@@ -80,6 +80,7 @@ class VehicleMarker extends StatefulWidget {
     super.key,
     this.selected = false,
     this.delay = Duration.zero,
+    this.animateIn = true,
     this.onTap,
   });
 
@@ -89,6 +90,9 @@ class VehicleMarker extends StatefulWidget {
 
   /// Atraso da entrada: escalone os pins quando o mapa carrega (ex.: 260 ms + i * 70 ms).
   final Duration delay;
+
+  /// `false` pula a queda de entrada (pin recriado quando o mapa se reconstroi).
+  final bool animateIn;
   final VoidCallback? onTap;
 
   @override
@@ -116,7 +120,7 @@ class _VehicleMarkerState extends State<VehicleMarker>
     super.didChangeDependencies();
     if (_started) return;
     _started = true;
-    if (VoltiMotion.reduced(context)) {
+    if (VoltiMotion.reduced(context) || !widget.animateIn) {
       _c.value = 1;
     } else {
       _c.forward();

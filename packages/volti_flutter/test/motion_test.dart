@@ -102,6 +102,17 @@ void main() {
       expect(find.byKey(const Key('volti-ripple')), findsNothing);
     });
 
+    testWidgets('desabilitar durante a ondulacao nao quebra', (t) async {
+      await t.pumpWidget(_wrap(VoltiButton(label: 'Ir', onPressed: () {})));
+      final g = await t.startGesture(t.getCenter(find.text('Ir')));
+      await t.pump(const Duration(milliseconds: 100));
+      await t.pumpWidget(_wrap(const VoltiButton(label: 'Ir')));
+      await t.pump(const Duration(milliseconds: 100));
+      await g.up();
+      await t.pump(const Duration(seconds: 1));
+      expect(t.takeException(), isNull);
+    });
+
     testWidgets('press escala com mola ate .97', (t) async {
       await t.pumpWidget(_wrap(VoltiButton(label: 'Ir', onPressed: () {})));
       final g = await t.startGesture(t.getCenter(find.text('Ir')));

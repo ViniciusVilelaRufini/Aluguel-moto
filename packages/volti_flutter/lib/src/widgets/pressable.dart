@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../tokens/shadows.dart';
 
@@ -24,8 +25,23 @@ class VoltiPressable extends StatefulWidget {
 class _VoltiPressableState extends State<VoltiPressable> {
   bool _down = false;
 
+  @override
+  void didUpdateWidget(VoltiPressable old) {
+    super.didUpdateWidget(old);
+    // Desabilitado no meio do press: solta sem setState (estamos em build).
+    if (widget.onTap == null) _down = false;
+  }
+
   void _set(bool v) {
-    if (_down != v && mounted) setState(() => _down = v);
+    if (_down == v || !mounted) return;
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _down != v) setState(() => _down = v);
+      });
+    } else {
+      setState(() => _down = v);
+    }
   }
 
   @override
@@ -72,8 +88,9 @@ class VoltiRipple extends StatefulWidget {
 }
 
 class _Drop {
-  _Drop(this.origin, this.controller);
+  _Drop(this.origin, this.controller, this.color);
   final Offset origin;
+  final Color color;
   final AnimationController controller;
 }
 
@@ -87,7 +104,7 @@ class _VoltiRippleState extends State<VoltiRipple>
       vsync: this,
       duration: const Duration(milliseconds: 620),
     );
-    final drop = _Drop(e.localPosition, c);
+    final drop = _Drop(e.localPosition, c, widget.color!);
     setState(() => _drops.add(drop));
     c.forward().whenComplete(() {
       if (!mounted) return;
@@ -120,7 +137,7 @@ class _VoltiRippleState extends State<VoltiRipple>
                   borderRadius: widget.borderRadius,
                   child: CustomPaint(
                     key: const Key('volti-ripple'),
-                    painter: _RipplePainter(_drops, widget.color!),
+                    painter: _RipplePainter(_drops),
                   ),
                 ),
               ),
@@ -133,10 +150,9 @@ class _VoltiRippleState extends State<VoltiRipple>
 }
 
 class _RipplePainter extends CustomPainter {
-  _RipplePainter(this.drops, this.color)
+  _RipplePainter(this.drops)
     : super(repaint: Listenable.merge([for (final d in drops) d.controller]));
   final List<_Drop> drops;
-  final Color color;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -146,7 +162,7 @@ class _RipplePainter extends CustomPainter {
       canvas.drawCircle(
         drop.origin,
         d / 2 * t,
-        Paint()..color = color.withValues(alpha: color.a * (1 - t)),
+        Paint()..color = drop.color.withValues(alpha: drop.color.a * (1 - t)),
       );
     }
   }
