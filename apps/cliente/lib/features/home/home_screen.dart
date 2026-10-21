@@ -33,6 +33,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     // Push: registra o token (no-op sem Firebase).
     Future.microtask(() => ref.read(pushServiceProvider).register(ref.read(backendProvider)));
+    WidgetsBinding.instance.addPostFrameCallback((_) => _askLocationOnce());
+  }
+
+  /// Explica para que serve a localizacao e so entao abre o dialogo do sistema.
+  Future<void> _askLocationOnce() async {
+    if (!mounted) return;
+    final session = ref.read(sessionProvider).value;
+    if (session == null || !session.onboardingDone || !session.locationConsent) return;
+    final svc = ref.read(locationServiceProvider);
+    if (await svc.hasPermission() || !mounted) return;
+    final l = context.l;
+    final ok = await VoltiDialog.show<bool>(
+      context,
+      title: l.locationRationaleTitle,
+      icon: const Icon(LucideIcons.mapPin, size: 32, color: VoltiColors.brand),
+      message: Text(l.locationRationaleText),
+      actions: [
+        VoltiButton(label: l.allowLocation, fullWidth: true, onPressed: () => Navigator.of(context).pop(true)),
+        VoltiButton(label: l.notNow, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(context).pop(false)),
+      ],
+    );
+    if (ok == true && await svc.ensurePermission()) ref.invalidate(userLocationProvider);
   }
 
   Color _zoneColor(ZoneType t) {

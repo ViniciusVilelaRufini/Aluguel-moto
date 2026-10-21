@@ -398,5 +398,10 @@
   "lockNotConfirmed": "Não conseguimos confirmar a trava",
   "lockNotConfirmedText": "A moto ainda não confirmou que travou. Tente de novo ou fale com o suporte para não ser cobrado a mais.",
   "contactSupport": "Falar com o suporte",
-  "realtimeOffline": "Sem conexão em tempo real"
+  "realtimeOffline": "Sem conexão em tempo real",
+  "locationRationaleTitle": "Motos por perto",
+  "locationRationaleText": "Usamos sua localização para mostrar as motos mais próximas e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.",
+  "allowLocation": "Continuar",
+  "birthInvalid": "Data inválida. Use dd/mm/aaaa.",
+  "birthUnderage": "É preciso ter 18 anos ou mais."
 }

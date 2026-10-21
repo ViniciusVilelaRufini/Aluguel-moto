@@ -834,4 +834,20 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get realtimeOffline => 'Sem conexão em tempo real';
+
+  @override
+  String get locationRationaleTitle => 'Motos por perto';
+
+  @override
+  String get locationRationaleText =>
+      'Usamos sua localização para mostrar as motos mais próximas e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.';
+
+  @override
+  String get allowLocation => 'Continuar';
+
+  @override
+  String get birthInvalid => 'Data inválida. Use dd/mm/aaaa.';
+
+  @override
+  String get birthUnderage => 'É preciso ter 18 anos ou mais.';
 }

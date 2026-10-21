@@ -1,7 +1,7 @@
-import 'dart:typed_data';
 import 'package:built_collection/built_collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/errors.dart';
@@ -10,7 +10,22 @@ import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:volti_cliente/core/session.dart';
+import 'package:volti_cliente/features/home/providers.dart';
+import 'package:volti_cliente/features/onboarding/onboarding_screen.dart';
+
 import 'helpers.dart';
+
+class _CountingLocation extends FakeLocation {
+  int calls = 0;
+  @override
+  Future<LatLng?> currentPosition({bool requestPermission = false}) async {
+    calls++;
+    return null;
+  }
+}
 
 class _EndBackend extends FakeBackend {
   final keys = <String?>[];
@@ -50,6 +65,28 @@ Future<void> _endFlow(WidgetTester t) async {
 }
 
 void main() {
+  test('mascara dd/mm/aaaa insere as barras e valida data e idade', () {
+    final f = MaskFormatter('##/##/####');
+    final v = f.formatEditUpdate(TextEditingValue.empty, const TextEditingValue(text: '15031990'));
+    expect(v.text, '15/03/1990');
+    expect(validateBirth('15/03/1990', now: DateTime(2026, 10, 21)), isNull);
+    expect(validateBirth('31/02/1990'), BirthError.invalid);
+    expect(validateBirth('15/03/2015', now: DateTime(2026, 10, 21)), BirthError.underage);
+    expect(validateBirth('15/03'), BirthError.incomplete);
+  });
+
+  test('localizacao nao e consultada sem consentimento', () async {
+    final loc = _CountingLocation();
+    final c = ProviderContainer(overrides: [
+      locationServiceProvider.overrideWithValue(loc),
+      sessionProvider.overrideWith(() => FakeSession(session(location: false))),
+    ]);
+    addTearDown(c.dispose);
+    await c.read(sessionProvider.future);
+    expect(await c.read(userLocationProvider.future), isNull);
+    expect(loc.calls, 0);
+  });
+
   test('datas no fuso de Sao Paulo (UTC-3), independente do aparelho', () {
     expect(formatDateTimeSp(DateTime.utc(2026, 10, 21, 2, 5)), '20/10/2026 23:05');
     expect(formatDateTimeSp(DateTime.utc(2026, 1, 5, 15, 0)), '05/01/2026 12:00');

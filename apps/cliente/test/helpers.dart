@@ -43,7 +43,9 @@ class FakeLocation implements LocationService {
   @override
   Future<bool> ensurePermission() async => false;
   @override
-  Future<LatLng?> currentPosition() async => null;
+  Future<bool> hasPermission() async => false;
+  @override
+  Future<LatLng?> currentPosition({bool requestPermission = false}) async => null;
   @override
   Stream<LatLng> trackDuringRental({required String notificationTitle, required String notificationText}) => const Stream.empty();
 }

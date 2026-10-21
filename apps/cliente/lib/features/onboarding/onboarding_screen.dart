@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -109,6 +109,45 @@ class _StepShell extends StatelessWidget {
   }
 }
 
+/// Mascara por digitos: `#` e um digito, o resto e literal inserido automaticamente.
+class MaskFormatter extends TextInputFormatter {
+  MaskFormatter(this.mask);
+  final String mask;
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final out = StringBuffer();
+    var d = 0;
+    for (var i = 0; i < mask.length && d < digits.length; i++) {
+      if (mask[i] == '#') {
+        out.write(digits[d++]);
+      } else {
+        out.write(mask[i]);
+      }
+    }
+    final text = out.toString();
+    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+  }
+}
+
+enum BirthError { incomplete, invalid, underage }
+
+/// dd/mm/aaaa valida e com 18 anos ou mais? `null` = ok; senao o motivo.
+BirthError? validateBirth(String text, {DateTime? now}) {
+  if (text.length < 10) return BirthError.incomplete;
+  final p = text.split('/');
+  final d = int.tryParse(p[0]), m = int.tryParse(p[1]), y = int.tryParse(p[2]);
+  if (d == null || m == null || y == null || y < 1900) return BirthError.invalid;
+  final date = DateTime(y, m, d);
+  if (date.day != d || date.month != m) return BirthError.invalid;
+  final today = now ?? DateTime.now();
+  if (date.isAfter(today)) return BirthError.invalid;
+  var age = today.year - y;
+  if (today.month < m || (today.month == m && today.day < d)) age--;
+  return age >= 18 ? null : BirthError.underage;
+}
+
 class ConsentStep extends ConsumerStatefulWidget {
   const ConsentStep({super.key, required this.onDone});
   final void Function(String name, String cpf, String birth) onDone;
@@ -132,7 +171,7 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
   }
 
   bool get _valid =>
-      _terms && _location && _name.text.trim().isNotEmpty && _cpf.text.trim().length >= 11 && _birth.text.trim().length == 10;
+      _terms && _location && _name.text.trim().isNotEmpty && _cpf.text.replaceAll(RegExp(r'\D'), '').length == 11 && validateBirth(_birth.text) == null;
 
   Future<void> _save() async {
     setState(() {
@@ -141,8 +180,11 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
     });
     try {
       final backend = ref.read(backendProvider);
-      await backend.updateProfile(name: _name.text.trim());
-      await ref.read(sessionProvider.notifier).saveConsents(terms: _terms, location: _location, marketing: _marketing);
+      await Future.wait([
+        backend.updateProfile(name: _name.text.trim()),
+        backend.updateConsents(terms: _terms, location: _location, marketing: _marketing),
+      ]);
+      await ref.read(sessionProvider.notifier).refresh();
       widget.onDone(_name.text.trim(), _cpf.text.trim(), _birth.text.trim());
     } catch (e) {
       if (mounted) setState(() => _error = e);
@@ -160,8 +202,9 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
       subtitle: l.dataSubtitle,
       cta: Column(mainAxisSize: MainAxisSize.min, children: [
         if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(failureText(l, _error!), style: const TextStyle(color: VoltiColors.danger))),
+        if (_busy) const Padding(padding: EdgeInsets.only(bottom: 8), child: LinearProgressIndicator()),
         VoltiButton(
-          label: l.continueLabel,
+          label: _busy ? l.sending : l.continueLabel,
           size: VoltiButtonSize.lg,
           fullWidth: true,
           onPressed: (_valid && !_busy) ? _save : null,
@@ -180,15 +223,25 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
           controller: _cpf,
           onChanged: (_) => setState(() {}),
           keyboardType: TextInputType.number,
+          inputFormatters: [MaskFormatter('###.###.###-##')],
           decoration: InputDecoration(labelText: l.cpf, hintText: '000.000.000-00', prefixIcon: const Icon(LucideIcons.idCard)),
         ),
         const SizedBox(height: VoltiSpacing.s12),
         TextField(
           controller: _birth,
           onChanged: (_) => setState(() {}),
-          keyboardType: TextInputType.datetime,
+          keyboardType: TextInputType.number,
+          inputFormatters: [MaskFormatter('##/##/####')],
           decoration: InputDecoration(
-              labelText: l.birthDate, hintText: 'DD/MM/AAAA', helperText: l.adultOnly, prefixIcon: const Icon(LucideIcons.calendar)),
+              labelText: l.birthDate,
+              hintText: 'dd/mm/aaaa',
+              helperText: l.adultOnly,
+              errorText: switch (_birth.text.length == 10 ? validateBirth(_birth.text) : null) {
+                BirthError.invalid => l.birthInvalid,
+                BirthError.underage => l.birthUnderage,
+                _ => null,
+              },
+              prefixIcon: const Icon(LucideIcons.calendar)),
         ),
         const SizedBox(height: VoltiSpacing.s12),
         CheckboxListTile(

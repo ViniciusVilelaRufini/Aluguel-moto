@@ -160,7 +160,12 @@ final realtimeFactoryProvider = Provider<RealtimeService Function()>((ref) {
 abstract class LocationService {
   /// Pede a permissao em primeiro plano. `false` se negada.
   Future<bool> ensurePermission();
-  Future<LatLng?> currentPosition();
+
+  /// Permissao ja concedida? Nunca abre o dialogo do sistema.
+  Future<bool> hasPermission();
+
+  /// Posicao atual. So pede permissao se [requestPermission] for true.
+  Future<LatLng?> currentPosition({bool requestPermission = false});
 
   /// Rastreio que continua com o app em segundo plano. Cancele a assinatura ao encerrar o aluguel.
   Stream<LatLng> trackDuringRental({required String notificationTitle, required String notificationText});
@@ -180,8 +185,18 @@ class GeolocatorLocationService implements LocationService {
   }
 
   @override
-  Future<LatLng?> currentPosition() async {
-    if (!await ensurePermission()) return null;
+  Future<bool> hasPermission() async {
+    try {
+      final p = await Geolocator.checkPermission();
+      return p == LocationPermission.always || p == LocationPermission.whileInUse;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<LatLng?> currentPosition({bool requestPermission = false}) async {
+    if (requestPermission ? !await ensurePermission() : !await hasPermission()) return null;
     try {
       final p = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high, timeLimit: Duration(seconds: 8)),

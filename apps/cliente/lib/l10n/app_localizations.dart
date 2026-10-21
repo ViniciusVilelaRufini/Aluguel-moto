@@ -1599,6 +1599,36 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Sem conexão em tempo real'**
   String get realtimeOffline;
+
+  /// No description provided for @locationRationaleTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Motos por perto'**
+  String get locationRationaleTitle;
+
+  /// No description provided for @locationRationaleText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Usamos sua localização para mostrar as motos mais próximas e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.'**
+  String get locationRationaleText;
+
+  /// No description provided for @allowLocation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar'**
+  String get allowLocation;
+
+  /// No description provided for @birthInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Data inválida. Use dd/mm/aaaa.'**
+  String get birthInvalid;
+
+  /// No description provided for @birthUnderage.
+  ///
+  /// In pt, this message translates to:
+  /// **'É preciso ter 18 anos ou mais.'**
+  String get birthUnderage;
 }
 
 class _AppLocalizationsDelegate
