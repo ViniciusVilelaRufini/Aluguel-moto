@@ -21,8 +21,8 @@ function PickScreen({ onBack, onReserve, onMap }) {
     <div style={{display:'flex',gap:8,padding:'14px 20px 6px',overflowX:'auto',scrollbarWidth:'none',flexShrink:0}}>
       {['Todas','Volti Flash','Volti Urban','Volti Cargo'].map(m=><Chip key={m} selected={model===m} onClick={()=>setModel(m)}>{m}</Chip>)}
     </div>
-    <div style={{flex:1,overflow:'auto',scrollbarWidth:'none',padding:'8px 20px 16px',display:'flex',flexDirection:'column',gap:10}}>
-      {list.map(p=>{const on=p.id===sel;return <div key={p.id} role="radio" aria-checked={on} onClick={()=>setSel(p.id)} style={{display:'flex',gap:14,padding:10,borderRadius:'var(--radius-lg)',background:on?'var(--brand-soft)':'var(--surface-card)',border:'1.5px solid '+(on?'var(--brand)':'transparent'),boxShadow:on?'none':'var(--shadow-1)',cursor:'pointer',transition:'all var(--dur-base) var(--ease-out)'}}>
+    <div className="vt-stagger" style={{flex:1,overflow:'auto',scrollbarWidth:'none',padding:'8px 20px 16px',display:'flex',flexDirection:'column',gap:10}}>
+      {list.map(p=>{const on=p.id===sel;return <div key={p.id} role="radio" aria-checked={on} onClick={()=>setSel(p.id)} style={{display:'flex',gap:14,padding:10,borderRadius:'var(--radius-lg)',background:on?'var(--brand-soft)':'var(--surface-card)',border:'1.5px solid '+(on?'var(--brand)':'transparent'),boxShadow:on?'none':'var(--shadow-1)',cursor:'pointer',transform:on?'scale(1.01)':'none',transition:'all var(--dur-spring) var(--ease-spring)'}}>
         <div style={{width:96,height:96,borderRadius:16,background:'var(--surface-media)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',font:'var(--type-caption)',color:'var(--blue-600)',textAlign:'center'}}><span>foto<br/>{p.model.split(' ')[1]}</span></div>
         <div style={{flex:1,minWidth:0,display:'flex',flexDirection:'column',gap:6,justifyContent:'center'}}>
           <div style={{display:'flex',alignItems:'baseline',gap:8}}><span style={{font:'var(--type-body-strong)'}}>{p.model}</span><span style={{font:'var(--fw-medium) 11px/1 var(--font-mono)',color:'var(--text-secondary)'}}>{p.code}</span></div>
@@ -30,7 +30,7 @@ function PickScreen({ onBack, onReserve, onMap }) {
           <div><BatteryPill level={p.level} range={p.range}/></div>
           <div style={{display:'flex',gap:6,flexWrap:'wrap'}}><Badge size="sm" tone="neutral" icon="Footprints">{p.walk}</Badge><Badge size="sm" tone="info">{p.price}</Badge>{p.promo&&<Badge size="sm">1ª grátis</Badge>}</div>
         </div>
-        <span style={{width:22,height:22,borderRadius:'50%',flexShrink:0,alignSelf:'center',border:'1.5px solid '+(on?'var(--brand)':'var(--border-strong)'),background:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}>{on&&<span style={{width:12,height:12,borderRadius:'50%',background:'var(--brand)'}}/>}</span>
+        <span style={{width:22,height:22,borderRadius:'50%',flexShrink:0,alignSelf:'center',border:'1.5px solid '+(on?'var(--brand)':'var(--border-strong)'),background:'#fff',display:'flex',alignItems:'center',justifyContent:'center'}}>{on&&<span style={{width:12,height:12,borderRadius:'50%',background:'var(--brand)',animation:'vt-check-pop 320ms var(--ease-spring) both'}}/>}</span>
       </div>})}
     </div>
     <div style={{padding:'14px 20px 40px',background:'var(--surface-card)',boxShadow:'var(--shadow-sheet)',display:'flex',flexDirection:'column',gap:10}}>

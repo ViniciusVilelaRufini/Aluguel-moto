@@ -8,7 +8,7 @@ function PlanScreen({ onBack, onConfirm }) {
   const row=(l,v,b)=><div style={{display:'flex',justifyContent:'space-between',padding:'7px 0',font:b?'var(--type-body-strong)':'var(--type-caption)',color:b?'var(--text-primary)':'var(--text-secondary)'}}><span>{l}</span><span style={{color:'var(--text-primary)',fontWeight:600}}>{v}</span></div>;
   return <div style={{position:'absolute',inset:0,background:'var(--surface-app)',display:'flex',flexDirection:'column'}}>
     <div style={{padding:'58px 20px 12px',display:'flex',alignItems:'center',gap:12}}><IconButton icon="ArrowLeft" variant="surface" size={40} label="Voltar" onClick={onBack}/><div><div style={{font:'var(--type-heading)'}}>Escolha seu plano</div><div style={{font:'var(--type-caption)',color:'var(--text-secondary)'}}>VT-4821 · Volti Flash · 90%</div></div></div>
-    <div style={{flex:1,overflow:'auto',scrollbarWidth:'none',padding:'4px 20px 16px',display:'flex',flexDirection:'column',gap:8}}>
+    <div className="vt-stagger" style={{flex:1,overflow:'auto',scrollbarWidth:'none',padding:'4px 20px 16px',display:'flex',flexDirection:'column',gap:8}}>
       {PLANS.map(p=><OptionCard key={p.id} title={p.t} description={p.d} price={p.p} priceNote={p.n} selected={plan===p.id} onClick={()=>setPlan(p.id)}/>)}
       <div style={{font:'var(--type-label)',margin:'14px 0 2px'}}>Seguro</div>
       <OptionCard icon="Shield" title="Básico" badge="Obrigatório" description="Danos a terceiros e acidentes pessoais" price="R$ 1,50" priceNote="/aluguel" selected={ins==='basic'} onClick={()=>setIns('basic')}/>

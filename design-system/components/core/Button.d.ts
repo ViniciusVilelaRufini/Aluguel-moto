@@ -11,6 +11,10 @@ export interface ButtonProps {
   iconRight?: string;
   fullWidth?: boolean;
   disabled?: boolean;
+  /** Spinner replaces the leading icon; button is inert */
+  loading?: boolean;
+  /** Periodic light sweep — use only on the single main CTA of a screen */
+  shine?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   type?: 'button' | 'submit';
   style?: React.CSSProperties;

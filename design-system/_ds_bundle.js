@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"VoltiDesignSystem_09a717","components":[{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Card","sourcePath":"components/core/Card.jsx"},{"name":"Chip","sourcePath":"components/core/Chip.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"DataTable","sourcePath":"components/data/DataTable.jsx"},{"name":"FLEET_STATUS","sourcePath":"components/data/FleetStatus.jsx"},{"name":"FleetStatus","sourcePath":"components/data/FleetStatus.jsx"},{"name":"StatTile","sourcePath":"components/data/StatTile.jsx"},{"name":"Alert","sourcePath":"components/feedback/Alert.jsx"},{"name":"BottomSheet","sourcePath":"components/feedback/BottomSheet.jsx"},{"name":"Dialog","sourcePath":"components/feedback/Dialog.jsx"},{"name":"ProgressSteps","sourcePath":"components/feedback/ProgressSteps.jsx"},{"name":"Toast","sourcePath":"components/feedback/Toast.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Input","sourcePath":"components/forms/Input.jsx"},{"name":"OptionCard","sourcePath":"components/forms/OptionCard.jsx"},{"name":"OtpInput","sourcePath":"components/forms/OtpInput.jsx"},{"name":"SegmentedControl","sourcePath":"components/forms/SegmentedControl.jsx"},{"name":"Switch","sourcePath":"components/forms/Switch.jsx"},{"name":"BatteryPill","sourcePath":"components/mobility/BatteryPill.jsx"},{"name":"ListRow","sourcePath":"components/mobility/ListRow.jsx"},{"name":"LocationHeader","sourcePath":"components/mobility/LocationHeader.jsx"},{"name":"PassCard","sourcePath":"components/mobility/PassCard.jsx"},{"name":"PhotoCapture","sourcePath":"components/mobility/PhotoCapture.jsx"},{"name":"ReservationBanner","sourcePath":"components/mobility/ReservationBanner.jsx"},{"name":"RouteInfoPill","sourcePath":"components/mobility/RouteInfoPill.jsx"},{"name":"SwipeAction","sourcePath":"components/mobility/SwipeAction.jsx"},{"name":"VehicleMarker","sourcePath":"components/mobility/VehicleMarker.jsx"},{"name":"VehicleSummary","sourcePath":"components/mobility/VehicleSummary.jsx"},{"name":"SideNav","sourcePath":"components/navigation/SideNav.jsx"}],"sourceHashes":{"components/core/Badge.jsx":"6a8bde5ab94f","components/core/Button.jsx":"be7cacbbc73d","components/core/Card.jsx":"32577861a542","components/core/Chip.jsx":"99d40f3fc872","components/core/Icon.jsx":"d78cbe537f30","components/core/IconButton.jsx":"56136ed17b34","components/data/DataTable.jsx":"7ecae1defc33","components/data/FleetStatus.jsx":"0243a9b7eacc","components/data/StatTile.jsx":"05d0b199b4d5","components/feedback/Alert.jsx":"8a8b635f301c","components/feedback/BottomSheet.jsx":"c506f945ed96","components/feedback/Dialog.jsx":"0ba9e5c7b4f1","components/feedback/ProgressSteps.jsx":"d09a2ab25e84","components/feedback/Toast.jsx":"80873ac9609d","components/forms/Checkbox.jsx":"0a611163df85","components/forms/Input.jsx":"6eb8322e2000","components/forms/OptionCard.jsx":"e3b153f8861a","components/forms/OtpInput.jsx":"f41921213a09","components/forms/SegmentedControl.jsx":"4c08a328a9f8","components/forms/Switch.jsx":"e3ae98262fc6","components/mobility/BatteryPill.jsx":"0b8d117f30d1","components/mobility/ListRow.jsx":"de2e623fe1b0","components/mobility/LocationHeader.jsx":"56fa953cb035","components/mobility/PassCard.jsx":"aa5d19848661","components/mobility/PhotoCapture.jsx":"f82edab8d9a8","components/mobility/ReservationBanner.jsx":"6be67efcd11c","components/mobility/RouteInfoPill.jsx":"7e256e2cd87a","components/mobility/SwipeAction.jsx":"c0bbdf6251f8","components/mobility/VehicleMarker.jsx":"9872ae564921","components/mobility/VehicleSummary.jsx":"a5094285e484","components/navigation/SideNav.jsx":"e1acde8f0266","ui_kits/admin/AdminApp.jsx":"6dfc23887022","ui_kits/admin/AdminMap.jsx":"22342cd89b67","ui_kits/admin/AlertsView.jsx":"7f6af63f54ae","ui_kits/admin/CustomersView.jsx":"baf77842f1b8","ui_kits/admin/DocAdminShell.jsx":"c850c0acb77e","ui_kits/admin/FinanceView.jsx":"7725b4dfc914","ui_kits/admin/FleetView.jsx":"2fa0abb58321","ui_kits/admin/LoginView.jsx":"661634700b86","ui_kits/admin/OperationsView.jsx":"880b83490ad6","ui_kits/admin/PricingView.jsx":"ee86a4f4a41e","ui_kits/admin/TeamView.jsx":"5fc30e257730","ui_kits/admin/ZonesView.jsx":"afd5287f81a0","ui_kits/admin/deck-stage.js":"f3d3d0a662c0","ui_kits/admin/doc-page.js":"f52ae9c02fca","ui_kits/app/AccountScreen.jsx":"c69f11478fdc","ui_kits/app/ClientApp.jsx":"56f12e4aec10","ui_kits/app/DeckPhone.jsx":"47e316579117","ui_kits/app/HomeScreen.jsx":"666c73717a68","ui_kits/app/MapView.jsx":"8e87edb3dc63","ui_kits/app/Onboarding.jsx":"b13529d83cbc","ui_kits/app/PickScreen.jsx":"e0d71a8aa10e","ui_kits/app/PlanScreen.jsx":"42cff9c9ebd1","ui_kits/app/ReservedScreen.jsx":"a255c367bedf","ui_kits/app/ReturnScreen.jsx":"1805f782f058","ui_kits/app/RideScreen.jsx":"fd4c1c118a08","ui_kits/app/ScanScreen.jsx":"6c0fec0dd986","ui_kits/app/SummaryScreen.jsx":"fe1fcbc06cbf","ui_kits/app/deck-stage.js":"f3d3d0a662c0","ui_kits/app/doc-page.js":"f52ae9c02fca","ui_kits/app/ios-frame.jsx":"24642b887be3","ui_kits/operator/OperatorApp.jsx":"6dc03a6cd5ed","ui_kits/operator/TaskDetail.jsx":"29ce3f81abd8","ui_kits/operator/TaskList.jsx":"d36dff1832fd"},"inlinedExternals":[],"unexposedExports":[]} */
+/* @ds-bundle: {"format":4,"namespace":"VoltiDesignSystem_09a717","components":[{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Card","sourcePath":"components/core/Card.jsx"},{"name":"Chip","sourcePath":"components/core/Chip.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"DataTable","sourcePath":"components/data/DataTable.jsx"},{"name":"FLEET_STATUS","sourcePath":"components/data/FleetStatus.jsx"},{"name":"FleetStatus","sourcePath":"components/data/FleetStatus.jsx"},{"name":"StatTile","sourcePath":"components/data/StatTile.jsx"},{"name":"Alert","sourcePath":"components/feedback/Alert.jsx"},{"name":"BottomSheet","sourcePath":"components/feedback/BottomSheet.jsx"},{"name":"Dialog","sourcePath":"components/feedback/Dialog.jsx"},{"name":"ProgressSteps","sourcePath":"components/feedback/ProgressSteps.jsx"},{"name":"Toast","sourcePath":"components/feedback/Toast.jsx"},{"name":"Checkbox","sourcePath":"components/forms/Checkbox.jsx"},{"name":"Input","sourcePath":"components/forms/Input.jsx"},{"name":"OptionCard","sourcePath":"components/forms/OptionCard.jsx"},{"name":"OtpInput","sourcePath":"components/forms/OtpInput.jsx"},{"name":"SegmentedControl","sourcePath":"components/forms/SegmentedControl.jsx"},{"name":"Switch","sourcePath":"components/forms/Switch.jsx"},{"name":"BatteryPill","sourcePath":"components/mobility/BatteryPill.jsx"},{"name":"ListRow","sourcePath":"components/mobility/ListRow.jsx"},{"name":"LocationHeader","sourcePath":"components/mobility/LocationHeader.jsx"},{"name":"PassCard","sourcePath":"components/mobility/PassCard.jsx"},{"name":"PhotoCapture","sourcePath":"components/mobility/PhotoCapture.jsx"},{"name":"ReservationBanner","sourcePath":"components/mobility/ReservationBanner.jsx"},{"name":"RouteInfoPill","sourcePath":"components/mobility/RouteInfoPill.jsx"},{"name":"SwipeAction","sourcePath":"components/mobility/SwipeAction.jsx"},{"name":"VehicleMarker","sourcePath":"components/mobility/VehicleMarker.jsx"},{"name":"VehicleSummary","sourcePath":"components/mobility/VehicleSummary.jsx"},{"name":"SideNav","sourcePath":"components/navigation/SideNav.jsx"}],"sourceHashes":{"components/core/Badge.jsx":"6a8bde5ab94f","components/core/Button.jsx":"9b9a5dd1621e","components/core/Card.jsx":"32577861a542","components/core/Chip.jsx":"63d76cf23d4d","components/core/Icon.jsx":"d78cbe537f30","components/core/IconButton.jsx":"1e888103dd55","components/data/DataTable.jsx":"7ecae1defc33","components/data/FleetStatus.jsx":"0243a9b7eacc","components/data/StatTile.jsx":"05d0b199b4d5","components/feedback/Alert.jsx":"8a8b635f301c","components/feedback/BottomSheet.jsx":"565476d4b8d6","components/feedback/Dialog.jsx":"2b61e4f31d10","components/feedback/ProgressSteps.jsx":"d09a2ab25e84","components/feedback/Toast.jsx":"eba4f862f380","components/forms/Checkbox.jsx":"0a611163df85","components/forms/Input.jsx":"6eb8322e2000","components/forms/OptionCard.jsx":"28bdcd5a65fe","components/forms/OtpInput.jsx":"f41921213a09","components/forms/SegmentedControl.jsx":"4c08a328a9f8","components/forms/Switch.jsx":"e3ae98262fc6","components/mobility/BatteryPill.jsx":"0b8d117f30d1","components/mobility/ListRow.jsx":"de2e623fe1b0","components/mobility/LocationHeader.jsx":"56fa953cb035","components/mobility/PassCard.jsx":"86280b27e502","components/mobility/PhotoCapture.jsx":"f82edab8d9a8","components/mobility/ReservationBanner.jsx":"6be67efcd11c","components/mobility/RouteInfoPill.jsx":"7e256e2cd87a","components/mobility/SwipeAction.jsx":"c0bbdf6251f8","components/mobility/VehicleMarker.jsx":"410cf9f2b076","components/mobility/VehicleSummary.jsx":"a5094285e484","components/navigation/SideNav.jsx":"e1acde8f0266","ui_kits/admin/AdminApp.jsx":"6dfc23887022","ui_kits/admin/AdminMap.jsx":"22342cd89b67","ui_kits/admin/AlertsView.jsx":"7f6af63f54ae","ui_kits/admin/CustomersView.jsx":"baf77842f1b8","ui_kits/admin/DocAdminShell.jsx":"c850c0acb77e","ui_kits/admin/FinanceView.jsx":"7725b4dfc914","ui_kits/admin/FleetView.jsx":"2fa0abb58321","ui_kits/admin/LoginView.jsx":"661634700b86","ui_kits/admin/OperationsView.jsx":"880b83490ad6","ui_kits/admin/PricingView.jsx":"ee86a4f4a41e","ui_kits/admin/TeamView.jsx":"5fc30e257730","ui_kits/admin/ZonesView.jsx":"afd5287f81a0","ui_kits/admin/deck-stage.js":"f3d3d0a662c0","ui_kits/admin/doc-page.js":"f52ae9c02fca","ui_kits/app/AccountScreen.jsx":"a2a5985a1ad7","ui_kits/app/ClientApp.jsx":"b0363b652dfa","ui_kits/app/DeckPhone.jsx":"47e316579117","ui_kits/app/HomeScreen.jsx":"292ce1041d3a","ui_kits/app/MapView.jsx":"54d7432dcde2","ui_kits/app/Onboarding.jsx":"b13529d83cbc","ui_kits/app/PickScreen.jsx":"d95ee293951b","ui_kits/app/PlanScreen.jsx":"035ed2260af2","ui_kits/app/ReservedScreen.jsx":"a255c367bedf","ui_kits/app/ReturnScreen.jsx":"1805f782f058","ui_kits/app/RideScreen.jsx":"58cbe5356018","ui_kits/app/ScanScreen.jsx":"8d0392a30065","ui_kits/app/SummaryScreen.jsx":"254f7bf36d36","ui_kits/app/deck-stage.js":"f3d3d0a662c0","ui_kits/app/doc-page.js":"f52ae9c02fca","ui_kits/app/ios-frame.jsx":"24642b887be3","ui_kits/operator/OperatorApp.jsx":"6dc03a6cd5ed","ui_kits/operator/TaskDetail.jsx":"29ce3f81abd8","ui_kits/operator/TaskList.jsx":"d36dff1832fd"},"inlinedExternals":[],"unexposedExports":[]} */
 
 (() => {
 
@@ -163,31 +163,36 @@ const VARIANTS = {
     bg: 'var(--brand)',
     fg: 'var(--on-brand)',
     bd: 'transparent',
-    sh: 'var(--shadow-brand)'
+    sh: 'var(--shadow-brand)',
+    rip: 'rgba(255,255,255,.38)'
   },
   secondary: {
     bg: 'var(--surface-card)',
     fg: 'var(--brand)',
     bd: 'var(--brand)',
-    sh: 'none'
+    sh: 'none',
+    rip: 'rgba(52,194,92,.2)'
   },
   ghost: {
     bg: 'transparent',
     fg: 'var(--text-primary)',
     bd: 'transparent',
-    sh: 'none'
+    sh: 'none',
+    rip: 'rgba(21,24,26,.08)'
   },
   dark: {
     bg: 'var(--surface-inverse)',
     fg: 'var(--text-on-inverse)',
     bd: 'transparent',
-    sh: 'var(--shadow-2)'
+    sh: 'var(--shadow-2)',
+    rip: 'rgba(255,255,255,.22)'
   },
   danger: {
     bg: 'var(--danger)',
     fg: 'var(--white)',
     bd: 'transparent',
-    sh: 'var(--shadow-coral)'
+    sh: 'var(--shadow-coral)',
+    rip: 'rgba(255,255,255,.35)'
   }
 };
 function Button({
@@ -198,21 +203,49 @@ function Button({
   iconRight,
   fullWidth = false,
   disabled = false,
+  loading = false,
+  shine = false,
   onClick,
   type = 'button',
   style
 }) {
   const [p, setP] = React.useState(false);
+  const [h, setH] = React.useState(false);
+  const [rip, setRip] = React.useState([]);
   const s = SIZES[size] || SIZES.md,
     v = VARIANTS[variant] || VARIANTS.primary;
+  const off = disabled || loading;
+  const down = e => {
+    if (off) return;
+    setP(true);
+    const el = e.currentTarget,
+      r = el.getBoundingClientRect(),
+      k = r.width / el.offsetWidth || 1;
+    const d = Math.max(el.offsetWidth, el.offsetHeight) * 2.2,
+      id = Date.now() + Math.random();
+    setRip(a => [...a, {
+      id,
+      d,
+      x: (e.clientX - r.left) / k - d / 2,
+      y: (e.clientY - r.top) / k - d / 2
+    }]);
+    setTimeout(() => setRip(a => a.filter(q => q.id !== id)), 650);
+  };
   return /*#__PURE__*/React.createElement("button", {
     type: type,
-    disabled: disabled,
+    disabled: off,
     onClick: onClick,
-    onPointerDown: () => setP(true),
+    onPointerDown: down,
     onPointerUp: () => setP(false),
-    onPointerLeave: () => setP(false),
+    onPointerEnter: () => setH(true),
+    onPointerLeave: () => {
+      setP(false);
+      setH(false);
+    },
     style: {
+      position: 'relative',
+      overflow: 'hidden',
+      isolation: 'isolate',
       display: fullWidth ? 'flex' : 'inline-flex',
       width: fullWidth ? '100%' : undefined,
       alignItems: 'center',
@@ -226,18 +259,52 @@ function Button({
       color: v.fg,
       font: 'var(--fw-semibold) ' + s.fs + 'px/1 var(--font-sans)',
       boxShadow: disabled ? 'none' : v.sh,
-      cursor: disabled ? 'not-allowed' : 'pointer',
+      cursor: disabled ? 'not-allowed' : loading ? 'progress' : 'pointer',
       opacity: disabled ? 0.4 : 1,
-      transform: p && !disabled ? 'scale(var(--press-scale))' : 'none',
-      filter: p && !disabled ? 'brightness(.94)' : 'none',
-      transition: 'transform var(--dur-fast) var(--ease-out), filter var(--dur-fast)',
+      transform: p && !off ? 'scale(var(--press-scale))' : h && !off ? 'translateY(-1px)' : 'none',
+      filter: p && !off ? 'brightness(.94)' : h && !off ? 'brightness(1.04)' : 'none',
+      transition: 'transform var(--dur-spring) var(--ease-spring), filter var(--dur-fast), opacity var(--dur-base), background var(--dur-base)',
       whiteSpace: 'nowrap',
       ...style
     }
-  }, icon && /*#__PURE__*/React.createElement(__ds_scope.Icon, {
+  }, rip.map(q => /*#__PURE__*/React.createElement("span", {
+    key: q.id,
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      left: q.x,
+      top: q.y,
+      width: q.d,
+      height: q.d,
+      borderRadius: '50%',
+      background: v.rip,
+      animation: 'vt-ripple 620ms var(--ease-out) forwards',
+      pointerEvents: 'none',
+      zIndex: -1
+    }
+  })), shine && !off && /*#__PURE__*/React.createElement("span", {
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      left: 0,
+      width: '35%',
+      background: 'linear-gradient(90deg,transparent,rgba(255,255,255,.38),transparent)',
+      animation: 'vt-shine 3.8s var(--ease-in-out) 1.4s infinite',
+      pointerEvents: 'none',
+      zIndex: -1
+    }
+  }), loading ? /*#__PURE__*/React.createElement(__ds_scope.Icon, {
+    name: "LoaderCircle",
+    size: s.ic,
+    style: {
+      animation: 'vt-spin .9s linear infinite'
+    }
+  }) : icon && /*#__PURE__*/React.createElement(__ds_scope.Icon, {
     name: icon,
     size: s.ic
-  }), children, iconRight && /*#__PURE__*/React.createElement(__ds_scope.Icon, {
+  }), children, iconRight && !loading && /*#__PURE__*/React.createElement(__ds_scope.Icon, {
     name: iconRight,
     size: s.ic
   }));
@@ -254,9 +321,14 @@ function Chip({
   onClick,
   style
 }) {
+  const [p, setP] = React.useState(false);
   return /*#__PURE__*/React.createElement("button", {
     onClick: onClick,
+    onPointerDown: () => setP(true),
+    onPointerUp: () => setP(false),
+    onPointerLeave: () => setP(false),
     style: {
+      transform: p ? 'scale(.94)' : 'none',
       display: 'inline-flex',
       alignItems: 'center',
       gap: 6,
@@ -269,7 +341,7 @@ function Chip({
       font: 'var(--fw-medium) 13px/1 var(--font-sans)',
       cursor: 'pointer',
       whiteSpace: 'nowrap',
-      transition: 'background var(--dur-base), border-color var(--dur-base)',
+      transition: 'background var(--dur-base), border-color var(--dur-base), color var(--dur-base), transform var(--dur-spring) var(--ease-spring)',
       ...style
     }
   }, icon && /*#__PURE__*/React.createElement(__ds_scope.Icon, {
@@ -341,8 +413,8 @@ function IconButton({
       justifyContent: 'center',
       cursor: 'pointer',
       flexShrink: 0,
-      transform: p ? 'scale(.92)' : 'none',
-      transition: 'transform var(--dur-fast) var(--ease-out)',
+      transform: p ? 'scale(.88)' : 'none',
+      transition: 'transform var(--dur-spring) var(--ease-spring), background var(--dur-base)',
       ...style
     }
   }, /*#__PURE__*/React.createElement(__ds_scope.Icon, {
@@ -648,7 +720,7 @@ function BottomSheet({
       boxShadow: 'var(--shadow-sheet)',
       padding,
       transform: open ? 'translateY(0)' : 'translateY(105%)',
-      transition: 'transform var(--dur-slow) var(--ease-out)',
+      transition: 'transform var(--dur-screen) var(--ease-screen)',
       ...style
     }
   }, /*#__PURE__*/React.createElement("div", {
@@ -659,7 +731,11 @@ function BottomSheet({
       background: 'var(--ink-200)',
       margin: '0 auto 14px'
     }
-  }), children);
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      animation: open ? 'vt-fade-up 420ms var(--ease-out) 120ms both' : 'none'
+    }
+  }, children));
 }
 Object.assign(__ds_scope, { BottomSheet });
 })(); } catch (e) { __ds_ns.__errors.push({ path: "components/feedback/BottomSheet.jsx", error: String((e && e.message) || e) }); }
@@ -682,6 +758,7 @@ function Dialog({
       inset: 0,
       zIndex: 80,
       background: 'var(--surface-scrim)',
+      animation: 'vt-fade-in 200ms var(--ease-out) both',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
@@ -696,6 +773,7 @@ function Dialog({
       borderRadius: 'var(--radius-xl)',
       padding: 24,
       boxShadow: 'var(--shadow-2)',
+      animation: 'vt-pop-in 360ms var(--ease-spring) both',
       display: 'flex',
       flexDirection: 'column',
       gap: 12,
@@ -796,6 +874,7 @@ function Toast({
       color: '#fff',
       boxShadow: 'var(--shadow-2)',
       font: 'var(--type-label)',
+      animation: 'vt-toast-in 420ms var(--ease-spring) both',
       ...style
     }
   }, /*#__PURE__*/React.createElement(__ds_scope.Icon, {
@@ -977,7 +1056,7 @@ function OptionCard({
       background: selected ? 'var(--brand-soft)' : 'var(--surface-card)',
       border: '1.5px solid ' + (selected ? 'var(--brand)' : 'var(--border-subtle)'),
       opacity: disabled ? .5 : 1,
-      transition: 'background var(--dur-base), border-color var(--dur-base)',
+      transition: 'background var(--dur-base), border-color var(--dur-base), transform var(--dur-spring) var(--ease-spring)',
       ...style
     }
   }, /*#__PURE__*/React.createElement("span", {
@@ -998,7 +1077,8 @@ function OptionCard({
       width: 12,
       height: 12,
       borderRadius: '50%',
-      background: 'var(--brand)'
+      background: 'var(--brand)',
+      animation: 'vt-check-pop 320ms var(--ease-spring) both'
     }
   })), icon && /*#__PURE__*/React.createElement("span", {
     style: {
@@ -1457,9 +1537,15 @@ function PassCard({
   style
 }) {
   const [bg, fg] = TONES[tone] || TONES.sun;
+  const [p, setP] = React.useState(false);
   return /*#__PURE__*/React.createElement("button", {
     onClick: onClick,
+    onPointerDown: () => setP(true),
+    onPointerUp: () => setP(false),
+    onPointerLeave: () => setP(false),
     style: {
+      transform: p ? 'scale(.96)' : 'none',
+      transition: 'transform var(--dur-spring) var(--ease-spring)',
       display: 'flex',
       alignItems: 'center',
       gap: 12,
@@ -1746,6 +1832,7 @@ try { (() => {
 function VehicleMarker({
   level = 80,
   selected = false,
+  delay = 0,
   onClick,
   style
 }) {
@@ -1762,10 +1849,23 @@ function VehicleMarker({
       border: 0,
       background: 'transparent',
       cursor: 'pointer',
-      transition: 'all var(--dur-base) var(--ease-spring)',
+      animation: 'vt-marker-in 560ms var(--ease-spring) ' + delay + 'ms both',
+      transition: 'width var(--dur-spring) var(--ease-spring), height var(--dur-spring) var(--ease-spring)',
       ...style
     }
-  }, /*#__PURE__*/React.createElement("span", {
+  }, selected && /*#__PURE__*/React.createElement("span", {
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      width: s,
+      height: s,
+      borderRadius: '50%',
+      background: 'var(--brand)',
+      animation: 'vt-pulse-ring 1.8s var(--ease-out) infinite'
+    }
+  }), /*#__PURE__*/React.createElement("span", {
     style: {
       position: 'absolute',
       top: 0,
@@ -1780,7 +1880,8 @@ function VehicleMarker({
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      boxSizing: 'border-box'
+      boxSizing: 'border-box',
+      transition: 'all var(--dur-spring) var(--ease-spring)'
     }
   }, /*#__PURE__*/React.createElement(__ds_scope.Icon, {
     name: "Bike",
@@ -8231,6 +8332,7 @@ function AccountScreen({
       font: 'var(--type-heading)'
     }
   }, "Minha conta")), /*#__PURE__*/React.createElement("div", {
+    className: "vt-stagger",
     style: {
       flex: 1,
       overflow: 'auto',
@@ -8356,57 +8458,116 @@ window.AccountScreen = AccountScreen;
 // ui_kits/app/ClientApp.jsx
 try { (() => {
 const SCREENS = [['onboarding', 'Cadastro'], ['home', 'Mapa'], ['pick', 'Escolher moto'], ['reserved', 'Reserva'], ['scan', 'QR'], ['plan', 'Plano e seguro'], ['ride', 'Corrida'], ['return', 'Devolução'], ['summary', 'Recibo'], ['account', 'Conta']];
+const ORDER = SCREENS.map(x => x[0]);
+const T_IN = {
+  fwd: ['vt-screen-in-right', 2],
+  back: ['vt-screen-in-left', 1],
+  up: ['vt-screen-in-up', 2],
+  down: ['vt-screen-emerge', 1]
+};
+const T_OUT = {
+  fwd: ['vt-screen-out-left', 1],
+  back: ['vt-screen-out-right', 2],
+  up: ['vt-screen-recede', 1],
+  down: ['vt-screen-out-down', 2]
+};
 function ClientApp() {
-  const [s, setS] = React.useState(() => localStorage.getItem('volti-kit-screen') || 'home');
+  const [nav, setNav] = React.useState(() => ({
+    cur: localStorage.getItem('volti-kit-screen') || 'home',
+    prev: null,
+    dir: 'fwd',
+    n: 0
+  }));
   const [veh, setVeh] = React.useState(VEHICLES[0]);
   const [toast, setToast] = React.useState(null);
+  const navRef = React.useRef(nav);
+  navRef.current = nav;
   const go = (x, t) => {
-    setS(x);
+    const c = navRef.current;
+    if (x === c.cur) return;
+    const dir = x === 'scan' ? 'up' : c.cur === 'scan' && x !== 'plan' ? 'down' : ORDER.indexOf(x) > ORDER.indexOf(c.cur) ? 'fwd' : 'back';
+    const n = c.n + 1;
+    setNav({
+      cur: x,
+      prev: c.cur,
+      dir,
+      n
+    });
     localStorage.setItem('volti-kit-screen', x);
+    setTimeout(() => setNav(p => p.n === n ? {
+      ...p,
+      prev: null
+    } : p), 480);
     if (t) {
       setToast(t);
       setTimeout(() => setToast(null), 2800);
     }
   };
-  let screen;
-  if (s === 'onboarding') screen = /*#__PURE__*/React.createElement(Onboarding, {
-    onDone: () => go('home', 'Cadastro enviado. Verificação em até 2 min.')
-  });else if (s === 'home') screen = /*#__PURE__*/React.createElement(HomeScreen, {
-    toast: toast,
-    onAccount: () => go('account'),
-    onList: () => go('pick'),
-    onReserve: v => {
-      setVeh(v);
-      go('reserved');
-    },
-    onScan: () => go('scan')
-  });else if (s === 'pick') screen = /*#__PURE__*/React.createElement(PickScreen, {
-    onBack: () => go('home'),
-    onMap: () => go('home'),
-    onReserve: v => {
-      setVeh(v);
-      go('reserved');
+  const render = s => {
+    if (s === 'onboarding') return /*#__PURE__*/React.createElement(Onboarding, {
+      onDone: () => go('home', 'Cadastro enviado. Verificação em até 2 min.')
+    });
+    if (s === 'home') return /*#__PURE__*/React.createElement(HomeScreen, {
+      toast: toast,
+      onAccount: () => go('account'),
+      onList: () => go('pick'),
+      onReserve: v => {
+        setVeh(v);
+        go('reserved');
+      },
+      onScan: () => go('scan')
+    });
+    if (s === 'pick') return /*#__PURE__*/React.createElement(PickScreen, {
+      onBack: () => go('home'),
+      onMap: () => go('home'),
+      onReserve: v => {
+        setVeh(v);
+        go('reserved');
+      }
+    });
+    if (s === 'reserved') return /*#__PURE__*/React.createElement(ReservedScreen, {
+      vehicle: veh,
+      onCancel: () => go('home', 'Reserva cancelada'),
+      onScan: () => go('scan')
+    });
+    if (s === 'scan') return /*#__PURE__*/React.createElement(ScanScreen, {
+      onBack: () => go('home'),
+      onUnlocked: () => go('plan')
+    });
+    if (s === 'plan') return /*#__PURE__*/React.createElement(PlanScreen, {
+      onBack: () => go('scan'),
+      onConfirm: () => go('ride')
+    });
+    if (s === 'ride') return /*#__PURE__*/React.createElement(RideScreen, {
+      onEnd: () => go('return')
+    });
+    if (s === 'return') return /*#__PURE__*/React.createElement(ReturnScreen, {
+      onBack: () => go('ride'),
+      onDone: () => go('summary')
+    });
+    if (s === 'account') return /*#__PURE__*/React.createElement(AccountScreen, {
+      onBack: () => go('home')
+    });
+    return /*#__PURE__*/React.createElement(SummaryScreen, {
+      onDone: () => go('home', 'Obrigado por andar de Volti')
+    });
+  };
+  const layer = (s, key, anim, z, out) => /*#__PURE__*/React.createElement("div", {
+    key: key,
+    style: {
+      position: 'absolute',
+      inset: 0,
+      overflow: 'hidden',
+      background: 'var(--surface-app)',
+      zIndex: z,
+      pointerEvents: out ? 'none' : undefined,
+      animation: anim ? anim + ' var(--dur-screen) var(--ease-screen) both' : 'none',
+      boxShadow: anim && z === 2 ? '0 0 48px rgba(21,24,26,.22)' : 'none'
     }
-  });else if (s === 'reserved') screen = /*#__PURE__*/React.createElement(ReservedScreen, {
-    vehicle: veh,
-    onCancel: () => go('home', 'Reserva cancelada'),
-    onScan: () => go('scan')
-  });else if (s === 'scan') screen = /*#__PURE__*/React.createElement(ScanScreen, {
-    onBack: () => go('home'),
-    onUnlocked: () => go('plan')
-  });else if (s === 'plan') screen = /*#__PURE__*/React.createElement(PlanScreen, {
-    onBack: () => go('scan'),
-    onConfirm: () => go('ride')
-  });else if (s === 'ride') screen = /*#__PURE__*/React.createElement(RideScreen, {
-    onEnd: () => go('return')
-  });else if (s === 'return') screen = /*#__PURE__*/React.createElement(ReturnScreen, {
-    onBack: () => go('ride'),
-    onDone: () => go('summary')
-  });else if (s === 'account') screen = /*#__PURE__*/React.createElement(AccountScreen, {
-    onBack: () => go('home')
-  });else screen = /*#__PURE__*/React.createElement(SummaryScreen, {
-    onDone: () => go('home', 'Obrigado por andar de Volti')
-  });
+  }, render(s));
+  const animate = nav.n > 0;
+  const [inA, inZ] = T_IN[nav.dir],
+    [outA, outZ] = T_OUT[nav.dir];
   return /*#__PURE__*/React.createElement("div", {
     style: {
       minHeight: '100vh',
@@ -8427,18 +8588,19 @@ function ClientApp() {
     }
   }, SCREENS.map(([k, l]) => /*#__PURE__*/React.createElement(VDS.Chip, {
     key: k,
-    selected: k === s,
+    selected: k === nav.cur,
     onClick: () => go(k)
   }, l))), /*#__PURE__*/React.createElement(IOSDevice, null, /*#__PURE__*/React.createElement("div", {
-    "data-screen-label": s,
+    "data-screen-label": nav.cur,
     style: {
       position: 'relative',
       height: '100%',
       overflow: 'hidden',
       fontFamily: 'var(--font-sans)',
-      color: 'var(--text-primary)'
+      color: 'var(--text-primary)',
+      background: '#000'
     }
-  }, screen)));
+  }, nav.prev && layer(nav.prev, nav.prev + '-' + (nav.n - 1), outA, outZ, true), layer(nav.cur, nav.cur + '-' + nav.n, animate ? inA : null, animate ? inZ : 1, false))));
 }
 ReactDOM.createRoot(document.getElementById('root')).render(/*#__PURE__*/React.createElement(ClientApp, null));
 })(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/app/ClientApp.jsx", error: String((e && e.message) || e) }); }
@@ -8586,6 +8748,7 @@ function TopOverlay({
       paddingTop: 58
     }
   }, /*#__PURE__*/React.createElement("div", {
+    className: "vt-drop",
     style: {
       padding: '0 20px'
     }
@@ -8594,6 +8757,7 @@ function TopOverlay({
     address: "Av. Paulista, 1578",
     onAvatar: onAvatar
   })), /*#__PURE__*/React.createElement("div", {
+    className: "vt-stagger",
     style: {
       display: 'flex',
       gap: 10,
@@ -8617,10 +8781,11 @@ function TopOverlay({
     icon: "Users",
     tone: "sky"
   })), /*#__PURE__*/React.createElement("div", {
+    className: "vt-stagger",
     style: {
       display: 'flex',
       gap: 8,
-      padding: '2px 20px',
+      padding: '2px 20px 8px',
       overflowX: 'auto',
       scrollbarWidth: 'none'
     }
@@ -8670,11 +8835,13 @@ function VehicleSheet({
     range: v.range,
     onView3d: () => {}
   }), /*#__PURE__*/React.createElement("div", {
+    className: "vt-stagger",
     style: {
       display: 'flex',
       gap: 8,
       margin: '18px 0 12px',
-      overflowX: 'auto'
+      overflowX: 'auto',
+      scrollbarWidth: 'none'
     }
   }, /*#__PURE__*/React.createElement(Chip, {
     icon: "Megaphone"
@@ -8736,12 +8903,13 @@ function HomeScreen({
       position: 'absolute',
       inset: 0
     }
-  }, /*#__PURE__*/React.createElement(MapView, null, VEHICLES.map(x => /*#__PURE__*/React.createElement(Pin, {
+  }, /*#__PURE__*/React.createElement(MapView, null, VEHICLES.map((x, i) => /*#__PURE__*/React.createElement(Pin, {
     key: x.id,
     x: x.x,
     y: x.y
   }, /*#__PURE__*/React.createElement(VehicleMarker, {
     level: x.level,
+    delay: 260 + i * 70,
     selected: x.id === sel,
     onClick: () => setSel(x.id)
   }))), /*#__PURE__*/React.createElement(UserDot, {
@@ -8750,6 +8918,7 @@ function HomeScreen({
   })), /*#__PURE__*/React.createElement(TopOverlay, {
     onAvatar: onAccount
   }), !v && /*#__PURE__*/React.createElement("div", {
+    className: "vt-stagger",
     style: {
       position: 'absolute',
       left: 20,
@@ -8788,6 +8957,7 @@ function HomeScreen({
   })), /*#__PURE__*/React.createElement(Button, {
     size: "lg",
     fullWidth: true,
+    shine: true,
     icon: "ScanQrCode",
     onClick: onScan
   }, "Escanear para andar")), /*#__PURE__*/React.createElement(VehicleSheet, {
@@ -8872,15 +9042,28 @@ function UserDot({
   y,
   heading = false
 }) {
+  const s = heading ? 34 : 20;
   return /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
       left: x,
       top: y,
       transform: 'translate(-50%,-50%)',
-      zIndex: 6
+      zIndex: 6,
+      animation: 'vt-pop-in 500ms var(--ease-spring) 200ms both'
     }
-  }, !heading && /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      width: s,
+      height: s,
+      borderRadius: '50%',
+      background: 'var(--brand)',
+      animation: 'vt-pulse-ring 2.2s var(--ease-out) infinite'
+    }
+  }), !heading && /*#__PURE__*/React.createElement("div", {
     style: {
       position: 'absolute',
       left: -40,
@@ -8892,6 +9075,7 @@ function UserDot({
     }
   }), heading ? /*#__PURE__*/React.createElement("div", {
     style: {
+      position: 'relative',
       width: 34,
       height: 34,
       borderRadius: '50%',
@@ -8911,12 +9095,14 @@ function UserDot({
     }
   })) : /*#__PURE__*/React.createElement("div", {
     style: {
+      position: 'relative',
       width: 20,
       height: 20,
       borderRadius: '50%',
       background: 'var(--brand)',
       border: '4px solid #fff',
-      boxShadow: '0 0 0 6px rgba(52,194,92,.2)'
+      boxShadow: '0 2px 6px rgba(21,24,26,.25)',
+      boxSizing: 'border-box'
     }
   }));
 }
@@ -8939,7 +9125,13 @@ function Route({
     stroke: color,
     strokeWidth: "4",
     strokeLinecap: "round",
-    strokeLinejoin: "round"
+    strokeLinejoin: "round",
+    pathLength: "1",
+    strokeDasharray: "1",
+    strokeDashoffset: "1",
+    style: {
+      animation: 'vt-draw 1.1s var(--ease-in-out) 300ms forwards'
+    }
   }));
 }
 Object.assign(window, {
@@ -9319,6 +9511,7 @@ function PickScreen({
     selected: model === m,
     onClick: () => setModel(m)
   }, m))), /*#__PURE__*/React.createElement("div", {
+    className: "vt-stagger",
     style: {
       flex: 1,
       overflow: 'auto',
@@ -9344,7 +9537,8 @@ function PickScreen({
         border: '1.5px solid ' + (on ? 'var(--brand)' : 'transparent'),
         boxShadow: on ? 'none' : 'var(--shadow-1)',
         cursor: 'pointer',
-        transition: 'all var(--dur-base) var(--ease-out)'
+        transform: on ? 'scale(1.01)' : 'none',
+        transition: 'all var(--dur-spring) var(--ease-spring)'
       }
     }, /*#__PURE__*/React.createElement("div", {
       style: {
@@ -9425,7 +9619,8 @@ function PickScreen({
         width: 12,
         height: 12,
         borderRadius: '50%',
-        background: 'var(--brand)'
+        background: 'var(--brand)',
+        animation: 'vt-check-pop 320ms var(--ease-spring) both'
       }
     })));
   })), /*#__PURE__*/React.createElement("div", {
@@ -9552,6 +9747,7 @@ function PlanScreen({
       color: 'var(--text-secondary)'
     }
   }, "VT-4821 \xB7 Volti Flash \xB7 90%"))), /*#__PURE__*/React.createElement("div", {
+    className: "vt-stagger",
     style: {
       flex: 1,
       overflow: 'auto',
@@ -10017,7 +10213,15 @@ function RideScreen({
     }
   }, mm, ":", ss)), /*#__PURE__*/React.createElement(Badge, {
     tone: paused ? 'warning' : 'success'
-  }, paused ? 'R$ 0,20/min' : 'Ao vivo')), /*#__PURE__*/React.createElement("div", {
+  }, paused ? 'R$ 0,20/min' : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 6,
+      height: 6,
+      borderRadius: 3,
+      background: 'currentColor',
+      animation: 'vt-live 1.4s ease-in-out infinite'
+    }
+  }), "Ao vivo"))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 12,
@@ -10226,6 +10430,8 @@ function ScanScreen({
   }, /*#__PURE__*/React.createElement("button", {
     onClick: scan,
     style: {
+      animation: state === 'idle' ? 'vt-breathe 2.4s var(--ease-in-out) infinite' : 'none',
+      overflow: 'hidden',
       position: 'relative',
       width: 250,
       height: 250,
@@ -10272,6 +10478,18 @@ function ScanScreen({
       borderRightWidth: 4,
       borderBottomRightRadius: 24
     }
+  }), state === 'idle' && /*#__PURE__*/React.createElement("span", {
+    "aria-hidden": "true",
+    style: {
+      position: 'absolute',
+      left: 18,
+      right: 18,
+      height: 3,
+      borderRadius: 2,
+      background: 'var(--green-400)',
+      boxShadow: '0 0 18px 5px rgba(85,204,121,.5)',
+      animation: 'vt-scan-line 2.4s var(--ease-in-out) infinite'
+    }
   }), state === 'idle' ? 'visor da câmera — toque para simular' : /*#__PURE__*/React.createElement("span", {
     style: {
       display: 'flex',
@@ -10283,6 +10501,7 @@ function ScanScreen({
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
+      position: 'relative',
       width: 56,
       height: 56,
       borderRadius: '50%',
@@ -10290,11 +10509,23 @@ function ScanScreen({
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
-      boxShadow: 'var(--shadow-brand)'
+      boxShadow: 'var(--shadow-brand)',
+      animation: 'vt-check-pop 520ms var(--ease-spring) both'
     }
-  }, /*#__PURE__*/React.createElement(Icon, {
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: 'absolute',
+      inset: 0,
+      borderRadius: '50%',
+      background: 'var(--brand)',
+      animation: 'vt-pulse-ring 1s var(--ease-out) 2'
+    }
+  }), /*#__PURE__*/React.createElement(Icon, {
     name: "LockOpen",
-    size: 26
+    size: 26,
+    style: {
+      position: 'relative'
+    }
   })), "Moto VT-4821 encontrada")), /*#__PURE__*/React.createElement("div", {
     style: {
       textAlign: 'center'
@@ -10353,6 +10584,7 @@ function SummaryScreen({
     }
   }, v));
   return /*#__PURE__*/React.createElement("div", {
+    className: "vt-stagger",
     style: {
       position: 'absolute',
       inset: 0,
@@ -10369,6 +10601,7 @@ function SummaryScreen({
     }
   }, /*#__PURE__*/React.createElement("span", {
     style: {
+      position: 'relative',
       width: 56,
       height: 56,
       borderRadius: '50%',
@@ -10378,12 +10611,24 @@ function SummaryScreen({
       alignItems: 'center',
       justifyContent: 'center',
       boxShadow: 'var(--shadow-brand)',
-      flexShrink: 0
+      flexShrink: 0,
+      animation: 'vt-check-pop 600ms var(--ease-spring) 300ms both'
     }
-  }, /*#__PURE__*/React.createElement(Icon, {
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: 'absolute',
+      inset: 0,
+      borderRadius: '50%',
+      background: 'var(--brand)',
+      animation: 'vt-pulse-ring 1.1s var(--ease-out) 700ms 2 both'
+    }
+  }), /*#__PURE__*/React.createElement(Icon, {
     name: "Check",
     size: 28,
-    strokeWidth: 3
+    strokeWidth: 3,
+    style: {
+      position: 'relative'
+    }
   })), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
     style: {
       font: 'var(--type-title)',
@@ -10445,7 +10690,9 @@ function SummaryScreen({
       background: 'transparent',
       cursor: 'pointer',
       padding: 4,
-      color: n <= stars ? 'var(--sun-400)' : 'var(--ink-300)'
+      color: n <= stars ? 'var(--sun-400)' : 'var(--ink-300)',
+      transition: 'color var(--dur-base)',
+      animation: n <= stars ? 'vt-check-pop 380ms var(--ease-spring) ' + (n - 1) * 50 + 'ms both' : 'none'
     }
   }, /*#__PURE__*/React.createElement(Icon, {
     name: "Star",

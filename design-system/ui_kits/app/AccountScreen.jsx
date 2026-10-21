@@ -4,7 +4,7 @@ function AccountScreen({ onBack }) {
   const group=(title,children)=><div><div style={{font:'var(--type-overline)',letterSpacing:'var(--ls-caps)',color:'var(--text-secondary)',textTransform:'uppercase',margin:'18px 4px 8px'}}>{title}</div><Card padding={4} style={{display:'flex',flexDirection:'column'}}>{children}</Card></div>;
   return <div style={{position:'absolute',inset:0,background:'var(--surface-app)',display:'flex',flexDirection:'column'}}>
     <div style={{padding:'58px 20px 0',display:'flex',alignItems:'center',gap:12}}><IconButton icon="ArrowLeft" label="Voltar" onClick={onBack}/><div style={{font:'var(--type-heading)'}}>Minha conta</div></div>
-    <div style={{flex:1,overflow:'auto',scrollbarWidth:'none',padding:'16px 20px 40px'}}>
+    <div className="vt-stagger" style={{flex:1,overflow:'auto',scrollbarWidth:'none',padding:'16px 20px 40px'}}>
       <div style={{display:'flex',alignItems:'center',gap:14}}>
         <div style={{width:56,height:56,borderRadius:'50%',background:'var(--sun-300)',display:'flex',alignItems:'center',justifyContent:'center',font:'var(--fw-bold) 20px/1 var(--font-sans)'}}>AL</div>
         <div style={{flex:1}}><div style={{font:'var(--type-body-strong)'}}>Ana Lima</div><div style={{display:'flex',gap:6,marginTop:4}}><Badge size="sm" icon="ShieldCheck">Verificada</Badge><Badge size="sm" tone="neutral">18+</Badge></div></div>

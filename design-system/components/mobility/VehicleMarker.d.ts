@@ -2,6 +2,8 @@
 export interface VehicleMarkerProps {
   level?: number;
   selected?: boolean;
+  /** Entrance delay in ms — stagger markers when the map loads */
+  delay?: number;
   onClick?: () => void;
   style?: React.CSSProperties;
 }

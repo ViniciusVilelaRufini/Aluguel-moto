@@ -60,6 +60,7 @@ Nenhuma fonte definia um inventário de componentes; este é um conjunto padrão
 - **Transparência/blur:** cards de passe e o HUD de velocidade flutuam sobre o mapa com vidro branco 82% + blur 16px. Nada mais usa blur.
 - **Layout fixo:** header (avatar · localização · sino) no topo; CTA verde pill fixo a 40px da base; botão "localizar" redondo 16px acima do CTA; bottom sheet sobe do rodapé.
 - **Motion:** `--ease-out` 200ms padrão; sheets 320ms; spring (`--ease-spring`) em knobs, pins selecionados e switch. Sem bounces gratuitos, sem fades longos.
+- **Motion (v2):** presets em `tokens/motion.css` (`vt-*`). Troca de tela: push lateral 440ms `--ease-screen` (avançar entra pela direita, voltar sai pela direita); scan abre como modal de baixo para cima e a tela de trás recua (escala .93, escurece). Conteúdo entra em cascata (`.vt-stagger`, 45ms entre itens). Botões: ripple a partir do toque + spring .97; CTA principal pode ter `shine`. Pins caem com mola em sequência; pin selecionado e posição do usuário pulsam. Rotas se desenham. Sucesso = check com pop + anel. Respeita `prefers-reduced-motion`.
 - **Hover/press:** mobile-first — press = escala .97 + brilho −6% em botões, .92 em icon buttons. Hover (web) = mesma cor 1 tom mais escuro (`--brand-hover`).
 - **Bordas:** 1–1.5px, só em secundário (verde), chips e inputs focados.
 - **Status da frota:** `--status-free` verde, `rented` azul, `reserved` laranja, `paused` sol, `blocked` coral escuro, `maintenance` violeta, `offline` cinza — mesmos em mapa, filtros e tabelas.

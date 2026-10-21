@@ -35,7 +35,7 @@ function RideScreen({ onEnd }) {
     <BottomSheet padding="10px 20px 34px">
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
         <div><div style={{font:'var(--type-caption)',color:'var(--text-secondary)'}}>{paused?'Moto travada · pausa':'Em corrida'} · Por minuto · Seguro básico</div><div style={{font:'var(--type-timer)',marginTop:4}}>{mm}:{ss}</div></div>
-        <Badge tone={paused?'warning':'success'}>{paused?'R$ 0,20/min':'Ao vivo'}</Badge>
+        <Badge tone={paused?'warning':'success'}>{paused?'R$ 0,20/min':<><span style={{width:6,height:6,borderRadius:3,background:'currentColor',animation:'vt-live 1.4s ease-in-out infinite'}}/>Ao vivo</>}</Badge>
       </div>
       <div style={{display:'flex',gap:12,margin:'16px 0 12px',padding:'14px 16px',borderRadius:'var(--radius-md)',background:'var(--surface-sunken)'}}>{stat('Tarifa',paused?'R$ 0,20/min':'R$ 0,79/min')}{stat('Custo acumulado','R$ '+cost)}{stat('Bateria','84%')}</div>
       <div style={{display:'flex',gap:8,marginBottom:14}}><Chip icon="CircleAlert" onClick={()=>setReport(true)}>Reportar problema</Chip><Chip icon="Share2">Compartilhar trajeto</Chip></div>

@@ -3,4 +3,4 @@ Pill-shaped button for every tappable action; primary (green) for the one main a
 <Button icon="ScanQrCode" fullWidth size="lg">Escanear para andar</Button>
 <Button variant="secondary" icon="Bookmark">Reservar</Button>
 ```
-Variants: primary, secondary (green outline), ghost, dark, danger (coral). Sizes sm 36 / md 48 / lg 56. Press = scale .97.
+Variants: primary, secondary (green outline), ghost, dark, danger (coral). Sizes sm 36 / md 48 / lg 56. Press = spring scale .97 + ripple from the touch point; hover lifts 1px. `loading` shows a spinner; `shine` adds a slow light sweep (main CTA only).
