@@ -48,7 +48,9 @@ abstract class AuthRepository {
   }
 }
 
-/// Modo `dev`: pede um token ao emissor local da API.
+/// Modo `dev`: pede um token ao emissor local da API. Tokens dev nao tem
+/// refresh: ao expirar, `accessToken()` devolve `null` e e preciso chamar
+/// [signIn] de novo.
 class DevAuthRepository implements AuthRepository {
   DevAuthRepository({required String baseUrl, Dio? dio})
       : _dio = dio ??
