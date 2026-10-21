@@ -36,7 +36,12 @@ async function setup(opts: { online?: boolean; speed?: number } = {}) {
   events.on(EV.IOT_COMMAND_UPDATED, (e: IotCommandUpdatedEvent) => updates.push(e));
   const live = new LiveStateStore(new MemoryRedisStore(), clock);
   const gw = new TestGateway(transport, live, clock, events, { confirmWaitMs: 3_000, commandTimeoutMs: 30_000 });
-  if (opts.online !== false) await live.applyTelemetry(T, telemetry(opts.speed ?? 0));
+  if (opts.online !== false) {
+    // A primeira amostra abre a conexão e a graça pós-reconexão de 10 s (revisão 5): a moto só tem velocidade conhecida depois dela.
+    await live.applyTelemetry(T, telemetry(opts.speed ?? 0));
+    await clock.advance(10_000);
+    await live.applyTelemetry(T, { ...telemetry(opts.speed ?? 0), timestamp: new Date(clock.now()).toISOString() });
+  }
   return { clock, transport, events, updates, live, gw };
 }
 

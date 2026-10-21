@@ -11,7 +11,7 @@ export interface IotConfig {
   confirmWaitMs: number;
   commandTimeoutMs: number;
   offlineAfterMs: number;
-  /** Com o relógio do rastreador adiantado, nenhuma amostra vale para travar neste intervalo depois da reconexão (fila offline). */
+  /** Depois de qualquer reconexão, nenhuma amostra de velocidade (de nenhuma origem) vale para travar neste intervalo (fila offline). */
   reconnectGraceMs: number;
   outOfAreaLockMinutes: number;
   shadowPollMs: number;

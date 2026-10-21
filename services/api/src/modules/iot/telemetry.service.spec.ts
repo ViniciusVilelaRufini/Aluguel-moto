@@ -120,12 +120,14 @@ describe('TelemetryService', () => {
 
   it('a velocidade da telemetria alimenta a rampa: moto andando para abaixo de 3 → travada publicada', async () => {
     const { svc, gateway, transport, clock } = setup();
-    await svc.telemetry(T, msg({ velocidade_kmh: 25 }));
+    await svc.telemetry(T, msg({ velocidade_kmh: 25 })); // primeira mensagem = reconexão: abre a graça de 10 s (revisão 5)
+    await clock.advance(10_000);
+    await svc.telemetry(T, msg({ velocidade_kmh: 25, timestamp: '2026-10-21T15:00:10.000Z' }));
     const p = gateway.lock({ commandId: 'c1', thingName: T });
     await clock.advance(1000);
     await p;
     expect(transport.desired.some((d) => d.desired.travada)).toBe(false);
-    await svc.telemetry(T, msg({ velocidade_kmh: 2, timestamp: '2026-10-21T15:00:01.000Z' })); // amostra nova (mesmo timestamp não é mais nova)
+    await svc.telemetry(T, msg({ velocidade_kmh: 2, timestamp: '2026-10-21T15:00:11.000Z' })); // amostra nova (mesmo timestamp não é mais nova)
     expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: true });
   });
 
