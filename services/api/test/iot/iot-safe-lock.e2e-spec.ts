@@ -46,7 +46,12 @@ describe('IoT (integração com Mosquitto)', () => {
   let gateway: IotGateway;
   let admin: string;
 
+  const ENV_KEYS = ['IOT_MODE', 'GEOFENCE_MODE', 'MQTT_URL', 'IOT_CONFIRM_WAIT_MS'] as const;
+  const savedEnv: Record<string, string | undefined> = {};
+
   beforeAll(async () => {
+    // process.env é compartilhado entre os arquivos no --runInBand: restaurado no afterAll.
+    for (const k of ENV_KEYS) savedEnv[k] = process.env[k];
     process.env.IOT_MODE = 'local';
     process.env.GEOFENCE_MODE = 'local';
     process.env.MQTT_URL = MQTT_URL;
@@ -71,6 +76,10 @@ describe('IoT (integração com Mosquitto)', () => {
     await app?.close();
     await prisma?.$disconnect();
     redis?.disconnect();
+    for (const k of ENV_KEYS) {
+      if (savedEnv[k] === undefined) delete process.env[k];
+      else process.env[k] = savedEnv[k];
+    }
   });
 
   it('lock via API com a moto simulada andando: degraus 15 → 8 → 3 → 0, trava só abaixo de 3 km/h e termina confirmed com a moto parada', async () => {

@@ -18,6 +18,12 @@ export interface GatewayOptions {
   safeLockTimeoutMs?: number;
 }
 
+/**
+ * Janela depois de a chamada responder `in_progress`/`pending` em que o desfecho é emitido com atraso: o `CommandsService`
+ * grava o status devolvido logo após a chamada e, sem isso, um `confirmed` muito rápido poderia ser sobrescrito.
+ */
+export const EMIT_GRACE_MS = 1_000;
+
 interface Tracked {
   commandId: string;
   thingName: string;
@@ -37,6 +43,7 @@ export abstract class BaseIotGateway implements IotGateway {
   readonly safeLock: SafeLockService;
   private readonly waiters = new Map<string, (o: CommandOutcome) => void>();
   private readonly tracked = new Map<string, Tracked>();
+  private readonly returnedAt = new Map<string, number>();
   private limitResolver: (thingName: string) => number = () => MAX_SPEED_KMH;
 
   constructor(
@@ -73,6 +80,7 @@ export abstract class BaseIotGateway implements IotGateway {
     this.watch(req.thingName);
     if (initial.status !== 'in_progress') {
       this.waiters.delete(req.commandId);
+      if (initial.status === 'pending') this.returnedAt.set(req.commandId, this.clock.now());
       return initial;
     }
     return wait();
@@ -86,6 +94,11 @@ export abstract class BaseIotGateway implements IotGateway {
 
   async setSpeedLimit(req: CommandRequest, kmh: number): Promise<CommandOutcome> {
     assertSpeedLimit(kmh);
+    // Durante o bloqueio seguro, a rampa é dona do limite: nada (zona, operador) pode subir ou mexer nos degraus.
+    if (this.safeLock.isActive(req.thingName)) {
+      this.logger.warn({ msg: 'speed_limit_refused_during_safe_lock', thingName: req.thingName, commandId: req.commandId });
+      return { commandId: req.commandId, status: 'failed' };
+    }
     return this.desiredCommand(req, { limite_kmh: kmh });
   }
 
@@ -168,6 +181,7 @@ export abstract class BaseIotGateway implements IotGateway {
     }
     if (!online && this.tracked.has(req.commandId)) {
       this.waiters.delete(req.commandId);
+      this.returnedAt.set(req.commandId, this.clock.now());
       return { commandId: req.commandId, status: 'pending', reason: 'offline' };
     }
     return wait();
@@ -189,6 +203,7 @@ export abstract class BaseIotGateway implements IotGateway {
       const timer = this.clock.setTimeout(() => {
         if (this.waiters.get(commandId) === resolve) {
           this.waiters.delete(commandId);
+          this.returnedAt.set(commandId, this.clock.now());
           resolve({ commandId, status: 'in_progress' });
         }
       }, this.opts.confirmWaitMs);
@@ -206,7 +221,11 @@ export abstract class BaseIotGateway implements IotGateway {
     }
     const ev: IotCommandUpdatedEvent = { commandId: o.commandId, status: o.status };
     if (o.reason) ev.reason = o.reason;
-    this.events.emit(EV.IOT_COMMAND_UPDATED, ev);
+    const returned = this.returnedAt.get(o.commandId);
+    this.returnedAt.delete(o.commandId);
+    const wait = returned === undefined ? 0 : EMIT_GRACE_MS - (this.clock.now() - returned);
+    if (wait > 0) this.clock.setTimeout(() => this.events.emit(EV.IOT_COMMAND_UPDATED, ev), wait);
+    else this.events.emit(EV.IOT_COMMAND_UPDATED, ev);
   }
 
   private onTrackedTimeout(commandId: string): void {

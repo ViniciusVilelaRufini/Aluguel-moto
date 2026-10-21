@@ -138,6 +138,7 @@ describe('TelemetryService', () => {
     await clock.advance(1000);
     await p;
     await svc.reported(T, { limite_kmh: 6 });
+    await clock.advance(1_000);
     expect(updates).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
     expect(emitted[EV.IOT_CONNECTIVITY]).toHaveLength(1);
   });

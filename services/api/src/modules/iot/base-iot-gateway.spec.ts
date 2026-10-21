@@ -62,6 +62,7 @@ describe('BaseIotGateway', () => {
     await clock.advance(3_000);
     expect(await p).toEqual({ commandId: 'c1', status: 'in_progress' });
     await gw.onReported(T, { limite_kmh: 6 });
+    await clock.advance(1_000); // janela de graça (EMIT_GRACE_MS)
     expect(updates).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
   });
 
@@ -100,6 +101,7 @@ describe('BaseIotGateway', () => {
     const p2 = gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 20);
     await gw.onReported(T, { limite_kmh: 20 });
     expect(await p2).toEqual({ commandId: 'c2', status: 'confirmed' });
+    await clock.advance(1_000);
     expect(updates).toEqual([{ commandId: 'c1', status: 'failed' }]);
   });
 
@@ -127,6 +129,7 @@ describe('BaseIotGateway', () => {
     await gw.onSpeed(T, 1.5);
     expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: true });
     await gw.onReported(T, { travada: true });
+    await clock.advance(1_000);
     expect(updates).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
   });
 
@@ -140,6 +143,7 @@ describe('BaseIotGateway', () => {
     await gw.onReported(T, { travada: false, limite_kmh: 20 });
     expect(await u).toEqual({ commandId: 'c2', status: 'confirmed' });
     expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: false, limite_kmh: 20 });
+    await clock.advance(1_000);
     expect(updates).toEqual([{ commandId: 'c1', status: 'failed' }]);
   });
 
@@ -150,6 +154,28 @@ describe('BaseIotGateway', () => {
     const b = await setup({ online: false });
     expect(await b.gw.horn({ commandId: 'c2', thingName: T })).toEqual({ commandId: 'c2', status: 'failed', reason: 'offline' });
     expect(b.transport.commands).toEqual([]);
+  });
+
+  it('durante a rampa do bloqueio seguro, setSpeedLimit (ex.: saída de zona → 32) é recusado sem publicar', async () => {
+    const { gw, clock, transport } = await setup({ speed: 25 });
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(3_000);
+    await p;
+    const before = transport.desired.length;
+    expect(await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 32)).toEqual({ commandId: 'c2', status: 'failed' });
+    expect(await gw.setSpeedLimit({ commandId: 'c3', thingName: T }, 6)).toEqual({ commandId: 'c3', status: 'failed' });
+    expect(transport.desired.length).toBe(before);
+  });
+
+  it('desfecho logo depois de a chamada responder in_progress é emitido com atraso (evita sobrescrever confirmed com in_progress)', async () => {
+    const { gw, clock, updates } = await setup();
+    const p = gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 6);
+    await clock.advance(3_000);
+    expect((await p).status).toBe('in_progress');
+    await gw.onReported(T, { limite_kmh: 6 });
+    expect(updates).toEqual([]); // ainda dentro da janela de graça
+    await clock.advance(1_000);
+    expect(updates).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
   });
 
   it('getLiveState devolve o estado conhecido (ou null)', async () => {
