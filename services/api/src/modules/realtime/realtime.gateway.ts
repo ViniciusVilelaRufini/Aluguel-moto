@@ -1,0 +1,144 @@
+import { Inject, Logger } from '@nestjs/common';
+import { OnEvent } from '@nestjs/event-emitter';
+import { OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import type { Namespace, Socket } from 'socket.io';
+import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
+import {
+  AlertCreatedEvent, CommandChangedEvent, EV, GeofenceTransitionEvent, IotDeviceEvent, IotTelemetryEvent, RentalChangedEvent, VehicleStatusChangedEvent,
+} from '../../common/events';
+import { AUTH_VERIFIER, type AuthVerifier } from '../../ports/auth-verifier.port';
+import { PrismaService } from '../../prisma/prisma.service';
+import type { Principal } from '../auth/principal';
+import { PrincipalResolver } from '../auth/principal-resolver.service';
+
+const FLEET_GROUPS = ['admin', 'operacao', 'suporte'];
+
+interface VehicleCache {
+  status: VehicleStatus;
+  speedLimitKmh: number;
+  rentalId?: string;
+  at: number;
+}
+
+export function zoneMessage(ev: Pick<GeofenceTransitionEvent, 'zoneType' | 'transition' | 'speedLimitKmh'>): string {
+  const enter = ev.transition === 'ENTER';
+  switch (ev.zoneType) {
+    case 'reduced_speed':
+      if (!enter) return 'Você saiu da área de velocidade reduzida.';
+      return ev.speedLimitKmh !== undefined && ev.speedLimitKmh <= 6
+        ? `Você entrou numa área de pedestres. Velocidade máxima: ${ev.speedLimitKmh} km/h.`
+        : `Você entrou numa ciclovia. Velocidade máxima: ${ev.speedLimitKmh ?? 20} km/h.`;
+    case 'forbidden':
+      return enter ? 'Área proibida para motos. Saia da área para continuar.' : 'Você saiu da área proibida.';
+    case 'operation':
+      return enter ? 'Você voltou para a área de operação.' : 'Você saiu da área de operação. Volte em até 5 minutos para evitar o bloqueio da moto.';
+    case 'return':
+      return enter ? 'Você está numa zona de devolução. Já pode encerrar o aluguel.' : 'Você saiu da zona de devolução.';
+  }
+}
+
+/** Socket.IO `/realtime` (packages/contracts/realtime.md): salas `fleet` e `rental:{id}`; servidor → cliente apenas. */
+@WebSocketGateway({ namespace: '/realtime', cors: { origin: true, credentials: true } })
+export class RealtimeGateway implements OnGatewayInit {
+  private readonly logger = new Logger('RealtimeGateway');
+  private readonly vehicles = new Map<string, VehicleCache>();
+
+  @WebSocketServer()
+  server: Namespace;
+
+  constructor(
+    @Inject(AUTH_VERIFIER) private readonly verifier: AuthVerifier,
+    private readonly resolver: PrincipalResolver,
+    private readonly prisma: PrismaService,
+  ) {}
+
+  afterInit(server: Namespace): void {
+    server.use((socket, next) => {
+      void this.authenticate(socket)
+        .then(() => next())
+        .catch(() => next(new Error('unauthorized')));
+    });
+  }
+
+  private async authenticate(socket: Socket): Promise<void> {
+    const token = (socket.handshake.auth as { token?: string } | undefined)?.token;
+    if (!token) throw new Error('unauthorized');
+    const principal: Principal = await this.resolver.resolve(await this.verifier.verify(token));
+    socket.data.principal = principal;
+    if (principal.pool === 'staff') {
+      if (principal.groups.some((g) => FLEET_GROUPS.includes(g))) await socket.join('fleet');
+      return;
+    }
+    await socket.join(`user:${principal.customerId}`);
+    const rental = await this.prisma.rental.findFirst({ where: { customerId: principal.customerId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
+    if (rental) await socket.join(`rental:${rental.id}`);
+  }
+
+  private async vehicleInfo(vehicleId: string): Promise<VehicleCache | null> {
+    const cached = this.vehicles.get(vehicleId);
+    if (cached && Date.now() - cached.at < 60_000) return cached;
+    const v = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { status: true, speedLimitKmh: true } });
+    if (!v) return null;
+    const r = await this.prisma.rental.findFirst({ where: { vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true, speedLimitKmh: true } });
+    const info: VehicleCache = { status: v.status, speedLimitKmh: r?.speedLimitKmh ?? v.speedLimitKmh, rentalId: r?.id, at: Date.now() };
+    this.vehicles.set(vehicleId, info);
+    return info;
+  }
+
+  @OnEvent(EV.IOT_TELEMETRY, { async: true, promisify: true })
+  async onTelemetry(ev: IotTelemetryEvent): Promise<void> {
+    if (!this.server) return;
+    const info = await this.vehicleInfo(ev.vehicleId);
+    if (!info) return;
+    const payload = { vehicleId: ev.vehicleId, lat: ev.lat, lng: ev.lng, speedKmh: ev.speedKmh, batteryPct: ev.batteryPct, status: info.status, speedLimitKmh: info.speedLimitKmh, ts: ev.ts };
+    this.server.to('fleet').emit('vehicle.position', payload);
+    if (info.rentalId) this.server.to(`rental:${info.rentalId}`).emit('vehicle.position', payload);
+  }
+
+  @OnEvent(EV.VEHICLE_STATUS_CHANGED)
+  onVehicleStatus(ev: VehicleStatusChangedEvent): void {
+    const cached = this.vehicles.get(ev.vehicleId);
+    if (cached) cached.status = ev.status;
+    this.server?.to('fleet').emit('vehicle.status', { vehicleId: ev.vehicleId, status: ev.status, ts: ev.ts });
+  }
+
+  @OnEvent(EV.COMMAND_CHANGED)
+  onCommand(ev: CommandChangedEvent): void {
+    const payload: Record<string, unknown> = { commandId: ev.commandId, vehicleId: ev.vehicleId, type: ev.type, status: ev.status };
+    if (ev.reason) payload.reason = ev.reason;
+    this.server?.to('fleet').emit('command.updated', payload);
+  }
+
+  @OnEvent(EV.ALERT_CREATED)
+  onAlert(ev: AlertCreatedEvent): void {
+    this.server?.to('fleet').emit('alert.created', JSON.parse(JSON.stringify(ev)));
+  }
+
+  @OnEvent(EV.RENTAL_CHANGED)
+  onRental(ev: RentalChangedEvent): void {
+    this.vehicles.delete(ev.vehicleId);
+    if (!this.server) return;
+    const room = `rental:${ev.rentalId}`;
+    const open = OPEN_RENTAL_STATUSES.includes(ev.status);
+    if (open) this.server.in(`user:${ev.customerId}`).socketsJoin(room);
+    this.server.to(room).emit('rental.updated', { rentalId: ev.rentalId, status: ev.status, elapsedSeconds: ev.elapsedSeconds, costCents: ev.costCents, ts: ev.ts });
+    if (!open) this.server.in(room).socketsLeave(room);
+  }
+
+  @OnEvent(EV.GEOFENCE_TRANSITION, { async: true, promisify: true })
+  async onGeofence(ev: GeofenceTransitionEvent): Promise<void> {
+    const rentalId = ev.rentalId ?? (await this.vehicleInfo(ev.vehicleId))?.rentalId;
+    if (ev.zoneType === 'reduced_speed') this.vehicles.delete(ev.vehicleId);
+    if (!rentalId || !this.server) return;
+    const payload: Record<string, unknown> = { rentalId, zoneType: ev.zoneType, transition: ev.transition, message: zoneMessage(ev) };
+    if (ev.speedLimitKmh !== undefined) payload.speedLimitKmh = ev.speedLimitKmh;
+    this.server.to(`rental:${rentalId}`).emit('zone.notice', payload);
+  }
+
+  @OnEvent(EV.IOT_DEVICE_EVENT, { async: true, promisify: true })
+  async onDeviceEvent(ev: IotDeviceEvent): Promise<void> {
+    if (ev.type !== 'queda' || !this.server) return;
+    const rentalId = (await this.vehicleInfo(ev.vehicleId))?.rentalId;
+    if (rentalId) this.server.to(`rental:${rentalId}`).emit('device.event', { rentalId, type: 'queda', ts: ev.ts });
+  }
+}
