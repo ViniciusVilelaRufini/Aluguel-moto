@@ -2,8 +2,15 @@ import 'package:flutter/painting.dart';
 
 /// Tipografia (`typography.css`). Plus Jakarta Sans + JetBrains Mono.
 abstract final class VoltiTypography {
-  static const fontSans = 'Plus Jakarta Sans';
-  static const fontMono = 'JetBrains Mono';
+  /// Familias declaradas no pubspec deste pacote (sem prefixo).
+  static const familySans = 'Plus Jakarta Sans';
+  static const familyMono = 'JetBrains Mono';
+
+  /// Fontes de pacote so resolvem nos apps como `packages/<pacote>/<familia>`.
+  /// Os apps NAO devem redeclarar as fontes.
+  static const _pkg = 'packages/volti_flutter/';
+  static const fontSans = '$_pkg$familySans';
+  static const fontMono = '$_pkg$familyMono';
 
   static const fwRegular = FontWeight.w400;
   static const fwMedium = FontWeight.w500;

@@ -20,11 +20,11 @@ void main() {
 
   test('tema usa Plus Jakarta Sans e tipografia usa as duas familias', () {
     for (final t in [VoltiTheme.light(), VoltiTheme.dark()]) {
-      expect(t.textTheme.bodyMedium!.fontFamily, 'Plus Jakarta Sans');
-      expect(t.textTheme.titleLarge!.fontFamily, 'Plus Jakarta Sans');
+      expect(t.textTheme.bodyMedium!.fontFamily, 'packages/volti_flutter/Plus Jakarta Sans');
+      expect(t.textTheme.titleLarge!.fontFamily, 'packages/volti_flutter/Plus Jakarta Sans');
     }
-    expect(VoltiTypography.timer.fontFamily, 'JetBrains Mono');
-    expect(VoltiTypography.display.fontFamily, 'Plus Jakarta Sans');
+    expect(VoltiTypography.timer.fontFamily, 'packages/volti_flutter/JetBrains Mono');
+    expect(VoltiTypography.display.fontFamily, 'packages/volti_flutter/Plus Jakarta Sans');
   });
 
   test('FontManifest lista as fontes TTF com os pesos', () async {
@@ -34,8 +34,8 @@ void main() {
     List<String> assets(String n) => [
           for (final f in fam(n)['fonts'] as List) (f as Map)['asset'] as String
         ];
-    final sans = assets('Plus Jakarta Sans');
-    final mono = assets('JetBrains Mono');
+    final sans = assets(VoltiTypography.familySans);
+    final mono = assets(VoltiTypography.familyMono);
     expect(sans.length, 5);
     expect(mono.length, 2);
     expect([...sans, ...mono].every((a) => a.endsWith('.ttf')), isTrue);
