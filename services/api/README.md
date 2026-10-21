@@ -59,7 +59,8 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 | `IOT_CONFIRM_WAIT_MS` | `3000` | quanto a chamada de comando espera o `reported` antes de responder `in_progress` |
 | `IOT_COMMAND_TIMEOUT_MS` | `30000` | sem `reported` → `failed`/`timeout` (o lock tem 120 s) |
 | `IOT_OFFLINE_AFTER_MS` | `180000` | sem notícia → `iot.connectivity` offline |
-| `IOT_RECONNECT_GRACE_MS` | `10000` | depois de qualquer reconexão, nenhuma amostra de velocidade (telemetria, reported, polling do shadow) vale para travar neste intervalo (fila offline do MQTT esvaziada) |
+| `IOT_RECONNECT_GRACE_MS` | `10000` | depois de qualquer reconexão, nenhuma amostra de velocidade (telemetria, reported, polling do shadow) vale para travar neste intervalo (fila offline do MQTT esvaziada). Reconexão = presença `connected` (só `local`), primeira mensagem depois de offline, primeira amostra do processo ou lacuna (`IOT_RECONNECT_GAP_MS`) |
+| `IOT_RECONNECT_GAP_MS` | `15000` | lacuna entre mensagens do rastreador (qualquer canal, hora de chegada) que conta como reconexão, nos dois modos; com a moto parada/travada vale `max(isto, 150000)`. No `aws` é o único detector de quedas mais curtas que `IOT_OFFLINE_AFTER_MS` (a presença vai para o EventBridge) |
 | `OUT_OF_AREA_LOCK_MINUTES` | `5` | bloqueio seguro depois de sair da área de operação |
 | `TRACK_RETENTION_DAYS` | `90` | `TrackPoint.expiresAt` |
 

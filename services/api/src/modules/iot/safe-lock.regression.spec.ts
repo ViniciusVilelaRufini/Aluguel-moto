@@ -4,6 +4,7 @@ import { MemoryRedisStore } from '../../redis/redis-store';
 import { AwsIotTransport } from './aws-iot.transport';
 import { BaseIotGateway } from './base-iot-gateway';
 import { FakeClock } from './clock';
+import { loadIotConfig } from './iot-config';
 import { LiveStateStore } from './live-state.store';
 import { SafeLockService } from './safe-lock.service';
 import type { DesiredState, IotTransport } from './shadow-transport';
@@ -60,11 +61,11 @@ class FakeTransport implements IotTransport {
   }
 }
 
-function localSetup() {
+function localSetup(opts: { graceMs?: number } = {}) {
   const clock = new FakeClock(T0);
   const transport = new FakeTransport();
   const events = new EventEmitter2();
-  const live = new LiveStateStore(new MemoryRedisStore(), clock);
+  const live = new LiveStateStore(new MemoryRedisStore(), clock, undefined, opts.graceMs);
   const gw = new GW(transport, live, clock, events, { confirmWaitMs: 1000, commandTimeoutMs: 30_000 });
   const tel = new TelemetryService(
     gw,
@@ -76,6 +77,55 @@ function localSetup() {
     { trackRetentionDays: 90 },
   );
   return { clock, transport, events, live, gw, tel };
+}
+
+/**
+ * Caminho aws real: telemetria pela fila SQS `telemetria` (regra IoT com `thingName`/`ingestedAt`), reported pelo polling do
+ * shadow (`GetThingShadow` com metadata) e **nenhum** evento de presença (eles vão para o EventBridge).
+ */
+async function awsSetup(opts: { gapMs?: number } = {}) {
+  const clock = new FakeClock(T0);
+  let reported: Record<string, unknown> = {};
+  let at = 0;
+  let version = 0;
+  const published: DesiredState[] = [];
+  const client = {
+    send: async (cmd: any) => {
+      if (cmd.constructor.name === 'UpdateThingShadowCommand') {
+        published.push(JSON.parse(new TextDecoder().decode(cmd.input.payload)).state.desired);
+        return {};
+      }
+      if (cmd.constructor.name !== 'GetThingShadowCommand') return {};
+      const meta: Record<string, { timestamp: number }> = {};
+      for (const k of Object.keys(reported)) meta[k] = { timestamp: at };
+      return { payload: new TextEncoder().encode(JSON.stringify({ state: { reported }, metadata: { reported: meta }, version })) };
+    },
+  };
+  let handler!: (m: unknown) => Promise<void>;
+  const queue = { publish: async () => undefined, subscribe: (_q: string, h: (m: unknown) => Promise<void>) => (handler = h) };
+  const transport = new AwsIotTransport(client as any, queue as any, { pollMs: 0 });
+  const events = new EventEmitter2();
+  const live = new LiveStateStore(new MemoryRedisStore(), clock);
+  const gw = new GW(transport, live, clock, events, { confirmWaitMs: 100, commandTimeoutMs: 30_000 });
+  const telOpts = { trackRetentionDays: 90, ...(opts.gapMs !== undefined ? { reconnectGapMs: opts.gapMs } : {}) };
+  const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) }, trackPoint: { create: async () => ({}) } } as any, events, clock, telOpts);
+  await transport.start(tel);
+  /** Uma mensagem da fila SQS `telemetria`. */
+  const sqs = (body: object) => handler({ ...body, thingName: T, ingestedAt: clock.now() });
+  /** O rastreador escreve no shadow agora (metadata em segundos). */
+  const shadow = (r: Record<string, unknown>) => {
+    reported = r;
+    at = Math.floor(clock.now() / 1000);
+    version++;
+  };
+  /** Andando (telemetria a cada 5 s, relógio do rastreador `ahead` ms adiantado) até passar a graça; termina 5 s depois da última. */
+  const ride = async (kmh: number, ahead = 0) => {
+    for (let i = 0; i < 4; i++) {
+      await sqs(telemetry(kmh, new Date(clock.now() + ahead).toISOString()));
+      await clock.advance(5_000);
+    }
+  };
+  return { clock, published, gw, tel, transport, sqs, shadow, ride, locked: () => published.some((d) => d.travada === true) };
 }
 
 describe('Bloqueio seguro — regressões da revisão', () => {
@@ -176,9 +226,15 @@ describe('Bloqueio seguro — regressões da revisão', () => {
   });
 
   it('velocidade 0 mas velha (> 10 s) com a moto online → rampa, não trava direto', async () => {
-    const { transport, tel, gw, clock } = localSetup();
-    await tel.telemetry(T, telemetry(0));
-    await clock.advance(30_000); // parada manda telemetria a cada 60 s
+    const { transport, tel, gw, clock, live } = localSetup();
+    // Parada (ignição desligada, telemetria a cada 60 s). Aquecimento além da graça: a amostra 0 vale enquanto fresca.
+    const parked = (ms: number) => ({ ...telemetry(0, new Date(ms).toISOString()), ignicao: false });
+    await tel.telemetry(T, parked(clock.now()));
+    await clock.advance(60_000);
+    await tel.telemetry(T, parked(clock.now()));
+    expect(live.knownSpeed(T)).toBe(0); // aceita: o que segue testa só o frescor
+    await clock.advance(30_000);
+    expect(live.knownSpeed(T)).toBeNull();
     const p = gw.lock({ commandId: 'c1', thingName: T });
     await clock.advance(1000);
     await p;
@@ -260,31 +316,40 @@ describe('Bloqueio seguro — regressões da revisão 2', () => {
   const iso = (ms: number) => new Date(ms).toISOString();
 
   it('telemetria velha (fila offline do cliente MQTT, 3 min) com 0 km/h chegando depois da reconexão não trava', async () => {
-    const { transport, tel, gw, clock } = localSetup();
+    const { transport, tel, gw, clock, live } = localSetup();
     await tel.telemetry(T, telemetry(25, iso(clock.now())));
     await tel.presence(T, false);
     await gw.lock({ commandId: 'c1', thingName: T });
     await clock.advance(5 * 60_000);
     await tel.presence(T, true);
     expect(transport.limits()).toEqual([15]);
-    await tel.telemetry(T, telemetry(0, iso(clock.now() - 3 * 60_000)));
+    // A amostra velha chega depois da graça (e sem lacuna ≥ 15 s): só o frescor / "não antes da reconexão" a rejeitam.
+    await clock.advance(10_000);
+    const old = await live.applyTelemetry(T, telemetry(0, iso(clock.now() - 3 * 60_000)));
+    expect(old.speedAccepted).toBe(false);
+    await tel.telemetry(T, telemetry(0, iso(clock.now() - 3 * 60_000 + 1)));
     expect(transport.locked()).toBe(false);
-    await clock.advance(10_000); // graça pós-reconexão (revisão 5)
+    await clock.advance(1_000);
     await tel.telemetry(T, telemetry(1, iso(clock.now())));
     expect(transport.locked()).toBe(true);
   });
 
   it('telemetria fora de ordem: 0 mais antigo depois de 25 mais novo não trava', async () => {
-    const { transport, tel, gw, clock } = localSetup();
-    await clock.advance(10_000);
+    const { transport, tel, gw, clock, live } = localSetup();
     await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    await clock.advance(10_000); // aquecimento além da graça: o 25 seguinte é aceito
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    expect(live.knownSpeed(T)).toBe(25);
     const p = gw.lock({ commandId: 'c1', thingName: T });
     await clock.advance(1000);
     await p;
     expect(transport.limits()).toEqual([15]);
-    await tel.telemetry(T, telemetry(0, iso(clock.now() - 3000)));
+    await tel.telemetry(T, telemetry(0, iso(clock.now() - 3000))); // fresca (3 s), fora da graça, mas mais velha que o 25
     expect(transport.locked()).toBe(false);
+    expect(live.knownSpeed(T)).toBe(25);
     expect((await gw.getLiveState(T))!.speedKmh).toBe(25); // exibição também não volta
+    await tel.telemetry(T, telemetry(1, iso(clock.now())));
+    expect(transport.locked()).toBe(true);
   });
 
   it('velocidade lida do polling com horário no futuro é limitada a agora (não bloqueia amostras seguintes)', async () => {
@@ -403,7 +468,8 @@ describe('Bloqueio seguro — regressões da revisão 3', () => {
   });
 
   it('reconexão percebida pela telemetria (sem evento de presença) também invalida amostras de antes', async () => {
-    const { transport, tel, gw, clock } = localSetup();
+    // Graça 0: isola a regra "não antes da reconexão" (com a graça, qualquer amostra logo depois da reconexão já seria rejeitada).
+    const { transport, tel, gw, clock } = localSetup({ graceMs: 0 });
     await tel.telemetry(T, telemetry(25, iso(clock.now())));
     await clock.advance(1000);
     await tel.telemetry(T, telemetry(25, iso(clock.now())));
@@ -415,6 +481,9 @@ describe('Bloqueio seguro — regressões da revisão 3', () => {
     await tel.telemetry(T, telemetry(0, iso(clock.now() - 2_000)));
     expect(transport.locked()).toBe(false);
     expect(transport.limits()).toEqual([15]);
+    await clock.advance(500);
+    await tel.telemetry(T, telemetry(1, iso(clock.now()))); // posterior à reconexão: vale (graça 0)
+    expect(transport.locked()).toBe(true);
   });
 
   it('desired que falhou ao publicar não vira teto da rampa', async () => {
@@ -586,44 +655,25 @@ describe('Bloqueio seguro — regressões da revisão 5 (graça incondicional de
     expect(transport.locked()).toBe(true);
   });
 
-  it('aws: reported.velocidade_kmh 0 lido do shadow (polling, metadata = agora) logo depois da reconexão não trava; depois da graça trava', async () => {
-    const clock = new FakeClock(T0);
-    let reported: Record<string, unknown> = { limite_kmh: 32, velocidade_kmh: 25 };
-    let at = Math.floor(T0 / 1000);
-    const published: DesiredState[] = [];
-    const client = {
-      send: async (cmd: any) => {
-        if (cmd.constructor.name === 'UpdateThingShadowCommand') {
-          published.push(JSON.parse(new TextDecoder().decode(cmd.input.payload)).state.desired);
-          return {};
-        }
-        const meta: Record<string, { timestamp: number }> = {};
-        for (const k of Object.keys(reported)) meta[k] = { timestamp: at };
-        return { payload: new TextEncoder().encode(JSON.stringify({ state: { reported }, metadata: { reported: meta }, version: at })) };
-      },
-    };
-    const transport = new AwsIotTransport(client as any, { subscribe: () => undefined } as any, { pollMs: 0 });
-    const events = new EventEmitter2();
-    const live = new LiveStateStore(new MemoryRedisStore(), clock);
-    const gw = new GW(transport, live, clock, events, { confirmWaitMs: 100, commandTimeoutMs: 30_000 });
-    const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) }, trackPoint: { create: async () => ({}) } } as any, events, clock, { trackRetentionDays: 90 });
-    await transport.start(tel);
-    await tel.telemetry(T, telemetry(25, iso(clock.now())));
-    await tel.presence(T, false);
-    expect((await gw.lock({ commandId: 'c1', thingName: T })).status).toBe('pending');
-    await clock.advance(30_000);
-    await tel.presence(T, true);
-    expect(published).toEqual([{ limite_kmh: 15 }]);
-    at = Math.floor(clock.now() / 1000);
-    reported = { limite_kmh: 15, velocidade_kmh: 0 };
-    await transport.pollOnce(); // o limite 15 confirma o degrau; a velocidade 0 não vale (graça)
-    expect(published).toEqual([{ limite_kmh: 15 }]);
-    await clock.advance(10_000); // o degrau 8 sai pelo timer (sem ack, a rampa para nele)
-    expect(published).toEqual([{ limite_kmh: 15 }, { limite_kmh: 8 }]);
-    at = Math.floor(clock.now() / 1000);
-    reported = { limite_kmh: 15, velocidade_kmh: 1 };
-    await transport.pollOnce();
-    expect(published).toEqual([{ limite_kmh: 15 }, { limite_kmh: 8 }, { travada: true }]);
+  it('aws: reported.velocidade_kmh 0 lido do shadow (polling, metadata = agora) logo depois de uma queda curta não trava; depois da graça trava', async () => {
+    // Caminho aws real: sem eventos de presença; a reconexão é percebida pela lacuna (ver bloco "revisão 4b").
+    const s = await awsSetup();
+    await s.ride(25);
+    const p = s.gw.lock({ commandId: 'c1', thingName: T }); // 25 km/h há 5 s: rampa
+    await s.clock.advance(100);
+    await p;
+    expect(s.published).toEqual([{ limite_kmh: 15 }]);
+    await s.clock.advance(30_000); // queda de ~30 s: a vigia (180 s) não percebe
+    expect(s.gw.live.isOnline(T)).toBe(true);
+    s.shadow({ limite_kmh: 15, velocidade_kmh: 0 }); // F5 ao reconectar (ou um update da fila de shadow)
+    await s.transport.pollOnce(); // o limite 15 confirma o degrau; a velocidade 0 não vale (graça aberta pela lacuna)
+    expect(s.gw.live.knownSpeed(T)).toBeNull();
+    expect(s.published).toEqual([{ limite_kmh: 15 }]);
+    await s.clock.advance(10_000); // o degrau 8 sai pelo timer (sem ack, a rampa para nele)
+    expect(s.published).toEqual([{ limite_kmh: 15 }, { limite_kmh: 8 }]);
+    s.shadow({ limite_kmh: 15, velocidade_kmh: 1 });
+    await s.transport.pollOnce();
+    expect(s.published).toEqual([{ limite_kmh: 15 }, { limite_kmh: 8 }, { travada: true }]);
   });
 
   it('processo novo (sem reconexão conhecida): a primeira amostra abre a graça; só depois dela a velocidade vale', async () => {
@@ -647,5 +697,124 @@ describe('Bloqueio seguro — regressões da revisão 5 (graça incondicional de
     await clock.advance(10_000);
     expect((await live.applyTelemetry(T, telemetry(0, iso(seen)))).speedAccepted).toBe(false);
     expect((await live.applyTelemetry(T, telemetry(1, iso(clock.now())))).speedAccepted).toBe(true);
+  });
+});
+
+describe('Bloqueio seguro — regressões da revisão 4b (reconexão percebida pela lacuna de telemetria; modo aws sem presença)', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const AHEAD = 60_000;
+
+  it('aws (repro): relógio 60 s adiantado, queda de 59,5 s, o 0 da fila chega pelo SQS — não vale; lock faz rampa; amostra ao vivo depois da graça trava', async () => {
+    const s = await awsSetup();
+    await s.ride(25, AHEAD);
+    const queued = telemetry(0, iso(s.clock.now() + AHEAD)); // parou; a amostra ficou na fila offline e o rastreador caiu
+    await s.clock.advance(59_500); // < 180 s: a vigia de inatividade não percebe a queda
+    expect(s.gw.live.isOnline(T)).toBe(true);
+    await s.sqs(queued);
+    expect(s.gw.live.knownSpeed(T)).toBeNull();
+    const p = s.gw.lock({ commandId: 'c1', thingName: T });
+    await s.clock.advance(100);
+    await p;
+    expect(s.locked()).toBe(false);
+    expect(s.published).toEqual([{ limite_kmh: 15 }]);
+    await s.clock.advance(5_000);
+    await s.sqs(telemetry(1, iso(s.clock.now() + AHEAD))); // ainda na graça
+    expect(s.locked()).toBe(false);
+    await s.clock.advance(5_000);
+    await s.sqs(telemetry(1, iso(s.clock.now() + AHEAD)));
+    expect(s.locked()).toBe(true);
+  });
+
+  it('aws: lacuna menor que o limite (andando, 5 s) não abre graça — a amostra fresca vale direto', async () => {
+    const s = await awsSetup();
+    await s.ride(25);
+    await s.sqs(telemetry(0, iso(s.clock.now())));
+    expect(s.gw.live.knownSpeed(T)).toBe(0);
+    const p = s.gw.lock({ commandId: 'c1', thingName: T });
+    await s.clock.advance(100);
+    await p;
+    expect(s.published).toEqual([{ travada: true }]);
+  });
+
+  it('aws: lacuna percebida pela metadata do polling (o shadow chega antes da telemetria); a telemetria da fila depois também não vale', async () => {
+    const s = await awsSetup();
+    await s.ride(25, AHEAD);
+    const queued = telemetry(0, iso(s.clock.now() + AHEAD));
+    const p = s.gw.lock({ commandId: 'c1', thingName: T });
+    await s.clock.advance(100);
+    await p;
+    expect(s.published).toEqual([{ limite_kmh: 15 }]);
+    await s.clock.advance(40_000);
+    s.shadow({ velocidade_kmh: 0 });
+    await s.transport.pollOnce();
+    await s.sqs(queued);
+    expect(s.gw.live.knownSpeed(T)).toBeNull();
+    expect(s.locked()).toBe(false);
+  });
+
+  it('local: o mesmo vale sem evento de presença (last will perdido) — queda de 20 s andando, 0 da fila não vale', async () => {
+    const { transport, tel, gw, clock, live } = localSetup();
+    await tel.telemetry(T, telemetry(25, iso(clock.now() + AHEAD)));
+    await clock.advance(10_000);
+    await tel.telemetry(T, telemetry(25, iso(clock.now() + AHEAD)));
+    await clock.advance(5_000);
+    const queued = telemetry(0, iso(clock.now() + AHEAD));
+    await clock.advance(20_000);
+    await tel.telemetry(T, queued);
+    expect(live.knownSpeed(T)).toBeNull();
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1_000);
+    await p;
+    expect(transport.locked()).toBe(false);
+    expect(transport.limits()).toEqual([15]);
+  });
+
+  it('parada (ignição desligada, telemetria a cada 60 s): a cadência normal não é reconexão; lacuna > 2,5 × 60 s é', async () => {
+    const { transport, tel, gw, clock, live } = localSetup();
+    const parked = (kmh: number) => ({ ...telemetry(kmh, iso(clock.now())), ignicao: false });
+    await tel.telemetry(T, parked(0));
+    await clock.advance(60_000);
+    await tel.telemetry(T, parked(0));
+    await clock.advance(60_000);
+    await tel.telemetry(T, parked(0));
+    expect(live.knownSpeed(T)).toBe(0);
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1_000);
+    await p;
+    expect(transport.desired).toEqual([{ travada: true }]);
+    // outra moto: queda de 160 s (< vigia de 180 s) com a moto parada também abre a graça
+    const T2 = 'moto-0002';
+    await tel.telemetry(T2, parked(0));
+    await clock.advance(60_000);
+    await tel.telemetry(T2, parked(0));
+    expect(live.knownSpeed(T2)).toBe(0);
+    await clock.advance(160_000);
+    expect(gw.live.isOnline(T2)).toBe(true);
+    await tel.telemetry(T2, parked(0));
+    expect(live.knownSpeed(T2)).toBeNull();
+  });
+
+  it('IOT_RECONNECT_GAP_MS configurável: com 5 s, uma lacuna de 6 s andando já abre a graça', async () => {
+    const s = await awsSetup({ gapMs: 5_000 });
+    for (let i = 0; i < 4; i++) {
+      await s.sqs(telemetry(25, iso(s.clock.now())));
+      await s.clock.advance(4_000);
+    }
+    await s.clock.advance(2_000);
+    await s.sqs(telemetry(0, iso(s.clock.now())));
+    expect(s.gw.live.knownSpeed(T)).toBeNull();
+  });
+
+  it('loadIotConfig lê IOT_RECONNECT_GAP_MS (padrão 15000)', () => {
+    const saved = process.env.IOT_RECONNECT_GAP_MS;
+    try {
+      delete process.env.IOT_RECONNECT_GAP_MS;
+      expect((loadIotConfig() as unknown as Record<string, unknown>).reconnectGapMs).toBe(15_000);
+      process.env.IOT_RECONNECT_GAP_MS = '20000';
+      expect((loadIotConfig() as unknown as Record<string, unknown>).reconnectGapMs).toBe(20_000);
+    } finally {
+      if (saved === undefined) delete process.env.IOT_RECONNECT_GAP_MS;
+      else process.env.IOT_RECONNECT_GAP_MS = saved;
+    }
   });
 });

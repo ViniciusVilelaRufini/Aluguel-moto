@@ -22,6 +22,16 @@ export const MAX_CLOCK_SKEW_MS = 10 * 60 * 1000;
  * `IOT_RECONNECT_GRACE_MS`.
  */
 export const DEFAULT_RECONNECT_GRACE_MS = 10_000;
+/**
+ * Lacuna entre mensagens do rastreador (qualquer canal; hora de chegada no servidor) maior que isto = reconexão, mesmo sem evento
+ * de presença (o modo aws não recebe presença: ela vai para o EventBridge; e uma queda mais curta que `offlineAfterMs` nunca passa
+ * pela vigia). Padrão 15 s = 3 × a telemetria de 5 s (destravada com ignição ou em modo roubada). Configurável por
+ * `IOT_RECONNECT_GAP_MS`.
+ */
+export const DEFAULT_RECONNECT_GAP_MS = 15_000;
+/** Cadência da telemetria com a moto parada/travada (contrato: 60 s); a lacuna de reconexão nesse estado é 2,5 × isto. */
+export const PARKED_TELEMETRY_MS = 60_000;
+export const PARKED_GAP_FACTOR = 2.5;
 
 /**
  * Estado ao vivo por rastreador (thingName): telemetria + reported do shadow + conectividade.
@@ -52,6 +62,8 @@ export class LiveStateStore {
   private readonly lastDeviceTs = new Map<string, number>();
   /** Início da conexão atual (ou da primeira amostra vista por este processo): amostras anteriores a ela não valem, e a graça conta a partir dela. */
   private readonly reconnectAt = new Map<string, number>();
+  /** Última mensagem do rastreador, de qualquer canal (hora de chegada; no polling, a metadata do shadow). Só em memória. */
+  private readonly heardAt = new Map<string, number>();
   private readonly held = new Map<string, boolean>();
 
   constructor(
@@ -172,7 +184,7 @@ export class LiveStateStore {
   }
 
   /**
-   * Presença `connected` (ou primeira mensagem depois de offline): a velocidade de antes da desconexão deixa de valer até chegar
+   * Presença `connected`, primeira mensagem depois de offline ou lacuna de reconexão (`noteHeard`): a velocidade de antes da desconexão deixa de valer até chegar
    * amostra nova fora da graça, e a ordem (bruta e da exibição) recomeça — o rastreador pode ter reiniciado e acertado o relógio.
    */
   markReconnected(thingName: string): void {
@@ -180,6 +192,24 @@ export class LiveStateStore {
     this.lastDeviceTs.delete(thingName);
     this.lastTelemetryAt.delete(thingName);
     this.reconnectAt.set(thingName, this.clock.now());
+  }
+
+  /**
+   * Registra uma mensagem do rastreador (qualquer canal) chegando em `at` e diz se a lacuna desde a anterior indica reconexão.
+   * Limite: `gapMs` quando a última situação conhecida é de telemetria a cada 5 s (destravada com ignição, ou modo roubada);
+   * senão `max(gapMs, 2,5 × 60 s)` (parada/travada: a cadência normal de 60 s não é queda). Sem mensagem anterior neste processo
+   * não há lacuna (a primeira amostra já abre a graça). Devolve a lacuna (ms) quando ela indica reconexão; senão `null`.
+   * Quem chama decide o que fazer (`markReconnected`).
+   */
+  noteHeard(thingName: string, at: number, gapMs = DEFAULT_RECONNECT_GAP_MS): number | null {
+    const prev = this.heardAt.get(thingName);
+    if (prev === undefined || at > prev) this.heardAt.set(thingName, at);
+    if (prev === undefined) return null;
+    const s = this.states.get(thingName);
+    const fast = !!s && ((!s.locked && s.ignition) || s.stolenMode);
+    const limit = fast ? gapMs : Math.max(gapMs, PARKED_GAP_FACTOR * PARKED_TELEMETRY_MS);
+    const gap = at - prev;
+    return gap > limit ? gap : null;
   }
 
   /** "Limite segurado em 0" depois de `did_not_stop`: persiste até um unlock explícito. */
