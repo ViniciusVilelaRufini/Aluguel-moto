@@ -25,6 +25,8 @@ export interface ApiStackProps extends StackProps {
   iot: IotStack;
   certificateArn: string;
   imageTag: string;
+  /** 0 on the first deploy (no image in ECR yet); set to >= 1 once an image is pushed. */
+  desiredCount: number;
 }
 
 export const API_PORT = 3000;
@@ -36,7 +38,7 @@ export class ApiStack extends Stack {
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
-    const { cfg, vpc, data, auth, messaging, iot } = props;
+    const { cfg, vpc, data, auth, messaging, iot, desiredCount } = props;
     const env = cfg.name;
 
     this.repository = new ecr.Repository(this, 'ApiRepo', {
@@ -79,7 +81,8 @@ export class ApiStack extends Stack {
       cluster,
       cpu: cfg.apiCpu,
       memoryLimitMiB: cfg.apiMemoryMiB,
-      desiredCount: cfg.apiMinTasks,
+      // The pattern rejects 0, so 1 here and the CFN property is overridden below.
+      desiredCount: 1,
       minHealthyPercent: 100,
       maxHealthyPercent: 200,
       publicLoadBalancer: true,
@@ -137,6 +140,8 @@ export class ApiStack extends Stack {
       },
     });
 
+    (this.service.service.node.defaultChild as ecs.CfnService).desiredCount = desiredCount;
+
     this.service.targetGroup.configureHealthCheck({
       path: '/health',
       healthyHttpCodes: '200',
@@ -147,7 +152,7 @@ export class ApiStack extends Stack {
     this.service.targetGroup.setAttribute('deregistration_delay.timeout_seconds', '30');
 
     this.service.service
-      .autoScaleTaskCount({ minCapacity: cfg.apiMinTasks, maxCapacity: cfg.apiMaxTasks })
+      .autoScaleTaskCount({ minCapacity: desiredCount === 0 ? 0 : cfg.apiMinTasks, maxCapacity: cfg.apiMaxTasks })
       .scaleOnCpuUtilization('CpuScaling', {
         targetUtilizationPercent: cfg.apiCpuTargetPercent,
         scaleInCooldown: Duration.minutes(5),

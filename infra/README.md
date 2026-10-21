@@ -39,6 +39,7 @@ O synth offline usa conta `000000000000` e ARNs de certificado fictícios. Nenhu
 | `env` | `dev` | `dev` ou `prod` |
 | `account` | `000000000000` | ID da conta AWS |
 | `certificateArn` | ARN fictício | Certificado ACM em `sa-east-1` para o ALB (obrigatório no deploy real) |
+| `apiDesiredCount` | `0` | Tarefas Fargate; use 0 até existir imagem no ECR, depois 1 (dev) ou mais |
 | `apiImageTag` | `latest` | Tag da imagem no ECR `volti-<env>-api` (o CI usa o SHA do commit) |
 | `domainName` | vazio | Se definido junto com `adminCertificateArn`, o painel responde em `admin.<domainName>` |
 | `adminCertificateArn` | vazio | Certificado ACM em `us-east-1` (exigência do CloudFront) |
@@ -46,13 +47,18 @@ O synth offline usa conta `000000000000` e ARNs de certificado fictícios. Nenhu
 
 DNS não é gerenciado aqui: aponte `api.<domínio>` para o ALB (`api/load-balancer-dns` no SSM) e `admin.<domínio>` para a distribuição.
 
-### Primeiro deploy
+### Ordem de deploy
+
+O serviço da API nasce com 0 tarefas (`-c apiDesiredCount=0`, o padrão), porque o repositório ECR é criado pela própria stack e ainda está vazio. Sem isso o Fargate não consegue baixar a imagem e o circuit breaker faz rollback.
 
 1. `cdk bootstrap aws://<conta>/sa-east-1` e `aws://<conta>/us-east-1` (a stack `waf` fica em us-east-1).
-2. Crie o certificado ACM e rode `cdk deploy --all -c env=dev -c account=... -c certificateArn=...`.
-3. Publique a imagem da API no ECR (`api/ecr-repository` no SSM). Até existir a imagem com a tag, o serviço ECS não sobe.
-4. Preencha o segredo `volti/<env>/app` (`MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`); os valores iniciais são `CHANGE_ME`.
-5. Habilite a extensão: `CREATE EXTENSION IF NOT EXISTS postgis;` na migração inicial.
+2. Crie o certificado ACM e rode `cdk deploy --all -c env=dev -c account=... -c certificateArn=...` (infra completa, serviço com 0 tarefas).
+3. Construa e publique a imagem de `services/api` no ECR (`api/ecr-repository` no SSM) com a tag que será usada em `-c apiImageTag`.
+4. Redeploy com a tarefa rodando: `cdk deploy --all ... -c apiImageTag=<tag> -c apiDesiredCount=1` (prod: 2 ou mais).
+5. Preencha o segredo `volti/<env>/app` (`MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`); os valores iniciais são `CHANGE_ME`.
+6. Habilite a extensão com `CREATE EXTENSION IF NOT EXISTS postgis;` na migração inicial.
+
+O workflow de deploy do dev faz 2 a 4 sozinho: deploy com 0 tarefas, build e push da imagem se existir `services/api/Dockerfile`, e novo deploy com 1 tarefa. Sem Dockerfile, o serviço permanece em 0 tarefas. Com 0 tarefas o auto scaling usa mínimo 0.
 
 ## Parâmetros no SSM (prefixo `/volti/<env>/`)
 
@@ -105,7 +111,7 @@ Regras: `motos/+/telemetria` vai para a fila de telemetria; `motos/+/eventos` va
 - Buckets sempre com `RETAIN`; KYC com versionamento e expiração de versões antigas em 90 dias (retenção legal dos documentos fica com o jurídico). Fotos: IA aos 90 dias, expiram em 365. Relatórios: IA aos 30, expiram em 730.
 - `dev`: RDS com snapshot na remoção, sem deletion protection, sem Container Insights. `prod`: Multi-AZ, deletion protection, termination protection nas stacks.
 - Budget: sem filtro por tag (requer ativar tags de alocação de custo); notifica em 80% e 100% do gasto real e 100% da previsão. Com `alarmEmail` envia por e-mail, senão para o SNS.
-- `pnpm --filter infra lint` e `build` executam `tsc --noEmit` (sem ESLint nesta área).
+- `lint` roda ESLint (typescript-eslint, flat config); `build` roda `tsc --noEmit`.
 
 ## Custo mensal aproximado (dev, sa-east-1, valores de lista, sem free tier)
 

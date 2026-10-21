@@ -1,4 +1,3 @@
-import { Match } from 'aws-cdk-lib/assertions';
 import { stacksFor, templateOf } from './helpers';
 
 describe('AuthStack', () => {
@@ -26,6 +25,5 @@ describe('AuthStack', () => {
     }
     t().resourceCountIs('AWS::Cognito::UserPoolClient', 2);
     t().hasResourceProperties('AWS::Cognito::UserPoolClient', { GenerateSecret: false });
-    expect(Match).toBeDefined();
   });
 });

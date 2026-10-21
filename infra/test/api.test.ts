@@ -29,6 +29,11 @@ describe('ApiStack', () => {
     expect(JSON.stringify(c.Environment)).not.toMatch(/password|secret_key/i);
   });
 
+  it('first deploy is safe: service starts with 0 tasks and autoscaling min 0', () => {
+    t().hasResourceProperties('AWS::ECS::Service', { DesiredCount: 0 });
+    t().hasResourceProperties('AWS::ApplicationAutoScaling::ScalableTarget', { MinCapacity: 0 });
+  });
+
   it('creates the ECR repository for the API image', () => {
     t().resourceCountIs('AWS::ECR::Repository', 1);
   });

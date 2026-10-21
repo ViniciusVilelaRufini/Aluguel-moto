@@ -21,6 +21,8 @@ export interface VoltiAppOptions {
   /** ACM certificate (sa-east-1) for the ALB HTTPS listener. */
   certificateArn?: string;
   apiImageTag?: string;
+  /** Fargate desired count. Default 0 so a fresh deploy never waits for a missing image. */
+  apiDesiredCount?: number;
   /** Optional admin panel domain, only applied together with adminCertificateArn (ACM in us-east-1). */
   adminDomainName?: string;
   adminCertificateArn?: string;
@@ -64,6 +66,7 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     iot,
     certificateArn: opts.certificateArn ?? FAKE_CERTIFICATE_ARN,
     imageTag: opts.apiImageTag ?? 'latest',
+    desiredCount: opts.apiDesiredCount ?? 0,
   });
   const waf = new WafStack(app, `${prefix}-waf`, {
     ...common,

@@ -81,9 +81,34 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
           aws-region: ${{ env.AWS_REGION }}
-      - name: cdk deploy
+      # 1) Infra first with the API service at 0 tasks: safe on a fresh account (ECR is empty).
+      - name: cdk deploy (service at 0 tasks)
         run: >
           pnpm --filter infra exec cdk deploy --all --require-approval never -c env=dev
           -c account=${{ vars.AWS_ACCOUNT_ID }}
           -c certificateArn=${{ vars.CERTIFICATE_ARN_DEV }}
           -c apiImageTag=${{ github.sha }}
+          -c apiDesiredCount=0
+      # 2) Build and push the API image only when services/api has a Dockerfile.
+      - name: check API Dockerfile
+        id: api
+        run: |
+          if [ -f services/api/Dockerfile ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+        if: steps.api.outputs.present == 'true'
+      - name: build and push API image
+        if: steps.api.outputs.present == 'true'
+        run: |
+          REPO="${{ steps.ecr.outputs.registry }}/volti-dev-api"
+          docker build -t "$REPO:${{ github.sha }}" services/api
+          docker push "$REPO:${{ github.sha }}"
+      # 3) Redeploy with the service running, now that the image tag exists.
+      - name: cdk deploy (service running)
+        if: steps.api.outputs.present == 'true'
+        run: >
+          pnpm --filter infra exec cdk deploy --all --require-approval never -c env=dev
+          -c account=${{ vars.AWS_ACCOUNT_ID }}
+          -c certificateArn=${{ vars.CERTIFICATE_ARN_DEV }}
+          -c apiImageTag=${{ github.sha }}
+          -c apiDesiredCount=1
