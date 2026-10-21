@@ -1,0 +1,9 @@
+# Opções do gerador dart-dio (openapi-generator). Usado por scripts/generate.mjs (-c).
+pubName: volti_api
+pubVersion: 0.1.0
+pubDescription: Cliente Dart da API Volti gerado de packages/contracts/openapi.yaml
+pubAuthor: Volti
+pubHomepage: https://volti.com.br
+serializationLibrary: built_value
+dateLibrary: core
+enumUnknownDefaultCase: true

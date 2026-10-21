@@ -1,0 +1,13 @@
+# Mantido à mão (listado no .openapi-generator-ignore por scripts/generate.mjs).
+# Igual ao gerado pelo dart-dio, mais o silêncio de unused_import: os templates do gerador importam
+# json_object/problem em todos os arquivos de API, mesmo quando não usam.
+analyzer:
+  language:
+    strict-inference: true
+    strict-raw-types: true
+    strict-casts: false
+  exclude:
+    - test/*.dart
+  errors:
+    deprecated_member_use_from_same_package: ignore
+    unused_import: ignore

@@ -1,0 +1,36 @@
+{
+  "name": "@volti/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Contrato da API Volti (OpenAPI 3.1), eventos de tempo real e clientes gerados (TypeScript e Dart).",
+  "type": "module",
+  "types": "./generated/ts/schema.d.ts",
+  "exports": {
+    ".": {
+      "types": "./generated/ts/schema.d.ts"
+    },
+    "./openapi.yaml": "./openapi.yaml"
+  },
+  "files": [
+    "openapi.yaml",
+    "realtime.md",
+    "generated/ts"
+  ],
+  "scripts": {
+    "lint": "redocly lint openapi.yaml",
+    "generate": "node scripts/generate.mjs",
+    "generate:ts": "node scripts/generate.mjs --only=ts",
+    "generate:dart": "node scripts/generate.mjs --only=dart",
+    "typecheck": "tsc -p tsconfig.json",
+    "mock": "prism mock openapi.yaml -p 4010 -h 0.0.0.0",
+    "build": "pnpm run lint && pnpm run typecheck",
+    "test": "pnpm run lint && pnpm run typecheck"
+  },
+  "devDependencies": {
+    "@openapitools/openapi-generator-cli": "2.41.0",
+    "@redocly/cli": "2.57.0",
+    "@stoplight/prism-cli": "5.16.0",
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}

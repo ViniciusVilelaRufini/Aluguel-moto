@@ -1,0 +1,11 @@
+extends:
+  - recommended
+rules:
+  # Contrato interno, sem licença pública.
+  info-license: off
+  info-license-strict: off
+  # Os servidores do contrato são o ambiente local e o mock Prism.
+  no-server-example.com: off
+  # Rotas literais exigidas pelo plano (`/vehicles/by-code/{code}`, `/payments/cards/{id}`) convivem com
+  # `/{id}/...`; os `{id}` são UUID, então não há ambiguidade real e a API registra as rotas literais primeiro.
+  no-ambiguous-paths: off

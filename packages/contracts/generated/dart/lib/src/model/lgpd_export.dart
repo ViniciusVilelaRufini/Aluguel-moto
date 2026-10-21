@@ -1,0 +1,261 @@
+//
+// AUTO-GENERATED FILE, DO NOT MODIFY!
+//
+
+// ignore_for_file: unused_element
+import 'package:volti_api/src/model/payment.dart';
+import 'package:volti_api/src/model/dispute.dart';
+import 'package:built_collection/built_collection.dart';
+import 'package:volti_api/src/model/customer.dart';
+import 'package:volti_api/src/model/consents.dart';
+import 'package:volti_api/src/model/rental.dart';
+import 'package:volti_api/src/model/incident.dart';
+import 'package:volti_api/src/model/track.dart';
+import 'package:volti_api/src/model/claim.dart';
+import 'package:volti_api/src/model/wallet_entry.dart';
+import 'package:built_value/built_value.dart';
+import 'package:built_value/serializer.dart';
+
+part 'lgpd_export.g.dart';
+
+/// LgpdExport
+///
+/// Properties:
+/// * [generatedAt]
+/// * [customer]
+/// * [consents]
+/// * [rentals]
+/// * [payments]
+/// * [tracks]
+/// * [walletEntries]
+/// * [incidents]
+/// * [disputes]
+/// * [claims]
+@BuiltValue()
+abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
+  @BuiltValueField(wireName: r'generatedAt')
+  DateTime get generatedAt;
+
+  @BuiltValueField(wireName: r'customer')
+  Customer get customer;
+
+  @BuiltValueField(wireName: r'consents')
+  Consents get consents;
+
+  @BuiltValueField(wireName: r'rentals')
+  BuiltList<Rental> get rentals;
+
+  @BuiltValueField(wireName: r'payments')
+  BuiltList<Payment> get payments;
+
+  @BuiltValueField(wireName: r'tracks')
+  BuiltList<Track> get tracks;
+
+  @BuiltValueField(wireName: r'walletEntries')
+  BuiltList<WalletEntry> get walletEntries;
+
+  @BuiltValueField(wireName: r'incidents')
+  BuiltList<Incident> get incidents;
+
+  @BuiltValueField(wireName: r'disputes')
+  BuiltList<Dispute> get disputes;
+
+  @BuiltValueField(wireName: r'claims')
+  BuiltList<Claim> get claims;
+
+  LgpdExport._();
+
+  factory LgpdExport([void updates(LgpdExportBuilder b)]) = _$LgpdExport;
+
+  @BuiltValueHook(initializeBuilder: true)
+  static void _defaults(LgpdExportBuilder b) => b;
+
+  @BuiltValueSerializer(custom: true)
+  static Serializer<LgpdExport> get serializer => _$LgpdExportSerializer();
+}
+
+class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
+  @override
+  final Iterable<Type> types = const [LgpdExport, _$LgpdExport];
+
+  @override
+  final String wireName = r'LgpdExport';
+
+  Iterable<Object?> _serializeProperties(
+    Serializers serializers,
+    LgpdExport object, {
+    FullType specifiedType = FullType.unspecified,
+  }) sync* {
+    yield r'generatedAt';
+    yield serializers.serialize(
+      object.generatedAt,
+      specifiedType: const FullType(DateTime),
+    );
+    yield r'customer';
+    yield serializers.serialize(
+      object.customer,
+      specifiedType: const FullType(Customer),
+    );
+    yield r'consents';
+    yield serializers.serialize(
+      object.consents,
+      specifiedType: const FullType(Consents),
+    );
+    yield r'rentals';
+    yield serializers.serialize(
+      object.rentals,
+      specifiedType: const FullType(BuiltList, [FullType(Rental)]),
+    );
+    yield r'payments';
+    yield serializers.serialize(
+      object.payments,
+      specifiedType: const FullType(BuiltList, [FullType(Payment)]),
+    );
+    yield r'tracks';
+    yield serializers.serialize(
+      object.tracks,
+      specifiedType: const FullType(BuiltList, [FullType(Track)]),
+    );
+    yield r'walletEntries';
+    yield serializers.serialize(
+      object.walletEntries,
+      specifiedType: const FullType(BuiltList, [FullType(WalletEntry)]),
+    );
+    yield r'incidents';
+    yield serializers.serialize(
+      object.incidents,
+      specifiedType: const FullType(BuiltList, [FullType(Incident)]),
+    );
+    yield r'disputes';
+    yield serializers.serialize(
+      object.disputes,
+      specifiedType: const FullType(BuiltList, [FullType(Dispute)]),
+    );
+    yield r'claims';
+    yield serializers.serialize(
+      object.claims,
+      specifiedType: const FullType(BuiltList, [FullType(Claim)]),
+    );
+  }
+
+  @override
+  Object serialize(
+    Serializers serializers,
+    LgpdExport object, {
+    FullType specifiedType = FullType.unspecified,
+  }) {
+    return _serializeProperties(serializers, object,
+            specifiedType: specifiedType)
+        .toList();
+  }
+
+  void _deserializeProperties(
+    Serializers serializers,
+    Object serialized, {
+    FullType specifiedType = FullType.unspecified,
+    required List<Object?> serializedList,
+    required LgpdExportBuilder result,
+    required List<Object?> unhandled,
+  }) {
+    for (var i = 0; i < serializedList.length; i += 2) {
+      final key = serializedList[i] as String;
+      final value = serializedList[i + 1];
+      switch (key) {
+        case r'generatedAt':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(DateTime),
+          ) as DateTime;
+          result.generatedAt = valueDes;
+          break;
+        case r'customer':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(Customer),
+          ) as Customer;
+          result.customer.replace(valueDes);
+          break;
+        case r'consents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(Consents),
+          ) as Consents;
+          result.consents.replace(valueDes);
+          break;
+        case r'rentals':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BuiltList, [FullType(Rental)]),
+          ) as BuiltList<Rental>;
+          result.rentals.replace(valueDes);
+          break;
+        case r'payments':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BuiltList, [FullType(Payment)]),
+          ) as BuiltList<Payment>;
+          result.payments.replace(valueDes);
+          break;
+        case r'tracks':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BuiltList, [FullType(Track)]),
+          ) as BuiltList<Track>;
+          result.tracks.replace(valueDes);
+          break;
+        case r'walletEntries':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BuiltList, [FullType(WalletEntry)]),
+          ) as BuiltList<WalletEntry>;
+          result.walletEntries.replace(valueDes);
+          break;
+        case r'incidents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BuiltList, [FullType(Incident)]),
+          ) as BuiltList<Incident>;
+          result.incidents.replace(valueDes);
+          break;
+        case r'disputes':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BuiltList, [FullType(Dispute)]),
+          ) as BuiltList<Dispute>;
+          result.disputes.replace(valueDes);
+          break;
+        case r'claims':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BuiltList, [FullType(Claim)]),
+          ) as BuiltList<Claim>;
+          result.claims.replace(valueDes);
+          break;
+        default:
+          unhandled.add(key);
+          unhandled.add(value);
+          break;
+      }
+    }
+  }
+
+  @override
+  LgpdExport deserialize(
+    Serializers serializers,
+    Object serialized, {
+    FullType specifiedType = FullType.unspecified,
+  }) {
+    final result = LgpdExportBuilder();
+    final serializedList = (serialized as Iterable<Object?>).toList();
+    final unhandled = <Object?>[];
+    _deserializeProperties(
+      serializers,
+      serialized,
+      specifiedType: specifiedType,
+      serializedList: serializedList,
+      unhandled: unhandled,
+      result: result,
+    );
+    return result.build();
+  }
+}
