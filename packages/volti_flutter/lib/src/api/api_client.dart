@@ -60,17 +60,29 @@ class RetryInterceptor extends Interceptor {
     return u == 'GET' || u == 'HEAD' || u == 'PUT' || u == 'DELETE';
   }
 
+  /// Seguro repetir: metodo idempotente, header `Idempotency-Key` ou
+  /// `options.extra['retryable'] = true`.
+  static bool _safe(RequestOptions o) =>
+      _idempotent(o.method) ||
+      o.headers.keys.any((k) => k.toLowerCase() == 'idempotency-key') ||
+      o.extra['retryable'] == true;
+
   bool _retryable(DioException e) {
+    final o = e.requestOptions;
+    // Corpos de stream/FormData nao podem ser reenviados.
+    if (o.data is Stream || o.data is FormData) return false;
     switch (e.type) {
-      case DioExceptionType.connectionError:
+      // A requisicao nunca chegou ao servidor.
       case DioExceptionType.connectionTimeout:
         return true;
+      // Pode ocorrer depois do envio (socket reset): so se for seguro.
+      case DioExceptionType.connectionError:
       case DioExceptionType.sendTimeout:
       case DioExceptionType.receiveTimeout:
-        return _idempotent(e.requestOptions.method);
+        return _safe(o);
       case DioExceptionType.badResponse:
         final code = e.response?.statusCode ?? 0;
-        return code >= 500 && _idempotent(e.requestOptions.method);
+        return code >= 500 && _safe(o);
       default:
         return false;
     }
@@ -83,7 +95,9 @@ class RetryInterceptor extends Interceptor {
       return handler.next(err);
     }
     await sleep(baseDelay * pow(2, attempt - 1).toInt());
-    final opts = err.requestOptions..extra[_attemptKey] = attempt + 1;
+    final opts = err.requestOptions.copyWith(
+      extra: {...err.requestOptions.extra, _attemptKey: attempt + 1},
+    );
     try {
       handler.resolve(await dio.fetch<dynamic>(opts));
     } on DioException catch (e) {
