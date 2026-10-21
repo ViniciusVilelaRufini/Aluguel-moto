@@ -108,7 +108,7 @@ export class TelemetryService implements InboundHandler {
       // amostra saiu da fila offline (atraso). Nos dois últimos casos a própria amostra cai na graça.
       const gap = this.heard(thingName, now);
       const drained = this.drained(thingName, now, deviceTs);
-      if (!wasOnline || gap || drained) this.gateway.live.markReconnected(thingName);
+      if (!wasOnline || gap || drained) this.gateway.live.markReconnected(thingName, { keepDisplayOrder: wasOnline });
       const applied = await this.gateway.live.applyTelemetry(thingName, msg);
       if (!wasOnline) await this.connectivity(thingName, vehicleId, true);
 

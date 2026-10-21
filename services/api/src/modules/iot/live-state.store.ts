@@ -75,6 +75,12 @@ export class LiveStateStore {
   private readonly heardAt = new Map<string, number>();
   /** Chegada e `timestamp` bruto da telemetria mais nova (no relógio do rastreador), para o atraso da fila offline. Só em memória. */
   private readonly lastTelemetryPair = new Map<string, { arrival: number; deviceTs: number }>();
+  /**
+   * Candidata a nova referência depois de um salto para trás > `CLOCK_JUMP_BACK_MS`: só vira referência quando a amostra seguinte
+   * confirma a nova linha do tempo (também atrás da referência, mais nova que a candidata e com atraso pequeno contra ela).
+   * Uma única mensagem velha reordenada nunca troca a referência.
+   */
+  private readonly jumpCandidate = new Map<string, { arrival: number; deviceTs: number }>();
   private readonly held = new Map<string, boolean>();
 
   constructor(
@@ -198,10 +204,13 @@ export class LiveStateStore {
    * Presença `connected`, primeira mensagem depois de offline ou lacuna de reconexão (`noteHeard`) ou atraso de fila offline (`noteTelemetry`): a velocidade de antes da desconexão deixa de valer até chegar
    * amostra nova fora da graça, e a ordem (bruta e da exibição) recomeça — o rastreador pode ter reiniciado e acertado o relógio.
    */
-  markReconnected(thingName: string): void {
+  markReconnected(thingName: string, opts: { keepDisplayOrder?: boolean } = {}): void {
     this.sample.delete(thingName);
     this.lastDeviceTs.delete(thingName);
-    this.lastTelemetryAt.delete(thingName);
+    // Reconexão percebida pela própria telemetria (lacuna/atraso, moto online): a ordem da exibição continua — uma mensagem velha
+    // reordenada que abriu a graça não volta a moto no mapa. Presença/volta de offline recomeçam (o rastreador pode ter reiniciado);
+    // um salto para trás confirmado (`noteTelemetry`) também.
+    if (!opts.keepDisplayOrder) this.lastTelemetryAt.delete(thingName);
     this.reconnectAt.set(thingName, this.clock.now());
   }
 
@@ -228,17 +237,42 @@ export class LiveStateStore {
    * da fila offline (atraso relativo à telemetria anterior > `lagMs`), senão `null`. Não depende da cadência nem do estado
    * conhecido da moto (ignição/trava), nem do desvio do relógio do rastreador. `timestamp` não confiável (> chegada + 10 min) é
    * ignorado. Fora de ordem (timestamp ≤ o mais novo) também mede o atraso contra o mais novo, sem trocar a referência: uma
-   * mensagem reordenada ou duplicada muito atrasada abre a graça (falha segura). Relógio que volta mais de `CLOCK_JUMP_BACK_MS`:
-   * abre a graça uma vez e a amostra vira a referência (senão toda amostra seguinte reabriria a graça por ~o tamanho do salto e
-   * um lock em curso terminaria `did_not_stop`); a graça e o recomeço da ordem bruta (`markReconnected`) continuam protegendo.
+   * mensagem reordenada ou duplicada muito atrasada abre a graça. Relógio que volta mais de `CLOCK_JUMP_BACK_MS`: abre a graça e
+   * a amostra vira **candidata**; a referência só muda quando a amostra seguinte confirma a nova linha do tempo (atrás da
+   * referência, mais nova que a candidata, atraso ≤ `lagMs` contra ela). Assim um salto real do relógio abre a graça uma vez (sem
+   * isso, toda amostra seguinte a reabriria por ~o tamanho do salto e um lock em curso terminaria `did_not_stop`), e uma única
+   * mensagem velha reordenada não esconde uma amostra da fila que chegue depois (ela é medida contra a referência antiga).
    */
   noteTelemetry(thingName: string, arrival: number, deviceTs: number, lagMs = DEFAULT_QUEUE_LAG_MS): number | null {
     if (!Number.isFinite(deviceTs) || deviceTs > arrival + MAX_CLOCK_SKEW_MS) return null;
+    const cur = { arrival, deviceTs };
+    const lagVs = (ref: { arrival: number; deviceTs: number }) => arrival - ref.arrival - (deviceTs - ref.deviceTs);
     const prev = this.lastTelemetryPair.get(thingName);
-    const jumpedBack = !!prev && prev.deviceTs - deviceTs > CLOCK_JUMP_BACK_MS;
-    if (!prev || deviceTs > prev.deviceTs || jumpedBack) this.lastTelemetryPair.set(thingName, { arrival, deviceTs });
-    if (!prev) return null;
-    const lag = arrival - prev.arrival - (deviceTs - prev.deviceTs);
+    if (!prev) {
+      this.lastTelemetryPair.set(thingName, cur);
+      return null;
+    }
+    if (deviceTs > prev.deviceTs) {
+      // Linha do tempo da referência continua: descarta a candidata.
+      this.lastTelemetryPair.set(thingName, cur);
+      this.jumpCandidate.delete(thingName);
+      const lag = lagVs(prev);
+      return lag > lagMs ? lag : null;
+    }
+    if (prev.deviceTs - deviceTs > CLOCK_JUMP_BACK_MS) {
+      const cand = this.jumpCandidate.get(thingName);
+      if (cand && deviceTs > cand.deviceTs && lagVs(cand) <= lagMs) {
+        // Salto confirmado por duas amostras seguidas: nova referência; a exibição recomeça na nova linha do tempo.
+        this.lastTelemetryPair.set(thingName, cur);
+        this.jumpCandidate.delete(thingName);
+        this.lastTelemetryAt.delete(thingName);
+        return null;
+      }
+      this.jumpCandidate.set(thingName, cur);
+      return lagVs(prev); // grande: abre a graça
+    }
+    // Fora de ordem dentro de 30 s (ou repetida): mede contra a referência, sem trocá-la.
+    const lag = lagVs(prev);
     return lag > lagMs ? lag : null;
   }
 

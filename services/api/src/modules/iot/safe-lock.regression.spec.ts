@@ -931,3 +931,26 @@ describe('Bloqueio seguro — regressões da revisão 4b, fix round 2 (relógio 
     expect(live.knownSpeed(T)).not.toBe(0);
   });
 });
+
+describe('Bloqueio seguro — regressões da revisão 4b, fix round 3 (mensagem velha reordenada não troca a referência do atraso)', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it('L/M/S: uma mensagem reordenada 100 s atrás (M) não esconde a amostra da fila (S) que chega depois; M também não volta a exibição', async () => {
+    const s = await awsSetup();
+    await s.ride(25); // além da graça; agora = 20 s
+    const base = s.clock.now();
+    await s.sqs(telemetry(25, iso(base))); // L (chegada 100, ts 100 no exemplo da revisão)
+    const p = s.gw.lock({ commandId: 'c1', thingName: T });
+    await s.clock.advance(100);
+    await p;
+    expect(s.published).toEqual([{ limite_kmh: 15 }]);
+    await s.clock.advance(900);
+    await s.sqs(telemetry(7, iso(base - 100_000))); // M: reordenada no SQS, 100 s atrás → graça até base+11
+    expect((await s.gw.getLiveState(T))!.speedKmh).toBe(25); // exibição não volta para M
+    const queued = telemetry(0, iso(base + 3_000)); // S: medida em base+3, presa na fila (queda em ~base+2)
+    await s.clock.advance(11_000); // chega em base+12: fresca (9 s), lacuna 11 s < 15 s, graça de M já passou
+    await s.sqs(queued);
+    expect(s.gw.live.knownSpeed(T)).toBeNull(); // atraso contra L = 12 − 3 = 9 s > 5 s
+    expect(s.locked()).toBe(false);
+  });
+});
