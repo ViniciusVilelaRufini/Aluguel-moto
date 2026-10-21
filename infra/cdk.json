@@ -1,0 +1,8 @@
+{
+  "app": "pnpm exec ts-node --prefer-ts-exts bin/volti.ts",
+  "watch": { "include": ["**"], "exclude": ["node_modules", "cdk.out", "test"] },
+  "context": {
+    "env": "dev",
+    "@aws-cdk/core:defaultCrossStackReferences": "strong"
+  }
+}

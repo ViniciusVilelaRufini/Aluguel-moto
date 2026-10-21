@@ -1,0 +1,114 @@
+name: infra
+
+on:
+  pull_request:
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra.yml'
+
+permissions:
+  contents: read
+  id-token: write       # OIDC token for aws-actions/configure-aws-credentials
+  pull-requests: read
+
+env:
+  AWS_REGION: sa-east-1
+
+jobs:
+  synth:
+    name: test + synth (${{ matrix.env }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        env: [dev, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter infra test
+        if: matrix.env == 'dev'
+      - name: cdk synth
+        run: pnpm --filter infra exec cdk synth -c env=${{ matrix.env }} -c account=${{ vars.AWS_ACCOUNT_ID || '000000000000' }} -q
+
+  diff:
+    name: cdk diff (dev)
+    if: github.event_name == 'pull_request'
+    needs: synth
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: cdk diff
+        run: >
+          pnpm --filter infra exec cdk diff --all -c env=dev
+          -c account=${{ vars.AWS_ACCOUNT_ID }}
+          -c certificateArn=${{ vars.CERTIFICATE_ARN_DEV }}
+
+  deploy-dev:
+    name: deploy (dev)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: synth
+    runs-on: ubuntu-latest
+    environment: dev
+    concurrency: infra-deploy-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+      # 1) Infra first with the API service at 0 tasks: safe on a fresh account (ECR is empty).
+      - name: cdk deploy (service at 0 tasks)
+        run: >
+          pnpm --filter infra exec cdk deploy --all --require-approval never -c env=dev
+          -c account=${{ vars.AWS_ACCOUNT_ID }}
+          -c certificateArn=${{ vars.CERTIFICATE_ARN_DEV }}
+          -c apiImageTag=${{ github.sha }}
+          -c apiDesiredCount=0
+      # 2) Build and push the API image only when services/api has a Dockerfile.
+      - name: check API Dockerfile
+        id: api
+        run: |
+          if [ -f services/api/Dockerfile ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+        if: steps.api.outputs.present == 'true'
+      - name: build and push API image
+        if: steps.api.outputs.present == 'true'
+        run: |
+          REPO="${{ steps.ecr.outputs.registry }}/volti-dev-api"
+          docker build -t "$REPO:${{ github.sha }}" services/api
+          docker push "$REPO:${{ github.sha }}"
+      # 3) Redeploy with the service running, now that the image tag exists.
+      - name: cdk deploy (service running)
+        if: steps.api.outputs.present == 'true'
+        run: >
+          pnpm --filter infra exec cdk deploy --all --require-approval never -c env=dev
+          -c account=${{ vars.AWS_ACCOUNT_ID }}
+          -c certificateArn=${{ vars.CERTIFICATE_ARN_DEV }}
+          -c apiImageTag=${{ github.sha }}
+          -c apiDesiredCount=1
