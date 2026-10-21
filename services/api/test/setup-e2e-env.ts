@@ -27,5 +27,7 @@ process.env.STUB_PIX_AUTOCONFIRM_SECONDS = '0';
 process.env.PAYMENT_PROVIDER = 'fake';
 process.env.FAKE_PIX_AUTOCONFIRM_SECONDS = '0';
 process.env.MERCADOPAGO_WEBHOOK_SECRET = process.env.MERCADOPAGO_WEBHOOK_SECRET || 'segredo-webhook-e2e';
-// Sem rastreador nos e2e do fluxo de aluguel: gateway stub (confirma na hora). O e2e de IoT (test/iot) usa IOT_MODE=local.
-process.env.IOT_MODE = process.env.IOT_MODE ?? 'stub';
+// Sem rastreador nos e2e do fluxo de aluguel: gateway stub (confirma na hora). O e2e de IoT (test/iot) troca para
+// IOT_MODE=local no próprio arquivo. Forçado (não `??`): o `.env` lido acima costuma vir do .env.example (IOT_MODE=local),
+// e aí o encerramento esperaria a confirmação de um rastreador que não existe (202 em vez de 200).
+process.env.IOT_MODE = 'stub';
