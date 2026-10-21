@@ -4,33 +4,56 @@ import { verifyMercadoPagoSignature } from './mercadopago-signature';
 import { CardDeclinedError, PaymentProviderError } from './payment-provider';
 
 const SECRET = 'segredo-webhook';
+const NOW = String(Math.floor(Date.now() / 1000));
 const sign = (dataId: string, requestId: string, ts: string, secret = SECRET) =>
   `ts=${ts},v1=${createHmac('sha256', secret).update(`id:${dataId};request-id:${requestId};ts:${ts};`).digest('hex')}`;
 
 describe('verifyMercadoPagoSignature', () => {
   it('aceita a assinatura do manifesto id/request-id/ts', () => {
-    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('123', 'req-1', '1700000000'), requestId: 'req-1', dataId: '123' })).toBe(true);
+    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('123', 'req-1', NOW), requestId: 'req-1', dataId: '123' })).toBe(true);
   });
   it('aceita espaços e ordem trocada', () => {
-    const s = sign('123', 'req-1', '1700000000');
+    const s = sign('123', 'req-1', NOW);
     const [ts, v1] = s.split(',');
     expect(verifyMercadoPagoSignature({ secret: SECRET, signature: ` ${v1} , ${ts}`, requestId: 'req-1', dataId: '123' })).toBe(true);
   });
   it.each([
-    ['v1 errado', { signature: 'ts=1700000000,v1=' + '0'.repeat(64), requestId: 'req-1', dataId: '123' }],
-    ['outro data.id', { signature: sign('999', 'req-1', '1700000000'), requestId: 'req-1', dataId: '123' }],
-    ['outro request-id', { signature: sign('123', 'req-2', '1700000000'), requestId: 'req-1', dataId: '123' }],
+    ['v1 errado', { signature: 'ts=' + NOW + ',v1=' + '0'.repeat(64), requestId: 'req-1', dataId: '123' }],
+    ['outro data.id', { signature: sign('999', 'req-1', NOW), requestId: 'req-1', dataId: '123' }],
+    ['outro request-id', { signature: sign('123', 'req-2', NOW), requestId: 'req-1', dataId: '123' }],
     ['sem ts', { signature: 'v1=abc', requestId: 'req-1', dataId: '123' }],
     ['sem assinatura', { signature: undefined, requestId: 'req-1', dataId: '123' }],
-    ['sem request-id', { signature: sign('123', 'req-1', '1700000000'), requestId: undefined, dataId: '123' }],
+    ['sem request-id', { signature: sign('123', 'req-1', NOW), requestId: undefined, dataId: '123' }],
   ])('rejeita: %s', (_n, input) => {
     expect(verifyMercadoPagoSignature({ secret: SECRET, ...input })).toBe(false);
   });
   it('rejeita tudo sem segredo configurado', () => {
-    expect(verifyMercadoPagoSignature({ secret: undefined, signature: sign('123', 'req-1', '1'), requestId: 'req-1', dataId: '123' })).toBe(false);
+    expect(verifyMercadoPagoSignature({ secret: undefined, signature: sign('123', 'req-1', NOW), requestId: 'req-1', dataId: '123' })).toBe(false);
+  });
+  it('fix round 1: ts com mais de 5 minutos (passado ou futuro) → rejeita', () => {
+    const now = Date.now();
+    const old = String(Math.floor(now / 1000) - 301);
+    const future = String(Math.floor(now / 1000) + 301);
+    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('1', 'r', old), requestId: 'r', dataId: '1', nowMs: now })).toBe(false);
+    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('1', 'r', future), requestId: 'r', dataId: '1', nowMs: now })).toBe(false);
+    const recent = String(Math.floor(now / 1000) - 299);
+    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('1', 'r', recent), requestId: 'r', dataId: '1', nowMs: now })).toBe(true);
+  });
+  it('fix round 1: tolerância configurável e ts em milissegundos aceito', () => {
+    const now = Date.now();
+    const tenMinAgo = String(Math.floor(now / 1000) - 600);
+    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('1', 'r', tenMinAgo), requestId: 'r', dataId: '1', nowMs: now, toleranceSeconds: 900 })).toBe(true);
+    const ms = String(now - 1000);
+    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('1', 'r', ms), requestId: 'r', dataId: '1', nowMs: now })).toBe(true);
+    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('1', 'r', 'abc'), requestId: 'r', dataId: '1', nowMs: now })).toBe(false);
+  });
+  it('fix round 1: FakePaymentProvider aplica a tolerância do construtor', () => {
+    const old = String(Math.floor(Date.now() / 1000) - 600);
+    expect(new FakePaymentProvider(SECRET).verifyWebhook({ signature: sign('1', 'r', old), requestId: 'r', dataId: '1' })).toBe(false);
+    expect(new FakePaymentProvider(SECRET, 900).verifyWebhook({ signature: sign('1', 'r', old), requestId: 'r', dataId: '1' })).toBe(true);
   });
   it('usa o data.id em minúsculas (regra do Mercado Pago para ids alfanuméricos)', () => {
-    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('abc', 'r', '1'), requestId: 'r', dataId: 'ABC' })).toBe(true);
+    expect(verifyMercadoPagoSignature({ secret: SECRET, signature: sign('abc', 'r', NOW), requestId: 'r', dataId: 'ABC' })).toBe(true);
   });
 });
 
@@ -135,7 +158,7 @@ describe('FakePaymentProvider', () => {
   });
 
   it('verifyWebhook usa o HMAC do Mercado Pago', () => {
-    expect(p.verifyWebhook({ signature: sign('1', 'r', '2'), requestId: 'r', dataId: '1' })).toBe(true);
-    expect(p.verifyWebhook({ signature: sign('1', 'r', '2', 'outro'), requestId: 'r', dataId: '1' })).toBe(false);
+    expect(p.verifyWebhook({ signature: sign('1', 'r', NOW), requestId: 'r', dataId: '1' })).toBe(true);
+    expect(p.verifyWebhook({ signature: sign('1', 'r', NOW, 'outro'), requestId: 'r', dataId: '1' })).toBe(false);
   });
 });

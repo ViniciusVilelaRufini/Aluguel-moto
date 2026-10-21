@@ -32,7 +32,10 @@ export class FakePaymentProvider implements PaymentProvider {
   private readonly failures = new Map<Op, string>();
   private readonly counts = new Map<Op, number>();
 
-  constructor(private readonly webhookSecret?: string) {}
+  constructor(
+    private readonly webhookSecret?: string,
+    private readonly webhookToleranceSeconds?: number,
+  ) {}
 
   /** Número de operações efetivamente executadas (sem contar repetições idempotentes). */
   operations(op: Op): number {
@@ -207,6 +210,6 @@ export class FakePaymentProvider implements PaymentProvider {
   }
 
   verifyWebhook(input: { signature?: string; requestId?: string; dataId: string }): boolean {
-    return verifyMercadoPagoSignature({ secret: this.webhookSecret, ...input });
+    return verifyMercadoPagoSignature({ secret: this.webhookSecret, toleranceSeconds: this.webhookToleranceSeconds, ...input });
   }
 }

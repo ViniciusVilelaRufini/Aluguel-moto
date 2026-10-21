@@ -18,6 +18,8 @@ export interface MercadoPagoConfig {
   /** `MERCADOPAGO_API_BASE_URL` (padrão `https://api.mercadopago.com`). */
   baseUrl?: string;
   timeoutMs?: number;
+  /** `MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS` (padrão 300). */
+  webhookToleranceSeconds?: number;
 }
 
 interface MpPayment {
@@ -320,6 +322,6 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
   }
 
   verifyWebhook(input: { signature?: string; requestId?: string; dataId: string }): boolean {
-    return verifyMercadoPagoSignature({ secret: this.cfg.webhookSecret, ...input });
+    return verifyMercadoPagoSignature({ secret: this.cfg.webhookSecret, toleranceSeconds: this.cfg.webhookToleranceSeconds, ...input });
   }
 }

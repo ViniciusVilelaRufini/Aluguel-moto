@@ -161,14 +161,18 @@ describe('RentalBillingService.settle', () => {
     expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(1);
   });
 
-  it('falha de captura → failed, cliente inadimplente e isDelinquent → true', async () => {
+  it('falha de captura → settle failed, cliente inadimplente e isDelinquent → true; liquidação fica pendente para retentativa', async () => {
     const ctx = await setup();
     await rentalWithDeposit(ctx);
     expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(false);
     ctx.provider.failNext('capture', 'cc_rejected_insufficient_amount');
     const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY });
     expect(r.status).toBe('failed');
-    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'failed', failureReason: 'cc_rejected_insufficient_amount' });
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'pending', failureReason: 'cc_rejected_insufficient_amount' });
+    expect(await ctx.db.settlementProgress.findUnique({ where: { paymentId: r.paymentId } })).toMatchObject({ attempts: 1, plan: 'card_capture' });
+    // Repetir a porta não retenta (só o job): mesma resposta, nenhuma captura nova.
+    expect(await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY })).toEqual(r);
+    expect(ctx.provider.operations('capture')).toBe(1);
     expect((await ctx.db.customer.findUnique({ where: { id: CUSTOMER } })).delinquent).toBe(true);
     expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
     expect(ctx.receipts.issueForPayment).not.toHaveBeenCalled();
@@ -185,12 +189,17 @@ describe('RentalBillingService.settle', () => {
     expect((await depositPayment(ctx.db, held.depositId)).status).toBe('canceled');
   });
 
-  it('valor acima da caução e cobrança recusada → captura a caução inteira como garantia, failed e inadimplente', async () => {
+  it('valor acima da caução e cobrança recusada 3× → captura a caução inteira como garantia, failed e inadimplente', async () => {
     const ctx = await setup();
     const { held } = await rentalWithDeposit(ctx);
-    ctx.provider.failNext('charge');
+    const charge = jest.spyOn(ctx.provider, 'charge').mockResolvedValue({ providerPaymentId: '', status: 'failed', amountCents: 7000, failureReason: 'cc_rejected_other_reason' });
     const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
     expect(r.status).toBe('failed');
+    await ctx.svc.retryPendingSettlements(0);
+    await ctx.svc.retryPendingSettlements(0);
+    expect(charge).toHaveBeenCalledTimes(3);
+    expect(new Set(charge.mock.calls.map((c) => c[0].idempotencyKey)).size).toBe(3);
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('failed');
     expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'captured', capturedCents: 5000 });
     expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
   });
@@ -298,5 +307,147 @@ describe('RentalBillingService: liberação da caução (deposit.release-request
     await ctx.svc.onReleaseRequested({ depositId: held.depositId, customerId: CUSTOMER, reason: 'rental_not_started' });
     expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('held');
     expect(ctx.provider.operations('cancelPreAuthorization')).toBe(0);
+  });
+});
+
+describe('fix round 1: liquidação retomável sem cobrança dupla', () => {
+  /** Faz a transição para `paid` falhar uma vez (queda entre a chamada ao gateway e o registro final). */
+  function crashBeforePaid(ctx: Awaited<ReturnType<typeof setup>>) {
+    const real = ctx.state.transition.bind(ctx.state);
+    let crashed = false;
+    jest.spyOn(ctx.state, 'transition').mockImplementation(async (id: string, to: any, data?: any) => {
+      if (to === 'paid' && !crashed) {
+        crashed = true;
+        throw new Error('caiu antes do paid');
+      }
+      return real(id, to, data);
+    });
+  }
+
+  it('falha depois de capturar (antes do paid) → retentativa conclui sem nova captura e sem cobrança', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    crashBeforePaid(ctx);
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY })).rejects.toThrow('caiu antes do paid');
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('captured');
+    await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
+    expect(ctx.provider.operations('capture')).toBe(1);
+    expect(ctx.provider.operations('charge')).toBe(0);
+  });
+
+  it('Pix: falha depois de estornar a sobra → retentativa não estorna de novo nem cobra', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx, 'pix');
+    const dp = await depositPayment(ctx.db, held.depositId);
+    ctx.provider.simulatePixPaid(dp.providerPaymentId);
+    await ctx.svc.applyProviderPayment(await ctx.provider.getPayment(dp.providerPaymentId));
+    crashBeforePaid(ctx);
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY })).rejects.toThrow('caiu');
+    await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
+    expect(ctx.provider.operations('refund')).toBe(1);
+    expect(ctx.provider.operations('charge')).toBe(0);
+  });
+
+  it('duas liquidações concorrentes → exatamente uma captura, mesma resposta', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    const [a, b] = await Promise.all([
+      ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY }),
+      ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY }),
+    ]);
+    expect(a).toEqual(b);
+    expect(a.status).toBe('paid');
+    expect(ctx.provider.operations('capture')).toBe(1);
+    expect(ctx.provider.operations('charge')).toBe(0);
+  });
+
+  it('valor acima da caução, concorrente com o job → exatamente uma cobrança', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    await Promise.all([
+      ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY }),
+      ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY }),
+      ctx.svc.retryPendingSettlements(0),
+    ]);
+    expect(ctx.provider.operations('charge')).toBe(1);
+    expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
+  });
+
+  it('job de retentativa não executa liquidação com lease válido de outro executor', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'capture').mockRejectedValueOnce(new Error('timeout'));
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY })).rejects.toThrow('timeout');
+    const pay = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    await ctx.db.settlementProgress.update({ where: { paymentId: pay.id }, data: { leaseOwner: 'outra-replica', leaseUntil: new Date(Date.now() + 60_000) } });
+    const capture = jest.spyOn(ctx.provider, 'capture');
+    capture.mockClear();
+    await ctx.svc.retryPendingSettlements(0);
+    expect(capture).not.toHaveBeenCalled();
+    expect((await ctx.db.payment.findUnique({ where: { id: pay.id } })).status).toBe('pending');
+  });
+
+  it('captura falha 3× → pré-autorização cancelada (caução released), pagamento failed, inadimplência mantida', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    const capture = jest.spyOn(ctx.provider, 'capture').mockResolvedValue({ providerPaymentId: 'x', status: 'failed', amountCents: 1290, failureReason: 'cc_rejected_other_reason' });
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY });
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('held');
+    await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('pending');
+    await ctx.svc.retryPendingSettlements(0);
+    expect(capture).toHaveBeenCalledTimes(3);
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'failed' });
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
+    expect((await depositPayment(ctx.db, held.depositId)).status).toBe('canceled');
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
+  });
+
+  it('captura falha uma vez e passa na retentativa → paid e inadimplência removida', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    ctx.provider.failNext('capture');
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY });
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
+    await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('paid');
+    expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'captured', capturedCents: 1290 });
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(false);
+  });
+
+  it('valor capturado gravado para o Payment da caução (PaymentCapture)', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY });
+    const dp = await depositPayment(ctx.db, held.depositId);
+    expect(await ctx.db.paymentCapture.findUnique({ where: { paymentId: dp.id } })).toMatchObject({ capturedCents: 1290 });
+  });
+
+  it('liberação sem confirmação do gateway → caução continua held; o job retenta e libera', async () => {
+    const ctx = await setup();
+    const held = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });
+    const dp = await depositPayment(ctx.db, held.depositId);
+    jest.spyOn(ctx.provider, 'cancelPreAuthorization').mockResolvedValueOnce({ providerPaymentId: dp.providerPaymentId, status: 'authorized', amountCents: 5000 });
+    await ctx.svc.onReleaseRequested({ depositId: held.depositId, customerId: CUSTOMER, reason: 'rental_not_started' });
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('held');
+    expect(await ctx.db.depositRelease.findUnique({ where: { depositId: held.depositId } })).toMatchObject({ attempts: 1, confirmedAt: null });
+    await ctx.svc.retryDepositReleases();
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
+    expect((await ctx.db.depositRelease.findUnique({ where: { depositId: held.depositId } })).confirmedAt).toBeInstanceOf(Date);
+  });
+
+  it('liberação na liquidação sem confirmação → liquidação fica pendente (não marca released nem paid)', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    const dp = await depositPayment(ctx.db, held.depositId);
+    jest.spyOn(ctx.provider, 'cancelPreAuthorization').mockResolvedValueOnce({ providerPaymentId: dp.providerPaymentId, status: 'authorized', amountCents: 5000 });
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 0, idempotencyKey: SETTLE_KEY })).rejects.toThrow(/não confirmou/);
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('held');
+    expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('pending');
+    await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
   });
 });

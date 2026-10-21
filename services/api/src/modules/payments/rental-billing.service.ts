@@ -1,7 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
-import type { Deposit, Payment, Prisma } from '@prisma/client';
+import type { Deposit, Payment, Prisma, SettlementProgress } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { DepositReleaseRequestedEvent, EV } from '../../common/events';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import type { PixCharge, RentalBillingPort } from '../../ports/rental-billing.port';
@@ -26,6 +27,27 @@ export const BILLING_OPTIONS = Symbol('BILLING_OPTIONS');
 type HoldInput = { customerId: string; rentalId: string; method: 'card' | 'pix'; idempotencyKey: string };
 type HoldResult = { depositId: string; status: 'held' | 'awaiting_pix' | 'failed'; pix?: PixCharge };
 type SettleResult = { paymentId: string; status: 'paid' | 'failed' };
+
+export const MAX_COLLECTION_ATTEMPTS = 3;
+export const MAX_RELEASE_ATTEMPTS = 20;
+const SETTLEMENT_LEASE_MS = 2 * 60_000;
+
+type SettlementPlan = 'zero' | 'card_capture' | 'card_charge' | 'pix_keep' | 'pix_keep_charge' | 'charge_only';
+interface SettlementSteps {
+  release?: boolean;
+  capture?: boolean;
+  refundExcess?: boolean;
+  depositKept?: boolean;
+  charge?: { providerPaymentId: string; cardLast4: string | null };
+}
+type SettleRental = { customerId: string; depositId: string; insurancePolicyId: string | null };
+
+export class DepositReleaseNotConfirmedError extends Error {}
+export class SettlementInProgressError extends Error {
+  constructor(paymentId: string) {
+    super(`Liquidação ${paymentId} em andamento em outro executor.`);
+  }
+}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -136,20 +158,27 @@ export class RentalBillingService implements RentalBillingPort {
     return this.prisma.payment.findFirst({ where: { depositId, kind: 'deposit' }, orderBy: { createdAt: 'asc' } });
   }
 
-  /** Cancela a pré-autorização, cancela o Pix pendente ou estorna o Pix pago; caução → `released`. */
+  /**
+   * Libera a caução no gateway: cancela a pré-autorização, cancela o Pix pendente ou estorna o Pix pago.
+   * Só marca `released` com confirmação do gateway (pagamento da caução em estado final de liberação);
+   * sem confirmação, lança `DepositReleaseNotConfirmedError` e o estado fica como está (retentado depois).
+   */
   private async releaseDeposit(deposit: Deposit, key: string): Promise<void> {
     if (deposit.status !== 'held' && deposit.status !== 'awaiting_pix') return;
-    const dp = await this.depositPayment(deposit.id);
+    let dp = await this.depositPayment(deposit.id);
     if (dp?.providerPaymentId) {
       if (dp.status === 'authorized') {
         const r = await this.provider.cancelPreAuthorization({ providerPaymentId: dp.providerPaymentId, idempotencyKey: key });
-        if (r.status === 'canceled') await this.state.transition(dp.id, 'canceled');
+        if (r.status === 'canceled') dp = await this.state.transition(dp.id, 'canceled');
       } else if (dp.status === 'pending') {
-        await this.provider.cancelPix({ providerPaymentId: dp.providerPaymentId, idempotencyKey: key });
-        await this.state.transition(dp.id, 'failed', { failureReason: 'pix_canceled' });
-      } else if (dp.status === 'paid') {
+        const r = await this.provider.cancelPix({ providerPaymentId: dp.providerPaymentId, idempotencyKey: key });
+        if (r.status === 'failed') dp = await this.state.transition(dp.id, 'failed', { failureReason: 'pix_canceled' });
+      } else if (dp.status === 'paid' || dp.status === 'partially_refunded') {
         const r = await this.provider.refund({ providerPaymentId: dp.providerPaymentId, idempotencyKey: key });
-        await this.state.transition(dp.id, r.status, { refundedCents: r.refundedCents });
+        if (r.status === 'refunded') dp = await this.state.transition(dp.id, 'refunded', { refundedCents: r.refundedCents });
+      }
+      if (!['canceled', 'failed', 'refunded'].includes(dp.status)) {
+        throw new DepositReleaseNotConfirmedError(`O gateway não confirmou a liberação da caução ${deposit.id} (pagamento ${dp.status}).`);
       }
     }
     await this.prisma.deposit.updateMany({ where: { id: deposit.id, status: { in: ['held', 'awaiting_pix'] } }, data: { status: 'released' } });
@@ -158,6 +187,11 @@ export class RentalBillingService implements RentalBillingPort {
 
   private async captureDeposit(deposit: Deposit, dp: Payment, amountCents: number): Promise<void> {
     if (dp.status === 'authorized') await this.state.transition(dp.id, 'captured');
+    try {
+      await this.prisma.paymentCapture.create({ data: { paymentId: dp.id, capturedCents: amountCents } });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+    }
     await this.prisma.deposit.updateMany({ where: { id: deposit.id, status: 'held' }, data: { status: 'captured', capturedCents: amountCents } });
   }
 
@@ -165,19 +199,62 @@ export class RentalBillingService implements RentalBillingPort {
   @OnEvent(EV.DEPOSIT_RELEASE_REQUESTED, { async: true, promisify: true })
   async onReleaseRequested(ev: DepositReleaseRequestedEvent): Promise<void> {
     try {
-      const rentalStarted = await this.prisma.rental.findFirst({ where: { depositId: ev.depositId }, select: { id: true } });
-      if (rentalStarted) return;
       const deposit = await this.prisma.deposit.findUnique({ where: { id: ev.depositId } });
       if (!deposit || deposit.customerId !== ev.customerId) return;
-      await this.releaseDeposit(deposit, `deposit-release:${deposit.id}`);
+      if (await this.prisma.rental.findFirst({ where: { depositId: ev.depositId }, select: { id: true } })) return;
+      await this.prisma.depositRelease.upsert({ where: { depositId: deposit.id }, create: { depositId: deposit.id, reason: ev.reason }, update: {} });
+      await this.attemptRelease(deposit.id);
     } catch (err) {
       this.logger.error({ msg: 'deposit_release_failed', depositId: ev.depositId, error: (err as Error).message });
     }
   }
 
+  private async attemptRelease(depositId: string): Promise<void> {
+    const req = await this.prisma.depositRelease.findUnique({ where: { depositId } });
+    if (!req || req.confirmedAt) return;
+    try {
+      if (await this.prisma.rental.findFirst({ where: { depositId }, select: { id: true } })) {
+        await this.prisma.depositRelease.update({ where: { depositId }, data: { confirmedAt: new Date(), lastError: 'rental_started' } });
+        return;
+      }
+      const deposit = await this.prisma.deposit.findUnique({ where: { id: depositId } });
+      if (deposit) await this.releaseDeposit(deposit, `deposit-release:${depositId}`);
+      await this.prisma.depositRelease.update({ where: { depositId }, data: { confirmedAt: new Date() } });
+    } catch (err) {
+      await this.prisma.depositRelease.update({ where: { depositId }, data: { attempts: { increment: 1 }, lastError: (err as Error).message.slice(0, 500) } });
+      this.logger.warn({ msg: 'deposit_release_pending', depositId, error: (err as Error).message });
+    }
+  }
+
+  @Interval('payments-deposit-release-retry', 5 * 60_000)
+  async releaseRetryJob(): Promise<void> {
+    if (process.env.JOBS_ENABLED === 'false') return;
+    await this.retryDepositReleases().catch((err) => this.logger.error({ msg: 'deposit_release_retry_failed', error: (err as Error).message }));
+  }
+
+  async retryDepositReleases(): Promise<void> {
+    const pending = await this.prisma.depositRelease.findMany({ where: { confirmedAt: null, attempts: { lt: MAX_RELEASE_ATTEMPTS } }, take: 50 });
+    for (const r of pending) await this.attemptRelease(r.depositId);
+  }
+
   // ───────────────────────── liquidação ─────────────────────────
 
+  /**
+   * Liquidação retomável e sem cobrança dupla:
+   * - o **plano** (qual caminho cobrar) é decidido uma vez, na primeira execução, e gravado em `SettlementProgress`;
+   *   repetições nunca o recalculam a partir do estado atual da caução;
+   * - cada passo no gateway usa uma chave estável (`<chave>:<passo>`, e `:a<n>` a partir da 2ª tentativa de cobrança),
+   *   e o passo concluído é gravado antes do próximo;
+   * - só um executor por vez (lease com dono e validade em `SettlementProgress`).
+   * Falha de captura/cobrança: cliente inadimplente na hora, a liquidação fica `pending` e o job retenta até
+   * `MAX_COLLECTION_ATTEMPTS`; na última, cancela a pré-autorização (captura) ou captura a caução como garantia
+   * (cobrança acima da caução) e o pagamento vira `failed`.
+   */
   async settle(input: { rentalId: string; amountCents: number; idempotencyKey: string }): Promise<SettleResult> {
+    return this.runSettlement(input, false);
+  }
+
+  private async runSettlement(input: { rentalId: string; amountCents: number; idempotencyKey: string }, retry: boolean): Promise<SettleResult> {
     const existing = await this.prisma.payment.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
     if (existing && existing.status !== 'pending') return this.settleResult(existing);
     const rental = await this.prisma.rental.findUnique({ where: { id: input.rentalId }, select: { customerId: true, depositId: true, insurancePolicyId: true } });
@@ -192,62 +269,158 @@ export class RentalBillingService implements RentalBillingPort {
         if (pay.status !== 'pending') return this.settleResult(pay);
       }
     }
-    return this.collect(pay, rental, input.idempotencyKey);
+    let progress = await this.ensureProgress(pay, rental.depositId);
+    // Cobrança já recusada: só o job retenta; a porta devolve `failed` sem chamar o gateway.
+    if (progress.attempts > 0 && !retry) return { paymentId: pay.id, status: 'failed' };
+
+    const owner = randomUUID();
+    const now = new Date();
+    const claimed = await this.prisma.settlementProgress.updateMany({
+      where: { paymentId: pay.id, OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] },
+      data: { leaseOwner: owner, leaseUntil: new Date(now.getTime() + SETTLEMENT_LEASE_MS) },
+    });
+    if (claimed.count === 0) return this.awaitOtherRunner(pay.id, retry);
+    try {
+      progress = (await this.prisma.settlementProgress.findUnique({ where: { paymentId: pay.id } }))!;
+      const current = (await this.prisma.payment.findUnique({ where: { id: pay.id } }))!;
+      if (current.status !== 'pending') return this.settleResult(current);
+      return await this.execute(current, progress, rental, input.idempotencyKey);
+    } finally {
+      await this.prisma.settlementProgress.updateMany({ where: { paymentId: pay.id, leaseOwner: owner }, data: { leaseOwner: null, leaseUntil: null } });
+    }
+  }
+
+  /** Outro executor tem o lease: a chamada da porta espera o resultado; o job só pula. */
+  private async awaitOtherRunner(paymentId: string, retry: boolean): Promise<SettleResult> {
+    if (retry) throw new SettlementInProgressError(paymentId);
+    for (let i = 0; i < 300; i++) {
+      const p = (await this.prisma.payment.findUnique({ where: { id: paymentId } }))!;
+      if (p.status !== 'pending') return this.settleResult(p);
+      const prog = await this.prisma.settlementProgress.findUnique({ where: { paymentId } });
+      if (!prog?.leaseUntil) {
+        // O outro executor terminou sem liquidar: cobrança recusada (aguarda o job) ou erro do gateway (o job retoma).
+        if (prog && prog.attempts > 0) return { paymentId, status: 'failed' };
+        throw new SettlementInProgressError(paymentId);
+      }
+      await sleep(50);
+    }
+    throw new SettlementInProgressError(paymentId);
+  }
+
+  private async ensureProgress(pay: Payment, depositId: string) {
+    const found = await this.prisma.settlementProgress.findUnique({ where: { paymentId: pay.id } });
+    if (found) return found;
+    const deposit = await this.prisma.deposit.findUnique({ where: { id: depositId } });
+    const dp = deposit ? await this.depositPayment(deposit.id) : null;
+    const plan = this.choosePlan(pay.amountCents, deposit, dp);
+    try {
+      return await this.prisma.settlementProgress.create({ data: { paymentId: pay.id, plan, depositId: deposit?.id ?? null } });
+    } catch (err) {
+      if (!isUniqueViolation(err)) throw err;
+      return (await this.prisma.settlementProgress.findUnique({ where: { paymentId: pay.id } }))!;
+    }
+  }
+
+  private choosePlan(amount: number, deposit: Deposit | null, dp: Payment | null): SettlementPlan {
+    if (amount === 0) return 'zero';
+    if (deposit?.status === 'held' && deposit.method === 'card' && dp?.status === 'authorized' && dp.providerPaymentId) {
+      return amount <= deposit.amountCents ? 'card_capture' : 'card_charge';
+    }
+    if (deposit?.status === 'held' && deposit.method === 'pix' && dp?.providerPaymentId && SETTLED_STATUSES.includes(dp.status)) {
+      return amount <= deposit.amountCents ? 'pix_keep' : 'pix_keep_charge';
+    }
+    return 'charge_only';
   }
 
   private settleResult(p: Payment): SettleResult {
     return { paymentId: p.id, status: SETTLED_STATUSES.includes(p.status) ? 'paid' : 'failed' };
   }
 
-  private async collect(pay: Payment, rental: { customerId: string; depositId: string; insurancePolicyId: string | null }, key: string): Promise<SettleResult> {
+  private async execute(pay: Payment, progress: SettlementProgress, rental: SettleRental, key: string): Promise<SettleResult> {
+    const steps = { ...((progress.steps as SettlementSteps | null) ?? {}) };
+    const save = async (patch: SettlementSteps) => {
+      Object.assign(steps, patch);
+      await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { steps: steps as Prisma.InputJsonValue } });
+    };
     const amount = pay.amountCents;
-    const deposit = await this.prisma.deposit.findUnique({ where: { id: rental.depositId } });
+    const plan = progress.plan as SettlementPlan;
+    const deposit = progress.depositId ? await this.prisma.deposit.findUnique({ where: { id: progress.depositId } }) : null;
     const dp = deposit ? await this.depositPayment(deposit.id) : null;
-    const held = deposit?.status === 'held' && dp?.providerPaymentId ? { deposit, dp } : null;
+    const attempt = progress.attempts;
+    const attemptKey = (base: string) => (attempt === 0 ? base : `${base}:a${attempt}`);
 
-    if (amount === 0) {
-      if (deposit) await this.releaseDeposit(deposit, `${key}:release`);
+    if (plan === 'zero') {
+      if (!steps.release && deposit) await this.releaseDeposit(deposit, `${key}:release`);
+      if (!steps.release) await save({ release: true });
       return this.finishPaid(pay, rental, { method: deposit?.method ?? 'card' });
     }
 
-    if (held && held.deposit.method === 'card') {
-      const { deposit: d, dp: auth } = held;
-      if (amount <= d.amountCents) {
-        const cap = await this.provider.capture({ providerPaymentId: auth.providerPaymentId!, amountCents: amount, idempotencyKey: `${key}:capture` });
-        if (cap.status !== 'captured') return this.finishFailed(pay, rental.customerId, cap.failureReason ?? 'capture_failed');
-        await this.captureDeposit(d, auth, amount);
-        return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: auth.providerPaymentId, cardLast4: auth.cardLast4 });
+    if (plan === 'card_capture') {
+      if (!steps.capture) {
+        const cap = await this.provider.capture({ providerPaymentId: dp!.providerPaymentId!, amountCents: amount, idempotencyKey: attemptKey(`${key}:capture`) });
+        if (cap.status !== 'captured') {
+          return this.collectionFailed(pay, progress, rental.customerId, cap.failureReason ?? 'capture_failed', {
+            // Última tentativa: a pré-autorização não fica pendurada; a dívida segue como inadimplência.
+            onFinal: async () => this.releaseDeposit((await this.prisma.deposit.findUnique({ where: { id: deposit!.id } }))!, `${key}:release-after-failure`),
+          });
+        }
+        await this.captureDeposit(deposit!, dp!, amount);
+        await save({ capture: true });
       }
-      const charged = await this.chargeCard(rental.customerId, amount, `${key}:charge`, pay.id);
-      if (charged?.status === 'paid') {
-        await this.releaseDeposit(d, `${key}:release`);
-        return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: charged.providerPaymentId, cardLast4: charged.cardLast4 });
-      }
-      // Cobrança recusada: a caução inteira é capturada como garantia; o restante fica em aberto (inadimplência).
-      const cap = await this.provider.capture({ providerPaymentId: auth.providerPaymentId!, amountCents: d.amountCents, idempotencyKey: `${key}:capture-guarantee` });
-      if (cap.status === 'captured') await this.captureDeposit(d, auth, d.amountCents);
-      return this.finishFailed(pay, rental.customerId, charged?.failureReason ?? 'card_not_found');
+      return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: dp!.providerPaymentId, cardLast4: dp!.cardLast4 });
     }
 
-    if (held && held.deposit.method === 'pix' && SETTLED_STATUSES.includes(held.dp.status)) {
-      const { deposit: d, dp: pixPay } = held;
-      const kept = Math.min(amount, d.amountCents);
-      const excess = d.amountCents - kept;
-      if (excess > 0) {
-        const r = await this.provider.refund({ providerPaymentId: pixPay.providerPaymentId!, amountCents: excess, idempotencyKey: `${key}:refund-excess` });
-        await this.state.transition(pixPay.id, r.status, { refundedCents: r.refundedCents });
+    if (plan === 'card_charge') {
+      if (!steps.charge) {
+        const charged = await this.chargeCard(rental.customerId, amount, attemptKey(`${key}:charge`), pay.id);
+        if (charged?.status !== 'paid') {
+          return this.collectionFailed(pay, progress, rental.customerId, charged?.failureReason ?? 'card_not_found', {
+            final: !charged,
+            // Última tentativa: a caução inteira é capturada como garantia; o restante fica como inadimplência.
+            onFinal: async () => {
+              const d = (await this.prisma.deposit.findUnique({ where: { id: deposit!.id } }))!;
+              const auth = (await this.depositPayment(d.id))!;
+              if (d.status !== 'held' || auth.status !== 'authorized') return;
+              const cap = await this.provider.capture({ providerPaymentId: auth.providerPaymentId!, amountCents: d.amountCents, idempotencyKey: `${key}:capture-guarantee` });
+              if (cap.status === 'captured') await this.captureDeposit(d, auth, d.amountCents);
+              else await this.releaseDeposit(d, `${key}:release-after-failure`);
+            },
+          });
+        }
+        await save({ charge: { providerPaymentId: charged.providerPaymentId, cardLast4: charged.cardLast4 ?? null } });
       }
-      await this.prisma.deposit.updateMany({ where: { id: d.id, status: 'held' }, data: { status: 'captured', capturedCents: kept } });
-      if (amount <= d.amountCents) return this.finishPaid(pay, rental, { method: 'pix', providerPaymentId: pixPay.providerPaymentId });
-      const charged = await this.chargeCard(rental.customerId, amount - d.amountCents, `${key}:charge-remainder`, pay.id);
-      if (charged?.status === 'paid') return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: charged.providerPaymentId, cardLast4: charged.cardLast4 });
-      return this.finishFailed(pay, rental.customerId, charged?.failureReason ?? 'card_not_found');
+      if (!steps.release) {
+        await this.releaseDeposit((await this.prisma.deposit.findUnique({ where: { id: deposit!.id } }))!, `${key}:release`);
+        await save({ release: true });
+      }
+      return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: steps.charge!.providerPaymentId, cardLast4: steps.charge!.cardLast4 });
     }
 
-    // Sem caução retida: cobra o total no cartão padrão.
-    const charged = await this.chargeCard(rental.customerId, amount, `${key}:charge`, pay.id);
-    if (charged?.status === 'paid') return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: charged.providerPaymentId, cardLast4: charged.cardLast4 });
-    return this.finishFailed(pay, rental.customerId, charged?.failureReason ?? 'card_not_found');
+    if (plan === 'pix_keep' || plan === 'pix_keep_charge') {
+      const kept = Math.min(amount, deposit!.amountCents);
+      const excess = deposit!.amountCents - kept;
+      if (excess > 0 && !steps.refundExcess) {
+        const r = await this.provider.refund({ providerPaymentId: dp!.providerPaymentId!, amountCents: excess, idempotencyKey: `${key}:refund-excess` });
+        const fresh = (await this.prisma.payment.findUnique({ where: { id: dp!.id } }))!;
+        if (fresh.status !== r.status || fresh.refundedCents !== r.refundedCents) await this.state.transition(dp!.id, r.status, { refundedCents: r.refundedCents });
+        await save({ refundExcess: true });
+      }
+      if (!steps.depositKept) {
+        await this.prisma.deposit.updateMany({ where: { id: deposit!.id, status: 'held' }, data: { status: 'captured', capturedCents: kept } });
+        await save({ depositKept: true });
+      }
+      if (plan === 'pix_keep') return this.finishPaid(pay, rental, { method: 'pix', providerPaymentId: dp!.providerPaymentId });
+    }
+
+    // pix_keep_charge (restante) ou charge_only (total) no cartão padrão.
+    const due = plan === 'pix_keep_charge' ? amount - deposit!.amountCents : amount;
+    const base = plan === 'pix_keep_charge' ? `${key}:charge-remainder` : `${key}:charge`;
+    if (!steps.charge) {
+      const charged = await this.chargeCard(rental.customerId, due, attemptKey(base), pay.id);
+      if (charged?.status !== 'paid') return this.collectionFailed(pay, progress, rental.customerId, charged?.failureReason ?? 'card_not_found', { final: !charged });
+      await save({ charge: { providerPaymentId: charged.providerPaymentId, cardLast4: charged.cardLast4 ?? null } });
+    }
+    return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: steps.charge!.providerPaymentId, cardLast4: steps.charge!.cardLast4 });
   }
 
   private async chargeCard(customerId: string, amountCents: number, idempotencyKey: string, externalReference: string): Promise<ProviderPayment | null> {
@@ -258,9 +431,10 @@ export class RentalBillingService implements RentalBillingPort {
     return { ...res, cardLast4: res.cardLast4 ?? card.last4 };
   }
 
-  private async finishPaid(pay: Payment, rental: { insurancePolicyId: string | null }, data: { method: 'card' | 'pix' | 'wallet'; providerPaymentId?: string | null; cardLast4?: string | null }): Promise<SettleResult> {
-    await this.state.transition(pay.id, 'paid', { method: data.method, providerPaymentId: data.providerPaymentId ?? null, cardLast4: data.cardLast4 ?? null });
+  private async finishPaid(pay: Payment, rental: { customerId: string; insurancePolicyId: string | null }, data: { method: 'card' | 'pix' | 'wallet'; providerPaymentId?: string | null; cardLast4?: string | null }): Promise<SettleResult> {
+    await this.state.transition(pay.id, 'paid', { method: data.method, providerPaymentId: data.providerPaymentId ?? null, cardLast4: data.cardLast4 ?? null, failureReason: null });
     this.logger.log({ msg: 'rental_settled', paymentId: pay.id, rentalId: pay.rentalId, amountCents: pay.amountCents });
+    await this.maybeClearDelinquency(rental.customerId);
     if (rental.insurancePolicyId) {
       await this.insurance.registerRemittance(rental.insurancePolicyId).catch((err) => this.logger.error({ msg: 'insurance_remittance_failed', paymentId: pay.id, error: (err as Error).message }));
     }
@@ -268,10 +442,18 @@ export class RentalBillingService implements RentalBillingPort {
     return { paymentId: pay.id, status: 'paid' };
   }
 
-  private async finishFailed(pay: Payment, customerId: string, reason: string): Promise<SettleResult> {
-    // Inadimplente antes do 'failed': quem observar o pagamento falho já vê o cliente bloqueado.
+  /** Cobrança recusada: inadimplente já; retentativa pelo job até o limite; na última, `onFinal` e `failed`. */
+  private async collectionFailed(pay: Payment, progress: SettlementProgress, customerId: string, reason: string, opts: { final?: boolean; onFinal?: () => Promise<void> } = {}): Promise<SettleResult> {
+    const attempts = progress.attempts + 1;
     await this.markDelinquent(customerId, pay.id, reason);
-    await this.state.transition(pay.id, 'failed', { failureReason: reason });
+    if (opts.final || attempts >= MAX_COLLECTION_ATTEMPTS) {
+      if (opts.onFinal) await opts.onFinal();
+      await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { attempts, lastFailure: reason } });
+      await this.state.transition(pay.id, 'failed', { failureReason: reason });
+      return { paymentId: pay.id, status: 'failed' };
+    }
+    await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { attempts, lastFailure: reason } });
+    await this.state.annotate(pay.id, { failureReason: reason });
     return { paymentId: pay.id, status: 'failed' };
   }
 
@@ -280,12 +462,25 @@ export class RentalBillingService implements RentalBillingPort {
     this.logger.warn({ msg: 'customer_delinquent', paymentId, reason });
   }
 
+  /** Dívida quitada (cobrança retentada com sucesso): sai da inadimplência se não houver outra em aberto. */
+  private async maybeClearDelinquency(customerId: string): Promise<void> {
+    const c = await this.prisma.customer.findUnique({ where: { id: customerId }, select: { delinquent: true } });
+    if (!c?.delinquent) return;
+    const failed = await this.prisma.payment.count({ where: { customerId, kind: { in: ['rental', 'subscription'] }, status: 'failed' } });
+    if (failed > 0) return;
+    const pendingIds = (await this.prisma.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } })).map((p) => p.id);
+    const retrying = pendingIds.length ? await this.prisma.settlementProgress.count({ where: { paymentId: { in: pendingIds }, attempts: { gt: 0 } } }) : 0;
+    if (retrying > 0) return;
+    await this.prisma.customer.update({ where: { id: customerId }, data: { delinquent: false } });
+    this.logger.log({ msg: 'customer_delinquency_cleared' });
+  }
+
   async isDelinquent(customerId: string): Promise<boolean> {
     const c = await this.prisma.customer.findUnique({ where: { id: customerId }, select: { delinquent: true } });
     return c?.delinquent === true;
   }
 
-  /** Liquidações que ficaram `pending` (erro de rede/gateway) são retomadas com as mesmas chaves (sem cobrar duas vezes). */
+  /** Liquidações `pending` (erro do gateway ou cobrança recusada) são retomadas pelo plano gravado, sem cobrar duas vezes. */
   @Interval('payments-settlement-retry', 5 * 60_000)
   async retryJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
@@ -293,13 +488,14 @@ export class RentalBillingService implements RentalBillingPort {
   }
 
   async retryPendingSettlements(olderThanMs: number): Promise<void> {
-    const pending = await this.prisma.payment.findMany({
-      where: { kind: 'rental', status: 'pending', createdAt: { lte: new Date(Date.now() - olderThanMs) } },
-      take: 50,
-    });
+    const cutoff = new Date(Date.now() - olderThanMs);
+    const pending = await this.prisma.payment.findMany({ where: { kind: 'rental', status: 'pending', createdAt: { lte: cutoff } }, take: 50 });
     for (const p of pending) {
       if (!p.rentalId || !p.idempotencyKey) continue;
-      await this.settle({ rentalId: p.rentalId, amountCents: p.amountCents, idempotencyKey: p.idempotencyKey })
+      const prog = await this.prisma.settlementProgress.findUnique({ where: { paymentId: p.id } });
+      if (prog?.leaseUntil && prog.leaseUntil > new Date()) continue;
+      if (prog && prog.attempts > 0 && prog.updatedAt > cutoff) continue;
+      await this.runSettlement({ rentalId: p.rentalId, amountCents: p.amountCents, idempotencyKey: p.idempotencyKey }, true)
         .catch((err) => this.logger.warn({ msg: 'settlement_retry_item_failed', paymentId: p.id, error: (err as Error).message }));
     }
   }

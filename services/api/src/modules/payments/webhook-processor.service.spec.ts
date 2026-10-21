@@ -116,6 +116,23 @@ describe('WebhookProcessor (fila pagamentos-webhook, dedup por eventId)', () => 
     expect((await db.customer.findUnique({ where: { id: CUSTOMER } })).delinquent).toBe(true);
   });
 
+  it('fix round 1: renovação vista primeiro pendente e depois aprovada → um Payment, período renovado uma vez', async () => {
+    const { db, provider, subscriptions, processor } = await setup();
+    await new ProviderCustomersService(db as any, provider).addCard(CUSTOMER, 'tok_visa_4242', true);
+    await db.pricingPlan.create({ data: { code: 'weekly', name: 'Semanal', unit: 'week', unitPriceCents: 24900, active: true } });
+    const sub = await subscriptions.create(CUSTOMER, { planCode: 'weekly' });
+    const end = new Date(sub.currentPeriodEnd).getTime();
+    const getPayment = jest.spyOn(provider, 'getPayment');
+    getPayment.mockResolvedValueOnce({ providerPaymentId: 'mp-ren-1', status: 'pending', amountCents: 24900, externalReference: `subscription:${sub.id}` });
+    await processor.process(event('mp-ren-1', 'ev-pend'));
+    getPayment.mockResolvedValueOnce({ providerPaymentId: 'mp-ren-1', status: 'paid', amountCents: 24900, externalReference: `subscription:${sub.id}` });
+    await processor.process(event('mp-ren-1', 'ev-paid'));
+    expect(await db.payment.count({ where: { subscriptionId: sub.id, providerPaymentId: 'mp-ren-1' } })).toBe(1);
+    expect(await db.payment.findFirst({ where: { providerPaymentId: 'mp-ren-1' } })).toMatchObject({ status: 'paid' });
+    const after = (await db.subscription.findUnique({ where: { id: sub.id } })).currentPeriodEnd.getTime();
+    expect(after - end).toBe(7 * 86_400_000);
+  });
+
   it('cobrança recorrente paga → Payment paid e período renovado', async () => {
     const { db, provider, subscriptions, processor } = await setup();
     await new ProviderCustomersService(db as any, provider).addCard(CUSTOMER, 'tok_visa_4242', true);

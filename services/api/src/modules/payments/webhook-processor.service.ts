@@ -61,6 +61,8 @@ export class WebhookProcessor implements OnModuleInit {
         else this.logger.warn({ msg: 'webhook_payment_unknown', eventId: msg.eventId });
       } else if (applied.changed && applied.payment.kind === 'top_up') {
         await this.wallet.onTopUpPayment(applied.payment);
+      } else if (applied.changed && applied.payment.kind === 'subscription') {
+        await this.subscriptions.onSubscriptionPaymentChanged(applied.payment);
       }
       this.logger.log({ msg: 'webhook_processed', eventId: msg.eventId, status: pp.status });
       return 'processed';

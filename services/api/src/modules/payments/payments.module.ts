@@ -28,8 +28,8 @@ import { WebhookProcessor } from './webhook-processor.service';
       inject: [PAYMENTS_CONFIG],
       useFactory: (cfg: PaymentsConfig) =>
         cfg.provider === 'mercadopago'
-          ? new MercadoPagoPaymentProvider({ accessToken: cfg.mercadoPago.accessToken ?? '', webhookSecret: cfg.mercadoPago.webhookSecret, baseUrl: cfg.mercadoPago.baseUrl })
-          : new FakePaymentProvider(cfg.mercadoPago.webhookSecret),
+          ? new MercadoPagoPaymentProvider({ accessToken: cfg.mercadoPago.accessToken ?? '', webhookSecret: cfg.mercadoPago.webhookSecret, baseUrl: cfg.mercadoPago.baseUrl, webhookToleranceSeconds: cfg.webhookToleranceSeconds })
+          : new FakePaymentProvider(cfg.mercadoPago.webhookSecret, cfg.webhookToleranceSeconds),
     },
     { provide: BILLING_OPTIONS, inject: [PAYMENTS_CONFIG], useFactory: (cfg: PaymentsConfig) => ({ pixExpirationMinutes: cfg.pixExpirationMinutes, fakePixAutoConfirmSeconds: cfg.fakePixAutoConfirmSeconds }) },
     { provide: RECEIPT_OPTIONS, inject: [PAYMENTS_CONFIG], useFactory: (cfg: PaymentsConfig) => ({ reportsBucket: cfg.reportsBucket }) },

@@ -14,7 +14,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import { createInMemoryPrisma } from './testing/in-memory-prisma';
 
 const SECRET = 'segredo-webhook-teste';
-const sign = (dataId: string, requestId: string, ts = '1700000000', secret = SECRET) =>
+const sign = (dataId: string, requestId: string, ts = String(Math.floor(Date.now() / 1000)), secret = SECRET) =>
   `ts=${ts},v1=${createHmac('sha256', secret).update(`id:${dataId};request-id:${requestId};ts:${ts};`).digest('hex')}`;
 
 describe('PaymentsController (HTTP)', () => {
@@ -42,7 +42,7 @@ describe('PaymentsController (HTTP)', () => {
 
   it('webhook com assinatura inválida → 401 webhook-signature-invalid e nada enfileirado', async () => {
     const res = await request(h.app.getHttpServer()).post('/webhooks/mercadopago')
-      .set('x-signature', sign('999', 'req-1', '1700000000', 'outro-segredo')).set('x-request-id', 'req-1').send(body).expect(401);
+      .set('x-signature', sign('999', 'req-1', undefined, 'outro-segredo')).set('x-request-id', 'req-1').send(body).expect(401);
     expect(res.body.type).toMatch(/webhook-signature-invalid$/);
     expect(queue.publish).not.toHaveBeenCalled();
   });
@@ -131,5 +131,40 @@ describe('PaymentsService.refund (via gateway)', () => {
     const w = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'rental', method: 'wallet', status: 'paid', amountCents: 800 } });
     await svc.refund(admin, w.id, { reason: 'Devolução' });
     expect(await db.walletEntry.findFirst({ where: { customerId: CUSTOMER_ID } })).toMatchObject({ type: 'refund', amountCents: 800, paymentId: w.id });
+  });
+
+  it('fix round 1: dois estornos concorrentes pela carteira → um crédito só, o outro 409', async () => {
+    const { db, svc } = await setup();
+    const w = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'rental', method: 'wallet', status: 'paid', amountCents: 800 } });
+    const results = await Promise.allSettled([svc.refund(admin, w.id, { reason: 'A' }, 'k-a'), svc.refund(admin, w.id, { reason: 'B' }, 'k-b')]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult;
+    expect(rejected.reason).toMatchObject({ slug: 'conflict' });
+    expect(await db.walletEntry.count({ where: { paymentId: w.id } })).toBe(1);
+    expect((await db.payment.findUnique({ where: { id: w.id } })).refundedCents).toBe(800);
+  });
+
+  it('fix round 1: dois estornos concorrentes no gateway → uma chamada de refund, chave estável pela Idempotency-Key', async () => {
+    const { svc, p, provider } = await setup();
+    const refund = jest.spyOn(provider, 'refund');
+    const results = await Promise.allSettled([svc.refund(admin, p.id, { reason: 'A' }, 'k-1'), svc.refund(admin, p.id, { reason: 'B' }, 'k-2')]);
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(refund).toHaveBeenCalledTimes(1);
+    expect(refund.mock.calls[0][0].idempotencyKey).toMatch(new RegExp(`^refund:${p.id}:k-[12]$`));
+  });
+
+  it('fix round 1: gateway falha no estorno → reserva desfeita (status e refundedCents voltam)', async () => {
+    const { db, svc, p, provider } = await setup();
+    jest.spyOn(provider, 'refund').mockRejectedValueOnce(new Error('502'));
+    await expect(svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k')).rejects.toMatchObject({ slug: 'conflict' });
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'paid', refundedCents: 0 });
+    expect(await svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k')).toMatchObject({ status: 'partially_refunded', refundedCents: 1000 });
+  });
+
+  it('fix round 1: teto do estorno de caução capturada = valor capturado (PaymentCapture)', async () => {
+    const { db, svc } = await setup();
+    const dp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'deposit', method: 'card', status: 'captured', amountCents: 5000, providerPaymentId: 'x' } });
+    await db.paymentCapture.create({ data: { paymentId: dp.id, capturedCents: 1290 } });
+    await expect(svc.refund(admin, dp.id, { amountCents: 2000, reason: 'x' })).rejects.toMatchObject({ slug: 'validation-error' });
   });
 });

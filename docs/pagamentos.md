@@ -82,9 +82,33 @@ Um cliente inadimplente recebe `403 customer-delinquent` ao tentar novos alugué
 
 Se já existe aluguel com a caução, o pedido é ignorado. Pix pago depois da liberação (webhook atrasado) → estorno automático (`late-pix-refund:<paymentId>`).
 
+### Liquidação retomável (fix round 1)
+
+- **Plano gravado.** Na primeira execução, o plano é decidido e gravado em `SettlementProgress`: `zero`, `card_capture`, `card_charge`, `pix_keep`, `pix_keep_charge` ou `charge_only`.
+  - Repetições seguem esse plano e os passos já concluídos (`capture`, `charge`, `release`, `refundExcess`, `depositKept`).
+  - O plano nunca é recalculado pelo estado atual da caução. Assim, uma captura feita antes de uma queda não vira cobrança extra na retomada.
+- **Chave por passo.** Cada passo no gateway usa uma chave estável: `<rental-settlement:id>:<passo>`, com `:a<n>` a partir da 2ª tentativa de cobrança recusada. O passo é gravado assim que o gateway responde.
+- **Lease.** `leaseOwner` + `leaseUntil` (2 min) garantem um executor por vez. Uma chamada concorrente da porta espera o resultado; o job pula liquidações com lease válido.
+- **Cobrança ou captura recusada.**
+  - O cliente fica inadimplente na hora e a porta responde `failed`, mas o `Payment` fica `pending`.
+  - O job retenta até `MAX_COLLECTION_ATTEMPTS` (3), no máximo a cada 5 min.
+  - Na última tentativa:
+    - captura → cancela a pré-autorização (caução `released`, nada fica pendurado);
+    - cobrança acima da caução → captura a caução inteira como garantia.
+  - Depois disso o `Payment` vira `failed` e a dívida continua como inadimplência.
+  - Sem cartão: falha definitiva na hora.
+  - Retentativa que passa → `paid`, e a inadimplência é removida se não houver outra dívida.
+- **Liberação de caução.** Só vira `released` com confirmação do gateway (pagamento da caução `canceled`, `failed` ou `refunded`). Sem confirmação, o estado fica como está e o pedido entra em `DepositRelease`, retentado por job a cada 5 min.
+- **Valor capturado.** O valor efetivamente capturado da caução fica em `PaymentCapture` e é o teto do estorno.
+- **Estorno.**
+  - O valor é reservado com update condicional (status + `refundedCents` lidos), na mesma transação do lançamento da carteira.
+  - Só depois o gateway é chamado, com chave `refund:<paymentId>:<Idempotency-Key>`.
+  - Se o gateway falhar, a reserva é desfeita.
+  - Estorno concorrente → `409`.
+
 ## Webhook do Mercado Pago
 
-1. `POST /webhooks/mercadopago` é público. O endpoint valida `x-signature` (`ts=<epoch>,v1=<hex>`) com HMAC-SHA256 sobre `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`. A chave é `MERCADOPAGO_WEBHOOK_SECRET` e a comparação é em tempo constante; o `data.id` vai em minúsculas.
+1. `POST /webhooks/mercadopago` é público. O endpoint valida `x-signature` (`ts=<epoch>,v1=<hex>`; `ts` fora de ±`MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS`, padrão 300, é rejeitado) com HMAC-SHA256 sobre `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`. A chave é `MERCADOPAGO_WEBHOOK_SECRET` e a comparação é em tempo constante; o `data.id` vai em minúsculas.
 2. Assinatura inválida ou ausente → `401 webhook-signature-invalid`, e nada é enfileirado.
 3. Evento válido → enfileirado no `QueueBus` (`pagamentos-webhook`, SQS na AWS) como `{ provider, eventId, type, action, dataId }`, com `dedupId = eventId` (o `id` da notificação).
 4. O `WebhookProcessor` faz o processamento:
@@ -137,7 +161,8 @@ O PDF não leva CPF, e-mail nem trajeto. A NFS-e é emitida pelo `InvoiceIssuer`
 
 | Variável | Padrão | Uso |
 |---|---|---|
-| `PAYMENT_PROVIDER` | `fake` | `fake` ou `mercadopago` |
+| `PAYMENT_PROVIDER` | `fake` só com `NODE_ENV` development/test | `fake` ou `mercadopago`. Sem valor fora de dev/test, a API não sobe (falha fechada). |
+| `MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS` | `300` | Janela do `ts` da assinatura do webhook |
 | `MERCADOPAGO_ACCESS_TOKEN` | — | Obrigatória com `mercadopago` (Secrets Manager na AWS) |
 | `MERCADOPAGO_WEBHOOK_SECRET` | — | Assinatura do webhook (sem ela, todo webhook dá 401) |
 | `MERCADOPAGO_API_BASE_URL` | `https://api.mercadopago.com` | Sobrescreve a URL da API |

@@ -65,3 +65,10 @@ Decisões tomadas ao trocar `StubRentalBilling`/`StubInsurance` pelas implementa
 11. **Variável do Pix automático:** `STUB_PIX_AUTOCONFIRM_SECONDS` passa a se chamar `FAKE_PIX_AUTOCONFIRM_SECONDS` (o nome antigo continua aceito). O Pix "pago" do fake entra pela fila `pagamentos-webhook`, como um webhook real.
 12. **Corrida no encerramento (Task 3):** quando o travamento é confirmado na hora, `POST /rentals/{id}/end` e o consumidor de `command.changed` chamam `finalize`. Quem perde a corrida devolve a resposta antes da liquidação terminar, e o corpo pode sair sem `paymentId`. Não há cobrança dupla (liquidação única por `rentalId`), mas o e2e de pagamentos espera a liquidação por polling. Proposta: o perdedor aguarda a liquidação do vencedor.
 13. **Setup do e2e lê o `.env` do pacote** (`test/setup-e2e-env.ts`), para cada worktree usar o próprio banco e Redis (fase 2: `volti_pagamentos`, Redis db 2). O `process.loadEnvFile` não alcança o `process.env` do sandbox do Jest, então o arquivo é lido com `util.parseEnv`.
+14. **Fix round 1 (code review do `7190d10`):**
+    - **Liquidação:** segue o plano gravado em `SettlementProgress`, com chave estável por passo e lease (dono + validade).
+    - **Cobrança recusada:** captura ou cobrança recusada deixa o pagamento `pending`, com o cliente inadimplente na hora. O job retenta até 3 vezes. Na última tentativa, cancela a pré-autorização (ou, na cobrança acima da caução, captura a caução como garantia) e marca `failed`. Isso substitui o "failed na hora" do item 4.
+    - **Liberação de caução:** só com confirmação do gateway (`DepositRelease`, retentado por job).
+    - **Estorno:** reserva condicional antes de chamar o gateway, com chave `refund:<id>:<Idempotency-Key>`.
+    - **Webhook:** rejeita `ts` fora de ±5 min (`MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS`). Isso revoga o "sem janela de ts" do item 9.
+    - **`PAYMENT_PROVIDER`:** ausente fora de development/test, a API não sobe.

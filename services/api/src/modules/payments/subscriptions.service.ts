@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { Subscription } from '@prisma/client';
+import type { Payment, Subscription } from '@prisma/client';
 import { conflict, forbidden, notFound, ProblemException } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
 import { canTransition } from './payment-state';
@@ -88,22 +88,33 @@ export class SubscriptionsService {
     const subId = pp.externalReference?.slice('subscription:'.length);
     const sub = subId ? await this.prisma.subscription.findUnique({ where: { id: subId } }) : null;
     if (!sub) return;
-    const first = await this.prisma.payment.findFirst({ where: { subscriptionId: sub.id, status: 'pending', providerPaymentId: null } });
-    let paymentId = first?.id;
-    if (!paymentId) {
+    // Primeira cobrança do Mercado Pago: liga ao pagamento `:1` criado na assinatura.
+    const first = await this.prisma.payment.findFirst({ where: { subscriptionId: sub.id, status: 'pending', providerPaymentId: null, idempotencyKey: `subscription:${sub.id}:1` } });
+    let payment = first ? await this.state.annotate(first.id, { providerPaymentId: pp.providerPaymentId }) : null;
+    if (!payment) {
       try {
-        paymentId = (await this.state.create({ customerId: sub.customerId, subscriptionId: sub.id, kind: 'subscription', method: 'card', amountCents: pp.amountCents || sub.priceCents, idempotencyKey: `subscription-charge:${pp.providerPaymentId}` })).id;
+        // Renovação: o id do gateway é gravado já na criação, então o próximo evento (pending → paid) acha este pagamento.
+        payment = await this.state.create({ customerId: sub.customerId, subscriptionId: sub.id, kind: 'subscription', method: 'card', amountCents: pp.amountCents || sub.priceCents, providerPaymentId: pp.providerPaymentId, idempotencyKey: `subscription-charge:${pp.providerPaymentId}` });
       } catch (err) {
         if (isUniqueViolation(err)) return;
         throw err;
       }
     }
     if (!canTransition('pending', pp.status)) return;
-    await this.state.transition(paymentId, pp.status, { providerPaymentId: pp.providerPaymentId, ...(pp.failureReason && pp.status === 'failed' ? { failureReason: pp.failureReason } : {}) });
-    if (pp.status === 'paid' && !first) await this.renew(sub);
-    if (pp.status === 'failed') {
+    const updated = await this.state.transition(payment.id, pp.status, { ...(pp.failureReason && pp.status === 'failed' ? { failureReason: pp.failureReason } : {}) });
+    await this.onSubscriptionPaymentChanged(updated);
+  }
+
+  /** Pagamento da assinatura mudou (por qualquer caminho do webhook): renovação paga → renova; recusada → past_due. */
+  async onSubscriptionPaymentChanged(payment: Payment): Promise<void> {
+    if (!payment.subscriptionId) return;
+    const sub = await this.prisma.subscription.findUnique({ where: { id: payment.subscriptionId } });
+    if (!sub) return;
+    const isFirst = payment.idempotencyKey === `subscription:${sub.id}:1`;
+    if (payment.status === 'paid' && !isFirst) await this.renew(sub);
+    if (payment.status === 'failed') {
       await this.prisma.subscription.update({ where: { id: sub.id }, data: { status: 'past_due' } });
-      await this.billing.markDelinquent(sub.customerId, paymentId, pp.failureReason ?? 'subscription_charge_failed');
+      await this.billing.markDelinquent(sub.customerId, payment.id, payment.failureReason ?? 'subscription_charge_failed');
     }
   }
 

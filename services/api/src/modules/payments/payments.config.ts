@@ -5,6 +5,7 @@
 export interface PaymentsConfig {
   provider: 'fake' | 'mercadopago';
   mercadoPago: { accessToken?: string; webhookSecret?: string; baseUrl?: string };
+  webhookToleranceSeconds: number;
   pixExpirationMinutes: number;
   fakePixAutoConfirmSeconds: number;
   insuranceProvider: 'mock';
@@ -23,7 +24,10 @@ const int = (name: string, fallback: number): number => {
 };
 
 export function loadPaymentsConfig(): PaymentsConfig {
-  const provider = env('PAYMENT_PROVIDER') ?? 'fake';
+  // Falha fechada: sem PAYMENT_PROVIDER, só dev/test caem no fake (nunca produção sem querer).
+  const nodeEnv = env('NODE_ENV');
+  const provider = env('PAYMENT_PROVIDER') ?? (nodeEnv === 'development' || nodeEnv === 'test' ? 'fake' : undefined);
+  if (!provider) throw new Error(`PAYMENT_PROVIDER não definido (NODE_ENV=${nodeEnv ?? 'indefinido'}): defina fake ou mercadopago explicitamente.`);
   if (provider !== 'fake' && provider !== 'mercadopago') throw new Error(`PAYMENT_PROVIDER inválido: ${provider} (use fake ou mercadopago).`);
   const insurance = env('INSURANCE_PROVIDER') ?? 'mock';
   if (insurance !== 'mock') throw new Error(`INSURANCE_PROVIDER inválido: ${insurance} (só mock nesta versão).`);
@@ -32,6 +36,7 @@ export function loadPaymentsConfig(): PaymentsConfig {
   return {
     provider,
     mercadoPago: { accessToken: env('MERCADOPAGO_ACCESS_TOKEN'), webhookSecret: env('MERCADOPAGO_WEBHOOK_SECRET'), baseUrl: env('MERCADOPAGO_API_BASE_URL') },
+    webhookToleranceSeconds: int('MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS', 300),
     pixExpirationMinutes: int('PIX_EXPIRATION_MINUTES', 15),
     // Nome antigo (Task 3) aceito como fallback.
     fakePixAutoConfirmSeconds: int('FAKE_PIX_AUTOCONFIRM_SECONDS', int('STUB_PIX_AUTOCONFIRM_SECONDS', 10)),

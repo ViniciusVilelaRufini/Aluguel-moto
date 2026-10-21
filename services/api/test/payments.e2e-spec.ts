@@ -4,6 +4,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { FakePaymentProvider } from '../src/modules/payments/provider/fake-payment-provider';
 import { PAYMENT_PROVIDER } from '../src/modules/payments/provider/payment-provider';
+import { RentalBillingService } from '../src/modules/payments/rental-billing.service';
 import { approvedCustomer, bootE2eApp, freeVehicleInReturnZone } from './helpers/e2e-app';
 
 /**
@@ -144,14 +145,29 @@ describe('Pagamentos (e2e)', () => {
     const vehicle = await freeVehicleInReturnZone(prisma);
     const started = await http().post('/rentals').set(auth).set('Idempotency-Key', randomUUID())
       .send({ vehicleId: vehicle.id, planCode: 'minute', coverage: 'basic', depositMethod: 'card' }).expect(201);
-    await endRental(auth, started.body.rental.id);
-    expect(await settled(started.body.rental.id)).toMatchObject({ status: 'failed', failureReason: 'cc_rejected_insufficient_amount' });
+    const rentalId: string = started.body.rental.id;
+    const depositId: string = started.body.deposit.id;
+    await endRental(auth, rentalId);
+    // Captura recusada: inadimplente na hora; a liquidação fica pendente para o job retentar (fix round 1).
+    const pay = await until(() => prisma.payment.findFirst({ where: { rentalId, kind: 'rental' } }), (v) => v?.failureReason === 'cc_rejected_insufficient_amount');
+    expect(pay).toMatchObject({ status: 'pending' });
+    expect(await prisma.settlementProgress.findUnique({ where: { paymentId: pay!.id } })).toMatchObject({ attempts: 1, plan: 'card_capture' });
     expect((await prisma.customer.findUniqueOrThrow({ where: { id: customerId } })).delinquent).toBe(true);
+    expect((await prisma.deposit.findUniqueOrThrow({ where: { id: depositId } })).status).toBe('held');
 
     const other = await freeVehicleInReturnZone(prisma);
     const denied = await http().post('/rentals').set(auth).set('Idempotency-Key', randomUUID())
       .send({ vehicleId: other.id, planCode: 'minute', coverage: 'basic', depositMethod: 'card' }).expect(403);
     expect(denied.body.type).toMatch(/customer-delinquent$/);
+
+    // Mais duas tentativas do job: na última, a pré-autorização é cancelada e o pagamento vira failed.
+    const billing = app.get(RentalBillingService);
+    await billing.retryPendingSettlements(0);
+    await billing.retryPendingSettlements(0);
+    expect(await prisma.payment.findUniqueOrThrow({ where: { id: pay!.id } })).toMatchObject({ status: 'failed' });
+    expect((await prisma.deposit.findUniqueOrThrow({ where: { id: depositId } })).status).toBe('released');
+    expect(await prisma.payment.findFirst({ where: { depositId, kind: 'deposit' } })).toMatchObject({ status: 'canceled' });
+    expect((await prisma.customer.findUniqueOrThrow({ where: { id: customerId } })).delinquent).toBe(true);
   });
 
   it('carteira: recarga no cartão gera lançamento e o saldo é a soma do ledger', async () => {

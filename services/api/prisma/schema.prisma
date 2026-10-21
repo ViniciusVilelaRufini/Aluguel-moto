@@ -1120,3 +1120,40 @@ model Invoice {
   amountCents Int
   issuedAt    DateTime @default(now())
 }
+
+/// Progresso da liquidação de um aluguel (fix round 1): plano decidido uma vez, passos concluídos, tentativas e lease
+/// (dono + validade) para que só um executor por vez fale com o gateway.
+model SettlementProgress {
+  paymentId   String    @id @db.Uuid
+  plan        String
+  depositId   String?   @db.Uuid
+  steps       Json      @default("{}")
+  attempts    Int       @default(0)
+  lastFailure String?
+  leaseOwner  String?
+  leaseUntil  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([updatedAt])
+}
+
+/// Pedido de liberação de caução ainda não confirmado pelo gateway (retentado por job).
+model DepositRelease {
+  depositId   String    @id @db.Uuid
+  reason      String
+  attempts    Int       @default(0)
+  lastError   String?
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([confirmedAt])
+}
+
+/// Valor efetivamente capturado de uma pré-autorização (teto de estorno do pagamento da caução).
+model PaymentCapture {
+  paymentId     String   @id @db.Uuid
+  capturedCents Int
+  createdAt     DateTime @default(now())
+}

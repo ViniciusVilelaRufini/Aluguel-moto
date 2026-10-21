@@ -37,6 +37,21 @@ export class PaymentStateService {
     return updated;
   }
 
+  /**
+   * Reserva um estorno: valida a transição e grava status + `refundedCents` só se o pagamento ainda estiver como foi lido
+   * (status e `refundedCents`). Devolve `false` se outro estorno chegou antes. Use dentro da transação do lançamento.
+   */
+  async claimRefund(tx: Prisma.TransactionClient, read: Payment, to: PaymentStatus, refundedCents: number): Promise<boolean> {
+    assertTransition(read.status, to);
+    const res = await tx.payment.updateMany({ where: { id: read.id, status: read.status, refundedCents: read.refundedCents }, data: { status: to, refundedCents } });
+    return res.count === 1;
+  }
+
+  emitUpdated(p: Payment): void {
+    const ev: PaymentUpdatedEvent = { paymentId: p.id, status: p.status, ...(p.rentalId ? { rentalId: p.rentalId } : {}) };
+    this.events.emit(EV.PAYMENT_UPDATED, ev);
+  }
+
   /** Atualiza campos sem mudar o status (ex.: id do gateway de um Pix recém-criado). */
   async annotate(paymentId: string, data: PaymentData): Promise<Payment> {
     return this.prisma.payment.update({ where: { id: paymentId }, data });
