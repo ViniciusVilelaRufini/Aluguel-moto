@@ -77,14 +77,14 @@ O workflow de deploy do dev faz 2 a 4 sozinho: deploy com 0 tarefas, build e pus
 | `iot/thing-type` | `moto` |
 | `location/tracker-name` | `LOCATION_TRACKER_NAME` |
 | `location/geofence-collection` | `LOCATION_GEOFENCE_COLLECTION` |
-| `sqs/telemetry-url` | `SQS_TELEMETRY_URL` |
-| `sqs/payments-webhook-url` | `SQS_PAYMENTS_WEBHOOK_URL` |
-| `sqs/alerts-url` | `SQS_ALERTS_URL` |
+| `sqs/telemetry-url` | `SQS_QUEUE_TELEMETRIA_URL` |
+| `sqs/payments-webhook-url` | `SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL` |
+| `sqs/alerts-url` | `SQS_QUEUE_ALERTAS_URL` |
 | `admin/distribution-domain` | domínio do CloudFront do painel |
 
 Extras: `api/load-balancer-dns`, `api/ecr-repository`, `admin/site-bucket`.
 
-O container da API recebe estas variáveis do `.env.example` já com os adaptadores AWS: `NODE_ENV=production`, `AUTH_MODE=cognito`, `IOT_MODE=aws`, `GEOFENCE_MODE=aws`, `QUEUE_MODE=aws`, `STORAGE_MODE=aws`, `PAYMENT_PROVIDER` (dev `fake`, prod `mercadopago`), `INSURANCE_PROVIDER=mock`, `KYC_PROVIDER=mock`, `PUSH_MODE=log`, `TRACK_RETENTION_DAYS=90`, `OUT_OF_AREA_LOCK_MINUTES=5`. `DATABASE_URL` não é injetada: a API monta a URL com `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` (o Secrets Manager não compõe strings). Variáveis locais (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DEV_JWT_SECRET`, `MQTT_URL`) não existem na AWS: a task role acessa S3, SQS, IoT e Location.
+O container da API recebe estas variáveis do `.env.example` já com os adaptadores AWS: `NODE_ENV=production`, `AUTH_MODE=cognito`, `IOT_MODE=aws`, `GEOFENCE_MODE=aws`, `QUEUE_MODE=sqs`, `STORAGE_MODE=s3`, `PAYMENT_PROVIDER` (dev `fake`, prod `mercadopago`), `INSURANCE_PROVIDER=mock`, `KYC_PROVIDER=mock`, `PUSH_MODE=log`, `TRACK_RETENTION_DAYS=90`, `OUT_OF_AREA_LOCK_MINUTES=5`. `DATABASE_URL` não é injetada: o entrypoint do container (`services/api/scripts/start.mjs`) monta a URL (com `sslmode=require`) com `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` (o Secrets Manager não compõe strings). Variáveis locais (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DEV_JWT_SECRET`, `MQTT_URL`) não existem na AWS: a task role acessa S3, SQS, IoT e Location.
 
 ## Contrato IoT
 
