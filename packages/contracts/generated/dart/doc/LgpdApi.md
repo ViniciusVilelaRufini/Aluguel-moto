@@ -135,7 +135,7 @@ This endpoint does not need any parameter.
 
 Registrar consentimentos (termos e localização)
 
-O onboarding exige `termsAccepted` e `locationTracking` verdadeiros para seguir. Sem consentimento de localização, reservas e aluguéis são recusados (`403`).
+O onboarding exige `termsAccepted` e `locationTracking` verdadeiros para seguir. Sem consentimento de localização, `POST /rentals` é recusado (`403` `location-consent-required`); reservar não exige o consentimento.
 
 ### Example
 ```dart

@@ -18,6 +18,8 @@ const AlertType _$vehicleOffline = const AlertType._('vehicleOffline');
 const AlertType _$commandFailed = const AlertType._('commandFailed');
 const AlertType _$customerNotOk = const AlertType._('customerNotOk');
 const AlertType _$incidentReported = const AlertType._('incidentReported');
+const AlertType _$speedLimiterNoncompliant =
+    const AlertType._('speedLimiterNoncompliant');
 const AlertType _$unknownDefaultOpenApi =
     const AlertType._('unknownDefaultOpenApi');
 
@@ -43,6 +45,8 @@ AlertType _$valueOf(String name) {
       return _$customerNotOk;
     case 'incidentReported':
       return _$incidentReported;
+    case 'speedLimiterNoncompliant':
+      return _$speedLimiterNoncompliant;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -61,6 +65,7 @@ final BuiltSet<AlertType> _$values = BuiltSet<AlertType>(const <AlertType>[
   _$commandFailed,
   _$customerNotOk,
   _$incidentReported,
+  _$speedLimiterNoncompliant,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -76,6 +81,7 @@ class _$AlertTypeMeta {
   AlertType get commandFailed => _$commandFailed;
   AlertType get customerNotOk => _$customerNotOk;
   AlertType get incidentReported => _$incidentReported;
+  AlertType get speedLimiterNoncompliant => _$speedLimiterNoncompliant;
   AlertType get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   AlertType valueOf(String name) => _$valueOf(name);
   BuiltSet<AlertType> get values => _$values;
@@ -100,6 +106,7 @@ class _$AlertTypeSerializer implements PrimitiveSerializer<AlertType> {
     'commandFailed': 'command_failed',
     'customerNotOk': 'customer_not_ok',
     'incidentReported': 'incident_reported',
+    'speedLimiterNoncompliant': 'speed_limiter_noncompliant',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -113,6 +120,7 @@ class _$AlertTypeSerializer implements PrimitiveSerializer<AlertType> {
     'command_failed': 'commandFailed',
     'customer_not_ok': 'customerNotOk',
     'incident_reported': 'incidentReported',
+    'speed_limiter_noncompliant': 'speedLimiterNoncompliant',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

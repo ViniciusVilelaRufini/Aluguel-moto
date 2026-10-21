@@ -382,7 +382,7 @@ Name | Type | Description  | Notes
 
 Registrar checklist de inspeção
 
-Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é confirmado com `configuredMaxKmh` (no máximo 32; acima disso → `400`). `recordedAt` é o instante real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma `Idempotency-Key` não duplica. 
+Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é observado em `configuredMaxKmh` (valor lido no controlador, 0 a 100). Se `configuredMaxKmh > 32`: `speedLimiter.ok: true` é recusado (`422` `speed-limiter-noncompliant`); com `ok: false` a inspeção é registrada e a API abre automaticamente uma manutenção corretiva e um alerta, e muda a moto para `maintenance`. `recordedAt` é o instante real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma `Idempotency-Key` não duplica. 
 
 ### Example
 ```dart

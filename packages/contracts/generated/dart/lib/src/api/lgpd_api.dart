@@ -262,7 +262,7 @@ class LgpdApi {
   }
 
   /// Registrar consentimentos (termos e localização)
-  /// O onboarding exige &#x60;termsAccepted&#x60; e &#x60;locationTracking&#x60; verdadeiros para seguir. Sem consentimento de localização, reservas e aluguéis são recusados (&#x60;403&#x60;).
+  /// O onboarding exige &#x60;termsAccepted&#x60; e &#x60;locationTracking&#x60; verdadeiros para seguir. Sem consentimento de localização, &#x60;POST /rentals&#x60; é recusado (&#x60;403&#x60; &#x60;location-consent-required&#x60;); reservar não exige o consentimento.
   ///
   /// Parameters:
   /// * [consentsUpdate]

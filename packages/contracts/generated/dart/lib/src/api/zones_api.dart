@@ -23,7 +23,7 @@ class ZonesApi {
   const ZonesApi(this._dio, this._serializers);
 
   /// Criar cerca
-  /// Polígono GeoJSON válido (anel fechado, sem autointerseção) → senão &#x60;422&#x60; (&#x60;zone-invalid-geometry&#x60;). &#x60;reduced_speed&#x60; exige &#x60;speedLimitKmh&#x60; entre 0 e 20 (&#x60;422&#x60; &#x60;zone-speed-limit-required&#x60;); acima de 32 é sempre &#x60;400&#x60;. Sincronizada com o motor de cercas. Grava AuditLog.
+  /// Polígono GeoJSON válido (anel fechado, sem autointerseção) → senão &#x60;422&#x60; (&#x60;zone-invalid-geometry&#x60;). &#x60;reduced_speed&#x60; exige &#x60;speedLimitKmh&#x60;: ausente → &#x60;422&#x60; &#x60;zone-speed-limit-required&#x60;; entre 21 e 32 → &#x60;422&#x60; &#x60;zone-speed-limit-invalid&#x60; (máximo 20 em zonas de velocidade reduzida); acima de 32 → sempre &#x60;400&#x60; (validação do schema). Sincronizada com o motor de cercas. Grava AuditLog.
   ///
   /// Parameters:
   /// * [geoZoneInput]

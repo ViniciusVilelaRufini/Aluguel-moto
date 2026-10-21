@@ -30,6 +30,8 @@ class AlertType extends EnumClass {
   static const AlertType customerNotOk = _$customerNotOk;
   @BuiltValueEnumConst(wireName: r'incident_reported')
   static const AlertType incidentReported = _$incidentReported;
+  @BuiltValueEnumConst(wireName: r'speed_limiter_noncompliant')
+  static const AlertType speedLimiterNoncompliant = _$speedLimiterNoncompliant;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const AlertType unknownDefaultOpenApi = _$unknownDefaultOpenApi;
 

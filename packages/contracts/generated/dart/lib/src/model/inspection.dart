@@ -26,6 +26,8 @@ part 'inspection.g.dart';
 /// * [photoObjectKeys]
 /// * [notes]
 /// * [passed] - Todos os itens ok.
+/// * [maintenanceTaskId] - Manutenção aberta automaticamente (limitador acima de 32 km/h).
+/// * [alertId] - Alerta `speed_limiter_noncompliant` aberto automaticamente.
 /// * [recordedAt]
 /// * [createdAt]
 @BuiltValue()
@@ -66,6 +68,14 @@ abstract class Inspection implements Built<Inspection, InspectionBuilder> {
   /// Todos os itens ok.
   @BuiltValueField(wireName: r'passed')
   bool get passed;
+
+  /// Manutenção aberta automaticamente (limitador acima de 32 km/h).
+  @BuiltValueField(wireName: r'maintenanceTaskId')
+  String? get maintenanceTaskId;
+
+  /// Alerta `speed_limiter_noncompliant` aberto automaticamente.
+  @BuiltValueField(wireName: r'alertId')
+  String? get alertId;
 
   @BuiltValueField(wireName: r'recordedAt')
   DateTime get recordedAt;
@@ -158,6 +168,20 @@ class _$InspectionSerializer implements PrimitiveSerializer<Inspection> {
       object.passed,
       specifiedType: const FullType(bool),
     );
+    if (object.maintenanceTaskId != null) {
+      yield r'maintenanceTaskId';
+      yield serializers.serialize(
+        object.maintenanceTaskId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.alertId != null) {
+      yield r'alertId';
+      yield serializers.serialize(
+        object.alertId,
+        specifiedType: const FullType(String),
+      );
+    }
     yield r'recordedAt';
     yield serializers.serialize(
       object.recordedAt,
@@ -277,6 +301,22 @@ class _$InspectionSerializer implements PrimitiveSerializer<Inspection> {
             specifiedType: const FullType(bool),
           ) as bool;
           result.passed = valueDes;
+          break;
+        case r'maintenanceTaskId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.maintenanceTaskId = valueDes;
+          break;
+        case r'alertId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.alertId = valueDes;
           break;
         case r'recordedAt':
           final valueDes = serializers.deserialize(

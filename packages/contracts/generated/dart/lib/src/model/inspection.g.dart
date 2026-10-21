@@ -32,6 +32,10 @@ class _$Inspection extends Inspection {
   @override
   final bool passed;
   @override
+  final String? maintenanceTaskId;
+  @override
+  final String? alertId;
+  @override
   final DateTime recordedAt;
   @override
   final DateTime createdAt;
@@ -52,6 +56,8 @@ class _$Inspection extends Inspection {
       required this.photoObjectKeys,
       this.notes,
       required this.passed,
+      this.maintenanceTaskId,
+      this.alertId,
       required this.recordedAt,
       required this.createdAt})
       : super._();
@@ -78,6 +84,8 @@ class _$Inspection extends Inspection {
         photoObjectKeys == other.photoObjectKeys &&
         notes == other.notes &&
         passed == other.passed &&
+        maintenanceTaskId == other.maintenanceTaskId &&
+        alertId == other.alertId &&
         recordedAt == other.recordedAt &&
         createdAt == other.createdAt;
   }
@@ -97,6 +105,8 @@ class _$Inspection extends Inspection {
     _$hash = $jc(_$hash, photoObjectKeys.hashCode);
     _$hash = $jc(_$hash, notes.hashCode);
     _$hash = $jc(_$hash, passed.hashCode);
+    _$hash = $jc(_$hash, maintenanceTaskId.hashCode);
+    _$hash = $jc(_$hash, alertId.hashCode);
     _$hash = $jc(_$hash, recordedAt.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jf(_$hash);
@@ -118,6 +128,8 @@ class _$Inspection extends Inspection {
           ..add('photoObjectKeys', photoObjectKeys)
           ..add('notes', notes)
           ..add('passed', passed)
+          ..add('maintenanceTaskId', maintenanceTaskId)
+          ..add('alertId', alertId)
           ..add('recordedAt', recordedAt)
           ..add('createdAt', createdAt))
         .toString();
@@ -179,6 +191,15 @@ class InspectionBuilder implements Builder<Inspection, InspectionBuilder> {
   bool? get passed => _$this._passed;
   set passed(bool? passed) => _$this._passed = passed;
 
+  String? _maintenanceTaskId;
+  String? get maintenanceTaskId => _$this._maintenanceTaskId;
+  set maintenanceTaskId(String? maintenanceTaskId) =>
+      _$this._maintenanceTaskId = maintenanceTaskId;
+
+  String? _alertId;
+  String? get alertId => _$this._alertId;
+  set alertId(String? alertId) => _$this._alertId = alertId;
+
   DateTime? _recordedAt;
   DateTime? get recordedAt => _$this._recordedAt;
   set recordedAt(DateTime? recordedAt) => _$this._recordedAt = recordedAt;
@@ -206,6 +227,8 @@ class InspectionBuilder implements Builder<Inspection, InspectionBuilder> {
       _photoObjectKeys = $v.photoObjectKeys.toBuilder();
       _notes = $v.notes;
       _passed = $v.passed;
+      _maintenanceTaskId = $v.maintenanceTaskId;
+      _alertId = $v.alertId;
       _recordedAt = $v.recordedAt;
       _createdAt = $v.createdAt;
       _$v = null;
@@ -247,6 +270,8 @@ class InspectionBuilder implements Builder<Inspection, InspectionBuilder> {
             notes: notes,
             passed: BuiltValueNullFieldError.checkNotNull(
                 passed, r'Inspection', 'passed'),
+            maintenanceTaskId: maintenanceTaskId,
+            alertId: alertId,
             recordedAt: BuiltValueNullFieldError.checkNotNull(
                 recordedAt, r'Inspection', 'recordedAt'),
             createdAt: BuiltValueNullFieldError.checkNotNull(

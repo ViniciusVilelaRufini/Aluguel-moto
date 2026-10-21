@@ -364,8 +364,9 @@ export interface paths {
         /**
          * Criar cerca
          * @description Polígono GeoJSON válido (anel fechado, sem autointerseção) → senão `422` (`zone-invalid-geometry`).
-         *     `reduced_speed` exige `speedLimitKmh` entre 0 e 20 (`422` `zone-speed-limit-required`); acima de 32
-         *     é sempre `400`. Sincronizada com o motor de cercas. Grava AuditLog.
+         *     `reduced_speed` exige `speedLimitKmh`: ausente → `422` `zone-speed-limit-required`; entre 21 e 32 →
+         *     `422` `zone-speed-limit-invalid` (máximo 20 em zonas de velocidade reduzida); acima de 32 → sempre `400`
+         *     (validação do schema). Sincronizada com o motor de cercas. Grava AuditLog.
          */
         post: operations["createZone"];
         delete?: never;
@@ -474,15 +475,20 @@ export interface paths {
         /**
          * Iniciar aluguel
          * @description Exige KYC aprovado (`403` `kyc-not-approved`), cliente não inadimplente (`403`
-         *     `customer-delinquent`), seguro (`coverage`; `basic` é o mínimo obrigatório) e caução.
+         *     `customer-delinquent`), consentimento de localização (`403` `location-consent-required`, ver
+         *     `PUT /lgpd/consents`), seguro (`coverage`; `basic` é o mínimo obrigatório) e caução.
          *     A moto precisa estar `free` ou reservada pelo próprio cliente (senão `409` `vehicle-unavailable`).
          *
          *     Caução (`depositMethod`):
          *     - `card`: pré-autoriza 5000 no cartão (`cardId` ou o cartão padrão). Sucesso → `201` com
          *       `outcome: started`, aluguel `active` e desbloqueio pedido ao módulo IoT.
-         *     - `pix`: gera a cobrança Pix → `202` com `outcome: awaiting_deposit` e `deposit.pix`. A reserva é
-         *       mantida até `pix.expiresAt`. Depois do pagamento (`GET /payments/deposits/{id}` com `held`),
-         *       o app chama `POST /rentals` de novo, com **nova** `Idempotency-Key` e `depositId`, e recebe `201`.
+         *     - `pix`: gera a cobrança Pix → `202` com `outcome: awaiting_deposit` e `deposit.pix`. A resposta cria
+         *       (ou estende) uma reserva do cliente para essa moto válida até `pix.expiresAt`, com as mesmas regras
+         *       das reservas (uma por cliente, KYC aprovado, sem bloqueio) e no máximo o prazo do Pix. Depois do
+         *       pagamento (`GET /payments/deposits/{id}` com `held`), o app chama `POST /rentals` de novo, com
+         *       **nova** `Idempotency-Key` e `depositId`, e recebe `201`. Caução paga cujo aluguel não chega a
+         *       iniciar (reserva expirada, `409` na segunda chamada, cancelamento) é liberada/estornada
+         *       automaticamente (`DepositStatus` → `released`).
          *
          *     Idempotência: a mesma `Idempotency-Key` devolve a mesma resposta e não cria outro aluguel.
          */
@@ -643,6 +649,10 @@ export interface paths {
          *       liquidado uma única vez;
          *     - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por
          *       `rental.updated` ou `GET /rentals/{id}`.
+         *
+         *     Liquidação idempotente por `rentalId`: no máximo uma liquidação por aluguel, não importa quantas
+         *     vezes a chamada seja repetida (com ou sem `Idempotency-Key`). A `Idempotency-Key` opcional faz a
+         *     repetição devolver a mesma resposta.
          */
         post: operations["endRental"];
         delete?: never;
@@ -665,7 +675,8 @@ export interface paths {
          * @description `reason` obrigatório (`400` sem ele). Dispensa a foto. Status final `force_ended`; trava a moto com
          *     bloqueio seguro. Fora de uma zona `return`, só `admin` pode forçar (`403`
          *     `force-end-outside-zone-requires-admin`) e soma a taxa `force_end_outside_return_zone` (1500).
-         *     Grava AuditLog.
+         *     Grava AuditLog. Liquidação idempotente por `rentalId` (no máximo uma por aluguel, mesmo com
+         *     repetições); a `Idempotency-Key` opcional faz a repetição devolver a mesma resposta.
          */
         post: operations["forceEndRental"];
         delete?: never;
@@ -1725,7 +1736,10 @@ export interface paths {
         /**
          * Registrar checklist de inspeção
          * @description Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é
-         *     confirmado com `configuredMaxKmh` (no máximo 32; acima disso → `400`). `recordedAt` é o instante
+         *     observado em `configuredMaxKmh` (valor lido no controlador, 0 a 100). Se `configuredMaxKmh > 32`:
+         *     `speedLimiter.ok: true` é recusado (`422` `speed-limiter-noncompliant`); com `ok: false` a inspeção é
+         *     registrada e a API abre automaticamente uma manutenção corretiva e um alerta, e muda a moto para
+         *     `maintenance`. `recordedAt` é o instante
          *     real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma
          *     `Idempotency-Key` não duplica.
          */
@@ -2117,7 +2131,7 @@ export interface paths {
         get: operations["getConsents"];
         /**
          * Registrar consentimentos (termos e localização)
-         * @description O onboarding exige `termsAccepted` e `locationTracking` verdadeiros para seguir. Sem consentimento de localização, reservas e aluguéis são recusados (`403`).
+         * @description O onboarding exige `termsAccepted` e `locationTracking` verdadeiros para seguir. Sem consentimento de localização, `POST /rentals` é recusado (`403` `location-consent-required`); reservar não exige o consentimento.
          */
         put: operations["updateConsents"];
         post?: never;
@@ -2262,7 +2276,7 @@ export interface components {
         /** @enum {string} */
         PolicyStatus: "active" | "canceled" | "expired";
         /** @enum {string} */
-        AlertType: "out_of_operation_area" | "forbidden_zone_entered" | "fall_detected" | "tamper" | "battery_critical" | "movement_without_rental" | "vehicle_offline" | "command_failed" | "customer_not_ok" | "incident_reported";
+        AlertType: "out_of_operation_area" | "forbidden_zone_entered" | "fall_detected" | "tamper" | "battery_critical" | "movement_without_rental" | "vehicle_offline" | "command_failed" | "customer_not_ok" | "incident_reported" | "speed_limiter_noncompliant";
         /** @enum {string} */
         AlertPriority: "low" | "medium" | "high" | "critical";
         /** @enum {string} */
@@ -2656,7 +2670,7 @@ export interface components {
         GeoZoneInput: {
             name: string;
             type: components["schemas"]["ZoneType"];
-            /** @description Obrigatório em `reduced_speed` (e então <= 20); ignorado nos demais tipos. */
+            /** @description Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Acima de 32 → 400. */
             speedLimitKmh?: number;
             geometry: components["schemas"]["GeoJsonPolygon"];
             /** @default true */
@@ -3613,7 +3627,12 @@ export interface components {
         };
         SpeedLimiterCheck: {
             ok: boolean;
-            /** @description Velocidade máxima configurada no controlador. Acima de 32 km/h é rejeitado. */
+            /**
+             * @description Observação: velocidade máxima lida no controlador durante a inspeção (0 a 100). Não configura
+             *     nada (limites configuráveis continuam 0..32). Acima de 32 a moto está fora da lei: `ok: true` →
+             *     `422` `speed-limiter-noncompliant`; a API abre manutenção corretiva e alerta e põe a moto em
+             *     `maintenance`.
+             */
             configuredMaxKmh: number;
             notes?: string;
         };
@@ -3646,6 +3665,16 @@ export interface components {
             notes?: string;
             /** @description Todos os itens ok. */
             passed: boolean;
+            /**
+             * Format: uuid
+             * @description Manutenção aberta automaticamente (limitador acima de 32 km/h).
+             */
+            maintenanceTaskId?: string;
+            /**
+             * Format: uuid
+             * @description Alerta `speed_limiter_noncompliant` aberto automaticamente.
+             */
+            alertId?: string;
             /** Format: date-time */
             recordedAt: string;
             /** Format: date-time */
@@ -5196,7 +5225,10 @@ export interface operations {
     endRental: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Recomendado para reenvios da fila offline. Válida por 24 h. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKeyOptional"];
+            };
             path: {
                 id: components["parameters"]["PathId"];
             };
@@ -5236,7 +5268,10 @@ export interface operations {
     forceEndRental: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Recomendado para reenvios da fila offline. Válida por 24 h. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKeyOptional"];
+            };
             path: {
                 id: components["parameters"]["PathId"];
             };

@@ -847,7 +847,7 @@ class FieldTasksApi {
   }
 
   /// Registrar checklist de inspeção
-  /// Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é confirmado com &#x60;configuredMaxKmh&#x60; (no máximo 32; acima disso → &#x60;400&#x60;). &#x60;recordedAt&#x60; é o instante real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma &#x60;Idempotency-Key&#x60; não duplica.
+  /// Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é observado em &#x60;configuredMaxKmh&#x60; (valor lido no controlador, 0 a 100). Se &#x60;configuredMaxKmh &gt; 32&#x60;: &#x60;speedLimiter.ok: true&#x60; é recusado (&#x60;422&#x60; &#x60;speed-limiter-noncompliant&#x60;); com &#x60;ok: false&#x60; a inspeção é registrada e a API abre automaticamente uma manutenção corretiva e um alerta, e muda a moto para &#x60;maintenance&#x60;. &#x60;recordedAt&#x60; é o instante real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma &#x60;Idempotency-Key&#x60; não duplica.
   ///
   /// Parameters:
   /// * [id]

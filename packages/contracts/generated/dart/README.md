@@ -32,7 +32,8 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `rental-already-active`, `rental-not-active`, `rental-outside-return-zone`, `return-photo-missing`,
 `rental-lock-not-confirmed`, `force-end-outside-zone-requires-admin`, `insurance-required`,
 `coupon-invalid`, `deposit-not-held`, `payment-failed`, `card-not-found`, `zone-invalid-geometry`,
-`zone-speed-limit-required`, `battery-serials-must-differ`, `account-deletion-blocked`,
+`zone-speed-limit-required`, `zone-speed-limit-invalid`, `location-consent-required`,
+`speed-limiter-noncompliant`, `battery-serials-must-differ`, `account-deletion-blocked`,
 `webhook-signature-invalid`.
 
 ## Autenticação e grupos

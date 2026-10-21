@@ -12,7 +12,7 @@ part 'speed_limiter_check.g.dart';
 ///
 /// Properties:
 /// * [ok]
-/// * [configuredMaxKmh] - Velocidade máxima configurada no controlador. Acima de 32 km/h é rejeitado.
+/// * [configuredMaxKmh] - Observação: velocidade máxima lida no controlador durante a inspeção (0 a 100). Não configura nada (limites configuráveis continuam 0..32). Acima de 32 a moto está fora da lei: `ok: true` → `422` `speed-limiter-noncompliant`; a API abre manutenção corretiva e alerta e põe a moto em `maintenance`.
 /// * [notes]
 @BuiltValue()
 abstract class SpeedLimiterCheck
@@ -20,7 +20,7 @@ abstract class SpeedLimiterCheck
   @BuiltValueField(wireName: r'ok')
   bool get ok;
 
-  /// Velocidade máxima configurada no controlador. Acima de 32 km/h é rejeitado.
+  /// Observação: velocidade máxima lida no controlador durante a inspeção (0 a 100). Não configura nada (limites configuráveis continuam 0..32). Acima de 32 a moto está fora da lei: `ok: true` → `422` `speed-limiter-noncompliant`; a API abre manutenção corretiva e alerta e põe a moto em `maintenance`.
   @BuiltValueField(wireName: r'configuredMaxKmh')
   int get configuredMaxKmh;
 

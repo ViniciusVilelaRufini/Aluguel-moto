@@ -2,7 +2,7 @@
 
 Registro de mudanças de contrato e decisões que fogem da spec. Formato: data · autor · decisão · motivo · status (proposta/aprovada).
 
-## 2026-10-21 · agente 2 (Task 1, contrato) · status: proposta (aprovar junto com o `openapi.yaml`)
+## 2026-10-21 · agente 2 (Task 1, contrato) · status: aprovada (2026-10-21, usuário, revisão do contrato no checkpoint da Task 1)
 
 Ambiguidades resolvidas ao escrever `packages/contracts/openapi.yaml`:
 
@@ -13,8 +13,14 @@ Ambiguidades resolvidas ao escrever `packages/contracts/openapi.yaml`:
 5. **Motivo do comando.** `VehicleCommand.reason` é o texto do operador (AuditLog); o motivo técnico (`offline`, `timeout`, `did_not_stop`, `invalid_limit`) é `VehicleCommand.statusReason` (`CommandStatusReason`), que no WebSocket `command.updated` aparece como `reason` (tabela fixa do plano). No Dart, o campo `on` vira `on_` (palavra reservada).
 6. **Encerramento forçado.** `POST /rentals/{id}/force-end` liberado para `admin` e `suporte`; fora da zona de devolução só `admin` (403 `force-end-outside-zone-requires-admin`) e soma a taxa `force_end_outside_return_zone` (1500). Leitura de "Encerramento forçado fora da zona de devolução (só admin)".
 7. **Endpoints além do mínimo do plano**, para cobrir os prompts 4–7: `PATCH /me`, `POST /me/devices` (FCM), revisão manual de KYC, `GET/POST /vehicles`, `PATCH /vehicles/{id}`, `POST /vehicles/{id}/status` (campo: manutenção/disponível), `GET /vehicles/{id}/track` (replay), `POST /vehicles/{id}/ring` (buzina do cliente com reserva/aluguel), `GET /vehicles/{id}/commands`, `GET /rentals/current`, eventos, troca de moto, recibo, avaliação, compartilhar localização (SOS), resposta do "você está bem?", cauções, assinaturas semanal/mensal, pacotes de minutos e ajuste de carteira (lançamento), coberturas e apólices de seguro, chat de suporte (por polling — sem evento WebSocket na v1), uploads de anexos, início de tarefa de campo, manutenção, dashboard e mapa de calor, lista de restrição (`/customer-restrictions`), usuários internos, consentimentos LGPD.
-8. **Consentimento de localização obrigatório.** Sem `locationTracking: true` (`PUT /lgpd/consents`) reservas e aluguéis são recusados (403).
+8. **Consentimento de localização obrigatório para iniciar o aluguel** (alterada pelo usuário). Sem `locationTracking: true` (`PUT /lgpd/consents`), `POST /rentals` responde `403` `location-consent-required`. Reservar **não** exige o consentimento.
 9. **Reserva de 15 minutos** (o prompt 5 fala em 10 a 15).
 10. **Grupos por endpoint (`x-required-groups`).** Além da visibilidade do prompt 6: `campo` lê motos, comandos e zonas e muda status da moto; `operacao` e `suporte` listam usuários internos (para atribuir tarefas/alertas); auditoria só `admin`; estornos e ajustes de carteira `admin`/`financeiro`; CPF completo só para `admin`.
 11. **Mock exige `Authorization`.** O Prism aplica os esquemas de segurança: o smoke do plano (`curl localhost:4010/vehicles/nearby?...`) responde 401 sem header e 200 com `-H "Authorization: Bearer <qualquer>"`. O header ficou documentado no README do pacote.
 12. **Webhook do Mercado Pago** em snake_case (formato do provedor), única exceção à convenção camelCase.
+13. **Limitador na inspeção é observação.** `SpeedLimiterCheck.configuredMaxKmh` aceita 0..100 (valor lido no controlador). Acima de 32: `ok: true` → `422` `speed-limiter-noncompliant`; a API abre automaticamente uma manutenção corretiva e um alerta `speed_limiter_noncompliant` e muda a moto para `maintenance` (`Inspection.maintenanceTaskId`/`alertId`). Limites **configuráveis** (comandos, zonas, moto) continuam 0..32.
+14. **Todas as 140 operações mantidas** (decisão #7 confirmada).
+15. **Slugs de limite de zona.** `reduced_speed` sem `speedLimitKmh` → `422` `zone-speed-limit-required`; 21 a 32 → `422` `zone-speed-limit-invalid`; acima de 32 → `400` (validação do schema).
+16. **Reserva no fluxo Pix.** O `202` `awaiting_deposit` cria (ou estende) uma reserva do cliente para a moto até `pix.expiresAt`, com as mesmas regras das reservas. Caução paga cujo aluguel não chega a iniciar (reserva expirada, `409`, cancelamento) é liberada/estornada automaticamente (`DepositStatus` → `released`).
+17. **Liquidação única por aluguel.** `POST /rentals/{id}/end` e `/force-end` aceitam `Idempotency-Key` opcional; a liquidação é chaveada por `rentalId` (no máximo uma por aluguel, independentemente de repetições).
+18. **Sala `rental:{id}`** do WebSocket vale enquanto o aluguel estiver `active`, `paused` ou `ending` (já descrito em `packages/contracts/realtime.md`).

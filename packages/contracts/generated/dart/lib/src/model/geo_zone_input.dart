@@ -15,7 +15,7 @@ part 'geo_zone_input.g.dart';
 /// Properties:
 /// * [name]
 /// * [type]
-/// * [speedLimitKmh] - Obrigatório em `reduced_speed` (e então <= 20); ignorado nos demais tipos.
+/// * [speedLimitKmh] - Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Acima de 32 → 400.
 /// * [geometry]
 /// * [active]
 @BuiltValue()
@@ -28,7 +28,7 @@ abstract class GeoZoneInput
   ZoneType get type;
   // enum typeEnum {  operation,  return,  forbidden,  reduced_speed,  };
 
-  /// Obrigatório em `reduced_speed` (e então <= 20); ignorado nos demais tipos.
+  /// Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Acima de 32 → 400.
   @BuiltValueField(wireName: r'speedLimitKmh')
   int? get speedLimitKmh;
 

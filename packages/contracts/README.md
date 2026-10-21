@@ -115,8 +115,11 @@ valor novo no servidor não quebra o app; o campo `on` de `SendCommandRequest`/`
 
 ## Regras que o contrato garante
 
-- `speedLimitKmh` sempre `0..32` (comandos, zonas, inspeção, ficha da moto); acima disso → 400.
-- Zonas `reduced_speed` exigem `speedLimitKmh <= 20` (422).
+- `speedLimitKmh` configurável sempre `0..32` (comandos, zonas, ficha da moto); acima disso → 400.
+- Zonas `reduced_speed`: `speedLimitKmh` acima de 32 → `400` (validação do schema); ausente → `422`
+  `zone-speed-limit-required`; entre 21 e 32 → `422` `zone-speed-limit-invalid` (máximo 20).
+- Inspeção: `configuredMaxKmh` é observação (0..100); acima de 32 com `ok: true` → `422`
+  `speed-limiter-noncompliant`, e a API põe a moto em manutenção e abre alerta.
 - Cartão: só `cardToken` do gateway; nenhum campo de número, CVV ou validade completa.
 - Cliente nunca recebe distância percorrida; recebe tempo, custo, bateria, autonomia e velocidade.
 - CPF completo só para o próprio cliente e para `admin`.

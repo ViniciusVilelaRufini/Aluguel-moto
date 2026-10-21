@@ -143,11 +143,12 @@ class RentalsApi {
   }
 
   /// Encerrar aluguel
-  /// Só dentro de uma zona &#x60;return&#x60; (&#x60;422&#x60; &#x60;rental-outside-return-zone&#x60;) e com a foto enviada (&#x60;422&#x60; &#x60;return-photo-missing&#x60;). Pede o travamento ao rastreador: - travada confirmada → &#x60;200&#x60;, status &#x60;ended&#x60;, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → &#x60;202&#x60;, status &#x60;ending&#x60;; o servidor tenta de novo e o cliente acompanha por   &#x60;rental.updated&#x60; ou &#x60;GET /rentals/{id}&#x60;.
+  /// Só dentro de uma zona &#x60;return&#x60; (&#x60;422&#x60; &#x60;rental-outside-return-zone&#x60;) e com a foto enviada (&#x60;422&#x60; &#x60;return-photo-missing&#x60;). Pede o travamento ao rastreador: - travada confirmada → &#x60;200&#x60;, status &#x60;ended&#x60;, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → &#x60;202&#x60;, status &#x60;ending&#x60;; o servidor tenta de novo e o cliente acompanha por   &#x60;rental.updated&#x60; ou &#x60;GET /rentals/{id}&#x60;.  Liquidação idempotente por &#x60;rentalId&#x60;: no máximo uma liquidação por aluguel, não importa quantas vezes a chamada seja repetida (com ou sem &#x60;Idempotency-Key&#x60;). A &#x60;Idempotency-Key&#x60; opcional faz a repetição devolver a mesma resposta.
   ///
   /// Parameters:
   /// * [id]
   /// * [endRentalRequest]
+  /// * [idempotencyKey] - Recomendado para reenvios da fila offline. Válida por 24 h.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -160,6 +161,7 @@ class RentalsApi {
   Future<Response<Rental>> endRental({
     required String id,
     required EndRentalRequest endRentalRequest,
+    String? idempotencyKey,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -174,6 +176,7 @@ class RentalsApi {
     final _options = Options(
       method: r'POST',
       headers: <String, dynamic>{
+        if (idempotencyKey != null) r'Idempotency-Key': idempotencyKey,
         ...?headers,
       },
       extra: <String, dynamic>{
@@ -250,11 +253,12 @@ class RentalsApi {
   }
 
   /// Encerramento forçado (staff)
-  /// &#x60;reason&#x60; obrigatório (&#x60;400&#x60; sem ele). Dispensa a foto. Status final &#x60;force_ended&#x60;; trava a moto com bloqueio seguro. Fora de uma zona &#x60;return&#x60;, só &#x60;admin&#x60; pode forçar (&#x60;403&#x60; &#x60;force-end-outside-zone-requires-admin&#x60;) e soma a taxa &#x60;force_end_outside_return_zone&#x60; (1500). Grava AuditLog.
+  /// &#x60;reason&#x60; obrigatório (&#x60;400&#x60; sem ele). Dispensa a foto. Status final &#x60;force_ended&#x60;; trava a moto com bloqueio seguro. Fora de uma zona &#x60;return&#x60;, só &#x60;admin&#x60; pode forçar (&#x60;403&#x60; &#x60;force-end-outside-zone-requires-admin&#x60;) e soma a taxa &#x60;force_end_outside_return_zone&#x60; (1500). Grava AuditLog. Liquidação idempotente por &#x60;rentalId&#x60; (no máximo uma por aluguel, mesmo com repetições); a &#x60;Idempotency-Key&#x60; opcional faz a repetição devolver a mesma resposta.
   ///
   /// Parameters:
   /// * [id]
   /// * [forceEndRentalRequest]
+  /// * [idempotencyKey] - Recomendado para reenvios da fila offline. Válida por 24 h.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -267,6 +271,7 @@ class RentalsApi {
   Future<Response<Rental>> forceEndRental({
     required String id,
     required ForceEndRentalRequest forceEndRentalRequest,
+    String? idempotencyKey,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -281,6 +286,7 @@ class RentalsApi {
     final _options = Options(
       method: r'POST',
       headers: <String, dynamic>{
+        if (idempotencyKey != null) r'Idempotency-Key': idempotencyKey,
         ...?headers,
       },
       extra: <String, dynamic>{
@@ -1381,7 +1387,7 @@ class RentalsApi {
   }
 
   /// Iniciar aluguel
-  /// Exige KYC aprovado (&#x60;403&#x60; &#x60;kyc-not-approved&#x60;), cliente não inadimplente (&#x60;403&#x60; &#x60;customer-delinquent&#x60;), seguro (&#x60;coverage&#x60;; &#x60;basic&#x60; é o mínimo obrigatório) e caução. A moto precisa estar &#x60;free&#x60; ou reservada pelo próprio cliente (senão &#x60;409&#x60; &#x60;vehicle-unavailable&#x60;).  Caução (&#x60;depositMethod&#x60;): - &#x60;card&#x60;: pré-autoriza 5000 no cartão (&#x60;cardId&#x60; ou o cartão padrão). Sucesso → &#x60;201&#x60; com   &#x60;outcome: started&#x60;, aluguel &#x60;active&#x60; e desbloqueio pedido ao módulo IoT. - &#x60;pix&#x60;: gera a cobrança Pix → &#x60;202&#x60; com &#x60;outcome: awaiting_deposit&#x60; e &#x60;deposit.pix&#x60;. A reserva é   mantida até &#x60;pix.expiresAt&#x60;. Depois do pagamento (&#x60;GET /payments/deposits/{id}&#x60; com &#x60;held&#x60;),   o app chama &#x60;POST /rentals&#x60; de novo, com **nova** &#x60;Idempotency-Key&#x60; e &#x60;depositId&#x60;, e recebe &#x60;201&#x60;.  Idempotência: a mesma &#x60;Idempotency-Key&#x60; devolve a mesma resposta e não cria outro aluguel.
+  /// Exige KYC aprovado (&#x60;403&#x60; &#x60;kyc-not-approved&#x60;), cliente não inadimplente (&#x60;403&#x60; &#x60;customer-delinquent&#x60;), consentimento de localização (&#x60;403&#x60; &#x60;location-consent-required&#x60;, ver &#x60;PUT /lgpd/consents&#x60;), seguro (&#x60;coverage&#x60;; &#x60;basic&#x60; é o mínimo obrigatório) e caução. A moto precisa estar &#x60;free&#x60; ou reservada pelo próprio cliente (senão &#x60;409&#x60; &#x60;vehicle-unavailable&#x60;).  Caução (&#x60;depositMethod&#x60;): - &#x60;card&#x60;: pré-autoriza 5000 no cartão (&#x60;cardId&#x60; ou o cartão padrão). Sucesso → &#x60;201&#x60; com   &#x60;outcome: started&#x60;, aluguel &#x60;active&#x60; e desbloqueio pedido ao módulo IoT. - &#x60;pix&#x60;: gera a cobrança Pix → &#x60;202&#x60; com &#x60;outcome: awaiting_deposit&#x60; e &#x60;deposit.pix&#x60;. A resposta cria   (ou estende) uma reserva do cliente para essa moto válida até &#x60;pix.expiresAt&#x60;, com as mesmas regras   das reservas (uma por cliente, KYC aprovado, sem bloqueio) e no máximo o prazo do Pix. Depois do   pagamento (&#x60;GET /payments/deposits/{id}&#x60; com &#x60;held&#x60;), o app chama &#x60;POST /rentals&#x60; de novo, com   **nova** &#x60;Idempotency-Key&#x60; e &#x60;depositId&#x60;, e recebe &#x60;201&#x60;. Caução paga cujo aluguel não chega a   iniciar (reserva expirada, &#x60;409&#x60; na segunda chamada, cancelamento) é liberada/estornada   automaticamente (&#x60;DepositStatus&#x60; → &#x60;released&#x60;).  Idempotência: a mesma &#x60;Idempotency-Key&#x60; devolve a mesma resposta e não cria outro aluguel.
   ///
   /// Parameters:
   /// * [idempotencyKey] - Chave única por intenção (UUID v4 recomendado). Válida por 24 h.

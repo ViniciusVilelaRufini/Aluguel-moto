@@ -71,11 +71,11 @@ Name | Type | Description  | Notes
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **endRental**
-> Rental endRental(id, endRentalRequest)
+> Rental endRental(id, endRentalRequest, idempotencyKey)
 
 Encerrar aluguel
 
-Só dentro de uma zona `return` (`422` `rental-outside-return-zone`) e com a foto enviada (`422` `return-photo-missing`). Pede o travamento ao rastreador: - travada confirmada → `200`, status `ended`, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por   `rental.updated` ou `GET /rentals/{id}`. 
+Só dentro de uma zona `return` (`422` `rental-outside-return-zone`) e com a foto enviada (`422` `return-photo-missing`). Pede o travamento ao rastreador: - travada confirmada → `200`, status `ended`, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por   `rental.updated` ou `GET /rentals/{id}`.  Liquidação idempotente por `rentalId`: no máximo uma liquidação por aluguel, não importa quantas vezes a chamada seja repetida (com ou sem `Idempotency-Key`). A `Idempotency-Key` opcional faz a repetição devolver a mesma resposta. 
 
 ### Example
 ```dart
@@ -84,9 +84,10 @@ import 'package:volti_api/api.dart';
 final api = VoltiApi().getRentalsApi();
 final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
 final EndRentalRequest endRentalRequest = ; // EndRentalRequest | 
+final String idempotencyKey = idempotencyKey_example; // String | Recomendado para reenvios da fila offline. Válida por 24 h.
 
 try {
-    final response = api.endRental(id, endRentalRequest);
+    final response = api.endRental(id, endRentalRequest, idempotencyKey);
     print(response);
 } on DioException catch (e) {
     print('Exception when calling RentalsApi->endRental: $e\n');
@@ -99,6 +100,7 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **String**|  | 
  **endRentalRequest** | [**EndRentalRequest**](EndRentalRequest.md)|  | 
+ **idempotencyKey** | **String**| Recomendado para reenvios da fila offline. Válida por 24 h. | [optional] 
 
 ### Return type
 
@@ -116,11 +118,11 @@ Name | Type | Description  | Notes
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **forceEndRental**
-> Rental forceEndRental(id, forceEndRentalRequest)
+> Rental forceEndRental(id, forceEndRentalRequest, idempotencyKey)
 
 Encerramento forçado (staff)
 
-`reason` obrigatório (`400` sem ele). Dispensa a foto. Status final `force_ended`; trava a moto com bloqueio seguro. Fora de uma zona `return`, só `admin` pode forçar (`403` `force-end-outside-zone-requires-admin`) e soma a taxa `force_end_outside_return_zone` (1500). Grava AuditLog. 
+`reason` obrigatório (`400` sem ele). Dispensa a foto. Status final `force_ended`; trava a moto com bloqueio seguro. Fora de uma zona `return`, só `admin` pode forçar (`403` `force-end-outside-zone-requires-admin`) e soma a taxa `force_end_outside_return_zone` (1500). Grava AuditLog. Liquidação idempotente por `rentalId` (no máximo uma por aluguel, mesmo com repetições); a `Idempotency-Key` opcional faz a repetição devolver a mesma resposta. 
 
 ### Example
 ```dart
@@ -129,9 +131,10 @@ import 'package:volti_api/api.dart';
 final api = VoltiApi().getRentalsApi();
 final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
 final ForceEndRentalRequest forceEndRentalRequest = ; // ForceEndRentalRequest | 
+final String idempotencyKey = idempotencyKey_example; // String | Recomendado para reenvios da fila offline. Válida por 24 h.
 
 try {
-    final response = api.forceEndRental(id, forceEndRentalRequest);
+    final response = api.forceEndRental(id, forceEndRentalRequest, idempotencyKey);
     print(response);
 } on DioException catch (e) {
     print('Exception when calling RentalsApi->forceEndRental: $e\n');
@@ -144,6 +147,7 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **String**|  | 
  **forceEndRentalRequest** | [**ForceEndRentalRequest**](ForceEndRentalRequest.md)|  | 
+ **idempotencyKey** | **String**| Recomendado para reenvios da fila offline. Válida por 24 h. | [optional] 
 
 ### Return type
 
@@ -647,7 +651,7 @@ Name | Type | Description  | Notes
 
 Iniciar aluguel
 
-Exige KYC aprovado (`403` `kyc-not-approved`), cliente não inadimplente (`403` `customer-delinquent`), seguro (`coverage`; `basic` é o mínimo obrigatório) e caução. A moto precisa estar `free` ou reservada pelo próprio cliente (senão `409` `vehicle-unavailable`).  Caução (`depositMethod`): - `card`: pré-autoriza 5000 no cartão (`cardId` ou o cartão padrão). Sucesso → `201` com   `outcome: started`, aluguel `active` e desbloqueio pedido ao módulo IoT. - `pix`: gera a cobrança Pix → `202` com `outcome: awaiting_deposit` e `deposit.pix`. A reserva é   mantida até `pix.expiresAt`. Depois do pagamento (`GET /payments/deposits/{id}` com `held`),   o app chama `POST /rentals` de novo, com **nova** `Idempotency-Key` e `depositId`, e recebe `201`.  Idempotência: a mesma `Idempotency-Key` devolve a mesma resposta e não cria outro aluguel. 
+Exige KYC aprovado (`403` `kyc-not-approved`), cliente não inadimplente (`403` `customer-delinquent`), consentimento de localização (`403` `location-consent-required`, ver `PUT /lgpd/consents`), seguro (`coverage`; `basic` é o mínimo obrigatório) e caução. A moto precisa estar `free` ou reservada pelo próprio cliente (senão `409` `vehicle-unavailable`).  Caução (`depositMethod`): - `card`: pré-autoriza 5000 no cartão (`cardId` ou o cartão padrão). Sucesso → `201` com   `outcome: started`, aluguel `active` e desbloqueio pedido ao módulo IoT. - `pix`: gera a cobrança Pix → `202` com `outcome: awaiting_deposit` e `deposit.pix`. A resposta cria   (ou estende) uma reserva do cliente para essa moto válida até `pix.expiresAt`, com as mesmas regras   das reservas (uma por cliente, KYC aprovado, sem bloqueio) e no máximo o prazo do Pix. Depois do   pagamento (`GET /payments/deposits/{id}` com `held`), o app chama `POST /rentals` de novo, com   **nova** `Idempotency-Key` e `depositId`, e recebe `201`. Caução paga cujo aluguel não chega a   iniciar (reserva expirada, `409` na segunda chamada, cancelamento) é liberada/estornada   automaticamente (`DepositStatus` → `released`).  Idempotência: a mesma `Idempotency-Key` devolve a mesma resposta e não cria outro aluguel. 
 
 ### Example
 ```dart

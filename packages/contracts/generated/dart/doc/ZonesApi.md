@@ -21,7 +21,7 @@ Method | HTTP request | Description
 
 Criar cerca
 
-Polígono GeoJSON válido (anel fechado, sem autointerseção) → senão `422` (`zone-invalid-geometry`). `reduced_speed` exige `speedLimitKmh` entre 0 e 20 (`422` `zone-speed-limit-required`); acima de 32 é sempre `400`. Sincronizada com o motor de cercas. Grava AuditLog. 
+Polígono GeoJSON válido (anel fechado, sem autointerseção) → senão `422` (`zone-invalid-geometry`). `reduced_speed` exige `speedLimitKmh`: ausente → `422` `zone-speed-limit-required`; entre 21 e 32 → `422` `zone-speed-limit-invalid` (máximo 20 em zonas de velocidade reduzida); acima de 32 → sempre `400` (validação do schema). Sincronizada com o motor de cercas. Grava AuditLog. 
 
 ### Example
 ```dart

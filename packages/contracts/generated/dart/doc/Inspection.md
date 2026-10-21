@@ -20,6 +20,8 @@ Name | Type | Description | Notes
 **photoObjectKeys** | **BuiltList&lt;String&gt;** |  | 
 **notes** | **String** |  | [optional] 
 **passed** | **bool** | Todos os itens ok. | 
+**maintenanceTaskId** | **String** | Manutenção aberta automaticamente (limitador acima de 32 km/h). | [optional] 
+**alertId** | **String** | Alerta `speed_limiter_noncompliant` aberto automaticamente. | [optional] 
 **recordedAt** | [**DateTime**](DateTime.md) |  | 
 **createdAt** | [**DateTime**](DateTime.md) |  | 
 
