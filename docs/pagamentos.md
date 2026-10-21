@@ -106,6 +106,40 @@ Se já existe aluguel com a caução, o pedido é ignorado. Pix pago depois da l
   - Se o gateway falhar, a reserva é desfeita.
   - Estorno concorrente → `409`.
 
+### Resultados ambíguos do gateway (fix round 2)
+
+**Recusa vs. resultado desconhecido.**
+- Só conta como tentativa uma **recusa genuína**: o gateway respondeu e recusou (Mercado Pago 200/201 com `rejected`).
+- Qualquer outro desfecho de captura ou cobrança é **resultado desconhecido** e lança `PaymentProviderError`: 4xx (já capturado, chave repetida com corpo diferente), 5xx ou timeout.
+- Resultado desconhecido não conta tentativa e não troca a chave.
+
+**Conferir antes de repetir.**
+- **Captura:** consulta `getPayment` da pré-autorização. Se já está `captured`, grava o passo e conclui.
+- **Cobrança:** procura com `searchPayments` um pagamento aprovado com `external_reference = Payment.id` e o mesmo valor.
+- **Cancelar na última tentativa:** confere antes de cancelar. Se a captura entrou, a liquidação é paga.
+- **Garantia:** confere antes de capturar a caução.
+- **Liberação:** com resultado desconhecido, decide pelo estado no gateway.
+
+**Token do cartão.** É criado uma vez por tentativa (`createCardToken`) e gravado em `steps.chargeTokens` antes da cobrança. A repetição do mesmo passo manda corpo idêntico com a mesma chave.
+
+**Estacionar.** Cada execução que termina em erro incrementa `errorRuns`. Ao chegar em `MAX_ERROR_RUNS` (5), a liquidação é marcada com `parkedAt`/`parkedReason`: o job para de tentar e o log `payment_needs_manual_review` é registrado.
+
+**Estornos (`PaymentRefund`).**
+
+| Estado | Significado |
+|---|---|
+| `claimed` | Reserva gravada, gateway ainda não chamado |
+| `pending` | Resultado desconhecido |
+| `succeeded` | Estorno confirmado |
+| `rejected` | Recusa definitiva (`RefundRejectedError`, Mercado Pago 400/404): a reserva é desfeita e a API responde 422 |
+| `needs_review` | Revisão manual |
+
+- Timeout mantém a reserva; a API responde 200 com o pagamento já reservado.
+- O job `reconcileRefunds` (5 min) trata `claimed` e `pending`:
+  - se o gateway já mostra o valor estornado → `succeeded`;
+  - senão repete com a mesma chave;
+  - depois de 10 tentativas → `needs_review`.
+
 ## Webhook do Mercado Pago
 
 1. `POST /webhooks/mercadopago` é público. O endpoint valida `x-signature` (`ts=<epoch>,v1=<hex>`; `ts` fora de ±`MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS`, padrão 300, é rejeitado) com HMAC-SHA256 sobre `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`. A chave é `MERCADOPAGO_WEBHOOK_SECRET` e a comparação é em tempo constante; o `data.id` vai em minúsculas.

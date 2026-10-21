@@ -72,3 +72,10 @@ Decisões tomadas ao trocar `StubRentalBilling`/`StubInsurance` pelas implementa
     - **Estorno:** reserva condicional antes de chamar o gateway, com chave `refund:<id>:<Idempotency-Key>`.
     - **Webhook:** rejeita `ts` fora de ±5 min (`MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS`). Isso revoga o "sem janela de ts" do item 9.
     - **`PAYMENT_PROVIDER`:** ausente fora de development/test, a API não sobe.
+15. **Fix round 2: resultados ambíguos do gateway.**
+    - **Recusa vs. resultado desconhecido:** só recusa genuína (200/201 com `rejected`) conta tentativa. 4xx, 5xx e timeout de captura ou cobrança são resultado desconhecido: o executor confere o estado (`getPayment`, `searchPayments` por `external_reference`) antes de repetir com a mesma chave e o mesmo token de cartão.
+    - **Estacionamento:** 5 execuções com erro estacionam a liquidação (`parkedAt`, log `payment_needs_manual_review`).
+    - **Estorno:** um estorno com resultado desconhecido mantém a reserva (`PaymentRefund` `pending`) e um job reconcilia. Só a recusa definitiva (400/404) desfaz a reserva.
+    - **Pré-autorização:** continua tratando 4xx como `failed`, porque o aluguel não começa. Uma autorização fantasma expira no gateway.
+    - **Proposta: alerta de pagamento.** Criar o tipo `payment_needs_review` (Task 3, enum `AlertType`) para que liquidações estacionadas e estornos em `needs_review` apareçam no painel. Hoje eles só ficam no log e no banco.
+    - **Proposta: `rental.paymentId` (Task 3, `rental-end.service.ts`).** Quando `settle` lança, o encerramento não liga `rental.paymentId`. A ligação acontece depois, quando o job conclui: a transição emite `payment.updated` e o `RentalsListeners.onPaymentUpdated` grava o id se estiver vazio. A proposta é que o encerramento grave o id do `Payment` pendente já na hora (leitura por `idempotencyKey`).

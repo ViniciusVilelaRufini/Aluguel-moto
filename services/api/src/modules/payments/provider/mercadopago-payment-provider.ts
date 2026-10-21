@@ -7,6 +7,7 @@ import {
   type PaymentProvider,
   PaymentProviderError,
   type ProviderCard,
+  RefundRejectedError,
   type ProviderPayment,
 } from './payment-provider';
 
@@ -164,9 +165,33 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
     return t.id;
   }
 
+  async createCardToken(input: { providerCustomerId: string; providerCardId: string }): Promise<{ cardToken: string }> {
+    try {
+      return { cardToken: await this.savedCardToken(input.providerCustomerId, input.providerCardId) };
+    } catch (err) {
+      this.rethrow(err, 'createCardToken');
+    }
+  }
+
+  async searchPayments(input: { externalReference: string }): Promise<ProviderPayment[]> {
+    try {
+      const r = await this.request<{ results?: MpPayment[] }>(
+        'GET',
+        `/v1/payments/search?external_reference=${encodeURIComponent(input.externalReference)}&sort=date_created&criteria=desc`,
+      );
+      return (r.results ?? []).map((p) => this.map(p));
+    } catch (err) {
+      this.rethrow(err, 'searchPayments');
+    }
+  }
+
+  /**
+   * Pré-autorização: 4xx vira `failed` (a caução não é retida e o aluguel não começa; uma eventual autorização fantasma expira no
+   * gateway). Cobrança: só `rejected` é recusa; qualquer erro HTTP/timeout é resultado desconhecido e lança.
+   */
   private async cardPayment(input: CardPaymentInput, capture: boolean): Promise<ProviderPayment> {
     try {
-      const token = await this.savedCardToken(input.providerCustomerId, input.providerCardId);
+      const token = input.cardToken ?? (await this.savedCardToken(input.providerCustomerId, input.providerCardId));
       const p = await this.request<MpPayment>(
         'POST',
         '/v1/payments',
@@ -183,7 +208,7 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
       );
       return this.map(p);
     } catch (err) {
-      if (err instanceof HttpError && err.status >= 400 && err.status < 500) {
+      if (!capture && err instanceof HttpError && err.status >= 400 && err.status < 500) {
         return { providerPaymentId: '', status: 'failed', amountCents: input.amountCents, failureReason: `http_${err.status}`, externalReference: input.externalReference };
       }
       this.rethrow(err, capture ? 'charge' : 'preAuthorize');
@@ -205,9 +230,7 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
       if (mapped.status === 'captured') mapped.capturedCents = input.amountCents;
       return mapped;
     } catch (err) {
-      if (err instanceof HttpError && err.status >= 400 && err.status < 500) {
-        return { providerPaymentId: input.providerPaymentId, status: 'failed', amountCents: input.amountCents, failureReason: `capture_http_${err.status}` };
-      }
+      // 4xx pode ser 'já capturado' ou chave repetida: resultado desconhecido (quem chama reconcilia com getPayment).
       this.rethrow(err, 'capture');
     }
   }
@@ -235,6 +258,7 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
       const status = this.mapStatus(p) === 'refunded' ? ('refunded' as const) : ('partially_refunded' as const);
       return { providerRefundId: String(r.id), refundedCents: toCents(p.transaction_amount_refunded), status };
     } catch (err) {
+      if (err instanceof HttpError && (err.status === 400 || err.status === 404)) throw new RefundRejectedError(`Mercado Pago recusou o estorno (${err.status}).`, err.status);
       this.rethrow(err, 'refund');
     }
   }

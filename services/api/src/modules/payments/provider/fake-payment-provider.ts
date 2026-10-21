@@ -7,6 +7,7 @@ import {
   type CardPaymentInput,
   type PaymentProvider,
   PaymentProviderError,
+  RefundRejectedError,
   type ProviderCard,
   type ProviderPayment,
 } from './payment-provider';
@@ -27,6 +28,7 @@ export class FakePaymentProvider implements PaymentProvider {
   readonly name = 'fake' as const;
   private readonly payments = new Map<string, ProviderPayment & { cardFailsCharge?: boolean }>();
   private readonly cards = new Map<string, ProviderCard & { failsCharge: boolean }>();
+  private readonly cardTokens = new Map<string, string>();
   private readonly subscriptions = new Map<string, 'active' | 'canceled'>();
   private readonly idem = new Map<string, unknown>();
   private readonly failures = new Map<Op, string>();
@@ -109,6 +111,16 @@ export class FakePaymentProvider implements PaymentProvider {
     return { ...p };
   }
 
+  async createCardToken(input: { providerCustomerId: string; providerCardId: string }) {
+    const cardToken = `fake-tok-${randomUUID()}`;
+    this.cardTokens.set(cardToken, input.providerCardId);
+    return { cardToken };
+  }
+
+  async searchPayments(input: { externalReference: string }): Promise<ProviderPayment[]> {
+    return [...this.payments.values()].filter((p) => p.externalReference === input.externalReference).map((p) => ({ ...p }));
+  }
+
   async preAuthorize(input: CardPaymentInput): Promise<ProviderPayment> {
     return this.once('preAuthorize', input.idempotencyKey, () => {
       const card = this.cards.get(input.providerCardId);
@@ -143,7 +155,7 @@ export class FakePaymentProvider implements PaymentProvider {
 
   async charge(input: CardPaymentInput): Promise<ProviderPayment> {
     return this.once('charge', input.idempotencyKey, () => {
-      const card = this.cards.get(input.providerCardId);
+      const card = this.cards.get(input.cardToken ? (this.cardTokens.get(input.cardToken) ?? '') : input.providerCardId);
       const failure = this.takeFailure('charge') ?? (!card ? 'card_not_found' : card.failsCharge ? 'cc_rejected_insufficient_amount' : undefined);
       if (failure) return this.newPayment(input, 'failed', { failureReason: failure });
       return this.newPayment(input, 'paid', { cardLast4: card!.last4 });
@@ -156,7 +168,7 @@ export class FakePaymentProvider implements PaymentProvider {
       const base = p.status === 'captured' ? (p.capturedCents ?? p.amountCents) : p.amountCents;
       const already = p.refundedCents ?? 0;
       const amount = input.amountCents ?? base - already;
-      if (amount <= 0 || already + amount > base) throw new PaymentProviderError('Estorno acima do disponível.', 400);
+      if (amount <= 0 || already + amount > base) throw new RefundRejectedError('Estorno acima do disponível.', 400);
       const total = already + amount;
       const status = total >= base ? ('refunded' as const) : ('partially_refunded' as const);
       this.move(p, status);

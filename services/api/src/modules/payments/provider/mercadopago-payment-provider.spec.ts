@@ -1,6 +1,6 @@
 import nock from 'nock';
 import { MercadoPagoPaymentProvider } from './mercadopago-payment-provider';
-import { CardDeclinedError, PaymentProviderError } from './payment-provider';
+import { CardDeclinedError, PaymentProviderError, RefundRejectedError } from './payment-provider';
 
 const BASE = 'https://api.mercadopago.test';
 const TOKEN = 'TEST-access-token';
@@ -77,9 +77,45 @@ describe('MercadoPagoPaymentProvider (HTTP mockado com nock, nunca rede real)', 
       .toMatchObject({ providerPaymentId: '777', status: 'captured', capturedCents: 1290 });
   });
 
-  it('capture recusado pelo gateway (4xx) → failed (não lança)', async () => {
+  it('fix round 2: capture com 4xx é ambíguo (pode já estar capturado) → lança PaymentProviderError, nunca "failed"', async () => {
     api().put('/v1/payments/777').reply(400, { message: 'cannot capture', cause: [{ code: 'x' }] });
-    expect(await mp.capture({ providerPaymentId: '777', amountCents: 100, idempotencyKey: 'c' })).toMatchObject({ status: 'failed' });
+    const err = await mp.capture({ providerPaymentId: '777', amountCents: 100, idempotencyKey: 'c' }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentProviderError);
+    expect(err.httpStatus).toBe(400);
+  });
+
+  it('fix round 2: capture respondido 200 sem aprovar → recusa genuína (failed)', async () => {
+    api().put('/v1/payments/777').reply(200, { id: 777, status: 'rejected', status_detail: 'cc_rejected_other_reason', transaction_amount: 1 });
+    expect(await mp.capture({ providerPaymentId: '777', amountCents: 100, idempotencyKey: 'c' })).toMatchObject({ status: 'failed', failureReason: 'cc_rejected_other_reason' });
+  });
+
+  it('fix round 2: charge com 4xx (ex.: chave repetida com corpo diferente) é ambíguo → lança', async () => {
+    api().post('/v1/payments').reply(400, { message: 'idempotency key already used' });
+    await expect(mp.charge({ providerCustomerId: 'cus-1', providerCardId: 'card-9', cardToken: 'tok-fixo', amountCents: 100, description: 'x', idempotencyKey: 'k', externalReference: 'p' }))
+      .rejects.toBeInstanceOf(PaymentProviderError);
+  });
+
+  it('fix round 2: charge com cardToken salvo reusa o token (não gera outro)', async () => {
+    api().post('/v1/payments', (b) => b.token === 'tok-fixo').reply(201, { id: 901, status: 'approved', transaction_amount: 1 });
+    expect((await mp.charge({ providerCustomerId: 'cus-1', providerCardId: 'card-9', cardToken: 'tok-fixo', amountCents: 100, description: 'x', idempotencyKey: 'k', externalReference: 'p' })).status).toBe('paid');
+  });
+
+  it('fix round 2: createCardToken e searchPayments por external_reference', async () => {
+    api().post('/v1/card_tokens', { card_id: 'card-9', customer_id: 'cus-1' }).reply(201, { id: 'tok-9' });
+    expect(await mp.createCardToken({ providerCustomerId: 'cus-1', providerCardId: 'card-9' })).toEqual({ cardToken: 'tok-9' });
+    api().get('/v1/payments/search').query({ external_reference: 'pay-1', sort: 'date_created', criteria: 'desc' })
+      .reply(200, { results: [{ id: 1, status: 'approved', transaction_amount: 70, external_reference: 'pay-1' }, { id: 2, status: 'rejected', transaction_amount: 70, external_reference: 'pay-1' }] });
+    const found = await mp.searchPayments({ externalReference: 'pay-1' });
+    expect(found.map((p) => [p.providerPaymentId, p.status])).toEqual([['1', 'paid'], ['2', 'failed']]);
+  });
+
+  it('fix round 2: refund 400 → RefundRejectedError (recusa definitiva); 502 → ambíguo', async () => {
+    api().post('/v1/payments/900/refunds').reply(400, { message: 'amount exceeds' });
+    await expect(mp.refund({ providerPaymentId: '900', amountCents: 100, idempotencyKey: 'r' })).rejects.toBeInstanceOf(RefundRejectedError);
+    api().post('/v1/payments/900/refunds').reply(502, 'bad gateway');
+    const err = await mp.refund({ providerPaymentId: '900', amountCents: 100, idempotencyKey: 'r' }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentProviderError);
+    expect(err).not.toBeInstanceOf(RefundRejectedError);
   });
 
   it('erro 5xx → PaymentProviderError (sem vazar o token)', async () => {

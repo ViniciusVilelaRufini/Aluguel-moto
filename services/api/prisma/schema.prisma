@@ -1130,6 +1130,10 @@ model SettlementProgress {
   steps       Json      @default("{}")
   attempts    Int       @default(0)
   lastFailure String?
+  /// Execuções que terminaram em erro/resultado ambíguo do gateway (fix round 2); no limite, a liquidação é estacionada.
+  errorRuns   Int       @default(0)
+  parkedAt    DateTime?
+  parkedReason String?
   leaseOwner  String?
   leaseUntil  DateTime?
   createdAt   DateTime  @default(now())
@@ -1156,4 +1160,27 @@ model PaymentCapture {
   paymentId     String   @id @db.Uuid
   capturedCents Int
   createdAt     DateTime @default(now())
+}
+
+/// Pedido de estorno (fix round 2): reserva gravada junto com o claim do Payment; resultado do gateway reconciliado por job.
+/// status: claimed (gateway ainda não chamado) | pending (resultado desconhecido) | succeeded | rejected | needs_review
+model PaymentRefund {
+  id                String   @id @default(uuid()) @db.Uuid
+  paymentId         String   @db.Uuid
+  idempotencyKey    String   @unique
+  amountCents       Int
+  prevStatus        String
+  prevRefundedCents Int
+  newStatus         String
+  newRefundedCents  Int
+  status            String
+  attempts          Int      @default(0)
+  providerRefundId  String?
+  lastError         String?
+  createdById       String?  @db.Uuid
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([paymentId])
 }

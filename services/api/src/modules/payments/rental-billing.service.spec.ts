@@ -5,6 +5,7 @@ import { InsuranceService } from '../insurance/insurance.service';
 import { PaymentStateService } from './payment-state.service';
 import { InvalidPaymentTransitionError } from './payment-state';
 import { FakePaymentProvider } from './provider/fake-payment-provider';
+import { PaymentProviderError } from './provider/payment-provider';
 import { ProviderCustomersService } from './provider-customers.service';
 import { RentalBillingService } from './rental-billing.service';
 import { createInMemoryPrisma, type InMemoryPrisma } from './testing/in-memory-prisma';
@@ -256,6 +257,9 @@ describe('RentalBillingService.settle', () => {
     await ctx.svc.retryPendingSettlements(0);
     expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
     expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(1);
+    // O módulo rentals liga rental.paymentId ao ouvir payment.updated (rentals.listeners), também quando o job conclui.
+    const paid = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    expect(ctx.emitted).toContainEqual({ paymentId: paid.id, rentalId: RENTAL, status: 'paid' });
   });
 });
 
@@ -449,5 +453,105 @@ describe('fix round 1: liquidação retomável sem cobrança dupla', () => {
     await ctx.svc.retryPendingSettlements(0);
     expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
     expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
+  });
+});
+
+describe('fix round 2: resultados ambíguos do gateway', () => {
+  /** Faz a gravação do passo indicado falhar uma vez (queda entre o sucesso no gateway e o registro). */
+  function crashOnStepSave(ctx: Awaited<ReturnType<typeof setup>>, step: string) {
+    const real = ctx.db.settlementProgress.update.bind(ctx.db.settlementProgress);
+    let crashed = false;
+    jest.spyOn(ctx.db.settlementProgress, 'update').mockImplementation(async (args: any) => {
+      if (!crashed && args.data?.steps && args.data.steps[step] !== undefined && typeof args.data.steps[step] !== 'string' && step in args.data.steps) {
+        const s = args.data.steps[step];
+        if (s === true || (typeof s === 'object' && s?.providerPaymentId)) {
+          crashed = true;
+          throw new Error(`caiu antes de gravar ${step}`);
+        }
+      }
+      return real(args);
+    });
+  }
+
+  it('cobrança aprovada e queda antes de gravar o passo → retentativa reconcilia pela referência externa: 0 cobranças extras', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    crashOnStepSave(ctx, 'charge');
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY })).rejects.toThrow('caiu antes de gravar charge');
+    // Como no Mercado Pago: repetir o POST (corpo/token diferente) com a mesma chave dá 4xx.
+    const charge = jest.spyOn(ctx.provider, 'charge').mockRejectedValue(new PaymentProviderError('Mercado Pago: charge falhou (400).', 400));
+    await ctx.svc.retryPendingSettlements(0);
+    const pay = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    expect(pay.status).toBe('paid');
+    expect(charge).not.toHaveBeenCalled();
+    expect(ctx.provider.operations('charge')).toBe(1);
+    expect(pay.providerPaymentId).toMatch(/^fake-pay-/);
+  });
+
+  it('4xx/timeout na cobrança é ambíguo: não conta tentativa nem troca a chave', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    const charge = jest.spyOn(ctx.provider, 'charge').mockRejectedValueOnce(new PaymentProviderError('Mercado Pago: charge falhou (409).', 409));
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY })).rejects.toThrow('409');
+    const pay = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    expect(await ctx.db.settlementProgress.findUnique({ where: { paymentId: pay.id } })).toMatchObject({ attempts: 0, errorRuns: 1 });
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(false);
+    await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findUnique({ where: { id: pay.id } })).status).toBe('paid');
+    expect(charge.mock.calls.map((c) => c[0].idempotencyKey)).toEqual([`${SETTLE_KEY}:charge`, `${SETTLE_KEY}:charge`]);
+    // O mesmo token do cartão nas duas chamadas do mesmo passo.
+    expect(charge.mock.calls[0][0].cardToken).toBeDefined();
+    expect(charge.mock.calls[1][0].cardToken).toBe(charge.mock.calls[0][0].cardToken);
+  });
+
+  it('captura feita e queda antes de registrar → retentativa vê captured no gateway e conclui sem capturar de novo', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    const real = ctx.state.transition.bind(ctx.state);
+    let crashed = false;
+    jest.spyOn(ctx.state, 'transition').mockImplementation(async (id: string, to: any, data?: any) => {
+      if (to === 'captured' && !crashed) {
+        crashed = true;
+        throw new Error('caiu depois da captura');
+      }
+      return real(id, to, data);
+    });
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY })).rejects.toThrow('caiu depois da captura');
+    const capture = jest.spyOn(ctx.provider, 'capture').mockRejectedValue(new PaymentProviderError('Mercado Pago: capture falhou (400).', 400));
+    await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
+    expect(capture).not.toHaveBeenCalled();
+    expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'captured', capturedCents: 1290 });
+  });
+
+  it('última tentativa: antes de cancelar, confere no gateway; se já estava capturado, conclui como pago', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    const dp = await depositPayment(ctx.db, held.depositId);
+    jest.spyOn(ctx.provider, 'capture').mockResolvedValue({ providerPaymentId: dp.providerPaymentId, status: 'failed', amountCents: 1290, failureReason: 'cc_rejected_other_reason' });
+    await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY });
+    await ctx.svc.retryPendingSettlements(0);
+    jest.spyOn(ctx.provider, 'getPayment').mockResolvedValue({ providerPaymentId: dp.providerPaymentId, status: 'captured', amountCents: 5000, capturedCents: 1290 });
+    const cancel = jest.spyOn(ctx.provider, 'cancelPreAuthorization');
+    await ctx.svc.retryPendingSettlements(0);
+    expect(cancel).not.toHaveBeenCalled();
+    expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
+  });
+
+  it('cancelamento final que sempre falha → liquidação estacionada para revisão manual após 5 execuções (o job para)', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    const dp = await depositPayment(ctx.db, held.depositId);
+    jest.spyOn(ctx.provider, 'capture').mockResolvedValue({ providerPaymentId: dp.providerPaymentId, status: 'failed', amountCents: 1290, failureReason: 'cc_rejected_other_reason' });
+    const cancel = jest.spyOn(ctx.provider, 'cancelPreAuthorization').mockRejectedValue(new PaymentProviderError('Mercado Pago: cancelPreAuthorization falhou (502).', 502));
+    await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY });
+    for (let i = 0; i < 10; i++) await ctx.svc.retryPendingSettlements(0);
+    const pay = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    const prog = await ctx.db.settlementProgress.findUnique({ where: { paymentId: pay.id } });
+    expect(prog.parkedAt).toBeInstanceOf(Date);
+    expect(prog.parkedReason).toMatch(/502/);
+    expect(cancel).toHaveBeenCalledTimes(5);
+    expect(pay.status).toBe('pending');
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
   });
 });

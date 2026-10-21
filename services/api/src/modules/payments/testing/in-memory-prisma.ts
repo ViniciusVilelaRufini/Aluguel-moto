@@ -36,7 +36,8 @@ const SPECS: Record<string, ModelSpec> = {
   minutePackage: { unique: [['id']], defaults: () => ({ active: true }), updatedAt: true },
   pricingPlan: { unique: [['id']], defaults: () => ({ active: true }), updatedAt: true },
   auditLog: { unique: [['id']] },
-  settlementProgress: { id: 'paymentId', unique: [['paymentId']], defaults: () => ({ steps: {}, attempts: 0, lastFailure: null, leaseOwner: null, leaseUntil: null, depositId: null }), updatedAt: true },
+  settlementProgress: { id: 'paymentId', unique: [['paymentId']], defaults: () => ({ steps: {}, attempts: 0, errorRuns: 0, parkedAt: null, parkedReason: null, lastFailure: null, leaseOwner: null, leaseUntil: null, depositId: null }), updatedAt: true },
+  paymentRefund: { unique: [['id'], ['idempotencyKey']], defaults: () => ({ attempts: 0, providerRefundId: null, lastError: null, createdById: null }), updatedAt: true },
   depositRelease: { id: 'depositId', unique: [['depositId']], defaults: () => ({ attempts: 0, lastError: null, confirmedAt: null }), updatedAt: true },
   paymentCapture: { id: 'paymentId', unique: [['paymentId']] },
 };

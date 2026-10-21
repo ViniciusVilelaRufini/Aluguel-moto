@@ -8,7 +8,7 @@ import { PaymentStateService } from './payment-state.service';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { FakePaymentProvider } from './provider/fake-payment-provider';
-import { PAYMENT_PROVIDER } from './provider/payment-provider';
+import { PAYMENT_PROVIDER, PaymentProviderError, RefundRejectedError } from './provider/payment-provider';
 import { ProviderCustomersService } from './provider-customers.service';
 import { SubscriptionsService } from './subscriptions.service';
 import { createInMemoryPrisma } from './testing/in-memory-prisma';
@@ -153,12 +153,61 @@ describe('PaymentsService.refund (via gateway)', () => {
     expect(refund.mock.calls[0][0].idempotencyKey).toMatch(new RegExp(`^refund:${p.id}:k-[12]$`));
   });
 
-  it('fix round 1: gateway falha no estorno → reserva desfeita (status e refundedCents voltam)', async () => {
+  it('fix round 2: gateway RECUSA o estorno (definitivo) → reserva desfeita e 422', async () => {
     const { db, svc, p, provider } = await setup();
-    jest.spyOn(provider, 'refund').mockRejectedValueOnce(new Error('502'));
-    await expect(svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k')).rejects.toMatchObject({ slug: 'conflict' });
+    jest.spyOn(provider, 'refund').mockRejectedValueOnce(new RefundRejectedError('Mercado Pago recusou o estorno (400).'));
+    await expect(svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k')).rejects.toMatchObject({ slug: 'payment-failed' });
     expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'paid', refundedCents: 0 });
+    expect(await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).toMatchObject({ status: 'rejected' });
+    expect(await svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k2')).toMatchObject({ status: 'partially_refunded', refundedCents: 1000 });
+  });
+
+  it('fix round 2: timeout no estorno → reserva mantida (refund pending), sem rollback; o job reconcilia e conclui', async () => {
+    const { db, svc, p, provider } = await setup();
+    const refund = jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('Falha de rede com o Mercado Pago: TimeoutError'));
     expect(await svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k')).toMatchObject({ status: 'partially_refunded', refundedCents: 1000 });
+    expect(await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).toMatchObject({ status: 'pending', newRefundedCents: 1000 });
+    // Outro pedido com chave nova não estorna o mesmo valor de novo: a reserva continua valendo (teto 5000 − 1000).
+    await expect(svc.refund(admin, p.id, { amountCents: 4500, reason: 'y' }, 'k-nova')).rejects.toMatchObject({ slug: 'validation-error' });
+    await svc.reconcileRefunds(0);
+    expect(await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).toMatchObject({ status: 'succeeded' });
+    expect(refund.mock.calls.map((c) => c[0].idempotencyKey)).toEqual([`refund:${p.id}:k`, `refund:${p.id}:k`]);
+    expect(provider.operations('refund')).toBe(1);
+  });
+
+  it('fix round 2: timeout depois de o gateway estornar → reconciliação vê o estorno e não chama de novo', async () => {
+    const { db, svc, p, provider } = await setup();
+    const real = provider.refund.bind(provider);
+    const refund = jest.spyOn(provider, 'refund').mockImplementationOnce(async (input) => {
+      await real(input);
+      throw new PaymentProviderError('Falha de rede com o Mercado Pago: TimeoutError');
+    });
+    await svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k');
+    await svc.reconcileRefunds(0);
+    expect(await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).toMatchObject({ status: 'succeeded' });
+    expect(refund).toHaveBeenCalledTimes(1);
+    expect(provider.operations('refund')).toBe(1);
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'partially_refunded', refundedCents: 1000 });
+  });
+
+  it('fix round 2: queda depois da reserva e antes de chamar o gateway → o job recupera (estorna com a mesma chave)', async () => {
+    const { db, svc, p, provider } = await setup();
+    // Estado deixado por uma queda: Payment reservado + PaymentRefund "claimed", gateway nunca chamado.
+    await db.payment.update({ where: { id: p.id }, data: { status: 'partially_refunded', refundedCents: 1000 } });
+    await db.paymentRefund.create({ data: { paymentId: p.id, idempotencyKey: `refund:${p.id}:k`, amountCents: 1000, prevStatus: 'paid', prevRefundedCents: 0, newStatus: 'partially_refunded', newRefundedCents: 1000, status: 'claimed' } });
+    await svc.reconcileRefunds(0);
+    expect(await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).toMatchObject({ status: 'succeeded' });
+    expect(provider.operations('refund')).toBe(1);
+    expect((await provider.getPayment(p.providerPaymentId)).refundedCents).toBe(1000);
+  });
+
+  it('fix round 2: reconciliação com recusa definitiva desfaz a reserva', async () => {
+    const { db, svc, p, provider } = await setup();
+    jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout')).mockRejectedValueOnce(new RefundRejectedError('recusado'));
+    await svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k');
+    await svc.reconcileRefunds(0);
+    expect(await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).toMatchObject({ status: 'rejected' });
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'paid', refundedCents: 0 });
   });
 
   it('fix round 1: teto do estorno de caução capturada = valor capturado (PaymentCapture)', async () => {

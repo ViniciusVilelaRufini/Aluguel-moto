@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Interval } from '@nestjs/schedule';
+import type { Payment, PaymentRefund, Prisma } from '@prisma/client';
+import { randomUUID } from 'node:crypto';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
@@ -14,8 +16,11 @@ import type { ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, Payme
 import { toPayment, toPaymentCard } from './payments.mapper';
 import { ProviderCustomersService } from './provider-customers.service';
 import type { WebhookQueueMessage } from './provider/fake-pix-autoconfirm';
-import { CardDeclinedError, PAYMENT_PROVIDER, type PaymentProvider } from './provider/payment-provider';
+import { CardDeclinedError, PAYMENT_PROVIDER, type PaymentProvider, RefundRejectedError } from './provider/payment-provider';
 import { SubscriptionsService } from './subscriptions.service';
+
+/** Repetições de um estorno sem resultado antes de pedir revisão manual. */
+export const MAX_REFUND_ATTEMPTS = 10;
 
 const range = (from?: string, to?: string) =>
   from || to ? { ...(from ? { gte: new Date(from) } : {}), ...(to ? { lt: new Date(to) } : {}) } : undefined;
@@ -112,11 +117,13 @@ export class PaymentsService {
     return toPayment(p);
   }
 
-  /** Estorno total ou parcial: no gateway (cartão/Pix) ou de volta à carteira (pagamento pela carteira). */
   /**
-   * Estorno total ou parcial, seguro contra concorrência: primeiro reserva o valor (update condicional por status e
-   * `refundedCents` lidos, na mesma transação do lançamento da carteira), só depois chama o gateway, com chave estável
-   * por pedido (`refund:<paymentId>:<Idempotency-Key>`). Se o gateway falhar, a reserva é desfeita.
+   * Estorno total ou parcial, seguro contra concorrência e contra resultado desconhecido do gateway:
+   * 1. reserva o valor (update condicional por status e `refundedCents` lidos) e grava um `PaymentRefund` `claimed`
+   *    na mesma transação (pela carteira: o lançamento entra junto e o pedido já nasce `succeeded`);
+   * 2. chama o gateway com chave estável por pedido (`refund:<paymentId>:<Idempotency-Key>`);
+   * 3. sucesso → `succeeded`; recusa definitiva (`RefundRejectedError`) → desfaz a reserva (`rejected`, 422);
+   *    timeout/erro → mantém a reserva (`pending`) e o job `reconcileRefunds` resolve pelo estado no gateway.
    * Teto: valor capturado (caução capturada parcialmente) ou valor do pagamento.
    */
   async refund(actor: Principal, id: string, dto: RefundDto, idempotencyKey?: string) {
@@ -134,30 +141,93 @@ export class PaymentsService {
     const to = refundedCents >= base ? 'refunded' : 'partially_refunded';
     const viaWallet = p.method === 'wallet';
     if (!viaWallet && !p.providerPaymentId) throw unprocessable('validation-error', 'Pagamento sem registro no gateway para estornar.');
+    const key = `refund:${p.id}:${idempotencyKey ?? randomUUID()}`;
 
-    const claimed = await this.prisma.$transaction(async (tx) => {
-      if (!(await this.state.claimRefund(tx, p, to, refundedCents))) return false;
+    const record = await this.prisma.$transaction(async (tx) => {
+      if (!(await this.state.claimRefund(tx, p, to, refundedCents))) return null;
       if (viaWallet) {
         await appendWalletEntry(tx, { customerId: p.customerId, type: 'refund', amountCents: amount, description: `Estorno: ${dto.reason}`, paymentId: p.id, rentalId: p.rentalId, createdById: actor.userId });
       }
-      return true;
+      return tx.paymentRefund.create({
+        data: {
+          paymentId: p.id, idempotencyKey: key, amountCents: amount, prevStatus: p.status, prevRefundedCents: p.refundedCents,
+          newStatus: to, newRefundedCents: refundedCents, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
+        },
+      });
     });
-    if (!claimed) throw conflict('conflict', 'Outro estorno deste pagamento foi registrado ao mesmo tempo. Atualize e tente de novo.');
+    if (!record) throw conflict('conflict', 'Outro estorno deste pagamento foi registrado ao mesmo tempo. Atualize e tente de novo.');
 
     if (!viaWallet) {
-      try {
-        await this.provider.refund({ providerPaymentId: p.providerPaymentId!, amountCents: amount, idempotencyKey: `refund:${p.id}:${idempotencyKey ?? refundedCents}` });
-      } catch (err) {
-        // Desfaz a reserva (só se ninguém mexeu depois) para o estorno poder ser pedido de novo.
-        await this.prisma.payment.updateMany({ where: { id: p.id, status: to, refundedCents }, data: { status: p.status, refundedCents: p.refundedCents } });
-        this.logger.error({ msg: 'refund_gateway_failed', paymentId: p.id, error: (err as Error).message });
-        throw conflict('conflict', 'O gateway não confirmou o estorno. Tente de novo.');
-      }
+      const outcome = await this.callGatewayRefund(record);
+      if (outcome === 'rejected') throw new ProblemException(422, 'payment-failed', 'O gateway recusou o estorno.');
     }
     const updated = (await this.prisma.payment.findUnique({ where: { id } }))!;
     this.state.emitUpdated(updated);
     await this.audit.record({ actor, action: 'payment.refund', entityType: 'Payment', entityId: id, reason: dto.reason, metadata: { amountCents: amount } });
     return toPayment(updated);
+  }
+
+  /** Chama o gateway para um pedido de estorno e grava o resultado. Desfaz a reserva só em recusa definitiva. */
+  private async callGatewayRefund(record: PaymentRefund): Promise<'succeeded' | 'rejected' | 'pending'> {
+    const p = (await this.prisma.payment.findUnique({ where: { id: record.paymentId } }))!;
+    try {
+      const r = await this.provider.refund({ providerPaymentId: p.providerPaymentId!, amountCents: record.amountCents, idempotencyKey: record.idempotencyKey });
+      await this.prisma.paymentRefund.update({ where: { id: record.id }, data: { status: 'succeeded', providerRefundId: r.providerRefundId, attempts: { increment: 1 } } });
+      return 'succeeded';
+    } catch (err) {
+      if (err instanceof RefundRejectedError) {
+        await this.rollbackRefund(record, err.message);
+        return 'rejected';
+      }
+      await this.prisma.paymentRefund.update({ where: { id: record.id }, data: { status: 'pending', attempts: { increment: 1 }, lastError: (err as Error).message.slice(0, 500) } });
+      this.logger.warn({ msg: 'refund_outcome_unknown', paymentId: p.id, refundId: record.id, error: (err as Error).message });
+      return 'pending';
+    }
+  }
+
+  private async rollbackRefund(record: PaymentRefund, reason: string): Promise<void> {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({
+        where: { id: record.paymentId, status: record.newStatus as Payment['status'], refundedCents: record.newRefundedCents },
+        data: { status: record.prevStatus as Payment['status'], refundedCents: record.prevRefundedCents },
+      });
+      await tx.paymentRefund.update({ where: { id: record.id }, data: { status: 'rejected', lastError: reason.slice(0, 500) } });
+    });
+    this.logger.warn({ msg: 'refund_rejected', paymentId: record.paymentId, refundId: record.id });
+  }
+
+  @Interval('payments-refund-reconcile', 5 * 60_000)
+  async refundReconcileJob(): Promise<void> {
+    if (process.env.JOBS_ENABLED === 'false') return;
+    await this.reconcileRefunds(2 * 60_000).catch((err) => this.logger.error({ msg: 'refund_reconcile_failed', error: (err as Error).message }));
+  }
+
+  /**
+   * Pedidos de estorno sem resultado (`claimed`: queda antes de chamar o gateway; `pending`: timeout/erro):
+   * se o gateway já mostra o valor estornado → `succeeded`; senão repete com a mesma chave (idempotente).
+   * Depois de `MAX_REFUND_ATTEMPTS`, `needs_review` (revisão manual).
+   */
+  async reconcileRefunds(olderThanMs: number): Promise<void> {
+    const cutoff = new Date(Date.now() - olderThanMs);
+    const open = await this.prisma.paymentRefund.findMany({ where: { status: { in: ['claimed', 'pending'] }, updatedAt: { lte: cutoff } }, take: 50 });
+    for (const rec of open) {
+      try {
+        const p = (await this.prisma.payment.findUnique({ where: { id: rec.paymentId } }))!;
+        const pp = await this.provider.getPayment(p.providerPaymentId!);
+        if ((pp.refundedCents ?? 0) >= rec.newRefundedCents) {
+          await this.prisma.paymentRefund.update({ where: { id: rec.id }, data: { status: 'succeeded' } });
+          continue;
+        }
+        if (rec.attempts >= MAX_REFUND_ATTEMPTS) {
+          await this.prisma.paymentRefund.update({ where: { id: rec.id }, data: { status: 'needs_review' } });
+          this.logger.error({ msg: 'payment_needs_manual_review', paymentId: rec.paymentId, refundId: rec.id });
+          continue;
+        }
+        await this.callGatewayRefund(rec);
+      } catch (err) {
+        this.logger.warn({ msg: 'refund_reconcile_item_failed', refundId: rec.id, error: (err as Error).message });
+      }
+    }
   }
 
   // ── webhook ──
