@@ -68,7 +68,8 @@ Cada dependência AWS fica atrás de uma interface no `services/api` com duas im
 | `GeofenceEngine` | `GEOFENCE_MODE=local`: PostGIS `ST_Contains` comparando a posição anterior e a atual | Amazon Location (geofence collection + tracker) | agente 3 |
 | `QueueBus` | `QUEUE_MODE=local`: fila em processo | SQS/EventBridge | agente 2 |
 | `ObjectStorage` | `STORAGE_MODE=local`: MinIO (S3 compatível, URLs pré-assinadas funcionam) | S3 | agente 2 |
-| `PaymentProvider` | `PAYMENT_PROVIDER=fake` | `mercadopago` | agente 2 define; agente 4 implementa |
+| `RentalBillingPort` / `InsurancePort` (o que o aluguel precisa: caução, liquidação, inadimplência, apólice) | stubs do agente 2 | — | agente 2 define; agente 4 implementa |
+| `PaymentProvider` (gateway) | `PAYMENT_PROVIDER=fake` | `mercadopago` | agente 4 |
 | `InsuranceProvider` | `INSURANCE_PROVIDER=mock` | (parceiro futuro) | agente 4 |
 | `KycProvider` | `KYC_PROVIDER=mock` (aprova se 18+; CPF terminado em `00` reprova) | (provedor futuro) | agente 2 |
 | `PushNotifier` | `PUSH_MODE=log` | FCM | agente 2 |
@@ -82,10 +83,10 @@ Cada dependência AWS fica atrás de uma interface no `services/api` com duas im
 Para que as fases 2 e 3 rodem em paralelo sem conflito:
 
 - **Agente 2** entrega, além do contrato e da API:
-  - as interfaces `IotGateway` e `PaymentProvider` em `services/api/src/ports/`, com stubs mínimos em memória (`StubIotGateway` confirma na hora; `StubPaymentProvider` aprova tudo), o suficiente para o e2e reservar → iniciar → pausar → encerrar passar;
+  - as portas `IotGateway`, `RentalBillingPort` e `InsurancePort` em `services/api/src/ports/` (assinaturas fixadas no plano mestre), com stubs mínimos em memória (`StubIotGateway` confirma na hora; `StubRentalBilling` aprova tudo; `StubInsurance` usa os prêmios do seed), o suficiente para o e2e reservar → iniciar → pausar → encerrar passar;
   - os módulos `iot`, `payments` e `insurance` só como pastas com o `*.module.ts` registrando os stubs.
 - **Agente 3** trabalha só em `services/api/src/modules/iot/**`, `services/iot-sim/**`, `packages/contracts/mqtt.md` e `schemas/**`, `docs/adr-rastreador.md` e o serviço Mosquitto do compose. Substitui o `StubIotGateway`.
-- **Agente 4** trabalha só em `services/api/src/modules/payments/**` e `insurance/**`, em migrações Prisma novas (sem editar as existentes) e em `docs/pagamentos.md`. Substitui o `StubPaymentProvider`.
+- **Agente 4** trabalha só em `services/api/src/modules/payments/**` e `insurance/**`, em migrações Prisma novas (sem editar as existentes) e em `docs/pagamentos.md`. Cria o `PaymentProvider` (fake + Mercado Pago) e substitui `StubRentalBilling` e `StubInsurance`.
 - Arquivos compartilhados (`app.module.ts`, `schema.prisma`, `openapi.yaml`): cada agente pode acrescentar, nunca reescrever o que outro fez. O orquestrador resolve conflitos no merge.
 - **Agentes 5, 6 e 7** não editam nada fora da própria pasta, exceto: agente 5 cria `packages/volti_flutter`; agente 7 só acrescenta widgets lá.
 
