@@ -11,6 +11,8 @@ export interface IotConfig {
   confirmWaitMs: number;
   commandTimeoutMs: number;
   offlineAfterMs: number;
+  /** Com o relógio do rastreador adiantado, nenhuma amostra vale para travar neste intervalo depois da reconexão (fila offline). */
+  reconnectGraceMs: number;
   outOfAreaLockMinutes: number;
   shadowPollMs: number;
 }
@@ -35,6 +37,7 @@ export function loadIotConfig(): IotConfig {
     confirmWaitMs: num('IOT_CONFIRM_WAIT_MS', 3_000),
     commandTimeoutMs: num('IOT_COMMAND_TIMEOUT_MS', 30_000),
     offlineAfterMs: num('IOT_OFFLINE_AFTER_MS', 180_000),
+    reconnectGraceMs: num('IOT_RECONNECT_GRACE_MS', 10_000),
     outOfAreaLockMinutes: num('OUT_OF_AREA_LOCK_MINUTES', 5),
     shadowPollMs: num('IOT_SHADOW_POLL_MS', 1_000),
   };

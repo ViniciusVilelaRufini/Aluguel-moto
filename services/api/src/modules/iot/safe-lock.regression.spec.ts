@@ -379,7 +379,7 @@ describe('Bloqueio seguro — regressões da revisão 3', () => {
     const { transport, tel, gw, clock } = localSetup();
     const ahead = 60_000;
     await tel.telemetry(T, telemetry(20, iso(clock.now() + ahead))); // aquece (primeira mensagem = reconexão)
-    await clock.advance(5_000);
+    await clock.advance(15_000); // relógio adiantado: fora da graça de 10 s da reconexão (revisão 4)
     const t = clock.now();
     await tel.telemetry(T, telemetry(25, iso(t + ahead + 2_000)));
     const p = gw.lock({ commandId: 'c1', thingName: T });
@@ -429,5 +429,103 @@ describe('Bloqueio seguro — regressões da revisão 3', () => {
     await clock.advance(1000);
     await p;
     expect(transport.desired[1]).toEqual({ limite_kmh: 6 });
+  });
+});
+
+describe('Bloqueio seguro — regressões da revisão 4 (relógio adiantado × reconexão; timestamp no futuro distante)', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const AHEAD = 60_000;
+
+  it('relógio 60 s adiantado, queda de 3 s: o 0 km/h enfileirado antes da queda chega primeiro depois da reconexão e não trava; amostra ao vivo < 3 depois da graça trava', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(25, iso(clock.now() + AHEAD)));
+    await clock.advance(20_000);
+    await tel.telemetry(T, telemetry(25, iso(clock.now() + AHEAD)));
+    await clock.advance(1_000);
+    // parou por um instante e o rastreador caiu logo depois; a amostra ficou na fila offline do cliente MQTT
+    const queued = telemetry(0, iso(clock.now() + AHEAD));
+    await clock.advance(500);
+    await tel.presence(T, false);
+    expect((await gw.lock({ commandId: 'c1', thingName: T })).status).toBe('pending');
+    await clock.advance(3_000); // queda curta: a moto pode estar andando de novo
+    await tel.presence(T, true);
+    expect(transport.limits()).toEqual([15]); // rampa começa com velocidade desconhecida
+    await tel.telemetry(T, queued); // timestamp bruto > agora (relógio adiantado) e ≥ reconexão depois do min(raw, now)
+    expect(transport.locked()).toBe(false);
+    // amostras ao vivo < 3 ainda dentro da graça: não valem para travar
+    await clock.advance(2_000);
+    await tel.telemetry(T, telemetry(2, iso(clock.now() + AHEAD)));
+    expect(transport.locked()).toBe(false);
+    // depois da graça (10 s desde a reconexão), amostra ao vivo < 3 trava
+    await clock.advance(9_000);
+    await tel.telemetry(T, telemetry(1, iso(clock.now() + AHEAD)));
+    expect(transport.locked()).toBe(true);
+  });
+
+  it('relógio adiantado: amostra vista na graça é rejeitada mas o timestamp conta; depois da graça só vale timestamp bruto estritamente maior', async () => {
+    const clock = new FakeClock(T0);
+    const live = new LiveStateStore(new MemoryRedisStore(), clock);
+    live.markReconnected(T);
+    const flushed = clock.now() + AHEAD; // amostra da fila offline, vista durante a graça
+    expect((await live.applyTelemetry(T, telemetry(2, iso(flushed)))).speedAccepted).toBe(false);
+    await clock.advance(11_000);
+    expect((await live.applyTelemetry(T, telemetry(0, iso(flushed - 1_000)))).speedAccepted).toBe(false); // atrasada: timestamp menor que o já visto
+    expect((await live.applyTelemetry(T, telemetry(0, iso(flushed)))).speedAccepted).toBe(false); // igual ao já visto também não
+    expect(live.knownSpeed(T)).toBeNull();
+    expect((await live.applyTelemetry(T, telemetry(1, iso(clock.now() + AHEAD)))).speedAccepted).toBe(true);
+    expect(live.knownSpeed(T)).toBe(1);
+  });
+
+  it('exibição: reconexão zera a ordem — relógio corrigido para trás depois do reinício não congela o iot.telemetry', async () => {
+    const { tel, gw, clock, events } = localSetup();
+    const shown: number[] = [];
+    events.on(EV.IOT_TELEMETRY, (e: { speedKmh: number }) => shown.push(e.speedKmh));
+    await tel.telemetry(T, telemetry(10, iso(clock.now() + 5 * 60_000))); // relógio 5 min adiantado (dentro da tolerância)
+    await clock.advance(5_000);
+    await tel.presence(T, false);
+    await clock.advance(5_000);
+    await tel.presence(T, true); // reiniciou e acertou o relógio
+    await tel.telemetry(T, telemetry(11, iso(clock.now())));
+    expect(shown).toEqual([10, 11]);
+    expect((await gw.getLiveState(T))!.speedKmh).toBe(11);
+  });
+
+  it('exibição: um timestamp no futuro distante (RTC ruim) não congela a posição nem o iot.telemetry das mensagens seguintes', async () => {
+    const { tel, gw, clock, events } = localSetup();
+    const shown: number[] = [];
+    events.on(EV.IOT_TELEMETRY, (e: { speedKmh: number }) => shown.push(e.speedKmh));
+    await tel.telemetry(T, telemetry(10, iso(clock.now())));
+    await clock.advance(5_000);
+    await tel.telemetry(T, telemetry(12, iso(clock.now() + 60 * 60_000))); // 1 h no futuro: não ordena
+    await clock.advance(5_000);
+    await tel.telemetry(T, telemetry(14, iso(clock.now())));
+    expect(shown).toEqual([10, 12, 14]);
+    expect((await gw.getLiveState(T))!.speedKmh).toBe(14);
+  });
+
+  it('trava: timestamp no futuro distante nunca vale para travar e não bloqueia a amostra sã seguinte', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    await clock.advance(15_000);
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1_000);
+    await p;
+    expect(transport.limits()).toEqual([15]);
+    await tel.telemetry(T, telemetry(0, iso(clock.now() + 60 * 60_000))); // 1 h no futuro: desconhecida = em movimento
+    expect(transport.locked()).toBe(false);
+    await clock.advance(1_000);
+    await tel.telemetry(T, telemetry(1, iso(clock.now()))); // sã, mais nova de verdade
+    expect(transport.locked()).toBe(true);
+  });
+
+  it('graça configurável: com reconnectGraceMs menor a amostra ao vivo vale antes', async () => {
+    const clock = new FakeClock(T0);
+    const live = new LiveStateStore(new MemoryRedisStore(), clock, 180_000, 2_000);
+    live.markReconnected(T);
+    await clock.advance(1_000);
+    expect((await live.applyTelemetry(T, telemetry(1, iso(clock.now() + AHEAD)))).speedAccepted).toBe(false);
+    await clock.advance(1_500);
+    expect((await live.applyTelemetry(T, telemetry(1, iso(clock.now() + AHEAD)))).speedAccepted).toBe(true);
   });
 });

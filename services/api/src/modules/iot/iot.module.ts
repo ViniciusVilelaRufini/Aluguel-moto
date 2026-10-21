@@ -43,7 +43,7 @@ import { TelemetryService } from './telemetry.service';
     {
       provide: LiveStateStore,
       inject: [REDIS_STORE, IOT_CLOCK, IOT_CONFIG],
-      useFactory: (redis: RedisStore, clock: Clock, cfg: IotConfig) => new LiveStateStore(redis, clock, cfg.offlineAfterMs),
+      useFactory: (redis: RedisStore, clock: Clock, cfg: IotConfig) => new LiveStateStore(redis, clock, cfg.offlineAfterMs, cfg.reconnectGraceMs),
     },
     {
       provide: IOT_GATEWAY,

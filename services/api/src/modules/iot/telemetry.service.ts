@@ -5,12 +5,11 @@ import { EV, IotConnectivityEvent, IotDeviceEvent, IotTelemetryEvent } from '../
 import type { BaseIotGateway } from './base-iot-gateway';
 import type { Clock } from './clock';
 import type { PositionInput, RentalLookup } from './geofence/geofence.service';
+import { MAX_CLOCK_SKEW_MS } from './live-state.store';
 import { parseDeviceEvent, parseTelemetry } from './mqtt-contract';
 import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Relógio do rastreador mais que isto fora do servidor → usa a hora do servidor. */
-const MAX_CLOCK_SKEW_MS = 10 * 60 * 1000;
 
 export interface TelemetryOptions {
   trackRetentionDays: number;
@@ -76,6 +75,7 @@ export class TelemetryService implements InboundHandler {
       }
       const now = this.clock.now();
       const deviceTs = Date.parse(msg.timestamp);
+      // Relógio do rastreador mais que MAX_CLOCK_SKEW_MS fora do servidor → o trajeto usa a hora do servidor.
       const recordedAt = new Date(Math.abs(deviceTs - now) > MAX_CLOCK_SKEW_MS ? now : deviceTs);
       const ts = recordedAt.toISOString();
 

@@ -9,6 +9,19 @@ import type { ReportedState } from './shadow-transport';
 export const DEFAULT_OFFLINE_AFTER_MS = 180_000;
 /** Amostra de velocidade mais velha que isto não serve para decidir a trava (é tratada como desconhecida = em movimento). */
 export const SPEED_FRESH_MS = 10_000;
+/**
+ * `timestamp` do rastreador mais que isto à frente do servidor = não confiável (RTC ruim, rollover do GPS): não ordena a exibição,
+ * não ordena as amostras e nunca vale para travar. O mesmo limite vale, para trás ou para a frente, na hora gravada no trajeto.
+ */
+export const MAX_CLOCK_SKEW_MS = 10 * 60 * 1000;
+/** `timestamp` mais que isto depois da chegada = relógio do rastreador provadamente adiantado (latência de rede nunca é negativa). */
+export const CLOCK_AHEAD_TOLERANCE_MS = 1_000;
+/**
+ * Com o relógio adiantado, nenhuma amostra vale para travar nos primeiros `reconnectGraceMs` depois da reconexão: é a janela em que o
+ * cliente MQTT do rastreador esvazia a fila offline, e `min(timestamp, agora)` não distingue uma amostra guardada antes da queda de
+ * uma ao vivo. Configurável por `IOT_RECONNECT_GRACE_MS`.
+ */
+export const DEFAULT_RECONNECT_GRACE_MS = 10_000;
 
 /**
  * Estado ao vivo por rastreador (thingName): telemetria + reported do shadow + conectividade.
@@ -24,12 +37,17 @@ export class LiveStateStore {
   private readonly sample = new Map<string, { kmh: number; at: number }>();
   /** Horário da amostra mais nova já aceita (nunca volta): amostras mais antigas que ela, fora de ordem, são descartadas. */
   private readonly lastSampleAt = new Map<string, number>();
-  /** Horário da telemetria mais nova aplicada à exibição (posição): telemetria fora de ordem não volta a moto no mapa. */
+  /**
+   * `timestamp` da telemetria mais nova aplicada à exibição (posição): telemetria fora de ordem não volta a moto no mapa.
+   * Um `timestamp` não confiável (> agora + `MAX_CLOCK_SKEW_MS`) entra limitado a "agora", para não congelar a exibição.
+   * Zerado na reconexão (o rastreador pode ter reiniciado e acertado o relógio para trás).
+   */
   private readonly lastTelemetryAt = new Map<string, number>();
   /**
-   * Maior `timestamp` **bruto** (relógio do rastreador, sem limitar a agora) já aceito pela telemetria. A ordem entre mensagens
+   * Maior `timestamp` **bruto** (relógio do rastreador, sem limitar a agora) visto pela telemetria desde a reconexão: amostras
+   * aceitas e, com o relógio adiantado, também as rejeitadas durante a graça (a fila offline esvaziada). A ordem entre mensagens
    * do rastreador é decidida neste relógio: com o relógio adiantado, todas as amostras seriam limitadas a "agora" e uma mensagem
-   * enfileirada mais velha pareceria mais nova. Zerado na reconexão (o rastreador pode ter reiniciado e acertado o relógio).
+   * enfileirada mais velha pareceria mais nova. Um `timestamp` não confiável nunca entra aqui. Zerado na reconexão.
    */
   private readonly lastDeviceTs = new Map<string, number>();
   /** Início da conexão atual: amostras anteriores a ela não valem. */
@@ -40,6 +58,7 @@ export class LiveStateStore {
     private readonly redis: RedisStore,
     private readonly clock: Clock,
     private readonly offlineAfterMs = DEFAULT_OFFLINE_AFTER_MS,
+    private readonly reconnectGraceMs = DEFAULT_RECONNECT_GRACE_MS,
   ) {}
 
   private key(thingName: string): string {
@@ -115,18 +134,35 @@ export class LiveStateStore {
    * Aceita uma amostra de velocidade para a trava só se: medida há no máximo `SPEED_FRESH_MS`, não antes da reconexão atual
    * e mais nova que a última aceita. `at` é limitado a "agora" (relógio do rastreador adiantado não ganha validade extra).
    * `allowEqual`: amostra com horário de chegada (reported via MQTT) no mesmo ms da anterior.
+   *
+   * Telemetria (`deviceTs`, relógio bruto do rastreador):
+   * - `deviceTs` > agora + `MAX_CLOCK_SKEW_MS` → não confiável: nunca vale para travar e não entra na ordem;
+   * - `deviceTs` > agora + `CLOCK_AHEAD_TOLERANCE_MS` → relógio provadamente adiantado: `min(deviceTs, agora)` = agora ≥ reconexão
+   *   mesmo para uma amostra guardada antes da queda, então a regra "não antes da reconexão" não a pega. Falha segura: nada vale
+   *   para travar até `reconnectGraceMs` depois da reconexão (fila offline esvaziada), o `deviceTs` de toda amostra vista conta
+   *   para a ordem, e depois da graça só vale `deviceTs` estritamente maior que todos os vistos desde a reconexão.
    */
   private acceptSpeed(thingName: string, kmh: number, measuredAt: number, allowEqual = false, deviceTs?: number): boolean {
     const now = this.clock.now();
+    if (deviceTs !== undefined && deviceTs > now + MAX_CLOCK_SKEW_MS) return false;
     const at = Math.min(measuredAt, now); // limitado a agora: só para a janela de frescor
     const last = this.lastSampleAt.get(thingName);
-    const since = this.reconnectAt.get(thingName);
+    let since = this.reconnectAt.get(thingName);
     if (now - at > SPEED_FRESH_MS) return false;
     if (since !== undefined && at < since) return false;
     // Ordem no relógio do próprio rastreador (bruto), quando a amostra o traz (telemetria).
     if (deviceTs !== undefined) {
       const lastRaw = this.lastDeviceTs.get(thingName);
       if (lastRaw !== undefined && deviceTs <= lastRaw) return false;
+      if (deviceTs > now + CLOCK_AHEAD_TOLERANCE_MS) {
+        // Relógio adiantado sem reconexão conhecida (processo novo): a graça começa agora.
+        if (since === undefined) {
+          since = now;
+          this.reconnectAt.set(thingName, now);
+        }
+        this.lastDeviceTs.set(thingName, deviceTs); // conta para a ordem mesmo se rejeitada pela graça
+        if (now - since < this.reconnectGraceMs) return false;
+      }
     }
     if (last !== undefined && (at < last || (at === last && !allowEqual && deviceTs === undefined))) return false;
     this.sample.set(thingName, { kmh, at });
@@ -135,10 +171,14 @@ export class LiveStateStore {
     return true;
   }
 
-  /** Presença `connected`: a velocidade de antes da desconexão deixa de valer até chegar amostra nova. */
+  /**
+   * Presença `connected` (ou primeira mensagem depois de offline): a velocidade de antes da desconexão deixa de valer até chegar
+   * amostra nova, e a ordem (bruta e da exibição) recomeça — o rastreador pode ter reiniciado e acertado o relógio.
+   */
   markReconnected(thingName: string): void {
     this.sample.delete(thingName);
     this.lastDeviceTs.delete(thingName);
+    this.lastTelemetryAt.delete(thingName);
     this.reconnectAt.set(thingName, this.clock.now());
   }
 
@@ -182,11 +222,13 @@ export class LiveStateStore {
     const now = this.clock.now();
     const deviceTs = Date.parse(t.timestamp);
     const measuredAt = Math.min(deviceTs, now);
-    // Exibição também ordenada pelo relógio bruto do rastreador.
+    // Exibição também ordenada pelo relógio bruto do rastreador; um `timestamp` não confiável (futuro distante) entra como "agora",
+    // para uma única mensagem com RTC ruim não congelar o mapa até lá.
+    const orderTs = deviceTs > now + MAX_CLOCK_SKEW_MS ? now : deviceTs;
     const lastShown = this.lastTelemetryAt.get(thingName);
-    const newest = lastShown === undefined || deviceTs >= lastShown;
+    const newest = lastShown === undefined || orderTs >= lastShown;
     if (newest) {
-      this.lastTelemetryAt.set(thingName, deviceTs);
+      this.lastTelemetryAt.set(thingName, orderTs);
       Object.assign(s, { lat: t.lat, lng: t.lng, speedKmh: t.velocidade_kmh, batteryPct: t.bateria_pct, locked: t.travada, ignition: t.ignicao, signal: t.sinal });
     }
     const speedAccepted = this.acceptSpeed(thingName, t.velocidade_kmh, measuredAt, false, deviceTs);

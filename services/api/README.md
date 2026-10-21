@@ -59,6 +59,7 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 | `IOT_CONFIRM_WAIT_MS` | `3000` | quanto a chamada de comando espera o `reported` antes de responder `in_progress` |
 | `IOT_COMMAND_TIMEOUT_MS` | `30000` | sem `reported` → `failed`/`timeout` (o lock tem 120 s) |
 | `IOT_OFFLINE_AFTER_MS` | `180000` | sem notícia → `iot.connectivity` offline |
+| `IOT_RECONNECT_GRACE_MS` | `10000` | relógio do rastreador adiantado: nenhuma amostra de velocidade vale para travar neste intervalo depois da reconexão (fila offline do MQTT) |
 | `OUT_OF_AREA_LOCK_MINUTES` | `5` | bloqueio seguro depois de sair da área de operação |
 | `TRACK_RETENTION_DAYS` | `90` | `TrackPoint.expiresAt` |
 
