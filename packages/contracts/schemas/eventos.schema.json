@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/eventos.schema.json",
+  "title": "Evento do rastreador",
+  "description": "Publicado em motos/{thingName}/eventos quando o rastreador detecta uma condição. QoS 1.",
+  "type": "object",
+  "required": ["tipo", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "tipo": {
+      "type": "string",
+      "enum": ["queda", "violacao", "bateria_critica", "movimento_sem_aluguel"],
+      "description": "queda: acelerômetro detectou tombo; violacao: abertura do rastreador/corte de alimentação; bateria_critica: bateria de tração abaixo do limite; movimento_sem_aluguel: deslocamento com a moto travada"
+    },
+    "timestamp": { "type": "string", "format": "date-time" }
+  },
+  "examples": [{ "tipo": "queda", "timestamp": "2026-10-21T15:00:00.000Z" }]
+}

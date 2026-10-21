@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/telemetria.schema.json",
+  "title": "Telemetria do rastreador",
+  "description": "Publicada em motos/{thingName}/telemetria a cada 5 s com a moto destravada (em aluguel) e a cada 60 s parada/travada. QoS 0.",
+  "type": "object",
+  "required": ["lat", "lng", "velocidade_kmh", "bateria_pct", "travada", "ignicao", "sinal", "timestamp"],
+  "additionalProperties": false,
+  "properties": {
+    "lat": { "type": "number", "minimum": -90, "maximum": 90, "description": "Latitude WGS84" },
+    "lng": { "type": "number", "minimum": -180, "maximum": 180, "description": "Longitude WGS84" },
+    "velocidade_kmh": { "type": "number", "minimum": 0, "maximum": 200, "description": "Velocidade medida (GPS/controlador). Valores acima de 32 indicam violação do limitador e são aceitos para alerta." },
+    "bateria_pct": { "type": "number", "minimum": 0, "maximum": 100 },
+    "travada": { "type": "boolean", "description": "Trava eletrônica acionada (motor desabilitado)" },
+    "ignicao": { "type": "boolean" },
+    "sinal": { "type": "integer", "minimum": 0, "maximum": 5, "description": "Qualidade do sinal celular (0 a 5)" },
+    "timestamp": { "type": "string", "format": "date-time", "description": "Hora da medição em UTC (ISO 8601)" }
+  },
+  "examples": [
+    { "lat": -23.5614, "lng": -46.6914, "velocidade_kmh": 18.4, "bateria_pct": 76, "travada": false, "ignicao": true, "sinal": 4, "timestamp": "2026-10-21T15:00:00.000Z" }
+  ]
+}

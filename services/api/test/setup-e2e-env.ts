@@ -27,3 +27,5 @@ process.env.STUB_PIX_AUTOCONFIRM_SECONDS = '0';
 process.env.PAYMENT_PROVIDER = 'fake';
 process.env.FAKE_PIX_AUTOCONFIRM_SECONDS = '0';
 process.env.MERCADOPAGO_WEBHOOK_SECRET = process.env.MERCADOPAGO_WEBHOOK_SECRET || 'segredo-webhook-e2e';
+// Sem rastreador nos e2e do fluxo de aluguel: gateway stub (confirma na hora). O e2e de IoT (test/iot) usa IOT_MODE=local.
+process.env.IOT_MODE = process.env.IOT_MODE ?? 'stub';
