@@ -154,7 +154,9 @@ export class GeofenceService {
     const armed = this.outOfArea.get(vehicleId);
     if (armed && armed.rentalId === rentalId) return;
     // Armado para outro aluguel (ou nenhum): o prazo de A nunca vale para B.
-    if (armed || !rentalId) await this.cancelOutOfAreaLock(vehicleId, !rentalId && !armed);
+    if (armed) await this.cancelOutOfAreaLock(vehicleId, true);
+    // Nada armado e sem aluguel: no máximo um DEL por moto e processo (prazo órfão de antes de um reinício).
+    else if (!rentalId) await this.cancelOutOfAreaLock(vehicleId);
     if (!rentalId) return;
     await this.armOutOfAreaLock(vehicleId, rentalId);
   }

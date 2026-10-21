@@ -26,6 +26,12 @@ export class LiveStateStore {
   private readonly lastSampleAt = new Map<string, number>();
   /** Horário da telemetria mais nova aplicada à exibição (posição): telemetria fora de ordem não volta a moto no mapa. */
   private readonly lastTelemetryAt = new Map<string, number>();
+  /**
+   * Maior `timestamp` **bruto** (relógio do rastreador, sem limitar a agora) já aceito pela telemetria. A ordem entre mensagens
+   * do rastreador é decidida neste relógio: com o relógio adiantado, todas as amostras seriam limitadas a "agora" e uma mensagem
+   * enfileirada mais velha pareceria mais nova. Zerado na reconexão (o rastreador pode ter reiniciado e acertado o relógio).
+   */
+  private readonly lastDeviceTs = new Map<string, number>();
   /** Início da conexão atual: amostras anteriores a ela não valem. */
   private readonly reconnectAt = new Map<string, number>();
   private readonly held = new Map<string, boolean>();
@@ -110,22 +116,29 @@ export class LiveStateStore {
    * e mais nova que a última aceita. `at` é limitado a "agora" (relógio do rastreador adiantado não ganha validade extra).
    * `allowEqual`: amostra com horário de chegada (reported via MQTT) no mesmo ms da anterior.
    */
-  private acceptSpeed(thingName: string, kmh: number, measuredAt: number, allowEqual = false): boolean {
+  private acceptSpeed(thingName: string, kmh: number, measuredAt: number, allowEqual = false, deviceTs?: number): boolean {
     const now = this.clock.now();
-    const at = Math.min(measuredAt, now);
+    const at = Math.min(measuredAt, now); // limitado a agora: só para a janela de frescor
     const last = this.lastSampleAt.get(thingName);
     const since = this.reconnectAt.get(thingName);
     if (now - at > SPEED_FRESH_MS) return false;
     if (since !== undefined && at < since) return false;
-    if (last !== undefined && (at < last || (at === last && !allowEqual))) return false;
+    // Ordem no relógio do próprio rastreador (bruto), quando a amostra o traz (telemetria).
+    if (deviceTs !== undefined) {
+      const lastRaw = this.lastDeviceTs.get(thingName);
+      if (lastRaw !== undefined && deviceTs <= lastRaw) return false;
+    }
+    if (last !== undefined && (at < last || (at === last && !allowEqual && deviceTs === undefined))) return false;
     this.sample.set(thingName, { kmh, at });
     this.lastSampleAt.set(thingName, at);
+    if (deviceTs !== undefined) this.lastDeviceTs.set(thingName, deviceTs);
     return true;
   }
 
   /** Presença `connected`: a velocidade de antes da desconexão deixa de valer até chegar amostra nova. */
   markReconnected(thingName: string): void {
     this.sample.delete(thingName);
+    this.lastDeviceTs.delete(thingName);
     this.reconnectAt.set(thingName, this.clock.now());
   }
 
@@ -167,14 +180,16 @@ export class LiveStateStore {
   async applyTelemetry(thingName: string, t: TelemetryMessage): Promise<{ state: VehicleLiveState; speedAccepted: boolean; newest: boolean }> {
     const s = (await this.load(thingName)) ?? this.blank(thingName);
     const now = this.clock.now();
-    const measuredAt = Math.min(Date.parse(t.timestamp), now);
+    const deviceTs = Date.parse(t.timestamp);
+    const measuredAt = Math.min(deviceTs, now);
+    // Exibição também ordenada pelo relógio bruto do rastreador.
     const lastShown = this.lastTelemetryAt.get(thingName);
-    const newest = lastShown === undefined || measuredAt >= lastShown;
+    const newest = lastShown === undefined || deviceTs >= lastShown;
     if (newest) {
-      this.lastTelemetryAt.set(thingName, measuredAt);
+      this.lastTelemetryAt.set(thingName, deviceTs);
       Object.assign(s, { lat: t.lat, lng: t.lng, speedKmh: t.velocidade_kmh, batteryPct: t.bateria_pct, locked: t.travada, ignition: t.ignicao, signal: t.sinal });
     }
-    const speedAccepted = this.acceptSpeed(thingName, t.velocidade_kmh, measuredAt);
+    const speedAccepted = this.acceptSpeed(thingName, t.velocidade_kmh, measuredAt, false, deviceTs);
     s.online = true;
     s.lastSeenAt = new Date(now).toISOString();
     this.states.set(thingName, s);

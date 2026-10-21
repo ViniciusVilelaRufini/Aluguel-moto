@@ -80,6 +80,8 @@ export class TelemetryService implements InboundHandler {
       const ts = recordedAt.toISOString();
 
       const wasOnline = this.gateway.live.isOnline(thingName);
+      // Reconexão percebida pela própria mensagem (sem evento de presença): amostras de antes dela não valem.
+      if (!wasOnline) this.gateway.live.markReconnected(thingName);
       const applied = await this.gateway.live.applyTelemetry(thingName, msg);
       if (!wasOnline) await this.connectivity(thingName, vehicleId, true);
 
@@ -142,6 +144,7 @@ export class TelemetryService implements InboundHandler {
       }
       const vehicleId = await this.vehicleIdOf(thingName);
       const wasOnline = this.gateway.live.isOnline(thingName);
+      if (!wasOnline) this.gateway.live.markReconnected(thingName);
       await this.gateway.onReported(thingName, reported, meta);
       if (!wasOnline && vehicleId) await this.connectivity(thingName, vehicleId, true);
     });

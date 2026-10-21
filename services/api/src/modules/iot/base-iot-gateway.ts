@@ -68,9 +68,13 @@ export abstract class BaseIotGateway implements IotGateway {
     });
   }
 
+  /**
+   * Publica o desired e só então registra o limite como teto (publicação que falhou não deixa teto acima do shadow real).
+   * Sem registro (processo novo), o teto é o `reported` — `Math.min` com `MAX_SPEED_KMH` no lock — e o hold persistido.
+   */
   private async publishDesired(thingName: string, desired: DesiredState): Promise<void> {
-    if (desired.limite_kmh !== undefined) this.desiredLimit.set(thingName, desired.limite_kmh);
     await this.transport.updateDesired(thingName, desired);
+    if (desired.limite_kmh !== undefined) this.desiredLimit.set(thingName, desired.limite_kmh);
   }
 
   /** Limite em vigor para a moto (zonas de velocidade reduzida), usado ao destravar. Registrado pelo motor de cercas. */

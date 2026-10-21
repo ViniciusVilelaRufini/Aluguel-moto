@@ -272,4 +272,14 @@ describe('GeofenceService', () => {
       expect(transitions.slice(before).filter((t) => t.zoneType === 'operation' && t.transition === 'EXIT')).toHaveLength(1);
     });
   });
+
+  it('moto parada fora da área sem aluguel e sem nada armado: não faz DEL no Redis a cada posição', async () => {
+    const redis = new MemoryRedisStore();
+    const delSpy = jest.spyOn(redis, 'del');
+    const a = setup({ rentalId: null });
+    const svc = new GeofenceService(a.engine, a.commander, a.rentals, a.events, a.clock, redis, { outOfAreaLockMinutes: 5 });
+    a.engine.zones = [];
+    for (let i = 0; i < 10; i++) await svc.onPosition(pos());
+    expect(delSpy.mock.calls.filter((c) => String(c[0]).startsWith('geofence:out-of-area:')).length).toBeLessThanOrEqual(1);
+  });
 });

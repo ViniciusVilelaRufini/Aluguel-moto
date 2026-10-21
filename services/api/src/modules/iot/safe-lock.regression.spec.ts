@@ -371,3 +371,63 @@ describe('Bloqueio seguro — regressões da revisão 2', () => {
     expect(transport.desired.slice(1)[0]).toEqual({ limite_kmh: 6 });
   });
 });
+
+describe('Bloqueio seguro — regressões da revisão 3', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it('relógio do rastreador 60 s adiantado: 0 km/h enfileirado (ts T+1) chegando depois de 25 (ts T+2) não trava', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    const ahead = 60_000;
+    await tel.telemetry(T, telemetry(20, iso(clock.now() + ahead))); // aquece (primeira mensagem = reconexão)
+    await clock.advance(5_000);
+    const t = clock.now();
+    await tel.telemetry(T, telemetry(25, iso(t + ahead + 2_000)));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1000);
+    await p;
+    expect(transport.limits()).toEqual([15]);
+    await clock.advance(500);
+    await tel.telemetry(T, telemetry(0, iso(t + ahead + 1_000))); // mais antiga pelo relógio do rastreador
+    expect(transport.locked()).toBe(false);
+    await clock.advance(1000);
+    await tel.telemetry(T, telemetry(1, iso(clock.now() + ahead))); // nova de verdade
+    expect(transport.locked()).toBe(true);
+  });
+
+  it('reconexão percebida pela telemetria (sem evento de presença) também invalida amostras de antes', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    await clock.advance(1000);
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    await clock.advance(200_000); // vigia: offline
+    await tel.sweepStale();
+    expect(gw.live.isOnline(T)).toBe(false);
+    await gw.lock({ commandId: 'c1', thingName: T });
+    // primeira mensagem depois da queda: amostra enfileirada de 2 s atrás (antes da reconexão) com 0 km/h
+    await tel.telemetry(T, telemetry(0, iso(clock.now() - 2_000)));
+    expect(transport.locked()).toBe(false);
+    expect(transport.limits()).toEqual([15]);
+  });
+
+  it('desired que falhou ao publicar não vira teto da rampa', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(5, iso(clock.now())));
+    await clock.advance(1000);
+    await tel.telemetry(T, telemetry(5, iso(clock.now())));
+    const z = gw.setSpeedLimit({ commandId: 'z6', thingName: T }, 6); // publicado; reported continua 32
+    await clock.advance(1000);
+    await z;
+    const orig = transport.updateDesired.bind(transport);
+    transport.updateDesired = async () => {
+      throw new Error('broker fora');
+    };
+    await expect(gw.setSpeedLimit({ commandId: 'z32', thingName: T }, 32)).rejects.toThrow('broker fora');
+    transport.updateDesired = orig;
+    // o 32 nunca chegou ao shadow: o teto continua 6
+    await tel.telemetry(T, telemetry(5, iso(clock.now())));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1000);
+    await p;
+    expect(transport.desired[1]).toEqual({ limite_kmh: 6 });
+  });
+});
