@@ -39,6 +39,8 @@ export const PARKED_GAP_FACTOR = 2.5;
  * reconexão (a própria amostra cai na graça). Configurável por `IOT_QUEUE_LAG_MS`.
  */
 export const DEFAULT_QUEUE_LAG_MS = 5_000;
+/** Relógio do rastreador que volta mais que isto entre duas telemetrias = salto (GPS/NTP, RTC zerado): reconexão uma vez e nova referência. */
+export const CLOCK_JUMP_BACK_MS = 30_000;
 
 /**
  * Estado ao vivo por rastreador (thingName): telemetria + reported do shadow + conectividade.
@@ -226,12 +228,15 @@ export class LiveStateStore {
    * da fila offline (atraso relativo à telemetria anterior > `lagMs`), senão `null`. Não depende da cadência nem do estado
    * conhecido da moto (ignição/trava), nem do desvio do relógio do rastreador. `timestamp` não confiável (> chegada + 10 min) é
    * ignorado. Fora de ordem (timestamp ≤ o mais novo) também mede o atraso contra o mais novo, sem trocar a referência: uma
-   * mensagem reordenada ou duplicada muito atrasada abre a graça (falha segura).
+   * mensagem reordenada ou duplicada muito atrasada abre a graça (falha segura). Relógio que volta mais de `CLOCK_JUMP_BACK_MS`:
+   * abre a graça uma vez e a amostra vira a referência (senão toda amostra seguinte reabriria a graça por ~o tamanho do salto e
+   * um lock em curso terminaria `did_not_stop`); a graça e o recomeço da ordem bruta (`markReconnected`) continuam protegendo.
    */
   noteTelemetry(thingName: string, arrival: number, deviceTs: number, lagMs = DEFAULT_QUEUE_LAG_MS): number | null {
     if (!Number.isFinite(deviceTs) || deviceTs > arrival + MAX_CLOCK_SKEW_MS) return null;
     const prev = this.lastTelemetryPair.get(thingName);
-    if (!prev || deviceTs > prev.deviceTs) this.lastTelemetryPair.set(thingName, { arrival, deviceTs });
+    const jumpedBack = !!prev && prev.deviceTs - deviceTs > CLOCK_JUMP_BACK_MS;
+    if (!prev || deviceTs > prev.deviceTs || jumpedBack) this.lastTelemetryPair.set(thingName, { arrival, deviceTs });
     if (!prev) return null;
     const lag = arrival - prev.arrival - (deviceTs - prev.deviceTs);
     return lag > lagMs ? lag : null;

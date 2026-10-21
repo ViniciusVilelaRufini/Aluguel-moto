@@ -892,3 +892,42 @@ describe('Bloqueio seguro — regressões da revisão 4b, fix round 1 (fila offl
     }
   });
 });
+
+describe('Bloqueio seguro — regressões da revisão 4b, fix round 2 (relógio que volta; amostra velha pelo TelemetryService)', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it('N1: relógio do rastreador volta 120 s (correção do GPS) — abre a graça uma vez; depois dela uma amostra fresca < 3 trava', async () => {
+    const s = await awsSetup();
+    await s.ride(25, 120_000); // relógio 120 s adiantado
+    await s.sqs(telemetry(25, iso(s.clock.now()))); // corrigido: volta 120 s
+    expect(s.gw.live.knownSpeed(T)).toBeNull(); // uma graça
+    const p = s.gw.lock({ commandId: 'c1', thingName: T });
+    await s.clock.advance(100);
+    await p;
+    expect(s.published).toEqual([{ limite_kmh: 15 }]);
+    await s.clock.advance(4_900);
+    await s.sqs(telemetry(25, iso(s.clock.now())));
+    await s.clock.advance(5_000);
+    await s.sqs(telemetry(25, iso(s.clock.now()))); // 10 s depois: fora da graça, sem reabrir
+    expect(s.gw.live.knownSpeed(T)).toBe(25);
+    await s.clock.advance(5_000);
+    await s.sqs(telemetry(1, iso(s.clock.now())));
+    expect(s.locked()).toBe(true);
+  });
+
+  it('N2: telemetria de 3 min atrás passando pelo TelemetryService (fila offline) não vale para travar', async () => {
+    const { transport, tel, gw, clock, live } = localSetup();
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    await clock.advance(10_000);
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    expect(live.knownSpeed(T)).toBe(25);
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1_000);
+    await p;
+    expect(transport.limits()).toEqual([15]);
+    await clock.advance(2_000);
+    await tel.telemetry(T, telemetry(0, iso(clock.now() - 3 * 60_000)));
+    expect(transport.locked()).toBe(false);
+    expect(live.knownSpeed(T)).not.toBe(0);
+  });
+});
