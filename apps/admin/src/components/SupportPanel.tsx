@@ -6,7 +6,7 @@ import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { CLAIM_STATUS, CLAIM_TYPE, DISPUTE_STATUS, INCIDENT_CATEGORY, INCIDENT_STATUS } from '@/lib/labels';
-import { formatBRL, formatDateTime, timeAgo } from '@/lib/format';
+import { formatDateTime, timeAgo } from '@/lib/format';
 import type { S } from '@/lib/types';
 import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
@@ -221,4 +221,3 @@ function Incidents({ customerId }: { customerId?: string }) {
   );
 }
 
-export { formatBRL };

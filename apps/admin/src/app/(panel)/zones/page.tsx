@@ -177,7 +177,7 @@ export default function ZonesPage() {
       <div style={{ flex: 1, position: 'relative', minHeight: 320 }}>
         <MapView onReady={onReady} onDestroy={() => { mapRef.current = null; drawRef.current = null; setMapReady(false); }} />
         <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 8 }}>
-          {canEdit && <Button size="sm" variant="dark" icon="PenTool" testId="draw-zone" onClick={startNew}>Desenhar área</Button>}
+          {canEdit && <Button size="sm" variant="dark" icon="PenTool" testId="draw-zone" disabled={!mapReady} onClick={startNew}>Desenhar área</Button>}
           <Button size="sm" variant="secondary" icon="Layers" style={{ background: '#fff' }} onClick={() => setLayers(!layers)}>{layers ? 'Ocultar camadas' : 'Mostrar camadas'}</Button>
         </div>
       </div>
