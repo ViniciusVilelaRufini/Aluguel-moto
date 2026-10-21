@@ -35,8 +35,8 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 
 | Comando | O que roda | Precisa de |
 |---|---|---|
-| `pnpm --filter api test` | unitários (preço, início/encerramento, reservas, comandos, auth, LGPD, inspeção) + conformidade com o contrato (rotas, grupos, schemas) | nada |
-| `pnpm --filter api test:e2e` | `test/rental-flow.e2e-spec.ts`: dev token → reserva → aluguel → pausa → retoma → foto (PUT real no MinIO) → encerra, TTL da reserva, auth, TrackPoint; `test/reports.e2e-spec.ts`: relatórios no fuso de São Paulo | compose + migrate + seed |
+| `pnpm --filter api test` | unitários (preço, início/encerramento, reservas, comandos, auth, LGPD, inspeção, pagamentos/carteira/seguro com Prisma em memória e Mercado Pago via nock) + conformidade com o contrato (rotas, grupos, schemas) | nada |
+| `pnpm --filter api test:e2e` | `test/rental-flow.e2e-spec.ts`: dev token → cartão → reserva → aluguel → pausa → retoma → foto (PUT real no MinIO) → encerra, TTL da reserva, auth, TrackPoint; `test/reports.e2e-spec.ts`: relatórios no fuso de São Paulo; `test/payments.e2e-spec.ts`: caução/captura/recibo/NFS-e/repasse, Pix por webhook assinado (dedup), inadimplência → 403, carteira (`PAYMENT_PROVIDER=fake`). O setup lê o `.env` do pacote (`DATABASE_URL`/`REDIS_URL` por worktree) | compose + migrate + seed |
 | `pnpm --filter api test:contract` | sobe a API e valida respostas reais de 11 grupos de endpoints com `jest-openapi` | compose + migrate + seed |
 | `pnpm --filter api lint` | ESLint + `tsc --noEmit` | nada |
 
@@ -44,7 +44,8 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 
 - `src/ports/` — interfaces fixas: `IotGateway`, `RentalBillingPort`, `InsurancePort` (plano mestre), `ObjectStorage`, `QueueBus`, `KycProvider`, `PushNotifier`, `AuthVerifier`.
 - `src/adapters/` — implementações local/aws escolhidas por variável (`AUTH_MODE`, `STORAGE_MODE`, `QUEUE_MODE`, `KYC_PROVIDER`, `PUSH_MODE`).
-- `src/modules/iot`, `payments`, `insurance`, `wallet` — **donos: Tasks 4 e 5**. Hoje registram `StubIotGateway` (confirma na hora), `StubRentalBilling` (`held`/`paid`/não inadimplente; Pix confirma sozinho após `STUB_PIX_AUTOCONFIRM_SECONDS`) e `StubInsurance` (prêmios do seed), além de endpoints provisórios sobre o banco.
+- `src/modules/iot` — **dono: Task 4**. Hoje registra `StubIotGateway` (confirma na hora).
+- `src/modules/payments`, `insurance`, `wallet` — **Task 5** (`docs/pagamentos.md`): `RentalBillingService` (caução por pré-autorização ou Pix, liquidação com captura parcial, inadimplência) sobre `PaymentProvider` (`PAYMENT_PROVIDER=fake|mercadopago`), webhooks do Mercado Pago validados, enfileirados e deduplicados (`ProcessedWebhook`), carteira em ledger somente inserção, `InsuranceService` com `MockInsuranceProvider` e repasse, recibo em PDF no bucket de relatórios e NFS-e (`MockInvoiceIssuer`). No fake, o cartão precisa ser cadastrado antes de alugar (`POST /payments/cards` com `cardToken: tok_visa_4242`); o Pix se confirma sozinho após `FAKE_PIX_AUTOCONFIRM_SECONDS`.
 - `src/common/` — enums compartilhados, erros RFC 7807 (`ProblemException` → `type: https://api.volti.com.br/problems/<slug>`), idempotência (`@Idempotent`), paginação por cursor, logger JSON sem dados pessoais.
 - Eventos internos: `src/common/events.ts` (os do plano mestre + os próprios da API, ver `docs/decisoes.md`).
 - Jobs (`JOBS_ENABLED`): expiração de reservas (TTL do Redis + varredura), retentativa de encerramento `ending`, `rental.updated` a cada 30 s, "você está bem?" (60 s), limpeza diária de `TrackPoint` expirado.

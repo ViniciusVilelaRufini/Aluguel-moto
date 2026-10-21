@@ -1060,3 +1060,130 @@ model IdempotencyRecord {
   @@unique([scope, key])
   @@index([expiresAt])
 }
+
+// ───────────── Task 5 (pagamentos, caução e seguro) — só modelos novos ─────────────
+
+/// Webhook já processado (deduplicação por id do evento do provedor).
+model ProcessedWebhook {
+  id          String   @id @default(uuid()) @db.Uuid
+  provider    String
+  eventId     String
+  type        String
+  dataId      String?
+  processedAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+}
+
+/// Referência a entidades no gateway: cliente (`customer`) e assinatura (`subscription`).
+model PaymentProviderRef {
+  id         String   @id @default(uuid()) @db.Uuid
+  entityType String
+  entityId   String   @db.Uuid
+  provider   String
+  providerId String
+  createdAt  DateTime @default(now())
+
+  @@unique([entityType, entityId, provider])
+  @@index([provider, providerId])
+}
+
+/// Repasse do prêmio à seguradora (um por apólice).
+model InsuranceRemittance {
+  id          String   @id @default(uuid()) @db.Uuid
+  policyId    String   @unique @db.Uuid
+  rentalId    String?  @db.Uuid
+  insurer     String
+  amountCents Int
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Recibo em PDF (bucket de relatórios) por pagamento.
+model PaymentReceipt {
+  paymentId String   @id @db.Uuid
+  rentalId  String?  @db.Uuid
+  bucket    String
+  objectKey String
+  createdAt DateTime @default(now())
+}
+
+/// NFS-e emitida por pagamento (via `InvoiceIssuer`).
+model Invoice {
+  id          String   @id @default(uuid()) @db.Uuid
+  paymentId   String   @unique @db.Uuid
+  issuer      String
+  number      String
+  status      String
+  amountCents Int
+  issuedAt    DateTime @default(now())
+}
+
+/// Progresso da liquidação de um aluguel (fix round 1): plano decidido uma vez, passos concluídos, tentativas e lease
+/// (dono + validade) para que só um executor por vez fale com o gateway.
+model SettlementProgress {
+  paymentId   String    @id @db.Uuid
+  plan        String
+  depositId   String?   @db.Uuid
+  steps       Json      @default("{}")
+  attempts    Int       @default(0)
+  lastFailure String?
+  /// Execuções que terminaram em erro/resultado ambíguo do gateway (fix round 2); no limite, a liquidação é estacionada.
+  errorRuns   Int       @default(0)
+  parkedAt    DateTime?
+  parkedReason String?
+  /// Liquidação concluída (Payment saiu de `pending`); o job de retomada só lê registros sem `finishedAt` e sem `parkedAt` (fix round 4).
+  finishedAt  DateTime?
+  leaseOwner  String?
+  leaseUntil  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([updatedAt])
+  @@index([parkedAt, finishedAt, updatedAt])
+}
+
+/// Pedido de liberação de caução ainda não confirmado pelo gateway (retentado por job).
+model DepositRelease {
+  depositId   String    @id @db.Uuid
+  reason      String
+  attempts    Int       @default(0)
+  lastError   String?
+  confirmedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([confirmedAt])
+}
+
+/// Valor efetivamente capturado de uma pré-autorização (teto de estorno do pagamento da caução).
+model PaymentCapture {
+  paymentId     String   @id @db.Uuid
+  capturedCents Int
+  createdAt     DateTime @default(now())
+}
+
+/// Pedido de estorno (fix round 2): reserva gravada junto com o claim do Payment; resultado do gateway reconciliado por job.
+/// status: claimed (gateway ainda não chamado) | pending (resultado desconhecido) | succeeded | rejected | needs_review
+model PaymentRefund {
+  id                String   @id @default(uuid()) @db.Uuid
+  paymentId         String   @db.Uuid
+  idempotencyKey    String   @unique
+  amountCents       Int
+  prevStatus        String
+  prevRefundedCents Int
+  newStatus         String
+  newRefundedCents  Int
+  status            String
+  attempts          Int      @default(0)
+  providerRefundId  String?
+  lastError         String?
+  createdById       String?  @db.Uuid
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([paymentId])
+}

@@ -25,6 +25,8 @@ describe('Fluxo do aluguel (e2e)', () => {
     const { token, customerId } = await approvedCustomer(app, prisma, 'flow');
     const auth = { Authorization: `Bearer ${token}` };
     const vehicle = await freeVehicleInReturnZone(prisma);
+    // Caução no cartão exige cartão cadastrado (token do gateway fake, Task 5).
+    await http().post('/payments/cards').set(auth).set('Idempotency-Key', randomUUID()).send({ cardToken: 'tok_visa_4242' }).expect(201);
 
     // Reserva
     const reservation = await http().post('/reservations').set(auth).send({ vehicleId: vehicle.id }).expect(201);
@@ -74,7 +76,11 @@ describe('Fluxo do aluguel (e2e)', () => {
     expect(costCents).toBeGreaterThanOrEqual(1290);
     expect(final.body.breakdown.insuranceCents).toBe(200);
 
-    // Liquidação única e moto liberada
+    // Liquidação única e moto liberada. A liquidação pode terminar logo depois da resposta: o travamento confirmado na hora
+    // também dispara o encerramento pelo evento command.changed (decisões, Task 5 #12), então espera o pagamento aparecer.
+    for (let i = 0; i < 100 && !(await prisma.payment.count({ where: { rentalId, kind: 'rental', status: { not: 'pending' } } })); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
     const payments = await prisma.payment.findMany({ where: { rentalId, kind: 'rental' } });
     expect(payments).toHaveLength(1);
     expect(payments[0].amountCents).toBe(costCents);

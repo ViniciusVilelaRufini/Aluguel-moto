@@ -1,16 +1,18 @@
 import { Global, Module } from '@nestjs/common';
 import { INSURANCE } from '../../ports/insurance.port';
+import { MockInsuranceProvider, INSURANCE_PROVIDER } from './insurance-provider';
 import { InsuranceController } from './insurance.controller';
-import { StubInsurance } from './stub-insurance';
+import { InsuranceService } from './insurance.service';
 
-/**
- * Módulo de seguro — dono: Task 5 (agente 4). Hoje registra o `StubInsurance` (prêmios do seed).
- * A Task 5 troca o provider por `InsuranceService` (com `InsuranceProvider` mock).
- */
+/** Seguro (Task 5): `InsuranceService` implementa a porta `INSURANCE` sobre o `InsuranceProvider` (`INSURANCE_PROVIDER=mock`). */
 @Global()
 @Module({
   controllers: [InsuranceController],
-  providers: [StubInsurance, { provide: INSURANCE, useExisting: StubInsurance }],
-  exports: [INSURANCE],
+  providers: [
+    { provide: INSURANCE_PROVIDER, useFactory: () => new MockInsuranceProvider() },
+    InsuranceService,
+    { provide: INSURANCE, useExisting: InsuranceService },
+  ],
+  exports: [INSURANCE, InsuranceService],
 })
 export class InsuranceModule {}

@@ -78,8 +78,8 @@ export class PaymentsController {
   @HttpCode(200)
   @StaffOnly('admin', 'financeiro')
   @Idempotent({ required: true })
-  refund(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RefundDto, @CurrentUser() u: Principal) {
-    return this.payments.refund(u, id, dto);
+  refund(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RefundDto, @CurrentUser() u: Principal, @Headers('idempotency-key') idempotencyKey?: string) {
+    return this.payments.refund(u, id, dto, idempotencyKey);
   }
 
   /** Público; valida `x-signature` (HMAC-SHA256) antes de enfileirar. */
