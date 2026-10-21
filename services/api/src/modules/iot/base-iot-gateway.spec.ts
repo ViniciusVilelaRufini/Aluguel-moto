@@ -52,6 +52,17 @@ describe('BaseIotGateway', () => {
     expect(transport.desired).toEqual([]);
   });
 
+  it('QA-01: limite manual acima do limite da zona em que a moto está → failed/invalid_limit e nada publicado; igual ou abaixo passa', async () => {
+    const { gw, transport } = await setup();
+    gw.setLimitResolver(() => 6); // calçadão
+    expect(await gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 32)).toEqual({ commandId: 'c1', status: 'failed', reason: 'invalid_limit' });
+    expect(await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 7)).toEqual({ commandId: 'c2', status: 'failed', reason: 'invalid_limit' });
+    expect(transport.desired).toEqual([]);
+    transport.autoReport = (t, d) => void gw.onReported(t, { limite_kmh: d.limite_kmh });
+    expect(await gw.setSpeedLimit({ commandId: 'c3', thingName: T }, 6)).toEqual({ commandId: 'c3', status: 'confirmed' });
+    expect(await gw.setSpeedLimit({ commandId: 'c4', thingName: T }, 3)).toEqual({ commandId: 'c4', status: 'confirmed' });
+  });
+
   it('online + reported dentro da espera → confirmed (sem evento)', async () => {
     const { gw, transport, updates } = await setup();
     transport.autoReport = (t, d) => void gw.onReported(t, { limite_kmh: d.limite_kmh });

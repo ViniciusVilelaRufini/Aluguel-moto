@@ -125,6 +125,13 @@ export abstract class BaseIotGateway implements IotGateway {
       this.logger.warn({ msg: 'speed_limit_refused_during_safe_lock', thingName: req.thingName, commandId: req.commandId });
       return { commandId: req.commandId, status: 'failed' };
     }
+    // QA-01: nenhum limite (operador/admin) acima do limite da zona em que a moto está (6 calçadão, 20 ciclovia).
+    // O motor de cercas manda exatamente o limite em vigor, então só comandos manuais acima dele são recusados (nunca truncar).
+    const zoneLimit = this.limitResolver(req.thingName);
+    if (kmh > zoneLimit) {
+      this.logger.warn({ msg: 'speed_limit_refused_above_zone_limit', thingName: req.thingName, commandId: req.commandId, kmh, zoneLimit });
+      return { commandId: req.commandId, status: 'failed', reason: 'invalid_limit' };
+    }
     return this.desiredCommand(req, { limite_kmh: kmh });
   }
 
