@@ -17,6 +17,8 @@ O firmware está fora do escopo da Task 4. Este documento é o requisito para o 
 | F7 | **Telemetria:** a cada 5 s destravada ou em modo roubada; a cada 60 s parada/travada. |
 | F8 | **Perda de conexão:** manter o último estado aplicado (limite e trava). Sem conexão, nunca travar por conta própria em movimento. |
 | F9 | **Movimento travada:** deslocamento > 20 m com a trava acionada → evento `movimento_sem_aluguel`. |
+| F11 | **Mensagens guardadas offline:** a telemetria deve levar no `timestamp` a hora da **medição** (não a do envio); pode ser enfileirada e enviada depois da reconexão, mas o servidor não a usa para travar (só amostras com até 10 s, posteriores à reconexão e mais novas que a última). `reported` com `velocidade_kmh` **não** pode ser enfileirado offline nem reenviado depois da reconexão (o shadow não carrega a hora da medição): ao reconectar, descartar a fila de updates de shadow e publicar o reported atual (F5). |
+| F12 | **Trava pendente que expirou:** se o servidor desistir da trava (120 s sem confirmação) ele troca o desired para `travada: false` com `limite_kmh: 0`. O firmware deve cancelar qualquer trava pendente ao receber `travada: false` e manter o limite 0 até novo comando. |
 | F10 | **Presença:** registrar *last will* em `$aws/events/presence/disconnected/{thingName}` no ambiente local (o IoT Core gera os eventos de ciclo de vida sozinho em produção). |
 
 ## Por que F1 é a última linha de defesa (corrida inevitável)
@@ -41,7 +43,7 @@ desired travada=true   ───────────────►  trava (
 comando lock: confirmed
 ```
 
-Se a moto não parar em 120 s, o comando termina `failed`/`did_not_stop`, o limite 0 fica mantido e o painel recebe alerta (`command_failed`, prioridade alta).
+Se a moto não parar em 120 s, o comando termina `failed`/`did_not_stop`, o limite 0 fica mantido (segurado no servidor até um `unlock` explícito) e o painel recebe alerta (`command_failed`, prioridade alta). Se a trava foi pedida mas não confirmada em 120 s (`failed`/`timeout`), o servidor grava `travada: false` + `limite_kmh: 0` no desired, para um rastreador offline não aplicar a trava ao reconectar em qualquer velocidade; um lock futuro refaz a rampa.
 
 ## Homologação
 

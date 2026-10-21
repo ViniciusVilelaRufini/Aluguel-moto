@@ -208,11 +208,12 @@ describe('SafeLockService (bloqueio seguro)', () => {
     expect(transport.limits()).toEqual([6, 3, 0]);
   });
 
-  it('travada enviada mas sem confirmação em 120 s → failed/timeout', async () => {
-    const { clock, outcomes, svc } = setup();
+  it('travada enviada mas sem confirmação em 120 s → failed/timeout e o desired volta a travada:false com limite 0 (um lock futuro refaz a rampa)', async () => {
+    const { clock, outcomes, svc, transport } = setup();
     await svc.start(REQ, { speedKmh: 0, speedLimitKmh: 32, locked: false, online: true });
     await clock.advance(120_000);
     expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
+    expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: false, limite_kmh: 0 });
   });
 
   it('eventos de outra moto não afetam a rampa', async () => {

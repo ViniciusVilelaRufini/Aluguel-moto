@@ -46,6 +46,8 @@ export abstract class BaseIotGateway implements IotGateway {
   private readonly waiters = new Map<string, (o: CommandOutcome) => void>();
   private readonly tracked = new Map<string, Tracked>();
   private readonly returnedAt = new Map<string, number>();
+  /** Último `limite_kmh` gravado no desired por este processo (a rampa nunca começa acima dele). */
+  private readonly desiredLimit = new Map<string, number>();
   private limitResolver: (thingName: string) => number = () => MAX_SPEED_KMH;
 
   constructor(
@@ -55,11 +57,20 @@ export abstract class BaseIotGateway implements IotGateway {
     protected readonly events: EventEmitter2,
     protected readonly opts: GatewayOptions,
   ) {
-    this.safeLock = new SafeLockService(clock, transport, (o) => this.settle(o), {
+    // A rampa publica pelo mesmo caminho que registra o último limite desejado.
+    const recording = { updateDesired: (t: string, d: DesiredState) => this.publishDesired(t, d), publishCommand: transport.publishCommand.bind(transport) };
+    this.safeLock = new SafeLockService(clock, recording, (o) => this.settle(o), {
       stepIntervalMs: opts.stepIntervalMs,
       timeoutMs: opts.safeLockTimeoutMs,
-      onHeld: (thingName) => void this.live.setHeld(thingName, true),
+      // Em memória na hora (falha fechada); a escrita no Redis que falhar é registrada.
+      onHeld: (thingName) =>
+        void this.live.setHeld(thingName, true).catch((err: Error) => this.logger.error({ msg: 'safe_lock_hold_persist_failed', thingName, error: err.message })),
     });
+  }
+
+  private async publishDesired(thingName: string, desired: DesiredState): Promise<void> {
+    if (desired.limite_kmh !== undefined) this.desiredLimit.set(thingName, desired.limite_kmh);
+    await this.transport.updateDesired(thingName, desired);
   }
 
   /** Limite em vigor para a moto (zonas de velocidade reduzida), usado ao destravar. Registrado pelo motor de cercas. */
@@ -75,7 +86,12 @@ export abstract class BaseIotGateway implements IotGateway {
     const state = {
       // Só velocidade fresca; desconhecida = null (a rampa trata como em movimento). Nunca 0 por padrão.
       speedKmh: this.live.knownSpeed(req.thingName),
-      speedLimitKmh: s?.speedLimitKmh ?? MAX_SPEED_KMH,
+      // Teto da rampa: o menor entre o reported, o último desired e o hold (0). Nunca sobe acima do que já foi pedido.
+      speedLimitKmh: Math.min(
+        s?.speedLimitKmh ?? MAX_SPEED_KMH,
+        this.desiredLimit.get(req.thingName) ?? MAX_SPEED_KMH,
+        (await this.live.isHeld(req.thingName)) ? 0 : MAX_SPEED_KMH,
+      ),
       locked: s?.locked === true && this.live.isOnline(req.thingName),
       online: this.live.isOnline(req.thingName),
     };
@@ -177,7 +193,7 @@ export abstract class BaseIotGateway implements IotGateway {
     if (online) tracked.timer = this.clock.setTimeout(() => this.onTrackedTimeout(req.commandId), this.opts.commandTimeoutMs);
     this.tracked.set(req.commandId, tracked);
     try {
-      await this.transport.updateDesired(req.thingName, { ...expect, ...extra });
+      await this.publishDesired(req.thingName, { ...expect, ...extra });
     } catch (err) {
       this.untrack(tracked);
       this.waiters.delete(req.commandId);

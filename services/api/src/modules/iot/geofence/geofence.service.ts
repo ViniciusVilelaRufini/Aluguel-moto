@@ -53,7 +53,7 @@ export class GeofenceService {
   private readonly logger = new Logger('GeofenceService');
   private readonly byVehicle = new Map<string, VehicleZones>();
   private readonly limitByThing = new Map<string, number>();
-  private readonly outOfArea = new Map<string, TimerHandle>();
+  private readonly outOfArea = new Map<string, { handle: TimerHandle; rentalId: string }>();
   /** Motos cujo prazo persistido já foi conferido neste processo (evita um GET/DEL no Redis a cada posição). */
   private readonly outOfAreaChecked = new Set<string>();
 
@@ -111,8 +111,9 @@ export class GeofenceService {
     const opBefore = prevZones.some((z) => z.type === 'operation');
     const opNow = zones.some((z) => z.type === 'operation');
     // Zonas operation: só a passagem "dentro de alguma" ↔ "fora de todas" conta como transição.
-    const exits = prevZones.filter((z) => !nowIds.has(z.id) && (z.type !== 'operation' || (opBefore && !opNow)));
-    const enters = zones.filter((z) => !prevIds.has(z.id) && (z.type !== 'operation' || (!opBefore && opNow)));
+    // Uma única transição de operation mesmo com zonas sobrepostas deixadas/alcançadas na mesma posição.
+    const exits = onlyOneOperation(prevZones.filter((z) => !nowIds.has(z.id) && (z.type !== 'operation' || (opBefore && !opNow))));
+    const enters = onlyOneOperation(zones.filter((z) => !prevIds.has(z.id) && (z.type !== 'operation' || (!opBefore && opNow))));
 
     const reduced = zones.filter((z) => z.type === 'reduced_speed' && z.speedLimitKmh !== null);
     const limit = effectiveZoneLimit(reduced.map((z) => z.speedLimitKmh!));
@@ -149,10 +150,19 @@ export class GeofenceService {
       await this.cancelOutOfAreaLock(vehicleId);
       return;
     }
-    if (this.outOfArea.has(vehicleId)) return;
     const rentalId = knownRentalId ?? (await this.rentals.openRentalId(vehicleId));
+    const armed = this.outOfArea.get(vehicleId);
+    if (armed && armed.rentalId === rentalId) return;
+    // Armado para outro aluguel (ou nenhum): o prazo de A nunca vale para B.
+    if (armed || !rentalId) await this.cancelOutOfAreaLock(vehicleId, !rentalId && !armed);
     if (!rentalId) return;
-    await this.armOutOfAreaLock(vehicleId);
+    await this.armOutOfAreaLock(vehicleId, rentalId);
+  }
+
+  /** `rental.changed` com o aluguel encerrado: desarma e apaga o prazo persistido. */
+  async onRentalEnded(vehicleId: string): Promise<void> {
+    this.rentals.invalidate(vehicleId);
+    await this.cancelOutOfAreaLock(vehicleId, true);
   }
 
   private emit(p: PositionInput, z: ZoneRef, transition: 'ENTER' | 'EXIT', rentalId?: string): void {
@@ -167,43 +177,53 @@ export class GeofenceService {
     return `geofence:out-of-area:${vehicleId}`;
   }
 
-  /** Arma com o prazo persistido (reinício) ou com um prazo novo de `OUT_OF_AREA_LOCK_MINUTES`. */
-  private async armOutOfAreaLock(vehicleId: string): Promise<void> {
+  /**
+   * Arma com o prazo persistido do **mesmo aluguel** (reinício) ou com um prazo novo de `OUT_OF_AREA_LOCK_MINUTES`.
+   * Persistido como `{ rentalId, deadline }` com TTL (prazo + 1 h), para não sobrar chave órfã.
+   */
+  private async armOutOfAreaLock(vehicleId: string, rentalId: string): Promise<void> {
     const now = this.clock.now();
     const raw = await this.redis.get(this.outOfAreaKey(vehicleId)).catch(() => null);
-    let deadline = raw ? Number(raw) : NaN;
+    let deadline = NaN;
+    try {
+      const stored = raw ? (JSON.parse(raw) as { rentalId?: string; deadline?: number }) : null;
+      if (stored && stored.rentalId === rentalId && Number.isFinite(stored.deadline)) deadline = stored.deadline!;
+    } catch {
+      /* formato antigo/corrompido: prazo novo */
+    }
     if (!Number.isFinite(deadline)) {
       deadline = now + this.opts.outOfAreaLockMinutes * 60_000;
-      await this.redis.set(this.outOfAreaKey(vehicleId), String(deadline)).catch(() => undefined);
+      await this.redis.set(this.outOfAreaKey(vehicleId), JSON.stringify({ rentalId, deadline }), deadline - now + OUT_OF_AREA_KEY_GRACE_MS).catch(() => undefined);
     }
-    if (this.outOfArea.has(vehicleId)) return;
     this.outOfAreaChecked.add(vehicleId);
-    const handle = this.clock.setTimeout(() => this.fireOutOfAreaLock(vehicleId), Math.max(0, deadline - now));
-    this.outOfArea.set(vehicleId, handle);
-    this.logger.log({ msg: 'out_of_area_lock_armed', vehicleId, inMs: Math.max(0, deadline - now) });
+    const handle = this.clock.setTimeout(() => this.fireOutOfAreaLock(vehicleId, rentalId), Math.max(0, deadline - now));
+    this.outOfArea.set(vehicleId, { handle, rentalId });
+    this.logger.log({ msg: 'out_of_area_lock_armed', vehicleId, rentalId, inMs: Math.max(0, deadline - now) });
   }
 
-  private async cancelOutOfAreaLock(vehicleId: string): Promise<void> {
-    const h = this.outOfArea.get(vehicleId);
-    if (h) {
-      this.clock.clearTimeout(h);
+  private async cancelOutOfAreaLock(vehicleId: string, force = false): Promise<void> {
+    const armed = this.outOfArea.get(vehicleId);
+    if (armed) {
+      this.clock.clearTimeout(armed.handle);
       this.outOfArea.delete(vehicleId);
-      this.logger.log({ msg: 'out_of_area_lock_canceled', vehicleId });
-    } else if (this.outOfAreaChecked.has(vehicleId)) {
+      this.logger.log({ msg: 'out_of_area_lock_canceled', vehicleId, rentalId: armed.rentalId });
+    } else if (!force && this.outOfAreaChecked.has(vehicleId)) {
       return;
     }
     this.outOfAreaChecked.add(vehicleId);
     await this.redis.del(this.outOfAreaKey(vehicleId)).catch(() => undefined);
   }
 
-  private async fireOutOfAreaLock(vehicleId: string): Promise<void> {
+  private async fireOutOfAreaLock(vehicleId: string, armedRentalId: string): Promise<void> {
+    if (this.outOfArea.get(vehicleId)?.rentalId !== armedRentalId) return;
     this.outOfArea.delete(vehicleId);
     await this.redis.del(this.outOfAreaKey(vehicleId)).catch(() => undefined);
     const state = await this.load(vehicleId);
     if (state?.zones.some((z) => z.type === 'operation')) return;
     this.rentals.invalidate(vehicleId);
     const rentalId = await this.rentals.openRentalId(vehicleId);
-    if (!rentalId) return;
+    // Só bloqueia pelo aluguel que armou o prazo.
+    if (!rentalId || rentalId !== armedRentalId) return;
     this.logger.warn({ msg: 'out_of_area_safe_lock', vehicleId, rentalId });
     await this.commander
       .safeLock(vehicleId, { rentalId, purpose: 'out_of_area' })
@@ -212,9 +232,22 @@ export class GeofenceService {
 
   /** Encerramento do módulo. */
   stop(): void {
-    for (const h of this.outOfArea.values()) this.clock.clearTimeout(h);
+    for (const a of this.outOfArea.values()) this.clock.clearTimeout(a.handle);
     this.outOfArea.clear();
   }
+}
+
+/** Folga do TTL do prazo persistido além do próprio prazo. */
+const OUT_OF_AREA_KEY_GRACE_MS = 60 * 60_000;
+
+function onlyOneOperation(zones: ZoneRef[]): ZoneRef[] {
+  let seen = false;
+  return zones.filter((z) => {
+    if (z.type !== 'operation') return true;
+    if (seen) return false;
+    seen = true;
+    return true;
+  });
 }
 
 /** Ordem estável das chaves no payload (vehicleId, rentalId, zoneId, zoneType, speedLimitKmh, transition, ts). */

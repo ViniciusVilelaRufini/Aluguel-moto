@@ -213,4 +213,63 @@ describe('GeofenceService', () => {
       expect(transitions[transitions.length - 1]).toEqual(expect.objectContaining({ zoneId: 'z-op-b', zoneType: 'operation', transition: 'EXIT' }));
     });
   });
+
+  describe('fora da área (revisão 2)', () => {
+    it('aluguel A termina fora da área; aluguel B sai da área → B tem os 5 min inteiros', async () => {
+      const { svc, engine, clock, commander, rentals } = setup();
+      engine.zones = [];
+      await svc.onPosition(pos()); // A fora: arma
+      await clock.advance(3 * 60_000);
+      rentals.openRentalId.mockResolvedValue(undefined);
+      await svc.onRentalEnded('veh-1');
+      await clock.advance(60_000);
+      rentals.openRentalId.mockResolvedValue('rent-B');
+      await svc.onPosition(pos());
+      await clock.advance(5 * 60_000 - 1);
+      expect(commander.safeLock).not.toHaveBeenCalled();
+      await clock.advance(1);
+      expect(commander.safeLock).toHaveBeenCalledWith('veh-1', expect.objectContaining({ rentalId: 'rent-B' }));
+    });
+
+    it('sem evento de fim: rentalId diferente do armado → rearma com prazo novo (o de A não vale para B)', async () => {
+      const redis = new MemoryRedisStore();
+      const a = setup();
+      const svcA = new GeofenceService(a.engine, a.commander, a.rentals, a.events, a.clock, redis, { outOfAreaLockMinutes: 5 });
+      a.engine.zones = [];
+      await svcA.onPosition(pos());
+      svcA.stop();
+      const b = setup({ rentalId: 'rent-B' });
+      const svcB = new GeofenceService(b.engine, b.commander, b.rentals, b.events, b.clock, redis, { outOfAreaLockMinutes: 5 });
+      await b.clock.advance(4 * 60_000);
+      b.engine.zones = [];
+      await svcB.onPosition(pos());
+      await b.clock.advance(4 * 60_000);
+      expect(b.commander.safeLock).not.toHaveBeenCalled();
+      await b.clock.advance(60_000);
+      expect(b.commander.safeLock).toHaveBeenCalledWith('veh-1', expect.objectContaining({ rentalId: 'rent-B' }));
+    });
+
+    it('prazo persistido guarda o rentalId e tem TTL', async () => {
+      const redis = new MemoryRedisStore();
+      const setSpy = jest.spyOn(redis, 'set');
+      const a = setup();
+      const svcA = new GeofenceService(a.engine, a.commander, a.rentals, a.events, a.clock, redis, { outOfAreaLockMinutes: 5 });
+      a.engine.zones = [];
+      await svcA.onPosition(pos());
+      const call = setSpy.mock.calls.find((c) => c[0] === 'geofence:out-of-area:veh-1')!;
+      expect(JSON.parse(call[1])).toEqual({ rentalId: 'rent-1', deadline: Date.parse('2026-10-21T15:05:00Z') });
+      expect(call[2]).toBeGreaterThan(5 * 60_000);
+      svcA.stop();
+    });
+
+    it('duas zonas operation sobrepostas deixadas na mesma posição → um único EXIT', async () => {
+      const { svc, engine, transitions } = setup();
+      engine.zones = [OPERATION, OPERATION_B];
+      await svc.onPosition(pos());
+      const before = transitions.length;
+      engine.zones = [];
+      await svc.onPosition(pos());
+      expect(transitions.slice(before).filter((t) => t.zoneType === 'operation' && t.transition === 'EXIT')).toHaveLength(1);
+    });
+  });
 });

@@ -199,7 +199,13 @@ export class SafeLockService {
       if (ramp.lastPublishedLimit !== 0) await this.transport.updateDesired(thingName, { limite_kmh: 0 });
       return;
     }
-    if (ramp.phase === 'locking') this.finish(ramp, { status: 'failed', reason: 'timeout' });
+    if (ramp.phase === 'locking') {
+      // travada:true sem confirmação não pode ficar no desired: um rastreador offline o aplicaria ao reconectar em qualquer
+      // velocidade. Volta para travada:false segurando o limite em 0; um lock futuro refaz a rampa.
+      this.opts.onHeld?.(thingName);
+      this.finish(ramp, { status: 'failed', reason: 'timeout' });
+      await this.transport.updateDesired(thingName, { travada: false, limite_kmh: 0 });
+    }
   }
 
   private finish(ramp: Ramp, outcome: Omit<CommandOutcome, 'commandId'>): void {

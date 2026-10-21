@@ -125,7 +125,7 @@ describe('TelemetryService', () => {
     await clock.advance(1000);
     await p;
     expect(transport.desired.some((d) => d.desired.travada)).toBe(false);
-    await svc.telemetry(T, msg({ velocidade_kmh: 2 }));
+    await svc.telemetry(T, msg({ velocidade_kmh: 2, timestamp: '2026-10-21T15:00:01.000Z' })); // amostra nova (mesmo timestamp não é mais nova)
     expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: true });
   });
 

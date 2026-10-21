@@ -252,3 +252,122 @@ describe('SafeLockService — menores da revisão', () => {
     expect(tx.desired).toEqual([{ limite_kmh: 15 }]);
   });
 });
+
+describe('Bloqueio seguro — regressões da revisão 2', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  it('telemetria velha (fila offline do cliente MQTT, 3 min) com 0 km/h chegando depois da reconexão não trava', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    await tel.presence(T, false);
+    await gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(5 * 60_000);
+    await tel.presence(T, true);
+    expect(transport.limits()).toEqual([15]);
+    await tel.telemetry(T, telemetry(0, iso(clock.now() - 3 * 60_000)));
+    expect(transport.locked()).toBe(false);
+    await tel.telemetry(T, telemetry(1, iso(clock.now())));
+    expect(transport.locked()).toBe(true);
+  });
+
+  it('telemetria fora de ordem: 0 mais antigo depois de 25 mais novo não trava', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await clock.advance(10_000);
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1000);
+    await p;
+    expect(transport.limits()).toEqual([15]);
+    await tel.telemetry(T, telemetry(0, iso(clock.now() - 3000)));
+    expect(transport.locked()).toBe(false);
+    expect((await gw.getLiveState(T))!.speedKmh).toBe(25); // exibição também não volta
+  });
+
+  it('velocidade lida do polling com horário no futuro é limitada a agora (não bloqueia amostras seguintes)', async () => {
+    const clock = new FakeClock(T0);
+    const live = new LiveStateStore(new MemoryRedisStore(), clock);
+    const r = await live.applyReported(T, { velocidade_kmh: 0 }, { fromPoll: true, speedAt: T0 + 60_000 });
+    expect(r.speedAccepted).toBe(true);
+    await clock.advance(1000);
+    const t = await live.applyTelemetry(T, telemetry(25, iso(clock.now())));
+    expect(t.speedAccepted).toBe(true);
+    expect(live.knownSpeed(T)).toBe(25);
+  });
+
+  it('isHeld falha fechada: erro no Redis recusa mudar o limite e não fica em cache', async () => {
+    const clock = new FakeClock(T0);
+    const redis = new MemoryRedisStore();
+    const realGet = redis.get.bind(redis);
+    let broken = true;
+    redis.get = async (k: string) => {
+      if (broken && k.startsWith('iot:held:')) throw new Error('redis fora');
+      return realGet(k);
+    };
+    const transport = new FakeTransport();
+    const live = new LiveStateStore(redis, clock);
+    const gw = new GW(transport, live, clock, new EventEmitter2(), { confirmWaitMs: 100, commandTimeoutMs: 30_000 });
+    await live.applyTelemetry(T, telemetry(0, iso(clock.now())));
+    expect((await gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 20)).status).toBe('failed');
+    expect(transport.desired).toEqual([]);
+    broken = false;
+    const p = gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 20);
+    await clock.advance(100);
+    expect((await p).status).toBe('in_progress');
+    expect(transport.desired).toEqual([{ limite_kmh: 20 }]);
+  });
+
+  it('setHeld propaga erro de escrita (unlock não solta em silêncio)', async () => {
+    const clock = new FakeClock(T0);
+    const redis = new MemoryRedisStore();
+    redis.del = async () => {
+      throw new Error('redis fora');
+    };
+    const live = new LiveStateStore(redis, clock);
+    await live.setHeld(T, true);
+    await expect(live.setHeld(T, false)).rejects.toThrow('redis fora');
+    expect(await live.isHeld(T)).toBe(true);
+  });
+
+  it('lock que expira em "locking" segura o limite em 0 (setSpeedLimit recusado até unlock)', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(0, iso(clock.now())));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1000);
+    await p;
+    expect(transport.desired).toEqual([{ travada: true }]);
+    await clock.advance(120_000);
+    expect(transport.desired[transport.desired.length - 1]).toEqual({ travada: false, limite_kmh: 0 });
+    expect((await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 32)).status).toBe('failed');
+  });
+
+  it('novo lock numa moto segurada em 0 que ainda não reportou 0: o primeiro degrau não sobe acima do desired (0)', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1000);
+    await p;
+    await clock.advance(120_000); // did_not_stop; o rastreador nunca reportou limite (reported continua 32)
+    expect((await gw.getLiveState(T))!.speedLimitKmh).toBe(32);
+    const before = transport.desired.length;
+    await tel.telemetry(T, telemetry(25, iso(clock.now())));
+    const q = gw.lock({ commandId: 'c2', thingName: T });
+    await clock.advance(1000);
+    await q;
+    const after = transport.desired.slice(before);
+    expect(after[0]).toEqual({ limite_kmh: 0 });
+    expect(after.every((d) => d.limite_kmh === undefined || d.limite_kmh === 0)).toBe(true);
+  });
+
+  it('degraus nunca acima do último desired publicado (limite de zona 6 ainda não reportado)', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(5, iso(clock.now())));
+    const s = gw.setSpeedLimit({ commandId: 'z', thingName: T }, 6); // reported continua 32
+    await clock.advance(1000);
+    await s;
+    await tel.telemetry(T, telemetry(5, iso(clock.now())));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1000);
+    await p;
+    expect(transport.desired.slice(1)[0]).toEqual({ limite_kmh: 6 });
+  });
+});

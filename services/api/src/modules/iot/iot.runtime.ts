@@ -61,8 +61,11 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
     await this.geofence.onZoneChanged(ev).catch((err) => this.logger.error({ msg: 'geofence_sync_failed', zoneId: ev.zoneId, error: (err as Error).message }));
   }
 
-  @OnEvent(EV.RENTAL_CHANGED)
-  onRentalChanged(ev: RentalChangedEvent): void {
+  @OnEvent(EV.RENTAL_CHANGED, { async: true, promisify: true })
+  async onRentalChanged(ev: RentalChangedEvent): Promise<void> {
     this.rentals.invalidate(ev.vehicleId);
+    if (ev.status === 'ended' || ev.status === 'force_ended') {
+      await this.geofence?.onRentalEnded(ev.vehicleId).catch((err) => this.logger.error({ msg: 'out_of_area_disarm_failed', vehicleId: ev.vehicleId, error: (err as Error).message }));
+    }
   }
 }

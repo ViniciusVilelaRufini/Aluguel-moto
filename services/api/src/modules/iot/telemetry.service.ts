@@ -80,7 +80,7 @@ export class TelemetryService implements InboundHandler {
       const ts = recordedAt.toISOString();
 
       const wasOnline = this.gateway.live.isOnline(thingName);
-      await this.gateway.live.applyTelemetry(thingName, msg);
+      const applied = await this.gateway.live.applyTelemetry(thingName, msg);
       if (!wasOnline) await this.connectivity(thingName, vehicleId, true);
 
       const ev: IotTelemetryEvent = {
@@ -95,8 +95,10 @@ export class TelemetryService implements InboundHandler {
         signal: msg.sinal,
         ts,
       };
-      this.events.emit(EV.IOT_TELEMETRY, ev);
-      await this.gateway.onSpeed(thingName, msg.velocidade_kmh);
+      // Fora de ordem (mais velha que a última recebida): fica só no trajeto, não volta a moto no mapa/frota.
+      if (applied.newest) this.events.emit(EV.IOT_TELEMETRY, ev);
+      // A rampa só vê amostra fresca, pós-reconexão e mais nova (telemetria velha da fila offline nunca trava).
+      if (applied.speedAccepted) await this.gateway.onSpeed(thingName, msg.velocidade_kmh);
 
       const rentalId = await this.rentals.openRentalId(vehicleId);
       if (rentalId) {

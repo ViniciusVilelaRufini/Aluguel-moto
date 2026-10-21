@@ -38,7 +38,8 @@ Nada nesses tópicos identifica o cliente: a associação moto ↔ aluguel exist
 { "lat": -23.5614, "lng": -46.6914, "velocidade_kmh": 18.4, "bateria_pct": 76, "travada": false, "ignicao": true, "sinal": 4, "timestamp": "2026-10-21T15:00:00.000Z" }
 ```
 
-- `timestamp` é a hora da medição em UTC. Se divergir mais de 10 min do relógio do servidor, o servidor usa a própria hora.
+- `timestamp` é a hora da **medição** em UTC. Se divergir mais de 10 min do relógio do servidor, o trajeto usa a hora do servidor.
+- Telemetria guardada offline e enviada depois é aceita para o trajeto, mas só atualiza a posição exibida se for a mais nova recebida, e só vale para a rampa do bloqueio se tiver até 10 s, for posterior à reconexão e mais nova que a última amostra (`timestamp` limitado a "agora").
 - Mensagens fora do schema são descartadas (log `telemetry_invalid`, sem o payload).
 - `velocidade_kmh` acima de 32 é aceita (indica limitador violado e alimenta alertas), nunca usada como limite.
 
@@ -85,7 +86,7 @@ A chamada à API espera até `IOT_CONFIRM_WAIT_MS` (3 s); depois disso responde 
 4. Sem parar em **120 s** → `failed`/`did_not_stop`; `limite_kmh: 0` fica mantido.
 5. Moto offline → `pending`/`offline`; a rampa começa quando ela reconecta (o servidor não grava `travada: true` sem saber a velocidade).
 6. **Velocidade conhecida = amostra fresca** (até 10 s, depois da última reconexão e mais nova que a anterior). Desconhecida ou velha é tratada como "em movimento" (rampa), nunca como 0. No modo aws, campos do `reported` lidos por `GetThingShadow` só valem se `metadata.reported.<campo>.timestamp` for mais novo que o já ingerido, e o polling nunca conta como sinal de vida.
-7. `did_not_stop` deixa o limite **segurado em 0** até um `unlock` explícito: nenhuma zona ou operador sobe o limite.
+7. `did_not_stop` deixa o limite **segurado em 0** até um `unlock` explícito: nenhuma zona ou operador sobe o limite. Trava sem confirmação em 120 s (`timeout`) → desired `travada: false` + `limite_kmh: 0` (também segurado). Os degraus nunca começam acima do último desired nem do hold.
 8. O ack de cada degrau e a confirmação da trava só aceitam `reported` não mais antigo que a publicação.
 
 Comportamento esperado do firmware: [`docs/firmware-bloqueio-seguro.md`](../../docs/firmware-bloqueio-seguro.md).
