@@ -43,8 +43,10 @@ interface VehicleZones {
 /**
  * Transições de cerca (ENTER/EXIT) a partir das posições, com as regras do produto:
  * - `reduced_speed`: ENTER → limite da zona; EXIT → menor limite das zonas que ainda contêm a moto, senão 32;
- * - saída de `operation` com aluguel → alerta imediato (consumidores de `geofence.transition`: alerts, realtime `zone.notice`)
- *   e bloqueio seguro após `OUT_OF_AREA_LOCK_MINUTES`, cancelado se a moto voltar antes.
+ * - fora da área = fora de **todas** as zonas `operation`: só então sai o EXIT de `operation` (alerta imediato e `zone.notice`
+ *   pelos consumidores de `geofence.transition`); trocar de uma zona `operation` para outra é silencioso;
+ * - com aluguel e fora da área (avaliado a cada posição, não só na transição) → bloqueio seguro após `OUT_OF_AREA_LOCK_MINUTES`,
+ *   cancelado se a moto voltar antes. O prazo fica no Redis (`geofence:out-of-area:{vehicleId}`) e é rearmado depois de um reinício.
  * Estado por moto no Redis (`geofence:inside:{vehicleId}`), para um reinício não reemitir transições.
  */
 export class GeofenceService {
@@ -52,6 +54,8 @@ export class GeofenceService {
   private readonly byVehicle = new Map<string, VehicleZones>();
   private readonly limitByThing = new Map<string, number>();
   private readonly outOfArea = new Map<string, TimerHandle>();
+  /** Motos cujo prazo persistido já foi conferido neste processo (evita um GET/DEL no Redis a cada posição). */
+  private readonly outOfAreaChecked = new Set<string>();
 
   constructor(
     private readonly engine: GeofenceEngine,
@@ -104,16 +108,21 @@ export class GeofenceService {
     const prevZones = prev?.zones ?? [];
     const prevIds = new Set(prevZones.map((z) => z.id));
     const nowIds = new Set(zones.map((z) => z.id));
-    const exits = prevZones.filter((z) => !nowIds.has(z.id));
-    const enters = zones.filter((z) => !prevIds.has(z.id));
+    const opBefore = prevZones.some((z) => z.type === 'operation');
+    const opNow = zones.some((z) => z.type === 'operation');
+    // Zonas operation: só a passagem "dentro de alguma" ↔ "fora de todas" conta como transição.
+    const exits = prevZones.filter((z) => !nowIds.has(z.id) && (z.type !== 'operation' || (opBefore && !opNow)));
+    const enters = zones.filter((z) => !prevIds.has(z.id) && (z.type !== 'operation' || (!opBefore && opNow)));
 
     const reduced = zones.filter((z) => z.type === 'reduced_speed' && z.speedLimitKmh !== null);
     const limit = effectiveZoneLimit(reduced.map((z) => z.speedLimitKmh!));
     this.limitByThing.set(p.thingName, limit);
 
     const state: VehicleZones = { zones, appliedLimit: prev?.appliedLimit };
+    const zonesChanged = prevIds.size !== nowIds.size || [...nowIds].some((id) => !prevIds.has(id));
     if (!exits.length && !enters.length) {
-      if (!prev) await this.save(p.vehicleId, state);
+      if (!prev || zonesChanged) await this.save(p.vehicleId, state);
+      await this.evaluateOutOfArea(p.vehicleId, opNow);
       return;
     }
 
@@ -131,9 +140,19 @@ export class GeofenceService {
     }
     await this.save(p.vehicleId, state);
 
-    // Fora da área de operação.
-    if (exits.some((z) => z.type === 'operation') && rentalId) this.scheduleOutOfAreaLock(p.vehicleId);
-    if (enters.some((z) => z.type === 'operation')) this.cancelOutOfAreaLock(p.vehicleId);
+    await this.evaluateOutOfArea(p.vehicleId, opNow, rentalId);
+  }
+
+  /** A cada posição: com aluguel e fora de todas as zonas operation → arma (se ainda não armado); dentro → cancela. */
+  private async evaluateOutOfArea(vehicleId: string, insideOperation: boolean, knownRentalId?: string): Promise<void> {
+    if (insideOperation) {
+      await this.cancelOutOfAreaLock(vehicleId);
+      return;
+    }
+    if (this.outOfArea.has(vehicleId)) return;
+    const rentalId = knownRentalId ?? (await this.rentals.openRentalId(vehicleId));
+    if (!rentalId) return;
+    await this.armOutOfAreaLock(vehicleId);
   }
 
   private emit(p: PositionInput, z: ZoneRef, transition: 'ENTER' | 'EXIT', rentalId?: string): void {
@@ -144,22 +163,42 @@ export class GeofenceService {
     this.events.emit(EV.GEOFENCE_TRANSITION, sortKeys(ev));
   }
 
-  private scheduleOutOfAreaLock(vehicleId: string): void {
-    if (this.outOfArea.has(vehicleId)) return;
-    const handle = this.clock.setTimeout(() => this.fireOutOfAreaLock(vehicleId), this.opts.outOfAreaLockMinutes * 60_000);
-    this.outOfArea.set(vehicleId, handle);
+  private outOfAreaKey(vehicleId: string): string {
+    return `geofence:out-of-area:${vehicleId}`;
   }
 
-  private cancelOutOfAreaLock(vehicleId: string): void {
+  /** Arma com o prazo persistido (reinício) ou com um prazo novo de `OUT_OF_AREA_LOCK_MINUTES`. */
+  private async armOutOfAreaLock(vehicleId: string): Promise<void> {
+    const now = this.clock.now();
+    const raw = await this.redis.get(this.outOfAreaKey(vehicleId)).catch(() => null);
+    let deadline = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(deadline)) {
+      deadline = now + this.opts.outOfAreaLockMinutes * 60_000;
+      await this.redis.set(this.outOfAreaKey(vehicleId), String(deadline)).catch(() => undefined);
+    }
+    if (this.outOfArea.has(vehicleId)) return;
+    this.outOfAreaChecked.add(vehicleId);
+    const handle = this.clock.setTimeout(() => this.fireOutOfAreaLock(vehicleId), Math.max(0, deadline - now));
+    this.outOfArea.set(vehicleId, handle);
+    this.logger.log({ msg: 'out_of_area_lock_armed', vehicleId, inMs: Math.max(0, deadline - now) });
+  }
+
+  private async cancelOutOfAreaLock(vehicleId: string): Promise<void> {
     const h = this.outOfArea.get(vehicleId);
-    if (!h) return;
-    this.clock.clearTimeout(h);
-    this.outOfArea.delete(vehicleId);
-    this.logger.log({ msg: 'out_of_area_lock_canceled', vehicleId });
+    if (h) {
+      this.clock.clearTimeout(h);
+      this.outOfArea.delete(vehicleId);
+      this.logger.log({ msg: 'out_of_area_lock_canceled', vehicleId });
+    } else if (this.outOfAreaChecked.has(vehicleId)) {
+      return;
+    }
+    this.outOfAreaChecked.add(vehicleId);
+    await this.redis.del(this.outOfAreaKey(vehicleId)).catch(() => undefined);
   }
 
   private async fireOutOfAreaLock(vehicleId: string): Promise<void> {
     this.outOfArea.delete(vehicleId);
+    await this.redis.del(this.outOfAreaKey(vehicleId)).catch(() => undefined);
     const state = await this.load(vehicleId);
     if (state?.zones.some((z) => z.type === 'operation')) return;
     this.rentals.invalidate(vehicleId);

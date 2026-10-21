@@ -7,6 +7,8 @@ import type { ReportedState } from './shadow-transport';
 
 /** Sem telemetria por mais que isto → offline (3 × o intervalo de 60 s da moto parada). */
 export const DEFAULT_OFFLINE_AFTER_MS = 180_000;
+/** Amostra de velocidade mais velha que isto não serve para decidir a trava (é tratada como desconhecida = em movimento). */
+export const SPEED_FRESH_MS = 10_000;
 
 /**
  * Estado ao vivo por rastreador (thingName): telemetria + reported do shadow + conectividade.
@@ -15,6 +17,11 @@ export const DEFAULT_OFFLINE_AFTER_MS = 180_000;
  */
 export class LiveStateStore {
   private readonly states = new Map<string, VehicleLiveState>();
+  /** Horário (relógio do servidor) da última amostra de velocidade aceita. Ausente = desconhecida. Não persiste: após reinício, desconhecida. */
+  private readonly speedAt = new Map<string, number>();
+  /** Início da conexão atual: amostras anteriores a ela não valem. */
+  private readonly reconnectAt = new Map<string, number>();
+  private readonly held = new Map<string, boolean>();
 
   constructor(
     private readonly redis: RedisStore,
@@ -83,6 +90,36 @@ export class LiveStateStore {
     return [...this.states.values()].filter((s) => s.online && now - Date.parse(s.lastSeenAt) >= this.offlineAfterMs).map((s) => s.thingName);
   }
 
+  /** Velocidade conhecida e fresca, ou `null` (desconhecida, velha ou anterior à reconexão) — nunca 0 por padrão. */
+  knownSpeed(thingName: string): number | null {
+    const s = this.states.get(thingName);
+    const at = this.speedAt.get(thingName);
+    if (!s || at === undefined) return null;
+    if (this.clock.now() - at > SPEED_FRESH_MS) return null;
+    return s.speedKmh;
+  }
+
+  /** Presença `connected`: a velocidade de antes da desconexão deixa de valer até chegar amostra nova. */
+  markReconnected(thingName: string): void {
+    this.speedAt.delete(thingName);
+    this.reconnectAt.set(thingName, this.clock.now());
+  }
+
+  /** "Limite segurado em 0" depois de `did_not_stop`: persiste até um unlock explícito. */
+  async isHeld(thingName: string): Promise<boolean> {
+    const mem = this.held.get(thingName);
+    if (mem !== undefined) return mem;
+    const v = (await this.redis.get(`iot:held:${thingName}`).catch(() => null)) === '1';
+    this.held.set(thingName, v);
+    return v;
+  }
+
+  async setHeld(thingName: string, on: boolean): Promise<void> {
+    this.held.set(thingName, on);
+    if (on) await this.redis.set(`iot:held:${thingName}`, '1').catch(() => undefined);
+    else await this.redis.del(`iot:held:${thingName}`).catch(() => undefined);
+  }
+
   async applyTelemetry(thingName: string, t: TelemetryMessage): Promise<VehicleLiveState> {
     const s = (await this.load(thingName)) ?? this.blank(thingName);
     Object.assign(s, {
@@ -96,27 +133,52 @@ export class LiveStateStore {
       online: true,
       lastSeenAt: new Date(this.clock.now()).toISOString(),
     });
+    this.speedAt.set(thingName, this.clock.now());
     this.states.set(thingName, s);
     await this.persist(s);
     return s;
   }
 
-  async applyReported(thingName: string, r: ReportedState): Promise<VehicleLiveState> {
+  /**
+   * Aplica um `reported`. Do rastreador (MQTT): marca online e a velocidade vale como amostra de agora.
+   * Do polling (`fromPoll`): não mexe na conectividade; a velocidade só é aceita com horário (metadata) mais novo que a última
+   * amostra, não anterior à reconexão e fresco. Devolve se a velocidade foi aceita.
+   */
+  async applyReported(thingName: string, r: ReportedState, opts: { fromPoll?: boolean; speedAt?: number } = {}): Promise<{ state: VehicleLiveState; speedAccepted: boolean }> {
     const s = (await this.load(thingName)) ?? this.blank(thingName);
+    const now = this.clock.now();
     if (r.travada !== undefined) s.locked = r.travada;
     if (r.limite_kmh !== undefined) s.speedLimitKmh = r.limite_kmh;
     if (r.modo_roubada !== undefined) s.stolenMode = r.modo_roubada;
-    if (r.velocidade_kmh !== undefined) s.speedKmh = r.velocidade_kmh;
-    s.online = true;
-    s.lastSeenAt = new Date(this.clock.now()).toISOString();
+    let speedAccepted = false;
+    if (r.velocidade_kmh !== undefined) {
+      const sampleAt = opts.fromPoll ? opts.speedAt : (opts.speedAt ?? now);
+      const last = this.speedAt.get(thingName);
+      const since = this.reconnectAt.get(thingName);
+      if (
+        sampleAt !== undefined &&
+        (last === undefined || sampleAt > last || (!opts.fromPoll && sampleAt >= last)) &&
+        (since === undefined || sampleAt >= since) &&
+        now - sampleAt <= SPEED_FRESH_MS
+      ) {
+        s.speedKmh = r.velocidade_kmh;
+        this.speedAt.set(thingName, sampleAt);
+        speedAccepted = true;
+      }
+    }
+    if (!opts.fromPoll) {
+      s.online = true;
+      s.lastSeenAt = new Date(now).toISOString();
+    }
     this.states.set(thingName, s);
     await this.persist(s);
-    return s;
+    return { state: s, speedAccepted };
   }
 
   async setOnline(thingName: string, online: boolean): Promise<VehicleLiveState> {
     const s = (await this.load(thingName)) ?? this.blank(thingName);
     s.online = online;
+    if (!online) this.speedAt.delete(thingName);
     if (online) s.lastSeenAt = new Date(this.clock.now()).toISOString();
     this.states.set(thingName, s);
     await this.persist(s);

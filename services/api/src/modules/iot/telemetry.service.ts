@@ -6,7 +6,7 @@ import type { BaseIotGateway } from './base-iot-gateway';
 import type { Clock } from './clock';
 import type { PositionInput, RentalLookup } from './geofence/geofence.service';
 import { parseDeviceEvent, parseTelemetry } from './mqtt-contract';
-import type { InboundHandler, ReportedState } from './shadow-transport';
+import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Relógio do rastreador mais que isto fora do servidor → usa a hora do servidor. */
@@ -131,11 +131,16 @@ export class TelemetryService implements InboundHandler {
     });
   }
 
-  reported(thingName: string, reported: ReportedState): Promise<void> {
+  reported(thingName: string, reported: ReportedState, meta: ReportedMeta = {}): Promise<void> {
     return this.serial(thingName, async () => {
+      // Lido pelo servidor (polling aws): não é sinal de vida — nunca muda a conectividade.
+      if (meta.fromPoll) {
+        await this.gateway.onReported(thingName, reported, meta);
+        return;
+      }
       const vehicleId = await this.vehicleIdOf(thingName);
       const wasOnline = this.gateway.live.isOnline(thingName);
-      await this.gateway.onReported(thingName, reported);
+      await this.gateway.onReported(thingName, reported, meta);
       if (!wasOnline && vehicleId) await this.connectivity(thingName, vehicleId, true);
     });
   }
@@ -145,6 +150,8 @@ export class TelemetryService implements InboundHandler {
       const vehicleId = await this.vehicleIdOf(thingName);
       await this.gateway.live.load(thingName);
       const wasOnline = this.gateway.live.isOnline(thingName);
+      // Conexão nova: a velocidade de antes não vale (a moto pode ter sido levada); espera amostra fresca.
+      if (online) this.gateway.live.markReconnected(thingName);
       if (online === wasOnline) {
         if (online) await this.gateway.live.setOnline(thingName, true);
         return;

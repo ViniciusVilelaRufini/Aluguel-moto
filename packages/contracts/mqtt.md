@@ -84,6 +84,9 @@ A chamada à API espera até `IOT_CONFIRM_WAIT_MS` (3 s); depois disso responde 
 3. Assim que a velocidade reportada (telemetria ou `reported.velocidade_kmh`) ficar < 3 km/h → `desired.travada = true`.
 4. Sem parar em **120 s** → `failed`/`did_not_stop`; `limite_kmh: 0` fica mantido.
 5. Moto offline → `pending`/`offline`; a rampa começa quando ela reconecta (o servidor não grava `travada: true` sem saber a velocidade).
+6. **Velocidade conhecida = amostra fresca** (até 10 s, depois da última reconexão e mais nova que a anterior). Desconhecida ou velha é tratada como "em movimento" (rampa), nunca como 0. No modo aws, campos do `reported` lidos por `GetThingShadow` só valem se `metadata.reported.<campo>.timestamp` for mais novo que o já ingerido, e o polling nunca conta como sinal de vida.
+7. `did_not_stop` deixa o limite **segurado em 0** até um `unlock` explícito: nenhuma zona ou operador sobe o limite.
+8. O ack de cada degrau e a confirmação da trava só aceitam `reported` não mais antigo que a publicação.
 
 Comportamento esperado do firmware: [`docs/firmware-bloqueio-seguro.md`](../../docs/firmware-bloqueio-seguro.md).
 

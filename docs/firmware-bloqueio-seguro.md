@@ -19,6 +19,12 @@ O firmware está fora do escopo da Task 4. Este documento é o requisito para o 
 | F9 | **Movimento travada:** deslocamento > 20 m com a trava acionada → evento `movimento_sem_aluguel`. |
 | F10 | **Presença:** registrar *last will* em `$aws/events/presence/disconnected/{thingName}` no ambiente local (o IoT Core gera os eventos de ciclo de vida sozinho em produção). |
 
+## Por que F1 é a última linha de defesa (corrida inevitável)
+
+O servidor decide publicar `travada: true` com base na **última velocidade reportada** — e só aceita amostras frescas (até 10 s), posteriores à reconexão e mais novas que as já recebidas; velocidade desconhecida é tratada como "em movimento". Mesmo assim existe uma janela entre a amostra (< 3 km/h) e a chegada do delta no rastreador: latência 4G de centenas de milissegundos a alguns segundos, mensagens enfileiradas no broker com a moto em túnel/sombra, ou um delta antigo aplicado ao reconectar. Nessa janela a moto pode ter voltado a acelerar (empurrada, ladeira, piloto acelerando de novo depois de parar).
+
+Por isso o servidor nunca é suficiente sozinho: **o firmware precisa conferir a velocidade medida no instante de executar a trava** (F1) e, se for ≥ 3 km/h, manter o pedido pendente. Pelo mesmo motivo, o servidor não grava `travada: true` no shadow com a moto offline (o delta seria aplicado sabe-se lá em que velocidade) e o polling do shadow no modo aws não reaproveita um `reported.velocidade_kmh` antigo.
+
 ## Sequência típica (moto a 25 km/h)
 
 ```

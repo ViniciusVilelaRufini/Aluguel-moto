@@ -6,7 +6,7 @@ import type { CommandOutcome, CommandRequest, IotGateway, VehicleLiveState } fro
 import type { Clock, TimerHandle } from './clock';
 import type { LiveStateStore } from './live-state.store';
 import { SafeLockService } from './safe-lock.service';
-import type { DesiredState, IotTransport, ReportedState } from './shadow-transport';
+import type { DesiredState, IotTransport, ReportedMeta, ReportedState } from './shadow-transport';
 import { assertSpeedLimit } from './speed-limit';
 
 export interface GatewayOptions {
@@ -21,6 +21,8 @@ export interface GatewayOptions {
 /**
  * Janela depois de a chamada responder `in_progress`/`pending` em que o desfecho é emitido com atraso: o `CommandsService`
  * grava o status devolvido logo após a chamada e, sem isso, um `confirmed` muito rápido poderia ser sobrescrito.
+ * PALIATIVO: o bug é do `CommandsService.applyOutcome` (Task 3), que rebaixa `confirmed` para `in_progress`; ele será corrigido
+ * no módulo commands depois do merge (decisão do coordenador na revisão da Task 4). Remover esta janela quando isso acontecer.
  */
 export const EMIT_GRACE_MS = 1_000;
 
@@ -56,6 +58,7 @@ export abstract class BaseIotGateway implements IotGateway {
     this.safeLock = new SafeLockService(clock, transport, (o) => this.settle(o), {
       stepIntervalMs: opts.stepIntervalMs,
       timeoutMs: opts.safeLockTimeoutMs,
+      onHeld: (thingName) => void this.live.setHeld(thingName, true),
     });
   }
 
@@ -70,7 +73,8 @@ export abstract class BaseIotGateway implements IotGateway {
     this.supersede(req.thingName, ['travada']);
     const s = await this.live.load(req.thingName);
     const state = {
-      speedKmh: s?.speedKmh ?? 0,
+      // Só velocidade fresca; desconhecida = null (a rampa trata como em movimento). Nunca 0 por padrão.
+      speedKmh: this.live.knownSpeed(req.thingName),
       speedLimitKmh: s?.speedLimitKmh ?? MAX_SPEED_KMH,
       locked: s?.locked === true && this.live.isOnline(req.thingName),
       online: this.live.isOnline(req.thingName),
@@ -88,6 +92,7 @@ export abstract class BaseIotGateway implements IotGateway {
 
   async unlock(req: CommandRequest): Promise<CommandOutcome> {
     this.safeLock.cancel(req.thingName);
+    await this.live.setHeld(req.thingName, false);
     const limit = assertSpeedLimit(this.limitResolver(req.thingName));
     return this.desiredCommand(req, { travada: false }, { limite_kmh: limit });
   }
@@ -95,7 +100,8 @@ export abstract class BaseIotGateway implements IotGateway {
   async setSpeedLimit(req: CommandRequest, kmh: number): Promise<CommandOutcome> {
     assertSpeedLimit(kmh);
     // Durante o bloqueio seguro, a rampa é dona do limite: nada (zona, operador) pode subir ou mexer nos degraus.
-    if (this.safeLock.isActive(req.thingName)) {
+    // Depois de `did_not_stop`, o limite fica segurado em 0 até um unlock explícito.
+    if (this.safeLock.isActive(req.thingName) || (await this.live.isHeld(req.thingName))) {
       this.logger.warn({ msg: 'speed_limit_refused_during_safe_lock', thingName: req.thingName, commandId: req.commandId });
       return { commandId: req.commandId, status: 'failed' };
     }
@@ -121,9 +127,12 @@ export abstract class BaseIotGateway implements IotGateway {
 
   // ── entradas vindas dos rastreadores (chamadas pelo TelemetryService) ──
 
-  async onReported(thingName: string, reported: ReportedState): Promise<void> {
-    await this.live.applyReported(thingName, reported);
-    await this.safeLock.onReported(thingName, reported);
+  async onReported(thingName: string, reported: ReportedState, meta: ReportedMeta = {}): Promise<void> {
+    const { speedAccepted } = await this.live.applyReported(thingName, reported, { fromPoll: meta.fromPoll, speedAt: meta.timestamps?.velocidade_kmh });
+    // A rampa só vê velocidade que é amostra fresca e mais nova (reported velho replayed pelo polling não trava ninguém).
+    const forLock: ReportedState = { ...reported };
+    if (!speedAccepted) delete forLock.velocidade_kmh;
+    await this.safeLock.onReported(thingName, forLock, meta.timestamps ?? {});
     const s = this.live.get(thingName);
     for (const t of [...this.tracked.values()]) {
       if (t.thingName !== thingName) continue;
@@ -143,7 +152,7 @@ export abstract class BaseIotGateway implements IotGateway {
     for (const t of this.tracked.values()) {
       if (t.thingName === thingName && !t.timer) t.timer = this.clock.setTimeout(() => this.onTrackedTimeout(t.commandId), this.opts.commandTimeoutMs);
     }
-    await this.safeLock.onConnectivity(thingName, true, { speedKmh: s.speedKmh, speedLimitKmh: s.speedLimitKmh, locked: s.locked, online: true });
+    await this.safeLock.onConnectivity(thingName, true, { speedKmh: this.live.knownSpeed(thingName), speedLimitKmh: s.speedLimitKmh, locked: s.locked, online: true });
   }
 
   /** Há algo aguardando `reported` desta moto? (o modo aws consulta o shadow enquanto houver). */

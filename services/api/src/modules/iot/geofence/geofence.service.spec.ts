@@ -7,6 +7,7 @@ import { GeofenceCommander, GeofenceService, RentalLookup } from './geofence.ser
 
 const OPERATION: ZoneRef = { id: 'z-op', type: 'operation', speedLimitKmh: null };
 const PEDESTRIAN: ZoneRef = { id: 'z-ped', type: 'reduced_speed', speedLimitKmh: 6 };
+const OPERATION_B: ZoneRef = { id: 'z-op-b', type: 'operation', speedLimitKmh: null };
 const BIKE_LANE: ZoneRef = { id: 'z-bike', type: 'reduced_speed', speedLimitKmh: 20 };
 
 class FakeEngine implements GeofenceEngine {
@@ -155,5 +156,61 @@ describe('GeofenceService', () => {
     const { svc, engine } = setup();
     await svc.onPosition(pos());
     expect(engine.positions).toEqual([{ thingName: 'moto-0001', lat: -23.56, lng: -46.69 }]);
+  });
+
+  describe('fora da área (revisão)', () => {
+    it('reinício da API: o bloqueio de 5 min é rearmado pelo prazo persistido (não recomeça nem se perde)', async () => {
+      const redis = new MemoryRedisStore();
+      const a = setup();
+      const svcA = new GeofenceService(a.engine, a.commander, a.rentals, a.events, a.clock, redis, { outOfAreaLockMinutes: 5 });
+      a.engine.zones = [OPERATION];
+      await svcA.onPosition(pos());
+      a.engine.zones = [];
+      await svcA.onPosition(pos());
+      await a.clock.advance(3 * 60_000);
+      svcA.stop(); // processo morre
+      const b = setup();
+      const svcB = new GeofenceService(b.engine, b.commander, b.rentals, b.events, b.clock, redis, { outOfAreaLockMinutes: 5 });
+      await b.clock.advance(3 * 60_000); // relógio do novo processo (b começa em 15:00; prazo era 15:05)
+      b.engine.zones = [];
+      await svcB.onPosition(pos());
+      await b.clock.advance(1_999);
+      expect(b.commander.safeLock).not.toHaveBeenCalled();
+      await b.clock.advance(2 * 60_000);
+      expect(b.commander.safeLock).toHaveBeenCalledWith('veh-1', expect.objectContaining({ purpose: 'out_of_area' }));
+    });
+
+    it('primeira posição já fora da área com aluguel → arma o bloqueio de 5 min', async () => {
+      const { svc, engine, clock, commander } = setup();
+      engine.zones = [];
+      await svc.onPosition(pos());
+      await clock.advance(5 * 60_000);
+      expect(commander.safeLock).toHaveBeenCalledWith('veh-1', expect.objectContaining({ rentalId: 'rent-1', purpose: 'out_of_area' }));
+    });
+
+    it('aluguel começa com a moto já fora da área → arma na próxima posição', async () => {
+      const { svc, engine, clock, commander, rentals } = setup({ rentalId: null });
+      engine.zones = [];
+      await svc.onPosition(pos());
+      rentals.openRentalId.mockResolvedValue('rent-2');
+      await svc.onPosition(pos());
+      await clock.advance(5 * 60_000);
+      expect(commander.safeLock).toHaveBeenCalledWith('veh-1', expect.objectContaining({ rentalId: 'rent-2' }));
+    });
+
+    it('sair de uma zona operation continuando dentro de outra não é "fora da área": sem EXIT, sem bloqueio', async () => {
+      const { svc, engine, clock, transitions, commander } = setup();
+      engine.zones = [OPERATION, OPERATION_B];
+      await svc.onPosition(pos());
+      const before = transitions.length;
+      engine.zones = [OPERATION_B];
+      await svc.onPosition(pos());
+      expect(transitions.slice(before).filter((t) => t.zoneType === 'operation')).toEqual([]);
+      await clock.advance(10 * 60_000);
+      expect(commander.safeLock).not.toHaveBeenCalled();
+      engine.zones = [];
+      await svc.onPosition(pos());
+      expect(transitions[transitions.length - 1]).toEqual(expect.objectContaining({ zoneId: 'z-op-b', zoneType: 'operation', transition: 'EXIT' }));
+    });
   });
 });

@@ -31,11 +31,22 @@ export interface ShadowTransport {
   publishCommand(thingName: string, command: MomentaryCommand): Promise<void>;
 }
 
+/**
+ * Origem de um `reported`:
+ * - publicado pelo rastreador agora (MQTT local): `fromPoll` ausente → conta como sinal de vida e amostra de velocidade de agora;
+ * - lido pelo servidor (`GetThingShadow`, modo aws): `fromPoll: true` → nunca marca online; cada campo vale pelo horário da
+ *   metadata do shadow (`timestamps`, ms), e a velocidade só é usada se for mais nova que a última amostra e fresca.
+ */
+export interface ReportedMeta {
+  fromPoll?: boolean;
+  timestamps?: Partial<Record<keyof ReportedState, number>>;
+}
+
 /** Mensagens que chegam dos rastreadores (payload bruto: a validação fica no `TelemetryService`). */
 export interface InboundHandler {
   telemetry(thingName: string, raw: unknown): Promise<void>;
   deviceEvent(thingName: string, raw: unknown): Promise<void>;
-  reported(thingName: string, reported: ReportedState): Promise<void>;
+  reported(thingName: string, reported: ReportedState, meta?: ReportedMeta): Promise<void>;
   presence(thingName: string, online: boolean): Promise<void>;
 }
 

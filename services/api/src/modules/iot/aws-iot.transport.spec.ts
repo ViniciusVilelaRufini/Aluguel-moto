@@ -2,12 +2,15 @@ import { GetThingShadowCommand, PublishCommand, UpdateThingShadowCommand } from 
 import { AwsIotTransport } from './aws-iot.transport';
 import type { InboundHandler } from './shadow-transport';
 
-function setup(shadow: unknown = { state: { reported: { travada: true, limite_kmh: 8 } }, version: 3 }) {
+const shadowDoc = { state: { reported: { travada: true, limite_kmh: 8 } }, metadata: { reported: { travada: { timestamp: 1_760_000_000 }, limite_kmh: { timestamp: 1_760_000_000 } } }, version: 3 };
+
+function setup(shadow: any = shadowDoc) {
   const sent: any[] = [];
   const client = {
     send: jest.fn(async (cmd: any) => {
       sent.push(cmd);
       if (cmd instanceof GetThingShadowCommand) return { payload: new TextEncoder().encode(JSON.stringify(shadow)) };
+      if (cmd instanceof UpdateThingShadowCommand) shadow.version += 1; // o nosso desired também muda a versão
       return {};
     }),
   };
@@ -47,17 +50,25 @@ describe('AwsIotTransport', () => {
     expect(inbound.telemetry).toHaveBeenCalledTimes(1);
   });
 
-  it('enquanto houver comando aguardando, consulta o shadow e repassa o reported (só versão nova)', async () => {
-    const { t, inbound, sent } = setup();
+  it('enquanto houver comando aguardando, consulta o shadow e repassa só campos com metadata mais nova (fromPoll, nunca sinal de vida)', async () => {
+    const shadow = JSON.parse(JSON.stringify(shadowDoc));
+    const { t, inbound, sent } = setup(shadow);
     await t.start(inbound);
     t.watch('moto-0001', true);
     await t.pollOnce();
+    await t.updateDesired('moto-0001', { limite_kmh: 3 }); // versão muda, reported do rastreador não
     await t.pollOnce();
     expect(sent.filter((c) => c instanceof GetThingShadowCommand)).toHaveLength(2);
     expect(inbound.reported).toHaveBeenCalledTimes(1);
-    expect(inbound.reported).toHaveBeenCalledWith('moto-0001', { travada: true, limite_kmh: 8 });
+    expect(inbound.reported).toHaveBeenCalledWith('moto-0001', { travada: true, limite_kmh: 8 }, { fromPoll: true, timestamps: { travada: 1_760_000_000_000, limite_kmh: 1_760_000_000_000 } });
+    // o rastreador reporta só o limite: só ele é repassado
+    shadow.state.reported.limite_kmh = 3;
+    shadow.metadata.reported.limite_kmh.timestamp = 1_760_000_005;
+    shadow.version += 1;
+    await t.pollOnce();
+    expect(inbound.reported).toHaveBeenLastCalledWith('moto-0001', { limite_kmh: 3 }, { fromPoll: true, timestamps: { limite_kmh: 1_760_000_005_000 } });
     t.watch('moto-0001', false);
     await t.pollOnce();
-    expect(sent.filter((c) => c instanceof GetThingShadowCommand)).toHaveLength(2);
+    expect(sent.filter((c) => c instanceof GetThingShadowCommand)).toHaveLength(3);
   });
 });

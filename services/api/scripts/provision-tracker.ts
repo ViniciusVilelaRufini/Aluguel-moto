@@ -22,7 +22,10 @@ import {
   AttachThingPrincipalCommand,
   CreateKeysAndCertificateCommand,
   CreateThingCommand,
+  DeleteCertificateCommand,
   DescribeThingCommand,
+  DetachPolicyCommand,
+  UpdateCertificateCommand,
   IoTClient,
   ResourceNotFoundException,
 } from '@aws-sdk/client-iot';
@@ -98,8 +101,19 @@ async function main(): Promise<void> {
           chmodSync(join(dir, file), 0o600);
         }
         log({ msg: 'certificate_issued', thingName, certificateId: cert.certificateId, dir });
-        await iot.send(new AttachPolicyCommand({ policyName, target: certificateArn }));
-        await iot.send(new AttachThingPrincipalCommand({ thingName, principal: certificateArn }));
+        try {
+          await iot.send(new AttachPolicyCommand({ policyName, target: certificateArn }));
+          await iot.send(new AttachThingPrincipalCommand({ thingName, principal: certificateArn }));
+        } catch (err) {
+          // Certificado ativo e solto não pode ficar para trás: desativa, desanexa e apaga.
+          log({ level: 'error', msg: 'certificate_attach_failed', thingName, error: (err as Error).message });
+          await iot.send(new DetachPolicyCommand({ policyName, target: certificateArn })).catch(() => undefined);
+          await iot.send(new UpdateCertificateCommand({ certificateId: cert.certificateId, newStatus: 'INACTIVE' })).catch(() => undefined);
+          await iot.send(new DeleteCertificateCommand({ certificateId: cert.certificateId, forceDelete: true })).catch((e) =>
+            log({ level: 'error', msg: 'certificate_cleanup_failed', certificateId: cert.certificateId, error: (e as Error).message }),
+          );
+          throw err;
+        }
         log({ msg: 'certificate_attached', thingName, policyName });
       }
     } else {

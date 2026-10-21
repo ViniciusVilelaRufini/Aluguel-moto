@@ -10,7 +10,8 @@ export const SAFE_LOCK_STEP_INTERVAL_MS = 2_000;
 export const SAFE_LOCK_TIMEOUT_MS = 120_000;
 
 export interface SafeLockVehicleState {
-  speedKmh: number;
+  /** Última velocidade reportada **fresca**; `null` = desconhecida/velha → tratada como em movimento (nunca 0 por padrão). */
+  speedKmh: number | null;
   speedLimitKmh: number;
   locked: boolean;
   online: boolean;
@@ -25,13 +26,18 @@ interface Ramp {
   steps: number[];
   stepIdx: number;
   awaitingAck: boolean;
-  lastSpeed: number;
+  lastSpeed: number | null;
   lastPublishedLimit?: number;
+  /** Quando o degrau atual / a trava foram publicados (o ack só vale para reported mais novo). */
+  publishedAt: number;
   stepTimer?: TimerHandle;
   timeoutTimer?: TimerHandle;
 }
 
 export type OutcomeSink = (outcome: CommandOutcome) => void;
+
+/** Horário (ms) de cada campo do reported, quando conhecido (metadata do shadow no modo aws). */
+export type ReportedTimestamps = Partial<Record<keyof ReportedState, number>>;
 
 /**
  * Bloqueio seguro (CLAUDE.md: "nunca cortar o motor com a moto em movimento").
@@ -52,7 +58,7 @@ export class SafeLockService {
     private readonly clock: Clock,
     private readonly transport: ShadowTransport,
     private readonly sink: OutcomeSink,
-    private readonly opts: { stepIntervalMs?: number; timeoutMs?: number } = {},
+    private readonly opts: { stepIntervalMs?: number; timeoutMs?: number; onHeld?: (thingName: string) => void } = {},
   ) {}
 
   private get stepIntervalMs(): number {
@@ -85,6 +91,7 @@ export class SafeLockService {
       stepIdx: 0,
       awaitingAck: false,
       lastSpeed: state.speedKmh,
+      publishedAt: 0,
     };
     this.ramps.set(req.thingName, ramp);
     if (!state.online) return { commandId: req.commandId, status: 'pending', reason: 'offline' };
@@ -100,18 +107,25 @@ export class SafeLockService {
     if (ramp.phase === 'ramping' && speedKmh < SAFE_LOCK_SPEED_KMH) await this.lock(ramp);
   }
 
-  async onReported(thingName: string, reported: ReportedState): Promise<void> {
+  /**
+   * `reported` do rastreador. A velocidade só deve chegar aqui se for uma amostra fresca (o gateway filtra).
+   * `at`: horário de cada campo; sem ele, vale a hora de chegada. O ack do degrau e a confirmação da trava só aceitam
+   * reported não mais antigo que a publicação (com resolução de 1 s, a da metadata do shadow).
+   */
+  async onReported(thingName: string, reported: ReportedState, at: ReportedTimestamps = {}): Promise<void> {
     const ramp = this.ramps.get(thingName);
     if (!ramp) return;
     if (reported.velocidade_kmh !== undefined) await this.onSpeed(thingName, reported.velocidade_kmh);
-    if (ramp.phase === 'locking' && reported.travada === true) {
+    if (this.ramps.get(thingName) !== ramp) return;
+    const notOlder = (field: keyof ReportedState) => (at[field] ?? this.clock.now()) >= Math.floor(ramp.publishedAt / 1000) * 1000;
+    if (ramp.phase === 'locking' && reported.travada === true && notOlder('travada')) {
       this.finish(ramp, { status: 'confirmed' });
       return;
     }
-    if (ramp.phase === 'ramping' && ramp.awaitingAck && reported.limite_kmh !== undefined && reported.limite_kmh <= ramp.steps[ramp.stepIdx]) {
+    if (ramp.phase === 'ramping' && ramp.awaitingAck && reported.limite_kmh !== undefined && reported.limite_kmh <= ramp.steps[ramp.stepIdx] && notOlder('limite_kmh')) {
       ramp.awaitingAck = false;
       if (ramp.stepIdx < ramp.steps.length - 1) {
-        ramp.stepTimer = this.clock.setTimeout(() => this.nextStep(thingName), this.stepIntervalMs);
+        ramp.stepTimer = this.clock.setTimeout(() => this.nextStep(ramp), this.stepIntervalMs);
       }
     }
   }
@@ -135,8 +149,9 @@ export class SafeLockService {
 
   private async begin(ramp: Ramp, state: SafeLockVehicleState): Promise<void> {
     ramp.lastSpeed = state.speedKmh;
-    ramp.timeoutTimer = this.clock.setTimeout(() => this.onTimeout(ramp.thingName), this.timeoutMs);
-    if (state.speedKmh < SAFE_LOCK_SPEED_KMH) {
+    ramp.timeoutTimer = this.clock.setTimeout(() => this.onTimeout(ramp), this.timeoutMs);
+    // Velocidade desconhecida/velha (null) = em movimento: rampa. Só trava direto com amostra fresca < 3.
+    if (state.speedKmh !== null && state.speedKmh < SAFE_LOCK_SPEED_KMH) {
       await this.lock(ramp);
       return;
     }
@@ -150,12 +165,13 @@ export class SafeLockService {
     const limit = ramp.steps[ramp.stepIdx];
     ramp.awaitingAck = true;
     ramp.lastPublishedLimit = limit;
+    ramp.publishedAt = this.clock.now();
     await this.transport.updateDesired(ramp.thingName, { limite_kmh: limit });
   }
 
-  private async nextStep(thingName: string): Promise<void> {
-    const ramp = this.ramps.get(thingName);
-    if (!ramp || ramp.phase !== 'ramping') return;
+  /** Timer de degrau ligado à rampa que o criou: um timer velho nunca avança uma rampa nova. */
+  private async nextStep(ramp: Ramp): Promise<void> {
+    if (this.ramps.get(ramp.thingName) !== ramp || ramp.phase !== 'ramping') return;
     ramp.stepTimer = undefined;
     ramp.stepIdx += 1;
     await this.publishStep(ramp);
@@ -163,19 +179,22 @@ export class SafeLockService {
 
   private async lock(ramp: Ramp): Promise<void> {
     // Defesa em profundidade: nunca publica travada com velocidade reportada ≥ 3.
-    if (!(ramp.lastSpeed < SAFE_LOCK_SPEED_KMH)) return;
+    if (ramp.lastSpeed === null || !(ramp.lastSpeed < SAFE_LOCK_SPEED_KMH)) return;
     this.clock.clearTimeout(ramp.stepTimer);
     ramp.stepTimer = undefined;
     ramp.phase = 'locking';
+    ramp.publishedAt = this.clock.now();
     await this.transport.updateDesired(ramp.thingName, { travada: true });
   }
 
-  private async onTimeout(thingName: string): Promise<void> {
-    const ramp = this.ramps.get(thingName);
-    if (!ramp) return;
+  private async onTimeout(ramp: Ramp): Promise<void> {
+    const thingName = ramp.thingName;
+    if (this.ramps.get(thingName) !== ramp) return;
     ramp.timeoutTimer = undefined;
     if (ramp.phase === 'ramping') {
       this.clock.clearTimeout(ramp.stepTimer);
+      // Limite 0 fica "segurado" até um unlock explícito (o gateway recusa qualquer setSpeedLimit).
+      this.opts.onHeld?.(thingName);
       this.finish(ramp, { status: 'failed', reason: 'did_not_stop' });
       if (ramp.lastPublishedLimit !== 0) await this.transport.updateDesired(thingName, { limite_kmh: 0 });
       return;

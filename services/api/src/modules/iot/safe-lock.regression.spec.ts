@@ -1,0 +1,254 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EV } from '../../common/events';
+import { MemoryRedisStore } from '../../redis/redis-store';
+import { AwsIotTransport } from './aws-iot.transport';
+import { BaseIotGateway } from './base-iot-gateway';
+import { FakeClock } from './clock';
+import { LiveStateStore } from './live-state.store';
+import { SafeLockService } from './safe-lock.service';
+import type { DesiredState, IotTransport } from './shadow-transport';
+import { TelemetryService } from './telemetry.service';
+
+/**
+ * Regressões da revisão (fix round 1): o invariante "nunca publicar travada:true com a moto podendo estar a ≥ 3 km/h"
+ * precisa valer com velocidade velha, desconhecida ou replayed pelo polling do shadow.
+ */
+class GW extends BaseIotGateway {}
+const T = 'moto-0001';
+const T0 = Date.parse('2026-10-21T15:00:00Z');
+const telemetry = (speed: number, ts = '2026-10-21T15:00:00Z') => ({ lat: -23.5, lng: -46.6, velocidade_kmh: speed, bateria_pct: 80, travada: false, ignicao: true, sinal: 4, timestamp: ts });
+const flush = async () => {
+  for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+};
+
+/** Cliente IoT Data Plane falso: o UpdateThingShadow do servidor muda a versão; o reported do rastreador é antigo (metadata). */
+function awsClient(clock: FakeClock, reportedAtSec: number, reported: Record<string, unknown> = { travada: false, limite_kmh: 32, velocidade_kmh: 0 }) {
+  let version = 10;
+  const published: DesiredState[] = [];
+  const meta: Record<string, { timestamp: number }> = {};
+  for (const k of Object.keys(reported)) meta[k] = { timestamp: reportedAtSec };
+  const client = {
+    send: async (cmd: any) => {
+      const n = cmd.constructor.name;
+      if (n === 'UpdateThingShadowCommand') {
+        version++;
+        published.push(JSON.parse(new TextDecoder().decode(cmd.input.payload)).state.desired);
+        return {};
+      }
+      if (n === 'GetThingShadowCommand') {
+        return { payload: new TextEncoder().encode(JSON.stringify({ state: { reported }, metadata: { reported: meta }, version, timestamp: Math.floor(clock.now() / 1000) })) };
+      }
+      return {};
+    },
+  };
+  return { client, published };
+}
+
+class FakeTransport implements IotTransport {
+  desired: DesiredState[] = [];
+  async updateDesired(_t: string, d: DesiredState) {
+    this.desired.push(d);
+  }
+  async publishCommand() {}
+  async start() {}
+  async stop() {}
+  locked() {
+    return this.desired.some((d) => d.travada === true);
+  }
+  limits() {
+    return this.desired.filter((d) => d.limite_kmh !== undefined).map((d) => d.limite_kmh);
+  }
+}
+
+function localSetup() {
+  const clock = new FakeClock(T0);
+  const transport = new FakeTransport();
+  const events = new EventEmitter2();
+  const live = new LiveStateStore(new MemoryRedisStore(), clock);
+  const gw = new GW(transport, live, clock, events, { confirmWaitMs: 1000, commandTimeoutMs: 30_000 });
+  const tel = new TelemetryService(
+    gw,
+    { onPosition: async () => {} },
+    { openRentalId: async () => undefined, invalidate: () => {} },
+    { vehicle: { findUnique: async () => ({ id: 'v1' }) }, trackPoint: { create: async () => ({}) } } as any,
+    events,
+    clock,
+    { trackRetentionDays: 90 },
+  );
+  return { clock, transport, events, live, gw, tel };
+}
+
+describe('Bloqueio seguro — regressões da revisão', () => {
+  it('aws: polling que devolve reported.velocidade_kmh antigo (0) não trava moto andando a 25 km/h (repro do revisor)', async () => {
+    const clock = new FakeClock(T0);
+    // reported do rastreador é de 1 min atrás; a telemetria de agora diz 25 km/h.
+    const { client, published } = awsClient(clock, Math.floor(T0 / 1000) - 60);
+    const transport = new AwsIotTransport(client as any, { subscribe: () => undefined } as any, { pollMs: 0 });
+    const live = new LiveStateStore(new MemoryRedisStore(), clock);
+    const gw = new GW(transport, live, clock, new EventEmitter2(), { confirmWaitMs: 3000, commandTimeoutMs: 30000 });
+    await transport.start({ telemetry: async () => {}, deviceEvent: async () => {}, presence: async () => {}, reported: (t: string, r: any, m: any) => gw.onReported(t, r, m) } as any);
+    await live.applyTelemetry(T, telemetry(25));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await flush();
+    await transport.pollOnce();
+    await transport.pollOnce();
+    await clock.advance(5000);
+    await p;
+    expect(published).toEqual([{ limite_kmh: 15 }]);
+    expect(live.get(T)!.speedKmh).toBe(25);
+  });
+
+  it('aws: lock de moto offline — o polling não marca online, não emite iot.connectivity e não trava (repro do revisor)', async () => {
+    const clock = new FakeClock(T0);
+    const { client, published } = awsClient(clock, Math.floor(T0 / 1000) - 600);
+    const transport = new AwsIotTransport(client as any, { subscribe: () => undefined } as any, { pollMs: 0 });
+    const live = new LiveStateStore(new MemoryRedisStore(), clock);
+    const events = new EventEmitter2();
+    const conn: unknown[] = [];
+    events.on(EV.IOT_CONNECTIVITY, (e) => conn.push(e));
+    const gw = new GW(transport, live, clock, events, { confirmWaitMs: 3000, commandTimeoutMs: 30000 });
+    const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) } } as any, events, clock, { trackRetentionDays: 90 });
+    await transport.start(tel);
+    await live.applyTelemetry(T, telemetry(0));
+    await live.setOnline(T, false);
+    const r = await gw.lock({ commandId: 'c1', thingName: T });
+    await transport.pollOnce();
+    expect(r).toEqual({ commandId: 'c1', status: 'pending', reason: 'offline' });
+    expect(published).toEqual([]);
+    expect(conn).toEqual([]);
+    expect(gw.live.isOnline(T)).toBe(false);
+  });
+
+  it('aws: reported novo do rastreador (metadata mais recente) é aceito — velocidade 1 trava, limite confirma degrau', async () => {
+    const clock = new FakeClock(T0);
+    let reported: Record<string, unknown> = { limite_kmh: 32, velocidade_kmh: 25 };
+    let at = Math.floor(T0 / 1000);
+    const published: DesiredState[] = [];
+    const client = {
+      send: async (cmd: any) => {
+        if (cmd.constructor.name === 'UpdateThingShadowCommand') {
+          published.push(JSON.parse(new TextDecoder().decode(cmd.input.payload)).state.desired);
+          return {};
+        }
+        const meta: Record<string, { timestamp: number }> = {};
+        for (const k of Object.keys(reported)) meta[k] = { timestamp: at };
+        return { payload: new TextEncoder().encode(JSON.stringify({ state: { reported }, metadata: { reported: meta }, version: at })) };
+      },
+    };
+    const transport = new AwsIotTransport(client as any, { subscribe: () => undefined } as any, { pollMs: 0 });
+    const live = new LiveStateStore(new MemoryRedisStore(), clock);
+    const gw = new GW(transport, live, clock, new EventEmitter2(), { confirmWaitMs: 100, commandTimeoutMs: 30000 });
+    await transport.start({ telemetry: async () => {}, deviceEvent: async () => {}, presence: async () => {}, reported: (t: string, r: any, m: any) => gw.onReported(t, r, m) } as any);
+    await live.applyTelemetry(T, telemetry(25));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(100);
+    await p;
+    await clock.advance(2000);
+    at = Math.floor(clock.now() / 1000);
+    reported = { limite_kmh: 15, velocidade_kmh: 1 };
+    await transport.pollOnce();
+    expect(published).toEqual([{ limite_kmh: 15 }, { travada: true }]);
+  });
+
+  it('presença chega antes do reported: não trava com a velocidade de antes da desconexão; reported 25 não trava; amostra nova < 3 trava', async () => {
+    const { transport, tel, gw } = localSetup();
+    await tel.telemetry(T, telemetry(0)); // estava parada
+    await tel.presence(T, false);
+    const r = await gw.lock({ commandId: 'c1', thingName: T });
+    expect(r.status).toBe('pending');
+    await tel.presence(T, true); // reconecta (pode ter sido levada: roubada)
+    expect(transport.locked()).toBe(false);
+    expect(transport.limits()).toEqual([15]); // velocidade desconhecida = tratada como em movimento
+    await tel.reported(T, { limite_kmh: 15, velocidade_kmh: 25 });
+    expect(transport.locked()).toBe(false);
+    await tel.reported(T, { velocidade_kmh: 2 });
+    expect(transport.locked()).toBe(true);
+  });
+
+  it('sem estado ao vivo nenhum → lock não trava na hora (pending/offline)', async () => {
+    const { transport, gw } = localSetup();
+    const r = await gw.lock({ commandId: 'c1', thingName: 'moto-0042' });
+    expect(r).toEqual({ commandId: 'c1', status: 'pending', reason: 'offline' });
+    expect(transport.desired).toEqual([]);
+  });
+
+  it('velocidade 0 mas velha (> 10 s) com a moto online → rampa, não trava direto', async () => {
+    const { transport, tel, gw, clock } = localSetup();
+    await tel.telemetry(T, telemetry(0));
+    await clock.advance(30_000); // parada manda telemetria a cada 60 s
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1000);
+    await p;
+    expect(transport.locked()).toBe(false);
+    expect(transport.limits()).toEqual([15]);
+    await tel.reported(T, { limite_kmh: 15, velocidade_kmh: 0 }); // F4: o rastreador reporta a velocidade com o delta
+    expect(transport.locked()).toBe(true);
+  });
+
+  it('did_not_stop mantém o limite em 0: setSpeedLimit (zona) recusado até um unlock explícito, mesmo depois de reiniciar', async () => {
+    const { transport, tel, gw, clock, live } = localSetup();
+    await tel.telemetry(T, telemetry(25));
+    const p = gw.lock({ commandId: 'c1', thingName: T });
+    await clock.advance(1000);
+    await p;
+    await clock.advance(120_000);
+    expect(transport.limits()[transport.limits().length - 1]).toBe(0);
+    const before = transport.desired.length;
+    expect((await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 32)).status).toBe('failed');
+    expect(transport.desired.length).toBe(before);
+    // "Reinício": novo gateway sobre o mesmo Redis continua segurando.
+    const redisLive = new LiveStateStore((live as any).redis, clock);
+    const gw2 = new GW(transport, redisLive, clock, new EventEmitter2(), { confirmWaitMs: 1000, commandTimeoutMs: 30_000 });
+    expect((await gw2.setSpeedLimit({ commandId: 'c3', thingName: T }, 20)).status).toBe('failed');
+    const u = gw.unlock({ commandId: 'c4', thingName: T });
+    await tel.reported(T, { travada: false, limite_kmh: 32 });
+    await u;
+    const s = gw.setSpeedLimit({ commandId: 'c5', thingName: T }, 20);
+    await tel.reported(T, { limite_kmh: 20 });
+    expect((await s).status).toBe('confirmed');
+  });
+});
+
+describe('SafeLockService — menores da revisão', () => {
+  class Tx {
+    desired: DesiredState[] = [];
+    async updateDesired(_t: string, d: DesiredState) {
+      this.desired.push(d);
+    }
+    async publishCommand() {}
+  }
+
+  it('timer de degrau antigo não avança uma rampa nova (identidade)', async () => {
+    const clock = new FakeClock(T0);
+    const tx = new Tx();
+    const svc = new SafeLockService(clock, tx, () => undefined);
+    await svc.start({ commandId: 'a', thingName: T }, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
+    await svc.onReported(T, { limite_kmh: 15 }); // agenda o degrau 8 em 2 s
+    svc.cancel(T);
+    await svc.start({ commandId: 'b', thingName: T }, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true }); // publica 15
+    await clock.advance(2000);
+    expect(tx.desired).toEqual([{ limite_kmh: 15 }, { limite_kmh: 15 }]); // o timer velho não publicou 8
+  });
+
+  it('ack do degrau só aceita reported mais novo que a publicação do degrau', async () => {
+    const clock = new FakeClock(T0);
+    const tx = new Tx();
+    const svc = new SafeLockService(clock, tx, () => undefined);
+    await clock.advance(5000);
+    await svc.start({ commandId: 'a', thingName: T }, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
+    await svc.onReported(T, { limite_kmh: 0 }, { limite_kmh: T0 }); // reported antigo (antes do degrau)
+    await clock.advance(5000);
+    expect(tx.desired).toEqual([{ limite_kmh: 15 }]);
+    await svc.onReported(T, { limite_kmh: 15 }, { limite_kmh: clock.now() });
+    await clock.advance(2000);
+    expect(tx.desired).toEqual([{ limite_kmh: 15 }, { limite_kmh: 8 }]);
+  });
+
+  it('velocidade desconhecida (null) = em movimento: rampa', async () => {
+    const clock = new FakeClock(T0);
+    const tx = new Tx();
+    const svc = new SafeLockService(clock, tx, () => undefined);
+    await svc.start({ commandId: 'a', thingName: T }, { speedKmh: null, speedLimitKmh: 32, locked: false, online: true });
+    expect(tx.desired).toEqual([{ limite_kmh: 15 }]);
+  });
+});
