@@ -23,6 +23,10 @@ O Prism exige um header `Authorization: Bearer ...`; o login de dev (`POST /dev/
 - `lib/features/<tela>`: onboarding, home (mapa), reservation, scan, plan (+ Pix), ride, return_flow, summary, account.
 - `lib/l10n/app_pt.arb`: todos os textos (pt-BR).
 
+## Motion (design v2)
+
+Transições de tela em `core/router.dart` (`voltiPage`): push lateral de 440 ms; `/scan` abre como modal de baixo e a tela de trás recua. Listas e seções entram em cascata (`VoltiStagger.wrap`), pins caem em sequência, pin selecionado e posição do usuário pulsam, rotas se desenham (`DrawnPolyline`), recibo mostra `VoltiSuccessCheck`. Tudo respeita reduced motion (`MediaQuery.disableAnimationsOf`). Animações infinitas (pulso, brilho, ponto ao vivo) impedem `pumpAndSettle`: use `pump(duration)` nos testes dessas telas.
+
 ## Pontos de integração
 
 ### Push (Firebase Cloud Messaging)

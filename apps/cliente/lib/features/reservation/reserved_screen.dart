@@ -87,7 +87,7 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
           final expired = remaining <= 0;
           return ListView(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-            children: [
+            children: VoltiStagger.wrap([
               if (expired)
                 NoticeBanner(
                     danger: true, icon: LucideIcons.clock, title: l.reservationExpiredTitle, message: l.reservationExpiredText)
@@ -120,11 +120,9 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
                       zoom: 17,
                       interactive: false,
                       layers: [
-                        if (user != null)
-                          PolylineLayer(polylines: [
-                            Polyline(points: [user, LatLng(v.lat, v.lng)], color: VoltiColors.brand, strokeWidth: 4),
-                          ]),
+                        if (user != null) DrawnPolyline(points: [user, LatLng(v.lat, v.lng)], color: VoltiColors.brand),
                         MarkerLayer(markers: [
+                          if (user != null) Marker(point: user, width: 22, height: 22, child: const VoltiUserDot()),
                           Marker(
                               point: LatLng(v.lat, v.lng),
                               width: 56,
@@ -152,7 +150,7 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
                 fullWidth: true,
                 onPressed: expired ? null : () => _ring(r),
               ),
-            ],
+            ]),
           );
         },
       ),

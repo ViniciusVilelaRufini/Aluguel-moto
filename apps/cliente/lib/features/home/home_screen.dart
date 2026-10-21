@@ -28,6 +28,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _selectedId;
   bool _busy = false;
 
+  /// Pins que ja cairam: remontar (pan/culling, lista mudando, GPS chegando)
+  /// nao repete a animacao. A sequencia com atraso so vale na primeira carga.
+  final _dropped = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -104,6 +108,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (v.id == _selectedId) selected = v;
     }
     final center = loc ?? fallbackCenter;
+    final firstLoad = _dropped.isEmpty;
+    final newIds = [for (final v in vehicles) if (!_dropped.contains(v.id)) v.id];
+    if (newIds.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _dropped.addAll(newIds));
+    }
 
     return Scaffold(
       body: Stack(
@@ -125,19 +134,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 MarkerLayer(markers: [
                   if (loc != null)
                     Marker(
+                      key: const ValueKey('user-dot'),
                       point: loc,
                       width: 22,
                       height: 22,
-                      child: Semantics(
-                        label: l.yourLocation,
-                        child: Container(
-                          decoration: BoxDecoration(
-                              color: VoltiColors.brand, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3)),
-                        ),
-                      ),
+                      child: Semantics(label: l.yourLocation, child: const VoltiUserDot()),
                     ),
-                  for (final v in vehicles)
+                  // Pins caem em sequencia (260 ms + 70 ms por pin, limitado a 12).
+                  for (final (i, v) in vehicles.indexed)
                     Marker(
+                      key: ValueKey('pin-${v.id}'),
                       point: LatLng(v.lat, v.lng),
                       width: 56,
                       height: 64,
@@ -145,7 +151,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         button: true,
                         label: l.vehicleSemantics(v.model, v.batteryPct),
                         child: VehicleMarker(v.status, v.batteryPct,
-                            selected: v.id == _selectedId, onTap: () => setState(() => _selectedId = v.id)),
+                            animateIn: !_dropped.contains(v.id),
+                            delay: firstLoad ? Duration(milliseconds: 260 + (i < 12 ? i : 12) * 70) : Duration.zero,
+                            selected: v.id == _selectedId,
+                            onTap: () => setState(() => _selectedId = v.id)),
                       ),
                     ),
                 ]),
@@ -157,7 +166,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
               child: Column(
                 children: [
-                  Row(children: [
+                  VoltiEnter(
+                    key: const Key('home-header'),
+                    duration: VoltiMotion.staggerItem,
+                    delay: const Duration(milliseconds: 80),
+                    fromOffset: const Offset(0, -12),
+                    curve: VoltiMotion.easeOut,
+                    child: Row(children: [
                     VoltiIconButton(
                       icon: LucideIcons.user,
                       label: l.account,
@@ -177,6 +192,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                     ),
                   ]),
+                  ),
                   const SizedBox(height: VoltiSpacing.s10),
                   if (rental != null)
                     _ActiveBanner(
@@ -207,11 +223,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   const SizedBox(height: VoltiSpacing.s8),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: FilterChip(
-                      label: Text(l.filterBattery),
-                      avatar: const Icon(LucideIcons.batteryFull, size: 16),
-                      selected: minBattery >= 50,
-                      onSelected: (v) => ref.read(minBatteryFilterProvider.notifier).set(v ? 50 : 0),
+                    child: VoltiFadeUp(
+                      child: VoltiChip(
+                        label: l.filterBattery,
+                        icon: LucideIcons.batteryFull,
+                        selected: minBattery >= 50,
+                        elevated: true,
+                        onTap: () => ref.read(minBatteryFilterProvider.notifier).set(minBattery >= 50 ? 0 : 50),
+                      ),
                     ),
                   ),
                 ],
@@ -237,13 +256,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         child: ErrorState(error: nearby.error!, onRetry: () => ref.invalidate(nearbyProvider)),
                       )
                     else if (selected != null)
-                      _VehicleSheet(
+                      VoltiEnter(
+                        key: ValueKey('sheet-${selected.id}'),
+                        duration: VoltiMotion.durScreen,
+                        curve: VoltiMotion.easeScreen,
+                        fromOffset: const Offset(0, 120),
+                        child: _VehicleSheet(
                         vehicle: selected,
                         busy: _busy,
                         hasReservation: reservation != null,
                         onReserve: () => _reserve(selected!),
                         onRing: reservation?.vehicleId == selected.id ? () => _ring(selected!) : null,
                         onClose: () => setState(() => _selectedId = null),
+                      ),
                       )
                     else if (nearby.isLoading)
                       const Center(child: LinearProgressIndicator())
@@ -255,13 +280,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         child: Text(l.noVehiclesNearby, style: VoltiTypography.body),
                       ),
                     const SizedBox(height: VoltiSpacing.s12),
-                    Row(children: [
+                    VoltiFadeUp(
+                      delay: VoltiMotion.staggerDelay(1),
+                      child: Row(children: [
                       Expanded(
                         child: VoltiButton(
                           label: l.scanToRide,
                           icon: LucideIcons.scanLine,
                           size: VoltiButtonSize.lg,
                           fullWidth: true,
+                          shine: true,
                           onPressed: () => context.push('/scan'),
                         ),
                       ),
@@ -276,6 +304,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         },
                       ),
                     ]),
+                    ),
                   ],
                 ),
               ),
@@ -347,10 +376,10 @@ class _VehicleSheet extends StatelessWidget {
             VoltiIconButton(icon: LucideIcons.x, variant: VoltiIconButtonVariant.ghost, label: l.close, onPressed: onClose),
           ]),
           const SizedBox(height: VoltiSpacing.s10),
-          Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: VoltiStagger.wrap([
             BatteryPill(vehicle.batteryPct, rangeKm: vehicle.estimatedRangeKm.round()),
             if (dist != null) RouteInfoPill(minutes: walkingMinutes(dist), distance: walkingDistanceLabel(dist)),
-          ]),
+          ])),
           const SizedBox(height: VoltiSpacing.s14),
           Row(children: [
             Expanded(

@@ -5,6 +5,7 @@ import '../tokens/colors.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
+import 'motion.dart';
 
 /// Corpo de bottom sheet: raio 28 no topo, grabber e sombra de sheet.
 /// Use [VoltiBottomSheet.show] para abrir como modal.
@@ -30,9 +31,11 @@ class VoltiBottomSheet extends StatelessWidget {
       backgroundColor: Colors.transparent,
       elevation: 0,
       barrierColor: VoltiColors.surfaceScrim,
-      sheetAnimationStyle: const AnimationStyle(
-        duration: VoltiMotion.durSlow,
-        curve: VoltiMotion.easeOut,
+      sheetAnimationStyle: AnimationStyle(
+        duration: VoltiMotion.scaled(context, VoltiMotion.durScreen),
+        reverseDuration: VoltiMotion.scaled(context, VoltiMotion.durScreen),
+        curve: VoltiMotion.easeScreen,
+        reverseCurve: VoltiMotion.easeScreen.flipped,
       ),
       builder: (ctx) => VoltiBottomSheet(child: builder(ctx)),
     );
@@ -50,16 +53,31 @@ class VoltiBottomSheet extends StatelessWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(bottom: 14),
-            decoration: BoxDecoration(
-                color: scheme.outlineVariant, borderRadius: BorderRadius.circular(2)),
-          ),
-          Flexible(child: child),
-        ]),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 14),
+              decoration: BoxDecoration(
+                color: scheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            // Conteudo entra com fade-up 120 ms depois do sheet (`vt-fade-up` 420 ms).
+            Flexible(
+              child: VoltiEnter(
+                key: const Key('volti-sheet-content'),
+                duration: const Duration(milliseconds: 420),
+                delay: const Duration(milliseconds: 120),
+                fromOffset: const Offset(0, VoltiMotion.fadeUpOffset),
+                curve: VoltiMotion.easeOut,
+                child: child,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -93,7 +111,12 @@ class VoltiDialog extends StatelessWidget {
       context: context,
       barrierDismissible: barrierDismissible,
       barrierColor: VoltiColors.surfaceScrim,
-      builder: (_) => VoltiDialog(title: title, message: message, icon: icon, actions: actions),
+      builder: (_) => VoltiDialog(
+        title: title,
+        message: message,
+        icon: icon,
+        actions: actions,
+      ),
     );
   }
 
@@ -104,37 +127,49 @@ class VoltiDialog extends StatelessWidget {
       backgroundColor: Colors.transparent,
       elevation: 0,
       insetPadding: const EdgeInsets.all(24),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 340),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: VoltiRadii.rXl,
-            boxShadow: VoltiShadows.shadow2,
-          ),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            if (icon != null) ...[icon!, const SizedBox(height: 12)],
-            if (title != null)
-              Text(title!,
-                  textAlign: TextAlign.center,
-                  style: VoltiTypography.heading.copyWith(color: scheme.onSurface)),
-            if (message != null) ...[
-              const SizedBox(height: 12),
-              DefaultTextStyle(
-                textAlign: TextAlign.center,
-                style: VoltiTypography.body.copyWith(color: scheme.onSurfaceVariant),
-                child: message!,
-              ),
-            ],
-            if (actions.isNotEmpty) ...[
-              const SizedBox(height: 20),
-              for (var i = 0; i < actions.length; i++) ...[
-                if (i > 0) const SizedBox(height: 8),
-                actions[i],
+      child: VoltiEnter.pop(
+        key: const Key('volti-dialog-card'),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 340),
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: scheme.surface,
+              borderRadius: VoltiRadii.rXl,
+              boxShadow: VoltiShadows.shadow2,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (icon != null) ...[icon!, const SizedBox(height: 12)],
+                if (title != null)
+                  Text(
+                    title!,
+                    textAlign: TextAlign.center,
+                    style: VoltiTypography.heading.copyWith(
+                      color: scheme.onSurface,
+                    ),
+                  ),
+                if (message != null) ...[
+                  const SizedBox(height: 12),
+                  DefaultTextStyle(
+                    textAlign: TextAlign.center,
+                    style: VoltiTypography.body.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                    child: message!,
+                  ),
+                ],
+                if (actions.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  for (var i = 0; i < actions.length; i++) ...[
+                    if (i > 0) const SizedBox(height: 8),
+                    actions[i],
+                  ],
+                ],
               ],
-            ],
-          ]),
+            ),
+          ),
         ),
       ),
     );
@@ -168,15 +203,27 @@ class VoltiToast extends StatelessWidget {
   }) {
     final m = ScaffoldMessenger.of(context);
     m.hideCurrentSnackBar();
-    m.showSnackBar(SnackBar(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      padding: EdgeInsets.zero,
-      behavior: SnackBarBehavior.floating,
-      margin: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 0, VoltiSpacing.screenGutter, 16),
-      duration: duration,
-      content: VoltiToast(message: message, tone: tone, actionLabel: actionLabel, onAction: onAction),
-    ));
+    m.showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        padding: EdgeInsets.zero,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.fromLTRB(
+          VoltiSpacing.screenGutter,
+          0,
+          VoltiSpacing.screenGutter,
+          16,
+        ),
+        duration: duration,
+        content: VoltiToast(
+          message: message,
+          tone: tone,
+          actionLabel: actionLabel,
+          onAction: onAction,
+        ),
+      ),
+    );
   }
 
   @override
@@ -184,35 +231,52 @@ class VoltiToast extends StatelessWidget {
     final (icon, color) = switch (tone) {
       VoltiToastTone.success => (LucideIcons.circleCheck, VoltiColors.green400),
       VoltiToastTone.info => (LucideIcons.info, VoltiColors.blue500),
-      VoltiToastTone.warning => (LucideIcons.circleAlert, VoltiColors.orange500),
+      VoltiToastTone.warning => (
+        LucideIcons.circleAlert,
+        VoltiColors.orange500,
+      ),
       VoltiToastTone.danger => (LucideIcons.circleAlert, VoltiColors.coral400),
     };
-    return Container(
-      constraints: const BoxConstraints(minHeight: 48),
-      padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
-      decoration: const BoxDecoration(
-        color: VoltiColors.surfaceInverse,
-        borderRadius: VoltiRadii.rMd,
-        boxShadow: VoltiShadows.shadow2,
-      ),
-      child: Row(children: [
-        Icon(icon, size: 20, color: color),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(message,
-              style: VoltiTypography.label.copyWith(color: Colors.white)),
+    return VoltiEnter.toast(
+      key: const Key('volti-toast'),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
+        decoration: const BoxDecoration(
+          color: VoltiColors.surfaceInverse,
+          borderRadius: VoltiRadii.rMd,
+          boxShadow: VoltiShadows.shadow2,
         ),
-        if (actionLabel != null)
-          GestureDetector(
-            onTap: onAction,
-            behavior: HitTestBehavior.opaque,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-              child: Text(actionLabel!,
-                  style: VoltiTypography.label.copyWith(color: VoltiColors.green300)),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: VoltiTypography.label.copyWith(color: Colors.white),
+              ),
             ),
-          ),
-      ]),
+            if (actionLabel != null)
+              GestureDetector(
+                onTap: onAction,
+                behavior: HitTestBehavior.opaque,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 6,
+                  ),
+                  child: Text(
+                    actionLabel!,
+                    style: VoltiTypography.label.copyWith(
+                      color: VoltiColors.green300,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -235,27 +299,40 @@ class ProgressSteps extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-      Row(children: [
-        for (var i = 0; i < total; i++) ...[
-          if (i > 0) const SizedBox(width: 6),
-          Expanded(
-            child: AnimatedContainer(
-              key: Key('progress-step-$i'),
-              duration: VoltiMotion.durBase,
-              height: 4,
-              decoration: BoxDecoration(
-                color: i <= current ? VoltiColors.brand : scheme.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            for (var i = 0; i < total; i++) ...[
+              if (i > 0) const SizedBox(width: 6),
+              Expanded(
+                child: AnimatedContainer(
+                  key: Key('progress-step-$i'),
+                  duration: VoltiMotion.durBase,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: i <= current
+                        ? VoltiColors.brand
+                        : scheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
               ),
+            ],
+          ],
+        ),
+        if (label != null) ...[
+          const SizedBox(height: 8),
+          Text(
+            label!,
+            style: VoltiTypography.caption.copyWith(
+              color: scheme.onSurfaceVariant,
             ),
           ),
         ],
-      ]),
-      if (label != null) ...[
-        const SizedBox(height: 8),
-        Text(label!, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
       ],
-    ]);
+    );
   }
 }
