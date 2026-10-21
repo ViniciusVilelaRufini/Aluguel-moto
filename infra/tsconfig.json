@@ -1,0 +1,12 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["es2022"],
+    "types": ["node", "jest"],
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "rootDir": "."
+  },
+  "include": ["bin/**/*.ts", "lib/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "cdk.out"]
+}

@@ -1,0 +1,35 @@
+import { Match } from 'aws-cdk-lib/assertions';
+import { stacksFor, templateOf } from './helpers';
+
+describe('ApiStack', () => {
+  const t = () => templateOf(stacksFor('dev').api);
+
+  it('ALB has a 443 HTTPS listener with a certificate', () => {
+    t().hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', {
+      Port: 443,
+      Protocol: 'HTTPS',
+      Certificates: [Match.objectLike({ CertificateArn: Match.anyValue() })],
+    });
+  });
+
+  it('target group health check is /health', () => {
+    t().hasResourceProperties('AWS::ElasticLoadBalancingV2::TargetGroup', { HealthCheckPath: '/health' });
+  });
+
+  it('runs on Fargate with CPU auto scaling and secrets from Secrets Manager', () => {
+    t().hasResourceProperties('AWS::ECS::Service', { LaunchType: 'FARGATE' });
+    t().hasResourceProperties('AWS::ApplicationAutoScaling::ScalingPolicy', {
+      TargetTrackingScalingPolicyConfiguration: Match.objectLike({
+        PredefinedMetricSpecification: { PredefinedMetricType: 'ECSServiceAverageCPUUtilization' },
+      }),
+    });
+    const td = Object.values(t().findResources('AWS::ECS::TaskDefinition'))[0] as any;
+    const c = td.Properties.ContainerDefinitions[0];
+    expect(c.Secrets.length).toBeGreaterThan(0);
+    expect(JSON.stringify(c.Environment)).not.toMatch(/password|secret_key/i);
+  });
+
+  it('creates the ECR repository for the API image', () => {
+    t().resourceCountIs('AWS::ECR::Repository', 1);
+  });
+});
