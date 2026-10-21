@@ -58,7 +58,7 @@ void main() {
 
     testWidgets('tique segue a bateria e selected aumenta', (t) async {
       await t.pumpWidget(_wrap(const VehicleMarker(VehicleStatus.free, 15, selected: true)));
-      await t.pumpAndSettle();
+      await t.pump(const Duration(seconds: 1)); // pulso infinito: sem pumpAndSettle
       final tick = t.widget<Container>(find.byKey(const Key('vehicle-marker-battery')));
       expect((tick.decoration! as BoxDecoration).color, VoltiColors.batteryLow);
       expect(t.getSize(find.byKey(const Key('vehicle-marker-body'))).width, 44);

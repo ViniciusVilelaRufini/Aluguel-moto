@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../tokens/shadows.dart';
 
-/// Area tocavel com feedback de press (escala + brilho), como no design system.
+/// Area tocavel com feedback de press (escala com mola), como no design system.
 class VoltiPressable extends StatefulWidget {
   const VoltiPressable({
     super.key,
@@ -43,11 +43,114 @@ class _VoltiPressableState extends State<VoltiPressable> {
         onTap: widget.onTap,
         child: AnimatedScale(
           scale: _down ? widget.scale : 1,
-          duration: VoltiMotion.durFast,
-          curve: VoltiMotion.easeOut,
+          duration: VoltiMotion.scaled(context, VoltiMotion.durSpring),
+          curve: VoltiMotion.easeSpring,
           child: widget.child,
         ),
       ),
     );
   }
+}
+
+/// Ondulacao a partir do ponto de toque (`vt-ripple`, 620 ms). Fica entre o
+/// fundo e o conteudo: use dentro do `Container` decorado, envolvendo o
+/// conteudo. [color] `null` desliga. Nao consome o toque.
+class VoltiRipple extends StatefulWidget {
+  const VoltiRipple({
+    super.key,
+    required this.child,
+    this.color,
+    this.borderRadius = BorderRadius.zero,
+  });
+
+  final Widget child;
+  final Color? color;
+  final BorderRadius borderRadius;
+
+  @override
+  State<VoltiRipple> createState() => _VoltiRippleState();
+}
+
+class _Drop {
+  _Drop(this.origin, this.controller);
+  final Offset origin;
+  final AnimationController controller;
+}
+
+class _VoltiRippleState extends State<VoltiRipple>
+    with TickerProviderStateMixin {
+  final _drops = <_Drop>[];
+
+  void _down(PointerDownEvent e) {
+    if (widget.color == null || VoltiMotion.reduced(context)) return;
+    final c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 620),
+    );
+    final drop = _Drop(e.localPosition, c);
+    setState(() => _drops.add(drop));
+    c.forward().whenComplete(() {
+      if (!mounted) return;
+      setState(() => _drops.remove(drop));
+      c.dispose();
+    });
+  }
+
+  @override
+  void dispose() {
+    for (final d in _drops) {
+      d.controller.dispose();
+    }
+    _drops.clear();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _down,
+      child: Stack(
+        fit: StackFit.passthrough,
+        children: [
+          if (_drops.isNotEmpty)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: ClipRRect(
+                  borderRadius: widget.borderRadius,
+                  child: CustomPaint(
+                    key: const Key('volti-ripple'),
+                    painter: _RipplePainter(_drops, widget.color!),
+                  ),
+                ),
+              ),
+            ),
+          widget.child,
+        ],
+      ),
+    );
+  }
+}
+
+class _RipplePainter extends CustomPainter {
+  _RipplePainter(this.drops, this.color)
+    : super(repaint: Listenable.merge([for (final d in drops) d.controller]));
+  final List<_Drop> drops;
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final d = (size.width > size.height ? size.width : size.height) * 2.2;
+    for (final drop in drops) {
+      final t = VoltiMotion.easeOut.transform(drop.controller.value);
+      canvas.drawCircle(
+        drop.origin,
+        d / 2 * t,
+        Paint()..color = color.withValues(alpha: color.a * (1 - t)),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RipplePainter old) => true;
 }

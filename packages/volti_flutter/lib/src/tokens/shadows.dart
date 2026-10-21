@@ -1,5 +1,6 @@
 import 'package:flutter/animation.dart';
 import 'package:flutter/painting.dart';
+import 'package:flutter/widgets.dart' show BuildContext, MediaQuery;
 
 /// Sombras (`effects.css`).
 abstract final class VoltiShadows {
@@ -25,16 +26,48 @@ abstract final class VoltiShadows {
   static const double glassBlur = 16;
 }
 
-/// Duracoes e curvas de motion.
+/// Duracoes e curvas de motion (`effects.css` + `motion.css`).
 abstract final class VoltiMotion {
   static const durFast = Duration(milliseconds: 120);
   static const durBase = Duration(milliseconds: 200);
   static const durSlow = Duration(milliseconds: 320);
 
+  /// Troca de tela (`--dur-screen`).
+  static const durScreen = Duration(milliseconds: 440);
+
+  /// Press/knobs com mola (`--dur-spring`).
+  static const durSpring = Duration(milliseconds: 280);
+
   static const easeOut = Cubic(.2, .8, .2, 1);
   static const easeSpring = Cubic(.34, 1.56, .64, 1);
   static const easeInOut = Cubic(.65, 0, .35, 1);
 
+  /// Curva da troca de tela (`--ease-screen`).
+  static const easeScreen = Cubic(.32, .72, 0, 1);
+
   static const double pressScale = .97;
-  static const double iconPressScale = .92;
+  static const double iconPressScale = .88;
+  static const double chipPressScale = .94;
+
+  /// Cascata (`.vt-stagger`): primeiro item aos 140 ms, 45 ms entre itens,
+  /// itens a partir do 10o compartilham o ultimo atraso (545 ms).
+  static const staggerFirst = Duration(milliseconds: 140);
+  static const staggerStep = Duration(milliseconds: 45);
+  static const staggerMax = Duration(milliseconds: 545);
+  static const staggerItem = Duration(milliseconds: 480);
+  static const double fadeUpOffset = 14;
+
+  /// Atraso do item [index] (base 0) da cascata.
+  static Duration staggerDelay(int index) {
+    final d = staggerFirst + staggerStep * index;
+    return d > staggerMax ? staggerMax : d;
+  }
+
+  /// `true` quando o usuario pediu menos movimento (reduced motion).
+  static bool reduced(BuildContext context) =>
+      MediaQuery.maybeDisableAnimationsOf(context) ?? false;
+
+  /// Duracao efetiva: zero com reduced motion.
+  static Duration scaled(BuildContext context, Duration d) =>
+      reduced(context) ? Duration.zero : d;
 }

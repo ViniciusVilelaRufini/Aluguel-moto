@@ -26,7 +26,7 @@ MaterialApp(theme: VoltiTheme.light(), darkTheme: VoltiTheme.dark(), ...);
 | `VoltiSpacing` | `s0..s48`, `screenGutter`, `controlSm/Md/Lg`, `hitMin` |
 | `VoltiRadii` | `xs..xl`, `pill` e `BorderRadius` prontos (`rLg`, `sheetTop`, ...) |
 | `VoltiShadows` | `shadow1`, `shadow2`, `shadowSheet`, `shadowBrand`, `shadowCoral`, `glassBlur` |
-| `VoltiMotion` | `durFast/Base/Slow`, `easeOut/Spring/InOut`, `pressScale` |
+| `VoltiMotion` | `durFast/Base/Slow/Screen/Spring`, `easeOut/Spring/InOut/Screen`, `pressScale`, `staggerDelay(i)`, `reduced(context)` / `scaled(context, d)` |
 | `VoltiTypography` | `display`, `title`, `heading`, `bodyStrong`, `body`, `label`, `caption`, `overline`, `timer` (JetBrains Mono) |
 | `VoltiTheme` | `light()` e `dark()` (Material 3; escuro usa superfícies ink e mantém o verde) |
 
@@ -35,6 +35,10 @@ Fontes TTF estáticas (Plus Jakarta Sans 400-800, JetBrains Mono 500/700, OFL) v
 ## Widgets
 
 `VoltiButton` (variantes `primary`, `secondary`, `ghost`, `dark`, `danger`; tamanhos `sm/md/lg`), `VoltiIconButton`, `BatteryPill(pct, {rangeKm})`, `VehicleMarker(status, batteryPct, {selected, onTap})`, `FleetStatusBadge(status, {count, pill, selected, onTap})`, `RouteInfoPill`, `ReservationBanner`, `SwipeAction`, `OptionCard`, `OtpInput`, `PhotoCapture`, `ListRow`, `ProgressSteps`, `VoltiBottomSheet.show`, `VoltiDialog.show`, `VoltiToast.show`.
+
+### Motion (design v2)
+
+`VoltiFadeUp`/`VoltiStagger` (cascata 45 ms, primeiro aos 140 ms; `VoltiStagger.wrap(lista)` para `ListView`), `VoltiEnter` (`.pop`, `.toast`), `VoltiPulse` (anel), `VoltiCheckPop`, `VoltiSuccessCheck`, `VoltiShine`, `VoltiRouteDraw` (+ `partial` para truncar polylines), `VoltiUserDot`, `VoltiChip`, `PassCard`, e transições de tela `VoltiPageTransitions.push` / `.modal` (formato `transitionsBuilder`, usável em `CustomTransitionPage` do go_router; `VoltiPageRoute` para Navigator puro). `VoltiButton` ganhou `loading` e `shine`; `VehicleMarker` ganhou `delay`. Com `MediaQuery.disableAnimationsOf` (reduced motion) tudo mostra o estado final já no primeiro frame. Animações infinitas (pulso, brilho) impedem `pumpAndSettle` em testes: use `pump(duration)` ou ligue `disableAnimations`.
 
 Cores de bateria: > 50 verde, 21-50 amarelo, <= 20 coral. Ícones: `lucide_icons_flutter` (`LucideIcons.*`), recebidos como `IconData`.
 

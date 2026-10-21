@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../tokens/colors.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
+import 'motion.dart';
 import 'pressable.dart';
 
 enum VoltiButtonVariant { primary, secondary, ghost, dark, danger }
@@ -21,6 +23,8 @@ class VoltiButton extends StatelessWidget {
     this.icon,
     this.iconRight,
     this.fullWidth = false,
+    this.loading = false,
+    this.shine = false,
   });
 
   final String label;
@@ -32,6 +36,12 @@ class VoltiButton extends StatelessWidget {
   final IconData? icon;
   final IconData? iconRight;
   final bool fullWidth;
+
+  /// Spinner no lugar do icone; o botao fica inerte.
+  final bool loading;
+
+  /// Brilho periodico; so no CTA principal da tela.
+  final bool shine;
 
   static (double h, double px, double fs, double ic) _dims(VoltiButtonSize s) =>
       switch (s) {
@@ -46,42 +56,56 @@ class VoltiButton extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final (bg, fg, bd, sh) = switch (variant) {
       VoltiButtonVariant.primary => (
-          VoltiColors.brand,
-          VoltiColors.onBrand,
-          Colors.transparent,
-          VoltiShadows.shadowBrand
-        ),
+        VoltiColors.brand,
+        VoltiColors.onBrand,
+        Colors.transparent,
+        VoltiShadows.shadowBrand,
+      ),
       VoltiButtonVariant.secondary => (
-          scheme.surface,
-          VoltiColors.brand,
-          VoltiColors.brand,
-          const <BoxShadow>[]
-        ),
+        scheme.surface,
+        VoltiColors.brand,
+        VoltiColors.brand,
+        const <BoxShadow>[],
+      ),
       VoltiButtonVariant.ghost => (
-          Colors.transparent,
-          scheme.onSurface,
-          Colors.transparent,
-          const <BoxShadow>[]
-        ),
+        Colors.transparent,
+        scheme.onSurface,
+        Colors.transparent,
+        const <BoxShadow>[],
+      ),
       VoltiButtonVariant.dark => (
-          VoltiColors.surfaceInverse,
-          VoltiColors.textOnInverse,
-          Colors.transparent,
-          VoltiShadows.shadow2
-        ),
+        VoltiColors.surfaceInverse,
+        VoltiColors.textOnInverse,
+        Colors.transparent,
+        VoltiShadows.shadow2,
+      ),
       VoltiButtonVariant.danger => (
-          VoltiColors.danger,
-          VoltiColors.white,
-          Colors.transparent,
-          VoltiShadows.shadowCoral
-        ),
+        VoltiColors.danger,
+        VoltiColors.white,
+        Colors.transparent,
+        VoltiShadows.shadowCoral,
+      ),
     };
     final disabled = onPressed == null;
+    final off = disabled || loading;
+    final ripple = switch (variant) {
+      VoltiButtonVariant.primary => const Color(0x61FFFFFF),
+      VoltiButtonVariant.secondary => const Color(0x3334C25C),
+      VoltiButtonVariant.ghost => const Color(0x1415181A),
+      VoltiButtonVariant.dark => const Color(0x38FFFFFF),
+      VoltiButtonVariant.danger => const Color(0x59FFFFFF),
+    };
     final content = Row(
       mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (icon != null) ...[Icon(icon, size: ic, color: fg), const SizedBox(width: 10)],
+        if (loading) ...[
+          _Spinner(size: ic, color: fg),
+          const SizedBox(width: 10),
+        ] else if (icon != null) ...[
+          Icon(icon, size: ic, color: fg),
+          const SizedBox(width: 10),
+        ],
         Flexible(
           child: Text(
             label,
@@ -96,29 +120,81 @@ class VoltiButton extends StatelessWidget {
             ),
           ),
         ),
-        if (iconRight != null) ...[const SizedBox(width: 10), Icon(iconRight, size: ic, color: fg)],
+        if (iconRight != null && !loading) ...[
+          const SizedBox(width: 10),
+          Icon(iconRight, size: ic, color: fg),
+        ],
       ],
     );
     final body = Opacity(
       opacity: disabled ? .4 : 1,
       child: Container(
         height: h,
-        padding: EdgeInsets.symmetric(horizontal: px),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: VoltiRadii.rPill,
           border: Border.all(color: bd, width: 1.5),
           boxShadow: disabled ? null : sh,
         ),
-        child: content,
+        child: VoltiRipple(
+          color: off ? null : ripple,
+          borderRadius: VoltiRadii.rPill,
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: px),
+            child: Center(widthFactor: fullWidth ? null : 1, child: content),
+          ),
+        ),
       ),
     );
+    final shown = shine && !off ? VoltiShine(child: body) : body;
     return VoltiPressable(
-      onTap: onPressed,
+      onTap: off ? null : onPressed,
       semanticLabel: label,
-      child: fullWidth ? SizedBox(width: double.infinity, child: body) : body,
+      child: fullWidth ? SizedBox(width: double.infinity, child: shown) : shown,
     );
   }
+}
+
+class _Spinner extends StatefulWidget {
+  const _Spinner({required this.size, required this.color});
+  final double size;
+  final Color color;
+  @override
+  State<_Spinner> createState() => _SpinnerState();
+}
+
+class _SpinnerState extends State<_Spinner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+  bool _init = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_init) return;
+    _init = true;
+    if (!VoltiMotion.reduced(context)) _c.repeat();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => RotationTransition(
+    key: const Key('volti-button-spinner'),
+    turns: _c,
+    child: Icon(
+      LucideIcons.loaderCircle,
+      size: widget.size,
+      color: widget.color,
+    ),
+  );
 }
 
 enum VoltiIconButtonVariant { surface, ghost, soft, brand, dark }
@@ -152,11 +228,31 @@ class VoltiIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final (bg, fg, sh) = switch (variant) {
-      VoltiIconButtonVariant.surface => (scheme.surface, scheme.onSurface, VoltiShadows.shadow1),
-      VoltiIconButtonVariant.ghost => (Colors.transparent, scheme.onSurface, const <BoxShadow>[]),
-      VoltiIconButtonVariant.soft => (scheme.surfaceContainerHighest, scheme.onSurface, const <BoxShadow>[]),
-      VoltiIconButtonVariant.brand => (VoltiColors.brand, VoltiColors.onBrand, VoltiShadows.shadowBrand),
-      VoltiIconButtonVariant.dark => (VoltiColors.surfaceInverse, VoltiColors.white, const <BoxShadow>[]),
+      VoltiIconButtonVariant.surface => (
+        scheme.surface,
+        scheme.onSurface,
+        VoltiShadows.shadow1,
+      ),
+      VoltiIconButtonVariant.ghost => (
+        Colors.transparent,
+        scheme.onSurface,
+        const <BoxShadow>[],
+      ),
+      VoltiIconButtonVariant.soft => (
+        scheme.surfaceContainerHighest,
+        scheme.onSurface,
+        const <BoxShadow>[],
+      ),
+      VoltiIconButtonVariant.brand => (
+        VoltiColors.brand,
+        VoltiColors.onBrand,
+        VoltiShadows.shadowBrand,
+      ),
+      VoltiIconButtonVariant.dark => (
+        VoltiColors.surfaceInverse,
+        VoltiColors.white,
+        const <BoxShadow>[],
+      ),
     };
     return VoltiPressable(
       onTap: onPressed,
@@ -165,11 +261,19 @@ class VoltiIconButton extends StatelessWidget {
       child: Container(
         width: size,
         height: size,
-        decoration: BoxDecoration(color: bg, shape: BoxShape.circle, boxShadow: sh),
+        decoration: BoxDecoration(
+          color: bg,
+          shape: BoxShape.circle,
+          boxShadow: sh,
+        ),
         child: Stack(
           alignment: Alignment.center,
           children: [
-            Icon(icon, size: (size * .46).roundToDouble(), color: iconColor ?? fg),
+            Icon(
+              icon,
+              size: (size * .46).roundToDouble(),
+              color: iconColor ?? fg,
+            ),
             if (dot)
               Positioned(
                 top: size * .24,
