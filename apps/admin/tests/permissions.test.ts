@@ -4,27 +4,25 @@ import { can, menuFor, canSeeFullCpf } from '@/lib/permissions';
 const keys = (g: string[]) => menuFor(g as never).map((m) => m.key);
 
 describe('menu by group', () => {
-  it('admin sees everything', () => {
-    expect(keys(['admin'])).toEqual([
-      'dashboard', 'fleet', 'zones', 'alerts', 'customers', 'rentals', 'support', 'field', 'finance', 'settings', 'audit',
-    ]);
+  it('admin sees the 8 sections in design order', () => {
+    expect(keys(['admin'])).toEqual(['fleet', 'alerts', 'zones', 'customers', 'tasks', 'finance', 'settings', 'team']);
   });
   it('operacao sees fleet, zones, alerts and field', () => {
     const k = keys(['operacao']);
-    expect(k).toEqual(expect.arrayContaining(['fleet', 'zones', 'alerts', 'field']));
+    expect(k).toEqual(expect.arrayContaining(['fleet', 'zones', 'alerts', 'tasks']));
     expect(k).not.toContain('finance');
     expect(k).not.toContain('customers');
-    expect(k).not.toContain('audit');
+    expect(k).not.toContain('team');
   });
-  it('financeiro sees finance and rentals but not fleet', () => {
+  it('financeiro sees finance and pricing but not fleet', () => {
     const k = keys(['financeiro']);
-    expect(k).toEqual(expect.arrayContaining(['finance', 'rentals']));
+    expect(k).toEqual(expect.arrayContaining(['finance', 'settings']));
     expect(k).not.toContain('fleet');
     expect(k).not.toContain('zones');
   });
-  it('suporte sees customers, rentals and support', () => {
+  it('suporte sees customers and alerts', () => {
     const k = keys(['suporte']);
-    expect(k).toEqual(expect.arrayContaining(['customers', 'rentals', 'support']));
+    expect(k).toEqual(expect.arrayContaining(['customers', 'alerts']));
     expect(k).not.toContain('finance');
     expect(k).not.toContain('zones');
   });

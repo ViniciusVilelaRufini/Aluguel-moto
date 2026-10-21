@@ -80,3 +80,8 @@ export async function downloadCsv(path: string, query: Record<string, string>, f
 export function errorText(e: unknown): string {
   return e instanceof Error ? e.message : 'Algo deu errado. Tente de novo.';
 }
+
+/** Relatórios aceitam `format=csv` e por isso o tipo gerado é `T | string`; no JSON é sempre `T`. */
+export function asJson<T>(v: T): Exclude<T, string> {
+  return v as Exclude<T, string>;
+}

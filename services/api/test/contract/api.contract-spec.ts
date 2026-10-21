@@ -19,6 +19,10 @@ describe('Contrato: respostas reais × openapi.yaml', () => {
   beforeAll(async () => {
     ({ app, prisma } = await bootE2eApp());
     customer = (await approvedCustomer(app, prisma, 'contract')).token;
+    // Caução no cartão exige cartão cadastrado (gateway fake, Task 5); a resposta também é validada contra o contrato.
+    const card = await http().post('/payments/cards').set('Authorization', `Bearer ${customer}`).set('Idempotency-Key', randomUUID()).send({ cardToken: 'tok_visa_4242' });
+    expect(card.status).toBe(201);
+    expect(card).toSatisfyApiSpec();
     admin = await devToken(app, { sub: 'dev-admin', email: 'admin@volti.dev', groups: ['admin'], pool: 'staff' });
   });
   afterAll(async () => {
