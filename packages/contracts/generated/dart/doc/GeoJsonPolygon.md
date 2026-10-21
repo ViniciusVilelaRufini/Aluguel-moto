@@ -1,0 +1,16 @@
+# volti_api.model.GeoJsonPolygon
+
+## Load the model package
+```dart
+import 'package:volti_api/api.dart';
+```
+
+## Properties
+Name | Type | Description | Notes
+------------ | ------------- | ------------- | -------------
+**type** | [**GeoJsonPolygonType**](GeoJsonPolygonType.md) |  | 
+**coordinates** | [**BuiltList&lt;BuiltList&lt;BuiltList&lt;double&gt;&gt;&gt;**](BuiltList.md) |  | 
+
+[[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
+
+

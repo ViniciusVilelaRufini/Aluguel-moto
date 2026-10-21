@@ -1,0 +1,8 @@
+# Mantido por scripts/generate.mjs — arquivos que o openapi-generator não deve (re)gerar.
+# Testes stub gerados (vazios) não agregam e só aumentam o diff.
+test/**
+# analysis_options.yaml é mantido à mão (silencia unused_import do código gerado).
+analysis_options.yaml
+# CI do gerador (não usamos Travis/git_push).
+.travis.yml
+git_push.sh

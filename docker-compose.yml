@@ -20,13 +20,52 @@ services:
     ports: ["1883:1883"]
     volumes: ["./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"]
   minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
+    # A MinIO deixou de publicar imagens no Docker Hub/quay (2025); bitnamilegacy é a última imagem pública compatível.
+    image: bitnamilegacy/minio:2025.7.23
     environment:
       MINIO_ROOT_USER: volti
       MINIO_ROOT_PASSWORD: volti-dev-secret
     ports: ["9000:9000", "9001:9001"]
-    volumes: [miniodata:/data]
+    volumes: [miniodata:/bitnami/minio/data]
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    # Sobe sem .env: padrões de desenvolvimento via ${VAR:-padrão} (o shell/.env da raiz pode sobrescrever).
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      AUTH_MODE: ${AUTH_MODE:-dev}
+      DEV_JWT_SECRET: ${DEV_JWT_SECRET:-troque-este-segredo-local}
+      STORAGE_MODE: ${STORAGE_MODE:-local}
+      QUEUE_MODE: ${QUEUE_MODE:-local}
+      IOT_MODE: ${IOT_MODE:-local}
+      GEOFENCE_MODE: ${GEOFENCE_MODE:-local}
+      PAYMENT_PROVIDER: ${PAYMENT_PROVIDER:-fake}
+      INSURANCE_PROVIDER: ${INSURANCE_PROVIDER:-mock}
+      KYC_PROVIDER: ${KYC_PROVIDER:-mock}
+      PUSH_MODE: ${PUSH_MODE:-log}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-volti}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-volti-dev-secret}
+      DATABASE_URL: postgresql://volti:volti@postgres:5432/volti
+      REDIS_URL: redis://redis:6379
+      MQTT_URL: mqtt://mosquitto:1883
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      RUN_SEED: ${RUN_SEED:-false}
+    ports: ["${API_PORT:-3000}:3000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      minio:
+        condition: service_started
 volumes:
   pgdata:
   miniodata:

@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/dist-seed
+**/.next
+**/cdk.out
+**/.dart_tool
+**/build
+.env
+**/.env
+.git
+.worktrees
+.superpowers
