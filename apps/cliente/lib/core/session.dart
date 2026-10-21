@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import 'auth_store.dart';
 import 'backend.dart';
 import 'errors.dart';
 
@@ -29,7 +30,16 @@ class SessionNotifier extends AsyncNotifier<SessionState> {
   Future<SessionState> build() async {
     final auth = ref.read(authRepositoryProvider);
     if (auth.session == null) return const SessionState.signedOut();
-    return _load();
+    try {
+      return await _load();
+    } catch (e) {
+      // Token restaurado recusado: volta ao login.
+      if (toFailure(e).kind == FailureKind.unauthorized) {
+        await auth.signOut();
+        return const SessionState.signedOut();
+      }
+      rethrow;
+    }
   }
 
   Future<SessionState> _load() async {
@@ -47,8 +57,11 @@ class SessionNotifier extends AsyncNotifier<SessionState> {
   /// Login de desenvolvimento (`POST /dev/token`, pool customer). O modo cognito usa a mesma interface.
   Future<void> signIn(String email) async {
     final auth = ref.read(authRepositoryProvider);
-    if (auth is DevAuthRepository) {
-      await auth.signIn(sub: email.trim().toLowerCase(), email: email.trim(), pool: DevAuthPool.customer);
+    final sub = email.trim().toLowerCase();
+    if (auth is PersistentDevAuthRepository) {
+      await auth.signIn(sub: sub, email: email.trim());
+    } else if (auth is DevAuthRepository) {
+      await auth.signIn(sub: sub, email: email.trim(), pool: DevAuthPool.customer);
     } else {
       throw AppFailure(kind: FailureKind.unknown);
     }

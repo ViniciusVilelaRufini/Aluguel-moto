@@ -46,3 +46,14 @@ String clock(int seconds) {
   final s = (seconds % 60).toString().padLeft(2, '0');
   return h > 0 ? '$h:$m:$s' : '$m:$s';
 }
+
+/// America/Sao_Paulo. O Brasil nao tem horario de verao desde 2019, entao o fuso e UTC-3 fixo
+/// e dispensa o banco de fusos (se o horario de verao voltar, trocar por `package:timezone`).
+DateTime toSaoPaulo(DateTime d) => d.toUtc().subtract(const Duration(hours: 3));
+
+/// "21/10/2026 14:05" no horario de Sao Paulo, independente do fuso do aparelho.
+String formatDateTimeSp(DateTime d) {
+  final x = toSaoPaulo(d);
+  String two(int n) => n.toString().padLeft(2, '0');
+  return '${two(x.day)}/${two(x.month)}/${x.year} ${two(x.hour)}:${two(x.minute)}';
+}

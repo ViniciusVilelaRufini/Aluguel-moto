@@ -4,4 +4,6 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- API de dev em http (10.0.2.2/localhost): so em debug e profile, nunca em release. -->
+    <application android:usesCleartextTraffic="true" />
 </manifest>

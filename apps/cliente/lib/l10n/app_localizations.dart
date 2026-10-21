@@ -1575,6 +1575,30 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Velocidade máxima: {limit} km/h'**
   String zoneLimit(int limit);
+
+  /// No description provided for @lockNotConfirmed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos confirmar a trava'**
+  String get lockNotConfirmed;
+
+  /// No description provided for @lockNotConfirmedText.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto ainda não confirmou que travou. Tente de novo ou fale com o suporte para não ser cobrado a mais.'**
+  String get lockNotConfirmedText;
+
+  /// No description provided for @contactSupport.
+  ///
+  /// In pt, this message translates to:
+  /// **'Falar com o suporte'**
+  String get contactSupport;
+
+  /// No description provided for @realtimeOffline.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem conexão em tempo real'**
+  String get realtimeOffline;
 }
 
 class _AppLocalizationsDelegate

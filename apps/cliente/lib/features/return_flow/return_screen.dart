@@ -26,9 +26,15 @@ final inReturnZoneProvider = FutureProvider.autoDispose.family<bool?, String>((r
 
 /// Encerrar: so em ponto de devolucao, foto obrigatoria, aguarda a confirmacao de "travada".
 class ReturnScreen extends ConsumerStatefulWidget {
-  const ReturnScreen({super.key, required this.rentalId, this.pollInterval = const Duration(seconds: 2)});
+  const ReturnScreen({
+    super.key,
+    required this.rentalId,
+    this.pollInterval = const Duration(seconds: 2),
+    this.lockTimeout = const Duration(seconds: 90),
+  });
   final String rentalId;
   final Duration pollInterval;
+  final Duration lockTimeout;
   @override
   ConsumerState<ReturnScreen> createState() => _ReturnScreenState();
 }
@@ -37,6 +43,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   Uint8List? _photo;
   bool _busy = false;
   bool _waitingLock = false;
+  bool _lockTimedOut = false;
+  String? _endKey; // Idempotency-Key da tentativa de encerramento (mantida nas repeticoes)
+  String? _photoKey; // objeto ja enviado desta foto
   String? _error;
   Timer? _poll;
 
@@ -48,7 +57,13 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
 
   Future<void> _take() async {
     final bytes = await ref.read(photoPickerProvider).take();
-    if (bytes != null && mounted) setState(() => _photo = bytes);
+    if (bytes != null && mounted) {
+      setState(() {
+        _photo = bytes;
+        _endKey = null;
+        _photoKey = null;
+      });
+    }
   }
 
   void _finish() {
@@ -74,23 +89,18 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     });
     try {
       final backend = ref.read(backendProvider);
-      final target = await backend.returnPhotoUpload(widget.rentalId);
-      await backend.upload(target, _photo!, 'image/jpeg');
-      final rental = await backend.endRental(widget.rentalId, target.objectKey);
+      if (_photoKey == null) {
+        final target = await backend.returnPhotoUpload(widget.rentalId);
+        await backend.upload(target, _photo!, 'image/jpeg');
+        _photoKey = target.objectKey;
+      }
+      _endKey ??= newIdempotencyKey();
+      final rental = await backend.endRental(widget.rentalId, _photoKey!, idempotencyKey: _endKey);
       if (rental.status == RentalStatus.ended || rental.status == RentalStatus.forceEnded) {
         _finish();
       } else {
         // 202 ending: aguarda "parada e travada"
-        setState(() => _waitingLock = true);
-        _poll = Timer.periodic(widget.pollInterval, (_) async {
-          try {
-            final r = await backend.rental(widget.rentalId);
-            if (r.status == RentalStatus.ended || r.status == RentalStatus.forceEnded) {
-              _poll?.cancel();
-              _finish();
-            }
-          } catch (_) {}
-        });
+        _startPolling();
       }
     } catch (e) {
       if (mounted) setState(() => _error = failureText(l, e));
@@ -99,10 +109,60 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     }
   }
 
+  void _startPolling() {
+    _poll?.cancel();
+    final maxTicks = (widget.lockTimeout.inMilliseconds / widget.pollInterval.inMilliseconds).ceil();
+    var ticks = 0;
+    setState(() {
+      _waitingLock = true;
+      _lockTimedOut = false;
+    });
+    _poll = Timer.periodic(widget.pollInterval, (_) async {
+      try {
+        final r = await ref.read(backendProvider).rental(widget.rentalId);
+        if (r.status == RentalStatus.ended || r.status == RentalStatus.forceEnded) {
+          _poll?.cancel();
+          _finish();
+          return;
+        }
+      } catch (_) {
+        // rede instavel: segue tentando ate o prazo
+      }
+      if (++ticks >= maxTicks) {
+        _poll?.cancel();
+        if (mounted) setState(() => _lockTimedOut = true);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = context.l;
     final zone = ref.watch(inReturnZoneProvider(widget.rentalId));
+    if (_waitingLock && _lockTimedOut) {
+      return Scaffold(
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(LucideIcons.circleAlert, size: 40, color: VoltiColors.danger),
+              const SizedBox(height: 16),
+              Semantics(liveRegion: true, child: Text(l.lockNotConfirmed, style: VoltiTypography.heading, textAlign: TextAlign.center)),
+              const SizedBox(height: 8),
+              Text(l.lockNotConfirmedText, style: VoltiTypography.body, textAlign: TextAlign.center),
+              const SizedBox(height: 20),
+              VoltiButton(label: l.retry, icon: LucideIcons.refreshCw, fullWidth: true, onPressed: _startPolling),
+              const SizedBox(height: 8),
+              VoltiButton(
+                  label: l.contactSupport,
+                  variant: VoltiButtonVariant.secondary,
+                  fullWidth: true,
+                  onPressed: () => context.push('/account/support')),
+            ]),
+          ),
+        ),
+      );
+    }
     if (_waitingLock) {
       return Scaffold(
         body: Center(

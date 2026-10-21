@@ -394,5 +394,9 @@
         "type": "int"
       }
     }
-  }
+  },
+  "lockNotConfirmed": "Não conseguimos confirmar a trava",
+  "lockNotConfirmedText": "A moto ainda não confirmou que travou. Tente de novo ou fale com o suporte para não ser cobrado a mais.",
+  "contactSupport": "Falar com o suporte",
+  "realtimeOffline": "Sem conexão em tempo real"
 }

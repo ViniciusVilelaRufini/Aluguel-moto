@@ -69,7 +69,8 @@ abstract class Backend {
 
   // devolucao e recibo
   Future<PresignedUpload> returnPhotoUpload(String rentalId);
-  Future<Rental> endRental(String rentalId, String photoKey);
+  /// [idempotencyKey]: uma por tentativa de encerramento, reutilizada nas repeticoes (decisao #17).
+  Future<Rental> endRental(String rentalId, String photoKey, {String? idempotencyKey});
   Future<Receipt> receipt(String rentalId);
   Future<void> rate(String rentalId, int stars, String? comment);
 
@@ -322,8 +323,10 @@ class ApiBackend implements Backend {
           .data!);
 
   @override
-  Future<Rental> endRental(String rentalId, String photoKey) => _run(() async => (await _api.getRentalsApi().endRental(
+  Future<Rental> endRental(String rentalId, String photoKey, {String? idempotencyKey}) =>
+      _run(() async => (await _api.getRentalsApi().endRental(
         id: rentalId,
+        idempotencyKey: idempotencyKey,
         endRentalRequest: EndRentalRequest((b) => b..returnPhotoObjectKey = photoKey),
         validateStatus: (s) => s != null && s >= 200 && s < 300,
       ))

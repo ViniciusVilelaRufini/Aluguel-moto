@@ -821,4 +821,17 @@ class AppLocalizationsPt extends AppLocalizations {
   String zoneLimit(int limit) {
     return 'Velocidade máxima: $limit km/h';
   }
+
+  @override
+  String get lockNotConfirmed => 'Não conseguimos confirmar a trava';
+
+  @override
+  String get lockNotConfirmedText =>
+      'A moto ainda não confirmou que travou. Tente de novo ou fale com o suporte para não ser cobrado a mais.';
+
+  @override
+  String get contactSupport => 'Falar com o suporte';
+
+  @override
+  String get realtimeOffline => 'Sem conexão em tempo real';
 }

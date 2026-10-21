@@ -47,6 +47,9 @@ class _RideScreenState extends ConsumerState<RideScreen> {
 
   RealtimeService? _realtime;
   StreamSubscription<RealtimeEvent>? _events;
+  StreamSubscription<bool>? _connSub;
+  Timer? _rtRetry;
+  bool _rtDown = false;
   StreamSubscription<LatLng>? _tracking;
   Timer? _tick;
 
@@ -60,6 +63,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   void dispose() {
     _tick?.cancel();
     _events?.cancel();
+    _connSub?.cancel();
+    _rtRetry?.cancel();
     _tracking?.cancel();
     _realtime?.dispose();
     super.dispose();
@@ -102,13 +107,22 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   }
 
   Future<void> _startRealtime() async {
+    _rtRetry?.cancel();
     try {
+      _events?.cancel();
+      _connSub?.cancel();
       _realtime?.dispose();
       _realtime = ref.read(realtimeFactoryProvider)();
       _events = _realtime!.events.listen(_onEvent);
+      _connSub = _realtime!.connected.listen((up) {
+        if (mounted) setState(() => _rtDown = !up);
+      });
       await _realtime!.connect();
     } catch (_) {
-      // sem tempo real o app segue com o tempo local e polling na reabertura
+      // Sem tempo real o app segue com o tempo local; avisa e tenta de novo.
+      if (!mounted) return;
+      setState(() => _rtDown = true);
+      _rtRetry = Timer(const Duration(seconds: 5), _startRealtime);
     }
   }
 
@@ -359,6 +373,21 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                   ),
                 ),
               ]),
+              if (_rtDown)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Chip(
+                        avatar: const Icon(LucideIcons.wifiOff, size: 16),
+                        label: Text(l.realtimeOffline),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                  ),
+                ),
               if (_zone != null)
                 Padding(
                   padding: const EdgeInsets.only(top: 10),

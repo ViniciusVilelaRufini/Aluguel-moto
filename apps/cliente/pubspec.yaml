@@ -23,6 +23,7 @@ dependencies:
   geolocator: ^14.0.0
   firebase_core: ^4.0.0
   firebase_messaging: ^16.0.0
+  flutter_secure_storage: ^9.2.4
   url_launcher: ^6.3.0
   share_plus: ^11.0.0
   lucide_icons_flutter: ^3.0.0
@@ -35,7 +36,35 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  built_collection: any
+  flutter_native_splash: ^2.4.6
+  flutter_launcher_icons: ^0.14.4
 
 flutter:
   uses-material-design: true
   generate: true
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  image_path: assets/brand/icon.png
+  adaptive_icon_background: "#34C25C"
+  adaptive_icon_foreground: assets/brand/icon_foreground.png
+  web:
+    generate: true
+    image_path: assets/brand/icon.png
+    background_color: "#34C25C"
+    theme_color: "#34C25C"
+
+flutter_native_splash:
+  color: "#FFFFFF"
+  image: assets/brand/splash.png
+  color_dark: "#15181A"
+  image_dark: assets/brand/splash_dark.png
+  android_12:
+    color: "#FFFFFF"
+    image: assets/brand/splash_android12.png
+    color_dark: "#15181A"
+    image_dark: assets/brand/splash_android12_dark.png
+  web: false

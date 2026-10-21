@@ -61,6 +61,9 @@ class DeviceEventReceived extends RealtimeEvent {
 
 abstract class RealtimeService {
   Stream<RealtimeEvent> get events;
+
+  /// `false` quando a conexao cai ou falha (o socket reconecta sozinho).
+  Stream<bool> get connected;
   Future<void> connect();
   void dispose();
 }
@@ -70,7 +73,11 @@ class SocketRealtimeService implements RealtimeService {
   final String baseUrl;
   final AuthRepository auth;
   final _controller = StreamController<RealtimeEvent>.broadcast();
+  final _conn = StreamController<bool>.broadcast();
   io.Socket? _socket;
+
+  @override
+  Stream<bool> get connected => _conn.stream;
 
   @override
   Stream<RealtimeEvent> get events => _controller.stream;
@@ -124,6 +131,9 @@ class SocketRealtimeService implements RealtimeService {
       final j = m(d);
       _controller.add(DeviceEventReceived(type: j['type'] as String));
     });
+    socket.onConnect((_) => _conn.add(true));
+    socket.onDisconnect((_) => _conn.add(false));
+    socket.onConnectError((_) => _conn.add(false));
     socket.connect();
     _socket = socket;
   }
@@ -132,6 +142,7 @@ class SocketRealtimeService implements RealtimeService {
   void dispose() {
     _socket?.dispose();
     _controller.close();
+    _conn.close();
   }
 }
 

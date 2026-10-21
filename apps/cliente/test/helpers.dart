@@ -25,12 +25,18 @@ class FakeBackend implements Backend {
 class FakeRealtime implements RealtimeService {
   final _c = StreamController<RealtimeEvent>.broadcast();
   void emit(RealtimeEvent e) => _c.add(e);
+  final conn = StreamController<bool>.broadcast();
+  @override
+  Stream<bool> get connected => conn.stream;
   @override
   Stream<RealtimeEvent> get events => _c.stream;
   @override
   Future<void> connect() async {}
   @override
-  void dispose() => _c.close();
+  void dispose() {
+    _c.close();
+    conn.close();
+  }
 }
 
 class FakeLocation implements LocationService {

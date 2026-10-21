@@ -129,11 +129,7 @@ class HistoryScreen extends ConsumerWidget {
     );
   }
 
-  static String _date(DateTime d) {
-    final x = d.toLocal();
-    String two(int n) => n.toString().padLeft(2, '0');
-    return '${two(x.day)}/${two(x.month)}/${x.year} ${two(x.hour)}:${two(x.minute)}';
-  }
+  static String _date(DateTime d) => formatDateTimeSp(d);
 }
 
 // ---------------------------------------------------------------------------
