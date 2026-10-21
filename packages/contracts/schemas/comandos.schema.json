@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/comandos.schema.json",
+  "title": "Comando momentâneo",
+  "description": "Publicado pelo servidor em motos/{thingName}/comandos para ações que não cabem no shadow (não têm estado). QoS 1.",
+  "type": "object",
+  "required": ["comando_id", "acao"],
+  "additionalProperties": false,
+  "properties": {
+    "comando_id": { "type": "string", "format": "uuid", "description": "VehicleCommand.id" },
+    "acao": { "type": "string", "enum": ["buzina"], "description": "buzina: buzina e pisca por 3 s" }
+  },
+  "examples": [{ "comando_id": "6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a10", "acao": "buzina" }]
+}

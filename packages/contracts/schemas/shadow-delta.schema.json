@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/shadow-delta.schema.json",
+  "title": "Shadow: delta",
+  "description": "Payload de $aws/things/{thingName}/shadow/update/delta (e o campo state.delta de /get/accepted): campos do desired que diferem do reported.",
+  "type": "object",
+  "required": ["state", "version"],
+  "properties": {
+    "state": { "$ref": "shadow-desired.schema.json" },
+    "version": { "type": "integer", "minimum": 0 },
+    "timestamp": { "type": "integer", "description": "Segundos desde a época (UTC)" }
+  }
+}

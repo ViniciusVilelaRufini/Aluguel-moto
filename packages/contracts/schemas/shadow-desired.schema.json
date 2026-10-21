@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/shadow-desired.schema.json",
+  "title": "Shadow: estado desejado",
+  "description": "Bloco state.desired gravado pelo servidor e state do /update/delta recebido pelo rastreador. Só os campos alterados aparecem.",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 1,
+  "properties": {
+    "travada": { "type": "boolean", "description": "true só é gravado pelo servidor com a velocidade reportada abaixo de 3 km/h (bloqueio seguro). O firmware também nunca trava acima de 3 km/h." },
+    "limite_kmh": { "type": "integer", "minimum": 0, "maximum": 32, "description": "Limite de velocidade. Nunca acima de 32 (Contran 996/2023)." },
+    "modo_roubada": { "type": "boolean", "description": "Modo roubada: telemetria a cada 5 s mesmo travada, sirene ao mover, recusa destravar localmente." }
+  }
+}

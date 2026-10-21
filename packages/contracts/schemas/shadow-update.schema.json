@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/shadow-update.schema.json",
+  "title": "Shadow: documento de atualização",
+  "description": "Payload de $aws/things/{thingName}/shadow/update. O rastreador envia só state.reported; o servidor (UpdateThingShadow ou emulação local) só state.desired.",
+  "type": "object",
+  "required": ["state"],
+  "properties": {
+    "state": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "desired": { "$ref": "shadow-desired.schema.json" },
+        "reported": { "$ref": "shadow-reported.schema.json" }
+      }
+    },
+    "clientToken": { "type": "string", "maxLength": 64 },
+    "version": { "type": "integer", "minimum": 0 }
+  }
+}

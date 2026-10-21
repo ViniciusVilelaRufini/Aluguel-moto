@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/shadow-reported.schema.json",
+  "title": "Shadow: estado reportado",
+  "description": "Bloco state.reported publicado pelo rastreador em $aws/things/{thingName}/shadow/update. Atualizações parciais são permitidas.",
+  "type": "object",
+  "additionalProperties": false,
+  "minProperties": 1,
+  "properties": {
+    "travada": { "type": "boolean" },
+    "limite_kmh": { "type": "integer", "minimum": 0, "maximum": 32, "description": "Limite efetivamente aplicado no controlador" },
+    "modo_roubada": { "type": "boolean" },
+    "firmware": { "type": "string", "maxLength": 64, "description": "Versão do firmware (semver)" },
+    "velocidade_kmh": { "type": "number", "minimum": 0, "maximum": 200, "description": "Velocidade no momento do reporte (usada pela rampa do bloqueio seguro)" }
+  }
+}

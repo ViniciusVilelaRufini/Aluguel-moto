@@ -1,15 +1,90 @@
+import { randomUUID } from 'node:crypto';
+import { IoTDataPlaneClient } from '@aws-sdk/client-iot-data-plane';
+import { LocationClient } from '@aws-sdk/client-location';
 import { Global, Module } from '@nestjs/common';
-import { IOT_GATEWAY } from '../../ports/iot-gateway.port';
+import { ModuleRef } from '@nestjs/core';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { connect } from 'mqtt';
+import { APP_CONFIG, type AppConfig } from '../../config/env';
+import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
+import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
+import { PrismaService } from '../../prisma/prisma.service';
+import { REDIS_STORE, type RedisStore } from '../../redis/redis-store';
+import { CommandsGeofenceCommander, PrismaRentalLookup } from './adapters';
+import { AwsIotTransport } from './aws-iot.transport';
+import { BaseIotGateway } from './base-iot-gateway';
+import { IOT_CLOCK, SystemClock, type Clock } from './clock';
+import { AwsLocationGeofenceEngine } from './geofence/aws-location-geofence-engine';
+import { GEOFENCE_ENGINE, type GeofenceEngine } from './geofence/geofence-engine';
+import { GEOFENCE_COMMANDER, GeofenceService, RENTAL_LOOKUP, type GeofenceCommander, type RentalLookup } from './geofence/geofence.service';
+import { LocalGeofenceEngine } from './geofence/local-geofence-engine';
+import { AwsIotGateway, LocalMqttIotGateway } from './gateways';
+import { IOT_CONFIG, loadIotConfig, type IotConfig } from './iot-config';
+import { IotRuntime } from './iot.runtime';
+import { LiveStateStore } from './live-state.store';
+import { LocalMqttTransport, type MqttClientLike } from './local-mqtt.transport';
+import { LocalShadowStore } from './local-shadow';
 import { StubIotGateway } from './stub-iot-gateway';
+import { TelemetryService } from './telemetry.service';
 
 /**
- * Módulo IoT — dono: Task 4 (agente 3). Hoje só registra o `StubIotGateway`.
- * A Task 4 troca o provider por `LocalMqttIotGateway`/`AwsIotGateway` (seleção por `IOT_MODE`) e adiciona
- * o consumo de telemetria e o motor de cercas, emitindo `iot.*` e `geofence.transition`.
+ * Módulo IoT (Task 4). Seleção por variável de ambiente:
+ * - `IOT_MODE=local` (padrão): `LocalMqttIotGateway` no Mosquitto, com emulação do serviço de shadow;
+ * - `IOT_MODE=aws`: `AwsIotGateway` (IoT Data Plane + fila SQS `telemetria`);
+ * - `IOT_MODE=stub`: `StubIotGateway` da Task 3 (confirma na hora; usado pelos e2e que não têm rastreador).
+ * - `GEOFENCE_MODE=local` (PostGIS) ou `aws` (Amazon Location).
  */
 @Global()
 @Module({
-  providers: [StubIotGateway, { provide: IOT_GATEWAY, useExisting: StubIotGateway }],
+  providers: [
+    { provide: IOT_CONFIG, useFactory: loadIotConfig },
+    { provide: IOT_CLOCK, useFactory: () => new SystemClock() },
+    StubIotGateway,
+    {
+      provide: LiveStateStore,
+      inject: [REDIS_STORE, IOT_CLOCK, IOT_CONFIG],
+      useFactory: (redis: RedisStore, clock: Clock, cfg: IotConfig) => new LiveStateStore(redis, clock, cfg.offlineAfterMs),
+    },
+    {
+      provide: IOT_GATEWAY,
+      inject: [IOT_CONFIG, IOT_CLOCK, LiveStateStore, EventEmitter2, REDIS_STORE, QUEUE_BUS, StubIotGateway],
+      useFactory: (cfg: IotConfig, clock: Clock, live: LiveStateStore, events: EventEmitter2, redis: RedisStore, queue: QueueBus, stub: StubIotGateway): IotGateway => {
+        const opts = { confirmWaitMs: cfg.confirmWaitMs, commandTimeoutMs: cfg.commandTimeoutMs };
+        if (cfg.iotMode === 'stub') return stub;
+        if (cfg.iotMode === 'aws') {
+          const client = new IoTDataPlaneClient({ region: cfg.region, endpoint: cfg.iotEndpoint });
+          return new AwsIotGateway(new AwsIotTransport(client, queue, { pollMs: cfg.shadowPollMs }), live, clock, events, opts);
+        }
+        const mqttConnect = (): MqttClientLike =>
+          connect(cfg.mqttUrl, { clientId: `volti-api-${randomUUID().slice(0, 8)}`, clean: true, reconnectPeriod: 2_000, connectTimeout: 5_000 }) as unknown as MqttClientLike;
+        return new LocalMqttIotGateway(new LocalMqttTransport(mqttConnect, new LocalShadowStore(redis)), live, clock, events, opts);
+      },
+    },
+    {
+      provide: GEOFENCE_ENGINE,
+      inject: [IOT_CONFIG, PrismaService],
+      useFactory: (cfg: IotConfig, prisma: PrismaService): GeofenceEngine => {
+        const local = new LocalGeofenceEngine(prisma);
+        if (cfg.geofenceMode !== 'aws') return local;
+        return new AwsLocationGeofenceEngine(prisma, new LocationClient({ region: cfg.region }), { trackerName: cfg.trackerName, collectionName: cfg.geofenceCollection }, local);
+      },
+    },
+    { provide: RENTAL_LOOKUP, inject: [PrismaService, IOT_CLOCK], useFactory: (prisma: PrismaService, clock: Clock) => new PrismaRentalLookup(prisma, clock) },
+    { provide: GEOFENCE_COMMANDER, inject: [ModuleRef], useFactory: (moduleRef: ModuleRef) => new CommandsGeofenceCommander(moduleRef) },
+    {
+      provide: GeofenceService,
+      inject: [GEOFENCE_ENGINE, GEOFENCE_COMMANDER, RENTAL_LOOKUP, EventEmitter2, IOT_CLOCK, REDIS_STORE, IOT_CONFIG],
+      useFactory: (engine: GeofenceEngine, commander: GeofenceCommander, rentals: RentalLookup, events: EventEmitter2, clock: Clock, redis: RedisStore, cfg: IotConfig) =>
+        new GeofenceService(engine, commander, rentals, events, clock, redis, { outOfAreaLockMinutes: cfg.outOfAreaLockMinutes }),
+    },
+    {
+      provide: TelemetryService,
+      inject: [IOT_GATEWAY, GeofenceService, RENTAL_LOOKUP, PrismaService, EventEmitter2, IOT_CLOCK, APP_CONFIG],
+      useFactory: (gw: IotGateway, geofence: GeofenceService, rentals: RentalLookup, prisma: PrismaService, events: EventEmitter2, clock: Clock, app: AppConfig) =>
+        gw instanceof BaseIotGateway ? new TelemetryService(gw, geofence, rentals, prisma, events, clock, { trackRetentionDays: app.trackRetentionDays }) : null,
+    },
+    IotRuntime,
+  ],
   exports: [IOT_GATEWAY],
 })
 export class IotModule {}

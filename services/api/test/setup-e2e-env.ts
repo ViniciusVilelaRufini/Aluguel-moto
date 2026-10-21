@@ -9,3 +9,5 @@ process.env.S3_ENDPOINT = process.env.S3_ENDPOINT ?? 'http://localhost:9000';
 process.env.S3_ACCESS_KEY = process.env.S3_ACCESS_KEY ?? 'volti';
 process.env.S3_SECRET_KEY = process.env.S3_SECRET_KEY ?? 'volti-dev-secret';
 process.env.STUB_PIX_AUTOCONFIRM_SECONDS = '0';
+// Sem rastreador nos e2e do fluxo de aluguel: gateway stub (confirma na hora). O e2e de IoT (test/iot) usa IOT_MODE=local.
+process.env.IOT_MODE = process.env.IOT_MODE ?? 'stub';
