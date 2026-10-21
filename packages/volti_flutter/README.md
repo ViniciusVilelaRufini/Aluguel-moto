@@ -48,7 +48,7 @@ await (auth as DevAuthRepository).signIn(sub: 'u1', email: 'a@b.com');
 
 - `API_BASE_URL` via `--dart-define` (padrão `http://10.0.2.2:3000` no Android, `http://localhost:3000` nos demais). Sobrescreva em testes com `apiBaseUrlProvider`.
 - `AUTH_MODE=dev|cognito` via `--dart-define` (padrão `dev`).
-- Retry exponencial (3 tentativas, 300 ms e 600 ms): `connectionTimeout` em qualquer método; `connectionError`, 5xx e timeouts de envio/resposta só em métodos idempotentes (GET, HEAD, PUT, DELETE), com header `Idempotency-Key` ou `extra['retryable']=true`, para não duplicar `POST`. Corpos FormData/stream nunca são repetidos.
+- Retry exponencial (3 tentativas, 300 ms e 600 ms): `connectionTimeout` em qualquer método; `connectionError`, 5xx e timeouts de envio/resposta só se (método idempotente: GET, HEAD, PUT, DELETE) OU (header `Idempotency-Key`) OU (`extra['retryable']=true`) -- qualquer uma basta --, para não duplicar `POST`. Corpos FormData/stream nunca são repetidos.
 - Modo `dev` (sem refresh; ao expirar, chame `signIn` de novo): `POST /dev/token` com `sub`, `email`, `groups`, `pool` (`DevAuthPool`). Token só em memória.
 - Modo `cognito`: interface pronta (`CognitoAuthRepository`), mas o login (Hosted UI/PKCE) lança `UnimplementedError` até a infraestrutura de autenticação existir; `accessToken()` devolve `null`.
 
