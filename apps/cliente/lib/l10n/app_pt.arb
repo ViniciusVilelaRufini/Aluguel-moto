@@ -1,0 +1,407 @@
+{
+  "@@locale": "pt",
+  "acceptLocation": "Permito o uso da minha localização durante o aluguel",
+  "acceptLocationHint": "Só rastreamos sua posição com um aluguel ativo. Você pode revogar quando quiser em Conta.",
+  "acceptMarketing": "Quero receber novidades e ofertas",
+  "acceptTerms": "Aceito os termos de uso e a política de privacidade",
+  "account": "Conta",
+  "accountNoName": "Sua conta",
+  "accountTitle": "Conta",
+  "accumulatedCost": "Custo acumulado",
+  "addCard": "Adicionar cartão",
+  "adultOnly": "É preciso ter 18 anos ou mais",
+  "allowAndContinue": "Permitir e continuar",
+  "apply": "Aplicar",
+  "back": "Voltar",
+  "backToMap": "Voltar ao mapa",
+  "backToRide": "Voltar à corrida",
+  "badgeAdult": "18+",
+  "badgeNoLicense": "Sem CNH",
+  "badgeNoPlate": "Sem placa",
+  "battery": "Bateria",
+  "birthDate": "Data de nascimento",
+  "callSupport": "Ligar para o suporte",
+  "cameraUnavailable": "Não foi possível abrir a câmera. Digite o número da moto.",
+  "cancel": "Cancelar",
+  "checkReturnText": "Estacione numa área verde do mapa antes de encerrar.",
+  "checkReturnTitle": "Confira o ponto de devolução",
+  "chooseInsurance": "Escolha o seguro",
+  "choosePlan": "Escolha o plano",
+  "claimAccident": "Acidente",
+  "claimDamage": "Dano à moto",
+  "claimDescription": "Conte o que aconteceu",
+  "claimInjury": "Lesão pessoal",
+  "claimSent": "Sinistro enviado. Vamos entrar em contato.",
+  "claimTheft": "Furto",
+  "close": "Fechar",
+  "consentLocationTitle": "Localização durante o aluguel",
+  "continueLabel": "Continuar",
+  "continueWithEmail": "Entrar com e-mail",
+  "copyPixCode": "Copiar código Pix",
+  "coupon": "Cupom",
+  "couponApplied": "Cupom aplicado",
+  "couponHint": "Código do cupom",
+  "couponInvalid": "Cupom inválido ou expirado",
+  "coverage": "Seguro",
+  "coverageBasic": "Básico",
+  "coverageFull": "Completo",
+  "cpf": "CPF",
+  "dataSubtitle": "Não pedimos CNH. Só confirmamos que é você.",
+  "dataTitle": "Seus dados",
+  "deleteAccount": "Excluir minha conta",
+  "deleteAccountConfirm": "Excluir conta",
+  "deleteAccountText": "Seus dados pessoais serão apagados. Aluguéis e pagamentos podem ser mantidos pelo prazo legal.",
+  "deleteAccountTitle": "Excluir conta?",
+  "deposit": "Caução",
+  "depositAmount": "Caução (devolvida)",
+  "depositHint": "A caução é liberada quando você encerra a corrida.",
+  "discount": "Desconto",
+  "disputeCharge": "Contestar cobrança",
+  "disputeHint": "Explique o motivo da contestação",
+  "disputeSent": "Contestação enviada",
+  "disputeTitle": "Contestar cobrança",
+  "documentPhoto": "Foto do documento (RG ou CNH)",
+  "documentPhotoHint": "Frente, sem reflexo",
+  "duration": "Duração",
+  "email": "E-mail",
+  "endRide": "Encerrar corrida",
+  "endRideText": "A moto será travada. Você paga só pelos minutos usados.",
+  "endRideTitle": "Encerrar corrida?",
+  "errorGeneric": "Algo deu errado. Tente de novo.",
+  "errorNetwork": "Sem conexão com a internet. Confira sua rede e tente de novo.",
+  "errorUnauthorized": "Sua sessão expirou. Entre de novo.",
+  "estimatedTotal": "Total estimado",
+  "exportData": "Exportar meus dados",
+  "fees": "Taxas",
+  "filterBattery": "Bateria acima de 50%",
+  "fullName": "Nome completo",
+  "fullNameHint": "Como no documento",
+  "goToMap": "Ir para o mapa",
+  "helpCenter": "Central de ajuda",
+  "helpIntro": "Sua moto é um equipamento autopropelido: até 32 km/h, sem placa e sem CNH. Veja as regras para andar com segurança.",
+  "helpRule1Title": "Onde posso andar",
+  "helpRule1Text": "Ciclovias, ciclofaixas e vias de baixa velocidade. Em calçadas e áreas de pedestres a moto reduz para 6 km/h sozinha.",
+  "helpRule2Title": "Velocidade máxima",
+  "helpRule2Text": "A moto nunca passa de 32 km/h. Em ciclovias o limite é 20 km/h.",
+  "helpRule3Title": "Capacete e equipamentos",
+  "helpRule3Text": "Use capacete, respeite semáforos e sinalização e não ande em duas pessoas.",
+  "helpRule4Title": "Onde estacionar",
+  "helpRule4Text": "Só encerre a corrida em pontos de devolução (áreas verdes no mapa), sem atrapalhar a calçada.",
+  "helpRule5Title": "Em caso de queda ou emergência",
+  "helpRule5Text": "Toque em SOS na tela da corrida para ligar para o suporte ou compartilhar sua localização com um contato.",
+  "history": "Histórico",
+  "historyEmpty": "Você ainda não fez nenhuma corrida.",
+  "imFine": "Estou bem",
+  "included": "Incluído",
+  "insideReturnText": "Você pode encerrar a corrida aqui.",
+  "insideReturnTitle": "Ponto de devolução",
+  "insurance": "Seguro",
+  "kycApprovedShort": "Aprovada",
+  "kycApprovedText": "Sua identidade foi confirmada. Já dá para andar.",
+  "kycApprovedTitle": "Tudo certo",
+  "kycHomeNotice": "Você pode reservar depois da aprovação. Toque para ver o status.",
+  "kycPendingShort": "Em análise",
+  "kycPendingText": "Estamos conferindo seus documentos. Avisamos assim que terminar.",
+  "kycPendingTitle": "Verificação em análise",
+  "kycPrivacy": "Seus documentos ficam criptografados e servem só para verificação.",
+  "kycRejectedShort": "Recusada",
+  "kycRejectedText": "Não conseguimos confirmar seus dados. Envie novos documentos.",
+  "kycRejectedTitle": "Verificação recusada",
+  "kycSubtitle": "Foto do documento e uma selfie rápida para comparação facial.",
+  "kycTitle": "Verificação de identidade",
+  "liveBadge": "Ao vivo",
+  "loading": "Carregando",
+  "locateMe": "Minha localização",
+  "locationConsentText": "Para andar, precisamos da sua localização durante o aluguel. Ela só é usada com uma corrida ativa.",
+  "locationConsentTitle": "Permitir localização?",
+  "lockedBye": "Moto travada. Até a próxima!",
+  "loginCognitoPending": "A entrada pelo Cognito ainda não está configurada neste ambiente.",
+  "loginDevHint": "Modo de desenvolvimento: informe um e-mail para entrar.",
+  "loginTitle": "Entrar",
+  "mandatory": "Obrigatório",
+  "message": "Mensagem",
+  "minutePackages": "Pacotes de minutos",
+  "myPlan": "Meu plano",
+  "nearbyTitle": "Motos por perto",
+  "needHelp": "Preciso de ajuda",
+  "newConversation": "Nova conversa",
+  "noCard": "Nenhum cartão salvo",
+  "noKmNotice": "Você paga pelo tempo de uso. Não cobramos nem mostramos km rodados.",
+  "noReservation": "Você não tem uma reserva ativa.",
+  "noVehiclesNearby": "Nenhuma moto por perto agora.",
+  "notNow": "Agora não",
+  "openClaim": "Abrir sinistro",
+  "outsideReturnText": "Estacione numa área verde para encerrar.",
+  "outsideReturnTitle": "Fora do ponto de devolução",
+  "pause": "Pausar",
+  "pausedBadge": "Pausada",
+  "payAndUnlock": "Pagar caução e destravar",
+  "payCard": "Cartão de crédito",
+  "payPix": "Pix",
+  "payPixHint": "Caução por depósito Pix",
+  "pixCopied": "Código Pix copiado",
+  "pixFailed": "O Pix não foi concluído. Tente de novo.",
+  "pixTitle": "Pague com Pix",
+  "pixWaiting": "Aguardando o pagamento...",
+  "planMonthly": "Plano mensal",
+  "planTitle": "Escolha como andar",
+  "planWeekly": "Plano semanal",
+  "privacy": "Privacidade e dados",
+  "privacyIntro": "Você controla seus dados. Pode exportar uma cópia ou excluir sua conta quando quiser.",
+  "problemBattery": "Bateria",
+  "problemBrake": "Freio",
+  "problemLights": "Luzes",
+  "problemOther": "Outro",
+  "problemTire": "Pneu",
+  "rateRide": "Como foi a corrida?",
+  "refreshStatus": "Atualizar status",
+  "rentalInProgress": "Corrida em andamento",
+  "reportProblem": "Reportar problema",
+  "reportSentText": "Recebemos o seu relato. Quer trocar de moto sem nova taxa?",
+  "reportSentTitle": "Problema reportado",
+  "reportTitle": "Qual o problema?",
+  "reservationActive": "Moto reservada",
+  "reservationExpiredText": "A moto voltou a ficar disponível. Escolha outra no mapa.",
+  "reservationExpiredTitle": "Reserva expirada",
+  "reservationTimeLeft": "Tempo de reserva restante",
+  "reserve15": "Reservar por 15 min",
+  "reservedTitle": "Moto reservada",
+  "resume": "Retomar",
+  "retry": "Tentar de novo",
+  "returnPhoto": "Foto da moto estacionada",
+  "returnPhotoHint": "Mostre a moto inteira e o entorno",
+  "returnPhotoText": "Tire uma foto da moto estacionada. Ela é obrigatória para encerrar.",
+  "returnTitle": "Devolver moto",
+  "returnVehicle": "Devolver moto",
+  "rideLive": "Em corrida",
+  "ridePaused": "Moto travada · pausa",
+  "rideTitle": "Corrida",
+  "ringHorn": "Piscar e buzinar",
+  "ringSent": "Sinal enviado. Procure a moto piscando.",
+  "scanCameraSemantics": "Câmera para ler o QR code da moto",
+  "scanHint": "Aponte para o QR no guidão ou digite o número da moto.",
+  "scanTitle": "Escanear para andar",
+  "scanToRide": "Escanear para andar",
+  "seeReservation": "Ver reserva",
+  "selfiePhoto": "Selfie com prova de vida",
+  "selfiePhotoHint": "Olhe para a câmera em local iluminado",
+  "send": "Enviar",
+  "sendForReview": "Enviar para análise",
+  "sendRating": "Enviar avaliação",
+  "sending": "Enviando...",
+  "shareTrip": "Compartilhar trajeto",
+  "shareWithContact": "Enviar localização a um contato",
+  "signIn": "Entrar",
+  "signOut": "Sair",
+  "sosText": "Sua localização em tempo real é compartilhada enquanto o SOS estiver ativo.",
+  "sosTitle": "SOS",
+  "subject": "Assunto",
+  "subscribe": "Assinar",
+  "subscriptionEnding": "Termina no fim do período",
+  "summary": "Resumo",
+  "summaryTitle": "Recibo",
+  "support": "Suporte",
+  "supportEmpty": "Nenhuma conversa ainda.",
+  "swapDone": "Moto trocada",
+  "swapTitle": "Trocar de moto",
+  "swapVehicle": "Trocar de moto",
+  "swipeToCancel": "Deslize para cancelar",
+  "tapToCancel": "Toque em um plano para cancelar a renovação.",
+  "thanksRating": "Obrigado pela avaliação",
+  "total": "Total",
+  "trackingNotificationText": "Sua localização é usada só enquanto a corrida está ativa.",
+  "trackingNotificationTitle": "Corrida em andamento",
+  "typeMessage": "Digite sua mensagem",
+  "typeNumber": "Digitar o número da moto",
+  "useCamera": "Usar a câmera",
+  "useWallet": "Usar créditos da carteira",
+  "vehicleNumber": "Número da moto",
+  "verificationTitle": "Verificação de identidade",
+  "viewReceipt": "Ver recibo",
+  "waitingLock": "Aguardando a moto travar",
+  "waitingLockText": "A moto precisa parar para travar com segurança. Isso leva alguns segundos.",
+  "wallet": "Carteira",
+  "walletBalanceTitle": "Saldo",
+  "welcomeSubtitle": "Por minuto, hora, dia ou semana. Liberada pelo app em segundos.",
+  "welcomeTitle": "Pegue uma moto e vá.",
+  "wellbeingText": "Detectamos uma possível queda. Sem resposta em 60 segundos, acionamos o suporte.",
+  "wellbeingTitle": "Você está bem?",
+  "yourLocation": "Sua localização",
+  "zoneNotice": "Aviso de zona",
+  "greeting": "Olá, {name}",
+  "@greeting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "historyItem": "Moto {code} · {date}",
+  "@historyItem": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "minutesBalance": "{minutes} min",
+  "@minutesBalance": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "perUnit": "por {unit}",
+  "@perUnit": {
+    "placeholders": {
+      "unit": {
+        "type": "String"
+      }
+    }
+  },
+  "pixText": "Pague {amount} para liberar a moto. A caução volta quando você encerra a corrida.",
+  "@pixText": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "receiptNumber": "Recibo {number}",
+  "@receiptNumber": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "reservationRemaining": "Reserva expira em {time}",
+  "@reservationRemaining": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "shareLocationMessage": "Estou numa corrida Volti e preciso de ajuda. Minha localização: {url}",
+  "@shareLocationMessage": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "speedSemantics": "Velocidade {speed} quilômetros por hora, limite {limit}",
+  "@speedSemantics": {
+    "placeholders": {
+      "speed": {
+        "type": "int"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "speedUnit": "km/h · limite {limit}",
+  "@speedUnit": {
+    "placeholders": {
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "starsLabel": "{n} estrelas",
+  "@starsLabel": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "stepOf": "Passo {n} de {total}",
+  "@stepOf": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "subscriptionRenews": "Renova em {date}",
+  "@subscriptionRenews": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "unlockFee": "Taxa de desbloqueio {fee}",
+  "@unlockFee": {
+    "placeholders": {
+      "fee": {
+        "type": "String"
+      }
+    }
+  },
+  "unreadMessages": "{n} mensagens novas",
+  "@unreadMessages": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "vehicleCode": "Moto {code}",
+  "@vehicleCode": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "vehicleSemantics": "{model}, bateria {pct} por cento",
+  "@vehicleSemantics": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "walletBalance": "Saldo {money} e {minutes} min",
+  "@walletBalance": {
+    "placeholders": {
+      "money": {
+        "type": "String"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "zoneLimit": "Velocidade máxima: {limit} km/h",
+  "@zoneLimit": {
+    "placeholders": {
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "lockNotConfirmed": "Não conseguimos confirmar a trava",
+  "lockNotConfirmedText": "A moto ainda não confirmou que travou. Tente de novo ou fale com o suporte para não ser cobrado a mais.",
+  "contactSupport": "Falar com o suporte",
+  "realtimeOffline": "Sem conexão em tempo real",
+  "locationRationaleTitle": "Motos por perto",
+  "locationRationaleText": "Usamos sua localização para mostrar as motos mais próximas e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.",
+  "allowLocation": "Continuar",
+  "birthInvalid": "Data inválida. Use dd/mm/aaaa.",
+  "birthUnderage": "É preciso ter 18 anos ou mais."
+}
