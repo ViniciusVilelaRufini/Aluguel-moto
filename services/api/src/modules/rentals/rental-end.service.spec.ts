@@ -132,6 +132,42 @@ describe('Encerramento do aluguel', () => {
     expect(billing.settle).toHaveBeenCalledTimes(1);
   });
 
+  it('corrida: evento de travada e HTTP finalizam juntos — a resposta só volta depois da liquidação, e liquida uma vez', async () => {
+    const { service, rental, billing, commands } = setup();
+    let settled = false;
+    billing.settle.mockImplementation(async () => {
+      for (let i = 0; i < 30; i++) await Promise.resolve(); // sem timers (jest usa relógio falso)
+      settled = true;
+      return { paymentId: 'pay-1', status: 'paid' };
+    });
+    let eventDone: Promise<void> = Promise.resolve();
+    commands.dispatch.mockImplementation(async () => {
+      // o evento command.changed chega antes do retorno do gateway para o HTTP
+      eventDone = service.onCommandChanged({ commandId: 'c', vehicleId: VEHICLE_ID, type: 'lock', status: 'confirmed', payload: { rentalId: RENTAL_ID, purpose: 'rental_end' } });
+      for (let i = 0; i < 3; i++) await Promise.resolve();
+      return { id: 'cmd', status: 'confirmed' };
+    });
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(settled).toBe(true);
+    expect(r.status).toBe(200);
+    expect(r.rental.status).toBe('ended');
+    expect(rental.paymentId).toBe('pay-1');
+    await eventDone;
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('settle falha: aluguel fica encerrado (200, sem 500) e o payment.updated posterior vincula o pagamento', async () => {
+    const { service, rental, billing, prisma } = setup();
+    billing.settle.mockRejectedValue(new Error('gateway fora'));
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(r.status).toBe(200);
+    expect(r.rental.status).toBe('ended');
+    expect(rental.paymentId).toBeNull();
+    const { RentalsListeners } = await import('./rentals.listeners');
+    await new RentalsListeners(prisma as any).onPaymentUpdated({ paymentId: 'pay-9', rentalId: RENTAL_ID, status: 'paid' } as any);
+    expect(rental.paymentId).toBe('pay-9');
+  });
+
   it('confirmado → ended (200) e settle chamado uma vez com o valor calculado (plano + seguro)', async () => {
     const { service, billing, rental } = setup();
     const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });

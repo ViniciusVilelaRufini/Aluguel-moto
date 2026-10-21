@@ -11,6 +11,14 @@ import { AuditService, type AuditActor } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
 import { CommandPayload, toVehicleCommand } from './commands.mapper';
 
+/** Status de origem aceitos para cada destino (ordem: pending < in_progress < confirmed|failed). */
+const PREDECESSORS: Record<CommandOutcome['status'], VehicleCommand['status'][]> = {
+  pending: ['pending'],
+  in_progress: ['pending', 'in_progress'],
+  confirmed: ['pending', 'in_progress', 'failed'],
+  failed: ['pending', 'in_progress'],
+};
+
 export interface DispatchInput {
   vehicleId: string;
   type: CommandType;
@@ -98,7 +106,7 @@ export class CommandsService {
 
     const outcome = await this.callGateway(command.id, vehicle.thingName, input);
     const updated = await this.applyOutcome(command, outcome);
-    if (outcome.status === 'confirmed') await this.reflectOnVehicle(vehicle.id, input);
+    if (updated.status === 'confirmed') await this.reflectOnVehicle(vehicle.id, input);
     return toVehicleCommand(updated);
   }
 
@@ -124,15 +132,22 @@ export class CommandsService {
     }
   }
 
+  /**
+   * Grava a transição sem nunca andar para trás: pending < in_progress < confirmed|failed (terminal é final;
+   * só `failed` → `confirmed` tardio é aceito). O `updateMany` condicional evita que o status inicial devolvido pelo
+   * gateway sobrescreva um `iot.command-updated` terminal que chegou antes da gravação. Se não avançou, devolve o estado atual.
+   */
   private async applyOutcome(command: VehicleCommand, outcome: { status: CommandOutcome['status']; reason?: CommandOutcome['reason'] }) {
-    const updated = await this.prisma.vehicleCommand.update({
-      where: { id: command.id },
+    const moved = await this.prisma.vehicleCommand.updateMany({
+      where: { id: command.id, status: { in: PREDECESSORS[outcome.status] } },
       data: {
         status: outcome.status,
         statusReason: outcome.reason ?? null,
         confirmedAt: outcome.status === 'confirmed' ? new Date() : null,
       },
     });
+    const updated = await this.prisma.vehicleCommand.findUniqueOrThrow({ where: { id: command.id } });
+    if (moved.count === 0) return updated;
     const ev: CommandChangedEvent = {
       commandId: updated.id,
       vehicleId: updated.vehicleId,
