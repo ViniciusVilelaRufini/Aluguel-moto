@@ -1,0 +1,52 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tokens copiados de design-system/tokens/*.css */
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/JetBrainsMono-500.woff2") format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/JetBrainsMono-700.woff2") format("woff2")}
+@font-face{font-family:"Plus Jakarta Sans";font-style:normal;font-weight:400;font-display:swap;src:url("/fonts/PlusJakartaSans-400.woff2") format("woff2")}
+@font-face{font-family:"Plus Jakarta Sans";font-style:normal;font-weight:500;font-display:swap;src:url("/fonts/PlusJakartaSans-500.woff2") format("woff2")}
+@font-face{font-family:"Plus Jakarta Sans";font-style:normal;font-weight:600;font-display:swap;src:url("/fonts/PlusJakartaSans-600.woff2") format("woff2")}
+@font-face{font-family:"Plus Jakarta Sans";font-style:normal;font-weight:700;font-display:swap;src:url("/fonts/PlusJakartaSans-700.woff2") format("woff2")}
+@font-face{font-family:"Plus Jakarta Sans";font-style:normal;font-weight:800;font-display:swap;src:url("/fonts/PlusJakartaSans-800.woff2") format("woff2")}
+
+:root{
+--green-50:#EAF8EF;--green-100:#D2F1DC;--green-200:#A8E4BA;--green-300:#7FD89A;--green-400:#55CC79;--green-500:#34C25C;--green-600:#27A84C;--green-700:#1E8A3D;--green-900:#0F4A21;
+--coral-50:#FFEDEB;--coral-100:#FFD7D2;--coral-400:#F7867C;--coral-500:#F2665A;--coral-600:#E04E42;
+--orange-50:#FFF1E6;--orange-500:#F07A2A;--orange-600:#D9661A;
+--blue-50:#E8F1FD;--blue-500:#2F7FE0;--blue-600:#1F66C1;
+--sky-100:#DDF1FA;--sky-200:#C3E6F5;
+--sun-300:#FFD45C;--sun-400:#FBC531;
+--violet-50:#F0EDFE;--violet-500:#8B7CF6;--violet-600:#6F5EE8;
+--ink-900:#15181A;--ink-800:#1F2326;--ink-700:#3A3F44;--ink-600:#50565C;--ink-500:#6B7178;--ink-400:#9AA0A6;--ink-300:#C9CDD2;--ink-200:#E4E7EA;--ink-100:#F1F3F5;--ink-50:#F7F8FA;--white:#FFFFFF;
+
+--brand:var(--green-500);--brand-hover:var(--green-600);--brand-press:var(--green-700);--brand-soft:var(--green-50);--on-brand:var(--white);
+--surface-app:var(--ink-50);--surface-card:var(--white);--surface-sunken:var(--ink-100);--surface-inverse:var(--ink-900);--surface-scrim:rgba(21,24,26,.45);
+--text-primary:var(--ink-900);--text-secondary:var(--ink-500);--text-tertiary:var(--ink-400);--text-brand:var(--green-700);--text-link:var(--green-600);
+--border-subtle:var(--ink-200);--border-strong:var(--ink-300);--border-focus:var(--green-500);
+--success:var(--green-500);--success-soft:var(--green-50);--success-ink:var(--green-700);
+--danger:var(--coral-500);--danger-soft:var(--coral-50);--danger-ink:var(--coral-600);
+--warning:var(--orange-500);--warning-soft:var(--orange-50);--warning-ink:var(--orange-600);
+--info:var(--blue-500);--info-soft:var(--blue-50);--info-ink:var(--blue-600);
+--status-free:var(--green-500);--status-rented:var(--blue-500);--status-reserved:var(--orange-500);--status-paused:var(--sun-400);--status-blocked:var(--coral-600);--status-maintenance:var(--violet-500);--status-offline:var(--ink-400);
+--battery-high:var(--green-500);--battery-mid:var(--sun-400);--battery-low:var(--coral-500);
+
+--shadow-1:0 1px 2px rgba(21,24,26,.06),0 2px 8px rgba(21,24,26,.06);
+--shadow-2:0 4px 12px rgba(21,24,26,.08),0 12px 28px rgba(21,24,26,.08);
+--shadow-brand:0 8px 20px rgba(52,194,92,.35);
+--ease-out:cubic-bezier(.2,.8,.2,1);
+--dur-base:200ms;
+
+--radius-xs:6px;--radius-sm:10px;--radius-md:14px;--radius-lg:20px;--radius-xl:28px;--radius-pill:999px;
+--font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
+--font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+
+html,body{height:100%}
+body{font-family:var(--font-sans);font-weight:500;font-size:14px;line-height:1.45;color:var(--text-primary);background:var(--surface-app);-webkit-font-smoothing:antialiased}
+a{color:var(--text-link)}
+a:hover{color:var(--brand-press)}
+:focus-visible{outline:2px solid var(--border-focus);outline-offset:2px}
+
+.maplibregl-ctrl-attrib{font-size:10px}

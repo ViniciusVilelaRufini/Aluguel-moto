@@ -1,0 +1,62 @@
+import { describe, expect, it } from 'vitest';
+import { can, menuFor, canSeeFullCpf } from '@/lib/permissions';
+
+const keys = (g: string[]) => menuFor(g as never).map((m) => m.key);
+
+describe('menu by group', () => {
+  it('admin sees everything', () => {
+    expect(keys(['admin'])).toEqual([
+      'dashboard', 'fleet', 'zones', 'alerts', 'customers', 'rentals', 'support', 'field', 'finance', 'settings', 'audit',
+    ]);
+  });
+  it('operacao sees fleet, zones, alerts and field', () => {
+    const k = keys(['operacao']);
+    expect(k).toEqual(expect.arrayContaining(['fleet', 'zones', 'alerts', 'field']));
+    expect(k).not.toContain('finance');
+    expect(k).not.toContain('customers');
+    expect(k).not.toContain('audit');
+  });
+  it('financeiro sees finance and rentals but not fleet', () => {
+    const k = keys(['financeiro']);
+    expect(k).toEqual(expect.arrayContaining(['finance', 'rentals']));
+    expect(k).not.toContain('fleet');
+    expect(k).not.toContain('zones');
+  });
+  it('suporte sees customers, rentals and support', () => {
+    const k = keys(['suporte']);
+    expect(k).toEqual(expect.arrayContaining(['customers', 'rentals', 'support']));
+    expect(k).not.toContain('finance');
+    expect(k).not.toContain('zones');
+  });
+  it('merges multiple groups', () => {
+    const k = keys(['operacao', 'financeiro']);
+    expect(k).toEqual(expect.arrayContaining(['fleet', 'finance']));
+  });
+  it('campo has no panel menu', () => {
+    expect(keys(['campo'])).toEqual([]);
+  });
+});
+
+describe('actions by group', () => {
+  it('financeiro and suporte cannot send vehicle commands', () => {
+    expect(can(['financeiro'], 'vehicle.command')).toBe(false);
+    expect(can(['suporte'], 'vehicle.command')).toBe(false);
+    expect(can(['operacao'], 'vehicle.command')).toBe(true);
+    expect(can(['admin'], 'vehicle.command')).toBe(true);
+  });
+  it('zone edits are for admin and operacao', () => {
+    expect(can(['operacao'], 'zone.edit')).toBe(true);
+    expect(can(['suporte'], 'zone.edit')).toBe(false);
+  });
+  it('force end is admin and suporte; refunds admin and financeiro', () => {
+    expect(can(['suporte'], 'rental.forceEnd')).toBe(true);
+    expect(can(['financeiro'], 'rental.forceEnd')).toBe(false);
+    expect(can(['financeiro'], 'payment.refund')).toBe(true);
+    expect(can(['suporte'], 'payment.refund')).toBe(false);
+  });
+  it('full CPF only for admin', () => {
+    expect(canSeeFullCpf(['admin'])).toBe(true);
+    expect(canSeeFullCpf(['suporte'])).toBe(false);
+    expect(canSeeFullCpf(['suporte', 'financeiro'])).toBe(false);
+  });
+});
