@@ -127,7 +127,7 @@ abstract class AppLocalizations {
   /// No description provided for @loginError.
   ///
   /// In pt, this message translates to:
-  /// **'Não foi possível entrar. Confira o e-mail e tente de novo.'**
+  /// **'Não foi possível entrar. Verifique a conexão e tente de novo.'**
   String get loginError;
 
   /// No description provided for @loginCognitoUnavailable.

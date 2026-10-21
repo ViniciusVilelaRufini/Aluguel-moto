@@ -157,14 +157,14 @@ class FakePhotoPicker implements PhotoPicker {
 }
 
 class Harness {
-  Harness({FakeFieldRepository? repo})
+  Harness({FakeFieldRepository? repo, OfflineQueue? queue})
       : repo = repo ?? FakeFieldRepository(),
         connectivity = FakeConnectivity(),
-        queue = MemoryOfflineQueue();
+        queue = queue ?? MemoryOfflineQueue();
 
   final FakeFieldRepository repo;
   final FakeConnectivity connectivity;
-  final MemoryOfflineQueue queue;
+  final OfflineQueue queue;
 
   List<Override> get overrides => [
         fieldRepositoryProvider.overrideWithValue(repo),
@@ -173,12 +173,13 @@ class Harness {
         photoPickerProvider.overrideWithValue(FakePhotoPicker()),
       ];
 
-  Future<void> pump(WidgetTester tester, Widget child) async {
+  Future<void> pump(WidgetTester tester, Widget child,
+      {List<Override> extraOverrides = const []}) async {
     tester.view.physicalSize = const Size(800, 2000);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(ProviderScope(
-      overrides: overrides,
+      overrides: [...overrides, ...extraOverrides],
       child: MaterialApp(
         theme: VoltiTheme.light(),
         locale: const Locale('pt'),

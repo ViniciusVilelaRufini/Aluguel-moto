@@ -25,7 +25,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get loginError =>
-      'Não foi possível entrar. Confira o e-mail e tente de novo.';
+      'Não foi possível entrar. Verifique a conexão e tente de novo.';
 
   @override
   String get loginCognitoUnavailable =>

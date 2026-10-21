@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:volti_operador/data/sync.dart';
 import 'package:hive_ce/hive.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_operador/data/field_repository.dart';
@@ -68,6 +70,8 @@ void main() {
     expect(find.text('Baixa'), findsOneWidget);
   });
 
+  syncRobustnessTests();
+
   test('sortTasks: urgente antes de baixa', () {
     final s = sortTasks([
       fakeTask(id: '1', priority: TaskPriority.low),
@@ -75,5 +79,66 @@ void main() {
       fakeTask(id: '3', priority: TaskPriority.medium),
     ]);
     expect(s.map((e) => e.id), ['2', '3', '1']);
+  });
+}
+
+void syncRobustnessTests() {
+  QueuedJob swapJob(String id) {
+    final now = DateTime.utc(2026, 10, 21, 12);
+    return QueuedJob(
+      id: id,
+      kind: JobKind.batterySwap,
+      taskId: 't1',
+      payload: {
+        'swap': const BatterySwapDraft(removedSerial: 'AAA', installedSerial: 'BBB').toJson()
+      },
+      idempotencyKey: 'key-$id',
+      createdAt: now,
+      recordedAt: now,
+    );
+  }
+
+  test('partida a frio online: item persistido no Hive e sincronizado ao criar o controller',
+      () async {
+    final dir = await Directory.systemTemp.createTemp('hive_cold');
+    addTearDown(() => dir.delete(recursive: true));
+    Hive.init(dir.path);
+    final queue = await HiveOfflineQueue.open();
+    await queue.put(swapJob('j1'));
+    final h = Harness(queue: queue);
+    final container = ProviderContainer(overrides: h.overrides);
+    addTearDown(container.dispose);
+    container.read(syncControllerProvider);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(h.repo.swaps.single.$3, 'key-j1');
+    expect(await queue.all(), isEmpty);
+    await Hive.close();
+  });
+
+  test('401 mantem o item pendente (nao vira Recusado)', () async {
+    final h = Harness();
+    await h.queue.put(swapJob('j2'));
+    h.repo.rejectWith =
+        const RepositoryException(FailureKind.auth, 'expirou', status: 401);
+    final container = ProviderContainer(overrides: h.overrides);
+    addTearDown(container.dispose);
+    container.read(syncControllerProvider);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    final jobs = await h.queue.all();
+    expect(jobs.single.status, JobStatus.pending);
+  });
+
+  test('sync pedido durante a rodada roda de novo', () async {
+    final h = Harness();
+    final container = ProviderContainer(overrides: h.overrides);
+    addTearDown(container.dispose);
+    final c = container.read(syncControllerProvider.notifier);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await h.queue.put(swapJob('j3'));
+    final first = c.sync();
+    await h.queue.put(swapJob('j4'));
+    final second = c.sync(); // durante a rodada: agenda outra
+    await Future.wait([first, second]);
+    expect(await h.queue.all(), isEmpty);
   });
 }

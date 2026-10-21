@@ -9,7 +9,9 @@ import 'package:volti_flutter/volti_flutter.dart';
 import 'models.dart';
 
 /// Tipo de falha: `network` (tentar de novo depois) ou `rejected` (a API recusou).
-enum FailureKind { network, rejected }
+/// `network`: tentar de novo depois; `auth`: token expirado (401), manter e pedir login;
+/// `rejected`: a API recusou (403, 422...).
+enum FailureKind { network, auth, rejected }
 
 class RepositoryException implements Exception {
   const RepositoryException(this.kind, this.message, {this.slug, this.status});
@@ -238,8 +240,13 @@ RepositoryException mapDioError(DioException e) {
     if (type is String && type.contains('/')) slug = type.split('/').last;
     detail = (data['detail'] ?? data['title']) as String?;
   }
+  if (status == 401) {
+    return RepositoryException(FailureKind.auth, detail ?? 'Sessão expirada.',
+        slug: slug, status: status);
+  }
+  // 409: requisicao idempotente ainda em andamento; tentar de novo.
   // 5xx: o servidor pode estar indisponivel; tentar de novo depois.
-  if (status >= 500 || status == 408 || status == 429) {
+  if (status >= 500 || status == 408 || status == 429 || status == 409) {
     return RepositoryException(FailureKind.network, detail ?? 'Servidor indisponível.',
         slug: slug, status: status);
   }

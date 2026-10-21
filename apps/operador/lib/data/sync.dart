@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../features/auth/auth.dart';
 import 'field_repository.dart';
 import 'models.dart';
 import 'offline_queue.dart';
@@ -65,6 +66,8 @@ class SubmitOutcome {
 class SyncController extends Notifier<SyncState> {
   StreamSubscription<bool>? _sub;
   bool _running = false;
+  bool _again = false;
+  Future<void>? _chain;
 
   OfflineQueue get _queue => ref.read(offlineQueueProvider);
   FieldRepository get _repo => ref.read(fieldRepositoryProvider);
@@ -75,7 +78,12 @@ class SyncController extends Notifier<SyncState> {
     _sub = ref.read(connectivityMonitorProvider).onlineChanges.listen((online) {
       if (online) unawaited(sync());
     });
-    unawaited(load());
+    // Entrar de novo (token expirado) drena a fila.
+    ref.listen(sessionProvider, (prev, next) {
+      if (next != null) unawaited(sync());
+    });
+    // Partida a frio ja online: nao ha evento de conectividade, entao sincroniza agora.
+    unawaited(load().then((_) => sync()));
     return const SyncState();
   }
 
@@ -138,11 +146,27 @@ class SyncController extends Notifier<SyncState> {
 
   /// Envia a fila em ordem. Para na primeira falha de rede; jobs recusados pela
   /// API ficam como `failed` e bloqueiam os seguintes da mesma tarefa.
-  Future<void> sync() async {
-    if (_running) return;
+  Future<void> sync() {
+    if (_running) {
+      _again = true; // itens enfileirados durante a rodada atual
+      return _chain!; // quem espera so volta quando a fila drenou
+    }
     _running = true;
+    return _chain = _syncLoop();
+  }
+
+  Future<void> _syncLoop() async {
+    do {
+      _again = false;
+      await _syncOnce();
+    } while (_again);
+    _running = false;
+  }
+
+  Future<void> _syncOnce() async {
     state = state.copyWith(syncing: true);
     try {
+      var authExpired = false;
       final blockedTasks = <String>{};
       final results = Map<String, Object>.of(state.results);
       for (final job in await _queue.all()) {
@@ -157,19 +181,31 @@ class SyncController extends Notifier<SyncState> {
           results[job.id] = result;
         } on RepositoryException catch (e) {
           if (e.kind == FailureKind.network) break;
-          await _queue.put(job.copyWith(status: JobStatus.failed, error: e.message));
+          if (e.kind == FailureKind.auth) {
+            // Token expirado: mantem pendente e pede novo login.
+            authExpired = true;
+            break;
+          }
+          await _queue.put((await _latest(job)).copyWith(
+              status: JobStatus.failed, error: e.message));
           blockedTasks.add(job.taskId);
-        } on Exception catch (e) {
-          await _queue.put(job.copyWith(status: JobStatus.failed, error: '$e'));
+        } on Exception {
+          // Falha local (ex.: leitura de arquivo): tenta de novo depois.
           blockedTasks.add(job.taskId);
         }
       }
       final latest = await _queue.all();
       state = state.copyWith(jobs: latest, results: results);
+      if (authExpired) await ref.read(sessionProvider.notifier).signOut();
     } finally {
-      _running = false;
       state = state.copyWith(syncing: false);
     }
+  }
+
+  /// Versao mais recente do job na fila (preserva fotos ja enviadas).
+  Future<QueuedJob> _latest(QueuedJob job) async {
+    final all = await _queue.all();
+    return all.firstWhere((j) => j.id == job.id, orElse: () => job);
   }
 
   Future<Object> _run(QueuedJob job) async {

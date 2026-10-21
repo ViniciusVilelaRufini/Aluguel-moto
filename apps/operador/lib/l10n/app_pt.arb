@@ -6,7 +6,7 @@
   "loginSubtitle": "Operador de campo",
   "loginEmail": "E-mail",
   "loginAction": "Entrar",
-  "loginError": "Não foi possível entrar. Confira o e-mail e tente de novo.",
+  "loginError": "Não foi possível entrar. Verifique a conexão e tente de novo.",
   "loginCognitoUnavailable": "O login pelo Cognito ainda não está disponível neste ambiente.",
   "signOut": "Sair",
 

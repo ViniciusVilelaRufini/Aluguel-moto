@@ -7,7 +7,7 @@ App Flutter do operador de campo: tarefas atribuídas (lista e mapa), destravar 
 ```
 cd apps/operador
 flutter pub get
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000 --dart-define=AUTH_MODE=dev
+flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3001 --dart-define=AUTH_MODE=dev
 ```
 
 Login dev: `campo@volti.dev` (seed da API; `POST /dev/token`, pool `staff`, grupo `campo`). `AUTH_MODE=cognito` usa a mesma interface, mas o login hospedado ainda não está ligado.

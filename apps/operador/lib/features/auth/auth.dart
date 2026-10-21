@@ -1,4 +1,4 @@
-import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -68,8 +68,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       await ref.read(sessionProvider.notifier).signIn(_email.text);
     } on UnimplementedError {
       _error = t.loginCognitoUnavailable;
-    } on DioException {
-      _error = t.loginError;
+    } catch (e) {
+      // Nunca falha em silencio: mostra o erro (detalhe so em debug).
+      _error = kDebugMode ? '${t.loginError}\n($e)' : t.loginError;
     } finally {
       if (mounted) setState(() => _busy = false);
     }
