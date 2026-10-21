@@ -28,6 +28,7 @@ describe('Comandos remotos', () => {
   let h: Harness;
   let iot: jest.Mocked<IotGateway>;
   let audit: { record: jest.Mock };
+  const store: { row: any } = { row: null };
 
   beforeAll(async () => {
     iot = iotMock();
@@ -42,6 +43,7 @@ describe('Comandos remotos', () => {
     jest.clearAllMocks();
     h.prisma.vehicle.findUnique.mockResolvedValue(vehicle as any);
     let lastCreated: any = {};
+    store.row = null;
     h.prisma.vehicleCommand.create.mockImplementation((async (args: any) => (lastCreated = {
       id: '44444444-4444-4444-8444-444444444444',
       vehicleId: VEHICLE_ID,
@@ -54,22 +56,20 @@ describe('Comandos remotos', () => {
       updatedAt: new Date(),
       ...args.data,
     })) as any);
-    h.prisma.vehicleCommand.update.mockImplementation((async (args: any) => ({
-      id: '44444444-4444-4444-8444-444444444444',
-      vehicleId: VEHICLE_ID,
-      type: 'horn',
-      reason: 'x',
-      payload: {},
-      requestedById: STAFF_ID,
-      requestedByType: 'staff',
-      requestedByName: null,
-      statusReason: null,
-      confirmedAt: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      ...lastCreated,
-      ...args.data,
-    })) as any);
+    // Banco falso com estado: `updateMany` condicional (where.status.in) + leitura.
+    store.row = null;
+    h.prisma.vehicleCommand.updateMany.mockImplementation((async (args: any) => {
+      const row = store.row ?? lastCreated;
+      const allowed: string[] | undefined = args.where.status?.in;
+      if (allowed && !allowed.includes(row.status)) return { count: 0 };
+      store.row = { ...row, ...args.data };
+      return { count: 1 };
+    }) as any);
+    // `update` incondicional (comportamento antigo) — mantido para evidenciar a regressão.
+    h.prisma.vehicleCommand.update.mockImplementation((async (args: any) => (store.row = { ...(store.row ?? lastCreated), ...args.data })) as any);
+    const read = (async () => store.row ?? lastCreated) as any;
+    h.prisma.vehicleCommand.findUnique.mockImplementation(read);
+    h.prisma.vehicleCommand.findUniqueOrThrow.mockImplementation(read);
   });
 
   const post = async (body: object) =>
@@ -171,6 +171,33 @@ describe('Comandos remotos', () => {
       const cmd = await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio', actor: operator });
       expect(cmd.status).toBe('pending');
       expect(cmd.statusReason).toBe('offline');
+    });
+
+    it('evento terminal (confirmed) antes do retorno do gateway não é sobrescrito por in_progress', async () => {
+      iot.lock.mockImplementationOnce((async (req: { commandId: string }) => {
+        // iot.command-updated chega enquanto o gateway ainda não retornou
+        await service.onIotCommandUpdated({ commandId: req.commandId, status: 'confirmed' } as any);
+        return { commandId: req.commandId, status: 'in_progress' as const };
+      }) as any);
+      const cmd = await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio', actor: operator });
+      expect(store.row.status).toBe('confirmed');
+      expect(cmd.status).toBe('confirmed');
+    });
+
+    it('evento failed antes do retorno pending não volta o comando para pending', async () => {
+      iot.lock.mockImplementationOnce((async (req: { commandId: string }) => {
+        await service.onIotCommandUpdated({ commandId: req.commandId, status: 'failed', reason: 'timeout' } as any);
+        return { commandId: req.commandId, status: 'pending' as const };
+      }) as any);
+      const cmd = await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio', actor: operator });
+      expect(cmd.status).toBe('failed');
+    });
+
+    it('atualização atrasada in_progress não rebaixa um comando confirmado', async () => {
+      await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio', actor: operator });
+      expect(store.row.status).toBe('confirmed');
+      await (service as any).applyOutcome(store.row, { status: 'in_progress' });
+      expect(store.row.status).toBe('confirmed');
     });
   });
 });

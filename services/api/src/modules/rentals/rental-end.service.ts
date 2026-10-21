@@ -32,6 +32,7 @@ type RentalWithVehicle = Rental & { vehicle: Vehicle };
 @Injectable()
 export class RentalEndService {
   private readonly logger = new Logger('RentalEndService');
+  private readonly finalizing = new Map<string, ReturnType<RentalEndService['doFinalize']>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -95,6 +96,8 @@ export class RentalEndService {
     const confirmed = await this.requestLock(rentalId, rental.vehicleId, 'rental_end');
     if (confirmed) return { status: 200 as const, rental: await this.finalize(rentalId, 'ended') };
     const current = await this.load(rentalId);
+    // O evento de travada pode ter encerrado o aluguel enquanto o HTTP voltava do gateway.
+    if (current.status === 'ended') return { status: 200 as const, rental: await this.finalize(rentalId, 'ended') };
     this.emitRental(current);
     return { status: 202 as const, rental: toRental(current) };
   }
@@ -153,7 +156,17 @@ export class RentalEndService {
    * Fecha o aluguel e liquida **uma única vez**: a transição de status é condicional (`updateMany` com status em andamento),
    * então chamadas repetidas/concorrentes só liquidam na primeira.
    */
-  async finalize(rentalId: string, kind: 'ended' | 'force_ended', opts: { fees?: FeeCharge[]; actor?: Principal } = {}) {
+  finalize(rentalId: string, kind: 'ended' | 'force_ended', opts: { fees?: FeeCharge[]; actor?: Principal } = {}) {
+    // Caminho único por aluguel: quem chega durante uma finalização em andamento (HTTP x evento x retentativa)
+    // espera a mesma execução e devolve o aluguel já liquidado, em vez de ler um estado intermediário.
+    const running = this.finalizing.get(rentalId);
+    if (running) return running;
+    const p = this.doFinalize(rentalId, kind, opts).finally(() => this.finalizing.delete(rentalId));
+    this.finalizing.set(rentalId, p);
+    return p;
+  }
+
+  private async doFinalize(rentalId: string, kind: 'ended' | 'force_ended', opts: { fees?: FeeCharge[]; actor?: Principal }) {
     const rental = await this.load(rentalId);
     if (rental.status === 'ended' || rental.status === 'force_ended') return toRental(rental);
 
