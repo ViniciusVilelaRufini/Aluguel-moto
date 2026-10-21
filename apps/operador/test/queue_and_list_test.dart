@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volti_flutter/volti_flutter.dart' show DevAuthRepository, authRepositoryProvider;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_operador/data/sync.dart';
 import 'package:hive_ce/hive.dart';
@@ -82,6 +84,27 @@ void main() {
   });
 }
 
+class _CountingAuth extends DevAuthRepository {
+  _CountingAuth() : super(baseUrl: 'http://127.0.0.1:1');
+  int signOuts = 0;
+
+  @override
+  Future<void> signOut() async => signOuts++;
+}
+
+class _FlakyQueue extends MemoryOfflineQueue {
+  bool failNext = false;
+
+  @override
+  Future<List<QueuedJob>> all() async {
+    if (failNext) {
+      failNext = false;
+      throw StateError('hive');
+    }
+    return super.all();
+  }
+}
+
 void syncRobustnessTests() {
   QueuedJob swapJob(String id) {
     final now = DateTime.utc(2026, 10, 21, 12);
@@ -117,15 +140,49 @@ void syncRobustnessTests() {
 
   test('401 mantem o item pendente (nao vira Recusado)', () async {
     final h = Harness();
+    final auth = _CountingAuth();
     await h.queue.put(swapJob('j2'));
     h.repo.rejectWith =
         const RepositoryException(FailureKind.auth, 'expirou', status: 401);
-    final container = ProviderContainer(overrides: h.overrides);
+    final container = ProviderContainer(
+        overrides: [...h.overrides, authRepositoryProvider.overrideWithValue(auth)]);
     addTearDown(container.dispose);
     container.read(syncControllerProvider);
     await Future<void>.delayed(const Duration(milliseconds: 100));
     final jobs = await h.queue.all();
     expect(jobs.single.status, JobStatus.pending);
+    expect(auth.signOuts, 1); // pede novo login
+  });
+
+  test('erro na fila nao mata o sync: proxima chamada roda', () async {
+    final q = _FlakyQueue();
+    final h = Harness(queue: q);
+    final container = ProviderContainer(overrides: h.overrides);
+    addTearDown(container.dispose);
+    final c = container.read(syncControllerProvider.notifier);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    await q.put(swapJob('j5'));
+    q.failNext = true;
+    await expectLater(c.sync(), throwsStateError);
+    await c.sync();
+    expect(await q.all(), isEmpty);
+  });
+
+  test('409 que nao e idempotencia em andamento e recusa', () {
+    final e = mapDioError(DioException(
+        requestOptions: RequestOptions(),
+        response: Response(requestOptions: RequestOptions(), statusCode: 409, data: {
+          'type': 'https://api.volti.com.br/problems/conflict',
+          'detail': 'Moto com aluguel ativo.'
+        })));
+    expect(e.kind, FailureKind.rejected);
+    final p = mapDioError(DioException(
+        requestOptions: RequestOptions(),
+        response: Response(requestOptions: RequestOptions(), statusCode: 409, data: {
+          'type': 'https://api.volti.com.br/problems/conflict',
+          'detail': 'Requisição com esta Idempotency-Key ainda em processamento.'
+        })));
+    expect(p.kind, FailureKind.network);
   });
 
   test('sync pedido durante a rodada roda de novo', () async {

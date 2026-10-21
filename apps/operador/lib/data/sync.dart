@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -76,14 +78,14 @@ class SyncController extends Notifier<SyncState> {
   SyncState build() {
     ref.onDispose(() => _sub?.cancel());
     _sub = ref.read(connectivityMonitorProvider).onlineChanges.listen((online) {
-      if (online) unawaited(sync());
+      if (online) unawaited(_safeSync());
     });
     // Entrar de novo (token expirado) drena a fila.
     ref.listen(sessionProvider, (prev, next) {
-      if (next != null) unawaited(sync());
+      if (next != null) unawaited(_safeSync());
     });
     // Partida a frio ja online: nao ha evento de conectividade, entao sincroniza agora.
-    unawaited(load().then((_) => sync()));
+    unawaited(load().then((_) => _safeSync()));
     return const SyncState();
   }
 
@@ -146,6 +148,15 @@ class SyncController extends Notifier<SyncState> {
 
   /// Envia a fila em ordem. Para na primeira falha de rede; jobs recusados pela
   /// API ficam como `failed` e bloqueiam os seguintes da mesma tarefa.
+  /// Para chamadas sem espera: nunca deixa erro escapar sem tratamento.
+  Future<void> _safeSync() async {
+    try {
+      await sync();
+    } catch (e, st) {
+      debugPrint('sync falhou: $e\n$st');
+    }
+  }
+
   Future<void> sync() {
     if (_running) {
       _again = true; // itens enfileirados durante a rodada atual
@@ -156,11 +167,14 @@ class SyncController extends Notifier<SyncState> {
   }
 
   Future<void> _syncLoop() async {
-    do {
-      _again = false;
-      await _syncOnce();
-    } while (_again);
-    _running = false;
+    try {
+      do {
+        _again = false;
+        await _syncOnce();
+      } while (_again);
+    } finally {
+      _running = false;
+    }
   }
 
   Future<void> _syncOnce() async {

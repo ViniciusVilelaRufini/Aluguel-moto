@@ -244,9 +244,13 @@ RepositoryException mapDioError(DioException e) {
     return RepositoryException(FailureKind.auth, detail ?? 'Sessão expirada.',
         slug: slug, status: status);
   }
-  // 409: requisicao idempotente ainda em andamento; tentar de novo.
+  // 409 "ainda em processamento" (Idempotency-Key em andamento): tentar de novo.
+  // Outros 409 sao recusa de negocio.
+  final inFlight = status == 409 &&
+      (slug == null || slug == 'conflict') &&
+      (detail ?? '').toLowerCase().contains('processamento');
   // 5xx: o servidor pode estar indisponivel; tentar de novo depois.
-  if (status >= 500 || status == 408 || status == 429 || status == 409) {
+  if (status >= 500 || status == 408 || status == 429 || inFlight) {
     return RepositoryException(FailureKind.network, detail ?? 'Servidor indisponível.',
         slug: slug, status: status);
   }
