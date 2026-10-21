@@ -32,6 +32,13 @@ export const DEFAULT_RECONNECT_GAP_MS = 15_000;
 /** Cadência da telemetria com a moto parada/travada (contrato: 60 s); a lacuna de reconexão nesse estado é 2,5 × isto. */
 export const PARKED_TELEMETRY_MS = 60_000;
 export const PARKED_GAP_FACTOR = 2.5;
+/**
+ * Fila offline detectada pelo atraso, independente da cadência: para cada telemetria,
+ * `atraso = (chegada − chegada anterior) − (timestamp − timestamp anterior)` (o desvio do relógio do rastreador se cancela).
+ * Amostra ao vivo: atraso ≈ jitter. Amostra que esperou na fila offline: atraso ≈ duração da queda. Atraso maior que isto =
+ * reconexão (a própria amostra cai na graça). Configurável por `IOT_QUEUE_LAG_MS`.
+ */
+export const DEFAULT_QUEUE_LAG_MS = 5_000;
 
 /**
  * Estado ao vivo por rastreador (thingName): telemetria + reported do shadow + conectividade.
@@ -64,6 +71,8 @@ export class LiveStateStore {
   private readonly reconnectAt = new Map<string, number>();
   /** Última mensagem do rastreador, de qualquer canal (hora de chegada; no polling, a metadata do shadow). Só em memória. */
   private readonly heardAt = new Map<string, number>();
+  /** Chegada e `timestamp` bruto da telemetria mais nova (no relógio do rastreador), para o atraso da fila offline. Só em memória. */
+  private readonly lastTelemetryPair = new Map<string, { arrival: number; deviceTs: number }>();
   private readonly held = new Map<string, boolean>();
 
   constructor(
@@ -184,7 +193,7 @@ export class LiveStateStore {
   }
 
   /**
-   * Presença `connected`, primeira mensagem depois de offline ou lacuna de reconexão (`noteHeard`): a velocidade de antes da desconexão deixa de valer até chegar
+   * Presença `connected`, primeira mensagem depois de offline ou lacuna de reconexão (`noteHeard`) ou atraso de fila offline (`noteTelemetry`): a velocidade de antes da desconexão deixa de valer até chegar
    * amostra nova fora da graça, e a ordem (bruta e da exibição) recomeça — o rastreador pode ter reiniciado e acertado o relógio.
    */
   markReconnected(thingName: string): void {
@@ -210,6 +219,22 @@ export class LiveStateStore {
     const limit = fast ? gapMs : Math.max(gapMs, PARKED_GAP_FACTOR * PARKED_TELEMETRY_MS);
     const gap = at - prev;
     return gap > limit ? gap : null;
+  }
+
+  /**
+   * Telemetria chegando em `arrival` com `timestamp` bruto `deviceTs`: devolve o atraso (ms) quando ele indica que a amostra saiu
+   * da fila offline (atraso relativo à telemetria anterior > `lagMs`), senão `null`. Não depende da cadência nem do estado
+   * conhecido da moto (ignição/trava), nem do desvio do relógio do rastreador. `timestamp` não confiável (> chegada + 10 min) é
+   * ignorado. Fora de ordem (timestamp ≤ o mais novo) também mede o atraso contra o mais novo, sem trocar a referência: uma
+   * mensagem reordenada ou duplicada muito atrasada abre a graça (falha segura).
+   */
+  noteTelemetry(thingName: string, arrival: number, deviceTs: number, lagMs = DEFAULT_QUEUE_LAG_MS): number | null {
+    if (!Number.isFinite(deviceTs) || deviceTs > arrival + MAX_CLOCK_SKEW_MS) return null;
+    const prev = this.lastTelemetryPair.get(thingName);
+    if (!prev || deviceTs > prev.deviceTs) this.lastTelemetryPair.set(thingName, { arrival, deviceTs });
+    if (!prev) return null;
+    const lag = arrival - prev.arrival - (deviceTs - prev.deviceTs);
+    return lag > lagMs ? lag : null;
   }
 
   /** "Limite segurado em 0" depois de `did_not_stop`: persiste até um unlock explícito. */

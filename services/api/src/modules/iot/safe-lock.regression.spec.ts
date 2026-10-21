@@ -326,8 +326,7 @@ describe('Bloqueio seguro — regressões da revisão 2', () => {
     // A amostra velha chega depois da graça (e sem lacuna ≥ 15 s): só o frescor / "não antes da reconexão" a rejeitam.
     await clock.advance(10_000);
     const old = await live.applyTelemetry(T, telemetry(0, iso(clock.now() - 3 * 60_000)));
-    expect(old.speedAccepted).toBe(false);
-    await tel.telemetry(T, telemetry(0, iso(clock.now() - 3 * 60_000 + 1)));
+    expect(old.speedAccepted).toBe(false); // direto no store: a regra do atraso (TelemetryService) não entra aqui
     expect(transport.locked()).toBe(false);
     await clock.advance(1_000);
     await tel.telemetry(T, telemetry(1, iso(clock.now())));
@@ -792,6 +791,11 @@ describe('Bloqueio seguro — regressões da revisão 4b (reconexão percebida p
     expect(gw.live.isOnline(T2)).toBe(true);
     await tel.telemetry(T2, parked(0));
     expect(live.knownSpeed(T2)).toBeNull();
+    const before = transport.desired.length;
+    const q = gw.lock({ commandId: 'c2', thingName: T2 });
+    await clock.advance(1_000);
+    await q;
+    expect(transport.desired.slice(before)).toEqual([{ limite_kmh: 15 }]); // rampa, não trava direto
   });
 
   it('IOT_RECONNECT_GAP_MS configurável: com 5 s, uma lacuna de 6 s andando já abre a graça', async () => {
@@ -809,12 +813,82 @@ describe('Bloqueio seguro — regressões da revisão 4b (reconexão percebida p
     const saved = process.env.IOT_RECONNECT_GAP_MS;
     try {
       delete process.env.IOT_RECONNECT_GAP_MS;
-      expect((loadIotConfig() as unknown as Record<string, unknown>).reconnectGapMs).toBe(15_000);
+      expect(loadIotConfig().reconnectGapMs).toBe(15_000);
       process.env.IOT_RECONNECT_GAP_MS = '20000';
-      expect((loadIotConfig() as unknown as Record<string, unknown>).reconnectGapMs).toBe(20_000);
+      expect(loadIotConfig().reconnectGapMs).toBe(20_000);
     } finally {
       if (saved === undefined) delete process.env.IOT_RECONNECT_GAP_MS;
       else process.env.IOT_RECONNECT_GAP_MS = saved;
+    }
+  });
+});
+
+describe('Bloqueio seguro — regressões da revisão 4b, fix round 1 (fila offline detectada pelo atraso, independente da cadência)', () => {
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const A = 120_000; // relógio do rastreador ~120 s adiantado
+  const parked = (kmh: number, devMs: number) => ({ ...telemetry(kmh, iso(devMs)), ignicao: false });
+
+  it('C1: parada destravada sem ignição, relógio +120 s, queda de 139 s (< 150 s): o 0 da fila (medido em T+60) não trava a moto que já anda', async () => {
+    const s = await awsSetup();
+    // cadência parada de 60 s, além da graça
+    await s.sqs(parked(0, s.clock.now() + A));
+    await s.clock.advance(60_000);
+    await s.sqs(parked(0, s.clock.now() + A));
+    await s.clock.advance(60_000);
+    const t = s.clock.now();
+    await s.sqs(parked(0, t + A)); // última mensagem antes da queda (t)
+    expect(s.gw.live.knownSpeed(T)).toBe(0);
+    await s.clock.advance(30_000); // o enlace caiu em t+1; amostra com mais de 10 s → rampa
+    const p = s.gw.lock({ commandId: 'c1', thingName: T });
+    await s.clock.advance(100);
+    await p;
+    expect(s.published).toEqual([{ limite_kmh: 15 }]);
+    const queued = parked(0, t + 60_000 + A); // guardada offline em t+60; em t+65 o piloto liga a ignição e sai andando
+    await s.clock.advance(t + 140_000 - s.clock.now()); // reconecta em t+140: lacuna 140 s < 150 s
+    expect(s.gw.live.isOnline(T)).toBe(true);
+    await s.sqs(queued); // esvazia primeiro
+    expect(s.locked()).toBe(false);
+    expect(s.gw.live.knownSpeed(T)).toBeNull();
+    await s.sqs({ ...telemetry(25, iso(t + 140_000 + A)), ignicao: true }); // as amostras ao vivo atrás dela
+    expect(s.locked()).toBe(false);
+  });
+
+  it('parada com 60 s de cadência e jitter de chegada (±2 s), relógio adiantado: nunca abre a graça; o lock trava direto', async () => {
+    const s = await awsSetup();
+    const dev0 = s.clock.now() + A;
+    const jitter = [0, 1_800, -1_500, 2_000, -2_000, 900, -700, 1_200];
+    for (let i = 0; i < jitter.length; i++) {
+      await s.sqs(parked(0, dev0 + i * 60_000)); // medição exata a cada 60 s; chegada com jitter
+      if (i < jitter.length - 1) await s.clock.advance(60_000 + jitter[i + 1] - jitter[i]);
+    }
+    expect(s.gw.live.knownSpeed(T)).toBe(0);
+    const p = s.gw.lock({ commandId: 'c1', thingName: T });
+    await s.clock.advance(100);
+    await p;
+    expect(s.published).toEqual([{ travada: true }]);
+  });
+
+  it('andando, telemetria a cada 5 s com jitter: o atraso nunca passa do limite; amostra fresca < 3 trava direto', async () => {
+    const s = await awsSetup();
+    const dev0 = s.clock.now() + 60_000;
+    const jitter = [0, 400, -300, 1_000, -800, 200];
+    for (let i = 0; i < jitter.length; i++) {
+      await s.sqs(telemetry(i === jitter.length - 1 ? 0 : 25, iso(dev0 + i * 5_000)));
+      if (i < jitter.length - 1) await s.clock.advance(5_000 + jitter[i + 1] - jitter[i]);
+    }
+    expect(s.gw.live.knownSpeed(T)).toBe(0);
+  });
+
+  it('IOT_QUEUE_LAG_MS configurável (padrão 5000)', () => {
+    const saved = process.env.IOT_QUEUE_LAG_MS;
+    try {
+      delete process.env.IOT_QUEUE_LAG_MS;
+      expect(loadIotConfig().queueLagMs).toBe(5_000);
+      process.env.IOT_QUEUE_LAG_MS = '8000';
+      expect(loadIotConfig().queueLagMs).toBe(8_000);
+    } finally {
+      if (saved === undefined) delete process.env.IOT_QUEUE_LAG_MS;
+      else process.env.IOT_QUEUE_LAG_MS = saved;
     }
   });
 });

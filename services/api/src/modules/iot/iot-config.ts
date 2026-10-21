@@ -15,6 +15,8 @@ export interface IotConfig {
   reconnectGraceMs: number;
   /** Lacuna entre mensagens do rastreador que conta como reconexão (sem presença no modo aws); parada/travada: máx(isto, 150 s). */
   reconnectGapMs: number;
+  /** Telemetria com atraso (chegada − medição, relativo à anterior) maior que isto = esvaziamento da fila offline = reconexão. */
+  queueLagMs: number;
   outOfAreaLockMinutes: number;
   shadowPollMs: number;
 }
@@ -41,6 +43,7 @@ export function loadIotConfig(): IotConfig {
     offlineAfterMs: num('IOT_OFFLINE_AFTER_MS', 180_000),
     reconnectGraceMs: num('IOT_RECONNECT_GRACE_MS', 10_000),
     reconnectGapMs: num('IOT_RECONNECT_GAP_MS', 15_000),
+    queueLagMs: num('IOT_QUEUE_LAG_MS', 5_000),
     outOfAreaLockMinutes: num('OUT_OF_AREA_LOCK_MINUTES', 5),
     shadowPollMs: num('IOT_SHADOW_POLL_MS', 1_000),
   };

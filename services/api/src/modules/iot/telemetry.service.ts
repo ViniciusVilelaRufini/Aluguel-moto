@@ -5,7 +5,7 @@ import { EV, IotConnectivityEvent, IotDeviceEvent, IotTelemetryEvent } from '../
 import type { BaseIotGateway } from './base-iot-gateway';
 import type { Clock } from './clock';
 import type { PositionInput, RentalLookup } from './geofence/geofence.service';
-import { DEFAULT_RECONNECT_GAP_MS, MAX_CLOCK_SKEW_MS } from './live-state.store';
+import { DEFAULT_QUEUE_LAG_MS, DEFAULT_RECONNECT_GAP_MS, MAX_CLOCK_SKEW_MS } from './live-state.store';
 import { parseDeviceEvent, parseTelemetry } from './mqtt-contract';
 import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
 
@@ -15,6 +15,8 @@ export interface TelemetryOptions {
   trackRetentionDays: number;
   /** Lacuna entre mensagens do rastreador que conta como reconexão (`IOT_RECONNECT_GAP_MS`; padrão 15 s). */
   reconnectGapMs?: number;
+  /** Atraso de telemetria (relativo à anterior) que indica fila offline = reconexão (`IOT_QUEUE_LAG_MS`; padrão 5 s). */
+  queueLagMs?: number;
 }
 
 /**
@@ -71,6 +73,14 @@ export class TelemetryService implements InboundHandler {
     return true;
   }
 
+  /** Telemetria que saiu da fila offline (atraso relativo à anterior, independente da cadência e do relógio do rastreador). */
+  private drained(thingName: string, arrival: number, deviceTs: number): boolean {
+    const lag = this.gateway.live.noteTelemetry(thingName, arrival, deviceTs, this.opts.queueLagMs ?? DEFAULT_QUEUE_LAG_MS);
+    if (lag === null) return false;
+    this.logger.log({ msg: 'iot_reconnect_queue_lag', thingName, lagMs: lag });
+    return true;
+  }
+
   private nowIso(): string {
     return new Date(this.clock.now()).toISOString();
   }
@@ -94,9 +104,11 @@ export class TelemetryService implements InboundHandler {
       const ts = recordedAt.toISOString();
 
       const wasOnline = this.gateway.live.isOnline(thingName);
-      // Reconexão percebida pela própria mensagem (sem evento de presença: estava offline ou ficou calada além do limite).
+      // Reconexão percebida pela própria mensagem (sem evento de presença): estava offline, ficou calada além do limite ou a
+      // amostra saiu da fila offline (atraso). Nos dois últimos casos a própria amostra cai na graça.
       const gap = this.heard(thingName, now);
-      if (!wasOnline || gap) this.gateway.live.markReconnected(thingName);
+      const drained = this.drained(thingName, now, deviceTs);
+      if (!wasOnline || gap || drained) this.gateway.live.markReconnected(thingName);
       const applied = await this.gateway.live.applyTelemetry(thingName, msg);
       if (!wasOnline) await this.connectivity(thingName, vehicleId, true);
 
