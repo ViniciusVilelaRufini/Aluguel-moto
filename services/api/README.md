@@ -8,13 +8,15 @@ NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as 140 opera�
 cp .env.example .env                    # na raiz do monorepo
 cp .env.example services/api/.env       # o Prisma CLI lê o .env da pasta do pacote
 pnpm install
-pnpm dev:deps                           # postgres, redis, mosquitto, minio (+ buckets)
-pnpm --filter api prisma migrate dev    # aplica prisma/migrations
+pnpm dev:deps                           # postgres, redis, mosquitto, minio (a API cria os buckets ao subir)
+pnpm --filter api prisma migrate deploy # aplica prisma/migrations
 pnpm --filter api prisma db seed        # São Paulo: 60 motos, zonas, preços, usuários dev
 pnpm --filter api dev                   # compila (tsc) e sobe em http://localhost:3000
 ```
 
-Ou tudo em containers: `docker compose up -d --build api` (o container aplica as migrações com `RUN_MIGRATIONS=true`; `RUN_SEED=true` roda o seed).
+Ou tudo em containers: `docker compose up -d --build api` (sobe sem `.env`, com padrões de dev; porta do host em `API_PORT`, padrão 3000) (o container aplica as migrações com `RUN_MIGRATIONS=true`; `RUN_SEED=true` roda o seed).
+
+> **Migrações:** aplique com `migrate deploy`. Use `migrate dev` só para criar migração nova, revisando o SQL gerado. A migração inicial tem índices GIST e parciais e `CHECK` escritos à mão, e o setup do e2e confere que existem. Para checar drift, rode `prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --script`: o resultado deve ser uma migração vazia.
 
 > `tsx`/esbuild não emite metadados de decorators; por isso o `dev` usa `tsc`. O seed roda com `tsx` (não usa DI).
 
@@ -34,7 +36,7 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 | Comando | O que roda | Precisa de |
 |---|---|---|
 | `pnpm --filter api test` | unitários (preço, início/encerramento, reservas, comandos, auth, LGPD, inspeção) + conformidade com o contrato (rotas, grupos, schemas) | nada |
-| `pnpm --filter api test:e2e` | `test/rental-flow.e2e-spec.ts`: dev token → reserva → aluguel → pausa → retoma → foto → encerra | compose + migrate + seed |
+| `pnpm --filter api test:e2e` | `test/rental-flow.e2e-spec.ts`: dev token → reserva → aluguel → pausa → retoma → foto (PUT real no MinIO) → encerra, TTL da reserva, auth, TrackPoint; `test/reports.e2e-spec.ts`: relatórios no fuso de São Paulo | compose + migrate + seed |
 | `pnpm --filter api test:contract` | sobe a API e valida respostas reais de 11 grupos de endpoints com `jest-openapi` | compose + migrate + seed |
 | `pnpm --filter api lint` | ESLint + `tsc --noEmit` | nada |
 

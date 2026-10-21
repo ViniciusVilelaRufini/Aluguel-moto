@@ -9,7 +9,7 @@
     "build": "pnpm -r build",
     "lint": "pnpm -r lint",
     "test": "pnpm -r test",
-    "dev:deps": "docker compose up -d postgres redis mosquitto minio minio-init",
+    "dev:deps": "docker compose up -d postgres redis mosquitto minio",
     "contracts:generate": "pnpm --filter @volti/contracts generate"
   }
 }

@@ -4,12 +4,14 @@ import { OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websoc
 import type { Namespace, Socket } from 'socket.io';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import {
-  AlertCreatedEvent, CommandChangedEvent, EV, GeofenceTransitionEvent, IotDeviceEvent, IotTelemetryEvent, RentalChangedEvent, VehicleStatusChangedEvent,
+  AlertCreatedEvent, CommandChangedEvent, EV, GeofenceTransitionEvent, IotDeviceEvent, IotTelemetryEvent, PaymentUpdatedEvent, RentalChangedEvent,
+  VehicleStatusChangedEvent,
 } from '../../common/events';
 import { AUTH_VERIFIER, type AuthVerifier } from '../../ports/auth-verifier.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Principal } from '../auth/principal';
 import { PrincipalResolver } from '../auth/principal-resolver.service';
+import { toRental } from '../rentals/rentals.mapper';
 
 const FLEET_GROUPS = ['admin', 'operacao', 'suporte'];
 
@@ -123,6 +125,18 @@ export class RealtimeGateway implements OnGatewayInit {
     if (open) this.server.in(`user:${ev.customerId}`).socketsJoin(room);
     this.server.to(room).emit('rental.updated', { rentalId: ev.rentalId, status: ev.status, elapsedSeconds: ev.elapsedSeconds, costCents: ev.costCents, ts: ev.ts });
     if (!open) this.server.in(room).socketsLeave(room);
+  }
+
+  /** Pagamento ligado a um aluguel (ex.: liquidação) → `rental.updated` na sala do aluguel com o custo atual. */
+  @OnEvent(EV.PAYMENT_UPDATED, { async: true, promisify: true })
+  async onPaymentUpdated(ev: PaymentUpdatedEvent): Promise<void> {
+    if (!ev.rentalId || !this.server) return;
+    const rental = await this.prisma.rental.findUnique({ where: { id: ev.rentalId } });
+    if (!rental) return;
+    const mapped = toRental(rental);
+    this.server.to(`rental:${rental.id}`).emit('rental.updated', {
+      rentalId: rental.id, status: rental.status, elapsedSeconds: mapped.elapsedSeconds, costCents: mapped.costCents, ts: new Date().toISOString(),
+    });
   }
 
   @OnEvent(EV.GEOFENCE_TRANSITION, { async: true, promisify: true })

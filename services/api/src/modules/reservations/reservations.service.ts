@@ -79,7 +79,7 @@ export class ReservationsService implements OnModuleInit {
    * com as mesmas regras das reservas. Chamado pelo módulo de aluguel dentro da transação dele.
    */
   async reserveForPix(customerId: string, vehicleId: string, depositId: string, until: Date): Promise<Reservation> {
-    const existing = await this.prisma.reservation.findFirst({ where: { customerId, status: 'active' } });
+    const existing = await this.prisma.reservation.findFirst({ where: { customerId, status: 'active', expiresAt: { gt: new Date() } } });
     let reservation: Reservation;
     if (existing && existing.vehicleId === vehicleId) {
       reservation = await this.prisma.reservation.update({

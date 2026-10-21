@@ -1,4 +1,4 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import type { AppConfig } from '../../config/env';
 import type { ObjectStorage } from '../../ports/object-storage.port';
@@ -45,5 +45,19 @@ export class S3ObjectStorage implements ObjectStorage {
 
   async deleteObject(input: { bucket: string; key: string }): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: input.bucket, Key: input.key }));
+  }
+
+  /** Só em `STORAGE_MODE=local` (MinIO): cria os buckets que faltam. Idempotente. Em S3 os buckets vêm do CDK. */
+  async ensureBuckets(buckets: string[]): Promise<string[]> {
+    const created: string[] = [];
+    for (const Bucket of buckets) {
+      try {
+        await this.client.send(new HeadBucketCommand({ Bucket }));
+      } catch {
+        await this.client.send(new CreateBucketCommand({ Bucket }));
+        created.push(Bucket);
+      }
+    }
+    return created;
   }
 }

@@ -6,7 +6,7 @@ export interface AppConfig {
   redisUrl: string;
   authMode: 'dev' | 'cognito';
   devJwtSecret?: string;
-  cognito: { region: string; customerPoolId?: string; staffPoolId?: string };
+  cognito: { region: string; customerPoolId?: string; staffPoolId?: string; customerClientId?: string; staffClientId?: string };
   storageMode: 'local' | 's3';
   s3: { endpoint?: string; region: string; accessKey?: string; secretKey?: string; publicEndpoint?: string };
   buckets: { kyc: string; returnPhotos: string; reports: string; attachments: string };
@@ -44,6 +44,8 @@ export function loadConfig(): AppConfig {
       region: str('COGNITO_REGION', str('AWS_REGION', 'sa-east-1'))!,
       customerPoolId: str('COGNITO_CUSTOMER_POOL_ID'),
       staffPoolId: str('COGNITO_STAFF_POOL_ID'),
+      customerClientId: str('COGNITO_CUSTOMER_CLIENT_ID'),
+      staffClientId: str('COGNITO_STAFF_CLIENT_ID'),
     },
     storageMode: (str('STORAGE_MODE', 'local') as AppConfig['storageMode']),
     s3: {

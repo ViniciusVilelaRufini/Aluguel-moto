@@ -8,3 +8,4 @@ process.env.S3_ENDPOINT = process.env.S3_ENDPOINT ?? 'http://localhost:9000';
 process.env.S3_ACCESS_KEY = process.env.S3_ACCESS_KEY ?? 'test';
 process.env.S3_SECRET_KEY = process.env.S3_SECRET_KEY ?? 'test-secret';
 process.env.LOG_LEVEL = process.env.LOG_LEVEL ?? 'info';
+process.env.ENSURE_BUCKETS = 'false';

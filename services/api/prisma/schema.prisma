@@ -490,6 +490,7 @@ model Zone {
   updatedAt     DateTime                               @updatedAt
 
   @@index([type, active])
+  @@index([geom], map: "Zone_geom_gist", type: Gist)
 }
 
 model VehicleCommand {

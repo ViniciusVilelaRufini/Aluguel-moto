@@ -46,7 +46,10 @@ export class RentalStartService {
     await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: true });
 
     const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
-    if (open) throw conflict('rental-already-active', 'Você já tem um aluguel em andamento.');
+    if (open) {
+      this.requestDepositRelease(dto.depositId, customerId);
+      throw conflict('rental-already-active', 'Você já tem um aluguel em andamento.');
+    }
 
     const plan = await this.pricing.activePlan(dto.planCode);
     const coupon: Coupon | null = dto.couponCode ? await this.pricing.requireCoupon(dto.couponCode, dto.planCode, customerId) : null;
@@ -64,13 +67,18 @@ export class RentalStartService {
     }
 
     // ── caução ──
-    let deposit: Deposit;
-    let rentalId: string;
+    let deposit!: Deposit;
+    let rentalId!: string;
+    let heldDepositId: string | undefined;
+    let policyId: string | undefined;
+    let rental;
+    try {
     if (dto.depositId) {
       const d = await this.prisma.deposit.findUnique({ where: { id: dto.depositId } });
       if (!d || d.customerId !== customerId) throw notFound('Caução não encontrada.');
       if (d.status !== 'held') throw new ProblemException(402, 'deposit-not-held', 'A caução ainda não foi confirmada.');
       deposit = d;
+      heldDepositId = d.id;
       rentalId = d.rentalId ?? randomUUID();
     } else {
       rentalId = randomUUID();
@@ -79,6 +87,7 @@ export class RentalStartService {
       const d = await this.prisma.deposit.findUnique({ where: { id: held.depositId } });
       if (!d) throw new ProblemException(402, 'payment-failed', 'Caução não registrada pelo provedor.');
       deposit = d;
+      if (held.status === 'held') heldDepositId = d.id;
       if (held.status === 'awaiting_pix') {
         const until = new Date(held.pix?.expiresAt ?? Date.now() + 15 * 60 * 1000);
         await this.reservations.reserveForPix(customerId, vehicle.id, held.depositId, until);
@@ -91,9 +100,10 @@ export class RentalStartService {
       ? await this.prisma.subscription.findFirst({ where: { customerId, planCode: dto.planCode, status: 'active', currentPeriodEnd: { gt: new Date() } } })
       : null;
     const policy = await this.insurance.issueForRental({ rentalId, customerId, coverage: dto.coverage });
+    policyId = policy.policyId;
     const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription);
 
-    const rental = await this.prisma.$transaction(async (tx) => {
+    rental = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.vehicle.updateMany({ where: { id: vehicle.id, status: { in: ['free', 'reserved'] } }, data: { status: 'rented' } });
       if (claimed.count === 0) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
       if (ownReservation) await this.reservations.convert(tx, ownReservation.id);
@@ -121,6 +131,18 @@ export class RentalStartService {
       if (!deposit.rentalId) await tx.deposit.update({ where: { id: deposit.id }, data: { rentalId } });
       return created;
     });
+    } catch (err) {
+      // Compensação (decisão #16): caução retida e apólice emitida não podem ficar órfãs.
+      if (policyId) {
+        try {
+          await this.insurance.cancel(policyId);
+        } catch (e) {
+          this.logger.error({ msg: 'policy_cancel_failed', policyId, error: (e as Error).message });
+        }
+      }
+      if (heldDepositId) this.requestDepositRelease(heldDepositId, customerId);
+      throw err;
+    }
 
     // Desbloqueio pelo módulo IoT (não desfaz o aluguel se a moto estiver offline: o comando fica pendente).
     try {

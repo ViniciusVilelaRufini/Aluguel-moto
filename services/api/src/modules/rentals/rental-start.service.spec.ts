@@ -1,4 +1,6 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import request from 'supertest';
+import { EV } from '../../common/events';
 import { createHarness, CUSTOMER_ID, customerToken, Harness } from '../../../test/helpers/http-harness';
 import { INSURANCE } from '../../ports/insurance.port';
 import { RENTAL_BILLING } from '../../ports/rental-billing.port';
@@ -176,5 +178,46 @@ describe('Início do aluguel (POST /rentals)', () => {
     const res = await post('chave-fail-0001');
     expect(res.status).toBe(402);
     expect(res.body.type).toBe('https://api.volti.com.br/problems/payment-failed');
+  });
+
+  describe('sem vazamento de caução/apólice quando o início falha (decisão #16)', () => {
+    let released: jest.Mock;
+    beforeEach(() => {
+      released = jest.fn();
+      h.app.get(EventEmitter2).removeAllListeners(EV.DEPOSIT_RELEASE_REQUESTED);
+      h.app.get(EventEmitter2).on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+    });
+
+    it('409 na reivindicação da moto (corrida) depois da caução e da apólice → libera caução e cancela apólice', async () => {
+      h.prisma.vehicle.updateMany.mockResolvedValue({ count: 0 });
+      const res = await post('chave-race-0001');
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
+      expect(insurance.cancel).toHaveBeenCalledWith(POLICY_ID);
+      expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: DEPOSIT_ID, customerId: CUSTOMER_ID, reason: 'rental_not_started' }));
+    });
+
+    it('erro inesperado depois da apólice (falha ao gravar o aluguel) → libera caução e cancela apólice', async () => {
+      h.prisma.rental.create.mockRejectedValueOnce(new Error('db down'));
+      const res = await post('chave-boom-0001');
+      expect(res.status).toBe(500);
+      expect(insurance.cancel).toHaveBeenCalledWith(POLICY_ID);
+      expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: DEPOSIT_ID }));
+    });
+
+    it('409 rental-already-active com depositId informado → libera a caução paga', async () => {
+      h.prisma.rental.findFirst.mockResolvedValue({ id: 'r', status: 'active' } as any);
+      const res = await post('chave-dup-0001', { ...body, depositMethod: 'pix', depositId: DEPOSIT_ID });
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/rental-already-active');
+      expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: DEPOSIT_ID }));
+    });
+
+    it('sucesso não libera nada', async () => {
+      const res = await post('chave-okok-0001');
+      expect(res.status).toBe(201);
+      expect(released).not.toHaveBeenCalled();
+      expect(insurance.cancel).not.toHaveBeenCalled();
+    });
   });
 });

@@ -7,6 +7,7 @@ import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../
 import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
 import { RENTAL_BILLING, type RentalBillingPort } from '../../ports/rental-billing.port';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
 import { isAdmin, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
@@ -18,6 +19,8 @@ export const FORCE_END_FEE_CODE = 'force_end_outside_return_zone';
 export const FORCE_END_FEE_DEFAULT_CENTS = 1500;
 /** Intervalo mínimo entre tentativas de travamento de um aluguel em `ending`. */
 export const END_RETRY_INTERVAL_MS = 30_000;
+/** Depois de tantas tentativas sem "travada", para de reenviar e chama a operação (alerta). */
+export const MAX_END_ATTEMPTS = 10;
 const SYSTEM = { system: true as const, name: 'encerramento' };
 
 type RentalWithVehicle = Rental & { vehicle: Vehicle };
@@ -39,6 +42,7 @@ export class RentalEndService {
     @Inject(IOT_GATEWAY) private readonly iot: IotGateway,
     private readonly events: EventEmitter2,
     private readonly audit: AuditService,
+    private readonly alerts: AlertsService,
   ) {}
 
   private async load(rentalId: string): Promise<RentalWithVehicle> {
@@ -222,7 +226,7 @@ export class RentalEndService {
   async retryEnding(): Promise<void> {
     const cutoff = new Date(Date.now() - END_RETRY_INTERVAL_MS);
     const pending = await this.prisma.rental.findMany({
-      where: { status: 'ending', OR: [{ endLastAttemptAt: null }, { endLastAttemptAt: { lt: cutoff } }] },
+      where: { status: 'ending', endAttempts: { lt: MAX_END_ATTEMPTS }, OR: [{ endLastAttemptAt: null }, { endLastAttemptAt: { lt: cutoff } }] },
       take: 100,
     });
     for (const r of pending) {
@@ -231,8 +235,18 @@ export class RentalEndService {
         data: { endLastAttemptAt: new Date(), endAttempts: { increment: 1 } },
       });
       const confirmed = await this.requestLock(r.id, r.vehicleId, 'rental_end');
-      if (confirmed) await this.finalize(r.id, 'ended');
-      else this.logger.warn({ msg: 'rental_end_lock_pending', rentalId: r.id, attempts: r.endAttempts + 1 });
+      if (confirmed) {
+        await this.finalize(r.id, 'ended');
+        continue;
+      }
+      const attempts = r.endAttempts + 1;
+      this.logger.warn({ msg: 'rental_end_lock_pending', rentalId: r.id, attempts });
+      if (attempts >= MAX_END_ATTEMPTS) {
+        await this.alerts.create(
+          { type: 'command_failed', priority: 'high', message: `Encerramento sem confirmação de travamento após ${attempts} tentativas.`, vehicleId: r.vehicleId, rentalId: r.id },
+          { dedupe: false },
+        );
+      }
     }
   }
 

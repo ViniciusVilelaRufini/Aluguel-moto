@@ -7,7 +7,7 @@
     "build": "prisma generate && tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
     "start:prod": "node scripts/start.mjs",
-    "dev": "tsc -p tsconfig.build.json && node --enable-source-maps dist/main.js",
+    "dev": "tsc -p tsconfig.build.json && node --env-file-if-exists=.env --enable-source-maps dist/main.js",
     "lint": "eslint \"src/**/*.ts\" \"test/**/*.ts\" \"prisma/**/*.ts\" && tsc -p tsconfig.json --noEmit",
     "test": "jest --config jest.config.js",
     "test:e2e": "jest --config test/jest-e2e.config.js --runInBand",

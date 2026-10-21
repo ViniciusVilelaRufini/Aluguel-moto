@@ -11,6 +11,15 @@ const GROUP_SECONDS: Record<GroupBy, number> = { hour: 3600, day: 86400, week: 7
 
 const n = (v: unknown) => Number(v ?? 0);
 
+/**
+ * As colunas são `timestamp(3)` sem fuso, gravadas em UTC. `local(col)` converte para o horário de São Paulo;
+ * `utcBound(date)` gera o literal UTC sem fuso para comparar com as colunas (independe do TimeZone da sessão).
+ */
+const local = (col: Prisma.Sql) => Prisma.sql`((${col} AT TIME ZONE 'UTC') AT TIME ZONE ${TZ})`;
+const utcBound = (d: Date) => Prisma.sql`(${d.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+/** Instante local (São Paulo, sem fuso) → `timestamptz`. */
+const fromLocal = (ts: Prisma.Sql) => Prisma.sql`(${ts} AT TIME ZONE ${TZ})`;
+
 /** Início do dia corrente em São Paulo (UTC−3, sem horário de verão desde 2019). */
 export function startOfTodaySaoPaulo(now = new Date()): Date {
   const local = new Date(now.getTime() - 3 * 3600 * 1000);
@@ -69,7 +78,7 @@ export class ReportsService {
     const { from, to } = this.window(fromIso, toIso);
     const rows = await this.prisma.$queryRaw<Array<{ lat: number; lng: number; weight: bigint }>>`
       SELECT round("startLat"::numeric, 3)::float8 AS "lat", round("startLng"::numeric, 3)::float8 AS "lng", count(*) AS "weight"
-      FROM "Rental" WHERE "startedAt" >= ${from} AND "startedAt" < ${to} AND "startLat" IS NOT NULL
+      FROM "Rental" WHERE "startedAt" >= ${utcBound(from)} AND "startedAt" < ${utcBound(to)} AND "startLat" IS NOT NULL
       GROUP BY 1, 2 ORDER BY 3 DESC LIMIT 5000`;
     return { from: from.toISOString(), to: to.toISOString(), points: rows.map((r) => ({ lat: n(r.lat), lng: n(r.lng), weight: n(r.weight) })) };
   }
@@ -78,7 +87,7 @@ export class ReportsService {
     const { from, to } = this.window(fromIso, toIso, groupBy);
     const planFilter = planCode ? Prisma.sql`AND "planCode" = ${planCode}::"PlanCode"` : Prisma.empty;
     const rows = await this.prisma.$queryRaw<Array<Record<string, unknown>>>`
-      SELECT (date_trunc(${groupBy}, "endedAt" AT TIME ZONE ${TZ}) AT TIME ZONE ${TZ}) AS "periodStart", "planCode",
+      SELECT ${fromLocal(Prisma.sql`date_trunc(${groupBy}, ${local(Prisma.sql`"endedAt"`)})`)} AS "periodStart", "planCode",
              count(*) AS "rentals",
              coalesce(sum(("breakdown"->>'subtotalCents')::int), 0) AS "grossCents",
              coalesce(sum(("breakdown"->>'discountCents')::int), 0) AS "discountCents",
@@ -86,7 +95,7 @@ export class ReportsService {
              coalesce(sum(("breakdown"->>'feesCents')::int), 0) AS "feesCents",
              coalesce(sum("costCents"), 0) AS "netCents"
       FROM "Rental"
-      WHERE "status" IN ('ended', 'force_ended') AND "endedAt" >= ${from} AND "endedAt" < ${to} ${planFilter}
+      WHERE "status" IN ('ended', 'force_ended') AND "endedAt" >= ${utcBound(from)} AND "endedAt" < ${utcBound(to)} ${planFilter}
       GROUP BY 1, 2 ORDER BY 1, 2`;
     const mapped = rows.map((r) => ({
       periodStart: (r.periodStart as Date).toISOString(),
@@ -106,12 +115,13 @@ export class ReportsService {
     const step = Prisma.sql`('1 ' || ${groupBy})::interval`;
     const rows = await this.prisma.$queryRaw<Array<{ periodStart: Date; total: bigint; rented: bigint }>>`
       WITH periods AS (
-        SELECT gs AS p FROM generate_series(date_trunc(${groupBy}, ${from}::timestamptz AT TIME ZONE ${TZ}), ${to}::timestamptz AT TIME ZONE ${TZ} - interval '1 microsecond', ${step}) gs
+        SELECT gs AS p FROM generate_series(date_trunc(${groupBy}, ${from.toISOString()}::timestamptz AT TIME ZONE ${TZ}), ${to.toISOString()}::timestamptz AT TIME ZONE ${TZ} - interval '1 microsecond', ${step}) gs
       )
       SELECT (p AT TIME ZONE ${TZ}) AS "periodStart",
              (SELECT count(*) FROM "Vehicle") AS "total",
              (SELECT count(DISTINCT r."vehicleId") FROM "Rental" r
-                WHERE r."startedAt" < ((p + ${step}) AT TIME ZONE ${TZ}) AND coalesce(r."endedAt", now()) >= (p AT TIME ZONE ${TZ})) AS "rented"
+                WHERE r."startedAt" < (((p + ${step}) AT TIME ZONE ${TZ}) AT TIME ZONE 'UTC')
+                  AND coalesce(r."endedAt", (now() AT TIME ZONE 'UTC')) >= ((p AT TIME ZONE ${TZ}) AT TIME ZONE 'UTC')) AS "rented"
       FROM periods ORDER BY p`;
     return {
       from: from.toISOString(),
@@ -129,11 +139,11 @@ export class ReportsService {
     const { from, to } = this.window(fromIso, toIso);
     const vehicleFilter = vehicleId ? Prisma.sql`AND r."vehicleId" = ${vehicleId}::uuid` : Prisma.empty;
     const rows = await this.prisma.$queryRaw<Array<Record<string, unknown>>>`
-      SELECT r."vehicleId", v."code" AS "vehicleCode", to_char(r."endedAt" AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS "date",
+      SELECT r."vehicleId", v."code" AS "vehicleCode", to_char(${local(Prisma.sql`r."endedAt"`)}, 'YYYY-MM-DD') AS "date",
              count(*) AS "rentals", coalesce(sum(extract(epoch FROM (r."endedAt" - r."startedAt")))::bigint, 0) AS "rentedSeconds",
              coalesce(sum(r."costCents"), 0) AS "revenueCents"
       FROM "Rental" r JOIN "Vehicle" v ON v."id" = r."vehicleId"
-      WHERE r."status" IN ('ended', 'force_ended') AND r."endedAt" >= ${from} AND r."endedAt" < ${to} ${vehicleFilter}
+      WHERE r."status" IN ('ended', 'force_ended') AND r."endedAt" >= ${utcBound(from)} AND r."endedAt" < ${utcBound(to)} ${vehicleFilter}
       GROUP BY 1, 2, 3 ORDER BY 3, 2`;
     return {
       from: from.toISOString(),

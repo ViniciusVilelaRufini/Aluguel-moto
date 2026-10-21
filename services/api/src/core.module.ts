@@ -1,4 +1,4 @@
-import { Global, Inject, Module, OnModuleDestroy } from '@nestjs/common';
+import { Global, Inject, Logger, Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { CognitoAuthVerifier } from './adapters/auth/cognito-auth-verifier';
 import { DevAuthVerifier } from './adapters/auth/dev-auth-verifier';
 import { MockKycProvider } from './adapters/kyc/mock-kyc-provider';
@@ -60,8 +60,25 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
     PUSH_NOTIFIER,
   ],
 })
-export class CoreModule implements OnModuleDestroy {
-  constructor(@Inject(REDIS_STORE) private readonly redis: RedisStore) {}
+export class CoreModule implements OnModuleDestroy, OnApplicationBootstrap {
+  private readonly logger = new Logger('CoreModule');
+
+  constructor(
+    @Inject(REDIS_STORE) private readonly redis: RedisStore,
+    @Inject(OBJECT_STORAGE) private readonly storage: S3ObjectStorage,
+    @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+  ) {}
+
+  /** Dev local: garante os buckets do MinIO (documentos-kyc, fotos-devolucao, relatorios, anexos). */
+  async onApplicationBootstrap(): Promise<void> {
+    if (this.cfg.storageMode !== 'local' || process.env.ENSURE_BUCKETS === 'false') return;
+    try {
+      const created = await this.storage.ensureBuckets(Object.values(this.cfg.buckets));
+      this.logger.log({ msg: 'buckets_ready', created });
+    } catch (err) {
+      this.logger.warn({ msg: 'buckets_ensure_failed', error: (err as Error).message });
+    }
+  }
 
   async onModuleDestroy(): Promise<void> {
     await this.redis.close();

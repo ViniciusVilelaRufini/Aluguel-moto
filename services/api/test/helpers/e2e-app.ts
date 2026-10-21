@@ -5,6 +5,35 @@ import request from 'supertest';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/bootstrap';
 
+/**
+ * Índices e restrições escritos à mão na migração (o Prisma não modela os parciais/expressões nem os CHECK;
+ * um `migrate dev` descuidado poderia removê-los). O setup de e2e/contrato falha se algum sumir.
+ */
+export const HAND_WRITTEN_INDEXES = [
+  'Zone_geom_gist',
+  'Vehicle_position_gist',
+  'Reservation_one_active_per_customer',
+  'Reservation_one_active_per_vehicle',
+  'Rental_one_open_per_customer',
+  'Rental_one_open_per_vehicle',
+  'PricingPlan_one_active_per_code',
+  'Subscription_one_active_per_customer',
+  'Dispute_one_open_per_rental',
+];
+export const HAND_WRITTEN_CHECKS = ['Vehicle_speed_limit_range', 'Zone_speed_limit_range', 'Rental_speed_limit_range'];
+
+export async function assertHandWrittenSchema(prisma: PrismaClient): Promise<void> {
+  const idx = await prisma.$queryRaw<Array<{ indexname: string }>>`SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`;
+  const checks = await prisma.$queryRaw<Array<{ conname: string }>>`SELECT conname FROM pg_constraint WHERE contype = 'c'`;
+  const missing = [
+    ...HAND_WRITTEN_INDEXES.filter((n) => !idx.some((r) => r.indexname === n)),
+    ...HAND_WRITTEN_CHECKS.filter((n) => !checks.some((r) => r.conname === n)),
+  ];
+  if (missing.length) {
+    throw new Error(`Índices/restrições da migração ausentes: ${missing.join(', ')}. Rode "prisma migrate deploy" e não aceite migrações que os removam.`);
+  }
+}
+
 /** Sobe a API completa (AppModule) contra o Postgres/Redis do compose. */
 export async function bootE2eApp(): Promise<{ app: INestApplication; prisma: PrismaClient }> {
   const moduleRef = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -13,6 +42,7 @@ export async function bootE2eApp(): Promise<{ app: INestApplication; prisma: Pri
   await app.init();
   const prisma = new PrismaClient();
   await prisma.$connect();
+  await assertHandWrittenSchema(prisma);
   return { app, prisma };
 }
 

@@ -57,6 +57,9 @@ describe('Fluxo do aluguel (e2e)', () => {
     // Foto e encerramento (moto do seed está dentro de uma zona `return`)
     const photo = await http().post(`/rentals/${rentalId}/return-photo`).set(auth).send({ contentType: 'image/jpeg' }).expect(201);
     expect(photo.body).toMatchObject({ method: 'PUT' });
+    // A URL pré-assinada funciona de verdade contra o MinIO do compose.
+    const put = await fetch(photo.body.uploadUrl, { method: 'PUT', headers: photo.body.headers, body: Buffer.from([0xff, 0xd8, 0xff, 0xd9]) });
+    expect(put.status).toBe(200);
     const ended = await http().post(`/rentals/${rentalId}/end`).set(auth).send({ returnPhotoObjectKey: photo.body.objectKey }).expect(200);
     expect(ended.body.status).toBe('ended');
 
@@ -108,5 +111,37 @@ describe('Fluxo do aluguel (e2e)', () => {
     await http().post(`/vehicles/${vehicle.id}/commands`).set('Authorization', `Bearer ${op}`).send({ type: 'speed_limit', reason: 'teste e2e', speedLimitKmh: 33 }).expect(400);
     const ok = await http().post(`/vehicles/${vehicle.id}/commands`).set('Authorization', `Bearer ${op}`).send({ type: 'horn', reason: 'teste e2e' }).expect(202);
     expect(ok.body.status).toBe('confirmed');
+  });
+
+  it('TrackPoint (gravado pela Task 4): trajeto do aluguel, exportação LGPD e expiração leem a tabela corretamente', async () => {
+    const http = () => request(app.getHttpServer());
+    const { token, customerId } = await approvedCustomer(app, prisma, 'track');
+    const vehicle = await prisma.vehicle.findFirstOrThrow({ where: { code: 'VLT-0059' } });
+    const deposit = await prisma.deposit.create({ data: { customerId, method: 'card', status: 'captured', amountCents: 5000 } });
+    const now = Date.now();
+    const rental = await prisma.rental.create({
+      data: {
+        customerId, vehicleId: vehicle.id, planCode: 'minute', coverage: 'basic', status: 'ended', depositId: deposit.id, costCents: 500,
+        priceSnapshot: { planCode: 'minute', unit: 'minute', unlockFeeCents: 300, unitPriceCents: 79, pausePerMinuteCents: 20, insurancePremiumCents: 200 },
+        startedAt: new Date(now - 120_000), endRequestedAt: new Date(now - 60_000), endedAt: new Date(now - 60_000),
+      },
+    });
+    const day = 86_400_000;
+    await prisma.trackPoint.createMany({
+      data: [
+        { rentalId: rental.id, vehicleId: vehicle.id, lat: -23.56, lng: -46.69, speedKmh: 12, recordedAt: new Date(now - 110_000), expiresAt: new Date(now + 90 * day) },
+        { rentalId: rental.id, vehicleId: vehicle.id, lat: -23.561, lng: -46.691, speedKmh: 15, recordedAt: new Date(now - 100_000), expiresAt: new Date(now + 90 * day) },
+        { rentalId: rental.id, vehicleId: vehicle.id, lat: -23.562, lng: -46.692, speedKmh: 9, recordedAt: new Date(now - 91 * day), expiresAt: new Date(now - 1000) },
+      ],
+    });
+    const track = await http().get(`/rentals/${rental.id}/track`).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(track.body.points).toHaveLength(2);
+    expect(track.body.points[0]).toEqual({ lat: -23.56, lng: -46.69, speedKmh: 12, recordedAt: new Date(now - 110_000).toISOString() });
+    const exp = await http().get('/lgpd/export').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(exp.body.tracks).toEqual([expect.objectContaining({ rentalId: rental.id, points: expect.arrayContaining([expect.objectContaining({ speedKmh: 15 })]) })]);
+    expect(exp.body.tracks[0].points).toHaveLength(2);
+    const { LgpdService } = await import('../src/modules/lgpd/lgpd.service');
+    expect(await app.get(LgpdService).purgeExpiredTracks()).toBeGreaterThanOrEqual(1);
+    expect(await prisma.trackPoint.count({ where: { rentalId: rental.id } })).toBe(2);
   });
 });

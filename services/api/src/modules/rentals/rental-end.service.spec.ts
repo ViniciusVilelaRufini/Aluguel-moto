@@ -2,8 +2,8 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import request from 'supertest';
 import { mockDeep } from 'jest-mock-extended';
 import { PrismaClient } from '@prisma/client';
-import { createHarness, Harness, staffToken } from '../../../test/helpers/http-harness';
-import { ProblemException } from '../../common/problem';
+import { createHarness, customerToken, Harness, staffToken } from '../../../test/helpers/http-harness';
+import { ProblemException, unprocessable } from '../../common/problem';
 import type { Principal } from '../auth/principal';
 import { PricingService } from '../pricing/pricing.service';
 import { RentalEndService } from './rental-end.service';
@@ -52,11 +52,29 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
   const zones = { findContaining: jest.fn().mockResolvedValue(opts.inZone === false ? null : { id: ZONE_ID, type: 'return' }) };
   const iot = { getLiveState: jest.fn().mockResolvedValue(null) };
   const audit = { record: jest.fn() };
-  const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, new EventEmitter2(), audit as any);
-  return { service, prisma, rental, billing, commands, zones, audit };
+  const alerts = { create: jest.fn().mockResolvedValue({ id: 'alert-1' }) };
+  const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, new EventEmitter2(), audit as any, alerts as any);
+  return { service, prisma, rental, billing, commands, zones, audit, alerts };
 }
 
 describe('Encerramento do aluguel', () => {
+  // Relógio controlado: o valor (1290) não pode depender do tempo de execução do teste.
+  beforeEach(() => jest.useFakeTimers({ now: new Date('2026-10-21T15:00:00.000Z') }));
+  afterEach(() => jest.useRealTimers());
+
+  it('retentativas têm limite: no 10º travamento sem confirmação abre alerta e para de reenviar comandos', async () => {
+    const { service, rental, commands, prisma, alerts } = setup({ lock: 'in_progress' });
+    rental.status = 'ending';
+    rental.endAttempts = 9;
+    rental.endLastAttemptAt = new Date(Date.now() - 60_000);
+    prisma.rental.findMany.mockResolvedValue([{ ...rental }] as any);
+    await service.retryEnding();
+    expect(commands.dispatch).toHaveBeenCalledTimes(1);
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'command_failed', priority: 'high', rentalId: RENTAL_ID }), expect.anything());
+    // A consulta do job só busca aluguéis abaixo do limite.
+    expect((prisma.rental.findMany.mock.calls[0][0] as any).where.endAttempts).toEqual({ lt: 10 });
+  });
+
   it('fora de zona return → 422 problem rental-outside-return-zone', async () => {
     const { service, commands } = setup({ inZone: false });
     const err = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }).catch((e) => e);
@@ -182,6 +200,17 @@ describe('POST /rentals/{id}/force-end (validação)', () => {
     });
   });
   afterAll(() => h.app.close());
+
+  it('encerrar fora da zona de devolução → 422 application/problem+json com type .../rental-outside-return-zone', async () => {
+    ender.end.mockRejectedValueOnce(unprocessable('rental-outside-return-zone', 'Estacione numa zona de devolução para encerrar.'));
+    const res = await request(h.app.getHttpServer())
+      .post(`/rentals/${RENTAL_ID}/end`)
+      .set('Authorization', `Bearer ${await customerToken()}`)
+      .send({ returnPhotoObjectKey: PHOTO_KEY });
+    expect(res.status).toBe(422);
+    expect(res.headers['content-type']).toMatch(/application\/problem\+json/);
+    expect(res.body.type).toMatch(/\/rental-outside-return-zone$/);
+  });
 
   it('sem reason → 400 e o serviço não é chamado', async () => {
     const res = await request(h.app.getHttpServer())
