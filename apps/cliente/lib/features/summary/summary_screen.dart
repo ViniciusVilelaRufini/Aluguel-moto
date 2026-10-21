@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
@@ -74,8 +72,8 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
             final mapOn = ref.watch(mapEnabledProvider);
             return ListView(
               padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-              children: [
-                Center(child: Icon(LucideIcons.circleCheck, size: 48, color: VoltiColors.brand)),
+              children: VoltiStagger.wrap([
+                const Center(child: VoltiSuccessCheck()),
                 const SizedBox(height: 8),
                 Center(child: Semantics(header: true, child: Text(l.lockedBye, style: VoltiTypography.title, textAlign: TextAlign.center))),
                 const SizedBox(height: 4),
@@ -90,7 +88,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                         center: pts.first,
                         zoom: 15,
                         interactive: false,
-                        layers: [PolylineLayer(polylines: [Polyline(points: pts, color: VoltiColors.brand, strokeWidth: 4)])],
+                        layers: [DrawnPolyline(points: pts, color: VoltiColors.brand)],
                       ),
                     ),
                   ),
@@ -116,8 +114,15 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                       IconButton(
                         tooltip: l.starsLabel(i),
                         onPressed: _rated ? null : () => setState(() => _stars = i),
-                        icon: Icon(i <= _stars ? Icons.star_rounded : Icons.star_outline_rounded,
-                            size: 36, color: i <= _stars ? VoltiColors.sun400 : VoltiColors.ink300),
+                        icon: i <= _stars
+                            // Estrelas marcadas fazem pop em cascata (50 ms entre elas).
+                            ? VoltiCheckPop(
+                                key: ValueKey('star-$i'),
+                                delay: Duration(milliseconds: (i - 1) * 50),
+                                duration: const Duration(milliseconds: 380),
+                                child: const Icon(Icons.star_rounded, size: 36, color: VoltiColors.sun400),
+                              )
+                            : const Icon(Icons.star_outline_rounded, size: 36, color: VoltiColors.ink300),
                       ),
                   ],
                 ),
@@ -128,7 +133,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                 VoltiButton(label: l.disputeCharge, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: _dispute),
                 const SizedBox(height: VoltiSpacing.s8),
                 VoltiButton(label: l.backToMap, size: VoltiButtonSize.lg, fullWidth: true, onPressed: () => context.go('/home')),
-              ],
+              ]),
             );
           },
         ),

@@ -35,7 +35,7 @@ class AccountScreen extends ConsumerWidget {
       title: l.accountTitle,
       body: ListView(
         padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-        children: [
+        children: VoltiStagger.wrap([
           Text(c?.name ?? l.accountNoName, style: VoltiTypography.title),
           Text(c?.email ?? '', style: VoltiTypography.body),
           const SizedBox(height: VoltiSpacing.s16),
@@ -65,7 +65,7 @@ class AccountScreen extends ConsumerWidget {
               if (context.mounted) context.go('/welcome');
             },
           ),
-        ],
+        ]),
       ),
     );
   }

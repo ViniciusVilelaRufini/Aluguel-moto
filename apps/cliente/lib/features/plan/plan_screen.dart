@@ -158,7 +158,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
       ),
       body: ListView(
         padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-        children: [
+        children: VoltiStagger.wrap([
           Row(children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -304,7 +304,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
             ),
           const SizedBox(height: VoltiSpacing.s16),
           Text(l.noKmNotice, style: VoltiTypography.caption),
-        ],
+        ]),
       ),
     );
   }

@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 
+import 'package:flutter/widgets.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
+import 'package:volti_flutter/volti_flutter.dart';
 
 /// Ponto dentro do poligono (anel externo GeoJSON, [lng, lat]).
 bool pointInZone(double lat, double lng, GeoZone zone) {
@@ -56,4 +59,33 @@ String formatDateTimeSp(DateTime d) {
   final x = toSaoPaulo(d);
   String two(int n) => n.toString().padLeft(2, '0');
   return '${two(x.day)}/${two(x.month)}/${x.year} ${two(x.hour)}:${two(x.minute)}';
+}
+
+/// Polyline que se desenha sozinha (1,1 s, apos 300 ms), para camadas do
+/// flutter_map. Com reduced motion ja aparece completa.
+class DrawnPolyline extends StatelessWidget {
+  const DrawnPolyline({super.key, required this.points, required this.color, this.strokeWidth = 4});
+  final List<LatLng> points;
+  final Color color;
+  final double strokeWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return VoltiRouteDraw(
+      builder: (context, t) => PolylineLayer(polylines: [
+        Polyline(
+          points: VoltiRouteDraw.partial<LatLng>(
+            points,
+            t,
+            lerp: (a, b, f) => LatLng(a.latitude + (b.latitude - a.latitude) * f, a.longitude + (b.longitude - a.longitude) * f),
+            dist: (a, b) => math.sqrt(math.pow(a.latitude - b.latitude, 2) + math.pow(a.longitude - b.longitude, 2)),
+          ),
+          color: color,
+          strokeWidth: strokeWidth,
+          strokeCap: StrokeCap.round,
+          strokeJoin: StrokeJoin.round,
+        ),
+      ]),
+    );
+  }
 }

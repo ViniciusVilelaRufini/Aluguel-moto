@@ -213,7 +213,8 @@ void main() {
     testWidgets('device.event queda abre "Voce esta bem?" e responde ao backend', (t) async {
       await pumpRide(t);
       rt.emit(const DeviceEventReceived(type: 'queda'));
-      await t.pumpAndSettle(const Duration(milliseconds: 100), EnginePhase.sendSemanticsUpdate, const Duration(seconds: 2));
+      await t.pump();
+      await t.pump(const Duration(seconds: 1)); // ponto ao vivo pisca sem parar: sem pumpAndSettle
 
       expect(find.text('Você está bem?'), findsOneWidget);
       await t.tap(find.text('Estou bem'));

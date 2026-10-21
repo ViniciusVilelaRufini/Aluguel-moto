@@ -3,6 +3,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:volti_api/volti_api.dart';
+import 'package:volti_flutter/volti_flutter.dart';
 
 import '../features/account/account_screens.dart';
 import '../features/home/home_screen.dart';
@@ -17,6 +18,23 @@ import '../features/summary/summary_screen.dart';
 import 'session.dart';
 
 const _publicPaths = {'/welcome', '/login'};
+
+/// Pagina com as transicoes do design: push lateral de 440 ms (`--ease-screen`)
+/// ou, com [modal], sobe de baixo enquanto a tela de tras recua (scan).
+/// Reduced motion: sem animacao.
+CustomTransitionPage<T> voltiPage<T>(BuildContext context, GoRouterState state, Widget child, {bool modal = false}) {
+  final d = VoltiPageTransitions.durationOf(context);
+  return CustomTransitionPage<T>(
+    key: state.pageKey,
+    name: state.name ?? state.path,
+    arguments: <String, String>{...state.pathParameters, ...state.uri.queryParameters},
+    restorationId: state.pageKey.value,
+    child: child,
+    transitionDuration: d,
+    reverseTransitionDuration: d,
+    transitionsBuilder: modal ? VoltiPageTransitions.modal : VoltiPageTransitions.push,
+  );
+}
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier<int>(0);
@@ -41,32 +59,32 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/welcome', builder: (_, _) => const WelcomeScreen()),
-      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
-      GoRoute(path: '/onboarding', builder: (_, _) => const OnboardingScreen()),
-      GoRoute(path: '/home', builder: (_, _) => const HomeScreen()),
-      GoRoute(path: '/reserved', builder: (_, _) => const ReservedScreen()),
+      GoRoute(path: '/welcome', pageBuilder: (c, state) => voltiPage(c, state, const WelcomeScreen())),
+      GoRoute(path: '/login', pageBuilder: (c, state) => voltiPage(c, state, const LoginScreen())),
+      GoRoute(path: '/onboarding', pageBuilder: (c, state) => voltiPage(c, state, const OnboardingScreen())),
+      GoRoute(path: '/home', pageBuilder: (c, state) => voltiPage(c, state, const HomeScreen())),
+      GoRoute(path: '/reserved', pageBuilder: (c, state) => voltiPage(c, state, const ReservedScreen())),
       GoRoute(
         path: '/scan',
-        builder: (_, state) => ScanScreen(swapRentalId: state.uri.queryParameters['swap']),
+        pageBuilder: (c, state) => voltiPage(c, state, ScanScreen(swapRentalId: state.uri.queryParameters['swap']), modal: true),
       ),
-      GoRoute(path: '/plan', builder: (_, state) => PlanScreen(vehicle: state.extra! as Vehicle)),
-      GoRoute(path: '/ride', builder: (_, _) => const RideScreen()),
-      GoRoute(path: '/return/:id', builder: (_, state) => ReturnScreen(rentalId: state.pathParameters['id']!)),
-      GoRoute(path: '/summary/:id', builder: (_, state) => SummaryScreen(rentalId: state.pathParameters['id']!)),
+      GoRoute(path: '/plan', pageBuilder: (c, state) => voltiPage(c, state, PlanScreen(vehicle: state.extra! as Vehicle))),
+      GoRoute(path: '/ride', pageBuilder: (c, state) => voltiPage(c, state, const RideScreen())),
+      GoRoute(path: '/return/:id', pageBuilder: (c, state) => voltiPage(c, state, ReturnScreen(rentalId: state.pathParameters['id']!))),
+      GoRoute(path: '/summary/:id', pageBuilder: (c, state) => voltiPage(c, state, SummaryScreen(rentalId: state.pathParameters['id']!))),
       GoRoute(
         path: '/account',
-        builder: (_, _) => const AccountScreen(),
+        pageBuilder: (c, state) => voltiPage(c, state, const AccountScreen()),
         routes: [
-          GoRoute(path: 'history', builder: (_, _) => const HistoryScreen()),
-          GoRoute(path: 'wallet', builder: (_, _) => const WalletScreen()),
-          GoRoute(path: 'subscriptions', builder: (_, _) => const SubscriptionsScreen()),
-          GoRoute(path: 'support', builder: (_, _) => const SupportScreen()),
-          GoRoute(path: 'support/:id', builder: (_, state) => SupportChatScreen(conversationId: state.pathParameters['id']!)),
-          GoRoute(path: 'help', builder: (_, _) => const HelpScreen()),
-          GoRoute(path: 'privacy', builder: (_, _) => const PrivacyScreen()),
-          GoRoute(path: 'verification', builder: (_, _) => const VerificationStatusScreen()),
-          GoRoute(path: 'claim/:rentalId', builder: (_, state) => ClaimScreen(rentalId: state.pathParameters['rentalId']!)),
+          GoRoute(path: 'history', pageBuilder: (c, state) => voltiPage(c, state, const HistoryScreen())),
+          GoRoute(path: 'wallet', pageBuilder: (c, state) => voltiPage(c, state, const WalletScreen())),
+          GoRoute(path: 'subscriptions', pageBuilder: (c, state) => voltiPage(c, state, const SubscriptionsScreen())),
+          GoRoute(path: 'support', pageBuilder: (c, state) => voltiPage(c, state, const SupportScreen())),
+          GoRoute(path: 'support/:id', pageBuilder: (c, state) => voltiPage(c, state, SupportChatScreen(conversationId: state.pathParameters['id']!))),
+          GoRoute(path: 'help', pageBuilder: (c, state) => voltiPage(c, state, const HelpScreen())),
+          GoRoute(path: 'privacy', pageBuilder: (c, state) => voltiPage(c, state, const PrivacyScreen())),
+          GoRoute(path: 'verification', pageBuilder: (c, state) => voltiPage(c, state, const VerificationStatusScreen())),
+          GoRoute(path: 'claim/:rentalId', pageBuilder: (c, state) => voltiPage(c, state, ClaimScreen(rentalId: state.pathParameters['rentalId']!))),
         ],
       ),
     ],

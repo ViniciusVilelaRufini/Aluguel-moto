@@ -44,6 +44,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   ZoneNotice? _zone;
   bool _fallOpen = false;
   bool _busy = false;
+  bool _markerDropped = false;
 
   RealtimeService? _realtime;
   StreamSubscription<RealtimeEvent>? _events;
@@ -304,6 +305,9 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     final paused = r.status == RentalStatus.paused;
     final center = _vehiclePos ?? _userPos ?? const LatLng(-23.5614, -46.6559);
     final mapOn = ref.watch(mapEnabledProvider);
+    // O mapa e recriado quando a posicao muda: o pin so cai na primeira vez.
+    final firstMarkerDrop = !_markerDropped;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _markerDropped = true);
 
     return Scaffold(
       body: Stack(children: [
@@ -315,17 +319,13 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                   layers: [
                     MarkerLayer(markers: [
                       if (_userPos != null)
-                        Marker(
-                            point: _userPos!,
-                            width: 20,
-                            height: 20,
-                            child: const DecoratedBox(decoration: BoxDecoration(color: VoltiColors.brand, shape: BoxShape.circle))),
+                        Marker(point: _userPos!, width: 34, height: 34, child: const VoltiUserDot(heading: true)),
                       if (_vehiclePos != null)
                         Marker(
                             point: _vehiclePos!,
                             width: 56,
                             height: 64,
-                            child: VehicleMarker(VehicleStatus.rented, _battery, selected: true)),
+                            child: VehicleMarker(VehicleStatus.rented, _battery, selected: true, animateIn: firstMarkerDrop)),
                     ]),
                   ],
                 )
@@ -422,7 +422,10 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                         Text(clock(_elapsed), style: VoltiTypography.timer),
                       ]),
                     ),
-                    Chip(label: Text(paused ? l.pausedBadge : l.liveBadge)),
+                    Chip(
+                      avatar: paused ? null : const _LiveDot(),
+                      label: Text(paused ? l.pausedBadge : l.liveBadge),
+                    ),
                   ]),
                   const SizedBox(height: 12),
                   Container(
@@ -494,5 +497,42 @@ class _RoundIcon extends StatelessWidget {
         height: 56,
         decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
         child: Icon(icon, color: fg, size: 26),
+      );
+}
+
+/// Ponto "ao vivo" que pisca (`vt-live`, 1,4 s). Reduced motion: fixo.
+class _LiveDot extends StatefulWidget {
+  const _LiveDot();
+  @override
+  State<_LiveDot> createState() => _LiveDotState();
+}
+
+class _LiveDotState extends State<_LiveDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
+  bool _init = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_init) return;
+    _init = true;
+    if (!VoltiMotion.reduced(context)) _c.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        key: const Key('live-dot'),
+        opacity: Tween(begin: 1.0, end: .25).chain(CurveTween(curve: VoltiMotion.easeInOut)).animate(_c),
+        child: Container(
+          width: 8,
+          height: 8,
+          decoration: const BoxDecoration(color: VoltiColors.success, shape: BoxShape.circle),
+        ),
       );
 }
