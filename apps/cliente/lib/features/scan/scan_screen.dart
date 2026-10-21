@@ -1,0 +1,142 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:volti_flutter/volti_flutter.dart';
+
+import '../../core/backend.dart';
+import '../../core/errors.dart';
+import '../../core/widgets.dart';
+
+/// Extrai o codigo da moto do conteudo do QR (codigo puro ou URL `.../v/<codigo>`).
+String vehicleCodeFromQr(String raw) {
+  final t = raw.trim();
+  final uri = Uri.tryParse(t);
+  if (uri != null && uri.hasScheme && uri.pathSegments.isNotEmpty) return uri.pathSegments.last;
+  return t;
+}
+
+/// Leitor de QR ou digitacao do numero da moto. Com [swapRentalId], troca a moto do aluguel.
+class ScanScreen extends ConsumerStatefulWidget {
+  const ScanScreen({super.key, this.swapRentalId});
+  final String? swapRentalId;
+  @override
+  ConsumerState<ScanScreen> createState() => _ScanScreenState();
+}
+
+class _ScanScreenState extends ConsumerState<ScanScreen> {
+  final _code = TextEditingController();
+  bool _busy = false;
+  bool _manual = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _code.dispose();
+    super.dispose();
+  }
+
+  Future<void> _resolve(String raw) async {
+    if (_busy || raw.trim().isEmpty) return;
+    final l = context.l;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final backend = ref.read(backendProvider);
+      final vehicle = await backend.vehicleByCode(vehicleCodeFromQr(raw));
+      if (widget.swapRentalId != null) {
+        await backend.swap(widget.swapRentalId!, vehicle.id, 'vehicle_problem');
+        if (mounted) {
+          VoltiToast.show(context, l.swapDone);
+          context.go('/ride');
+        }
+        return;
+      }
+      if (mounted) context.push('/plan', extra: vehicle);
+    } catch (e) {
+      if (mounted) setState(() => _error = failureText(l, e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    return VoltiScaffold(
+      title: widget.swapRentalId != null ? l.swapTitle : l.scanTitle,
+      body: ListView(
+        padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
+        children: [
+          Text(l.scanHint, style: VoltiTypography.body),
+          const SizedBox(height: VoltiSpacing.s16),
+          if (!_manual)
+            ClipRRect(
+              borderRadius: VoltiRadii.rXl,
+              child: SizedBox(
+                height: 320,
+                child: Semantics(
+                  label: l.scanCameraSemantics,
+                  child: MobileScanner(
+                    onDetect: (capture) {
+                      final v = capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
+                      if (v != null) _resolve(v);
+                    },
+                    errorBuilder: (context, error) => Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(l.cameraUnavailable, textAlign: TextAlign.center),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          const SizedBox(height: VoltiSpacing.s16),
+          if (_manual) ...[
+            TextField(
+              key: const Key('vehicle-code'),
+              controller: _code,
+              textCapitalization: TextCapitalization.characters,
+              decoration: InputDecoration(labelText: l.vehicleNumber, prefixIcon: const Icon(LucideIcons.hash)),
+              onSubmitted: _resolve,
+            ),
+            const SizedBox(height: VoltiSpacing.s12),
+            VoltiButton(
+              label: _busy ? l.loading : l.continueLabel,
+              size: VoltiButtonSize.lg,
+              fullWidth: true,
+              onPressed: _busy ? null : () => _resolve(_code.text),
+            ),
+          ] else
+            VoltiButton(
+              label: l.typeNumber,
+              variant: VoltiButtonVariant.secondary,
+              icon: LucideIcons.keyboard,
+              fullWidth: true,
+              onPressed: () => setState(() => _manual = true),
+            ),
+          if (_manual)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: VoltiButton(
+                label: l.useCamera,
+                variant: VoltiButtonVariant.ghost,
+                icon: LucideIcons.scanLine,
+                fullWidth: true,
+                onPressed: () => setState(() => _manual = false),
+              ),
+            ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
+            ),
+        ],
+      ),
+    );
+  }
+}
