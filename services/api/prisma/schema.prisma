@@ -1,0 +1,1061 @@
+// Volti — modelo de dados da API (Task 3).
+// Regra de convivência (spec §6): Tasks 4 e 5 só ACRESCENTAM modelos/migrações; não reescrevem os existentes.
+// Dinheiro em centavos (Int); datas em UTC (timestamptz).
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+  binaryTargets   = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// ───────────── enums compartilhados (interfaces-compartilhadas.md) ─────────────
+
+enum VehicleStatus {
+  free
+  rented
+  reserved
+  paused
+  blocked
+  maintenance
+  offline
+}
+
+enum ZoneType {
+  operation
+  return
+  forbidden
+  reduced_speed
+}
+
+enum StaffGroup {
+  admin
+  operacao
+  financeiro
+  suporte
+  campo
+}
+
+enum RentalStatus {
+  active
+  paused
+  ending
+  ended
+  force_ended
+}
+
+enum CommandType {
+  lock
+  unlock
+  horn
+  speed_limit
+  stolen_mode
+}
+
+enum CommandStatus {
+  pending
+  in_progress
+  confirmed
+  failed
+}
+
+enum PlanCode {
+  minute
+  hour
+  day
+  weekly
+  monthly
+}
+
+enum InsuranceCoverage {
+  basic
+  full
+}
+
+enum KycStatus {
+  not_started
+  pending
+  approved
+  rejected
+}
+
+// ───────────── enums do contrato ─────────────
+
+enum CommandStatusReason {
+  offline
+  timeout
+  did_not_stop
+  invalid_limit
+}
+
+enum ActorType {
+  customer
+  staff
+  system
+}
+
+enum DocumentType {
+  rg
+  cnh
+  rne
+}
+
+enum DevicePlatform {
+  android
+  ios
+  web
+}
+
+enum ReservationStatus {
+  active
+  converted
+  canceled
+  expired
+}
+
+enum DepositMethod {
+  card
+  pix
+}
+
+enum DepositStatus {
+  awaiting_pix
+  held
+  failed
+  captured
+  released
+}
+
+enum RentalEventType {
+  started
+  paused
+  resumed
+  vehicle_swapped
+  zone_entered
+  zone_exited
+  left_operation_area
+  returned_operation_area
+  alert
+  fall_detected
+  ending
+  ended
+  force_ended
+  command
+}
+
+enum PlanUnit {
+  minute
+  hour
+  day
+  week
+  month
+}
+
+enum DiscountType {
+  percent
+  fixed
+}
+
+enum PaymentStatus {
+  pending
+  authorized
+  captured
+  canceled
+  paid
+  refunded
+  partially_refunded
+  failed
+}
+
+enum PaymentKind {
+  rental
+  deposit
+  top_up
+  subscription
+  fee
+}
+
+enum PaymentMethod {
+  card
+  pix
+  wallet
+}
+
+enum TopUpStatus {
+  pending
+  paid
+  failed
+  expired
+}
+
+enum SubscriptionStatus {
+  active
+  past_due
+  canceled
+  expired
+}
+
+enum WalletEntryType {
+  top_up
+  minute_package
+  rental_charge
+  refund
+  adjustment
+  bonus
+}
+
+enum PolicyStatus {
+  active
+  canceled
+  expired
+}
+
+enum AlertType {
+  out_of_operation_area
+  forbidden_zone_entered
+  fall_detected
+  tamper
+  battery_critical
+  movement_without_rental
+  vehicle_offline
+  command_failed
+  customer_not_ok
+  incident_reported
+  speed_limiter_noncompliant
+}
+
+enum AlertPriority {
+  low
+  medium
+  high
+  critical
+}
+
+enum AlertStatus {
+  open
+  assigned
+  resolved
+}
+
+enum IncidentCategory {
+  vehicle_problem
+  accident
+  theft
+  app_problem
+  parking
+  other
+}
+
+enum IncidentStatus {
+  open
+  in_progress
+  resolved
+  closed
+}
+
+enum DisputeStatus {
+  open
+  under_review
+  accepted
+  rejected
+}
+
+enum ClaimType {
+  accident
+  theft
+  damage
+  personal_injury
+}
+
+enum ClaimStatus {
+  submitted
+  under_review
+  approved
+  rejected
+  paid
+}
+
+enum ConversationStatus {
+  open
+  closed
+}
+
+enum MessageAuthorType {
+  customer
+  staff
+  system
+}
+
+enum FieldTaskType {
+  collect
+  battery_swap
+  maintenance
+  reposition
+  inspection
+}
+
+enum FieldTaskStatus {
+  open
+  assigned
+  in_progress
+  done
+  canceled
+}
+
+enum TaskPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum MaintenanceKind {
+  preventive
+  corrective
+}
+
+enum MaintenanceStatus {
+  scheduled
+  in_progress
+  done
+  canceled
+}
+
+enum CustomerStatus {
+  active
+  blocked
+  deleted
+}
+
+// ───────────── pessoas ─────────────
+
+model Customer {
+  id                        String         @id @default(uuid()) @db.Uuid
+  cognitoSub                String         @unique
+  email                     String
+  name                      String?
+  phone                     String?
+  cpf                       String?        @unique
+  birthDate                 DateTime?      @db.Date
+  kycStatus                 KycStatus      @default(not_started)
+  kycReason                 String?
+  kycSubmittedAt            DateTime?
+  kycReviewedAt             DateTime?
+  kycDocumentType           DocumentType?
+  kycDocumentFrontKey       String?
+  kycDocumentBackKey        String?
+  kycSelfieKey              String?
+  status                    CustomerStatus @default(active)
+  delinquent                Boolean        @default(false)
+  blockedReason             String?
+  blockedAt                 DateTime?
+  emergencyContactName      String?
+  emergencyContactPhone     String?
+  termsVersion              String?
+  termsAccepted             Boolean        @default(false)
+  termsAcceptedAt           DateTime?
+  locationConsent           Boolean        @default(false)
+  locationConsentUpdatedAt  DateTime?
+  marketingConsent          Boolean        @default(false)
+  consentsUpdatedAt         DateTime?
+  deletedAt                 DateTime?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
+
+  reservations  Reservation[]
+  rentals       Rental[]
+  payments      Payment[]
+  deposits      Deposit[]
+  cards         PaymentCard[]
+  subscriptions Subscription[]
+  walletEntries WalletEntry[]
+  topUps        TopUp[]
+  policies      InsurancePolicy[]
+  incidents     Incident[]
+  disputes      Dispute[]
+  claims        Claim[]
+  conversations SupportConversation[]
+
+  @@index([kycStatus])
+  @@index([status])
+}
+
+model StaffUser {
+  id          String       @id @default(uuid()) @db.Uuid
+  cognitoSub  String?      @unique
+  email       String       @unique
+  name        String
+  groups      StaffGroup[]
+  active      Boolean      @default(true)
+  mfaEnabled  Boolean      @default(false)
+  lastLoginAt DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}
+
+model Device {
+  id         String         @id @default(uuid()) @db.Uuid
+  fcmToken   String         @unique
+  platform   DevicePlatform
+  appVersion String?
+  ownerType  ActorType
+  ownerId    String         @db.Uuid
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([ownerId])
+}
+
+model RestrictionEntry {
+  id          String   @id @default(uuid()) @db.Uuid
+  cpf         String   @unique
+  reason      String
+  createdById String?  @db.Uuid
+  createdAt   DateTime @default(now())
+}
+
+// ───────────── frota ─────────────
+
+model Vehicle {
+  id                  String         @id @default(uuid()) @db.Uuid
+  code                String         @unique
+  qrCode              String?
+  model               String
+  thingName           String         @unique
+  status              VehicleStatus  @default(free)
+  statusBeforeOffline VehicleStatus?
+  lat                 Float          @default(0)
+  lng                 Float          @default(0)
+  batteryPct          Int            @default(100)
+  speedLimitKmh       Int            @default(32)
+  speedKmh            Float?
+  online              Boolean        @default(true)
+  locked              Boolean        @default(true)
+  ignition            Boolean        @default(false)
+  signal              Int?
+  stolenMode          Boolean        @default(false)
+  firmwareVersion     String?
+  lastSeenAt          DateTime?
+  batterySerial       String?
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  tracker      Tracker?
+  reservations Reservation[]
+  rentals      Rental[]
+  commands     VehicleCommand[]
+  fieldTasks   FieldTask[]
+  maintenance  MaintenanceTask[]
+
+  @@index([status])
+}
+
+model Tracker {
+  id              String   @id @default(uuid()) @db.Uuid
+  vehicleId       String?  @unique @db.Uuid
+  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
+  thingName       String   @unique
+  imei            String?
+  firmwareVersion String?
+  certificateArn  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Battery {
+  id         String   @id @default(uuid()) @db.Uuid
+  serial     String   @unique
+  chargePct  Int      @default(100)
+  vehicleId  String?  @db.Uuid
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+/// Cerca. `geom` (PostGIS) é a fonte para ST_Contains; `geometry` guarda o GeoJSON devolvido pela API.
+model Zone {
+  id            String                                 @id @default(uuid()) @db.Uuid
+  name          String
+  type          ZoneType
+  speedLimitKmh Int?
+  geometry      Json
+  geom          Unsupported("geometry(Polygon,4326)")?
+  active        Boolean                                @default(true)
+  deletedAt     DateTime?
+  createdAt     DateTime                               @default(now())
+  updatedAt     DateTime                               @updatedAt
+
+  @@index([type, active])
+}
+
+model VehicleCommand {
+  id              String               @id @default(uuid()) @db.Uuid
+  vehicleId       String               @db.Uuid
+  vehicle         Vehicle              @relation(fields: [vehicleId], references: [id])
+  type            CommandType
+  status          CommandStatus        @default(pending)
+  statusReason    CommandStatusReason?
+  reason          String
+  requestedById   String?              @db.Uuid
+  requestedByType ActorType            @default(staff)
+  requestedByName String?
+  /// { speedLimitKmh?, on?, rentalId?, fieldTaskId?, purpose? }
+  payload         Json                 @default("{}")
+  confirmedAt     DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([vehicleId, createdAt])
+  @@index([status])
+}
+
+/// Ponto de trajeto (LGPD): só durante aluguel; expira em 90 dias.
+model TrackPoint {
+  id         String   @id @default(uuid()) @db.Uuid
+  rentalId   String?  @db.Uuid
+  vehicleId  String   @db.Uuid
+  lat        Float
+  lng        Float
+  speedKmh   Float    @default(0)
+  recordedAt DateTime
+  expiresAt  DateTime
+
+  @@index([expiresAt])
+  @@index([rentalId, recordedAt])
+  @@index([vehicleId, recordedAt])
+}
+
+// ───────────── preços ─────────────
+
+model PricingPlan {
+  id                  String   @id @default(uuid()) @db.Uuid
+  code                PlanCode
+  name                String
+  description         String?
+  unit                PlanUnit
+  unlockFeeCents      Int      @default(0)
+  unitPriceCents      Int
+  pausePerMinuteCents Int      @default(0)
+  recurring           Boolean  @default(false)
+  active              Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([code, active])
+}
+
+model Coupon {
+  id                        String       @id @default(uuid()) @db.Uuid
+  code                      String       @unique
+  description               String?
+  discountType              DiscountType
+  percentOff                Int?
+  amountOffCents            Int?
+  planCodes                 PlanCode[]
+  validFrom                 DateTime?
+  validUntil                DateTime?
+  maxRedemptions            Int?
+  maxRedemptionsPerCustomer Int?
+  redemptions               Int          @default(0)
+  active                    Boolean      @default(true)
+  createdAt                 DateTime     @default(now())
+  updatedAt                 DateTime     @updatedAt
+
+  redemptionsLog CouponRedemption[]
+}
+
+model CouponRedemption {
+  id         String   @id @default(uuid()) @db.Uuid
+  couponId   String   @db.Uuid
+  coupon     Coupon   @relation(fields: [couponId], references: [id])
+  customerId String   @db.Uuid
+  rentalId   String   @unique @db.Uuid
+  createdAt  DateTime @default(now())
+
+  @@index([couponId, customerId])
+}
+
+model Fee {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  amountCents Int
+  active      Boolean  @default(true)
+  system      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ───────────── reserva e aluguel ─────────────
+
+model Reservation {
+  id         String            @id @default(uuid()) @db.Uuid
+  customerId String            @db.Uuid
+  customer   Customer          @relation(fields: [customerId], references: [id])
+  vehicleId  String            @db.Uuid
+  vehicle    Vehicle           @relation(fields: [vehicleId], references: [id])
+  status     ReservationStatus @default(active)
+  depositId  String?           @db.Uuid
+  expiresAt  DateTime
+  endedAt    DateTime?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([customerId, status])
+  @@index([vehicleId, status])
+  @@index([status, expiresAt])
+}
+
+model Rental {
+  id                     String            @id @default(uuid()) @db.Uuid
+  customerId             String            @db.Uuid
+  customer               Customer          @relation(fields: [customerId], references: [id])
+  vehicleId              String            @db.Uuid
+  vehicle                Vehicle           @relation(fields: [vehicleId], references: [id])
+  planCode               PlanCode
+  coverage               InsuranceCoverage
+  status                 RentalStatus      @default(active)
+  startedAt              DateTime          @default(now())
+  pausedAt               DateTime?
+  pausedSecondsAcc       Int               @default(0)
+  endRequestedAt         DateTime?
+  endLastAttemptAt       DateTime?
+  endAttempts            Int               @default(0)
+  endedAt                DateTime?
+  /// Preço congelado no início: { unit, unlockFeeCents, unitPriceCents, pausePerMinuteCents, insurancePremiumCents, subscriptionCovered, coupon? }
+  priceSnapshot          Json
+  costCents              Int               @default(0)
+  breakdown              Json?
+  couponCode             String?
+  depositId              String            @db.Uuid
+  insurancePolicyId      String?           @db.Uuid
+  paymentId              String?           @db.Uuid
+  endZoneId              String?           @db.Uuid
+  returnPhotoUploadKey   String?
+  returnPhotoObjectKey   String?
+  forceEndReason         String?
+  forcedEndById          String?           @db.Uuid
+  rating                 Int?
+  ratingComment          String?
+  speedLimitKmh          Int?
+  startLat               Float?
+  startLng               Float?
+  wellbeingCheckDueAt    DateTime?
+  createdAt              DateTime          @default(now())
+  updatedAt              DateTime          @updatedAt
+
+  events RentalEvent[]
+
+  @@index([customerId, startedAt])
+  @@index([vehicleId, startedAt])
+  @@index([status])
+}
+
+model RentalEvent {
+  id        String          @id @default(uuid()) @db.Uuid
+  rentalId  String          @db.Uuid
+  rental    Rental          @relation(fields: [rentalId], references: [id])
+  type      RentalEventType
+  at        DateTime        @default(now())
+  actorType ActorType
+  actorId   String?         @db.Uuid
+  message   String?
+  data      Json?
+
+  @@index([rentalId, at])
+}
+
+model LocationShare {
+  id        String   @id @default(uuid()) @db.Uuid
+  rentalId  String   @db.Uuid
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+// ───────────── pagamentos (Task 5 implementa a lógica real) ─────────────
+
+model PaymentCard {
+  id              String   @id @default(uuid()) @db.Uuid
+  customerId      String   @db.Uuid
+  customer        Customer @relation(fields: [customerId], references: [id])
+  providerCardId  String
+  brand           String
+  last4           String
+  expMonth        Int
+  expYear         Int
+  isDefault       Boolean  @default(false)
+  deletedAt       DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([customerId])
+}
+
+model Deposit {
+  id                String        @id @default(uuid()) @db.Uuid
+  rentalId          String?       @db.Uuid
+  customerId        String        @db.Uuid
+  customer          Customer      @relation(fields: [customerId], references: [id])
+  method            DepositMethod
+  status            DepositStatus
+  amountCents       Int
+  capturedCents     Int?
+  cardId            String?       @db.Uuid
+  idempotencyKey    String?       @unique
+  providerReference String?
+  /// PixCharge { chargeId, qrCodeBase64, copyPaste, expiresAt }
+  pix               Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([customerId, status])
+}
+
+model Payment {
+  id                String        @id @default(uuid()) @db.Uuid
+  customerId        String        @db.Uuid
+  customer          Customer      @relation(fields: [customerId], references: [id])
+  rentalId          String?       @db.Uuid
+  depositId         String?       @db.Uuid
+  subscriptionId    String?       @db.Uuid
+  kind              PaymentKind
+  method            PaymentMethod
+  status            PaymentStatus
+  amountCents       Int
+  refundedCents     Int           @default(0)
+  cardLast4         String?
+  failureReason     String?
+  providerPaymentId String?
+  receiptUrl        String?
+  idempotencyKey    String?       @unique
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([customerId, createdAt])
+  @@index([rentalId])
+  @@index([status])
+}
+
+model Subscription {
+  id                 String             @id @default(uuid()) @db.Uuid
+  customerId         String             @db.Uuid
+  customer           Customer           @relation(fields: [customerId], references: [id])
+  planCode           PlanCode
+  status             SubscriptionStatus
+  cardId             String?            @db.Uuid
+  priceCents         Int
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  canceledAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([customerId, status])
+}
+
+model MinutePackage {
+  id         String   @id @default(uuid()) @db.Uuid
+  name       String
+  minutes    Int
+  priceCents Int
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model TopUp {
+  id          String      @id @default(uuid()) @db.Uuid
+  customerId  String      @db.Uuid
+  customer    Customer    @relation(fields: [customerId], references: [id])
+  status      TopUpStatus
+  method      DepositMethod
+  amountCents Int
+  packageId   String?     @db.Uuid
+  minutes     Int?
+  pix         Json?
+  paymentId   String?     @db.Uuid
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+}
+
+/// Ledger somente inserção: o saldo é sempre a soma.
+model WalletEntry {
+  id                String          @id @default(uuid()) @db.Uuid
+  customerId        String          @db.Uuid
+  customer          Customer        @relation(fields: [customerId], references: [id])
+  type              WalletEntryType
+  amountCents       Int
+  minutes           Int?
+  balanceAfterCents Int
+  description       String
+  rentalId          String?         @db.Uuid
+  paymentId         String?         @db.Uuid
+  createdById       String?         @db.Uuid
+  createdAt         DateTime        @default(now())
+
+  @@index([customerId, createdAt])
+}
+
+// ───────────── seguro (Task 5 implementa a lógica real) ─────────────
+
+model InsuranceCoverageConfig {
+  coverage     InsuranceCoverage @id
+  name         String
+  description  String
+  premiumCents Int
+  mandatory    Boolean           @default(false)
+  /// CoverageItem[]
+  items        Json              @default("[]")
+  active       Boolean           @default(true)
+  updatedAt    DateTime          @updatedAt
+}
+
+model InsurancePolicy {
+  id               String            @id @default(uuid()) @db.Uuid
+  rentalId         String            @db.Uuid
+  customerId       String            @db.Uuid
+  customer         Customer          @relation(fields: [customerId], references: [id])
+  coverage         InsuranceCoverage
+  premiumCents     Int
+  payoutCents      Int?
+  status           PolicyStatus      @default(active)
+  providerPolicyId String?
+  issuedAt         DateTime          @default(now())
+  canceledAt       DateTime?
+
+  @@index([customerId])
+  @@index([rentalId])
+}
+
+// ───────────── operação ─────────────
+
+model Alert {
+  id         String        @id @default(uuid()) @db.Uuid
+  type       AlertType
+  priority   AlertPriority
+  status     AlertStatus   @default(open)
+  vehicleId  String?       @db.Uuid
+  rentalId   String?       @db.Uuid
+  message    String
+  lat        Float?
+  lng        Float?
+  assigneeId String?       @db.Uuid
+  resolution String?
+  createdAt  DateTime      @default(now())
+  assignedAt DateTime?
+  resolvedAt DateTime?
+
+  @@index([status, priority, createdAt])
+  @@index([vehicleId])
+}
+
+model AuditLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  actorType  ActorType
+  actorId    String?   @db.Uuid
+  actorName  String?
+  action     String
+  entityType String
+  entityId   String
+  reason     String?
+  metadata   Json?
+  createdAt  DateTime  @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model Incident {
+  id              String           @id @default(uuid()) @db.Uuid
+  customerId      String?          @db.Uuid
+  customer        Customer?        @relation(fields: [customerId], references: [id])
+  rentalId        String?          @db.Uuid
+  vehicleId       String?          @db.Uuid
+  category        IncidentCategory
+  status          IncidentStatus   @default(open)
+  description     String
+  photoObjectKeys String[]
+  lat             Float?
+  lng             Float?
+  resolutionNote  String?
+  createdById     String?          @db.Uuid
+  createdByType   ActorType
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([customerId])
+}
+
+model Dispute {
+  id                String        @id @default(uuid()) @db.Uuid
+  customerId        String        @db.Uuid
+  customer          Customer      @relation(fields: [customerId], references: [id])
+  rentalId          String        @db.Uuid
+  paymentId         String?       @db.Uuid
+  status            DisputeStatus @default(open)
+  reason            String
+  description       String?
+  resolution        String?
+  refundAmountCents Int?
+  resolvedById      String?       @db.Uuid
+  resolvedAt        DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([customerId])
+  @@index([rentalId, status])
+}
+
+model Claim {
+  id                String      @id @default(uuid()) @db.Uuid
+  customerId        String      @db.Uuid
+  customer          Customer    @relation(fields: [customerId], references: [id])
+  rentalId          String      @db.Uuid
+  incidentId        String?     @db.Uuid
+  insurancePolicyId String?     @db.Uuid
+  providerClaimId   String?
+  type              ClaimType
+  status            ClaimStatus @default(submitted)
+  description       String
+  occurredAt        DateTime
+  lat               Float?
+  lng               Float?
+  photoObjectKeys   String[]
+  statusNote        String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([customerId])
+}
+
+model SupportConversation {
+  id              String             @id @default(uuid()) @db.Uuid
+  customerId      String             @db.Uuid
+  customer        Customer           @relation(fields: [customerId], references: [id])
+  rentalId        String?            @db.Uuid
+  subject         String
+  status          ConversationStatus @default(open)
+  lastMessageAt   DateTime           @default(now())
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  messages SupportMessage[]
+
+  @@index([customerId])
+}
+
+model SupportMessage {
+  id                   String              @id @default(uuid()) @db.Uuid
+  conversationId       String              @db.Uuid
+  conversation         SupportConversation @relation(fields: [conversationId], references: [id])
+  authorType           MessageAuthorType
+  authorId             String?             @db.Uuid
+  authorName           String?
+  body                 String
+  attachmentObjectKeys String[]
+  createdAt            DateTime            @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+model MaintenanceTask {
+  id           String            @id @default(uuid()) @db.Uuid
+  vehicleId    String            @db.Uuid
+  vehicle      Vehicle           @relation(fields: [vehicleId], references: [id])
+  kind         MaintenanceKind
+  title        String
+  description  String?
+  status       MaintenanceStatus @default(scheduled)
+  scheduledFor DateTime?
+  completedAt  DateTime?
+  notes        String?
+  createdById  String?           @db.Uuid
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@index([vehicleId])
+  @@index([status])
+}
+
+model FieldTask {
+  id                String          @id @default(uuid()) @db.Uuid
+  type              FieldTaskType
+  status            FieldTaskStatus @default(open)
+  priority          TaskPriority
+  vehicleId         String          @db.Uuid
+  vehicle           Vehicle         @relation(fields: [vehicleId], references: [id])
+  targetLat         Float?
+  targetLng         Float?
+  assigneeId        String?         @db.Uuid
+  notes             String?
+  dueAt             DateTime?
+  maintenanceTaskId String?         @db.Uuid
+  createdById       String?         @db.Uuid
+  completionNotes   String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  inspections   Inspection[]
+  batterySwaps  BatterySwap[]
+
+  @@index([status, priority])
+  @@index([assigneeId])
+}
+
+model Inspection {
+  id                String    @id @default(uuid()) @db.Uuid
+  fieldTaskId       String    @db.Uuid
+  fieldTask         FieldTask @relation(fields: [fieldTaskId], references: [id])
+  vehicleId         String    @db.Uuid
+  inspectorId       String    @db.Uuid
+  /// { brakes, tires, lights, bell, speedLimiter }
+  checklist         Json
+  photoObjectKeys   String[]
+  notes             String?
+  passed            Boolean
+  maintenanceTaskId String?   @db.Uuid
+  alertId           String?   @db.Uuid
+  idempotencyKey    String?   @unique
+  recordedAt        DateTime
+  createdAt         DateTime  @default(now())
+}
+
+model BatterySwap {
+  id                     String    @id @default(uuid()) @db.Uuid
+  fieldTaskId            String    @db.Uuid
+  fieldTask              FieldTask @relation(fields: [fieldTaskId], references: [id])
+  vehicleId              String    @db.Uuid
+  operatorId             String    @db.Uuid
+  removedBatterySerial   String
+  installedBatterySerial String
+  installedBatteryPct    Int?
+  idempotencyKey         String?   @unique
+  recordedAt             DateTime
+  createdAt              DateTime  @default(now())
+}
+
+// ───────────── transversal ─────────────
+
+model IdempotencyRecord {
+  id          String   @id @default(uuid()) @db.Uuid
+  scope       String
+  key         String
+  requestHash String
+  statusCode  Int?
+  response    Json?
+  completed   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime
+
+  @@unique([scope, key])
+  @@index([expiresAt])
+}
