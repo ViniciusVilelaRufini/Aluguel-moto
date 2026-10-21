@@ -61,6 +61,17 @@ describe('LgpdService', () => {
     expect(Object.keys(out).sort()).toEqual(['claims', 'consents', 'customer', 'disputes', 'generatedAt', 'incidents', 'payments', 'rentals', 'tracks', 'walletEntries']);
   });
 
+  it('QA-07: DELETE /lgpd/account invalida o cache de identidades (o token antigo não vale mais sobre o cadastro anonimizado)', async () => {
+    const prisma = mockDeep<PrismaClient>();
+    (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
+    prisma.customer.findUnique.mockResolvedValue(me as any);
+    prisma.rental.findMany.mockResolvedValue([]);
+    const resolver = { invalidate: jest.fn() };
+    const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
+    await new LgpdService(prisma as any, storage, loadConfig(), resolver as any).deleteAccount(ME);
+    expect(resolver.invalidate).toHaveBeenCalled();
+  });
+
   it('DELETE /lgpd/account anonimiza nome, CPF, e-mail e telefone e mantém os pagamentos', async () => {
     const { service, prisma, storage } = setup();
     prisma.rental.findMany.mockResolvedValue([{ id: 'r1' }, { id: 'r2' }] as any);
