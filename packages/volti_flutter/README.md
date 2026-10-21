@@ -30,7 +30,7 @@ MaterialApp(theme: VoltiTheme.light(), darkTheme: VoltiTheme.dark(), ...);
 | `VoltiTypography` | `display`, `title`, `heading`, `bodyStrong`, `body`, `label`, `caption`, `overline`, `timer` (JetBrains Mono) |
 | `VoltiTheme` | `light()` e `dark()` (Material 3; escuro usa superfícies ink e mantém o verde) |
 
-Fontes TTF estáticas (Plus Jakarta Sans 400-800, JetBrains Mono 500/700, OFL) vão em `fonts/` e já estão declaradas no `pubspec.yaml`.
+Fontes TTF estáticas (Plus Jakarta Sans 400-800, JetBrains Mono 500/700, OFL) vão em `fonts/` e já estão declaradas no `pubspec.yaml` do pacote. As famílias são referenciadas como `packages/volti_flutter/Plus Jakarta Sans` e `packages/volti_flutter/JetBrains Mono` (`VoltiTypography.fontSans/fontMono`): **os apps não devem redeclarar as fontes** nem usar o nome sem prefixo.
 
 ## Widgets
 
