@@ -7,6 +7,21 @@ import { Construct } from 'constructs';
 import { EnvConfig } from '../config';
 import { publishParam } from '../ssm';
 
+/**
+ * Viewer-request: o export estático do Next (trailingSlash) gera `rota/index.html`; o S3 não resolve diretórios,
+ * então URIs sem extensão viram `<uri>/index.html` (e `/` vira `/index.html`). Arquivos com extensão passam direto.
+ */
+export const SPA_REWRITE_FUNCTION_CODE = `function handler(event) {
+  var request = event.request;
+  var uri = request.uri;
+  if (uri.charAt(uri.length - 1) === '/') {
+    request.uri = uri + 'index.html';
+  } else if (uri.split('/').pop().indexOf('.') === -1) {
+    request.uri = uri + '/index.html';
+  }
+  return request;
+}`;
+
 export interface AdminWebStackProps extends StackProps {
   cfg: EnvConfig;
   webAclArn: string;
@@ -31,6 +46,12 @@ export class AdminWebStack extends Stack {
       removalPolicy: RemovalPolicy.RETAIN,
     });
 
+    const rewrite = new cloudfront.Function(this, 'RewriteToIndexHtml', {
+      comment: 'Reescreve rotas do export estatico para <rota>/index.html',
+      code: cloudfront.FunctionCode.fromInline(SPA_REWRITE_FUNCTION_CODE),
+      runtime: cloudfront.FunctionRuntime.JS_2_0,
+    });
+
     const custom = props.adminDomainName && props.adminCertificateArn;
 
     // Origin Access Control (not the legacy OAI): the bucket policy only trusts this distribution.
@@ -46,11 +67,12 @@ export class AdminWebStack extends Stack {
         origin: origins.S3BucketOrigin.withOriginAccessControl(this.bucket),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        functionAssociations: [{ function: rewrite, eventType: cloudfront.FunctionEventType.VIEWER_REQUEST }],
       },
-      // SPA routing.
+      // Rota inexistente: o bucket privado devolve 403 (sem ListBucket) ou 404; ambos mostram a página 404 do Next.
       errorResponses: [
-        { httpStatus: 403, responseHttpStatus: 200, responsePagePath: '/index.html' },
-        { httpStatus: 404, responseHttpStatus: 200, responsePagePath: '/index.html' },
+        { httpStatus: 403, responseHttpStatus: 404, responsePagePath: '/404.html' },
+        { httpStatus: 404, responseHttpStatus: 404, responsePagePath: '/404.html' },
       ],
     });
 

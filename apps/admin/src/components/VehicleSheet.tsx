@@ -9,6 +9,7 @@ import { can, rentalHref } from '@/lib/permissions';
 import { useRealtime, useRealtimeEvent } from '@/lib/realtime';
 import { commandStateLabel, commandStateTone } from '@/lib/status';
 import { formatDateTime, timeAgo } from '@/lib/format';
+import { assertSpeedLimit } from '@/lib/speed-limit';
 import { MAX_SPEED_KMH, type CommandStatus, type CommandStatusReason, type CommandType, type S } from '@/lib/types';
 import { BatteryPill } from '@/ds/BatteryPill';
 import { Badge } from '@/ds/Badge';
@@ -73,6 +74,8 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
 
   const moving = (v.speedKmh ?? 0) >= 3;
   const send = async (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => {
+    // Última barreira: nenhum chamador envia limite fora de 0..32 km/h.
+    if (type === 'speed_limit') assertSpeedLimit(extra.speedLimitKmh);
     const cmd = await unwrap(api.POST('/vehicles/{id}/commands', { params: { path: { id: vehicleId } }, body: { type, reason, ...extra } }));
     setActive({ id: cmd.id, type, status: cmd.status, reason: cmd.statusReason });
     toast(SENT_LABEL[type]);
@@ -187,10 +190,8 @@ function CommandDialog({ type, vehicle, moving, onClose, onSend }: {
       onConfirm={async (reason) => {
         const extra: { speedLimitKmh?: number; on?: boolean } = {};
         if (type === 'speed_limit') {
-          const n = Number(limit);
-          if (limit.trim() === '' || Number.isNaN(n)) { const m = 'Informe o limite de velocidade'; setLimitError(m); throw new Error(m); }
-          if (n > MAX_SPEED_KMH) { const m = `Máximo de ${MAX_SPEED_KMH} km/h`; setLimitError(m); throw new Error(m); }
-          if (n < 0) { const m = 'O limite não pode ser negativo'; setLimitError(m); throw new Error(m); }
+          const n = limit.trim() === '' ? undefined : Number(limit);
+          try { assertSpeedLimit(n); } catch (e) { setLimitError((e as Error).message); throw e; }
           extra.speedLimitKmh = n;
         }
         if (type === 'stolen_mode') extra.on = on === 'on';

@@ -4,13 +4,12 @@ import { useEffect, useRef } from 'react';
 import type { Map as MlMap, StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 
-export const SP_CENTER: [number, number] = [-46.656, -23.5614];
+export const SP_CENTER: [number, number] = [-46.675, -23.563];
 
 /** Tiles OSM com o filtro do design system (saturate .55, brightness 1.06, contrast .92) aplicado só no raster. */
 export function baseStyle(): StyleSpecification {
   return {
     version: 8,
-    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
     sources: {
       osm: {
         type: 'raster',
@@ -22,7 +21,7 @@ export function baseStyle(): StyleSpecification {
     },
     layers: [
       { id: 'bg', type: 'background', paint: { 'background-color': '#F2F3F0' } },
-      { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.45, 'raster-contrast': -0.08, 'raster-brightness-max': 1 } },
+      { id: 'osm', type: 'raster', source: 'osm', paint: { 'raster-saturation': -0.5, 'raster-contrast': -0.1, 'raster-brightness-min': 0.05, 'raster-brightness-max': 1 } },
     ],
   };
 }
@@ -34,7 +33,7 @@ declare global {
   }
 }
 
-export function MapView({ onReady, onDestroy, center = SP_CENTER, zoom = 12, className }: {
+export function MapView({ onReady, onDestroy, center = SP_CENTER, zoom = 13.5, className }: {
   onReady: (map: MlMap) => void;
   onDestroy?: () => void;
   center?: [number, number];

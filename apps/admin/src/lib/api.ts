@@ -22,7 +22,7 @@ const auth: Middleware = {
   onResponse({ response }) {
     if (response.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
       setToken(null);
-      window.location.assign('/login');
+      window.location.assign('/login/');
     }
     return response;
   },
@@ -74,7 +74,7 @@ export async function downloadCsv(path: string, query: Record<string, string>, f
   a.href = url;
   a.download = filename;
   a.click();
-  URL.revokeObjectURL(url);
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
 export function errorText(e: unknown): string {

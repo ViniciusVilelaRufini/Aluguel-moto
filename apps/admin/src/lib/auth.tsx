@@ -65,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setTokenState(null);
     setMe(null);
     if (AUTH_MODE === 'cognito') window.location.assign(cognitoLogoutUrl());
-    else window.location.assign('/login');
+    else window.location.assign('/login/');
   }, []);
 
   const value = useMemo<AuthState>(

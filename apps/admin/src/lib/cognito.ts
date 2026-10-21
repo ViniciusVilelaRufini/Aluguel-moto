@@ -57,6 +57,6 @@ export async function exchangeCode(code: string): Promise<string> {
 
 export function cognitoLogoutUrl(): string {
   const url = new URL(`https://${COGNITO.domain}/logout`);
-  url.search = new URLSearchParams({ client_id: COGNITO.clientId, logout_uri: window.location.origin + '/login' }).toString();
+  url.search = new URLSearchParams({ client_id: COGNITO.clientId, logout_uri: window.location.origin + '/login/' }).toString();
   return url.toString();
 }

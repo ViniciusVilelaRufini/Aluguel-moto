@@ -55,8 +55,7 @@ export default function FleetPage() {
   const onReady = useCallback((map: MlMap) => {
     mapRef.current = map;
     map.addSource(FLEET_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, cluster: true, clusterRadius: 44, clusterMaxZoom: 14 });
-    map.addLayer({ id: 'clusters', type: 'circle', source: FLEET_SRC, filter: ['has', 'point_count'], paint: { 'circle-color': '#15181A', 'circle-radius': ['step', ['get', 'point_count'], 16, 10, 20, 50, 26], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-    map.addLayer({ id: 'cluster-count', type: 'symbol', source: FLEET_SRC, filter: ['has', 'point_count'], layout: { 'text-field': ['get', 'point_count_abbreviated'], 'text-size': 12, 'text-font': ['Open Sans Regular'] }, paint: { 'text-color': '#fff' } });
+    map.addLayer({ id: 'clusters', type: 'circle', source: FLEET_SRC, filter: ['has', 'point_count'], paint: { 'circle-color': '#15181A', 'circle-radius': ['step', ['get', 'point_count'], 12, 5, 16, 15, 20, 40, 26], 'circle-opacity': 0.85, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
     map.addLayer({ id: 'vehicles', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': colorExpr, 'circle-radius': 8, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
     map.addLayer({ id: 'vehicle-selected', type: 'circle', source: FLEET_SRC, filter: ['==', ['get', 'id'], ''], paint: { 'circle-color': colorExpr, 'circle-radius': 12, 'circle-stroke-color': '#15181A', 'circle-stroke-width': 3 } });
     map.on('click', 'vehicles', (e) => { const id = e.features?.[0]?.properties?.id as string | undefined; if (id) select(id); });
@@ -83,6 +82,17 @@ export default function FleetPage() {
       features: shown.map((v) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [v.lng, v.lat] }, properties: { id: v.id, code: v.code, status: v.status } })),
     });
   }, [shown, mapReady]);
+
+  // Enquadra a frota uma vez, quando os dados chegam (sem moto selecionada).
+  const fitted = useRef(false);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || fitted.current || vehicles.length === 0 || selectedRef.current) return;
+    fitted.current = true;
+    const lngs = vehicles.map((v) => v.lng);
+    const lats = vehicles.map((v) => v.lat);
+    map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 15, duration: 0 });
+  }, [vehicles, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;

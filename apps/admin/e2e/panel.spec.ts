@@ -13,6 +13,16 @@ test.describe('painel', () => {
     await expect(page.getByTestId('fleet-badge')).toContainText(/\d+ motos · \d+ sem sinal/);
   });
 
+  test('a frota aparece no mapa (marcadores ou clusters renderizados)', async ({ page }) => {
+    await login(page, 'admin');
+    await page.goto('/fleet');
+    await expect.poll(async () => page.evaluate(() => {
+      const map = window.__voltiMap;
+      if (!map || !map.getLayer('vehicles')) return 0;
+      return map.queryRenderedFeatures({ layers: ['vehicles', 'clusters'] }).length;
+    }), { timeout: 30_000 }).toBeGreaterThan(0);
+  });
+
   test('financeiro vê financeiro e preços, sem frota nem comandos', async ({ page }) => {
     await login(page, 'financeiro');
     await expect(page).toHaveURL(/\/finance/);

@@ -6,6 +6,7 @@ import { io, type Socket } from 'socket.io-client';
 import { api, unwrap } from './api';
 import { API_BASE_URL } from './config';
 import { useAuth } from './auth';
+import { getToken } from './token-store';
 import type { RealtimeEvents, S } from './types';
 
 type Handler<K extends keyof RealtimeEvents> = (payload: RealtimeEvents[K]) => void;
@@ -77,7 +78,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!token || !canFleet) return;
-    const socket: Socket = io(`${API_BASE_URL}/realtime`, { auth: { token }, transports: ['websocket'] });
+    const socket: Socket = io(`${API_BASE_URL}/realtime`, { auth: (cb) => cb({ token: getToken() ?? token }), transports: ['websocket'] });
     const emit = (event: string, payload: unknown) => handlers.current.get(event)?.forEach((h) => (h as (p: unknown) => void)(payload));
     socket.on('connect', () => {
       setConnected(true);
