@@ -1,0 +1,5 @@
+packages:
+  - infra
+  - services/*
+  - apps/admin
+  - packages/contracts

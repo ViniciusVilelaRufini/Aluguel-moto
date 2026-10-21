@@ -1,0 +1,32 @@
+name: volti
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_USER: volti
+      POSTGRES_PASSWORD: volti
+      POSTGRES_DB: volti
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U volti"]
+      interval: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports: ["1883:1883"]
+    volumes: ["./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"]
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: volti
+      MINIO_ROOT_PASSWORD: volti-dev-secret
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [miniodata:/data]
+volumes:
+  pgdata:
+  miniodata:

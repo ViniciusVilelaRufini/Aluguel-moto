@@ -17,3 +17,5 @@ cdk.out/
 *.docx
 !docs/**/*.docx
 .DS_Store
+.superpowers/
+.worktrees/
