@@ -1,0 +1,19 @@
+<!-- @dsCard group="Components" viewport="700x300" name="Core" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:20px;background:#fff;font-family:var(--font-sans)}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const R=({children,g=10,style})=><div style={{display:'flex',gap:g,flexWrap:'wrap',alignItems:'center',...style}}>{children}</div>;
+const {Button,IconButton,Badge,Chip,Card,Icon}=window.VoltiDesignSystem_09a717;
+ReactDOM.createRoot(root).render(<div style={{display:'flex',flexDirection:'column',gap:14}}>
+<R><Button icon="ScanQrCode">Escanear QR</Button><Button variant="secondary" icon="Bookmark">Reservar</Button><Button variant="dark">Encerrar</Button><Button variant="danger">Cancelar</Button><Button variant="ghost">Agora não</Button></R>
+<R><Button size="sm">Pequeno</Button><Button size="lg" icon="ScanQrCode">Escanear para andar</Button><Button disabled>Desativado</Button></R>
+<R><IconButton icon="Bell" dot label="n"/><IconButton icon="LocateFixed" iconColor="var(--brand)" label="l"/><IconButton icon="X" variant="soft" size={36} label="x"/><IconButton icon="Flashlight" variant="dark" label="f"/><IconButton icon="ArrowRight" variant="brand" label="a"/>
+<span style={{width:12}}/><Chip icon="BellRing">Tocar</Chip><Chip icon="Navigation">Navegar</Chip><Chip icon="CircleAlert">Reportar</Chip><Chip selected>≥ 50%</Chip></R>
+<R><Badge>Grátis na 1ª corrida</Badge><Badge tone="info">R$ 0,79/min + taxa</Badge><Badge tone="warning">Bateria baixa</Badge><Badge tone="danger" icon="CircleAlert">Fora da área</Badge><Badge tone="neutral" size="sm">VT-4821</Badge><Badge tone="dark" size="sm">Novo</Badge></R>
+</div>);
+</script></body></html>

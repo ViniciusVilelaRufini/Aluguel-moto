@@ -1,0 +1,17 @@
+<!-- @dsCard group="Components" viewport="700x400" name="Data" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:20px;background:var(--ink-50);font-family:var(--font-sans)}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const {FleetStatus,StatTile,DataTable}=window.VoltiDesignSystem_09a717;
+const rows=[{id:'VT-4821',st:'rented',bat:'84%',sig:'4G · forte',last:'agora'},{id:'VT-1077',st:'blocked',bat:'52%',sig:'4G · fraco',last:'2 min'},{id:'VT-3310',st:'offline',bat:'—',sig:'sem sinal',last:'38 min'}];
+ReactDOM.createRoot(root).render(<div style={{display:'flex',flexDirection:'column',gap:14}}>
+<div style={{display:'flex',gap:6,flexWrap:'wrap'}}>{['free','rented','reserved','paused','blocked','maintenance','offline'].map((s,i)=><FleetStatus key={s} status={s} count={[64,42,8,5,3,6,2][i]} selected={i===1}/>)}</div>
+<div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10}}><StatTile icon="Gauge" label="Taxa de ocupação" value="68%" delta="+4,2% vs. semana"/><StatTile icon="Wallet" label="Receita/moto/dia" value="R$ 74,10" delta="+R$ 3,20"/><StatTile icon="Clock" label="Tempo médio" value="18 min" delta="−1,4 min" trend="down"/></div>
+<DataTable dense columns={[{key:'id',label:'Moto',mono:true},{key:'st',label:'Status',render:r=><FleetStatus status={r.st} variant="dot"/>},{key:'bat',label:'Bateria',align:'right'},{key:'sig',label:'Sinal'},{key:'last',label:'Último sinal',align:'right'}]} rows={rows} selectedKey="VT-4821"/>
+</div>);
+</script></body></html>

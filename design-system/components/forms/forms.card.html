@@ -1,0 +1,17 @@
+<!-- @dsCard group="Components" viewport="700x420" name="Forms" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:20px;background:#fff;font-family:var(--font-sans)}</style></head><body><div id="root"></div>
+<script type="text/babel">
+const R=({children,g=10,style})=><div style={{display:'flex',gap:g,flexWrap:'wrap',alignItems:'center',...style}}>{children}</div>;
+const {Input,Switch,Checkbox,SegmentedControl,OptionCard,OtpInput}=window.VoltiDesignSystem_09a717;
+function D(){const [t,setT]=React.useState('Por minuto');const [o,setO]=React.useState('min');const [c,setC]=React.useState('482');return <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16}}>
+<Input label="CPF" placeholder="000.000.000-00" icon="IdCard"/><Input label="Cupom" defaultValue="PASSE1" error="Cupom inválido ou expirado" icon="Ticket"/>
+<div style={{display:'flex',flexDirection:'column',gap:12}}><Switch defaultChecked label="Avisos de reserva"/><Switch label="Modo econômico"/></div>
+<div style={{display:'flex',flexDirection:'column',gap:12}}><Checkbox defaultChecked label="Tenho 18 anos ou mais"/><SegmentedControl options={['Por minuto','Passes','Planos']} value={t} onChange={setT}/></div><div style={{display:'flex',flexDirection:'column',gap:8}}><OptionCard title="Por minuto" description="Trajetos curtos" price="R$ 0,79" priceNote="/min" selected={o==='min'} onClick={()=>setO('min')}/><OptionCard title="Seguro básico" badge="Obrigatório" price="R$ 1,50" selected={o==='seg'} onClick={()=>setO('seg')}/></div><OtpInput value={c} onChange={setC}/></div>}
+ReactDOM.createRoot(root).render(<D/>);
+</script></body></html>

@@ -1,0 +1,8 @@
+/** Map pin for an available moto with battery tick underneath. */
+export interface VehicleMarkerProps {
+  level?: number;
+  selected?: boolean;
+  onClick?: () => void;
+  style?: React.CSSProperties;
+}
+export declare function VehicleMarker(props: VehicleMarkerProps): JSX.Element;

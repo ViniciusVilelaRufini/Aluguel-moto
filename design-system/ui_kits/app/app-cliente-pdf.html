@@ -1,0 +1,177 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><title>Volti — App do cliente (PDF)</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/lucide@0.460.0/dist/umd/lucide.min.js"></script>
+<script src="../../_ds_bundle.js"></script>
+<script>window.VDS = window.VoltiDesignSystem_09a717;</script>
+<style>doc-page:not(:defined){visibility:hidden}a{color:var(--text-link)}a:hover{color:var(--brand-press)}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}</style>
+</head><body>
+<doc-page orientation="landscape" content-width="1056px" content-height="816px">
+<section class="page" data-screen-label="01 Capa"><div style="display:flex;height:816px;width:1056px;background:var(--brand);color:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px">
+<div style="font:800 40px/1 var(--font-sans);letter-spacing:-.04em">volti</div>
+<div style="flex:1"></div>
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-900)">Áreas do app · iOS e Android</div>
+<h1 style="font:800 72px/1 var(--font-sans);letter-spacing:-.04em;margin:16px 0 20px">App do cliente</h1>
+<p style="font:500 20px/1.45 var(--font-sans);margin:0;max-width:460px">Aluguel de motos elétricas sem CNH e sem placa, do cadastro ao recibo.</p>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px 24px;margin-top:36px;font:600 15px/1.3 var(--font-sans)"><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">02</span>Boas-vindas</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">03</span>Verificação de identidade</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">04</span>Mapa</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">05</span>Moto selecionada</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">06</span>Escolher moto</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">07</span>Reserva ativa</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">08</span>Escanear QR</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">09</span>Plano e seguro</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">10</span>Corrida</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">11</span>Devolução</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">12</span>Recibo</div><div style="display:flex;gap:10px"><span style="font-family:var(--font-mono);color:var(--green-900)">13</span>Minha conta</div></div>
+</div>
+<div style="width:452px;display:flex;align-items:center;justify-content:center;background:var(--green-600)"><div class="phone" data-screen="home" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="02 Boas-vindas"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">01 · Cadastro</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Boas-vindas</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">A primeira tela apresenta a proposta: moto elétrica sem CNH e sem placa, liberada pelo app.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Login com celular, Apple, Google ou e-mail</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Código de confirmação por SMS</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Selos "Sem CNH", "Sem placa" e "18+"</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">02</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="onb0" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="03 Verificação de identidade"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">02 · Cadastro</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Verificação de identidade</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Validação de CPF, foto do documento e selfie com prova de vida antes do primeiro aluguel.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Barra de progresso em 4 passos</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Checagem de idade mínima (18+)</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Aceite de termos, privacidade e localização</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Cartão tokenizado e chave Pix para estornos</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">03</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="onb3" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="04 Mapa"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">03 · Encontrar</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Mapa</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">O mapa é a tela principal: todas as motos disponíveis com bateria e autonomia.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Filtros por autonomia, ponto de retirada e troca de bateria</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Cards de passe, 1ª corrida grátis e indicação</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Botão "Escolher moto" e "Escanear para andar"</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">04</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="home" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="05 Moto selecionada"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">04 · Encontrar</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Moto selecionada</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Ao tocar num pin, o bottom sheet mostra os detalhes da moto.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Modelo, bateria e autonomia estimada</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Preço por minuto e promoção ativa</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Buzinar e piscar farol para achar a moto</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Reportar problema, cupom, escanear ou reservar</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">05</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="homeSel" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="06 Escolher moto"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">05 · Reservar</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Escolher moto</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Lista para comparar e escolher a moto que a pessoa quer reservar.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Filtro por modelo</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Bateria, autonomia, distância a pé e preço</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Seleção única com botão fixo de reserva</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Reserva de 10 min sem custo</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">06</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="pick" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="07 Reserva ativa"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">06 · Reservar</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Reserva ativa</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Contagem regressiva e rota a pé até a moto reservada.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Tempo de reserva restante em destaque</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Deslize para cancelar, sem toque acidental</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Tempo e distância a pé até a moto</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">07</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="reserved" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="08 Escanear QR"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">07 · Destravar</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Escanear QR</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Destrava pelo QR code do guidão ou digitando o número da moto.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Visor da câmera com moldura verde</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Lanterna para ambientes escuros</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Alternativa: digitar o número da moto</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">08</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="scan" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="09 Plano e seguro"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">08 · Plano e pagamento</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Plano e seguro</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Antes de destravar, a pessoa escolhe plano, seguro e vê o resumo do valor.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Por minuto, hora, dia, semana ou mês</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Seguro básico (obrigatório) ou completo</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Cupom ou crédito da carteira</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Caução por pré-autorização, devolvida no fim</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">09</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="plan" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="10 Corrida"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">09 · Durante o aluguel</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Corrida</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Painel ao vivo com tempo, custo acumulado, bateria e velocidade.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Velocidade e limite da zona atual</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Botão SOS sempre visível</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Pausa com tarifa reduzida</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Aviso de zona, detecção de queda e troca de moto</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">10</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="ride" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="11 Devolução"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">10 · Devolução</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Devolução</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Encerramento só em ponto permitido, com foto e confirmação do rastreador.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Pontos de devolução destacados no mapa</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Foto obrigatória da moto estacionada</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Trava confirmada pelo rastreador antes de encerrar</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">11</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="return" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="12 Recibo"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">11 · Pós-aluguel</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Recibo</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Recibo detalhado na hora, com trajeto, tempo, valor e seguro.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Trajeto no mapa</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Desbloqueio, minutos, seguro e cupom</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Recibo e nota fiscal</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Avaliação da moto e da viagem</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">12</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="summary" style="width:322px;height:700px"></div></div>
+</div></section>
+<section class="page" data-screen-label="13 Minha conta"><div style="display:flex;height:816px;width:1056px;background:#fff">
+<div style="flex:1;display:flex;flex-direction:column;padding:64px 56px 48px 64px">
+<div style="font:700 15px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--green-700)">12 · Conta</div>
+<h2 style="font:800 46px/1.05 var(--font-sans);letter-spacing:-.03em;margin:18px 0 16px;color:var(--ink-900)">Minha conta</h2>
+<p style="font:500 19px/1.45 var(--font-sans);color:var(--ink-600);margin:0 0 30px;max-width:440px">Carteira, plano recorrente, histórico, suporte e privacidade.</p>
+<ul style="list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:14px"><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Créditos e pacotes de minutos</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Plano semanal para entregadores e troca de bateria</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Histórico, contestação e sinistro</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Chat, ajuda e regras de trânsito</span></li><li style="display:flex;gap:12px;align-items:flex-start;font:500 17px/1.4 var(--font-sans);color:var(--ink-800)"><span style="width:8px;height:8px;border-radius:50%;background:var(--brand);margin-top:8px;flex-shrink:0"></span><span>Baixar dados e excluir conta (LGPD)</span></li></ul>
+<div style="flex:1"></div>
+<div style="display:flex;justify-content:space-between;font:600 13px/1 var(--font-sans);color:var(--ink-400)"><span><span style="font-weight:800;color:var(--brand);letter-spacing:-.03em">volti</span> · App do cliente</span><span style="font-family:var(--font-mono)">13</span></div>
+</div>
+<div style="width:452px;background:var(--ink-100);display:flex;align-items:center;justify-content:center"><div class="phone" data-screen="account" style="width:322px;height:700px"></div></div>
+</div></section>
+</doc-page>
+<script src="doc-page.js"></script>
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="MapView.jsx"></script>
+<script type="text/babel" src="Onboarding.jsx"></script>
+<script type="text/babel" src="HomeScreen.jsx"></script>
+<script type="text/babel" src="PickScreen.jsx"></script>
+<script type="text/babel" src="ReservedScreen.jsx"></script>
+<script type="text/babel" src="ScanScreen.jsx"></script>
+<script type="text/babel" src="PlanScreen.jsx"></script>
+<script type="text/babel" src="RideScreen.jsx"></script>
+<script type="text/babel" src="ReturnScreen.jsx"></script>
+<script type="text/babel" src="SummaryScreen.jsx"></script>
+<script type="text/babel" src="AccountScreen.jsx"></script>
+<script type="text/babel">
+const noop=()=>{};
+const MAP={onb0:<Onboarding onDone={noop}/>,onb3:<Onboarding onDone={noop} initialStep={3}/>,home:<HomeScreen onReserve={noop} onScan={noop} onAccount={noop} onList={noop}/>,homeSel:<HomeScreen onReserve={noop} onScan={noop} onAccount={noop} onList={noop} initialSel={1}/>,
+pick:<PickScreen onBack={noop} onMap={noop} onReserve={noop}/>,reserved:<ReservedScreen vehicle={VEHICLES[0]} onCancel={noop} onScan={noop}/>,scan:<ScanScreen onBack={noop} onUnlocked={noop}/>,plan:<PlanScreen onBack={noop} onConfirm={noop}/>,
+ride:<RideScreen onEnd={noop}/>,return:<ReturnScreen onBack={noop} onDone={noop}/>,summary:<SummaryScreen onDone={noop}/>,account:<AccountScreen onBack={noop}/>};
+document.querySelectorAll('.phone').forEach(el=>ReactDOM.createRoot(el).render(
+  <div style={{width:402,height:874,transform:'scale(.8)',transformOrigin:'top left'}}><IOSDevice><div style={{position:'relative',height:'100%',overflow:'hidden',fontFamily:'var(--font-sans)',color:'var(--text-primary)'}}>{MAP[el.dataset.screen]}</div></IOSDevice></div>));
+</script>
+</body></html>
