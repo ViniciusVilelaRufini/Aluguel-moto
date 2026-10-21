@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { PageQuery } from '../../common/pagination';
 
 export class PaymentCardCreateDto {
@@ -7,6 +7,8 @@ export class PaymentCardCreateDto {
   @IsString()
   @MinLength(8)
   @MaxLength(512)
+  // Recusa algo com cara de número de cartão (12 a 19 dígitos, com ou sem espaços/hífens): só o token do gateway é aceito.
+  @Matches(/^(?![\d\s-]{12,25}$)/, { message: 'cardToken deve ser o token gerado pelo SDK do gateway, nunca o número do cartão' })
   cardToken: string;
 
   @IsOptional()

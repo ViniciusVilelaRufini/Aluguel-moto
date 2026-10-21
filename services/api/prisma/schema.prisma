@@ -1060,3 +1060,63 @@ model IdempotencyRecord {
   @@unique([scope, key])
   @@index([expiresAt])
 }
+
+// ───────────── Task 5 (pagamentos, caução e seguro) — só modelos novos ─────────────
+
+/// Webhook já processado (deduplicação por id do evento do provedor).
+model ProcessedWebhook {
+  id          String   @id @default(uuid()) @db.Uuid
+  provider    String
+  eventId     String
+  type        String
+  dataId      String?
+  processedAt DateTime @default(now())
+
+  @@unique([provider, eventId])
+}
+
+/// Referência a entidades no gateway: cliente (`customer`) e assinatura (`subscription`).
+model PaymentProviderRef {
+  id         String   @id @default(uuid()) @db.Uuid
+  entityType String
+  entityId   String   @db.Uuid
+  provider   String
+  providerId String
+  createdAt  DateTime @default(now())
+
+  @@unique([entityType, entityId, provider])
+  @@index([provider, providerId])
+}
+
+/// Repasse do prêmio à seguradora (um por apólice).
+model InsuranceRemittance {
+  id          String   @id @default(uuid()) @db.Uuid
+  policyId    String   @unique @db.Uuid
+  rentalId    String?  @db.Uuid
+  insurer     String
+  amountCents Int
+  status      String   @default("pending")
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+/// Recibo em PDF (bucket de relatórios) por pagamento.
+model PaymentReceipt {
+  paymentId String   @id @db.Uuid
+  rentalId  String?  @db.Uuid
+  bucket    String
+  objectKey String
+  createdAt DateTime @default(now())
+}
+
+/// NFS-e emitida por pagamento (via `InvoiceIssuer`).
+model Invoice {
+  id          String   @id @default(uuid()) @db.Uuid
+  paymentId   String   @unique @db.Uuid
+  issuer      String
+  number      String
+  status      String
+  amountCents Int
+  issuedAt    DateTime @default(now())
+}

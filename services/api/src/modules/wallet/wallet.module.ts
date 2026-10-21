@@ -1,7 +1,8 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
 import { WalletController } from './wallet.controller';
 import { WalletService } from './wallet.service';
 
-/** Carteira — dono: Task 5 (agente 4). Implementação provisória sobre o ledger. */
+/** Carteira (Task 5): ledger somente inserção; recargas pelo `PaymentProvider`. Global para o consumidor de webhooks. */
+@Global()
 @Module({ controllers: [WalletController], providers: [WalletService], exports: [WalletService] })
 export class WalletModule {}
