@@ -24,7 +24,7 @@ async function setup() {
   const queue = { publish: jest.fn(), subscribe: jest.fn() };
   await db.customer.create({ data: { id: CUSTOMER, cognitoSub: 'sub', email: 'c@example.com' } });
   await db.fee.create({ data: { code: 'deposit', amountCents: 5000, active: true } });
-  const billing = new RentalBillingService(db as any, provider, state, customers, new InsuranceService(db as any, new MockInsuranceProvider()), { issueForPayment: jest.fn() } as any, queue as any, opts);
+  const billing = new RentalBillingService(db as any, provider, state, customers, new InsuranceService(db as any, new MockInsuranceProvider()), { issueForPayment: jest.fn() } as any, queue as any, events, opts);
   const wallet = new WalletService(db as any, { record: jest.fn() } as any, provider, state, customers, queue as any, opts);
   const subscriptions = new SubscriptionsService(db as any, provider, state, customers, billing);
   const processor = new WebhookProcessor(db as any, provider, billing, wallet, subscriptions, queue as any);

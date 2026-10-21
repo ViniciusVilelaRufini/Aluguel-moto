@@ -31,7 +31,7 @@ import { WebhookProcessor } from './webhook-processor.service';
           ? new MercadoPagoPaymentProvider({ accessToken: cfg.mercadoPago.accessToken ?? '', webhookSecret: cfg.mercadoPago.webhookSecret, baseUrl: cfg.mercadoPago.baseUrl, webhookToleranceSeconds: cfg.webhookToleranceSeconds })
           : new FakePaymentProvider(cfg.mercadoPago.webhookSecret, cfg.webhookToleranceSeconds),
     },
-    { provide: BILLING_OPTIONS, inject: [PAYMENTS_CONFIG], useFactory: (cfg: PaymentsConfig) => ({ pixExpirationMinutes: cfg.pixExpirationMinutes, fakePixAutoConfirmSeconds: cfg.fakePixAutoConfirmSeconds }) },
+    { provide: BILLING_OPTIONS, inject: [PAYMENTS_CONFIG], useFactory: (cfg: PaymentsConfig) => ({ pixExpirationMinutes: cfg.pixExpirationMinutes, fakePixAutoConfirmSeconds: cfg.fakePixAutoConfirmSeconds, reviewMaxDays: cfg.reviewMaxDays }) },
     { provide: RECEIPT_OPTIONS, inject: [PAYMENTS_CONFIG], useFactory: (cfg: PaymentsConfig) => ({ reportsBucket: cfg.reportsBucket }) },
     { provide: INVOICE_ISSUER, useFactory: () => new MockInvoiceIssuer() },
     PaymentStateService,

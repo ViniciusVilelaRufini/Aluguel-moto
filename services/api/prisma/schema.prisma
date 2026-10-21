@@ -1134,12 +1134,15 @@ model SettlementProgress {
   errorRuns   Int       @default(0)
   parkedAt    DateTime?
   parkedReason String?
+  /// Liquidação concluída (Payment saiu de `pending`); o job de retomada só lê registros sem `finishedAt` e sem `parkedAt` (fix round 4).
+  finishedAt  DateTime?
   leaseOwner  String?
   leaseUntil  DateTime?
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
   @@index([updatedAt])
+  @@index([parkedAt, finishedAt, updatedAt])
 }
 
 /// Pedido de liberação de caução ainda não confirmado pelo gateway (retentado por job).

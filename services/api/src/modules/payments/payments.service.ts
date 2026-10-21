@@ -129,6 +129,12 @@ export class PaymentsService {
   async refund(actor: Principal, id: string, dto: RefundDto, idempotencyKey?: string) {
     const p = await this.prisma.payment.findUnique({ where: { id } });
     if (!p) throw notFound('Pagamento não encontrado.');
+    const key = `refund:${p.id}:${idempotencyKey ?? randomUUID()}`;
+    // Mesma Idempotency-Key de um pedido já registrado: repete a resposta desse pedido (sem reservar nem chamar o gateway de novo).
+    if (idempotencyKey) {
+      const same = await this.prisma.paymentRefund.findUnique({ where: { idempotencyKey: key } });
+      if (same) return this.replayRefund(same, p);
+    }
     if (!canTransition(p.status, 'partially_refunded') && !canTransition(p.status, 'refunded')) {
       throw unprocessable('validation-error', 'Só é possível estornar pagamentos pagos ou capturados.');
     }
@@ -141,7 +147,6 @@ export class PaymentsService {
     const to = refundedCents >= base ? 'refunded' : 'partially_refunded';
     const viaWallet = p.method === 'wallet';
     if (!viaWallet && !p.providerPaymentId) throw unprocessable('validation-error', 'Pagamento sem registro no gateway para estornar.');
-    const key = `refund:${p.id}:${idempotencyKey ?? randomUUID()}`;
 
     // Um estorno em aberto por pagamento: sem isso, a reconciliação (que compara totais acumulados) confundiria pedidos.
     const open = await this.prisma.paymentRefund.findFirst({ where: { paymentId: p.id, status: { in: ['claimed', 'pending'] } } });
@@ -169,6 +174,17 @@ export class PaymentsService {
     this.state.emitUpdated(updated);
     await this.audit.record({ actor, action: 'payment.refund', entityType: 'Payment', entityId: id, reason: dto.reason, metadata: { amountCents: amount } });
     return toPayment(updated);
+  }
+
+  /**
+   * Repetição com a mesma chave: em aberto (`claimed`/`pending`) ou concluído → 200 com o estado atual do pagamento
+   * (a reserva já vale; a reconciliação cuida do gateway); recusado → o mesmo 422; em revisão manual → 409.
+   */
+  private replayRefund(record: PaymentRefund, p: Payment) {
+    if (record.status === 'rejected') throw new ProblemException(422, 'payment-failed', 'O gateway recusou o estorno.');
+    if (record.status === 'needs_review') throw conflict('conflict', 'Este estorno está em revisão manual.');
+    this.logger.log({ msg: 'refund_replayed', paymentId: p.id, refundId: record.id, status: record.status });
+    return toPayment(p);
   }
 
   /** Chama o gateway para um pedido de estorno e grava o resultado. Desfaz a reserva só em recusa definitiva. */

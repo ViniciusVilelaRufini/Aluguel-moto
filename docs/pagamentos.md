@@ -159,6 +159,21 @@ Se já existe aluguel com a caução, o pedido é ignorado. Pix pago depois da l
 - **Mercado Pago.** Um 400 ou 404 na leitura (`GET`) feita depois de um estorno aceito é resultado desconhecido, não recusa.
 - **Execuções com erro.** O contador `errorRuns` volta a 0 quando um passo é gravado. Se a gravação do erro falhar, o erro original é preservado e logado.
 
+### Análise com prazo, garantia em análise e recusa explícita (fix round 4)
+
+- **Prazo da análise.** Quando uma cobrança ou captura entra em análise, o motor grava o início (`steps.chargeInReviewSince` ou `steps.captureInReviewSince`, ISO). Cada execução seguinte (job ou webhook) compara com o relógio: passados `PAYMENT_REVIEW_MAX_DAYS` dias (padrão 7), a liquidação é estacionada com `parkedReason = review_timeout`. Antes do prazo, a espera continua como antes (sem nova cobrança, sem inadimplência). O início é apagado quando a análise termina.
+- **Sinal de revisão manual.** Todo estacionamento (erros repetidos, `review_timeout`, estado inesperado no gateway) emite o par: log `payment_needs_manual_review` e evento interno `payment.needs-review` `{ paymentId, rentalId?, reason }` (`payments/payment-review.ts`). Um consumidor de alerta pode ser ligado nesse evento sem mexer no motor.
+- **Garantia em análise.** Na última tentativa do `card_charge`, se a captura da caução como garantia volta `pending`, o motor **não cancela** a pré-autorização: grava `steps.guaranteeCaptureInReview = true`, registra as tentativas e deixa o pagamento `pending`. As execuções seguintes só consultam `getPayment` da pré-autorização:
+  - capturada → caução `captured` e a liquidação termina `failed` (a dívida restante continua como inadimplência);
+  - recusada ou cancelada → a pré-autorização morreu: Payment da caução `failed`/`canceled`, caução `released` localmente, liquidação `failed` (nada é cancelado no gateway, porque não existe mais);
+  - em análise → espera, com o mesmo prazo;
+  - qualquer outro estado → estacionada.
+- **Captura parcial em análise (`card_capture`).** Mesmo tratamento: espera com prazo, nunca cancela; aprovada → `paid`; recusada depois da análise → pré-autorização morta (acima), liquidação `failed` e inadimplência.
+- **Recusa explícita.** Para uma cobrança vista em análise, só `failed` (Mercado Pago `rejected`) e `canceled` (`cancelled`) contam como recusa e liberam a próxima tentativa (`:a1`). `refunded`, `partially_refunded`, `authorized` ou qualquer outro estado estaciona a liquidação para revisão, sem nova cobrança.
+- **Webhook do Payment da caução.** Um webhook da pré-autorização (externalReference = id do Payment da caução) também acorda a liquidação do aluguel que espera a captura dessa caução (parcial ou garantia), além de registrar o estado no Payment da caução.
+- **Job de retomada.** Lê `SettlementProgress` com `parkedAt IS NULL` e `finishedAt IS NULL`, sem lease válido e sem movimento há 2 min, em ordem de `updatedAt` crescente (50 por rodada). `finishedAt` é gravado quando a liquidação termina (`paid` ou `failed` definitivo); se uma queda deixar o carimbo faltando, o job fecha o registro ao encontrá-lo. Sem isso, 50 liquidações antigas tomariam a página inteira e nenhuma pendente seria retomada (o e2e pegou exatamente isso). Pagamentos `pending` que caíram antes de ganhar o registro entram por uma segunda consulta. Migração `20261021230000_payments_settlement_finished` (coluna, índice e backfill).
+- **Estorno com a mesma chave.** Repetir `POST /payments/{id}/refund` com a mesma `Idempotency-Key` enquanto o pedido anterior está em aberto (ou já concluído) devolve `200` com o estado atual do pagamento, sem reservar nem chamar o gateway. Chave diferente com outro pedido em aberto continua `409`. Mesma chave de um pedido recusado → o mesmo `422`; em revisão manual → `409`.
+
 ## Webhook do Mercado Pago
 
 1. `POST /webhooks/mercadopago` é público. O endpoint valida `x-signature` (`ts=<epoch>,v1=<hex>`; `ts` fora de ±`MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS`, padrão 300, é rejeitado) com HMAC-SHA256 sobre `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`. A chave é `MERCADOPAGO_WEBHOOK_SECRET` e a comparação é em tempo constante; o `data.id` vai em minúsculas.
@@ -216,6 +231,7 @@ O PDF não leva CPF, e-mail nem trajeto. A NFS-e é emitida pelo `InvoiceIssuer`
 |---|---|---|
 | `PAYMENT_PROVIDER` | `fake` só com `NODE_ENV` development/test | `fake` ou `mercadopago`. Sem valor fora de dev/test, a API não sobe (falha fechada). |
 | `MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS` | `300` | Janela do `ts` da assinatura do webhook |
+| `PAYMENT_REVIEW_MAX_DAYS` | `7` | Dias que uma cobrança/captura pode ficar em análise no gateway antes de a liquidação ser estacionada (`review_timeout`) |
 | `MERCADOPAGO_ACCESS_TOKEN` | — | Obrigatória com `mercadopago` (Secrets Manager na AWS) |
 | `MERCADOPAGO_WEBHOOK_SECRET` | — | Assinatura do webhook (sem ela, todo webhook dá 401) |
 | `MERCADOPAGO_API_BASE_URL` | `https://api.mercadopago.com` | Sobrescreve a URL da API |

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { OnEvent } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import type { Deposit, Payment, Prisma, SettlementProgress } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -8,6 +8,7 @@ import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import type { PixCharge, RentalBillingPort } from '../../ports/rental-billing.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InsuranceService } from '../insurance/insurance.service';
+import { signalNeedsReview } from './payment-review';
 import { canTransition, SETTLED_STATUSES } from './payment-state';
 import { isUniqueViolation, PaymentStateService } from './payment-state.service';
 import { ProviderCustomersService } from './provider-customers.service';
@@ -21,8 +22,13 @@ export interface BillingOptions {
   pixExpirationMinutes: number;
   /** Só com `PAYMENT_PROVIDER=fake`: confirma sozinho o Pix depois de N segundos (0 desliga). */
   fakePixAutoConfirmSeconds: number;
+  /** Dias que uma cobrança/captura pode ficar em análise no gateway antes de a liquidação ser estacionada (`PAYMENT_REVIEW_MAX_DAYS`). */
+  reviewMaxDays?: number;
+  /** Relógio (injetável nos testes). */
+  now?: () => Date;
 }
 export const BILLING_OPTIONS = Symbol('BILLING_OPTIONS');
+export const DEFAULT_REVIEW_MAX_DAYS = 7;
 
 type HoldInput = { customerId: string; rentalId: string; method: 'card' | 'pix'; idempotencyKey: string };
 type HoldResult = { depositId: string; status: 'held' | 'awaiting_pix' | 'failed'; pix?: PixCharge };
@@ -40,6 +46,12 @@ interface SettlementSteps {
   chargeStarted?: boolean;
   /** Cobrança em análise no gateway (id): o passo espera, sem nova cobrança. */
   chargeInReview?: string | null;
+  /** Início da análise da cobrança (ISO); some quando a análise termina. Passado `reviewMaxDays`, a liquidação é estacionada. */
+  chargeInReviewSince?: string | null;
+  /** Início da análise de uma captura (parcial do `card_capture` ou garantia do `card_charge`). */
+  captureInReviewSince?: string | null;
+  /** Captura da caução como garantia em análise no gateway (última tentativa do `card_charge`): nunca cancelar enquanto isso. */
+  guaranteeCaptureInReview?: boolean | null;
   /** Token do cartão por tentativa (gravado antes da chamada, reusado na repetição do mesmo passo). */
   chargeTokens?: Record<string, string>;
   release?: boolean;
@@ -57,6 +69,12 @@ interface StepContext {
   customerId: string;
 }
 type SettleRental = { customerId: string; depositId: string; insurancePolicyId: string | null };
+/** Resultado de um passo de cobrança: pagamento do gateway, `null` (sem cartão) ou "pare aqui" com a resposta da porta. */
+type StepOutcome = ProviderPayment | null | { stop: SettleResult };
+const isStop = (o: StepOutcome): o is { stop: SettleResult } => !!o && 'stop' in o;
+/** Recusa genuína do gateway para um pagamento visto em análise (Mercado Pago: `rejected` → failed, `cancelled` → canceled). */
+const DECLINED_STATUSES: readonly string[] = ['failed', 'canceled'];
+type ReviewKind = 'charge' | 'capture';
 
 export class DepositReleaseNotConfirmedError extends Error {}
 export class SettlementInProgressError extends Error {
@@ -90,8 +108,17 @@ export class RentalBillingService implements RentalBillingPort {
     private readonly insurance: InsuranceService,
     private readonly receipts: ReceiptService,
     @Inject(QUEUE_BUS) private readonly queue: QueueBus,
+    private readonly events: EventEmitter2,
     @Inject(BILLING_OPTIONS) private readonly opts: BillingOptions,
   ) {}
+
+  private now(): Date {
+    return this.opts.now?.() ?? new Date();
+  }
+
+  private reviewMaxMs(): number {
+    return (this.opts.reviewMaxDays ?? DEFAULT_REVIEW_MAX_DAYS) * 24 * 60 * 60_000;
+  }
 
   // ───────────────────────── caução ─────────────────────────
 
@@ -214,7 +241,9 @@ export class RentalBillingService implements RentalBillingPort {
   }
 
   private async captureDeposit(deposit: Deposit, dp: Payment, amountCents: number): Promise<void> {
-    if (dp.status === 'authorized') await this.state.transition(dp.id, 'captured');
+    // Relê o status: um webhook do Payment da caução pode ter registrado `captured` entre a chamada ao gateway e este ponto.
+    const fresh = (await this.prisma.payment.findUnique({ where: { id: dp.id } })) ?? dp;
+    if (fresh.status === 'authorized') await this.state.transition(dp.id, 'captured');
     try {
       await this.prisma.paymentCapture.create({ data: { paymentId: dp.id, capturedCents: amountCents } });
     } catch (err) {
@@ -318,7 +347,7 @@ export class RentalBillingService implements RentalBillingPort {
         return await this.execute(current, progress, rental, input.idempotencyKey);
       } catch (err) {
         try {
-          await this.recordErrorRun(pay.id, err as Error);
+          await this.recordErrorRun(current, err as Error);
         } catch (recordErr) {
           this.logger.error({ msg: 'settlement_error_run_not_recorded', paymentId: pay.id, error: (recordErr as Error).message, original: (err as Error).message });
         }
@@ -333,15 +362,27 @@ export class RentalBillingService implements RentalBillingPort {
    * Erro ou resultado desconhecido do gateway: não conta como tentativa de cobrança (mesma chave na próxima execução).
    * Depois de `MAX_ERROR_RUNS` execuções assim, a liquidação é estacionada (`parkedAt`) para revisão manual.
    */
-  private async recordErrorRun(paymentId: string, err: Error): Promise<void> {
-    const current = await this.prisma.settlementProgress.findUnique({ where: { paymentId }, select: { errorRuns: true } });
+  private async recordErrorRun(pay: Payment, err: Error): Promise<void> {
+    const current = await this.prisma.settlementProgress.findUnique({ where: { paymentId: pay.id }, select: { errorRuns: true } });
     const errorRuns = (current?.errorRuns ?? 0) + 1;
     const park = errorRuns >= MAX_ERROR_RUNS;
+    const reason = err.message.slice(0, 500);
     await this.prisma.settlementProgress.update({
-      where: { paymentId },
-      data: { errorRuns, lastFailure: err.message.slice(0, 500), ...(park ? { parkedAt: new Date(), parkedReason: err.message.slice(0, 500) } : {}) },
+      where: { paymentId: pay.id },
+      data: { errorRuns, lastFailure: reason, ...(park ? { parkedAt: this.now(), parkedReason: reason } : {}) },
     });
-    if (park) this.logger.error({ msg: 'payment_needs_manual_review', paymentId, errorRuns, error: err.message });
+    if (park) this.signalReview(pay, reason, { errorRuns });
+  }
+
+  /** Estaciona a liquidação para revisão manual: o job, a porta e o webhook param de chamar o gateway; o operador é avisado. */
+  private async park(pay: Payment, reason: string): Promise<SettleResult> {
+    await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { parkedAt: this.now(), parkedReason: reason.slice(0, 500) } });
+    this.signalReview(pay, reason);
+    return { paymentId: pay.id, status: 'failed' };
+  }
+
+  private signalReview(pay: Payment, reason: string, extra: Record<string, unknown> = {}): void {
+    signalNeedsReview(this.logger, this.events, { paymentId: pay.id, ...(pay.rentalId ? { rentalId: pay.rentalId } : {}), reason }, extra);
   }
 
   /** Outro executor tem o lease: a chamada da porta espera o resultado; o job só pula. */
@@ -414,42 +455,44 @@ export class RentalBillingService implements RentalBillingPort {
     if (plan === 'card_capture') {
       const paidByCapture = () => this.finishPaid(pay, rental, { method: 'card', providerPaymentId: dp!.providerPaymentId, cardLast4: dp!.cardLast4 });
       if (!steps.capture) {
-        // Já tentou capturar antes (queda ou resposta ambígua): o gateway diz o que aconteceu antes de qualquer nova chamada.
+        // Já tentou capturar antes (queda, resposta ambígua ou captura em análise): o gateway diz o que aconteceu antes de qualquer nova chamada.
         if (steps.captureStarted) {
-          const seen = await this.reconcileCapture(deposit!, dp!, save);
+          const seen = await this.reconcileCapture(ctx, progress, deposit!, dp!);
           if (seen === 'captured') return paidByCapture();
-          if (seen === 'awaiting') return this.awaitingReview(pay);
+          if (seen !== 'authorized') return seen;
         }
         if (!steps.captureStarted) await save({ captureStarted: true });
         const cap = await this.provider.capture({ providerPaymentId: dp!.providerPaymentId!, amountCents: amount, idempotencyKey: attemptKey(`${key}:capture`) });
-        // Captura em análise: não é recusa; a próxima execução confere pelo getPayment.
-        if (cap.status === 'pending') return this.awaitingReview(pay);
+        // Captura em análise: não é recusa; a próxima execução confere pelo getPayment (nunca cancela enquanto isso).
+        if (cap.status === 'pending') return this.awaitingReview(ctx, 'capture');
         if (cap.status !== 'captured') {
           return this.collectionFailed(pay, progress, rental.customerId, cap.failureReason ?? 'capture_failed', {
             onFinal: async () => {
-              // Antes de cancelar, confere: se a captura entrou, a liquidação está paga.
-              const seen = await this.reconcileCapture(deposit!, dp!, save);
+              // Antes de cancelar, confere: se a captura entrou, a liquidação está paga; se está em análise, espera.
+              const seen = await this.reconcileCapture(ctx, progress, deposit!, dp!);
               if (seen === 'captured') return paidByCapture();
-              if (seen === 'awaiting') return this.awaitingReview(pay);
+              if (seen !== 'authorized') return seen;
               await this.releaseDeposit((await this.prisma.deposit.findUnique({ where: { id: deposit!.id } }))!, `${key}:release-after-failure`);
             },
           });
         }
         await this.captureDeposit(deposit!, dp!, cap.capturedCents ?? amount);
-        await save({ capture: true });
+        await save({ capture: true, captureInReviewSince: null });
       }
       return paidByCapture();
     }
 
     if (plan === 'card_charge') {
+      // Garantia em análise no gateway: só consulta; nunca cobra nem cancela a pré-autorização.
+      if (steps.guaranteeCaptureInReview) return this.resolveGuaranteeCapture(ctx, progress, deposit!);
       if (!steps.charge) {
         const charged = await this.chargeStep(ctx, `${key}:charge`, amount);
-        if (charged === 'awaiting') return this.awaitingReview(pay);
+        if (isStop(charged)) return charged.stop;
         if (charged?.status !== 'paid') {
           return this.collectionFailed(pay, progress, rental.customerId, charged?.failureReason ?? 'card_not_found', {
             final: !charged,
             // Última tentativa: a caução inteira é capturada como garantia; o restante fica como inadimplência.
-            onFinal: async () => this.captureGuarantee(deposit!.id, `${key}:capture-guarantee`, `${key}:release-after-failure`),
+            onFinal: async () => this.captureGuarantee(ctx, deposit!.id, `${key}:capture-guarantee`, `${key}:release-after-failure`),
           });
         }
       }
@@ -481,25 +524,48 @@ export class RentalBillingService implements RentalBillingPort {
     const base = plan === 'pix_keep_charge' ? `${key}:charge-remainder` : `${key}:charge`;
     if (!steps.charge) {
       const charged = await this.chargeStep(ctx, base, due);
-      if (charged === 'awaiting') return this.awaitingReview(pay);
+      if (isStop(charged)) return charged.stop;
       if (charged?.status !== 'paid') return this.collectionFailed(pay, progress, rental.customerId, charged?.failureReason ?? 'card_not_found', { final: !charged });
     }
     return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: steps.charge!.providerPaymentId, cardLast4: steps.charge!.cardLast4 });
   }
 
-  /** Confere a pré-autorização no gateway; se já foi capturada, grava o passo e devolve `true`. */
-  private async reconcileCapture(deposit: Deposit, dp: Payment, save: (p: SettlementSteps) => Promise<void>): Promise<'captured' | 'authorized' | 'awaiting'> {
+  /**
+   * Confere a pré-autorização no gateway antes de qualquer nova chamada:
+   * - `captured` → grava o passo e devolve `'captured'`;
+   * - `authorized` → ainda dá para capturar (devolve `'authorized'`);
+   * - `pending` (captura em análise) → espera;
+   * - recusada/cancelada → a pré-autorização morreu: nada a capturar nem a cancelar; falha definitiva da cobrança;
+   * - qualquer outro estado → estacionada para revisão.
+   * Um `SettleResult` significa "pare aqui e responda isto".
+   */
+  private async reconcileCapture(ctx: StepContext, progress: SettlementProgress, deposit: Deposit, dp: Payment): Promise<'captured' | 'authorized' | SettleResult> {
     const pp = await this.provider.getPayment(dp.providerPaymentId!);
     if (pp.status === 'captured') {
       const freshDp = (await this.prisma.payment.findUnique({ where: { id: dp.id } }))!;
       await this.captureDeposit((await this.prisma.deposit.findUnique({ where: { id: deposit.id } }))!, freshDp, pp.capturedCents ?? pp.amountCents);
-      await save({ capture: true });
+      await ctx.save({ capture: true, captureInReviewSince: null });
       this.logger.warn({ msg: 'settlement_capture_reconciled', paymentId: dp.id });
       return 'captured';
     }
-    if (pp.status === 'pending') return 'awaiting';
-    if (pp.status !== 'authorized') throw new Error(`Pré-autorização em estado inesperado no gateway: ${pp.status}.`);
-    return 'authorized';
+    if (pp.status === 'authorized') return 'authorized';
+    if (pp.status === 'pending') return this.awaitingReview(ctx, 'capture');
+    if (DECLINED_STATUSES.includes(pp.status)) {
+      const reason = pp.failureReason ?? 'capture_rejected_after_review';
+      return this.collectionFailed(ctx.pay, progress, ctx.customerId, reason, { final: true, onFinal: () => this.voidDeadPreAuth(deposit.id, pp.status, reason) });
+    }
+    return this.park(ctx.pay, `preauthorization_unexpected_status:${pp.status}`);
+  }
+
+  /**
+   * A pré-autorização deixou de existir no gateway (captura recusada depois da análise, autorização cancelada/expirada):
+   * não há o que capturar nem cancelar. Registra no Payment da caução e libera a caução localmente.
+   */
+  private async voidDeadPreAuth(depositId: string, gatewayStatus: string, reason: string): Promise<void> {
+    const dp = await this.depositPayment(depositId);
+    if (dp?.status === 'authorized') await this.state.transition(dp.id, gatewayStatus === 'canceled' ? 'canceled' : 'failed', { failureReason: reason });
+    await this.prisma.deposit.updateMany({ where: { id: depositId, status: 'held' }, data: { status: 'released' } });
+    this.logger.warn({ msg: 'deposit_preauthorization_void', depositId, gatewayStatus, reason });
   }
 
   /**
@@ -512,17 +578,21 @@ export class RentalBillingService implements RentalBillingPort {
    * - o token do cartão é criado uma vez por tentativa e guardado antes da chamada (o corpo da repetição é idêntico);
    * - recusa genuína volta como `failed`; erro/timeout lança (não conta tentativa, mesma chave na próxima execução).
    */
-  private async chargeStep(ctx: StepContext, base: string, due: number): Promise<ProviderPayment | null | 'awaiting'> {
+  private async chargeStep(ctx: StepContext, base: string, due: number): Promise<StepOutcome> {
     const { pay, steps, save, attempt } = ctx;
     if (steps.chargeInReview) {
       const pp = await this.provider.getPayment(steps.chargeInReview);
-      if (pp.status === 'pending') return 'awaiting';
+      if (pp.status === 'pending') return { stop: await this.awaitingReview(ctx, 'charge') };
       if (pp.status === 'paid') {
-        await save({ chargeInReview: null, charge: { providerPaymentId: pp.providerPaymentId, cardLast4: pp.cardLast4 ?? null } });
+        await save({ chargeInReview: null, chargeInReviewSince: null, charge: { providerPaymentId: pp.providerPaymentId, cardLast4: pp.cardLast4 ?? null } });
         return pp;
       }
-      await save({ chargeInReview: null });
-      return { ...pp, status: 'failed', failureReason: pp.failureReason ?? 'charge_rejected_after_review' };
+      if (DECLINED_STATUSES.includes(pp.status)) {
+        await save({ chargeInReview: null, chargeInReviewSince: null });
+        return { ...pp, status: 'failed', failureReason: pp.failureReason ?? 'charge_rejected_after_review' };
+      }
+      // Estornado, contestado, autorizado...: nem aprovado nem recusado. Nunca cobrar de novo em cima disso: revisão manual.
+      return { stop: await this.park(pay, `charge_in_review_unexpected_status:${pp.status}`) };
     }
     if (steps.chargeStarted) {
       const found = (await this.provider.searchPayments({ externalReference: pay.id })).filter((p) => p.amountCents === due);
@@ -535,7 +605,7 @@ export class RentalBillingService implements RentalBillingPort {
       const reviewing = found.find((p) => p.status === 'pending');
       if (reviewing) {
         await save({ chargeInReview: reviewing.providerPaymentId });
-        return 'awaiting';
+        return { stop: await this.awaitingReview(ctx, 'charge') };
       }
     }
     const card = await this.customers.card(ctx.customerId);
@@ -553,31 +623,86 @@ export class RentalBillingService implements RentalBillingPort {
     if (out.status === 'paid') await save({ charge: { providerPaymentId: out.providerPaymentId, cardLast4: out.cardLast4 ?? null } });
     if (out.status === 'pending') {
       await save({ chargeInReview: out.providerPaymentId });
-      return 'awaiting';
+      return { stop: await this.awaitingReview(ctx, 'charge') };
     }
     return out;
   }
 
-  /** Cobrança/captura em análise no gateway: nada falhou e nada é cobrado de novo; o job (ou o webhook) confere depois. */
-  private awaitingReview(pay: Payment): SettleResult {
-    this.logger.log({ msg: 'settlement_awaiting_gateway_review', paymentId: pay.id });
-    return { paymentId: pay.id, status: 'failed' };
+  /**
+   * Cobrança/captura em análise no gateway: nada falhou e nada é cobrado de novo; o job (ou o webhook) confere depois.
+   * O início da análise fica gravado (`chargeInReviewSince`/`captureInReviewSince`); passado `reviewMaxDays`
+   * (`PAYMENT_REVIEW_MAX_DAYS`, padrão 7), a liquidação é estacionada com motivo `review_timeout` e o operador é avisado.
+   */
+  private async awaitingReview(ctx: StepContext, kind: ReviewKind): Promise<SettleResult> {
+    const now = this.now();
+    const current = kind === 'charge' ? ctx.steps.chargeInReviewSince : ctx.steps.captureInReviewSince;
+    if (!current) await ctx.save(kind === 'charge' ? { chargeInReviewSince: now.toISOString() } : { captureInReviewSince: now.toISOString() });
+    const sinceIso = kind === 'charge' ? ctx.steps.chargeInReviewSince! : ctx.steps.captureInReviewSince!;
+    if (now.getTime() - new Date(sinceIso).getTime() >= this.reviewMaxMs()) {
+      this.logger.warn({ msg: 'settlement_review_timeout', paymentId: ctx.pay.id, kind, since: sinceIso });
+      return this.park(ctx.pay, 'review_timeout');
+    }
+    this.logger.log({ msg: 'settlement_awaiting_gateway_review', paymentId: ctx.pay.id, kind });
+    return { paymentId: ctx.pay.id, status: 'failed' };
   }
 
-  /** Garantia: captura a caução inteira (conferindo antes no gateway); se não der para capturar, libera. */
-  private async captureGuarantee(depositId: string, captureKey: string, releaseKey: string): Promise<void> {
+  /**
+   * Garantia (última tentativa do `card_charge`): captura a caução inteira, conferindo antes no gateway.
+   * - captura em análise (`pending`) → **não cancela**: grava `guaranteeCaptureInReview` e devolve `'awaiting'`
+   *   (o job e o webhook resolvem em `resolveGuaranteeCapture`);
+   * - recusada ou pré-autorização já morta → libera (sem cancelar o que não existe);
+   * - estado inesperado → estacionada.
+   */
+  private async captureGuarantee(ctx: StepContext, depositId: string, captureKey: string, releaseKey: string): Promise<SettleResult | 'awaiting' | void> {
     const d = (await this.prisma.deposit.findUnique({ where: { id: depositId } }))!;
     const auth = (await this.depositPayment(d.id))!;
     if (d.status !== 'held' || auth.status !== 'authorized') return;
+    const awaiting = async () => {
+      await ctx.save({ guaranteeCaptureInReview: true, captureInReviewSince: ctx.steps.captureInReviewSince ?? this.now().toISOString() });
+      this.logger.log({ msg: 'settlement_guarantee_capture_in_review', paymentId: ctx.pay.id, depositId });
+      return 'awaiting' as const;
+    };
     const pp = await this.provider.getPayment(auth.providerPaymentId!);
     if (pp.status === 'captured') return this.captureDeposit(d, auth, pp.capturedCents ?? d.amountCents);
+    if (pp.status === 'pending') return awaiting();
+    if (DECLINED_STATUSES.includes(pp.status)) return this.voidDeadPreAuth(d.id, pp.status, pp.failureReason ?? 'preauthorization_void');
+    if (pp.status !== 'authorized') return this.park(ctx.pay, `preauthorization_unexpected_status:${pp.status}`);
     const cap = await this.provider.capture({ providerPaymentId: auth.providerPaymentId!, amountCents: d.amountCents, idempotencyKey: captureKey });
     if (cap.status === 'captured') await this.captureDeposit(d, auth, d.amountCents);
+    else if (cap.status === 'pending') return awaiting();
     else await this.releaseDeposit(d, releaseKey);
+  }
+
+  /**
+   * Garantia em análise: só consulta o gateway (nunca cobra nem cancela).
+   * Aprovada → caução capturada e a liquidação termina `failed` (a dívida restante continua como inadimplência);
+   * recusada/cancelada → pré-autorização morta: caução liberada localmente e `failed`; em análise → espera (com prazo);
+   * qualquer outro estado → estacionada.
+   */
+  private async resolveGuaranteeCapture(ctx: StepContext, progress: SettlementProgress, deposit: Deposit): Promise<SettleResult> {
+    const { pay, save } = ctx;
+    const d = (await this.prisma.deposit.findUnique({ where: { id: deposit.id } }))!;
+    const auth = (await this.depositPayment(d.id))!;
+    const pp = await this.provider.getPayment(auth.providerPaymentId!);
+    if (pp.status === 'pending') return this.awaitingReview(ctx, 'capture');
+    if (pp.status === 'captured') await this.captureDeposit(d, auth, pp.capturedCents ?? d.amountCents);
+    else if (DECLINED_STATUSES.includes(pp.status)) await this.voidDeadPreAuth(d.id, pp.status, pp.failureReason ?? 'guarantee_capture_rejected');
+    else return this.park(pay, `guarantee_capture_unexpected_status:${pp.status}`);
+    await save({ guaranteeCaptureInReview: null, captureInReviewSince: null });
+    await this.state.transition(pay.id, 'failed', { failureReason: progress.lastFailure ?? 'charge_failed' });
+    await this.markFinished(pay.id);
+    this.logger.warn({ msg: 'settlement_guarantee_resolved', paymentId: pay.id, depositId: d.id, gatewayStatus: pp.status });
+    return { paymentId: pay.id, status: 'failed' };
+  }
+
+  /** Liquidação concluída (paga ou falha definitiva): o registro sai da fila do job. */
+  private async markFinished(paymentId: string): Promise<void> {
+    await this.prisma.settlementProgress.updateMany({ where: { paymentId, finishedAt: null }, data: { finishedAt: this.now() } });
   }
 
   private async finishPaid(pay: Payment, rental: { customerId: string; insurancePolicyId: string | null }, data: { method: 'card' | 'pix' | 'wallet'; providerPaymentId?: string | null; cardLast4?: string | null }): Promise<SettleResult> {
     await this.state.transition(pay.id, 'paid', { method: data.method, providerPaymentId: data.providerPaymentId ?? null, cardLast4: data.cardLast4 ?? null, failureReason: null });
+    await this.markFinished(pay.id);
     this.logger.log({ msg: 'rental_settled', paymentId: pay.id, rentalId: pay.rentalId, amountCents: pay.amountCents });
     await this.maybeClearDelinquency(rental.customerId);
     if (rental.insurancePolicyId) {
@@ -591,16 +716,23 @@ export class RentalBillingService implements RentalBillingPort {
    * Recusa **genuína** (o gateway respondeu e recusou): inadimplente já; retentativa pelo job até o limite; na última,
    * `onFinal` (que pode concluir como pago, se a conferência no gateway mostrar que entrou) e `failed`.
    */
-  private async collectionFailed(pay: Payment, progress: SettlementProgress, customerId: string, reason: string, opts: { final?: boolean; onFinal?: () => Promise<SettleResult | void> } = {}): Promise<SettleResult> {
+  private async collectionFailed(pay: Payment, progress: SettlementProgress, customerId: string, reason: string, opts: { final?: boolean; onFinal?: () => Promise<SettleResult | 'awaiting' | void> } = {}): Promise<SettleResult> {
     const attempts = progress.attempts + 1;
     await this.markDelinquent(customerId, pay.id, reason);
     if (opts.final || attempts >= MAX_COLLECTION_ATTEMPTS) {
       if (opts.onFinal) {
         const settled = await opts.onFinal();
+        if (settled === 'awaiting') {
+          // Garantia em análise: a cobrança já esgotou as tentativas, mas o desfecho da caução ainda vem do gateway.
+          await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { attempts, lastFailure: reason } });
+          await this.state.annotate(pay.id, { failureReason: reason });
+          return { paymentId: pay.id, status: 'failed' };
+        }
         if (settled) return settled;
       }
       await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { attempts, lastFailure: reason } });
       await this.state.transition(pay.id, 'failed', { failureReason: reason });
+      await this.markFinished(pay.id);
       return { paymentId: pay.id, status: 'failed' };
     }
     await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { attempts, lastFailure: reason } });
@@ -638,15 +770,32 @@ export class RentalBillingService implements RentalBillingPort {
     await this.retryPendingSettlements(2 * 60_000).catch((err) => this.logger.error({ msg: 'settlement_retry_failed', error: (err as Error).message }));
   }
 
+  /**
+   * Lê as liquidações pelo próprio registro do motor (`SettlementProgress`): não estacionadas, sem lease válido e sem
+   * movimento há `olderThanMs`, as mais antigas primeiro (`updatedAt` crescente). Pagamentos `pending` que caíram antes
+   * de ganhar o registro (janela mínima) entram por uma segunda consulta.
+   */
   async retryPendingSettlements(olderThanMs: number): Promise<void> {
-    const cutoff = new Date(Date.now() - olderThanMs);
-    const pending = await this.prisma.payment.findMany({ where: { kind: 'rental', status: 'pending', createdAt: { lte: cutoff } }, take: 50 });
-    for (const p of pending) {
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - olderThanMs);
+    const progress = await this.prisma.settlementProgress.findMany({
+      where: { parkedAt: null, finishedAt: null, updatedAt: { lte: cutoff }, OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] },
+      orderBy: { updatedAt: 'asc' },
+      take: 50,
+    });
+    const seen = new Set(progress.map((p) => p.paymentId));
+    const candidates: Payment[] = [];
+    for (const prog of progress) {
+      const p = await this.prisma.payment.findUnique({ where: { id: prog.paymentId } });
+      if (p?.status === 'pending') candidates.push(p);
+      // Liquidação já concluída sem o carimbo (queda entre a transição e o registro): fecha o registro para sair da fila.
+      else if (p) await this.markFinished(p.id);
+    }
+    const orphans = await this.prisma.payment.findMany({ where: { kind: 'rental', status: 'pending', createdAt: { lte: cutoff } }, orderBy: { updatedAt: 'asc' }, take: 50 });
+    const withProgress = new Set((await this.prisma.settlementProgress.findMany({ where: { paymentId: { in: orphans.map((p) => p.id) } }, select: { paymentId: true } })).map((p) => p.paymentId));
+    for (const p of orphans) if (!seen.has(p.id) && !withProgress.has(p.id)) candidates.push(p);
+    for (const p of candidates) {
       if (!p.rentalId || !p.idempotencyKey) continue;
-      const prog = await this.prisma.settlementProgress.findUnique({ where: { paymentId: p.id } });
-      if (prog?.leaseUntil && prog.leaseUntil > new Date()) continue;
-      if (prog?.parkedAt) continue;
-      if (prog && prog.attempts > 0 && prog.updatedAt > cutoff) continue;
       await this.runSettlement({ rentalId: p.rentalId, amountCents: p.amountCents, idempotencyKey: p.idempotencyKey }, true)
         .catch((err) => this.logger.warn({ msg: 'settlement_retry_item_failed', paymentId: p.id, error: (err as Error).message }));
     }
@@ -670,6 +819,13 @@ export class RentalBillingService implements RentalBillingPort {
       await this.nudgeSettlement(local, pp);
       return { payment: (await this.prisma.payment.findUnique({ where: { id: local.id } }))!, changed: false };
     }
+    const result = await this.applyToLocal(local, pp);
+    // Payment de caução no cartão: se uma liquidação está esperando uma captura em análise (parcial ou garantia), o motor roda.
+    if (local.kind === 'deposit' && local.method === 'card' && local.depositId) await this.nudgeDepositSettlement(local);
+    return result;
+  }
+
+  private async applyToLocal(local: Payment, pp: ProviderPayment): Promise<{ payment: Payment; changed: boolean }> {
     // Pix que expirou/foi cancelado no gateway antes de ser pago: localmente é pending → failed.
     if (pp.status === 'canceled' && local.status === 'pending') pp = { ...pp, status: 'failed', failureReason: pp.failureReason ?? 'pix_expired' };
     if (local.status === pp.status) return { payment: local, changed: false };
@@ -696,13 +852,29 @@ export class RentalBillingService implements RentalBillingPort {
     const progress = await this.prisma.settlementProgress.findUnique({ where: { paymentId: local.id } });
     if (!progress || progress.parkedAt || !local.rentalId || !local.idempotencyKey) return;
     const steps = (progress.steps as SettlementSteps | null) ?? {};
-    const waitingThis = steps.chargeInReview === pp.providerPaymentId || (steps.captureStarted && !steps.capture);
+    const waitingThis = steps.chargeInReview === pp.providerPaymentId || this.waitingCapture(steps);
     if (!waitingThis) {
       this.logger.log({ msg: 'settlement_webhook_ignored', paymentId: local.id, status: pp.status });
       return;
     }
     await this.runSettlement({ rentalId: local.rentalId, amountCents: local.amountCents, idempotencyKey: local.idempotencyKey }, true)
       .catch((err) => this.logger.warn({ msg: 'settlement_nudge_failed', paymentId: local.id, error: (err as Error).message }));
+  }
+
+  private waitingCapture(steps: SettlementSteps): boolean {
+    return (!!steps.captureStarted && !steps.capture) || !!steps.guaranteeCaptureInReview;
+  }
+
+  /** Webhook do Payment da caução: acorda a liquidação do aluguel que espera a captura (parcial ou garantia) dessa caução. */
+  private async nudgeDepositSettlement(depositPay: Payment): Promise<void> {
+    if (!depositPay.rentalId) return;
+    const pay = await this.prisma.payment.findFirst({ where: { rentalId: depositPay.rentalId, kind: 'rental', status: 'pending' }, orderBy: { createdAt: 'asc' } });
+    if (!pay?.idempotencyKey || !pay.rentalId) return;
+    const progress = await this.prisma.settlementProgress.findUnique({ where: { paymentId: pay.id } });
+    if (!progress || progress.parkedAt || progress.depositId !== depositPay.depositId) return;
+    if (!this.waitingCapture((progress.steps as SettlementSteps | null) ?? {})) return;
+    await this.runSettlement({ rentalId: pay.rentalId, amountCents: pay.amountCents, idempotencyKey: pay.idempotencyKey }, true)
+      .catch((err) => this.logger.warn({ msg: 'settlement_nudge_failed', paymentId: pay.id, error: (err as Error).message }));
   }
 
   private async onDepositPaymentChanged(p: Payment): Promise<void> {

@@ -8,6 +8,8 @@ export interface PaymentsConfig {
   webhookToleranceSeconds: number;
   pixExpirationMinutes: number;
   fakePixAutoConfirmSeconds: number;
+  /** Dias que uma cobrança/captura pode ficar em análise no gateway antes de a liquidação ser estacionada para revisão. */
+  reviewMaxDays: number;
   insuranceProvider: 'mock';
   invoiceIssuer: 'mock';
   reportsBucket: string;
@@ -40,6 +42,7 @@ export function loadPaymentsConfig(): PaymentsConfig {
     pixExpirationMinutes: int('PIX_EXPIRATION_MINUTES', 15),
     // Nome antigo (Task 3) aceito como fallback.
     fakePixAutoConfirmSeconds: int('FAKE_PIX_AUTOCONFIRM_SECONDS', int('STUB_PIX_AUTOCONFIRM_SECONDS', 10)),
+    reviewMaxDays: int('PAYMENT_REVIEW_MAX_DAYS', 7),
     insuranceProvider: 'mock',
     invoiceIssuer: 'mock',
     reportsBucket: env('S3_BUCKET_REPORTS') ?? 'relatorios',

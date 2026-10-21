@@ -27,6 +27,14 @@ describe('loadPaymentsConfig (fix round 1)', () => {
     expect(() => loadPaymentsConfig()).toThrow(/PAYMENT_PROVIDER inválido/);
   });
 
+  it('fix round 4: prazo da análise no gateway (PAYMENT_REVIEW_MAX_DAYS): padrão 7 dias, configurável', () => {
+    process.env.PAYMENT_PROVIDER = 'fake';
+    delete process.env.PAYMENT_REVIEW_MAX_DAYS;
+    expect(loadPaymentsConfig().reviewMaxDays).toBe(7);
+    process.env.PAYMENT_REVIEW_MAX_DAYS = '3';
+    expect(loadPaymentsConfig().reviewMaxDays).toBe(3);
+  });
+
   it('tolerância do webhook: padrão 300 s, configurável', () => {
     process.env.PAYMENT_PROVIDER = 'fake';
     delete process.env.MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS;

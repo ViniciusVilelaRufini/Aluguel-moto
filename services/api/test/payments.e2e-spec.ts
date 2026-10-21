@@ -151,7 +151,9 @@ describe('Pagamentos (e2e)', () => {
     // Captura recusada: inadimplente na hora; a liquidação fica pendente para o job retentar (fix round 1).
     const pay = await until(() => prisma.payment.findFirst({ where: { rentalId, kind: 'rental' } }), (v) => v?.failureReason === 'cc_rejected_insufficient_amount');
     expect(pay).toMatchObject({ status: 'pending' });
-    expect(await prisma.settlementProgress.findUnique({ where: { paymentId: pay!.id } })).toMatchObject({ attempts: 1, plan: 'card_capture' });
+    // O motor grava a recusa antes de soltar o lease; o job (abaixo) só retoma liquidações sem lease, então espera a execução terminar.
+    const progress = await until(() => prisma.settlementProgress.findUnique({ where: { paymentId: pay!.id } }), (v) => v?.attempts === 1 && v.leaseUntil === null);
+    expect(progress).toMatchObject({ attempts: 1, plan: 'card_capture' });
     expect((await prisma.customer.findUniqueOrThrow({ where: { id: customerId } })).delinquent).toBe(true);
     expect((await prisma.deposit.findUniqueOrThrow({ where: { id: depositId } })).status).toBe('held');
 

@@ -239,6 +239,34 @@ describe('PaymentsService.refund (via gateway)', () => {
     expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'paid', refundedCents: 0 });
   });
 
+  it('fix round 4: repetir o estorno com a MESMA Idempotency-Key enquanto o primeiro está em aberto → 200 com o estado atual (sem 409, sem novo pedido, sem gateway)', async () => {
+    const { db, svc, p, provider } = await setup();
+    const refund = jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+    const first = await svc.refund(admin, p.id, { amountCents: 1000, reason: 'A' }, 'k-a');
+    expect(first).toMatchObject({ status: 'partially_refunded', refundedCents: 1000 });
+    const again = await svc.refund(admin, p.id, { amountCents: 1000, reason: 'A' }, 'k-a');
+    expect(again).toMatchObject({ id: p.id, status: 'partially_refunded', refundedCents: 1000 });
+    expect(refund).toHaveBeenCalledTimes(1);
+    expect(await db.paymentRefund.count({ where: { paymentId: p.id } })).toBe(1);
+    expect(await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).toMatchObject({ status: 'pending', idempotencyKey: `refund:${p.id}:k-a` });
+    // Chave diferente continua 409 enquanto o primeiro estiver em aberto.
+    await expect(svc.refund(admin, p.id, { amountCents: 500, reason: 'B' }, 'k-b')).rejects.toMatchObject({ slug: 'conflict' });
+    // Depois de concluído, a mesma chave ainda devolve o estado atual sem estornar de novo.
+    await svc.reconcileRefunds(0);
+    expect(await svc.refund(admin, p.id, { amountCents: 1000, reason: 'A' }, 'k-a')).toMatchObject({ status: 'partially_refunded', refundedCents: 1000 });
+    expect(provider.operations('refund')).toBe(1);
+    expect(await db.paymentRefund.count({ where: { paymentId: p.id } })).toBe(1);
+  });
+
+  it('fix round 4: mesma Idempotency-Key de um estorno recusado → 422 de novo, sem novo pedido', async () => {
+    const { db, svc, p, provider } = await setup();
+    jest.spyOn(provider, 'refund').mockRejectedValueOnce(new RefundRejectedError('recusado'));
+    await expect(svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k')).rejects.toMatchObject({ slug: 'payment-failed' });
+    await expect(svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k')).rejects.toMatchObject({ slug: 'payment-failed' });
+    expect(await db.paymentRefund.count({ where: { paymentId: p.id } })).toBe(1);
+    expect(provider.operations('refund')).toBe(0);
+  });
+
   it('fix round 1: teto do estorno de caução capturada = valor capturado (PaymentCapture)', async () => {
     const { db, svc } = await setup();
     const dp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'deposit', method: 'card', status: 'captured', amountCents: 5000, providerPaymentId: 'x' } });
