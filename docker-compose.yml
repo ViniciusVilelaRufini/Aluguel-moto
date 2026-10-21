@@ -27,6 +27,37 @@ services:
       MINIO_ROOT_PASSWORD: volti-dev-secret
     ports: ["9000:9000", "9001:9001"]
     volumes: [miniodata:/data]
+  minio-init:
+    image: minio/mc:latest
+    depends_on: [minio]
+    entrypoint: >
+      /bin/sh -c "until mc alias set local http://minio:9000 volti volti-dev-secret; do sleep 1; done;
+      for b in documentos-kyc fotos-devolucao relatorios anexos; do mc mb --ignore-existing local/$$b; done"
+  api:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://volti:volti@postgres:5432/volti
+      REDIS_URL: redis://redis:6379
+      MQTT_URL: mqtt://mosquitto:1883
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      RUN_MIGRATIONS: ${RUN_MIGRATIONS:-true}
+      RUN_SEED: ${RUN_SEED:-false}
+    ports: ["3000:3000"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+      minio:
+        condition: service_started
 volumes:
   pgdata:
   miniodata:

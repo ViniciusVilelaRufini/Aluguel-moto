@@ -24,3 +24,23 @@ Ambiguidades resolvidas ao escrever `packages/contracts/openapi.yaml`:
 16. **Reserva no fluxo Pix.** O `202` `awaiting_deposit` cria (ou estende) uma reserva do cliente para a moto até `pix.expiresAt`, com as mesmas regras das reservas. Caução paga cujo aluguel não chega a iniciar (reserva expirada, `409`, cancelamento) é liberada/estornada automaticamente (`DepositStatus` → `released`).
 17. **Liquidação única por aluguel.** `POST /rentals/{id}/end` e `/force-end` aceitam `Idempotency-Key` opcional; a liquidação é chaveada por `rentalId` (no máximo uma por aluguel, independentemente de repetições).
 18. **Sala `rental:{id}`** do WebSocket vale enquanto o aluguel estiver `active`, `paused` ou `ending` (já descrito em `packages/contracts/realtime.md`).
+
+## 2026-10-21 · agente 2 (Task 3, API) · status: proposta
+
+Decisões tomadas ao implementar `services/api` onde o contrato/spec deixam espaço. Nenhuma altera o `openapi.yaml` (a única mudança de contrato aplicada foi a aprovada: `submitInspection` declara `422`).
+
+1. **Eventos internos adicionais** (além da tabela do plano mestre): `vehicle.status-changed`, `command.changed`, `alert.created`, `rental.changed` (alimentam o WebSocket), `zone.changed` (sincronização do motor de cercas — Task 4), `reservation.ended` e `deposit.release-requested` `{ depositId, customerId, reason }`. **A Task 5 deve consumir `deposit.release-requested`** para liberar/estornar a caução no gateway (decisão #16); o `StubRentalBilling` hoje só marca `released` no banco. Tipos em `services/api/src/common/events.ts`.
+2. **Chaves de idempotência das portas:** liquidação `rental-settlement:<rentalId>` (decisão #17) e caução `deposit:<customerId>:<Idempotency-Key>`.
+3. **Foto de devolução:** o `returnPhotoObjectKey` do `end` precisa ser igual à chave emitida pelo último `POST /rentals/{id}/return-photo` (a porta `ObjectStorage` não tem `head`; a existência do objeto não é verificada). Proposta: acrescentar `headObject` à porta.
+4. **Tempo cobrado no encerramento:** até o pedido de encerramento (`endRequestedAt`), não até a confirmação "travada" — a espera do rastreador não é cobrada.
+5. **Regras de preço não explícitas:** `hour`/`day`/`week`/`month` cobram unidades iniciadas sobre o tempo total (pausa inclusa, mínimo 1 unidade); cupom incide só sobre o tempo (não sobre seguro e taxas); percentual arredonda ao centavo mais próximo.
+6. **Troca de moto a mais de 200 m:** `422` com slug `validation-error` (o contrato não tem slug específico). Proposta: slug `swap-vehicle-too-far`.
+7. **Idempotency-Key em processamento:** segunda requisição concorrente com a mesma chave → `409` slug `conflict` (não listado no contrato).
+8. **Usuários internos (`POST /staff`):** gravados só no banco; criar o usuário no pool interno do Cognito (convite + MFA) exige uma porta nova (`StaffDirectory`, local = no-op, aws = `AdminCreateUser`). Proposta para a Task 2/9.
+9. **Aluguel/recurso de outro cliente:** `404` (não `403`), para não revelar existência.
+10. **Telemetria:** o módulo vehicles grava o estado ao vivo no Redis (`vehicle:live:{id}`) a cada `iot.telemetry` e no Postgres no máximo a cada 30 s por moto. A gravação de `TrackPoint` (só com aluguel ativo) fica com o consumidor da Task 4, para não duplicar pontos.
+11. **`DELETE /zones/{id}`:** exclusão lógica (`active: false`, `deletedAt`), preservando o histórico de eventos de cerca.
+12. **Webhook do Mercado Pago:** a API valida a assinatura e enfileira com `dedupId`; a deduplicação persistente (`ProcessedWebhook`) e o processamento ficam com a Task 5.
+13. **`POST /vehicles`:** moto nova nasce em `maintenance` (até o rastreador ser validado e alguém liberá-la via `POST /vehicles/{id}/status`).
+14. **KYC:** CPF na lista de restrição → `422 customer-blocked`; CPF já usado por outra conta → `409 conflict`; chaves de arquivo precisam estar sob `kyc/<customerId>/`.
+15. **Teste de contrato:** `jest-openapi` só aceita OpenAPI 3.0; o teste converte o documento 3.1 em memória para 3.0.3 (o contrato não usa construções exclusivas de 3.1), sem alterar nenhum schema.
