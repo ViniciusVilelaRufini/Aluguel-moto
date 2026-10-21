@@ -30,7 +30,7 @@ MaterialApp(theme: VoltiTheme.light(), darkTheme: VoltiTheme.dark(), ...);
 | `VoltiTypography` | `display`, `title`, `heading`, `bodyStrong`, `body`, `label`, `caption`, `overline`, `timer` (JetBrains Mono) |
 | `VoltiTheme` | `light()` e `dark()` (Material 3; escuro usa superfícies ink e mantém o verde) |
 
-Fontes (Plus Jakarta Sans 400-800, JetBrains Mono 500/700) vão em `fonts/` e já estão declaradas no `pubspec.yaml`.
+Fontes TTF estáticas (Plus Jakarta Sans 400-800, JetBrains Mono 500/700, OFL) vão em `fonts/` e já estão declaradas no `pubspec.yaml`.
 
 ## Widgets
 
@@ -48,8 +48,8 @@ await (auth as DevAuthRepository).signIn(sub: 'u1', email: 'a@b.com');
 
 - `API_BASE_URL` via `--dart-define` (padrão `http://10.0.2.2:3000` no Android, `http://localhost:3000` nos demais). Sobrescreva em testes com `apiBaseUrlProvider`.
 - `AUTH_MODE=dev|cognito` via `--dart-define` (padrão `dev`).
-- Retry exponencial (3 tentativas, 300 ms e 600 ms): erros de conexão em qualquer método; 5xx e timeouts de resposta só em métodos idempotentes (GET, HEAD, PUT, DELETE), para não duplicar `POST`.
-- Modo `dev`: `POST /dev/token` com `sub`, `email`, `groups`, `pool` (`DevAuthPool`). Token só em memória.
+- Retry exponencial (3 tentativas, 300 ms e 600 ms): `connectionTimeout` em qualquer método; `connectionError`, 5xx e timeouts de envio/resposta só se (método idempotente: GET, HEAD, PUT, DELETE) OU (header `Idempotency-Key`) OU (`extra['retryable']=true`) -- qualquer uma basta --, para não duplicar `POST`. Corpos FormData/stream nunca são repetidos.
+- Modo `dev` (sem refresh; ao expirar, chame `signIn` de novo): `POST /dev/token` com `sub`, `email`, `groups`, `pool` (`DevAuthPool`). Token só em memória.
 - Modo `cognito`: interface pronta (`CognitoAuthRepository`), mas o login (Hosted UI/PKCE) lança `UnimplementedError` até a infraestrutura de autenticação existir; `accessToken()` devolve `null`.
 
 ## Testes

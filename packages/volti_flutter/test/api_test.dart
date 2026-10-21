@@ -76,6 +76,30 @@ void main() {
     expect(a2.calls.length, 1);
   });
 
+  test('POST + connectionError: exatamente 1 chamada', () async {
+    final a = _FakeAdapter(['net']);
+    final api = buildVoltiApi(
+        baseUrl: 'http://x', auth: _StubAuth(), httpClientAdapter: a, sleep: (_) async {});
+    await expectLater(api.dio.post<dynamic>('/rentals'), throwsA(isA<DioException>()));
+    expect(a.calls.length, 1);
+  });
+
+  test('POST com Idempotency-Key ou extra retryable repete', () async {
+    final a = _FakeAdapter(['net', 200]);
+    final api = buildVoltiApi(
+        baseUrl: 'http://x', auth: _StubAuth(), httpClientAdapter: a, sleep: (_) async {});
+    final r = await api.dio.post<dynamic>('/rentals',
+        options: Options(headers: {'Idempotency-Key': 'k1'}));
+    expect(r.statusCode, 200);
+    expect(a.calls.length, 2);
+
+    final b = _FakeAdapter(['net', 200]);
+    final api2 = buildVoltiApi(
+        baseUrl: 'http://x', auth: _StubAuth(), httpClientAdapter: b, sleep: (_) async {});
+    await api2.dio.post<dynamic>('/rentals', options: Options(extra: {'retryable': true}));
+    expect(b.calls.length, 2);
+  });
+
   test('DevAuthRepository usa POST /dev/token', () async {
     final adapter = _TokenAdapter();
     final repo = DevAuthRepository(baseUrl: 'http://x', dio: Dio()..httpClientAdapter = adapter);
