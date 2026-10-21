@@ -19,10 +19,7 @@ abstract final class VoltiPageTransitions {
 
   /// Progresso (0..1, ja com a curva da tela) do modal aberto no momento. A
   /// pagina de tras usa para recuar em vez de deslizar.
-  @visibleForTesting
   static final ValueNotifier<double> recede = ValueNotifier<double>(0);
-
-  static const _shadow = [BoxShadow(color: Color(0x3815181A), blurRadius: 48)];
 
   /// Push lateral. Aplique em todas as paginas "normais".
   static Widget push(
@@ -47,16 +44,7 @@ abstract final class VoltiPageTransitions {
           begin: const Offset(1, 0),
           end: Offset.zero,
         ).animate(enter),
-        child: AnimatedBuilder(
-          animation: enter,
-          child: child,
-          builder: (context, c) => DecoratedBox(
-            decoration: BoxDecoration(
-              boxShadow: enter.value < 1 ? _shadow : null,
-            ),
-            child: c,
-          ),
-        ),
+        child: _EdgeShadow(animation: enter, axis: Axis.horizontal, child: child),
       ),
     );
   }
@@ -79,6 +67,7 @@ abstract final class VoltiPageTransitions {
     );
     return _Covered(
       cover: cover,
+      canRecede: false,
       child: _RecedePublisher(
         animation: enter,
         child: SlideTransition(
@@ -86,16 +75,7 @@ abstract final class VoltiPageTransitions {
             begin: const Offset(0, 1),
             end: Offset.zero,
           ).animate(enter),
-          child: AnimatedBuilder(
-            animation: enter,
-            child: child,
-            builder: (context, c) => DecoratedBox(
-              decoration: BoxDecoration(
-                boxShadow: enter.value < 1 ? _shadow : null,
-              ),
-              child: c,
-            ),
-          ),
+          child: _EdgeShadow(animation: enter, axis: Axis.vertical, child: child),
         ),
       ),
     );
@@ -105,8 +85,9 @@ abstract final class VoltiPageTransitions {
 /// Pagina coberta por outra: com um modal por cima recua (escala/escurece/
 /// cantos); com push lateral desliza 30% e escurece.
 class _Covered extends StatelessWidget {
-  const _Covered({required this.cover, required this.child});
+  const _Covered({required this.cover, required this.child, this.canRecede = true});
   final Animation<double> cover;
+  final bool canRecede;
   final Widget child;
 
   @override
@@ -118,7 +99,7 @@ class _Covered extends StatelessWidget {
         final t = cover.value;
         if (t <= 0) return c!;
         final r = VoltiPageTransitions.recede.value;
-        if (r > 0) {
+        if (canRecede && r > 0) {
           return ColoredBox(
             color: Colors.black,
             child: Transform.scale(
@@ -174,27 +155,75 @@ class _RecedePublisher extends StatefulWidget {
 }
 
 class _RecedePublisherState extends State<_RecedePublisher> {
-  void _tick() => VoltiPageTransitions.recede.value = widget.animation.value;
+  // Modais abertos, do mais antigo ao mais novo: vale o do topo, e um que fecha
+  // nao zera o valor de outro mais novo.
+  static final _stack = <_RecedePublisherState>[];
+
+  static void _publish() =>
+      VoltiPageTransitions.recede.value = _stack.isEmpty ? 0 : _stack.last.widget.animation.value;
 
   @override
   void initState() {
     super.initState();
-    widget.animation.addListener(_tick);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _tick());
+    _stack.add(this);
+    widget.animation.addListener(_publish);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _publish());
   }
 
   @override
   void dispose() {
-    widget.animation.removeListener(_tick);
+    widget.animation.removeListener(_publish);
+    _stack.remove(this);
     // Fora do ciclo de build/finalizacao da arvore.
-    WidgetsBinding.instance.addPostFrameCallback(
-      (_) => VoltiPageTransitions.recede.value = 0,
-    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _publish());
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => widget.child;
+}
+
+/// Sombra de borda barata (gradiente de 28 px) enquanto a pagina entra, no
+/// lugar de um BoxShadow de blur grande.
+class _EdgeShadow extends StatelessWidget {
+  const _EdgeShadow({required this.animation, required this.axis, required this.child});
+  final Animation<double> animation;
+  final Axis axis;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final h = axis == Axis.horizontal;
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, c) {
+        if (animation.value >= 1) return c!;
+        return Stack(clipBehavior: Clip.none, fit: StackFit.passthrough, children: [
+          c!,
+          Positioned(
+            left: h ? -28 : 0,
+            right: h ? null : 0,
+            top: h ? 0 : -28,
+            bottom: h ? 0 : null,
+            width: h ? 28 : null,
+            height: h ? null : 28,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: h ? Alignment.centerLeft : Alignment.topCenter,
+                    end: h ? Alignment.centerRight : Alignment.bottomCenter,
+                    colors: const [Color(0x0015181A), Color(0x3815181A)],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ]);
+      },
+    );
+  }
 }
 
 /// Rota pronta (Navigator puro) com as transicoes do design.

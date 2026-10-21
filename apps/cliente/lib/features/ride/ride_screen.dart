@@ -509,14 +509,16 @@ class _LiveDot extends StatefulWidget {
 
 class _LiveDotState extends State<_LiveDot> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
-  bool _init = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_init) return;
-    _init = true;
-    if (!VoltiMotion.reduced(context)) _c.repeat(reverse: true);
+    if (VoltiMotion.reduced(context)) {
+      _c.stop();
+      _c.value = 0;
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
   }
 
   @override

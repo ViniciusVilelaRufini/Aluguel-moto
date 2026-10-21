@@ -162,18 +162,35 @@ class _ScanOverlay extends StatefulWidget {
 
 class _ScanOverlayState extends State<_ScanOverlay> with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 1200));
-  bool _init = false;
+  late final CurvedAnimation _eased = CurvedAnimation(parent: _c, curve: VoltiMotion.easeInOut);
+  bool _reduced = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_init) return;
-    _init = true;
-    if (!VoltiMotion.reduced(context)) _c.repeat(reverse: true);
+    _reduced = VoltiMotion.reduced(context);
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(_ScanOverlay old) {
+    super.didUpdateWidget(old);
+    _sync();
+  }
+
+  /// Anima so enquanto procura e sem reduced motion.
+  void _sync() {
+    if (_reduced || widget.found) {
+      _c.stop();
+      _c.value = 0;
+    } else if (!_c.isAnimating) {
+      _c.repeat(reverse: true);
+    }
   }
 
   @override
   void dispose() {
+    _eased.dispose();
     _c.dispose();
     super.dispose();
   }
@@ -208,7 +225,7 @@ class _ScanOverlayState extends State<_ScanOverlay> with SingleTickerProviderSta
 
   @override
   Widget build(BuildContext context) {
-    final eased = CurvedAnimation(parent: _c, curve: VoltiMotion.easeInOut);
+    final eased = _eased;
     return IgnorePointer(
       child: ScaleTransition(
         scale: Tween(begin: 1.0, end: widget.found ? 1.0 : 1.035).animate(eased),

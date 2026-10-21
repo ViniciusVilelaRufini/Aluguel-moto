@@ -202,13 +202,17 @@ class VoltiStagger extends StatelessWidget {
   final int startIndex;
 
   /// Envolve cada widget em [VoltiFadeUp] com o atraso da sua posicao.
-  static List<Widget> wrap(List<Widget> items, {int startIndex = 0}) => [
-    for (var i = 0; i < items.length; i++)
-      VoltiFadeUp(
-        delay: VoltiMotion.staggerDelay(startIndex + i),
-        child: items[i],
-      ),
-  ];
+  ///
+  /// Cuidado em listas longas e preguicosas (`ListView` com muitos itens): cada
+  /// item anima quando e construido ao rolar; use `animate: false` (ou envolva
+  /// so os primeiros itens) em historicos e listas paginadas.
+  static List<Widget> wrap(List<Widget> items, {int startIndex = 0, bool animate = true}) {
+    if (!animate) return items;
+    return [
+      for (var i = 0; i < items.length; i++)
+        VoltiFadeUp(delay: VoltiMotion.staggerDelay(startIndex + i), child: items[i]),
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -418,7 +422,8 @@ class _VoltiPulseState extends State<VoltiPulse>
         children: [
           if (showRing)
             Positioned.fill(
-              child: IgnorePointer(
+              child: RepaintBoundary(
+                child: IgnorePointer(
                 child: AnimatedBuilder(
                   animation: _c,
                   builder: (context, _) {
@@ -444,6 +449,7 @@ class _VoltiPulseState extends State<VoltiPulse>
                     );
                   },
                 ),
+              ),
               ),
             ),
           if (widget.child != null) widget.child!,
@@ -562,7 +568,8 @@ class _VoltiShineState extends State<VoltiShine>
   Widget build(BuildContext context) {
     final on = widget.enabled && !VoltiMotion.reduced(context);
     if (!on) return widget.child;
-    return Stack(
+    return RepaintBoundary(
+      child: Stack(
       children: [
         widget.child,
         Positioned.fill(
@@ -571,15 +578,18 @@ class _VoltiShineState extends State<VoltiShine>
               borderRadius: widget.borderRadius,
               child: AnimatedBuilder(
                 animation: _c,
-                builder: (context, _) => CustomPaint(
-                  key: const Key('volti-shine'),
-                  painter: _ShinePainter(_phase(_c.value)),
-                ),
+                builder: (context, _) {
+                  final t = _phase(_c.value);
+                  // Fora do varrido (45% ociosos do ciclo) nao pinta nada.
+                  if (t < 0 || t > 1) return const SizedBox.expand(key: Key('volti-shine-idle'));
+                  return CustomPaint(key: const Key('volti-shine'), painter: _ShinePainter(t));
+                },
               ),
             ),
           ),
         ),
       ],
+    ),
     );
   }
 

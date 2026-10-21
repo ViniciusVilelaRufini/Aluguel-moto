@@ -298,4 +298,94 @@ void main() {
       expect(t.getTopLeft(find.text('segunda')).dx, lessThan(300));
     });
   });
+
+  group('Estabilidade e recede', () {
+    testWidgets('pins com key estavel nao reiniciam a queda quando a lista muda', (t) async {
+      Widget list(List<String> ids) => _wrap(Column(children: [
+            for (final id in ids)
+              VehicleMarker(VehicleStatus.free, 80, key: ValueKey(id), delay: const Duration(milliseconds: 100)),
+          ]));
+      await t.pumpWidget(list(['a', 'b']));
+      await t.pump(const Duration(seconds: 2));
+      await t.pumpWidget(list(['x', 'a', 'b']));
+      await t.pump(const Duration(milliseconds: 10));
+      final bodies = find.byKey(const Key('vehicle-marker-body'));
+      expect(bodies, findsNWidgets(3));
+      // a e b seguem visiveis (sem reiniciar); so o novo (x, primeiro) esta em entrada.
+      expect(_opacityOf(t, bodies.at(1)), 1);
+      expect(_opacityOf(t, bodies.at(2)), 1);
+      expect(_opacityOf(t, bodies.at(0)), 0);
+      await t.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('animateIn false nao anima', (t) async {
+      await t.pumpWidget(_wrap(const VehicleMarker(VehicleStatus.free, 80, animateIn: false, delay: Duration(seconds: 1))));
+      expect(_opacityOf(t, find.byKey(const Key('vehicle-marker-body'))), 1);
+    });
+
+    testWidgets('shine nao pinta no trecho ocioso do ciclo', (t) async {
+      await t.pumpWidget(_wrap(VoltiShine(child: const SizedBox(width: 100, height: 40))));
+      await t.pump(const Duration(milliseconds: 100));
+      expect(find.byKey(const Key('volti-shine')), findsNothing);
+      await t.pump(const Duration(milliseconds: 1900)); // 2 s: em pleno varrido
+      expect(find.byKey(const Key('volti-shine')), findsOneWidget);
+      await t.pump(const Duration(milliseconds: 2500)); // 4,5 s: ocioso
+      expect(find.byKey(const Key('volti-shine')), findsNothing);
+    });
+
+    testWidgets('VoltiStagger.wrap(animate: false) devolve os itens', (t) async {
+      final items = [const Text('a')];
+      expect(identical(VoltiStagger.wrap(items, animate: false), items), isTrue);
+    });
+
+    Widget app() => MaterialApp(
+          home: Builder(
+            builder: (c) => Scaffold(
+              body: TextButton(
+                onPressed: () => Navigator.of(c).push(VoltiPageRoute<void>(
+                  modal: true,
+                  builder: (_) => const Scaffold(body: Text('modal')),
+                )),
+                child: const Text('abrir'),
+              ),
+            ),
+          ),
+        );
+
+    testWidgets('recede volta a 0 ao fechar o modal com pop', (t) async {
+      await t.pumpWidget(app());
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      expect(VoltiPageTransitions.recede.value, 1);
+      Navigator.of(t.element(find.text('modal'))).pop();
+      await t.pumpAndSettle();
+      expect(VoltiPageTransitions.recede.value, 0);
+    });
+
+    testWidgets('recede volta a 0 ao fechar com o gesto/botao voltar do sistema', (t) async {
+      await t.pumpWidget(app());
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      await t.binding.handlePopRoute();
+      await t.pumpAndSettle();
+      expect(find.text('modal'), findsNothing);
+      expect(VoltiPageTransitions.recede.value, 0);
+    });
+
+    testWidgets('modal fechando nao zera o valor de outro modal mais novo', (t) async {
+      await t.pumpWidget(app());
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      final nav = Navigator.of(t.element(find.text('modal')));
+      nav.push(VoltiPageRoute<void>(modal: true, builder: (_) => const Scaffold(body: Text('modal2'))));
+      await t.pumpAndSettle();
+      expect(VoltiPageTransitions.recede.value, 1);
+      nav.pop();
+      await t.pumpAndSettle();
+      expect(VoltiPageTransitions.recede.value, 1);
+      nav.pop();
+      await t.pumpAndSettle();
+      expect(VoltiPageTransitions.recede.value, 0);
+    });
+  });
 }

@@ -28,6 +28,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   String? _selectedId;
   bool _busy = false;
 
+  /// Pins que ja cairam: remontar (pan/culling, lista mudando, GPS chegando)
+  /// nao repete a animacao. A sequencia com atraso so vale na primeira carga.
+  final _dropped = <String>{};
+
   @override
   void initState() {
     super.initState();
@@ -104,6 +108,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (v.id == _selectedId) selected = v;
     }
     final center = loc ?? fallbackCenter;
+    final firstLoad = _dropped.isEmpty;
+    final newIds = [for (final v in vehicles) if (!_dropped.contains(v.id)) v.id];
+    if (newIds.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _dropped.addAll(newIds));
+    }
 
     return Scaffold(
       body: Stack(
@@ -125,6 +134,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 MarkerLayer(markers: [
                   if (loc != null)
                     Marker(
+                      key: const ValueKey('user-dot'),
                       point: loc,
                       width: 22,
                       height: 22,
@@ -133,6 +143,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   // Pins caem em sequencia (260 ms + 70 ms por pin, limitado a 12).
                   for (final (i, v) in vehicles.indexed)
                     Marker(
+                      key: ValueKey('pin-${v.id}'),
                       point: LatLng(v.lat, v.lng),
                       width: 56,
                       height: 64,
@@ -140,7 +151,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         button: true,
                         label: l.vehicleSemantics(v.model, v.batteryPct),
                         child: VehicleMarker(v.status, v.batteryPct,
-                            delay: Duration(milliseconds: 260 + (i < 12 ? i : 12) * 70),
+                            animateIn: !_dropped.contains(v.id),
+                            delay: firstLoad ? Duration(milliseconds: 260 + (i < 12 ? i : 12) * 70) : Duration.zero,
                             selected: v.id == _selectedId,
                             onTap: () => setState(() => _selectedId = v.id)),
                       ),
@@ -364,10 +376,10 @@ class _VehicleSheet extends StatelessWidget {
             VoltiIconButton(icon: LucideIcons.x, variant: VoltiIconButtonVariant.ghost, label: l.close, onPressed: onClose),
           ]),
           const SizedBox(height: VoltiSpacing.s10),
-          Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+          Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: VoltiStagger.wrap([
             BatteryPill(vehicle.batteryPct, rangeKm: vehicle.estimatedRangeKm.round()),
             if (dist != null) RouteInfoPill(minutes: walkingMinutes(dist), distance: walkingDistanceLabel(dist)),
-          ]),
+          ])),
           const SizedBox(height: VoltiSpacing.s14),
           Row(children: [
             Expanded(
