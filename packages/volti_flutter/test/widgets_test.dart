@@ -182,7 +182,7 @@ void main() {
       expect(d.brightness, Brightness.dark);
       expect(l.colorScheme.primary, VoltiColors.green500);
       expect(d.colorScheme.primary, VoltiColors.green500);
-      expect(l.textTheme.bodyMedium!.fontFamily, VoltiTypography.fontSans);
+      expect(l.textTheme.bodyMedium!.fontFamily, 'packages/volti_flutter/Plus Jakarta Sans');
     });
 
     testWidgets('widgets renderizam no tema escuro', (t) async {
