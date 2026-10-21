@@ -32,13 +32,21 @@ export async function vehicleByCode(request: APIRequestContext, code: string): P
   return apiGet(request, `/vehicles/by-code/${code}`);
 }
 
-/** Desenha um polígono clicando no canvas do mapa e fechando com duplo clique. */
+/**
+ * Desenha um polígono no mapa: o Draw precisa de um mousemove antes de cada clique e fecha o polígono
+ * quando o último vértice é clicado de novo.
+ */
 export async function drawPolygon(page: Page, offset = 0) {
   const map = page.getByTestId('map');
   const box = (await map.boundingBox())!;
   const cx = box.x + box.width / 2 + offset;
   const cy = box.y + box.height / 2 + offset;
-  const pts: [number, number][] = [[-80, -60], [80, -60], [80, 60]];
-  for (const [dx, dy] of pts) await page.mouse.click(cx + dx, cy + dy);
-  await page.mouse.dblclick(cx - 80, cy + 60);
+  const pts: [number, number][] = [[-80, -60], [80, -60], [80, 60], [-80, 60]];
+  for (const [dx, dy] of pts) {
+    await page.mouse.move(cx + dx, cy + dy, { steps: 5 });
+    await page.mouse.down();
+    await page.mouse.up();
+  }
+  await page.mouse.down();
+  await page.mouse.up();
 }

@@ -65,6 +65,7 @@ export default function ZonesPage() {
     const draw = new Draw({ displayControlsDefault: false, defaultMode: 'simple_select' });
     map.addControl(draw as never);
     drawRef.current = draw;
+    (window as unknown as { __voltiDraw?: MapboxDraw }).__voltiDraw = draw;
     const sync = (e: { features: GeoJSON.Feature[] }) => {
       const g = e.features[0]?.geometry;
       if (g?.type !== 'Polygon') return;
