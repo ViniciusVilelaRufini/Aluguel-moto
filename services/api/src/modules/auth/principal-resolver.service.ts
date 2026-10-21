@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { VerifiedToken } from '../../ports/auth-verifier.port';
 import type { Principal } from './principal';
@@ -19,12 +20,7 @@ export class PrincipalResolver {
 
     let principal: Principal;
     if (token.pool === 'customer') {
-      const customer = await this.prisma.customer.upsert({
-        where: { cognitoSub: token.sub },
-        create: { cognitoSub: token.sub, email: token.email || `${token.sub}@sem-email.volti.invalid` },
-        update: {},
-        select: { id: true, status: true },
-      });
+      const customer = await this.upsertCustomer(token);
       if (customer.status === 'deleted') throw new ProblemException(401, 'unauthorized', 'Conta excluída.');
       principal = { pool: 'customer', sub: token.sub, email: token.email, groups: [], userId: customer.id, customerId: customer.id };
     } else {
@@ -57,6 +53,26 @@ export class PrincipalResolver {
     }
     this.cache.set(cacheKey, { principal, at: Date.now() });
     return principal;
+  }
+
+  /**
+   * QA-08: primeiro acesso com requisições paralelas (o app abre várias telas juntas) disputava o upsert e respondia 409.
+   * O upsert do Prisma não é atômico: em violação de unicidade, relê o cadastro criado pela requisição concorrente.
+   */
+  private async upsertCustomer(token: VerifiedToken): Promise<{ id: string; status: string }> {
+    const where = { cognitoSub: token.sub };
+    const select = { id: true, status: true } as const;
+    try {
+      return await this.prisma.customer.upsert({
+        where,
+        create: { cognitoSub: token.sub, email: token.email || `${token.sub}@sem-email.volti.invalid` },
+        update: {},
+        select,
+      });
+    } catch (err) {
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+      return this.prisma.customer.findUniqueOrThrow({ where, select });
+    }
   }
 
   invalidate(): void {
