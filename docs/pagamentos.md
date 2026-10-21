@@ -140,6 +140,25 @@ Se já existe aluguel com a caução, o pedido é ignorado. Pix pago depois da l
   - senão repete com a mesma chave;
   - depois de 10 tentativas → `needs_review`.
 
+### Cobrança em análise, estorno único em aberto e webhooks da liquidação (fix round 3)
+
+- **Cobrança ou captura em análise.** No Mercado Pago, `pending`, `in_process` e `in_mediation` mapeiam para `pending` local, e esse estado não é recusa.
+  - O passo grava `chargeInReview = <id>`, não conta tentativa, não deixa o cliente inadimplente e não troca a chave.
+  - Cada execução seguinte só consulta `getPayment(id)`, sem cobrar de novo.
+  - Aprovada → passo concluído. Recusada → conta como uma recusa.
+  - A conciliação por `external_reference` também encontra pagamentos em análise.
+  - Enquanto espera, a porta responde `failed` (o contrato da porta só tem `paid` ou `failed`) e o `Payment` continua `pending`.
+- **Estorno.**
+  - Só um pedido em aberto (`claimed` ou `pending`) por pagamento; um novo pedido nesse período recebe `409`.
+  - O id do estorno no gateway fica gravado em `providerRefundId`.
+  - Um rollback que não encontra a reserva exatamente como foi deixada marca o pedido `needs_review`, nunca `rejected`.
+- **Webhook de liquidação pendente.** O webhook **nunca** muda o `Payment` do aluguel diretamente.
+  - Se o motor está esperando exatamente aquele pagamento (`chargeInReview`), o webhook dispara uma execução do motor sob o lease.
+  - Caso contrário, é ignorado.
+  - Liquidação estacionada não é tocada.
+- **Mercado Pago.** Um 400 ou 404 na leitura (`GET`) feita depois de um estorno aceito é resultado desconhecido, não recusa.
+- **Execuções com erro.** O contador `errorRuns` volta a 0 quando um passo é gravado. Se a gravação do erro falhar, o erro original é preservado e logado.
+
 ## Webhook do Mercado Pago
 
 1. `POST /webhooks/mercadopago` é público. O endpoint valida `x-signature` (`ts=<epoch>,v1=<hex>`; `ts` fora de ±`MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS`, padrão 300, é rejeitado) com HMAC-SHA256 sobre `id:<data.id>;request-id:<x-request-id>;ts:<ts>;`. A chave é `MERCADOPAGO_WEBHOOK_SECRET` e a comparação é em tempo constante; o `data.id` vai em minúsculas.

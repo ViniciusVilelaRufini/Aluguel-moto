@@ -251,15 +251,23 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
   }
 
   async refund(input: { providerPaymentId: string; amountCents?: number; idempotencyKey: string }) {
+    const id = encodeURIComponent(input.providerPaymentId);
+    let r: { id: number | string };
     try {
-      const id = encodeURIComponent(input.providerPaymentId);
-      const r = await this.request<{ id: number | string }>('POST', `/v1/payments/${id}/refunds`, input.amountCents === undefined ? {} : { amount: toReais(input.amountCents) }, input.idempotencyKey);
+      r = await this.request<{ id: number | string }>('POST', `/v1/payments/${id}/refunds`, input.amountCents === undefined ? {} : { amount: toReais(input.amountCents) }, input.idempotencyKey);
+    } catch (err) {
+      // Só a resposta do próprio POST de estorno com 400/404 é recusa definitiva.
+      if (err instanceof HttpError && (err.status === 400 || err.status === 404)) throw new RefundRejectedError(`Mercado Pago recusou o estorno (${err.status}).`, err.status);
+      this.rethrow(err, 'refund');
+    }
+    try {
       const p = await this.request<MpPayment>('GET', `/v1/payments/${id}`);
       const status = this.mapStatus(p) === 'refunded' ? ('refunded' as const) : ('partially_refunded' as const);
       return { providerRefundId: String(r.id), refundedCents: toCents(p.transaction_amount_refunded), status };
     } catch (err) {
-      if (err instanceof HttpError && (err.status === 400 || err.status === 404)) throw new RefundRejectedError(`Mercado Pago recusou o estorno (${err.status}).`, err.status);
-      this.rethrow(err, 'refund');
+      // O estorno foi aceito; só a leitura do total falhou: resultado desconhecido (a reconciliação resolve).
+      if (err instanceof HttpError) throw new PaymentProviderError(`Mercado Pago: estorno ${r.id} aceito, leitura do pagamento falhou (${err.status}).`, err.status);
+      throw err;
     }
   }
 

@@ -38,6 +38,8 @@ type SettlementPlan = 'zero' | 'card_capture' | 'card_charge' | 'pix_keep' | 'pi
 interface SettlementSteps {
   captureStarted?: boolean;
   chargeStarted?: boolean;
+  /** Cobrança em análise no gateway (id): o passo espera, sem nova cobrança. */
+  chargeInReview?: string | null;
   /** Token do cartão por tentativa (gravado antes da chamada, reusado na repetição do mesmo passo). */
   chargeTokens?: Record<string, string>;
   release?: boolean;
@@ -315,7 +317,11 @@ export class RentalBillingService implements RentalBillingPort {
       try {
         return await this.execute(current, progress, rental, input.idempotencyKey);
       } catch (err) {
-        await this.recordErrorRun(pay.id, progress.errorRuns, err as Error);
+        try {
+          await this.recordErrorRun(pay.id, err as Error);
+        } catch (recordErr) {
+          this.logger.error({ msg: 'settlement_error_run_not_recorded', paymentId: pay.id, error: (recordErr as Error).message, original: (err as Error).message });
+        }
         throw err;
       }
     } finally {
@@ -327,8 +333,9 @@ export class RentalBillingService implements RentalBillingPort {
    * Erro ou resultado desconhecido do gateway: não conta como tentativa de cobrança (mesma chave na próxima execução).
    * Depois de `MAX_ERROR_RUNS` execuções assim, a liquidação é estacionada (`parkedAt`) para revisão manual.
    */
-  private async recordErrorRun(paymentId: string, previous: number, err: Error): Promise<void> {
-    const errorRuns = previous + 1;
+  private async recordErrorRun(paymentId: string, err: Error): Promise<void> {
+    const current = await this.prisma.settlementProgress.findUnique({ where: { paymentId }, select: { errorRuns: true } });
+    const errorRuns = (current?.errorRuns ?? 0) + 1;
     const park = errorRuns >= MAX_ERROR_RUNS;
     await this.prisma.settlementProgress.update({
       where: { paymentId },
@@ -387,7 +394,8 @@ export class RentalBillingService implements RentalBillingPort {
     const steps: SettlementSteps = { ...((progress.steps as SettlementSteps | null) ?? {}) };
     const save = async (patch: SettlementSteps) => {
       Object.assign(steps, patch);
-      await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { steps: { ...steps } as Prisma.InputJsonValue } });
+      // Passo concluído/gravado: a contagem de execuções com erro recomeça.
+      await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { steps: { ...steps } as Prisma.InputJsonValue, errorRuns: 0 } });
     };
     const amount = pay.amountCents;
     const plan = progress.plan as SettlementPlan;
@@ -407,14 +415,22 @@ export class RentalBillingService implements RentalBillingPort {
       const paidByCapture = () => this.finishPaid(pay, rental, { method: 'card', providerPaymentId: dp!.providerPaymentId, cardLast4: dp!.cardLast4 });
       if (!steps.capture) {
         // Já tentou capturar antes (queda ou resposta ambígua): o gateway diz o que aconteceu antes de qualquer nova chamada.
-        if (steps.captureStarted && (await this.reconcileCapture(deposit!, dp!, save))) return paidByCapture();
+        if (steps.captureStarted) {
+          const seen = await this.reconcileCapture(deposit!, dp!, save);
+          if (seen === 'captured') return paidByCapture();
+          if (seen === 'awaiting') return this.awaitingReview(pay);
+        }
         if (!steps.captureStarted) await save({ captureStarted: true });
         const cap = await this.provider.capture({ providerPaymentId: dp!.providerPaymentId!, amountCents: amount, idempotencyKey: attemptKey(`${key}:capture`) });
+        // Captura em análise: não é recusa; a próxima execução confere pelo getPayment.
+        if (cap.status === 'pending') return this.awaitingReview(pay);
         if (cap.status !== 'captured') {
           return this.collectionFailed(pay, progress, rental.customerId, cap.failureReason ?? 'capture_failed', {
             onFinal: async () => {
               // Antes de cancelar, confere: se a captura entrou, a liquidação está paga.
-              if (await this.reconcileCapture(deposit!, dp!, save)) return paidByCapture();
+              const seen = await this.reconcileCapture(deposit!, dp!, save);
+              if (seen === 'captured') return paidByCapture();
+              if (seen === 'awaiting') return this.awaitingReview(pay);
               await this.releaseDeposit((await this.prisma.deposit.findUnique({ where: { id: deposit!.id } }))!, `${key}:release-after-failure`);
             },
           });
@@ -428,6 +444,7 @@ export class RentalBillingService implements RentalBillingPort {
     if (plan === 'card_charge') {
       if (!steps.charge) {
         const charged = await this.chargeStep(ctx, `${key}:charge`, amount);
+        if (charged === 'awaiting') return this.awaitingReview(pay);
         if (charged?.status !== 'paid') {
           return this.collectionFailed(pay, progress, rental.customerId, charged?.failureReason ?? 'card_not_found', {
             final: !charged,
@@ -464,39 +481,61 @@ export class RentalBillingService implements RentalBillingPort {
     const base = plan === 'pix_keep_charge' ? `${key}:charge-remainder` : `${key}:charge`;
     if (!steps.charge) {
       const charged = await this.chargeStep(ctx, base, due);
+      if (charged === 'awaiting') return this.awaitingReview(pay);
       if (charged?.status !== 'paid') return this.collectionFailed(pay, progress, rental.customerId, charged?.failureReason ?? 'card_not_found', { final: !charged });
     }
     return this.finishPaid(pay, rental, { method: 'card', providerPaymentId: steps.charge!.providerPaymentId, cardLast4: steps.charge!.cardLast4 });
   }
 
   /** Confere a pré-autorização no gateway; se já foi capturada, grava o passo e devolve `true`. */
-  private async reconcileCapture(deposit: Deposit, dp: Payment, save: (p: SettlementSteps) => Promise<void>): Promise<boolean> {
+  private async reconcileCapture(deposit: Deposit, dp: Payment, save: (p: SettlementSteps) => Promise<void>): Promise<'captured' | 'authorized' | 'awaiting'> {
     const pp = await this.provider.getPayment(dp.providerPaymentId!);
     if (pp.status === 'captured') {
       const freshDp = (await this.prisma.payment.findUnique({ where: { id: dp.id } }))!;
       await this.captureDeposit((await this.prisma.deposit.findUnique({ where: { id: deposit.id } }))!, freshDp, pp.capturedCents ?? pp.amountCents);
       await save({ capture: true });
       this.logger.warn({ msg: 'settlement_capture_reconciled', paymentId: dp.id });
-      return true;
+      return 'captured';
     }
+    if (pp.status === 'pending') return 'awaiting';
     if (pp.status !== 'authorized') throw new Error(`Pré-autorização em estado inesperado no gateway: ${pp.status}.`);
-    return false;
+    return 'authorized';
   }
 
   /**
    * Cobrança de um passo com resultado desconhecido tratado com segurança:
-   * - se o passo já foi tentado, procura no gateway um pagamento aprovado com a referência externa (o `Payment.id`) e o valor;
+   * - cobrança **em análise** (`pending` no gateway: pending/in_process/in_mediation) não é recusa: o passo espera
+   *   (`chargeInReview`) e cada execução só consulta `getPayment` pelo id, sem cobrar de novo; aprovada → passo concluído;
+   *   recusada → conta como uma recusa;
+   * - se o passo já foi tentado, procura no gateway (referência externa = `Payment.id`, mesmo valor) um pagamento aprovado
+   *   ou em análise antes de qualquer nova cobrança;
    * - o token do cartão é criado uma vez por tentativa e guardado antes da chamada (o corpo da repetição é idêntico);
    * - recusa genuína volta como `failed`; erro/timeout lança (não conta tentativa, mesma chave na próxima execução).
    */
-  private async chargeStep(ctx: StepContext, base: string, due: number): Promise<ProviderPayment | null> {
+  private async chargeStep(ctx: StepContext, base: string, due: number): Promise<ProviderPayment | null | 'awaiting'> {
     const { pay, steps, save, attempt } = ctx;
+    if (steps.chargeInReview) {
+      const pp = await this.provider.getPayment(steps.chargeInReview);
+      if (pp.status === 'pending') return 'awaiting';
+      if (pp.status === 'paid') {
+        await save({ chargeInReview: null, charge: { providerPaymentId: pp.providerPaymentId, cardLast4: pp.cardLast4 ?? null } });
+        return pp;
+      }
+      await save({ chargeInReview: null });
+      return { ...pp, status: 'failed', failureReason: pp.failureReason ?? 'charge_rejected_after_review' };
+    }
     if (steps.chargeStarted) {
-      const found = (await this.provider.searchPayments({ externalReference: pay.id })).find((p) => p.status === 'paid' && p.amountCents === due);
-      if (found) {
-        await save({ charge: { providerPaymentId: found.providerPaymentId, cardLast4: found.cardLast4 ?? null } });
+      const found = (await this.provider.searchPayments({ externalReference: pay.id })).filter((p) => p.amountCents === due);
+      const paid = found.find((p) => p.status === 'paid');
+      if (paid) {
+        await save({ charge: { providerPaymentId: paid.providerPaymentId, cardLast4: paid.cardLast4 ?? null } });
         this.logger.warn({ msg: 'settlement_charge_reconciled', paymentId: pay.id });
-        return found;
+        return paid;
+      }
+      const reviewing = found.find((p) => p.status === 'pending');
+      if (reviewing) {
+        await save({ chargeInReview: reviewing.providerPaymentId });
+        return 'awaiting';
       }
     }
     const card = await this.customers.card(ctx.customerId);
@@ -512,7 +551,17 @@ export class RentalBillingService implements RentalBillingPort {
     });
     const out = { ...res, cardLast4: res.cardLast4 ?? card.last4 };
     if (out.status === 'paid') await save({ charge: { providerPaymentId: out.providerPaymentId, cardLast4: out.cardLast4 ?? null } });
+    if (out.status === 'pending') {
+      await save({ chargeInReview: out.providerPaymentId });
+      return 'awaiting';
+    }
     return out;
+  }
+
+  /** Cobrança/captura em análise no gateway: nada falhou e nada é cobrado de novo; o job (ou o webhook) confere depois. */
+  private awaitingReview(pay: Payment): SettleResult {
+    this.logger.log({ msg: 'settlement_awaiting_gateway_review', paymentId: pay.id });
+    return { paymentId: pay.id, status: 'failed' };
   }
 
   /** Garantia: captura a caução inteira (conferindo antes no gateway); se não der para capturar, libera. */
@@ -615,6 +664,12 @@ export class RentalBillingService implements RentalBillingPort {
       local = await this.prisma.payment.findFirst({ where: { providerPaymentId: pp.providerPaymentId }, orderBy: { createdAt: 'asc' } });
     }
     if (!local) return null;
+    // Liquidação de aluguel ainda em andamento: o webhook nunca muda o Payment direto (pularia liberação da caução,
+    // retentativas, onFinal, recibo e o estacionamento). Só dispara o motor se ele está esperando exatamente este pagamento.
+    if (local.kind === 'rental' && local.status === 'pending') {
+      await this.nudgeSettlement(local, pp);
+      return { payment: (await this.prisma.payment.findUnique({ where: { id: local.id } }))!, changed: false };
+    }
     // Pix que expirou/foi cancelado no gateway antes de ser pago: localmente é pending → failed.
     if (pp.status === 'canceled' && local.status === 'pending') pp = { ...pp, status: 'failed', failureReason: pp.failureReason ?? 'pix_expired' };
     if (local.status === pp.status) return { payment: local, changed: false };
@@ -635,6 +690,19 @@ export class RentalBillingService implements RentalBillingPort {
     }
     this.logger.warn({ msg: 'payment_transition_ignored', paymentId: local.id, from: local.status, to: pp.status });
     return { payment: local, changed: false };
+  }
+
+  private async nudgeSettlement(local: Payment, pp: ProviderPayment): Promise<void> {
+    const progress = await this.prisma.settlementProgress.findUnique({ where: { paymentId: local.id } });
+    if (!progress || progress.parkedAt || !local.rentalId || !local.idempotencyKey) return;
+    const steps = (progress.steps as SettlementSteps | null) ?? {};
+    const waitingThis = steps.chargeInReview === pp.providerPaymentId || (steps.captureStarted && !steps.capture);
+    if (!waitingThis) {
+      this.logger.log({ msg: 'settlement_webhook_ignored', paymentId: local.id, status: pp.status });
+      return;
+    }
+    await this.runSettlement({ rentalId: local.rentalId, amountCents: local.amountCents, idempotencyKey: local.idempotencyKey }, true)
+      .catch((err) => this.logger.warn({ msg: 'settlement_nudge_failed', paymentId: local.id, error: (err as Error).message }));
   }
 
   private async onDepositPaymentChanged(p: Payment): Promise<void> {

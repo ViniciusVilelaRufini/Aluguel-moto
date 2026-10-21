@@ -79,3 +79,7 @@ Decisões tomadas ao trocar `StubRentalBilling`/`StubInsurance` pelas implementa
     - **Pré-autorização:** continua tratando 4xx como `failed`, porque o aluguel não começa. Uma autorização fantasma expira no gateway.
     - **Proposta: alerta de pagamento.** Criar o tipo `payment_needs_review` (Task 3, enum `AlertType`) para que liquidações estacionadas e estornos em `needs_review` apareçam no painel. Hoje eles só ficam no log e no banco.
     - **Proposta: `rental.paymentId` (Task 3, `rental-end.service.ts`).** Quando `settle` lança, o encerramento não liga `rental.paymentId`. A ligação acontece depois, quando o job conclui: a transição emite `payment.updated` e o `RentalsListeners.onPaymentUpdated` grava o id se estiver vazio. A proposta é que o encerramento grave o id do `Payment` pendente já na hora (leitura por `idempotencyKey`).
+16. **Fix round 3:**
+    - **Cobrança em análise.** No Mercado Pago, cobrança ou captura com status `pending`, `in_process` ou `in_mediation` fica em espera (`chargeInReview`): não conta tentativa e não troca a chave. Enquanto espera, a porta `settle` responde `failed` e o pagamento continua `pending`.
+    - **Estorno.** Só pode haver um estorno em aberto por pagamento; um segundo pedido nesse período recebe 409.
+    - **Webhook da liquidação.** O webhook de uma liquidação pendente só aciona o motor da liquidação, e só quando o motor está esperando aquele pagamento. Ele nunca muda o `Payment` diretamente.

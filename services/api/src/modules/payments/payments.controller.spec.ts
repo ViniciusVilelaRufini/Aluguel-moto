@@ -201,6 +201,35 @@ describe('PaymentsService.refund (via gateway)', () => {
     expect((await provider.getPayment(p.providerPaymentId)).refundedCents).toBe(1000);
   });
 
+  it('fix round 3: com um estorno em aberto (pending), um segundo pedido → 409 (nada reservado a mais)', async () => {
+    const { db, svc, p, provider } = await setup();
+    jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+    await svc.refund(admin, p.id, { amountCents: 1000, reason: 'A' }, 'k-a');
+    await expect(svc.refund(admin, p.id, { amountCents: 500, reason: 'B' }, 'k-b')).rejects.toMatchObject({ slug: 'conflict' });
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ refundedCents: 1000 });
+    expect(await db.paymentRefund.count({ where: { paymentId: p.id } })).toBe(1);
+    // Depois que A conclui, B pode ser pedido.
+    await svc.reconcileRefunds(0);
+    expect(await svc.refund(admin, p.id, { amountCents: 500, reason: 'B' }, 'k-b')).toMatchObject({ refundedCents: 1500 });
+  });
+
+  it('fix round 3: rollback que não acha a reserva esperada → needs_review (não marca rejected nem libera teto)', async () => {
+    const { db, svc, p, provider } = await setup();
+    jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout')).mockRejectedValueOnce(new RefundRejectedError('recusado'));
+    await svc.refund(admin, p.id, { amountCents: 1000, reason: 'A' }, 'k-a');
+    // Alguém mexeu no pagamento por fora (ex.: estorno total registrado manualmente).
+    await db.payment.update({ where: { id: p.id }, data: { status: 'refunded', refundedCents: 5000 } });
+    await svc.reconcileRefunds(0);
+    expect(await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).toMatchObject({ status: 'needs_review' });
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'refunded', refundedCents: 5000 });
+  });
+
+  it('fix round 3: id do estorno no gateway gravado no pedido', async () => {
+    const { db, svc, p } = await setup();
+    await svc.refund(admin, p.id, { amountCents: 1000, reason: 'A' }, 'k-a');
+    expect((await db.paymentRefund.findFirst({ where: { paymentId: p.id } })).providerRefundId).toMatch(/^fake-ref-/);
+  });
+
   it('fix round 2: reconciliação com recusa definitiva desfaz a reserva', async () => {
     const { db, svc, p, provider } = await setup();
     jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout')).mockRejectedValueOnce(new RefundRejectedError('recusado'));

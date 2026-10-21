@@ -143,6 +143,10 @@ export class PaymentsService {
     if (!viaWallet && !p.providerPaymentId) throw unprocessable('validation-error', 'Pagamento sem registro no gateway para estornar.');
     const key = `refund:${p.id}:${idempotencyKey ?? randomUUID()}`;
 
+    // Um estorno em aberto por pagamento: sem isso, a reconciliação (que compara totais acumulados) confundiria pedidos.
+    const open = await this.prisma.paymentRefund.findFirst({ where: { paymentId: p.id, status: { in: ['claimed', 'pending'] } } });
+    if (open) throw conflict('conflict', 'Há um estorno deste pagamento aguardando confirmação do gateway. Tente de novo depois.');
+
     const record = await this.prisma.$transaction(async (tx) => {
       if (!(await this.state.claimRefund(tx, p, to, refundedCents))) return null;
       if (viaWallet) {
@@ -185,15 +189,18 @@ export class PaymentsService {
     }
   }
 
+  /** Desfaz a reserva só se o pagamento ainda estiver exatamente como este pedido deixou; senão, revisão manual. */
   private async rollbackRefund(record: PaymentRefund, reason: string): Promise<void> {
-    await this.prisma.$transaction(async (tx) => {
-      await tx.payment.updateMany({
+    const undone = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.payment.updateMany({
         where: { id: record.paymentId, status: record.newStatus as Payment['status'], refundedCents: record.newRefundedCents },
         data: { status: record.prevStatus as Payment['status'], refundedCents: record.prevRefundedCents },
       });
-      await tx.paymentRefund.update({ where: { id: record.id }, data: { status: 'rejected', lastError: reason.slice(0, 500) } });
+      await tx.paymentRefund.update({ where: { id: record.id }, data: { status: res.count === 1 ? 'rejected' : 'needs_review', lastError: reason.slice(0, 500) } });
+      return res.count === 1;
     });
-    this.logger.warn({ msg: 'refund_rejected', paymentId: record.paymentId, refundId: record.id });
+    if (undone) this.logger.warn({ msg: 'refund_rejected', paymentId: record.paymentId, refundId: record.id });
+    else this.logger.error({ msg: 'payment_needs_manual_review', paymentId: record.paymentId, refundId: record.id, reason: 'refund_rollback_mismatch' });
   }
 
   @Interval('payments-refund-reconcile', 5 * 60_000)

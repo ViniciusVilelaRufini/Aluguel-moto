@@ -555,3 +555,112 @@ describe('fix round 2: resultados ambíguos do gateway', () => {
     expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
   });
 });
+
+describe('fix round 3: cobrança em análise e webhooks da liquidação', () => {
+  const inReview = (id = 'mp-review-1') => ({ providerPaymentId: id, status: 'pending' as const, amountCents: 7000, externalReference: 'x' });
+
+  it('cobrança em análise (pending) → não conta tentativa, não fica inadimplente, o job não cobra de novo; aprovada depois → paid', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    const charge = jest.spyOn(ctx.provider, 'charge').mockResolvedValueOnce(inReview());
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('failed');
+    const prog = await ctx.db.settlementProgress.findUnique({ where: { paymentId: r.paymentId } });
+    expect(prog).toMatchObject({ attempts: 0, errorRuns: 0 });
+    expect(prog.steps.chargeInReview).toBe('mp-review-1');
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(false);
+
+    const getPayment = jest.spyOn(ctx.provider, 'getPayment').mockResolvedValueOnce(inReview());
+    await ctx.svc.retryPendingSettlements(0);
+    expect(charge).toHaveBeenCalledTimes(1);
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('pending');
+
+    getPayment.mockResolvedValueOnce({ ...inReview(), status: 'paid' });
+    await ctx.svc.retryPendingSettlements(0);
+    expect(charge).toHaveBeenCalledTimes(1);
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'paid', providerPaymentId: 'mp-review-1' });
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
+  });
+
+  it('cobrança em análise recusada depois → conta como uma recusa (a próxima tentativa usa :a1)', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    const charge = jest.spyOn(ctx.provider, 'charge').mockResolvedValueOnce(inReview());
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
+    jest.spyOn(ctx.provider, 'getPayment').mockResolvedValueOnce({ ...inReview(), status: 'failed', failureReason: 'cc_rejected_high_risk' });
+    await ctx.svc.retryPendingSettlements(0);
+    expect(charge).toHaveBeenCalledTimes(1);
+    expect(await ctx.db.settlementProgress.findUnique({ where: { paymentId: r.paymentId } })).toMatchObject({ attempts: 1, lastFailure: 'cc_rejected_high_risk' });
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
+    await ctx.svc.retryPendingSettlements(0);
+    expect(charge.mock.calls.map((c) => c[0].idempotencyKey)).toEqual([`${SETTLE_KEY}:charge`, `${SETTLE_KEY}:charge:a1`]);
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('paid');
+  });
+
+  it('reconciliação por external_reference considera pagamento em análise (não cobra de novo)', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY })).rejects.toThrow('timeout');
+    jest.spyOn(ctx.provider, 'searchPayments').mockResolvedValueOnce([inReview('mp-review-9')]);
+    const charge = jest.spyOn(ctx.provider, 'charge');
+    charge.mockClear();
+    await ctx.svc.retryPendingSettlements(0);
+    expect(charge).not.toHaveBeenCalled();
+    const pay = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    expect((await ctx.db.settlementProgress.findUnique({ where: { paymentId: pay.id } })).steps.chargeInReview).toBe('mp-review-9');
+  });
+
+  it('webhook de tentativa recusada da liquidação NÃO muda o Payment (só o motor da liquidação decide)', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockResolvedValueOnce({ providerPaymentId: 'mp-dec-1', status: 'failed', amountCents: 7000, failureReason: 'cc_rejected_other_reason' });
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
+    const res = await ctx.svc.applyProviderPayment({ providerPaymentId: 'mp-dec-1', status: 'failed', amountCents: 7000, externalReference: r.paymentId, failureReason: 'cc_rejected_other_reason' });
+    expect(res?.changed).toBe(false);
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('pending');
+    expect(await ctx.db.settlementProgress.findUnique({ where: { paymentId: r.paymentId } })).toMatchObject({ attempts: 1 });
+  });
+
+  it('webhook aprovando a cobrança em análise → roda o motor: paid com caução liberada e recibo', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockResolvedValueOnce(inReview());
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
+    jest.spyOn(ctx.provider, 'getPayment').mockResolvedValueOnce({ ...inReview(), status: 'paid' });
+    await ctx.svc.applyProviderPayment({ ...inReview(), status: 'paid', externalReference: r.paymentId });
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('paid');
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
+    expect(ctx.receipts.issueForPayment).toHaveBeenCalledWith(r.paymentId);
+  });
+
+  it('webhook não mexe em liquidação estacionada', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockResolvedValueOnce(inReview());
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
+    await ctx.db.settlementProgress.update({ where: { paymentId: r.paymentId }, data: { parkedAt: new Date(), parkedReason: 'revisão' } });
+    const getPayment = jest.spyOn(ctx.provider, 'getPayment');
+    await ctx.svc.applyProviderPayment({ ...inReview(), status: 'paid', externalReference: r.paymentId });
+    expect(getPayment).not.toHaveBeenCalled();
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('pending');
+  });
+
+  it('errorRuns volta a 0 quando um passo conclui; falha ao registrar o erro preserva o erro original', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockRejectedValueOnce(new PaymentProviderError('Mercado Pago: charge falhou (502).', 502));
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY })).rejects.toThrow('502');
+    const pay = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    expect((await ctx.db.settlementProgress.findUnique({ where: { paymentId: pay.id } })).errorRuns).toBe(1);
+    // Próxima execução: a cobrança passa, mas a liberação da caução falha → errorRuns recomeça do zero (1, não 2).
+    jest.spyOn(ctx.provider, 'cancelPreAuthorization').mockRejectedValueOnce(new Error('rede caiu'));
+    const realUpdate = ctx.db.settlementProgress.update.bind(ctx.db.settlementProgress);
+    jest.spyOn(ctx.db.settlementProgress, 'update').mockImplementation(async (args: any) => {
+      if (args.data?.parkedAt !== undefined || (args.data?.errorRuns !== undefined && args.data?.lastFailure)) throw new Error('banco indisponível');
+      return realUpdate(args);
+    });
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY })).rejects.toThrow('rede caiu');
+    expect((await ctx.db.settlementProgress.findUnique({ where: { paymentId: pay.id } })).errorRuns).toBe(0);
+  });
+});

@@ -109,6 +109,14 @@ describe('MercadoPagoPaymentProvider (HTTP mockado com nock, nunca rede real)', 
     expect(found.map((p) => [p.providerPaymentId, p.status])).toEqual([['1', 'paid'], ['2', 'failed']]);
   });
 
+  it('fix round 3: refund aceito e GET seguinte com 404 → ambíguo (nunca RefundRejectedError)', async () => {
+    api().post('/v1/payments/900/refunds').reply(201, { id: 7, amount: 1 });
+    api().get('/v1/payments/900').reply(404, { message: 'not found' });
+    const err = await mp.refund({ providerPaymentId: '900', amountCents: 100, idempotencyKey: 'r' }).catch((e) => e);
+    expect(err).toBeInstanceOf(PaymentProviderError);
+    expect(err).not.toBeInstanceOf(RefundRejectedError);
+  });
+
   it('fix round 2: refund 400 → RefundRejectedError (recusa definitiva); 502 → ambíguo', async () => {
     api().post('/v1/payments/900/refunds').reply(400, { message: 'amount exceeds' });
     await expect(mp.refund({ providerPaymentId: '900', amountCents: 100, idempotencyKey: 'r' })).rejects.toBeInstanceOf(RefundRejectedError);
