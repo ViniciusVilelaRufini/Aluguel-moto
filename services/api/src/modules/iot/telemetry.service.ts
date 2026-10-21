@@ -5,7 +5,7 @@ import { EV, IotConnectivityEvent, IotDeviceEvent, IotTelemetryEvent } from '../
 import type { BaseIotGateway } from './base-iot-gateway';
 import type { Clock } from './clock';
 import type { PositionInput, RentalLookup } from './geofence/geofence.service';
-import { MAX_CLOCK_SKEW_MS } from './live-state.store';
+import { DEFAULT_QUEUE_LAG_MS, DEFAULT_RECONNECT_GAP_MS, MAX_CLOCK_SKEW_MS } from './live-state.store';
 import { parseDeviceEvent, parseTelemetry } from './mqtt-contract';
 import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
 
@@ -13,6 +13,10 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface TelemetryOptions {
   trackRetentionDays: number;
+  /** Lacuna entre mensagens do rastreador que conta como reconexão (`IOT_RECONNECT_GAP_MS`; padrão 15 s). */
+  reconnectGapMs?: number;
+  /** Atraso de telemetria (relativo à anterior) que indica fila offline = reconexão (`IOT_QUEUE_LAG_MS`; padrão 5 s). */
+  queueLagMs?: number;
 }
 
 /**
@@ -57,6 +61,26 @@ export class TelemetryService implements InboundHandler {
     return id;
   }
 
+  /**
+   * Toda mensagem do rastreador (telemetria, evento, reported via MQTT, presença `connected`; no polling, a metadata do shadow)
+   * passa por aqui. Lacuna maior que o limite desde a anterior = reconexão, com ou sem evento de presença: no modo aws não há
+   * presença na API e uma queda menor que a vigia (180 s) não seria percebida, então a graça pós-reconexão não abriria.
+   */
+  private heard(thingName: string, at: number): boolean {
+    const gap = this.gateway.live.noteHeard(thingName, at, this.opts.reconnectGapMs ?? DEFAULT_RECONNECT_GAP_MS);
+    if (gap === null) return false;
+    this.logger.log({ msg: 'iot_reconnect_gap', thingName, gapMs: gap });
+    return true;
+  }
+
+  /** Telemetria que saiu da fila offline (atraso relativo à anterior, independente da cadência e do relógio do rastreador). */
+  private drained(thingName: string, arrival: number, deviceTs: number): boolean {
+    const lag = this.gateway.live.noteTelemetry(thingName, arrival, deviceTs, this.opts.queueLagMs ?? DEFAULT_QUEUE_LAG_MS);
+    if (lag === null) return false;
+    this.logger.log({ msg: 'iot_reconnect_queue_lag', thingName, lagMs: lag });
+    return true;
+  }
+
   private nowIso(): string {
     return new Date(this.clock.now()).toISOString();
   }
@@ -80,8 +104,11 @@ export class TelemetryService implements InboundHandler {
       const ts = recordedAt.toISOString();
 
       const wasOnline = this.gateway.live.isOnline(thingName);
-      // Reconexão percebida pela própria mensagem (sem evento de presença): amostras de antes dela não valem.
-      if (!wasOnline) this.gateway.live.markReconnected(thingName);
+      // Reconexão percebida pela própria mensagem (sem evento de presença): estava offline, ficou calada além do limite ou a
+      // amostra saiu da fila offline (atraso). Nos dois últimos casos a própria amostra cai na graça.
+      const gap = this.heard(thingName, now);
+      const drained = this.drained(thingName, now, deviceTs);
+      if (!wasOnline || gap || drained) this.gateway.live.markReconnected(thingName, { keepDisplayOrder: wasOnline });
       const applied = await this.gateway.live.applyTelemetry(thingName, msg);
       if (!wasOnline) await this.connectivity(thingName, vehicleId, true);
 
@@ -129,6 +156,8 @@ export class TelemetryService implements InboundHandler {
       }
       const vehicleId = await this.vehicleIdOf(thingName);
       if (!vehicleId) return;
+      await this.gateway.live.load(thingName);
+      if (this.heard(thingName, this.clock.now())) this.gateway.live.markReconnected(thingName);
       const ev: IotDeviceEvent = { thingName, vehicleId, type: msg.tipo, ts: msg.timestamp };
       this.logger.log({ msg: 'device_event', thingName, type: msg.tipo });
       this.events.emit(EV.IOT_DEVICE_EVENT, ev);
@@ -139,12 +168,20 @@ export class TelemetryService implements InboundHandler {
     return this.serial(thingName, async () => {
       // Lido pelo servidor (polling aws): não é sinal de vida — nunca muda a conectividade.
       if (meta.fromPoll) {
+        // Mas a metadata diz quando o rastreador escreveu: campo novo depois de uma lacuna = ele reconectou (o shadow pode chegar
+        // antes da telemetria). Limitada a agora.
+        const written = Object.values(meta.timestamps ?? {}).filter((v): v is number => typeof v === 'number');
+        if (written.length) {
+          await this.gateway.live.load(thingName);
+          if (this.heard(thingName, Math.min(Math.max(...written), this.clock.now()))) this.gateway.live.markReconnected(thingName);
+        }
         await this.gateway.onReported(thingName, reported, meta);
         return;
       }
       const vehicleId = await this.vehicleIdOf(thingName);
       const wasOnline = this.gateway.live.isOnline(thingName);
-      if (!wasOnline) this.gateway.live.markReconnected(thingName);
+      const gap = this.heard(thingName, this.clock.now());
+      if (!wasOnline || gap) this.gateway.live.markReconnected(thingName);
       await this.gateway.onReported(thingName, reported, meta);
       if (!wasOnline && vehicleId) await this.connectivity(thingName, vehicleId, true);
     });
@@ -156,7 +193,10 @@ export class TelemetryService implements InboundHandler {
       await this.gateway.live.load(thingName);
       const wasOnline = this.gateway.live.isOnline(thingName);
       // Conexão nova: a velocidade de antes não vale (a moto pode ter sido levada); espera amostra fresca.
-      if (online) this.gateway.live.markReconnected(thingName);
+      if (online) {
+        this.heard(thingName, this.clock.now());
+        this.gateway.live.markReconnected(thingName);
+      }
       if (online === wasOnline) {
         if (online) await this.gateway.live.setOnline(thingName, true);
         return;

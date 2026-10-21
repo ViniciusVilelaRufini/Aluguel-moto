@@ -11,7 +11,8 @@ import type { DesiredState, InboundHandler, IotTransport, MomentaryCommand, Repo
  *   (proposta: regra de `motos/+/eventos` também para esta fila — hoje ela vai para `alertas`, ver docs/decisoes.md);
  * - `reported`: enquanto houver comando ou rampa aguardando uma moto, `GetThingShadow` a cada `pollMs`.
  *   (A task role da API não tem `iot:Connect`/`iot:Subscribe`; assinar `/update/documents` exigiria isso.)
- * - presença: vigia de inatividade do `TelemetryService` (os eventos de presença vão para o EventBridge).
+ * - presença: os eventos vão para o EventBridge e não chegam aqui. Offline = vigia de inatividade do `TelemetryService` (180 s);
+ *   reconexão = lacuna entre mensagens maior que `IOT_RECONNECT_GAP_MS` (`TelemetryService.heard`), que abre a graça da rampa.
  */
 export class AwsIotTransport implements IotTransport {
   private readonly logger = new Logger('AwsIotTransport');
