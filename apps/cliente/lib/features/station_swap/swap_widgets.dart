@@ -11,9 +11,17 @@ import '../home/depot_providers.dart';
 import '../home/providers.dart';
 import 'swap_logic.dart';
 
-/// Abre o leitor do QR da estacao. [stationId]: a estacao perto (so dica).
-Future<void> openSwapScan(BuildContext context, {String? stationId}) =>
-    context.push(Uri(path: '/station-swap/scan', queryParameters: stationId == null ? null : {'station': stationId}).toString());
+/// Abre o leitor do QR da estacao ([stationId]: a estacao perto, so dica) e,
+/// quando ele devolve a troca criada (ou a ja aberta), a tela de progresso.
+/// O futuro so termina quando o cliente sai do fluxo inteiro, entao quem chama
+/// pode travar toques repetidos ate la (com `pushReplacement` o futuro do
+/// leitor nunca terminava).
+Future<void> openSwapScan(BuildContext context, {String? stationId}) async {
+  final swap = await context.push<StationSwap>(
+    Uri(path: '/station-swap/scan', queryParameters: stationId == null ? null : {'station': stationId}).toString(),
+  );
+  if (swap != null && context.mounted) await openSwapProgress(context, swap);
+}
 
 /// Abre (ou reabre) a tela de progresso da troca.
 Future<void> openSwapProgress(BuildContext context, StationSwap swap) =>
@@ -50,6 +58,7 @@ class SwapNearbyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
+    final dark = Theme.of(context).brightness == Brightness.dark;
     return VoltiEnter(
       duration: VoltiMotion.durScreen,
       curve: VoltiMotion.easeScreen,
@@ -60,10 +69,10 @@ class SwapNearbyCard extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(color: VoltiColors.infoSoft, borderRadius: VoltiRadii.rMd),
-              child: const Icon(LucideIcons.batteryCharging, color: VoltiColors.infoInk, size: 20),
+              width: VoltiSpacing.s40,
+              height: VoltiSpacing.s40,
+              decoration: BoxDecoration(color: dark ? VoltiColors.infoInk.withValues(alpha: .22) : VoltiColors.infoSoft, borderRadius: VoltiRadii.rMd),
+              child: Icon(LucideIcons.batteryCharging, color: dark ? VoltiColors.blue50 : VoltiColors.infoInk, size: VoltiSpacing.s20),
             ),
             const SizedBox(width: VoltiSpacing.s10),
             Expanded(

@@ -31,8 +31,8 @@ class SwapConfirmSheet extends ConsumerStatefulWidget {
   final SwapStation? station;
 
   /// Taxa por troca no plano do aluguel (`CurrentRental.batterySwapFeeCents`).
-  /// `> 0` mostra "Taxa R$ X"; `null` (API ainda sem o campo) cai na linha
-  /// generica nos planos por minuto/hora; `0` = sem taxa.
+  /// `> 0` mostra "Taxa R$ X"; `0` = sem taxa; `null` (API antiga, campo
+  /// ausente) cai na linha generica nos planos por minuto/hora.
   final int? feeCents;
 
   static Future<StationSwap?> show(

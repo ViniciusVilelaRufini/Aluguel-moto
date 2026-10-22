@@ -77,14 +77,22 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   StreamSubscription<LatLng>? _tracking;
   Timer? _tick;
 
+  /// Socket da corrida emprestado a tela da troca aberta por cima.
+  late final RideRealtimeLink _link;
+
+  /// Um toque so em "Trocar bateria"/"Continuar" (sem empilhar duas telas).
+  bool _navigating = false;
+
   @override
   void initState() {
     super.initState();
+    _link = ref.read(rideRealtimeLinkProvider)..openCount += 1;
     _load();
   }
 
   @override
   void dispose() {
+    _link.openCount -= 1;
     _tick?.cancel();
     _events?.cancel();
     _connSub?.cancel();
@@ -159,11 +167,17 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   }
 
   Future<void> _openSwapFlow({String? stationId}) async {
-    final swap = _openSwap;
-    if (swap != null) {
-      await openSwapProgress(context, swap);
-    } else {
-      await openSwapScan(context, stationId: stationId);
+    if (_navigating) return;
+    _navigating = true;
+    try {
+      final swap = _openSwap;
+      if (swap != null) {
+        await openSwapProgress(context, swap);
+      } else {
+        await openSwapScan(context, stationId: stationId);
+      }
+    } finally {
+      _navigating = false;
     }
     if (mounted) _refreshSwap();
   }
@@ -206,11 +220,13 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       _realtime = ref.read(realtimeFactoryProvider)();
       _events = _realtime!.events.listen(_onEvent);
       _connSub = _realtime!.connected.listen((up) {
+        _link.connected.value = up;
         if (mounted) setState(() => _rtDown = !up);
       });
       await _realtime!.connect();
     } catch (_) {
       // Sem tempo real o app segue com o tempo local; avisa e tenta de novo.
+      _link.connected.value = false;
       if (!mounted) return;
       setState(() => _rtDown = true);
       _rtRetry = Timer(const Duration(seconds: 5), _startRealtime);

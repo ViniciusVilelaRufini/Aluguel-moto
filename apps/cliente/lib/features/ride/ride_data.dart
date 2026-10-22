@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
@@ -24,6 +25,21 @@ final rideEventBusProvider = Provider<StreamController<RealtimeEvent>>((ref) {
   final c = StreamController<RealtimeEvent>.broadcast();
   ref.onDispose(c.close);
   return c;
+});
+
+/// Socket da corrida para as telas abertas por cima dela (troca na estacao):
+/// [open] enquanto alguma [RideScreen] esta montada (ela soma no `initState`
+/// e subtrai no `dispose`) e [connected] com o estado da conexao dela.
+class RideRealtimeLink {
+  int openCount = 0;
+  final connected = ValueNotifier<bool>(true);
+  bool get open => openCount > 0;
+}
+
+final rideRealtimeLinkProvider = Provider<RideRealtimeLink>((ref) {
+  final link = RideRealtimeLink();
+  ref.onDispose(link.connected.dispose);
+  return link;
 });
 
 /// Quantas telas de devolucao estao abertas sobre a corrida. A [ReturnScreen]

@@ -23,6 +23,8 @@ import '../pickup/depot_labels.dart';
 import '../ride/battery_sheet.dart' show rentalDepotProvider;
 import '../ride/ride_data.dart' show ReturnScreensOpen, returnScreensOpenProvider, rideEventBusProvider, sharedZonesProvider;
 import '../ride/ride_screen.dart' show mapEnabledProvider;
+import '../station_swap/swap_logic.dart' show isOpenSwap;
+import '../station_swap/swap_widgets.dart' show openSwapProgress;
 
 /// Zonas de devolucao e onde a moto esta em relacao a elas.
 class ReturnContext {
@@ -95,6 +97,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   String? _endKey; // Idempotency-Key da tentativa de encerramento (mantida nas repeticoes)
   String? _photoKey; // objeto ja enviado desta foto
   String? _error;
+
+  /// Encerramento recusado com `409 swap-open`: oferece "Continuar troca".
+  bool _swapOpen = false;
   Timer? _poll;
   StreamSubscription<RealtimeEvent>? _rideEvents;
 
@@ -181,6 +186,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     setState(() {
       _busy = true;
       _error = null;
+      _swapOpen = false;
     });
     try {
       final backend = ref.read(backendProvider);
@@ -198,9 +204,34 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
         _startPolling();
       }
     } catch (e) {
-      if (mounted) setState(() => _error = failureText(l, e));
+      final f = toFailure(e);
+      if (mounted) {
+        setState(() {
+          _swapOpen = f.slug == 'swap-open';
+          _error = _swapOpen ? l.swapErrorOpen : failureText(l, e);
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Abre a troca na estacao em andamento (o aluguel so encerra depois dela).
+  Future<void> _continueSwap() async {
+    try {
+      final swap = (await ref.read(backendProvider).currentRentalState()).stationSwap;
+      if (!mounted) return;
+      if (isOpenSwap(swap)) {
+        await openSwapProgress(context, swap!);
+      }
+      if (mounted) {
+        setState(() {
+          _swapOpen = false;
+          _error = null;
+        });
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = failureText(context.l, e));
     }
   }
 
@@ -476,6 +507,18 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                           Padding(
                             padding: const EdgeInsets.only(top: 12),
                             child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
+                          ),
+                        if (_swapOpen)
+                          Padding(
+                            padding: const EdgeInsets.only(top: VoltiSpacing.s8),
+                            child: VoltiButton(
+                              key: const Key('return-continue-swap'),
+                              label: l.returnSwapOpenAction,
+                              icon: LucideIcons.batteryCharging,
+                              variant: VoltiButtonVariant.secondary,
+                              fullWidth: true,
+                              onPressed: _continueSwap,
+                            ),
                           ),
                         const SizedBox(height: 14),
                         VoltiButton(

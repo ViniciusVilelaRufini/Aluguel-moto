@@ -1,6 +1,7 @@
 // Troca de bateria na estacao via QR (app do cliente): proximidade, QR,
 // confirmacao (taxa, erros, idempotencia), progresso pelo WebSocket, cancelar
 // e retomar pelo `currentStationSwap`.
+
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -19,120 +20,11 @@ import 'package:volti_cliente/features/station_swap/swap_confirm_sheet.dart';
 import 'package:volti_cliente/features/station_swap/swap_logic.dart';
 import 'package:volti_cliente/features/station_swap/swap_progress_screen.dart';
 import 'package:volti_cliente/features/station_swap/swap_scan_screen.dart';
-import 'package:volti_cliente/l10n/app_localizations_pt.dart';
 
 import 'galpao_fixtures.dart';
 import 'helpers.dart';
 
-final l = AppLocalizationsPt();
-
-const largoId = 'd0000000-0000-4000-8000-000000000001';
-const largoQr = 'vst1.d0000000-0000-4000-8000-000000000001.lMyoiWvb5xuRTHIzBFoxEQ';
-const largo = LatLng(-23.5667, -46.6936);
-
-SwapStation station({String id = largoId, String name = 'Estação Largo da Batata', int available = 9, bool open24h = true, LatLng at = largo}) => SwapStation(
-  (b) => b
-    ..id = id
-    ..name = name
-    ..address = 'R. Teodoro Sampaio, 2000'
-    ..lat = at.latitude
-    ..lng = at.longitude
-    ..availableBatteries = available
-    ..totalSlots = 12
-    ..openingHours = 'Seg a sáb, 7h às 22h'
-    ..open24h = open24h,
-);
-
-StationSwap swapFx({StationSwapStatus status = StationSwapStatus.openingSlot, int? slot, int fee = 500, StationSwapEndReason? reason, DateTime? expiresAt}) => StationSwap(
-  (b) => b
-    ..id = 'sw1'
-    ..stationId = largoId
-    ..rentalId = 'r1'
-    ..status = status
-    ..slotNumber = slot
-    ..feeCents = fee
-    ..endReason = reason
-    ..expiresAt = expiresAt ?? thu10.add(const Duration(minutes: 3))
-    ..createdAt = thu10,
-);
-
-AppFailure apiError(int status, String slug) => AppFailure(kind: FailureKind.api, status: status, slug: slug, detail: 'texto cru da API');
-
-/// ~[meters] ao norte de [p].
-LatLng north(LatLng p, double meters) => LatLng(p.latitude + meters / 111320, p.longitude);
-
-class SwapBackend extends GalpaoBackend {
-  Rental? rentalNow = sampleRental();
-  List<SwapStation> stationList = [station()];
-  StationSwap server = swapFx();
-  Object? swapCreateError;
-  int swapCreates = 0;
-  final keys = <String>[];
-  final positions = <LatLng>[];
-  int gets = 0;
-  int swapCancels = 0;
-  int vehicleBattery = 80;
-
-  @override
-  Future<Rental?> currentRental() async => rentalNow;
-  @override
-  Future<Rental> rental(String id) async => rentalNow!;
-  @override
-  Future<Vehicle> vehicleByCode(String code) async => sampleVehicle(battery: vehicleBattery);
-  @override
-  Future<List<SwapStation>> swapStations({double? lat, double? lng}) async => stationList;
-  @override
-  Future<StationSwap> createStationSwap({
-    required String stationId,
-    required String stationCode,
-    required String rentalId,
-    required double lat,
-    required double lng,
-    required String idempotencyKey,
-  }) async {
-    swapCreates++;
-    keys.add(idempotencyKey);
-    positions.add(LatLng(lat, lng));
-    final e = swapCreateError;
-    if (e != null) throw e;
-    return server;
-  }
-
-  @override
-  Future<StationSwap> stationSwap(String stationId, String swapId) async {
-    gets++;
-    return server;
-  }
-
-  @override
-  Future<StationSwap> cancelStationSwap(String stationId, String swapId) async {
-    swapCancels++;
-    server = server.rebuild((b) => b
-      ..status = StationSwapStatus.canceled
-      ..endReason = StationSwapEndReason.canceledByCustomer);
-    return server;
-  }
-}
-
-class PhoneAt extends FakeLocation {
-  PhoneAt(this.at, {this.track = const []});
-  final LatLng? at;
-  final List<LatLng> track;
-  @override
-  Future<bool> ensurePermission() async => true;
-  @override
-  Future<bool> hasPermission() async => true;
-  @override
-  Future<LatLng?> currentPosition({bool requestPermission = false}) async => at;
-  @override
-  Stream<LatLng> trackDuringRental({required String notificationTitle, required String notificationText}) => Stream.fromIterable(track);
-}
-
-Future<void> settle(WidgetTester t) async {
-  for (var i = 0; i < 6; i++) {
-    await t.pump(const Duration(milliseconds: 300));
-  }
-}
+import 'swap_fixtures.dart';
 
 void main() {
   group('proximidade (50 m, haversine)', () {
@@ -197,10 +89,14 @@ void main() {
       expect(swapErrorMessage(l, apiError(409, 'swap-open')), l.swapErrorOpen);
       expect(swapErrorMessage(l, apiError(409, 'rental-not-active')), l.swapErrorRentalNotActive);
       expect(swapErrorMessage(l, apiError(422, 'station-unavailable'), station: station(available: 0)), l.swapErrorNoBattery);
+      // Fechada so quando o horario e legivel e "agora" cai fora dele.
+      final thuLate = DateTime.utc(2026, 10, 23, 2); // qui 23h em SP
       expect(
-        swapErrorMessage(l, apiError(422, 'station-unavailable'), station: station(open24h: false)),
+        swapErrorMessage(l, apiError(422, 'station-unavailable'), station: station(open24h: false), now: thuLate),
         'Esta estação está fechada agora (Seg a sáb, 7h às 22h).',
       );
+      expect(swapErrorMessage(l, apiError(422, 'station-unavailable'), station: station(open24h: false), now: thu10), l.swapErrorUnavailable);
+      expect(swapErrorMessage(l, apiError(422, 'station-unavailable'), station: station(open24h: false)), l.swapErrorUnavailable);
       expect(swapErrorMessage(l, apiError(422, 'station-unavailable'), station: station()), l.swapErrorUnavailable);
       expect(swapErrorMessage(l, apiError(422, 'station-unavailable')), l.swapErrorUnavailable);
       expect(swapErrorMessage(l, AppFailure(kind: FailureKind.network)), l.errorNetwork);
@@ -365,15 +261,16 @@ void main() {
   });
 
   group('leitor', () {
-    Future<GoRouter> pumpScan(WidgetTester t, SwapBackend b, {QrScannerBuilder? scanner}) async {
+    Future<GoRouter> pumpScan(WidgetTester t, SwapBackend b, {QrScannerBuilder? scanner, String initial = '/station-swap/scan'}) async {
       tallScreen(t);
-      final router = GoRouter(initialLocation: '/station-swap/scan', routes: appRoutes());
+      scanNow = thu10;
+      final router = GoRouter(initialLocation: initial, routes: appRoutes());
       addTearDown(router.dispose);
       await t.pumpWidget(testRouterApp(router, overrides: [
         backendProvider.overrideWithValue(b),
         locationServiceProvider.overrideWithValue(PhoneAt(largo)),
         sessionProvider.overrideWith(() => FakeSession(session())),
-        clockProvider.overrideWithValue(() => thu10),
+        clockProvider.overrideWithValue(() => scanNow),
         realtimeFactoryProvider.overrideWithValue(() => FakeRealtime()),
         qrScannerBuilderProvider.overrideWithValue(
           scanner ?? (context, {required onCode, required onManual}) => const ColoredBox(color: Colors.black),

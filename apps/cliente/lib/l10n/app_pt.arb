@@ -1765,5 +1765,14 @@
     }
   },
   "swapEndReturnAfterClose": "Sua bateria foi recebida depois que a troca foi encerrada. Nossa equipe de operação já foi avisada; fale com o suporte se precisar.",
-  "swapEndRentalForceEnded": "O aluguel foi encerrado pela equipe Volti, então a troca foi cancelada."
+  "swapEndRentalForceEnded": "O aluguel foi encerrado pela equipe Volti, então a troca foi cancelada.",
+  "swapScanStation": "Estação: {name}",
+  "@swapScanStation": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "returnSwapOpenAction": "Continuar troca"
 }

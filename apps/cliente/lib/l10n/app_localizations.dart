@@ -4965,6 +4965,18 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'O aluguel foi encerrado pela equipe Volti, então a troca foi cancelada.'**
   String get swapEndRentalForceEnded;
+
+  /// No description provided for @swapScanStation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estação: {name}'**
+  String swapScanStation(String name);
+
+  /// No description provided for @returnSwapOpenAction.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar troca'**
+  String get returnSwapOpenAction;
 }
 
 class _AppLocalizationsDelegate

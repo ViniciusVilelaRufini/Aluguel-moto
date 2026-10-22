@@ -159,16 +159,26 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (mounted) _moveMap(p ?? fallback);
   }
 
-  /// Leitor do QR (troca nova) ou a tela da troca em andamento; na volta,
-  /// relê o aluguel (troca encerrada, bateria nova).
+  /// Leitor do QR (troca nova) ou a tela da troca em andamento.
   Future<void> _openSwapFlow(StationSwap? open, {String? stationId}) async {
-    if (open != null) {
-      await openSwapProgress(context, open);
-    } else {
-      await openSwapScan(context, stationId: stationId);
+    if (_swapNavigating) return;
+    _swapNavigating = true;
+    try {
+      if (open != null) {
+        await openSwapProgress(context, open);
+      } else {
+        await openSwapScan(context, stationId: stationId);
+      }
+    } finally {
+      _swapNavigating = false;
     }
-    if (mounted) ref.invalidate(currentRentalStateProvider);
+    // Sem recarga aqui: a tela da troca ja invalida o aluguel quando a troca
+    // termina (invalidar na volta, com a home ainda coberta pela transicao,
+    // reconstruia providers no meio do build).
   }
+
+  /// Um toque so nas entradas da troca (sem empilhar duas telas).
+  bool _swapNavigating = false;
 
   void _selectDepot(Depot d) {
     VoltiHaptics.selection();

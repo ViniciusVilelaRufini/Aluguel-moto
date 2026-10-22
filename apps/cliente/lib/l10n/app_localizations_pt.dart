@@ -2905,4 +2905,12 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get swapEndRentalForceEnded =>
       'O aluguel foi encerrado pela equipe Volti, então a troca foi cancelada.';
+
+  @override
+  String swapScanStation(String name) {
+    return 'Estação: $name';
+  }
+
+  @override
+  String get returnSwapOpenAction => 'Continuar troca';
 }

@@ -7,6 +7,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/clock.dart';
 import '../../core/widgets.dart';
 import 'swap_confirm_sheet.dart';
 import 'swap_logic.dart';
@@ -15,6 +16,9 @@ import 'swap_logic.dart';
 /// faltar permissao ou camera, o visor explica e chama [onManual] para o
 /// campo de codigo digitado.
 typedef QrScannerBuilder = Widget Function(BuildContext context, {required ValueChanged<String> onCode, required VoidCallback onManual});
+
+/// Quanto o mesmo QR da camera fica ignorado depois que a confirmacao fecha.
+const kSwapRescanCooldown = Duration(seconds: 2);
 
 /// Trocado nos testes de widget (sem camera nem canal de plataforma).
 final qrScannerBuilderProvider = Provider<QrScannerBuilder>(
@@ -42,10 +46,25 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
   /// Uma leitura por vez: enquanto a confirmacao esta aberta, novos QR sao ignorados.
   bool _handling = false;
 
+  /// Ultimo QR da camera e quando a confirmacao dele fechou: o visor continua
+  /// lendo o mesmo QR, que fica ignorado por [kSwapRescanCooldown] (sem a
+  /// folha reabrir sozinha), e depois volta a valer.
+  String? _lastScan;
+  DateTime? _lastClosedAt;
+
+  /// Nome da estacao do aviso de proximidade (`Estacao: <nome>`).
+  String? _hintName;
+
   @override
   void initState() {
     super.initState();
     _state = ref.read(backendProvider).currentRentalState();
+    final hint = widget.stationHint;
+    if (hint != null) {
+      _station(hint.toLowerCase()).then((s) {
+        if (mounted && s != null) setState(() => _hintName = s.name);
+      });
+    }
     _state!.then((s) {
       // Troca ja em andamento: retoma a tela dela em vez de abrir outra.
       if (mounted && isOpenSwap(s.stationSwap)) _goProgress(s.stationSwap!);
@@ -59,7 +78,19 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
     super.dispose();
   }
 
-  void _goProgress(StationSwap swap) => context.pushReplacement('/station-swap/${swap.stationId}/${swap.id}', extra: swap);
+  /// Devolve a troca a quem abriu o leitor ([openSwapScan] abre o progresso);
+  /// aberto direto (sem tela embaixo), vai para o progresso.
+  void _goProgress(StationSwap swap) {
+    if (_left) return;
+    _left = true;
+    if (context.canPop()) {
+      context.pop(swap);
+    } else {
+      context.go('/station-swap/${swap.stationId}/${swap.id}', extra: swap);
+    }
+  }
+
+  bool _left = false;
 
   /// Estacao do QR (baterias, horario) pela lista publica, sem filtro de raio.
   Future<SwapStation?> _station(String id) async {
@@ -68,6 +99,16 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
     } catch (_) {
       return null;
     }
+  }
+
+  /// QR lido pela camera (repetido continuamente pelo visor).
+  void _onScanned(String raw) {
+    final code = raw.trim();
+    final closed = _lastClosedAt;
+    if (code == _lastScan && closed != null && ref.read(clockProvider)().difference(closed) < kSwapRescanCooldown) return;
+    if (_handling) return;
+    _lastScan = code;
+    _onCode(code);
   }
 
   Future<void> _onCode(String raw) async {
@@ -92,12 +133,29 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
       final station = await _station(stationId);
       if (!mounted) return;
       VoltiHaptics.selection();
-      final swap = await SwapConfirmSheet.show(context, rental: rental!, stationId: stationId, stationCode: code, station: station);
-      if (swap != null && mounted) _goProgress(swap);
+      final swap = await SwapConfirmSheet.show(
+        context,
+        rental: rental!,
+        stationId: stationId,
+        stationCode: code,
+        station: station,
+        feeCents: state.batterySwapFeeCents,
+      );
+      if (!mounted) return;
+      if (swap != null) {
+        _goProgress(swap);
+        return;
+      }
+      // Fechou sem troca: se o POST chegou a criar uma (resposta perdida), retoma.
+      try {
+        final now = await ref.read(backendProvider).currentRentalState();
+        if (mounted && isOpenSwap(now.stationSwap)) _goProgress(now.stationSwap!);
+      } catch (_) {}
     } catch (e) {
       if (mounted) VoltiToast.show(context, swapErrorMessage(l, e), tone: VoltiToastTone.danger);
     } finally {
       _handling = false;
+      _lastClosedAt = ref.read(clockProvider)();
     }
   }
 
@@ -131,6 +189,10 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                if (_hintName != null) ...[
+                  Text(l.swapScanStation(_hintName!), key: const Key('swap-scan-station'), style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface)),
+                  const SizedBox(height: VoltiSpacing.s4),
+                ],
                 Text(l.swapScanHint, style: VoltiTypography.body.copyWith(color: scheme.onSurfaceVariant)),
                 const SizedBox(height: VoltiSpacing.s16),
                 AspectRatio(
@@ -144,7 +206,7 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
                         children: [
                           KeyedSubtree(
                             key: const Key('swap-scanner'),
-                            child: scanner(context, onCode: _onCode, onManual: _focusManual),
+                            child: scanner(context, onCode: _onScanned, onManual: _focusManual),
                           ),
                           const IgnorePointer(child: _ScanFrame()),
                         ],
@@ -189,7 +251,7 @@ class _ScanFrame extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.all(40),
+        padding: const EdgeInsets.all(VoltiSpacing.s40),
         child: DecoratedBox(
           decoration: BoxDecoration(
             borderRadius: VoltiRadii.rLg,
@@ -211,7 +273,9 @@ class MobileQrScanner extends StatefulWidget {
 }
 
 class _MobileQrScannerState extends State<MobileQrScanner> {
-  final _controller = MobileScannerController(formats: const [BarcodeFormat.qrCode], detectionSpeed: DetectionSpeed.noDuplicates);
+  // `normal`: o mesmo QR volta a ser entregue (a tela ignora repeticoes por
+  // [kSwapRescanCooldown]); com `noDuplicates` cancelar a folha travava a releitura.
+  final _controller = MobileScannerController(formats: const [BarcodeFormat.qrCode], detectionSpeed: DetectionSpeed.normal);
 
   @override
   void dispose() {

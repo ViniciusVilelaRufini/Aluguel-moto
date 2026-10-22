@@ -15,6 +15,7 @@ import '../../core/services.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
 import '../home/providers.dart';
+import '../ride/ride_data.dart' show RideRealtimeLink, rideEventBusProvider, rideRealtimeLinkProvider;
 import 'swap_logic.dart';
 
 /// Com o tempo real fora do ar, o GET da troca a cada [kSwapPollWhileOffline].
@@ -45,34 +46,87 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
   bool _doneHandled = false;
   int? _donePct;
   bool _rtWasDown = false;
+  bool _foreground = true;
   Timer? _tick;
   Timer? _poll;
   ProviderSubscription<RealtimeService>? _rtSub;
   StreamSubscription<RealtimeEvent>? _events;
   StreamSubscription<bool>? _conn;
+  RideRealtimeLink? _rideLink;
+  AppLifecycleListener? _lifecycle;
+
+  /// Ordem dos GETs: resposta de um pedido mais antigo que o ultimo estado
+  /// aplicado (outro GET ou o cancelamento) e descartada.
+  int _fetchSeq = 0;
+  int _appliedSeq = 0;
 
   @override
   void initState() {
     super.initState();
     _swap = widget.initial;
+    _foreground = (WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed) == AppLifecycleState.resumed;
+    _lifecycle = AppLifecycleListener(onStateChange: _onLifecycle);
     _fetch();
     _startRealtime();
-    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted && _swap != null && !isTerminalSwap(_swap!.status)) setState(() {});
-    });
+    _startTick();
   }
 
   @override
   void dispose() {
+    _lifecycle?.dispose();
     _tick?.cancel();
     _poll?.cancel();
     _events?.cancel();
     _conn?.cancel();
     _rtSub?.close();
+    _rideLink?.connected.removeListener(_onRideConnection);
     super.dispose();
   }
 
+  void _startTick() {
+    _tick ??= Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted && _swap != null && !isTerminalSwap(_swap!.status)) setState(() {});
+    });
+  }
+
+  void _startPoll() {
+    if (!_foreground || _swap?.status == StationSwapStatus.completed) return;
+    _poll ??= Timer.periodic(kSwapPollWhileOffline, (_) => _fetch());
+  }
+
+  void _stopTimers() {
+    _tick?.cancel();
+    _tick = null;
+    _poll?.cancel();
+    _poll = null;
+  }
+
+  /// Segundo plano: para a contagem e o GET periodico. Volta: GET na hora,
+  /// contagem e, com o socket fora, o GET periodico de novo.
+  void _onLifecycle(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.hidden) {
+      _foreground = false;
+      _stopTimers();
+    } else if (state == AppLifecycleState.resumed && !_foreground) {
+      _foreground = true;
+      if (!mounted) return;
+      _fetch();
+      _startTick();
+      if (_rtWasDown) _startPoll();
+    }
+  }
+
+  /// Corrida aberta por baixo: reusa o socket dela ([rideEventBusProvider] e
+  /// [RideRealtimeLink.connected]); senao, a conexao do cliente.
   void _startRealtime() {
+    final link = ref.read(rideRealtimeLinkProvider);
+    if (link.open) {
+      _rideLink = link;
+      _events = ref.read(rideEventBusProvider).stream.listen(_onEvent, onError: (Object _) {});
+      link.connected.addListener(_onRideConnection);
+      if (!link.connected.value) _onConnection(false);
+      return;
+    }
     try {
       _rtSub = ref.listenManual(customerRealtimeProvider, (_, _) {});
       final rt = _rtSub!.read();
@@ -84,6 +138,8 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
     }
   }
 
+  void _onRideConnection() => _onConnection(_rideLink!.connected.value);
+
   void _onConnection(bool up) {
     if (!mounted) return;
     if (up) {
@@ -94,7 +150,7 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
       _rtWasDown = false;
     } else {
       _rtWasDown = true;
-      _poll ??= Timer.periodic(kSwapPollWhileOffline, (_) => _fetch());
+      _startPoll();
     }
   }
 
@@ -117,9 +173,11 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
   }
 
   Future<void> _fetch() async {
+    final seq = ++_fetchSeq;
     try {
       final fetched = await ref.read(backendProvider).stationSwap(widget.stationId, widget.swapId);
-      if (!mounted) return;
+      if (!mounted || seq < _appliedSeq) return;
+      _appliedSeq = seq;
       final current = _swap;
       _set(current == null ? fetched : mergeSwapFetch(current, fetched));
     } catch (e) {
@@ -184,7 +242,9 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
     setState(() => _canceling = true);
     try {
       final s = await ref.read(backendProvider).cancelStationSwap(widget.stationId, widget.swapId);
-      if (mounted) _set(s);
+      // GETs pedidos antes do cancelamento ficam velhos.
+      _appliedSeq = ++_fetchSeq;
+      if (mounted) _set(mergeSwapFetch(_swap ?? s, s));
     } catch (e) {
       if (!mounted) return;
       VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
@@ -195,8 +255,8 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
     }
   }
 
+  /// Quem abriu a troca (home, corrida) rele o aluguel na volta.
   void _close() {
-    ref.invalidate(currentRentalStateProvider);
     if (context.canPop()) {
       context.pop();
     } else {
@@ -208,16 +268,11 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
   Widget build(BuildContext context) {
     final l = context.l;
     final swap = _swap;
-    return PopScope(
-      onPopInvokedWithResult: (didPop, _) {
-        if (didPop) ref.invalidate(currentRentalStateProvider);
-      },
-      child: VoltiScaffold(
-        title: l.swapProgressTitle,
-        body: swap == null
-            ? (_loadError != null ? ErrorState(error: _loadError!, onRetry: _fetch) : const LoadingState())
-            : _body(context, l, swap),
-      ),
+    return VoltiScaffold(
+      title: l.swapProgressTitle,
+      body: swap == null
+          ? (_loadError != null ? ErrorState(error: _loadError!, onRetry: _fetch) : const LoadingState())
+          : _body(context, l, swap),
     );
   }
 
@@ -264,13 +319,13 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
                 excludeSemantics: true,
                 child: Container(
                   key: const Key('swap-countdown'),
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.s14, vertical: VoltiSpacing.s8),
                   decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: VoltiRadii.rPill),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(LucideIcons.hourglass, size: 14, color: scheme.onSurfaceVariant),
-                      const SizedBox(width: 6),
+                      const SizedBox(width: VoltiSpacing.s6),
                       Text(
                         left == Duration.zero ? l.swapTimeUp : l.swapTimeLeft(clock(left.inSeconds)),
                         style: VoltiTypography.label.copyWith(color: scheme.onSurface),
@@ -395,18 +450,32 @@ class _StepView extends StatelessWidget {
   }
 }
 
+/// Lado da arte do passo (circulo do icone) e da vaga em destaque.
+const _artSize = VoltiSpacing.s48 + VoltiSpacing.s24;
+const _slotSize = VoltiSpacing.s48 + VoltiSpacing.s40;
+
+/// Fundo suave e icone no tema: no escuro, o tom do icone a 22% sobre a
+/// superficie e o icone clareado (os fundos "soft" claros ofuscavam).
+(Color, Color) _artColors(BuildContext context, Color bg, Color fg) {
+  if (Theme.of(context).brightness != Brightness.dark) return (bg, fg);
+  return (fg.withValues(alpha: .22), Color.lerp(fg, VoltiColors.white, .45)!);
+}
+
 class _Art extends StatelessWidget {
   const _Art({required this.icon, required this.bg, required this.fg});
   final IconData icon;
   final Color bg, fg;
 
   @override
-  Widget build(BuildContext context) => Container(
-        width: 72,
-        height: 72,
-        decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
-        child: Icon(icon, color: fg, size: 32),
-      );
+  Widget build(BuildContext context) {
+    final (b, f) = _artColors(context, bg, fg);
+    return Container(
+      width: _artSize,
+      height: _artSize,
+      decoration: BoxDecoration(color: b, shape: BoxShape.circle),
+      child: Icon(icon, color: f, size: VoltiSpacing.s32),
+    );
+  }
 }
 
 /// Numero da vaga em destaque ("devolva na vaga N").
@@ -415,16 +484,19 @@ class _SlotArt extends StatelessWidget {
   final int? slot;
 
   @override
-  Widget build(BuildContext context) => ExcludeSemantics(
-        child: Container(
-          key: const Key('swap-slot'),
-          width: 88,
-          height: 88,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: VoltiColors.brandSoft, borderRadius: VoltiRadii.rLg, border: Border.all(color: VoltiColors.brand, width: 2)),
-          child: slot == null
-              ? const Icon(LucideIcons.packageOpen, color: VoltiColors.brandAction, size: 32)
-              : Text('$slot', style: VoltiTypography.display.copyWith(color: VoltiColors.brandAction)),
-        ),
-      );
+  Widget build(BuildContext context) {
+    final (bg, fg) = _artColors(context, VoltiColors.brandSoft, VoltiColors.brandAction);
+    return ExcludeSemantics(
+      child: Container(
+        key: const Key('swap-slot'),
+        width: _slotSize,
+        height: _slotSize,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: bg, borderRadius: VoltiRadii.rLg, border: Border.all(color: VoltiColors.brand, width: 2)),
+        child: slot == null
+            ? Icon(LucideIcons.packageOpen, color: fg, size: VoltiSpacing.s32)
+            : Text('$slot', style: VoltiTypography.display.copyWith(color: fg)),
+      ),
+    );
+  }
 }
