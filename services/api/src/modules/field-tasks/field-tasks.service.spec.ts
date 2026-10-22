@@ -61,3 +61,71 @@ describe('Inspeção (limitador como observação, decisão #13)', () => {
     ).rejects.toMatchObject({ status: 422, slug: 'battery-serials-must-differ' });
   });
 });
+
+const DEPOT = { id: '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c', lat: -23.5654, lng: -46.6847, active: true };
+
+describe('Recolhimento (collect) devolve a moto ao galpão', () => {
+  function collectSetup(vehicleStatus = 'awaiting_pickup') {
+    const ctx = setup();
+    ctx.prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'collect', status: 'in_progress', vehicleId: VEHICLE_ID, assigneeId: campo.userId, createdAt: new Date(), updatedAt: new Date() } as any);
+    ctx.prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: vehicleStatus, code: 'VLT-0001' } as any);
+    ctx.prisma.depot.findUnique.mockResolvedValue(DEPOT as any);
+    ctx.prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
+    ctx.prisma.fieldTask.findMany.mockResolvedValue([]);
+    ctx.prisma.staffUser.findMany.mockResolvedValue([]);
+    ctx.prisma.battery.findMany.mockResolvedValue([]);
+    ctx.prisma.vehicle.findMany.mockResolvedValue([]);
+    return ctx;
+  }
+
+  it('concluir collect com depotId → moto free, com o depotId e nas coordenadas do galpão', async () => {
+    const { service, prisma } = collectSetup();
+    await service.complete(campo, TASK_ID, { depotId: DEPOT.id });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({
+      where: { id: VEHICLE_ID, status: { in: ['awaiting_pickup', 'free', 'maintenance', 'blocked'] } },
+      data: { status: 'free', depotId: DEPOT.id, lat: DEPOT.lat, lng: DEPOT.lng },
+    });
+    expect(prisma.fieldTask.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: TASK_ID }, data: expect.objectContaining({ status: 'done' }) }));
+  });
+
+  it('collect com depotId e vehicleStatus maintenance → chega ao galpão em manutenção', async () => {
+    const { service, prisma } = collectSetup();
+    await service.complete(campo, TASK_ID, { depotId: DEPOT.id, vehicleStatus: 'maintenance' });
+    expect((prisma.vehicle.updateMany.mock.calls[0][0] as any).data).toEqual({ status: 'maintenance', depotId: DEPOT.id, lat: DEPOT.lat, lng: DEPOT.lng });
+  });
+
+  it('moto offline: guarda o status de retorno (free) e já fica no galpão', async () => {
+    const { service, prisma } = collectSetup('offline');
+    prisma.vehicle.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+    await service.complete(campo, TASK_ID, { depotId: DEPOT.id });
+    expect(prisma.vehicle.updateMany.mock.calls[1][0]).toEqual({
+      where: { id: VEHICLE_ID, status: 'offline' },
+      data: { statusBeforeOffline: 'free', depotId: DEPOT.id, lat: DEPOT.lat, lng: DEPOT.lng },
+    });
+  });
+
+  it('galpão inexistente → 404 e a tarefa não é concluída', async () => {
+    const { service, prisma } = collectSetup();
+    prisma.depot.findUnique.mockResolvedValue(null);
+    await expect(service.complete(campo, TASK_ID, { depotId: DEPOT.id })).rejects.toMatchObject({ status: 404 });
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+  });
+
+  it('moto alugada/reservada no meio do caminho → 409 e a tarefa não é concluída', async () => {
+    const { service, prisma } = collectSetup('rented');
+    prisma.vehicle.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.complete(campo, TASK_ID, { depotId: DEPOT.id })).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+  });
+
+  it('collect de moto awaiting_pickup sem depotId → 422 (a moto ficaria presa)', async () => {
+    const { service, prisma } = collectSetup();
+    await expect(service.complete(campo, TASK_ID, {})).rejects.toMatchObject({ status: 422, slug: 'validation-error' });
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+  });
+
+  it('depotId em tarefa que não é collect → 422', async () => {
+    const { service, prisma } = collectSetup();
+    prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'reposition', status: 'in_progress', vehicleId: VEHICLE_ID } as any);
+    await expect(service.complete(campo, TASK_ID, { depotId: DEPOT.id })).rejects.toMatchObject({ status: 422 });
+  });
+});

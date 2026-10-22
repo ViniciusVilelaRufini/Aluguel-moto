@@ -26,6 +26,17 @@ const SYSTEM = { system: true as const, name: 'encerramento' };
 type RentalWithVehicle = Rental & { vehicle: Vehicle };
 
 /**
+ * Onde a moto termina: `street` (ponto verde, padrão) ou `depot` (devolução no galpão, Task 6 — quem chama já põe a moto
+ * no galpão). Na rua, moto do galpão vai para `awaiting_pickup` com uma tarefa `collect`; moto de rua volta a `free`.
+ */
+export type ReturnTo = 'street' | 'depot';
+export interface FinalizeOptions {
+  fees?: FeeCharge[];
+  actor?: Principal;
+  returnTo?: ReturnTo;
+}
+
+/**
  * Encerramento: só em zona `return`, com a foto emitida, e com o rastreador confirmando "parada e travada".
  * Sem confirmação → `ending` (202) e retentativa. Liquidação única por aluguel (chave `rental-settlement:<id>`).
  */
@@ -156,7 +167,7 @@ export class RentalEndService {
    * Fecha o aluguel e liquida **uma única vez**: a transição de status é condicional (`updateMany` com status em andamento),
    * então chamadas repetidas/concorrentes só liquidam na primeira.
    */
-  finalize(rentalId: string, kind: 'ended' | 'force_ended', opts: { fees?: FeeCharge[]; actor?: Principal } = {}) {
+  finalize(rentalId: string, kind: 'ended' | 'force_ended', opts: FinalizeOptions = {}) {
     // Caminho único por aluguel: quem chega durante uma finalização em andamento (HTTP x evento x retentativa)
     // espera a mesma execução e devolve o aluguel já liquidado, em vez de ler um estado intermediário.
     const running = this.finalizing.get(rentalId);
@@ -166,7 +177,7 @@ export class RentalEndService {
     return p;
   }
 
-  private async doFinalize(rentalId: string, kind: 'ended' | 'force_ended', opts: { fees?: FeeCharge[]; actor?: Principal }) {
+  private async doFinalize(rentalId: string, kind: 'ended' | 'force_ended', opts: FinalizeOptions) {
     const rental = await this.load(rentalId);
     if (rental.status === 'ended' || rental.status === 'force_ended') return toRental(rental);
 
@@ -192,7 +203,10 @@ export class RentalEndService {
     });
     if (claimed.count === 0) return toRental(await this.load(rentalId));
 
-    await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: 'free' } });
+    const awaitingPickup = opts.returnTo !== 'depot' && (await this.isDepotVehicle(rental));
+    const vehicleStatus = awaitingPickup ? 'awaiting_pickup' : 'free';
+    if (awaitingPickup) await this.leaveForPickup(rental);
+    else await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: 'free' } });
     await this.prisma.rentalEvent.create({
       data: {
         rentalId,
@@ -212,10 +226,39 @@ export class RentalEndService {
     }
 
     const final = await this.load(rentalId);
-    this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: rental.vehicleId, status: 'free', ts: now.toISOString() } satisfies VehicleStatusChangedEvent);
+    this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: rental.vehicleId, status: vehicleStatus, ts: now.toISOString() } satisfies VehicleStatusChangedEvent);
     this.emitRental(final);
     this.logger.log({ msg: 'rental_finalized', rentalId, status: kind, costCents: breakdown.totalCents });
     return toRental(final);
+  }
+
+  /** Moto do galpão: tem `depotId` ou saiu por uma entrega de galpão aceita para este aluguel. Só sai de novo pela entrega. */
+  private async isDepotVehicle(rental: RentalWithVehicle): Promise<boolean> {
+    if (rental.vehicle.depotId) return true;
+    const pickup = await this.prisma.handover.findFirst({ where: { rentalId: rental.id, type: 'pickup', status: 'accepted' }, select: { id: true } });
+    return !!pickup;
+  }
+
+  /**
+   * Ponto verde: moto fica `awaiting_pickup` e nasce uma tarefa `collect` na posição dela. Idempotente: sob um lock
+   * transacional por moto, não cria outra se já houver `collect` aberta (finalizações concorrentes em instâncias diferentes).
+   */
+  private async leaveForPickup(rental: RentalWithVehicle): Promise<void> {
+    const pos = await this.positionOf(rental.vehicle);
+    const vehicleId = rental.vehicleId;
+    const created = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`collect:${vehicleId}`}))::text`;
+      await tx.vehicle.updateMany({ where: { id: vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: 'awaiting_pickup' } });
+      const open = await tx.fieldTask.findFirst({ where: { vehicleId, type: 'collect', status: { notIn: ['done', 'canceled'] } }, select: { id: true } });
+      if (open) return null;
+      return tx.fieldTask.create({
+        data: {
+          type: 'collect', priority: 'medium', status: 'open', vehicleId, targetLat: pos.lat, targetLng: pos.lng,
+          notes: 'Recolher ao galpão: moto devolvida em ponto verde.',
+        },
+      });
+    });
+    if (created) this.logger.log({ msg: 'collect_task_created', rentalId: rental.id, vehicleId, fieldTaskId: created.id });
   }
 
   /** Confirmação tardia do travamento (via `iot.command-updated` → `command.changed`). */

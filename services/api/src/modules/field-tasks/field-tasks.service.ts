@@ -180,14 +180,32 @@ export class FieldTasksService {
     if (t.type === 'battery_swap' && (await this.prisma.batterySwap.count({ where: { fieldTaskId: id } })) === 0) {
       throw unprocessable('validation-error', 'Registre a troca de bateria antes de concluir.');
     }
+    if (dto.depotId && t.type !== 'collect') throw unprocessable('validation-error', 'O galpão só é informado ao concluir um recolhimento.');
+    const depot = dto.depotId ? await this.prisma.depot.findUnique({ where: { id: dto.depotId }, select: { id: true, lat: true, lng: true } }) : null;
+    if (dto.depotId && !depot) throw notFound('Galpão não encontrado.');
+    if (t.type === 'collect' && !depot) {
+      const v = await this.prisma.vehicle.findUnique({ where: { id: t.vehicleId }, select: { status: true, statusBeforeOffline: true } });
+      if (v?.status === 'awaiting_pickup' || (v?.status === 'offline' && v.statusBeforeOffline === 'awaiting_pickup')) {
+        throw unprocessable('validation-error', 'Informe o galpão onde a moto chegou.');
+      }
+    }
+    const arrivedStatus = dto.vehicleStatus ?? 'free';
     await this.prisma.$transaction(async (tx) => {
       await tx.fieldTask.update({ where: { id }, data: { status: 'done', completionNotes: dto.notes, completedAt: dto.completedAt ? new Date(dto.completedAt) : new Date() } });
-      if (dto.vehicleStatus) {
+      if (depot) {
+        // Retirada em galpão: a moto recolhida volta ao galpão (livre para retirada ou em manutenção).
+        const at = { depotId: depot.id, lat: depot.lat, lng: depot.lng };
+        let moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: ['awaiting_pickup', 'free', 'maintenance', 'blocked'] } }, data: { status: arrivedStatus, ...at } });
+        if (!moved.count) moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: 'offline' }, data: { statusBeforeOffline: arrivedStatus, ...at } });
+        if (!moved.count) throw conflict('vehicle-unavailable', 'A moto está em uso por um cliente; não dá para registrar a chegada ao galpão.');
+        await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: 'Recolhimento concluído no galpão', metadata: { fieldTaskId: id, to: arrivedStatus, depotId: depot.id } }, tx as any);
+      } else if (dto.vehicleStatus) {
         const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: ['free', 'maintenance', 'offline', 'blocked'] } }, data: { status: dto.vehicleStatus } });
         if (moved.count) await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: `Tarefa ${t.type} concluída`, metadata: { fieldTaskId: id, to: dto.vehicleStatus } }, tx as any);
       }
     });
-    if (dto.vehicleStatus) this.emitVehicle(t.vehicleId, dto.vehicleStatus);
+    if (depot) this.emitVehicle(t.vehicleId, arrivedStatus);
+    else if (dto.vehicleStatus) this.emitVehicle(t.vehicleId, dto.vehicleStatus);
     return this.mapped(id);
   }
 

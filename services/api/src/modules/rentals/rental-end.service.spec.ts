@@ -21,7 +21,7 @@ const admin: Principal = { pool: 'staff', sub: 'a', email: 'a@volti.com.br', gro
 const support: Principal = { ...admin, groups: ['suporte'] };
 
 /** Banco falso mínimo e com estado para o aluguel (findUnique/updateMany/update). */
-function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | 'in_progress' | 'pending' } = {}) {
+function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | 'in_progress' | 'pending'; depotId?: string | null } = {}) {
   const prisma = mockDeep<PrismaClient>();
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   const startedAt = new Date(Date.now() - 10 * 60 * 1000);
@@ -33,7 +33,7 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
     endZoneId: null, returnPhotoUploadKey: opts.photo === false ? null : PHOTO_KEY, returnPhotoObjectKey: null, forceEndReason: null,
     forcedEndById: null, rating: null, speedLimitKmh: null, createdAt: startedAt, updatedAt: startedAt,
   };
-  const vehicle = { id: VEHICLE_ID, code: 'VLT-0001', thingName: 'moto-0001', lat: -23.56, lng: -46.69, status: 'rented' };
+  const vehicle = { id: VEHICLE_ID, code: 'VLT-0001', thingName: 'moto-0001', lat: -23.56, lng: -46.69, status: 'rented', depotId: opts.depotId ?? null };
   prisma.rental.findUnique.mockImplementation((async () => ({ ...rental, vehicle })) as any);
   prisma.rental.updateMany.mockImplementation((async (args: any) => {
     const allowed: string[] | undefined = args.where.status?.in;
@@ -219,6 +219,86 @@ describe('Encerramento do aluguel', () => {
     const { service, billing } = setup({ inZone: false });
     await expect(service.forceEnd(support, RENTAL_ID, 'Motivo qualquer')).rejects.toMatchObject({ status: 403, slug: 'force-end-outside-zone-requires-admin' });
     expect(billing.settle).not.toHaveBeenCalled();
+  });
+});
+
+const DEPOT_ID = '77777777-7777-4777-8777-777777777777';
+
+describe('Devolução em ponto verde (retirada em galpão)', () => {
+  beforeEach(() => jest.useFakeTimers({ now: new Date('2026-10-21T15:00:00.000Z') }));
+  afterEach(() => jest.useRealTimers());
+
+  const statusSetTo = (prisma: ReturnType<typeof setup>['prisma']) =>
+    prisma.vehicle.updateMany.mock.calls.map((c: any) => c[0].data.status).filter(Boolean);
+
+  it('moto do galpão termina em awaiting_pickup e nasce uma tarefa collect na posição da moto', async () => {
+    const { service, prisma } = setup({ depotId: DEPOT_ID });
+    prisma.fieldTask.findFirst.mockResolvedValue(null);
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(r.status).toBe(200);
+    expect(r.rental.status).toBe('ended');
+    expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['rented', 'paused'] } }, data: { status: 'awaiting_pickup' } });
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+    expect(prisma.fieldTask.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ type: 'collect', priority: 'medium', status: 'open', vehicleId: VEHICLE_ID, targetLat: -23.56, targetLng: -46.69 }),
+    });
+  });
+
+  it('moto que saiu por entrega de galpão (handover pickup aceito) também vai para recolhimento, mesmo sem depotId', async () => {
+    const { service, prisma } = setup({ depotId: null });
+    prisma.handover.findFirst.mockResolvedValue({ id: 'h1' } as any);
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect((prisma.handover.findFirst.mock.calls[0][0] as any).where).toMatchObject({ rentalId: RENTAL_ID, type: 'pickup', status: 'accepted' });
+    expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('moto de rua (sem depotId e sem entrega) continua voltando a free, sem tarefa', async () => {
+    const { service, prisma } = setup();
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(statusSetTo(prisma)).toEqual(['free']);
+    expect(prisma.fieldTask.create).not.toHaveBeenCalled();
+  });
+
+  it('já existe collect aberta para a moto → não cria outra', async () => {
+    const { service, prisma } = setup({ depotId: DEPOT_ID });
+    prisma.fieldTask.findFirst.mockResolvedValue({ id: 'task-aberta' } as any);
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    const where = (prisma.fieldTask.findFirst.mock.calls[0][0] as any).where;
+    expect(where).toMatchObject({ vehicleId: VEHICLE_ID, type: 'collect', status: { notIn: ['done', 'canceled'] } });
+    expect(prisma.fieldTask.create).not.toHaveBeenCalled();
+  });
+
+  it('duas finalizações concorrentes (HTTP x evento x job) criam uma tarefa só e liquidam uma vez', async () => {
+    const { service, prisma, rental, billing } = setup({ depotId: DEPOT_ID });
+    rental.status = 'ending';
+    rental.endRequestedAt = new Date();
+    let created = 0;
+    prisma.fieldTask.findFirst.mockImplementation((async () => (created ? { id: 't' } : null)) as any);
+    prisma.fieldTask.create.mockImplementation((async () => ({ id: `t${++created}` })) as any);
+    await Promise.all([service.finalize(RENTAL_ID, 'ended'), service.finalize(RENTAL_ID, 'ended'), service.onCommandChanged({ commandId: 'c', vehicleId: VEHICLE_ID, type: 'lock', status: 'confirmed', payload: { rentalId: RENTAL_ID, purpose: 'rental_end' } })]);
+    await service.finalize(RENTAL_ID, 'ended');
+    expect(created).toBe(1);
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+    // A checagem e a criação ficam sob um lock transacional por moto (finalizações em instâncias diferentes).
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+  });
+
+  it('encerramento forçado de moto do galpão também deixa a moto esperando recolhimento', async () => {
+    const { service, prisma } = setup({ depotId: DEPOT_ID, inZone: false, photo: false });
+    prisma.fieldTask.findFirst.mockResolvedValue(null);
+    await service.forceEnd(admin, RENTAL_ID, 'Cliente sem bateria no celular');
+    expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('finalize com returnTo: depot (devolução no galpão, Task 6) não cria recolhimento', async () => {
+    const { service, prisma, rental } = setup({ depotId: DEPOT_ID });
+    rental.status = 'ending';
+    await service.finalize(RENTAL_ID, 'ended', { returnTo: 'depot' });
+    expect(statusSetTo(prisma)).toEqual(['free']);
+    expect(prisma.fieldTask.create).not.toHaveBeenCalled();
   });
 });
 

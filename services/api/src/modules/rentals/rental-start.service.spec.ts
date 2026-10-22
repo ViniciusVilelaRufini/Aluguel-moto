@@ -107,6 +107,32 @@ describe('Início do aluguel (POST /rentals)', () => {
     expect(res.body.type).toBe('https://api.volti.com.br/problems/location-consent-required');
   });
 
+  it('galpão: moto free com depotId → 409 vehicle-unavailable (só sai pela entrega), sem caução nem reivindicação', async () => {
+    h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, depotId: '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c' } as any);
+    const res = await post('chave-galpao-0001');
+    expect(res.status).toBe(409);
+    expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
+    expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('galpão: moto awaiting_pickup (devolvida em ponto verde) → 409 vehicle-unavailable', async () => {
+    h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'awaiting_pickup' } as any);
+    const res = await post('chave-galpao-0002');
+    expect(res.status).toBe(409);
+    expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
+  });
+
+  it('galpão: moto reservada pelo próprio cliente numa reserva de galpão → 409 vehicle-unavailable', async () => {
+    h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved', depotId: '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c' } as any);
+    h.prisma.reservation.findFirst.mockResolvedValue({ id: 'res-1', customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, status: 'active', expiresAt: new Date(Date.now() + 60_000) } as any);
+    const res = await post('chave-galpao-0003');
+    expect(res.status).toBe(409);
+    expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
+  });
+
   it('moto não livre → 409 vehicle-unavailable', async () => {
     h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'rented' } as any);
     const res = await post('chave-occ-0001');
