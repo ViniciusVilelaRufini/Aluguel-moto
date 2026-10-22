@@ -19,6 +19,7 @@ Princípios mantidos: verde `#34C25C` continua a única cor de ação; coral só
 | E-09 | **Barra de progresso da reserva** que esvazia sem degraus | O cronômetro sozinho não mostra quanto do tempo já passou | Reserva | `ReservationBanner(totalSeconds:)` (opcional, compatível) |
 | E-10 | **Coreografia de sucesso**: check → título → total contando; Pix mostra check antes de fechar; trava com cadeado pulsando | Os momentos de conclusão (pagar, travar, recibo) não tinham fechamento | Pix, devolução, recibo | reuso de `VoltiSuccessCheck`, `VoltiPulse`, `VoltiCountUp` |
 | E-11 | **Tinta forte para texto em banners**: `warningInkStrong` #9A4A0F e `dangerInkStrong` #B0352B | `warningInk`/`dangerInk` sobre fundo suave ficam em 3,9:1 e 3,5:1 (abaixo de 4,5:1) | Todos os `NoticeBanner` e `VoltiStatusBanner` | 2 tokens em `VoltiColors` (sugestão para `tokens/colors.css`: `--warning-ink-strong`, `--danger-ink-strong`) |
+| E-13 | **Alvo de toque de 44 px nos chips**: o visual continua com 36 px e ganha 4 px invisíveis acima e abaixo (largura mínima de 44); a semântica cobre a área toda | O DS pede alvo mínimo de 44 | Mapa (filtro), corrida (Reportar problema, Compartilhar trajeto), operador | `VoltiChip` (o layout fica 8 px mais alto) |
 | E-14 | **Selo ao vivo/pausada** na marca (pílula verde suave com ponto piscando; sol suave com ícone de pausa) e chips da marca nas ações da corrida | `Chip`/`ActionChip` do Material destoavam | Corrida | local na tela |
 
 Correções de base que acompanharam (não são evoluções, mas mudam `volti_flutter`): `VoltiChip` agora tem altura mínima de 36 px que cresce com o texto; `VoltiPressable` com rótulo não repete o texto interno para leitores de tela; `VoltiFadeUp`/`VoltiEnter` preservam o estado do filho ao terminar.
@@ -28,7 +29,6 @@ Correções de base que acompanharam (não são evoluções, mas mudam `volti_fl
 | ID | Evolução | Por quê | Telas | Motivo de não aplicar agora |
 |---|---|---|---|---|
 | E-12 | Texto `ink900` sobre o verde do CTA (ou verde 1 tom mais escuro atrás de texto branco) | Branco sobre #34C25C = 2,4:1 | Todos os CTAs | Muda a identidade visual aprovada; decisão de marca |
-| E-13 | Alvo de toque de 44 px nos chips (área invisível ao redor do visual de 36 px) | DS pede alvo mínimo de 44 | Mapa (filtro), corrida (ações) | Muda o layout de `VoltiChip` também no app do operador; validar lá antes |
 | E-15 | Transição compartilhada (Hero) pin → cartão → plano | Continuidade espacial entre a moto escolhida e a contratação | Mapa, plano | O caminho real para o plano passa pelo scan (modal), que quebra a continuidade; avaliar quando houver "reservar e destravar" sem scan |
 | E-16 | Bottom sheet com pontos de encaixe (recolhido/meio/expandido) na corrida | Mais mapa visível durante a corrida | Corrida | Precisa de teste de uso com gente andando; o sheet atual já limita a 62% da altura e rola |
 | E-17 | Faixa global "sem conexão" fora da corrida | Hoje só há erro pontual por tela | Todas | Exige `connectivity_plus` (nova dependência) e um provider; `VoltiStatusBanner(tone: offline)` já está pronto |

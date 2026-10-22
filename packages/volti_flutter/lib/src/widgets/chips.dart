@@ -38,7 +38,13 @@ class VoltiChip extends StatelessWidget {
         onTap: onTap,
         scale: VoltiMotion.chipPressScale,
         semanticLabel: label,
-        child: AnimatedContainer(
+        // Alvo de toque >= 44 px (E-13): 4 px invisiveis acima e abaixo do
+        // visual de 36 px; a semantica cobre a area inteira.
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: (VoltiSpacing.hitMin - 36) / 2),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: VoltiSpacing.hitMin),
+            child: AnimatedContainer(
           duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
           // Altura minima 36 (design) que cresce com a escala de texto.
           constraints: const BoxConstraints(minHeight: 36),
@@ -47,34 +53,28 @@ class VoltiChip extends StatelessWidget {
             color: selected ? VoltiColors.brandSoft : scheme.surface,
             borderRadius: VoltiRadii.rPill,
             border: Border.all(
-              color: selected
-                  ? VoltiColors.brand
-                  : (elevated ? Colors.transparent : scheme.outlineVariant),
+              color: selected ? VoltiColors.brand : (elevated ? Colors.transparent : scheme.outlineVariant),
             ),
             boxShadow: elevated ? VoltiShadows.shadow1 : null,
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (icon != null) ...[
-                Icon(icon, size: 16, color: fg),
-                const SizedBox(width: 6),
-              ],
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontFamily: VoltiTypography.fontSans,
-                    fontWeight: VoltiTypography.fwMedium,
-                    fontSize: 13,
-                    height: 1,
-                    color: fg,
-                  ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[Icon(icon, size: 16, color: fg), const SizedBox(width: 6)],
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: VoltiTypography.fontSans,
+                  fontWeight: VoltiTypography.fwMedium,
+                  fontSize: 13,
+                  height: 1,
+                  color: fg,
                 ),
               ),
-            ],
+            ),
+          ]),
+        ),
           ),
         ),
       ),
@@ -116,56 +116,28 @@ class PassCard extends StatelessWidget {
       scale: .96,
       semanticLabel: subtitle == null ? title : '$title. $subtitle',
       child: DecoratedBox(
-        decoration: const BoxDecoration(
-          borderRadius: VoltiRadii.rLg,
-          boxShadow: VoltiShadows.shadow1,
-        ),
+        decoration: const BoxDecoration(borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
         child: ClipRRect(
           borderRadius: VoltiRadii.rLg,
           child: BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: VoltiShadows.glassBlur,
-              sigmaY: VoltiShadows.glassBlur,
-            ),
+            filter: ImageFilter.blur(sigmaX: VoltiShadows.glassBlur, sigmaY: VoltiShadows.glassBlur),
             child: Container(
               padding: const EdgeInsets.fromLTRB(8, 8, 18, 8),
               color: VoltiColors.glassBg,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: bg,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(icon, size: 22, color: fg),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        style: VoltiTypography.label.copyWith(
-                          color: scheme.onSurface,
-                        ),
-                      ),
-                      if (subtitle != null)
-                        Text(
-                          subtitle!,
-                          maxLines: 1,
-                          style: VoltiTypography.caption.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
+                  child: Icon(icon, size: 22, color: fg),
+                ),
+                const SizedBox(width: 12),
+                Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(title, maxLines: 1, style: VoltiTypography.label.copyWith(color: scheme.onSurface)),
+                  if (subtitle != null)
+                    Text(subtitle!, maxLines: 1, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+                ]),
+              ]),
             ),
           ),
         ),
