@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { FOCUSABLE, cycleFocusIndex, dialogStack } from '@/lib/focus';
+import { markLeaving, pushToast, removeToast, toastDuration, type ToastItem, type ToastTone } from '@/lib/toast-queue';
 import { keepPreviousData, useQuery, type QueryKey } from '@tanstack/react-query';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
@@ -250,22 +251,44 @@ export function ReasonDialog({
 
 /* ---------- Toast ---------- */
 
-type ToastTone = 'success' | 'info' | 'warning' | 'danger';
 const ToastCtx = createContext<(msg: string, tone?: ToastTone) => void>(() => {});
 export const useToast = () => useContext(ToastCtx);
 
+/**
+ * Pilha de toasts (até 3) no rodapé central: entram com vt-toast-in, saem com vt-toast-out,
+ * erros ficam mais tempo e têm `role=alert`; os demais são anunciados educadamente (aria-live).
+ */
 export function ToastProvider({ children }: { children: ReactNode }) {
-  const [t, setT] = useState<{ msg: string; tone: ToastTone } | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const show = useCallback((msg: string, tone: ToastTone = 'success') => {
-    setT({ msg, tone });
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setT(null), 3200);
+  const [list, setList] = useState<ToastItem[]>([]);
+  const seq = useRef(0);
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const dismiss = useCallback((id: number) => {
+    setList((l) => markLeaving(l, id));
+    setTimeout(() => setList((l) => removeToast(l, id)), 220);
   }, []);
+  const show = useCallback((msg: string, tone: ToastTone = 'success') => {
+    const id = ++seq.current;
+    setList((l) => pushToast(l, { id, msg, tone }));
+    timers.current.set(id, setTimeout(() => { timers.current.delete(id); dismiss(id); }, toastDuration(tone)));
+  }, [dismiss]);
+  // Itens marcados para sair pelo limite da pilha são removidos depois da animação.
+  useEffect(() => {
+    const leaving = list.filter((t) => t.leaving);
+    if (leaving.length === 0) return;
+    const h = setTimeout(() => setList((l) => l.filter((t) => !t.leaving)), 220);
+    return () => clearTimeout(h);
+  }, [list]);
+  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
   return (
     <ToastCtx.Provider value={show}>
       {children}
-      {t && <Toast tone={t.tone} style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', minWidth: 320, zIndex: 90 }}>{t.msg}</Toast>}
+      <div aria-live="polite" style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 90, display: 'flex', flexDirection: 'column-reverse', gap: 8, alignItems: 'center', pointerEvents: 'none', width: 'min(420px, calc(100vw - 32px))' }}>
+        {[...list].reverse().map((t) => (
+          <div key={t.id} role={t.tone === 'danger' ? 'alert' : undefined} style={{ width: '100%', pointerEvents: 'auto', animation: t.leaving ? 'vt-toast-out 200ms var(--ease-out) forwards' : 'vt-toast-in var(--dur-slow) var(--ease-spring) backwards' }}>
+            <Toast tone={t.tone} action="Fechar" onAction={() => dismiss(t.id)}>{t.msg}</Toast>
+          </div>
+        ))}
+      </div>
     </ToastCtx.Provider>
   );
 }
