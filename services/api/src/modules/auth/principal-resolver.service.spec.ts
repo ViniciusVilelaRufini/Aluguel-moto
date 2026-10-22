@@ -108,3 +108,21 @@ describe('PrincipalResolver (staff, QA-04)', () => {
     expect(prisma.staffUser.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 's2' }, data: expect.objectContaining({ cognitoSub: 'sub-op' }) }));
   });
 });
+
+/** QA-08 (resto): primeiro acesso paralelo de um staff sem cadastro não responde 409. */
+describe('PrincipalResolver (staff novo em paralelo)', () => {
+  it('violação de unicidade ao criar o staff → relê o cadastro criado pela requisição concorrente', async () => {
+    const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' });
+    const created = { id: 's9', active: true, groups: ['campo'], cognitoSub: 'novo-staff', lastLoginAt: new Date() };
+    const prisma = {
+      staffUser: {
+        findUnique: jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(created),
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockRejectedValue(p2002),
+        update: jest.fn(),
+      },
+    };
+    const p = await new PrincipalResolver(prisma as any).resolve({ sub: 'novo-staff', email: 'n@volti.dev', groups: ['campo'], pool: 'staff' });
+    expect(p).toMatchObject({ staffId: 's9', groups: ['campo'] });
+  });
+});

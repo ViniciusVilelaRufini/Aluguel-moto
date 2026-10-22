@@ -41,21 +41,28 @@ export class PrincipalResolver {
     const select = { id: true, active: true, groups: true, cognitoSub: true, lastLoginAt: true } as const;
     // QA-17: casa pelo sub. O e-mail só liga um cadastro ainda sem sub (criado pelo painel antes do primeiro login) e só
     // existe em tokens dev; o access token do Cognito não traz e-mail, e o `username` nunca é usado como e-mail.
-    const existing =
+    let existing =
       (await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select })) ??
       (token.email ? await this.prisma.staffUser.findFirst({ where: { email: token.email, cognitoSub: null }, select }) : null);
     if (!existing) {
-      const created = await this.prisma.staffUser.create({
-        data: {
-          cognitoSub: token.sub,
-          email: token.email || `${token.sub}@staff.volti.invalid`,
-          name: token.email ? token.email.split('@')[0] : token.sub,
-          groups: token.groups,
-          lastLoginAt: new Date(),
-        },
-        select: { id: true },
-      });
-      return { pool: 'staff', sub: token.sub, email: token.email, groups: [...token.groups], userId: created.id, staffId: created.id };
+      try {
+        const created = await this.prisma.staffUser.create({
+          data: {
+            cognitoSub: token.sub,
+            email: token.email || `${token.sub}@staff.volti.invalid`,
+            name: token.email ? token.email.split('@')[0] : token.sub,
+            groups: token.groups,
+            lastLoginAt: new Date(),
+          },
+          select: { id: true },
+        });
+        return { pool: 'staff', sub: token.sub, email: token.email, groups: [...token.groups], userId: created.id, staffId: created.id };
+      } catch (err) {
+        // QA-08 (resto): requisições paralelas no primeiro acesso → relê o cadastro criado pela concorrente.
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+        existing = await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select });
+        if (!existing) throw err;
+      }
     }
     if (!existing.active) throw new ProblemException(403, 'forbidden', 'Usuário interno desativado.');
     const now = Date.now();
