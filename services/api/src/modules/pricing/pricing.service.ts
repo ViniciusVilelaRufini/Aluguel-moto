@@ -142,13 +142,14 @@ export class PricingService {
   }
 
   /** Valida o cupom para o cliente/plano. Devolve o cupom ou a mensagem de recusa. */
-  async checkCoupon(code: string, planCode: PlanCode, customerId?: string): Promise<{ coupon?: Coupon; message?: string }> {
+  /** `planCode` ausente (validação na conta, contrato v2) não confere a elegibilidade por plano. */
+  async checkCoupon(code: string, planCode: PlanCode | undefined, customerId?: string): Promise<{ coupon?: Coupon; message?: string }> {
     const coupon = await this.prisma.coupon.findUnique({ where: { code: code.toUpperCase() } });
     const now = new Date();
     if (!coupon || !coupon.active) return { message: 'Cupom não encontrado.' };
     if (coupon.validFrom && coupon.validFrom > now) return { message: 'Cupom ainda não está válido.' };
     if (coupon.validUntil && coupon.validUntil < now) return { message: 'Cupom expirado.' };
-    if (coupon.planCodes.length > 0 && !coupon.planCodes.includes(planCode)) return { message: 'Cupom não vale para este plano.' };
+    if (planCode && coupon.planCodes.length > 0 && !coupon.planCodes.includes(planCode)) return { message: 'Cupom não vale para este plano.' };
     if (coupon.maxRedemptions != null && coupon.redemptions >= coupon.maxRedemptions) return { message: 'Cupom esgotado.' };
     if (customerId && coupon.maxRedemptionsPerCustomer != null) {
       const used = await this.prisma.couponRedemption.count({ where: { couponId: coupon.id, customerId } });
@@ -168,12 +169,24 @@ export class PricingService {
     return fee && fee.active ? fee.amountCents : fallbackCents;
   }
 
-  static snapshotFrom(plan: PricingPlan, insurancePremiumCents: number, coverage: InsuranceCoverage, coupon?: Coupon | null, subscriptionCovered = false): PriceSnapshot {
+  /**
+   * Contrato v2: `model` (catálogo) substitui o preço por minuto — e o desbloqueio, se o modelo tiver um — só no plano
+   * por minuto (unidade `minute`). Os demais planos têm preço único para a frota.
+   */
+  static snapshotFrom(
+    plan: PricingPlan,
+    insurancePremiumCents: number,
+    coverage: InsuranceCoverage,
+    coupon?: Coupon | null,
+    subscriptionCovered = false,
+    model?: { pricePerMinuteCents: number; unlockFeeCents?: number | null } | null,
+  ): PriceSnapshot {
+    const perMinuteModel = plan.unit === 'minute' && model ? model : null;
     const snap: PriceSnapshot = {
       planCode: plan.code,
       unit: plan.unit,
-      unlockFeeCents: plan.unlockFeeCents,
-      unitPriceCents: plan.unitPriceCents,
+      unlockFeeCents: perMinuteModel?.unlockFeeCents ?? plan.unlockFeeCents,
+      unitPriceCents: perMinuteModel ? perMinuteModel.pricePerMinuteCents : plan.unitPriceCents,
       pausePerMinuteCents: plan.pausePerMinuteCents,
       insurancePremiumCents,
       coverage,

@@ -145,6 +145,10 @@ export class LgpdService {
           birthDate: null,
           emergencyContactName: null,
           emergencyContactPhone: null,
+          // Contrato v2: chave Pix de estorno e código de indicação são dados pessoais.
+          pixRefundKey: null,
+          pixRefundKeyType: null,
+          referralCode: null,
           // QA-07: só o hash do sub, para recusar o token antigo sem guardar o identificador.
           cognitoSub: customer.cognitoSub.startsWith('deleted:') ? customer.cognitoSub : deletedSubMarker(customer.cognitoSub),
           kycDocumentFrontKey: null,

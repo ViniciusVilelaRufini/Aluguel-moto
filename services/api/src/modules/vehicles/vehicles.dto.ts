@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { VEHICLE_STATUSES, type VehicleStatus } from '../../common/enums';
 import { PageQuery } from '../../common/pagination';
 
@@ -69,6 +69,11 @@ export class VehicleCreateDto {
   @IsString()
   @MaxLength(64)
   batterySerial?: string;
+
+  /** Contrato v2: modelo do catálogo (define também `model`). */
+  @IsOptional()
+  @IsUUID()
+  vehicleModelId?: string;
 }
 
 export class VehicleUpdateDto {
@@ -86,6 +91,23 @@ export class VehicleUpdateDto {
   @IsString()
   @MaxLength(200)
   qrCode?: string;
+
+  /** Contrato v2: modelo do catálogo e correção manual de odômetro/horas (AuditLog). */
+  @IsOptional()
+  @IsUUID()
+  vehicleModelId?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(1000000)
+  odometerKm?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(100000)
+  usageHours?: number;
 }
 
 export class VehicleStatusChangeDto {

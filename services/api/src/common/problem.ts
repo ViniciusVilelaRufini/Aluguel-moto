@@ -42,6 +42,16 @@ const DEFAULT_TITLES: Record<string, string> = {
   'battery-serials-must-differ': 'Números de série iguais',
   'account-deletion-blocked': 'Exclusão de conta bloqueada',
   'webhook-signature-invalid': 'Assinatura do webhook inválida',
+  // contrato v2
+  'pix-key-invalid': 'Chave Pix inválida',
+  'top-up-amount-out-of-range': 'Valor de recarga fora do permitido',
+  'subscription-not-pausable': 'Assinatura não pode ser pausada ou retomada',
+  'subscription-pause-limit-reached': 'Limite de pausa do plano',
+  'subscription-required': 'Plano semanal ou mensal necessário',
+  'subscription-vehicle-required': 'Plano sem moto fixa',
+  'maintenance-slot-unavailable': 'Horário de manutenção indisponível',
+  'referral-code-invalid': 'Código de indicação inválido',
+  'referral-not-eligible': 'Indicação não permitida',
   'internal-error': 'Erro interno',
 };
 

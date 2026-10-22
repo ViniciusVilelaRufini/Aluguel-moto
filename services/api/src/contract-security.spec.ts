@@ -58,8 +58,8 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     }
   }
 
-  it('cobre as 140 operações do contrato, sem rotas extras', () => {
-    expect(ops).toHaveLength(140);
+  it('cobre as 165 operações do contrato, sem rotas extras', () => {
+    expect(ops).toHaveLength(165);
     const missing = ops.map(([k]) => k).filter((k) => !routes.has(k));
     const extra = [...routes.keys()].filter((k) => !ops.some(([o]) => o === k));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });

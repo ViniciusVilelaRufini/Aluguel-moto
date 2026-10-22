@@ -29,7 +29,7 @@ export class FakePaymentProvider implements PaymentProvider {
   private readonly payments = new Map<string, ProviderPayment & { cardFailsCharge?: boolean }>();
   private readonly cards = new Map<string, ProviderCard & { failsCharge: boolean }>();
   private readonly cardTokens = new Map<string, string>();
-  private readonly subscriptions = new Map<string, 'active' | 'canceled'>();
+  private readonly subscriptions = new Map<string, 'active' | 'paused' | 'canceled'>();
   private readonly idem = new Map<string, unknown>();
   private readonly failures = new Map<Op, string>();
   private readonly counts = new Map<Op, number>();
@@ -55,7 +55,7 @@ export class FakePaymentProvider implements PaymentProvider {
     return { ...p };
   }
 
-  subscriptionStatus(id: string): 'active' | 'canceled' | undefined {
+  subscriptionStatus(id: string): 'active' | 'paused' | 'canceled' | undefined {
     return this.subscriptions.get(id);
   }
 
@@ -219,6 +219,11 @@ export class FakePaymentProvider implements PaymentProvider {
 
   async cancelSubscription(input: { providerSubscriptionId: string }): Promise<void> {
     if (this.subscriptions.has(input.providerSubscriptionId)) this.subscriptions.set(input.providerSubscriptionId, 'canceled');
+  }
+
+  async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean }): Promise<void> {
+    const current = this.subscriptions.get(input.providerSubscriptionId);
+    if (current && current !== 'canceled') this.subscriptions.set(input.providerSubscriptionId, input.paused ? 'paused' : 'active');
   }
 
   verifyWebhook(input: { signature?: string; requestId?: string; dataId: string }): boolean {

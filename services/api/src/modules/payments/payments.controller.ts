@@ -1,14 +1,18 @@
-import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { SkipThrottle } from '@nestjs/throttler';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, Public, StaffOnly } from '../auth/principal';
-import { ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto } from './payments.dto';
+import { ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto, SubscriptionPauseDto, SubscriptionVehicleDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
+import { SubscriptionsService } from './subscriptions.service';
 
 /** Rotas literais (`cards`, `deposits`, `subscriptions`) antes de `/payments/:id`. */
 @Controller()
 export class PaymentsController {
-  constructor(private readonly payments: PaymentsService) {}
+  constructor(
+    private readonly payments: PaymentsService,
+    private readonly subscriptions: SubscriptionsService,
+  ) {}
 
   @Get('payments/cards')
   @CustomerOnly()
@@ -53,6 +57,32 @@ export class PaymentsController {
   @Idempotent({ required: true })
   createSubscription(@Body() dto: SubscriptionCreateDto, @CurrentUser() u: Principal) {
     return this.payments.createSubscription(u.customerId!, dto);
+  }
+
+  @Get('payments/subscriptions/:id')
+  @CustomerOnly()
+  getSubscription(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: Principal) {
+    return this.subscriptions.get(u.customerId!, id);
+  }
+
+  @Post('payments/subscriptions/:id/pause')
+  @HttpCode(200)
+  @CustomerOnly()
+  pauseSubscription(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SubscriptionPauseDto, @CurrentUser() u: Principal) {
+    return this.subscriptions.pause(u.customerId!, id, dto.days);
+  }
+
+  @Post('payments/subscriptions/:id/resume')
+  @HttpCode(200)
+  @CustomerOnly()
+  resumeSubscription(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: Principal) {
+    return this.subscriptions.resume(u.customerId!, id);
+  }
+
+  @Put('payments/subscriptions/:id/vehicle')
+  @CustomerOrStaff('admin', 'operacao')
+  assignSubscriptionVehicle(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SubscriptionVehicleDto, @CurrentUser() u: Principal) {
+    return this.subscriptions.assignVehicle(u, id, dto.vehicleId);
   }
 
   @Delete('payments/subscriptions/:id')

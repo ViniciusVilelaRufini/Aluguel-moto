@@ -1,4 +1,5 @@
 import type { Customer } from '@prisma/client';
+import { maskPixKey } from '../../common/pix-key';
 import { compact, iso, maskCpf } from '../../common/util';
 
 export interface CustomerStats {
@@ -8,8 +9,21 @@ export interface CustomerStats {
   lastRentalAt?: string;
 }
 
-/** Prisma → `Customer`. CPF completo só para admin (ou o próprio titular). */
-export function toCustomer(c: Customer, opts: { fullCpf: boolean; restricted?: boolean; stats?: CustomerStats }) {
+/** Assinatura semanal/mensal aberta (ativa ou pausada), para `activePlanCode`/`activeSubscriptionId`. */
+export interface ActiveSubscriptionRef {
+  id: string;
+  planCode: string;
+}
+
+/**
+ * Prisma → `Customer`. CPF completo só para admin (ou o próprio titular). Chave Pix de estorno completa para o titular,
+ * `admin` e `financeiro` (`fullPixKey`, padrão = `fullCpf`); mascarada para os demais.
+ */
+export function toCustomer(
+  c: Customer,
+  opts: { fullCpf: boolean; restricted?: boolean; stats?: CustomerStats; fullPixKey?: boolean; activeSubscription?: ActiveSubscriptionRef | null },
+) {
+  const pixFull = opts.fullPixKey ?? opts.fullCpf;
   return compact({
     id: c.id,
     name: c.name ?? undefined,
@@ -26,6 +40,10 @@ export function toCustomer(c: Customer, opts: { fullCpf: boolean; restricted?: b
     locationConsent: c.locationConsent,
     emergencyContactName: c.emergencyContactName ?? undefined,
     emergencyContactPhone: c.emergencyContactPhone ?? undefined,
+    pixRefundKeyType: c.pixRefundKey ? (c.pixRefundKeyType ?? undefined) : undefined,
+    pixRefundKey: c.pixRefundKey && c.pixRefundKeyType ? (pixFull ? c.pixRefundKey : maskPixKey(c.pixRefundKeyType, c.pixRefundKey)) : undefined,
+    activePlanCode: opts.activeSubscription ? (opts.activeSubscription.planCode as 'weekly' | 'monthly') : undefined,
+    activeSubscriptionId: opts.activeSubscription?.id,
     stats: opts.stats,
     createdAt: c.createdAt.toISOString(),
   });

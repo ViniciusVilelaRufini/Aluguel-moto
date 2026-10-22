@@ -353,6 +353,14 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
     }
   }
 
+  async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean }): Promise<void> {
+    try {
+      await this.request('PUT', `/preapproval/${encodeURIComponent(input.providerSubscriptionId)}`, { status: input.paused ? 'paused' : 'authorized' });
+    } catch (err) {
+      this.rethrow(err, 'setSubscriptionPaused');
+    }
+  }
+
   verifyWebhook(input: { signature?: string; requestId?: string; dataId: string }): boolean {
     return verifyMercadoPagoSignature({ secret: this.cfg.webhookSecret, toleranceSeconds: this.cfg.webhookToleranceSeconds, ...input });
   }

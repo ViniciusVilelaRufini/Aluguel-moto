@@ -1,6 +1,6 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import type { BatterySwap, FieldTask, Inspection, Prisma, StaffUser, Vehicle } from '@prisma/client';
+import type { Battery, BatterySwap, FieldTask, Inspection, Prisma, StaffUser, Vehicle } from '@prisma/client';
 import { MAX_SPEED_KMH } from '../../common/enums';
 import { EV, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
@@ -13,16 +13,27 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
 import { hasGroup, type Principal } from '../auth/principal';
+import { VehicleAddressService } from '../vehicles/vehicle-address.service';
 import type { BatterySwapDto, FieldTaskCompleteDto, FieldTaskCreateDto, FieldTaskUpdateDto, InspectionDto, ListFieldTasksQuery } from './field-tasks.dto';
 
-type TaskRow = FieldTask & { vehicle?: Pick<Vehicle, 'code' | 'lat' | 'lng' | 'batteryPct'> | null; assignee?: Pick<StaffUser, 'name'> | null };
+type TaskVehicle = Pick<Vehicle, 'code' | 'lat' | 'lng' | 'batteryPct'> & Partial<Pick<Vehicle, 'status' | 'addressLabel' | 'batterySerial'>>;
+type TaskRow = FieldTask & {
+  vehicle?: TaskVehicle | null;
+  assignee?: Pick<StaffUser, 'name'> | null;
+  /** Contrato v2: bateria instalada e endereço do destino. */
+  battery?: Pick<Battery, 'serial' | 'cycleCount'> | null;
+  targetAddress?: string;
+};
 const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 } as const;
 const CLOSED = ['done', 'canceled'];
 
 export function toFieldTask(t: TaskRow) {
   return compact({
     id: t.id, type: t.type, status: t.status, priority: t.priority, vehicleId: t.vehicleId, vehicleCode: t.vehicle?.code ?? '',
-    vehicleLat: t.vehicle?.lat, vehicleLng: t.vehicle?.lng, vehicleBatteryPct: t.vehicle?.batteryPct, targetLat: t.targetLat ?? undefined,
+    vehicleLat: t.vehicle?.lat, vehicleLng: t.vehicle?.lng, vehicleBatteryPct: t.vehicle?.batteryPct,
+    vehicleStatus: t.vehicle?.status, vehicleAddress: t.vehicle?.addressLabel ?? undefined,
+    vehicleBatterySerial: t.battery?.serial ?? t.vehicle?.batterySerial ?? undefined, vehicleBatteryCycleCount: t.battery?.cycleCount,
+    targetAddress: t.targetAddress, targetLat: t.targetLat ?? undefined,
     targetLng: t.targetLng ?? undefined, assigneeId: t.assigneeId ?? undefined, assigneeName: t.assignee?.name, notes: t.notes ?? undefined,
     dueAt: iso(t.dueAt), maintenanceTaskId: t.maintenanceTaskId ?? undefined, createdById: t.createdById ?? undefined,
     completionNotes: t.completionNotes ?? undefined, createdAt: t.createdAt.toISOString(), updatedAt: t.updatedAt.toISOString(),
@@ -42,7 +53,9 @@ export function toInspection(i: Inspection) {
 export function toBatterySwap(b: BatterySwap) {
   return compact({
     id: b.id, fieldTaskId: b.fieldTaskId, vehicleId: b.vehicleId, operatorId: b.operatorId, removedBatterySerial: b.removedBatterySerial,
-    installedBatterySerial: b.installedBatterySerial, installedBatteryPct: b.installedBatteryPct ?? undefined, recordedAt: b.recordedAt.toISOString(),
+    installedBatterySerial: b.installedBatterySerial, installedBatteryPct: b.installedBatteryPct ?? undefined,
+    removedBatteryPct: b.removedBatteryPct ?? undefined, removedBatteryCycleCount: b.removedBatteryCycleCount ?? undefined,
+    installedBatteryCycleCount: b.installedBatteryCycleCount ?? undefined, recordedAt: b.recordedAt.toISOString(),
     createdAt: b.createdAt.toISOString(),
   });
 }
@@ -57,18 +70,33 @@ export class FieldTasksService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     private readonly events: EventEmitter2,
+    @Optional() private readonly addresses?: VehicleAddressService,
   ) {}
 
   private async enrich(rows: FieldTask[]): Promise<TaskRow[]> {
     const vIds = [...new Set(rows.map((r) => r.vehicleId))];
     const sIds = [...new Set(rows.map((r) => r.assigneeId).filter((x): x is string => !!x))];
     const [vehicles, staff] = await Promise.all([
-      vIds.length ? this.prisma.vehicle.findMany({ where: { id: { in: vIds } }, select: { id: true, code: true, lat: true, lng: true, batteryPct: true } }) : [],
+      vIds.length
+        ? this.prisma.vehicle.findMany({
+            where: { id: { in: vIds } },
+            select: { id: true, code: true, lat: true, lng: true, batteryPct: true, status: true, batterySerial: true, addressLabel: true, addressLat: true, addressLng: true, addressUpdatedAt: true },
+          })
+        : [],
       sIds.length ? this.prisma.staffUser.findMany({ where: { id: { in: sIds } }, select: { id: true, name: true } }) : [],
     ]);
+    // Contrato v2: endereço da moto (cache) e do destino, bateria instalada.
+    if (this.addresses) await this.addresses.ensure(vehicles);
+    const batteries = vIds.length ? await this.prisma.battery.findMany({ where: { vehicleId: { in: vIds }, status: 'in_vehicle' }, select: { vehicleId: true, serial: true, cycleCount: true } }) : [];
+    const bm = new Map(batteries.map((b) => [b.vehicleId!, b]));
     const vm = new Map(vehicles.map((v) => [v.id, v]));
     const sm = new Map(staff.map((s) => [s.id, s]));
-    return rows.map((r) => ({ ...r, vehicle: vm.get(r.vehicleId) ?? null, assignee: r.assigneeId ? (sm.get(r.assigneeId) ?? null) : null }));
+    const out: TaskRow[] = [];
+    for (const r of rows) {
+      const targetAddress = this.addresses && r.targetLat != null ? await this.addresses.label(r.targetLat, r.targetLng) : undefined;
+      out.push({ ...r, vehicle: vm.get(r.vehicleId) ?? null, assignee: r.assigneeId ? (sm.get(r.assigneeId) ?? null) : null, battery: bm.get(r.vehicleId) ?? null, targetAddress });
+    }
+    return out;
   }
 
   private async one(id: string) {
@@ -184,7 +212,7 @@ export class FieldTasksService {
     if (overLimit) {
       const mt = await this.prisma.maintenanceTask.create({
         data: {
-          vehicleId: t.vehicleId, kind: 'corrective', title: 'Limitador de velocidade acima de 32 km/h',
+          vehicleId: t.vehicleId, kind: 'corrective', title: 'Limitador de velocidade acima de 32 km/h', source: 'system',
           description: `Inspeção leu ${dto.speedLimiter.configuredMaxKmh} km/h no controlador. Reconfigurar para no máximo 32 km/h.`, createdById: user.userId,
         },
       });
@@ -217,16 +245,36 @@ export class FieldTasksService {
       const prev = await this.prisma.batterySwap.findUnique({ where: { idempotencyKey } });
       if (prev) return toBatterySwap(prev);
     }
+    const removedSerial = dto.removedBatterySerial.trim();
+    const installedSerial = dto.installedBatterySerial.trim();
     const swap = await this.prisma.$transaction(async (tx) => {
+      // Contrato v2: inventário de baterias. A retirada vai para a van do operador com a última carga lida da moto;
+      // a instalada sai da van (ou de onde estiver), entra na moto e conta mais um ciclo.
+      const vehicle = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { batteryPct: true } });
+      const removedPct = vehicle?.batteryPct ?? null;
+      const removed = await tx.battery.upsert({
+        where: { serial: removedSerial },
+        create: { serial: removedSerial, chargePct: removedPct ?? 0, status: 'in_van', holderId: user.userId },
+        update: { status: 'in_van', holderId: user.userId, vehicleId: null, stationId: null, ...(removedPct !== null ? { chargePct: removedPct } : {}) },
+      });
+      const installedPct = dto.installedBatteryPct;
+      const installed = await tx.battery.upsert({
+        where: { serial: installedSerial },
+        create: { serial: installedSerial, chargePct: installedPct ?? 100, status: 'in_vehicle', vehicleId: t.vehicleId, cycleCount: 1 },
+        update: { status: 'in_vehicle', vehicleId: t.vehicleId, holderId: null, stationId: null, cycleCount: { increment: 1 }, ...(installedPct !== undefined ? { chargePct: installedPct } : {}) },
+      });
+      // Outra bateria registrada nesta moto (série divergente da retirada) deixa de constar como instalada.
+      await tx.battery.updateMany({ where: { vehicleId: t.vehicleId, status: 'in_vehicle', NOT: { id: installed.id } }, data: { vehicleId: null, status: 'charging' } });
       const s = await tx.batterySwap.create({
         data: {
           fieldTaskId: id, vehicleId: t.vehicleId, operatorId: user.userId, removedBatterySerial: dto.removedBatterySerial, installedBatterySerial: dto.installedBatterySerial,
           installedBatteryPct: dto.installedBatteryPct, idempotencyKey, recordedAt: new Date(dto.recordedAt),
+          removedBatteryPct: removedPct, removedBatteryCycleCount: removed.cycleCount, installedBatteryCycleCount: installed.cycleCount,
         },
       });
       await tx.vehicle.update({
         where: { id: t.vehicleId },
-        data: { batterySerial: dto.installedBatterySerial, ...(dto.installedBatteryPct !== undefined ? { batteryPct: dto.installedBatteryPct } : {}) },
+        data: { batterySerial: dto.installedBatterySerial, batteryPct: installed.chargePct },
       });
       return s;
     });

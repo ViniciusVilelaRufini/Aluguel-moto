@@ -83,6 +83,10 @@ export function toMessage(m: SupportMessage) {
     authorName: m.authorName ?? undefined,
     body: m.body,
     attachmentObjectKeys: m.attachmentObjectKeys.length ? m.attachmentObjectKeys : undefined,
+    // Contrato v2: sent → delivered (o outro lado buscou) → read (o outro lado marcou como lida).
+    status: m.readAt ? 'read' : m.deliveredAt ? 'delivered' : 'sent',
+    deliveredAt: iso(m.deliveredAt),
+    readAt: iso(m.readAt),
     createdAt: m.createdAt.toISOString(),
   });
 }

@@ -99,8 +99,12 @@ export class PricingAdminService {
     }
     const { premiumCents } = await this.insurance.quote({ coverage: dto.coverage, planCode: dto.planCode });
     const minutes = dto.estimatedMinutes ?? UNIT_MINUTES[plan.unit];
+    // Contrato v2: preço por minuto do modelo da moto.
+    const model = dto.vehicleId
+      ? ((await this.prisma.vehicle.findUnique({ where: { id: dto.vehicleId }, select: { vehicleModel: { select: { pricePerMinuteCents: true, unlockFeeCents: true } } } }))?.vehicleModel ?? null)
+      : null;
     const breakdown = this.pricing.calculate({
-      snapshot: PricingService.snapshotFrom(plan, premiumCents, dto.coverage, coupon),
+      snapshot: PricingService.snapshotFrom(plan, premiumCents, dto.coverage, coupon, false, model),
       elapsedSeconds: minutes * 60,
       pausedSeconds: 0,
     });

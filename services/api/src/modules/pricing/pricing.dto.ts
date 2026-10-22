@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { ArrayUnique, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayUnique, IsArray, IsBoolean, IsDateString, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, IsUUID } from 'class-validator';
 import { INSURANCE_COVERAGES, PLAN_CODES, type InsuranceCoverage, type PlanCode } from '../../common/enums';
 import { PageQuery } from '../../common/pagination';
 
@@ -67,6 +67,11 @@ export class QuoteRequestDto {
   @Min(1)
   @Max(44640)
   estimatedMinutes?: number;
+
+  /** Contrato v2: usa o preço por minuto do modelo da moto. */
+  @IsOptional()
+  @IsUUID()
+  vehicleId?: string;
 }
 
 export class ListCouponsQuery extends PageQuery {

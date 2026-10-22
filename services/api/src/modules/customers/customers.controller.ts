@@ -7,7 +7,7 @@ import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
-import { CurrentUser, isAdmin, Principal, StaffOnly } from '../auth/principal';
+import { CurrentUser, hasGroup, isAdmin, Principal, StaffOnly } from '../auth/principal';
 import { toCustomer } from './customers.mapper';
 
 class ListCustomersQuery extends PageQuery {
@@ -60,7 +60,8 @@ export class CustomersController {
 
   private async full(c: Customer, user: Principal) {
     const restricted = (await this.restrictedSet([c.cpf])).size > 0;
-    return toCustomer(c, { fullCpf: isAdmin(user), restricted, stats: await this.stats(c.id) });
+    const activeSubscription = await this.prisma.subscription.findFirst({ where: { customerId: c.id, status: { in: ['active', 'paused'] } }, select: { id: true, planCode: true } });
+    return toCustomer(c, { fullCpf: isAdmin(user), fullPixKey: hasGroup(user, 'admin', 'financeiro'), restricted, stats: await this.stats(c.id), activeSubscription });
   }
 
   @Get('customers')
@@ -80,7 +81,11 @@ export class CustomersController {
     }
     const rows = await this.prisma.customer.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], ...pageArgs(q) });
     const restricted = await this.restrictedSet(rows.map((r) => r.cpf));
-    return toPage(rows, q, (c) => toCustomer(c, { fullCpf: isAdmin(u), restricted: !!c.cpf && restricted.has(c.cpf) }));
+    const subs = await this.prisma.subscription.findMany({ where: { customerId: { in: rows.map((r) => r.id) }, status: { in: ['active', 'paused'] } }, select: { id: true, planCode: true, customerId: true } });
+    const subBy = new Map(subs.map((x) => [x.customerId, x]));
+    return toPage(rows, q, (c) =>
+      toCustomer(c, { fullCpf: isAdmin(u), fullPixKey: hasGroup(u, 'admin', 'financeiro'), restricted: !!c.cpf && restricted.has(c.cpf), activeSubscription: subBy.get(c.id) }),
+    );
   }
 
   @Get('customer-restrictions')

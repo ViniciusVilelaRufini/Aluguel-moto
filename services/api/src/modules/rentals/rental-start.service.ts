@@ -170,8 +170,14 @@ export class RentalStartService {
     const plan = await this.pricing.activePlan(dto.planCode);
     const coupon: Coupon | null = dto.couponCode ? await this.pricing.requireCoupon(dto.couponCode, dto.planCode, customerId) : null;
 
-    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: dto.vehicleId } });
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: dto.vehicleId }, include: { vehicleModel: { select: { pricePerMinuteCents: true, unlockFeeCents: true } } } });
     if (!vehicle) throw notFound('Moto não encontrada.');
+    // Contrato v2: moto fixa de assinatura aberta só pode ser alugada pelo assinante.
+    const fixedFor = await this.prisma.subscription.findFirst({ where: { assignedVehicleId: vehicle.id, status: { in: ['active', 'paused'] } }, select: { customerId: true } });
+    if (fixedFor && fixedFor.customerId !== customerId) {
+      await this.requestDepositRelease(dto.depositId, customerId);
+      throw conflict('vehicle-unavailable', 'Esta moto é a moto fixa de outro plano.');
+    }
     const reservation = await this.prisma.reservation.findFirst({
       where: { vehicleId: vehicle.id, status: 'active', expiresAt: { gt: new Date() } },
     });
@@ -236,7 +242,7 @@ export class RentalStartService {
       : null;
     const policy = await this.insurance.issueForRental({ rentalId, customerId, coverage: dto.coverage });
     policyId = policy.policyId;
-    const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription);
+    const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription, vehicle.vehicleModel);
 
     // QA-21: reivindica a moto, desbloqueia e só cria o aluguel (relógio e cobrança) com o desbloqueio confirmado.
     // Fix round 1: a reivindicação grava junto o marcador `RentalStart`; se o processo morrer durante a espera do

@@ -23,6 +23,11 @@ import { PUSH_NOTIFIER } from './ports/push-notifier.port';
 import { QUEUE_BUS } from './ports/queue-bus.port';
 import { STAFF_DIRECTORY, type StaffDirectory } from './ports/staff-directory.port';
 import { PrismaService } from './prisma/prisma.service';
+import { AwsLocationReverseGeocoder } from './adapters/geocoding/aws-location-reverse-geocoder';
+import { CachedReverseGeocoder } from './adapters/geocoding/cached-reverse-geocoder';
+import { LocalReverseGeocoder } from './adapters/geocoding/local-reverse-geocoder';
+import { loadV2Config, V2_CONFIG, type V2Config } from './config/v2-config';
+import { REVERSE_GEOCODER } from './ports/reverse-geocoder.port';
 import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis/redis-store';
 
 /** Infraestrutura compartilhada: implementação "local" ou "aws" de cada porta escolhida por variável de ambiente. */
@@ -30,6 +35,17 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
 @Module({
   providers: [
     { provide: APP_CONFIG, useFactory: loadConfig },
+    { provide: V2_CONFIG, useFactory: loadV2Config },
+    {
+      // Contrato v2: endereço da moto (local = ruas de São Paulo em memória; aws = Amazon Location), com cache no Redis.
+      provide: REVERSE_GEOCODER,
+      inject: [V2_CONFIG, REDIS_STORE],
+      useFactory: (v2: V2Config, redis: RedisStore) => {
+        if (v2.geocoderMode === 'aws' && !v2.placeIndexName) throw new Error('GEOCODER_MODE=aws exige LOCATION_PLACE_INDEX.');
+        const inner = v2.geocoderMode === 'aws' ? AwsLocationReverseGeocoder.create(v2.awsRegion, v2.placeIndexName!) : new LocalReverseGeocoder();
+        return new CachedReverseGeocoder(inner, redis);
+      },
+    },
     PrismaService,
     AuditService,
     PrincipalResolver,
@@ -71,6 +87,8 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
   ],
   exports: [
     APP_CONFIG,
+    V2_CONFIG,
+    REVERSE_GEOCODER,
     PrismaService,
     AuditService,
     PrincipalResolver,
