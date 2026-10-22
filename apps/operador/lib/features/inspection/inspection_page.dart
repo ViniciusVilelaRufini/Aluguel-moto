@@ -355,6 +355,8 @@ class AnswerChip extends StatelessWidget {
       selected: selected,
       enabled: !disabled,
       label: '$item: $label',
+      // O toque precisa estar no proprio no (excludeSemantics tira o do GestureDetector).
+      onTap: onSelected,
       excludeSemantics: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,

@@ -57,7 +57,8 @@ void main() {
   group('regra de conclusao (detalhe)', () {
     testWidgets('Concluir fica desabilitado com o motivo ate modo servico + checklist + foto',
         (tester) async {
-      final h = Harness(repo: _Repo([fakeTask(type: FieldTaskType.collect)]));
+      // Manutencao: conclui pela folha (o recolhimento conclui pela chegada no galpao).
+      final h = Harness(repo: _Repo([fakeTask(type: FieldTaskType.maintenance)]));
       await h.pump(tester, TaskDetailPage(taskId: 'task-1', onOpenInspection: () {}));
       await _settle(tester);
 

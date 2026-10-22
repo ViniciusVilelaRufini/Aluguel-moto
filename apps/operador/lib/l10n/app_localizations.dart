@@ -1035,6 +1035,653 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.'**
   String get rejectedHint;
+
+  /// No description provided for @navTasks.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tarefas'**
+  String get navTasks;
+
+  /// No description provided for @navPickups.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retiradas'**
+  String get navPickups;
+
+  /// No description provided for @pickupsTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retiradas de hoje'**
+  String get pickupsTitle;
+
+  /// No description provided for @pickupsDepotLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão'**
+  String get pickupsDepotLabel;
+
+  /// No description provided for @depotChoose.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trocar galpão'**
+  String get depotChoose;
+
+  /// No description provided for @depotChooseTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Em qual galpão você está?'**
+  String get depotChooseTitle;
+
+  /// No description provided for @depotChooseHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha o galpão para ver a agenda e registrar chegadas.'**
+  String get depotChooseHint;
+
+  /// No description provided for @depotsError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar os galpões.'**
+  String get depotsError;
+
+  /// No description provided for @depotsEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhum galpão ativo.'**
+  String get depotsEmpty;
+
+  /// No description provided for @pickupsError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar a agenda.'**
+  String get pickupsError;
+
+  /// No description provided for @pickupsEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma retirada para hoje.'**
+  String get pickupsEmpty;
+
+  /// No description provided for @pickupsDoneToday.
+  ///
+  /// In pt, this message translates to:
+  /// **'Concluídas hoje ({count})'**
+  String pickupsDoneToday(int count);
+
+  /// No description provided for @pickupsShowDone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mostrar concluídas'**
+  String get pickupsShowDone;
+
+  /// No description provided for @pickupsHideDone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Esconder concluídas'**
+  String get pickupsHideDone;
+
+  /// No description provided for @pickupScanAction.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ler QR da reserva'**
+  String get pickupScanAction;
+
+  /// No description provided for @arrivalAction.
+  ///
+  /// In pt, this message translates to:
+  /// **'Registrar chegada'**
+  String get arrivalAction;
+
+  /// No description provided for @pickupNow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirar agora · até {time}'**
+  String pickupNow(String time);
+
+  /// No description provided for @pickupScheduled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Agendada {time} · até {deadline}'**
+  String pickupScheduled(String time, String deadline);
+
+  /// No description provided for @pickupStatusActive.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aguardando retirada'**
+  String get pickupStatusActive;
+
+  /// No description provided for @pickupStatusHandover.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aguardando o cliente'**
+  String get pickupStatusHandover;
+
+  /// No description provided for @pickupStatusConverted.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirada'**
+  String get pickupStatusConverted;
+
+  /// No description provided for @pickupStatusCanceled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelada'**
+  String get pickupStatusCanceled;
+
+  /// No description provided for @pickupStatusExpired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Expirada'**
+  String get pickupStatusExpired;
+
+  /// No description provided for @pickupDraftSaved.
+  ///
+  /// In pt, this message translates to:
+  /// **'Rascunho salvo'**
+  String get pickupDraftSaved;
+
+  /// No description provided for @customerFallback.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cliente'**
+  String get customerFallback;
+
+  /// No description provided for @pickupCardSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{name}, moto {vehicle}. {when}. {status}'**
+  String pickupCardSemantics(
+    String name,
+    String vehicle,
+    String when,
+    String status,
+  );
+
+  /// No description provided for @pickupScanTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ler QR da reserva'**
+  String get pickupScanTitle;
+
+  /// No description provided for @pickupScanBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'Peça ao cliente para abrir a reserva no app e aponte a câmera para o QR.'**
+  String get pickupScanBody;
+
+  /// No description provided for @pickupScanOpenCamera.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abrir câmera'**
+  String get pickupScanOpenCamera;
+
+  /// No description provided for @pickupScanAim.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aponte para o QR da reserva'**
+  String get pickupScanAim;
+
+  /// No description provided for @pickupCodeLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código da reserva'**
+  String get pickupCodeLabel;
+
+  /// No description provided for @pickupCodeHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cole ou digite o código'**
+  String get pickupCodeHint;
+
+  /// No description provided for @pickupCodeContinue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar'**
+  String get pickupCodeContinue;
+
+  /// No description provided for @pickupCodeInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código inválido'**
+  String get pickupCodeInvalid;
+
+  /// No description provided for @pickupCodeInvalidBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confira se o QR é de uma reserva Volti e leia de novo.'**
+  String get pickupCodeInvalidBody;
+
+  /// No description provided for @pickupCodeExpired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código vencido'**
+  String get pickupCodeExpired;
+
+  /// No description provided for @pickupCodeExpiredBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'O prazo da reserva acabou. O cliente precisa reservar de novo.'**
+  String get pickupCodeExpiredBody;
+
+  /// No description provided for @pickupNotInAgenda.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserva fora da agenda de hoje'**
+  String get pickupNotInAgenda;
+
+  /// No description provided for @pickupNotInAgendaBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'Esta reserva não é deste galpão ou não é para hoje.'**
+  String get pickupNotInAgendaBody;
+
+  /// No description provided for @pickupNotActive.
+  ///
+  /// In pt, this message translates to:
+  /// **'Esta reserva não está aguardando retirada'**
+  String get pickupNotActive;
+
+  /// No description provided for @pickupChecklistTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Checklist de saída'**
+  String get pickupChecklistTitle;
+
+  /// No description provided for @hoItemFreios.
+  ///
+  /// In pt, this message translates to:
+  /// **'Freios'**
+  String get hoItemFreios;
+
+  /// No description provided for @hoItemLuzes.
+  ///
+  /// In pt, this message translates to:
+  /// **'Luzes'**
+  String get hoItemLuzes;
+
+  /// No description provided for @hoItemPneus.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pneus'**
+  String get hoItemPneus;
+
+  /// No description provided for @hoItemBuzina.
+  ///
+  /// In pt, this message translates to:
+  /// **'Buzina'**
+  String get hoItemBuzina;
+
+  /// No description provided for @hoItemPainel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Painel'**
+  String get hoItemPainel;
+
+  /// No description provided for @hoItemCarenagem.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carenagem'**
+  String get hoItemCarenagem;
+
+  /// No description provided for @problemNoteLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'O que há de errado? (opcional)'**
+  String get problemNoteLabel;
+
+  /// No description provided for @batteryPctLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria (%)'**
+  String get batteryPctLabel;
+
+  /// No description provided for @batteryPctHelp.
+  ///
+  /// In pt, this message translates to:
+  /// **'Leitura do painel, de 0 a 100.'**
+  String get batteryPctHelp;
+
+  /// No description provided for @batteryPctInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Informe um valor de 0 a 100.'**
+  String get batteryPctInvalid;
+
+  /// No description provided for @batterySerialLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nº de série da bateria (opcional)'**
+  String get batterySerialLabel;
+
+  /// No description provided for @pickupPhotosTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotos da moto'**
+  String get pickupPhotosTitle;
+
+  /// No description provided for @pickupPhotosHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Frente, trás e os dois lados (mínimo 4).'**
+  String get pickupPhotosHint;
+
+  /// No description provided for @photoFront.
+  ///
+  /// In pt, this message translates to:
+  /// **'Frente'**
+  String get photoFront;
+
+  /// No description provided for @photoBack.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trás'**
+  String get photoBack;
+
+  /// No description provided for @photoLeft.
+  ///
+  /// In pt, this message translates to:
+  /// **'Lado esquerdo'**
+  String get photoLeft;
+
+  /// No description provided for @photoRight.
+  ///
+  /// In pt, this message translates to:
+  /// **'Lado direito'**
+  String get photoRight;
+
+  /// No description provided for @photoSlotEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tirar foto'**
+  String get photoSlotEmpty;
+
+  /// No description provided for @photoSlotDone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto tirada · toque para refazer'**
+  String get photoSlotDone;
+
+  /// No description provided for @photoExtraAdd.
+  ///
+  /// In pt, this message translates to:
+  /// **'Adicionar outra foto'**
+  String get photoExtraAdd;
+
+  /// No description provided for @pickupSubmit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar para o cliente'**
+  String get pickupSubmit;
+
+  /// No description provided for @submitMissing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Para enviar: {items}.'**
+  String submitMissing(String items);
+
+  /// No description provided for @missingChecklist.
+  ///
+  /// In pt, this message translates to:
+  /// **'responda todos os itens'**
+  String get missingChecklist;
+
+  /// No description provided for @missingBattery.
+  ///
+  /// In pt, this message translates to:
+  /// **'informe a bateria'**
+  String get missingBattery;
+
+  /// No description provided for @missingPhotos.
+  ///
+  /// In pt, this message translates to:
+  /// **'tire as 4 fotos'**
+  String get missingPhotos;
+
+  /// No description provided for @missingDepot.
+  ///
+  /// In pt, this message translates to:
+  /// **'escolha o galpão'**
+  String get missingDepot;
+
+  /// No description provided for @missingPhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'tire uma foto'**
+  String get missingPhoto;
+
+  /// No description provided for @missingVehicle.
+  ///
+  /// In pt, this message translates to:
+  /// **'informe a moto'**
+  String get missingVehicle;
+
+  /// No description provided for @pickupOffline.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem conexão: envie quando voltar a rede'**
+  String get pickupOffline;
+
+  /// No description provided for @pickupOfflineBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'O rascunho fica salvo neste aparelho.'**
+  String get pickupOfflineBody;
+
+  /// No description provided for @handoverTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrega da moto'**
+  String get handoverTitle;
+
+  /// No description provided for @handoverWaiting.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aguardando o cliente'**
+  String get handoverWaiting;
+
+  /// No description provided for @handoverWaitingBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'O cliente confere a moto no app e aceita.'**
+  String get handoverWaitingBody;
+
+  /// No description provided for @handoverAccepted.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aceito — moto liberada'**
+  String get handoverAccepted;
+
+  /// No description provided for @handoverAcceptedBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'O aluguel começou. Pode entregar a moto ao cliente.'**
+  String get handoverAcceptedBody;
+
+  /// No description provided for @handoverPaymentDeclined.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagamento não aprovado'**
+  String get handoverPaymentDeclined;
+
+  /// No description provided for @handoverPaymentDeclinedBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'O cliente pode tentar outro pagamento no app. A moto continua travada.'**
+  String get handoverPaymentDeclinedBody;
+
+  /// No description provided for @handoverDisputed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Problema apontado'**
+  String get handoverDisputed;
+
+  /// No description provided for @handoverDisputedBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'O suporte vai analisar. Motivo: {reason}'**
+  String handoverDisputedBody(String reason);
+
+  /// No description provided for @handoverDisputedNoReason.
+  ///
+  /// In pt, this message translates to:
+  /// **'O suporte vai analisar.'**
+  String get handoverDisputedNoReason;
+
+  /// No description provided for @handoverCanceled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrega cancelada'**
+  String get handoverCanceled;
+
+  /// No description provided for @handoverRefresh.
+  ///
+  /// In pt, this message translates to:
+  /// **'Atualizar'**
+  String get handoverRefresh;
+
+  /// No description provided for @handoverBackToAgenda.
+  ///
+  /// In pt, this message translates to:
+  /// **'Voltar para a agenda'**
+  String get handoverBackToAgenda;
+
+  /// No description provided for @handoverLoadError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível atualizar a entrega.'**
+  String get handoverLoadError;
+
+  /// No description provided for @handoverVehicle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto {code}'**
+  String handoverVehicle(String code);
+
+  /// No description provided for @arrivalTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Chegada no galpão'**
+  String get arrivalTitle;
+
+  /// No description provided for @arrivalCollectTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Chegada do recolhimento'**
+  String get arrivalCollectTitle;
+
+  /// No description provided for @arrivalVehicleLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código da moto'**
+  String get arrivalVehicleLabel;
+
+  /// No description provided for @arrivalVehicleHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ex.: VLT-0001'**
+  String get arrivalVehicleHint;
+
+  /// No description provided for @arrivalVehicleFind.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conferir moto'**
+  String get arrivalVehicleFind;
+
+  /// No description provided for @arrivalScanVehicle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ler QR da moto'**
+  String get arrivalScanVehicle;
+
+  /// No description provided for @arrivalVehicleFound.
+  ///
+  /// In pt, this message translates to:
+  /// **'{code} · aluguel aberto'**
+  String arrivalVehicleFound(String code);
+
+  /// No description provided for @arrivalNoRental.
+  ///
+  /// In pt, this message translates to:
+  /// **'Esta moto não tem aluguel aberto.'**
+  String get arrivalNoRental;
+
+  /// No description provided for @arrivalVehicleNotFound.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto não encontrada.'**
+  String get arrivalVehicleNotFound;
+
+  /// No description provided for @arrivalVehicleOffline.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem conexão para conferir a moto. A chegada vai para a fila e é conferida no envio.'**
+  String get arrivalVehicleOffline;
+
+  /// No description provided for @arrivalDepot.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão'**
+  String get arrivalDepot;
+
+  /// No description provided for @arrivalProblem.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto vai para manutenção'**
+  String get arrivalProblem;
+
+  /// No description provided for @arrivalProblemBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'Algum item está com problema.'**
+  String get arrivalProblemBody;
+
+  /// No description provided for @arrivalPhotosTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotos da chegada'**
+  String get arrivalPhotosTitle;
+
+  /// No description provided for @arrivalPhotosHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pelo menos uma foto da moto.'**
+  String get arrivalPhotosHint;
+
+  /// No description provided for @arrivalSubmit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Registrar chegada'**
+  String get arrivalSubmit;
+
+  /// No description provided for @arrivalCollectSubmit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Concluir recolhimento'**
+  String get arrivalCollectSubmit;
+
+  /// No description provided for @arrivalSent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Chegada registrada. Aluguel encerrado.'**
+  String get arrivalSent;
+
+  /// No description provided for @arrivalSentMaintenance.
+  ///
+  /// In pt, this message translates to:
+  /// **'Chegada registrada. Moto em manutenção.'**
+  String get arrivalSentMaintenance;
+
+  /// No description provided for @arrivalQueued.
+  ///
+  /// In pt, this message translates to:
+  /// **'A chegada será enviada quando a rede voltar.'**
+  String get arrivalQueued;
+
+  /// No description provided for @jobReturnHandover.
+  ///
+  /// In pt, this message translates to:
+  /// **'Chegada no galpão'**
+  String get jobReturnHandover;
 }
 
 class _AppLocalizationsDelegate

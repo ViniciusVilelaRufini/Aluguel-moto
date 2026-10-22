@@ -536,4 +536,355 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get rejectedHint =>
       'Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.';
+
+  @override
+  String get navTasks => 'Tarefas';
+
+  @override
+  String get navPickups => 'Retiradas';
+
+  @override
+  String get pickupsTitle => 'Retiradas de hoje';
+
+  @override
+  String get pickupsDepotLabel => 'Galpão';
+
+  @override
+  String get depotChoose => 'Trocar galpão';
+
+  @override
+  String get depotChooseTitle => 'Em qual galpão você está?';
+
+  @override
+  String get depotChooseHint =>
+      'Escolha o galpão para ver a agenda e registrar chegadas.';
+
+  @override
+  String get depotsError => 'Não foi possível carregar os galpões.';
+
+  @override
+  String get depotsEmpty => 'Nenhum galpão ativo.';
+
+  @override
+  String get pickupsError => 'Não foi possível carregar a agenda.';
+
+  @override
+  String get pickupsEmpty => 'Nenhuma retirada para hoje.';
+
+  @override
+  String pickupsDoneToday(int count) {
+    return 'Concluídas hoje ($count)';
+  }
+
+  @override
+  String get pickupsShowDone => 'Mostrar concluídas';
+
+  @override
+  String get pickupsHideDone => 'Esconder concluídas';
+
+  @override
+  String get pickupScanAction => 'Ler QR da reserva';
+
+  @override
+  String get arrivalAction => 'Registrar chegada';
+
+  @override
+  String pickupNow(String time) {
+    return 'Retirar agora · até $time';
+  }
+
+  @override
+  String pickupScheduled(String time, String deadline) {
+    return 'Agendada $time · até $deadline';
+  }
+
+  @override
+  String get pickupStatusActive => 'Aguardando retirada';
+
+  @override
+  String get pickupStatusHandover => 'Aguardando o cliente';
+
+  @override
+  String get pickupStatusConverted => 'Retirada';
+
+  @override
+  String get pickupStatusCanceled => 'Cancelada';
+
+  @override
+  String get pickupStatusExpired => 'Expirada';
+
+  @override
+  String get pickupDraftSaved => 'Rascunho salvo';
+
+  @override
+  String get customerFallback => 'Cliente';
+
+  @override
+  String pickupCardSemantics(
+    String name,
+    String vehicle,
+    String when,
+    String status,
+  ) {
+    return '$name, moto $vehicle. $when. $status';
+  }
+
+  @override
+  String get pickupScanTitle => 'Ler QR da reserva';
+
+  @override
+  String get pickupScanBody =>
+      'Peça ao cliente para abrir a reserva no app e aponte a câmera para o QR.';
+
+  @override
+  String get pickupScanOpenCamera => 'Abrir câmera';
+
+  @override
+  String get pickupScanAim => 'Aponte para o QR da reserva';
+
+  @override
+  String get pickupCodeLabel => 'Código da reserva';
+
+  @override
+  String get pickupCodeHint => 'Cole ou digite o código';
+
+  @override
+  String get pickupCodeContinue => 'Continuar';
+
+  @override
+  String get pickupCodeInvalid => 'Código inválido';
+
+  @override
+  String get pickupCodeInvalidBody =>
+      'Confira se o QR é de uma reserva Volti e leia de novo.';
+
+  @override
+  String get pickupCodeExpired => 'Código vencido';
+
+  @override
+  String get pickupCodeExpiredBody =>
+      'O prazo da reserva acabou. O cliente precisa reservar de novo.';
+
+  @override
+  String get pickupNotInAgenda => 'Reserva fora da agenda de hoje';
+
+  @override
+  String get pickupNotInAgendaBody =>
+      'Esta reserva não é deste galpão ou não é para hoje.';
+
+  @override
+  String get pickupNotActive => 'Esta reserva não está aguardando retirada';
+
+  @override
+  String get pickupChecklistTitle => 'Checklist de saída';
+
+  @override
+  String get hoItemFreios => 'Freios';
+
+  @override
+  String get hoItemLuzes => 'Luzes';
+
+  @override
+  String get hoItemPneus => 'Pneus';
+
+  @override
+  String get hoItemBuzina => 'Buzina';
+
+  @override
+  String get hoItemPainel => 'Painel';
+
+  @override
+  String get hoItemCarenagem => 'Carenagem';
+
+  @override
+  String get problemNoteLabel => 'O que há de errado? (opcional)';
+
+  @override
+  String get batteryPctLabel => 'Bateria (%)';
+
+  @override
+  String get batteryPctHelp => 'Leitura do painel, de 0 a 100.';
+
+  @override
+  String get batteryPctInvalid => 'Informe um valor de 0 a 100.';
+
+  @override
+  String get batterySerialLabel => 'Nº de série da bateria (opcional)';
+
+  @override
+  String get pickupPhotosTitle => 'Fotos da moto';
+
+  @override
+  String get pickupPhotosHint => 'Frente, trás e os dois lados (mínimo 4).';
+
+  @override
+  String get photoFront => 'Frente';
+
+  @override
+  String get photoBack => 'Trás';
+
+  @override
+  String get photoLeft => 'Lado esquerdo';
+
+  @override
+  String get photoRight => 'Lado direito';
+
+  @override
+  String get photoSlotEmpty => 'Tirar foto';
+
+  @override
+  String get photoSlotDone => 'Foto tirada · toque para refazer';
+
+  @override
+  String get photoExtraAdd => 'Adicionar outra foto';
+
+  @override
+  String get pickupSubmit => 'Enviar para o cliente';
+
+  @override
+  String submitMissing(String items) {
+    return 'Para enviar: $items.';
+  }
+
+  @override
+  String get missingChecklist => 'responda todos os itens';
+
+  @override
+  String get missingBattery => 'informe a bateria';
+
+  @override
+  String get missingPhotos => 'tire as 4 fotos';
+
+  @override
+  String get missingDepot => 'escolha o galpão';
+
+  @override
+  String get missingPhoto => 'tire uma foto';
+
+  @override
+  String get missingVehicle => 'informe a moto';
+
+  @override
+  String get pickupOffline => 'Sem conexão: envie quando voltar a rede';
+
+  @override
+  String get pickupOfflineBody => 'O rascunho fica salvo neste aparelho.';
+
+  @override
+  String get handoverTitle => 'Entrega da moto';
+
+  @override
+  String get handoverWaiting => 'Aguardando o cliente';
+
+  @override
+  String get handoverWaitingBody => 'O cliente confere a moto no app e aceita.';
+
+  @override
+  String get handoverAccepted => 'Aceito — moto liberada';
+
+  @override
+  String get handoverAcceptedBody =>
+      'O aluguel começou. Pode entregar a moto ao cliente.';
+
+  @override
+  String get handoverPaymentDeclined => 'Pagamento não aprovado';
+
+  @override
+  String get handoverPaymentDeclinedBody =>
+      'O cliente pode tentar outro pagamento no app. A moto continua travada.';
+
+  @override
+  String get handoverDisputed => 'Problema apontado';
+
+  @override
+  String handoverDisputedBody(String reason) {
+    return 'O suporte vai analisar. Motivo: $reason';
+  }
+
+  @override
+  String get handoverDisputedNoReason => 'O suporte vai analisar.';
+
+  @override
+  String get handoverCanceled => 'Entrega cancelada';
+
+  @override
+  String get handoverRefresh => 'Atualizar';
+
+  @override
+  String get handoverBackToAgenda => 'Voltar para a agenda';
+
+  @override
+  String get handoverLoadError => 'Não foi possível atualizar a entrega.';
+
+  @override
+  String handoverVehicle(String code) {
+    return 'Moto $code';
+  }
+
+  @override
+  String get arrivalTitle => 'Chegada no galpão';
+
+  @override
+  String get arrivalCollectTitle => 'Chegada do recolhimento';
+
+  @override
+  String get arrivalVehicleLabel => 'Código da moto';
+
+  @override
+  String get arrivalVehicleHint => 'Ex.: VLT-0001';
+
+  @override
+  String get arrivalVehicleFind => 'Conferir moto';
+
+  @override
+  String get arrivalScanVehicle => 'Ler QR da moto';
+
+  @override
+  String arrivalVehicleFound(String code) {
+    return '$code · aluguel aberto';
+  }
+
+  @override
+  String get arrivalNoRental => 'Esta moto não tem aluguel aberto.';
+
+  @override
+  String get arrivalVehicleNotFound => 'Moto não encontrada.';
+
+  @override
+  String get arrivalVehicleOffline =>
+      'Sem conexão para conferir a moto. A chegada vai para a fila e é conferida no envio.';
+
+  @override
+  String get arrivalDepot => 'Galpão';
+
+  @override
+  String get arrivalProblem => 'A moto vai para manutenção';
+
+  @override
+  String get arrivalProblemBody => 'Algum item está com problema.';
+
+  @override
+  String get arrivalPhotosTitle => 'Fotos da chegada';
+
+  @override
+  String get arrivalPhotosHint => 'Pelo menos uma foto da moto.';
+
+  @override
+  String get arrivalSubmit => 'Registrar chegada';
+
+  @override
+  String get arrivalCollectSubmit => 'Concluir recolhimento';
+
+  @override
+  String get arrivalSent => 'Chegada registrada. Aluguel encerrado.';
+
+  @override
+  String get arrivalSentMaintenance =>
+      'Chegada registrada. Moto em manutenção.';
+
+  @override
+  String get arrivalQueued => 'A chegada será enviada quando a rede voltar.';
+
+  @override
+  String get jobReturnHandover => 'Chegada no galpão';
 }

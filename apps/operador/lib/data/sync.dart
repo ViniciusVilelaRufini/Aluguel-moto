@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/auth/auth.dart';
 import 'field_repository.dart';
+import 'handover_models.dart';
 import 'models.dart';
 import 'offline_queue.dart';
 
@@ -119,6 +120,13 @@ class SyncController extends Notifier<SyncState> {
 
   Future<SubmitOutcome> completeTask(String taskId, CompletionDraft draft) =>
       _enqueue(JobKind.completeTask, taskId, {'completion': draft.toJson()});
+
+  /// Chegada de aluguel no galpao: entra na fila como os outros checklists.
+  /// O `taskId` do job agrupa por moto (`arrival:<codigo>`).
+  Future<SubmitOutcome> submitReturnHandover(ReturnArrival arrival) => _enqueue(
+      JobKind.returnHandover,
+      'arrival:${arrival.vehicleCode.trim().toUpperCase()}',
+      {'arrival': arrival.toJson()});
 
   Future<SubmitOutcome> _enqueue(
       JobKind kind, String taskId, Map<String, dynamic> payload) async {
@@ -269,9 +277,65 @@ class SyncController extends Notifier<SyncState> {
             CompletionDraft.fromJson(job.payload['completion'] as Map<String, dynamic>),
             completedAt: job.recordedAt,
             idempotencyKey: job.idempotencyKey);
+      case JobKind.returnHandover:
+        return _runReturn(job);
     }
   }
+
+  Future<Object> _runReturn(QueuedJob job) async {
+    var arrival =
+        ReturnArrival.fromJson(Map<String, dynamic>.from(job.payload['arrival'] as Map));
+    var current = job;
+    // Guardado sem rede so com o codigo da moto: descobre o aluguel aberto agora.
+    if (arrival.rentalId == null) {
+      final vehicle = await _repo.vehicleByCode(arrival.vehicleCode);
+      final rentalId = vehicle.currentRentalId;
+      if (rentalId == null) {
+        throw RepositoryException(FailureKind.rejected, noOpenRentalMessage,
+            slug: 'no-open-rental');
+      }
+      arrival = ReturnArrival(
+          vehicleCode: arrival.vehicleCode,
+          depotId: arrival.depotId,
+          rentalId: rentalId,
+          draft: arrival.draft);
+      current = _withPayload(current, {'arrival': arrival.toJson()});
+      await _queue.put(current);
+    }
+    final paths = arrival.draft.photoPaths;
+    var keys = current.photoKeys;
+    if (keys.length < paths.length) {
+      keys = [...keys];
+      for (var i = keys.length; i < paths.length; i++) {
+        keys.add(await _repo.uploadHandoverPhoto(paths[i]));
+        current = current.copyWith(photoKeys: keys);
+        await _queue.put(current);
+      }
+    }
+    return _repo.createReturnHandover(
+      rentalId: arrival.rentalId!,
+      depotId: arrival.depotId,
+      draft: arrival.draft,
+      photoKeys: keys,
+    );
+  }
+
+  QueuedJob _withPayload(QueuedJob j, Map<String, dynamic> payload) => QueuedJob(
+        id: j.id,
+        kind: j.kind,
+        taskId: j.taskId,
+        payload: payload,
+        idempotencyKey: j.idempotencyKey,
+        createdAt: j.createdAt,
+        recordedAt: j.recordedAt,
+        status: j.status,
+        error: j.error,
+        photoKeys: j.photoKeys,
+      );
 }
+
+/// Motivo exibido quando a moto que chegou nao tem aluguel aberto.
+const noOpenRentalMessage = 'Esta moto não tem aluguel aberto.';
 
 final syncControllerProvider =
     NotifierProvider<SyncController, SyncState>(SyncController.new);

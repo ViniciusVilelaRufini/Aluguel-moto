@@ -1,6 +1,6 @@
 # Volti Campo (apps/operador)
 
-App Flutter do operador de campo: tarefas atribuídas (lista e mapa), destravar em modo serviço, checklist de inspeção, troca de bateria, status da moto, conclusão da tarefa e modo offline. Usa `packages/volti_flutter` (tema, widgets, cliente de API, autenticação). Textos em pt-BR (`lib/l10n/app_pt.arb`).
+App Flutter do operador de campo: tarefas atribuídas (lista e mapa), destravar em modo serviço, checklist de inspeção, troca de bateria, status da moto, conclusão da tarefa, modo offline e a aba **Retiradas** do galpão (agenda do dia, QR da reserva, checklist de saída com aceite do cliente e chegada). Usa `packages/volti_flutter` (tema, widgets, cliente de API, autenticação). Textos em pt-BR (`lib/l10n/app_pt.arb`).
 
 ## Rodar
 
@@ -49,10 +49,20 @@ Comportamento:
 - Concluir tarefa (regra do design): só com a moto destravada em modo serviço, o checklist completo (5/5) e a foto da moto após o serviço; nas tarefas de bateria, também a troca registrada. Enquanto faltar algo, o botão fica desabilitado e o motivo aparece acima dele. Se o checklist estiver completo mas ainda não enviado, "Concluir" envia o checklist antes da conclusão (mesma fila offline).
 - Localização (geolocator): só com o app em uso (permissão "durante o uso", sem segundo plano; o GPS para quando o app sai da tela e quando nenhuma tela visível usa distância ou mapa). Antes de pedir a permissão o app explica para que serve. Com GPS, a lista mostra a distância até cada moto ("350 m", "1,2 km") e os mapas mostram o seu ponto.
 
+## Galpão (aba Retiradas)
+
+- **Agenda do dia**: `GET /depots/{id}/pickups?date=` (data local do aparelho). Primeiro as acionáveis (`active`, depois `handover`); dentro de cada grupo, "Retirar agora" antes e depois por horário. `converted`, `canceled` e `expired` ficam recolhidas em "Concluídas hoje". Só o primeiro nome do cliente aparece. Com mais de um galpão (`GET /depots`), o operador escolhe; com um só, ele já vem selecionado. A lista recarrega com `handover.updated` (Socket.IO `/realtime`, sala `depot:{id}`) e ao reconectar.
+- **QR da reserva** (`lib/features/pickups/pickup_scan_page.dart`): câmera ou código colado. O app confere o formato `v1.<reservationId>.<exp>.<assinatura>`, o vencimento e se a reserva está na agenda de hoje como `active`; a assinatura é conferida pela API no envio (`404` → "Código inválido").
+- **Checklist de saída**: freios, luzes, pneus, buzina, painel e carenagem (motivo opcional no item com problema), bateria em % (0–100) e nº de série opcional, fotos de frente, trás e dos dois lados (mínimo 4, até 12). Fotos sobem por `POST /handovers/uploads` (URL pré-assinada, prefixo `handovers/`) e o envio é `POST /handovers` com `type: pickup`. O envio precisa do servidor (o cliente aceita no app): sem rede, o rascunho fica guardado e a tela diz "Sem conexão: envie quando voltar a rede"; fotos já enviadas não sobem de novo.
+- **Estado ao vivo** (`handover_status_page.dart`): `handover.updated` + `GET /handovers/{id}`: "Aguardando o cliente", "Aceito — moto liberada", "Pagamento não aprovado" (`lastError`) ou "Problema apontado" (`disputed`, com o motivo).
+- **Chegada** (`lib/features/arrivals/arrival_checklist_page.dart`), checklist curto (freios, pneus, luzes, carenagem) + bateria + galpão:
+  - devolução de aluguel: confere a moto pelo código (`GET /vehicles/code/{code}` → `currentRentalId`), exige uma foto e envia `POST /handovers` `type: return_depot` com `rentalId` e `depotId` pela **fila offline** (sem rede, o aluguel é resolvido no envio). Item com problema: a moto vai para manutenção (decidido pela API).
+  - recolhimento (tarefa `collect`): "Concluir tarefa" abre a chegada; a conclusão vai com `depotId` e `vehicleStatus` `maintenance` (algum item com problema) ou `free`, e o resumo do checklist nas observações.
+
 ## Testes
 
 ```
 flutter analyze && flutter test && flutter build apk --debug
 ```
 
-Widget tests: checklist (bloqueios, leitura > 32, confirmação de manutenção, offline com repositório fake, miniaturas com remover), troca de bateria (séries diferentes), regra de conclusão e modo serviço persistido, badge de distância, controle segmentado, fila Hive e ordenação da lista. Testes de unidade: login Cognito, formatação (distância, prazo, prioridade) e regra de conclusão.
+Widget tests: galpão (`test/pickups_test.dart`: ordem da agenda e concluídas recolhidas, só primeiro nome, QR adulterado/vencido e `404`, checklist com 4 fotos e bateria, rascunho sem rede, estados ao vivo com `handover.updated`, chegada com item problemático e fila offline, recolhimento com galpão, 200% de texto em 360×740 e semântica de toque), checklist (bloqueios, leitura > 32, confirmação de manutenção, offline com repositório fake, miniaturas com remover), troca de bateria (séries diferentes), regra de conclusão e modo serviço persistido, badge de distância, controle segmentado, fila Hive e ordenação da lista. Testes de unidade: login Cognito, formatação (distância, prazo, prioridade) e regra de conclusão.

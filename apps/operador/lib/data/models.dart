@@ -118,22 +118,28 @@ class BatterySwapDraft {
 
 /// Dados de conclusao da tarefa.
 class CompletionDraft {
-  const CompletionDraft({this.notes, this.vehicleStatus});
+  const CompletionDraft({this.notes, this.vehicleStatus, this.depotId});
 
   final String? notes;
+
+  /// Tarefa `collect`: galpao onde a moto chegou (volta a `free` com esse `depotId`).
+  final String? depotId;
 
   /// `free` ou `maintenance`; `null` mantem o status atual.
   final String? vehicleStatus;
 
-  Map<String, dynamic> toJson() => {'notes': notes, 'vehicleStatus': vehicleStatus};
+  Map<String, dynamic> toJson() =>
+      {'notes': notes, 'vehicleStatus': vehicleStatus, 'depotId': depotId};
 
   factory CompletionDraft.fromJson(Map<String, dynamic> j) => CompletionDraft(
         notes: j['notes'] as String?,
         vehicleStatus: j['vehicleStatus'] as String?,
+        depotId: j['depotId'] as String?,
       );
 }
 
-enum JobKind { inspection, batterySwap, completeTask }
+/// `returnHandover`: chegada de aluguel no galpao (`POST /handovers`, `return_depot`).
+enum JobKind { inspection, batterySwap, completeTask, returnHandover }
 
 enum JobStatus { pending, failed }
 

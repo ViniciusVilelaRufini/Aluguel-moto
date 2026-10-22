@@ -212,10 +212,17 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
 /// Tela de camera que le QR ou codigo de barras e devolve o texto: moldura
 /// de mira, lanterna e "Digitar o numero" (volta sem leitura para digitar).
 class SerialScannerPage extends StatefulWidget {
-  const SerialScannerPage({super.key});
+  const SerialScannerPage({super.key, this.title, this.manualLabel});
 
-  static Future<String?> open(BuildContext context) =>
-      Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const SerialScannerPage()));
+  /// Titulo no topo (padrao: "Aponte para o QR ou codigo de barras").
+  final String? title;
+
+  /// Rotulo do botao de digitar (padrao: "Digitar o numero").
+  final String? manualLabel;
+
+  static Future<String?> open(BuildContext context, {String? title, String? manualLabel}) =>
+      Navigator.of(context).push<String>(MaterialPageRoute(
+          builder: (_) => SerialScannerPage(title: title, manualLabel: manualLabel)));
 
   @override
   State<SerialScannerPage> createState() => _SerialScannerPageState();
@@ -291,7 +298,7 @@ class _SerialScannerPageState extends State<SerialScannerPage> {
                   ),
                   const SizedBox(width: VoltiSpacing.s12),
                   Expanded(
-                    child: Text(t.scanTitle,
+                    child: Text(widget.title ?? t.scanTitle,
                         style: VoltiTypography.label.copyWith(color: VoltiColors.white)),
                   ),
                   VoltiIconButton(
@@ -321,7 +328,7 @@ class _SerialScannerPageState extends State<SerialScannerPage> {
                 const SizedBox(height: VoltiSpacing.s12),
                 VoltiButton(
                   key: const Key('scan-manual'),
-                  label: t.scanManual,
+                  label: widget.manualLabel ?? t.scanManual,
                   icon: LucideIcons.keyboard,
                   variant: VoltiButtonVariant.secondary,
                   fullWidth: true,

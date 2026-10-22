@@ -7,13 +7,13 @@ import 'package:volti_operador/data/sync.dart';
 import 'package:volti_operador/data/tasks_provider.dart';
 import 'package:volti_operador/features/auth/auth.dart';
 import 'package:volti_operador/features/battery/battery_swap_page.dart';
+import 'package:volti_operador/features/home/home_shell.dart';
 import 'package:volti_operador/features/inspection/inspection_page.dart';
 import 'package:volti_operador/features/sync/sync_page.dart';
 import 'package:volti_operador/features/tasks/task_detail_page.dart';
-import 'package:volti_operador/features/tasks/task_list_page.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
 
-/// Rotas: `/login`, `/tasks`, `/tasks/:id`, `/tasks/:id/inspection`, `/tasks/:id/battery`, `/sync`.
+/// Rotas: `/login`, `/tasks` (abas Tarefas e Retiradas), `/tasks/:id`, `/tasks/:id/inspection`, `/tasks/:id/battery`, `/sync`.
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier<int>(0);
   ref.listen(sessionProvider, (_, _) => refresh.value++);
@@ -35,7 +35,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (_, _) => const LoginPage()),
       GoRoute(
         path: '/tasks',
-        builder: (_, _) => const TaskListPage(),
+        builder: (_, _) => const HomeShell(),
         routes: [
           GoRoute(
             path: ':id',

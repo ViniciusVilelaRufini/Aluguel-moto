@@ -302,5 +302,180 @@
       }
     }
   },
-  "rejectedHint": "Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa."
+  "rejectedHint": "Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.",
+  "navTasks": "Tarefas",
+  "navPickups": "Retiradas",
+  "pickupsTitle": "Retiradas de hoje",
+  "pickupsDepotLabel": "Galpão",
+  "depotChoose": "Trocar galpão",
+  "depotChooseTitle": "Em qual galpão você está?",
+  "depotChooseHint": "Escolha o galpão para ver a agenda e registrar chegadas.",
+  "depotsError": "Não foi possível carregar os galpões.",
+  "depotsEmpty": "Nenhum galpão ativo.",
+  "pickupsError": "Não foi possível carregar a agenda.",
+  "pickupsEmpty": "Nenhuma retirada para hoje.",
+  "pickupsDoneToday": "Concluídas hoje ({count})",
+  "@pickupsDoneToday": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pickupsShowDone": "Mostrar concluídas",
+  "pickupsHideDone": "Esconder concluídas",
+  "pickupScanAction": "Ler QR da reserva",
+  "arrivalAction": "Registrar chegada",
+  "pickupNow": "Retirar agora · até {time}",
+  "@pickupNow": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pickupScheduled": "Agendada {time} · até {deadline}",
+  "@pickupScheduled": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      },
+      "deadline": {
+        "type": "String"
+      }
+    }
+  },
+  "pickupStatusActive": "Aguardando retirada",
+  "pickupStatusHandover": "Aguardando o cliente",
+  "pickupStatusConverted": "Retirada",
+  "pickupStatusCanceled": "Cancelada",
+  "pickupStatusExpired": "Expirada",
+  "pickupDraftSaved": "Rascunho salvo",
+  "customerFallback": "Cliente",
+  "pickupCardSemantics": "{name}, moto {vehicle}. {when}. {status}",
+  "@pickupCardSemantics": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "vehicle": {
+        "type": "String"
+      },
+      "when": {
+        "type": "String"
+      },
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "pickupScanTitle": "Ler QR da reserva",
+  "pickupScanBody": "Peça ao cliente para abrir a reserva no app e aponte a câmera para o QR.",
+  "pickupScanOpenCamera": "Abrir câmera",
+  "pickupScanAim": "Aponte para o QR da reserva",
+  "pickupCodeLabel": "Código da reserva",
+  "pickupCodeHint": "Cole ou digite o código",
+  "pickupCodeContinue": "Continuar",
+  "pickupCodeInvalid": "Código inválido",
+  "pickupCodeInvalidBody": "Confira se o QR é de uma reserva Volti e leia de novo.",
+  "pickupCodeExpired": "Código vencido",
+  "pickupCodeExpiredBody": "O prazo da reserva acabou. O cliente precisa reservar de novo.",
+  "pickupNotInAgenda": "Reserva fora da agenda de hoje",
+  "pickupNotInAgendaBody": "Esta reserva não é deste galpão ou não é para hoje.",
+  "pickupNotActive": "Esta reserva não está aguardando retirada",
+  "pickupChecklistTitle": "Checklist de saída",
+  "hoItemFreios": "Freios",
+  "hoItemLuzes": "Luzes",
+  "hoItemPneus": "Pneus",
+  "hoItemBuzina": "Buzina",
+  "hoItemPainel": "Painel",
+  "hoItemCarenagem": "Carenagem",
+  "problemNoteLabel": "O que há de errado? (opcional)",
+  "batteryPctLabel": "Bateria (%)",
+  "batteryPctHelp": "Leitura do painel, de 0 a 100.",
+  "batteryPctInvalid": "Informe um valor de 0 a 100.",
+  "batterySerialLabel": "Nº de série da bateria (opcional)",
+  "pickupPhotosTitle": "Fotos da moto",
+  "pickupPhotosHint": "Frente, trás e os dois lados (mínimo 4).",
+  "photoFront": "Frente",
+  "photoBack": "Trás",
+  "photoLeft": "Lado esquerdo",
+  "photoRight": "Lado direito",
+  "photoSlotEmpty": "Tirar foto",
+  "photoSlotDone": "Foto tirada · toque para refazer",
+  "photoExtraAdd": "Adicionar outra foto",
+  "pickupSubmit": "Enviar para o cliente",
+  "submitMissing": "Para enviar: {items}.",
+  "@submitMissing": {
+    "placeholders": {
+      "items": {
+        "type": "String"
+      }
+    }
+  },
+  "missingChecklist": "responda todos os itens",
+  "missingBattery": "informe a bateria",
+  "missingPhotos": "tire as 4 fotos",
+  "missingDepot": "escolha o galpão",
+  "missingPhoto": "tire uma foto",
+  "missingVehicle": "informe a moto",
+  "pickupOffline": "Sem conexão: envie quando voltar a rede",
+  "pickupOfflineBody": "O rascunho fica salvo neste aparelho.",
+  "handoverTitle": "Entrega da moto",
+  "handoverWaiting": "Aguardando o cliente",
+  "handoverWaitingBody": "O cliente confere a moto no app e aceita.",
+  "handoverAccepted": "Aceito — moto liberada",
+  "handoverAcceptedBody": "O aluguel começou. Pode entregar a moto ao cliente.",
+  "handoverPaymentDeclined": "Pagamento não aprovado",
+  "handoverPaymentDeclinedBody": "O cliente pode tentar outro pagamento no app. A moto continua travada.",
+  "handoverDisputed": "Problema apontado",
+  "handoverDisputedBody": "O suporte vai analisar. Motivo: {reason}",
+  "@handoverDisputedBody": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "handoverDisputedNoReason": "O suporte vai analisar.",
+  "handoverCanceled": "Entrega cancelada",
+  "handoverRefresh": "Atualizar",
+  "handoverBackToAgenda": "Voltar para a agenda",
+  "handoverLoadError": "Não foi possível atualizar a entrega.",
+  "handoverVehicle": "Moto {code}",
+  "@handoverVehicle": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "arrivalTitle": "Chegada no galpão",
+  "arrivalCollectTitle": "Chegada do recolhimento",
+  "arrivalVehicleLabel": "Código da moto",
+  "arrivalVehicleHint": "Ex.: VLT-0001",
+  "arrivalVehicleFind": "Conferir moto",
+  "arrivalScanVehicle": "Ler QR da moto",
+  "arrivalVehicleFound": "{code} · aluguel aberto",
+  "@arrivalVehicleFound": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "arrivalNoRental": "Esta moto não tem aluguel aberto.",
+  "arrivalVehicleNotFound": "Moto não encontrada.",
+  "arrivalVehicleOffline": "Sem conexão para conferir a moto. A chegada vai para a fila e é conferida no envio.",
+  "arrivalDepot": "Galpão",
+  "arrivalProblem": "A moto vai para manutenção",
+  "arrivalProblemBody": "Algum item está com problema.",
+  "arrivalPhotosTitle": "Fotos da chegada",
+  "arrivalPhotosHint": "Pelo menos uma foto da moto.",
+  "arrivalSubmit": "Registrar chegada",
+  "arrivalCollectSubmit": "Concluir recolhimento",
+  "arrivalSent": "Chegada registrada. Aluguel encerrado.",
+  "arrivalSentMaintenance": "Chegada registrada. Moto em manutenção.",
+  "arrivalQueued": "A chegada será enviada quando a rede voltar.",
+  "jobReturnHandover": "Chegada no galpão"
 }

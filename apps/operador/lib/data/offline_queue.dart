@@ -13,6 +13,10 @@ abstract class OfflineQueue {
   /// Ultima lista de tarefas (JSON) para consulta sem rede.
   Future<List<Map<String, dynamic>>> loadTasks();
   Future<void> saveTasks(List<Map<String, dynamic>> tasks);
+
+  /// Ultima lista de galpoes (JSON): a chegada funciona sem rede.
+  Future<List<Map<String, dynamic>>> loadDepots();
+  Future<void> saveDepots(List<Map<String, dynamic>> depots);
 }
 
 /// Fila em memoria (testes).
@@ -35,6 +39,14 @@ class MemoryOfflineQueue implements OfflineQueue {
 
   @override
   Future<void> saveTasks(List<Map<String, dynamic>> tasks) async => _tasks = tasks;
+
+  List<Map<String, dynamic>> _depots = [];
+
+  @override
+  Future<List<Map<String, dynamic>>> loadDepots() async => _depots;
+
+  @override
+  Future<void> saveDepots(List<Map<String, dynamic>> depots) async => _depots = depots;
 }
 
 /// Fila persistente em Hive (caixas de strings JSON, sem geracao de codigo).
@@ -45,6 +57,7 @@ class HiveOfflineQueue implements OfflineQueue {
   final Box<String> _meta;
 
   static const _tasksKey = 'tasks';
+  static const _depotsKey = 'depots';
 
   static Future<HiveOfflineQueue> open() async {
     final jobs = await Hive.openBox<String>('operator_jobs');
@@ -76,4 +89,15 @@ class HiveOfflineQueue implements OfflineQueue {
   @override
   Future<void> saveTasks(List<Map<String, dynamic>> tasks) =>
       _meta.put(_tasksKey, jsonEncode(tasks));
+
+  @override
+  Future<List<Map<String, dynamic>>> loadDepots() async {
+    final raw = _meta.get(_depotsKey);
+    if (raw == null) return [];
+    return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
+  }
+
+  @override
+  Future<void> saveDepots(List<Map<String, dynamic>> depots) =>
+      _meta.put(_depotsKey, jsonEncode(depots));
 }
