@@ -155,6 +155,7 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
           child: ListView(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             children: [
+              const ConnectivityBanner(padding: EdgeInsets.only(bottom: VoltiSpacing.s10)),
               _item('brakes', t.itemBrakes, d.brakes, (v) => _set(d.copyWith(brakes: v))),
               _item('tires', t.itemTires, d.tires, (v) => _set(d.copyWith(tires: v))),
               _item('lights', t.itemLights, d.lights, (v) => _set(d.copyWith(lights: v))),

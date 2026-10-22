@@ -49,8 +49,12 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
     final name = ref.watch(operatorNameProvider);
     final user = ref.watch(locationProvider).position;
     final all = tasks.value?.tasks ?? const <FieldTask>[];
-    final doneCount = all.where(isDone).length;
-    final shown = all.where((e) => isDone(e) == _showDone).toList();
+    // Concluidas = do dia (a API devolve todo o historico; filtro por data e proposta).
+    final now = DateTime.now();
+    final doneToday = all.where((e) => isDoneOn(e, now)).toList();
+    final doneCount = doneToday.length;
+    final pending = all.where((e) => !isDone(e)).toList();
+    final shown = _showDone ? doneToday : pending;
 
     return Scaffold(
       body: Column(
@@ -92,7 +96,7 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
                 const SizedBox(height: VoltiSpacing.s16),
                 Row(
                   children: [
-                    _stat(t.statPending, '${all.length - doneCount}'),
+                    _stat(t.statPending, '${pending.length}'),
                     const SizedBox(width: VoltiSpacing.s8),
                     _stat(t.statDone, '$doneCount'),
                     const SizedBox(width: VoltiSpacing.s8),

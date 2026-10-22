@@ -83,6 +83,14 @@ String? doneLabel(AppLocalizations t, FieldTask task) {
 
 bool isDone(FieldTask t) => t.status == FieldTaskStatus.done;
 
+/// Concluida no mesmo dia (local) de [day].
+bool isDoneOn(FieldTask t, DateTime day) {
+  if (!isDone(t)) return false;
+  final d = (t.completedAt ?? t.updatedAt).toLocal();
+  final l = day.toLocal();
+  return d.year == l.year && d.month == l.month && d.day == l.day;
+}
+
 /// Distancia em km entre dois pontos (haversine).
 double distanceKm(double lat1, double lng1, double lat2, double lng2) {
   const r = 6371.0;

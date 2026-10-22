@@ -89,7 +89,11 @@ class TasksController extends AsyncNotifier<TasksResult> {
     if (cur == null) return;
     state = AsyncData(TasksResult([
       for (final t in cur.tasks)
-        t.id == id ? t.rebuild((b) => b.status = FieldTaskStatus.done) : t,
+        t.id == id
+            ? t.rebuild((b) => b
+              ..status = FieldTaskStatus.done
+              ..completedAt = DateTime.now().toUtc())
+            : t,
     ], fromCache: cur.fromCache));
   }
 }

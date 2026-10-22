@@ -197,7 +197,11 @@ void main() {
   testWidgets('controle segmentado Hoje / Concluídas filtra a lista', (tester) async {
     final h = Harness(repo: _Repo([
       fakeTask(id: 'a', code: 'VT-0001'),
-      fakeTask(id: 'b', code: 'VT-0002', status: FieldTaskStatus.done),
+      fakeTask(id: 'b', code: 'VT-0002', status: FieldTaskStatus.done)
+          .rebuild((b) => b.completedAt = DateTime.now().toUtc()),
+      // Concluida em outro dia: fora da aba.
+      fakeTask(id: 'c', code: 'VT-0003', status: FieldTaskStatus.done)
+          .rebuild((b) => b.completedAt = DateTime.now().toUtc().subtract(const Duration(days: 2))),
     ]));
     await h.pump(tester, const TaskListPage());
     await _settle(tester);
@@ -211,6 +215,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('VT-0001'), findsNothing);
     expect(find.textContaining('VT-0002'), findsOneWidget);
+    expect(find.textContaining('VT-0003'), findsNothing);
+    expect(find.textContaining('Concluída às'), findsOneWidget);
   });
 
   testWidgets('checklist: miniaturas das fotos com remover', (tester) async {

@@ -114,6 +114,7 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
           child: ListView(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             children: [
+              const ConnectivityBanner(padding: EdgeInsets.only(bottom: VoltiSpacing.s10)),
               // Design: serie da bateria nova primeiro. A retirada ainda e digitada/lida:
               // serie, % e ciclos da bateria atual dependem de contrato.
               _serialField(
