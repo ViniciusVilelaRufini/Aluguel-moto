@@ -27,6 +27,14 @@ const str = (name: string, fallback?: string): string | undefined => {
   const v = process.env[name];
   return v === undefined || v === '' ? fallback : v;
 };
+/** Modo escolhido por variável: valor fora da lista recusa subir (QA-02: `QUEUE_MODE=aws` caía em silêncio na fila local). */
+export function oneOf<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
+  const v = process.env[name];
+  if (v === undefined || v === '') return fallback;
+  if (!(allowed as readonly string[]).includes(v)) throw new Error(`${name} inválido: ${v} (use ${allowed.join(' | ')}).`);
+  return v as T;
+}
+
 const num = (name: string, fallback: number): number => {
   const v = Number(process.env[name]);
   return Number.isFinite(v) && process.env[name] !== '' && process.env[name] !== undefined ? v : fallback;
@@ -38,7 +46,7 @@ export function loadConfig(): AppConfig {
     port: num('PORT', 3000),
     databaseUrl: str('DATABASE_URL'),
     redisUrl: str('REDIS_URL', 'redis://localhost:6379')!,
-    authMode: (str('AUTH_MODE', 'dev') as AppConfig['authMode']),
+    authMode: oneOf('AUTH_MODE', ['dev', 'cognito'] as const, 'dev'),
     devJwtSecret: str('DEV_JWT_SECRET'),
     cognito: {
       region: str('COGNITO_REGION', str('AWS_REGION', 'sa-east-1'))!,
@@ -47,7 +55,7 @@ export function loadConfig(): AppConfig {
       customerClientId: str('COGNITO_CUSTOMER_CLIENT_ID'),
       staffClientId: str('COGNITO_STAFF_CLIENT_ID'),
     },
-    storageMode: (str('STORAGE_MODE', 'local') as AppConfig['storageMode']),
+    storageMode: oneOf('STORAGE_MODE', ['local', 's3'] as const, 'local'),
     s3: {
       endpoint: str('S3_ENDPOINT'),
       publicEndpoint: str('S3_PUBLIC_ENDPOINT'),
@@ -61,7 +69,7 @@ export function loadConfig(): AppConfig {
       reports: str('S3_BUCKET_REPORTS', 'relatorios')!,
       attachments: str('S3_BUCKET_ATTACHMENTS', 'anexos')!,
     },
-    queueMode: (str('QUEUE_MODE', 'local') as AppConfig['queueMode']),
+    queueMode: oneOf('QUEUE_MODE', ['local', 'sqs'] as const, 'local'),
     sqs: {
       endpoint: str('SQS_ENDPOINT'),
       region: str('AWS_REGION', 'sa-east-1')!,
@@ -72,7 +80,7 @@ export function loadConfig(): AppConfig {
       },
     },
     kycProvider: 'mock',
-    pushMode: (str('PUSH_MODE', 'log') as AppConfig['pushMode']),
+    pushMode: oneOf('PUSH_MODE', ['log', 'fcm'] as const, 'log'),
     trackRetentionDays: num('TRACK_RETENTION_DAYS', 90),
     reservationTtlSeconds: num('RESERVATION_TTL_SECONDS', 15 * 60),
     jobsEnabled: str('JOBS_ENABLED', 'true') !== 'false',

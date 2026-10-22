@@ -1,3 +1,4 @@
+import { loadIotConfig } from '../modules/iot/iot-config';
 import { assertSafeConfig, loadConfig } from './env';
 
 describe('assertSafeConfig', () => {
@@ -15,5 +16,30 @@ describe('assertSafeConfig', () => {
   it('configuração de produção válida passa; fora de produção dev é permitido', () => {
     expect(() => assertSafeConfig(base())).not.toThrow();
     expect(() => assertSafeConfig({ ...base(), nodeEnv: 'development', authMode: 'dev', mercadoPagoWebhookSecret: 'CHANGE_ME' })).not.toThrow();
+  });
+});
+
+describe('valores desconhecidos de modo (QA-02, resto da API)', () => {
+  const env = { ...process.env };
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  it.each([
+    ['AUTH_MODE', 'aws'],
+    ['QUEUE_MODE', 'aws'],
+    ['STORAGE_MODE', 'aws'],
+    ['PUSH_MODE', 'sns'],
+  ])('%s=%s → recusa subir em vez de cair no modo local', (name, value) => {
+    process.env[name] = value;
+    expect(() => loadConfig()).toThrow(new RegExp(name));
+  });
+
+  it.each([
+    ['IOT_MODE', 'iotcore'],
+    ['GEOFENCE_MODE', 'location'],
+  ])('%s=%s → recusa subir', (name, value) => {
+    process.env[name] = value;
+    expect(() => loadIotConfig()).toThrow(new RegExp(name));
   });
 });
