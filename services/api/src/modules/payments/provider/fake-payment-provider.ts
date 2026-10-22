@@ -55,6 +55,14 @@ export class FakePaymentProvider implements PaymentProvider {
     return { ...p };
   }
 
+  /** Dev/testes: o Pix venceu sem pagamento (o gateway o dá como falho). */
+  simulatePixExpired(providerPaymentId: string): ProviderPayment {
+    const p = this.mustGet(providerPaymentId);
+    this.move(p, 'failed');
+    p.failureReason = 'pix_expired';
+    return { ...p };
+  }
+
   subscriptionStatus(id: string): 'active' | 'paused' | 'canceled' | undefined {
     return this.subscriptions.get(id);
   }

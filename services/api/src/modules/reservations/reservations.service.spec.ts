@@ -47,7 +47,7 @@ describe('ReservationsService', () => {
     const ttlMs = new Date(r.expiresAt).getTime() - Date.now();
     expect(ttlMs).toBeGreaterThan(14 * 60 * 1000);
     expect(ttlMs).toBeLessThanOrEqual(15 * 60 * 1000);
-    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'free' }, data: { status: 'reserved' } });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'free', depotId: null }, data: { status: 'reserved' } });
     expect(await redis.exists(`reservation:${RES_ID}`)).toBe(true);
   });
 
@@ -138,5 +138,42 @@ describe('ReservationsService', () => {
     await expect(service.cancel(CUSTOMER_ID, RES_ID)).rejects.toMatchObject({ status: 404 });
     prisma.reservation.findUnique.mockResolvedValue({ id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, status: 'expired' } as any);
     await expect(service.cancel(CUSTOMER_ID, RES_ID)).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('galpão: reserva de rua em moto do galpão (livre ou separada por reserva de galpão) → 409 vehicle-unavailable', async () => {
+    for (const status of ['free', 'reserved']) {
+      const { service, prisma } = setup();
+      prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status, depotId: '44444444-4444-4444-8444-444444444444' } as any);
+      await expect(service.create(CUSTOMER_ID, VEHICLE_ID)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+      expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    }
+  });
+
+  it('galpão: reserva de rua com reserva de galpão em entrega (handover) → 409 reservation-already-active', async () => {
+    const { service, prisma } = setup();
+    prisma.reservation.findFirst.mockResolvedValue({ id: 'outra', status: 'handover' } as any);
+    await expect(service.create(CUSTOMER_ID, VEHICLE_ID)).rejects.toMatchObject({ status: 409, slug: 'reservation-already-active' });
+    expect(JSON.stringify((prisma.reservation.findFirst.mock.calls[0][0] as any).where)).toContain('handover');
+  });
+
+  it('galpão: current traz reserva em handover com handoverId, sem pickupCode; active traz pickupCode', async () => {
+    const { service, prisma } = setup();
+    const base = { id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, depotId: 'dep-1', pickupMode: 'now', planCode: 'day', coverage: 'basic', depositMethod: 'card', depositId: null, createdAt: new Date(), expiresAt: new Date(Date.now() + 60_000), vehicle };
+    prisma.reservation.findFirst.mockResolvedValue({ ...base, status: 'handover' } as any);
+    prisma.handover.findFirst.mockResolvedValue({ id: 'ho-1' } as any);
+    const sign = jest.fn().mockReturnValue('v1.code');
+    const h = (await service.current(CUSTOMER_ID, sign)) as any;
+    expect(h.reservation).toMatchObject({ status: 'handover', handoverId: 'ho-1', depotId: 'dep-1' });
+    expect(h.reservation.pickupCode).toBeUndefined();
+    prisma.reservation.findFirst.mockResolvedValue({ ...base, status: 'active' } as any);
+    prisma.handover.findFirst.mockResolvedValue(null);
+    expect(((await service.current(CUSTOMER_ID, sign)) as any).reservation.pickupCode).toBe('v1.code');
+  });
+
+  it('galpão: convert aceita reserva em handover', async () => {
+    const { service, prisma } = setup();
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    await service.convert(prisma as any, RES_ID);
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: { in: ['active', 'handover'] } }, data: expect.objectContaining({ status: 'converted' }) });
   });
 });

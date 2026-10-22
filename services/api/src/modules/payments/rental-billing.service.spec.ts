@@ -8,6 +8,7 @@ import { PAYMENT_NEEDS_REVIEW, type PaymentNeedsReviewEvent } from './payment-re
 import { FakePaymentProvider } from './provider/fake-payment-provider';
 import { PaymentProviderError } from './provider/payment-provider';
 import { ProviderCustomersService } from './provider-customers.service';
+import { DEPOSIT_FAILED, type DepositFailedEvent } from './deposit-events';
 import { RentalBillingService } from './rental-billing.service';
 import { createInMemoryPrisma, type InMemoryPrisma } from './testing/in-memory-prisma';
 
@@ -304,6 +305,19 @@ describe('RentalBillingService: liberação da caução (deposit.release-request
     await ctx.svc.onReleaseRequested({ depositId: held.depositId, customerId: CUSTOMER, reason: 'reservation_canceled' });
     expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
     expect(await depositPayment(ctx.db, held.depositId)).toMatchObject({ status: 'failed', failureReason: 'pix_canceled' });
+  });
+
+  it('galpão (fix round 1): Pix da caução expira sem pagamento → caução failed e evento deposit.failed (uma vez)', async () => {
+    const ctx = await setup({ card: null });
+    const failed: DepositFailedEvent[] = [];
+    (ctx.svc as any).events.on(DEPOSIT_FAILED, (e: DepositFailedEvent) => failed.push(e));
+    const held = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'pix', idempotencyKey: KEY });
+    const dp = await depositPayment(ctx.db, held.depositId);
+    ctx.provider.simulatePixExpired(dp.providerPaymentId);
+    await ctx.svc.applyProviderPayment(await ctx.provider.getPayment(dp.providerPaymentId));
+    await ctx.svc.applyProviderPayment(await ctx.provider.getPayment(dp.providerPaymentId));
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('failed');
+    expect(failed).toEqual([{ depositId: held.depositId, customerId: CUSTOMER }]);
   });
 
   it('Pix pago depois de liberado → estorno automático', async () => {
