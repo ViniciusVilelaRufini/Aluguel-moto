@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync, statSync } from 'fs';
+import { join } from 'path';
 import { Match } from 'aws-cdk-lib/assertions';
 import { stacksFor, templateOf } from './helpers';
 
@@ -73,5 +75,52 @@ describe('ApiStack', () => {
     expect(gen.GenerateStringKey).toBe('MERCADOPAGO_WEBHOOK_SECRET');
     expect(gen.PasswordLength).toBeGreaterThanOrEqual(32);
     expect(JSON.parse(gen.SecretStringTemplate)).not.toHaveProperty('MERCADOPAGO_WEBHOOK_SECRET');
+  });
+
+  describe('QA-02: container env and secrets match what services/api reads', () => {
+    const container = () => {
+      const td = Object.values(t().findResources('AWS::ECS::TaskDefinition'))[0] as any;
+      return td.Properties.ContainerDefinitions[0];
+    };
+    const REQUIRED_ENV = [
+      'NODE_ENV', 'PORT', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'REDIS_URL',
+      'S3_BUCKET_KYC', 'S3_BUCKET_RETURN_PHOTOS', 'S3_BUCKET_REPORTS', 'S3_BUCKET_ATTACHMENTS',
+      'AUTH_MODE', 'COGNITO_CUSTOMER_POOL_ID', 'COGNITO_CUSTOMER_CLIENT_ID', 'COGNITO_STAFF_POOL_ID', 'COGNITO_STAFF_CLIENT_ID',
+      'IOT_MODE', 'GEOFENCE_MODE', 'LOCATION_TRACKER_NAME', 'LOCATION_GEOFENCE_COLLECTION',
+      'QUEUE_MODE', 'SQS_QUEUE_TELEMETRIA_URL', 'SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL', 'SQS_QUEUE_ALERTAS_URL',
+      'STORAGE_MODE', 'PAYMENT_PROVIDER', 'INSURANCE_PROVIDER', 'KYC_PROVIDER', 'PUSH_MODE',
+      'TRACK_RETENTION_DAYS', 'OUT_OF_AREA_LOCK_MINUTES', 'AWS_REGION',
+    ];
+    const REQUIRED_SECRETS = ['DB_USER', 'DB_PASSWORD', 'IOT_ENDPOINT', 'MERCADOPAGO_ACCESS_TOKEN', 'MERCADOPAGO_WEBHOOK_SECRET'];
+
+    it('has exactly the expected env vars and secrets', () => {
+      expect(container().Environment.map((e: any) => e.Name).sort()).toEqual([...REQUIRED_ENV].sort());
+      expect(container().Secrets.map((e: any) => e.Name).sort()).toEqual([...REQUIRED_SECRETS].sort());
+    });
+
+    it('uses values the API understands', () => {
+      const v = (n: string) => container().Environment.find((e: any) => e.Name === n).Value;
+      expect(v('QUEUE_MODE')).toBe('sqs');
+      expect(v('STORAGE_MODE')).toBe('s3');
+      expect(v('AUTH_MODE')).toBe('cognito');
+      expect(v('IOT_MODE')).toBe('aws');
+      expect(v('GEOFENCE_MODE')).toBe('aws');
+    });
+
+    it('every name is read somewhere in services/api (src or scripts)', () => {
+      const root = join(__dirname, '..', '..', 'services', 'api');
+      const files: string[] = [];
+      const walk = (d: string) => {
+        for (const f of readdirSync(d)) {
+          const p = join(d, f);
+          if (statSync(p).isDirectory()) walk(p);
+          else if (/\.(ts|mjs)$/.test(f) && !/\.spec\.ts$/.test(f)) files.push(p);
+        }
+      };
+      walk(join(root, 'src'));
+      walk(join(root, 'scripts'));
+      const text = files.map((f) => readFileSync(f, 'utf8')).join(' ');
+      for (const name of [...REQUIRED_ENV, ...REQUIRED_SECRETS]) expect({ name, found: text.includes(name) }).toEqual({ name, found: true });
+    });
   });
 });
