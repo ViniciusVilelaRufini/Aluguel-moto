@@ -5,6 +5,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart' show Inspection;
 import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_operador/data/device.dart';
+import 'package:volti_operador/data/local_state.dart';
 import 'package:volti_operador/data/models.dart';
 import 'package:volti_operador/data/sync.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
@@ -25,12 +26,22 @@ class InspectionPage extends ConsumerStatefulWidget {
 }
 
 class _InspectionPageState extends ConsumerState<InspectionPage> {
-  InspectionDraft _draft = const InspectionDraft();
-  final _reading = TextEditingController();
-  final _notes = TextEditingController();
+  late final TextEditingController _reading;
+  late final TextEditingController _notes;
   bool _submitting = false;
   SubmitOutcome? _outcome;
   String? _error;
+
+  /// Rascunho compartilhado com o detalhe da tarefa (contador n/5 e foto).
+  InspectionDraft get _draft => ref.read(inspectionDraftsProvider.notifier).of(widget.taskId);
+
+  @override
+  void initState() {
+    super.initState();
+    final d = _draft;
+    _reading = TextEditingController(text: d.speedReading?.toString() ?? '');
+    _notes = TextEditingController(text: d.notes);
+  }
 
   @override
   void dispose() {
@@ -39,12 +50,12 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
     super.dispose();
   }
 
-  void _set(InspectionDraft d) => setState(() => _draft = d);
+  void _set(InspectionDraft d) => ref.read(inspectionDraftsProvider.notifier).put(widget.taskId, d);
 
   Future<void> _addPhoto() async {
     final path = await ref.read(photoPickerProvider).take();
-    if (path == null) return;
-    _set(_draft.copyWith(photoPaths: [..._draft.photoPaths, path]));
+    if (path == null || !mounted) return;
+    ref.read(inspectionDraftsProvider.notifier).addPhoto(widget.taskId, path);
   }
 
   Future<void> _submit() async {
@@ -52,9 +63,10 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
       _submitting = true;
       _error = null;
     });
-    final outcome = await ref
-        .read(syncControllerProvider.notifier)
-        .submitInspection(widget.taskId, _draft.copyWith(notes: _notes.text));
+    final draft = _draft.copyWith(notes: _notes.text);
+    _set(draft);
+    final outcome =
+        await ref.read(syncControllerProvider.notifier).submitInspection(widget.taskId, draft);
     if (!mounted) return;
     setState(() {
       _submitting = false;
@@ -66,10 +78,28 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
+    final d = ref.watch(inspectionDraftsProvider)[widget.taskId] ?? const InspectionDraft();
+    final showResult = _outcome != null && _error == null;
     return Scaffold(
-      appBar: AppBar(title: Text(t.inspectionTitle)),
-      body: SafeArea(
-        child: _outcome != null && _error == null ? _result(t) : _form(t),
+      body: Column(
+        children: [
+          OperatorTopBar(
+            title: t.inspectionTitle,
+            trailing: showResult
+                ? null
+                : Text(
+                    t.itemsCounter(d.answered, InspectionDraft.totalItems),
+                    key: const Key('items-counter'),
+                    style: const TextStyle(
+                      fontFamily: VoltiTypography.fontMono,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: VoltiColors.textSecondary,
+                    ),
+                  ),
+          ),
+          Expanded(child: showResult ? _result(t) : _form(t, d)),
+        ],
       ),
     );
   }
@@ -116,8 +146,7 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
     );
   }
 
-  Widget _form(AppLocalizations t) {
-    final d = _draft;
+  Widget _form(AppLocalizations t, InspectionDraft d) {
     final readingText = _reading.text;
     final readingInvalid = readingText.isNotEmpty && !d.readingValid;
     return Column(
@@ -126,17 +155,7 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
           child: ListView(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             children: [
-              Row(
-                children: [
-                  Expanded(child: Text(t.inspectionTitle, style: VoltiTypography.heading)),
-                  Text(
-                    t.itemsCounter(d.answered, InspectionDraft.totalItems),
-                    key: const Key('items-counter'),
-                    style: VoltiTypography.label.copyWith(fontFamily: VoltiTypography.fontMono),
-                  ),
-                ],
-              ),
-              const SizedBox(height: VoltiSpacing.s12),
+              const ConnectivityBanner(padding: EdgeInsets.only(bottom: VoltiSpacing.s10)),
               _item('brakes', t.itemBrakes, d.brakes, (v) => _set(d.copyWith(brakes: v))),
               _item('tires', t.itemTires, d.tires, (v) => _set(d.copyWith(tires: v))),
               _item('lights', t.itemLights, d.lights, (v) => _set(d.copyWith(lights: v))),
@@ -145,12 +164,23 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
               const SizedBox(height: VoltiSpacing.s12),
               PhotoCapture(
                 key: const Key('photo-capture'),
-                label: t.photoAdd,
+                label: d.photoPaths.isEmpty ? t.photoAfterService : t.photoAddMore,
                 hint: d.photoPaths.isEmpty ? t.photoHint : t.photoCount(d.photoPaths.length),
-                done: d.photoPaths.isNotEmpty,
+                icon: d.photoPaths.isEmpty ? LucideIcons.camera : LucideIcons.imagePlus,
+                // Com foto, continua aceitando outras (o "done" do VDS esconderia o rotulo).
+                done: false,
                 height: 110,
                 onTap: _addPhoto,
               ),
+              if (d.photoPaths.isNotEmpty) ...[
+                const SizedBox(height: VoltiSpacing.s10),
+                PhotoThumbnails(
+                  key: const Key('photo-thumbnails'),
+                  paths: d.photoPaths,
+                  onRemove: (i) =>
+                      ref.read(inspectionDraftsProvider.notifier).removePhoto(widget.taskId, i),
+                ),
+              ],
               const SizedBox(height: VoltiSpacing.s12),
               TextField(
                 key: const Key('notes'),
@@ -158,6 +188,7 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
                 maxLines: 3,
                 maxLength: 2000,
                 decoration: InputDecoration(labelText: t.notesLabel),
+                onChanged: (v) => _set(_draft.copyWith(notes: v)),
               ),
               if (_error != null) ...[
                 const SizedBox(height: VoltiSpacing.s8),
@@ -170,8 +201,8 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
           ),
         ),
         Container(
-          padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12,
-              VoltiSpacing.screenGutter, VoltiSpacing.s16),
+          padding: EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12,
+              VoltiSpacing.screenGutter, MediaQuery.paddingOf(context).bottom + VoltiSpacing.s16),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerLowest,
             boxShadow: VoltiShadows.shadowSheet,
@@ -197,19 +228,24 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
       child: SectionCard(
         child: Row(
           children: [
-            Expanded(child: Text(title, style: VoltiTypography.bodyStrong)),
-            ChoiceChip(
+            ChecklistMark(value: value),
+            const SizedBox(width: VoltiSpacing.s10),
+            Expanded(child: Text(title, style: VoltiTypography.body)),
+            AnswerChip(
               key: Key('$id-ok'),
-              label: Text(t.answerOk),
+              label: t.answerOk,
+              item: title,
               selected: value == true,
-              onSelected: lockedProblem ? null : (_) => onChanged(true),
+              onSelected: lockedProblem ? null : () => onChanged(true),
             ),
-            const SizedBox(width: VoltiSpacing.s8),
-            ChoiceChip(
+            const SizedBox(width: VoltiSpacing.s6),
+            AnswerChip(
               key: Key('$id-problem'),
-              label: Text(t.answerProblem),
+              label: t.answerProblem,
+              item: title,
+              problem: true,
               selected: value == false,
-              onSelected: (_) => onChanged(false),
+              onSelected: () => onChanged(false),
             ),
           ],
         ),
@@ -226,21 +262,24 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
           children: [
             Row(
               children: [
-                Expanded(child: Text(t.itemSpeed, style: VoltiTypography.bodyStrong)),
-                ChoiceChip(
+                ChecklistMark(value: d.speedReading == null ? null : d.effectiveSpeedOk),
+                const SizedBox(width: VoltiSpacing.s10),
+                Expanded(child: Text(t.itemSpeed, style: VoltiTypography.body)),
+                AnswerChip(
                   key: const Key('speedLimiter-ok'),
-                  label: Text(t.answerOk),
+                  label: t.answerOk,
+                  item: t.itemSpeed,
                   selected: d.effectiveSpeedOk == true,
-                  onSelected: d.speedNonCompliant
-                      ? null
-                      : (_) => _set(d.copyWith(speedOk: true)),
+                  onSelected: d.speedNonCompliant ? null : () => _set(d.copyWith(speedOk: true)),
                 ),
-                const SizedBox(width: VoltiSpacing.s8),
-                ChoiceChip(
+                const SizedBox(width: VoltiSpacing.s6),
+                AnswerChip(
                   key: const Key('speedLimiter-problem'),
-                  label: Text(t.answerProblem),
+                  label: t.answerProblem,
+                  item: t.itemSpeed,
+                  problem: true,
                   selected: d.effectiveSpeedOk == false,
-                  onSelected: (_) => _set(d.copyWith(speedOk: false)),
+                  onSelected: () => _set(d.copyWith(speedOk: false)),
                 ),
               ],
             ),
@@ -261,7 +300,7 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
               ),
               onChanged: (v) {
                 final n = int.tryParse(v);
-                var next = d.copyWith(speedReading: n);
+                var next = _draft.copyWith(speedReading: n);
                 if (n != null && n > legalMaxKmh) next = next.copyWith(speedOk: false);
                 _set(next);
               },
@@ -276,6 +315,79 @@ class _InspectionPageState extends ConsumerState<InspectionPage> {
               ),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Resposta do item do checklist ("Ok" / "Com problema"), pilula do VDS com
+/// alvo de 44 px. `onSelected` nulo = bloqueada (ex.: "Ok" com leitura > 32).
+class AnswerChip extends StatelessWidget {
+  const AnswerChip({
+    super.key,
+    required this.label,
+    required this.item,
+    required this.selected,
+    required this.onSelected,
+    this.problem = false,
+  });
+
+  final String label;
+
+  /// Nome do item, para o leitor de tela ("Pneus: Ok").
+  final String item;
+  final bool selected;
+  final VoidCallback? onSelected;
+  final bool problem;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (bg, fg, border) = selected
+        ? (problem
+            ? (VoltiColors.danger, VoltiColors.white, VoltiColors.danger)
+            : (VoltiColors.brand, VoltiColors.white, VoltiColors.brand))
+        : (scheme.surfaceContainerLowest, scheme.onSurface, scheme.outline);
+    final disabled = onSelected == null;
+    return Semantics(
+      button: true,
+      selected: selected,
+      enabled: !disabled,
+      label: '$item: $label',
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onSelected,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44, minWidth: 44),
+          child: Center(
+            widthFactor: 1,
+            child: Opacity(
+              opacity: disabled && !selected ? .4 : 1,
+              child: AnimatedContainer(
+                duration: VoltiMotion.scaled(context, VoltiMotion.durFast),
+                height: 32,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: VoltiRadii.rPill,
+                  border: Border.all(color: border, width: 1.5),
+                ),
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontFamily: VoltiTypography.fontSans,
+                    fontWeight: VoltiTypography.fwSemibold,
+                    fontSize: 13,
+                    height: 1,
+                    color: fg,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

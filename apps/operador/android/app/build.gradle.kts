@@ -28,6 +28,10 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // Esquema da COGNITO_REDIRECT_URI (login Hosted UI via flutter_appauth).
+        // Outro esquema: ./gradlew -PappAuthRedirectScheme=... ou gradle.properties.
+        manifestPlaceholders["appAuthRedirectScheme"] =
+            (project.findProperty("appAuthRedirectScheme") as String?) ?: "br.com.volti.operador"
     }
 
     buildTypes {

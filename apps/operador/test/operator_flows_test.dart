@@ -69,8 +69,8 @@ void main() {
 
       expect(find.byKey(const Key('speed-noncompliant')), findsOneWidget);
       expect(find.text('Moto fora do limite legal — vai para manutenção'), findsOneWidget);
-      final ok = tester.widget<ChoiceChip>(find.byKey(const Key('speedLimiter-ok')));
-      final problem = tester.widget<ChoiceChip>(find.byKey(const Key('speedLimiter-problem')));
+      final ok = tester.widget<AnswerChip>(find.byKey(const Key('speedLimiter-ok')));
+      final problem = tester.widget<AnswerChip>(find.byKey(const Key('speedLimiter-problem')));
       expect(ok.selected, isFalse);
       expect(ok.onSelected, isNull); // nao da para marcar "ok"
       expect(problem.selected, isTrue);

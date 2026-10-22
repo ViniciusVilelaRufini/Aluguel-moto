@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_api/volti_api.dart';
 
 import 'field_repository.dart';
+import 'local_state.dart';
+import 'service_unlock.dart';
 import 'sync.dart';
 
 class TasksResult {
@@ -46,8 +50,20 @@ class TasksController extends AsyncNotifier<TasksResult> {
   @override
   Future<TasksResult> build() async {
     final queue = ref.read(offlineQueueProvider);
+    // Conclusao que sincronizou depois (fila offline): a tarefa vira concluida so agora.
+    ref.listen(syncControllerProvider, (prev, next) {
+      for (final e in next.results.entries) {
+        if (prev?.results.containsKey(e.key) ?? false) continue;
+        final r = e.value;
+        if (r is FieldTask && r.status == FieldTaskStatus.done) _completedOnServer(r.id);
+      }
+    });
     try {
       final tasks = sortTasks(await ref.read(fieldRepositoryProvider).listTasks());
+      // Lista da API (atribuidas a mim): solta o modo servico de tarefas
+      // reatribuidas, canceladas, concluidas ou com a moto em status incompativel.
+      await ref.read(serviceUnlockProvider.notifier).reconcile(tasks,
+          vehicleStatuses: ref.read(knownVehicleStatusProvider));
       await queue.saveTasks([
         for (final t in tasks)
           standardSerializers.serializeWith(FieldTask.serializer, t)!
@@ -83,13 +99,25 @@ class TasksController extends AsyncNotifier<TasksResult> {
     ], fromCache: cur.fromCache));
   }
 
+  /// A API confirmou a conclusao: marca como concluida e limpa o estado local
+  /// (modo servico e rascunho do checklist).
+  void _completedOnServer(String id) {
+    markDone(id);
+    unawaited(ref.read(serviceUnlockProvider.notifier).clear(id));
+    ref.read(inspectionDraftsProvider.notifier).clear(id);
+  }
+
   /// Tira a tarefa concluida da lista pendente (mantida como `done`).
   void markDone(String id) {
     final cur = state.value;
-    if (cur == null) return;
+    if (cur == null || cur.byId(id)?.status == FieldTaskStatus.done) return;
     state = AsyncData(TasksResult([
       for (final t in cur.tasks)
-        t.id == id ? t.rebuild((b) => b.status = FieldTaskStatus.done) : t,
+        t.id == id
+            ? t.rebuild((b) => b
+              ..status = FieldTaskStatus.done
+              ..completedAt = DateTime.now().toUtc())
+            : t,
     ], fromCache: cur.fromCache));
   }
 }

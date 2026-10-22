@@ -741,6 +741,300 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Descartar'**
   String get discard;
+
+  /// No description provided for @loginCognitoAction.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrar com a conta Volti'**
+  String get loginCognitoAction;
+
+  /// No description provided for @loginCognitoHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você entra pela página segura da Volti. O código de verificação (MFA) é pedido lá.'**
+  String get loginCognitoHint;
+
+  /// No description provided for @loginCampoRequired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua conta não tem acesso ao app de campo. Fale com a operação.'**
+  String get loginCampoRequired;
+
+  /// No description provided for @loginCognitoMissing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Login Cognito não configurado neste build (faltam: {names}).'**
+  String loginCognitoMissing(String names);
+
+  /// No description provided for @accountTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conta'**
+  String get accountTitle;
+
+  /// No description provided for @accountMenu.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conta e pendências'**
+  String get accountMenu;
+
+  /// No description provided for @prioritySemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Prioridade {priority}'**
+  String prioritySemantics(String priority);
+
+  /// No description provided for @distanceSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'A {distance} de você'**
+  String distanceSemantics(String distance);
+
+  /// No description provided for @dueLate.
+  ///
+  /// In pt, this message translates to:
+  /// **'Atrasada'**
+  String get dueLate;
+
+  /// No description provided for @dueAt.
+  ///
+  /// In pt, this message translates to:
+  /// **'Até {time}'**
+  String dueAt(String time);
+
+  /// No description provided for @doneAt.
+  ///
+  /// In pt, this message translates to:
+  /// **'Concluída às {time}'**
+  String doneAt(String time);
+
+  /// No description provided for @locationRationaleTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ative a localização'**
+  String get locationRationaleTitle;
+
+  /// No description provided for @locationRationaleBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'Usamos sua localização só com o app aberto, para mostrar a distância até cada moto e o seu ponto no mapa.'**
+  String get locationRationaleBody;
+
+  /// No description provided for @locationAllow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Permitir localização'**
+  String get locationAllow;
+
+  /// No description provided for @locationDeniedBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'A localização está bloqueada para o app. Libere nos ajustes para ver a distância até as motos.'**
+  String get locationDeniedBody;
+
+  /// No description provided for @locationServiceOff.
+  ///
+  /// In pt, this message translates to:
+  /// **'O GPS está desligado. Ligue para ver a distância até as motos.'**
+  String get locationServiceOff;
+
+  /// No description provided for @locationOpenSettings.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abrir ajustes'**
+  String get locationOpenSettings;
+
+  /// No description provided for @notNow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Agora não'**
+  String get notNow;
+
+  /// No description provided for @offlineTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem conexão'**
+  String get offlineTitle;
+
+  /// No description provided for @offlineBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'O que você registrar fica salvo e é enviado quando a rede voltar.'**
+  String get offlineBody;
+
+  /// No description provided for @loadingTasks.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregando tarefas'**
+  String get loadingTasks;
+
+  /// No description provided for @openTask.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abrir tarefa'**
+  String get openTask;
+
+  /// No description provided for @noVehiclePosition.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto sem posição conhecida'**
+  String get noVehiclePosition;
+
+  /// No description provided for @yourLocation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você está aqui'**
+  String get yourLocation;
+
+  /// No description provided for @batteryRegister.
+  ///
+  /// In pt, this message translates to:
+  /// **'Registrar troca'**
+  String get batteryRegister;
+
+  /// No description provided for @batteryInstalledSummary.
+  ///
+  /// In pt, this message translates to:
+  /// **'Instalada: {serial}'**
+  String batteryInstalledSummary(String serial);
+
+  /// No description provided for @checklistOpen.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abrir checklist'**
+  String get checklistOpen;
+
+  /// No description provided for @checklistItemOk.
+  ///
+  /// In pt, this message translates to:
+  /// **'{item}: ok'**
+  String checklistItemOk(String item);
+
+  /// No description provided for @checklistItemProblem.
+  ///
+  /// In pt, this message translates to:
+  /// **'{item}: com problema'**
+  String checklistItemProblem(String item);
+
+  /// No description provided for @checklistItemPending.
+  ///
+  /// In pt, this message translates to:
+  /// **'{item}: não respondido'**
+  String checklistItemPending(String item);
+
+  /// No description provided for @photoAfterService.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto da moto após o serviço'**
+  String get photoAfterService;
+
+  /// No description provided for @photoAddMore.
+  ///
+  /// In pt, this message translates to:
+  /// **'Adicionar outra foto'**
+  String get photoAddMore;
+
+  /// No description provided for @photoThumb.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto {n}'**
+  String photoThumb(int n);
+
+  /// No description provided for @photoRemove.
+  ///
+  /// In pt, this message translates to:
+  /// **'Remover foto {n}'**
+  String photoRemove(int n);
+
+  /// No description provided for @completeHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Para concluir: {items}.'**
+  String completeHint(String items);
+
+  /// No description provided for @blockerServiceUnlock.
+  ///
+  /// In pt, this message translates to:
+  /// **'destrave em modo serviço'**
+  String get blockerServiceUnlock;
+
+  /// No description provided for @blockerChecklist.
+  ///
+  /// In pt, this message translates to:
+  /// **'complete o checklist'**
+  String get blockerChecklist;
+
+  /// No description provided for @blockerPhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'tire a foto da moto'**
+  String get blockerPhoto;
+
+  /// No description provided for @blockerBatterySwap.
+  ///
+  /// In pt, this message translates to:
+  /// **'registre a troca de bateria'**
+  String get blockerBatterySwap;
+
+  /// No description provided for @taskDoneTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tarefa concluída'**
+  String get taskDoneTitle;
+
+  /// No description provided for @completionNotesLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Observações da conclusão'**
+  String get completionNotesLabel;
+
+  /// No description provided for @serialNewLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nº de série da bateria nova'**
+  String get serialNewLabel;
+
+  /// No description provided for @serialRemovedLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nº de série da bateria retirada'**
+  String get serialRemovedLabel;
+
+  /// No description provided for @serialPlaceholder.
+  ///
+  /// In pt, this message translates to:
+  /// **'BT-000000'**
+  String get serialPlaceholder;
+
+  /// No description provided for @scanTorch.
+  ///
+  /// In pt, this message translates to:
+  /// **'Lanterna'**
+  String get scanTorch;
+
+  /// No description provided for @scanManual.
+  ///
+  /// In pt, this message translates to:
+  /// **'Digitar o número'**
+  String get scanManual;
+
+  /// No description provided for @scanAimHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Centralize o código na moldura'**
+  String get scanAimHint;
+
+  /// No description provided for @vehicleStatusLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Status da moto: {status}'**
+  String vehicleStatusLabel(String status);
+
+  /// No description provided for @rejectedHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.'**
+  String get rejectedHint;
 }
 
 class _AppLocalizationsDelegate
