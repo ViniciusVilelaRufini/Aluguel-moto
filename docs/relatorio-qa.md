@@ -102,7 +102,8 @@ Efeitos:
 - **Ainda falta:**
   - validar no primeiro deploy;
   - fazer o `loadConfig` falhar ao receber valor desconhecido (`AUTH_MODE`, `QUEUE_MODE`, `STORAGE_MODE`, `IOT_MODE`), como o `payments.config.ts` já faz;
-  - criar o bucket de anexos (QA-06).
+  - ~~criar o bucket de anexos (QA-06)~~ feito.
+- **Acompanhamento (`fix/qa-infra`):** `infra/test/api.test.ts` agora confere a lista completa de variáveis e segredos do container (31 variáveis, 5 segredos), os valores (`sqs`, `s3`, `cognito`, `aws`) e que cada nome aparece em `services/api/src` ou `scripts`, para a divergência não voltar.
 
 ### Alta
 
@@ -141,11 +142,12 @@ O `AuthGuard` decide pelos grupos **do token**, e o `PrincipalResolver` regrava 
 - **Reproduzir:** `POST /zones {type: reduced_speed, name: "Calçadão …", speedLimitKmh: 20}` → 201.
 - **Sugestão:** subtipo `pedestrian` | `bike_lane` (mudança de contrato, registrar em `decisoes.md`) com teto 6 e 20, respectivamente.
 
-#### QA-06 · Bucket de anexos não existe na infra
+#### QA-06 · Bucket de anexos não existe na infra — corrigido
 
 A API usa `S3_BUCKET_ATTACHMENTS` (padrão `anexos`) para os uploads de suporte (`POST /support/uploads`), mas o `data-stack.ts` não cria esse bucket e a task não recebe a variável. Na AWS, o PUT pré-assinado falha.
 
 - **Sugestão:** criar o bucket com `BLOCK_ALL`, `enforceSSL` e lifecycle, dar `grantReadWrite` à task role e passar `S3_BUCKET_ATTACHMENTS`.
+- **Correção (`fix/qa-infra`):** `data-stack.ts` cria `volti-<env>-<conta>-anexos` (privado, `BLOCK_ALL`, `enforceSSL`, SSE-S3, lifecycle de IA em 90 dias e expiração em 365), parâmetro SSM `s3/attachments-bucket`, `grantReadWrite` à task role e `S3_BUCKET_ATTACHMENTS` na task. Testes do CDK em `data.test.ts` e `api.test.ts`.
 
 #### QA-08 · Primeiro acesso com requisições paralelas respondia 409 — corrigido
 
@@ -187,10 +189,10 @@ Com a moto offline, o `unlock` fica `pending`, mas o aluguel é criado `active` 
 | QA-13 | Exportação LGPD incompleta e sem `Cache-Control: no-store` | `GET /lgpd/export` não traz conversas/mensagens de suporte, dispositivos, eventos do aluguel, metadados do KYC nem fotos de devolução | incluir as entidades e mandar `no-store` |
 | QA-14 | Fotos de devolução não são apagadas na exclusão (lifecycle de 365 dias) | `Rental.returnPhotoObjectKey` permanece depois do `DELETE /lgpd/account` | apagar ou reduzir a retenção, se a foto puder identificar o cliente |
 | QA-15 | `POST /dev/token` depende só de `AUTH_MODE`, que vale `dev` quando ausente | `auth.module.ts`. Mitigado: o `DevAuthVerifier` exige `DEV_JWT_SECRET` e a infra fixa `cognito` (verificado: 404) | recusar `AUTH_MODE=dev` com `NODE_ENV=production` |
-| QA-16 | Política IoT pode ser mais estreita | dispositivo: falta a condição `iot:Connection.Thing.IsAttached`; task role da API: `iot:Publish` em `topic/motos/*` (pode publicar telemetria de qualquer moto) | condição `IsAttached`; API só em `motos/*/comandos` e `$aws/things/*/shadow/update` |
+| QA-16 | Política IoT pode ser mais estreita | dispositivo: falta a condição `iot:Connection.Thing.IsAttached`; task role da API: `iot:Publish` em `topic/motos/*` (pode publicar telemetria de qualquer moto) | condição `IsAttached`; API só em `motos/*/comandos` e `$aws/things/*/shadow/update` **Situação:** corrigido (`fix/qa-infra`). `iot:Connect` exige `iot:Connection.Thing.IsAttached = true`; a task role da API só publica em `motos/*/comandos` e `$aws/things/*/shadow/{update,get}` (nada de telemetria/eventos); `Get/UpdateThingShadow` mantidos. Testes em `iot.test.ts` e `api.test.ts`. |
 | QA-17 | Verificador Cognito aceita id token e usa `username` como e-mail do access token; o staff é casado por e-mail | `cognito-auth-verifier.ts`, `principal-resolver.service.ts` | aceitar só access token e casar o staff só por `sub` |
 | QA-18 | Endurecimento HTTP | sem HSTS/`nosniff`/`frame-ancestors` (helmet); throttler em memória por task; com `trust proxy 1` sem ALB na frente, o `X-Forwarded-For` forjado troca o IP do rate limit (só em dev) | `helmet`, throttler no Redis e WAF com rate rule (a `waf-stack` existe) |
-| QA-19 | Segredo do Mercado Pago nasce com `CHANGE_ME` | `api-stack.ts`: se esquecido, qualquer um assina webhooks com o segredo conhecido (mitigado: o estado vem do gateway) | gerar aleatório ou falhar no boot se o valor for `CHANGE_ME` |
+| QA-19 | Segredo do Mercado Pago nasce com `CHANGE_ME` | `api-stack.ts`: se esquecido, qualquer um assina webhooks com o segredo conhecido (mitigado: o estado vem do gateway) | gerar aleatório ou falhar no boot se o valor for `CHANGE_ME` **Situação:** corrigido (`fix/qa-infra`). O `MERCADOPAGO_WEBHOOK_SECRET` é gerado pelo Secrets Manager (48 caracteres, sem pontuação); só o access token nasce como `CHANGE_ME`. Rotação documentada em `infra/README.md`. Teste em `api.test.ts`. |
 | QA-20 | `GET /vehicles` mostra posição até 30 s velha | Postgres atualizado a cada 30 s por moto (k6: atraso médio de 15 s). O painel usa o WebSocket ao vivo | documentar no contrato ou ler o Redis ao vivo na listagem |
 | QA-22 | Testes do painel dependem da massa de dados | Playwright: "bloquear moto em movimento" exige uma moto **alugada** andando no simulador; "CPF mascarado" exige cliente com CPF na 1ª página; o cenário offline só simula a resposta na rede (o e2e de caixa-preta desta branch cobre o caso real). O `test:e2e` da API quebra com o simulador ligado | o teste cria a própria massa (aluguel na moto do simulador; cliente com CPF) **Situação:** corrigido. Painel: `apps/admin/e2e/helpers.ts` cria cliente com CPF/KYC e aluguel em moto livre do simulador pela API; API: `freeVehicleInReturnZone` cria a própria moto (`E2E-…`, thing `e2e-thing-…`) em vez de usar `VLT-0001…0006`. Sem rodar em ambiente real nesta passada (Docker pausado). |
 | QA-23 | Intermitente: desired pendente não entregue na reconexão | 1 falha em 8 execuções do e2e offline quando rodado em paralelo com o fluxo do cliente; isolado, 5 de 5 ok. Não reproduzido de forma determinística | investigar a ordem `presence`/`get`/`reported` na reconexão (`local-shadow.ts`, `telemetry.service.ts`) **Situação:** diagnosticado, não corrigido (fora do escopo: `services/api/src/modules/iot`). Causa provável: `LocalShadowStore` faz leitura-modificação-gravação sem serializar por thing e o `load` a frio não deduplica a leitura do Redis; um `applyDesired` concorrente com um `applyReported` (cada mensagem MQTT vira um `route()` sem fila) numa thing ainda não carregada perde o desired, o `get` não traz `delta` e o comando fica `pending`. Teste determinístico (falha sem a correção, hoje `it.skip`): `services/api/test/iot/local-shadow-race.e2e-spec.ts`. Correção sugerida: guardar a Promise do load e enfileirar as operações por thing (como o `serial` do `TelemetryService`). Não confirmado como a causa da falha 1 em 8; o harness (`EmulatedTracker`) segue o contrato e não tem defeito identificado. |
