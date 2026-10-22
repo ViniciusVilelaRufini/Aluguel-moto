@@ -31,10 +31,17 @@ export function loadConfig(env: Env = process.env, argv: string[] = process.argv
   if (rawMode !== 'auto' && rawMode !== 'manual') throw new Error(`STATION_SIM_MODE inválido: "${rawMode}" (use auto | manual)`);
   const stations = (env.STATION_SIM_STATIONS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
   for (const s of stations) if (!UUID.test(s)) throw new Error(`STATION_SIM_STATIONS inválido: "${s}" (ids de estação separados por vírgula)`);
+  // Fix 1 (I5): responder por todas as estações só de propósito (dev), nunca por engano num broker compartilhado.
+  const rawAll = env.STATION_SIM_ALL;
+  if (rawAll !== undefined && rawAll !== '' && rawAll !== 'true' && rawAll !== 'false') throw new Error(`STATION_SIM_ALL inválido: "${rawAll}" (true | false)`);
+  const all = rawAll === 'true' || argv.includes('--all');
+  if (!stations.length && !all) throw new Error('Informe STATION_SIM_STATIONS (ids das estações simuladas) ou STATION_SIM_ALL=true / --all para responder por todas.');
+  const mqttUrl = env.MQTT_URL || 'mqtt://localhost:1883';
+  if (/amazonaws\.com/i.test(mqttUrl)) throw new Error('MQTT_URL aponta para o AWS IoT Core (amazonaws.com): o simulador só roda contra o Mosquitto de desenvolvimento.');
   const returnPctMax = int(env, 'STATION_SIM_RETURN_PCT_MAX', 25, 0, 100);
   const returnPctMin = int(env, 'STATION_SIM_RETURN_PCT_MIN', Math.min(5, returnPctMax), 0, returnPctMax);
   return {
-    mqttUrl: env.MQTT_URL || 'mqtt://localhost:1883',
+    mqttUrl,
     mode: rawMode,
     stepMs: int(env, 'STATION_SIM_STEP_MS', 2000, 50, 120_000),
     slots: int(env, 'STATION_SIM_SLOTS', 12, 1, 999),

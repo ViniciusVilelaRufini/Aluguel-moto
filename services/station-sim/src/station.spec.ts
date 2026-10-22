@@ -20,7 +20,7 @@ const SWAP2 = '5b0e7c1a-2222-4222-8222-222222222222';
 
 /** Relógio manual: os passos só andam com `tick`. */
 function harness(over: Partial<SimConfig> = {}) {
-  const cfg: SimConfig = { ...loadConfig({}, []), stepMs: 100, ...over };
+  const cfg: SimConfig = { ...loadConfig({ STATION_SIM_ALL: 'true' }, []), stepMs: 100, ...over };
   let now = 0;
   let timers: Array<{ at: number; fn: () => void }> = [];
   const events: Array<[string, StationEvent]> = [];
@@ -93,6 +93,38 @@ describe('StationSim — modo automático', () => {
   });
 });
 
+describe('StationSim — abort_swap (fix 1, I2)', () => {
+  const abort = (swapId: string, slotNumber?: number) => ({ commandId: `${swapId}:abort_swap`, swapId, action: 'abort_swap' as const, slotNumber });
+
+  it('vaga aberta: fecha e confirma com slot_closed; nada de devolução nem liberação depois', () => {
+    const { sim, tick, types, events } = harness();
+    sim.onCommand(THING, open);
+    tick(100); // slot_opened
+    sim.onCommand(THING, abort(SWAP, 1));
+    tick(1000);
+    expect(types()).toEqual(['slot_opened', 'slot_closed']);
+    sim.onCommand(THING, release);
+    tick(1000);
+    expect(types()).toEqual(['slot_opened', 'slot_closed']);
+    for (const [, e] of events) expect(validEvent(e)).toBe(true);
+  });
+
+  it('vaga ainda abrindo: não chega a abrir, só confirma o fechamento; troca desconhecida também confirma', () => {
+    const { sim, tick, types } = harness();
+    sim.onCommand(THING, open);
+    sim.onCommand(THING, abort(SWAP));
+    tick(1000);
+    expect(types()).toEqual(['slot_closed']);
+    sim.onCommand(THING, abort(SWAP2));
+    expect(types()).toEqual(['slot_closed', 'slot_closed']);
+  });
+
+  it('o comando abort_swap da API passa no schema', () => {
+    expect(validCommand({ ...abort(SWAP, 2), ts: '2026-10-22T15:00:00.000Z' })).toBe(true);
+    expect(parseCommand({ ...abort(SWAP, 2), ts: 'x' })).toEqual(abort(SWAP, 2));
+  });
+});
+
 describe('StationSim — modo manual', () => {
   it('a vaga abre sozinha; devolver (d), liberar (l) e fechar vazia (f) pelo teclado', () => {
     const { sim, tick, types, events } = harness({ mode: 'manual' });
@@ -130,12 +162,21 @@ describe('protocolo e configuração', () => {
     expect(parseCommand('lixo')).toBeNull();
   });
 
+  it('fix 1 (I5): sem STATION_SIM_STATIONS só sobe com STATION_SIM_ALL=true (ou --all); nunca contra o IoT Core', () => {
+    expect(() => loadConfig({}, [])).toThrow(/STATION_SIM_STATIONS|STATION_SIM_ALL/);
+    expect(() => loadConfig({ STATION_SIM_ALL: 'sim' }, [])).toThrow(/STATION_SIM_ALL/);
+    expect(loadConfig({}, ['--all']).stations).toEqual([]);
+    expect(loadConfig({ STATION_SIM_STATIONS: STATION }, []).stations).toEqual([STATION]);
+    expect(() => loadConfig({ STATION_SIM_ALL: 'true', MQTT_URL: 'mqtts://abc-ats.iot.sa-east-1.amazonaws.com:8883' }, [])).toThrow(/amazonaws\.com/);
+    expect(() => loadConfig({ STATION_SIM_STATIONS: STATION, MQTT_URL: 'mqtts://X.IOT.SA-EAST-1.AMAZONAWS.COM' }, [])).toThrow(/amazonaws/);
+  });
+
   it('config: padrões, --manual e erros', () => {
-    expect(loadConfig({}, [])).toEqual(expect.objectContaining({ mode: 'auto', stepMs: 2000, slots: 12, stations: [], mqttUrl: 'mqtt://localhost:1883' }));
-    expect(loadConfig({}, ['--manual']).mode).toBe('manual');
+    expect(loadConfig({ STATION_SIM_ALL: 'true' }, [])).toEqual(expect.objectContaining({ mode: 'auto', stepMs: 2000, slots: 12, stations: [], mqttUrl: 'mqtt://localhost:1883' }));
+    expect(loadConfig({}, ['--manual', '--all']).mode).toBe('manual');
     expect(loadConfig({ STATION_SIM_MODE: 'manual', STATION_SIM_STATIONS: `${STATION.toUpperCase()}` }, []).stations).toEqual([STATION]);
     expect(() => loadConfig({ STATION_SIM_MODE: 'x' }, [])).toThrow(/STATION_SIM_MODE/);
-    expect(() => loadConfig({ STATION_SIM_STEP_MS: '10' }, [])).toThrow(/STATION_SIM_STEP_MS/);
+    expect(() => loadConfig({ STATION_SIM_ALL: 'true', STATION_SIM_STEP_MS: '10' }, [])).toThrow(/STATION_SIM_STEP_MS/);
     expect(() => loadConfig({ STATION_SIM_STATIONS: 'abc' }, [])).toThrow(/STATION_SIM_STATIONS/);
   });
 });

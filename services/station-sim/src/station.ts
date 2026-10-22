@@ -68,7 +68,24 @@ export class StationSim {
     this.seen.add(cmd.commandId);
     this.log({ msg: 'comando_recebido', swapId: cmd.swapId, action: cmd.action, stationId: stationIdOf(thing) });
     if (cmd.action === 'open_slot') this.openSlot(thing, cmd);
+    else if (cmd.action === 'abort_swap') this.abort(thing, cmd);
     else this.requestRelease(thing, cmd);
+  }
+
+  /**
+   * Fix 1 (I2): troca cancelada pelo cliente ou vencida na API. Fecha a vaga (se aberta ou ainda abrindo) e confirma com
+   * `slot_closed`; não devolve nem libera mais nada nessa troca. Troca desconhecida (simulador reiniciado) também confirma.
+   */
+  private abort(thing: string, cmd: StationCommand): void {
+    const s = this.swaps.get(cmd.swapId);
+    if (s && s.phase === 'done') return;
+    if (s) {
+      s.phase = 'done';
+      this.usedSlots.get(s.thing)?.delete(s.slotNumber);
+      this.emit(s, { type: 'slot_closed' });
+      return;
+    }
+    this.emit({ swapId: cmd.swapId, thing, slotNumber: cmd.slotNumber ?? 0, phase: 'done', createdAt: this.now() }, { type: 'slot_closed' });
   }
 
   /** Trocas que esperam alguém no teclado (manual), mais antigas primeiro. */
@@ -108,6 +125,7 @@ export class StationSim {
     this.swaps.set(s.swapId, s);
     const step = this.cfg.stepMs;
     this.scheduler.setTimeout(() => {
+      if (s.phase !== 'opening') return; // abortada antes de abrir
       s.phase = 'awaiting_return';
       this.emit(s, { type: 'slot_opened', slotNumber });
       if (this.cfg.mode === 'auto') {
