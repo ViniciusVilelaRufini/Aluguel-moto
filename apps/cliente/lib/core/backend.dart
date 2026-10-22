@@ -20,7 +20,10 @@ String newIdempotencyKey() {
 
 /// `GET /rentals/current`: o aluguel e a troca de bateria na estacao em
 /// andamento nele (`currentStationSwap`), para o app retomar a tela da troca.
-typedef CurrentRentalState = ({Rental? rental, StationSwap? stationSwap});
+/// [batterySwapFeeCents]: taxa por troca no plano do aluguel (0 nos planos
+/// diario/semanal/mensal), para a confirmacao mostrar o valor antes do POST;
+/// `null` enquanto a API/cliente gerado nao trazem o campo.
+typedef CurrentRentalState = ({Rental? rental, StationSwap? stationSwap, int? batterySwapFeeCents});
 
 /// Fronteira unica entre as telas e a API. As telas nunca usam `VoltiApi` direto,
 /// o que permite trocar por um fake nos testes de widget.
@@ -391,7 +394,9 @@ class ApiBackend implements Backend {
   @override
   Future<CurrentRentalState> currentRentalState() => _run(() async {
         final data = (await _api.getRentalsApi().getCurrentRental()).data;
-        return (rental: data?.rental, stationSwap: data?.currentStationSwap);
+        // `CurrentRental.batterySwapFeeCents` (aditivo, feat/troca-qr) ainda nao
+        // esta no cliente gerado deste branch: quando entrar, mapear aqui.
+        return (rental: data?.rental, stationSwap: data?.currentStationSwap, batterySwapFeeCents: null);
       });
 
   @override

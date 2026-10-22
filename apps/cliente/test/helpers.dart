@@ -23,7 +23,11 @@ class FakeBackend implements Backend {
 
   /// Padrao dos testes: o aluguel de [currentRental] e [currentStationSwap].
   @override
-  Future<CurrentRentalState> currentRentalState() async => (rental: await currentRental(), stationSwap: currentStationSwap);
+  Future<CurrentRentalState> currentRentalState() async =>
+      (rental: await currentRental(), stationSwap: currentStationSwap, batterySwapFeeCents: batterySwapFeeCents);
+
+  /// `CurrentRental.batterySwapFeeCents` devolvido por [currentRentalState].
+  int? batterySwapFeeCents;
 
   @override
   dynamic noSuchMethod(Invocation invocation) =>

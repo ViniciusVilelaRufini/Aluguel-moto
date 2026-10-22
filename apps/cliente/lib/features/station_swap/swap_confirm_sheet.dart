@@ -6,6 +6,8 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/clock.dart';
+import '../../core/geo.dart';
 import '../../core/errors.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
@@ -21,18 +23,17 @@ import 'swap_logic.dart';
 /// outra vaga); recusa da API (erros nao ficam memorizados) gera chave e
 /// posicao novas na proxima tentativa.
 class SwapConfirmSheet extends ConsumerStatefulWidget {
-  const SwapConfirmSheet({
-    super.key,
-    required this.rental,
-    required this.stationId,
-    required this.stationCode,
-    this.station,
-  });
+  const SwapConfirmSheet({super.key, required this.rental, required this.stationId, required this.stationCode, this.station, this.feeCents});
 
   final Rental rental;
   final String stationId;
   final String stationCode;
   final SwapStation? station;
+
+  /// Taxa por troca no plano do aluguel (`CurrentRental.batterySwapFeeCents`).
+  /// `> 0` mostra "Taxa R$ X"; `null` (API ainda sem o campo) cai na linha
+  /// generica nos planos por minuto/hora; `0` = sem taxa.
+  final int? feeCents;
 
   static Future<StationSwap?> show(
     BuildContext context, {
@@ -40,11 +41,14 @@ class SwapConfirmSheet extends ConsumerStatefulWidget {
     required String stationId,
     required String stationCode,
     SwapStation? station,
-  }) =>
-      VoltiBottomSheet.show<StationSwap>(
-        context,
-        builder: (_) => SwapConfirmSheet(rental: rental, stationId: stationId, stationCode: stationCode, station: station),
-      );
+    int? feeCents,
+  }) => VoltiBottomSheet.show<StationSwap>(
+    context,
+    // Sem arrastar para fechar: durante o POST a folha nao pode sumir (o
+    // voltar e o toque fora respeitam o PopScope enquanto ocupada).
+    enableDrag: false,
+    builder: (_) => SwapConfirmSheet(rental: rental, stationId: stationId, stationCode: stationCode, station: station, feeCents: feeCents),
+  );
 
   @override
   ConsumerState<SwapConfirmSheet> createState() => _SwapConfirmSheetState();
@@ -58,6 +62,7 @@ class _SwapConfirmSheetState extends ConsumerState<SwapConfirmSheet> {
   bool _openConflict = false;
 
   Future<void> _confirm() async {
+    if (_busy) return;
     final l = context.l;
     setState(() {
       _busy = true;
@@ -79,7 +84,9 @@ class _SwapConfirmSheetState extends ConsumerState<SwapConfirmSheet> {
         }
         _pos = p;
       }
-      final swap = await ref.read(backendProvider).createStationSwap(
+      final swap = await ref
+          .read(backendProvider)
+          .createStationSwap(
             stationId: widget.stationId,
             stationCode: widget.stationCode,
             rentalId: widget.rental.id,
@@ -91,15 +98,17 @@ class _SwapConfirmSheetState extends ConsumerState<SwapConfirmSheet> {
       if (mounted) Navigator.of(context).pop(swap);
     } catch (e) {
       final f = toFailure(e);
-      if (!f.isNetwork) {
+      final transient = f.isNetwork || (f.status != null && (f.status! >= 500 || f.status == 429));
+      if (!transient) {
         // Recusa da API: a proxima tentativa e outra (chave e posicao novas).
+        // Rede, 5xx e 429 mantem a chave e a posicao (a troca pode ter sido criada).
         _key = newIdempotencyKey();
         _pos = null;
       }
       VoltiHaptics.warning();
       if (mounted) {
         setState(() {
-          _error = swapErrorMessage(l, f, station: widget.station);
+          _error = swapErrorMessage(l, f, station: widget.station, now: ref.read(clockProvider)());
           _openConflict = f.slug == 'swap-open';
         });
       }
@@ -131,62 +140,56 @@ class _SwapConfirmSheetState extends ConsumerState<SwapConfirmSheet> {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
     final station = widget.station;
-    final fee = swapFeeApplies(widget.rental.planCode);
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Semantics(
-            header: true,
-            child: Text(l.swapConfirmTitle(widget.rental.vehicleCode), key: const Key('swap-confirm-title'), style: VoltiTypography.title),
-          ),
-          if (station != null) ...[
-            const SizedBox(height: VoltiSpacing.s4),
-            Text(station.name, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-          ],
-          const SizedBox(height: VoltiSpacing.s16),
-          if (station != null)
-            _Line(
-              key: const Key('swap-confirm-available'),
-              icon: LucideIcons.batteryCharging,
-              text: l.swapConfirmAvailable(station.availableBatteries),
+    final feeCents = widget.feeCents;
+    final String? feeText = feeCents != null
+        ? (feeCents > 0 ? l.swapConfirmFeeAmount(money(feeCents)) : null)
+        : (swapFeeApplies(widget.rental.planCode) ? l.swapConfirmFeeLine : null);
+    // Durante o POST: voltar e toque fora nao fecham (a troca pode estar sendo criada).
+    return PopScope(
+      canPop: !_busy,
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              header: true,
+              child: Text(l.swapConfirmTitle(widget.rental.vehicleCode), key: const Key('swap-confirm-title'), style: VoltiTypography.title),
             ),
-          if (fee)
-            _Line(key: const Key('swap-confirm-fee'), icon: LucideIcons.receipt, text: l.swapConfirmFeeLine),
-          _Line(icon: LucideIcons.info, text: l.swapConfirmSteps),
-          if (_error != null) ...[
-            const SizedBox(height: VoltiSpacing.s4),
-            KeyedSubtree(key: const Key('swap-confirm-error'), child: NoticeBanner(icon: LucideIcons.circleAlert, message: _error!, danger: true)),
+            if (station != null) ...[
+              const SizedBox(height: VoltiSpacing.s4),
+              Text(station.name, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+            ],
+            const SizedBox(height: VoltiSpacing.s16),
+            if (station != null)
+              _Line(key: const Key('swap-confirm-available'), icon: LucideIcons.batteryCharging, text: l.swapConfirmAvailable(station.availableBatteries)),
+            if (feeText != null) _Line(key: const Key('swap-confirm-fee'), icon: LucideIcons.receipt, text: feeText),
+            _Line(icon: LucideIcons.info, text: l.swapConfirmSteps),
+            if (_error != null) ...[
+              const SizedBox(height: VoltiSpacing.s4),
+              KeyedSubtree(
+                key: const Key('swap-confirm-error'),
+                child: NoticeBanner(icon: LucideIcons.circleAlert, message: _error!, danger: true),
+              ),
+            ],
+            const SizedBox(height: VoltiSpacing.s16),
+            if (_openConflict)
+              VoltiButton(key: const Key('swap-see-open'), label: l.swapSeeOpen, size: VoltiButtonSize.lg, fullWidth: true, onPressed: _openExisting)
+            else
+              VoltiButton(
+                key: const Key('swap-open-slot'),
+                label: l.swapOpenSlot,
+                icon: LucideIcons.packageOpen,
+                size: VoltiButtonSize.lg,
+                fullWidth: true,
+                loading: _busy,
+                haptic: VoltiHapticKind.tap,
+                onPressed: _busy ? null : _confirm,
+              ),
+            const SizedBox(height: VoltiSpacing.s8),
+            VoltiButton(label: l.cancel, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: _busy ? null : () => Navigator.of(context).pop()),
           ],
-          const SizedBox(height: VoltiSpacing.s16),
-          if (_openConflict)
-            VoltiButton(
-              key: const Key('swap-see-open'),
-              label: l.swapSeeOpen,
-              size: VoltiButtonSize.lg,
-              fullWidth: true,
-              onPressed: _openExisting,
-            )
-          else
-            VoltiButton(
-              key: const Key('swap-open-slot'),
-              label: l.swapOpenSlot,
-              icon: LucideIcons.packageOpen,
-              size: VoltiButtonSize.lg,
-              fullWidth: true,
-              loading: _busy,
-              haptic: VoltiHapticKind.tap,
-              onPressed: _busy ? null : _confirm,
-            ),
-          const SizedBox(height: VoltiSpacing.s8),
-          VoltiButton(
-            label: l.cancel,
-            variant: VoltiButtonVariant.ghost,
-            fullWidth: true,
-            onPressed: _busy ? null : () => Navigator.of(context).pop(),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -207,7 +210,9 @@ class _Line extends StatelessWidget {
         children: [
           Icon(icon, size: 18, color: scheme.onSurfaceVariant),
           const SizedBox(width: VoltiSpacing.s10),
-          Expanded(child: Text(text, style: VoltiTypography.body.copyWith(color: scheme.onSurface))),
+          Expanded(
+            child: Text(text, style: VoltiTypography.body.copyWith(color: scheme.onSurface)),
+          ),
         ],
       ),
     );

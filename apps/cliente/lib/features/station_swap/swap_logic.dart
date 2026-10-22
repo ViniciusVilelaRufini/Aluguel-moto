@@ -115,9 +115,18 @@ StationSwap applySwapEvent(StationSwap current, {required String swapId, require
 
 /// Prefere a resposta do GET, salvo quando ela e mais antiga que o que a tela
 /// ja mostra (evento chegou antes da leitura).
+///
+/// Ordem: `updatedAt` da API quando os dois tem (resposta mais antiga que a
+/// troca mostrada, ex.: GET que chegou depois do cancelamento, e descartada);
+/// empate ou sem `updatedAt`, a ordem dos passos.
 StationSwap mergeSwapFetch(StationSwap current, StationSwap fetched) {
   if (fetched.id != current.id) return current;
   if (current.status == StationSwapStatus.completed) return current;
+  final fu = fetched.updatedAt, cu = current.updatedAt;
+  if (fu != null && cu != null) {
+    if (fu.isBefore(cu)) return current;
+    if (fu.isAfter(cu)) return fetched;
+  }
   final behind = !isTerminalSwap(fetched.status) &&
       !isTerminalSwap(current.status) &&
       swapStepIndex(fetched.status) < swapStepIndex(current.status);
@@ -125,8 +134,9 @@ StationSwap mergeSwapFetch(StationSwap current, StationSwap fetched) {
 }
 
 /// Texto do erro ao abrir o compartimento (slugs do contrato). [station]
-/// separa "sem bateria" de "fechada" no `422 station-unavailable`.
-String swapErrorMessage(AppLocalizations l, Object error, {SwapStation? station}) {
+/// separa "sem bateria" de "fechada" no `422 station-unavailable`; "fechada"
+/// so quando o horario e legivel e [now] cai fora dele ([stationClosedAt]).
+String swapErrorMessage(AppLocalizations l, Object error, {SwapStation? station, DateTime? now}) {
   final f = toFailure(error);
   switch (f.slug) {
     case 'station-not-found':
@@ -141,7 +151,7 @@ String swapErrorMessage(AppLocalizations l, Object error, {SwapStation? station}
       return l.swapErrorRentalNotActive;
     case 'station-unavailable':
       if (station != null && station.availableBatteries <= 0) return l.swapErrorNoBattery;
-      if (station != null && station.open24h != true) return l.swapErrorClosed(station.openingHours);
+      if (station != null && now != null && stationClosedAt(station, now)) return l.swapErrorClosed(station.openingHours);
       return l.swapErrorUnavailable;
   }
   if (f.kind == FailureKind.api && f.status == 404) return l.swapErrorInvalidQr;
@@ -184,4 +194,68 @@ bool swapNeedsSupport(StationSwap s) =>
 Duration swapTimeLeft(DateTime expiresAt, DateTime now) {
   final d = expiresAt.toUtc().difference(now.toUtc());
   return d.isNegative ? Duration.zero : d;
+}
+
+// ───────────── horario da estacao (mesma leitura da API, `isStationOpen`) ─────────────
+
+const _dayIndex = {'dom': 0, 'seg': 1, 'ter': 2, 'qua': 3, 'qui': 4, 'sex': 5, 'sab': 6};
+
+String _fold(String s) {
+  const from = 'áàâãäéèêëíìîïóòôõöúùûüç';
+  const to = 'aaaaaeeeeiiiiooooouuuuc';
+  final b = StringBuffer();
+  for (final ch in s.toLowerCase().split('')) {
+    final i = from.indexOf(ch);
+    b.write(i < 0 ? ch : to[i]);
+  }
+  return b.toString();
+}
+
+Set<int>? _parseDays(String text) {
+  if (RegExp(r'todos os dias|diariamente').hasMatch(text)) return {0, 1, 2, 3, 4, 5, 6};
+  final m = RegExp(r'\b(dom|seg|ter|qua|qui|sex|sab)\w*\s*(?:a|-|–|ate)\s*(dom|seg|ter|qua|qui|sex|sab)').firstMatch(text);
+  if (m == null) return null;
+  final days = <int>{};
+  var d = _dayIndex[m.group(1)]!;
+  final end = _dayIndex[m.group(2)]!;
+  for (var i = 0; i < 7; i++) {
+    days.add(d);
+    if (d == end) break;
+    d = (d + 1) % 7;
+  }
+  return days;
+}
+
+/// `null` = horario ilegivel; `(-1, -1)` = 24 h.
+(int, int)? _parseHours(String text) {
+  if (RegExp(r'\b24\s*h\b').hasMatch(text)) return (-1, -1);
+  final m = RegExp(r'(\d{1,2})\s*h\s*(\d{2})?\s*(?:as|a|-|–|ate)\s*(\d{1,2})\s*h\s*(\d{2})?').firstMatch(text);
+  if (m == null) return null;
+  final from = int.parse(m.group(1)!) * 60 + int.parse(m.group(2) ?? '0');
+  final to = int.parse(m.group(3)!) * 60 + int.parse(m.group(4) ?? '0');
+  if (from > 24 * 60 || to > 24 * 60) return null;
+  return (from, to);
+}
+
+/// A estacao esta fechada em [now] (horario de Sao Paulo, UTC-3 fixo)? So
+/// `true` quando `openingHours` e legivel e [now] cai fora; `open24h` ou texto
+/// ilegivel → `false` (como a API, que so recusa quando o horario e legivel).
+bool stationClosedAt(SwapStation s, DateTime now) {
+  if (s.open24h == true) return false;
+  final text = _fold(s.openingHours);
+  final hours = _parseHours(text);
+  if (hours == null) return false;
+  final days = _parseDays(text) ?? {0, 1, 2, 3, 4, 5, 6};
+  final local = now.toUtc().subtract(const Duration(hours: 3));
+  final weekday = local.weekday % 7; // DateTime: seg=1..dom=7 → dom=0
+  final minutes = local.hour * 60 + local.minute;
+  final bool open;
+  if (hours.$1 < 0) {
+    open = days.contains(weekday);
+  } else if (hours.$1 < hours.$2) {
+    open = days.contains(weekday) && minutes >= hours.$1 && minutes < hours.$2;
+  } else {
+    open = (days.contains(weekday) && minutes >= hours.$1) || (days.contains((weekday + 6) % 7) && minutes < hours.$2);
+  }
+  return !open;
 }
