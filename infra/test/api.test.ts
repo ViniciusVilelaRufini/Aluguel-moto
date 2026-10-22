@@ -121,7 +121,7 @@ describe('ApiStack', () => {
       walk(join(root, 'scripts'));
       const text = files.map((f) => readFileSync(f, 'utf8')).join(' ');
       // CORS_ORIGINS e TRUST_PROXY são lidas pela API só depois do merge de fix/qa-api (QA-10/QA-18); remover a exclusão então.
-      const PENDING_API = ['CORS_ORIGINS', 'TRUST_PROXY'];
+      const PENDING_API: string[] = [];
       for (const name of [...REQUIRED_ENV, ...REQUIRED_SECRETS].filter((n) => !PENDING_API.includes(n))) expect({ name, found: text.includes(name) }).toEqual({ name, found: true });
     });
   });
