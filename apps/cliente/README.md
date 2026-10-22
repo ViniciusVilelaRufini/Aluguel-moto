@@ -37,6 +37,16 @@ Home como no design (`HomeScreen.jsx`): avatar com iniciais, pílula "Sua locali
 
 `/pick` (`PickScreen.jsx`): motos de `GET /vehicles/nearby` ordenadas pela distância a pé (haversine a partir do GPS, ~80 m/min; sem GPS não mostra distância), chips de modelo derivados dos dados, categoria por um mapa local de modelos, preço do plano `minute`, seleção em radio e "Reservar <modelo> · <código>" (`POST /reservations`, depois `/reserved`). KYC não aprovado, inadimplência, reserva ou corrida ativa desligam o botão com o motivo. Um 409 ao reservar (`vehicle-unavailable` ou `reservation-already-active`) recarrega a lista e a reserva, tira a moto da seleção e mostra o aviso (com link para a reserva ativa). Mapa e lista recarregam as motos a cada 20 s com a tela no topo e ao voltar do segundo plano (`NearbyAutoRefresh`). Lógica pura em `features/pick/pick_logic.dart`; o que falta no contrato está em `docs/decisoes.md` (2026-10-21, app "Escolha sua moto").
 
+## Ajustes do teste no emulador (rodada 1)
+
+- Reserva: barra do topo no topo (abaixo da status bar), sem voltar visível nem megafone; "Voltar" só para leitor de tela e voltar do sistema; trilho "Deslize para cancelar" de largura total; rota a pé em "L" (`walkingPath`) até existir a rota por ruas (proposta R2). A tela será redesenhada para retirada no galpão.
+- Contagem com o relógio do servidor: `clockProvider` usa o `ServerClock` do `volti_flutter`, corrigido pelo cabeçalho `Date` das respostas, e nunca passa da duração da reserva.
+- Resumo de preço (plano e recibo) por `core/breakdown.dart`: o seguro, o cupom e as taxas aparecem uma vez (das linhas da API; os totais só viram linha quando a categoria não veio).
+- Plano: sem cartão salvo, a caução já vem em Pix; botão desligado diz o motivo; "Obrigatório" só no selo.
+- Pix: `core/pix_qr.dart` desenha o QR a partir do "copia e cola" quando o PNG vem vazio ou minúsculo (fake: 1×1).
+- Conta: cadastro por celular mostra o telefone formatado, nunca o e-mail sintético (`@celular.volti.dev`, `@sem-email.volti.invalid`).
+- Testes em `test/emulador_1_test.dart` (carregam as fontes reais para medir texto cortado como no aparelho).
+
 ## Pontos de integração
 
 ### Push (Firebase Cloud Messaging)

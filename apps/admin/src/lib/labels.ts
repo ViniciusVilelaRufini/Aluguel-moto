@@ -105,3 +105,7 @@ export const MAINTENANCE_STATUS: Record<S<'MaintenanceTask'>['status'], [string,
 };
 
 export const GROUP_LABEL: Record<S<'StaffGroup'>, string> = { admin: 'Administrador', operacao: 'Operação', financeiro: 'Financeiro', suporte: 'Suporte', campo: 'Campo' };
+
+export const SUBSCRIPTION_STATUS: Record<S<'SubscriptionStatus'>, [string, Tone]> = {
+  active: ['Ativa', 'success'], paused: ['Pausada', 'warning'], past_due: ['Em atraso', 'danger'], canceled: ['Cancelada', 'neutral'], expired: ['Expirada', 'neutral'],
+};

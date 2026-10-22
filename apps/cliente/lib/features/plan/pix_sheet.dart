@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +8,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
 import '../../core/geo.dart';
+import '../../core/pix_qr.dart';
 import '../../core/widgets.dart';
 
 /// Caucao via Pix: mostra o QR e o copia e cola e acompanha o deposito ate `held`.
@@ -76,15 +75,6 @@ class _PixDepositSheetState extends ConsumerState<PixDepositSheet> {
   Widget build(BuildContext context) {
     final l = context.l;
     final pix = widget.deposit.pix;
-    Widget? qr;
-    final b64 = pix?.qrCodeBase64;
-    if (b64 != null && b64.isNotEmpty) {
-      try {
-        qr = Image.memory(base64Decode(b64.contains(',') ? b64.split(',').last : b64), width: 200, height: 200);
-      } catch (_) {
-        qr = null;
-      }
-    }
     if (_paid) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.s24),
@@ -104,7 +94,7 @@ class _PixDepositSheetState extends ConsumerState<PixDepositSheet> {
           const SizedBox(height: VoltiSpacing.s8),
           Text(l.pixText(money(widget.deposit.amountCents)), style: VoltiTypography.body),
           const SizedBox(height: VoltiSpacing.s16),
-          if (qr != null) Center(child: qr),
+          if (pix != null) Center(child: PixQrCode(key: const Key('pix-qr'), pix: pix, semanticLabel: l.pixQrLabel)),
           if (pix != null) ...[
             const SizedBox(height: VoltiSpacing.s12),
             VoltiButton(

@@ -340,15 +340,17 @@ class _LocationRationaleState extends ConsumerState<LocationRationale> {
               ],
             ),
             const SizedBox(height: VoltiSpacing.s10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            // Wrap: com texto grande (200%) os botoes descem de linha.
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: VoltiSpacing.s8,
+              runSpacing: VoltiSpacing.s8,
               children: [
                 VoltiButton(
                   label: t.notNow,
                   variant: VoltiButtonVariant.ghost,
                   onPressed: () => setState(() => _dismissed = true),
                 ),
-                const SizedBox(width: VoltiSpacing.s8),
                 VoltiButton(
                   key: const Key('location-allow'),
                   label: action,

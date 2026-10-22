@@ -9,7 +9,7 @@ import type { MenuItem } from '@/lib/permissions';
 import { STATUS_COLOR, STATUS_LABEL } from '@/lib/status';
 import type { VehicleStatus } from '@/lib/types';
 
-interface VehicleLike { id: string; code: string; status: VehicleStatus }
+interface VehicleLike { id: string; code: string; status: VehicleStatus; address?: string; model?: string }
 
 /**
  * Depois de navegar pela paleta, o foco vai para o destino em vez de cair no <body>:
@@ -134,7 +134,7 @@ export function CommandPalette({ vehicles, menu }: { vehicles: VehicleLike[]; me
               <Icon name="Search" size={20} color="var(--text-tertiary)" />
               <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey} data-testid="palette-input"
                 role="combobox" aria-expanded aria-controls={listId} aria-activedescendant={results[active] ? `${listId}-${active}` : undefined} aria-autocomplete="list"
-                aria-label="Buscar moto, cliente ou aluguel" placeholder="Código da moto, nome do cliente ou seção"
+                aria-label="Buscar moto, cliente ou aluguel" placeholder="Código ou endereço da moto, nome do cliente ou seção"
                 style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', font: 'var(--type-body)', color: 'var(--text-primary)' }} />
               <kbd className="kbd">Esc</kbd>
             </div>

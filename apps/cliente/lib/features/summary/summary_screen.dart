@@ -7,6 +7,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/breakdown.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
 import '../../core/flash.dart';
@@ -154,11 +155,13 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
                   child: Column(children: [
                     _Line(l.duration, durationLabel(r.durationSeconds)),
-                    for (final line in r.breakdown.lines) _Line(line.description, money(line.amountCents)),
-                    if (r.breakdown.insuranceCents > 0)
-                      _Line(r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong, money(r.breakdown.insuranceCents)),
-                    if (r.breakdown.feesCents > 0) _Line(l.fees, money(r.breakdown.feesCents)),
-                    if (r.breakdown.discountCents > 0) _Line(l.coupon, money(-r.breakdown.discountCents)),
+                    for (final row in breakdownRows(
+                      r.breakdown,
+                      insuranceLabel: r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong,
+                      feesLabel: l.fees,
+                      discountLabel: l.coupon,
+                    ))
+                      _Line(row.label, money(row.cents)),
                     const Divider(),
                     // O total conta depois do check (300 ms + 600 ms de pop).
                     _Line(l.total, money(r.breakdown.totalCents),

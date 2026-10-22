@@ -1035,6 +1035,318 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.'**
   String get rejectedHint;
+
+  /// No description provided for @statVan.
+  ///
+  /// In pt, this message translates to:
+  /// **'Baterias na van'**
+  String get statVan;
+
+  /// No description provided for @statUnavailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'indisponível'**
+  String get statUnavailable;
+
+  /// No description provided for @targetAddressLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Para: {address}'**
+  String targetAddressLine(String address);
+
+  /// No description provided for @cyclesCount.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =1{1 ciclo} other{{count} ciclos}}'**
+  String cyclesCount(int count);
+
+  /// No description provided for @removedBatteryLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirada: {details}'**
+  String removedBatteryLine(String details);
+
+  /// No description provided for @installedBatteryLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Instalada: {details}'**
+  String installedBatteryLine(String details);
+
+  /// No description provided for @vanTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Baterias na van'**
+  String get vanTitle;
+
+  /// No description provided for @vanCharged.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregadas'**
+  String get vanCharged;
+
+  /// No description provided for @vanDepleted.
+  ///
+  /// In pt, this message translates to:
+  /// **'Descarregadas'**
+  String get vanDepleted;
+
+  /// No description provided for @vanTotal.
+  ///
+  /// In pt, this message translates to:
+  /// **'Total'**
+  String get vanTotal;
+
+  /// No description provided for @vanEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma bateria na van.'**
+  String get vanEmpty;
+
+  /// No description provided for @vanError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar o estoque da van.'**
+  String get vanError;
+
+  /// No description provided for @vanOnlineHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregar e descarregar a van exige conexão.'**
+  String get vanOnlineHint;
+
+  /// No description provided for @vanLoad.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregar baterias'**
+  String get vanLoad;
+
+  /// No description provided for @vanLoadTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregar na van'**
+  String get vanLoadTitle;
+
+  /// No description provided for @vanLoadSerial.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nº de série da bateria'**
+  String get vanLoadSerial;
+
+  /// No description provided for @vanLoadAdd.
+  ///
+  /// In pt, this message translates to:
+  /// **'Adicionar'**
+  String get vanLoadAdd;
+
+  /// No description provided for @vanLoadRemove.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tirar {serial} da lista'**
+  String vanLoadRemove(String serial);
+
+  /// No description provided for @vanLoadConfirm.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregar {count, plural, =1{1 bateria} other{{count} baterias}}'**
+  String vanLoadConfirm(int count);
+
+  /// No description provided for @vanLoadDuplicate.
+  ///
+  /// In pt, this message translates to:
+  /// **'Essa série já está na lista.'**
+  String get vanLoadDuplicate;
+
+  /// No description provided for @vanLoaded.
+  ///
+  /// In pt, this message translates to:
+  /// **'Baterias carregadas na van.'**
+  String get vanLoaded;
+
+  /// No description provided for @vanUnload.
+  ///
+  /// In pt, this message translates to:
+  /// **'Descarregar'**
+  String get vanUnload;
+
+  /// No description provided for @vanUnloadSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Descarregar {serial} para recarga'**
+  String vanUnloadSemantics(String serial);
+
+  /// No description provided for @vanUnloaded.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria descarregada para recarga.'**
+  String get vanUnloaded;
+
+  /// No description provided for @vanBatterySemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria {serial}, {pct} por cento, {cycles}'**
+  String vanBatterySemantics(String serial, int pct, String cycles);
+
+  /// No description provided for @vanSuggestions.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregadas na van'**
+  String get vanSuggestions;
+
+  /// No description provided for @vanPickSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Usar a bateria {serial}'**
+  String vanPickSemantics(String serial);
+
+  /// No description provided for @fleetServiceTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Revisões da frota'**
+  String get fleetServiceTitle;
+
+  /// No description provided for @filterAll.
+  ///
+  /// In pt, this message translates to:
+  /// **'Todas'**
+  String get filterAll;
+
+  /// No description provided for @filterOverdue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Vencidas'**
+  String get filterOverdue;
+
+  /// No description provided for @filterDueSoon.
+  ///
+  /// In pt, this message translates to:
+  /// **'Próximas'**
+  String get filterDueSoon;
+
+  /// No description provided for @serviceOk.
+  ///
+  /// In pt, this message translates to:
+  /// **'Em dia'**
+  String get serviceOk;
+
+  /// No description provided for @serviceDueSoon.
+  ///
+  /// In pt, this message translates to:
+  /// **'Próxima'**
+  String get serviceDueSoon;
+
+  /// No description provided for @serviceOverdue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Vencida'**
+  String get serviceOverdue;
+
+  /// No description provided for @serviceStatusSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Revisão: {status}'**
+  String serviceStatusSemantics(String status);
+
+  /// No description provided for @serviceKmSince.
+  ///
+  /// In pt, this message translates to:
+  /// **'{km} desde a revisão'**
+  String serviceKmSince(String km);
+
+  /// No description provided for @serviceKmUntil.
+  ///
+  /// In pt, this message translates to:
+  /// **'faltam {km}'**
+  String serviceKmUntil(String km);
+
+  /// No description provided for @serviceKmOver.
+  ///
+  /// In pt, this message translates to:
+  /// **'{km} além do previsto'**
+  String serviceKmOver(String km);
+
+  /// No description provided for @serviceHours.
+  ///
+  /// In pt, this message translates to:
+  /// **'{hours} h de uso desde a revisão (a cada {interval} h)'**
+  String serviceHours(String hours, String interval);
+
+  /// No description provided for @serviceScheduled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Revisão agendada para {date}'**
+  String serviceScheduled(String date);
+
+  /// No description provided for @serviceEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma moto nesta situação.'**
+  String get serviceEmpty;
+
+  /// No description provided for @serviceError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar as revisões.'**
+  String get serviceError;
+
+  /// No description provided for @vehicleCardTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto'**
+  String get vehicleCardTitle;
+
+  /// No description provided for @modelPhotoSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto do modelo {name}'**
+  String modelPhotoSemantics(String name);
+
+  /// No description provided for @maintenanceCardTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Manutenção'**
+  String get maintenanceCardTitle;
+
+  /// No description provided for @maintenanceSourceCustomer.
+  ///
+  /// In pt, this message translates to:
+  /// **'Agendada pelo cliente {name}'**
+  String maintenanceSourceCustomer(String name);
+
+  /// No description provided for @maintenanceSourceCustomerNoName.
+  ///
+  /// In pt, this message translates to:
+  /// **'Agendada pelo cliente'**
+  String get maintenanceSourceCustomerNoName;
+
+  /// No description provided for @maintenanceSourceSystem.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aberta pela inspeção'**
+  String get maintenanceSourceSystem;
+
+  /// No description provided for @maintenanceSourceStaff.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aberta pela operação'**
+  String get maintenanceSourceStaff;
+
+  /// No description provided for @maintenanceKindPreventive.
+  ///
+  /// In pt, this message translates to:
+  /// **'Preventiva'**
+  String get maintenanceKindPreventive;
+
+  /// No description provided for @maintenanceKindCorrective.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corretiva'**
+  String get maintenanceKindCorrective;
+
+  /// No description provided for @maintenanceScheduledFor.
+  ///
+  /// In pt, this message translates to:
+  /// **'Agendada para {date}'**
+  String maintenanceScheduledFor(String date);
 }
 
 class _AppLocalizationsDelegate
