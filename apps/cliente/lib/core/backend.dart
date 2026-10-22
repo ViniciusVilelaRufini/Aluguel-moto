@@ -54,7 +54,8 @@ abstract class Backend {
   Future<Wallet> wallet();
   Future<List<MinutePackage>> minutePackages();
   /// Recarga Pix: valor livre em reais ([amountCents], R$ 10 a R$ 1.000) ou pacote ([packageId]); um dos dois.
-  Future<TopUp> topUp({String? packageId, int? amountCents});
+  /// [idempotencyKey]: uma por tentativa do cliente, reutilizada nas repeticoes da mesma recarga.
+  Future<TopUp> topUp({String? packageId, int? amountCents, String? idempotencyKey});
   Future<TopUp> topUpStatus(String id);
   Future<List<WalletEntry>> walletLedger();
   Future<RentalStartResult> startRental(StartRentalRequest request, {String? idempotencyKey});
@@ -80,7 +81,8 @@ abstract class Backend {
   // conta
   Future<List<Rental>> rentals();
   Future<List<Subscription>> subscriptions();
-  Future<Subscription> subscribe(SubscriptionPlanCode code);
+  /// [idempotencyKey]: uma por tentativa do cliente, reutilizada nas repeticoes. [cardId]: cartao mostrado na confirmacao.
+  Future<Subscription> subscribe(SubscriptionPlanCode code, {String? cardId, String? idempotencyKey});
   Future<void> cancelSubscription(String id);
   Future<Dispute> dispute(String rentalId, String reason, String? description);
   Future<Claim> claim(String rentalId, ClaimType type, String description, {List<String> photoKeys = const []});
@@ -249,10 +251,10 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getWalletApi().listMinutePackages()).data!.items.toList());
 
   @override
-  Future<TopUp> topUp({String? packageId, int? amountCents}) {
+  Future<TopUp> topUp({String? packageId, int? amountCents, String? idempotencyKey}) {
     assert((packageId == null) != (amountCents == null), 'informe packageId ou amountCents');
     return _run(() async => (await _api.getWalletApi().createWalletTopUp(
-          idempotencyKey: newIdempotencyKey(),
+          idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
           topUpRequest: TopUpRequest((b) => b
             ..method = TopUpMethod.pix
             ..packageId = packageId
@@ -372,10 +374,12 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getPaymentsApi().listSubscriptions()).data!.items.toList());
 
   @override
-  Future<Subscription> subscribe(SubscriptionPlanCode code) =>
+  Future<Subscription> subscribe(SubscriptionPlanCode code, {String? cardId, String? idempotencyKey}) =>
       _run(() async => (await _api.getPaymentsApi().createSubscription(
-            idempotencyKey: newIdempotencyKey(),
-            subscriptionCreate: SubscriptionCreate((b) => b..planCode = code),
+            idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
+            subscriptionCreate: SubscriptionCreate((b) => b
+              ..planCode = code
+              ..cardId = cardId),
           ))
           .data!);
 

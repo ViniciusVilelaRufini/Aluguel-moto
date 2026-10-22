@@ -68,10 +68,15 @@ class AccountBackend extends FakeBackend {
   final uploadedBytes = <Uint8List>[];
   // carteira
   final topUps = <(String?, int?)>[];
+  final topUpKeys = <String?>[];
+  int failTopUps = 0;
   TopUpStatus statusAfterPoll = TopUpStatus.paid;
   int statusCalls = 0;
   // plano
   final subscribed = <SubscriptionPlanCode>[];
+  final subscribeCalls = <(String?, String?)>[]; // (cardId, chave)
+  int failSubscribes = 0;
+  bool withPlans = true;
   List<Subscription> subs = [];
   int cancels = 0;
   // contato
@@ -142,11 +147,16 @@ class AccountBackend extends FakeBackend {
       ..chargeId = 'ch1'
       ..qrCodeBase64 = _png1x1
       ..copyPaste = '00020126PIXCOPIAECOLA'
-      ..expiresAt = DateTime.utc(2026, 10, 21, 13)).toBuilder()
+      ..expiresAt = DateTime.now().toUtc().add(const Duration(hours: 1))).toBuilder()
     ..createdAt = DateTime.utc(2026, 10, 21));
 
   @override
-  Future<TopUp> topUp({String? packageId, int? amountCents}) async {
+  Future<TopUp> topUp({String? packageId, int? amountCents, String? idempotencyKey}) async {
+    topUpKeys.add(idempotencyKey);
+    if (failTopUps > 0) {
+      failTopUps--;
+      throw AppFailure(kind: FailureKind.network);
+    }
     topUps.add((packageId, amountCents));
     return last = _topUp(TopUpStatus.pending, packageId: packageId, amount: amountCents ?? 3990, minutes: packageId == null ? null : 60);
   }
@@ -163,13 +173,18 @@ class AccountBackend extends FakeBackend {
   Future<List<Subscription>> subscriptions() async => subs;
 
   @override
-  Future<List<PricingPlan>> plans() async => [_plan(PlanCode.weekly, 24900), _plan(PlanCode.monthly, 79900)];
+  Future<List<PricingPlan>> plans() async => withPlans ? [_plan(PlanCode.weekly, 24900), _plan(PlanCode.monthly, 79900)] : [];
 
   @override
   Future<List<PaymentCard>> cards() async => [_card()];
 
   @override
-  Future<Subscription> subscribe(SubscriptionPlanCode code) async {
+  Future<Subscription> subscribe(SubscriptionPlanCode code, {String? cardId, String? idempotencyKey}) async {
+    subscribeCalls.add((cardId, idempotencyKey));
+    if (failSubscribes > 0) {
+      failSubscribes--;
+      throw AppFailure(kind: FailureKind.network);
+    }
     subscribed.add(code);
     subs = [_sub()];
     return subs.first;
@@ -463,6 +478,12 @@ void main() {
         sessionProvider.overrideWith(() => s),
       ]));
       await t.pumpAndSettle();
+      // Sem a autorizacao do contato, Salvar fica desabilitado.
+      expect(t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Salvar')).onPressed, isNull);
+      expect(find.text('Tenho autorização desta pessoa para receber minha localização em emergências'), findsOneWidget);
+      await t.tap(find.byKey(const Key('emergency-consent')));
+      await t.pump();
+      expect(t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Salvar')).onPressed, isNotNull);
       await t.tap(find.text('Salvar'));
       await t.pump();
       expect(find.text('Informe o nome do contato'), findsOneWidget);
@@ -584,6 +605,122 @@ void main() {
       await t.pumpAndSettle();
       final field = t.widget<TextField>(find.byKey(const Key('dispute-reason')));
       expect(field.maxLength, 200);
+    });
+  });
+
+  group('fix round 1', () {
+    testWidgets('I2 recarga: repetir apos falha de rede reusa a chave; valor novo gera outra', (t) async {
+      tallScreen(t);
+      final backend = AccountBackend()..failTopUps = 1;
+      await t.pumpWidget(testApp(const WalletScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
+      await t.pumpAndSettle();
+      Future<void> generate(String chip, String button) async {
+        await t.tap(find.text('Recarregar carteira'));
+        await t.pumpAndSettle();
+        await t.tap(find.text(chip));
+        await t.pump();
+        await t.tap(find.text(button));
+        await openSheet(t);
+      }
+
+      await generate('R\$ 20,00', 'Gerar Pix de R\$ 20,00');
+      expect(backend.topUps, isEmpty); // falhou na rede
+      await t.pump(const Duration(seconds: 5));
+      await generate('R\$ 20,00', 'Gerar Pix de R\$ 20,00');
+      expect(backend.topUps.single, (null, 2000));
+      expect(backend.topUpKeys.length, 2);
+      expect(backend.topUpKeys[1], backend.topUpKeys[0]);
+      await t.tap(find.text('Pagar depois'));
+      await t.pumpAndSettle();
+
+      await generate('R\$ 50,00', 'Gerar Pix de R\$ 50,00');
+      expect(backend.topUpKeys.length, 3);
+      expect(backend.topUpKeys[2], isNot(backend.topUpKeys[0]));
+      await t.tap(find.text('Pagar depois'));
+      await t.pumpAndSettle();
+      // Mesmo valor depois de um resultado definitivo (recarga criada) gera chave nova.
+      await generate('R\$ 50,00', 'Gerar Pix de R\$ 50,00');
+      expect(backend.topUpKeys[3], isNot(backend.topUpKeys[2]));
+      await t.tap(find.text('Pagar depois'));
+      await t.pumpAndSettle();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('I2 assinatura: repetir apos falha reusa a chave e cobra o cartao mostrado', (t) async {
+      tallScreen(t);
+      final backend = AccountBackend()..failSubscribes = 1;
+      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Continuar'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Assinar agora'));
+      await t.pumpAndSettle();
+      expect(backend.subscribed, isEmpty);
+      await t.tap(find.text('Assinar agora'));
+      await t.pumpAndSettle();
+      expect(backend.subscribed, [SubscriptionPlanCode.weekly]);
+      expect(backend.subscribeCalls.length, 2);
+      expect(backend.subscribeCalls[0].$1, 'card1');
+      expect(backend.subscribeCalls[0].$2, isNotNull);
+      expect(backend.subscribeCalls[1].$2, backend.subscribeCalls[0].$2);
+      await t.pump(const Duration(seconds: 5));
+      await t.pumpAndSettle();
+    });
+
+    testWidgets('I3 Pix pago depois de "Pagar depois": a Carteira confere e atualiza', (t) async {
+      tallScreen(t);
+      final backend = AccountBackend()..statusAfterPoll = TopUpStatus.pending;
+      await t.pumpWidget(testApp(const WalletScreen(), overrides: [
+        backendProvider.overrideWithValue(backend),
+        pendingTopUpPollProvider.overrideWithValue(const Duration(seconds: 10)),
+      ]));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Recarregar carteira'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Gerar Pix de R\$ 50,00'));
+      await openSheet(t);
+      await t.tap(find.text('Pagar depois'));
+      await t.pump();
+      await t.pump(const Duration(seconds: 1));
+      expect(find.byKey(const Key('pending-topup')), findsOneWidget);
+      expect(find.text('Pix de R\$ 50,00 aguardando pagamento'), findsOneWidget);
+      final before = backend.statusCalls;
+      backend.statusAfterPoll = TopUpStatus.paid;
+      await t.pump(const Duration(seconds: 10));
+      await t.pump();
+      expect(backend.statusCalls, greaterThan(before));
+      expect(find.byKey(const Key('pending-topup')), findsNothing);
+      expect(find.text('Carteira recarregada'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('sheet do Pix ja expirado nao consulta o servidor', (t) async {
+      final backend = AccountBackend();
+      final expired = TopUp((b) => b
+        ..id = 't9'
+        ..status = TopUpStatus.pending
+        ..method = TopUpMethod.pix
+        ..amountCents = 2000
+        ..pix = PixCharge((p) => p
+          ..chargeId = 'c'
+          ..qrCodeBase64 = _png1x1
+          ..copyPaste = 'x'
+          ..expiresAt = DateTime.now().toUtc().subtract(const Duration(minutes: 1))).toBuilder()
+        ..createdAt = DateTime.utc(2026, 10, 21));
+      await t.pumpWidget(testApp(Scaffold(body: TopUpPixSheet(topUp: expired, pollInterval: const Duration(seconds: 1))),
+          overrides: [backendProvider.overrideWithValue(backend)]));
+      await t.pump(const Duration(seconds: 3));
+      expect(backend.statusCalls, 0);
+      expect(find.text('O Pix expirou. Gere um novo código.'), findsOneWidget);
+    });
+
+    testWidgets('sem preco do plano nao deixa assinar', (t) async {
+      tallScreen(t);
+      final backend = AccountBackend()..withPlans = false;
+      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
+      await t.pumpAndSettle();
+      expect(find.text('Preço do plano indisponível agora. Tente de novo em instantes.'), findsOneWidget);
+      expect(t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Continuar')).onPressed, isNull);
     });
   });
 }

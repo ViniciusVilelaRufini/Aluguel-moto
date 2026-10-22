@@ -748,5 +748,17 @@
   "trafficRulesTitle": "Regras de trânsito",
   "walletAndPackages": "Carteira e pacotes de minutos",
   "walletLedgerEmpty": "Nenhum lançamento ainda.",
-  "walletLedgerTitle": "Extrato"
+  "walletLedgerTitle": "Extrato",
+  "emergencyConsentLabel": "Tenho autorização desta pessoa para receber minha localização em emergências",
+  "emergencyConsentText": "Só compartilhamos sua localização com este contato quando você aciona o SOS. Confirme que a pessoa concorda em receber esses avisos.",
+  "pendingTopUpTitle": "Pix de {amount} aguardando pagamento",
+  "@pendingTopUpTitle": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "pendingTopUpText": "O saldo atualiza sozinho quando o pagamento for confirmado. Puxe a tela para baixo para conferir agora.",
+  "subscriptionPriceUnavailable": "Preço do plano indisponível agora. Tente de novo em instantes."
 }

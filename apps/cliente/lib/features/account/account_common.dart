@@ -4,6 +4,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/errors.dart';
 import '../../core/geo.dart';
 
 export '../plan/plan_screen.dart' show walletProvider;
@@ -68,3 +69,47 @@ Widget accountListSkeleton(String label) => Padding(
       padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
       child: VoltiSkeleton.list(label: label),
     );
+
+/// Chave de idempotencia por tentativa do cliente: a mesma operacao (mesmos
+/// parametros) repetida depois de falha de rede ou 5xx reusa a chave, para o
+/// servidor devolver o mesmo recurso em vez de cobrar duas vezes. Resultado
+/// definitivo (sucesso ou 4xx) ou parametros novos geram chave nova.
+class AttemptKeys {
+  AttemptKeys([String Function()? generate]) : _generate = generate ?? newIdempotencyKey;
+  final String Function() _generate;
+  Object? _params;
+  String? _key;
+
+  String keyFor(Object params) {
+    if (_key != null && _params == params) return _key!;
+    _params = params;
+    return _key = _generate();
+  }
+
+  /// Fecha a tentativa: a proxima chamada gera chave nova.
+  void settle() {
+    _params = null;
+    _key = null;
+  }
+
+  /// Sucesso ou erro definitivo (4xx) fecha a tentativa; rede e 5xx mantem a chave.
+  static bool isDefinitive(Object error) {
+    final f = toFailure(error);
+    return f.kind == FailureKind.api && (f.status ?? 500) < 500;
+  }
+}
+
+final topUpAttemptProvider = Provider<AttemptKeys>((ref) => AttemptKeys());
+final subscribeAttemptProvider = Provider<AttemptKeys>((ref) => AttemptKeys());
+
+/// Recarga Pix criada e ainda nao paga (cliente tocou em "Pagar depois" ou fechou o QR).
+class PendingTopUpNotifier extends Notifier<TopUp?> {
+  @override
+  TopUp? build() => null;
+  void set(TopUp? t) => state = t;
+}
+
+final pendingTopUpProvider = NotifierProvider<PendingTopUpNotifier, TopUp?>(PendingTopUpNotifier.new);
+
+/// Intervalo da conferencia de Pix pendente com a Carteira aberta (baixa frequencia).
+final pendingTopUpPollProvider = Provider<Duration>((ref) => const Duration(seconds: 20));

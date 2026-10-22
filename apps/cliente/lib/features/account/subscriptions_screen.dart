@@ -184,7 +184,9 @@ class _ChoosePlanState extends ConsumerState<_ChoosePlan> {
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-    final plans = ref.watch(recurringPlansProvider).value ?? const <PricingPlan>[];
+    final plansAsync = ref.watch(recurringPlansProvider);
+    final plans = plansAsync.value ?? const <PricingPlan>[];
+    final selectedPlan = _planFor(plans, _code);
     String? priceOf(SubscriptionPlanCode c) {
       final p = _planFor(plans, c);
       return p == null ? null : money(p.unitPriceCents);
@@ -213,15 +215,22 @@ class _ChoosePlanState extends ConsumerState<_ChoosePlan> {
         onTap: () => setState(() => _code = SubscriptionPlanCode.monthly),
       ),
       const SizedBox(height: VoltiSpacing.s16),
+      // Sem preco vigente nao da para assinar sabendo o valor cobrado.
+      if (selectedPlan == null && !plansAsync.isLoading) ...[
+        NoticeBanner(icon: LucideIcons.circleAlert, message: l.subscriptionPriceUnavailable),
+        const SizedBox(height: VoltiSpacing.s12),
+      ],
       VoltiButton(
         label: l.subscribeContinue,
         icon: LucideIcons.arrowRight,
         size: VoltiButtonSize.lg,
         fullWidth: true,
-        onPressed: () async {
+        onPressed: selectedPlan == null
+            ? null
+            : () async {
           final done = await VoltiBottomSheet.show<bool>(
             context,
-            builder: (_) => SubscribeSheet(code: _code, plan: _planFor(plans, _code)),
+            builder: (_) => SubscribeSheet(code: _code, plan: selectedPlan),
           );
           if (done == true) {
             ref.invalidate(subscriptionsProvider);
@@ -266,7 +275,17 @@ class _SubscribeSheetState extends ConsumerState<SubscribeSheet> {
       _error = null;
     });
     try {
-      await ref.read(backendProvider).subscribe(widget.code);
+      final attempt = ref.read(subscribeAttemptProvider);
+      // Repetir a mesma assinatura (plano + cartao) depois de falha de rede reusa a chave.
+      final key = attempt.keyFor(('subscribe', widget.code, card.id));
+      try {
+        // O cartao cobrado e o mesmo mostrado na confirmacao.
+        await ref.read(backendProvider).subscribe(widget.code, cardId: card.id, idempotencyKey: key);
+        attempt.settle();
+      } catch (e) {
+        if (AttemptKeys.isDefinitive(e)) attempt.settle();
+        rethrow;
+      }
       if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) setState(() => _error = failureText(l, e));
@@ -290,7 +309,10 @@ class _SubscribeSheetState extends ConsumerState<SubscribeSheet> {
         children: [
           Semantics(header: true, child: Text(l.subscribeConfirmTitle(subscriptionName(context, widget.code)), style: VoltiTypography.title)),
           const SizedBox(height: VoltiSpacing.s8),
-          if (price != null) Text(weekly ? l.subscribePriceWeekly(price) : l.subscribePriceMonthly(price), style: VoltiTypography.heading),
+          if (price != null)
+            Text(weekly ? l.subscribePriceWeekly(price) : l.subscribePriceMonthly(price), style: VoltiTypography.heading)
+          else
+            NoticeBanner(icon: LucideIcons.circleAlert, message: l.subscriptionPriceUnavailable),
           const SizedBox(height: VoltiSpacing.s8),
           Text(weekly ? l.subscribeRecurringWeekly : l.subscribeRecurringMonthly, style: VoltiTypography.body),
           const SizedBox(height: VoltiSpacing.s16),
@@ -322,7 +344,7 @@ class _SubscribeSheetState extends ConsumerState<SubscribeSheet> {
             size: VoltiButtonSize.lg,
             fullWidth: true,
             loading: _busy,
-            onPressed: card == null || _busy ? null : () => _confirm(card),
+            onPressed: card == null || price == null || _busy ? null : () => _confirm(card),
           ),
           const SizedBox(height: VoltiSpacing.s8),
           VoltiButton(

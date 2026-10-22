@@ -2571,6 +2571,36 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Extrato'**
   String get walletLedgerTitle;
+
+  /// No description provided for @emergencyConsentLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tenho autorização desta pessoa para receber minha localização em emergências'**
+  String get emergencyConsentLabel;
+
+  /// No description provided for @emergencyConsentText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Só compartilhamos sua localização com este contato quando você aciona o SOS. Confirme que a pessoa concorda em receber esses avisos.'**
+  String get emergencyConsentText;
+
+  /// No description provided for @pendingTopUpTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix de {amount} aguardando pagamento'**
+  String pendingTopUpTitle(String amount);
+
+  /// No description provided for @pendingTopUpText.
+  ///
+  /// In pt, this message translates to:
+  /// **'O saldo atualiza sozinho quando o pagamento for confirmado. Puxe a tela para baixo para conferir agora.'**
+  String get pendingTopUpText;
+
+  /// No description provided for @subscriptionPriceUnavailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'Preço do plano indisponível agora. Tente de novo em instantes.'**
+  String get subscriptionPriceUnavailable;
 }
 
 class _AppLocalizationsDelegate

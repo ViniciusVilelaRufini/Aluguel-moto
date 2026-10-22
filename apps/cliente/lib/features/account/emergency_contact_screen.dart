@@ -52,6 +52,10 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
   bool _busy = false;
   bool _touched = false;
 
+  /// Autorizacao do contato para receber a localizacao (LGPD). O contrato ainda
+  /// nao guarda esse aceite (proposta em docs/decisoes.md); vale a cada gravacao.
+  bool _authorized = false;
+
   @override
   void initState() {
     super.initState();
@@ -88,7 +92,7 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
   Future<void> _save() async {
     final l = context.l;
     setState(() => _touched = true);
-    if (_nameError != null || _phoneError != null) return;
+    if (!_authorized || _nameError != null || _phoneError != null) return;
     setState(() => _busy = true);
     try {
       await ref.read(backendProvider).updateProfile(emergencyName: _name.text.trim(), emergencyPhone: toE164(_phone.text));
@@ -114,7 +118,7 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
         size: VoltiButtonSize.lg,
         fullWidth: true,
         loading: _busy,
-        onPressed: _busy ? null : _save,
+        onPressed: _busy || !_authorized ? null : _save,
       ),
       body: ListView(
         padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
@@ -146,6 +150,16 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
               helperText: l.emergencyPhoneHint,
               errorText: _touched ? _phoneError : null,
             ),
+          ),
+          const SizedBox(height: VoltiSpacing.s16),
+          Text(l.emergencyConsentText, style: VoltiTypography.caption),
+          CheckboxListTile(
+            key: const Key('emergency-consent'),
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: _authorized,
+            onChanged: _busy ? null : (v) => setState(() => _authorized = v ?? false),
+            title: Text(l.emergencyConsentLabel, style: VoltiTypography.body),
           ),
         ],
       ),

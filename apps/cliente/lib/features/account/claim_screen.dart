@@ -59,7 +59,8 @@ class _ClaimScreenState extends ConsumerState<ClaimScreen> {
   Future<void> _capture({required bool policeReport}) async {
     if (_full) return;
     final bytes = await ref.read(photoPickerProvider).take();
-    if (bytes == null || !mounted) return;
+    // O limite pode ter sido atingido enquanto a camera estava aberta.
+    if (bytes == null || !mounted || _full) return;
     final a = _Attachment(bytes, policeReport: policeReport);
     setState(() => _items.add(a));
     await _upload(a);
@@ -72,9 +73,10 @@ class _ClaimScreenState extends ConsumerState<ClaimScreen> {
       final backend = ref.read(backendProvider);
       final target = await backend.supportUpload(UploadContentType.imageSlashJpeg);
       await backend.upload(target, a.bytes, 'image/jpeg');
-      if (mounted) setState(() => a.key = target.objectKey);
+      // Removido durante o envio: nao volta para a lista.
+      if (mounted && _items.contains(a)) setState(() => a.key = target.objectKey);
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || !_items.contains(a)) return;
       setState(() => a.failed = true);
       VoltiToast.show(context, l.attachmentFailed, tone: VoltiToastTone.danger);
     }

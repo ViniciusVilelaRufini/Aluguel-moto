@@ -22,22 +22,30 @@ const kTopUpMaxCents = 100000;
 /// Atualiza saldo e extrato no fim. Devolve `true` quando o Pix foi pago.
 Future<bool> runWalletTopUp(BuildContext context, WidgetRef ref, {String? packageId, int? amountCents}) async {
   final l = context.l;
+  final attempt = ref.read(topUpAttemptProvider);
+  // Mesma recarga repetida depois de falha de rede reusa a chave (sem cobranca dupla).
+  final key = attempt.keyFor(('top-up', packageId, amountCents));
+  final TopUp t;
   try {
-    final t = await ref.read(backendProvider).topUp(packageId: packageId, amountCents: amountCents);
-    if (!context.mounted) return false;
-    final paid = await VoltiBottomSheet.show<bool>(
-      context,
-      isDismissible: true,
-      builder: (_) => TopUpPixSheet(topUp: t),
-    );
-    ref.invalidate(walletProvider);
-    ref.invalidate(ledgerProvider);
-    if (paid == true && context.mounted) VoltiToast.show(context, l.topUpDone, tone: VoltiToastTone.success);
-    return paid == true;
+    t = await ref.read(backendProvider).topUp(packageId: packageId, amountCents: amountCents, idempotencyKey: key);
+    attempt.settle();
   } catch (e) {
+    if (AttemptKeys.isDefinitive(e)) attempt.settle();
     if (context.mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     return false;
   }
+  if (!context.mounted) return false;
+  final paid = await VoltiBottomSheet.show<bool>(
+    context,
+    isDismissible: true,
+    builder: (_) => TopUpPixSheet(topUp: t),
+  );
+  // "Pagar depois" ou sheet fechado: a Carteira continua conferindo o Pix em baixa frequencia.
+  ref.read(pendingTopUpProvider.notifier).set(paid == true || t.status != TopUpStatus.pending ? null : t);
+  ref.invalidate(walletProvider);
+  ref.invalidate(ledgerProvider);
+  if (paid == true && context.mounted) VoltiToast.show(context, l.topUpDone, tone: VoltiToastTone.success);
+  return paid == true;
 }
 
 /// Abre a escolha do valor e, confirmado, segue para o Pix.
@@ -51,12 +59,65 @@ Future<void> openTopUp(BuildContext context, WidgetRef ref) async {
 // Carteira de creditos
 // ---------------------------------------------------------------------------
 
-class WalletScreen extends ConsumerWidget {
+class WalletScreen extends ConsumerStatefulWidget {
   const WalletScreen({super.key});
+  @override
+  ConsumerState<WalletScreen> createState() => _WalletScreenState();
+}
+
+class _WalletScreenState extends ConsumerState<WalletScreen> {
+  Timer? _pendingTimer;
+  bool _checking = false;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  void initState() {
+    super.initState();
+    // Pix pago depois de "Pagar depois": confere em baixa frequencia enquanto a Carteira esta aberta.
+    _pendingTimer = Timer.periodic(ref.read(pendingTopUpPollProvider), (_) => _checkPending());
+  }
+
+  @override
+  void dispose() {
+    _pendingTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkPending() async {
+    final pending = ref.read(pendingTopUpProvider);
+    if (pending == null || _checking) return;
+    final notifier = ref.read(pendingTopUpProvider.notifier);
+    final exp = pending.pix?.expiresAt;
+    if (exp != null && DateTime.now().toUtc().isAfter(exp.toUtc())) {
+      notifier.set(null);
+      return;
+    }
+    _checking = true;
+    try {
+      final t = await ref.read(backendProvider).topUpStatus(pending.id);
+      if (!mounted) return;
+      switch (t.status) {
+        case TopUpStatus.paid:
+          notifier.set(null);
+          ref.invalidate(walletProvider);
+          ref.invalidate(ledgerProvider);
+          VoltiToast.show(context, context.l.topUpDone, tone: VoltiToastTone.success);
+        case TopUpStatus.failed:
+        case TopUpStatus.expired:
+          notifier.set(null);
+        default:
+          break;
+      }
+    } catch (_) {
+      // rede instavel: confere de novo no proximo ciclo
+    } finally {
+      _checking = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final l = context.l;
+    final pending = ref.watch(pendingTopUpProvider);
     return VoltiScaffold(
       title: l.wallet,
       body: VoltiRefresh(
@@ -64,12 +125,22 @@ class WalletScreen extends ConsumerWidget {
           ref.invalidate(packagesProvider);
           ref.invalidate(ledgerProvider);
           ref.invalidate(walletProvider);
+          await _checkPending();
           await ref.read(walletProvider.future);
         },
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
           children: [
+            if (pending != null) ...[
+              NoticeBanner(
+                key: const Key('pending-topup'),
+                icon: LucideIcons.clock,
+                title: l.pendingTopUpTitle(money(pending.amountCents)),
+                message: l.pendingTopUpText,
+              ),
+              const SizedBox(height: VoltiSpacing.s12),
+            ],
             AsyncView<Wallet>(
               value: ref.watch(walletProvider),
               onRetry: () => ref.invalidate(walletProvider),
@@ -293,15 +364,26 @@ class TopUpPixSheet extends ConsumerStatefulWidget {
 class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
   Timer? _timer;
   Timer? _close;
-  String? _failed;
+  /// Fim sem pagamento (`failed` ou `expired`).
+  TopUpStatus? _ended;
   bool _paid = false;
   bool _polling = false;
+
+  bool get _expiredLocally {
+    final exp = widget.topUp.pix?.expiresAt;
+    return exp != null && DateTime.now().toUtc().isAfter(exp.toUtc());
+  }
 
   @override
   void initState() {
     super.initState();
-    if (widget.topUp.status == TopUpStatus.paid) {
+    final s = widget.topUp.status;
+    if (s == TopUpStatus.paid) {
       _paid = true;
+    } else if (s == TopUpStatus.failed || s == TopUpStatus.expired) {
+      _ended = s;
+    } else if (_expiredLocally) {
+      _ended = TopUpStatus.expired;
     } else {
       _timer = Timer.periodic(widget.pollInterval, (_) => _poll());
     }
@@ -316,6 +398,12 @@ class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
 
   Future<void> _poll() async {
     if (_paid || _polling) return;
+    // O QR venceu: para de consultar (o servidor marca `expired` depois).
+    if (_expiredLocally) {
+      _timer?.cancel();
+      setState(() => _ended = TopUpStatus.expired);
+      return;
+    }
     _polling = true;
     try {
       final t = await ref.read(backendProvider).topUpStatus(widget.topUp.id);
@@ -330,11 +418,9 @@ class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
             if (mounted) Navigator.of(context).pop(true);
           });
         case TopUpStatus.failed:
-          _timer?.cancel();
-          setState(() => _failed = context.l.pixFailed);
         case TopUpStatus.expired:
           _timer?.cancel();
-          setState(() => _failed = context.l.pixExpired);
+          setState(() => _ended = t.status);
         default:
           break;
       }
@@ -350,6 +436,11 @@ class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
     final l = context.l;
     final t = widget.topUp;
     final pix = t.pix;
+    final failed = switch (_ended) {
+      TopUpStatus.failed => l.pixFailed,
+      TopUpStatus.expired => l.pixExpired,
+      _ => null,
+    };
     if (_paid) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.s24),
@@ -423,8 +514,8 @@ class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
             Text(l.pixExpiresAt(formatDateTimeSp(pix.expiresAt)), style: VoltiTypography.caption),
           ],
           const SizedBox(height: VoltiSpacing.s16),
-          if (_failed != null)
-            NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _failed!)
+          if (failed != null)
+            NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: failed)
           else
             Semantics(
               liveRegion: true,
@@ -436,7 +527,7 @@ class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
             ),
           const SizedBox(height: VoltiSpacing.s12),
           VoltiButton(
-              label: _failed != null ? l.close : l.pixPayLater,
+              label: failed != null ? l.close : l.pixPayLater,
               variant: VoltiButtonVariant.ghost,
               fullWidth: true,
               onPressed: () => Navigator.of(context).pop(false)),

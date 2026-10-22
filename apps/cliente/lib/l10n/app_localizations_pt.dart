@@ -1420,4 +1420,25 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get walletLedgerTitle => 'Extrato';
+
+  @override
+  String get emergencyConsentLabel =>
+      'Tenho autorização desta pessoa para receber minha localização em emergências';
+
+  @override
+  String get emergencyConsentText =>
+      'Só compartilhamos sua localização com este contato quando você aciona o SOS. Confirme que a pessoa concorda em receber esses avisos.';
+
+  @override
+  String pendingTopUpTitle(String amount) {
+    return 'Pix de $amount aguardando pagamento';
+  }
+
+  @override
+  String get pendingTopUpText =>
+      'O saldo atualiza sozinho quando o pagamento for confirmado. Puxe a tela para baixo para conferir agora.';
+
+  @override
+  String get subscriptionPriceUnavailable =>
+      'Preço do plano indisponível agora. Tente de novo em instantes.';
 }
