@@ -120,12 +120,15 @@ class CognitoCustomerAuthRepository implements AuthRepository {
       await adopt(await client.refresh(refreshToken));
       return _tokens?.accessToken;
     } on CognitoException catch (e) {
-      // Refresh revogado/expirado: sessao encerrada. Sem rede: tenta na proxima chamada.
+      // Refresh revogado/expirado: sessao encerrada.
       if (e.type == 'NotAuthorizedException') {
         _tokens = null;
         await _store.clear();
+        return null;
       }
-      return null;
+      // Sem rede/erro transitorio: manda o token atual (a API responde 401 se ja
+      // venceu, em vez de uma chamada sem bearer) e tenta renovar na proxima.
+      return _tokens?.accessToken;
     }
   }
 

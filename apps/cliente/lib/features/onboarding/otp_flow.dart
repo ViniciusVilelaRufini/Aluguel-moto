@@ -44,11 +44,13 @@ class OtpChallenge {
   final String? session;
 }
 
-/// Fronteira do login por codigo. [verify] conclui o login (grava a sessao).
+/// Fronteira do login por codigo. [verify] conclui o login (grava a sessao) e
+/// devolve `null`; ou devolve um novo desafio quando a conta foi confirmada mas o
+/// Cognito pediu um codigo de login (um novo codigo ja foi enviado).
 abstract class OtpAuthClient {
   Future<OtpChallenge> start(OtpChannel channel, String destination);
   Future<OtpChallenge> resend(OtpChallenge challenge);
-  Future<void> verify(OtpChallenge challenge, String code);
+  Future<OtpChallenge?> verify(OtpChallenge challenge, String code);
 }
 
 OtpError otpErrorOf(Object e) {
@@ -129,17 +131,22 @@ class CognitoOtpClient implements OtpAuthClient {
   Future<OtpChallenge> resend(OtpChallenge c) async {
     if (c.signUp) {
       await _guard(() => api.resendConfirmationCode(username: c.destination));
-      return c;
+      // A Session do SignUp nao vale para o codigo reenviado: confirma sem ela.
+      return OtpChallenge(channel: c.channel, destination: c.destination, signUp: true, challengeName: c.challengeName);
     }
     return _initiate(c.channel, c.destination);
   }
 
   @override
-  Future<void> verify(OtpChallenge c, String code) async {
+  Future<OtpChallenge?> verify(OtpChallenge c, String code) async {
     final Map<String, dynamic> result;
     if (c.signUp) {
       final confirmed = await _guard(() => api.confirmSignUp(username: c.destination, code: code, session: c.session));
-      result = await _guard(() => api.initiateUserAuth(username: c.destination, session: confirmed['Session'] as String?));
+      final session = confirmed['Session'] as String?;
+      // Sem Session (ex.: codigo reenviado) a conta ja esta confirmada, mas o login
+      // precisa de um codigo proprio: pede e devolve o novo desafio.
+      if (session == null) return _initiate(c.channel, c.destination);
+      result = await _guard(() => api.initiateUserAuth(username: c.destination, session: session));
     } else {
       result = await _guard(() => api.respondToOtp(
             challengeName: c.challengeName,
@@ -149,8 +156,18 @@ class CognitoOtpClient implements OtpAuthClient {
           ));
     }
     final auth = result['AuthenticationResult'];
-    if (auth is! Map<String, dynamic>) throw const OtpException(OtpError.unknown);
-    await onTokens(CognitoTokens.fromAuthenticationResult(auth));
+    if (auth is Map<String, dynamic>) {
+      await onTokens(CognitoTokens.fromAuthenticationResult(auth));
+      return null;
+    }
+    // Veio um desafio em vez dos tokens.
+    final name = result['ChallengeName'] as String?;
+    final next = result['Session'] as String?;
+    if (name == challengeFor(c.channel) && next != null) {
+      return OtpChallenge(channel: c.channel, destination: c.destination, signUp: false, challengeName: name!, session: next);
+    }
+    if (c.signUp) return _initiate(c.channel, c.destination);
+    throw const OtpException(OtpError.unknown);
   }
 
   static Future<T> _guard<T>(Future<T> Function() f) async {
@@ -181,9 +198,10 @@ class DevOtpClient implements OtpAuthClient {
   Future<OtpChallenge> resend(OtpChallenge challenge) async => challenge;
 
   @override
-  Future<void> verify(OtpChallenge challenge, String value) async {
+  Future<OtpChallenge?> verify(OtpChallenge challenge, String value) async {
     if (value != code) throw const OtpException(OtpError.invalidCode);
     await signIn(emailFor(challenge.destination));
+    return null;
   }
 }
 
@@ -193,7 +211,7 @@ class _UnavailableOtpClient implements OtpAuthClient {
   @override
   Future<OtpChallenge> resend(OtpChallenge challenge) => throw const OtpException(OtpError.notConfigured);
   @override
-  Future<void> verify(OtpChallenge challenge, String code) => throw const OtpException(OtpError.notConfigured);
+  Future<OtpChallenge?> verify(OtpChallenge challenge, String code) => throw const OtpException(OtpError.notConfigured);
 }
 
 /// Cliente de codigo conforme o modo de autenticacao.
@@ -202,10 +220,11 @@ final otpAuthClientProvider = Provider<OtpAuthClient>((ref) {
   if (auth is CognitoCustomerAuthRepository && auth.config.hasIdentityApi) {
     return CognitoOtpClient(auth.client, onTokens: auth.adopt);
   }
-  if (auth is PersistentDevAuthRepository) {
+  // O codigo fixo do dev nunca existe num build de release.
+  if (!kReleaseMode && auth is PersistentDevAuthRepository) {
     return DevOtpClient((email) => auth.signIn(sub: email, email: email));
   }
-  if (auth is DevAuthRepository) {
+  if (!kReleaseMode && auth is DevAuthRepository) {
     return DevOtpClient((email) => auth.signIn(sub: email, email: email));
   }
   return _UnavailableOtpClient();
@@ -235,6 +254,7 @@ class OtpFlowController extends ChangeNotifier {
   OtpError? _error;
   int _resendIn = 0;
   bool _resending = false;
+  bool _accountConfirmed = false;
   Timer? _timer;
   bool _disposed = false;
 
@@ -242,14 +262,20 @@ class OtpFlowController extends ChangeNotifier {
   OtpChallenge? get challenge => _challenge;
   OtpError? get error => _error;
 
-  /// Segundos ate liberar o reenvio.
+  /// Segundos ate liberar um novo envio (para qualquer destino: corrigir o numero
+  /// nao zera a contagem, para nao virar um jeito de disparar SMS sem limite).
   int get resendIn => _resendIn;
   bool get resending => _resending;
   bool get canResend => _phase == OtpPhase.enterCode && _resendIn == 0 && !_resending;
+  bool get canSend => _phase == OtpPhase.enterDestination && _resendIn == 0;
+
+  /// Conta confirmada, mas o login pediu outro codigo (ja enviado).
+  bool get accountConfirmed => _accountConfirmed;
   bool get busy => _phase == OtpPhase.sending || _phase == OtpPhase.verifying || _resending;
 
   Future<void> send(String destination) async {
-    if (busy) return;
+    if (busy || _resendIn > 0) return;
+    _accountConfirmed = false;
     _set(phase: OtpPhase.sending, error: null);
     try {
       _challenge = await client.start(channel, destination);
@@ -282,7 +308,14 @@ class OtpFlowController extends ChangeNotifier {
     if (c == null || code.length != codeLength || busy) return false;
     _set(phase: OtpPhase.verifying, error: null);
     try {
-      await client.verify(c, code);
+      final next = await client.verify(c, code);
+      if (next != null) {
+        _challenge = next;
+        _accountConfirmed = true;
+        _set(phase: OtpPhase.enterCode);
+        _startCountdown();
+        return false;
+      }
       _timer?.cancel();
       _set(phase: OtpPhase.done);
       return true;
@@ -292,12 +325,11 @@ class OtpFlowController extends ChangeNotifier {
     }
   }
 
-  /// Volta para corrigir o telefone/e-mail.
+  /// Volta para corrigir o telefone/e-mail. A contagem continua correndo.
   void editDestination() {
     if (busy) return;
-    _timer?.cancel();
-    _resendIn = 0;
     _challenge = null;
+    _accountConfirmed = false;
     _set(phase: OtpPhase.enterDestination, error: null);
   }
 

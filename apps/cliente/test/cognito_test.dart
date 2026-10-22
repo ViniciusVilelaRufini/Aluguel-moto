@@ -1,9 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:volti_cliente/core/auth_mode.dart';
 import 'package:volti_cliente/core/auth_store.dart';
 import 'package:volti_cliente/core/cognito.dart';
 import 'package:volti_cliente/core/cognito_auth.dart';
+import 'package:volti_flutter/volti_flutter.dart' show AuthMode;
 
 const config = CognitoConfig(
   region: 'sa-east-1',
@@ -62,6 +64,15 @@ void main() {
       expect(config.hasHostedUi, isTrue);
       expect(const CognitoConfig(region: '', userPoolId: '', clientId: '').hasIdentityApi, isFalse);
       expect(const CognitoConfig(region: 'r', userPoolId: 'p', clientId: 'c').hasHostedUi, isFalse);
+    });
+  });
+
+  group('modo de autenticacao', () {
+    test('release nunca roda o modo dev', () {
+      expect(resolveAuthMode(AuthMode.dev, release: true), AuthMode.cognito);
+      expect(resolveAuthMode(AuthMode.cognito, release: true), AuthMode.cognito);
+      expect(resolveAuthMode(AuthMode.dev, release: false), AuthMode.dev);
+      expect(resolveAuthMode(AuthMode.cognito, release: false), AuthMode.cognito);
     });
   });
 
@@ -243,6 +254,18 @@ void main() {
       );
       expect(await repo.accessToken(), isNull);
       expect(repo.session, isNull);
+    });
+
+    test('refresh sem rede: manda o token atual em vez de nenhum bearer', () async {
+      final t = FakeTransport()..on('InitiateAuth', const CognitoException(CognitoException.network));
+      final repo = CognitoCustomerAuthRepository(
+        config: config,
+        client: CognitoIdentityClient(config, t),
+        store: MemoryCognitoTokenStore(),
+        restored: StoredTokens(accessToken: 'velho', refreshToken: 'r', expiresAt: DateTime(2000)),
+      );
+      expect(await repo.accessToken(), 'velho');
+      expect(repo.session, isNotNull, reason: 'sessao mantida para tentar de novo');
     });
 
     test('sair revoga o refresh token e limpa o armazenamento', () async {

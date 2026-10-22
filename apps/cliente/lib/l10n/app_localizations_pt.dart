@@ -1020,6 +1020,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get otpResend => 'Reenviar código';
 
   @override
+  String otpSendIn(String time) {
+    return 'Enviar código em $time';
+  }
+
+  @override
+  String get otpAccountConfirmed =>
+      'Conta confirmada. Enviamos um novo código para entrar.';
+
+  @override
   String get otpResent => 'Enviamos um novo código.';
 
   @override

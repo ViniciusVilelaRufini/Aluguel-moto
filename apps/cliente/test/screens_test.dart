@@ -88,7 +88,7 @@ bool isSelected(WidgetTester t, String c) => t.widget<OptionCard>(coverageCard(c
 
 void main() {
   group('onboarding', () {
-    testWidgets('so os termos e um CPF valido liberam; localizacao e opcional (pre-marcada)', (t) async {
+    testWidgets('so os termos e um CPF valido liberam; localizacao e opcional (desmarcada)', (t) async {
       tallScreen(t);
       final fake = FakeBackend();
       await t.pumpWidget(testApp(const OnboardingScreen(), overrides: [
@@ -104,8 +104,8 @@ void main() {
       await t.pump();
 
       VoltiButton cta() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Continuar'));
-      expect(t.widget<CheckboxListTile>(find.byKey(const Key('consent-location'))).value, isTrue,
-          reason: 'primeiro acesso: localizacao pre-marcada como no design');
+      expect(t.widget<CheckboxListTile>(find.byKey(const Key('consent-location'))).value, isFalse,
+          reason: 'LGPD: consentimento so por acao do cliente');
       expect(cta().onPressed, isNull, reason: 'sem termos');
 
       await t.tap(find.byKey(const Key('consent-terms')));
@@ -118,6 +118,9 @@ void main() {
       expect(find.text('CPF inválido'), findsNothing);
       expect(cta().onPressed, isNotNull);
 
+      await t.tap(find.byKey(const Key('consent-location')));
+      await t.pump();
+      expect(cta().onPressed, isNotNull, reason: 'marcar a localizacao nao muda a regra');
       await t.tap(find.byKey(const Key('consent-location')));
       await t.pump();
       expect(cta().onPressed, isNotNull, reason: 'localizacao desmarcada nao bloqueia (o Plano pede antes do aluguel)');

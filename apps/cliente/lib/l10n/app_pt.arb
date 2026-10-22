@@ -478,6 +478,15 @@
     }
   },
   "otpResend": "Reenviar código",
+  "otpSendIn": "Enviar código em {time}",
+  "@otpSendIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "otpAccountConfirmed": "Conta confirmada. Enviamos um novo código para entrar.",
   "otpResent": "Enviamos um novo código.",
   "otpConfirm": "Confirmar",
   "otpEditDestination": "Corrigir",

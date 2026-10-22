@@ -3,17 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'app.dart';
+import 'core/auth_mode.dart';
 import 'core/auth_store.dart';
 import 'core/cognito.dart';
 import 'core/cognito_auth.dart';
 
 /// `--dart-define=API_BASE_URL=http://10.0.2.2:3000` (ou o Prism em :4010).
-/// `--dart-define=AUTH_MODE=dev|cognito` (padrao dev). No modo cognito:
+/// `--dart-define=AUTH_MODE=dev|cognito` (padrao dev; release sempre cognito). No modo cognito:
 /// `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`,
 /// `COGNITO_REDIRECT_URI` (ver README).
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  final mode = AuthRepository.modeFromEnvironment();
+  final mode = resolveAuthMode(AuthRepository.modeFromEnvironment());
   final overrides = [
     authRepositoryProvider.overrideWithValue(
       mode == AuthMode.dev

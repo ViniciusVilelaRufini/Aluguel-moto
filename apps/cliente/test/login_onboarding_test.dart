@@ -10,11 +10,13 @@ import 'package:volti_cliente/features/onboarding/login_screen.dart';
 import 'package:volti_cliente/features/onboarding/onboarding_screen.dart';
 import 'package:volti_cliente/features/onboarding/otp_flow.dart';
 import 'package:volti_cliente/features/onboarding/payment_step.dart';
+import 'package:volti_cliente/features/plan/plan_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'cognito_test.dart' show FakeTransport, config;
 import 'helpers.dart';
 import 'otp_flow_test.dart' show FakeOtpClient;
+import 'screens_test.dart' show PlanBackend;
 
 class _Session extends FakeSession {
   _Session([SessionState? s]) : super(s ?? const SessionState.signedOut());
@@ -30,6 +32,40 @@ class _Session extends FakeSession {
 
   @override
   Future<void> signOut() async => signedOut = true;
+
+  @override
+  Future<void> refresh() async {}
+}
+
+/// Grava o que o passo de dados envia.
+class _ProfileBackend extends FakeBackend {
+  bool? location;
+  String? name;
+  KycStatus status = KycStatus.rejected;
+  @override
+  Future<void> updateProfile({String? name, String? phone, String? emergencyName, String? emergencyPhone}) async =>
+      this.name = name;
+  @override
+  Future<Consents> updateConsents({required bool terms, required bool location, required bool marketing}) async {
+    this.location = location;
+    return Consents((b) => b
+      ..termsAccepted = terms
+      ..locationTracking = location
+      ..marketing = marketing);
+  }
+  @override
+  Future<KycStatusResponse> kycStatus() async => KycStatusResponse((b) => b..status = status);
+}
+
+Future<void> fillData(WidgetTester t, {bool tapTerms = true}) async {
+  final fields = find.byType(TextField);
+  await t.enterText(fields.at(0), 'Ana Lima');
+  await t.enterText(fields.at(1), '52998224725');
+  await t.enterText(fields.at(2), '14/03/1998');
+  await t.pump();
+  if (!tapTerms) return;
+  await t.tap(find.byKey(const Key('consent-terms')));
+  await t.pump();
 }
 
 DevAuthRepository devAuth() => DevAuthRepository(baseUrl: 'http://x');
@@ -224,6 +260,50 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    testWidgets('Corrigir + Enviar dentro de 60 s nao manda outro SMS', (t) async {
+      final (client, _) = await pumpPhone(t);
+      await t.enterText(find.byKey(const Key('otp-destination')), '11987654321');
+      await t.pump();
+      await t.tap(find.byKey(const Key('otp-send')));
+      await t.pump();
+      await t.tap(find.text('Corrigir'));
+      await t.pump();
+      await t.enterText(find.byKey(const Key('otp-destination')), '11911112222');
+      await t.pump();
+      final send = t.widget<VoltiButton>(find.byKey(const Key('otp-send')));
+      expect(send.onPressed, isNull);
+      expect(send.label, 'Enviar código em 1:00');
+      await t.tap(find.byKey(const Key('otp-send')));
+      await t.pump();
+      expect(client.starts, 1);
+
+      await t.pump(const Duration(seconds: 60));
+      await t.tap(find.byKey(const Key('otp-send')));
+      await t.pump();
+      expect(client.starts, 2);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('conta confirmada pede outro codigo: aviso e segue no codigo', (t) async {
+      final (client, s) = await pumpPhone(t);
+      client.nextChallenge = const OtpChallenge(channel: OtpChannel.sms, destination: '+5511987654321', signUp: false);
+      await t.enterText(find.byKey(const Key('otp-destination')), '11987654321');
+      await t.pump();
+      await t.tap(find.byKey(const Key('otp-send')));
+      await t.pump();
+      await t.enterText(find.byKey(const Key('otp-field')), '123456');
+      await t.pump();
+      await t.tap(find.byKey(const Key('otp-confirm')));
+      await t.pump();
+      expect(find.text('Conta confirmada. Enviamos um novo código para entrar.'), findsOneWidget);
+      expect(s.completed, isEmpty);
+      await t.enterText(find.byKey(const Key('otp-field')), '123456');
+      await t.pump();
+      await t.tap(find.byKey(const Key('otp-confirm')));
+      await t.pump();
+      expect(s.completed, ['+5511987654321']);
+    });
+
     testWidgets('voltar no codigo volta para o numero', (t) async {
       await pumpPhone(t);
       await t.enterText(find.byKey(const Key('otp-destination')), '11987654321');
@@ -255,6 +335,52 @@ void main() {
       await t.tap(find.bySemanticsLabel('Voltar'));
       await t.pump();
       expect(s.signedOut, isTrue);
+    });
+
+    testWidgets('LGPD: sem marcar a localizacao nada e consentido e o Plano pede antes do aluguel', (t) async {
+      tallScreen(t);
+      final backend = _ProfileBackend();
+      await t.pumpWidget(testApp(const OnboardingScreen(), overrides: [
+        backendProvider.overrideWithValue(backend),
+        sessionProvider.overrideWith(() => _Session(session(terms: false, location: false, kyc: KycStatus.notStarted))),
+      ]));
+      await t.pumpAndSettle();
+      expect(t.widget<CheckboxListTile>(find.byKey(const Key('consent-location'))).value, isFalse);
+      await fillData(t);
+      await t.tap(find.widgetWithText(VoltiButton, 'Continuar'));
+      await t.pumpAndSettle();
+      expect(backend.location, isFalse, reason: 'caixa intocada nao vira consentimento');
+      expect(find.text('Verificação de identidade'), findsOneWidget);
+
+      // Com o consentimento gravado como falso, o Plano pede antes de iniciar.
+      final plan = PlanBackend();
+      await t.pumpWidget(testApp(PlanScreen(vehicle: sampleVehicle()), overrides: [
+        backendProvider.overrideWithValue(plan),
+        sessionProvider.overrideWith(() => FakeSession(session(location: backend.location!))),
+      ]));
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(VoltiButton, 'Pagar caução e destravar'));
+      await t.pumpAndSettle();
+      expect(find.text('Permitir localização?'), findsOneWidget);
+      expect(plan.startCalls, 0);
+    });
+
+    testWidgets('recusado: refaz os dados e o passo de documentos pede novo envio', (t) async {
+      tallScreen(t);
+      final backend = _ProfileBackend();
+      await t.pumpWidget(testApp(const OnboardingScreen(), overrides: [
+        backendProvider.overrideWithValue(backend),
+        sessionProvider.overrideWith(() => _Session(session(kyc: KycStatus.rejected))),
+      ]));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Enviar de novo'));
+      await t.pumpAndSettle();
+      await fillData(t, tapTerms: false);
+      await t.tap(find.widgetWithText(VoltiButton, 'Continuar'));
+      await t.pumpAndSettle();
+      expect(find.text('Documentos já enviados para análise.'), findsNothing);
+      expect(t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Enviar para análise')).onPressed, isNull,
+          reason: 'sem fotos novas');
     });
 
     test('CPF: digitos verificadores', () {

@@ -43,6 +43,9 @@ class FakeOtpClient implements OtpAuthClient {
   Object? startError;
   String good = '123456';
 
+  /// Se definido, o 1o codigo certo confirma a conta e pede outro (I-3).
+  OtpChallenge? nextChallenge;
+
   @override
   Future<OtpChallenge> start(OtpChannel channel, String destination) async {
     starts++;
@@ -57,9 +60,12 @@ class FakeOtpClient implements OtpAuthClient {
   }
 
   @override
-  Future<void> verify(OtpChallenge c, String code) async {
+  Future<OtpChallenge?> verify(OtpChallenge c, String code) async {
     if (code != good) throw const OtpException(OtpError.invalidCode);
     verified.add(code);
+    final next = nextChallenge;
+    nextChallenge = null;
+    return next;
   }
 }
 
@@ -120,12 +126,38 @@ void main() {
       expect(c.error, OtpError.network);
     });
 
-    test('corrigir o numero cancela a contagem e limpa o desafio', () async {
+    test('corrigir o numero limpa o desafio mas mantem a contagem (sem SMS ilimitado)', () async {
       await c.send('+5511987654321');
       c.editDestination();
       expect(c.phase, OtpPhase.enterDestination);
       expect(c.challenge, isNull);
-      expect(c.resendIn, 0);
+      expect(c.resendIn, 60);
+      expect(c.canSend, isFalse);
+
+      for (final n in ['+5511911111111', '+5511922222222', '+5511987654321']) {
+        await c.send(n);
+        c.editDestination();
+      }
+      expect(client.starts, 1, reason: 'Corrigir + Enviar dentro da janela nao dispara outro envio');
+
+      ticker.tick(60);
+      expect(c.canSend, isTrue);
+      await c.send('+5511911111111');
+      expect(client.starts, 2);
+      expect(c.resendIn, 60);
+    });
+
+    test('conta confirmada que pede outro codigo: continua no codigo com aviso', () async {
+      await c.send('+5511987654321');
+      client.nextChallenge = const OtpChallenge(
+          channel: OtpChannel.sms, destination: '+5511987654321', signUp: false, session: 'novo');
+      expect(await c.verify('123456'), isFalse);
+      expect(c.phase, OtpPhase.enterCode);
+      expect(c.accountConfirmed, isTrue);
+      expect(c.challenge!.session, 'novo');
+      expect(c.resendIn, 60, reason: 'um novo codigo acabou de ser enviado');
+      expect(await c.verify('123456'), isTrue);
+      expect(c.phase, OtpPhase.done);
     });
   });
 
@@ -182,6 +214,51 @@ void main() {
         {'Name': 'email', 'Value': 'ana@x.com'},
       ]);
       expect(t.calls.last.$2['AuthParameters']['PREFERRED_CHALLENGE'], 'EMAIL_OTP');
+    });
+
+    test('ConfirmSignUp sem Session: pede o codigo de login e conclui com ele', () async {
+      t.on('SignUp', {'UserConfirmed': false, 'Session': 'su'});
+      t.on('ConfirmSignUp', <String, dynamic>{});
+      t.on('InitiateAuth', {'ChallengeName': 'SMS_OTP', 'Session': 'ia'});
+      t.on('RespondToAuthChallenge', authResult('ok'));
+
+      final ch = await client.start(OtpChannel.sms, '+5511987654321');
+      final next = await client.verify(ch, '111111');
+      expect(next, isNotNull);
+      expect(next!.signUp, isFalse);
+      expect(next.session, 'ia');
+      expect(t.calls.last.$2['AuthParameters'], {'USERNAME': '+5511987654321', 'PREFERRED_CHALLENGE': 'SMS_OTP'});
+      expect(adopted, isEmpty);
+
+      expect(await client.verify(next, '222222'), isNull);
+      expect(t.calls.last.$1, 'RespondToAuthChallenge');
+      expect(adopted.single.accessToken, 'ok');
+    });
+
+    test('depois de reenviar: confirma sem a Session antiga e segue para o login', () async {
+      t.on('SignUp', {'UserConfirmed': false, 'Session': 'su'});
+      t.on('ConfirmSignUp', <String, dynamic>{});
+      t.on('InitiateAuth', {'ChallengeName': 'SMS_OTP', 'Session': 'ia'});
+      final ch = await client.start(OtpChannel.sms, '+5511987654321');
+      final resent = await client.resend(ch);
+      expect(t.calls.last.$1, 'ResendConfirmationCode');
+      expect(resent.session, isNull);
+
+      final next = await client.verify(resent, '333333');
+      final confirm = t.calls.firstWhere((c) => c.$1 == 'ConfirmSignUp').$2;
+      expect(confirm.containsKey('Session'), isFalse);
+      expect(next!.session, 'ia');
+    });
+
+    test('InitiateAuth com Session devolvendo desafio em vez de tokens', () async {
+      t.on('SignUp', {'UserConfirmed': false, 'Session': 'su'});
+      t.on('ConfirmSignUp', {'Session': 'cs'});
+      t.on('InitiateAuth', {'ChallengeName': 'SMS_OTP', 'Session': 'ch2'});
+      final ch = await client.start(OtpChannel.sms, '+5511987654321');
+      final next = await client.verify(ch, '111111');
+      expect(next!.session, 'ch2');
+      expect(next.signUp, isFalse);
+      expect(adopted, isEmpty);
     });
 
     test('cadastro nao confirmado: reenvia o codigo de confirmacao', () async {

@@ -1906,6 +1906,18 @@ abstract class AppLocalizations {
   /// **'Reenviar código'**
   String get otpResend;
 
+  /// No description provided for @otpSendIn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar código em {time}'**
+  String otpSendIn(String time);
+
+  /// No description provided for @otpAccountConfirmed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conta confirmada. Enviamos um novo código para entrar.'**
+  String get otpAccountConfirmed;
+
   /// No description provided for @otpResent.
   ///
   /// In pt, this message translates to:

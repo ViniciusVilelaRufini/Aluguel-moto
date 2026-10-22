@@ -124,11 +124,11 @@ class _OtpStepState extends ConsumerState<OtpStep> {
       onBack: sending ? null : _back,
       cta: VoltiButton(
         key: const Key('otp-send'),
-        label: l.otpSend,
+        label: _flow.resendIn > 0 ? l.otpSendIn(formatCountdown(_flow.resendIn)) : l.otpSend,
         size: VoltiButtonSize.lg,
         fullWidth: true,
         loading: sending,
-        onPressed: sending || _destination.text.trim().isEmpty ? null : _send,
+        onPressed: !_flow.canSend || _destination.text.trim().isEmpty ? null : _send,
       ),
       children: [
         TextField(
@@ -181,6 +181,14 @@ class _OtpStepState extends ConsumerState<OtpStep> {
         onPressed: _code.length == 6 && !verifying ? _verify : null,
       ),
       children: [
+        if (_flow.accountConfirmed) ...[
+          Semantics(
+            liveRegion: true,
+            child: Text(l.otpAccountConfirmed,
+                key: const Key('otp-confirmed'), style: VoltiTypography.caption.copyWith(color: VoltiColors.successInk)),
+          ),
+          const SizedBox(height: VoltiSpacing.s12),
+        ],
         Semantics(
           label: l.otpCodeLabel,
           textField: true,

@@ -57,8 +57,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       onboardingDataStep => ConsentStep(
           initialName: session.customer?.name ?? '',
           initialTerms: session.termsAccepted,
-          // Primeiro acesso: localizacao pre-marcada como no design.
-          initialLocation: session.termsAccepted ? session.locationConsent : true,
+          // LGPD: consentimento so por acao do cliente. A caixa vem desmarcada (o design
+          // a mostra marcada; ver docs/decisoes.md) e reflete o que ja foi gravado.
+          initialLocation: session.locationConsent,
           initialMarketing: session.consents?.marketing ?? false,
           onBack: () => ref.read(sessionProvider.notifier).signOut(),
           onDone: (name, cpf, birth) {
