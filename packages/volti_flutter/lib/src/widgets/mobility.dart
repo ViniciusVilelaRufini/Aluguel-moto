@@ -807,9 +807,12 @@ class PhotoCapture extends StatelessWidget {
           color: done ? VoltiColors.brand : scheme.outline,
           radius: VoltiRadii.lg,
         ),
+        // Altura minima (nao fixa): com texto grande (200%) o espaco cresce.
         child: Container(
-          height: height,
+          constraints: BoxConstraints(minHeight: height),
+          alignment: Alignment.center,
           width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
           decoration: BoxDecoration(
             color: done
                 ? VoltiColors.brandSoft
@@ -817,6 +820,7 @@ class PhotoCapture extends StatelessWidget {
             borderRadius: VoltiRadii.rLg,
           ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
@@ -836,6 +840,7 @@ class PhotoCapture extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 done ? 'Foto enviada' : label,
+                textAlign: TextAlign.center,
                 style: VoltiTypography.label.copyWith(color: fg),
               ),
               if (hint != null && !done) ...[
