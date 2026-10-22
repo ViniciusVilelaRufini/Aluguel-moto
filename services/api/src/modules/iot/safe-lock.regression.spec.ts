@@ -70,7 +70,7 @@ function localSetup(opts: { graceMs?: number } = {}) {
   const tel = new TelemetryService(
     gw,
     { onPosition: async () => {} },
-    { openRentalId: async () => undefined, invalidate: () => {} },
+    { openRentalId: async () => undefined, trackingRentalId: async () => undefined, invalidate: () => {} },
     { vehicle: { findUnique: async () => ({ id: 'v1' }) }, trackPoint: { create: async () => ({}) } } as any,
     events,
     clock,
@@ -108,7 +108,7 @@ async function awsSetup(opts: { gapMs?: number } = {}) {
   const live = new LiveStateStore(new MemoryRedisStore(), clock);
   const gw = new GW(transport, live, clock, events, { confirmWaitMs: 100, commandTimeoutMs: 30_000 });
   const telOpts = { trackRetentionDays: 90, ...(opts.gapMs !== undefined ? { reconnectGapMs: opts.gapMs } : {}) };
-  const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) }, trackPoint: { create: async () => ({}) } } as any, events, clock, telOpts);
+  const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, trackingRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) }, trackPoint: { create: async () => ({}) } } as any, events, clock, telOpts);
   await transport.start(tel);
   /** Uma mensagem da fila SQS `telemetria`. */
   const sqs = (body: object) => handler({ ...body, thingName: T, ingestedAt: clock.now() });
@@ -157,7 +157,7 @@ describe('Bloqueio seguro — regressões da revisão', () => {
     const conn: unknown[] = [];
     events.on(EV.IOT_CONNECTIVITY, (e) => conn.push(e));
     const gw = new GW(transport, live, clock, events, { confirmWaitMs: 3000, commandTimeoutMs: 30000 });
-    const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) } } as any, events, clock, { trackRetentionDays: 90 });
+    const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, trackingRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) } } as any, events, clock, { trackRetentionDays: 90 });
     await transport.start(tel);
     await live.applyTelemetry(T, telemetry(0));
     await live.setOnline(T, false);

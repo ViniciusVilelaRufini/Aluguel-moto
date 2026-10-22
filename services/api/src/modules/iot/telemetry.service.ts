@@ -129,7 +129,9 @@ export class TelemetryService implements InboundHandler {
       // A rampa só vê amostra fresca, pós-reconexão e mais nova (telemetria velha da fila offline nunca trava).
       if (applied.speedAccepted) await this.gateway.onSpeed(thingName, msg.velocidade_kmh);
 
-      const rentalId = await this.rentals.openRentalId(vehicleId);
+      // LGPD (QA-09): trajeto só com aluguel e consentimento de localização vigente; revogado no meio do aluguel, a posição
+      // da moto continua no estado da frota (segurança), mas nada mais é ligado ao cliente.
+      const rentalId = await this.rentals.trackingRentalId(vehicleId);
       if (rentalId) {
         await this.prisma.trackPoint.create({
           data: {

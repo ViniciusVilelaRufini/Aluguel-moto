@@ -66,7 +66,7 @@ export class PrismaZoneVehiclePositions implements ZoneVehiclePositions {
 
 /** Aluguel em andamento da moto, com cache curto (invalidado por `rental.changed`). */
 export class PrismaRentalLookup implements RentalLookup {
-  private readonly cache = new Map<string, { rentalId?: string; at: number }>();
+  private readonly cache = new Map<string, { rentalId?: string; consent: boolean; at: number }>();
 
   constructor(
     private readonly prisma: Pick<PrismaClient, 'rental'>,
@@ -74,12 +74,26 @@ export class PrismaRentalLookup implements RentalLookup {
     private readonly ttlMs = 5_000,
   ) {}
 
-  async openRentalId(vehicleId: string): Promise<string | undefined> {
+  private async lookup(vehicleId: string): Promise<{ rentalId?: string; consent: boolean }> {
     const hit = this.cache.get(vehicleId);
-    if (hit && this.clock.now() - hit.at < this.ttlMs) return hit.rentalId;
-    const r = await this.prisma.rental.findFirst({ where: { vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
-    this.cache.set(vehicleId, { rentalId: r?.id, at: this.clock.now() });
-    return r?.id;
+    if (hit && this.clock.now() - hit.at < this.ttlMs) return hit;
+    const r = await this.prisma.rental.findFirst({
+      where: { vehicleId, status: { in: OPEN_RENTAL_STATUSES } },
+      select: { id: true, customer: { select: { locationConsent: true } } },
+    });
+    const entry = { rentalId: r?.id, consent: !!r?.customer?.locationConsent, at: this.clock.now() };
+    this.cache.set(vehicleId, entry);
+    return entry;
+  }
+
+  async openRentalId(vehicleId: string): Promise<string | undefined> {
+    return (await this.lookup(vehicleId)).rentalId;
+  }
+
+  /** QA-09: aluguel aberto cujo titular mantém o consentimento de localização (senão o trajeto não é gravado). */
+  async trackingRentalId(vehicleId: string): Promise<string | undefined> {
+    const e = await this.lookup(vehicleId);
+    return e.consent ? e.rentalId : undefined;
   }
 
   invalidate(vehicleId?: string): void {

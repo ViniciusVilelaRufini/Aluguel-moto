@@ -61,6 +61,12 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
     await this.geofence.onZoneChanged(ev).catch((err) => this.logger.error({ msg: 'geofence_sync_failed', zoneId: ev.zoneId, error: (err as Error).message }));
   }
 
+  /** QA-09: consentimento de localização revogado/concedido → o próximo ponto relê o consentimento (para de gravar na hora). */
+  @OnEvent(EV.CUSTOMER_CONSENT_CHANGED)
+  onConsentChanged(): void {
+    this.rentals.invalidate();
+  }
+
   @OnEvent(EV.RENTAL_CHANGED, { async: true, promisify: true })
   async onRentalChanged(ev: RentalChangedEvent): Promise<void> {
     this.rentals.invalidate(ev.vehicleId);

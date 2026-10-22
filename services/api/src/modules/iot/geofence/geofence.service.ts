@@ -24,6 +24,8 @@ export interface GeofenceCommander {
 /** Aluguel em andamento (`active`/`paused`/`ending`) da moto, se houver. */
 export interface RentalLookup {
   openRentalId(vehicleId: string): Promise<string | undefined>;
+  /** Aluguel aberto cujo titular mantém o consentimento de localização: só então o trajeto é gravado (QA-09). */
+  trackingRentalId(vehicleId: string): Promise<string | undefined>;
   invalidate(vehicleId?: string): void;
 }
 

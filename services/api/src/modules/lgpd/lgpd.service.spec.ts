@@ -3,6 +3,7 @@ import { PrismaClient } from '@prisma/client';
 import { loadConfig } from '../../config/env';
 import { deletedSubMarker } from '../auth/deleted-identity';
 import { LgpdService } from './lgpd.service';
+import { EV } from '../../common/events';
 
 const ME = '11111111-1111-4111-8111-111111111111';
 const now = new Date();
@@ -136,6 +137,16 @@ describe('LgpdService', () => {
     expect(args.where.expiresAt.lt).toBeInstanceOf(Date);
     expect(args.where.expiresAt.lt.getTime()).toBeGreaterThanOrEqual(before);
     expect(deleted).toBe(7);
+  });
+
+  it('QA-09: revogar o consentimento de localização avisa o módulo IoT (o trajeto para na hora)', async () => {
+    const prisma = mockDeep<PrismaClient>();
+    prisma.customer.findUnique.mockResolvedValue(me as any);
+    prisma.customer.update.mockResolvedValue({ ...me, locationConsent: false } as any);
+    const events = { emit: jest.fn() };
+    const storage = { deleteObject: jest.fn(), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
+    await new LgpdService(prisma as any, storage, loadConfig(), undefined, events as any).updateConsents(ME, { termsVersion: '2026-10', termsAccepted: true, locationTracking: false, marketing: false });
+    expect(events.emit).toHaveBeenCalledWith(EV.CUSTOMER_CONSENT_CHANGED, { customerId: ME, locationTracking: false });
   });
 
   it('consentimentos: atualizar grava data quando muda a localização', async () => {

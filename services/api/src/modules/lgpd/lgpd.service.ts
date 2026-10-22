@@ -1,5 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EV, type CustomerConsentChangedEvent } from '../../common/events';
 import type { TrackPoint } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { conflict, notFound } from '../../common/problem';
@@ -30,6 +32,7 @@ export class LgpdService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     @Optional() @Inject(CUSTOMER_IDENTITY) private readonly identity?: CustomerIdentityDirectory,
+    @Optional() private readonly events?: EventEmitter2,
   ) {}
 
   private async customer(customerId: string) {
@@ -57,6 +60,9 @@ export class LgpdService {
         consentsUpdatedAt: now,
       },
     });
+    if (input.locationTracking !== current.locationConsent) {
+      this.events?.emit(EV.CUSTOMER_CONSENT_CHANGED, { customerId, locationTracking: input.locationTracking } satisfies CustomerConsentChangedEvent);
+    }
     return toConsents(updated);
   }
 

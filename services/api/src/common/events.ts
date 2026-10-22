@@ -16,7 +16,14 @@ export const EV = {
   ZONE_CHANGED: 'zone.changed',
   RESERVATION_ENDED: 'reservation.ended',
   DEPOSIT_RELEASE_REQUESTED: 'deposit.release-requested',
+  CUSTOMER_CONSENT_CHANGED: 'customer.consent-changed',
 } as const;
+
+/** Consentimento de localização mudou (QA-09): o módulo IoT relê o aluguel/consentimento antes de gravar trajeto. */
+export interface CustomerConsentChangedEvent {
+  customerId: string;
+  locationTracking: boolean;
+}
 
 export interface IotTelemetryEvent {
   thingName: string;

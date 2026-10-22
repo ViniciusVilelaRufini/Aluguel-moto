@@ -37,7 +37,7 @@ function setup(opts: { rentalId?: string | null } = {}) {
   events.on(EV.GEOFENCE_TRANSITION, (e: GeofenceTransitionEvent) => transitions.push(e));
   const commander: jest.Mocked<GeofenceCommander> = { setSpeedLimit: jest.fn().mockResolvedValue(undefined), safeLock: jest.fn().mockResolvedValue(undefined) };
   const rentalId = opts.rentalId === undefined ? 'rent-1' : opts.rentalId;
-  const rentals: jest.Mocked<RentalLookup> = { openRentalId: jest.fn().mockResolvedValue(rentalId ?? undefined), invalidate: jest.fn() };
+  const rentals: jest.Mocked<RentalLookup> = { openRentalId: jest.fn().mockResolvedValue(rentalId ?? undefined), trackingRentalId: jest.fn().mockResolvedValue(rentalId ?? undefined), invalidate: jest.fn() };
   const svc = new GeofenceService(engine, commander, rentals, events, clock, new MemoryRedisStore(), { outOfAreaLockMinutes: 5 });
   return { clock, engine, events, transitions, commander, rentals, svc };
 }
