@@ -217,7 +217,14 @@ export class FakePaymentProvider implements PaymentProvider {
     });
   }
 
+  /** Teste (fix round 2): faz a próxima chamada de cancelamento da assinatura falhar (a API deixa pendente e refaz). */
+  failNextCancelCall = false;
+
   async cancelSubscription(input: { providerSubscriptionId: string }): Promise<void> {
+    if (this.failNextCancelCall) {
+      this.failNextCancelCall = false;
+      throw new Error('fake_gateway_unavailable');
+    }
     if (this.subscriptions.has(input.providerSubscriptionId)) this.subscriptions.set(input.providerSubscriptionId, 'canceled');
   }
 

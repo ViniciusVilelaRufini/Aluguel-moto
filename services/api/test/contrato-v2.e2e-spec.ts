@@ -174,6 +174,47 @@ describe('Contrato v2 (e2e)', () => {
     await http().delete(`/payments/subscriptions/${sub.body.id}`).set(bearer(a.token)).expect(200);
   });
 
+  it('fix round 2: assinatura expirada cancela no gateway com retentativa; cobrança tardia é estornada e não reabre', async () => {
+    const { SubscriptionsService } = await import('../src/modules/payments/subscriptions.service');
+    const svc = app.get(SubscriptionsService);
+    const fake = app.get(PAYMENT_PROVIDER) as any;
+    const a = await customerWithCard('plan-late');
+    const old = await http().post('/payments/subscriptions').set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send({ planCode: 'weekly' }).expect(201);
+    const providerSubId = (await prisma.paymentProviderRef.findFirstOrThrow({ where: { entityType: 'subscription', entityId: old.body.id } })).providerId;
+    await prisma.subscription.update({ where: { id: old.body.id }, data: { currentPeriodEnd: new Date(Date.now() - 4 * 86_400_000) } });
+
+    // Gateway fora na hora de expirar: fecha localmente, cancelamento fica pendente; o job confirma depois.
+    fake.failNextCancelCall = true;
+    expect(await svc.expireStale(new Date(), { customerId: a.customerId })).toBe(1);
+    let row = await prisma.subscription.findUniqueOrThrow({ where: { id: old.body.id } });
+    expect(row).toMatchObject({ status: 'expired', gatewayCancelAttempts: 1 });
+    expect(row.gatewayCancelPendingAt).not.toBeNull();
+    expect(fake.subscriptionStatus(providerSubId)).toBe('active');
+    await svc.retryGatewayCancellations();
+    expect(fake.subscriptionStatus(providerSubId)).toBe('canceled');
+    expect((await prisma.subscription.findUniqueOrThrow({ where: { id: old.body.id } })).gatewayCancelPendingAt).toBeNull();
+
+    // Cliente assina de novo; uma cobrança tardia da recorrência antiga chega pelo webhook.
+    const fresh = await http().post('/payments/subscriptions').set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send({ planCode: 'weekly' }).expect(201);
+    const card = await prisma.paymentCard.findFirstOrThrow({ where: { customerId: a.customerId } });
+    const providerCustomerId = (await prisma.paymentProviderRef.findFirstOrThrow({ where: { entityType: 'customer', entityId: a.customerId } })).providerId;
+    const late = await fake.charge({ providerCustomerId, providerCardId: card.providerCardId, amountCents: 24900, description: 'renovação', idempotencyKey: randomUUID(), externalReference: `subscription:${old.body.id}` });
+    const refundsBefore = fake.operations('refund');
+    await svc.onRecurringPayment({ ...late, externalReference: `subscription:${old.body.id}` });
+    await svc.onRecurringPayment({ ...late, externalReference: `subscription:${old.body.id}` }); // webhook repetido
+    row = await prisma.subscription.findUniqueOrThrow({ where: { id: old.body.id } });
+    expect(row.status).toBe('expired');
+    expect((await prisma.subscription.findUniqueOrThrow({ where: { id: fresh.body.id } })).status).toBe('active');
+    const pay = await prisma.payment.findFirstOrThrow({ where: { providerPaymentId: late.providerPaymentId } });
+    expect(pay).toMatchObject({ status: 'refunded', refundedCents: 24900 });
+    expect(await prisma.paymentRefund.findFirstOrThrow({ where: { paymentId: pay.id } })).toMatchObject({ status: 'succeeded', idempotencyKey: `subscription-late-refund:${pay.id}` });
+    expect(fake.operations('refund') - refundsBefore).toBe(1);
+    expect((await fake.getPayment(late.providerPaymentId)).refundedCents).toBe(24900);
+    expect((await prisma.customer.findUniqueOrThrow({ where: { id: a.customerId } })).delinquent).toBe(false);
+    await http().delete(`/payments/subscriptions/${fresh.body.id}`).set(bearer(a.token)).expect(200);
+    await prisma.subscription.update({ where: { id: fresh.body.id }, data: { status: 'canceled' } });
+  });
+
   it('cupons na conta: validar, salvar, duplicado e inválido', async () => {
     const { token } = await approvedCustomer(app, prisma, 'coupon');
     const v = await http().post('/me/coupons/validate').set(bearer(token)).send({ code: 'volti20' }).expect(200);

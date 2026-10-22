@@ -198,6 +198,17 @@ describe('MercadoPagoPaymentProvider (HTTP mockado com nock, nunca rede real)', 
     await mp.cancelSubscription({ providerSubscriptionId: 'pre-2' });
   });
 
+  it('contrato v2 (fix round 2): cancelamento idempotente — 4xx em preapproval já cancelado conta como sucesso (a retentativa para); senão propaga', async () => {
+    api().put('/preapproval/pre-5', { status: 'cancelled' }).reply(400, { message: 'cannot update cancelled preapproval' });
+    api().get('/preapproval/pre-5').reply(200, { id: 'pre-5', status: 'cancelled' });
+    await mp.cancelSubscription({ providerSubscriptionId: 'pre-5' });
+    api().put('/preapproval/pre-6', { status: 'cancelled' }).reply(400, { message: 'invalid' });
+    api().get('/preapproval/pre-6').reply(200, { id: 'pre-6', status: 'authorized' });
+    await expect(mp.cancelSubscription({ providerSubscriptionId: 'pre-6' })).rejects.toBeInstanceOf(PaymentProviderError);
+    api().put('/preapproval/pre-7', { status: 'cancelled' }).reply(503, { message: 'indisponível' });
+    await expect(mp.cancelSubscription({ providerSubscriptionId: 'pre-7' })).rejects.toBeInstanceOf(PaymentProviderError);
+  });
+
   it('contrato v2 (fix round 1): pausa e retomada no preapproval, empurrando a próxima cobrança; erro do gateway propaga', async () => {
     api().put('/preapproval/pre-3', { status: 'paused' }).reply(200, { id: 'pre-3', status: 'paused' });
     await mp.setSubscriptionPaused({ providerSubscriptionId: 'pre-3', paused: true });

@@ -1,5 +1,6 @@
 import { ProblemException } from '../../common/problem';
 import { loadV2Config } from '../../config/v2-config';
+import { PaymentProviderError, RefundRejectedError } from './provider/payment-provider';
 import { SubscriptionsService } from './subscriptions.service';
 
 /** Contrato v2, fix round 1: pausa/retomada com o gateway como fonte da verdade (I1), ciclo de vida (C1), moto fixa (I2/M9). */
@@ -48,29 +49,47 @@ function table(rows: Row[] = []) {
       apply(r, data);
       return { ...r };
     }),
+    create: jest.fn(async ({ data }) => {
+      const r = { id: `id-${rows.length + 1}`, attempts: 0, ...data };
+      rows.push(r);
+      return { ...r };
+    }),
   };
 }
 
-function setup(sub: Row, opts: { vehicles?: Row[]; others?: Row[] } = {}) {
+function setup(sub: Row, opts: { vehicles?: Row[]; others?: Row[]; payments?: Row[] } = {}) {
   const now = new Date();
   const base = {
     id: 's1', customerId: 'c1', planCode: 'weekly', status: 'active', cardId: null, priceCents: 24900, currentPeriodStart: new Date(now.getTime() - DAY),
     currentPeriodEnd: new Date(now.getTime() + 6 * DAY), cancelAtPeriodEnd: false, canceledAt: null, pausedAt: null, pauseEndsAt: null, pausesUsedInPeriod: 0,
-    assignedVehicleId: null, assignedVehicleAt: null, createdAt: now, updatedAt: now,
+    assignedVehicleId: null, assignedVehicleAt: null, gatewayCancelPendingAt: null, gatewayCancelAttempts: 0, createdAt: now, updatedAt: now,
   };
   const subscription = table([{ ...base, ...sub }, ...(opts.others ?? [])]);
   const prisma: any = {
     subscription,
     rental: { findFirst: jest.fn(async () => null) },
     paymentCard: { findUnique: jest.fn(async () => null) },
-    payment: { findFirst: jest.fn(async () => null) },
+    payment: { ...table(opts.payments ?? []), findFirst: jest.fn(async () => null) },
+    paymentRefund: table([]),
     vehicle: table(opts.vehicles ?? []),
     $transaction: jest.fn(async (fn: any) => fn(prisma)),
   };
-  const provider: any = { setSubscriptionPaused: jest.fn(async () => undefined), cancelSubscription: jest.fn() };
+  const provider: any = {
+    setSubscriptionPaused: jest.fn(async () => undefined),
+    cancelSubscription: jest.fn(async () => undefined),
+    refund: jest.fn(async (i: any) => ({ providerRefundId: 'ref-1', refundedCents: i.amountCents, status: 'refunded' })),
+  };
   const customers: any = { providerRef: jest.fn(async () => 'pre-1') };
-  const svc = new SubscriptionsService(prisma, provider, {} as any, customers, {} as any, { record: jest.fn() } as any, loadV2Config());
-  return { svc, prisma, provider, row: subscription.rows[0] };
+  const state: any = {
+    claimRefund: jest.fn(async (tx: any, read: Row, to: string, refundedCents: number) => {
+      const res = await tx.payment.updateMany({ where: { id: read.id, status: read.status, refundedCents: read.refundedCents }, data: { status: to, refundedCents } });
+      return res.count === 1;
+    }),
+    emitUpdated: jest.fn(),
+  };
+  const billing: any = { markDelinquent: jest.fn(async () => undefined) };
+  const svc = new SubscriptionsService(prisma, provider, state, customers, billing, { record: jest.fn() } as any, loadV2Config());
+  return { svc, prisma, provider, billing, customers, row: subscription.rows[0] };
 }
 
 async function problem(p: Promise<unknown>) {
@@ -181,5 +200,94 @@ describe('SubscriptionsService — ciclo de vida (C1) e moto fixa (I2/M9)', () =
     );
     expect(await problem((svc as any).assertAssignableByCustomer('c1', 'v9'))).toEqual({ status: 409, slug: 'vehicle-unavailable' });
     expect(await problem((svc as any).assertAssignableByCustomer('c1', 'nope'))).toEqual({ status: 404, slug: 'not-found' });
+  });
+});
+
+describe('SubscriptionsService — assinatura fechada não reabre (fix round 2, achado 1)', () => {
+  const renewal = (over: Row = {}): Row => ({
+    id: 'p2', customerId: 'c1', subscriptionId: 's1', kind: 'subscription', method: 'card', status: 'paid', amountCents: 24900, refundedCents: 0,
+    providerPaymentId: 'mp-2', idempotencyKey: 'subscription-charge:mp-2', failureReason: null, ...over,
+  });
+
+  it.each(['expired', 'canceled'])('cobrança tardia paga em assinatura %s: não reabre, estorna pelo gateway uma vez só e pede o cancelamento de novo', async (status) => {
+    const { svc, prisma, provider, row } = setup({ status, currentPeriodEnd: new Date(Date.now() - 5 * DAY) }, { payments: [renewal()] });
+    const endBefore = row.currentPeriodEnd;
+    await svc.onSubscriptionPaymentChanged(renewal() as any);
+    expect(row).toMatchObject({ status, currentPeriodEnd: endBefore });
+    expect(provider.refund).toHaveBeenCalledWith({ providerPaymentId: 'mp-2', amountCents: 24900, idempotencyKey: 'subscription-late-refund:p2' });
+    expect(prisma.payment.rows[0]).toMatchObject({ status: 'refunded', refundedCents: 24900 });
+    expect(prisma.paymentRefund.rows[0]).toMatchObject({ paymentId: 'p2', status: 'succeeded', providerRefundId: 'ref-1', amountCents: 24900 });
+    expect(provider.cancelSubscription).toHaveBeenCalledWith({ providerSubscriptionId: 'pre-1' });
+    // Webhook repetido (ou o evento `refunded` do próprio estorno): idempotente, sem novo estorno.
+    await svc.onSubscriptionPaymentChanged(renewal() as any);
+    await svc.onSubscriptionPaymentChanged({ ...renewal(), status: 'refunded' } as any);
+    expect(provider.refund).toHaveBeenCalledTimes(1);
+    expect(row.status).toBe(status);
+  });
+
+  it('cobrança recusada em assinatura expirada não vira past_due nem deixa o cliente inadimplente', async () => {
+    const { svc, billing, row } = setup({ status: 'expired', currentPeriodEnd: new Date(Date.now() - 5 * DAY) });
+    await svc.onSubscriptionPaymentChanged(renewal({ status: 'failed', failureReason: 'cc_rejected' }) as any);
+    expect(row.status).toBe('expired');
+    expect(billing.markDelinquent).not.toHaveBeenCalled();
+  });
+
+  it('renovação que perde a corrida para o job (expirou entre a leitura e a gravação) também é estornada, sem reabrir', async () => {
+    const { svc, prisma, provider, row } = setup({ status: 'past_due', currentPeriodEnd: new Date(Date.now() - 4 * DAY) }, { payments: [renewal()] });
+    const stale = { ...row };
+    row.status = 'expired'; // o job fechou depois de o webhook ler a assinatura
+    prisma.subscription.findUnique.mockResolvedValueOnce(stale);
+    await svc.onSubscriptionPaymentChanged(renewal() as any);
+    expect(row.status).toBe('expired');
+    expect(provider.refund).toHaveBeenCalledTimes(1);
+  });
+
+  it('estorno com resultado desconhecido fica pending (a reconciliação de estornos repete); recusa definitiva desfaz e vai para revisão do financeiro', async () => {
+    const a = setup({ status: 'expired', currentPeriodEnd: new Date(Date.now() - 5 * DAY) }, { payments: [renewal()] });
+    a.provider.refund.mockRejectedValueOnce(new PaymentProviderError('timeout'));
+    await a.svc.onSubscriptionPaymentChanged(renewal() as any);
+    expect(a.prisma.paymentRefund.rows[0]).toMatchObject({ status: 'pending', attempts: 1, idempotencyKey: 'subscription-late-refund:p2' });
+    expect(a.prisma.payment.rows[0].status).toBe('refunded');
+
+    const b = setup({ status: 'expired', currentPeriodEnd: new Date(Date.now() - 5 * DAY) }, { payments: [renewal()] });
+    b.provider.refund.mockRejectedValueOnce(new RefundRejectedError('recusado'));
+    await b.svc.onSubscriptionPaymentChanged(renewal() as any);
+    expect(b.prisma.paymentRefund.rows[0]).toMatchObject({ status: 'needs_review' });
+    expect(b.prisma.payment.rows[0]).toMatchObject({ status: 'paid', refundedCents: 0 });
+  });
+
+  it('expirar cancela no gateway; falha fica pendente e o job tenta de novo até cancelar', async () => {
+    const now = new Date();
+    const { svc, provider, row } = setup({ status: 'active', currentPeriodEnd: new Date(now.getTime() - 4 * DAY) });
+    provider.cancelSubscription.mockRejectedValueOnce(new Error('timeout')).mockRejectedValueOnce(new Error('503'));
+    expect(await svc.expireStale(now)).toBe(1);
+    expect(row).toMatchObject({ status: 'expired', gatewayCancelAttempts: 1 });
+    expect(row.gatewayCancelPendingAt).toBeInstanceOf(Date);
+    expect(await svc.retryGatewayCancellations()).toBe(0);
+    expect(row.gatewayCancelAttempts).toBe(2);
+    expect(await svc.retryGatewayCancellations()).toBe(1);
+    expect(row.gatewayCancelPendingAt).toBeNull();
+    expect(provider.cancelSubscription).toHaveBeenCalledTimes(3);
+    expect(await svc.retryGatewayCancellations()).toBe(0);
+    expect(provider.cancelSubscription).toHaveBeenCalledTimes(3);
+  });
+
+  it('exclusão de conta (LGPD) não engole a falha do gateway: fecha localmente e deixa o cancelamento pendente para o job', async () => {
+    const { svc, provider, row } = setup({ assignedVehicleId: 'v1' });
+    provider.cancelSubscription.mockRejectedValueOnce(new Error('timeout'));
+    await svc.closeForAccountDeletion('c1');
+    expect(row).toMatchObject({ status: 'canceled', assignedVehicleId: null, gatewayCancelAttempts: 1 });
+    expect(row.gatewayCancelPendingAt).toBeInstanceOf(Date);
+    expect(await svc.retryGatewayCancellations()).toBe(1);
+    expect(row.gatewayCancelPendingAt).toBeNull();
+  });
+
+  it('cancelamento agendado (já cancelado no gateway) fecha sem nova chamada ao gateway', async () => {
+    const now = new Date();
+    const { svc, provider, row } = setup({ cancelAtPeriodEnd: true, currentPeriodEnd: new Date(now.getTime() - 1000) });
+    await svc.expireStale(now);
+    expect(row.status).toBe('canceled');
+    expect(provider.cancelSubscription).not.toHaveBeenCalled();
+    expect(row.gatewayCancelPendingAt).toBeNull();
   });
 });
