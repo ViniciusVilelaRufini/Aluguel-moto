@@ -7,7 +7,7 @@ import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, canSeeFullCpf } from '@/lib/permissions';
 import { displayCpf } from '@/lib/cpf';
-import { CUSTOMER_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
+import { CLAIM_STATUS, CONVERSATION_STATUS, CUSTOMER_STATUS, DISPUTE_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
 import { formatBRL, formatDate, formatDateTime } from '@/lib/format';
 import type { S } from '@/lib/types';
 import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast } from '@/components/ui';
@@ -232,9 +232,9 @@ function CustomerTickets({ customerId }: { customerId: string }) {
   const cl = useQuery({ queryKey: ['c-claims', customerId], queryFn: () => unwrap(api.GET('/support/claims', { params: { query: { customerId, limit: 5 } } })) });
   const cv = useQuery({ queryKey: ['c-convs', customerId], queryFn: () => unwrap(api.GET('/support/conversations', { params: { query: { customerId, limit: 5 } } })) });
   const rows: { id: string; t: string; d: string; tone: 'warning' | 'info' | 'success' | 'neutral' | 'danger'; s: string }[] = [
-    ...(d.data?.items ?? []).map((x) => ({ id: x.id, t: 'Contestação', d: x.reason, tone: DISPUTE_TONE(x.status), s: x.status })),
-    ...(cl.data?.items ?? []).map((x) => ({ id: x.id, t: 'Sinistro', d: x.description, tone: 'info' as const, s: x.status })),
-    ...(cv.data?.items ?? []).map((x) => ({ id: x.id, t: 'Chat', d: x.subject, tone: 'info' as const, s: x.status })),
+    ...(d.data?.items ?? []).map((x) => ({ id: x.id, t: 'Contestação', d: x.reason, tone: DISPUTE_STATUS[x.status][1], s: DISPUTE_STATUS[x.status][0] })),
+    ...(cl.data?.items ?? []).map((x) => ({ id: x.id, t: 'Sinistro', d: x.description, tone: CLAIM_STATUS[x.status][1], s: CLAIM_STATUS[x.status][0] })),
+    ...(cv.data?.items ?? []).map((x) => ({ id: x.id, t: 'Conversa', d: x.subject, tone: CONVERSATION_STATUS[x.status as 'open' | 'closed']?.[1] ?? 'neutral', s: CONVERSATION_STATUS[x.status as 'open' | 'closed']?.[0] ?? x.status })),
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -252,7 +252,6 @@ function CustomerTickets({ customerId }: { customerId: string }) {
     </div>
   );
 }
-const DISPUTE_TONE = (s: S<'DisputeStatus'>) => (s === 'open' ? 'warning' : s === 'accepted' ? 'success' : 'neutral') as 'warning' | 'success' | 'neutral';
 
 function CustomerHistory({ customerId, onRentals }: { customerId: string; onRentals: (id: string) => void }) {
   const r = useQuery({ queryKey: ['c-rentals', customerId], queryFn: () => unwrap(api.GET('/rentals', { params: { query: { customerId, limit: 10 } } })) });

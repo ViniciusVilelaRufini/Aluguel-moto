@@ -8,6 +8,8 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { PRIORITY_LABEL, PRIORITY_ORDER, priorityTone } from '@/lib/status';
 import { timeAgo } from '@/lib/format';
+import { ALERT_TYPE } from '@/lib/labels';
+import { useRealtimeEvent } from '@/lib/realtime';
 import type { S } from '@/lib/types';
 import { DataTable, ErrorNote, Page, PageHeader, Pill, ReasonDialog, usePagedQuery, useToast } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
@@ -15,19 +17,7 @@ import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
 
-const TYPE_INFO: Record<S<'AlertType'>, [string, string]> = {
-  out_of_operation_area: ['Moto fora da área de operação', 'MapPin'],
-  forbidden_zone_entered: ['Entrou em zona proibida', 'Ban'],
-  fall_detected: ['Queda detectada', 'Activity'],
-  tamper: ['Violação do rastreador', 'ShieldAlert'],
-  battery_critical: ['Bateria crítica', 'BatteryWarning'],
-  movement_without_rental: ['Moto em movimento sem aluguel', 'ShieldAlert'],
-  vehicle_offline: ['Rastreador desconectado', 'WifiOff'],
-  command_failed: ['Comando falhou', 'TriangleAlert'],
-  customer_not_ok: ['Cliente não respondeu ao "você está bem?"', 'Activity'],
-  incident_reported: ['Ocorrência registrada', 'FileText'],
-  speed_limiter_noncompliant: ['Limitador de velocidade acima de 32 km/h', 'Gauge'],
-};
+const TYPE_INFO = ALERT_TYPE;
 
 type Tab = 'open' | 'assigned' | 'resolved';
 const TABS: { value: Tab; label: string }[] = [
@@ -44,6 +34,9 @@ export default function AlertsPage() {
   const [tab, setTab] = useState<Tab>('open');
   const [resolving, setResolving] = useState<S<'Alert'> | null>(null);
   const canManage = can(groups, 'alert.manage');
+  // Alertas que chegaram pelo tempo real nesta visita piscam em coral ao entrar na fila.
+  const [fresh, setFresh] = useState<Set<string>>(() => new Set());
+  useRealtimeEvent('alert.created', (p) => setFresh((s) => new Set(s).add(p.alertId)));
 
   const { rows, loading, error, pager } = usePagedQuery<S<'Alert'>>(['alerts', tab], (cursor) =>
     unwrap(api.GET('/alerts', { params: { query: { status: tab, limit: 20, cursor } } })),
@@ -71,6 +64,7 @@ export default function AlertsPage() {
         loading={loading}
         pager={pager}
         label="Fila de alertas"
+        rowClassName={(r) => (fresh.has(r.id) ? 'row-new' : undefined)}
         empty={tab === 'open' ? 'Nenhum alerta aberto' : tab === 'assigned' ? 'Nenhum alerta atribuído' : 'Nenhum alerta resolvido ainda'}
         emptyIcon={tab === 'open' ? 'CircleCheck' : 'Siren'}
         emptyHint={tab === 'open' ? 'A frota está em ordem. Alertas novos aparecem aqui na hora.' : undefined}

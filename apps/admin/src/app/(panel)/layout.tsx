@@ -6,13 +6,25 @@ import { SideNav } from '@/ds/SideNav';
 import { Badge } from '@/ds/Badge';
 import { Icon } from '@/ds/Icon';
 import { useAuth } from '@/lib/auth';
-import { useRealtime } from '@/lib/realtime';
+import { useRealtime, useRealtimeEvent } from '@/lib/realtime';
+import { ALERT_TYPE } from '@/lib/labels';
 import { menuFor, MENU } from '@/lib/permissions';
-import { Initials } from '@/components/ui';
+import { Initials, useToast } from '@/components/ui';
 import { CommandPalette } from '@/components/CommandPalette';
 import type { StaffGroup } from '@/lib/types';
 
 const GROUP_LABEL: Record<StaffGroup, string> = { admin: 'Administrador', operacao: 'Operação', financeiro: 'Financeiro', suporte: 'Suporte', campo: 'Campo' };
+
+/** Alerta crítico chega por tempo real: avisa em qualquer seção (fora da própria fila de alertas). */
+function CriticalAlertToaster({ vehicles, onAlertsPage }: { vehicles: { id: string; code: string }[]; onAlertsPage: boolean }) {
+  const toast = useToast();
+  useRealtimeEvent('alert.created', (p) => {
+    if (p.priority !== 'critical' || onAlertsPage) return;
+    const code = p.vehicleId ? vehicles.find((v) => v.id === p.vehicleId)?.code : undefined;
+    toast(`Alerta crítico: ${ALERT_TYPE[p.type]?.[0] ?? p.type}${code ? ` · ${code}` : ''}`, 'danger');
+  });
+  return null;
+}
 
 export default function PanelLayout({ children }: { children: ReactNode }) {
   const { ready, token, me, groups, logout } = useAuth();
@@ -70,6 +82,7 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
         <header style={{ height: 64, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16, padding: '0 24px', background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)' }}>
           <div style={{ font: 'var(--type-heading)', fontWeight: 700, fontSize: 18, flex: 1 }}>{current?.label}</div>
           <CommandPalette vehicles={vehicles} menu={menu} />
+          {canLive && <CriticalAlertToaster vehicles={vehicles} onAlertsPage={current?.key === 'alerts'} />}
           {vehiclesReady && (
             <Badge tone={offline > 0 ? 'warning' : 'success'} icon="Wifi">
               <span data-testid="fleet-badge">{vehicles.length} motos · {offline} sem sinal</span>

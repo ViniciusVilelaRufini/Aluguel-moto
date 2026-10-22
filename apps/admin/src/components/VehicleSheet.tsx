@@ -18,6 +18,7 @@ import { FleetStatus } from '@/ds/FleetStatus';
 import { Alert } from '@/ds/Alert';
 import { CommandTimeline } from './CommandTimeline';
 import { commandOutcome } from '@/lib/command-steps';
+import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
 import { Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
 
 interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason }
@@ -112,7 +113,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       </div>
       <div>
         <KV k="Último sinal" v={v.lastSeenAt ? timeAgo(v.lastSeenAt) : '—'} />
-        <KV k="GPS / 4G" v={v.online === false ? 'Sem sinal' : `Sinal ${v.signal ?? '—'}/5`} />
+        <KV k="GPS / 4G" v={v.online === false ? 'Sem sinal' : v.signal != null ? `Sinal ${v.signal}/5` : '—'} />
         <KV k="Aluguel" v={v.currentRentalId ? (rentalHref(groups, v.currentRentalId) ? <Link href={rentalHref(groups, v.currentRentalId)!} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Ver aluguel atual</Link> : 'Em andamento') : '—'} />
         <KV k="Posição" v={`${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`} mono />
         <KV k="Travada" v={v.locked === undefined ? '—' : v.locked ? 'Sim' : 'Não'} />
@@ -127,7 +128,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
             <Button size="sm" variant="danger" icon="Lock" testId="cmd-lock" onClick={() => setDialog('lock')}>Bloquear</Button>
             <Button size="sm" variant="secondary" icon="LockOpen" testId="cmd-unlock" onClick={() => setDialog('unlock')}>Desbloquear</Button>
             <Button size="sm" variant="secondary" icon="Megaphone" testId="cmd-horn" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('horn')}>Buzina</Button>
-            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Limitar vel.</Button>
+            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Velocidade</Button>
           </div>
           <Button size="sm" variant="dark" icon="ShieldAlert" fullWidth style={{ marginTop: 8 }} testId="cmd-stolen" onClick={() => setDialog('stolen_mode')}>Modo roubada</Button>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>Sem sinal, o comando fica pendente e é aplicado ao reconectar.</div>
@@ -240,18 +241,18 @@ function HistoryModal({ vehicleId, code, groups, onClose }: { vehicleId: string;
     <Modal open title={`Histórico de ${code}`} onClose={onClose} width={560}
       actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
       <SectionTitle>Aluguéis</SectionTitle>
-      <DataTable dense loading={rentals.isLoading} rows={rentals.data?.items ?? []} empty="Nenhum aluguel."
+      <DataTable dense loading={rentals.isLoading} rows={rentals.data?.items ?? []} empty="Nenhum aluguel desta moto" emptyIcon="Bike"
         columns={[
           { key: 'startedAt', label: 'Início', render: (r) => formatDateTime(r.startedAt) },
-          { key: 'status', label: 'Situação' },
+          { key: 'status', label: 'Situação', render: (r) => <Pill tone={RENTAL_STATUS[r.status][1]}>{RENTAL_STATUS[r.status][0]}</Pill> },
           { key: 'id', label: '', align: 'right', render: (r) => { const h = rentalHref(groups, r.id); return h ? <Link href={h} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Abrir</Link> : null; } },
         ]} />
       <SectionTitle>Manutenção</SectionTitle>
-      <DataTable dense loading={maint.isLoading} rows={maint.data?.items ?? []} empty="Nenhuma manutenção."
+      <DataTable dense loading={maint.isLoading} rows={maint.data?.items ?? []} empty="Nenhuma manutenção registrada" emptyIcon="Wrench"
         columns={[
           { key: 'title', label: 'Serviço' },
           { key: 'kind', label: 'Tipo', render: (r) => (r.kind === 'preventive' ? 'Preventiva' : 'Corretiva') },
-          { key: 'status', label: 'Situação' },
+          { key: 'status', label: 'Situação', render: (r) => <Pill tone={MAINTENANCE_STATUS[r.status][1]}>{MAINTENANCE_STATUS[r.status][0]}</Pill> },
         ]} />
     </Modal>
   );
