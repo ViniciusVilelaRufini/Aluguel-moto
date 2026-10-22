@@ -40,6 +40,24 @@ Fontes TTF estáticas (Plus Jakarta Sans 400-800, JetBrains Mono 500/700, OFL) v
 
 `VoltiFadeUp`/`VoltiStagger` (cascata 45 ms, primeiro aos 140 ms; `VoltiStagger.wrap(lista)` para `ListView`), `VoltiEnter` (`.pop`, `.toast`), `VoltiPulse` (anel), `VoltiCheckPop`, `VoltiSuccessCheck`, `VoltiShine`, `VoltiRouteDraw` (+ `partial` para truncar polylines), `VoltiUserDot`, `VoltiChip`, `PassCard`, e transições de tela `VoltiPageTransitions.push` / `.modal` (formato `transitionsBuilder`, usável em `CustomTransitionPage` do go_router; `VoltiPageRoute` para Navigator puro). `VoltiIconButton` agora escala .88 ao toque (design v2; era .92). `VoltiButton` ganhou `loading` e `shine`; `VehicleMarker` ganhou `delay`. Com `MediaQuery.disableAnimationsOf` (reduced motion) tudo mostra o estado final já no primeiro frame. Animações infinitas (pulso, brilho) impedem `pumpAndSettle` em testes: use `pump(duration)` ou ligue `disableAnimations`.
 
+### Polimento de UI/UX (design pass do app, `docs/design/evolucoes-app.md`)
+
+Tudo respeita reduced motion (estado final no primeiro frame) e traz rótulos de semântica.
+
+| Peça | Uso |
+|---|---|
+| `VoltiHaptics` | `selection()` (pin, plano, estrela), `tap()` (copiar, atualizar), `warning()` (zona com limite, último minuto), `alert()` (queda, SOS), `success()` (travou, Pix pago). `VoltiHaptics.enabled = false` desliga. Continua ativa com reduced motion; falha da plataforma é ignorada. |
+| `VoltiSkeleton` + `VoltiSkeletonBox` | Esqueleto no formato do conteúdo com luz que cruza em 1,4 s. Atalhos `VoltiSkeleton.list(rows:)` (formato de `ListRow`) e `VoltiSkeleton.card(height:, count:)`. Lido como um único "Carregando" (`label`). Animação infinita: use `pump(duration)` nos testes enquanto ele estiver na tela. |
+| `VoltiTicker(text)` | Rola só os caracteres que mudaram (cronômetro, custo). Algarismos tabulares; leitor de tela lê o texto inteiro. |
+| `VoltiCountUp(value:, format:)` | Conta de `from` até `value` (recibo, saldo), com `delay`. |
+| `VoltiSpeedGauge(speedKmh:, limitKmh:)` | Arco de 270 graus contra o limite: verde, sol a partir de 85%, coral acima. `colorFor()` exposto. Número central com escala de texto limitada a 1,3x. |
+| `VoltiStatusBanner(visible:, message:, tone:)` | Faixa que entra/sai animando tamanho e fade (zona, sem conexão). Tons `info`, `warning`, `danger`, `offline`. Live region. |
+| `VoltiEmptyState(icon:, title:, ...)` | Estado vazio com disco tonal, título (header), texto, ação secundária e slot `illustration`. `compact` para cartões sobre o mapa. |
+| `VoltiRefresh(onRefresh:, child:)` | Puxar para atualizar verde da marca com háptica leve. |
+| `VoltiDragToDismiss(onDismiss:, child:)` | Cartão que se arrasta para baixo para fechar (mola ao voltar, dispensa por distância ou velocidade). Ação de semântica equivalente. |
+| `ReservationBanner(totalSeconds:)` | Novo parâmetro opcional: barra que esvazia suavemente. Sem ele, o banner fica igual. |
+| `VoltiColors.warningInkStrong` / `dangerInkStrong` | Texto de corpo sobre `warningSoft`/`dangerSoft` com contraste ≥ 4,5:1 (`warningInk`/`dangerInk` ficam para ícone e texto grande). |
+
 Cores de bateria: > 50 verde, 21-50 amarelo, <= 20 coral. Ícones: `lucide_icons_flutter` (`LucideIcons.*`), recebidos como `IconData`.
 
 ## API e autenticação
