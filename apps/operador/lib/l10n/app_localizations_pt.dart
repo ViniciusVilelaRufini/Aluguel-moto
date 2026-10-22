@@ -356,4 +356,180 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get discard => 'Descartar';
+
+  @override
+  String get loginCognitoAction => 'Entrar com a conta Volti';
+
+  @override
+  String get loginCognitoHint =>
+      'Você entra pela página segura da Volti. O código de verificação (MFA) é pedido lá.';
+
+  @override
+  String get loginCampoRequired =>
+      'Sua conta não tem acesso ao app de campo. Fale com a operação.';
+
+  @override
+  String loginCognitoMissing(String names) {
+    return 'Login Cognito não configurado neste build (faltam: $names).';
+  }
+
+  @override
+  String get accountTitle => 'Conta';
+
+  @override
+  String get accountMenu => 'Conta e pendências';
+
+  @override
+  String prioritySemantics(String priority) {
+    return 'Prioridade $priority';
+  }
+
+  @override
+  String distanceSemantics(String distance) {
+    return 'A $distance de você';
+  }
+
+  @override
+  String get dueLate => 'Atrasada';
+
+  @override
+  String dueAt(String time) {
+    return 'Até $time';
+  }
+
+  @override
+  String doneAt(String time) {
+    return 'Concluída às $time';
+  }
+
+  @override
+  String get locationRationaleTitle => 'Ative a localização';
+
+  @override
+  String get locationRationaleBody =>
+      'Usamos sua localização só com o app aberto, para mostrar a distância até cada moto e o seu ponto no mapa.';
+
+  @override
+  String get locationAllow => 'Permitir localização';
+
+  @override
+  String get locationDeniedBody =>
+      'A localização está bloqueada para o app. Libere nos ajustes para ver a distância até as motos.';
+
+  @override
+  String get locationServiceOff =>
+      'O GPS está desligado. Ligue para ver a distância até as motos.';
+
+  @override
+  String get locationOpenSettings => 'Abrir ajustes';
+
+  @override
+  String get notNow => 'Agora não';
+
+  @override
+  String get offlineTitle => 'Sem conexão';
+
+  @override
+  String get offlineBody =>
+      'O que você registrar fica salvo e é enviado quando a rede voltar.';
+
+  @override
+  String get loadingTasks => 'Carregando tarefas';
+
+  @override
+  String get openTask => 'Abrir tarefa';
+
+  @override
+  String get noVehiclePosition => 'Moto sem posição conhecida';
+
+  @override
+  String get yourLocation => 'Você está aqui';
+
+  @override
+  String get batteryRegister => 'Registrar troca';
+
+  @override
+  String batteryInstalledSummary(String serial) {
+    return 'Instalada: $serial';
+  }
+
+  @override
+  String get checklistOpen => 'Abrir checklist';
+
+  @override
+  String checklistItemOk(String item) {
+    return '$item: ok';
+  }
+
+  @override
+  String checklistItemProblem(String item) {
+    return '$item: com problema';
+  }
+
+  @override
+  String checklistItemPending(String item) {
+    return '$item: não respondido';
+  }
+
+  @override
+  String get photoAfterService => 'Foto da moto após o serviço';
+
+  @override
+  String get photoAddMore => 'Adicionar outra foto';
+
+  @override
+  String photoThumb(int n) {
+    return 'Foto $n';
+  }
+
+  @override
+  String photoRemove(int n) {
+    return 'Remover foto $n';
+  }
+
+  @override
+  String completeHint(String items) {
+    return 'Para concluir: $items.';
+  }
+
+  @override
+  String get blockerServiceUnlock => 'destrave em modo serviço';
+
+  @override
+  String get blockerChecklist => 'complete o checklist';
+
+  @override
+  String get blockerPhoto => 'tire a foto da moto';
+
+  @override
+  String get blockerBatterySwap => 'registre a troca de bateria';
+
+  @override
+  String get taskDoneTitle => 'Tarefa concluída';
+
+  @override
+  String get completionNotesLabel => 'Observações da conclusão';
+
+  @override
+  String get serialNewLabel => 'Nº de série da bateria nova';
+
+  @override
+  String get serialRemovedLabel => 'Nº de série da bateria retirada';
+
+  @override
+  String get serialPlaceholder => 'BT-000000';
+
+  @override
+  String get scanTorch => 'Lanterna';
+
+  @override
+  String get scanManual => 'Digitar o número';
+
+  @override
+  String get scanAimHint => 'Centralize o código na moldura';
+
+  @override
+  String vehicleStatusLabel(String status) {
+    return 'Status da moto: $status';
+  }
 }
