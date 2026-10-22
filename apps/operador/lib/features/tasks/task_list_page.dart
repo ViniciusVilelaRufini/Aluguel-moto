@@ -57,105 +57,115 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
     final doneCount = doneToday.length;
     final pending = all.where((e) => !isDone(e)).toList();
     final shown = _showDone ? doneToday : pending;
+    final large = MediaQuery.textScalerOf(context).scale(1) >= 1.5;
 
+    // Texto grande (200%): o topo (header, avisos e abas) rola dentro de ate 60%
+    // da altura, para a lista nunca ficar sem espaco.
     return Scaffold(
-      body: Column(
+      body: LayoutBuilder(builder: (context, box) => Column(
         children: [
-          OperatorHeader(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Turno do operador: depende de contrato (proposta em docs/decisoes.md).
-                          Text(t.headerRole,
-                              style: VoltiTypography.caption
-                                  .copyWith(color: const Color(0x99FFFFFF))),
-                          Semantics(
-                            header: true,
-                            child: Text(t.greeting(name),
-                                style: VoltiTypography.title.copyWith(
-                                    color: VoltiColors.white, letterSpacing: -0.4)),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxHeight: box.maxHeight * .6),
+            child: SingleChildScrollView(
+              key: const Key('list-top'),
+              child: Column(
+                children: [
+                  OperatorHeader(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Turno do operador: depende de contrato (proposta em docs/decisoes.md).
+                                  Text(t.headerRole,
+                                      style: VoltiTypography.caption
+                                          .copyWith(color: const Color(0x99FFFFFF))),
+                                  Semantics(
+                                    header: true,
+                                    child: Text(t.greeting(name),
+                                        style: VoltiTypography.title.copyWith(
+                                            color: VoltiColors.white, letterSpacing: -0.4)),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // Sino de notificacoes: sem push/notificacoes no contrato, oculto.
+                            VoltiIconButton(
+                              key: const Key('account-menu'),
+                              icon: LucideIcons.circleUser,
+                              variant: VoltiIconButtonVariant.dark,
+                              dot: sync.pending.isNotEmpty || sync.failed.isNotEmpty,
+                              label: t.accountMenu,
+                              onPressed: _account,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: VoltiSpacing.s16),
+                        _stats([
+                          _stat(t.statPending, '${pending.length}', large: large),
+                          _stat(t.statDone, '$doneCount', large: large),
+                          // Baterias carregadas na van (contrato v2); a fila offline
+                          // segue no menu da conta (ponto no icone e "Pendencias de envio").
+                          _stat(
+                            t.statVan,
+                            van.value == null ? '—' : '${van.value!.chargedCount}',
+                            semanticValue: van.value == null ? t.statUnavailable : null,
+                            key: const Key('stat-van'),
+                            onTap: () => context.push('/van'),
+                            large: large,
                           ),
-                        ],
-                      ),
+                        ], large: large),
+                      ],
                     ),
-                    // Sino de notificacoes: sem push/notificacoes no contrato, oculto.
-                    VoltiIconButton(
-                      key: const Key('account-menu'),
-                      icon: LucideIcons.circleUser,
-                      variant: VoltiIconButtonVariant.dark,
-                      dot: sync.pending.isNotEmpty || sync.failed.isNotEmpty,
-                      label: t.accountMenu,
-                      onPressed: _account,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: VoltiSpacing.s16),
-                Row(
-                  children: [
-                    _stat(t.statPending, '${pending.length}'),
-                    const SizedBox(width: VoltiSpacing.s8),
-                    _stat(t.statDone, '$doneCount'),
-                    const SizedBox(width: VoltiSpacing.s8),
-                    // Baterias carregadas na van (contrato v2); a fila offline
-                    // segue no menu da conta (ponto no icone e "Pendencias de envio").
-                    _stat(
-                      t.statVan,
-                      van.value == null ? '—' : '${van.value!.chargedCount}',
-                      semanticValue: van.value == null ? t.statUnavailable : null,
-                      key: const Key('stat-van'),
-                      onTap: () => context.push('/van'),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
-            child: Column(
-              children: [
-                const ConnectivityBanner(),
-                if (tasks.value?.fromCache == true)
+                  ),
                   Padding(
-                    padding: const EdgeInsets.only(top: VoltiSpacing.s10),
-                    child: Notice(
-                        tone: NoticeTone.info, icon: LucideIcons.cloudOff, title: t.offlineCache),
+                    padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                    child: Column(
+                      children: [
+                        const ConnectivityBanner(),
+                        if (tasks.value?.fromCache == true)
+                          Padding(
+                            padding: const EdgeInsets.only(top: VoltiSpacing.s10),
+                            child: Notice(
+                                tone: NoticeTone.info, icon: LucideIcons.cloudOff, title: t.offlineCache),
+                          ),
+                        const LocationRationale(),
+                      ],
+                    ),
                   ),
-                const LocationRationale(),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s16,
-                VoltiSpacing.screenGutter, VoltiSpacing.s8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: VoltiSegmentedControl<bool>(
-                    key: const Key('tabs'),
-                    options: [
-                      VoltiSegment(value: false, label: t.tabToday),
-                      VoltiSegment(value: true, label: t.tabDone),
-                    ],
-                    value: _showDone,
-                    onChanged: (v) => setState(() => _showDone = v),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s16,
+                        VoltiSpacing.screenGutter, VoltiSpacing.s8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: VoltiSegmentedControl<bool>(
+                            key: const Key('tabs'),
+                            options: [
+                              VoltiSegment(value: false, label: t.tabToday),
+                              VoltiSegment(value: true, label: t.tabDone),
+                            ],
+                            value: _showDone,
+                            onChanged: (v) => setState(() => _showDone = v),
+                          ),
+                        ),
+                        const SizedBox(width: VoltiSpacing.s8),
+                        VoltiIconButton(
+                          key: const Key('toggle-map'),
+                          icon: _showMap ? LucideIcons.list : LucideIcons.map,
+                          variant: VoltiIconButtonVariant.soft,
+                          label: _showMap ? t.viewList : t.viewMap,
+                          onPressed: () => setState(() => _showMap = !_showMap),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: VoltiSpacing.s8),
-                VoltiIconButton(
-                  key: const Key('toggle-map'),
-                  icon: _showMap ? LucideIcons.list : LucideIcons.map,
-                  variant: VoltiIconButtonVariant.soft,
-                  label: _showMap ? t.viewList : t.viewMap,
-                  onPressed: () => setState(() => _showMap = !_showMap),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
           Expanded(
@@ -202,45 +212,83 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
             ),
           ),
         ],
+      )),
+    );
+  }
+
+  /// Tres colunas; com texto grande, um bloco por linha (rotulo inteiro).
+  Widget _stats(List<Widget> tiles, {required bool large}) {
+    if (large) {
+      return Column(
+        children: [
+          for (final (i, w) in tiles.indexed) ...[
+            if (i > 0) const SizedBox(height: VoltiSpacing.s8),
+            w,
+          ],
+        ],
+      );
+    }
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final (i, w) in tiles.indexed) ...[
+            if (i > 0) const SizedBox(width: VoltiSpacing.s8),
+            Expanded(child: w),
+          ],
+        ],
       ),
     );
   }
 
   Widget _stat(String label, String value,
-      {String? semanticValue, Key? key, VoidCallback? onTap}) {
-    final tile = Semantics(
-          key: key,
-          container: true,
-          button: onTap != null,
-          label: '$label: ${semanticValue ?? value}',
-          excludeSemantics: true,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0x14FFFFFF),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      {String? semanticValue, Key? key, VoidCallback? onTap, required bool large}) {
+    final valueText = Text(value,
+        style: const TextStyle(
+            fontFamily: VoltiTypography.fontSans,
+            fontSize: 22,
+            height: 1,
+            fontWeight: FontWeight.w700,
+            color: VoltiColors.white));
+    final labelText = Text(label,
+        style: VoltiTypography.caption.copyWith(color: const Color(0x99FFFFFF)));
+    final box = Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0x14FFFFFF),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: large
+          ? Row(
               children: [
-                Text(value,
-                    style: const TextStyle(
-                        fontFamily: VoltiTypography.fontSans,
-                        fontSize: 22,
-                        height: 1,
-                        fontWeight: FontWeight.w700,
-                        color: VoltiColors.white)),
-                const SizedBox(height: 4),
-                Text(label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: VoltiTypography.caption.copyWith(color: const Color(0x99FFFFFF))),
+                valueText,
+                const SizedBox(width: VoltiSpacing.s12),
+                Expanded(child: labelText),
               ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [valueText, const SizedBox(height: 4), labelText],
             ),
-          ),
-        );
-    return Expanded(
-      child: onTap == null ? tile : VoltiPressable(onTap: onTap, scale: .98, child: tile),
+    );
+    final semantic = '$label: ${semanticValue ?? value}';
+    // Um unico no: rotulo e acao de toque juntos (VoltiPressable).
+    if (onTap != null) {
+      return VoltiPressable(
+        key: key,
+        onTap: onTap,
+        scale: .98,
+        semanticLabel: semantic,
+        child: ExcludeSemantics(child: box),
+      );
+    }
+    return Semantics(
+      key: key,
+      container: true,
+      label: semantic,
+      excludeSemantics: true,
+      child: box,
     );
   }
 }

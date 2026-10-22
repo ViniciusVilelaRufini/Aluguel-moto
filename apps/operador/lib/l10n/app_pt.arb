@@ -366,7 +366,7 @@
   },
   "vanLoadDuplicate": "Essa série já está na lista.",
   "vanLoaded": "Baterias carregadas na van.",
-  "vanUnload": "Descarregar para recarga",
+  "vanUnload": "Descarregar",
   "vanUnloadSemantics": "Descarregar {serial} para recarga",
   "@vanUnloadSemantics": {
     "placeholders": {

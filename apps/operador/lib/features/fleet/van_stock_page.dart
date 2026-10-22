@@ -217,19 +217,19 @@ class _BatteryRow extends StatelessWidget {
             ),
           ),
           const SizedBox(height: VoltiSpacing.s8),
+          // Rotulo curto (cabe a 200%); o leitor de tela ouve a serie, num no proprio.
           Semantics(
-            label: t.vanUnloadSemantics(battery.serial),
-            button: true,
-            excludeSemantics: true,
+            container: true,
             child: VoltiButton(
-              key: Key('van-unload-${battery.serial}'),
-              label: t.vanUnload,
-              icon: LucideIcons.batteryCharging,
-              variant: VoltiButtonVariant.secondary,
-              size: VoltiButtonSize.sm,
-              onPressed: onUnload,
-            ),
-          ),
+            key: Key('van-unload-${battery.serial}'),
+            label: t.vanUnload,
+            semanticLabel: t.vanUnloadSemantics(battery.serial),
+            icon: LucideIcons.batteryCharging,
+            variant: VoltiButtonVariant.secondary,
+            size: VoltiButtonSize.sm,
+            fullWidth: true,
+            onPressed: onUnload,
+          )),
         ],
       ),
     );
@@ -316,20 +316,24 @@ class _LoadSheetState extends State<_LoadSheet> {
           ),
           if (_serials.isNotEmpty) ...[
             const SizedBox(height: VoltiSpacing.s10),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: [
-                for (final s in _serials)
-                  InputChip(
-                    label: Text(s,
-                        style: VoltiTypography.caption
+            // Uma linha por serie (quebra com texto grande), com "tirar".
+            for (final s in _serials)
+              Row(
+                key: Key('van-load-item-$s'),
+                children: [
+                  Expanded(
+                    child: Text(s,
+                        style: VoltiTypography.body
                             .copyWith(fontFamily: VoltiTypography.fontMono)),
-                    deleteButtonTooltipMessage: t.vanLoadRemove(s),
-                    onDeleted: () => setState(() => _serials.remove(s)),
                   ),
-              ],
-            ),
+                  IconButton(
+                    tooltip: t.vanLoadRemove(s),
+                    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                    icon: const Icon(LucideIcons.x),
+                    onPressed: () => setState(() => _serials.remove(s)),
+                  ),
+                ],
+              ),
           ],
           const SizedBox(height: VoltiSpacing.s12),
           VoltiButton(

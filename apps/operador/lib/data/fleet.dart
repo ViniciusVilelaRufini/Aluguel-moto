@@ -66,8 +66,10 @@ final vehicleProvider = FutureProvider.autoDispose.family<Vehicle, String>(
     (ref, id) => ref.read(fieldRepositoryProvider).getVehicle(id),
     retry: _noRetry);
 
-/// Modelos por id (foto, nome, categoria e preco por minuto).
-final vehicleModelsProvider = FutureProvider<Map<String, VehicleModel>>((ref) async {
+/// Modelos por id (foto, nome, categoria e preco por minuto). `autoDispose`: a
+/// `photoUrl` e assinada e expira, entao o catalogo e relido a cada tela que o usa.
+final vehicleModelsProvider =
+    FutureProvider.autoDispose<Map<String, VehicleModel>>((ref) async {
   final list = await ref.read(fieldRepositoryProvider).listVehicleModels();
   return {for (final m in list) m.id: m};
 }, retry: _noRetry);

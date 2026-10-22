@@ -144,6 +144,7 @@ class FakeFieldRepository implements FieldRepository {
   final unloads = <List<String>>[];
   List<VehicleServiceRow> serviceRows = const [];
   final serviceQueries = <VehicleServiceStatus?>[];
+  int modelReads = 0;
   final vehicles = <String, Vehicle>{};
   List<VehicleModel> models = const [];
   final maintenance = <String, MaintenanceTask>{};
@@ -195,6 +196,7 @@ class FakeFieldRepository implements FieldRepository {
   @override
   Future<List<VehicleModel>> listVehicleModels() async {
     _check();
+    modelReads++;
     return models;
   }
 
@@ -403,6 +405,9 @@ class FakePhotoPicker implements PhotoPicker {
   Future<String?> take() async => '/tmp/photo-${++count}.jpg';
 }
 
+/// Celular pequeno (360x740 dp) para os testes de texto a 200%.
+const phone = Size(360, 740);
+
 class Harness {
   Harness({FakeFieldRepository? repo, OfflineQueue? queue, FakeLocationService? location})
       : repo = repo ?? FakeFieldRepository(),
@@ -424,8 +429,10 @@ class Harness {
       ];
 
   Future<void> pump(WidgetTester tester, Widget child,
-      {List<Override> extraOverrides = const [], double textScale = 1}) async {
-    tester.view.physicalSize = const Size(800, 2000);
+      {List<Override> extraOverrides = const [],
+      double textScale = 1,
+      Size surface = const Size(800, 2000)}) async {
+    tester.view.physicalSize = surface;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(ProviderScope(

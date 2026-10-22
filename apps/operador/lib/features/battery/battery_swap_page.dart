@@ -144,8 +144,17 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
     final task = ref.watch(tasksProvider).value?.byId(widget.taskId);
     final removedLine = task == null ? null : removedBatteryLine(t, task);
     // Sugestoes: baterias carregadas (>= 90%) na van, mais cheias primeiro.
+    // Baterias ja comprometidas numa troca na fila offline nao aparecem.
+    final queued = {
+      for (final j in ref.watch(syncControllerProvider).pending)
+        if (j.kind == JobKind.batterySwap)
+          BatterySwapDraft.fromJson(j.payload['swap'] as Map<String, dynamic>)
+              .installedSerial
+              .trim()
+              .toUpperCase(),
+    };
     final charged = (ref.watch(vanStockProvider).value?.items.toList() ?? const <Battery>[])
-        .where((b) => b.chargePct >= 90)
+        .where((b) => b.chargePct >= 90 && !queued.contains(b.serial.toUpperCase()))
         .toList()
       ..sort((a, b) => b.chargePct.compareTo(a.chargePct));
     return Column(
@@ -176,19 +185,14 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
                               runSpacing: 6,
                               children: [
                                 for (final b in charged.take(6))
-                                  Semantics(
-                                    button: true,
+                                  _VanPick(
+                                    key: Key('van-pick-${b.serial}'),
+                                    label: batteryDetails(t, b.serial,
+                                        pct: b.chargePct, cycles: b.cycleCount),
+                                    semanticLabel: t.vanPickSemantics(b.serial),
                                     selected: _installed.text.trim().toUpperCase() ==
                                         b.serial.toUpperCase(),
-                                    label: t.vanPickSemantics(b.serial),
-                                    excludeSemantics: true,
-                                    child: ActionChip(
-                                      key: Key('van-pick-${b.serial}'),
-                                      label: Text(batteryDetails(t, b.serial,
-                                          pct: b.chargePct, cycles: b.cycleCount)),
-                                      onPressed: () =>
-                                          setState(() => _installed.text = b.serial),
-                                    ),
+                                    onTap: () => setState(() => _installed.text = b.serial),
                                   ),
                               ],
                             ),
@@ -286,6 +290,50 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
           ),
           ?footer,
         ],
+      ),
+    );
+  }
+}
+
+/// Sugestao de bateria da van: um so no de semantica (rotulo, selecao e toque)
+/// e texto que quebra de linha com fonte grande.
+class _VanPick extends StatelessWidget {
+  const _VanPick({
+    super.key,
+    required this.label,
+    required this.semanticLabel,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final String semanticLabel;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      selected: selected,
+      child: VoltiPressable(
+        onTap: onTap,
+        scale: .97,
+        semanticLabel: semanticLabel,
+        child: ExcludeSemantics(
+          child: Container(
+            constraints: const BoxConstraints(minHeight: 40),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: selected ? VoltiColors.brandSoft : VoltiColors.surfaceSunken,
+              borderRadius: VoltiRadii.rPill,
+              border: Border.all(
+                  color: selected ? VoltiColors.brand : Colors.transparent, width: 1.5),
+            ),
+            child: Text(label,
+                style: VoltiTypography.caption.copyWith(
+                    fontFamily: VoltiTypography.fontMono, color: VoltiColors.ink700)),
+          ),
+        ),
       ),
     );
   }

@@ -75,9 +75,13 @@ final serviceUnlockTtlProvider = Provider<Duration>((ref) => const Duration(hour
 /// Relogio (sobrescrito nos testes).
 final clockProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
-/// Status da moto em que o modo servico ainda faz sentido.
+/// Status da moto em que o modo servico ainda faz sentido. Incompativel so com a
+/// moto em uso por cliente (alugada, reservada ou pausada); livre, manutencao,
+/// bloqueada, offline ou desconhecido mantem o modo servico.
 bool serviceUnlockCompatible(VehicleStatus? status) =>
-    status == null || status == VehicleStatus.free || status == VehicleStatus.maintenance;
+    status != VehicleStatus.rented &&
+    status != VehicleStatus.reserved &&
+    status != VehicleStatus.paused;
 
 /// Estado: id da tarefa -> instante do destravamento (so entradas validas).
 class ServiceUnlockController extends Notifier<Map<String, DateTime>> {

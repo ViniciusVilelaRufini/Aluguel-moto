@@ -129,9 +129,13 @@ String formatCentsPerMinute(int cents) {
   return 'R\$ $reais,$c/min';
 }
 
-/// "23/10 10:00" no fuso do aparelho.
+/// Fuso de exibicao do projeto (America/Sao_Paulo): UTC-3 fixo, sem horario de
+/// verao desde 2019 (mesma regra da API para as janelas de manutencao).
+const Duration saoPauloOffset = Duration(hours: -3);
+
+/// "23/10 10:00" em America/Sao_Paulo, qualquer que seja o fuso do aparelho.
 String formatDayTime(DateTime d) {
-  final l = d.toLocal();
+  final l = d.toUtc().add(saoPauloOffset);
   String two(int v) => v.toString().padLeft(2, '0');
   return '${two(l.day)}/${two(l.month)} ${two(l.hour)}:${two(l.minute)}';
 }

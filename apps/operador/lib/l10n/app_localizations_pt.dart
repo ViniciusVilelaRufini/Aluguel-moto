@@ -625,7 +625,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get vanLoaded => 'Baterias carregadas na van.';
 
   @override
-  String get vanUnload => 'Descarregar para recarga';
+  String get vanUnload => 'Descarregar';
 
   @override
   String vanUnloadSemantics(String serial) {

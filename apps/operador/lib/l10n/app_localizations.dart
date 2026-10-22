@@ -1165,7 +1165,7 @@ abstract class AppLocalizations {
   /// No description provided for @vanUnload.
   ///
   /// In pt, this message translates to:
-  /// **'Descarregar para recarga'**
+  /// **'Descarregar'**
   String get vanUnload;
 
   /// No description provided for @vanUnloadSemantics.

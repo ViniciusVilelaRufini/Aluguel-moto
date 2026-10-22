@@ -281,7 +281,7 @@ void main() {
       await tester.enterText(find.byKey(const Key('van-load-serial')), 'BT-555');
       await tester.pump();
       await _tap(tester, find.byKey(const Key('van-load-add')));
-      expect(find.widgetWithText(InputChip, 'BT-555'), findsOneWidget);
+      expect(find.byKey(const Key('van-load-item-BT-555')), findsOneWidget);
       await _tap(tester, find.byKey(const Key('van-load-serial-scan')));
       await tester.pump();
       await _tap(tester, find.byKey(const Key('van-load-add')));
