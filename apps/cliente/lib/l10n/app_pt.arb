@@ -433,5 +433,66 @@
         "type": "String"
       }
     }
-  }
+  },
+  "welcomePhone": "Continuar com celular",
+  "welcomeApple": "Apple",
+  "welcomeAppleLabel": "Entrar com Apple",
+  "welcomeGoogle": "Google",
+  "welcomeGoogleLabel": "Entrar com Google",
+  "welcomeDevHint": "Modo dev: celular aceita o código 123456; Google e Apple só funcionam com o Cognito.",
+  "welcomeSocialDevOnly": "No modo dev, Google e Apple não estão disponíveis. Entre com celular ou e-mail.",
+  "socialSignInError": "Não foi possível entrar. Tente de novo.",
+  "otpPhoneTitle": "Seu celular",
+  "otpPhoneSubtitle": "Vamos mandar um código por SMS para confirmar que é você.",
+  "otpPhoneLabel": "Celular com DDD",
+  "otpPhoneInvalid": "Informe um celular com DDD, ex.: (11) 98765-4321.",
+  "otpEmailTitle": "Seu e-mail",
+  "otpEmailSubtitle": "Vamos mandar um código por e-mail para confirmar que é você.",
+  "otpEmailInvalid": "Informe um e-mail válido.",
+  "otpSend": "Enviar código",
+  "otpCodeTitle": "Digite o código",
+  "otpCodeSentSms": "Enviamos 6 dígitos por SMS para {destination}.",
+  "@otpCodeSentSms": {
+    "placeholders": {
+      "destination": {
+        "type": "String"
+      }
+    }
+  },
+  "otpCodeSentEmail": "Enviamos 6 dígitos por e-mail para {destination}.",
+  "@otpCodeSentEmail": {
+    "placeholders": {
+      "destination": {
+        "type": "String"
+      }
+    }
+  },
+  "otpCodeLabel": "Código de 6 dígitos",
+  "otpNotReceived": "Não chegou?",
+  "otpResendIn": "Reenviar em {time}",
+  "@otpResendIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "otpResend": "Reenviar código",
+  "otpResent": "Enviamos um novo código.",
+  "otpConfirm": "Confirmar",
+  "otpEditDestination": "Corrigir",
+  "otpDevHint": "Modo dev: o código é 123456.",
+  "otpErrorInvalid": "Código inválido. Confira e tente de novo.",
+  "otpErrorExpired": "O código expirou. Peça um novo.",
+  "otpErrorTooMany": "Muitas tentativas. Aguarde alguns minutos e tente de novo.",
+  "otpErrorDestination": "Não conseguimos enviar para esse contato. Confira e tente de novo.",
+  "cpfInvalidShort": "CPF inválido",
+  "docsAlreadySent": "Documentos já enviados para análise.",
+  "payTitle": "Forma de pagamento",
+  "paySubtitle": "O cartão garante a caução. Você também pode pagar a caução por Pix em cada aluguel.",
+  "payPixWallet": "Pix + carteira Volti",
+  "payCardMissing": "Adicione um cartão para a caução",
+  "payPixExplain": "Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.",
+  "payFinish": "Concluir cadastro",
+  "onboardingSentToast": "Cadastro enviado. Verificação em até 2 min."
 }

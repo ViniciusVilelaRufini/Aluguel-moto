@@ -4,6 +4,8 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import 'auth_store.dart';
 import 'backend.dart';
+import 'cognito.dart';
+import 'cognito_auth.dart';
 import 'errors.dart';
 
 class SessionState {
@@ -21,8 +23,9 @@ class SessionState {
   bool get locationConsent => consents?.locationTracking ?? customer?.locationConsent ?? false;
   KycStatus get kyc => customer?.kycStatus ?? KycStatus.notStarted;
 
-  /// Onboarding concluido: termos, consentimento de localizacao e documentos enviados.
-  bool get onboardingDone => signedIn && termsAccepted && locationConsent && kyc != KycStatus.notStarted;
+  /// Onboarding concluido: termos aceitos e documentos enviados. O consentimento de
+  /// localizacao e opcional no cadastro: o Plano pede antes do aluguel (a API exige).
+  bool get onboardingDone => signedIn && termsAccepted && kyc != KycStatus.notStarted;
 }
 
 class SessionNotifier extends AsyncNotifier<SessionState> {
@@ -65,6 +68,30 @@ class SessionNotifier extends AsyncNotifier<SessionState> {
     } else {
       throw AppFailure(kind: FailureKind.unknown);
     }
+    state = const AsyncLoading<SessionState>();
+    state = await AsyncValue.guard(_load);
+  }
+
+  /// Login concluido fora daqui (codigo por SMS/e-mail): carrega a sessao e, se veio
+  /// por celular, grava o telefone no perfil (`MeUpdate.phone`, E.164). Falha ao gravar
+  /// o telefone nao impede o login.
+  Future<void> completeSignIn({String? phone}) async {
+    state = const AsyncLoading<SessionState>();
+    state = await AsyncValue.guard(_load);
+    final current = state.value;
+    if (phone == null || current == null || !current.signedIn) return;
+    if ((current.customer?.phone ?? '').isNotEmpty) return;
+    try {
+      await ref.read(backendProvider).updateProfile(phone: phone);
+      await refresh();
+    } catch (_) {}
+  }
+
+  /// Google ou Apple pelo Hosted UI do Cognito (so no modo `cognito`).
+  Future<void> signInWithProvider(IdentityProvider provider) async {
+    final auth = ref.read(authRepositoryProvider);
+    if (auth is! CognitoCustomerAuthRepository) throw const CognitoException('NotConfigured');
+    await auth.signInWithProvider(provider);
     state = const AsyncLoading<SessionState>();
     state = await AsyncValue.guard(_load);
   }
