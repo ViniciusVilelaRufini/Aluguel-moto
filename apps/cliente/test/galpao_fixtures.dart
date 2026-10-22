@@ -38,7 +38,7 @@ Depot depotFixture({String id = 'dep1', String name = 'Galpão Volti — Pinheir
       ..availableVehicleCount = count
       ..distanceM = distanceM);
 
-Vehicle bike(String id, String code, String model, {String depotId = 'dep1', int price = 79, String category = 'Urbana'}) => Vehicle((b) => b
+Vehicle bike(String id, String code, String model, {String depotId = 'dep1', int price = 79, String category = 'Urbana com cesto'}) => Vehicle((b) => b
   ..id = id
   ..code = code
   ..model = model
@@ -51,6 +51,22 @@ Vehicle bike(String id, String code, String model, {String depotId = 'dep1', int
   ..depotId = depotId
   ..categoryLabel = category
   ..pricePerMinuteCents = price);
+
+/// Modelo do catalogo (`GET /vehicle-models`), como o seed de exemplo.
+VehicleModel catalogModel(String id, String name, String category, int price, {int sortOrder = 0, String? description, String? photoUrl}) => VehicleModel((b) => b
+  ..id = id
+  ..name = name
+  ..slug = name.toLowerCase().replaceAll(' ', '-')
+  ..categoryLabel = category
+  ..description = description
+  ..photoUrl = photoUrl
+  ..pricePerMinuteCents = price
+  ..serviceIntervalKm = 1000
+  ..serviceIntervalHours = 100
+  ..active = true
+  ..sortOrder = sortOrder
+  ..createdAt = thu10
+  ..updatedAt = thu10);
 
 PricingPlan plan(PlanCode code, String name, PlanUnit unit, int cents, {bool recurring = false}) => PricingPlan((b) => b
   ..id = 'p-${code.name}'
@@ -94,9 +110,9 @@ class GalpaoBackend extends FakeBackend {
         vehiclesByDepot = vehicles ??
             {
               'dep1': [
-                bike('v1', 'VLT-001', 'Volti Flash'),
-                bike('v2', 'VLT-002', 'Volti Urban', price: 99, category: 'Dois lugares'),
-                bike('v3', 'VLT-003', 'Volti Flash'),
+                bike('v1', 'VLT-001', 'Volti Urbana'),
+                bike('v2', 'VLT-002', 'Volti Sport', price: 99, category: 'Esportiva compacta'),
+                bike('v3', 'VLT-003', 'Volti Urbana'),
               ],
             };
 
@@ -132,7 +148,11 @@ class GalpaoBackend extends FakeBackend {
   }
 
   @override
-  Future<List<VehicleModel>> vehicleModels() async => const [];
+  Future<List<VehicleModel>> vehicleModels() async => [
+        catalogModel('m-urbana', 'Volti Urbana', 'Urbana com cesto', 79, sortOrder: 1),
+        catalogModel('m-sport', 'Volti Sport', 'Esportiva compacta', 89, sortOrder: 2),
+        catalogModel('m-touring', 'Volti Touring', 'Touring com baú', 99, sortOrder: 3),
+      ];
   @override
   Future<List<SwapStation>> swapStations({double? lat, double? lng}) async => const [];
   @override
@@ -210,7 +230,7 @@ class GalpaoBackend extends FakeBackend {
       ..vehicle.replace(VehicleSummary((v) => v
         ..id = request.vehicleId
         ..code = 'VLT-001'
-        ..model = 'Volti Flash'
+        ..model = 'Volti Urbana'
         ..status = VehicleStatus.reserved
         ..lat = -23.566
         ..lng = -46.684
@@ -241,7 +261,7 @@ class GalpaoBackend extends FakeBackend {
 
 DepotSelection selection({PricingPlan? p, InsuranceCoverage c = InsuranceCoverage.basic}) => DepotSelection(
       depot: depotFixture(),
-      vehicle: bike('v1', 'VLT-001', 'Volti Flash'),
+      vehicle: bike('v1', 'VLT-001', 'Volti Urbana'),
       plan: p,
       coverage: c,
       coverageName: c == InsuranceCoverage.basic ? 'Básico' : 'Completo',

@@ -71,7 +71,7 @@ Reservation reservationFixture({ReservationStatus status = ReservationStatus.act
   ..vehicle.replace(VehicleSummary((v) => v
     ..id = 'v1'
     ..code = 'VLT-001'
-    ..model = 'Volti Flash'
+    ..model = 'Volti Urbana'
     ..status = VehicleStatus.reserved
     ..lat = -23.566
     ..lng = -46.684
@@ -176,7 +176,7 @@ class HandoverBackend extends GalpaoBackend {
   @override
   Future<Vehicle> vehicleByCode(String code) async {
     vehicleByCodeCalls++;
-    return bike('v1', code, 'Volti Flash').rebuild((b) => b.depotId = vehicleDepotId);
+    return bike('v1', code, 'Volti Urbana').rebuild((b) => b.depotId = vehicleDepotId);
   }
 
   @override

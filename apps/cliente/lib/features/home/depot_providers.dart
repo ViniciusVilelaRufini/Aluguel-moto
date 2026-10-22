@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_api/volti_api.dart';
 
@@ -60,10 +62,20 @@ final depotVehiclesProvider = FutureProvider.autoDispose.family<List<Vehicle>, S
   (ref, depotId) => ref.watch(backendProvider).depotVehicles(depotId),
 );
 
-/// Modelos do catalogo por id (foto). Falha = sem fotos (a lista mostra o icone).
+/// Por quanto tempo o catalogo fica em memoria na sessao. O `photoUrl` e um link
+/// assinado de 24 h que muda a cada busca, e o cache de imagens do Flutter usa a
+/// URL como chave: buscar o catalogo a cada visita a "Escolher moto" baixaria as
+/// fotos de novo. Fica abaixo das 24 h para o link nunca vencer na tela.
+const vehicleModelsKeepAlive = Duration(hours: 12);
+
+/// Modelos do catalogo por id (foto, descricao, categoria e ordem). Falha = sem
+/// fotos (a lista mostra o icone) e nova tentativa na proxima visita.
 final vehicleModelsProvider = FutureProvider.autoDispose<Map<String, VehicleModel>>((ref) async {
   try {
     final list = await ref.watch(backendProvider).vehicleModels();
+    final link = ref.keepAlive();
+    final timer = Timer(vehicleModelsKeepAlive, link.close);
+    ref.onDispose(timer.cancel);
     return {for (final m in list) m.id: m};
   } catch (_) {
     return const {};

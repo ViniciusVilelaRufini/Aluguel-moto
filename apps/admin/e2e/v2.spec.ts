@@ -145,7 +145,7 @@ test('catálogo: novo modelo com foto (upload pré-assinado) e desbloqueio herda
   const name = `Volti E2E ${Date.now().toString(36)}`;
   await login(page, 'admin');
   await page.goto('/settings/');
-  await expect(page.getByTestId('models-table').getByRole('row', { name: /Volti Flash/ })).toBeVisible();
+  await expect(page.getByTestId('models-table').getByRole('row', { name: /Volti Urbana/ })).toBeVisible();
   await page.getByTestId('new-model').click();
   const dlg = page.getByTestId('model-dialog');
   await dlg.getByTestId('model-name').fill(name);
@@ -181,7 +181,7 @@ test('catálogo: novo modelo com foto (upload pré-assinado) e desbloqueio herda
 test('catálogo: financeiro só visualiza', async ({ page }) => {
   await login(page, 'financeiro');
   await page.goto('/settings/');
-  await expect(page.getByTestId('models-table').getByRole('row', { name: /Volti Flash/ })).toBeVisible();
+  await expect(page.getByTestId('models-table').getByRole('row', { name: /Volti Urbana/ })).toBeVisible();
   await expect(page.getByTestId('new-model')).toHaveCount(0);
 });
 
