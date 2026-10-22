@@ -3,7 +3,7 @@ import 'package:volti_api/volti_api.dart';
 /// Uma linha do resumo de preco ja pronta para a tela.
 typedef BreakdownRow = ({String label, int cents});
 
-const _knownCodes = {'unlock', 'time', 'pause', 'coupon', 'wallet', 'subscription_covered'};
+const _knownCodes = {'unlock', 'time', 'pause', 'coupon', 'wallet', 'subscription', 'subscription_covered'};
 
 /// Linhas do resumo (cotacao e recibo) sem repetir valores.
 ///
