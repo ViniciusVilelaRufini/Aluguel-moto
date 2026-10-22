@@ -49,12 +49,6 @@ function collectRoutes() {
  * implementar uma rota a remove daqui (Task 4: `/depots*`; Task 6: `/handovers*`); a lista tem que terminar vazia.
  */
 const PENDING_GALPAO = new Set([
-  'GET /depots',
-  'POST /depots',
-  'GET /depots/:id',
-  'PATCH /depots/:id',
-  'GET /depots/:id/vehicles',
-  'GET /depots/:id/pickups',
   'POST /handovers',
   'GET /handovers',
   'POST /handovers/uploads',

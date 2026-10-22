@@ -192,6 +192,8 @@ class _Profile extends StatelessWidget {
       _ => (l.kycPendingShort, VoltiBadgeTone.warning, LucideIcons.shieldEllipsis),
     };
     void open() => context.push('/account/verification');
+    final c = customer;
+    final contact = c == null ? null : contactLine(c);
     return Semantics(
       button: true,
       label: '${customer?.name ?? l.accountNoName}, $kycLabel${_adult ? ', ${l.adultBadge}' : ''}',
@@ -221,8 +223,8 @@ class _Profile extends StatelessWidget {
           Expanded(
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(customer?.name ?? l.accountNoName, style: VoltiTypography.bodyStrong),
-              if (customer?.email != null)
-                Text(customer!.email, style: VoltiTypography.caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+              if (contact != null)
+                Text(contact, key: const Key('account-contact'), style: VoltiTypography.caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               Wrap(spacing: 6, runSpacing: 4, children: [
                 VoltiBadge(kycLabel, tone: kycTone, icon: kycIcon, size: VoltiBadgeSize.sm),

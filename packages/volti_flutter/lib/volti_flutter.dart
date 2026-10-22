@@ -2,6 +2,7 @@
 library;
 
 export 'src/api/api_client.dart';
+export 'src/api/server_clock.dart';
 export 'src/auth/auth_repository.dart';
 export 'src/theme.dart';
 export 'src/tokens/colors.dart';

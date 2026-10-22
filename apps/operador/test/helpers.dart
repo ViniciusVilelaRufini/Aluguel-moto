@@ -137,6 +137,81 @@ class FakeFieldRepository implements FieldRepository {
     return fakeTask(id: taskId, status: FieldTaskStatus.done);
   }
 
+  // ---- contrato v2 ----
+
+  /// `null` = a API devolve erro de rede para a van.
+  VanStock? van = fakeVan(const []);
+  int vanReads = 0;
+  final loads = <(List<String>, int?)>[];
+  final unloads = <List<String>>[];
+  List<VehicleServiceRow> serviceRows = const [];
+  final serviceQueries = <VehicleServiceStatus?>[];
+  int modelReads = 0;
+  final vehicles = <String, Vehicle>{};
+  List<VehicleModel> models = const [];
+  final maintenance = <String, MaintenanceTask>{};
+
+  @override
+  Future<VanStock> getVanStock() async {
+    _check();
+    vanReads++;
+    if (van == null) throw const RepositoryException(FailureKind.network, 'offline');
+    return van!;
+  }
+
+  @override
+  Future<VanStock> loadVan(List<String> serials, {int? chargePct}) async {
+    _check();
+    loads.add((serials, chargePct));
+    van = fakeVan([
+      ...?van?.items,
+      for (final s in serials) fakeBattery(s, pct: chargePct ?? 100, cycles: 0),
+    ]);
+    return van!;
+  }
+
+  @override
+  Future<VanStock> unloadVan(List<String> serials) async {
+    _check();
+    unloads.add(serials);
+    van = fakeVan([...?van?.items.where((b) => !serials.contains(b.serial))]);
+    return van!;
+  }
+
+  @override
+  Future<List<VehicleServiceRow>> listServiceStatus({VehicleServiceStatus? status}) async {
+    _check();
+    serviceQueries.add(status);
+    return serviceRows.where((r) => status == null || r.service.status == status).toList();
+  }
+
+  @override
+  Future<Vehicle> getVehicle(String id) async {
+    _check();
+    final v = vehicles[id];
+    if (v == null) {
+      throw const RepositoryException(FailureKind.rejected, 'not found', status: 404);
+    }
+    return v;
+  }
+
+  @override
+  Future<List<VehicleModel>> listVehicleModels() async {
+    _check();
+    modelReads++;
+    return models;
+  }
+
+  @override
+  Future<MaintenanceTask> getMaintenanceTask(String id) async {
+    _check();
+    final m = maintenance[id];
+    if (m == null) {
+      throw const RepositoryException(FailureKind.rejected, 'not found', status: 404);
+    }
+    return m;
+  }
+
   // ── Galpao ──
   List<Depot> depots = [fakeDepot()];
   List<Reservation> pickups = [];
@@ -144,7 +219,7 @@ class FakeFieldRepository implements FieldRepository {
   final handoverUploads = <String>[];
   final createdHandovers = <HandoverCreate>[];
   final handovers = <String, Handover>{};
-  final vehicles = <String, Vehicle>{};
+  final vehiclesByCode = <String, Vehicle>{};
   int handoverGets = 0;
 
   /// Recusa do `POST /handovers` (ex.: 404 de codigo adulterado).
@@ -226,7 +301,7 @@ class FakeFieldRepository implements FieldRepository {
   @override
   Future<Vehicle> vehicleByCode(String code) async {
     _check();
-    final v = vehicles[code.trim().toUpperCase()];
+    final v = vehiclesByCode[code.trim().toUpperCase()];
     if (v == null) {
       throw const RepositoryException(FailureKind.rejected, 'Moto não encontrada.',
           status: 404, slug: 'not-found');
@@ -288,7 +363,7 @@ Reservation fakeReservation({
     ..handoverId = handoverId);
 }
 
-Vehicle fakeVehicle({String code = 'VLT-0009', String? rentalId = 'rental-1'}) => Vehicle((b) => b
+Vehicle rentedVehicle({String code = 'VLT-0009', String? rentalId = 'rental-1'}) => Vehicle((b) => b
   ..id = 'veh-$code'
   ..code = code
   ..model = 'Volti S'
@@ -318,14 +393,139 @@ class FakeHandoverEvents implements HandoverEvents {
   void dispose() {}
 }
 
+Battery fakeBattery(String serial,
+        {int pct = 100, int cycles = 10, BatteryStatus? status}) =>
+    Battery((b) => b
+      ..id = 'bat-$serial'
+      ..serial = serial
+      ..chargePct = pct
+      ..cycleCount = cycles
+      ..status = status ?? BatteryStatus.inVan
+      ..holderId = 'op-1'
+      ..updatedAt = DateTime.utc(2026, 10, 22));
+
+VanStock fakeVan(List<Battery> items) => VanStock((b) => b
+  ..operatorId = 'op-1'
+  ..total = items.length
+  ..chargedCount = items.where((e) => e.chargePct >= 90).length
+  ..depletedCount = items.where((e) => e.chargePct < 90).length
+  ..items.replace(items));
+
+VehicleServiceInfo fakeService({
+  double kmSince = 812.4,
+  double hoursSince = 40,
+  int intervalKm = 1000,
+  int intervalHours = 100,
+  VehicleServiceStatus? status,
+  double odometer = 3812.4,
+}) =>
+    VehicleServiceInfo((b) => b
+      ..odometerKm = odometer
+      ..usageHours = 300
+      ..kmSinceService = kmSince
+      ..hoursSinceService = hoursSince
+      ..serviceIntervalKm = intervalKm
+      ..serviceIntervalHours = intervalHours
+      ..nextServiceAtKm = odometer - kmSince + intervalKm
+      ..nextServiceAtHours = 300 - hoursSince + intervalHours
+      ..kmUntilService = intervalKm - kmSince
+      ..hoursUntilService = intervalHours - hoursSince
+      ..status = status ?? VehicleServiceStatus.ok);
+
+VehicleServiceRow fakeServiceRow(String code,
+        {VehicleServiceInfo? service, DateTime? scheduledFor, String model = 'Volti City'}) =>
+    VehicleServiceRow((b) => b
+      ..vehicleId = 'veh-$code'
+      ..vehicleCode = code
+      ..model = model
+      ..vehicleStatus = VehicleStatus.free
+      ..service.replace(service ?? fakeService())
+      ..scheduledFor = scheduledFor);
+
+Vehicle fakeVehicle({
+  String id = 'veh-1',
+  String code = 'VT-3310',
+  String? modelId,
+  VehicleServiceInfo? service,
+  String? address,
+}) =>
+    Vehicle((b) => b
+      ..id = id
+      ..code = code
+      ..model = 'Volti City'
+      ..status = VehicleStatus.free
+      ..lat = -23.55
+      ..lng = -46.65
+      ..batteryPct = 12
+      ..estimatedRangeKm = 3
+      ..speedLimitKmh = 32
+      ..vehicleModelId = modelId
+      ..address = address
+      ..service = service?.toBuilder());
+
+VehicleModel fakeModel({
+  String id = 'model-1',
+  String name = 'Volti City',
+  String category = 'Urbana',
+  int priceCents = 59,
+  String? photoUrl,
+}) =>
+    VehicleModel((b) => b
+      ..id = id
+      ..name = name
+      ..slug = 'volti-city'
+      ..categoryLabel = category
+      ..photoUrl = photoUrl
+      ..pricePerMinuteCents = priceCents
+      ..serviceIntervalKm = 1000
+      ..serviceIntervalHours = 100
+      ..active = true
+      ..sortOrder = 1
+      ..createdAt = DateTime.utc(2026, 10, 1)
+      ..updatedAt = DateTime.utc(2026, 10, 1));
+
+MaintenanceTask fakeMaintenance({
+  String id = 'maint-1',
+  MaintenanceSource? source,
+  String? customerName,
+  String title = 'Revisão preventiva',
+  DateTime? scheduledFor,
+}) =>
+    MaintenanceTask((b) => b
+      ..id = id
+      ..vehicleId = 'veh-1'
+      ..vehicleCode = 'VT-3310'
+      ..kind = MaintenanceKind.preventive
+      ..title = title
+      ..status = MaintenanceStatus.scheduled
+      ..source_ = source
+      ..customerName = customerName
+      ..scheduledFor = scheduledFor
+      ..createdAt = DateTime.utc(2026, 10, 21)
+      ..updatedAt = DateTime.utc(2026, 10, 21));
+
 FieldTask fakeTask({
   String id = 'task-1',
   FieldTaskType type = FieldTaskType.inspection,
   FieldTaskStatus status = FieldTaskStatus.assigned,
   TaskPriority priority = TaskPriority.high,
   String code = 'VT-3310',
+  String? notes,
+  VehicleStatus? vehicleStatus,
+  String? vehicleAddress,
+  String? targetAddress,
+  String? batterySerial,
+  int? batteryCycles,
+  String? maintenanceTaskId,
 }) =>
     FieldTask((b) => b
+      ..notes = notes
+      ..vehicleStatus = vehicleStatus
+      ..vehicleAddress = vehicleAddress
+      ..targetAddress = targetAddress
+      ..vehicleBatterySerial = batterySerial
+      ..vehicleBatteryCycleCount = batteryCycles
+      ..maintenanceTaskId = maintenanceTaskId
       ..id = id
       ..type = type
       ..status = status
@@ -387,6 +587,9 @@ class FakePhotoPicker implements PhotoPicker {
   Future<String?> take() async => '/tmp/photo-${++count}.jpg';
 }
 
+/// Celular pequeno (360x740 dp) para os testes de texto a 200%.
+const phone = Size(360, 740);
+
 class Harness {
   Harness({FakeFieldRepository? repo, OfflineQueue? queue, FakeLocationService? location})
       : repo = repo ?? FakeFieldRepository(),
@@ -425,21 +628,14 @@ class Harness {
 
   Future<void> pump(WidgetTester tester, Widget child,
       {List<Override> extraOverrides = const [],
-      Size size = const Size(800, 2000),
-      double textScale = 1}) async {
-    tester.view.physicalSize = size;
+      double textScale = 1,
+      Size surface = const Size(800, 2000)}) async {
+    tester.view.physicalSize = surface;
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(ProviderScope(
       overrides: [...overrides, ...extraOverrides],
       child: MaterialApp(
-        builder: textScale == 1
-            ? null
-            : (context, child) => MediaQuery(
-                  data: MediaQuery.of(context)
-                      .copyWith(textScaler: TextScaler.linear(textScale)),
-                  child: child!,
-                ),
         theme: VoltiTheme.light(),
         locale: const Locale('pt'),
         supportedLocales: AppLocalizations.supportedLocales,
@@ -449,6 +645,13 @@ class Harness {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
+        builder: textScale == 1
+            ? null
+            : (context, w) => MediaQuery(
+                  data: MediaQuery.of(context)
+                      .copyWith(textScaler: TextScaler.linear(textScale)),
+                  child: w!,
+                ),
         home: child,
       ),
     ));

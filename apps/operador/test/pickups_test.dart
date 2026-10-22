@@ -362,7 +362,7 @@ void main() {
     testWidgets('devolucao no galpao com item problematico vai para manutencao',
         (tester) async {
       final h = Harness();
-      h.repo.vehicles['VLT-0009'] = fakeVehicle();
+      h.repo.vehiclesByCode['VLT-0009'] = rentedVehicle();
       await h.pump(tester, const ArrivalChecklistPage());
       await _settle(tester);
       expect(_button(tester, 'submit-arrival').onPressed, isNull);
@@ -390,7 +390,7 @@ void main() {
 
     testWidgets('moto sem aluguel aberto nao segue', (tester) async {
       final h = Harness();
-      h.repo.vehicles['VLT-0009'] = fakeVehicle(rentalId: null);
+      h.repo.vehiclesByCode['VLT-0009'] = rentedVehicle(rentalId: null);
       await h.pump(tester, const ArrivalChecklistPage());
       await _settle(tester);
       await _enter(tester, 'arrival-vehicle', 'VLT-0009');
@@ -403,7 +403,7 @@ void main() {
 
     testWidgets('sem rede a chegada vai para a fila e envia ao reconectar', (tester) async {
       final h = Harness();
-      h.repo.vehicles['VLT-0009'] = fakeVehicle();
+      h.repo.vehiclesByCode['VLT-0009'] = rentedVehicle();
       // Galpoes ja vistos antes (cache).
       await h.queue.saveDepots([
         standardSerializers.serializeWith(Depot.serializer, fakeDepot())!
@@ -498,7 +498,7 @@ void main() {
         fakeReservation(id: 'r-2', mode: PickupMode.scheduled, pickupAt: DateTime.now()),
         fakeReservation(id: 'r-3', status: ReservationStatus.converted),
       ];
-      await h.pump(tester, const HomeShell(initialIndex: 1), size: small, textScale: 2);
+      await h.pump(tester, const HomeShell(initialIndex: 1), surface: small, textScale: 2);
       await _settle(tester);
       _noOverflow(tester);
       expect(await _sem(tester, const Key('scan-qr')),
@@ -512,7 +512,7 @@ void main() {
 
     testWidgets('leitura do QR', (tester) async {
       final h = Harness();
-      await h.pump(tester, PickupScanPage(scan: (_) async => 'x'), size: small, textScale: 2);
+      await h.pump(tester, PickupScanPage(scan: (_) async => 'x'), surface: small, textScale: 2);
       await _settle(tester);
       await _tap(tester, 'pickup-open-camera');
       await _settle(tester);
@@ -523,7 +523,7 @@ void main() {
       final handle = tester.ensureSemantics();
       final h = Harness();
       await h.pump(tester, PickupChecklistPage(pickupCode: fakePickupCode()),
-          size: small, textScale: 2);
+          surface: small, textScale: 2);
       await _settle(tester);
       _noOverflow(tester);
       await _answerPickup(tester, problem: 'freios');
@@ -550,7 +550,7 @@ void main() {
         ..disputeReason = 'Retrovisor esquerdo quebrado e farol trincado'
         ..createdAt = DateTime.utc(2026, 10, 22, 13));
       await h.pump(tester, const HandoverStatusPage(handoverId: 'ho-1'),
-          size: small, textScale: 2);
+          surface: small, textScale: 2);
       await _settle(tester);
       _noOverflow(tester);
     });
@@ -559,7 +559,7 @@ void main() {
       final handle = tester.ensureSemantics();
       final h = Harness();
       h.repo.depots = [fakeDepot(), fakeDepot(id: 'depot-2', name: 'Galpão Mooca')];
-      await h.pump(tester, const ArrivalChecklistPage(), size: small, textScale: 2);
+      await h.pump(tester, const ArrivalChecklistPage(), surface: small, textScale: 2);
       await _settle(tester);
       _noOverflow(tester);
       await _tap(tester, 'arr-freios-problem');

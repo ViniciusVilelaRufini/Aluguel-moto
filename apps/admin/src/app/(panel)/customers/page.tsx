@@ -13,6 +13,10 @@ import type { S } from '@/lib/types';
 import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { SupportPanel } from '@/components/SupportPanel';
+import { SubscriptionVehicleDialog } from '@/components/SubscriptionVehicleDialog';
+import { canSeeFullPixKey, displayPixKey } from '@/lib/pix';
+import { useRealtime } from '@/lib/realtime';
+import { SUBSCRIPTION_STATUS } from '@/lib/labels';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Input } from '@/ds/Input';
@@ -100,6 +104,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
             { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={r.name ?? r.email} /><span style={{ fontWeight: 600 }}>{r.name ?? r.email}</span></div> },
             { key: 'cpf', label: 'CPF', mono: true, render: (r) => displayCpf(r.cpf, full) },
             { key: 'kycStatus', label: 'Verificação', render: (r) => { const [l, t, i] = KYC_STATUS[r.kycStatus]; return <Badge size="sm" tone={t} icon={i}>{l}</Badge>; } },
+            { key: 'plan', label: 'Plano', render: (r) => (r.activePlanCode ? <Pill tone="info" icon="Repeat">{PLAN_LABEL[r.activePlanCode]}</Pill> : <span style={{ color: 'var(--text-secondary)' }}>Avulso</span>) },
             { key: 'rentals', label: 'Aluguéis', align: 'right', render: (r) => r.stats?.rentalsCount ?? '—' },
             { key: 'spent', label: 'Gasto total', align: 'right', render: (r) => (r.stats ? formatBRL(r.stats.totalSpentCents) : '—') },
             { key: 'status', label: 'Conta', render: (r) => (
@@ -161,9 +166,12 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
                 <KV k="Telefone" v={c.phone ?? '—'} />
                 <KV k="Nascimento" v={formatDate(c.birthDate)} />
                 <KV k="Localização autorizada" v={c.locationConsent ? 'Sim' : 'Não'} />
+                <KV k="Plano" v={c.activePlanCode ? PLAN_LABEL[c.activePlanCode] : 'Avulso'} />
+                <KV k="Chave Pix (estornos)" v={<span data-testid="pix-key" data-masked={!canSeeFullPixKey(groups) || undefined}>{displayPixKey(c.pixRefundKeyType, c.pixRefundKey, canSeeFullPixKey(groups))}</span>} />
                 {c.blockedReason && <KV k="Motivo do bloqueio" v={c.blockedReason} />}
                 {c.stats && <KV k="Contestações abertas" v={c.stats.openDisputes} />}
               </div>
+              {c.activeSubscriptionId && <SubscriptionBox subscriptionId={c.activeSubscriptionId} planCode={c.activePlanCode} />}
               {c.kycStatus === 'pending' && can(groups, 'kyc.review') && (
                 <div style={{ display: 'flex', gap: 8 }}>
                   <Button size="sm" style={{ flex: 1 }} icon="Check" onClick={() => setReview('approved')}>Aprovar</Button>
@@ -317,5 +325,34 @@ function RestrictionModal({ onClose }: { onClose: () => void }) {
         }}>Adicionar</Button>
       </div>
     </Modal>
+  );
+}
+
+/**
+ * Assinatura semanal/mensal do cliente. O staff não lê a assinatura (`GET /payments/subscriptions/{id}` é do
+ * cliente): a moto fixa vem da frota (`Vehicle.assignedSubscriptionId`) e o estado completo aparece depois de
+ * definir a moto (resposta do `PUT .../vehicle`). Pausar e retomar são ações do cliente no app.
+ */
+function SubscriptionBox({ subscriptionId, planCode }: { subscriptionId: string; planCode?: S<'SubscriptionPlanCode'> }) {
+  const { groups } = useAuth();
+  const { vehicles } = useRealtime();
+  const [assign, setAssign] = useState(false);
+  const [sub, setSub] = useState<S<'Subscription'> | null>(null);
+  const fixed = sub?.assignedVehicle?.code ?? vehicles.find((v) => v.assignedSubscriptionId === subscriptionId)?.code;
+  const canAssign = can(groups, 'subscription.assignVehicle');
+  return (
+    <div data-testid="subscription-box" style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 12, borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>Assinatura {planCode ? PLAN_LABEL[planCode].toLowerCase() : ''}</span>
+        {sub && <Pill tone={SUBSCRIPTION_STATUS[sub.status][1]}>{SUBSCRIPTION_STATUS[sub.status][0]}</Pill>}
+      </div>
+      <KV k="Moto fixa" v={<span data-testid="fixed-vehicle" style={{ fontFamily: fixed ? 'var(--font-mono)' : undefined }}>{fixed ?? 'Nenhuma'}</span>} />
+      {sub?.status === 'paused' && <KV k="Pausada até" v={formatDateTime(sub.pauseEndsAt)} />}
+      {sub?.nextChargeAt && <KV k="Próxima cobrança" v={`${formatDate(sub.nextChargeAt)}${sub.nextChargeCents !== undefined ? ` · ${formatBRL(sub.nextChargeCents)}` : ''}`} />}
+      {sub && <KV k="Pausas restantes no período" v={sub.pausesRemainingInPeriod ?? '—'} />}
+      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Pausar e retomar o plano são feitos pelo cliente no app.</div>
+      {canAssign && <Button size="sm" variant="secondary" icon="Bike" testId="assign-fixed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', background: '#fff' }} onClick={() => setAssign(true)}>{fixed ? 'Trocar moto fixa' : 'Definir moto fixa'}</Button>}
+      {assign && <SubscriptionVehicleDialog subscriptionId={subscriptionId} currentCode={fixed} onClose={() => setAssign(false)} onDone={setSub} />}
+    </div>
   );
 }

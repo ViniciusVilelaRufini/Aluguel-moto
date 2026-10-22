@@ -8,7 +8,8 @@ import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEv
 
 /** Tentativas de excluir a identidade no Cognito antes do alerta de revisão manual. */
 export const MAX_IDENTITY_DELETION_ATTEMPTS = 10;
-import type { TrackPoint } from '@prisma/client';
+import type { Prisma, TrackPoint } from '@prisma/client';
+import { compact, iso } from '../../common/util';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { conflict, notFound } from '../../common/problem';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
@@ -116,6 +117,37 @@ export class LgpdService {
       disputes: disputes.map(toDispute),
       claims: claims.map(toClaim),
       ...(await this.exportV2(customerId, customer.referralCode)),
+      ...(await this.exportDepot(customerId, rentalIds)),
+    };
+  }
+
+  /**
+   * Retirada em galpão: reservas de galpão (sem `pickupCode`) e entregas do titular (pelas reservas dele ou pelos aluguéis
+   * dele). Fotos só como chaves, nunca links assinados.
+   */
+  private async exportDepot(customerId: string, rentalIds: string[]) {
+    const handoverWhere: Prisma.HandoverWhereInput[] = [{ reservation: { customerId } }];
+    if (rentalIds.length) handoverWhere.push({ rentalId: { in: rentalIds } });
+    const [reservations, handovers] = await Promise.all([
+      this.prisma.reservation.findMany({ where: { customerId, depotId: { not: null } }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.handover.findMany({ where: { OR: handoverWhere }, include: { vehicle: { select: { code: true } } }, orderBy: { createdAt: 'desc' } }),
+    ]);
+    return {
+      depotReservations: reservations.map((r) =>
+        compact({
+          id: r.id, vehicleId: r.vehicleId, status: r.status, createdAt: r.createdAt.toISOString(), expiresAt: r.expiresAt.toISOString(),
+          depotId: r.depotId ?? undefined, pickupMode: r.pickupMode ?? undefined, pickupAt: iso(r.pickupAt), planCode: r.planCode ?? undefined,
+          coverage: r.coverage ?? undefined, depositMethod: r.depositMethod ?? undefined,
+        }),
+      ),
+      handovers: handovers.map((h) =>
+        compact({
+          id: h.id, type: h.type, status: h.status, depotId: h.depotId, reservationId: h.reservationId ?? undefined, rentalId: h.rentalId ?? undefined,
+          vehicleId: h.vehicleId, vehicleCode: h.vehicle?.code, operatorId: h.operatorId, checklist: h.checklist, photoKeys: h.photoKeys,
+          batteryPct: h.batteryPct, batterySerial: h.batterySerial ?? undefined, disputeReason: h.disputeReason ?? undefined,
+          createdAt: h.createdAt.toISOString(), respondedAt: iso(h.respondedAt),
+        }),
+      ),
     };
   }
 

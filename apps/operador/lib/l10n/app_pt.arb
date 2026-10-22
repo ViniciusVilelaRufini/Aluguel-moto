@@ -303,6 +303,193 @@
     }
   },
   "rejectedHint": "Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.",
+  "statVan": "Baterias na van",
+  "statUnavailable": "indisponível",
+  "targetAddressLine": "Para: {address}",
+  "@targetAddressLine": {
+    "placeholders": {
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "cyclesCount": "{count, plural, =1{1 ciclo} other{{count} ciclos}}",
+  "@cyclesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "removedBatteryLine": "Retirada: {details}",
+  "@removedBatteryLine": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "installedBatteryLine": "Instalada: {details}",
+  "@installedBatteryLine": {
+    "placeholders": {
+      "details": {
+        "type": "String"
+      }
+    }
+  },
+  "vanTitle": "Baterias na van",
+  "vanCharged": "Carregadas",
+  "vanDepleted": "Descarregadas",
+  "vanTotal": "Total",
+  "vanEmpty": "Nenhuma bateria na van.",
+  "vanError": "Não foi possível carregar o estoque da van.",
+  "vanOnlineHint": "Carregar e descarregar a van exige conexão.",
+  "vanLoad": "Carregar baterias",
+  "vanLoadTitle": "Carregar na van",
+  "vanLoadSerial": "Nº de série da bateria",
+  "vanLoadAdd": "Adicionar",
+  "vanLoadRemove": "Tirar {serial} da lista",
+  "@vanLoadRemove": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "vanLoadConfirm": "Carregar {count, plural, =1{1 bateria} other{{count} baterias}}",
+  "@vanLoadConfirm": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "vanLoadDuplicate": "Essa série já está na lista.",
+  "vanLoaded": "Baterias carregadas na van.",
+  "vanUnload": "Descarregar",
+  "vanUnloadSemantics": "Descarregar {serial} para recarga",
+  "@vanUnloadSemantics": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "vanUnloaded": "Bateria descarregada para recarga.",
+  "vanBatterySemantics": "Bateria {serial}, {pct} por cento, {cycles}",
+  "@vanBatterySemantics": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      },
+      "pct": {
+        "type": "int"
+      },
+      "cycles": {
+        "type": "String"
+      }
+    }
+  },
+  "vanSuggestions": "Carregadas na van",
+  "vanPickSemantics": "Usar a bateria {serial}",
+  "@vanPickSemantics": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "fleetServiceTitle": "Revisões da frota",
+  "filterAll": "Todas",
+  "filterOverdue": "Vencidas",
+  "filterDueSoon": "Próximas",
+  "serviceOk": "Em dia",
+  "serviceDueSoon": "Próxima",
+  "serviceOverdue": "Vencida",
+  "serviceStatusSemantics": "Revisão: {status}",
+  "@serviceStatusSemantics": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "serviceKmSince": "{km} desde a revisão",
+  "@serviceKmSince": {
+    "placeholders": {
+      "km": {
+        "type": "String"
+      }
+    }
+  },
+  "serviceKmUntil": "faltam {km}",
+  "@serviceKmUntil": {
+    "placeholders": {
+      "km": {
+        "type": "String"
+      }
+    }
+  },
+  "serviceKmOver": "{km} além do previsto",
+  "@serviceKmOver": {
+    "placeholders": {
+      "km": {
+        "type": "String"
+      }
+    }
+  },
+  "serviceHours": "{hours} h de uso desde a revisão (a cada {interval} h)",
+  "@serviceHours": {
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      },
+      "interval": {
+        "type": "String"
+      }
+    }
+  },
+  "serviceScheduled": "Revisão agendada para {date}",
+  "@serviceScheduled": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "serviceEmpty": "Nenhuma moto nesta situação.",
+  "serviceError": "Não foi possível carregar as revisões.",
+  "vehicleCardTitle": "Moto",
+  "modelPhotoSemantics": "Foto do modelo {name}",
+  "@modelPhotoSemantics": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "maintenanceCardTitle": "Manutenção",
+  "maintenanceSourceCustomer": "Agendada pelo cliente {name}",
+  "@maintenanceSourceCustomer": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "maintenanceSourceCustomerNoName": "Agendada pelo cliente",
+  "maintenanceSourceSystem": "Aberta pela inspeção",
+  "maintenanceSourceStaff": "Aberta pela operação",
+  "maintenanceKindPreventive": "Preventiva",
+  "maintenanceKindCorrective": "Corretiva",
+  "maintenanceScheduledFor": "Agendada para {date}",
+  "@maintenanceScheduledFor": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
   "navTasks": "Tarefas",
   "navPickups": "Retiradas",
   "pickupsTitle": "Retiradas de hoje",

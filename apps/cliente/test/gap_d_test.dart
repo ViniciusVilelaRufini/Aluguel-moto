@@ -482,8 +482,11 @@ void main() {
       router.push('/reserved');
       await t.pump();
       await t.pump(const Duration(milliseconds: 500));
+      // Design sem botao visivel: o "Voltar" e so para leitor de tela (emulador-1).
+      final h = t.ensureSemantics();
       expect(find.bySemanticsLabel('Voltar'), findsOneWidget);
-      await t.tap(find.byKey(const Key('reserved-back')));
+      t.semantics.tap(find.semantics.byLabel('Voltar'));
+      h.dispose();
       await t.pump();
       await t.pump(const Duration(milliseconds: 500));
       expect(find.text('mapa'), findsOneWidget);

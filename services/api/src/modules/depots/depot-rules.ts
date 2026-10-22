@@ -130,3 +130,13 @@ export function slotsForDay(depot: DepotRulesInput, day: string, now: Date, step
   }
   return slots;
 }
+
+/** UTC bounds [start, end) of a local day (YYYY-MM-DD) in the given timezone. */
+export function localDayBounds(timezone: string, day: string): { start: Date; end: Date } {
+  const [year, month, dayOfMonth] = day.split('-').map(Number);
+  const next = new Date(Date.UTC(year, month - 1, dayOfMonth + 1));
+  return {
+    start: localToUtc(timezone, year, month, dayOfMonth, 0),
+    end: localToUtc(timezone, next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), 0),
+  };
+}

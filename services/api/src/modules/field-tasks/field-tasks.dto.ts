@@ -39,6 +39,8 @@ export class FieldTaskUpdateDto {
 export class FieldTaskCompleteDto {
   @IsOptional() @IsString() @MaxLength(2000) notes?: string;
   @IsOptional() @IsIn(['free', 'maintenance']) vehicleStatus?: 'free' | 'maintenance';
+  /** Tarefa `collect`: galpão onde a moto chegou (volta a `free` com esse `depotId` e as coordenadas do galpão). */
+  @IsOptional() @IsUUID() depotId?: string;
   @IsOptional() @IsDateString() completedAt?: string;
 }
 
