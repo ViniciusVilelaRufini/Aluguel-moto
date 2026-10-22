@@ -132,7 +132,21 @@ describe('LgpdService', () => {
     const { service, prisma } = setup();
     prisma.rental.findMany.mockResolvedValue([{ id: 'r1' }] as any);
     await service.deleteAccount(ME);
-    expect(prisma.rental.updateMany).toHaveBeenCalledWith({ where: { customerId: ME }, data: { startLat: null, startLng: null } });
+    expect(prisma.rental.updateMany).toHaveBeenCalledWith({ where: { customerId: ME }, data: expect.objectContaining({ startLat: null, startLng: null }) });
+  });
+
+  it('QA-14: exclusão apaga as fotos de devolução do bucket e as chaves do aluguel', async () => {
+    const { service, prisma, storage } = setup();
+    prisma.rental.findMany.mockResolvedValue([
+      { id: 'r1', returnPhotoObjectKey: 'returns/r1/a.jpg', returnPhotoUploadKey: 'returns/r1/a.jpg' },
+      { id: 'r2', returnPhotoObjectKey: null, returnPhotoUploadKey: 'returns/r2/b.jpg' },
+    ] as any);
+    await service.deleteAccount(ME);
+    const cfg = loadConfig();
+    expect(storage.deleteObject).toHaveBeenCalledWith({ bucket: cfg.buckets.returnPhotos, key: 'returns/r1/a.jpg' });
+    expect(storage.deleteObject).toHaveBeenCalledWith({ bucket: cfg.buckets.returnPhotos, key: 'returns/r2/b.jpg' });
+    expect(storage.deleteObject.mock.calls.filter(([a]: any) => a.key === 'returns/r1/a.jpg')).toHaveLength(1);
+    expect(prisma.rental.updateMany).toHaveBeenCalledWith({ where: { customerId: ME }, data: expect.objectContaining({ returnPhotoObjectKey: null, returnPhotoUploadKey: null }) });
   });
 
   it('QA-12: job diário anula a posição de início dos aluguéis com mais de TRACK_RETENTION_DAYS', async () => {

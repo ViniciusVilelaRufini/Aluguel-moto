@@ -122,13 +122,15 @@ export class LgpdService {
     }
 
     const kycKeys = [customer.kycDocumentFrontKey, customer.kycDocumentBackKey, customer.kycSelfieKey].filter((k): k is string => !!k);
-    const rentals = await this.prisma.rental.findMany({ where: { customerId }, select: { id: true } });
+    const rentals = await this.prisma.rental.findMany({ where: { customerId }, select: { id: true, returnPhotoObjectKey: true, returnPhotoUploadKey: true } });
     const rentalIds = rentals.map((r) => r.id);
+    // QA-14: a foto de devolução pode identificar o titular (rosto, casa); sai junto com a conta.
+    const photoKeys = [...new Set(rentals.flatMap((r) => [r.returnPhotoObjectKey, r.returnPhotoUploadKey]).filter((k): k is string => !!k))];
 
     await this.prisma.$transaction(async (tx) => {
       if (rentalIds.length) await tx.trackPoint.deleteMany({ where: { rentalId: { in: rentalIds } } });
       // QA-12: a posição de início é localização ligada ao titular.
-      await tx.rental.updateMany({ where: { customerId }, data: { startLat: null, startLng: null } });
+      await tx.rental.updateMany({ where: { customerId }, data: { startLat: null, startLng: null, returnPhotoObjectKey: null, returnPhotoUploadKey: null } });
       await tx.device.deleteMany({ where: { ownerId: customerId } });
       await tx.customer.update({
         where: { id: customerId },
@@ -169,6 +171,13 @@ export class LgpdService {
         await this.storage.deleteObject({ bucket: this.cfg.buckets.kyc, key });
       } catch (err) {
         this.logger.warn({ msg: 'kyc_object_delete_failed', customerId, error: (err as Error).message });
+      }
+    }
+    for (const key of photoKeys) {
+      try {
+        await this.storage.deleteObject({ bucket: this.cfg.buckets.returnPhotos, key });
+      } catch (err) {
+        this.logger.warn({ msg: 'return_photo_delete_failed', customerId, error: (err as Error).message });
       }
     }
     this.logger.log({ msg: 'account_anonymized', customerId });
