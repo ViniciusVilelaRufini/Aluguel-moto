@@ -183,6 +183,34 @@ void main() {
     expect(find.text('b100'), findsOneWidget);
   });
 
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('VoltiChip: area de toque >= 44 px (escala $scale)', (t) async {
+      var taps = 0;
+      await t.pumpWidget(_wrap(VoltiChip(label: 'Filtro', onTap: () => taps++), textScale: scale));
+      final size = t.getSize(find.byType(VoltiPressable));
+      expect(size.height, greaterThanOrEqualTo(44));
+      expect(size.width, greaterThanOrEqualTo(44));
+      // Tocar na faixa invisivel (2 px do topo) tambem conta.
+      final r = t.getRect(find.byType(VoltiPressable));
+      await t.tapAt(Offset(r.center.dx, r.top + 2));
+      expect(taps, 1);
+    });
+  }
+
+  testWidgets('VoltiRefresh engole o erro do onRefresh e encerra o indicador', (t) async {
+    await t.pumpWidget(_wrap(SizedBox(
+      height: 400,
+      child: VoltiRefresh(
+        onRefresh: () async => throw StateError('rede'),
+        child: ListView(physics: const AlwaysScrollableScrollPhysics(), children: const [SizedBox(height: 600, child: Text('lista'))]),
+      ),
+    )));
+    await t.fling(find.text('lista'), const Offset(0, 400), 1000);
+    await t.pumpAndSettle();
+    expect(t.takeException(), isNull);
+    expect(find.byType(RefreshProgressIndicator), findsNothing);
+  });
+
   test('tokens de texto forte em banners', () {
     expect(VoltiColors.warningInkStrong, const Color(0xFF9A4A0F));
     expect(VoltiColors.dangerInkStrong, const Color(0xFFB0352B));

@@ -48,7 +48,8 @@ class VoltiSpeedGauge extends StatelessWidget {
       label: semanticsLabel,
       container: true,
       child: ExcludeSemantics(
-        child: SizedBox.square(
+        child: RepaintBoundary(
+          child: SizedBox.square(
           dimension: size,
           child: TweenAnimationBuilder<double>(
             tween: Tween(end: ratio),
@@ -75,6 +76,7 @@ class VoltiSpeedGauge extends StatelessWidget {
                 ),
               ),
             ),
+          ),
           ),
         ),
       ),

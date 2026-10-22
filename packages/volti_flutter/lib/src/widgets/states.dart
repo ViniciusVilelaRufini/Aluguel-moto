@@ -206,7 +206,12 @@ class VoltiRefresh extends StatelessWidget {
       semanticsLabel: semanticsLabel,
       onRefresh: () async {
         VoltiHaptics.tap();
-        await onRefresh();
+        try {
+          await onRefresh();
+        } catch (_) {
+          // A tela mostra o erro (ex.: AsyncView); aqui so encerra o indicador
+          // sem deixar a excecao sem tratamento.
+        }
       },
       child: child,
     );

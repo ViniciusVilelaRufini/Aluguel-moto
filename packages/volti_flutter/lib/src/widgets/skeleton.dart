@@ -88,7 +88,10 @@ class _VoltiSkeletonState extends State<VoltiSkeleton> with SingleTickerProvider
       liveRegion: true,
       container: true,
       child: ExcludeSemantics(
-        child: _SkeletonScope(animation: _c, reduced: VoltiMotion.reduced(context), child: widget.child),
+        // Isola o repaint da luz do resto da tela.
+        child: RepaintBoundary(
+          child: _SkeletonScope(animation: _c, reduced: VoltiMotion.reduced(context), child: widget.child),
+        ),
       ),
     );
   }

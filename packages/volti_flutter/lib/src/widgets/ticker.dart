@@ -29,7 +29,8 @@ class VoltiTicker extends StatelessWidget {
       label: semanticsLabel ?? text,
       container: true,
       child: ExcludeSemantics(
-        child: ClipRect(
+        child: RepaintBoundary(
+          child: ClipRect(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -64,6 +65,7 @@ class VoltiTicker extends StatelessWidget {
                       ),
             ],
           ),
+        ),
         ),
       ),
     );
