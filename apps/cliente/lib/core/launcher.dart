@@ -9,6 +9,25 @@ typedef UrlOpener = Future<bool> Function(Uri uri);
 /// Abre a folha de compartilhar do sistema com um texto.
 typedef TextSharer = Future<void> Function(String text);
 
+/// Termos de uso e politica de privacidade publicados (links do rodape da
+/// boas-vindas). O app ainda nao tem paginas proprias nem URL fixa: cada
+/// ambiente passa `--dart-define=TERMS_URL=...` e `PRIVACY_URL=...`; sem o
+/// define, o link avisa que o documento nao esta publicado neste ambiente.
+class LegalLinks {
+  const LegalLinks({this.terms, this.privacy});
+  final Uri? terms, privacy;
+}
+
+const kTermsUrl = String.fromEnvironment('TERMS_URL');
+const kPrivacyUrl = String.fromEnvironment('PRIVACY_URL');
+
+Uri? _httpsUri(String raw) {
+  final u = Uri.tryParse(raw.trim());
+  return u != null && (u.scheme == 'https' || u.scheme == 'http') && u.host.isNotEmpty ? u : null;
+}
+
+final legalLinksProvider = Provider<LegalLinks>((ref) => LegalLinks(terms: _httpsUri(kTermsUrl), privacy: _httpsUri(kPrivacyUrl)));
+
 final urlLauncherProvider = Provider<UrlOpener>((ref) => (uri) => launchUrl(uri, mode: LaunchMode.externalApplication));
 
 final shareTextProvider = Provider<TextSharer>((ref) => (text) async {

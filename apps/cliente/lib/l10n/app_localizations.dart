@@ -1432,12 +1432,6 @@ abstract class AppLocalizations {
   /// **'Por minuto, hora, dia ou semana. Liberada pelo app em segundos.'**
   String get welcomeSubtitle;
 
-  /// No description provided for @welcomeTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Pegue uma moto e vá.'**
-  String get welcomeTitle;
-
   /// No description provided for @wellbeingText.
   ///
   /// In pt, this message translates to:
@@ -1489,7 +1483,7 @@ abstract class AppLocalizations {
   /// No description provided for @pixText.
   ///
   /// In pt, this message translates to:
-  /// **'Pague {amount} para liberar a moto. A caução volta quando você encerra a corrida.'**
+  /// **'Pague {amount} para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução volta quando você encerra a corrida.'**
   String pixText(String amount);
 
   /// No description provided for @receiptNumber.
@@ -1603,13 +1597,13 @@ abstract class AppLocalizations {
   /// No description provided for @locationRationaleTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Motos por perto'**
+  /// **'Galpão mais perto'**
   String get locationRationaleTitle;
 
   /// No description provided for @locationRationaleText.
   ///
   /// In pt, this message translates to:
-  /// **'Usamos sua localização para mostrar as motos mais próximas e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.'**
+  /// **'Usamos sua localização para mostrar o galpão Volti mais perto de você e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.'**
   String get locationRationaleText;
 
   /// No description provided for @allowLocation.
@@ -3694,12 +3688,6 @@ abstract class AppLocalizations {
   /// **'Tente de novo em instantes.'**
   String get depotsEmptyText;
 
-  /// No description provided for @pickContinue.
-  ///
-  /// In pt, this message translates to:
-  /// **'Continuar com {model} · {code}'**
-  String pickContinue(String model, String code);
-
   /// No description provided for @pickDepotCount.
   ///
   /// In pt, this message translates to:
@@ -4269,6 +4257,120 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Não encontramos o galpão. Tente de novo.'**
   String get returnDepotMissing;
+
+  /// No description provided for @pickContinueLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar'**
+  String get pickContinueLabel;
+
+  /// No description provided for @pickContinueBike.
+  ///
+  /// In pt, this message translates to:
+  /// **'{model} · {code}'**
+  String pickContinueBike(String model, String code);
+
+  /// No description provided for @nearDepot.
+  ///
+  /// In pt, this message translates to:
+  /// **'Perto do {depot}'**
+  String nearDepot(String depot);
+
+  /// No description provided for @welcomeTitleLead.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pegue uma moto'**
+  String get welcomeTitleLead;
+
+  /// No description provided for @welcomeTitleAccent.
+  ///
+  /// In pt, this message translates to:
+  /// **'e vá.'**
+  String get welcomeTitleAccent;
+
+  /// No description provided for @welcomeOr.
+  ///
+  /// In pt, this message translates to:
+  /// **'ou entre com'**
+  String get welcomeOr;
+
+  /// No description provided for @welcomeEmail.
+  ///
+  /// In pt, this message translates to:
+  /// **'E-mail'**
+  String get welcomeEmail;
+
+  /// No description provided for @welcomeTermsPrefix.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ao continuar, você aceita os '**
+  String get welcomeTermsPrefix;
+
+  /// No description provided for @welcomeTermsLink.
+  ///
+  /// In pt, this message translates to:
+  /// **'termos de uso'**
+  String get welcomeTermsLink;
+
+  /// No description provided for @welcomeTermsMiddle.
+  ///
+  /// In pt, this message translates to:
+  /// **' e a '**
+  String get welcomeTermsMiddle;
+
+  /// No description provided for @welcomePrivacyLink.
+  ///
+  /// In pt, this message translates to:
+  /// **'política de privacidade'**
+  String get welcomePrivacyLink;
+
+  /// No description provided for @welcomeTermsSuffix.
+  ///
+  /// In pt, this message translates to:
+  /// **'.'**
+  String get welcomeTermsSuffix;
+
+  /// No description provided for @welcomeLegalUnavailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'Este documento ainda não está publicado neste ambiente.'**
+  String get welcomeLegalUnavailable;
+
+  /// No description provided for @welcomeLegalOpenError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível abrir o link. Tente de novo.'**
+  String get welcomeLegalOpenError;
+
+  /// No description provided for @welcomePromoText.
+  ///
+  /// In pt, this message translates to:
+  /// **'até 15 min'**
+  String get welcomePromoText;
+
+  /// No description provided for @welcomeArtNearby.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count} motos perto'**
+  String welcomeArtNearby(int count);
+
+  /// No description provided for @welcomeArtRange.
+  ///
+  /// In pt, this message translates to:
+  /// **'~{km} km'**
+  String welcomeArtRange(int km);
+
+  /// No description provided for @welcomeArtEta.
+  ///
+  /// In pt, this message translates to:
+  /// **'{minutes} min'**
+  String welcomeArtEta(int minutes);
+
+  /// No description provided for @welcomeArtDistance.
+  ///
+  /// In pt, this message translates to:
+  /// **'{meters} m'**
+  String welcomeArtDistance(int meters);
 }
 
 class _AppLocalizationsDelegate

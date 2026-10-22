@@ -253,14 +253,18 @@ class _Footer extends StatelessWidget {
               // Texto grande: o motivo tem teto e rola, para a lista continuar visivel.
               if (reasonView != null) ...[
                 ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .22),
+                  // Teto menor que antes: o botao agora tem a segunda linha (modelo · codigo).
+                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .17),
                   child: SingleChildScrollView(child: reasonView),
                 ),
                 const SizedBox(height: VoltiSpacing.s10),
               ],
               VoltiButton(
                 key: const Key('pick-continue'),
-                label: v == null ? l.selectABike : l.pickContinue(v.model, v.code),
+                // Modelo e codigo na segunda linha: "Continuar com <modelo> · <codigo>" numa
+                // linha so cortava o codigo ("VLT-0…") no emulador.
+                label: v == null ? l.selectABike : l.pickContinueLabel,
+                subtitle: v == null ? null : l.pickContinueBike(v.model, v.code),
                 icon: LucideIcons.arrowRight,
                 size: VoltiButtonSize.lg,
                 fullWidth: true,

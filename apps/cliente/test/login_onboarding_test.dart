@@ -113,11 +113,11 @@ void main() {
       expect(find.text('Continuar com celular'), findsOneWidget);
       expect(find.text('Apple'), findsOneWidget);
       expect(find.text('Google'), findsOneWidget);
-      expect(find.text('Entrar com e-mail'), findsOneWidget);
+      expect(find.text('E-mail'), findsOneWidget);
       for (final b in ['Sem CNH', 'Sem placa', '18+']) {
         expect(find.widgetWithText(SuccessBadge, b), findsOneWidget);
       }
-      expect(t.widget<VoltiButton>(find.byKey(const Key('welcome-email'))).variant, VoltiButtonVariant.ghost);
+      expect(t.widget<VoltiButton>(find.byKey(const Key('welcome-email'))).variant, VoltiButtonVariant.soft);
       expect(find.byKey(const Key('welcome-dev-hint')), findsOneWidget);
       expect(find.bySemanticsLabel('Entrar com Google'), findsOneWidget);
 

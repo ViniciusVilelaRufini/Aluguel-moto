@@ -13,6 +13,7 @@ import '../../core/backend.dart';
 import '../../core/clock.dart';
 import '../../core/flash.dart';
 import '../../core/geo.dart';
+import '../../core/map_tiles.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
@@ -30,6 +31,10 @@ import 'providers.dart';
 /// rua). Embaixo, o cartao do galpao "Galpão Volti · bairro · N motos disponíveis"
 /// com o horario e **Escolher moto**. Com varios galpoes o cartao vira seletor,
 /// mais perto primeiro.
+/// Fracao da altura da tela que a camera sobe ao centrar o galpao (fica acima do
+/// cartao do galpao, que cobre a metade de baixo).
+const homeMapFocusShift = 0.12;
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -41,6 +46,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   /// Atualiza "Aberto até 20h" quando o horario vira.
   Timer? _tick;
+
+  /// Galpao em que a camera ja foi centrada (centra de novo quando ele muda).
+  String? _focusedDepotId;
 
   @override
   void initState() {
@@ -90,13 +98,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (ok == true && await svc.ensurePermission()) ref.invalidate(userLocationProvider);
   }
 
+  /// Deslocamento da camera para o ponto cair na faixa livre do mapa, entre o
+  /// cabecalho e o cartao do galpao (acima do meio da tela).
+  Offset _visibleOffset() => Offset(0, -MediaQuery.sizeOf(context).height * homeMapFocusShift);
+
   void _moveMap(LatLng to) {
     if (!ref.read(mapEnabledProvider)) return;
     try {
-      _map.move(to, 15);
+      _map.move(to, 15, offset: _visibleOffset());
     } catch (_) {
       // mapa ainda nao montado
     }
+  }
+
+  /// Centra o galpao ao abrir e quando ele muda. O `FlutterMap` guarda a camera no
+  /// controller, entao recriar o mapa com outro `initialCenter` nao a move: o
+  /// galpao ficava fora da tela (so as zonas e a estacao perto do centro de SP).
+  void _focusDepot(Depot? d) {
+    if (d == null || d.id == _focusedDepotId) return;
+    _focusedDepotId = d.id;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _moveMap(LatLng(d.lat, d.lng));
+    });
   }
 
   void _selectDepot(Depot d) {
@@ -121,6 +144,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.listen(flashProvider, (_, next) {
       if (next != null) WidgetsBinding.instance.addPostFrameCallback((_) => _showFlash());
     });
+    _focusDepot(current);
     final promoFirstRide = firstRideFree(session?.customer, promoActive: kFirstRidePromo);
     final center = current != null ? LatLng(current.lat, current.lng) : (loc ?? fallbackCenter);
     final surface = Theme.of(context).colorScheme.surface;
@@ -132,8 +156,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             child: !ref.watch(mapEnabledProvider)
                 ? const ColoredBox(color: VoltiColors.mapLand)
                 : VoltiMap(
-                    key: ValueKey('map-${current?.id}'),
+                    key: const Key('home-map'),
                     controller: _map,
+                    // Atribuicao ao lado do botao de localizar (o cartao cobre o rodape do mapa).
+                    showAttribution: false,
                     center: center,
                     zoom: 15,
                     layers: [
@@ -286,14 +312,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          VoltiIconButton(
-                            icon: LucideIcons.locateFixed,
-                            iconColor: VoltiColors.brand,
-                            label: l.locateMe,
-                            onPressed: () {
-                              ref.invalidate(userLocationProvider);
-                              _moveMap(loc ?? center);
-                            },
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              if (ref.watch(mapEnabledProvider)) const Flexible(child: MapAttribution()),
+                              const Spacer(),
+                              VoltiIconButton(
+                                icon: LucideIcons.locateFixed,
+                                iconColor: VoltiColors.brand,
+                                label: l.locateMe,
+                                onPressed: () {
+                                  ref.invalidate(userLocationProvider);
+                                  _moveMap(loc ?? center);
+                                },
+                              ),
+                            ],
                           ),
                           const SizedBox(height: VoltiSpacing.s12),
                           Flexible(

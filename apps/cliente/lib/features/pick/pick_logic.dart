@@ -1,4 +1,3 @@
-import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
 
 import '../../core/geo.dart';
@@ -58,16 +57,6 @@ List<Vehicle> filterByModel(List<Vehicle> list, String? model) =>
 
 /// Pontos verdes = zonas de devolucao ativas.
 Iterable<GeoZone> pickupZones(List<GeoZone> zones) => zones.where((z) => z.active && z.type == ZoneType.return_);
-
-/// Nome de lugar conhecido para "Sua localizacao · ...": o ponto de retirada em que o
-/// cliente esta. Sem geocodificacao reversa no contrato (proposta em docs/decisoes.md).
-String? nearestPlaceName(LatLng? user, List<GeoZone> zones) {
-  if (user == null) return null;
-  for (final z in pickupZones(zones)) {
-    if (pointInZone(user.latitude, user.longitude, z)) return z.name;
-  }
-  return null;
-}
 
 /// Motivo de o botao "Continuar" da lista do galpao estar desligado.
 enum ReserveBlock { none, noSelection, sessionLoading, kycPending, kycRejected, delinquent, activeReservation, activeRental }

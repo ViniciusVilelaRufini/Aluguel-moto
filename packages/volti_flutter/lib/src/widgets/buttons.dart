@@ -8,7 +8,9 @@ import '../tokens/typography.dart';
 import 'motion.dart';
 import 'pressable.dart';
 
-enum VoltiButtonVariant { primary, secondary, ghost, dark, danger }
+/// [neutral]: contorno cinza e texto escuro (ex.: "Google" na boas-vindas).
+/// [soft]: fundo cinza claro e texto escuro (ex.: "E-mail" na boas-vindas).
+enum VoltiButtonVariant { primary, secondary, ghost, dark, danger, neutral, soft }
 
 enum VoltiButtonSize { sm, md, lg }
 
@@ -26,7 +28,20 @@ class VoltiButton extends StatelessWidget {
     this.loading = false,
     this.shine = false,
     this.semanticLabel,
+    this.subtitle,
+    this.wrap = false,
   });
+
+  /// Rotulo quebra linha (e o botao cresce) em vez de cortar com reticencias:
+  /// para CTAs que precisam ficar legiveis a 200% de texto.
+  final bool wrap;
+
+  bool get _grows => wrap || subtitle != null;
+
+  /// Segunda linha menor sob o [label] (ex.: modelo e codigo da moto). Com ela o
+  /// botao cresce na altura e a linha quebra em vez de cortar com reticencias,
+  /// legivel com texto grande. O leitor de tela ouve "label: subtitle".
+  final String? subtitle;
 
   /// Rotulo para leitor de tela mais completo que [label] (ex.: com a serie).
   final String? semanticLabel;
@@ -115,6 +130,18 @@ class VoltiButton extends StatelessWidget {
         Colors.transparent,
         VoltiShadows.shadowCoral,
       ),
+      VoltiButtonVariant.neutral => (
+        scheme.surface,
+        scheme.onSurface,
+        VoltiColors.borderStrong,
+        const <BoxShadow>[],
+      ),
+      VoltiButtonVariant.soft => (
+        VoltiColors.surfaceSunken,
+        VoltiColors.textPrimary,
+        Colors.transparent,
+        const <BoxShadow>[],
+      ),
     };
     final disabled = onPressed == null;
     final off = disabled || loading;
@@ -124,6 +151,7 @@ class VoltiButton extends StatelessWidget {
       VoltiButtonVariant.ghost => const Color(0x1415181A),
       VoltiButtonVariant.dark => const Color(0x38FFFFFF),
       VoltiButtonVariant.danger => const Color(0x59FFFFFF),
+      VoltiButtonVariant.neutral || VoltiButtonVariant.soft => const Color(0x1415181A),
     };
     final content = Row(
       mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
@@ -137,12 +165,34 @@ class VoltiButton extends StatelessWidget {
           const SizedBox(width: 10),
         ],
         Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: _labelStyle(fs, fg),
-          ),
+          child: subtitle == null
+              ? Text(
+                  label,
+                  maxLines: wrap ? null : 1,
+                  overflow: wrap ? null : TextOverflow.ellipsis,
+                  textAlign: wrap ? TextAlign.center : null,
+                  style: wrap ? _labelStyle(fs, fg).copyWith(height: 1.2) : _labelStyle(fs, fg),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: _labelStyle(fs, fg),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle!,
+                      key: const Key('volti-button-subtitle'),
+                      textAlign: TextAlign.center,
+                      style: _labelStyle(fs - 3, fg).copyWith(
+                        fontWeight: VoltiTypography.fwMedium,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
         ),
         if (iconRight != null && !loading) ...[
           const SizedBox(width: 10),
@@ -153,7 +203,9 @@ class VoltiButton extends StatelessWidget {
     final body = Opacity(
       opacity: disabled ? .4 : 1,
       child: Container(
-        height: h,
+        height: _grows ? null : h,
+        constraints: _grows ? BoxConstraints(minHeight: h) : null,
+        padding: _grows ? const EdgeInsets.symmetric(vertical: 8) : null,
         decoration: BoxDecoration(
           color: bg,
           borderRadius: VoltiRadii.rPill,
@@ -173,7 +225,7 @@ class VoltiButton extends StatelessWidget {
     final shown = shine && !off ? VoltiShine(child: body) : body;
     return VoltiPressable(
       onTap: off ? null : onPressed,
-      semanticLabel: semanticLabel ?? label,
+      semanticLabel: semanticLabel ?? (subtitle == null ? label : '$label: $subtitle'),
       child: semanticLabel == null
           ? (fullWidth ? SizedBox(width: double.infinity, child: shown) : shown)
           : ExcludeSemantics(

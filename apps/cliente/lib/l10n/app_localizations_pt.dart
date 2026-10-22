@@ -712,9 +712,6 @@ class AppLocalizationsPt extends AppLocalizations {
       'Por minuto, hora, dia ou semana. Liberada pelo app em segundos.';
 
   @override
-  String get welcomeTitle => 'Pegue uma moto e vá.';
-
-  @override
   String get wellbeingText =>
       'Detectamos uma possível queda. Sem resposta em 60 segundos, acionamos o suporte.';
 
@@ -749,7 +746,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String pixText(String amount) {
-    return 'Pague $amount para liberar a moto. A caução volta quando você encerra a corrida.';
+    return 'Pague $amount para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução volta quando você encerra a corrida.';
   }
 
   @override
@@ -848,11 +845,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get realtimeOffline => 'Sem conexão em tempo real';
 
   @override
-  String get locationRationaleTitle => 'Motos por perto';
+  String get locationRationaleTitle => 'Galpão mais perto';
 
   @override
   String get locationRationaleText =>
-      'Usamos sua localização para mostrar as motos mais próximas e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.';
+      'Usamos sua localização para mostrar o galpão Volti mais perto de você e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.';
 
   @override
   String get allowLocation => 'Continuar';
@@ -2114,11 +2111,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get depotsEmptyText => 'Tente de novo em instantes.';
 
   @override
-  String pickContinue(String model, String code) {
-    return 'Continuar com $model · $code';
-  }
-
-  @override
   String pickDepotCount(int count) {
     String _temp0 = intl.Intl.pluralLogic(
       count,
@@ -2460,4 +2452,75 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get returnDepotMissing => 'Não encontramos o galpão. Tente de novo.';
+
+  @override
+  String get pickContinueLabel => 'Continuar';
+
+  @override
+  String pickContinueBike(String model, String code) {
+    return '$model · $code';
+  }
+
+  @override
+  String nearDepot(String depot) {
+    return 'Perto do $depot';
+  }
+
+  @override
+  String get welcomeTitleLead => 'Pegue uma moto';
+
+  @override
+  String get welcomeTitleAccent => 'e vá.';
+
+  @override
+  String get welcomeOr => 'ou entre com';
+
+  @override
+  String get welcomeEmail => 'E-mail';
+
+  @override
+  String get welcomeTermsPrefix => 'Ao continuar, você aceita os ';
+
+  @override
+  String get welcomeTermsLink => 'termos de uso';
+
+  @override
+  String get welcomeTermsMiddle => ' e a ';
+
+  @override
+  String get welcomePrivacyLink => 'política de privacidade';
+
+  @override
+  String get welcomeTermsSuffix => '.';
+
+  @override
+  String get welcomeLegalUnavailable =>
+      'Este documento ainda não está publicado neste ambiente.';
+
+  @override
+  String get welcomeLegalOpenError =>
+      'Não foi possível abrir o link. Tente de novo.';
+
+  @override
+  String get welcomePromoText => 'até 15 min';
+
+  @override
+  String welcomeArtNearby(int count) {
+    return '$count motos perto';
+  }
+
+  @override
+  String welcomeArtRange(int km) {
+    return '~$km km';
+  }
+
+  @override
+  String welcomeArtEta(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String welcomeArtDistance(int meters) {
+    return '$meters m';
+  }
 }

@@ -34,7 +34,7 @@ Fontes TTF estáticas (Plus Jakarta Sans 400-800, JetBrains Mono 500/700, OFL) v
 
 ## Widgets
 
-`VoltiButton` (variantes `primary`, `secondary`, `ghost`, `dark`, `danger`; tamanhos `sm/md/lg`), `VoltiIconButton`, `BatteryPill(pct, {rangeKm})`, `VehicleMarker(status, batteryPct, {selected, onTap})`, `FleetStatusBadge(status, {count, pill, selected, onTap})`, `RouteInfoPill`, `ReservationBanner`, `SwipeAction`, `OptionCard`, `OtpInput`, `PhotoCapture`, `ListRow`, `ProgressSteps`, `VoltiBottomSheet.show`, `VoltiDialog.show`, `VoltiToast.show`.
+`VoltiButton` (variantes `primary`, `secondary`, `ghost`, `dark`, `danger`, `neutral` (contorno cinza, texto escuro), `soft` (fundo cinza claro); tamanhos `sm/md/lg`; `subtitle` = segunda linha menor que quebra em vez de cortar; `wrap: true` = rótulo quebra linha e o botão cresce, para texto a 200%), `VoltiIconButton`, `BatteryPill(pct, {rangeKm})`, `VehicleMarker(status, batteryPct, {selected, onTap})`, `FleetStatusBadge(status, {count, pill, selected, onTap})`, `RouteInfoPill`, `ReservationBanner`, `SwipeAction`, `OptionCard`, `OtpInput`, `PhotoCapture`, `ListRow`, `ProgressSteps`, `VoltiBottomSheet.show`, `VoltiDialog.show`, `VoltiToast.show`.
 
 ### Motion (design v2)
 

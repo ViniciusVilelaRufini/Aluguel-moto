@@ -7,6 +7,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../l10n/app_localizations.dart';
 import 'errors.dart';
+import 'map_tiles.dart';
 
 /// Ponto unico de textos localizados.
 extension L10nX on BuildContext {
@@ -136,7 +137,11 @@ class SectionTitle extends StatelessWidget {
       );
 }
 
-/// Mapa claro (OSM com o filtro suave do design) para Android, iOS e web.
+/// Mapa claro (tiles de [kMapTileUrl] com o filtro suave do design) para Android,
+/// iOS e web. A atribuicao fica em [attributionAlignment]; quem desenha a
+/// atribuicao fora do mapa (ex.: a home, ao lado do botao de localizar) passa
+/// `showAttribution: false`. [backgroundColor] aparece enquanto os tiles nao
+/// chegam (transparente deixa ver um fundo desenhado por baixo, sem rede).
 class VoltiMap extends StatelessWidget {
   const VoltiMap({
     super.key,
@@ -145,12 +150,18 @@ class VoltiMap extends StatelessWidget {
     this.controller,
     this.layers = const [],
     this.interactive = true,
+    this.showAttribution = true,
+    this.attributionAlignment = Alignment.centerLeft,
+    this.backgroundColor = VoltiColors.mapLand,
   });
   final LatLng center;
   final double zoom;
   final MapController? controller;
   final List<Widget> layers;
   final bool interactive;
+  final bool showAttribution;
+  final Alignment attributionAlignment;
+  final Color backgroundColor;
 
   // saturate(.55) brightness(1.06) contrast(.92) aproximado em matriz de cor.
   static const _filter = ColorFilter.matrix(<double>[
@@ -169,17 +180,21 @@ class VoltiMap extends StatelessWidget {
         initialZoom: zoom,
         minZoom: 3,
         maxZoom: 19,
+        backgroundColor: backgroundColor,
         interactionOptions: InteractionOptions(
           flags: interactive ? InteractiveFlag.all & ~InteractiveFlag.rotate : InteractiveFlag.none,
         ),
       ),
       children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'br.com.volti.cliente',
-          tileBuilder: (context, tile, _) => ColorFiltered(colorFilter: _filter, child: tile),
-        ),
+        voltiTileLayer(context, tileBuilder: (context, tile, _) => ColorFiltered(colorFilter: _filter, child: tile)),
         ...layers,
+        if (showAttribution)
+          SafeArea(
+            child: Align(
+              alignment: attributionAlignment,
+              child: const Padding(padding: EdgeInsets.all(6), child: MapAttribution()),
+            ),
+          ),
       ],
     );
   }

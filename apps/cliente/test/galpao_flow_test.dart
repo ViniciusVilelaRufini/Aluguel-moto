@@ -148,11 +148,11 @@ void main() {
       expect(find.text('R\$ 0,79/min'), findsWidgets);
       expect(find.text('R\$ 0,99/min'), findsOneWidget);
       expect(find.textContaining(' m · '), findsNothing);
-      expect(find.text('Continuar com Volti Flash · VLT-001'), findsOneWidget);
+      expect(find.text('Volti Flash · VLT-001'), findsOneWidget);
       await t.tap(find.byKey(const Key('pick-card-v2')));
       await t.pump();
-      expect(find.text('Continuar com Volti Urban · VLT-002'), findsOneWidget);
-      await tapText(t, 'Continuar com Volti Urban · VLT-002');
+      expect(find.text('Volti Urban · VLT-002'), findsOneWidget);
+      await tapText(t, 'Volti Urban · VLT-002');
       expect(find.byType(PlanScreen), findsOneWidget);
     });
   });
@@ -197,7 +197,7 @@ void main() {
       await t.tap(find.widgetWithText(VoltiChip, 'Volti Urban'));
       await settle(t);
       expect(find.text('VLT-001'), findsNothing);
-      expect(find.text('Continuar com Volti Urban · VLT-002'), findsOneWidget);
+      expect(find.text('Volti Urban · VLT-002'), findsOneWidget);
     });
   });
 
@@ -419,7 +419,7 @@ void main() {
     testWidgets('reduzir movimento: lista -> plano sem voo de Hero e sem animacao pendente', (t) async {
       phone(t);
       await pumpApp(t, GalpaoBackend(), initial: '/pick', reduceMotion: true);
-      await t.tap(find.text('Continuar com Volti Flash · VLT-001'));
+      await t.tap(find.text('Volti Flash · VLT-001'));
       await t.pump();
       await t.pump();
       expect(find.byType(PlanScreen), findsOneWidget);
