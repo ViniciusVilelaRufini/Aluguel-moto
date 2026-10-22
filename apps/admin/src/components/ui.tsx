@@ -11,7 +11,7 @@ import { Toast } from '@/ds/Toast';
 /* ---------- Layout ---------- */
 
 export function Page({ children, style }: { children: ReactNode; style?: CSSProperties }) {
-  return <div style={{ flex: 1, overflow: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0, ...style }}>{children}</div>;
+  return <div className="page" style={{ flex: 1, overflow: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0, ...style }}>{children}</div>;
 }
 
 export function PageHeader({ title, subtitle, children }: { title: string; subtitle?: string; children?: ReactNode }) {
