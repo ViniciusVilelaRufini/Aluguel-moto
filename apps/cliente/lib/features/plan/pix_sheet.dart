@@ -49,15 +49,17 @@ class _PixDepositSheetState extends ConsumerState<PixDepositSheet> {
   }
 
   Future<void> _poll() async {
+    if (_paid) return;
     try {
       final d = await ref.read(backendProvider).deposit(widget.deposit.id);
-      if (!mounted) return;
+      if (!mounted || _paid) return;
       if (d.status == DepositStatus.held) {
         _timer?.cancel();
         VoltiHaptics.success();
         // Mostra o check por um instante antes de seguir (sem espera com reduced motion).
         setState(() => _paid = true);
         final wait = VoltiMotion.reduced(context) ? Duration.zero : const Duration(milliseconds: 1100);
+        _close?.cancel();
         _close = Timer(wait, () {
           if (mounted) Navigator.of(context).pop(true);
         });

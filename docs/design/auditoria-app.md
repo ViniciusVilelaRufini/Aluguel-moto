@@ -20,7 +20,7 @@ Legenda: **A** alto (bloqueia, confunde ou é arriscado), **M** médio (atrito p
 | A4 | Corrida | Rótulo do botão SOS fixo em código (`'SOS'`) e sem dica do que acontece; `GestureDetector` sem retorno de toque. | aplicado: rótulo e dica localizados, `VoltiPressable` e háptica |
 | A5 | Meu plano | Tocar numa assinatura cancela a renovação na hora, sem confirmação. Ação destrutiva com um toque. | aplicado: diálogo de confirmação |
 | A6 | Plano | "por minute"/"por hour": a unidade do plano é mostrada pelo nome do enum em inglês. | aplicado: unidade localizada |
-| A7 | Texto a 200% | O HUD da corrida (velocidade + bateria + SOS numa linha) e as linhas de recibo estouram com `textScaler` 2.0. | aplicado: HUD em `Wrap`/`Flexible`, linhas de valor com `Flexible`; testes de estouro |
+| A7 | Texto a 200% | Com `textScaler` 2.0 os chips de ação da corrida (`VoltiChip`, altura fixa de 36 px) estouram, confirmado em teste. O HUD (número de velocidade, bateria e SOS numa linha rígida) e as linhas de valor do recibo não tinham folga para crescer. | aplicado: chip com altura mínima, HUD reorganizado com `Expanded`/`FittedBox`, linhas de valor com espaçamento; testes de 200% em corrida, mapa, histórico e recibo |
 | A9 | Motion (todas) | `VoltiFadeUp`/`VoltiEnter` remontavam o filho ao terminar a entrada: estado interno era perdido (contador do recibo reiniciava, pulsos recomeçavam, gesto em andamento era solto). | aplicado: `GlobalKey` no filho (fix em `volti_flutter`) |
 | A10 | Leitores de tela | Todo `VoltiButton`/`VoltiChip` era lido duas vezes ("Entrar Entrar"): rótulo do `VoltiPressable` + texto interno. | aplicado: semântica interna excluída quando há rótulo |
 | A8 | Carregamento | Listas e mapa usam `CircularProgressIndicator`/`LinearProgressIndicator` genéricos: a tela "pula" quando os dados chegam. | aplicado: `VoltiSkeleton` no formato do conteúdo (histórico, suporte, carteira, planos, assinaturas, mapa) |
@@ -44,7 +44,7 @@ Legenda: **A** alto (bloqueia, confunde ou é arriscado), **M** médio (atrito p
 
 | # | Tela | Problema | Status |
 |---|---|---|---|
-| B0 | Chips | `VoltiChip` com altura fixa de 36 px estoura com texto a 200%; e 36 px fica abaixo do alvo de 44 px. | aplicado: altura mínima que cresce com o texto; alvo de 44 px proposto (E-13) |
+| B0 | Chips | `VoltiChip` com altura fixa de 36 px estoura com texto a 200%; e 36 px fica abaixo do alvo de 44 px. | aplicado: altura mínima que cresce com o texto e área de toque invisível de 44 px (E-13) |
 | B1 | Corrida | `Chip`/`ActionChip` do Material destoam dos chips da marca (`VoltiChip`). | aplicado: `VoltiChip` nas ações e no selo ao vivo |
 | B2 | Recibo | Estrelas são `IconButton` com 48 px; ok, mas sem háptica. | aplicado: háptica de seleção |
 | B3 | Pix | "Aguardando o pagamento..." com três pontos. | aplicado: reticências tipográficas (…) |

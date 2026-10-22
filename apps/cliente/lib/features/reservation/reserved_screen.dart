@@ -29,8 +29,21 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
   void initState() {
     super.initState();
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      _maybeWarnLastMinute();
+      setState(() {});
     });
+  }
+
+  /// Ultimo minuto: um aviso tatil, uma vez (fora do build).
+  void _maybeWarnLastMinute() {
+    final r = ref.read(currentReservationProvider).value;
+    if (r == null || _warnedLastMinute) return;
+    final remaining = r.expiresAt.difference(DateTime.now().toUtc()).inSeconds;
+    if (remaining > 0 && remaining <= 60) {
+      _warnedLastMinute = true;
+      VoltiHaptics.warning();
+    }
   }
 
   @override
@@ -85,11 +98,6 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
           final total = r.expiresAt.difference(r.createdAt).inSeconds;
           final v = r.vehicle;
           final expired = remaining <= 0;
-          // Ultimo minuto: um aviso tatil, uma vez.
-          if (!expired && remaining <= 60 && !_warnedLastMinute) {
-            _warnedLastMinute = true;
-            VoltiHaptics.warning();
-          }
           return ListView(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             children: VoltiStagger.wrap([

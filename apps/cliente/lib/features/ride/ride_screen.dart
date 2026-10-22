@@ -163,7 +163,12 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           _vehiclePos = LatLng(e.lat, e.lng);
         });
       case ZoneNotice():
-        if (e.transition == 'ENTER') VoltiHaptics.warning();
+        // Haptica so quando a zona muda (eventos ENTER repetidos nao vibram de novo).
+        final z = _zone;
+        if (e.transition == 'ENTER' &&
+            (z == null || z.zoneType != e.zoneType || z.speedLimitKmh != e.speedLimitKmh || z.message != e.message)) {
+          VoltiHaptics.warning();
+        }
         setState(() {
           _zone = e.transition == 'ENTER' ? e : null;
           if (_zone != null) _lastZone = _zone;
