@@ -198,6 +198,7 @@ enum SubscriptionStatus {
   past_due
   canceled
   expired
+  paused
 }
 
 enum WalletEntryType {
@@ -332,6 +333,40 @@ enum CustomerStatus {
   deleted
 }
 
+// ───────────── contrato v2 (docs/decisoes.md, 2026-10-22) ─────────────
+
+enum PixKeyType {
+  cpf
+  email
+  phone
+  random
+}
+
+enum BatteryStatus {
+  in_vehicle
+  in_van
+  charging
+  in_station
+  retired
+}
+
+enum MaintenanceSource {
+  staff
+  customer
+  system
+}
+
+enum ReferralRewardStatus {
+  pending
+  granted
+  canceled
+}
+
+enum CustomerCouponSource {
+  manual
+  referral
+}
+
 // ───────────── pessoas ─────────────
 
 model Customer {
@@ -363,6 +398,13 @@ model Customer {
   locationConsentUpdatedAt  DateTime?
   marketingConsent          Boolean        @default(false)
   consentsUpdatedAt         DateTime?
+  /// Chave Pix para estornos (contrato v2), normalizada pelo tipo.
+  pixRefundKeyType          PixKeyType?
+  pixRefundKey              String?
+  /// Código de indicação (gerado no primeiro GET /me/referral).
+  referralCode              String?        @unique
+  /// Fix round 1 (I4): HMAC-SHA256 do CPF (FRAUD_HASH_SECRET), retido após a exclusão LGPD para prevenção a fraude.
+  cpfHash                   String?
   deletedAt                 DateTime?
   createdAt                 DateTime       @default(now())
   updatedAt                 DateTime       @updatedAt
@@ -382,6 +424,7 @@ model Customer {
   conversations SupportConversation[]
 
   @@index([kycStatus])
+  @@index([cpfHash])
   @@index([status])
 }
 
@@ -442,6 +485,18 @@ model Vehicle {
   firmwareVersion     String?
   lastSeenAt          DateTime?
   batterySerial       String?
+  /// Contrato v2: catálogo, endereço em cache e manutenção preventiva por km/horas.
+  vehicleModelId        String?       @db.Uuid
+  vehicleModel          VehicleModel? @relation(fields: [vehicleModelId], references: [id])
+  addressLabel          String?
+  addressLat            Float?
+  addressLng            Float?
+  addressUpdatedAt      DateTime?
+  odometerKm            Float         @default(0)
+  usageHours            Float         @default(0)
+  lastServiceAt         DateTime?
+  lastServiceOdometerKm Float         @default(0)
+  lastServiceUsageHours Float         @default(0)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
@@ -468,12 +523,20 @@ model Tracker {
 }
 
 model Battery {
-  id         String   @id @default(uuid()) @db.Uuid
-  serial     String   @unique
-  chargePct  Int      @default(100)
-  vehicleId  String?  @db.Uuid
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id         String        @id @default(uuid()) @db.Uuid
+  serial     String        @unique
+  chargePct  Int           @default(100)
+  vehicleId  String?       @db.Uuid
+  /// Contrato v2: ciclos (+1 a cada instalação), onde está e quem leva na van.
+  cycleCount Int           @default(0)
+  status     BatteryStatus @default(charging)
+  holderId   String?       @db.Uuid
+  stationId  String?       @db.Uuid
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@index([vehicleId])
+  @@index([holderId, status])
 }
 
 /// Cerca. `geom` (PostGIS) é a fonte para ST_Contains; `geometry` guarda o GeoJSON devolvido pela API.
@@ -566,7 +629,8 @@ model Coupon {
   createdAt                 DateTime     @default(now())
   updatedAt                 DateTime     @updatedAt
 
-  redemptionsLog CouponRedemption[]
+  redemptionsLog  CouponRedemption[]
+  customerCoupons CustomerCoupon[]
 }
 
 model CouponRedemption {
@@ -575,9 +639,12 @@ model CouponRedemption {
   coupon     Coupon   @relation(fields: [couponId], references: [id])
   customerId String   @db.Uuid
   rentalId   String   @unique @db.Uuid
+  /// Fix round 1 (I4): HMAC do CPF de quem usou (limite por cliente sobrevive à exclusão da conta).
+  cpfHash    String?
   createdAt  DateTime @default(now())
 
   @@index([couponId, customerId])
+  @@index([couponId, cpfHash])
 }
 
 model Fee {
@@ -754,10 +821,22 @@ model Subscription {
   currentPeriodEnd   DateTime
   cancelAtPeriodEnd  Boolean            @default(false)
   canceledAt         DateTime?
+  /// Contrato v2: pausa (limites em subscription-rules.ts) e moto fixa.
+  pausedAt           DateTime?
+  pauseEndsAt        DateTime?
+  pausesUsedInPeriod Int                @default(0)
+  assignedVehicleId  String?            @db.Uuid
+  /// Fix round 1 (M9): quando a moto fixa foi definida (espera entre trocas pelo cliente).
+  assignedVehicleAt  DateTime?
+  /// Fix round 2: cancelamento no gateway ainda não confirmado (assinatura expirada ou conta excluída). O job refaz até o
+  /// gateway aceitar; enquanto isso a recorrência pode cobrar e a cobrança tardia é estornada.
+  gatewayCancelPendingAt DateTime?
+  gatewayCancelAttempts  Int                @default(0)
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
   @@index([customerId, status])
+  @@index([gatewayCancelPendingAt])
 }
 
 model MinutePackage {
@@ -961,6 +1040,9 @@ model SupportMessage {
   authorName           String?
   body                 String
   attachmentObjectKeys String[]
+  /// Contrato v2: estado sent → delivered → read (pelo outro lado da conversa).
+  deliveredAt          DateTime?
+  readAt               DateTime?
   createdAt            DateTime            @default(now())
 
   @@index([conversationId, createdAt])
@@ -978,11 +1060,16 @@ model MaintenanceTask {
   completedAt  DateTime?
   notes        String?
   createdById  String?           @db.Uuid
+  /// Contrato v2: quem abriu (painel, cliente do plano ou regra automática).
+  source       MaintenanceSource @default(staff)
+  customerId   String?           @db.Uuid
   createdAt    DateTime          @default(now())
   updatedAt    DateTime          @updatedAt
 
   @@index([vehicleId])
   @@index([status])
+  @@index([customerId])
+  @@index([scheduledFor])
 }
 
 model FieldTask {
@@ -1039,6 +1126,9 @@ model BatterySwap {
   removedBatterySerial   String
   installedBatterySerial String
   installedBatteryPct    Int?
+  removedBatteryPct          Int?
+  removedBatteryCycleCount   Int?
+  installedBatteryCycleCount Int?
   idempotencyKey         String?   @unique
   recordedAt             DateTime
   createdAt              DateTime  @default(now())
@@ -1214,4 +1304,75 @@ model CustomerIdentityDeletion {
   updatedAt  DateTime @updatedAt
 
   @@index([attempts])
+}
+
+// ───────────── contrato v2 (docs/decisoes.md, 2026-10-22) — só modelos novos ─────────────
+
+/// Catálogo de modelos ("Escolha sua moto"): categoria, foto (bucket de catálogo), preço por minuto e intervalo de revisão.
+model VehicleModel {
+  id                   String   @id @default(uuid()) @db.Uuid
+  name                 String   @unique
+  slug                 String   @unique
+  categoryLabel        String
+  description          String?
+  photoObjectKey       String?
+  pricePerMinuteCents  Int
+  unlockFeeCents       Int?
+  serviceIntervalKm    Int      @default(1000)
+  serviceIntervalHours Int      @default(100)
+  active               Boolean  @default(true)
+  sortOrder            Int      @default(0)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  vehicles Vehicle[]
+}
+
+/// Estação de troca de bateria (mapa do cliente e do operador).
+model SwapStation {
+  id                 String   @id @default(uuid()) @db.Uuid
+  name               String
+  address            String
+  lat                Float
+  lng                Float
+  availableBatteries Int      @default(0)
+  totalSlots         Int      @default(0)
+  openingHours       String
+  open24h            Boolean  @default(false)
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+/// Cupom salvo na conta do cliente.
+model CustomerCoupon {
+  id         String               @id @default(uuid()) @db.Uuid
+  customerId String               @db.Uuid
+  couponId   String               @db.Uuid
+  coupon     Coupon               @relation(fields: [couponId], references: [id])
+  source     CustomerCouponSource @default(manual)
+  createdAt  DateTime             @default(now())
+
+  @@unique([customerId, couponId])
+}
+
+/// Indicação: um indicado por conta; recompensa do indicado na hora e de quem indicou na primeira corrida terminada.
+model Referral {
+  id                    String               @id @default(uuid()) @db.Uuid
+  referrerId            String               @db.Uuid
+  refereeId             String               @unique @db.Uuid
+  code                  String
+  status                ReferralRewardStatus @default(pending)
+  referrerRewardCents   Int
+  refereeRewardCents    Int
+  refereeWalletEntryId  String?              @db.Uuid
+  referrerWalletEntryId String?              @db.Uuid
+  /// Fix round 1 (I4): HMAC do CPF do indicado e de quem indicou.
+  refereeCpfHash        String?
+  referrerCpfHash       String?
+  createdAt             DateTime             @default(now())
+  grantedAt             DateTime?
+
+  @@index([referrerId, createdAt])
+  @@index([refereeCpfHash])
 }

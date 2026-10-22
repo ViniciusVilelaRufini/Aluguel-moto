@@ -22,6 +22,12 @@ class _$SupportMessage extends SupportMessage {
   @override
   final BuiltList<String>? attachmentObjectKeys;
   @override
+  final SupportMessageStatus? status;
+  @override
+  final DateTime? deliveredAt;
+  @override
+  final DateTime? readAt;
+  @override
   final DateTime createdAt;
 
   factory _$SupportMessage([void Function(SupportMessageBuilder)? updates]) =>
@@ -35,6 +41,9 @@ class _$SupportMessage extends SupportMessage {
       this.authorName,
       required this.body,
       this.attachmentObjectKeys,
+      this.status,
+      this.deliveredAt,
+      this.readAt,
       required this.createdAt})
       : super._();
   @override
@@ -55,6 +64,9 @@ class _$SupportMessage extends SupportMessage {
         authorName == other.authorName &&
         body == other.body &&
         attachmentObjectKeys == other.attachmentObjectKeys &&
+        status == other.status &&
+        deliveredAt == other.deliveredAt &&
+        readAt == other.readAt &&
         createdAt == other.createdAt;
   }
 
@@ -68,6 +80,9 @@ class _$SupportMessage extends SupportMessage {
     _$hash = $jc(_$hash, authorName.hashCode);
     _$hash = $jc(_$hash, body.hashCode);
     _$hash = $jc(_$hash, attachmentObjectKeys.hashCode);
+    _$hash = $jc(_$hash, status.hashCode);
+    _$hash = $jc(_$hash, deliveredAt.hashCode);
+    _$hash = $jc(_$hash, readAt.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -83,6 +98,9 @@ class _$SupportMessage extends SupportMessage {
           ..add('authorName', authorName)
           ..add('body', body)
           ..add('attachmentObjectKeys', attachmentObjectKeys)
+          ..add('status', status)
+          ..add('deliveredAt', deliveredAt)
+          ..add('readAt', readAt)
           ..add('createdAt', createdAt))
         .toString();
   }
@@ -124,6 +142,18 @@ class SupportMessageBuilder
   set attachmentObjectKeys(ListBuilder<String>? attachmentObjectKeys) =>
       _$this._attachmentObjectKeys = attachmentObjectKeys;
 
+  SupportMessageStatus? _status;
+  SupportMessageStatus? get status => _$this._status;
+  set status(SupportMessageStatus? status) => _$this._status = status;
+
+  DateTime? _deliveredAt;
+  DateTime? get deliveredAt => _$this._deliveredAt;
+  set deliveredAt(DateTime? deliveredAt) => _$this._deliveredAt = deliveredAt;
+
+  DateTime? _readAt;
+  DateTime? get readAt => _$this._readAt;
+  set readAt(DateTime? readAt) => _$this._readAt = readAt;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -142,6 +172,9 @@ class SupportMessageBuilder
       _authorName = $v.authorName;
       _body = $v.body;
       _attachmentObjectKeys = $v.attachmentObjectKeys?.toBuilder();
+      _status = $v.status;
+      _deliveredAt = $v.deliveredAt;
+      _readAt = $v.readAt;
       _createdAt = $v.createdAt;
       _$v = null;
     }
@@ -177,6 +210,9 @@ class SupportMessageBuilder
             body: BuiltValueNullFieldError.checkNotNull(
                 body, r'SupportMessage', 'body'),
             attachmentObjectKeys: _attachmentObjectKeys?.build(),
+            status: status,
+            deliveredAt: deliveredAt,
+            readAt: readAt,
             createdAt: BuiltValueNullFieldError.checkNotNull(
                 createdAt, r'SupportMessage', 'createdAt'),
           );

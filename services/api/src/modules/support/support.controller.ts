@@ -3,7 +3,7 @@ import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, StaffOnly } from
 import { UploadRequestDto } from '../rentals/rentals.dto';
 import {
   ClaimCreateDto, ClaimUpdateDto, ConversationCreateDto, ConversationUpdateDto, DisputeCreateDto, DisputeResolveDto, IncidentCreateDto, IncidentUpdateDto,
-  ListClaimsQuery, ListConversationsQuery, ListDisputesQuery, ListIncidentsQuery, ListMessagesQuery, MessageCreateDto,
+  ListClaimsQuery, ListConversationsQuery, ListDisputesQuery, ListIncidentsQuery, ListMessagesQuery, MessageCreateDto, SupportReadDto,
 } from './support.dto';
 import { SupportService } from './support.service';
 
@@ -118,5 +118,12 @@ export class SupportController {
   @CustomerOrStaff('admin', 'suporte')
   sendMessage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: MessageCreateDto, @CurrentUser() u: Principal) {
     return this.support.sendMessage(u, id, dto);
+  }
+
+  @Post('conversations/:id/read')
+  @HttpCode(200)
+  @CustomerOrStaff('admin', 'suporte')
+  markRead(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SupportReadDto, @CurrentUser() u: Principal) {
+    return this.support.markRead(u, id, dto.upToMessageId);
   }
 }

@@ -3,6 +3,7 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:built_collection/built_collection.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -14,6 +15,9 @@ part 'wallet.g.dart';
 /// * [balanceCents] - Soma dos lançamentos em reais.
 /// * [minutesBalance] - Minutos de pacotes ainda disponíveis.
 /// * [updatedAt]
+/// * [topUpMinCents] - Menor recarga de valor livre aceita agora.
+/// * [topUpMaxCents] - Maior recarga de valor livre aceita agora.
+/// * [suggestedTopUpAmountsCents] - Valores sugeridos para os atalhos da tela de recarga (centavos).
 @BuiltValue()
 abstract class Wallet implements Built<Wallet, WalletBuilder> {
   /// Soma dos lançamentos em reais.
@@ -26,6 +30,18 @@ abstract class Wallet implements Built<Wallet, WalletBuilder> {
 
   @BuiltValueField(wireName: r'updatedAt')
   DateTime get updatedAt;
+
+  /// Menor recarga de valor livre aceita agora.
+  @BuiltValueField(wireName: r'topUpMinCents')
+  int? get topUpMinCents;
+
+  /// Maior recarga de valor livre aceita agora.
+  @BuiltValueField(wireName: r'topUpMaxCents')
+  int? get topUpMaxCents;
+
+  /// Valores sugeridos para os atalhos da tela de recarga (centavos).
+  @BuiltValueField(wireName: r'suggestedTopUpAmountsCents')
+  BuiltList<int>? get suggestedTopUpAmountsCents;
 
   Wallet._();
 
@@ -65,6 +81,27 @@ class _$WalletSerializer implements PrimitiveSerializer<Wallet> {
       object.updatedAt,
       specifiedType: const FullType(DateTime),
     );
+    if (object.topUpMinCents != null) {
+      yield r'topUpMinCents';
+      yield serializers.serialize(
+        object.topUpMinCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.topUpMaxCents != null) {
+      yield r'topUpMaxCents';
+      yield serializers.serialize(
+        object.topUpMaxCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.suggestedTopUpAmountsCents != null) {
+      yield r'suggestedTopUpAmountsCents';
+      yield serializers.serialize(
+        object.suggestedTopUpAmountsCents,
+        specifiedType: const FullType(BuiltList, [FullType(int)]),
+      );
+    }
   }
 
   @override
@@ -110,6 +147,30 @@ class _$WalletSerializer implements PrimitiveSerializer<Wallet> {
             specifiedType: const FullType(DateTime),
           ) as DateTime;
           result.updatedAt = valueDes;
+          break;
+        case r'topUpMinCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.topUpMinCents = valueDes;
+          break;
+        case r'topUpMaxCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.topUpMaxCents = valueDes;
+          break;
+        case r'suggestedTopUpAmountsCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(BuiltList, [FullType(int)]),
+          ) as BuiltList<int>?;
+          if (valueDes == null) continue;
+          result.suggestedTopUpAmountsCents.replace(valueDes);
           break;
         default:
           unhandled.add(key);

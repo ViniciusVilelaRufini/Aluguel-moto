@@ -3,6 +3,8 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:volti_api/src/model/battery.dart';
+import 'package:volti_api/src/model/vehicle_service_info.dart';
 import 'package:volti_api/src/model/vehicle_status.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
@@ -34,6 +36,17 @@ part 'vehicle.g.dart';
 /// * [firmwareVersion] - staff.
 /// * [lastSeenAt] - staff. Último sinal.
 /// * [currentRentalId] - staff.
+/// * [vehicleModelId]
+/// * [categoryLabel]
+/// * [pricePerMinuteCents]
+/// * [address] - Endereço aproximado da posição atual (geocodificação reversa em cache).
+/// * [addressUpdatedAt]
+/// * [odometerKm] - staff.
+/// * [usageHours] - staff. Horas com ignição ligada.
+/// * [service]
+/// * [battery]
+/// * [assignedSubscriptionId] - staff. Moto fixa de uma assinatura semanal/mensal.
+/// * [locationHidden] - Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
 /// * [createdAt]
 /// * [updatedAt]
 @BuiltValue()
@@ -118,6 +131,44 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   /// staff.
   @BuiltValueField(wireName: r'currentRentalId')
   String? get currentRentalId;
+
+  @BuiltValueField(wireName: r'vehicleModelId')
+  String? get vehicleModelId;
+
+  @BuiltValueField(wireName: r'categoryLabel')
+  String? get categoryLabel;
+
+  @BuiltValueField(wireName: r'pricePerMinuteCents')
+  int? get pricePerMinuteCents;
+
+  /// Endereço aproximado da posição atual (geocodificação reversa em cache).
+  @BuiltValueField(wireName: r'address')
+  String? get address;
+
+  @BuiltValueField(wireName: r'addressUpdatedAt')
+  DateTime? get addressUpdatedAt;
+
+  /// staff.
+  @BuiltValueField(wireName: r'odometerKm')
+  double? get odometerKm;
+
+  /// staff. Horas com ignição ligada.
+  @BuiltValueField(wireName: r'usageHours')
+  double? get usageHours;
+
+  @BuiltValueField(wireName: r'service')
+  VehicleServiceInfo? get service;
+
+  @BuiltValueField(wireName: r'battery')
+  Battery? get battery;
+
+  /// staff. Moto fixa de uma assinatura semanal/mensal.
+  @BuiltValueField(wireName: r'assignedSubscriptionId')
+  String? get assignedSubscriptionId;
+
+  /// Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
+  @BuiltValueField(wireName: r'locationHidden')
+  bool? get locationHidden;
 
   @BuiltValueField(wireName: r'createdAt')
   DateTime? get createdAt;
@@ -282,6 +333,83 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
       yield serializers.serialize(
         object.currentRentalId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.vehicleModelId != null) {
+      yield r'vehicleModelId';
+      yield serializers.serialize(
+        object.vehicleModelId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.categoryLabel != null) {
+      yield r'categoryLabel';
+      yield serializers.serialize(
+        object.categoryLabel,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.pricePerMinuteCents != null) {
+      yield r'pricePerMinuteCents';
+      yield serializers.serialize(
+        object.pricePerMinuteCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.address != null) {
+      yield r'address';
+      yield serializers.serialize(
+        object.address,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.addressUpdatedAt != null) {
+      yield r'addressUpdatedAt';
+      yield serializers.serialize(
+        object.addressUpdatedAt,
+        specifiedType: const FullType(DateTime),
+      );
+    }
+    if (object.odometerKm != null) {
+      yield r'odometerKm';
+      yield serializers.serialize(
+        object.odometerKm,
+        specifiedType: const FullType(double),
+      );
+    }
+    if (object.usageHours != null) {
+      yield r'usageHours';
+      yield serializers.serialize(
+        object.usageHours,
+        specifiedType: const FullType(double),
+      );
+    }
+    if (object.service != null) {
+      yield r'service';
+      yield serializers.serialize(
+        object.service,
+        specifiedType: const FullType(VehicleServiceInfo),
+      );
+    }
+    if (object.battery != null) {
+      yield r'battery';
+      yield serializers.serialize(
+        object.battery,
+        specifiedType: const FullType(Battery),
+      );
+    }
+    if (object.assignedSubscriptionId != null) {
+      yield r'assignedSubscriptionId';
+      yield serializers.serialize(
+        object.assignedSubscriptionId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.locationHidden != null) {
+      yield r'locationHidden';
+      yield serializers.serialize(
+        object.locationHidden,
+        specifiedType: const FullType(bool),
       );
     }
     if (object.createdAt != null) {
@@ -489,6 +617,94 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
           ) as String?;
           if (valueDes == null) continue;
           result.currentRentalId = valueDes;
+          break;
+        case r'vehicleModelId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.vehicleModelId = valueDes;
+          break;
+        case r'categoryLabel':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.categoryLabel = valueDes;
+          break;
+        case r'pricePerMinuteCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.pricePerMinuteCents = valueDes;
+          break;
+        case r'address':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.address = valueDes;
+          break;
+        case r'addressUpdatedAt':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DateTime),
+          ) as DateTime?;
+          if (valueDes == null) continue;
+          result.addressUpdatedAt = valueDes;
+          break;
+        case r'odometerKm':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(double),
+          ) as double?;
+          if (valueDes == null) continue;
+          result.odometerKm = valueDes;
+          break;
+        case r'usageHours':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(double),
+          ) as double?;
+          if (valueDes == null) continue;
+          result.usageHours = valueDes;
+          break;
+        case r'service':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(VehicleServiceInfo),
+          ) as VehicleServiceInfo?;
+          if (valueDes == null) continue;
+          result.service.replace(valueDes);
+          break;
+        case r'battery':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(Battery),
+          ) as Battery?;
+          if (valueDes == null) continue;
+          result.battery.replace(valueDes);
+          break;
+        case r'assignedSubscriptionId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.assignedSubscriptionId = valueDes;
+          break;
+        case r'locationHidden':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(bool),
+          ) as bool?;
+          if (valueDes == null) continue;
+          result.locationHidden = valueDes;
           break;
         case r'createdAt':
           final valueDes = serializers.deserialize(

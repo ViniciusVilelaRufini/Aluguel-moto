@@ -1,4 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
+import { assertTopUpAmount, topUpLimits } from './top-up-limits';
 import { Prisma, type Payment } from '@prisma/client';
 import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { badRequest, notFound, ProblemException, unprocessable } from '../../common/problem';
@@ -31,6 +33,7 @@ export class WalletService {
     private readonly customers: ProviderCustomersService,
     @Inject(QUEUE_BUS) private readonly queue: QueueBus,
     @Inject(BILLING_OPTIONS) private readonly opts: BillingOptions,
+    @Optional() @Inject(V2_CONFIG) private readonly v2: V2Config = loadV2Config(),
   ) {}
 
   balance(customerId: string, tx: Prisma.TransactionClient = this.prisma) {
@@ -39,7 +42,7 @@ export class WalletService {
 
   async get(customerId: string) {
     const b = await this.balance(customerId);
-    return { balanceCents: b.balanceCents, minutesBalance: b.minutesBalance, updatedAt: b.updatedAt.toISOString() };
+    return { balanceCents: b.balanceCents, minutesBalance: b.minutesBalance, updatedAt: b.updatedAt.toISOString(), ...topUpLimits(this.v2) };
   }
 
   async packages() {
@@ -56,6 +59,8 @@ export class WalletService {
     if ((dto.amountCents === undefined) === (dto.packageId === undefined)) {
       throw badRequest('Informe amountCents ou packageId (um dos dois).', [{ field: 'amountCents', message: 'exatamente um entre amountCents e packageId' }]);
     }
+    // Contrato v2: valor livre dentro dos limites configurados (422 top-up-amount-out-of-range).
+    if (dto.amountCents !== undefined) assertTopUpAmount(dto.amountCents, this.v2);
     let amountCents = dto.amountCents ?? 0;
     let minutes: number | undefined;
     if (dto.packageId) {

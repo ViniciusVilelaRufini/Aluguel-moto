@@ -191,7 +191,43 @@ export class SupportService {
     const rows = await this.prisma.supportConversation.findMany({
       where, include: { customer: { select: { name: true } } }, orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }], ...pageArgs(q),
     });
-    return toPage(rows, q, toConversation);
+    const unread = await this.unreadCounts(user, rows.map((r) => r.id));
+    return toPage(rows, q, (c) => toConversation({ ...c, unreadCount: unread.get(c.id) ?? 0 }));
+  }
+
+  /** Contrato v2: autores "do outro lado" da conversa para quem consulta. */
+  private otherSide(user: Principal): Array<'customer' | 'staff' | 'system'> {
+    return isStaff(user) ? ['customer'] : ['staff', 'system'];
+  }
+
+  /** Mensagens do outro lado ainda não lidas, por conversa. */
+  private async unreadCounts(user: Principal, ids: string[]): Promise<Map<string, number>> {
+    if (ids.length === 0) return new Map();
+    const rows = await this.prisma.supportMessage.groupBy({
+      by: ['conversationId'],
+      where: { conversationId: { in: ids }, authorType: { in: this.otherSide(user) }, readAt: null },
+      _count: { _all: true },
+    });
+    return new Map(rows.map((r) => [r.conversationId, r._count._all]));
+  }
+
+  /** Marca como lidas as mensagens do outro lado até `upToMessageId` (inclusive) ou todas. Idempotente. */
+  async markRead(user: Principal, id: string, upToMessageId?: string) {
+    const c = await this.conversationFor(user, id);
+    let cutoff: Date | undefined;
+    if (upToMessageId) {
+      const m = await this.prisma.supportMessage.findUnique({ where: { id: upToMessageId }, select: { conversationId: true, createdAt: true } });
+      if (!m || m.conversationId !== id) throw notFound('Mensagem não encontrada.');
+      cutoff = m.createdAt;
+    }
+    const now = new Date();
+    const filter: Prisma.SupportMessageWhereInput = { conversationId: id, authorType: { in: this.otherSide(user) }, readAt: null, ...(cutoff ? { createdAt: { lte: cutoff } } : {}) };
+    await this.prisma.$transaction([
+      this.prisma.supportMessage.updateMany({ where: { ...filter, deliveredAt: null }, data: { deliveredAt: now } }),
+      this.prisma.supportMessage.updateMany({ where: filter, data: { readAt: now } }),
+    ]);
+    const unread = await this.unreadCounts(user, [id]);
+    return toConversation({ ...c, unreadCount: unread.get(id) ?? 0 });
   }
 
   async createConversation(user: Principal, dto: ConversationCreateDto) {
@@ -217,7 +253,8 @@ export class SupportService {
   async updateConversation(user: Principal, id: string, dto: ConversationUpdateDto) {
     await this.conversationFor(user, id);
     const c = await this.prisma.supportConversation.update({ where: { id }, data: { status: dto.status }, include: { customer: { select: { name: true } } } });
-    return toConversation(c);
+    const unread = await this.unreadCounts(user, [id]);
+    return toConversation({ ...c, unreadCount: unread.get(id) ?? 0 });
   }
 
   async listMessages(user: Principal, id: string, q: ListMessagesQuery) {
@@ -225,6 +262,14 @@ export class SupportService {
     const where: Prisma.SupportMessageWhereInput = { conversationId: id };
     if (q.after) where.createdAt = { gt: new Date(q.after) };
     const rows = await this.prisma.supportMessage.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], ...pageArgs(q) });
+    // Contrato v2: buscar a conversa entrega (`delivered`) as mensagens do outro lado.
+    const other = this.otherSide(user);
+    const undelivered = rows.filter((r) => !r.deliveredAt && other.includes(r.authorType)).map((r) => r.id);
+    if (undelivered.length) {
+      const now = new Date();
+      await this.prisma.supportMessage.updateMany({ where: { id: { in: undelivered }, deliveredAt: null }, data: { deliveredAt: now } });
+      for (const r of rows) if (undelivered.includes(r.id)) r.deliveredAt = now;
+    }
     return toPage(rows, q, toMessage);
   }
 

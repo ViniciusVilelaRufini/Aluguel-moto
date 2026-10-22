@@ -10,6 +10,7 @@ const SubscriptionStatus _$active = const SubscriptionStatus._('active');
 const SubscriptionStatus _$pastDue = const SubscriptionStatus._('pastDue');
 const SubscriptionStatus _$canceled = const SubscriptionStatus._('canceled');
 const SubscriptionStatus _$expired = const SubscriptionStatus._('expired');
+const SubscriptionStatus _$paused = const SubscriptionStatus._('paused');
 const SubscriptionStatus _$unknownDefaultOpenApi =
     const SubscriptionStatus._('unknownDefaultOpenApi');
 
@@ -23,6 +24,8 @@ SubscriptionStatus _$valueOf(String name) {
       return _$canceled;
     case 'expired':
       return _$expired;
+    case 'paused':
+      return _$paused;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -36,6 +39,7 @@ final BuiltSet<SubscriptionStatus> _$values =
   _$pastDue,
   _$canceled,
   _$expired,
+  _$paused,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -45,6 +49,7 @@ class _$SubscriptionStatusMeta {
   SubscriptionStatus get pastDue => _$pastDue;
   SubscriptionStatus get canceled => _$canceled;
   SubscriptionStatus get expired => _$expired;
+  SubscriptionStatus get paused => _$paused;
   SubscriptionStatus get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   SubscriptionStatus valueOf(String name) => _$valueOf(name);
   BuiltSet<SubscriptionStatus> get values => _$values;
@@ -66,6 +71,7 @@ class _$SubscriptionStatusSerializer
     'pastDue': 'past_due',
     'canceled': 'canceled',
     'expired': 'expired',
+    'paused': 'paused',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -73,6 +79,7 @@ class _$SubscriptionStatusSerializer
     'past_due': 'pastDue',
     'canceled': 'canceled',
     'expired': 'expired',
+    'paused': 'paused',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

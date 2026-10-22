@@ -40,6 +40,16 @@ export class MeUpdateDto {
   @IsOptional()
   @Matches(PHONE)
   emergencyContactPhone?: string;
+
+  /** Contrato v2: chave Pix para estornos (validada pelo tipo no controller → 422 pix-key-invalid). */
+  @IsOptional()
+  @IsIn(['cpf', 'email', 'phone', 'random'])
+  pixRefundKeyType?: 'cpf' | 'email' | 'phone' | 'random';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(77)
+  pixRefundKey?: string;
 }
 
 export class DeviceRegistrationDto {

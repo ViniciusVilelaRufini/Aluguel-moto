@@ -15,6 +15,10 @@ class _$MeUpdate extends MeUpdate {
   final String? emergencyContactName;
   @override
   final String? emergencyContactPhone;
+  @override
+  final PixKeyType? pixRefundKeyType;
+  @override
+  final String? pixRefundKey;
 
   factory _$MeUpdate([void Function(MeUpdateBuilder)? updates]) =>
       (MeUpdateBuilder()..update(updates))._build();
@@ -23,7 +27,9 @@ class _$MeUpdate extends MeUpdate {
       {this.name,
       this.phone,
       this.emergencyContactName,
-      this.emergencyContactPhone})
+      this.emergencyContactPhone,
+      this.pixRefundKeyType,
+      this.pixRefundKey})
       : super._();
   @override
   MeUpdate rebuild(void Function(MeUpdateBuilder) updates) =>
@@ -39,7 +45,9 @@ class _$MeUpdate extends MeUpdate {
         name == other.name &&
         phone == other.phone &&
         emergencyContactName == other.emergencyContactName &&
-        emergencyContactPhone == other.emergencyContactPhone;
+        emergencyContactPhone == other.emergencyContactPhone &&
+        pixRefundKeyType == other.pixRefundKeyType &&
+        pixRefundKey == other.pixRefundKey;
   }
 
   @override
@@ -49,6 +57,8 @@ class _$MeUpdate extends MeUpdate {
     _$hash = $jc(_$hash, phone.hashCode);
     _$hash = $jc(_$hash, emergencyContactName.hashCode);
     _$hash = $jc(_$hash, emergencyContactPhone.hashCode);
+    _$hash = $jc(_$hash, pixRefundKeyType.hashCode);
+    _$hash = $jc(_$hash, pixRefundKey.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -59,7 +69,9 @@ class _$MeUpdate extends MeUpdate {
           ..add('name', name)
           ..add('phone', phone)
           ..add('emergencyContactName', emergencyContactName)
-          ..add('emergencyContactPhone', emergencyContactPhone))
+          ..add('emergencyContactPhone', emergencyContactPhone)
+          ..add('pixRefundKeyType', pixRefundKeyType)
+          ..add('pixRefundKey', pixRefundKey))
         .toString();
   }
 }
@@ -85,6 +97,15 @@ class MeUpdateBuilder implements Builder<MeUpdate, MeUpdateBuilder> {
   set emergencyContactPhone(String? emergencyContactPhone) =>
       _$this._emergencyContactPhone = emergencyContactPhone;
 
+  PixKeyType? _pixRefundKeyType;
+  PixKeyType? get pixRefundKeyType => _$this._pixRefundKeyType;
+  set pixRefundKeyType(PixKeyType? pixRefundKeyType) =>
+      _$this._pixRefundKeyType = pixRefundKeyType;
+
+  String? _pixRefundKey;
+  String? get pixRefundKey => _$this._pixRefundKey;
+  set pixRefundKey(String? pixRefundKey) => _$this._pixRefundKey = pixRefundKey;
+
   MeUpdateBuilder() {
     MeUpdate._defaults(this);
   }
@@ -96,6 +117,8 @@ class MeUpdateBuilder implements Builder<MeUpdate, MeUpdateBuilder> {
       _phone = $v.phone;
       _emergencyContactName = $v.emergencyContactName;
       _emergencyContactPhone = $v.emergencyContactPhone;
+      _pixRefundKeyType = $v.pixRefundKeyType;
+      _pixRefundKey = $v.pixRefundKey;
       _$v = null;
     }
     return this;
@@ -121,6 +144,8 @@ class MeUpdateBuilder implements Builder<MeUpdate, MeUpdateBuilder> {
           phone: phone,
           emergencyContactName: emergencyContactName,
           emergencyContactPhone: emergencyContactPhone,
+          pixRefundKeyType: pixRefundKeyType,
+          pixRefundKey: pixRefundKey,
         );
     replace(_$result);
     return _$result;

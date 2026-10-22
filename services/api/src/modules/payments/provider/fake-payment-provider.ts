@@ -29,7 +29,7 @@ export class FakePaymentProvider implements PaymentProvider {
   private readonly payments = new Map<string, ProviderPayment & { cardFailsCharge?: boolean }>();
   private readonly cards = new Map<string, ProviderCard & { failsCharge: boolean }>();
   private readonly cardTokens = new Map<string, string>();
-  private readonly subscriptions = new Map<string, 'active' | 'canceled'>();
+  private readonly subscriptions = new Map<string, 'active' | 'paused' | 'canceled'>();
   private readonly idem = new Map<string, unknown>();
   private readonly failures = new Map<Op, string>();
   private readonly counts = new Map<Op, number>();
@@ -55,7 +55,7 @@ export class FakePaymentProvider implements PaymentProvider {
     return { ...p };
   }
 
-  subscriptionStatus(id: string): 'active' | 'canceled' | undefined {
+  subscriptionStatus(id: string): 'active' | 'paused' | 'canceled' | undefined {
     return this.subscriptions.get(id);
   }
 
@@ -217,8 +217,34 @@ export class FakePaymentProvider implements PaymentProvider {
     });
   }
 
+  /** Teste (fix round 2): faz a próxima chamada de cancelamento da assinatura falhar (a API deixa pendente e refaz). */
+  failNextCancelCall = false;
+
   async cancelSubscription(input: { providerSubscriptionId: string }): Promise<void> {
+    if (this.failNextCancelCall) {
+      this.failNextCancelCall = false;
+      throw new Error('fake_gateway_unavailable');
+    }
     if (this.subscriptions.has(input.providerSubscriptionId)) this.subscriptions.set(input.providerSubscriptionId, 'canceled');
+  }
+
+  /** Datas da próxima cobrança por assinatura (o fake é a fonte da verdade nos testes). */
+  private readonly nextCharges = new Map<string, Date>();
+  /** Teste: faz a próxima chamada de pausa/retomada falhar. */
+  failNextPauseCall = false;
+
+  async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean; nextChargeAt?: Date }): Promise<void> {
+    if (this.failNextPauseCall) {
+      this.failNextPauseCall = false;
+      throw new Error('fake_gateway_unavailable');
+    }
+    const current = this.subscriptions.get(input.providerSubscriptionId);
+    if (current && current !== 'canceled') this.subscriptions.set(input.providerSubscriptionId, input.paused ? 'paused' : 'active');
+    if (!input.paused && input.nextChargeAt) this.nextCharges.set(input.providerSubscriptionId, input.nextChargeAt);
+  }
+
+  subscriptionNextChargeAt(id: string): Date | undefined {
+    return this.nextCharges.get(id);
   }
 
   verifyWebhook(input: { signature?: string; requestId?: string; dataId: string }): boolean {

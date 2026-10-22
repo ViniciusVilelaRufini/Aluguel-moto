@@ -1,4 +1,6 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { cpfHash } from '../../common/fraud-hash';
+import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
 import type { Customer } from '@prisma/client';
 import { ageOn } from '../../adapters/kyc/mock-kyc-provider';
 import { conflict, notFound, unprocessable } from '../../common/problem';
@@ -28,6 +30,7 @@ export class KycService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(PUSH_NOTIFIER) private readonly push: PushNotifier,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    @Optional() @Inject(V2_CONFIG) private readonly v2?: V2Config,
   ) {}
 
   private async customer(id: string) {
@@ -67,6 +70,8 @@ export class KycService {
       data: {
         name: dto.fullName,
         cpf: dto.cpf,
+        // Fix round 1 (I4): HMAC do CPF para prevenção a fraude (retido após a exclusão LGPD).
+        cpfHash: cpfHash(dto.cpf, (this.v2 ?? loadV2Config()).fraudHashSecret),
         birthDate: new Date(`${dto.birthDate}T00:00:00Z`),
         kycStatus: 'pending',
         kycReason: null,

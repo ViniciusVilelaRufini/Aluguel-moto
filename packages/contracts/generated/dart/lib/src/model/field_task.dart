@@ -5,6 +5,7 @@
 // ignore_for_file: unused_element
 import 'package:volti_api/src/model/field_task_type.dart';
 import 'package:volti_api/src/model/task_priority.dart';
+import 'package:volti_api/src/model/vehicle_status.dart';
 import 'package:volti_api/src/model/field_task_status.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
@@ -23,6 +24,11 @@ part 'field_task.g.dart';
 /// * [vehicleLat] - Última posição conhecida da moto.
 /// * [vehicleLng]
 /// * [vehicleBatteryPct]
+/// * [vehicleStatus]
+/// * [vehicleAddress] - Endereço aproximado da moto.
+/// * [vehicleBatterySerial] - Bateria instalada (retirada numa troca).
+/// * [vehicleBatteryCycleCount]
+/// * [targetAddress] - Endereço aproximado do destino.
 /// * [targetLat] - Destino (reposicionar).
 /// * [targetLng]
 /// * [assigneeId]
@@ -68,6 +74,25 @@ abstract class FieldTask implements Built<FieldTask, FieldTaskBuilder> {
 
   @BuiltValueField(wireName: r'vehicleBatteryPct')
   int? get vehicleBatteryPct;
+
+  @BuiltValueField(wireName: r'vehicleStatus')
+  VehicleStatus? get vehicleStatus;
+  // enum vehicleStatusEnum {  free,  rented,  reserved,  paused,  blocked,  maintenance,  offline,  };
+
+  /// Endereço aproximado da moto.
+  @BuiltValueField(wireName: r'vehicleAddress')
+  String? get vehicleAddress;
+
+  /// Bateria instalada (retirada numa troca).
+  @BuiltValueField(wireName: r'vehicleBatterySerial')
+  String? get vehicleBatterySerial;
+
+  @BuiltValueField(wireName: r'vehicleBatteryCycleCount')
+  int? get vehicleBatteryCycleCount;
+
+  /// Endereço aproximado do destino.
+  @BuiltValueField(wireName: r'targetAddress')
+  String? get targetAddress;
 
   /// Destino (reposicionar).
   @BuiltValueField(wireName: r'targetLat')
@@ -181,6 +206,41 @@ class _$FieldTaskSerializer implements PrimitiveSerializer<FieldTask> {
       yield serializers.serialize(
         object.vehicleBatteryPct,
         specifiedType: const FullType(int),
+      );
+    }
+    if (object.vehicleStatus != null) {
+      yield r'vehicleStatus';
+      yield serializers.serialize(
+        object.vehicleStatus,
+        specifiedType: const FullType(VehicleStatus),
+      );
+    }
+    if (object.vehicleAddress != null) {
+      yield r'vehicleAddress';
+      yield serializers.serialize(
+        object.vehicleAddress,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.vehicleBatterySerial != null) {
+      yield r'vehicleBatterySerial';
+      yield serializers.serialize(
+        object.vehicleBatterySerial,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.vehicleBatteryCycleCount != null) {
+      yield r'vehicleBatteryCycleCount';
+      yield serializers.serialize(
+        object.vehicleBatteryCycleCount,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.targetAddress != null) {
+      yield r'targetAddress';
+      yield serializers.serialize(
+        object.targetAddress,
+        specifiedType: const FullType(String),
       );
     }
     if (object.targetLat != null) {
@@ -360,6 +420,46 @@ class _$FieldTaskSerializer implements PrimitiveSerializer<FieldTask> {
           ) as int?;
           if (valueDes == null) continue;
           result.vehicleBatteryPct = valueDes;
+          break;
+        case r'vehicleStatus':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(VehicleStatus),
+          ) as VehicleStatus?;
+          if (valueDes == null) continue;
+          result.vehicleStatus = valueDes;
+          break;
+        case r'vehicleAddress':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.vehicleAddress = valueDes;
+          break;
+        case r'vehicleBatterySerial':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.vehicleBatterySerial = valueDes;
+          break;
+        case r'vehicleBatteryCycleCount':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.vehicleBatteryCycleCount = valueDes;
+          break;
+        case r'targetAddress':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.targetAddress = valueDes;
           break;
         case r'targetLat':
           final valueDes = serializers.deserialize(

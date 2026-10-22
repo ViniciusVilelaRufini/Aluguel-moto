@@ -1,6 +1,7 @@
 import type { InsurancePolicy, Payment, PaymentCard, Subscription, TopUp, WalletEntry } from '@prisma/client';
 import { compact, iso } from '../../common/util';
 import type { PixCharge } from '../../ports/rental-billing.port';
+import { nextCharge, pausePolicy, pausesRemaining } from './subscription-rules';
 
 /** `receiptUrl`: link assinado gerado na leitura (QA-11); o valor gravado em `Payment.receiptUrl` é legado e ignorado. */
 export function toPayment(p: Payment, receiptUrl?: string) {
@@ -28,7 +29,15 @@ export function toPaymentCard(c: PaymentCard) {
   return { id: c.id, brand: c.brand, last4: c.last4, expMonth: c.expMonth, expYear: c.expYear, isDefault: c.isDefault, createdAt: c.createdAt.toISOString() };
 }
 
-export function toSubscription(s: Subscription) {
+/** Dados extras da assinatura (contrato v2): cartão da recorrência, última cobrança e moto fixa. */
+export interface SubscriptionExtras {
+  card?: Pick<PaymentCard, 'brand' | 'last4'> | null;
+  lastPayment?: Pick<Payment, 'status' | 'createdAt'> | null;
+  assignedVehicle?: Record<string, unknown> | null;
+}
+
+export function toSubscription(s: Subscription, extras: SubscriptionExtras = {}) {
+  const next = nextCharge(s);
   return compact({
     id: s.id,
     planCode: s.planCode as 'weekly' | 'monthly',
@@ -39,6 +48,18 @@ export function toSubscription(s: Subscription) {
     currentPeriodEnd: s.currentPeriodEnd.toISOString(),
     cancelAtPeriodEnd: s.cancelAtPeriodEnd,
     canceledAt: iso(s.canceledAt),
+    nextChargeAt: iso(next.nextChargeAt),
+    nextChargeCents: next.nextChargeCents,
+    cardBrand: extras.card?.brand,
+    cardLast4: extras.card?.last4,
+    lastPaymentStatus: extras.lastPayment?.status,
+    lastPaymentAt: iso(extras.lastPayment?.createdAt),
+    pausedAt: iso(s.pausedAt),
+    pauseEndsAt: iso(s.pauseEndsAt),
+    maxPauseDays: pausePolicy(s.planCode).maxDaysPerPause,
+    pausesRemainingInPeriod: pausesRemaining(s),
+    assignedVehicleId: s.assignedVehicleId ?? undefined,
+    assignedVehicle: extras.assignedVehicle ?? undefined,
     createdAt: s.createdAt.toISOString(),
   });
 }

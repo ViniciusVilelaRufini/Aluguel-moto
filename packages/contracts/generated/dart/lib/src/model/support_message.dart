@@ -4,6 +4,7 @@
 
 // ignore_for_file: unused_element
 import 'package:built_collection/built_collection.dart';
+import 'package:volti_api/src/model/support_message_status.dart';
 import 'package:volti_api/src/model/message_author_type.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
@@ -20,6 +21,9 @@ part 'support_message.g.dart';
 /// * [authorName] - Primeiro nome do atendente (staff) ou \"Você\".
 /// * [body]
 /// * [attachmentObjectKeys]
+/// * [status]
+/// * [deliveredAt] - O outro lado buscou a mensagem.
+/// * [readAt] - O outro lado marcou como lida.
 /// * [createdAt]
 @BuiltValue()
 abstract class SupportMessage
@@ -46,6 +50,18 @@ abstract class SupportMessage
 
   @BuiltValueField(wireName: r'attachmentObjectKeys')
   BuiltList<String>? get attachmentObjectKeys;
+
+  @BuiltValueField(wireName: r'status')
+  SupportMessageStatus? get status;
+  // enum statusEnum {  sent,  delivered,  read,  };
+
+  /// O outro lado buscou a mensagem.
+  @BuiltValueField(wireName: r'deliveredAt')
+  DateTime? get deliveredAt;
+
+  /// O outro lado marcou como lida.
+  @BuiltValueField(wireName: r'readAt')
+  DateTime? get readAt;
 
   @BuiltValueField(wireName: r'createdAt')
   DateTime get createdAt;
@@ -115,6 +131,27 @@ class _$SupportMessageSerializer
       yield serializers.serialize(
         object.attachmentObjectKeys,
         specifiedType: const FullType(BuiltList, [FullType(String)]),
+      );
+    }
+    if (object.status != null) {
+      yield r'status';
+      yield serializers.serialize(
+        object.status,
+        specifiedType: const FullType(SupportMessageStatus),
+      );
+    }
+    if (object.deliveredAt != null) {
+      yield r'deliveredAt';
+      yield serializers.serialize(
+        object.deliveredAt,
+        specifiedType: const FullType(DateTime),
+      );
+    }
+    if (object.readAt != null) {
+      yield r'readAt';
+      yield serializers.serialize(
+        object.readAt,
+        specifiedType: const FullType(DateTime),
       );
     }
     yield r'createdAt';
@@ -199,6 +236,30 @@ class _$SupportMessageSerializer
           ) as BuiltList<String>?;
           if (valueDes == null) continue;
           result.attachmentObjectKeys.replace(valueDes);
+          break;
+        case r'status':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(SupportMessageStatus),
+          ) as SupportMessageStatus?;
+          if (valueDes == null) continue;
+          result.status = valueDes;
+          break;
+        case r'deliveredAt':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DateTime),
+          ) as DateTime?;
+          if (valueDes == null) continue;
+          result.deliveredAt = valueDes;
+          break;
+        case r'readAt':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DateTime),
+          ) as DateTime?;
+          if (valueDes == null) continue;
+          result.readAt = valueDes;
           break;
         case r'createdAt':
           final valueDes = serializers.deserialize(

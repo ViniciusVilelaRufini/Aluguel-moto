@@ -14,6 +14,7 @@ part 'subscription_create.g.dart';
 /// Properties:
 /// * [planCode]
 /// * [cardId] - Padrão do cliente se ausente.
+/// * [vehicleId] - Moto fixa (opcional; mesmas regras de `PUT /payments/subscriptions/{id}/vehicle`).
 @BuiltValue()
 abstract class SubscriptionCreate
     implements Built<SubscriptionCreate, SubscriptionCreateBuilder> {
@@ -24,6 +25,10 @@ abstract class SubscriptionCreate
   /// Padrão do cliente se ausente.
   @BuiltValueField(wireName: r'cardId')
   String? get cardId;
+
+  /// Moto fixa (opcional; mesmas regras de `PUT /payments/subscriptions/{id}/vehicle`).
+  @BuiltValueField(wireName: r'vehicleId')
+  String? get vehicleId;
 
   SubscriptionCreate._();
 
@@ -60,6 +65,13 @@ class _$SubscriptionCreateSerializer
       yield r'cardId';
       yield serializers.serialize(
         object.cardId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.vehicleId != null) {
+      yield r'vehicleId';
+      yield serializers.serialize(
+        object.vehicleId,
         specifiedType: const FullType(String),
       );
     }
@@ -102,6 +114,14 @@ class _$SubscriptionCreateSerializer
           ) as String?;
           if (valueDes == null) continue;
           result.cardId = valueDes;
+          break;
+        case r'vehicleId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.vehicleId = valueDes;
           break;
         default:
           unhandled.add(key);

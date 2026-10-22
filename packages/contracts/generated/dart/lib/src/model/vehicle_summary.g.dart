@@ -25,6 +25,12 @@ class _$VehicleSummary extends VehicleSummary {
   final double estimatedRangeKm;
   @override
   final int? distanceM;
+  @override
+  final String? vehicleModelId;
+  @override
+  final String? categoryLabel;
+  @override
+  final int? pricePerMinuteCents;
 
   factory _$VehicleSummary([void Function(VehicleSummaryBuilder)? updates]) =>
       (VehicleSummaryBuilder()..update(updates))._build();
@@ -38,7 +44,10 @@ class _$VehicleSummary extends VehicleSummary {
       required this.lng,
       required this.batteryPct,
       required this.estimatedRangeKm,
-      this.distanceM})
+      this.distanceM,
+      this.vehicleModelId,
+      this.categoryLabel,
+      this.pricePerMinuteCents})
       : super._();
   @override
   VehicleSummary rebuild(void Function(VehicleSummaryBuilder) updates) =>
@@ -59,7 +68,10 @@ class _$VehicleSummary extends VehicleSummary {
         lng == other.lng &&
         batteryPct == other.batteryPct &&
         estimatedRangeKm == other.estimatedRangeKm &&
-        distanceM == other.distanceM;
+        distanceM == other.distanceM &&
+        vehicleModelId == other.vehicleModelId &&
+        categoryLabel == other.categoryLabel &&
+        pricePerMinuteCents == other.pricePerMinuteCents;
   }
 
   @override
@@ -74,6 +86,9 @@ class _$VehicleSummary extends VehicleSummary {
     _$hash = $jc(_$hash, batteryPct.hashCode);
     _$hash = $jc(_$hash, estimatedRangeKm.hashCode);
     _$hash = $jc(_$hash, distanceM.hashCode);
+    _$hash = $jc(_$hash, vehicleModelId.hashCode);
+    _$hash = $jc(_$hash, categoryLabel.hashCode);
+    _$hash = $jc(_$hash, pricePerMinuteCents.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -89,7 +104,10 @@ class _$VehicleSummary extends VehicleSummary {
           ..add('lng', lng)
           ..add('batteryPct', batteryPct)
           ..add('estimatedRangeKm', estimatedRangeKm)
-          ..add('distanceM', distanceM))
+          ..add('distanceM', distanceM)
+          ..add('vehicleModelId', vehicleModelId)
+          ..add('categoryLabel', categoryLabel)
+          ..add('pricePerMinuteCents', pricePerMinuteCents))
         .toString();
   }
 }
@@ -135,6 +153,21 @@ class VehicleSummaryBuilder
   int? get distanceM => _$this._distanceM;
   set distanceM(int? distanceM) => _$this._distanceM = distanceM;
 
+  String? _vehicleModelId;
+  String? get vehicleModelId => _$this._vehicleModelId;
+  set vehicleModelId(String? vehicleModelId) =>
+      _$this._vehicleModelId = vehicleModelId;
+
+  String? _categoryLabel;
+  String? get categoryLabel => _$this._categoryLabel;
+  set categoryLabel(String? categoryLabel) =>
+      _$this._categoryLabel = categoryLabel;
+
+  int? _pricePerMinuteCents;
+  int? get pricePerMinuteCents => _$this._pricePerMinuteCents;
+  set pricePerMinuteCents(int? pricePerMinuteCents) =>
+      _$this._pricePerMinuteCents = pricePerMinuteCents;
+
   VehicleSummaryBuilder() {
     VehicleSummary._defaults(this);
   }
@@ -151,6 +184,9 @@ class VehicleSummaryBuilder
       _batteryPct = $v.batteryPct;
       _estimatedRangeKm = $v.estimatedRangeKm;
       _distanceM = $v.distanceM;
+      _vehicleModelId = $v.vehicleModelId;
+      _categoryLabel = $v.categoryLabel;
+      _pricePerMinuteCents = $v.pricePerMinuteCents;
       _$v = null;
     }
     return this;
@@ -189,6 +225,9 @@ class VehicleSummaryBuilder
           estimatedRangeKm: BuiltValueNullFieldError.checkNotNull(
               estimatedRangeKm, r'VehicleSummary', 'estimatedRangeKm'),
           distanceM: distanceM,
+          vehicleModelId: vehicleModelId,
+          categoryLabel: categoryLabel,
+          pricePerMinuteCents: pricePerMinuteCents,
         );
     replace(_$result);
     return _$result;

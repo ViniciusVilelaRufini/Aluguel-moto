@@ -24,6 +24,8 @@ import 'package:volti_api/src/model/refund_request.dart';
 import 'package:volti_api/src/model/subscription.dart';
 import 'package:volti_api/src/model/subscription_create.dart';
 import 'package:volti_api/src/model/subscription_list.dart';
+import 'package:volti_api/src/model/subscription_pause_request.dart';
+import 'package:volti_api/src/model/subscription_vehicle_assignment.dart';
 
 class PaymentsApi {
   final Dio _dio;
@@ -126,6 +128,118 @@ class PaymentsApi {
     }
 
     return Response<PaymentCard>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Definir a moto fixa do plano
+  /// A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver &#x60;active&#x60; ou &#x60;paused&#x60; e some do &#x60;GET /vehicles/nearby&#x60; dos demais clientes. Cliente: só a própria assinatura e uma moto &#x60;free&#x60; sem outro assinante (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;); o cliente troca a moto fixa no máximo uma vez a cada 24 h (&#x60;422&#x60; &#x60;subscription-vehicle-cooldown&#x60;). Staff (&#x60;admin&#x60;, &#x60;operacao&#x60;): qualquer assinatura e moto, sem espera; grava AuditLog. A exclusividade vale só com o período vigente (&#x60;currentPeriodEnd&#x60; no futuro).
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [subscriptionVehicleAssignment]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Subscription] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Subscription>> assignSubscriptionVehicle({
+    required String id,
+    required SubscriptionVehicleAssignment subscriptionVehicleAssignment,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/payments/subscriptions/{id}/vehicle'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'PUT',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(SubscriptionVehicleAssignment);
+      _bodyData = _serializers.serialize(subscriptionVehicleAssignment,
+          specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Subscription? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Subscription),
+            ) as Subscription;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Subscription>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,
@@ -563,6 +677,91 @@ class PaymentsApi {
     );
   }
 
+  /// Detalhe da assinatura (próxima cobrança, pausa, moto fixa)
+  ///
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Subscription] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Subscription>> getSubscription({
+    required String id,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/payments/subscriptions/{id}'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'GET',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Subscription? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Subscription),
+            ) as Subscription;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Subscription>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// Listar cauções
   ///
   ///
@@ -955,6 +1154,113 @@ class PaymentsApi {
     );
   }
 
+  /// Pausar assinatura
+  /// Suspende o plano por &#x60;days&#x60; dias; o período e a próxima cobrança andam o tempo efetivamente pausado. Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança (&#x60;422&#x60; &#x60;subscription-pause-limit-reached&#x60;). Só assinatura &#x60;active&#x60; sem cancelamento agendado (&#x60;409&#x60; &#x60;subscription-not-pausable&#x60;) e sem aluguel em andamento no plano (&#x60;409&#x60; &#x60;rental-already-active&#x60;). Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em &#x60;pauseEndsAt&#x60;. O gateway de pagamento é a fonte da verdade das datas: se ele não confirmar a pausa, nada muda e a resposta é &#x60;503&#x60; &#x60;gateway-unavailable&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [subscriptionPauseRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Subscription] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Subscription>> pauseSubscription({
+    required String id,
+    required SubscriptionPauseRequest subscriptionPauseRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/payments/subscriptions/{id}/pause'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(SubscriptionPauseRequest);
+      _bodyData = _serializers.serialize(subscriptionPauseRequest,
+          specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Subscription? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Subscription),
+            ) as Subscription;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Subscription>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// Estornar pagamento
   /// Total (sem &#x60;amountCents&#x60;) ou parcial. Só de &#x60;paid&#x60;, &#x60;captured&#x60; ou &#x60;partially_refunded&#x60;, até o valor ainda não estornado (&#x60;422&#x60;). Grava AuditLog.
   ///
@@ -1053,6 +1359,91 @@ class PaymentsApi {
     }
 
     return Response<Payment>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Retomar assinatura pausada
+  /// Antecipa o fim da pausa. Só &#x60;paused&#x60; (senão &#x60;409&#x60; &#x60;subscription-not-pausable&#x60;). &#x60;currentPeriodEnd&#x60; e &#x60;nextChargeAt&#x60; andam o tempo pausado e a nova data da cobrança é enviada ao gateway; sem confirmação do gateway → &#x60;503&#x60; &#x60;gateway-unavailable&#x60; (continua pausada).
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Subscription] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Subscription>> resumeSubscription({
+    required String id,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/payments/subscriptions/{id}/resume'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Subscription? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Subscription),
+            ) as Subscription;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Subscription>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

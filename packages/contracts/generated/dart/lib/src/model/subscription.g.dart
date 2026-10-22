@@ -26,6 +26,30 @@ class _$Subscription extends Subscription {
   @override
   final DateTime? canceledAt;
   @override
+  final DateTime? nextChargeAt;
+  @override
+  final int? nextChargeCents;
+  @override
+  final String? cardBrand;
+  @override
+  final String? cardLast4;
+  @override
+  final PaymentStatus? lastPaymentStatus;
+  @override
+  final DateTime? lastPaymentAt;
+  @override
+  final DateTime? pausedAt;
+  @override
+  final DateTime? pauseEndsAt;
+  @override
+  final int? maxPauseDays;
+  @override
+  final int? pausesRemainingInPeriod;
+  @override
+  final String? assignedVehicleId;
+  @override
+  final VehicleSummary? assignedVehicle;
+  @override
   final DateTime createdAt;
 
   factory _$Subscription([void Function(SubscriptionBuilder)? updates]) =>
@@ -41,6 +65,18 @@ class _$Subscription extends Subscription {
       required this.currentPeriodEnd,
       this.cancelAtPeriodEnd,
       this.canceledAt,
+      this.nextChargeAt,
+      this.nextChargeCents,
+      this.cardBrand,
+      this.cardLast4,
+      this.lastPaymentStatus,
+      this.lastPaymentAt,
+      this.pausedAt,
+      this.pauseEndsAt,
+      this.maxPauseDays,
+      this.pausesRemainingInPeriod,
+      this.assignedVehicleId,
+      this.assignedVehicle,
       required this.createdAt})
       : super._();
   @override
@@ -63,6 +99,18 @@ class _$Subscription extends Subscription {
         currentPeriodEnd == other.currentPeriodEnd &&
         cancelAtPeriodEnd == other.cancelAtPeriodEnd &&
         canceledAt == other.canceledAt &&
+        nextChargeAt == other.nextChargeAt &&
+        nextChargeCents == other.nextChargeCents &&
+        cardBrand == other.cardBrand &&
+        cardLast4 == other.cardLast4 &&
+        lastPaymentStatus == other.lastPaymentStatus &&
+        lastPaymentAt == other.lastPaymentAt &&
+        pausedAt == other.pausedAt &&
+        pauseEndsAt == other.pauseEndsAt &&
+        maxPauseDays == other.maxPauseDays &&
+        pausesRemainingInPeriod == other.pausesRemainingInPeriod &&
+        assignedVehicleId == other.assignedVehicleId &&
+        assignedVehicle == other.assignedVehicle &&
         createdAt == other.createdAt;
   }
 
@@ -78,6 +126,18 @@ class _$Subscription extends Subscription {
     _$hash = $jc(_$hash, currentPeriodEnd.hashCode);
     _$hash = $jc(_$hash, cancelAtPeriodEnd.hashCode);
     _$hash = $jc(_$hash, canceledAt.hashCode);
+    _$hash = $jc(_$hash, nextChargeAt.hashCode);
+    _$hash = $jc(_$hash, nextChargeCents.hashCode);
+    _$hash = $jc(_$hash, cardBrand.hashCode);
+    _$hash = $jc(_$hash, cardLast4.hashCode);
+    _$hash = $jc(_$hash, lastPaymentStatus.hashCode);
+    _$hash = $jc(_$hash, lastPaymentAt.hashCode);
+    _$hash = $jc(_$hash, pausedAt.hashCode);
+    _$hash = $jc(_$hash, pauseEndsAt.hashCode);
+    _$hash = $jc(_$hash, maxPauseDays.hashCode);
+    _$hash = $jc(_$hash, pausesRemainingInPeriod.hashCode);
+    _$hash = $jc(_$hash, assignedVehicleId.hashCode);
+    _$hash = $jc(_$hash, assignedVehicle.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -95,6 +155,18 @@ class _$Subscription extends Subscription {
           ..add('currentPeriodEnd', currentPeriodEnd)
           ..add('cancelAtPeriodEnd', cancelAtPeriodEnd)
           ..add('canceledAt', canceledAt)
+          ..add('nextChargeAt', nextChargeAt)
+          ..add('nextChargeCents', nextChargeCents)
+          ..add('cardBrand', cardBrand)
+          ..add('cardLast4', cardLast4)
+          ..add('lastPaymentStatus', lastPaymentStatus)
+          ..add('lastPaymentAt', lastPaymentAt)
+          ..add('pausedAt', pausedAt)
+          ..add('pauseEndsAt', pauseEndsAt)
+          ..add('maxPauseDays', maxPauseDays)
+          ..add('pausesRemainingInPeriod', pausesRemainingInPeriod)
+          ..add('assignedVehicleId', assignedVehicleId)
+          ..add('assignedVehicle', assignedVehicle)
           ..add('createdAt', createdAt))
         .toString();
   }
@@ -143,6 +215,62 @@ class SubscriptionBuilder
   DateTime? get canceledAt => _$this._canceledAt;
   set canceledAt(DateTime? canceledAt) => _$this._canceledAt = canceledAt;
 
+  DateTime? _nextChargeAt;
+  DateTime? get nextChargeAt => _$this._nextChargeAt;
+  set nextChargeAt(DateTime? nextChargeAt) =>
+      _$this._nextChargeAt = nextChargeAt;
+
+  int? _nextChargeCents;
+  int? get nextChargeCents => _$this._nextChargeCents;
+  set nextChargeCents(int? nextChargeCents) =>
+      _$this._nextChargeCents = nextChargeCents;
+
+  String? _cardBrand;
+  String? get cardBrand => _$this._cardBrand;
+  set cardBrand(String? cardBrand) => _$this._cardBrand = cardBrand;
+
+  String? _cardLast4;
+  String? get cardLast4 => _$this._cardLast4;
+  set cardLast4(String? cardLast4) => _$this._cardLast4 = cardLast4;
+
+  PaymentStatus? _lastPaymentStatus;
+  PaymentStatus? get lastPaymentStatus => _$this._lastPaymentStatus;
+  set lastPaymentStatus(PaymentStatus? lastPaymentStatus) =>
+      _$this._lastPaymentStatus = lastPaymentStatus;
+
+  DateTime? _lastPaymentAt;
+  DateTime? get lastPaymentAt => _$this._lastPaymentAt;
+  set lastPaymentAt(DateTime? lastPaymentAt) =>
+      _$this._lastPaymentAt = lastPaymentAt;
+
+  DateTime? _pausedAt;
+  DateTime? get pausedAt => _$this._pausedAt;
+  set pausedAt(DateTime? pausedAt) => _$this._pausedAt = pausedAt;
+
+  DateTime? _pauseEndsAt;
+  DateTime? get pauseEndsAt => _$this._pauseEndsAt;
+  set pauseEndsAt(DateTime? pauseEndsAt) => _$this._pauseEndsAt = pauseEndsAt;
+
+  int? _maxPauseDays;
+  int? get maxPauseDays => _$this._maxPauseDays;
+  set maxPauseDays(int? maxPauseDays) => _$this._maxPauseDays = maxPauseDays;
+
+  int? _pausesRemainingInPeriod;
+  int? get pausesRemainingInPeriod => _$this._pausesRemainingInPeriod;
+  set pausesRemainingInPeriod(int? pausesRemainingInPeriod) =>
+      _$this._pausesRemainingInPeriod = pausesRemainingInPeriod;
+
+  String? _assignedVehicleId;
+  String? get assignedVehicleId => _$this._assignedVehicleId;
+  set assignedVehicleId(String? assignedVehicleId) =>
+      _$this._assignedVehicleId = assignedVehicleId;
+
+  VehicleSummaryBuilder? _assignedVehicle;
+  VehicleSummaryBuilder get assignedVehicle =>
+      _$this._assignedVehicle ??= VehicleSummaryBuilder();
+  set assignedVehicle(VehicleSummaryBuilder? assignedVehicle) =>
+      _$this._assignedVehicle = assignedVehicle;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -163,6 +291,18 @@ class SubscriptionBuilder
       _currentPeriodEnd = $v.currentPeriodEnd;
       _cancelAtPeriodEnd = $v.cancelAtPeriodEnd;
       _canceledAt = $v.canceledAt;
+      _nextChargeAt = $v.nextChargeAt;
+      _nextChargeCents = $v.nextChargeCents;
+      _cardBrand = $v.cardBrand;
+      _cardLast4 = $v.cardLast4;
+      _lastPaymentStatus = $v.lastPaymentStatus;
+      _lastPaymentAt = $v.lastPaymentAt;
+      _pausedAt = $v.pausedAt;
+      _pauseEndsAt = $v.pauseEndsAt;
+      _maxPauseDays = $v.maxPauseDays;
+      _pausesRemainingInPeriod = $v.pausesRemainingInPeriod;
+      _assignedVehicleId = $v.assignedVehicleId;
+      _assignedVehicle = $v.assignedVehicle?.toBuilder();
       _createdAt = $v.createdAt;
       _$v = null;
     }
@@ -183,25 +323,51 @@ class SubscriptionBuilder
   Subscription build() => _build();
 
   _$Subscription _build() {
-    final _$result = _$v ??
-        _$Subscription._(
-          id: BuiltValueNullFieldError.checkNotNull(id, r'Subscription', 'id'),
-          planCode: BuiltValueNullFieldError.checkNotNull(
-              planCode, r'Subscription', 'planCode'),
-          status: BuiltValueNullFieldError.checkNotNull(
-              status, r'Subscription', 'status'),
-          cardId: cardId,
-          priceCents: BuiltValueNullFieldError.checkNotNull(
-              priceCents, r'Subscription', 'priceCents'),
-          currentPeriodStart: BuiltValueNullFieldError.checkNotNull(
-              currentPeriodStart, r'Subscription', 'currentPeriodStart'),
-          currentPeriodEnd: BuiltValueNullFieldError.checkNotNull(
-              currentPeriodEnd, r'Subscription', 'currentPeriodEnd'),
-          cancelAtPeriodEnd: cancelAtPeriodEnd,
-          canceledAt: canceledAt,
-          createdAt: BuiltValueNullFieldError.checkNotNull(
-              createdAt, r'Subscription', 'createdAt'),
-        );
+    _$Subscription _$result;
+    try {
+      _$result = _$v ??
+          _$Subscription._(
+            id: BuiltValueNullFieldError.checkNotNull(
+                id, r'Subscription', 'id'),
+            planCode: BuiltValueNullFieldError.checkNotNull(
+                planCode, r'Subscription', 'planCode'),
+            status: BuiltValueNullFieldError.checkNotNull(
+                status, r'Subscription', 'status'),
+            cardId: cardId,
+            priceCents: BuiltValueNullFieldError.checkNotNull(
+                priceCents, r'Subscription', 'priceCents'),
+            currentPeriodStart: BuiltValueNullFieldError.checkNotNull(
+                currentPeriodStart, r'Subscription', 'currentPeriodStart'),
+            currentPeriodEnd: BuiltValueNullFieldError.checkNotNull(
+                currentPeriodEnd, r'Subscription', 'currentPeriodEnd'),
+            cancelAtPeriodEnd: cancelAtPeriodEnd,
+            canceledAt: canceledAt,
+            nextChargeAt: nextChargeAt,
+            nextChargeCents: nextChargeCents,
+            cardBrand: cardBrand,
+            cardLast4: cardLast4,
+            lastPaymentStatus: lastPaymentStatus,
+            lastPaymentAt: lastPaymentAt,
+            pausedAt: pausedAt,
+            pauseEndsAt: pauseEndsAt,
+            maxPauseDays: maxPauseDays,
+            pausesRemainingInPeriod: pausesRemainingInPeriod,
+            assignedVehicleId: assignedVehicleId,
+            assignedVehicle: _assignedVehicle?.build(),
+            createdAt: BuiltValueNullFieldError.checkNotNull(
+                createdAt, r'Subscription', 'createdAt'),
+          );
+    } catch (_) {
+      late String _$failedField;
+      try {
+        _$failedField = 'assignedVehicle';
+        _assignedVehicle?.build();
+      } catch (e) {
+        throw BuiltValueNestedFieldError(
+            r'Subscription', _$failedField, e.toString());
+      }
+      rethrow;
+    }
     replace(_$result);
     return _$result;
   }

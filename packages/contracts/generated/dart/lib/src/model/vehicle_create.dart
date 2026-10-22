@@ -16,6 +16,7 @@ part 'vehicle_create.g.dart';
 /// * [thingName]
 /// * [qrCode]
 /// * [batterySerial]
+/// * [vehicleModelId] - Define também `model` (nome do modelo).
 @BuiltValue()
 abstract class VehicleCreate
     implements Built<VehicleCreate, VehicleCreateBuilder> {
@@ -33,6 +34,10 @@ abstract class VehicleCreate
 
   @BuiltValueField(wireName: r'batterySerial')
   String? get batterySerial;
+
+  /// Define também `model` (nome do modelo).
+  @BuiltValueField(wireName: r'vehicleModelId')
+  String? get vehicleModelId;
 
   VehicleCreate._();
 
@@ -85,6 +90,13 @@ class _$VehicleCreateSerializer implements PrimitiveSerializer<VehicleCreate> {
       yield r'batterySerial';
       yield serializers.serialize(
         object.batterySerial,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.vehicleModelId != null) {
+      yield r'vehicleModelId';
+      yield serializers.serialize(
+        object.vehicleModelId,
         specifiedType: const FullType(String),
       );
     }
@@ -149,6 +161,14 @@ class _$VehicleCreateSerializer implements PrimitiveSerializer<VehicleCreate> {
           ) as String?;
           if (valueDes == null) continue;
           result.batterySerial = valueDes;
+          break;
+        case r'vehicleModelId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.vehicleModelId = valueDes;
           break;
         default:
           unhandled.add(key);

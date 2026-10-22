@@ -33,6 +33,23 @@ export class SubscriptionCreateDto {
   @IsOptional()
   @IsUUID()
   cardId?: string;
+
+  /** Contrato v2: moto fixa (opcional). */
+  @IsOptional()
+  @IsUUID()
+  vehicleId?: string;
+}
+
+export class SubscriptionPauseDto {
+  @IsInt()
+  @Min(1)
+  @Max(7)
+  days: number;
+}
+
+export class SubscriptionVehicleDto {
+  @IsUUID()
+  vehicleId: string;
 }
 
 export class ListPaymentsQuery extends PageQuery {

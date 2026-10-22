@@ -17,6 +17,8 @@ class _$VehicleCreate extends VehicleCreate {
   final String? qrCode;
   @override
   final String? batterySerial;
+  @override
+  final String? vehicleModelId;
 
   factory _$VehicleCreate([void Function(VehicleCreateBuilder)? updates]) =>
       (VehicleCreateBuilder()..update(updates))._build();
@@ -26,7 +28,8 @@ class _$VehicleCreate extends VehicleCreate {
       required this.model,
       required this.thingName,
       this.qrCode,
-      this.batterySerial})
+      this.batterySerial,
+      this.vehicleModelId})
       : super._();
   @override
   VehicleCreate rebuild(void Function(VehicleCreateBuilder) updates) =>
@@ -43,7 +46,8 @@ class _$VehicleCreate extends VehicleCreate {
         model == other.model &&
         thingName == other.thingName &&
         qrCode == other.qrCode &&
-        batterySerial == other.batterySerial;
+        batterySerial == other.batterySerial &&
+        vehicleModelId == other.vehicleModelId;
   }
 
   @override
@@ -54,6 +58,7 @@ class _$VehicleCreate extends VehicleCreate {
     _$hash = $jc(_$hash, thingName.hashCode);
     _$hash = $jc(_$hash, qrCode.hashCode);
     _$hash = $jc(_$hash, batterySerial.hashCode);
+    _$hash = $jc(_$hash, vehicleModelId.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -65,7 +70,8 @@ class _$VehicleCreate extends VehicleCreate {
           ..add('model', model)
           ..add('thingName', thingName)
           ..add('qrCode', qrCode)
-          ..add('batterySerial', batterySerial))
+          ..add('batterySerial', batterySerial)
+          ..add('vehicleModelId', vehicleModelId))
         .toString();
   }
 }
@@ -95,6 +101,11 @@ class VehicleCreateBuilder
   set batterySerial(String? batterySerial) =>
       _$this._batterySerial = batterySerial;
 
+  String? _vehicleModelId;
+  String? get vehicleModelId => _$this._vehicleModelId;
+  set vehicleModelId(String? vehicleModelId) =>
+      _$this._vehicleModelId = vehicleModelId;
+
   VehicleCreateBuilder() {
     VehicleCreate._defaults(this);
   }
@@ -107,6 +118,7 @@ class VehicleCreateBuilder
       _thingName = $v.thingName;
       _qrCode = $v.qrCode;
       _batterySerial = $v.batterySerial;
+      _vehicleModelId = $v.vehicleModelId;
       _$v = null;
     }
     return this;
@@ -136,6 +148,7 @@ class VehicleCreateBuilder
               thingName, r'VehicleCreate', 'thingName'),
           qrCode: qrCode,
           batterySerial: batterySerial,
+          vehicleModelId: vehicleModelId,
         );
     replace(_$result);
     return _$result;

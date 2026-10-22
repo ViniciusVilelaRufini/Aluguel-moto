@@ -87,3 +87,19 @@ describe('PricingService.calculate', () => {
     expect(b.totalCents).toBe(300);
   });
 });
+
+describe('PricingService.snapshotFrom — preço por modelo (contrato v2)', () => {
+  const plan = (unit: string, unitPriceCents: number, unlockFeeCents: number) => ({ code: unit === 'minute' ? 'minute' : 'hour', unit, unitPriceCents, unlockFeeCents, pausePerMinuteCents: 20 }) as any;
+
+  it('plano por minuto usa o preço do modelo (e o desbloqueio do modelo, se houver)', () => {
+    const cargo = PricingService.snapshotFrom(plan('minute', 79, 300), 200, 'basic', null, false, { pricePerMinuteCents: 99, unlockFeeCents: null });
+    expect(cargo).toMatchObject({ unitPriceCents: 99, unlockFeeCents: 300, pausePerMinuteCents: 20 });
+    const special = PricingService.snapshotFrom(plan('minute', 79, 300), 200, 'basic', null, false, { pricePerMinuteCents: 89, unlockFeeCents: 0 });
+    expect(special).toMatchObject({ unitPriceCents: 89, unlockFeeCents: 0 });
+  });
+
+  it('planos por hora/dia ignoram o modelo; sem modelo vale o plano', () => {
+    expect(PricingService.snapshotFrom(plan('hour', 2900, 0), 200, 'basic', null, false, { pricePerMinuteCents: 99 })).toMatchObject({ unitPriceCents: 2900 });
+    expect(PricingService.snapshotFrom(plan('minute', 79, 300), 200, 'basic', null, false, null)).toMatchObject({ unitPriceCents: 79, unlockFeeCents: 300 });
+  });
+});

@@ -15,6 +15,9 @@ Name | Type | Description | Notes
 **removedBatterySerial** | **String** |  | 
 **installedBatterySerial** | **String** |  | 
 **installedBatteryPct** | **int** |  | [optional] 
+**removedBatteryPct** | **int** | Carga da bateria retirada (última leitura da moto). | [optional] 
+**removedBatteryCycleCount** | **int** |  | [optional] 
+**installedBatteryCycleCount** | **int** |  | [optional] 
 **recordedAt** | [**DateTime**](DateTime.md) |  | 
 **createdAt** | [**DateTime**](DateTime.md) |  | 
 

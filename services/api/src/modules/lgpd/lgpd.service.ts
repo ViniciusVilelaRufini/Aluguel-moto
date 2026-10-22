@@ -1,4 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { cpfHash } from '../../common/fraud-hash';
+import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
+import { SubscriptionsService } from '../payments/subscriptions.service';
 import { Cron, Interval } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEvent, type PrincipalRevokedEvent } from '../../common/events';
@@ -14,7 +17,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CUSTOMER_IDENTITY, type CustomerIdentityDirectory } from '../../ports/customer-identity.port';
 import { deletedSubMarker } from '../auth/deleted-identity';
 import { toConsents, toCustomer } from '../customers/customers.mapper';
-import { toPayment, toWalletEntry } from '../payments/payments.mapper';
+import { toPayment, toSubscription, toWalletEntry } from '../payments/payments.mapper';
+import { toCustomerCoupon, toReferralReward } from '../referrals/referrals.service';
 import { toRental } from '../rentals/rentals.mapper';
 import { toClaim, toDispute, toIncident } from '../support/support.mapper';
 
@@ -34,8 +38,11 @@ export class LgpdService {
     private readonly prisma: PrismaService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    /** Fix round 2 (M10): obrigatório — a exclusão sempre fecha a assinatura (e agenda o cancelamento no gateway). */
+    private readonly subscriptions: SubscriptionsService,
     @Optional() @Inject(CUSTOMER_IDENTITY) private readonly identity?: CustomerIdentityDirectory,
     @Optional() private readonly events?: EventEmitter2,
+    @Optional() @Inject(V2_CONFIG) private readonly v2?: V2Config,
   ) {}
 
   private async customer(customerId: string) {
@@ -108,6 +115,33 @@ export class LgpdService {
       incidents: incidents.map(toIncident),
       disputes: disputes.map(toDispute),
       claims: claims.map(toClaim),
+      ...(await this.exportV2(customerId, customer.referralCode)),
+    };
+  }
+
+  /** Fix round 1 (M10): assinaturas, cupons salvos, indicações feitas e manutenções agendadas. */
+  private async exportV2(customerId: string, referralCode: string | null) {
+    const now = new Date();
+    const [subscriptions, coupons, used, referrals, maintenance] = await Promise.all([
+      this.prisma.subscription.findMany({ where: { customerId }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.customerCoupon.findMany({ where: { customerId }, include: { coupon: true }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.couponRedemption.groupBy({ by: ['couponId'], where: { customerId }, _count: { _all: true } }),
+      this.prisma.referral.findMany({ where: { referrerId: customerId }, orderBy: { createdAt: 'desc' } }),
+      this.prisma.maintenanceTask.findMany({ where: { customerId, source: 'customer' }, include: { vehicle: { select: { code: true } } }, orderBy: { createdAt: 'desc' } }),
+    ]);
+    const usedBy = new Map(used.map((u) => [u.couponId, u._count._all]));
+    const names = await this.prisma.customer.findMany({ where: { id: { in: referrals.map((r) => r.refereeId) } }, select: { id: true, name: true } });
+    const nameBy = new Map(names.map((n) => [n.id, n.name]));
+    const location = (this.v2 ?? loadV2Config()).maintenanceLocation;
+    return {
+      subscriptions: subscriptions.map((x) => toSubscription(x)),
+      coupons: coupons.map((c) => toCustomerCoupon(c, usedBy.get(c.couponId) ?? 0, now)),
+      referrals: referrals.map((r) => toReferralReward(r, nameBy.get(r.refereeId))),
+      ...(referralCode ? { referralCode } : {}),
+      maintenanceRequests: maintenance.map((m) => ({
+        id: m.id, vehicleId: m.vehicleId, vehicleCode: m.vehicle?.code ?? '', status: m.status, scheduledFor: (m.scheduledFor ?? m.createdAt).toISOString(),
+        location, description: m.description ?? m.title, createdAt: m.createdAt.toISOString(),
+      })),
     };
   }
 
@@ -123,6 +157,9 @@ export class LgpdService {
     if (open || customer.delinquent || pendingDebts > 0) {
       throw conflict('account-deletion-blocked', 'Encerre o aluguel e regularize os pagamentos antes de excluir a conta.');
     }
+
+    // M10: fecha a assinatura aberta e libera a moto fixa; o cancelamento no gateway fica pendente e retentável se falhar.
+    await this.subscriptions.closeForAccountDeletion(customerId);
 
     const kycKeys = [customer.kycDocumentFrontKey, customer.kycDocumentBackKey, customer.kycSelfieKey].filter((k): k is string => !!k);
     const rentals = await this.prisma.rental.findMany({ where: { customerId }, select: { id: true, returnPhotoObjectKey: true, returnPhotoUploadKey: true } });
@@ -145,6 +182,12 @@ export class LgpdService {
           birthDate: null,
           emergencyContactName: null,
           emergencyContactPhone: null,
+          // Fix round 1 (I4): o HMAC do CPF fica (prevenção a fraude, docs/decisoes.md); o CPF em claro sai.
+          cpfHash: customer.cpfHash ?? (customer.cpf ? cpfHash(customer.cpf, (this.v2 ?? loadV2Config()).fraudHashSecret) : null),
+          // Contrato v2: chave Pix de estorno e código de indicação são dados pessoais.
+          pixRefundKey: null,
+          pixRefundKeyType: null,
+          referralCode: null,
           // QA-07: só o hash do sub, para recusar o token antigo sem guardar o identificador.
           cognitoSub: customer.cognitoSub.startsWith('deleted:') ? customer.cognitoSub : deletedSubMarker(customer.cognitoSub),
           kycDocumentFrontKey: null,

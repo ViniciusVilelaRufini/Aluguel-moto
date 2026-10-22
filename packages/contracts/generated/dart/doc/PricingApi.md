@@ -9,6 +9,7 @@ All URIs are relative to *http://localhost:3000*
 
 Method | HTTP request | Description
 ------------- | ------------- | -------------
+[**addMyCoupon**](PricingApi.md#addmycoupon) | **POST** /me/coupons | Adicionar cupom à conta
 [**createCoupon**](PricingApi.md#createcoupon) | **POST** /pricing/coupons | Criar cupom
 [**createFee**](PricingApi.md#createfee) | **POST** /pricing/fees | Criar taxa
 [**createPricingPlan**](PricingApi.md#createpricingplan) | **POST** /pricing/plans | Criar plano
@@ -19,12 +20,57 @@ Method | HTTP request | Description
 [**getPricingPlan**](PricingApi.md#getpricingplan) | **GET** /pricing/plans/{id} | Detalhe do plano
 [**listCoupons**](PricingApi.md#listcoupons) | **GET** /pricing/coupons | Listar cupons
 [**listFees**](PricingApi.md#listfees) | **GET** /pricing/fees | Listar taxas
+[**listMyCoupons**](PricingApi.md#listmycoupons) | **GET** /me/coupons | Cupons salvos na conta
 [**listPricingPlans**](PricingApi.md#listpricingplans) | **GET** /pricing/plans | Planos disponíveis
 [**quotePrice**](PricingApi.md#quoteprice) | **POST** /pricing/quote | Cotar aluguel
 [**updateCoupon**](PricingApi.md#updatecoupon) | **PUT** /pricing/coupons/{id} | Atualizar cupom
 [**updateFee**](PricingApi.md#updatefee) | **PUT** /pricing/fees/{id} | Atualizar taxa
 [**updatePricingPlan**](PricingApi.md#updatepricingplan) | **PUT** /pricing/plans/{id} | Atualizar plano
+[**validateMyCoupon**](PricingApi.md#validatemycoupon) | **POST** /me/coupons/validate | Validar cupom sem salvar
 
+
+# **addMyCoupon**
+> CustomerCoupon addMyCoupon(couponCodeRequest)
+
+Adicionar cupom à conta
+
+Valida o código (mesmas regras do aluguel: ativo, vigência, limite total e por cliente) e o salva na conta. Código inválido → `422` `coupon-invalid` (`detail` com o motivo em pt-BR); já salvo → `409` `conflict`. Códigos de indicação não são cupons: use `POST /me/referral/redeem`. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPricingApi();
+final CouponCodeRequest couponCodeRequest = ; // CouponCodeRequest | 
+
+try {
+    final response = api.addMyCoupon(couponCodeRequest);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PricingApi->addMyCoupon: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **couponCodeRequest** | [**CouponCodeRequest**](CouponCodeRequest.md)|  | 
+
+### Return type
+
+[**CustomerCoupon**](CustomerCoupon.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **createCoupon**
 > Coupon createCoupon(couponInput)
@@ -449,6 +495,45 @@ This endpoint does not need any parameter.
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
+# **listMyCoupons**
+> CustomerCouponList listMyCoupons()
+
+Cupons salvos na conta
+
+Cupons que o cliente adicionou à conta (`POST /me/coupons`) ou ganhou por indicação. `status` é calculado na leitura: `used` quando o limite por cliente foi atingido, `expired` quando passou de `validUntil` ou o cupom foi desativado. Para usar, o app envia `couponCode` em `POST /pricing/quote` e `POST /rentals`. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPricingApi();
+
+try {
+    final response = api.listMyCoupons();
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PricingApi->listMyCoupons: $e\n');
+}
+```
+
+### Parameters
+This endpoint does not need any parameter.
+
+### Return type
+
+[**CustomerCouponList**](CustomerCouponList.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
 # **listPricingPlans**
 > PricingPlanList listPricingPlans(includeInactive)
 
@@ -662,6 +747,49 @@ Name | Type | Description  | Notes
 ### Authorization
 
 [staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **validateMyCoupon**
+> CouponValidation validateMyCoupon(couponCodeRequest)
+
+Validar cupom sem salvar
+
+Sempre `200`; `valid = false` traz `message` com o motivo. `planCode` opcional restringe a validação a um plano.
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPricingApi();
+final CouponCodeRequest couponCodeRequest = ; // CouponCodeRequest | 
+
+try {
+    final response = api.validateMyCoupon(couponCodeRequest);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PricingApi->validateMyCoupon: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **couponCodeRequest** | [**CouponCodeRequest**](CouponCodeRequest.md)|  | 
+
+### Return type
+
+[**CouponValidation**](CouponValidation.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
 
 ### HTTP request headers
 

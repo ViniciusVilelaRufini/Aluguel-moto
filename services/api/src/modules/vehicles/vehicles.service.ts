@@ -1,4 +1,5 @@
 import { withLiveState } from './live-overlay';
+import { currentSubscriptionWhere, notFixedForOtherSql } from '../../common/fixed-vehicle';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma, type Vehicle } from '@prisma/client';
@@ -13,7 +14,14 @@ import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
 import type { ListVehiclesQuery, NearbyQuery, VehicleCreateDto, VehicleStatusChangeDto, VehicleUpdateDto } from './vehicles.dto';
+import { V2_CONFIG, type V2Config } from '../../config/v2-config';
+import { VEHICLE_MODEL_SELECT } from '../catalog/catalog.service';
+import { UsageTracker } from '../maintenance/usage-tracker.service';
+import { VehicleAddressService } from './vehicle-address.service';
 import { toVehicle, toVehicleSummary } from './vehicles.mapper';
+
+/** Relações lidas junto com a moto (contrato v2: modelo do catálogo). */
+const VEHICLE_INCLUDE = { tracker: { select: { id: true } }, vehicleModel: { select: VEHICLE_MODEL_SELECT } } as const;
 
 const TRACK_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Persistência da telemetria no Postgres no máximo a cada 30 s por moto (o estado ao vivo fica no Redis). */
@@ -44,23 +52,74 @@ export class VehiclesService {
     private readonly commands: CommandsService,
     private readonly events: EventEmitter2,
     @Inject(REDIS_STORE) private readonly redis: RedisStore,
+    private readonly addresses: VehicleAddressService,
+    private readonly usage: UsageTracker,
+    @Inject(V2_CONFIG) private readonly v2: V2Config,
   ) {}
+
+  /**
+   * Contrato v2: endereço (geocodificação reversa em cache), bateria instalada e moto fixa de assinatura, para a ficha
+   * e a lista. Clientes só recebem o endereço.
+   */
+  private async enrich<T extends Vehicle & { tracker?: { id: string } | null }>(rows: T[], staff: boolean, currentRental?: Map<string, string>, viewerCustomerId?: string) {
+    if (!staff) {
+      // Fix round 1 (I5): para cliente, posição e endereço só de moto livre ou da própria reserva/aluguel (LGPD).
+      const own = await this.ownVehicleIds(viewerCustomerId, rows.map((r) => r.id));
+      const visible = rows.filter((v) => v.status === 'free' || own.has(v.id));
+      await this.addresses.ensure(visible);
+      return rows.map((v) => (visible.includes(v) ? toVehicle(v, { staff: false }) : toVehicle(v, { staff: false, hideLocation: true })));
+    }
+    await this.addresses.ensure(rows);
+    const ids = rows.map((r) => r.id);
+    const serials = rows.map((r) => r.batterySerial).filter((x): x is string => !!x);
+    const [batteries, subs] = await Promise.all([
+      this.prisma.battery.findMany({ where: { OR: [{ vehicleId: { in: ids } }, { serial: { in: serials } }] } }),
+      this.prisma.subscription.findMany({ where: { assignedVehicleId: { in: ids }, ...currentSubscriptionWhere() }, select: { id: true, assignedVehicleId: true } }),
+    ]);
+    const subBy = new Map(subs.map((x) => [x.assignedVehicleId!, x.id]));
+    const defaults = { km: this.v2.defaultServiceIntervalKm, hours: this.v2.defaultServiceIntervalHours };
+    return rows.map((v) => {
+      const battery =
+        batteries.find((b) => b.vehicleId === v.id && b.status === 'in_vehicle') ?? batteries.find((b) => !!v.batterySerial && b.serial === v.batterySerial) ?? null;
+      return toVehicle(v, { staff: true, currentRentalId: currentRental?.get(v.id), battery, assignedSubscriptionId: subBy.get(v.id), serviceDefaults: defaults });
+    });
+  }
 
   /** Motos `free` no raio (clientes) ou todas (staff), ordenadas por distância (PostGIS). */
   async nearby(user: Principal, q: NearbyQuery) {
     const radius = q.radiusM ?? 1000;
     const minBattery = q.minRangeKm ? Math.ceil((q.minRangeKm / KM_PER_FULL_BATTERY) * 100) : 0;
     const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${q.lng}, ${q.lat}), 4326)::geography`;
-    const statusFilter = isStaff(user) ? Prisma.empty : Prisma.sql`AND "status" = 'free'::"VehicleStatus"`;
-    const rows = await this.prisma.$queryRaw<Array<Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct'> & { distance: number }>>`
-      SELECT "id", "code", "model", "status", "lat", "lng", "batteryPct",
-             ST_Distance(ST_SetSRID(ST_MakePoint("lng", "lat"), 4326)::geography, ${point}) AS "distance"
-      FROM "Vehicle"
-      WHERE ST_DWithin(ST_SetSRID(ST_MakePoint("lng", "lat"), 4326)::geography, ${point}, ${radius})
-        AND "batteryPct" >= ${minBattery} ${statusFilter}
+    // Contrato v2: moto fixa de assinatura aberta só aparece para o próprio assinante.
+    const statusFilter = isStaff(user)
+      ? Prisma.empty
+      : Prisma.sql`AND v."status" = 'free'::"VehicleStatus" AND ${notFixedForOtherSql(user.customerId!)}`;
+    type NearbyRow = Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct' | 'vehicleModelId'> & {
+      distance: number;
+      categoryLabel: string | null;
+      pricePerMinuteCents: number | null;
+    };
+    const rows = await this.prisma.$queryRaw<NearbyRow[]>`
+      SELECT v."id", v."code", v."model", v."status", v."lat", v."lng", v."batteryPct", v."vehicleModelId",
+             m."categoryLabel", m."pricePerMinuteCents",
+             ST_Distance(ST_SetSRID(ST_MakePoint(v."lng", v."lat"), 4326)::geography, ${point}) AS "distance"
+      FROM "Vehicle" v
+      LEFT JOIN "VehicleModel" m ON m."id" = v."vehicleModelId"
+      WHERE ST_DWithin(ST_SetSRID(ST_MakePoint(v."lng", v."lat"), 4326)::geography, ${point}, ${radius})
+        AND v."batteryPct" >= ${minBattery} ${statusFilter}
       ORDER BY "distance" ASC
       LIMIT 200`;
     return { items: rows.map((r) => toVehicleSummary(r, Number(r.distance))) };
+  }
+
+  /** Motos da reserva ativa ou do aluguel aberto do cliente. */
+  private async ownVehicleIds(customerId: string | undefined, ids: string[]): Promise<Set<string>> {
+    if (!customerId || ids.length === 0) return new Set();
+    const [res, ren] = await Promise.all([
+      this.prisma.reservation.findMany({ where: { customerId, vehicleId: { in: ids }, status: 'active', expiresAt: { gt: new Date() } }, select: { vehicleId: true } }),
+      this.prisma.rental.findMany({ where: { customerId, vehicleId: { in: ids }, status: { in: OPEN_RENTAL_STATUSES } }, select: { vehicleId: true } }),
+    ]);
+    return new Set([...res, ...ren].map((x) => x.vehicleId));
   }
 
   private async currentRentalId(vehicleId: string): Promise<string | undefined> {
@@ -71,9 +130,10 @@ export class VehiclesService {
   async byCode(user: Principal, code: string) {
     const normalized = parseVehicleCode(code);
     if (!normalized) throw notFound('Moto não encontrada.');
-    const v = await this.prisma.vehicle.findUnique({ where: { code: normalized }, include: { tracker: { select: { id: true } } } });
+    const v = await this.prisma.vehicle.findUnique({ where: { code: normalized }, include: VEHICLE_INCLUDE });
     if (!v) throw notFound('Moto não encontrada.');
-    return toVehicle(v, { staff: isStaff(user), currentRentalId: isStaff(user) ? await this.currentRentalId(v.id) : undefined });
+    const rental = isStaff(user) ? await this.currentRentalId(v.id) : undefined;
+    return (await this.enrich([v], isStaff(user), rental ? new Map([[v.id, rental]]) : undefined, user.customerId))[0];
   }
 
   async list(q: ListVehiclesQuery) {
@@ -81,30 +141,42 @@ export class VehiclesService {
     if (q.status) where.status = q.status;
     if (q.maxBatteryPct !== undefined) where.batteryPct = { lte: q.maxBatteryPct };
     if (q.q) where.OR = [{ code: { contains: q.q, mode: 'insensitive' } }, { thingName: { contains: q.q, mode: 'insensitive' } }, { model: { contains: q.q, mode: 'insensitive' } }];
-    const dbRows = await this.prisma.vehicle.findMany({ where, include: { tracker: { select: { id: true } } }, orderBy: [{ code: 'asc' }, { id: 'asc' }], ...pageArgs(q) });
+    const dbRows = await this.prisma.vehicle.findMany({ where, include: VEHICLE_INCLUDE, orderBy: [{ code: 'asc' }, { id: 'asc' }], ...pageArgs(q) });
     // QA-20: posição/telemetria ao vivo do Redis quando mais nova que o Postgres (gravado a cada 30 s).
     const rows = await withLiveState(this.redis, dbRows);
     const open = await this.prisma.rental.findMany({ where: { vehicleId: { in: rows.map((r) => r.id) }, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true, vehicleId: true } });
     const byVehicle = new Map(open.map((r) => [r.vehicleId, r.id]));
-    return toPage(rows, q, (v) => toVehicle(v, { staff: true, currentRentalId: byVehicle.get(v.id) }));
+    const page = toPage(rows, q, (v) => v);
+    return { ...page, items: await this.enrich(page.items, true, byVehicle) };
   }
 
   async create(actor: Principal, dto: VehicleCreateDto) {
     const dup = await this.prisma.vehicle.findFirst({ where: { OR: [{ code: dto.code }, { thingName: dto.thingName }] } });
     if (dup) throw conflict('conflict', 'Já existe uma moto com este código ou rastreador.');
+    const modelName = dto.vehicleModelId ? await this.modelName(dto.vehicleModelId) : undefined;
     const v = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.vehicle.create({ data: { ...dto, qrCode: dto.qrCode ?? `volti://v/${dto.code}`, status: 'maintenance' } });
+      const created = await tx.vehicle.create({
+        data: { ...dto, model: modelName ?? dto.model, qrCode: dto.qrCode ?? `volti://v/${dto.code}`, status: 'maintenance' },
+        include: VEHICLE_INCLUDE,
+      });
       await this.audit.record({ actor, action: 'vehicle.create', entityType: 'Vehicle', entityId: created.id, metadata: { code: dto.code } }, tx as any);
       return created;
     });
-    return toVehicle(v, { staff: true });
+    return (await this.enrich([v], true))[0];
+  }
+
+  private async modelName(vehicleModelId: string): Promise<string> {
+    const m = await this.prisma.vehicleModel.findUnique({ where: { id: vehicleModelId }, select: { name: true } });
+    if (!m) throw notFound('Modelo não encontrado.');
+    return m.name;
   }
 
   async get(user: Principal, id: string) {
-    const row = await this.prisma.vehicle.findUnique({ where: { id }, include: { tracker: { select: { id: true } } } });
+    const row = await this.prisma.vehicle.findUnique({ where: { id }, include: VEHICLE_INCLUDE });
     if (!row) throw notFound('Moto não encontrada.');
     const [v] = await withLiveState(this.redis, [row]);
-    return toVehicle(v, { staff: isStaff(user), currentRentalId: isStaff(user) ? await this.currentRentalId(id) : undefined });
+    const rental = isStaff(user) ? await this.currentRentalId(id) : undefined;
+    return (await this.enrich([v], isStaff(user), rental ? new Map([[id, rental]]) : undefined, user.customerId))[0];
   }
 
   async update(actor: Principal, id: string, dto: VehicleUpdateDto) {
@@ -114,12 +186,18 @@ export class VehiclesService {
       const dup = await this.prisma.vehicle.findUnique({ where: { thingName: dto.thingName } });
       if (dup) throw conflict('conflict', 'Este rastreador já está vinculado a outra moto.');
     }
+    const modelName = dto.vehicleModelId ? await this.modelName(dto.vehicleModelId) : undefined;
+    const corrected = dto.odometerKm !== undefined || dto.usageHours !== undefined;
+    const correction = corrected ? { previousOdometerKm: v.odometerKm, previousUsageHours: v.usageHours } : {};
     const updated = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.vehicle.update({ where: { id }, data: { ...dto }, include: { tracker: { select: { id: true } } } });
-      await this.audit.record({ actor, action: 'vehicle.update', entityType: 'Vehicle', entityId: id, metadata: { ...dto } }, tx as any);
+      const u = await tx.vehicle.update({ where: { id }, data: { ...dto, ...(modelName ? { model: modelName } : {}) }, include: VEHICLE_INCLUDE });
+      await this.audit.record({ actor, action: 'vehicle.update', entityType: 'Vehicle', entityId: id, metadata: { ...dto, ...correction } }, tx as any);
       return u;
     });
-    return toVehicle(updated, { staff: true, currentRentalId: await this.currentRentalId(id) });
+    // Correção manual do odômetro/horas: descarta o acumulado da telemetria ainda não gravado.
+    if (corrected) await this.usage.reset(id);
+    const rental = await this.currentRentalId(id);
+    return (await this.enrich([updated], true, rental ? new Map([[id, rental]]) : undefined))[0];
   }
 
   /** Só entre `free` e `maintenance`, sem aluguel ou reserva ativa. */
@@ -133,12 +211,12 @@ export class VehiclesService {
     ]);
     if (rental || reservation) throw conflict('vehicle-unavailable', 'A moto tem aluguel ou reserva ativa.');
     const updated = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.vehicle.update({ where: { id }, data: { status: dto.status }, include: { tracker: { select: { id: true } } } });
+      const u = await tx.vehicle.update({ where: { id }, data: { status: dto.status }, include: VEHICLE_INCLUDE });
       await this.audit.record({ actor, action: 'vehicle.status', entityType: 'Vehicle', entityId: id, reason: dto.reason, metadata: { from: v.status, to: dto.status } }, tx as any);
       return u;
     });
     this.emitStatus(id, dto.status);
-    return toVehicle(updated, { staff: true });
+    return (await this.enrich([updated], true))[0];
   }
 
   async track(id: string, fromIso: string, toIso: string) {
@@ -186,6 +264,8 @@ export class VehiclesService {
   /** Estado ao vivo no Redis a cada telemetria; Postgres no máximo a cada 30 s por moto. */
   @OnEvent(EV.IOT_TELEMETRY, { async: true, promisify: true })
   async onTelemetry(ev: IotTelemetryEvent): Promise<void> {
+    // Contrato v2: odômetro e horas de uso acumulados pela telemetria (gravados junto com a posição, a cada 30 s).
+    await this.usage.record(ev);
     await this.redis.hset(`vehicle:live:${ev.vehicleId}`, {
       lat: String(ev.lat), lng: String(ev.lng), speedKmh: String(ev.speedKmh), batteryPct: String(ev.batteryPct),
       locked: String(ev.locked), ignition: String(ev.ignition), signal: String(ev.signal), ts: ev.ts,
@@ -193,10 +273,18 @@ export class VehiclesService {
     const last = this.lastDbWrite.get(ev.vehicleId) ?? 0;
     if (Date.now() - last < DB_WRITE_INTERVAL_MS) return;
     this.lastDbWrite.set(ev.vehicleId, Date.now());
+    const pending = await this.usage.take(ev.vehicleId);
     await this.prisma.vehicle.updateMany({
       where: { id: ev.vehicleId },
-      data: { lat: ev.lat, lng: ev.lng, speedKmh: ev.speedKmh, batteryPct: Math.round(ev.batteryPct), locked: ev.locked, ignition: ev.ignition, signal: ev.signal, lastSeenAt: new Date(ev.ts), online: true },
+      data: {
+        lat: ev.lat, lng: ev.lng, speedKmh: ev.speedKmh, batteryPct: Math.round(ev.batteryPct), locked: ev.locked, ignition: ev.ignition, signal: ev.signal,
+        lastSeenAt: new Date(ev.ts), online: true,
+        ...(pending.km > 0 ? { odometerKm: { increment: pending.km } } : {}),
+        ...(pending.hours > 0 ? { usageHours: { increment: pending.hours } } : {}),
+      },
     });
+    // Carga da bateria instalada acompanha a telemetria.
+    await this.prisma.battery.updateMany({ where: { vehicleId: ev.vehicleId, status: 'in_vehicle' }, data: { chargePct: Math.max(0, Math.min(100, Math.round(ev.batteryPct))) } });
   }
 
   /** Rastreador offline → status `offline` (guarda o anterior); online → restaura. */

@@ -21,6 +21,9 @@ part 'vehicle_summary.g.dart';
 /// * [batteryPct]
 /// * [estimatedRangeKm] - Autonomia estimada com a carga atual.
 /// * [distanceM] - Distância até o ponto da busca (só em `nearby`).
+/// * [vehicleModelId] - Modelo no catálogo (`GET /vehicle-models`, com a foto).
+/// * [categoryLabel]
+/// * [pricePerMinuteCents] - Preço por minuto do modelo no plano `minute`.
 @BuiltValue()
 abstract class VehicleSummary
     implements Built<VehicleSummary, VehicleSummaryBuilder> {
@@ -53,6 +56,17 @@ abstract class VehicleSummary
   /// Distância até o ponto da busca (só em `nearby`).
   @BuiltValueField(wireName: r'distanceM')
   int? get distanceM;
+
+  /// Modelo no catálogo (`GET /vehicle-models`, com a foto).
+  @BuiltValueField(wireName: r'vehicleModelId')
+  String? get vehicleModelId;
+
+  @BuiltValueField(wireName: r'categoryLabel')
+  String? get categoryLabel;
+
+  /// Preço por minuto do modelo no plano `minute`.
+  @BuiltValueField(wireName: r'pricePerMinuteCents')
+  int? get pricePerMinuteCents;
 
   VehicleSummary._();
 
@@ -124,6 +138,27 @@ class _$VehicleSummarySerializer
       yield r'distanceM';
       yield serializers.serialize(
         object.distanceM,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.vehicleModelId != null) {
+      yield r'vehicleModelId';
+      yield serializers.serialize(
+        object.vehicleModelId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.categoryLabel != null) {
+      yield r'categoryLabel';
+      yield serializers.serialize(
+        object.categoryLabel,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.pricePerMinuteCents != null) {
+      yield r'pricePerMinuteCents';
+      yield serializers.serialize(
+        object.pricePerMinuteCents,
         specifiedType: const FullType(int),
       );
     }
@@ -215,6 +250,30 @@ class _$VehicleSummarySerializer
           ) as int?;
           if (valueDes == null) continue;
           result.distanceM = valueDes;
+          break;
+        case r'vehicleModelId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.vehicleModelId = valueDes;
+          break;
+        case r'categoryLabel':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.categoryLabel = valueDes;
+          break;
+        case r'pricePerMinuteCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.pricePerMinuteCents = valueDes;
           break;
         default:
           unhandled.add(key);

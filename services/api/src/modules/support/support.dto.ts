@@ -86,6 +86,11 @@ export class ListMessagesQuery extends PageQuery {
   @IsOptional() @IsDateString() after?: string;
 }
 
+/** Contrato v2: marcar como lidas até uma mensagem (ou todas). */
+export class SupportReadDto {
+  @IsOptional() @IsUUID() upToMessageId?: string;
+}
+
 export class MessageCreateDto {
   @IsString() @MinLength(1) @MaxLength(4000) body: string;
   @IsOptional() @IsArray() @IsString({ each: true }) attachmentObjectKeys?: string[];

@@ -157,6 +157,17 @@ describe('FakePaymentProvider', () => {
     expect(p.subscriptionStatus(s.providerSubscriptionId)).toBe('canceled');
   });
 
+  it('fix round 2: falha programada no cancelamento da assinatura (testa a retentativa) e cancelamento repetido é idempotente', async () => {
+    const c = await card();
+    const s = await p.createSubscription({ ...c, payerEmail: 'x@example.com', planCode: 'monthly', amountCents: 79900, idempotencyKey: 's2', externalReference: 'subscription:2' });
+    p.failNextCancelCall = true;
+    await expect(p.cancelSubscription({ providerSubscriptionId: s.providerSubscriptionId })).rejects.toThrow('fake_gateway_unavailable');
+    expect(p.subscriptionStatus(s.providerSubscriptionId)).toBe('active');
+    await p.cancelSubscription({ providerSubscriptionId: s.providerSubscriptionId });
+    await p.cancelSubscription({ providerSubscriptionId: s.providerSubscriptionId });
+    expect(p.subscriptionStatus(s.providerSubscriptionId)).toBe('canceled');
+  });
+
   it('verifyWebhook usa o HMAC do Mercado Pago', () => {
     expect(p.verifyWebhook({ signature: sign('1', 'r', NOW), requestId: 'r', dataId: '1' })).toBe(true);
     expect(p.verifyWebhook({ signature: sign('1', 'r', NOW, 'outro'), requestId: 'r', dataId: '1' })).toBe(false);
