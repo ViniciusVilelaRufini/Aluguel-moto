@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { assertNotFixedForOther } from '../../common/fixed-vehicle';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import type { Deposit, Prisma, Reservation, Vehicle } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
@@ -11,11 +11,16 @@ import { RENTAL_BILLING, type RentalBillingPort } from '../../ports/rental-billi
 import { PrismaService } from '../../prisma/prisma.service';
 import { REDIS_STORE, type RedisStore } from '../../redis/redis-store';
 import { assertCustomerEligible } from '../customers/eligibility';
+import { DEPOSIT_FAILED, type DepositFailedEvent } from '../payments/deposit-events';
 import { toDeposit } from '../rentals/rentals.mapper';
 import { toVehicleSummary } from '../vehicles/vehicles.mapper';
 
 const KEY_PREFIX = 'reservation:';
+const SWEEP_BATCH = 500;
 type Tx = Prisma.TransactionClient;
+
+const inHandover = () =>
+  new ProblemException(409, 'reservation-in-handover', 'A entrega da moto já começou. Para desistir, conteste a entrega.', undefined, 'Entrega em andamento');
 
 export interface ReservationExtras {
   deposit?: Deposit | null;
@@ -159,15 +164,28 @@ export class ReservationsService implements OnModuleInit {
   async cancel(customerId: string, id: string): Promise<void> {
     const r = await this.prisma.reservation.findUnique({ where: { id } });
     if (!r || r.customerId !== customerId) throw notFound('Reserva não encontrada.');
-    if (r.status === 'handover') {
-      throw new ProblemException(409, 'reservation-in-handover', 'A entrega da moto já começou. Para desistir, conteste a entrega.', undefined, 'Entrega em andamento');
-    }
+    if (r.status === 'handover') throw inHandover();
     if (r.status !== 'active') throw conflict('conflict', 'A reserva não está mais ativa.');
-    await this.end(r.id, 'canceled');
+    if (await this.end(r.id, 'canceled')) return;
+    // Perdeu a corrida (entrega aberta, expiração ou outro cancelamento no mesmo instante): nunca 204 sem cancelar.
+    const now = await this.prisma.reservation.findUnique({ where: { id } });
+    if (now?.status === 'handover') throw inHandover();
+    throw conflict('conflict', 'A reserva não está mais ativa.');
   }
 
   async expire(id: string, reason: 'expired' | 'canceled'): Promise<void> {
     await this.end(id, reason);
+  }
+
+  /** Fix round 1: caução Pix não paga (vencida/cancelada no gateway) → a reserva ativa presa nela expira. */
+  @OnEvent(DEPOSIT_FAILED, { async: true, promisify: true })
+  async onDepositFailed(ev: DepositFailedEvent): Promise<void> {
+    try {
+      const r = await this.prisma.reservation.findFirst({ where: { depositId: ev.depositId, status: 'active' }, select: { id: true } });
+      if (r) await this.end(r.id, 'expired');
+    } catch (err) {
+      this.logger.error({ msg: 'reservation_deposit_failed_expire_error', depositId: ev.depositId, error: (err as Error).message });
+    }
   }
 
   /** Converte a reserva ativa (ou em entrega de galpão) da moto em aluguel (sem liberar a moto). */
@@ -176,9 +194,10 @@ export class ReservationsService implements OnModuleInit {
     await this.redis.del(KEY_PREFIX + reservationId);
   }
 
-  private async end(id: string, reason: 'expired' | 'canceled'): Promise<void> {
+  /** `true` só se esta chamada encerrou a reserva (transição condicional `active → reason`). */
+  private async end(id: string, reason: 'expired' | 'canceled'): Promise<boolean> {
     const r = await this.prisma.reservation.findUnique({ where: { id } });
-    if (!r || r.status !== 'active') return;
+    if (!r || r.status !== 'active') return false;
     const done = await this.prisma.$transaction(async (tx) => {
       const upd = await tx.reservation.updateMany({ where: { id, status: 'active' }, data: { status: reason, endedAt: new Date() } });
       if (upd.count === 0) return false;
@@ -186,7 +205,7 @@ export class ReservationsService implements OnModuleInit {
       return true;
     });
     await this.redis.del(KEY_PREFIX + id);
-    if (!done) return;
+    if (!done) return false;
     this.emitVehicleStatus(r.vehicleId, 'free');
     const ev: ReservationEndedEvent = { reservationId: id, customerId: r.customerId, vehicleId: r.vehicleId, depositId: r.depositId ?? undefined, reason };
     this.events.emit(EV.RESERVATION_ENDED, ev);
@@ -199,6 +218,7 @@ export class ReservationsService implements OnModuleInit {
       this.events.emit(EV.DEPOSIT_RELEASE_REQUESTED, release);
     }
     this.logger.log({ msg: 'reservation_ended', reservationId: id, reason });
+    return true;
   }
 
   /** Rede de segurança (rua e galpão; só `active`: `handover` não vence pelo prazo): expira reservas vencidas (Redis sem keyspace notifications, reinício da API…). */
@@ -208,14 +228,37 @@ export class ReservationsService implements OnModuleInit {
     await this.sweep().catch((err) => this.logger.error({ msg: 'reservation_sweep_failed', error: (err as Error).message }));
   }
 
+  /**
+   * Fix round 1: três passes independentes. (1) Vencidas: só `expiresAt <= agora`, mais antigas primeiro (nunca ficam de fora
+   * por haver muitas ativas no prazo). (2) Galpão com caução `failed` ou Pix vencido sem pagamento. (3) Ativas no prazo sem
+   * chave no Redis: regrava o TTL.
+   */
   async sweep(): Promise<void> {
-    const candidates = await this.prisma.reservation.findMany({ where: { status: 'active' }, select: { id: true, expiresAt: true }, take: 500 });
-    for (const c of candidates) {
-      const overdue = c.expiresAt.getTime() <= Date.now();
-      if (overdue || !(await this.redis.exists(KEY_PREFIX + c.id))) {
-        if (overdue) await this.end(c.id, 'expired');
-        else await this.redis.set(KEY_PREFIX + c.id, '1', c.expiresAt.getTime() - Date.now());
-      }
+    const now = new Date();
+    const overdue = await this.prisma.reservation.findMany({
+      where: { status: 'active', expiresAt: { lte: now } },
+      select: { id: true },
+      orderBy: { expiresAt: 'asc' },
+      take: SWEEP_BATCH,
+    });
+    for (const c of overdue) await this.end(c.id, 'expired');
+
+    const unpaid = (await this.prisma.$queryRaw<Array<{ id: string }>>`
+      SELECT r."id" FROM "Reservation" r JOIN "Deposit" d ON d."id" = r."depositId"
+      WHERE r."status" = 'active' AND r."depotId" IS NOT NULL
+        AND (d."status" = 'failed' OR (d."status" = 'awaiting_pix' AND (d."pix"->>'expiresAt')::timestamptz <= now()))
+      LIMIT 500`) ?? [];
+    for (const c of unpaid) await this.end(c.id, 'expired');
+
+    const live = await this.prisma.reservation.findMany({
+      where: { status: 'active', expiresAt: { gt: now } },
+      select: { id: true, expiresAt: true },
+      orderBy: { expiresAt: 'asc' },
+      take: SWEEP_BATCH,
+    });
+    for (const c of live) {
+      const ttl = c.expiresAt.getTime() - Date.now();
+      if (ttl > 0 && !(await this.redis.exists(KEY_PREFIX + c.id))) await this.redis.set(KEY_PREFIX + c.id, '1', ttl);
     }
   }
 

@@ -31,6 +31,10 @@ export interface DepotReservationInput {
 
 /** Lembrete de retirada: reservas que vencem em até 30 min. */
 const REMIND_BEFORE_MS = 30 * 60_000;
+/** Marca da chave de idempotência da caução de reserva de galpão (`deposit:<cliente>:reservation:<Idempotency-Key>`). */
+const RESERVATION_KEY_MARK = ':reservation:';
+/** Caução de reserva sem reserva nem aluguel depois disto é órfã (processo caiu entre a caução e a transação). */
+const ORPHAN_DEPOSIT_AGE_MS = 10 * 60_000;
 
 /** Erros de `validatePickup` → problemas do contrato (`depot-closed` não tem slug próprio: vira `pickup-outside-hours`). */
 const PICKUP_ERRORS: Record<PickupErrorCode, () => ProblemException> = {
@@ -110,7 +114,8 @@ export class DepotReservationsService {
             planCode: dto.planCode,
             coverage: dto.coverage,
             depositMethod: dto.depositMethod,
-            cardId: dto.cardId ?? null,
+            // Fix round 1: cartão da caução só faz sentido com depositMethod card.
+            cardId: dto.depositMethod === 'card' ? dto.cardId ?? null : null,
             couponCode: dto.couponCode ?? null,
           },
           include: { vehicle: true },
@@ -145,8 +150,8 @@ export class DepotReservationsService {
       customerId,
       rentalId: randomUUID(),
       method: dto.depositMethod,
-      idempotencyKey: `deposit:${customerId}:reservation:${idempotencyKey}`,
-      ...(dto.cardId ? { cardId: dto.cardId } : {}),
+      idempotencyKey: `deposit:${customerId}${RESERVATION_KEY_MARK}${idempotencyKey}`,
+      ...(dto.depositMethod === 'card' && dto.cardId ? { cardId: dto.cardId } : {}),
     });
     const d = await this.prisma.deposit.findUnique({ where: { id: held.depositId } });
     // Repetição com a mesma chave depois de um 409: a caução daquela tentativa já foi liberada.
@@ -174,6 +179,41 @@ export class DepotReservationsService {
     await this.events.emitAsync(EV.DEPOSIT_RELEASE_REQUESTED, ev).catch((err) => this.logger.error({ msg: 'deposit_release_request_failed', depositId, error: (err as Error).message }));
   }
 
+  // ───────────────────────── caução órfã ─────────────────────────
+
+  @Interval('depot-reservations-orphan-deposits', 5 * 60_000)
+  async orphanDepositsJob(): Promise<void> {
+    if (!this.cfg.jobsEnabled) return;
+    await this.releaseOrphanDeposits().catch((err) => this.logger.error({ msg: 'orphan_deposit_release_failed', error: (err as Error).message }));
+  }
+
+  /**
+   * Fix round 1: caução de reserva de galpão (`held`/`awaiting_pix`, chave `deposit:<cliente>:reservation:…`) sem reserva
+   * nem aluguel há mais de 10 min — o processo caiu entre a caução e a transação — é liberada.
+   */
+  async releaseOrphanDeposits(now = new Date()): Promise<number> {
+    const candidates = await this.prisma.deposit.findMany({
+      where: {
+        status: { in: ['held', 'awaiting_pix'] },
+        idempotencyKey: { startsWith: 'deposit:', contains: RESERVATION_KEY_MARK },
+        createdAt: { lt: new Date(now.getTime() - ORPHAN_DEPOSIT_AGE_MS) },
+      },
+      select: { id: true, customerId: true },
+      take: 100,
+    });
+    let released = 0;
+    for (const d of candidates) {
+      // Liberação já pedida (DepositRelease): o job de retentativa de pagamentos cuida dela.
+      if (await this.prisma.depositRelease.findUnique({ where: { depositId: d.id } })) continue;
+      if (await this.prisma.reservation.findFirst({ where: { depositId: d.id }, select: { id: true } })) continue;
+      if (await this.prisma.rental.findFirst({ where: { depositId: d.id }, select: { id: true } })) continue;
+      await this.requestDepositRelease(d.id, d.customerId);
+      this.logger.warn({ msg: 'orphan_deposit_released', depositId: d.id });
+      released++;
+    }
+    return released;
+  }
+
   // ───────────────────────── lembrete ─────────────────────────
 
   @Interval('depot-reservations-remind', 60_000)
@@ -187,10 +227,13 @@ export class DepotReservationsService {
     const due = await this.prisma.reservation.findMany({
       where: { status: 'active', depotId: { not: null }, reminderSentAt: null, expiresAt: { gt: now, lte: new Date(now.getTime() + REMIND_BEFORE_MS) } },
       include: { depot: true },
+      orderBy: { expiresAt: 'asc' },
       take: 200,
     });
     let sent = 0;
     for (const r of due) {
+      // Fix round 1: reserva que dura 30 min ou menos já nasce dentro da janela; o app mostra o prazo — sem lembrete.
+      if (r.expiresAt.getTime() - r.createdAt.getTime() <= REMIND_BEFORE_MS) continue;
       const claimed = await this.prisma.reservation.updateMany({ where: { id: r.id, status: 'active', reminderSentAt: null }, data: { reminderSentAt: now } });
       if (claimed.count !== 1) continue;
       const time = formatTime(r.expiresAt, r.depot?.timezone ?? 'America/Sao_Paulo');

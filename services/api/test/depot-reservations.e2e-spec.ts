@@ -3,7 +3,11 @@ import { PrismaClient } from '@prisma/client';
 import jestOpenAPI from 'jest-openapi';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { FakePaymentProvider } from '../src/modules/payments/provider/fake-payment-provider';
+import { PAYMENT_PROVIDER } from '../src/modules/payments/provider/payment-provider';
+import { RentalBillingService } from '../src/modules/payments/rental-billing.service';
 import { verifyPickupCode } from '../src/modules/reservations/pickup-code';
+import { ReservationsService } from '../src/modules/reservations/reservations.service';
 import { loadSpecAs30 } from './contract/openapi-30';
 import { approvedCustomer, bootE2eApp } from './helpers/e2e-app';
 
@@ -137,6 +141,32 @@ describe('Reserva de galpão (e2e)', () => {
     expect(res.body.deposit).toMatchObject({ method: 'pix', status: 'awaiting_pix' });
     expect(res.body.deposit.pix.copyPaste).toBeTruthy();
     expect(res.body.deposit.pix.qrCodeBase64).toBeTruthy();
+  });
+
+  it('fix 1: Pix não pago (vencido no gateway) → reserva expired, moto free e current vazio', async () => {
+    const c = await approvedCustomer(app, prisma, 'dr-pix-exp');
+    const v = await depotVehicle();
+    const res = await http().post('/reservations').set(bearer(c.token)).set('Idempotency-Key', randomUUID()).send(body(v.id, { depositMethod: 'pix' })).expect(201);
+    const dp = await prisma.payment.findFirstOrThrow({ where: { depositId: res.body.deposit.id, kind: 'deposit' } });
+    const fake = app.get<FakePaymentProvider>(PAYMENT_PROVIDER);
+    fake.simulatePixExpired(dp.providerPaymentId!);
+    await app.get(RentalBillingService).applyProviderPayment(await fake.getPayment(dp.providerPaymentId!));
+    expect((await prisma.deposit.findUniqueOrThrow({ where: { id: res.body.deposit.id } })).status).toBe('failed');
+    expect((await prisma.reservation.findUniqueOrThrow({ where: { id: res.body.id } })).status).toBe('expired');
+    expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('free');
+    expect((await http().get('/reservations/current').set(bearer(c.token)).expect(200)).body).toEqual({});
+  });
+
+  it('fix 1: varredura expira reserva de galpão com Pix vencido sem webhook', async () => {
+    const c = await approvedCustomer(app, prisma, 'dr-pix-sweep');
+    const v = await depotVehicle();
+    const res = await http().post('/reservations').set(bearer(c.token)).set('Idempotency-Key', randomUUID()).send(body(v.id, { depositMethod: 'pix' })).expect(201);
+    const d = await prisma.deposit.findUniqueOrThrow({ where: { id: res.body.deposit.id } });
+    await prisma.deposit.update({ where: { id: d.id }, data: { pix: { ...(d.pix as object), expiresAt: new Date(Date.now() - 60_000).toISOString() } } });
+    await app.get(ReservationsService).sweep();
+    expect((await prisma.reservation.findUniqueOrThrow({ where: { id: res.body.id } })).status).toBe('expired');
+    expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('free');
+    expect((await http().get('/reservations/current').set(bearer(c.token)).expect(200)).body).toEqual({});
   });
 
   it('corrida: dois clientes pela mesma moto → um 201 e um 409, e a caução do perdedor é liberada', async () => {

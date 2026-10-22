@@ -219,7 +219,7 @@ describe('DepotReservationsService.create', () => {
 describe('DepotReservationsService — cancelamento, expiração e lembrete', () => {
   const row = (over: Record<string, unknown> = {}) => ({
     id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, depotId: DEPOT_ID, status: 'active', depositId: DEPOSIT_ID,
-    expiresAt: new Date(Date.now() + 60 * 60_000), reminderSentAt: null, ...over,
+    expiresAt: new Date(Date.now() + 60 * 60_000), reminderSentAt: null, createdAt: new Date(0), ...over,
   });
 
   it('cancel libera a caução e a moto volta a free', async () => {
@@ -283,5 +283,142 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     prisma.reservation.updateMany.mockImplementation((async () => ({ count: claims++ === 0 ? 1 : 0 })) as any);
     await Promise.all([service.remind(now), service.remind(now)]);
     expect(push.sendToOwner).toHaveBeenCalledTimes(1);
+  });
+
+  // ───────────── fix round 1 ─────────────
+
+  it('fix 1: caução Pix falhou (deposit.failed) → reserva ativa daquela caução expira e a moto volta a free', async () => {
+    const { reservations, prisma, released } = setup();
+    prisma.reservation.findFirst.mockResolvedValue(row({ depositMethod: 'pix' }) as any);
+    prisma.reservation.findUnique.mockResolvedValue(row({ depositMethod: 'pix' }) as any);
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    await reservations.onDepositFailed({ depositId: DEPOSIT_ID, customerId: CUSTOMER_ID });
+    expect((prisma.reservation.findFirst.mock.calls[0][0] as any).where).toMatchObject({ depositId: DEPOSIT_ID, status: 'active' });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active' }, data: expect.objectContaining({ status: 'expired' }) });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'reserved' }, data: { status: 'free' } });
+    expect(released).toEqual([expect.objectContaining({ depositId: DEPOSIT_ID, reason: 'reservation_expired' })]);
+  });
+
+  it('fix 1: deposit.failed sem reserva ativa → nada muda', async () => {
+    const { reservations, prisma } = setup();
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    await reservations.onDepositFailed({ depositId: DEPOSIT_ID, customerId: CUSTOMER_ID });
+    expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('fix 1: varredura expira reserva de galpão com caução failed ou Pix vencido (consulta com o Deposit)', async () => {
+    const { reservations, prisma } = setup();
+    prisma.reservation.findMany.mockResolvedValue([]);
+    (prisma.$queryRaw as any).mockResolvedValue([{ id: RES_ID }]);
+    prisma.reservation.findUnique.mockResolvedValue(row() as any);
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    await reservations.sweep();
+    const sql = ((prisma.$queryRaw as any).mock.calls[0][0] as TemplateStringsArray).join('?');
+    expect(sql).toContain(`'failed'`);
+    expect(sql).toContain(`'awaiting_pix'`);
+    expect(sql).toContain('expiresAt');
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active' }, data: expect.objectContaining({ status: 'expired' }) });
+  });
+
+  it('fix 2: cancel que perde a corrida → relê: handover → 409 reservation-in-handover; outro → 409 conflict; nunca 204 sem cancelar', async () => {
+    const { service, prisma, released } = setup();
+    prisma.reservation.updateMany.mockResolvedValue({ count: 0 });
+    prisma.reservation.findUnique
+      .mockResolvedValueOnce(row() as any) // cancel
+      .mockResolvedValueOnce(row() as any) // end
+      .mockResolvedValueOnce(row({ status: 'handover' }) as any); // releitura
+    await expect(service.cancel(CUSTOMER_ID, RES_ID)).rejects.toMatchObject({ status: 409, slug: 'reservation-in-handover' });
+    prisma.reservation.findUnique
+      .mockResolvedValueOnce(row() as any)
+      .mockResolvedValueOnce(row() as any)
+      .mockResolvedValueOnce(row({ status: 'expired' }) as any);
+    await expect(service.cancel(CUSTOMER_ID, RES_ID)).rejects.toMatchObject({ status: 409, slug: 'conflict' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(released).toEqual([]);
+  });
+
+  it('fix 3: passe de expiração busca só as vencidas (expiresAt <= agora, mais antigas primeiro, 500) — acha mesmo com mais de 500 ativas', async () => {
+    const { reservations, prisma } = setup();
+    const overdue = { id: RES_ID, expiresAt: new Date(Date.now() - 60_000) };
+    const future = Array.from({ length: 600 }, (_, i) => ({ id: `fut-${i}`, expiresAt: new Date(Date.now() + 3600_000) }));
+    prisma.reservation.count.mockResolvedValue(601);
+    prisma.reservation.findMany.mockImplementation((async (args: any) => (args.where.expiresAt?.lte ? [overdue] : future.slice(0, args.take))) as any);
+    prisma.reservation.findUnique.mockResolvedValue(row({ expiresAt: overdue.expiresAt }) as any);
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    await reservations.sweep();
+    const expiryCall = prisma.reservation.findMany.mock.calls.map((c) => c[0] as any).find((a) => a.where.expiresAt?.lte);
+    expect(expiryCall).toMatchObject({ where: { status: 'active', expiresAt: { lte: expect.any(Date) } }, orderBy: { expiresAt: 'asc' }, take: 500 });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active' }, data: expect.objectContaining({ status: 'expired' }) });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('fix 3: passe separado regrava a chave do Redis das ativas no prazo sem chave', async () => {
+    const { reservations, prisma, redis } = setup();
+    prisma.reservation.findMany.mockImplementation((async (args: any) =>
+      (args.where.expiresAt?.gt ? [{ id: RES_ID, expiresAt: new Date(Date.now() + 3600_000) }] : [])) as any);
+    await reservations.sweep();
+    expect(await redis.exists(`reservation:${RES_ID}`)).toBe(true);
+    expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('fix 4: compensador libera caução de reserva órfã (held/awaiting_pix, chave de reserva, sem reserva nem aluguel, > 10 min)', async () => {
+    const { service, prisma, released } = setup();
+    const now = new Date('2026-10-22T15:00:00Z');
+    prisma.deposit.findMany.mockResolvedValue([
+      { id: 'orfa', customerId: CUSTOMER_ID },
+      { id: 'com-reserva', customerId: CUSTOMER_ID },
+      { id: 'com-aluguel', customerId: CUSTOMER_ID },
+    ] as any);
+    prisma.reservation.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'com-reserva' ? { id: 'r' } : null)) as any);
+    prisma.rental.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'com-aluguel' ? { id: 'x' } : null)) as any);
+    prisma.deposit.findMany.mockResolvedValue([
+      { id: 'orfa', customerId: CUSTOMER_ID },
+      { id: 'com-reserva', customerId: CUSTOMER_ID },
+      { id: 'com-aluguel', customerId: CUSTOMER_ID },
+      { id: 'ja-liberando', customerId: CUSTOMER_ID },
+    ] as any);
+    prisma.depositRelease.findUnique.mockImplementation((async (a: any) => (a.where.depositId === 'ja-liberando' ? { depositId: 'ja-liberando' } : null)) as any);
+    expect(await service.releaseOrphanDeposits(now)).toBe(1);
+    expect(released).toEqual([expect.objectContaining({ depositId: 'orfa', customerId: CUSTOMER_ID })]);
+    const where = (prisma.deposit.findMany.mock.calls[0][0] as any).where;
+    expect(where).toMatchObject({
+      status: { in: ['held', 'awaiting_pix'] },
+      createdAt: { lt: new Date(now.getTime() - 10 * 60_000) },
+    });
+    expect(JSON.stringify(where)).toContain(':reservation:');
+  });
+
+  it('fix 4: compensador respeita JOBS_ENABLED', async () => {
+    const { service, prisma } = setup();
+    (service as any).cfg = { ...(service as any).cfg, jobsEnabled: false };
+    await service.orphanDepositsJob();
+    expect(prisma.deposit.findMany).not.toHaveBeenCalled();
+  });
+
+  it('fix 5: cardId só é gravado (e usado na caução) com depositMethod card', async () => {
+    const CARD = '77777777-7777-4777-8777-777777777777';
+    const a = setup();
+    a.billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'awaiting_pix', pix: {} });
+    a.prisma.deposit.findUnique.mockResolvedValue(deposit({ method: 'pix', status: 'awaiting_pix' }) as any);
+    await a.service.create(CUSTOMER_ID, input({ depositMethod: 'pix', cardId: CARD }), 'k-pix-card');
+    expect((a.prisma.reservation.create.mock.calls[0][0] as any).data.cardId).toBeNull();
+    expect(a.billing.holdDeposit.mock.calls[0][0]).not.toHaveProperty('cardId');
+    const b = setup();
+    await b.service.create(CUSTOMER_ID, input({ cardId: CARD }), 'k-card');
+    expect((b.prisma.reservation.create.mock.calls[0][0] as any).data.cardId).toBe(CARD);
+    expect(b.billing.holdDeposit.mock.calls[0][0]).toMatchObject({ cardId: CARD });
+  });
+
+  it('fix 6: sem lembrete quando a reserva inteira dura 30 min ou menos', async () => {
+    const { service, prisma, push } = setup();
+    const now = new Date('2026-10-22T17:05:00Z');
+    const expiresAt = new Date('2026-10-22T17:30:00Z');
+    prisma.reservation.findMany.mockResolvedValue([
+      { ...row({ id: 'curta', expiresAt, createdAt: new Date(expiresAt.getTime() - 30 * 60_000) }), depot },
+    ] as any);
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    expect(await service.remind(now)).toBe(0);
+    expect(push.sendToOwner).not.toHaveBeenCalled();
+    expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
   });
 });
