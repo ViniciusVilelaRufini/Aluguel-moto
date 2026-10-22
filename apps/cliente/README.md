@@ -144,6 +144,64 @@ O cliente não acha moto na rua: escolhe no app e retira no galpão.
 
 Aberto/fechado e horários saem de `Depot.openingHours`, `timezone`, `maxScheduleDays` e `pickupNowWindowMinutes` em `features/pickup/depot_hours.dart`, espelho de `services/api/src/modules/depots/depot-rules.ts` (fechamento exclusivo; último horário = fechamento − 30 min; "agora" vence no menor entre agora + janela e o fechamento de hoje; horários passados e além de `maxScheduleDays` saem). O servidor valida de novo. Fusos do Brasil com deslocamento fixo (sem horário de verão).
 
+## Troca de bateria na estação via QR (branch `feat/cliente-troca-qr`)
+
+Spec: `docs/superpowers/specs/2026-10-22-volti-troca-bateria-qr-design.md`. Código em `lib/features/station_swap/`.
+
+- **Aviso de proximidade.** Só com aluguel em andamento (`active`/`paused`) e consentimento de localização. A distância é calculada no app (haversine, `swapPromptStation`, até 50 m) sobre `GET /swap-stations`.
+  - Na corrida: usa a posição do rastreio que a corrida já faz.
+  - Na home: usa a mesma posição do mapa (`userLocationProvider`, uma consulta, sem rastreio fora do aluguel).
+  - O que aparece: o cartão "Você está na <estação> · Trocar bateria" e o botão "Trocar aqui" na linha da estação da folha "Troca de bateria" (`extraActions`).
+- **Leitor** (`/station-swap/scan`, push).
+  - Usa `mobile_scanner` (só QR). Permissão de câmera: Android `CAMERA`; iOS `NSCameraUsageDescription` em pt-BR.
+  - Campo "Código da estação" para emulador e desenvolvimento: cole o payload do QR.
+  - Câmera negada ou indisponível: a tela explica e leva ao campo.
+  - O QR `vst1.<stationId>.<assinatura>` dá o id da estação; a assinatura só a API confere.
+  - Vindo do aviso de proximidade, mostra "Estação: <nome>".
+  - O visor entrega o mesmo QR continuamente (`DetectionSpeed.normal`): enquanto a confirmação está aberta a leitura é ignorada e, depois que ela fecha, o mesmo QR fica ignorado por 2 s (`kSwapRescanCooldown`).
+  - Criada a troca (ou se já havia uma aberta), o leitor fecha e devolve a troca a quem abriu (`openSwapScan`), que abre o progresso. Se a folha fechar sem resposta, o leitor relê `GET /rentals/current` e retoma a troca que a API tenha criado.
+- **Confirmação** (folha).
+  - Mostra "Trocar a bateria da <código> aqui?" e as baterias disponíveis.
+  - Taxa: "Taxa R$ X" com o valor exato de `CurrentRental.batterySwapFeeCents` (o mesmo `feeCents` que o POST congela); `0` (diário/semanal/mensal) não mostra taxa. Sem o campo (API antiga), nos planos por minuto/hora aparece a linha genérica "Taxa por troca no seu plano…".
+  - "Abrir compartimento" faz `POST /swap-stations/{id}/swaps` com uma `Idempotency-Key` por tentativa. Rede, 5xx e 429 repetem com a mesma chave e a mesma posição (a troca pode ter sido criada); recusa da API (4xx) gera chave nova.
+  - Durante o POST a folha não fecha: sem arrastar e com `PopScope` (voltar e toque fora bloqueados).
+  - Cada slug tem sua mensagem em pt-BR: `station-not-found`, `too-far`, `vehicle-moving` ("Pare e trave a moto…"), `station-unavailable` ("sem baterias" quando a estação está zerada; "fechada agora" só quando o horário é legível e agora cai fora dele, `stationClosedAt`, mesma leitura da API; senão "não está disponível"), `swap-open` (leva à troca aberta) e `rental-not-active`.
+- **Progresso** (`/station-swap/:stationId/:swapId`, modal).
+  - Passos: abrindo a vaga → "Devolva a bateria na vaga N" → bateria recebida → "Pegue a bateria carregada" → "Bateria trocada · N%". Cada passo tem a contagem até `expiresAt`, pelo relógio do servidor.
+  - Atualização: o status vem do `station_swap.updated`; o `GET` da troca traz vaga, prazo e motivo e cobre a reconexão (com o socket fora, um GET a cada 10 s). Com a corrida aberta por baixo, usa o socket dela (`rideEventBusProvider` + `RideRealtimeLink`); senão, a conexão do cliente.
+  - Respostas fora de ordem: GET com `updatedAt` mais antigo que a troca mostrada é descartado (sem `updatedAt`, vale a ordem dos passos) e cada GET leva um número de sequência (resposta de um pedido anterior ao último estado aplicado, inclusive o cancelamento, é ignorada).
+  - Segundo plano (`AppLifecycleListener`): para a contagem e o GET periódico; ao voltar, faz um GET na hora e retoma os dois.
+  - "Cancelar troca" só aparece antes de `returned`.
+  - Finais `canceled`/`failed` mostram a mensagem do `endReason`. Inclui a devolução atrasada, que ainda pode liberar a carregada; `return_after_close` (operação avisada, suporte); `rental_force_ended`. Motivo desconhecido mostra uma mensagem genérica.
+  - Concluída: recarrega o aluguel e a bateria da moto.
+- **Retomar.** A partir de `CurrentRental.currentStationSwap` (`Backend.currentRentalState`), a home e a corrida mostram "Troca de bateria em andamento · Continuar". Na devolução, `409 swap-open` mostra "Continuar troca". As entradas travam toques repetidos enquanto o fluxo está aberto.
+
+### Testar localmente
+
+```bash
+# services/api: banco com migrate + seed e, depois do seed, os QR das estações
+npx prisma migrate deploy && npx prisma db seed
+pnpm --filter api stations:qr
+
+# A) sem simulador: a estação avança sozinha (STATION_STUB_STEP_MS, padrão 1,5 s)
+IOT_MODE=stub pnpm --filter api dev
+# B) com o simulador das estações (Mosquitto do docker-compose)
+IOT_MODE=local pnpm --filter api dev
+pnpm --filter station-sim dev          # automático; dev:manual para avançar no teclado (d/f/l/s)
+```
+
+No emulador, ponha a localização a até 50 m da estação, por exemplo em Largo da Batata: `-23.5672, -46.6930`. Use um aluguel em andamento com a moto parada ou travada (velocidade desconhecida conta como em movimento: `422`). Depois toque em "Trocar bateria" e cole um destes payloads (segredo de dev `volti-dev-station-qr-secret`):
+
+| Estação | Payload |
+|---|---|
+| Largo da Batata (24 h) | `vst1.d0000000-0000-4000-8000-000000000001.lMyoiWvb5xuRTHIzBFoxEQ` |
+| Metrô Vila Madalena | `vst1.d0000000-0000-4000-8000-000000000002.-OQdidRFbby02UAXfqQOXw` |
+| Benedito Calixto | `vst1.d0000000-0000-4000-8000-000000000003.6Stn4xTFoxVCTZ5Zv4TtYQ` |
+| Paulista–Consolação (24 h) | `vst1.d0000000-0000-4000-8000-000000000004.crYpZuWtPHt-ir7YFNKFuQ` |
+| Faria Lima (0 baterias → "sem baterias") | `vst1.d0000000-0000-4000-8000-000000000005.NimejMRACpa__AchaFlEYA` |
+
+Testes: `test/station_swap_test.dart` (proximidade, QR, taxa, slugs, máquina de estados, leitor, progresso, cancelamento e retomada) e `test/station_swap_fix1_test.dart` (releitura do QR, segundo plano, folha travada no POST, GET atrasado, horário, taxa exata, socket da corrida, devolução com troca aberta, chave em 5xx/429); fixtures em `test/swap_fixtures.dart`.
+
 ## Ajustes do teste no emulador (rodada 1)
 
 - Reserva: a reserva de rua (trilho "Deslize para cancelar", rota a pé `walkingPath`) saiu; a reserva de galpão está em "Retirada em galpão" acima (`/reservation/:id`, QR, Como chegar e Cancelar reserva).

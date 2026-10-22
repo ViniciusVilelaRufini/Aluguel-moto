@@ -111,7 +111,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
       // Estado global primeiro (a tela pode sair durante a espera abaixo).
       ref.read(createdReservationProvider.notifier).set(null);
       ref.invalidate(currentReservationProvider);
-      ref.invalidate(currentRentalProvider);
+      ref.invalidate(currentRentalStateProvider);
       ref.invalidate(depotsProvider);
       // Micro-animacao de sucesso no proprio botao antes de abrir a corrida.
       setState(() => _accepted = true);

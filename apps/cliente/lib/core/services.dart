@@ -77,6 +77,15 @@ class HandoverUpdated extends RealtimeEvent {
   final String? lastError;
 }
 
+/// Troca de bateria na estacao mudou de status (sala `customer:{id}`, so o
+/// dono). [status] e o nome do fio (`awaiting_return`, `completed`...);
+/// detalhes (vaga, prazo, motivo) pelo GET da troca.
+class StationSwapUpdated extends RealtimeEvent {
+  const StationSwapUpdated({required this.swapId, required this.status});
+  final String swapId;
+  final String status;
+}
+
 abstract class RealtimeService {
   Stream<RealtimeEvent> get events;
 
@@ -160,6 +169,10 @@ class SocketRealtimeService implements RealtimeService {
         status: j['status'] as String,
         lastError: j['lastError'] as String?,
       ));
+    });
+    socket.on('station_swap.updated', (d) {
+      final j = m(d);
+      _controller.add(StationSwapUpdated(swapId: j['swapId'] as String, status: j['status'] as String));
     });
     socket.onConnect((_) => _conn.add(true));
     socket.onDisconnect((_) => _conn.add(false));

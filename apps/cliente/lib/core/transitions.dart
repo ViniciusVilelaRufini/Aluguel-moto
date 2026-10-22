@@ -25,6 +25,8 @@ const routeTransitions = <String, VoltiScreenTransition>{
   '/handover/:id': VoltiScreenTransition.modal,
   '/ride': VoltiScreenTransition.fadeThrough,
   '/return/:id': VoltiScreenTransition.push,
+  '/station-swap/scan': VoltiScreenTransition.push,
+  '/station-swap/:stationId/:swapId': VoltiScreenTransition.modal,
   '/summary/:id': VoltiScreenTransition.modal,
   '/account': VoltiScreenTransition.push,
   '/account/history': VoltiScreenTransition.push,

@@ -14,9 +14,13 @@ import '../../core/errors.dart';
 import '../../core/geo.dart';
 import '../../core/launcher.dart';
 import '../../core/services.dart';
+import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
 import '../handover/handover_watch.dart';
+import '../home/depot_providers.dart' show swapStationsProvider;
+import '../station_swap/swap_logic.dart';
+import '../station_swap/swap_widgets.dart';
 import 'battery_sheet.dart';
 import 'ride_data.dart';
 
@@ -48,6 +52,10 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   LatLng? _userPos;
   ZoneNotice? _zone;
 
+  /// Troca de bateria na estacao em andamento (`currentStationSwap`): a corrida
+  /// oferece "Continuar" para reabrir a tela da troca.
+  StationSwap? _openSwap;
+
   /// Ultimo aviso mostrado: mantem o texto enquanto a faixa sai animando.
   ZoneNotice? _lastZone;
   bool _fallOpen = false;
@@ -69,14 +77,22 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   StreamSubscription<LatLng>? _tracking;
   Timer? _tick;
 
+  /// Socket da corrida emprestado a tela da troca aberta por cima.
+  late final RideRealtimeLink _link;
+
+  /// Um toque so em "Trocar bateria"/"Continuar" (sem empilhar duas telas).
+  bool _navigating = false;
+
   @override
   void initState() {
     super.initState();
+    _link = ref.read(rideRealtimeLinkProvider)..openCount += 1;
     _load();
   }
 
   @override
   void dispose() {
+    _link.openCount -= 1;
     _tick?.cancel();
     _events?.cancel();
     _connSub?.cancel();
@@ -91,7 +107,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     setState(() => _loadError = null);
     try {
       final backend = ref.read(backendProvider);
-      final rental = await backend.currentRental();
+      final state = await backend.currentRentalState();
+      final rental = state.rental;
       if (rental == null) {
         if (mounted) context.go('/home');
         return;
@@ -103,6 +120,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       if (!mounted) return;
       setState(() {
         _rental = rental;
+        _openSwap = isOpenSwap(state.stationSwap) ? state.stationSwap : null;
         _elapsed = rental.elapsedSeconds;
         _cost = rental.costCents;
         _limit = rental.speedLimitKmh ?? vehicle?.speedLimitKmh ?? 32;
@@ -122,6 +140,61 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     } catch (e) {
       if (mounted) setState(() => _loadError = e);
     }
+  }
+
+  /// Bateria e autonomia da moto (depois de uma troca na estacao).
+  Future<void> _reloadVehicle() async {
+    final r = _rental;
+    if (r == null) return;
+    try {
+      final v = await ref.read(backendProvider).vehicleByCode(r.vehicleCode);
+      if (!mounted) return;
+      setState(() {
+        _battery = v.batteryPct;
+        _range = v.estimatedRangeKm.round();
+      });
+    } catch (_) {}
+  }
+
+  /// Relê a troca em andamento (ao voltar da tela da troca).
+  Future<void> _refreshSwap() async {
+    try {
+      final state = await ref.read(backendProvider).currentRentalState();
+      if (!mounted) return;
+      setState(() => _openSwap = isOpenSwap(state.stationSwap) ? state.stationSwap : null);
+    } catch (_) {}
+    _reloadVehicle();
+  }
+
+  Future<void> _openSwapFlow({String? stationId}) async {
+    if (_navigating) return;
+    _navigating = true;
+    try {
+      final swap = _openSwap;
+      if (swap != null) {
+        await openSwapProgress(context, swap);
+      } else {
+        await openSwapScan(context, stationId: stationId);
+      }
+    } finally {
+      _navigating = false;
+    }
+    if (mounted) _refreshSwap();
+  }
+
+  void _onStationSwap(StationSwapUpdated e) {
+    final status = swapStatusFromWire(e.status);
+    final current = _openSwap;
+    setState(() {
+      if (isTerminalSwap(status)) {
+        _openSwap = null;
+      } else if (current != null && current.id == e.swapId) {
+        _openSwap = applySwapEvent(current, swapId: e.swapId, status: status);
+      }
+    });
+    // Troca nova (aberta em outro aparelho/tela) ou concluida: relê.
+    if (current == null && !isTerminalSwap(status)) _refreshSwap();
+    if (status == StationSwapStatus.completed) _reloadVehicle();
   }
 
   Future<void> _loadTrail(String rentalId) async {
@@ -147,11 +220,13 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       _realtime = ref.read(realtimeFactoryProvider)();
       _events = _realtime!.events.listen(_onEvent);
       _connSub = _realtime!.connected.listen((up) {
+        _link.connected.value = up;
         if (mounted) setState(() => _rtDown = !up);
       });
       await _realtime!.connect();
     } catch (_) {
       // Sem tempo real o app segue com o tempo local; avisa e tenta de novo.
+      _link.connected.value = false;
       if (!mounted) return;
       setState(() => _rtDown = true);
       _rtRetry = Timer(const Duration(seconds: 5), _startRealtime);
@@ -227,6 +302,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
         _onHandoverUpdated(e.handoverId);
       case HandoverPending():
         break;
+      case StationSwapUpdated():
+        _onStationSwap(e);
     }
   }
 
@@ -477,6 +554,12 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     final caption = [paused ? l.ridePaused : l.rideLive, if (plan != null) plan.name, coverageLabel].join(' · ');
     final center = _vehiclePos ?? _userPos ?? const LatLng(-23.5614, -46.6559);
     final mapOn = ref.watch(mapEnabledProvider);
+    // Aviso de estacao a ate 50 m: posicao do rastreio da corrida (ja ligado,
+    // com consentimento), sem consulta extra de localizacao.
+    final consent = ref.watch(sessionProvider.select((s) => s.value?.locationConsent ?? false));
+    final nearStation = _openSwap == null && _userPos != null && consent
+        ? swapPromptStation(rental: r, locationConsent: consent, phone: _userPos, stations: ref.watch(swapStationsProvider).value ?? const [])
+        : null;
     // O pin so cai na primeira vez.
     final firstMarkerDrop = !_markerDropped;
     WidgetsBinding.instance.addPostFrameCallback((_) => _markerDropped = true);
@@ -599,6 +682,13 @@ class _RideScreenState extends ConsumerState<RideScreen> {
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 16, VoltiSpacing.screenGutter, 16),
                 child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                  if (_openSwap != null) ...[
+                    SwapResumeCard(onResume: _openSwapFlow),
+                    const SizedBox(height: 12),
+                  ] else if (nearStation != null) ...[
+                    SwapNearbyCard(station: nearStation, onSwap: () => _openSwapFlow(stationId: nearStation.id)),
+                    const SizedBox(height: 12),
+                  ],
                   Row(children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

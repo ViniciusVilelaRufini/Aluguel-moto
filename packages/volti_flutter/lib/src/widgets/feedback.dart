@@ -24,11 +24,13 @@ class VoltiBottomSheet extends StatelessWidget {
     BuildContext context, {
     required WidgetBuilder builder,
     bool isDismissible = true,
+    bool enableDrag = true,
   }) {
     return showModalBottomSheet<T>(
       context: context,
       isScrollControlled: true,
       isDismissible: isDismissible,
+      enableDrag: enableDrag,
       backgroundColor: Colors.transparent,
       elevation: 0,
       barrierColor: VoltiColors.surfaceScrim,
