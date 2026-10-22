@@ -62,10 +62,11 @@ class VoltiButton extends StatelessWidget {
         Colors.transparent,
         VoltiShadows.shadowBrand,
       ),
+      // Extensao do E-12: texto e contorno no tom de acao (>= 4,5:1 sobre branco).
       VoltiButtonVariant.secondary => (
         scheme.surface,
-        VoltiColors.brand,
-        VoltiColors.brand,
+        VoltiColors.brandAction,
+        VoltiColors.brandAction,
         const <BoxShadow>[],
       ),
       VoltiButtonVariant.ghost => (

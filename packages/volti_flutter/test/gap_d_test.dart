@@ -33,8 +33,39 @@ void main() {
       final label = t.widget<Text>(find.text('Escanear QR'));
       expect(label.style!.color, VoltiColors.onBrandAction);
 
+    });
+
+    testWidgets('secundario (extensao do E-12): texto e borda no tom de acao, >= 4,5:1 sobre branco', (t) async {
+      expect(VoltiColors.contrast(VoltiColors.brandAction, VoltiColors.white), greaterThanOrEqualTo(4.5));
       await t.pumpWidget(_wrap(VoltiButton(label: 'Reservar', variant: VoltiButtonVariant.secondary, onPressed: () {})));
-      expect(t.widget<Text>(find.text('Reservar')).style!.color, VoltiColors.brand);
+      expect(t.widget<Text>(find.text('Reservar')).style!.color, VoltiColors.brandAction);
+      final box = t.widgetList<Container>(find.descendant(of: find.byType(VoltiButton), matching: find.byType(Container))).firstWhere(
+            (c) => c.decoration is BoxDecoration && (c.decoration! as BoxDecoration).borderRadius == VoltiRadii.rPill,
+          );
+      expect(((box.decoration! as BoxDecoration).border! as Border).top.color, VoltiColors.brandAction);
+    });
+
+    testWidgets('OptionCard a 200% em 360 px nao estoura (preco desce para baixo do titulo)', (t) async {
+      t.view.physicalSize = const Size(360, 740);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(MediaQuery(
+        data: const MediaQueryData(size: Size(360, 740), textScaler: TextScaler.linear(2)),
+        child: _wrap(const Padding(
+          padding: EdgeInsets.all(20),
+          child: OptionCard(
+            icon: Icons.shield,
+            title: 'Completo',
+            badge: 'Obrigatório',
+            description: 'Básico + danos à moto, furto e franquia zero',
+            price: r'R$ 4,90',
+            priceNote: '/aluguel',
+            selected: true,
+          ),
+        )),
+      ));
+      expect(t.takeException(), isNull);
+      expect(find.text(r'R$ 4,90'), findsOneWidget);
     });
   });
 
