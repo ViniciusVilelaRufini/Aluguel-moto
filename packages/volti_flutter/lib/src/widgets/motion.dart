@@ -544,11 +544,20 @@ class _VoltiShineState extends State<VoltiShine>
     with SingleTickerProviderStateMixin {
   static const _delay = 1400;
   static const _period = 3800;
-  late final AnimationController _c = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: _delay + _period),
-  );
+  // Criado no initState: preguicoso, com reduced motion ele so nascia no
+  // dispose, quando o elemento ja esta inativo (erro "deactivated widget's
+  // ancestor" ao tirar o botao da tela).
+  late final AnimationController _c;
   bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: _delay + _period),
+    );
+  }
 
   @override
   void didChangeDependencies() {
