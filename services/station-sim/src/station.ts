@@ -18,6 +18,10 @@ export interface SimSwap {
   expectedSerial?: string;
   serialHint?: string;
   createdAt: number;
+  /** A estação recebeu a bateria desta troca (vale mesmo depois de um `abort_swap`, fix 2 / I-2). */
+  returned?: boolean;
+  /** Já liberou a carregada desta troca (nunca libera duas). */
+  released?: boolean;
 }
 
 /** Pseudo-aleatório determinístico (LCG), como no simulador das motos. */
@@ -138,10 +142,14 @@ export class StationSim {
     }, step);
   }
 
+  /**
+   * Libera só se esta estação recebeu a bateria da troca. Fix 2 (I-2): vale também depois de um `abort_swap` (cancelamento
+   * cruzou com a devolução e a API registrou a devolução atrasada) — contrato em `packages/contracts/mqtt.md`.
+   */
   private requestRelease(thing: string, cmd: StationCommand): void {
     const s = this.swaps.get(cmd.swapId);
-    if (!s || s.thing !== thing || s.phase !== 'closed') {
-      // Sem devolução registrada nesta estação: não libera (segurança física).
+    if (!s || s.thing !== thing || !s.returned || s.released || s.phase === 'release_requested') {
+      // Sem devolução recebida nesta estação (ou já liberada): não libera (segurança física).
       this.log({ msg: 'liberacao_recusada', swapId: cmd.swapId, phase: s?.phase ?? 'desconhecida' });
       return;
     }
@@ -155,6 +163,7 @@ export class StationSim {
     const pct = this.cfg.returnPctMin + Math.floor(this.random() * (span + 1));
     const serial = s.expectedSerial ?? `SIM-RET-${Math.floor(this.random() * 1e6).toString().padStart(6, '0')}`;
     s.phase = 'returned';
+    s.returned = true;
     this.emit(s, { type: 'battery_returned', serial, pct });
   }
 
@@ -167,8 +176,9 @@ export class StationSim {
   }
 
   private emitReleased(s: SimSwap): void {
-    if (s.phase !== 'release_requested') return;
+    if (s.phase !== 'release_requested' || s.released) return;
     s.phase = 'done';
+    s.released = true;
     this.emit(s, { type: 'battery_released', serial: s.serialHint ?? this.nextStockSerial(s.thing) });
   }
 
