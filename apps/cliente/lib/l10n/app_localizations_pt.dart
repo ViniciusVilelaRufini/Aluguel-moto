@@ -2460,4 +2460,10 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get returnDepotMissing => 'Não encontramos o galpão. Tente de novo.';
+
+  @override
+  String get buttonBusy => 'Carregando…';
+
+  @override
+  String get buttonDone => 'Concluído';
 }

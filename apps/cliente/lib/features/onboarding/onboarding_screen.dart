@@ -262,30 +262,27 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
               prefixIcon: const Icon(LucideIcons.calendar)),
         ),
         const SizedBox(height: VoltiSpacing.s12),
-        CheckboxListTile(
+        VoltiCheckbox(
           key: const Key('consent-terms'),
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
           value: _terms,
-          onChanged: (v) => setState(() => _terms = v ?? false),
-          title: Text(l.acceptTerms),
+          onChanged: (v) => setState(() => _terms = v),
+          label: Text(l.acceptTerms),
         ),
-        CheckboxListTile(
+        VoltiCheckbox(
           key: const Key('consent-location'),
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
           value: _location,
-          onChanged: (v) => setState(() => _location = v ?? false),
-          title: Text(l.acceptLocation),
-          subtitle: Text(l.acceptLocationHint),
+          onChanged: (v) => setState(() => _location = v),
+          label: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(l.acceptLocation),
+            const SizedBox(height: 2),
+            Text(l.acceptLocationHint, style: VoltiTypography.caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+          ]),
         ),
-        CheckboxListTile(
+        VoltiCheckbox(
           key: const Key('consent-marketing'),
-          contentPadding: EdgeInsets.zero,
-          controlAffinity: ListTileControlAffinity.leading,
           value: _marketing,
-          onChanged: (v) => setState(() => _marketing = v ?? false),
-          title: Text(l.acceptMarketing),
+          onChanged: (v) => setState(() => _marketing = v),
+          label: Text(l.acceptMarketing),
         ),
       ],
     );

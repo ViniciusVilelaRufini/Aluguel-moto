@@ -5,7 +5,7 @@ import '../tokens/colors.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
-import 'motion.dart';
+import 'haptics.dart';
 import 'pressable.dart';
 
 /// Cartao de escolha (plano, seguro, pagamento), estilo radio.
@@ -64,7 +64,9 @@ class OptionCard extends StatelessWidget {
           ],
         );
     final card = AnimatedContainer(
-      duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
+      key: const Key('option-card-surface'),
+      duration: VoltiMotion.scaled(context, VoltiMotion.durSelect),
+      curve: VoltiMotion.easeOut,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: selected ? VoltiColors.brandSoft : scheme.surface,
@@ -77,33 +79,13 @@ class OptionCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            key: const Key('option-radio'),
-            width: 22,
-            height: 22,
-            margin: const EdgeInsets.only(top: 1),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: selected ? VoltiColors.brand : scheme.outline,
-                width: 1.5,
-              ),
+          Padding(
+            padding: const EdgeInsets.only(top: 1),
+            child: VoltiRadio(
+              key: const Key('option-radio'),
+              selected: selected,
+              dotKey: const Key('option-radio-dot'),
             ),
-            alignment: Alignment.center,
-            child: selected
-                ? VoltiCheckPop(
-                    key: const Key('option-radio-dot'),
-                    child: Container(
-                      width: 12,
-                      height: 12,
-                      decoration: const BoxDecoration(
-                        color: VoltiColors.brand,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  )
-                : null,
           ),
           const SizedBox(width: 12),
           if (icon != null && !stacked) ...[
@@ -192,12 +174,162 @@ class OptionCard extends StatelessWidget {
       checked: selected,
       enabled: !disabled,
       child: Opacity(
-        opacity: disabled ? .5 : 1,
+        opacity: disabled ? VoltiColors.disabledOpacityCard : 1,
         child: disabled || onTap == null
             ? card
             : VoltiPressable(onTap: onTap, scale: .99, child: card),
       ),
     );
+  }
+}
+
+/// Indicador de radio do design (22 px): borda anima para o verde e o ponto
+/// entra com mola (escala 0 -> 1). So visual: o alvo de toque e o cartao ou a
+/// linha que o contem, que tambem leva a semantica. Reduced motion = troca
+/// instantanea.
+class VoltiRadio extends StatelessWidget {
+  const VoltiRadio({super.key, required this.selected, this.size = VoltiSpacing.radio, this.dotKey});
+
+  final bool selected;
+  final double size;
+
+  /// Chave do ponto interno (testes).
+  final Key? dotKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final reduced = VoltiMotion.reduced(context);
+    return ExcludeSemantics(
+      child: AnimatedContainer(
+        duration: VoltiMotion.scaled(context, VoltiMotion.durSelect),
+        curve: VoltiMotion.easeOut,
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(color: selected ? VoltiColors.brand : scheme.outline, width: 1.5),
+        ),
+        alignment: Alignment.center,
+        child: AnimatedScale(
+          key: dotKey,
+          scale: selected ? 1 : 0,
+          duration: reduced ? Duration.zero : (selected ? VoltiMotion.durSpring : VoltiMotion.durFast),
+          curve: selected ? VoltiMotion.easeSpring : VoltiMotion.easeOut,
+          child: Container(
+            width: size * VoltiSpacing.radioDot / VoltiSpacing.radio,
+            height: size * VoltiSpacing.radioDot / VoltiSpacing.radio,
+            decoration: const BoxDecoration(color: VoltiColors.brand, shape: BoxShape.circle),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Caixa de selecao do design (`Checkbox.jsx`): 22 px dentro de um alvo de
+/// 44 px, fundo e borda em tween rapido, check com mola. Marcada = tom de
+/// acao ([VoltiColors.brandAction]) com check branco (E-12). Toca
+/// [VoltiHaptics.selection] ao mudar.
+///
+/// Com [label] vira uma linha inteira tocavel (caixa + texto), no lugar do
+/// `CheckboxListTile`. Semantica: um no marcavel com [semanticLabel] ou, sem
+/// ele, com o texto do [label].
+class VoltiCheckbox extends StatelessWidget {
+  const VoltiCheckbox({
+    super.key,
+    required this.value,
+    this.onChanged,
+    this.semanticLabel,
+    this.haptic = true,
+    this.label,
+  });
+
+  final bool value;
+
+  /// `null` desabilita.
+  final ValueChanged<bool>? onChanged;
+  final String? semanticLabel;
+
+  /// Toca [VoltiHaptics.selection] ao mudar.
+  final bool haptic;
+
+  /// Texto ao lado da caixa (titulo e, se quiser, descricao numa `Column`).
+  final Widget? label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final enabled = onChanged != null;
+    final reduced = VoltiMotion.reduced(context);
+    final box = SizedBox(
+      width: VoltiSpacing.hitMin,
+      height: VoltiSpacing.hitMin,
+      child: Center(
+        child: AnimatedContainer(
+          key: const Key('volti-checkbox-box'),
+          duration: VoltiMotion.scaled(context, VoltiMotion.durSelect),
+          curve: VoltiMotion.easeOut,
+          width: VoltiSpacing.checkbox,
+          height: VoltiSpacing.checkbox,
+          decoration: BoxDecoration(
+            color: value ? VoltiColors.brandAction : scheme.surface,
+            borderRadius: VoltiRadii.rCheckbox,
+            border: Border.all(color: value ? VoltiColors.brandAction : scheme.outline, width: 1.5),
+          ),
+          alignment: Alignment.center,
+          child: AnimatedScale(
+            key: const Key('volti-checkbox-check'),
+            scale: value ? 1 : 0,
+            duration: reduced ? Duration.zero : (value ? VoltiMotion.durSpring : VoltiMotion.durFast),
+            curve: value ? VoltiMotion.easeSpring : VoltiMotion.easeOut,
+            child: const Icon(Icons.check_rounded, size: VoltiSpacing.checkboxIcon, color: VoltiColors.onBrandAction),
+          ),
+        ),
+      ),
+    );
+    final content = label == null
+        ? box
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              box,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 11, bottom: 11, left: 2),
+                  child: DefaultTextStyle.merge(
+                    style: VoltiTypography.body.copyWith(color: scheme.onSurface),
+                    child: label!,
+                  ),
+                ),
+              ),
+            ],
+          );
+    return MergeSemantics(
+      child: Semantics(
+        checked: value,
+        enabled: enabled,
+        label: semanticLabel,
+        onTap: enabled ? _toggle : null,
+        child: ExcludeSemantics(
+          excluding: semanticLabel != null,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled ? _toggle : null,
+            child: Opacity(
+              opacity: enabled ? 1 : VoltiColors.disabledOpacity,
+              child: content,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggle() {
+    if (haptic) VoltiHaptics.selection();
+    onChanged?.call(!value);
   }
 }
 

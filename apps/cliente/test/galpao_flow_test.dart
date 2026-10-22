@@ -291,6 +291,27 @@ void main() {
       expect(find.byKey(const Key('reservation-qr')), findsOneWidget);
     });
 
+    testWidgets('"Confirmar reserva": haptica leve e check de sucesso no botao antes de abrir a reserva', (t) async {
+      phone(t);
+      final haptics = <VoltiHapticKind>[];
+      VoltiHaptics.debugHandler = (k) async => haptics.add(k);
+      addTearDown(() => VoltiHaptics.debugHandler = null);
+      final b = GalpaoBackend();
+      await pumpApp(t, b, initial: '/pickup', extra: selection(p: plan(PlanCode.weekly, 'Semanal', PlanUnit.week, 34900, recurring: true), c: InsuranceCoverage.full));
+      final confirm = find.byKey(const Key('pickup-confirm'));
+      await t.ensureVisible(confirm);
+      await t.pump();
+      await t.tap(confirm);
+      await t.pump();
+      await t.pump();
+      expect(haptics.first, VoltiHapticKind.tap);
+      expect(haptics, contains(VoltiHapticKind.success));
+      expect(find.descendant(of: confirm, matching: find.byType(VoltiSuccessCheck)), findsOneWidget);
+      expect(find.byType(DepotReservationScreen), findsNothing);
+      await settle(t);
+      expect(find.byType(DepotReservationScreen), findsOneWidget);
+    });
+
     testWidgets('retirar agora sem cartao: Pix pre-selecionado', (t) async {
       phone(t);
       final b = GalpaoBackend(withCard: false);

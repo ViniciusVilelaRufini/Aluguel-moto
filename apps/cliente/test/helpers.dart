@@ -154,6 +154,11 @@ Widget testRouterApp(GoRouter router, {List<Override> overrides = const []}) => 
           GlobalCupertinoLocalizations.delegate,
         ],
         routerConfig: router,
+        builder: (context, child) => VoltiButtonLabels(
+          loading: AppLocalizations.of(context).buttonBusy,
+          success: AppLocalizations.of(context).buttonDone,
+          child: child!,
+        ),
       ),
     );
 

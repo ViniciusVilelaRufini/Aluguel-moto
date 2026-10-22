@@ -71,6 +71,10 @@ Comportamento:
 - **Manutenção da tarefa:** com `maintenanceTaskId`, `GET /maintenance/tasks/{id}` → título, tipo, origem e data. Cliente só pelo primeiro nome (a API já manda só ele ao `campo`; o app corta de novo por garantia).
 - **Chat:** o app de campo não tem chat (o suporte é dos grupos `admin`/`suporte`), então `SupportMessage.status` não se aplica aqui.
 
+## Acessibilidade dos botões (E-21)
+
+`VoltiButtonLabels` no `builder` do `MaterialApp` (`lib/app.dart`) faz os `VoltiButton` em loading/sucesso anunciarem "Carregando…"/"Concluído" (`buttonBusy`/`buttonDone` no ARB). O harness de teste (`test/helpers.dart`) faz o mesmo.
+
 ## Testes
 
 ```

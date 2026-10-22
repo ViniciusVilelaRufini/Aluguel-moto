@@ -49,6 +49,33 @@ abstract final class VoltiMotion {
   static const double iconPressScale = .88;
   static const double chipPressScale = .94;
 
+  /// Press com reduced motion: sem escala, so opacidade (instantanea).
+  static const double pressOpacityReduced = .85;
+
+  /// Press escurece o fundo em 6% (`brilho -6%` do design system).
+  static const double pressDarken = .06;
+
+  /// Selecao (borda, fundo, check de cartoes, radios, chips): tween rapido.
+  static const durSelect = Duration(milliseconds: 160);
+
+  /// Quanto tempo o check de sucesso fica no botao antes de seguir.
+  static const successHold = Duration(milliseconds: 700);
+
+  /// [successHold] efetivo: zero com reduced motion.
+  static Duration successHoldOf(BuildContext context) => scaled(context, successHold);
+
+  /// Sombra durante o press: mesma cor, deslocamento e blur pela metade e
+  /// alfa a 60% (a peca "encosta" na superficie).
+  static List<BoxShadow> pressedShadow(List<BoxShadow> s) => [
+    for (final b in s)
+      BoxShadow(
+        color: b.color.withValues(alpha: b.color.a * .6),
+        offset: b.offset / 2,
+        blurRadius: b.blurRadius / 2,
+        spreadRadius: b.spreadRadius,
+      ),
+  ];
+
   /// Cascata (`.vt-stagger`): primeiro item aos 140 ms, 45 ms entre itens,
   /// itens a partir do 10o compartilham o ultimo atraso (545 ms).
   static const staggerFirst = Duration(milliseconds: 140);
