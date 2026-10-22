@@ -54,11 +54,11 @@ export class ApiStack extends Stack {
       secretName: `volti/${env}/app`,
       description: 'Volti API third-party credentials (fill after deploy)',
       generateSecretString: {
-        secretStringTemplate: JSON.stringify({
-          MERCADOPAGO_ACCESS_TOKEN: 'CHANGE_ME',
-          MERCADOPAGO_WEBHOOK_SECRET: 'CHANGE_ME',
-        }),
-        generateStringKey: 'unused',
+        // QA-19: o segredo do webhook nasce aleatório (nunca um valor conhecido). Só o access token precisa ser colado à mão.
+        secretStringTemplate: JSON.stringify({ MERCADOPAGO_ACCESS_TOKEN: 'CHANGE_ME' }),
+        generateStringKey: 'MERCADOPAGO_WEBHOOK_SECRET',
+        passwordLength: 48,
+        excludePunctuation: true,
       },
     });
 

@@ -66,4 +66,12 @@ describe('ApiStack', () => {
     const data = stmts.find((s) => toList(s.Action).includes('iot:GetThingShadow'));
     expect(toList(data.Action).sort()).toEqual(['iot:GetThingShadow', 'iot:UpdateThingShadow']);
   });
+
+  it('QA-19: the Mercado Pago webhook secret is generated, never the literal CHANGE_ME', () => {
+    const secret = Object.values(t().findResources('AWS::SecretsManager::Secret')).find((r: any) => r.Properties.Name === 'volti/dev/app') as any;
+    const gen = secret.Properties.GenerateSecretString;
+    expect(gen.GenerateStringKey).toBe('MERCADOPAGO_WEBHOOK_SECRET');
+    expect(gen.PasswordLength).toBeGreaterThanOrEqual(32);
+    expect(JSON.parse(gen.SecretStringTemplate)).not.toHaveProperty('MERCADOPAGO_WEBHOOK_SECRET');
+  });
 });

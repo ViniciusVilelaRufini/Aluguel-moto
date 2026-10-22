@@ -55,7 +55,7 @@ O serviço da API nasce com 0 tarefas (`-c apiDesiredCount=0`, o padrão), porqu
 2. Crie o certificado ACM e rode `cdk deploy --all -c env=dev -c account=... -c certificateArn=...` (infra completa, serviço com 0 tarefas).
 3. Construa e publique a imagem de `services/api` no ECR (`api/ecr-repository` no SSM) com a tag que será usada em `-c apiImageTag`.
 4. Redeploy com a tarefa rodando: `cdk deploy --all ... -c apiImageTag=<tag> -c apiDesiredCount=1` (prod: 2 ou mais).
-5. Preencha o segredo `volti/<env>/app` (`MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_WEBHOOK_SECRET`); os valores iniciais são `CHANGE_ME`.
+5. Preencha `MERCADOPAGO_ACCESS_TOKEN` no segredo `volti/<env>/app` (nasce como `CHANGE_ME`). O `MERCADOPAGO_WEBHOOK_SECRET` já nasce aleatório (48 caracteres, gerado pelo Secrets Manager); veja "Rotação do segredo do webhook" abaixo.
 6. Habilite a extensão com `CREATE EXTENSION IF NOT EXISTS postgis;` na migração inicial.
 
 O workflow de deploy do dev faz 2 a 4 sozinho: deploy com 0 tarefas, build e push da imagem se existir `services/api/Dockerfile`, e novo deploy com 1 tarefa. Sem Dockerfile, o serviço permanece em 0 tarefas. Com 0 tarefas o auto scaling usa mínimo 0.
@@ -108,7 +108,7 @@ Regras: `motos/+/telemetria` vai para a fila de telemetria; `motos/+/eventos` va
 - Dev e prod devem ficar em contas AWS separadas: o thing type `moto` e o nome do certificado são únicos por conta e região.
 - Segurança de rede: RDS e Redis aceitam tráfego do CIDR da VPC (evita dependência cíclica entre stacks); sem acesso público.
 - Redis com TLS: a API precisa conectar com `rediss://`.
-- Segredos: DB gerado pelo RDS; credenciais do Mercado Pago em `volti/<env>/app` com valor inicial `CHANGE_ME`.
+- Segredos: DB gerado pelo RDS; credenciais do Mercado Pago em `volti/<env>/app` (o access token começa como `CHANGE_ME` e o segredo do webhook é gerado aleatoriamente).
 - Buckets sempre com `RETAIN`; KYC com versionamento e expiração de versões antigas em 90 dias (retenção legal dos documentos fica com o jurídico). Fotos: IA aos 90 dias, expiram em 365. Relatórios: IA aos 30, expiram em 730.
 - `dev`: RDS com snapshot na remoção, sem deletion protection, sem Container Insights. `prod`: Multi-AZ, deletion protection, termination protection nas stacks.
 - Budget: sem filtro por tag (requer ativar tags de alocação de custo); notifica em 80% e 100% do gasto real e 100% da previsão. Com `alarmEmail` envia por e-mail, senão para o SNS.
@@ -135,3 +135,13 @@ Atenção: o orçamento de US$ 100/mês do dev dispara alerta de previsão logo 
 - Pull request: testes, `cdk synth` (dev e prod) e `cdk diff` do dev.
 - Push em `main`: `cdk deploy --all` no dev.
 - Autenticação por OIDC (`aws-actions/configure-aws-credentials` com `role-to-assume`), sem chaves fixas. Configure no repositório as variáveis `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN_DEV` e `CERTIFICATE_ARN_DEV`, e um provedor OIDC do GitHub na conta AWS com uma role confiando no repositório.
+
+## Rotação do segredo do webhook (Mercado Pago)
+
+O `MERCADOPAGO_WEBHOOK_SECRET` em `volti/<env>/app` é gerado no primeiro deploy. Para rotacionar:
+
+1. Gere um valor novo (`aws secretsmanager get-random-password --password-length 48 --exclude-punctuation`) ou copie o segredo exibido no painel do Mercado Pago (Webhooks, chave secreta).
+2. Atualize o campo no segredo (`aws secretsmanager put-secret-value`, mantendo o `MERCADOPAGO_ACCESS_TOKEN`) e cadastre o mesmo valor no painel do Mercado Pago.
+3. Force um novo deploy do serviço (`aws ecs update-service --force-new-deployment`), pois as tasks leem o segredo ao iniciar.
+
+Entre os passos 2 e 3 os webhooks assinados com o valor antigo falham com 401 e o Mercado Pago reenvia; faça tudo numa janela curta. Rotacione também se o segredo vazar.
