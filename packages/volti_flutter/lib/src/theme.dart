@@ -59,6 +59,12 @@ abstract final class VoltiTheme {
         VoltiColors.ink900,
       );
 
+  // Instancia unica: uma closure nova a cada build deixaria o ThemeData
+  // diferente e o AnimatedTheme do MaterialApp animaria a toa.
+  static final _checkFill = WidgetStateProperty.resolveWith<Color?>(
+    (s) => s.contains(WidgetState.selected) && !s.contains(WidgetState.disabled) ? VoltiColors.brandAction : null,
+  );
+
   static ThemeData _build(ColorScheme scheme, Color scaffold) {
     final base = ThemeData(
       useMaterial3: true,
@@ -88,6 +94,14 @@ abstract final class VoltiTheme {
         shape: const RoundedRectangleBorder(borderRadius: VoltiRadii.rLg),
       ),
       dividerColor: scheme.outlineVariant,
+      // Caixas Material (CheckboxListTile etc.) no padrao do kit:
+      // marcado no tom de acao (E-12), sem halo de toque.
+      checkboxTheme: CheckboxThemeData(
+        fillColor: _checkFill,
+        checkColor: const WidgetStatePropertyAll(VoltiColors.onBrandAction),
+        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+      ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: scheme.surfaceContainerHighest,

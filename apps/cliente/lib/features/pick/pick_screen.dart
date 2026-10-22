@@ -400,42 +400,13 @@ class _PickCardState extends State<_PickCard> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  _Radio(on: on),
+                  VoltiRadio(selected: on),
                 ],
               ),
             ),
           ),
         ),
       ),
-    );
-  }
-}
-
-class _Radio extends StatelessWidget {
-  const _Radio({required this.on});
-  final bool on;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white,
-        border: Border.all(color: on ? VoltiColors.brand : VoltiColors.ink300, width: 1.5),
-      ),
-      alignment: Alignment.center,
-      child: on
-          ? const VoltiCheckPop(
-              child: SizedBox(
-                width: 12,
-                height: 12,
-                child: DecoratedBox(decoration: BoxDecoration(color: VoltiColors.brand, shape: BoxShape.circle)),
-              ),
-            )
-          : null,
     );
   }
 }

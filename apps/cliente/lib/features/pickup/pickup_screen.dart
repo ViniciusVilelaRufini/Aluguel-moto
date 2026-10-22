@@ -53,6 +53,9 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
   String? _cardId;
   late String _coupon = ref.read(pendingCouponProvider);
   bool _busy = false;
+
+  /// Reserva criada: o botao mostra o check por [VoltiMotion.successHold].
+  bool _done = false;
   String? _error;
 
   /// Uma Idempotency-Key por pedido: repetir o mesmo pedido (rede caiu) reaproveita a chave.
@@ -166,7 +169,14 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
       ref.invalidate(depotVehiclesProvider(depotId));
       ref.invalidate(depotsProvider);
       final deposit = r.deposit;
-      if (request.depositMethod == DepositMethod.pix && deposit?.pix != null && deposit!.status != DepositStatus.held && mounted) {
+      final pixPending = request.depositMethod == DepositMethod.pix && deposit?.pix != null && deposit!.status != DepositStatus.held;
+      if (!pixPending && mounted) {
+        // Micro-animacao de sucesso no botao; com caucao Pix pendente o QR
+        // abre direto (a reserva so fica garantida quando o Pix cai).
+        setState(() => _done = true);
+        await Future<void>.delayed(VoltiMotion.successHoldOf(context));
+      }
+      if (pixPending && mounted) {
         // Caucao Pix: o QR sai do copia e cola; a reserva fica aberta mesmo se o cliente fechar.
         await PixDepositSheet.show(context, deposit);
       }
@@ -261,8 +271,10 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
               icon: LucideIcons.calendarCheck,
               size: VoltiButtonSize.lg,
               fullWidth: true,
-              loading: _busy,
-              onPressed: request == null || _busy ? null : () => _confirm(request),
+              loading: _busy && !_done,
+              success: _done,
+              haptic: VoltiHapticKind.tap,
+              onPressed: request == null || _busy || _done ? null : () => _confirm(request),
             ),
             ]),
           ),

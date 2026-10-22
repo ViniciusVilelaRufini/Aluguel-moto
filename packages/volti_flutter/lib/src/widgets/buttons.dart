@@ -6,6 +6,7 @@ import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
 import 'motion.dart';
+import 'haptics.dart';
 import 'pressable.dart';
 
 enum VoltiButtonVariant { primary, secondary, ghost, dark, danger }
@@ -26,7 +27,17 @@ class VoltiButton extends StatelessWidget {
     this.loading = false,
     this.shine = false,
     this.semanticLabel,
+    this.haptic,
+    this.success = false,
   });
+
+  /// Haptica a cada toque: [VoltiHapticKind.tap] nos CTAs de confirmacao.
+  final VoltiHapticKind? haptic;
+
+  /// Rotulo vira um check de sucesso ([VoltiSuccessCheck]) sem mudar a
+  /// largura; o botao fica inerte. Use por [VoltiMotion.successHold] antes de
+  /// seguir (ex.: "Confirmar reserva", "Aceitar e destravar").
+  final bool success;
 
   /// Rotulo para leitor de tela mais completo que [label] (ex.: com a serie).
   final String? semanticLabel;
@@ -41,7 +52,8 @@ class VoltiButton extends StatelessWidget {
   final IconData? iconRight;
   final bool fullWidth;
 
-  /// Spinner no lugar do icone; o botao fica inerte.
+  /// O conteudo some e um spinner aparece no centro, sem mudar a largura;
+  /// o botao fica inerte (sem esmaecer).
   final bool loading;
 
   /// Brilho periodico; so no CTA principal da tela.
@@ -72,7 +84,9 @@ class VoltiButton extends StatelessWidget {
       textScaler: MediaQuery.textScalerOf(context),
       maxLines: 1,
     )..layout();
-    final icons = (icon != null || loading ? ic + 10 : 0) + (iconRight != null ? ic + 10 : 0);
+    // O spinner do loading fica sobre o conteudo: a largura nao muda.
+    final icons =
+        (icon != null ? ic + 10 : 0) + (iconRight != null ? ic + 10 : 0);
     final w = tp.width + px * 2 + 3 + icons;
     tp.dispose();
     return w.ceilToDouble() + 1;
@@ -117,7 +131,10 @@ class VoltiButton extends StatelessWidget {
       ),
     };
     final disabled = onPressed == null;
-    final off = disabled || loading;
+    final busy = loading || success;
+    final off = disabled || busy;
+    // Carregando/sucesso nao esmaecem: so o botao realmente desabilitado.
+    final dim = disabled && !busy;
     final ripple = switch (variant) {
       VoltiButtonVariant.primary => const Color(0x61FFFFFF),
       VoltiButtonVariant.secondary => const Color(0x3334C25C),
@@ -125,14 +142,12 @@ class VoltiButton extends StatelessWidget {
       VoltiButtonVariant.dark => const Color(0x38FFFFFF),
       VoltiButtonVariant.danger => const Color(0x59FFFFFF),
     };
+    final morph = VoltiMotion.scaled(context, VoltiMotion.durBase);
     final content = Row(
       mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (loading) ...[
-          _Spinner(size: ic, color: fg),
-          const SizedBox(width: 10),
-        ] else if (icon != null) ...[
+        if (icon != null) ...[
           Icon(icon, size: ic, color: fg),
           const SizedBox(width: 10),
         ],
@@ -144,42 +159,116 @@ class VoltiButton extends StatelessWidget {
             style: _labelStyle(fs, fg),
           ),
         ),
-        if (iconRight != null && !loading) ...[
+        if (iconRight != null) ...[
           const SizedBox(width: 10),
           Icon(iconRight, size: ic, color: fg),
         ],
       ],
     );
-    final body = Opacity(
-      opacity: disabled ? .4 : 1,
-      child: Container(
-        height: h,
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: VoltiRadii.rPill,
-          border: Border.all(color: bd, width: 1.5),
-          boxShadow: disabled ? null : sh,
+    // O conteudo continua no layout (transparente) e define a largura; o
+    // spinner/check fica por cima, centrado: nada pula ao carregar.
+    final (checkBg, checkFg) =
+        variant == VoltiButtonVariant.primary ||
+            variant == VoltiButtonVariant.dark ||
+            variant == VoltiButtonVariant.danger
+        ? (VoltiColors.white, bg)
+        : (VoltiColors.brandAction, VoltiColors.onBrandAction);
+    final inner = Stack(
+      alignment: Alignment.center,
+      clipBehavior: Clip.none,
+      children: [
+        AnimatedOpacity(
+          key: const Key('volti-button-content'),
+          opacity: busy ? 0 : 1,
+          duration: morph,
+          curve: VoltiMotion.easeOut,
+          child: content,
         ),
-        child: VoltiRipple(
-          color: off ? null : ripple,
-          borderRadius: VoltiRadii.rPill,
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: px),
-            child: Center(widthFactor: fullWidth ? null : 1, child: content),
+        Positioned.fill(
+          child: Center(
+            child: AnimatedSwitcher(
+              duration: morph,
+              switchInCurve: VoltiMotion.easeOut,
+              transitionBuilder: (child, a) =>
+                  FadeTransition(opacity: a, child: child),
+              child: success
+                  ? VoltiSuccessCheck(
+                      key: const Key('volti-button-success'),
+                      size: ic + 4,
+                      delay: Duration.zero,
+                      color: checkBg,
+                      iconColor: checkFg,
+                    )
+                  : loading
+                  ? _Spinner(size: ic, color: fg)
+                  : const SizedBox.shrink(),
+            ),
           ),
         ),
+      ],
+    );
+    final body = AnimatedOpacity(
+      key: const Key('volti-button-enabled-fade'),
+      opacity: dim ? .4 : 1,
+      duration: morph,
+      curve: VoltiMotion.easeOut,
+      child: Builder(
+        builder: (context) {
+          final pressed = VoltiPressScope.pressedOf(context);
+          final reduced = VoltiMotion.reduced(context);
+          return AnimatedContainer(
+            key: const Key('volti-button-surface'),
+            height: h,
+            duration: reduced
+                ? Duration.zero
+                : (pressed ? VoltiMotion.durFast : VoltiMotion.durSpring),
+            curve: VoltiMotion.easeOut,
+            decoration: BoxDecoration(
+              color: pressed ? pressedColor(variant, bg) : bg,
+              borderRadius: VoltiRadii.rPill,
+              border: Border.all(color: bd, width: 1.5),
+              boxShadow: dim
+                  ? const <BoxShadow>[]
+                  : (pressed ? VoltiMotion.pressedShadow(sh) : sh),
+            ),
+            child: VoltiRipple(
+              color: off ? null : ripple,
+              borderRadius: VoltiRadii.rPill,
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: px),
+                child: Center(widthFactor: fullWidth ? null : 1, child: inner),
+              ),
+            ),
+          );
+        },
       ),
     );
     final shown = shine && !off ? VoltiShine(child: body) : body;
     return VoltiPressable(
       onTap: off ? null : onPressed,
       semanticLabel: semanticLabel ?? label,
+      haptic: haptic,
       child: semanticLabel == null
           ? (fullWidth ? SizedBox(width: double.infinity, child: shown) : shown)
           : ExcludeSemantics(
-              child: fullWidth ? SizedBox(width: double.infinity, child: shown) : shown),
+              child: fullWidth
+                  ? SizedBox(width: double.infinity, child: shown)
+                  : shown,
+            ),
     );
   }
+
+  /// Fundo no press: preenchidos escurecem 6% (o contraste com o texto so
+  /// sobe; E-12 continua >= 4,5:1); o secundario ganha o verde suave e o
+  /// fantasma um veu de 6% de tinta.
+  static Color pressedColor(VoltiButtonVariant variant, Color bg) =>
+      switch (variant) {
+        VoltiButtonVariant.secondary => VoltiColors.brandSoft,
+        VoltiButtonVariant.ghost => VoltiColors.ink900.withValues(
+          alpha: VoltiMotion.pressDarken,
+        ),
+        _ => Color.lerp(bg, const Color(0xFF000000), VoltiMotion.pressDarken)!,
+      };
 }
 
 /// Dois botoes lado a lado na proporcao do design (`flex` 1 : 1,3 por
@@ -229,7 +318,11 @@ class VoltiButtonPair extends StatelessWidget {
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [first, SizedBox(height: gap), second],
+          children: [
+            first,
+            SizedBox(height: gap),
+            second,
+          ],
         );
       },
     );
@@ -291,7 +384,11 @@ class VoltiIconButton extends StatelessWidget {
     this.dot = false,
     this.label,
     this.iconColor,
+    this.haptic,
   });
+
+  /// Haptica a cada toque (padrao nenhuma).
+  final VoltiHapticKind? haptic;
 
   final IconData icon;
   final VoidCallback? onPressed;
@@ -335,42 +432,65 @@ class VoltiIconButton extends StatelessWidget {
         const <BoxShadow>[],
       ),
     };
+    final ripple = switch (variant) {
+      VoltiIconButtonVariant.brand ||
+      VoltiIconButtonVariant.dark => const Color(0x52FFFFFF),
+      _ => const Color(0x1F15181A),
+    };
     return VoltiPressable(
       onTap: onPressed,
       scale: VoltiMotion.iconPressScale,
       semanticLabel: label,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: bg,
-          shape: BoxShape.circle,
-          boxShadow: sh,
-        ),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Icon(
-              icon,
-              size: (size * .46).roundToDouble(),
-              color: iconColor ?? fg,
+      haptic: haptic,
+      child: Builder(
+        builder: (context) {
+          final pressed = VoltiPressScope.pressedOf(context);
+          return AnimatedContainer(
+            key: const Key('volti-icon-button-surface'),
+            duration: VoltiMotion.reduced(context)
+                ? Duration.zero
+                : (pressed ? VoltiMotion.durFast : VoltiMotion.durSpring),
+            curve: VoltiMotion.easeOut,
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              color: pressed && variant == VoltiIconButtonVariant.brand
+                  ? VoltiButton.pressedColor(VoltiButtonVariant.primary, bg)
+                  : bg,
+              shape: BoxShape.circle,
+              boxShadow: pressed ? VoltiMotion.pressedShadow(sh) : sh,
             ),
-            if (dot)
-              Positioned(
-                top: size * .24,
-                right: size * .26,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: VoltiColors.warning,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: scheme.surface, width: 1.5),
+            // Ondulacao a partir do toque, recortada no circulo (sem splash Material).
+            child: VoltiRipple(
+              color: onPressed == null ? null : ripple,
+              borderRadius: BorderRadius.circular(size / 2),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Icon(
+                    icon,
+                    size: (size * .46).roundToDouble(),
+                    color: iconColor ?? fg,
                   ),
-                ),
+                  if (dot)
+                    Positioned(
+                      top: size * .24,
+                      right: size * .26,
+                      child: Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: VoltiColors.warning,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: scheme.surface, width: 1.5),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
+            ),
+          );
+        },
       ),
     );
   }

@@ -51,7 +51,9 @@ class VoltiChip extends StatelessWidget {
           child: ConstrainedBox(
             constraints: const BoxConstraints(minWidth: VoltiSpacing.hitMin),
             child: AnimatedContainer(
-          duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
+          key: const Key('volti-chip-surface'),
+          duration: VoltiMotion.scaled(context, VoltiMotion.durSelect),
+          curve: VoltiMotion.easeOut,
           // Altura minima 36 (design) que cresce com a escala de texto.
           constraints: const BoxConstraints(minHeight: 36),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -63,8 +65,13 @@ class VoltiChip extends StatelessWidget {
             ),
             boxShadow: elevated ? VoltiShadows.shadow1 : null,
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (icon != null) ...[Icon(icon, size: 16, color: fg), const SizedBox(width: 6)],
+          // Texto e icone acompanham o tween do fundo (sem salto de cor).
+          child: TweenAnimationBuilder<Color?>(
+            tween: ColorTween(end: fg),
+            duration: VoltiMotion.scaled(context, VoltiMotion.durSelect),
+            curve: VoltiMotion.easeOut,
+            builder: (context, c, _) => Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[Icon(icon, size: 16, color: c), const SizedBox(width: 6)],
             Flexible(
               child: Text(
                 label,
@@ -75,11 +82,12 @@ class VoltiChip extends StatelessWidget {
                   fontWeight: VoltiTypography.fwMedium,
                   fontSize: 13,
                   height: 1,
-                  color: fg,
+                  color: c,
                 ),
               ),
             ),
           ]),
+          ),
         ),
           ),
         ),

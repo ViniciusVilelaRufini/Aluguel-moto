@@ -345,6 +345,29 @@ void main() {
       expect(where(router), '/ride');
     });
 
+    testWidgets('"Aceitar e destravar": haptica leve no toque e check de sucesso no botao antes da corrida', (t) async {
+      phone(t);
+      final haptics = <VoltiHapticKind>[];
+      VoltiHaptics.debugHandler = (k) async => haptics.add(k);
+      addTearDown(() => VoltiHaptics.debugHandler = null);
+      final b = HandoverBackend()..acceptGate = Completer<void>();
+      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
+      final accept = find.byKey(const Key('handover-accept'));
+      await t.ensureVisible(accept);
+      await t.pump();
+      await t.tap(accept);
+      await t.pump();
+      expect(haptics, [VoltiHapticKind.tap]);
+      b.acceptGate!.complete();
+      await t.pump();
+      await t.pump();
+      expect(find.descendant(of: accept, matching: find.byType(VoltiSuccessCheck)), findsOneWidget);
+      expect(haptics, [VoltiHapticKind.tap, VoltiHapticKind.success]);
+      expect(where(router), '/handover/h1');
+      await settle(t);
+      expect(where(router), '/ride');
+    });
+
     testWidgets('pagamento recusado mostra o motivo, mantem a tela e a nova tentativa usa a mesma chave', (t) async {
       phone(t);
       final b = HandoverBackend()..acceptErrors.add(problem(422, 'payment-declined', detail: 'Cartão recusado'));

@@ -52,6 +52,9 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
   Object? _loadError;
   bool _accepting = false;
 
+  /// Aceite confirmado: o botao mostra o check por [VoltiMotion.successHold].
+  bool _accepted = false;
+
   /// Motivo da ultima tentativa que falhou nesta tela (o `lastError` da entrega
   /// cobre o que aconteceu fora dela).
   String? _error;
@@ -104,6 +107,11 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
     try {
       await ref.read(backendProvider).acceptHandover(widget.handoverId, _acceptKey);
       VoltiHaptics.success();
+      if (mounted) {
+        // Micro-animacao de sucesso no proprio botao antes de abrir a corrida.
+        setState(() => _accepted = true);
+        await Future<void>.delayed(VoltiMotion.successHoldOf(context));
+      }
       ref.read(createdReservationProvider.notifier).set(null);
       ref.invalidate(currentReservationProvider);
       ref.invalidate(currentRentalProvider);
@@ -308,7 +316,9 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
               icon: LucideIcons.lockOpen,
               size: VoltiButtonSize.lg,
               fullWidth: true,
-              loading: _accepting,
+              loading: _accepting && !_accepted,
+              success: _accepted,
+              haptic: VoltiHapticKind.tap,
               onPressed: _accepting ? null : _accept,
             ),
             const SizedBox(height: VoltiSpacing.s8),

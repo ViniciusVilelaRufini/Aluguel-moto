@@ -2,8 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../tokens/shadows.dart';
+import 'haptics.dart';
 
-/// Area tocavel com feedback de press (escala com mola), como no design system.
+/// Area tocavel com feedback de press, como no design system (motion v2):
+/// - aperta para [scale] em [VoltiMotion.durFast] com `--ease-out`;
+/// - solta com mola (`--ease-spring`, [VoltiMotion.durSpring]);
+/// - com reduced motion nao escala: so baixa a opacidade para
+///   [VoltiMotion.pressOpacityReduced], sem animacao;
+/// - [haptic] toca a haptica antes de [onTap] (CTAs de confirmacao).
+///
+/// Descendentes leem o estado com [VoltiPressScope.pressedOf] (ex.: a
+/// sombra do botao que baixa no press).
 class VoltiPressable extends StatefulWidget {
   const VoltiPressable({
     super.key,
@@ -11,12 +20,16 @@ class VoltiPressable extends StatefulWidget {
     this.onTap,
     this.scale = VoltiMotion.pressScale,
     this.semanticLabel,
+    this.haptic,
   });
 
   final Widget child;
   final VoidCallback? onTap;
   final double scale;
   final String? semanticLabel;
+
+  /// Haptica tocada a cada toque valido (nada com [onTap] `null`).
+  final VoltiHapticKind? haptic;
 
   @override
   State<VoltiPressable> createState() => _VoltiPressableState();
@@ -44,9 +57,20 @@ class _VoltiPressableState extends State<VoltiPressable> {
     }
   }
 
+  void _tap() {
+    final h = widget.haptic;
+    if (h != null) VoltiHaptics.play(h);
+    widget.onTap?.call();
+  }
+
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null;
+    final reduced = VoltiMotion.reduced(context);
+    final pressed = enabled && _down;
+    // Com [semanticLabel] o rotulo ja descreve tudo: sem isso o texto
+    // interno era lido de novo ("Entrar Entrar").
+    final inner = widget.semanticLabel != null ? ExcludeSemantics(child: widget.child) : widget.child;
     return Semantics(
       button: true,
       enabled: enabled,
@@ -56,18 +80,38 @@ class _VoltiPressableState extends State<VoltiPressable> {
         onTapDown: enabled ? (_) => _set(true) : null,
         onTapUp: enabled ? (_) => _set(false) : null,
         onTapCancel: enabled ? () => _set(false) : null,
-        onTap: widget.onTap,
-        child: AnimatedScale(
-          scale: _down ? widget.scale : 1,
-          duration: VoltiMotion.scaled(context, VoltiMotion.durSpring),
-          curve: VoltiMotion.easeSpring,
-          // Com [semanticLabel] o rotulo ja descreve tudo: sem isso o texto
-          // interno era lido de novo ("Entrar Entrar").
-          child: widget.semanticLabel != null ? ExcludeSemantics(child: widget.child) : widget.child,
+        onTap: enabled ? _tap : null,
+        child: VoltiPressScope(
+          pressed: pressed,
+          child: AnimatedScale(
+            scale: pressed && !reduced ? widget.scale : 1,
+            duration: reduced ? Duration.zero : (pressed ? VoltiMotion.durFast : VoltiMotion.durSpring),
+            curve: pressed ? VoltiMotion.easeOut : VoltiMotion.easeSpring,
+            child: AnimatedOpacity(
+              key: const Key('volti-press-opacity'),
+              opacity: pressed && reduced ? VoltiMotion.pressOpacityReduced : 1,
+              duration: Duration.zero,
+              child: inner,
+            ),
+          ),
         ),
       ),
     );
   }
+}
+
+/// Estado de press do [VoltiPressable] mais proximo.
+class VoltiPressScope extends InheritedWidget {
+  const VoltiPressScope({super.key, required this.pressed, required super.child});
+
+  final bool pressed;
+
+  /// `true` enquanto o dedo esta sobre o [VoltiPressable] ancestral.
+  static bool pressedOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<VoltiPressScope>()?.pressed ?? false;
+
+  @override
+  bool updateShouldNotify(VoltiPressScope old) => old.pressed != pressed;
 }
 
 /// Ondulacao a partir do ponto de toque (`vt-ripple`, 620 ms). Fica entre o
