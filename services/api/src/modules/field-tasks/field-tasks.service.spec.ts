@@ -4,6 +4,7 @@ import { PrismaClient } from '@prisma/client';
 import { loadConfig } from '../../config/env';
 import type { Principal } from '../auth/principal';
 import { FieldTasksService } from './field-tasks.service';
+import { EV } from '../../common/events';
 
 const TASK_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const VEHICLE_ID = '33333333-3333-4333-8333-333333333333';
@@ -22,8 +23,9 @@ function setup() {
   const alerts = { create: jest.fn().mockResolvedValue({ id: 'alert-1' }) };
   const audit = { record: jest.fn() };
   const storage = { presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn(), deleteObject: jest.fn() };
-  const service = new FieldTasksService(prisma as any, alerts as any, audit as any, storage, loadConfig(), new EventEmitter2());
-  return { prisma, alerts, service };
+  const events = new EventEmitter2();
+  const service = new FieldTasksService(prisma as any, alerts as any, audit as any, storage, loadConfig(), events);
+  return { prisma, alerts, service, events };
 }
 
 describe('Inspeção (limitador como observação, decisão #13)', () => {
@@ -65,24 +67,26 @@ describe('Inspeção (limitador como observação, decisão #13)', () => {
 const DEPOT = { id: '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c', lat: -23.5654, lng: -46.6847, active: true };
 
 describe('Recolhimento (collect) devolve a moto ao galpão', () => {
-  function collectSetup(vehicleStatus = 'awaiting_pickup') {
+  function collectSetup(vehicleStatus = 'awaiting_pickup', statusBeforeOffline: string | null = null) {
     const ctx = setup();
     ctx.prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'collect', status: 'in_progress', vehicleId: VEHICLE_ID, assigneeId: campo.userId, createdAt: new Date(), updatedAt: new Date() } as any);
-    ctx.prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: vehicleStatus, code: 'VLT-0001' } as any);
+    ctx.prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: vehicleStatus, statusBeforeOffline, code: 'VLT-0001' } as any);
     ctx.prisma.depot.findUnique.mockResolvedValue(DEPOT as any);
     ctx.prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
     ctx.prisma.fieldTask.findMany.mockResolvedValue([]);
     ctx.prisma.staffUser.findMany.mockResolvedValue([]);
     ctx.prisma.battery.findMany.mockResolvedValue([]);
     ctx.prisma.vehicle.findMany.mockResolvedValue([]);
-    return ctx;
+    const emitted: string[] = [];
+    ctx.events.on(EV.VEHICLE_STATUS_CHANGED, (e: { status: string }) => emitted.push(e.status));
+    return { ...ctx, emitted };
   }
 
   it('concluir collect com depotId → moto free, com o depotId e nas coordenadas do galpão', async () => {
     const { service, prisma } = collectSetup();
     await service.complete(campo, TASK_ID, { depotId: DEPOT.id });
     expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({
-      where: { id: VEHICLE_ID, status: { in: ['awaiting_pickup', 'free', 'maintenance', 'blocked'] } },
+      where: { id: VEHICLE_ID, status: 'awaiting_pickup' },
       data: { status: 'free', depotId: DEPOT.id, lat: DEPOT.lat, lng: DEPOT.lng },
     });
     expect(prisma.fieldTask.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: TASK_ID }, data: expect.objectContaining({ status: 'done' }) }));
@@ -94,14 +98,61 @@ describe('Recolhimento (collect) devolve a moto ao galpão', () => {
     expect((prisma.vehicle.updateMany.mock.calls[0][0] as any).data).toEqual({ status: 'maintenance', depotId: DEPOT.id, lat: DEPOT.lat, lng: DEPOT.lng });
   });
 
-  it('moto offline: guarda o status de retorno (free) e já fica no galpão', async () => {
-    const { service, prisma } = collectSetup('offline');
-    prisma.vehicle.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+  it('moto offline: guarda o status de retorno (free), já fica no galpão e o evento não mente (fix 4: nada emitido)', async () => {
+    const { service, prisma, emitted } = collectSetup('offline', 'awaiting_pickup');
     await service.complete(campo, TASK_ID, { depotId: DEPOT.id });
-    expect(prisma.vehicle.updateMany.mock.calls[1][0]).toEqual({
-      where: { id: VEHICLE_ID, status: 'offline' },
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledTimes(1);
+    expect(prisma.vehicle.updateMany.mock.calls[0][0]).toEqual({
+      where: { id: VEHICLE_ID, status: 'offline', statusBeforeOffline: 'awaiting_pickup' },
       data: { statusBeforeOffline: 'free', depotId: DEPOT.id, lat: DEPOT.lat, lng: DEPOT.lng },
     });
+    expect(emitted).toEqual([]);
+  });
+
+  it('moto online: o evento leva o status em que a moto chegou', async () => {
+    const { service, emitted } = collectSetup();
+    await service.complete(campo, TASK_ID, { depotId: DEPOT.id });
+    expect(emitted).toEqual(['free']);
+  });
+
+  it('fix 2: moto bloqueada continua bloqueada no galpão (recolher não desbloqueia)', async () => {
+    const { service, prisma } = collectSetup('blocked');
+    await service.complete(campo, TASK_ID, { depotId: DEPOT.id });
+    expect(prisma.vehicle.updateMany.mock.calls[0][0]).toEqual({
+      where: { id: VEHICLE_ID, status: 'blocked' },
+      data: { status: 'blocked', depotId: DEPOT.id, lat: DEPOT.lat, lng: DEPOT.lng },
+    });
+  });
+
+  it('fix 2: moto bloqueada com vehicleStatus explícito muda para ele', async () => {
+    const { service, prisma } = collectSetup('blocked');
+    await service.complete(campo, TASK_ID, { depotId: DEPOT.id, vehicleStatus: 'maintenance' });
+    expect((prisma.vehicle.updateMany.mock.calls[0][0] as any).data.status).toBe('maintenance');
+  });
+
+  it('fix 2: moto offline que estava bloqueada volta bloqueada', async () => {
+    const { service, prisma } = collectSetup('offline', 'blocked');
+    await service.complete(campo, TASK_ID, { depotId: DEPOT.id });
+    expect((prisma.vehicle.updateMany.mock.calls[0][0] as any).data.statusBeforeOffline).toBe('blocked');
+  });
+
+  it('moto offline durante um aluguel → 409', async () => {
+    const { service, prisma } = collectSetup('offline', 'rented');
+    await expect(service.complete(campo, TASK_ID, { depotId: DEPOT.id })).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+  });
+
+  it('fix 3: galpão inativo → 422 depot-inactive e a tarefa não é concluída', async () => {
+    const { service, prisma } = collectSetup();
+    prisma.depot.findUnique.mockResolvedValue({ ...DEPOT, active: false } as any);
+    await expect(service.complete(campo, TASK_ID, { depotId: DEPOT.id })).rejects.toMatchObject({ status: 422, slug: 'depot-inactive' });
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+  });
+
+  it('a moto mudou entre a leitura e a gravação → 409', async () => {
+    const { service, prisma } = collectSetup();
+    prisma.vehicle.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.complete(campo, TASK_ID, { depotId: DEPOT.id })).rejects.toMatchObject({ status: 409 });
   });
 
   it('galpão inexistente → 404 e a tarefa não é concluída', async () => {
@@ -113,8 +164,8 @@ describe('Recolhimento (collect) devolve a moto ao galpão', () => {
 
   it('moto alugada/reservada no meio do caminho → 409 e a tarefa não é concluída', async () => {
     const { service, prisma } = collectSetup('rented');
-    prisma.vehicle.updateMany.mockResolvedValue({ count: 0 });
     await expect(service.complete(campo, TASK_ID, { depotId: DEPOT.id })).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
   });
 
   it('collect de moto awaiting_pickup sem depotId → 422 (a moto ficaria presa)', async () => {
@@ -127,5 +178,65 @@ describe('Recolhimento (collect) devolve a moto ao galpão', () => {
     const { service, prisma } = collectSetup();
     prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'reposition', status: 'in_progress', vehicleId: VEHICLE_ID } as any);
     await expect(service.complete(campo, TASK_ID, { depotId: DEPOT.id })).rejects.toMatchObject({ status: 422 });
+  });
+});
+
+describe('Recolhimento: cancelamento e criação manual (fix 5)', () => {
+  const admin: Principal = { pool: 'staff', sub: 'a', email: 'a@volti.com.br', groups: ['admin'], userId: 'cccccccc-0000-4000-8000-000000000003', staffId: 'cccccccc-0000-4000-8000-000000000003' };
+  function cancelSetup(vehicle: { status: string; statusBeforeOffline?: string | null }) {
+    const ctx = setup();
+    ctx.prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'collect', status: 'assigned', vehicleId: VEHICLE_ID, createdAt: new Date(), updatedAt: new Date() } as any);
+    ctx.prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, statusBeforeOffline: null, ...vehicle } as any);
+    ctx.prisma.fieldTask.count.mockResolvedValue(0);
+    ctx.prisma.fieldTask.findMany.mockResolvedValue([]);
+    ctx.prisma.vehicle.findMany.mockResolvedValue([]);
+    ctx.prisma.staffUser.findMany.mockResolvedValue([]);
+    ctx.prisma.battery.findMany.mockResolvedValue([]);
+    return ctx;
+  }
+
+  it('cancelar collect com a moto awaiting_pickup → 409 com mensagem clara', async () => {
+    const { service, prisma } = cancelSetup({ status: 'awaiting_pickup' });
+    await expect(service.update(TASK_ID, { status: 'canceled' })).rejects.toMatchObject({ status: 409, detail: 'Moto aguardando recolhimento; conclua a tarefa.' });
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+  });
+
+  it('cancelar collect com a moto offline que estava awaiting_pickup → 409', async () => {
+    const { service } = cancelSetup({ status: 'offline', statusBeforeOffline: 'awaiting_pickup' });
+    await expect(service.update(TASK_ID, { status: 'canceled' })).rejects.toMatchObject({ status: 409 });
+  });
+
+  it('cancelar collect de moto awaiting_pickup é permitido se houver outra collect aberta para ela', async () => {
+    const { service, prisma } = cancelSetup({ status: 'awaiting_pickup' });
+    prisma.fieldTask.count.mockResolvedValue(1);
+    await service.update(TASK_ID, { status: 'canceled' });
+    expect((prisma.fieldTask.count.mock.calls[0][0] as any).where).toEqual({ vehicleId: VEHICLE_ID, type: 'collect', status: { notIn: ['done', 'canceled'] }, id: { not: TASK_ID } });
+    expect(prisma.fieldTask.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'canceled' }) }));
+  });
+
+  it('cancelar collect de moto que já está free é permitido', async () => {
+    const { service, prisma } = cancelSetup({ status: 'free' });
+    await service.update(TASK_ID, { status: 'canceled' });
+    expect(prisma.fieldTask.update).toHaveBeenCalled();
+  });
+
+  it('collect criada pelo painel usa o mesmo lock por moto e não duplica uma collect aberta', async () => {
+    const { service, prisma } = cancelSetup({ status: 'awaiting_pickup' });
+    prisma.fieldTask.findFirst.mockResolvedValue({ id: 'aberta' } as any);
+    await expect(service.create(admin, { type: 'collect', vehicleId: VEHICLE_ID, priority: 'high' })).rejects.toMatchObject({ status: 409 });
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+    expect(prisma.fieldTask.create).not.toHaveBeenCalled();
+
+    prisma.fieldTask.findFirst.mockResolvedValue(null);
+    prisma.fieldTask.create.mockResolvedValue({ id: TASK_ID } as any);
+    await service.create(admin, { type: 'collect', vehicleId: VEHICLE_ID, priority: 'high' });
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('tarefas de outro tipo não pegam o lock', async () => {
+    const { service, prisma } = cancelSetup({ status: 'free' });
+    prisma.fieldTask.create.mockResolvedValue({ id: TASK_ID } as any);
+    await service.create(admin, { type: 'reposition', vehicleId: VEHICLE_ID, priority: 'low' });
+    expect(prisma.$queryRaw).not.toHaveBeenCalled();
   });
 });

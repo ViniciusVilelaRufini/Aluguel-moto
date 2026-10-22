@@ -60,6 +60,33 @@ export function toBatterySwap(b: BatterySwap) {
   });
 }
 
+type VehicleState = Pick<Vehicle, 'status' | 'statusBeforeOffline'> | null;
+type ArrivalStatus = 'free' | 'maintenance' | 'blocked';
+/** Origens aceitas na chegada ao galpão (direto ou guardada antes de ficar offline). */
+const ARRIVAL_FROM = ['awaiting_pickup', 'free', 'maintenance', 'blocked'];
+
+/** Moto devolvida em ponto verde esperando recolhimento (também se ficou offline nesse estado). */
+function isAwaitingPickup(v: VehicleState): boolean {
+  return v?.status === 'awaiting_pickup' || (v?.status === 'offline' && v.statusBeforeOffline === 'awaiting_pickup');
+}
+
+/**
+ * Chegada da `collect` ao galpão: `free` (ou o `vehicleStatus` enviado); moto bloqueada continua bloqueada sem
+ * `vehicleStatus` explícito. Offline: grava o status de retorno em `statusBeforeOffline` e não emite evento.
+ */
+function depotArrival(v: VehicleState, explicit: 'free' | 'maintenance' | undefined, at: { depotId: string; lat: number; lng: number }) {
+  const target = (from: string | null): ArrivalStatus => (from === 'blocked' && !explicit ? 'blocked' : (explicit ?? 'free'));
+  if (v && ARRIVAL_FROM.includes(v.status)) {
+    const status = target(v.status);
+    return { where: { status: v.status }, data: { status, ...at }, status, emit: true };
+  }
+  if (v?.status === 'offline' && (v.statusBeforeOffline === null || ARRIVAL_FROM.includes(v.statusBeforeOffline))) {
+    const status = target(v.statusBeforeOffline);
+    return { where: { status: v.status, statusBeforeOffline: v.statusBeforeOffline }, data: { statusBeforeOffline: status, ...at }, status, emit: false };
+  }
+  throw conflict('vehicle-unavailable', 'A moto está em uso por um cliente; não dá para registrar a chegada ao galpão.');
+}
+
 /** Tarefas de campo, inspeção (limitador como observação) e troca de bateria. */
 @Injectable()
 export class FieldTasksService {
@@ -133,8 +160,14 @@ export class FieldTasksService {
     if (dto.maintenanceTaskId && !(await this.prisma.maintenanceTask.findUnique({ where: { id: dto.maintenanceTaskId }, select: { id: true } }))) {
       throw notFound('Manutenção não encontrada.');
     }
-    const t = await this.prisma.fieldTask.create({
-      data: { ...dto, dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined, status: dto.assigneeId ? 'assigned' : 'open', createdById: actor.userId },
+    const data = { ...dto, dueAt: dto.dueAt ? new Date(dto.dueAt) : undefined, status: dto.assigneeId ? ('assigned' as const) : ('open' as const), createdById: actor.userId };
+    if (dto.type !== 'collect') return this.mapped((await this.prisma.fieldTask.create({ data })).id);
+    // Recolhimento: mesmo lock por moto do encerramento em ponto verde; uma `collect` aberta por moto.
+    const t = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext(${`collect:${dto.vehicleId}`}))::text`;
+      const open = await tx.fieldTask.findFirst({ where: { vehicleId: dto.vehicleId, type: 'collect', status: { notIn: CLOSED as FieldTask['status'][] } }, select: { id: true } });
+      if (open) throw conflict('conflict', 'Já existe um recolhimento aberto para esta moto.');
+      return tx.fieldTask.create({ data });
     });
     return this.mapped(t.id);
   }
@@ -156,6 +189,7 @@ export class FieldTasksService {
       data.assigneeId = dto.assigneeId;
       if (t.status === 'open') data.status = 'assigned';
     }
+    if (dto.status === 'canceled' && t.type === 'collect') await this.assertCollectCancelable(t);
     if (dto.status === 'canceled') data.status = 'canceled';
     else if (dto.status && dto.status !== t.status && !dto.assigneeId) data.status = dto.status;
     await this.prisma.fieldTask.update({ where: { id }, data });
@@ -181,31 +215,28 @@ export class FieldTasksService {
       throw unprocessable('validation-error', 'Registre a troca de bateria antes de concluir.');
     }
     if (dto.depotId && t.type !== 'collect') throw unprocessable('validation-error', 'O galpão só é informado ao concluir um recolhimento.');
-    const depot = dto.depotId ? await this.prisma.depot.findUnique({ where: { id: dto.depotId }, select: { id: true, lat: true, lng: true } }) : null;
+    const depot = dto.depotId ? await this.prisma.depot.findUnique({ where: { id: dto.depotId }, select: { id: true, lat: true, lng: true, active: true } }) : null;
     if (dto.depotId && !depot) throw notFound('Galpão não encontrado.');
-    if (t.type === 'collect' && !depot) {
-      const v = await this.prisma.vehicle.findUnique({ where: { id: t.vehicleId }, select: { status: true, statusBeforeOffline: true } });
-      if (v?.status === 'awaiting_pickup' || (v?.status === 'offline' && v.statusBeforeOffline === 'awaiting_pickup')) {
-        throw unprocessable('validation-error', 'Informe o galpão onde a moto chegou.');
-      }
-    }
-    const arrivedStatus = dto.vehicleStatus ?? 'free';
+    if (depot && !depot.active) throw unprocessable('depot-inactive', 'Este galpão está desativado; escolha outro galpão.');
+    const vehicle = t.type === 'collect' ? await this.prisma.vehicle.findUnique({ where: { id: t.vehicleId }, select: { status: true, statusBeforeOffline: true } }) : null;
+    if (t.type === 'collect' && !depot && isAwaitingPickup(vehicle)) throw unprocessable('validation-error', 'Informe o galpão onde a moto chegou.');
+    const arrival = depot ? depotArrival(vehicle, dto.vehicleStatus, { depotId: depot.id, lat: depot.lat, lng: depot.lng }) : null;
     await this.prisma.$transaction(async (tx) => {
       await tx.fieldTask.update({ where: { id }, data: { status: 'done', completionNotes: dto.notes, completedAt: dto.completedAt ? new Date(dto.completedAt) : new Date() } });
-      if (depot) {
-        // Retirada em galpão: a moto recolhida volta ao galpão (livre para retirada ou em manutenção).
-        const at = { depotId: depot.id, lat: depot.lat, lng: depot.lng };
-        let moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: ['awaiting_pickup', 'free', 'maintenance', 'blocked'] } }, data: { status: arrivedStatus, ...at } });
-        if (!moved.count) moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: 'offline' }, data: { statusBeforeOffline: arrivedStatus, ...at } });
-        if (!moved.count) throw conflict('vehicle-unavailable', 'A moto está em uso por um cliente; não dá para registrar a chegada ao galpão.');
-        await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: 'Recolhimento concluído no galpão', metadata: { fieldTaskId: id, to: arrivedStatus, depotId: depot.id } }, tx as any);
+      if (arrival && depot) {
+        // Retirada em galpão: a moto recolhida volta ao galpão. Gravação condicionada ao status lido (409 se mudou).
+        const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, ...arrival.where }, data: arrival.data });
+        if (!moved.count) throw conflict('vehicle-unavailable', 'A moto mudou de situação; atualize a tarefa e tente de novo.');
+        await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: 'Recolhimento concluído no galpão', metadata: { fieldTaskId: id, to: arrival.status, depotId: depot.id } }, tx as any);
       } else if (dto.vehicleStatus) {
         const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: ['free', 'maintenance', 'offline', 'blocked'] } }, data: { status: dto.vehicleStatus } });
         if (moved.count) await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: `Tarefa ${t.type} concluída`, metadata: { fieldTaskId: id, to: dto.vehicleStatus } }, tx as any);
       }
     });
-    if (depot) this.emitVehicle(t.vehicleId, arrivedStatus);
-    else if (dto.vehicleStatus) this.emitVehicle(t.vehicleId, dto.vehicleStatus);
+    // Moto offline: o status real continua `offline` (o de retorno fica guardado), então não emite.
+    if (arrival) {
+      if (arrival.emit) this.emitVehicle(t.vehicleId, arrival.status);
+    } else if (dto.vehicleStatus) this.emitVehicle(t.vehicleId, dto.vehicleStatus);
     return this.mapped(id);
   }
 
@@ -300,6 +331,14 @@ export class FieldTasksService {
       return s;
     });
     return toBatterySwap(swap);
+  }
+
+  /** Cancelar a única `collect` aberta de uma moto que espera recolhimento deixaria a moto presa fora da rua. */
+  private async assertCollectCancelable(t: FieldTask): Promise<void> {
+    const v = await this.prisma.vehicle.findUnique({ where: { id: t.vehicleId }, select: { status: true, statusBeforeOffline: true } });
+    if (!isAwaitingPickup(v)) return;
+    const others = await this.prisma.fieldTask.count({ where: { vehicleId: t.vehicleId, type: 'collect', status: { notIn: CLOSED as FieldTask['status'][] }, id: { not: t.id } } });
+    if (!others) throw conflict('conflict', 'Moto aguardando recolhimento; conclua a tarefa.');
   }
 
   private emitVehicle(vehicleId: string, status: VehicleStatusChangedEvent['status']): void {

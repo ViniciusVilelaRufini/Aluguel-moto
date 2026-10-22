@@ -10,6 +10,8 @@ import { RentalEndService } from './rental-end.service';
 import { RentalStartService } from './rental-start.service';
 import { RentalsController } from './rentals.controller';
 import { RentalsService } from './rentals.service';
+import { EV } from '../../common/events';
+import { VehiclesService } from '../vehicles/vehicles.service';
 
 const CUSTOMER_ID = '11111111-1111-4111-8111-111111111111';
 const RENTAL_ID = '88888888-8888-4888-8888-888888888888';
@@ -53,8 +55,9 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
   const iot = { getLiveState: jest.fn().mockResolvedValue(null) };
   const audit = { record: jest.fn() };
   const alerts = { create: jest.fn().mockResolvedValue({ id: 'alert-1' }) };
-  const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, new EventEmitter2(), audit as any, alerts as any);
-  return { service, prisma, rental, billing, commands, zones, audit, alerts };
+  const events = new EventEmitter2();
+  const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, events, audit as any, alerts as any);
+  return { service, prisma, rental, billing, commands, zones, audit, alerts, events, vehicle: vehicle as Record<string, unknown> };
 }
 
 describe('Encerramento do aluguel', () => {
@@ -291,6 +294,39 @@ describe('Devolução em ponto verde (retirada em galpão)', () => {
     await service.forceEnd(admin, RENTAL_ID, 'Cliente sem bateria no celular');
     expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
     expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('fix 1: moto do galpão offline + encerramento forçado → ao reconectar volta como awaiting_pickup (não free)', async () => {
+    const { service, prisma, vehicle, events } = setup({ depotId: DEPOT_ID, inZone: false, photo: false });
+    // Banco falso com estado para a moto: offline durante o aluguel.
+    Object.assign(vehicle, { status: 'offline', online: false, statusBeforeOffline: 'rented' });
+    const matches = (where: any) =>
+      where.id === vehicle.id &&
+      (where.status === undefined || (typeof where.status === 'string' ? where.status === vehicle.status : where.status.in.includes(vehicle.status))) &&
+      (where.statusBeforeOffline === undefined || where.statusBeforeOffline.in.includes(vehicle.statusBeforeOffline));
+    prisma.vehicle.updateMany.mockImplementation((async (a: any) => (matches(a.where) ? (Object.assign(vehicle, a.data), { count: 1 }) : { count: 0 })) as any);
+    prisma.vehicle.findUnique.mockImplementation((async () => ({ ...vehicle })) as any);
+    prisma.vehicle.update.mockImplementation((async (a: any) => Object.assign(vehicle, a.data)) as any);
+    prisma.fieldTask.findFirst.mockResolvedValue(null);
+    const emitted: string[] = [];
+    events.on(EV.VEHICLE_STATUS_CHANGED, (e: { status: string }) => emitted.push(e.status));
+
+    await service.forceEnd(admin, RENTAL_ID, 'Moto sem sinal');
+    expect(vehicle).toMatchObject({ status: 'offline', statusBeforeOffline: 'awaiting_pickup' });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({
+      where: { id: VEHICLE_ID, status: 'offline', statusBeforeOffline: { in: ['rented', 'paused'] } },
+      data: { statusBeforeOffline: 'awaiting_pickup' },
+    });
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+    // Fix 4: o evento leva o status real.
+    expect(emitted).toEqual(['offline']);
+
+    // Rastreador volta: o aluguel já está encerrado; restoredStatus usa o status guardado.
+    prisma.rental.findFirst.mockResolvedValue(null);
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    const vehicles = new VehiclesService(prisma as any, {} as any, {} as any, new EventEmitter2(), {} as any, {} as any, {} as any, {} as any);
+    await vehicles.onConnectivity({ vehicleId: VEHICLE_ID, online: true, ts: new Date().toISOString() } as any);
+    expect(vehicle.status).toBe('awaiting_pickup');
   });
 
   it('finalize com returnTo: depot (devolução no galpão, Task 6) não cria recolhimento', async () => {
