@@ -113,6 +113,25 @@ a:hover{color:var(--brand-press)}
 .stat-flash { animation: vt-flash 1.2s var(--ease-out); }
 .stat-delta { animation: vt-pop-in var(--dur-spring) var(--ease-spring) backwards; }
 
+/* Mapa da frota */
+.map-pulse { width: 24px; height: 24px; border-radius: 50%; pointer-events: none; }
+.map-pulse::before, .map-pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--ink-900); opacity: .5; animation: vt-pulse-ring 1.8s var(--ease-out) infinite; }
+.map-pulse::after { animation-delay: .9s; }
+@media (prefers-reduced-motion: reduce) { .map-pulse::before, .map-pulse::after { animation: none; opacity: 0; } }
+.vt-popup .maplibregl-popup-content { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-inverse); color: #fff; box-shadow: var(--shadow-2); animation: vt-pop-in var(--dur-base) var(--ease-out) backwards; }
+.vt-popup .maplibregl-popup-tip { border-top-color: var(--surface-inverse) !important; border-bottom-color: var(--surface-inverse) !important; }
+.vt-tip { display: flex; flex-direction: column; gap: 2px; font: var(--type-caption); }
+.vt-tip strong { font: 700 13px/1.2 var(--font-mono); }
+.fleet-chip:hover { border-color: var(--ink-400) !important; }
+.fleet-chip:active { transform: scale(var(--press-scale)); }
+.chip-clear { height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--text-primary); font: var(--fw-semibold) 12px/1 var(--font-sans); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; animation: vt-pop-in var(--dur-base) var(--ease-out) backwards; }
+.replay-bar { animation: vt-fade-up var(--dur-slow) var(--ease-screen) backwards; }
+.speed-chip { height: 30px; min-width: 44px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface-card); font: 700 12px/1 var(--font-mono); color: var(--text-primary); cursor: pointer; }
+.replay-range { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; background: linear-gradient(to right, var(--blue-500) var(--progress, 0%), var(--ink-200) var(--progress, 0%)); cursor: pointer; }
+.replay-range::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 4px solid var(--blue-500); box-shadow: var(--shadow-1); transition: transform var(--dur-fast) var(--ease-out); }
+.replay-range::-webkit-slider-thumb:hover { transform: scale(1.15); }
+.replay-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 4px solid var(--blue-500); }
+
 /* Carregamento */
 .skeleton { background: linear-gradient(90deg, var(--ink-100) 25%, var(--ink-50) 50%, var(--ink-100) 75%); background-size: 200% 100%; animation: vt-shimmer 1.4s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

@@ -3,24 +3,41 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
+import type { GeoJSONSource, Map as MlMap, Marker, Popup } from 'maplibre-gl';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { useRealtime } from '@/lib/realtime';
-import { STATUS_COLOR, VEHICLE_STATUSES } from '@/lib/status';
+import { useRealtime, type FleetVehicle } from '@/lib/realtime';
+import { STATUS_COLOR, STATUS_LABEL, VEHICLE_STATUSES } from '@/lib/status';
 import { formatBRL } from '@/lib/format';
+import { anyMoved, batteryHex, interpolatePositions, positionsOf, type LngLat } from '@/lib/map-anim';
+import { easeInOutCubic, prefersReducedMotion, tween } from '@/lib/motion';
+import { dialogStack } from '@/lib/focus';
 import { MapView } from '@/components/MapView';
 import { VehicleSheet } from '@/components/VehicleSheet';
 import { Field, Select } from '@/components/ui';
 import { FleetStatus } from '@/ds/FleetStatus';
 import { StatTile, StatTileSkeleton } from '@/ds/StatTile';
 import { Button } from '@/ds/Button';
+import { IconButton } from '@/ds/IconButton';
 import { canOpen } from '@/lib/permissions';
 import type { VehicleStatus } from '@/lib/types';
 
 const FLEET_SRC = 'fleet';
+/** Tempo do deslize do pin até a nova posição (telemetria chega a cada 5 s em aluguel). */
+const MOVE_MS = 900;
 const pct = (n: number) => `${n}%`;
 const colorExpr = ['match', ['get', 'status'], ...VEHICLE_STATUSES.flatMap((s) => [s, STATUS_COLOR[s]]), '#9AA0A6'] as never;
+
+function toFeatures(list: FleetVehicle[]): GeoJSON.FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: list.map((v) => ({
+      type: 'Feature',
+      geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
+      properties: { id: v.id, code: v.code, status: v.status, battery: v.batteryPct, batteryColor: batteryHex(v.batteryPct) },
+    })),
+  };
+}
 
 export default function FleetPage() {
   const params = useSearchParams();
@@ -33,6 +50,7 @@ export default function FleetPage() {
   const [showHeat, setShowHeat] = useState(false);
   const [replay, setReplay] = useState(false);
   const mapRef = useRef<MlMap | null>(null);
+  const pulseRef = useRef<Marker | null>(null);
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
@@ -52,12 +70,27 @@ export default function FleetPage() {
     router.replace(id ? `/fleet?vehicle=${id}` : '/fleet', { scroll: false });
   }, [router]);
 
+  // Esc fecha a ficha da moto (quando nenhum diálogo está aberto).
+  useEffect(() => {
+    if (!selected) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || dialogStack.size() > 0) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+      select(null);
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [selected, select]);
+
   // Mapa: fonte com cluster, camadas e interação.
   const onReady = useCallback((map: MlMap) => {
     mapRef.current = map;
     map.addSource(FLEET_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, cluster: true, clusterRadius: 44, clusterMaxZoom: 14 });
     map.addLayer({ id: 'clusters', type: 'circle', source: FLEET_SRC, filter: ['has', 'point_count'], paint: { 'circle-color': '#15181A', 'circle-radius': ['step', ['get', 'point_count'], 12, 5, 16, 15, 20, 40, 26], 'circle-opacity': 0.85, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-    map.addLayer({ id: 'vehicles', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': colorExpr, 'circle-radius': 8, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
+    // Anel de bateria por fora do pin (mesma regra da BatteryPill), depois o pin na cor do status.
+    map.addLayer({ id: 'vehicles-battery', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': ['get', 'batteryColor'] as never, 'circle-radius': 11.5, 'circle-opacity': 0.95 } });
+    map.addLayer({ id: 'vehicles', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': colorExpr, 'circle-radius': 7.5, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 } });
     map.addLayer({ id: 'vehicle-selected', type: 'circle', source: FLEET_SRC, filter: ['==', ['get', 'id'], ''], paint: { 'circle-color': colorExpr, 'circle-radius': 12, 'circle-stroke-color': '#15181A', 'circle-stroke-width': 3 } });
     map.on('click', 'vehicles', (e) => { const id = e.features?.[0]?.properties?.id as string | undefined; if (id) select(id); });
     map.on('click', 'clusters', async (e) => {
@@ -65,23 +98,59 @@ export default function FleetPage() {
       if (!f) return;
       const src = map.getSource(FLEET_SRC) as GeoJSONSource;
       const zoom = await src.getClusterExpansionZoom(f.properties?.cluster_id as number);
-      map.easeTo({ center: (f.geometry as GeoJSON.Point).coordinates as [number, number], zoom });
+      // Abre o grupo com um zoom suave (curto com movimento reduzido).
+      map.easeTo({ center: (f.geometry as GeoJSON.Point).coordinates as [number, number], zoom, duration: prefersReducedMotion() ? 0 : 650, easing: easeInOutCubic });
     });
     for (const l of ['vehicles', 'clusters']) {
       map.on('mouseenter', l, () => (map.getCanvas().style.cursor = 'pointer'));
       map.on('mouseleave', l, () => (map.getCanvas().style.cursor = ''));
     }
-    setMapReady(true);
+    // Dica ao passar o mouse: código, status e bateria.
+    import('maplibre-gl').then((ml) => {
+      if (mapRef.current !== map) return;
+      let popup: Popup | null = null;
+      map.on('mouseenter', 'vehicles', (e) => {
+        const p = e.features?.[0]?.properties as { code?: string; status?: VehicleStatus; battery?: number } | undefined;
+        if (!p?.code) return;
+        const el = document.createElement('div');
+        el.className = 'vt-tip';
+        const strong = document.createElement('strong');
+        strong.textContent = p.code;
+        const span = document.createElement('span');
+        span.textContent = `${p.status ? STATUS_LABEL[p.status] : ''} · ${p.battery ?? '—'}%`;
+        el.append(strong, span);
+        popup = new ml.Popup({ closeButton: false, closeOnClick: false, offset: 14, className: 'vt-popup' })
+          .setLngLat((e.features![0].geometry as GeoJSON.Point).coordinates as [number, number]).setDOMContent(el).addTo(map);
+      });
+      map.on('mouseleave', 'vehicles', () => { popup?.remove(); popup = null; });
+      // Pulso da moto selecionada (HTML, para usar vt-pulse-ring e respeitar movimento reduzido no CSS).
+      const el = document.createElement('div');
+      el.className = 'map-pulse';
+      el.setAttribute('aria-hidden', 'true');
+      pulseRef.current = new ml.Marker({ element: el });
+      setMapReady(true);
+    });
   }, [select]);
 
+  // Posições: o pin desliza da posição desenhada até a nova (vehicle.position), sem saltar.
+  const drawn = useRef<Map<string, LngLat>>(new Map());
+  const cancelMove = useRef<() => void>(() => {});
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
     const src = map.getSource(FLEET_SRC) as GeoJSONSource | undefined;
-    src?.setData({
-      type: 'FeatureCollection',
-      features: shown.map((v) => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [v.lng, v.lat] }, properties: { id: v.id, code: v.code, status: v.status } })),
-    });
+    if (!src) return;
+    cancelMove.current();
+    const from = drawn.current;
+    const paint = (list: FleetVehicle[]) => {
+      src.setData(toFeatures(list));
+      drawn.current = positionsOf(list);
+      const sel = list.find((v) => v.id === selectedRef.current);
+      if (sel) pulseRef.current?.setLngLat([sel.lng, sel.lat]);
+    };
+    if (from.size === 0 || !anyMoved(from, shown)) { paint(shown); return; }
+    cancelMove.current = tween({ duration: MOVE_MS, reduced: prefersReducedMotion(), onUpdate: (t) => paint(interpolatePositions(from, shown, t)) });
+    return () => cancelMove.current();
   }, [shown, mapReady]);
 
   // Enquadra a frota uma vez, quando os dados chegam (sem moto selecionada).
@@ -100,7 +169,10 @@ export default function FleetPage() {
     if (!mapReady || !map) return;
     map.setFilter('vehicle-selected', ['==', ['get', 'id'], selected ?? '']);
     const v = vehicles.find((x) => x.id === selected);
-    if (v && !replay) map.easeTo({ center: [v.lng, v.lat], zoom: Math.max(map.getZoom(), 15), duration: 600 });
+    const pulse = pulseRef.current;
+    if (v && pulse) pulse.setLngLat([v.lng, v.lat]).addTo(map);
+    else pulse?.remove();
+    if (v && !replay) map.easeTo({ center: [v.lng, v.lat], zoom: Math.max(map.getZoom(), 15), duration: prefersReducedMotion() ? 0 : 600 });
     // Centraliza só ao trocar de moto.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, mapReady]);
@@ -131,7 +203,7 @@ export default function FleetPage() {
   return (
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 320 }}>
-        <MapView onReady={onReady} onDestroy={() => { mapRef.current = null; setMapReady(false); }} />
+        <MapView onReady={onReady} onDestroy={() => { pulseRef.current?.remove(); pulseRef.current = null; mapRef.current = null; drawn.current = new Map(); setMapReady(false); }} />
         <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
           {dash.data ? (
             <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
@@ -146,13 +218,15 @@ export default function FleetPage() {
               {[0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />)}
             </div>
           ) : null}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', pointerEvents: 'auto' }}>
-            <FleetStatus status="free" count={counts.free ?? 0} selected={filter === 'free'} onClick={() => setFilter(filter === 'free' ? null : 'free')} style={{ boxShadow: 'var(--shadow-1)' }} />
-            {VEHICLE_STATUSES.filter((s) => s !== 'free').map((s) => (
+          <div role="group" aria-label="Filtrar motos por status" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', pointerEvents: 'auto' }}>
+            {VEHICLE_STATUSES.map((s) => (
               <FleetStatus key={s} status={s} count={counts[s] ?? 0} selected={filter === s} onClick={() => setFilter(filter === s ? null : s)} style={{ boxShadow: 'var(--shadow-1)' }} />
             ))}
+            {filter && (
+              <button type="button" className="chip-clear" onClick={() => setFilter(null)} aria-label="Limpar filtro de status">Limpar filtro</button>
+            )}
             {canHeat && (
-              <Button size="sm" variant={showHeat ? 'dark' : 'secondary'} icon="Flame" testId="heat-toggle" style={{ height: 30, background: showHeat ? undefined : '#fff', color: showHeat ? undefined : 'var(--text-primary)', borderColor: 'var(--border-subtle)' }} onClick={() => setShowHeat(!showHeat)}>Demanda</Button>
+              <Button size="sm" variant={showHeat ? 'dark' : 'secondary'} icon="Flame" testId="heat-toggle" style={{ height: 30, background: showHeat ? undefined : '#fff', color: showHeat ? undefined : 'var(--text-primary)', borderColor: showHeat ? 'transparent' : 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => setShowHeat(!showHeat)}>Demanda</Button>
             )}
           </div>
         </div>
@@ -163,10 +237,17 @@ export default function FleetPage() {
   );
 }
 
-/** Replay de trajeto: linha no mapa e linha do tempo para mover o marcador. */
+const SPEEDS = [1, 4, 16] as const;
+
+/**
+ * Replay de trajeto: a rota se desenha ao carregar, o trecho percorrido fica forte e o resto claro;
+ * play/pausa anima o marcador pela linha do tempo (velocidade 1x, 4x, 16x).
+ */
 function ReplayBar({ vehicleId, mapRef, mapReady }: { vehicleId: string; mapRef: React.MutableRefObject<MlMap | null>; mapReady: boolean }) {
   const [hours, setHours] = useState<'2' | '24' | '168'>('24');
   const [idx, setIdx] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(4);
   const track = useQuery({
     queryKey: ['track', vehicleId, hours],
     queryFn: () => {
@@ -176,22 +257,35 @@ function ReplayBar({ vehicleId, mapRef, mapReady }: { vehicleId: string; mapRef:
     },
   });
   const points = useMemo(() => track.data?.points ?? [], [track.data]);
-  useEffect(() => setIdx(0), [points]);
+  useEffect(() => { setIdx(0); setPlaying(false); }, [points]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!mapReady || !map) return;
+    const ids = ['replay-line', 'replay-done', 'replay-pos'];
     const clean = () => {
-      for (const l of ['replay-line', 'replay-pos']) if (map.getLayer(l)) map.removeLayer(l);
-      for (const s of ['replay-line', 'replay-pos']) if (map.getSource(s)) map.removeSource(s);
+      for (const l of ids) if (map.getLayer(l)) map.removeLayer(l);
+      for (const s of ids) if (map.getSource(s)) map.removeSource(s);
     };
     clean();
     if (points.length === 0) return clean;
-    map.addSource('replay-line', { type: 'geojson', data: { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: points.map((p) => [p.lng, p.lat]) } } });
-    map.addLayer({ id: 'replay-line', type: 'line', source: 'replay-line', paint: { 'line-color': '#2F7FE0', 'line-width': 4 } });
-    map.addSource('replay-pos', { type: 'geojson', data: { type: 'Point', coordinates: [points[0].lng, points[0].lat] } });
+    const coords = points.map((p) => [p.lng, p.lat]);
+    const line = (c: number[][]): GeoJSON.Feature => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c.length > 1 ? c : [c[0], c[0]] } });
+    map.addSource('replay-line', { type: 'geojson', data: line(coords.slice(0, 1)) });
+    map.addLayer({ id: 'replay-line', type: 'line', source: 'replay-line', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2F7FE0', 'line-width': 4, 'line-opacity': 0.35 } });
+    map.addSource('replay-done', { type: 'geojson', data: line(coords.slice(0, 1)) });
+    map.addLayer({ id: 'replay-done', type: 'line', source: 'replay-done', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: { 'line-color': '#2F7FE0', 'line-width': 4.5 } });
+    map.addSource('replay-pos', { type: 'geojson', data: { type: 'Point', coordinates: coords[0] } });
     map.addLayer({ id: 'replay-pos', type: 'circle', source: 'replay-pos', paint: { 'circle-radius': 9, 'circle-color': '#fff', 'circle-stroke-color': '#2F7FE0', 'circle-stroke-width': 4 } });
-    return clean;
+    // A rota "se desenha" (700ms) e o mapa enquadra o trajeto.
+    const stop = tween({ duration: 700, reduced: prefersReducedMotion(), onUpdate: (t) => {
+      const n = Math.max(1, Math.ceil(coords.length * t));
+      (map.getSource('replay-line') as GeoJSONSource | undefined)?.setData(line(coords.slice(0, n)));
+    } });
+    const lngs = coords.map((c) => c[0]);
+    const lats = coords.map((c) => c[1]);
+    if (coords.length > 1) map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: { top: 140, bottom: 140, left: 60, right: 60 }, maxZoom: 16, duration: prefersReducedMotion() ? 0 : 600 });
+    return () => { stop(); clean(); };
   }, [points, mapReady, mapRef]);
 
   useEffect(() => {
@@ -199,22 +293,42 @@ function ReplayBar({ vehicleId, mapRef, mapReady }: { vehicleId: string; mapRef:
     const p = points[idx];
     if (!map || !p) return;
     (map.getSource('replay-pos') as GeoJSONSource | undefined)?.setData({ type: 'Point', coordinates: [p.lng, p.lat] });
+    const done = points.slice(0, idx + 1).map((x) => [x.lng, x.lat]);
+    (map.getSource('replay-done') as GeoJSONSource | undefined)?.setData({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: done.length > 1 ? done : [done[0], done[0]] } });
   }, [idx, points, mapRef]);
 
+  // Reprodução: ~8 pontos por segundo em 1x.
+  useEffect(() => {
+    if (!playing || points.length === 0) return;
+    const h = setInterval(() => {
+      setIdx((i) => {
+        if (i >= points.length - 1) { setPlaying(false); return i; }
+        return Math.min(points.length - 1, i + 1);
+      });
+    }, 125 / speed);
+    return () => clearInterval(h);
+  }, [playing, speed, points.length]);
+
   const p = points[idx];
+  const progress = points.length > 1 ? idx / (points.length - 1) : 0;
   return (
-    <div data-testid="replay-bar" style={{ position: 'absolute', left: 16, right: 16, bottom: 24, background: 'var(--glass-bg, rgba(255,255,255,.9))', backdropFilter: 'blur(16px)', borderRadius: 'var(--radius-lg)', padding: 14, boxShadow: 'var(--shadow-2)', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+    <div data-testid="replay-bar" className="replay-bar" style={{ position: 'absolute', left: 16, right: 60, bottom: 24, background: 'var(--glass-bg)', backdropFilter: 'var(--blur-glass)', WebkitBackdropFilter: 'var(--blur-glass)', borderRadius: 'var(--radius-lg)', padding: 14, boxShadow: 'var(--shadow-2)', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
       <div style={{ width: 150 }}>
         <Field label="Período">
           <Select value={hours} onChange={setHours} options={[{ value: '2', label: 'Últimas 2 h' }, { value: '24', label: 'Últimas 24 h' }, { value: '168', label: 'Últimos 7 dias' }]} />
         </Field>
       </div>
       {points.length === 0 ? (
-        <span style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{track.isLoading ? 'Carregando trajeto...' : 'Sem trajeto no período.'}</span>
+        <span role="status" style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{track.isLoading ? 'Carregando trajeto...' : 'Sem trajeto no período. Tente um período maior.'}</span>
       ) : (
         <>
-          <input type="range" aria-label="Linha do tempo" min={0} max={points.length - 1} value={idx} onChange={(e) => setIdx(Number(e.target.value))} style={{ flex: 1, minWidth: 160 }} />
-          <span style={{ font: '500 12px/1.3 var(--font-mono)', color: 'var(--text-secondary)' }}>
+          <IconButton icon={playing ? 'Pause' : 'Play'} variant="dark" size={40} label={playing ? 'Pausar replay' : 'Reproduzir replay'}
+            onClick={() => { if (!playing && idx >= points.length - 1) setIdx(0); setPlaying(!playing); }} />
+          <button type="button" className="speed-chip" onClick={() => setSpeed(SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length])} aria-label={`Velocidade ${speed}x. Trocar`}>{speed}x</button>
+          <input type="range" className="replay-range" aria-label="Linha do tempo" min={0} max={points.length - 1} value={idx}
+            onChange={(e) => { setPlaying(false); setIdx(Number(e.target.value)); }}
+            style={{ flex: 1, minWidth: 160, ['--progress' as string]: `${progress * 100}%` }} />
+          <span style={{ font: '500 12px/1.3 var(--font-mono)', color: 'var(--text-secondary)', minWidth: 190, textAlign: 'right' }}>
             {p ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'medium' }).format(new Date(p.recordedAt)) : ''} · {p ? Math.round(p.speedKmh) : 0} km/h
           </span>
         </>
