@@ -1,6 +1,6 @@
 import type { StaffGroup } from './types';
 
-export type MenuKey = 'fleet' | 'alerts' | 'zones' | 'customers' | 'tasks' | 'finance' | 'settings' | 'team';
+export type MenuKey = 'fleet' | 'alerts' | 'zones' | 'customers' | 'tasks' | 'finance' | 'settings' | 'depots' | 'pickups' | 'handovers' | 'team';
 
 export interface MenuItem {
   key: MenuKey;
@@ -19,6 +19,11 @@ export const MENU: MenuItem[] = [
   { key: 'tasks', label: 'Operação', href: '/tasks', icon: 'ClipboardList', groups: ['admin', 'operacao'] },
   { key: 'finance', label: 'Financeiro', href: '/finance', icon: 'ChartColumn', groups: ['admin', 'financeiro'] },
   { key: 'settings', label: 'Preços e planos', href: '/settings', icon: 'SlidersHorizontal', groups: ['admin', 'financeiro'] },
+  // Retirada em galpão (spec 2026-10-22 §6). `campo` não usa o painel; financeiro só lê o cadastro (GET /depots).
+  // Depois de Financeiro/Preços: a primeira seção de cada grupo é a tela inicial (financeiro continua em /finance).
+  { key: 'depots', label: 'Galpões', href: '/galpoes', icon: 'Warehouse', groups: ['admin', 'operacao', 'financeiro'] },
+  { key: 'pickups', label: 'Retiradas', href: '/retiradas', icon: 'CalendarClock', groups: ['admin', 'operacao'] },
+  { key: 'handovers', label: 'Entregas', href: '/entregas', icon: 'PackageCheck', groups: ['admin', 'operacao', 'suporte'] },
   { key: 'team', label: 'Equipe e acessos', href: '/team', icon: 'KeyRound', groups: ['admin'] },
 ];
 
@@ -42,7 +47,9 @@ export type Action =
   | 'task.create'
   | 'settings.edit'
   | 'support.reply'
-  | 'kyc.review';
+  | 'kyc.review'
+  | 'depot.edit'
+  | 'depot.deactivate';
 
 const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'vehicle.command': ['admin', 'operacao'],
@@ -57,6 +64,9 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'settings.edit': ['admin'],
   'support.reply': ['admin', 'suporte'],
   'kyc.review': ['admin', 'suporte'],
+  'depot.edit': ['admin', 'operacao'],
+  // Não há DELETE no contrato: "desativar" (PATCH active=false) fica só com o admin.
+  'depot.deactivate': ['admin'],
 };
 
 export function can(groups: StaffGroup[], action: Action): boolean {

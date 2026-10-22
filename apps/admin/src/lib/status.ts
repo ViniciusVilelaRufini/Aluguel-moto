@@ -11,8 +11,8 @@ export const STATUS_COLOR: Record<VehicleStatus, string> = {
   blocked: '#E04E42',
   maintenance: '#8B7CF6',
   offline: '#9AA0A6',
-  // Galpão: sem token próprio ainda (a task do painel define); provisório = cor de atenção (sun-400).
-  awaiting_pickup: '#FBC531',
+  // Galpão: token próprio `--status-awaiting-pickup` = teal-500 (docs/design/evolucoes-admin.md).
+  awaiting_pickup: '#13A8A8',
 };
 
 export const STATUS_LABEL: Record<VehicleStatus, string> = {

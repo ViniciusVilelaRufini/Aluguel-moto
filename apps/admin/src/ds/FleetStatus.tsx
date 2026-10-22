@@ -4,6 +4,7 @@ import React from 'react';
 export const FLEET_STATUS = {
   free: ['Livre', 'var(--status-free)'], rented: ['Alugada', 'var(--status-rented)'], reserved: ['Reservada', 'var(--status-reserved)'], paused: ['Pausada', 'var(--status-paused)'],
   blocked: ['Bloqueada', 'var(--status-blocked)'], maintenance: ['Manutenção', 'var(--status-maintenance)'], offline: ['Sem sinal', 'var(--status-offline)'],
+  awaiting_pickup: ['Aguardando recolhimento', 'var(--status-awaiting-pickup)'],
 };
 export function FleetStatus({ status = 'free', count, variant = 'pill', selected = false, onClick, style }: any) {
   const [label, c] = FLEET_STATUS[status] || FLEET_STATUS.free;

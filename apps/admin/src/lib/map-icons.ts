@@ -74,3 +74,48 @@ export function registerFleetImages(map: MlMap): () => void {
   map.on('styleimagemissing', onMissing);
   return () => { map.off('styleimagemissing', onMissing); };
 }
+
+/** Pino do galpão: quadrado arredondado ink-900 com o ícone Warehouse (Lucide) e a ponta embaixo (âncora `bottom`). */
+export const DEPOT_ICON = 'pin-depot';
+
+export function depotImage(): Img | null {
+  const w = 36;
+  const h = 44;
+  const made = canvas(Math.max(w, h) * 2);
+  if (!made) return null;
+  const [, ctx] = made;
+  ctx.scale(2, 2);
+  ctx.fillStyle = '#15181A';
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2.5;
+  const r = 10;
+  ctx.beginPath();
+  ctx.moveTo(r + 1, 1);
+  ctx.arcTo(w - 1, 1, w - 1, 34, r);
+  ctx.arcTo(w - 1, 35, 1, 35, r);
+  ctx.lineTo(w / 2 + 6, 35);
+  ctx.lineTo(w / 2, h - 2);
+  ctx.lineTo(w / 2 - 6, 35);
+  ctx.arcTo(1, 35, 1, 1, r);
+  ctx.arcTo(1, 1, w - 1, 1, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.save();
+  ctx.translate(7, 6);
+  ctx.scale(22 / 24, 22 / 24);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.stroke(new Path2D('M22 8.35V20a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8.35A2 2 0 0 1 3.26 6.5l8-3.2a2 2 0 0 1 1.48 0l8 3.2A2 2 0 0 1 22 8.35Z'));
+  ctx.stroke(new Path2D('M6 18h12M6 14h12'));
+  ctx.strokeRect(6, 10, 12, 12);
+  ctx.restore();
+  return ctx.getImageData(0, 0, w * 2, h * 2);
+}
+
+export function registerDepotImage(map: MlMap): void {
+  const img = depotImage();
+  if (img && !map.hasImage(DEPOT_ICON)) map.addImage(DEPOT_ICON, img, { pixelRatio: 2 });
+}

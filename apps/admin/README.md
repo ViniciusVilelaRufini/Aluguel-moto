@@ -6,11 +6,14 @@ Next.js 14 (App Router, `output: 'export'`), TypeScript, Tailwind 3, MapLibre GL
 
 | Seção | Grupos | Conteúdo |
 |---|---|---|
-| Frota ao vivo | admin, operacao, suporte | Mapa ao vivo (cluster, filtros por status, mapa de calor de demanda), faixa de dashboard (ocupação, aluguéis ativos, receita do dia, alertas), ficha da moto no painel lateral (posição, bateria, velocidade, comandos com motivo e estado ao vivo, replay de trajeto, histórico, log de comandos) |
+| Frota ao vivo | admin, operacao, suporte | Mapa ao vivo (cluster, filtros por status, mapa de calor de demanda, pino do galpão, motos `awaiting_pickup` com halo e legenda), faixa de dashboard (ocupação, aluguéis ativos, receita do dia, alertas), ficha da moto no painel lateral (posição, bateria, velocidade, comandos com motivo e estado ao vivo, replay de trajeto, histórico, log de comandos) |
 | Alertas | admin, operacao, suporte | Fila por prioridade em tempo real; atribuir, resolver (com motivo), ver no mapa |
 | Cercas e regras | admin, operacao | Desenhar, editar e excluir polígonos (operação, devolução, proibida, velocidade reduzida) com validação (limite <= 20 em velocidade reduzida; qualquer limite <= 32) |
 | Clientes | admin, suporte | Abas **Clientes** (busca, ficha com verificação/atendimento/histórico, bloqueio, lista de restrição, CPF mascarado exceto admin), **Aluguéis** (filtros, detalhe com eventos, encerramento forçado, estorno) e **Suporte** (conversas, contestações, sinistros, ocorrências) |
 | Operação | admin, operacao | Kanban de tarefas de campo (criar, atribuir) e manutenção |
+| Galpões | admin, operacao (editam), financeiro (leitura) | Cadastro do galpão: ponto no mapa (clique), endereço, horário por dia da semana (HH:MM, abertura antes do fechamento), prazos (retirar agora, agendar até, tolerância) e motos do galpão por status. Desativar/Reativar só para admin (não há exclusão no contrato) |
+| Retiradas | admin, operacao | Agenda do dia por galpão (`GET /depots/{id}/pickups`): horário em São Paulo, Agora/Agendadas, filtro de status, só o primeiro nome do cliente, nunca o `pickupCode` |
+| Entregas | admin, operacao, suporte | Saídas e chegadas com fotos (links assinados), checklist, bateria e status; aba Disputas (`status=disputed`) com o motivo e "Abrir no suporte" (fila de Clientes > Suporte) |
 | Financeiro | admin, financeiro | Receita, ocupação, planos, cauções/seguros/estornos, exportação CSV; aba **Aluguéis** (mesmo painel de Clientes) |
 | Preços e planos | admin, financeiro (leitura) | Planos, taxas, seguros, cupons |
 | Equipe e acessos | admin | Usuários internos e permissões; aba **Auditoria** |
@@ -38,7 +41,9 @@ O token fica só em `sessionStorage`.
 pnpm --filter admin lint        # next lint + tsc
 pnpm --filter admin test        # Vitest: status->cor, menu por grupo, máscara de CPF, validação de cerca,
                                 # motion (reduced-motion, tween), interpolação de pins, ticker, toasts,
-                                # linha do tempo do comando, paleta (Ctrl+K) e foco preso em diálogo
+                                # linha do tempo do comando, paleta (Ctrl+K), foco preso em diálogo e galpão
+                                # (horários, agenda, entregas; componentes .tsx renderizados com react-dom/server
+                                # sobre respostas simuladas no formato do contrato)
 pnpm --filter admin test:e2e    # Playwright contra a API real (sobe `next dev` em :3100)
 ```
 
@@ -49,6 +54,17 @@ Passada visual (`e2e/visual.spec.ts`): abre todas as seções e abas em desktop 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 pnpm --filter admin build && npx serve apps/admin/out -l 3110
 E2E_PORT=3110 E2E_API_URL=http://localhost:3001 E2E_CHROME="C:/Program Files/Google/Chrome/Application/chrome.exe"   SHOTS_DIR=../../docs/design/screenshots/depois pnpm --filter admin test:e2e
+```
+
+### E2E do galpão (`e2e/galpao.spec.ts`)
+
+Cadastro, permissões, mapa e agenda rodam contra a API real (módulo de galpões). A reserva de galpão ainda não tem rota na API desta branch, então o teste da agenda grava a reserva direto no banco com o Prisma Client de `services/api` e só roda com `E2E_DATABASE_URL` (o mesmo `DATABASE_URL` da API); TODO: trocar por `POST /reservations` depois da Task 5. Entregas e disputas ficam em `test.skip` até a Task 6 (handovers).
+
+```bash
+# API do worktree numa porta livre (services/api/.env com DATABASE_URL próprio, migrate + seed)
+NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=http://localhost:3112 pnpm --filter admin build
+npx serve apps/admin/out -l 3113
+E2E_PORT=3113 E2E_API_URL=http://localhost:3112 E2E_DATABASE_URL=postgresql://volti:volti@localhost:5432/<banco>   pnpm --filter admin exec playwright test e2e/galpao.spec.ts --workers=1
 ```
 
 ## Design e movimento

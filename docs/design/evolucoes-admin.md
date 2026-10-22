@@ -74,6 +74,11 @@ Novos tokens criados (em `apps/admin/src/app/globals.css`, não no DS): `--ease-
 ### E16. Contagem nos clusters — proposto
 - Exige `glyphs` no estilo do mapa para camadas `symbol`. Em produção o Amazon Location fornece; localmente dependeria de um servidor de fontes externo. Alternativa: contagem em marcadores HTML. Fora do escopo desta passada.
 
+### E23. Galpão no mapa e status "aguardando recolhimento" — aplicado
+- **Token novo:** `--status-awaiting-pickup: var(--teal-500)` com o primitivo `--teal-500: #13A8A8` (mais `--teal-50`/`--teal-600` para fundos e texto), em `apps/admin/src/app/globals.css` e no hex de `lib/status.ts` (o MapLibre não lê variáveis CSS). A cor provisória era sun-400, igual a `paused`. O teal fica entre o verde de `free` e o azul de `rented` no círculo de matiz, mas com saturação e luminosidade próprias, e é o único status que ganha também uma marca de forma: **halo** (círculo de 24 px a 22% + contorno) em volta do pin, para não depender só da cor. Quando o DS adotar o token, `design-system/tokens/colors.css` recebe as mesmas linhas.
+- **Legenda:** o chip de status ganhou "Aguardando recolhimento" (`FLEET_STATUS`), e uma legenda fixa no canto inferior esquerdo do mapa mostra o pino do galpão e o halo, com a contagem.
+- **Pino do galpão:** quadrado arredondado `--ink-900` com o ícone Warehouse (Lucide) em branco e ponta embaixo (âncora `bottom`), desenhado em canvas como os pins de moto. Fica acima do ponto, então o cluster das motos guardadas continua visível sob a ponta. Dica ao passar o mouse: nome e endereço.
+
 ## Navegação e teclado
 
 ### A1. Paleta de comandos (Ctrl+K) — aplicado

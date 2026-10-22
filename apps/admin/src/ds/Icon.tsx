@@ -71,6 +71,10 @@ import {
   Send as ISend,
   CircleDot as ICircleDot,
   Flame as IFlame,
+  Warehouse as IWarehouse,
+  CalendarClock as ICalendarClock,
+  PackageCheck as IPackageCheck,
+  Image as IImage,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -145,6 +149,10 @@ const ICONS: Record<string, LucideIcon> = {
   Send: ISend,
   CircleDot: ICircleDot,
   Flame: IFlame,
+  Warehouse: IWarehouse,
+  CalendarClock: ICalendarClock,
+  PackageCheck: IPackageCheck,
+  Image: IImage,
 };
 
 interface IconProps {
