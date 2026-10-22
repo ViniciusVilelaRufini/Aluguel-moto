@@ -18,5 +18,6 @@ export 'src/widgets/motion.dart';
 export 'src/widgets/page_transitions.dart';
 export 'src/widgets/pressable.dart';
 export 'src/widgets/skeleton.dart';
+export 'src/widgets/ticker.dart';
 // Reexporta o enum usado por VehicleMarker/FleetStatusBadge.
 export 'package:volti_api/volti_api.dart' show VehicleStatus;
