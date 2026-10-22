@@ -30,7 +30,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get accountNoName => 'Sua conta';
 
   @override
-  String get accountTitle => 'Conta';
+  String get accountTitle => 'Minha conta';
 
   @override
   String get accumulatedCost => 'Custo acumulado';
@@ -938,4 +938,486 @@ class AppLocalizationsPt extends AppLocalizations {
   String cancelRenewalText(String date) {
     return 'Seu plano continua valendo até $date. Depois disso, não renova.';
   }
+
+  @override
+  String get adultBadge => '18+';
+
+  @override
+  String get attachmentFailed =>
+      'Não foi possível enviar o anexo. Toque nele para tentar de novo.';
+
+  @override
+  String attachmentFailedLabel(int n) {
+    return 'Anexo $n: falhou, toque para tentar de novo';
+  }
+
+  @override
+  String attachmentRemove(int n) {
+    return 'Remover anexo $n';
+  }
+
+  @override
+  String get attachmentRetryFirst =>
+      'Reenvie ou remova os anexos que falharam.';
+
+  @override
+  String attachmentSentLabel(int n) {
+    return 'Anexo $n: enviado';
+  }
+
+  @override
+  String get attachmentUploading => 'Enviando anexo…';
+
+  @override
+  String attachmentUploadingLabel(int n) {
+    return 'Anexo $n: enviando';
+  }
+
+  @override
+  String buyPackageText(int minutes, String price) {
+    return '$minutes minutos por $price, pagos com Pix. Os minutos entram assim que o pagamento for confirmado.';
+  }
+
+  @override
+  String buyPackageTitle(String name) {
+    return 'Comprar $name?';
+  }
+
+  @override
+  String get chatAttach => 'Anexar foto';
+
+  @override
+  String chatAttachments(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count fotos anexadas',
+      one: '1 foto anexada',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get chatPhotoOnly => 'Foto anexada';
+
+  @override
+  String get chatSupportAgent => 'Suporte Volti';
+
+  @override
+  String get chatYou => 'Você';
+
+  @override
+  String get claimAddMorePhoto => 'Adicionar outra foto';
+
+  @override
+  String get claimAddMorePoliceReport => 'Adicionar outra página do BO';
+
+  @override
+  String get claimAddPhoto => 'Tirar foto';
+
+  @override
+  String get claimAddPoliceReport => 'Fotografar o boletim de ocorrência';
+
+  @override
+  String claimAttachmentsFull(int max) {
+    return 'Limite de $max anexos atingido.';
+  }
+
+  @override
+  String get claimDescriptionHint => 'Onde, quando e como aconteceu';
+
+  @override
+  String get claimIntro =>
+      'O sinistro vai para a seguradora parceira. Quanto mais detalhes e fotos, mais rápida a análise.';
+
+  @override
+  String claimMinChars(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Faltam $count caracteres',
+      one: 'Falta 1 caractere',
+    );
+    return '$_temp0 (mínimo de 10)';
+  }
+
+  @override
+  String get claimPhotoCaptureHint => 'Mostre os danos, a moto e o local';
+
+  @override
+  String claimPhotosHint(int max) {
+    return 'Até $max anexos no total, contando o boletim de ocorrência.';
+  }
+
+  @override
+  String get claimPhotosTitle => 'Fotos';
+
+  @override
+  String get claimPoliceReportHint =>
+      'Opcional. Se você registrou um BO, fotografe as páginas.';
+
+  @override
+  String get claimPoliceReportRecommended =>
+      'Em furto ou acidente, o boletim de ocorrência agiliza a análise. Fotografe as páginas.';
+
+  @override
+  String get claimPoliceReportTitle => 'Boletim de ocorrência (BO)';
+
+  @override
+  String get claimSend => 'Enviar sinistro';
+
+  @override
+  String get claimTypeTitle => 'O que aconteceu?';
+
+  @override
+  String get consentsRow => 'Consentimentos e privacidade';
+
+  @override
+  String get credits => 'Créditos';
+
+  @override
+  String get disputeDetailsLabel => 'Detalhes (opcional)';
+
+  @override
+  String get disputeOrClaim => 'Contestar cobrança / sinistro';
+
+  @override
+  String get disputeReasonLabel => 'Motivo';
+
+  @override
+  String disputeRefund(String amount) {
+    return 'Estorno de $amount';
+  }
+
+  @override
+  String get downloadMyData => 'Baixar meus dados';
+
+  @override
+  String get emergencyName => 'Nome do contato';
+
+  @override
+  String get emergencyNameRequired => 'Informe o nome do contato';
+
+  @override
+  String get emergencyNameTooLong => 'Use até 120 caracteres';
+
+  @override
+  String get emergencyPhone => 'Celular do contato';
+
+  @override
+  String get emergencyPhoneHint =>
+      'Com DDD. Para outro país, comece com + e o código do país.';
+
+  @override
+  String get emergencyPhoneInvalid => 'Celular inválido. Use DDD + número.';
+
+  @override
+  String get emergencyRowEmpty => 'Cadastre para usar no SOS';
+
+  @override
+  String get emergencySaved => 'Contato de emergência salvo';
+
+  @override
+  String get emergencyTitle => 'Contato de emergência';
+
+  @override
+  String get emergencyWhyText =>
+      'No SOS da corrida, enviamos sua localização em tempo real direto para esta pessoa.';
+
+  @override
+  String get emergencyWhyTitle => 'Para que serve';
+
+  @override
+  String get groupHelp => 'Ajuda';
+
+  @override
+  String get groupPlan => 'Plano';
+
+  @override
+  String get groupPrivacy => 'Privacidade (LGPD)';
+
+  @override
+  String get groupTrips => 'Viagens';
+
+  @override
+  String get helpFaq1Title => 'Como destravo uma moto?';
+
+  @override
+  String get helpFaq1Text =>
+      'No mapa, toque em Escanear para andar e aponte para o QR no guidão, ou digite o número da moto. Escolha o plano e o seguro e confirme.';
+
+  @override
+  String get helpFaq2Title => 'O que é a caução?';
+
+  @override
+  String get helpFaq2Text =>
+      'Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela volta quando você encerra a corrida.';
+
+  @override
+  String get helpFaq3Title => 'Como encerro a corrida?';
+
+  @override
+  String get helpFaq3Text =>
+      'Pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar.';
+
+  @override
+  String get helpFaq4Title => 'Como uso a carteira e os pacotes?';
+
+  @override
+  String get helpFaq4Text =>
+      'Recarregue a carteira com Pix ou compre um pacote de minutos em Conta. O saldo é usado nas próximas corridas.';
+
+  @override
+  String get helpFaq5Title => 'Sofri um acidente. E agora?';
+
+  @override
+  String get helpFaq5Text =>
+      'Durante a corrida, toque em SOS. Depois, abra um sinistro em Conta > Contestar cobrança / sinistro, com fotos e o boletim de ocorrência.';
+
+  @override
+  String get helpStillNeed => 'Não achou a resposta? Fale com a equipe.';
+
+  @override
+  String get historyPickHint =>
+      'Escolha a corrida que você quer contestar ou para a qual quer abrir um sinistro.';
+
+  @override
+  String get historyPickTitle => 'Escolha a corrida';
+
+  @override
+  String get historyTitle => 'Histórico e recibos';
+
+  @override
+  String get kycNotVerified => 'Não verificada';
+
+  @override
+  String get kycVerified => 'Verificada';
+
+  @override
+  String get minutePackage => 'Pacote de minutos';
+
+  @override
+  String minutesDelta(int minutes) {
+    return '$minutes min';
+  }
+
+  @override
+  String get noActivePlan => 'Sem plano ativo · semanal ou mensal';
+
+  @override
+  String get payWithPix => 'Pagar com Pix';
+
+  @override
+  String get perMonth => '/mês';
+
+  @override
+  String get perWeek => '/semana';
+
+  @override
+  String get pixExpired => 'O Pix expirou. Gere um novo código.';
+
+  @override
+  String pixExpiresAt(String date) {
+    return 'Válido até $date';
+  }
+
+  @override
+  String get pixPayLater => 'Pagar depois';
+
+  @override
+  String get pixQrLabel => 'QR code do Pix';
+
+  @override
+  String get planMonthlyDescription => 'Cobrança recorrente no cartão todo mês';
+
+  @override
+  String get planWeeklyDescription =>
+      'Para entregadores · cobrança toda semana';
+
+  @override
+  String get remove => 'Remover';
+
+  @override
+  String get requestsClaims => 'Sinistros';
+
+  @override
+  String get requestsClaimsEmpty => 'Nenhum sinistro aberto.';
+
+  @override
+  String get requestsDisputes => 'Contestações';
+
+  @override
+  String get requestsDisputesEmpty => 'Nenhuma contestação aberta.';
+
+  @override
+  String get requestsNew => 'Nova contestação ou sinistro';
+
+  @override
+  String get requestsTitle => 'Contestações e sinistros';
+
+  @override
+  String get retryShort => 'Tentar';
+
+  @override
+  String get save => 'Salvar';
+
+  @override
+  String get statusAccepted => 'Aceita';
+
+  @override
+  String get statusApproved => 'Aprovado';
+
+  @override
+  String get statusOpen => 'Aberta';
+
+  @override
+  String get statusPaid => 'Pago';
+
+  @override
+  String get statusRejected => 'Recusado';
+
+  @override
+  String get statusSubmitted => 'Enviado';
+
+  @override
+  String get statusUnderReview => 'Em análise';
+
+  @override
+  String get subscribeCardHint => 'Cobrança recorrente neste cartão';
+
+  @override
+  String get subscribeConfirm => 'Assinar agora';
+
+  @override
+  String subscribeConfirmTitle(String plan) {
+    return 'Assinar o $plan';
+  }
+
+  @override
+  String get subscribeContinue => 'Continuar';
+
+  @override
+  String subscribePriceMonthly(String price) {
+    return '$price por mês';
+  }
+
+  @override
+  String subscribePriceWeekly(String price) {
+    return '$price por semana';
+  }
+
+  @override
+  String get subscribeRecurringMonthly =>
+      'Cobramos hoje e renovamos todo mês no cartão. Corridas no plano mensal não cobram tempo, só seguro e taxas. Cancele quando quiser.';
+
+  @override
+  String get subscribeRecurringWeekly =>
+      'Cobramos hoje e renovamos toda semana no cartão. Corridas no plano semanal não cobram tempo, só seguro e taxas. Cancele quando quiser.';
+
+  @override
+  String get subscriptionActive => 'Ativo';
+
+  @override
+  String get subscriptionBenefit =>
+      'Corridas no plano não cobram tempo, só seguro e taxas';
+
+  @override
+  String get subscriptionCanceled => 'Renovação cancelada';
+
+  @override
+  String subscriptionCard(String card) {
+    return 'Cartão $card';
+  }
+
+  @override
+  String get subscriptionCreated => 'Plano assinado';
+
+  @override
+  String subscriptionEndedOn(String date) {
+    return 'Terminou em $date';
+  }
+
+  @override
+  String get subscriptionEndingBadge => 'Termina';
+
+  @override
+  String subscriptionEndingText(String date) {
+    return 'A renovação foi cancelada. O plano vale até $date.';
+  }
+
+  @override
+  String subscriptionEndsOn(String date) {
+    return 'Termina em $date';
+  }
+
+  @override
+  String subscriptionNextCharge(String date, String price) {
+    return 'Próxima cobrança $date · $price';
+  }
+
+  @override
+  String get subscriptionPastDue => 'Pagamento pendente';
+
+  @override
+  String get subscriptionsPast => 'Planos anteriores';
+
+  @override
+  String get supportChat => 'Chat com o suporte';
+
+  @override
+  String get topUpAmountError => 'Escolha um valor entre R\$ 10 e R\$ 1.000';
+
+  @override
+  String get topUpAmountHint =>
+      'O crédito entra na carteira assim que o Pix for confirmado.';
+
+  @override
+  String get topUpAmountLabel => 'Valor';
+
+  @override
+  String get topUpDone => 'Carteira recarregada';
+
+  @override
+  String topUpGeneratePix(String amount) {
+    return 'Gerar Pix de $amount';
+  }
+
+  @override
+  String get topUpGeneratePixDisabled => 'Gerar Pix';
+
+  @override
+  String get topUpPaid => 'Pix confirmado';
+
+  @override
+  String topUpPaidAmount(String amount) {
+    return '$amount já estão na sua carteira.';
+  }
+
+  @override
+  String topUpPaidMinutes(int minutes) {
+    return '$minutes minutos já estão na sua carteira.';
+  }
+
+  @override
+  String topUpPixText(String amount) {
+    return 'Pague $amount com o QR ou o código copia e cola no app do seu banco.';
+  }
+
+  @override
+  String get topUpWallet => 'Recarregar carteira';
+
+  @override
+  String get trafficRules => 'Regras de trânsito para autopropelidos';
+
+  @override
+  String get trafficRulesTitle => 'Regras de trânsito';
+
+  @override
+  String get walletAndPackages => 'Carteira e pacotes de minutos';
+
+  @override
+  String get walletLedgerEmpty => 'Nenhum lançamento ainda.';
+
+  @override
+  String get walletLedgerTitle => 'Extrato';
 }

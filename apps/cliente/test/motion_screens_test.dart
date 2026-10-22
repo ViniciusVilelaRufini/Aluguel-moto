@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:volti_api/volti_api.dart';
+import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/router.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/account/account_screens.dart';
@@ -54,6 +56,7 @@ void main() {
     Widget app({required bool reduced}) => MediaQuery(
           data: MediaQueryData(disableAnimations: reduced),
           child: testApp(const AccountScreen(), overrides: [
+            backendProvider.overrideWithValue(_AccountBackend()),
             sessionProvider.overrideWith(() => FakeSession(session())),
           ]),
         );
@@ -71,4 +74,16 @@ void main() {
     expect(find.descendant(of: find.byType(VoltiFadeUp).first, matching: find.byType(Opacity)), findsNothing);
     expect(find.descendant(of: find.byType(VoltiFadeUp).first, matching: find.byType(Transform)), findsNothing);
   });
+}
+
+class _AccountBackend extends FakeBackend {
+  @override
+  Future<Wallet> wallet() async => Wallet((b) => b
+    ..balanceCents = 0
+    ..minutesBalance = 0
+    ..updatedAt = DateTime.utc(2026));
+  @override
+  Future<List<Subscription>> subscriptions() async => [];
+  @override
+  Future<List<Rental>> rentals() async => [];
 }

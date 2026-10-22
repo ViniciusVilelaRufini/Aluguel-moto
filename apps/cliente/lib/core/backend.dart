@@ -53,7 +53,10 @@ abstract class Backend {
   Future<PaymentCard> addCard(String token);
   Future<Wallet> wallet();
   Future<List<MinutePackage>> minutePackages();
-  Future<TopUp> topUp({required String packageId});
+  /// Recarga Pix: valor livre em reais ([amountCents], R$ 10 a R$ 1.000) ou pacote ([packageId]); um dos dois.
+  Future<TopUp> topUp({String? packageId, int? amountCents});
+  Future<TopUp> topUpStatus(String id);
+  Future<List<WalletEntry>> walletLedger();
   Future<RentalStartResult> startRental(StartRentalRequest request, {String? idempotencyKey});
   Future<Deposit> deposit(String id);
 
@@ -80,11 +83,15 @@ abstract class Backend {
   Future<Subscription> subscribe(SubscriptionPlanCode code);
   Future<void> cancelSubscription(String id);
   Future<Dispute> dispute(String rentalId, String reason, String? description);
-  Future<Claim> claim(String rentalId, ClaimType type, String description);
+  Future<Claim> claim(String rentalId, ClaimType type, String description, {List<String> photoKeys = const []});
+  Future<List<Dispute>> disputes();
+  Future<List<Claim>> claims();
+  /// URL pre-assinada para anexo (sinistro, boletim de ocorrencia, chat).
+  Future<PresignedUpload> supportUpload(UploadContentType contentType);
   Future<List<SupportConversation>> conversations();
   Future<SupportConversation> openConversation(String subject, String message, {String? rentalId});
   Future<List<SupportMessage>> messages(String conversationId);
-  Future<SupportMessage> sendMessage(String conversationId, String body);
+  Future<SupportMessage> sendMessage(String conversationId, String body, {List<String> attachmentKeys = const []});
   Future<LgpdExport> exportData();
   Future<AccountDeletion> deleteAccount();
 }
@@ -242,13 +249,24 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getWalletApi().listMinutePackages()).data!.items.toList());
 
   @override
-  Future<TopUp> topUp({required String packageId}) => _run(() async => (await _api.getWalletApi().createWalletTopUp(
-        idempotencyKey: newIdempotencyKey(),
-        topUpRequest: TopUpRequest((b) => b
-          ..method = TopUpMethod.pix
-          ..packageId = packageId),
-      ))
-          .data!);
+  Future<TopUp> topUp({String? packageId, int? amountCents}) {
+    assert((packageId == null) != (amountCents == null), 'informe packageId ou amountCents');
+    return _run(() async => (await _api.getWalletApi().createWalletTopUp(
+          idempotencyKey: newIdempotencyKey(),
+          topUpRequest: TopUpRequest((b) => b
+            ..method = TopUpMethod.pix
+            ..packageId = packageId
+            ..amountCents = amountCents),
+        ))
+            .data!);
+  }
+
+  @override
+  Future<TopUp> topUpStatus(String id) => _run(() async => (await _api.getWalletApi().getWalletTopUp(id: id)).data!);
+
+  @override
+  Future<List<WalletEntry>> walletLedger() =>
+      _run(() async => (await _api.getWalletApi().listWalletLedger(limit: 50)).data!.items.toList());
 
   @override
   Future<RentalStartResult> startRental(StartRentalRequest request, {String? idempotencyKey}) =>
@@ -377,13 +395,30 @@ class ApiBackend implements Backend {
           .data!);
 
   @override
-  Future<Claim> claim(String rentalId, ClaimType type, String description) =>
+  Future<Claim> claim(String rentalId, ClaimType type, String description, {List<String> photoKeys = const []}) =>
       _run(() async => (await _api.getSupportApi().createClaim(
-            claimCreate: ClaimCreate((b) => b
-              ..rentalId = rentalId
-              ..type = type
-              ..description = description
-              ..occurredAt = DateTime.now().toUtc()),
+            claimCreate: ClaimCreate((b) {
+              b
+                ..rentalId = rentalId
+                ..type = type
+                ..description = description
+                ..occurredAt = DateTime.now().toUtc();
+              if (photoKeys.isNotEmpty) b.photoObjectKeys.addAll(photoKeys);
+            }),
+          ))
+          .data!);
+
+  @override
+  Future<List<Dispute>> disputes() =>
+      _run(() async => (await _api.getSupportApi().listDisputes(limit: 50)).data!.items.toList());
+
+  @override
+  Future<List<Claim>> claims() => _run(() async => (await _api.getSupportApi().listClaims(limit: 50)).data!.items.toList());
+
+  @override
+  Future<PresignedUpload> supportUpload(UploadContentType contentType) =>
+      _run(() async => (await _api.getSupportApi().createSupportUpload(
+            uploadRequest: UploadRequest((b) => b..contentType = contentType),
           ))
           .data!);
 
@@ -406,10 +441,13 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getSupportApi().listSupportMessages(id: conversationId)).data!.items.toList());
 
   @override
-  Future<SupportMessage> sendMessage(String conversationId, String body) =>
+  Future<SupportMessage> sendMessage(String conversationId, String body, {List<String> attachmentKeys = const []}) =>
       _run(() async => (await _api.getSupportApi().sendSupportMessage(
             id: conversationId,
-            supportMessageCreate: SupportMessageCreate((b) => b..body = body),
+            supportMessageCreate: SupportMessageCreate((b) {
+              b.body = body;
+              if (attachmentKeys.isNotEmpty) b.attachmentObjectKeys.addAll(attachmentKeys);
+            }),
           ))
           .data!);
 
