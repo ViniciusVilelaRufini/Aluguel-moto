@@ -50,6 +50,28 @@ void main() {
       handle.dispose();
     });
 
+    testWidgets('leitor de tela ativa o segmento (SemanticsAction.tap)', (t) async {
+      final handle = t.ensureSemantics();
+      var value = 1;
+      await t.pumpWidget(StatefulBuilder(
+        builder: (context, setState) => _wrap(VoltiSegmentedControl<int>(
+          options: const [
+            VoltiSegment(value: 1, label: 'Um'),
+            VoltiSegment(value: 2, label: 'Dois'),
+          ],
+          value: value,
+          onChanged: (v) => setState(() => value = v),
+        )),
+      ));
+      final node = t.getSemantics(find.text('Dois'));
+      expect(node, isSemantics(hasTapAction: true, isSelected: false));
+      t.semantics.tap(find.semantics.byLabel('Dois'));
+      await t.pumpAndSettle();
+      expect(value, 2);
+      expect(t.getSemantics(find.text('Dois')), isSemantics(isSelected: true));
+      handle.dispose();
+    });
+
     testWidgets('reduced motion: troca sem animacao', (t) async {
       await t.pumpWidget(_wrap(
           VoltiSegmentedControl<int>(

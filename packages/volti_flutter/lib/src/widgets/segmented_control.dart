@@ -56,20 +56,25 @@ class VoltiSegmentedControl<T> extends StatelessWidget {
       Duration duration) {
     final on = o.value == value;
     final fg = on ? scheme.onSurface : scheme.onSurfaceVariant;
+    final VoidCallback? select = onChanged == null || on
+        ? null
+        : () {
+            VoltiHaptics.selection();
+            onChanged!(o.value);
+          };
+    // O toque fica no no de Semantics (excludeSemantics esconde o do
+    // GestureDetector): TalkBack/VoiceOver conseguem ativar o segmento.
     return Semantics(
       button: true,
       selected: on,
+      enabled: onChanged != null,
       inMutuallyExclusiveGroup: true,
       label: o.label,
       excludeSemantics: true,
+      onTap: select,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onTap: onChanged == null || on
-            ? null
-            : () {
-                VoltiHaptics.selection();
-                onChanged!(o.value);
-              },
+        onTap: select,
         child: AnimatedContainer(
           duration: duration,
           curve: VoltiMotion.easeOut,
