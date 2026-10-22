@@ -30,7 +30,7 @@ export interface BillingOptions {
 export const BILLING_OPTIONS = Symbol('BILLING_OPTIONS');
 export const DEFAULT_REVIEW_MAX_DAYS = 7;
 
-type HoldInput = { customerId: string; rentalId: string; method: 'card' | 'pix'; idempotencyKey: string };
+type HoldInput = { customerId: string; rentalId: string; method: 'card' | 'pix'; idempotencyKey: string; cardId?: string };
 type HoldResult = { depositId: string; status: 'held' | 'awaiting_pix' | 'failed'; pix?: PixCharge };
 type SettleResult = { paymentId: string; status: 'paid' | 'failed' };
 
@@ -149,7 +149,7 @@ export class RentalBillingService implements RentalBillingPort {
   }
 
   private async holdOnCard(payment: Payment, input: HoldInput, amountCents: number): Promise<HoldResult> {
-    const card = await this.customers.card(input.customerId);
+    const card = await this.customers.card(input.customerId, input.cardId);
     if (!card) {
       await this.state.transition(payment.id, 'failed', { failureReason: 'card_not_found' });
       return this.depositResult(await this.createDeposit(payment, input, { status: 'failed', amountCents }));
