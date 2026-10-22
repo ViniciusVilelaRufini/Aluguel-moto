@@ -556,6 +556,61 @@ void main() {
       expect(hero(t).debugTilesFailed, isFalse);
     });
 
+    testWidgets('Pixel 411x923 (DPR 2,625): os tiles pedidos cobrem todo o retangulo pintado do mapa', (t) async {
+      final png = await t.runAsync(() async {
+        final rec = ui.PictureRecorder();
+        Canvas(rec).drawRect(const Rect.fromLTWH(0, 0, 256, 256), Paint()..color = const Color(0xFF9E9E9E));
+        final img = await rec.endRecording().toImage(256, 256);
+        return (await img.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+      });
+      final requested = <String>{};
+      debugTileProviderFactory = () => _RecTiles(png!, requested);
+      addTearDown(() => debugTileProviderFactory = null);
+      t.view.physicalSize = const Size(1080, 2424);
+      t.view.devicePixelRatio = 2.625;
+      t.view.padding = const FakeViewPadding(top: 63, bottom: 42);
+      addTearDown(t.view.reset);
+      await _pumpWelcome(t, map: true);
+      for (var i = 0; i < 4; i++) {
+        await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await t.pump(const Duration(milliseconds: 300));
+      }
+      final fm = find.descendant(of: find.byKey(const Key('welcome-map')), matching: find.byType(FlutterMap));
+      final box = t.renderObject<RenderBox>(fm);
+      final layer = t.element(find.descendant(of: fm, matching: find.byType(TileLayer)).first);
+      final cam = MapCamera.of(layer);
+      // O viewport da camera e o tamanho pintado do mapa.
+      expect(cam.nonRotatedSize, box.size);
+      final hero = t.getRect(find.byType(WelcomeHero));
+      for (var step = 0; step < 3; step++) {
+        for (var x = hero.left + 1; x < hero.right; x += 20) {
+          for (var y = hero.top + 1; y < hero.bottom; y += 20) {
+            final local = box.globalToLocal(Offset(x, y));
+            final ll = cam.screenOffsetToLatLng(local);
+            final (tx, ty) = tileXY(ll.latitude, ll.longitude, 15);
+            expect(requested, contains('15/$tx/$ty'), reason: 'ponto ($x, $y) sem tile pedido');
+          }
+        }
+        await t.pump(const Duration(seconds: 4));
+      }
+    });
+
+    test('tiles de rede sem abortar pedidos (tile abortado vira transparente para sempre)', () {
+      final p = newTileProvider();
+      expect(p, isA<NetworkTileProvider>());
+      expect((p as NetworkTileProvider).abortObsoleteRequests, isFalse);
+    });
+
+    testWidgets('camada de tiles com folga (panBuffer e keepBuffer >= 1)', (t) async {
+      screen(t);
+      await t.pumpWidget(const ProviderScope(child: MaterialApp(home: VoltiMap(center: kHeroDepot))));
+      await t.pump();
+      for (final l in t.widgetList<TileLayer>(find.byType(TileLayer))) {
+        expect(l.panBuffer, greaterThanOrEqualTo(1));
+        expect(l.keepBuffer, greaterThanOrEqualTo(1));
+      }
+    });
+
     test('rotas das motos saem do galpao', () {
       for (final r in kHeroRoutes) {
         expect(r.first, kHeroDepot);
@@ -844,4 +899,15 @@ class _MemTiles extends TileProvider {
   final Uint8List png;
   @override
   ImageProvider getImage(TileCoordinates coordinates, TileLayer options) => MemoryImage(png);
+}
+
+class _RecTiles extends TileProvider {
+  _RecTiles(this.png, this.requested);
+  final Uint8List png;
+  final Set<String> requested;
+  @override
+  ImageProvider getImage(TileCoordinates c, TileLayer options) {
+    requested.add('${c.z}/${c.x}/${c.y}');
+    return MemoryImage(png);
+  }
 }

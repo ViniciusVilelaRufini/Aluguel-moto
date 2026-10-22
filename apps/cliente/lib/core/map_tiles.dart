@@ -121,8 +121,12 @@ const kMapUserAgentPackage = 'br.com.volti.volti_cliente';
 @visibleForTesting
 TileProvider Function()? debugTileProviderFactory;
 
-/// Provedor de tiles de rede (ou o de teste).
-TileProvider newTileProvider() => debugTileProviderFactory?.call() ?? NetworkTileProvider();
+/// Provedor de tiles de rede (ou o de teste). Sem `abortObsoleteRequests`: no
+/// flutter_map 8, um pedido abortado (tile que saiu da faixa por um instante, ex.:
+/// quando a camera se move logo apos abrir) "carrega" um PNG transparente e o tile
+/// continua na tela vazio para sempre, sem erro nem nova tentativa: era a costura
+/// vertical do hero no emulador (as colunas da direita ficavam transparentes).
+TileProvider newTileProvider() => debugTileProviderFactory?.call() ?? NetworkTileProvider(abortObsoleteRequests: false);
 
 /// Camada de tiles comum: servidor configuravel, `@2x` em telas densas, retentativa
 /// (o `NetworkTileProvider` ja usa `RetryClient`) e tiles com erro descartados quando
@@ -155,6 +159,9 @@ TileLayer voltiTileLayer(
     retinaMode: template.contains('{r}') && RetinaMode.isHighDensity(context),
     tileProvider: p,
     reset: reset,
+    // Uma volta extra de tiles alem da tela (a deriva e o mapa maior que a caixa).
+    panBuffer: 1,
+    keepBuffer: 2,
     evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
     errorTileCallback: (tile, error, _) {
       onError?.call();

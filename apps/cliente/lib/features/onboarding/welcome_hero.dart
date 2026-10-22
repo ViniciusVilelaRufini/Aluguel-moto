@@ -92,7 +92,12 @@ class WelcomeHero extends StatefulWidget {
     required this.texts,
     this.onMapFallback,
     this.overlap = 28,
+    this.layoutReady = true,
   });
+
+  /// A faixa ja e a definitiva (folha medida): so entao o mapa e criado, para nao
+  /// mover a camera logo depois de abrir (e pedir os tiles duas vezes).
+  final bool layoutReady;
 
   final double band, topInset, overlap;
   final bool mapOn;
@@ -320,7 +325,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
         final world = ListenableBuilder(
           listenable: _geometry,
           builder: (context, _) {
-            final ready = _geometry.zone != null;
+            final ready = _geometry.zone != null && widget.layoutReady;
             if (ready && _mapCenter == null) _mapCenter = _cameraFor(size).center;
             final target = _depotTarget(size);
             return Stack(

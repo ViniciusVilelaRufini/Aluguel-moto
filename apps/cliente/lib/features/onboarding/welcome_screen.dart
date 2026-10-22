@@ -249,6 +249,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                     batterySwap: l.welcomeHeroBatterySwap,
                   ),
                   onMapFallback: () => setState(() => _mapFailed = true),
+                  layoutReady: _sheetHeight != null,
                 ),
               ),
               Positioned.fill(
