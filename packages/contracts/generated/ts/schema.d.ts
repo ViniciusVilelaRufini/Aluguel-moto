@@ -5267,11 +5267,16 @@ export interface components {
          *     em 3 min (`failed`); cliente não devolveu em 3 min (`canceled`); estação não liberou a carregada em 3 min depois da
          *     devolução (`failed`, abre alerta para a operação); bateria devolvida depois do cancelamento/prazo sem carregada para
          *     liberar (`failed`, alerta: a operação leva uma bateria); bateria devolvida ou liberada consta instalada em outra moto
-         *     (`failed`, alerta: conferir a estação). Uma devolução que chega depois de `canceled_by_customer`, `return_timeout`
-         *     ou `station_timeout` vale: a troca volta para `releasing` (sem `endReason`) e a estação libera uma carregada.
+         *     (`failed`, alerta: conferir a estação); bateria devolvida depois do cancelamento/prazo, mas com o aluguel já
+         *     encerrado ou com outra troca aberta no aluguel (`return_after_close`: `failed`, a devolução fica registrada, alerta);
+         *     aluguel encerrado pelo staff (forçado ou chegada no galpão) com a troca ainda sem devolução (`rental_force_ended`:
+         *     `canceled`). Uma devolução que chega depois de `canceled_by_customer`, `return_timeout` ou `station_timeout`, com o
+         *     aluguel ainda em andamento e sem outra troca aberta, vale: a troca volta para `releasing` (sem `endReason`) e a
+         *     estação libera uma carregada. Devolução numa troca encerrada por qualquer outro motivo só entra no estoque (alerta
+         *     para a operação).
          * @enum {string}
          */
-        StationSwapEndReason: "canceled_by_customer" | "slot_closed_without_return" | "station_timeout" | "return_timeout" | "release_timeout" | "no_battery_after_return" | "serial_mismatch";
+        StationSwapEndReason: "canceled_by_customer" | "slot_closed_without_return" | "station_timeout" | "return_timeout" | "release_timeout" | "no_battery_after_return" | "serial_mismatch" | "return_after_close" | "rental_force_ended";
         StationSwapRequest: {
             /** @description Conteúdo do QR fixo da estação. */
             stationCode: string;

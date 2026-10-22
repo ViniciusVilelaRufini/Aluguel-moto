@@ -20,6 +20,10 @@ const StationSwapEndReason _$noBatteryAfterReturn =
     const StationSwapEndReason._('noBatteryAfterReturn');
 const StationSwapEndReason _$serialMismatch =
     const StationSwapEndReason._('serialMismatch');
+const StationSwapEndReason _$returnAfterClose =
+    const StationSwapEndReason._('returnAfterClose');
+const StationSwapEndReason _$rentalForceEnded =
+    const StationSwapEndReason._('rentalForceEnded');
 const StationSwapEndReason _$unknownDefaultOpenApi =
     const StationSwapEndReason._('unknownDefaultOpenApi');
 
@@ -39,6 +43,10 @@ StationSwapEndReason _$valueOf(String name) {
       return _$noBatteryAfterReturn;
     case 'serialMismatch':
       return _$serialMismatch;
+    case 'returnAfterClose':
+      return _$returnAfterClose;
+    case 'rentalForceEnded':
+      return _$rentalForceEnded;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -55,6 +63,8 @@ final BuiltSet<StationSwapEndReason> _$values =
   _$releaseTimeout,
   _$noBatteryAfterReturn,
   _$serialMismatch,
+  _$returnAfterClose,
+  _$rentalForceEnded,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -67,6 +77,8 @@ class _$StationSwapEndReasonMeta {
   StationSwapEndReason get releaseTimeout => _$releaseTimeout;
   StationSwapEndReason get noBatteryAfterReturn => _$noBatteryAfterReturn;
   StationSwapEndReason get serialMismatch => _$serialMismatch;
+  StationSwapEndReason get returnAfterClose => _$returnAfterClose;
+  StationSwapEndReason get rentalForceEnded => _$rentalForceEnded;
   StationSwapEndReason get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   StationSwapEndReason valueOf(String name) => _$valueOf(name);
   BuiltSet<StationSwapEndReason> get values => _$values;
@@ -91,6 +103,8 @@ class _$StationSwapEndReasonSerializer
     'releaseTimeout': 'release_timeout',
     'noBatteryAfterReturn': 'no_battery_after_return',
     'serialMismatch': 'serial_mismatch',
+    'returnAfterClose': 'return_after_close',
+    'rentalForceEnded': 'rental_force_ended',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -101,6 +115,8 @@ class _$StationSwapEndReasonSerializer
     'release_timeout': 'releaseTimeout',
     'no_battery_after_return': 'noBatteryAfterReturn',
     'serial_mismatch': 'serialMismatch',
+    'return_after_close': 'returnAfterClose',
+    'rental_force_ended': 'rentalForceEnded',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 
