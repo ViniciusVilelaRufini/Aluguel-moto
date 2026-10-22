@@ -21,7 +21,7 @@ import '../home/depot_providers.dart' show depotsProvider;
 import '../home/providers.dart';
 import '../pickup/depot_labels.dart';
 import '../ride/battery_sheet.dart' show rentalDepotProvider;
-import '../ride/ride_data.dart' show rideEventBusProvider, sharedZonesProvider;
+import '../ride/ride_data.dart' show ReturnScreensOpen, returnScreensOpenProvider, rideEventBusProvider, sharedZonesProvider;
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 
 /// Zonas de devolucao e onde a moto esta em relacao a elas.
@@ -97,6 +97,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   String? _error;
   Timer? _poll;
   StreamSubscription<RealtimeEvent>? _rideEvents;
+
+  /// Avisa a corrida embaixo que a devolucao cuida do fim do aluguel.
+  late final ReturnScreensOpen _openFlag;
   bool _finished = false;
   ReturnMode _mode = ReturnMode.point;
 
@@ -106,12 +109,14 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     // Eventos da corrida aberta embaixo (mesmo socket): enquanto esta tela esta
     // aberta, e ela que reage ao fim do aluguel.
     _rideEvents = ref.read(rideEventBusProvider).stream.listen(_onRideEvent);
+    _openFlag = ref.read(returnScreensOpenProvider)..count += 1;
   }
 
   @override
   void dispose() {
     _poll?.cancel();
     _rideEvents?.cancel();
+    _openFlag.count -= 1;
     super.dispose();
   }
 

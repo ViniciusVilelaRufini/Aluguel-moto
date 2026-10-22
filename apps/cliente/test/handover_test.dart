@@ -760,6 +760,64 @@ void main() {
       expect(find.descendant(of: find.byKey(const Key('return-depot')), matching: find.byType(CircularProgressIndicator)), findsNothing);
     });
 
+    testWidgets('folha "Trocar bateria" aberta: force_ended fecha a folha e abre o recibo', (t) async {
+      phone(t);
+      final b = HandoverBackend()
+        ..rentalNow = sampleRental()
+        ..stations = [station('st1', 'Faria Lima')];
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub, initial: '/ride');
+      await t.tap(find.text('Trocar bateria'));
+      await settle(t);
+      expect(find.byKey(const Key('swap-depot')), findsOneWidget);
+      hub.emit(const RentalUpdated(rentalId: 'r1', status: 'force_ended', elapsedSeconds: 600, costCents: 8900));
+      await settle(t);
+      expect(where(router), '/summary/r1');
+      expect(find.byKey(const Key('swap-depot')), findsNothing);
+    });
+
+    testWidgets('dialogo aberto na corrida: force_ended fecha o dialogo e abre o recibo', (t) async {
+      phone(t);
+      final b = HandoverBackend()..rentalNow = sampleRental();
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub, initial: '/ride');
+      await t.tap(find.text('Reportar problema'));
+      await settle(t);
+      expect(find.byType(Dialog), findsOneWidget);
+      hub.emit(const RentalUpdated(rentalId: 'r1', status: 'force_ended', elapsedSeconds: 600, costCents: 8900));
+      await settle(t);
+      expect(where(router), '/summary/r1');
+      expect(find.byType(Dialog), findsNothing);
+    });
+
+    testWidgets('folha aberta: handover.updated de return_depot tambem abre o recibo', (t) async {
+      phone(t);
+      final b = HandoverBackend()..rentalNow = sampleRental();
+      b.handovers['h-ret'] = handoverFixture(id: 'h-ret', type: HandoverType.returnDepot, rentalId: 'r1', reservationId: null, status: HandoverStatus.accepted);
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub, initial: '/ride');
+      await t.tap(find.text('Trocar bateria'));
+      await settle(t);
+      hub.emit(const HandoverUpdated(handoverId: 'h-ret', status: 'accepted'));
+      await settle(t);
+      expect(where(router), '/summary/r1');
+    });
+
+    testWidgets('devolucao aberta: rental.updated encerrado tem um handler so', (t) async {
+      phone(t);
+      final b = HandoverBackend()..rentalNow = sampleRental();
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub, initial: '/ride');
+      router.push('/return/r1');
+      await settle(t);
+      var navigations = 0;
+      router.routerDelegate.addListener(() => navigations++);
+      hub.emit(const RentalUpdated(rentalId: 'r1', status: 'ended', elapsedSeconds: 600, costCents: 8900));
+      await settle(t);
+      expect(where(router), '/summary/r1');
+      expect(navigations, 1);
+    });
+
     testWidgets('corrida aberta tambem abre o recibo com handover.updated de return_depot', (t) async {
       phone(t);
       final b = HandoverBackend()..rentalNow = sampleRental();

@@ -171,9 +171,18 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     }, onError: (_) {});
   }
 
-  /// A corrida esta no topo? Com a devolucao aberta por cima, quem reage ao fim
-  /// do aluguel e a devolucao (os eventos chegam a ela por [rideEventBusProvider]).
-  bool get _onTop => ModalRoute.of(context)?.isCurrent ?? true;
+  /// Devolucao aberta por cima? Entao e ela que reage ao fim do aluguel (os
+  /// eventos chegam a ela por [rideEventBusProvider]). Dialogo ou folha aberta
+  /// na corrida nao conta: a corrida fecha e abre o recibo.
+  bool get _returnOpen => ref.read(returnScreensOpenProvider).any;
+
+  /// Fim do aluguel: fecha dialogos e folhas abertos sobre a corrida e abre o recibo.
+  void _goToSummary(String rentalId) {
+    if (!mounted || _returnOpen) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) Navigator.of(context).popUntil((r) => r == route);
+    context.go('/summary/$rentalId');
+  }
 
   void _onEvent(RealtimeEvent e) {
     ref.read(rideEventBusProvider).add(e);
@@ -185,8 +194,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           _cost = e.costCents;
           _rental = _rental?.rebuild((b) => b..status = RentalStatus.values.firstWhere((s) => s.name == _camel(e.status), orElse: () => _rental!.status));
         });
-        if ((e.status == 'ended' || e.status == 'force_ended') && _onTop) {
-          context.go('/summary/${e.rentalId}');
+        if (e.status == 'ended' || e.status == 'force_ended') {
+          _goToSummary(e.rentalId);
         }
       case VehiclePositionEvent():
         setState(() {
@@ -224,10 +233,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   /// O operador registrou a chegada no galpao: o aluguel acabou, abre o recibo.
   Future<void> _onHandoverUpdated(String handoverId) async {
     final r = _rental;
-    if (r == null || !_onTop) return;
-    if (await isDepotReturnOf(ref.read(backendProvider), handoverId, r.id) && mounted) {
-      context.go('/summary/${r.id}');
-    }
+    if (r == null || _returnOpen) return;
+    if (await isDepotReturnOf(ref.read(backendProvider), handoverId, r.id)) _goToSummary(r.id);
   }
 
   /// Centraliza na moto. Antes do mapa existir (ou com o mapa desligado) nao faz nada.

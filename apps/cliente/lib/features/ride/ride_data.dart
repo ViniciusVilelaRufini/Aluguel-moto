@@ -26,6 +26,16 @@ final rideEventBusProvider = Provider<StreamController<RealtimeEvent>>((ref) {
   return c;
 });
 
+/// Quantas telas de devolucao estao abertas sobre a corrida. A [ReturnScreen]
+/// soma no `initState` e subtrai no `dispose`; a corrida le na hora do evento
+/// (sem rebuild) para deixar o fim do aluguel com a devolucao.
+class ReturnScreensOpen {
+  int count = 0;
+  bool get any => count > 0;
+}
+
+final returnScreensOpenProvider = Provider<ReturnScreensOpen>((ref) => ReturnScreensOpen());
+
 /// Quanto tempo as zonas ficam em cache entre telas (corrida, devolucao).
 const kZonesTtl = Duration(minutes: 5);
 
