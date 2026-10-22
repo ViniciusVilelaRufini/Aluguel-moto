@@ -256,3 +256,15 @@ Sem mudança no contrato (`packages/contracts` intacto). Migração nova `202610
 - **Job de ciclo de vida:** o `WHERE` usa o mesmo critério de `lifecycleTransition`, com a carência incluída, e a leitura pagina por id (200 por página).
 - **M4:** ler a amostra anterior, gravar a nova e somar o acumulado é um compare-and-set único em Lua sobre o `ts` lido (`RedisStore.hcas`). Quem perde a corrida relê e recalcula, e amostra repetida ou mais antiga é descartada. Entrega duplicada concorrente em duas instâncias conta uma vez, com teste contra o Redis real em `test/usage-tracker-redis.e2e-spec.ts`.
 - **M10:** `SubscriptionsService` passa a ser dependência obrigatória do `LgpdService`.
+
+## 2026-10-22 · agente do painel admin no contrato v2 (branch `feat/v2-admin`) · status: proposta
+
+O painel consome o contrato v2 sem mudanças em `packages/contracts`. As lacunas abaixo ficaram de fora porque o contrato não as expõe; ficam como proposta de mudança do contrato (todas aditivas).
+
+1. **Assinaturas para o staff.** Hoje `GET /payments/subscriptions[/{id}]`, `pause` e `resume` são só do cliente; o painel mostra o plano (`Customer.activePlanCode`), a moto fixa (`Vehicle.assignedSubscriptionId`) e o estado só depois do `PUT .../vehicle`. **Proposta:** `GET /customers/{id}/subscriptions` (admin, financeiro, suporte, operacao) e `POST /payments/subscriptions/{id}/pause|resume` com `staffAuth` (admin, suporte), motivo obrigatório e AuditLog, mesmas regras de limite de pausa.
+2. **Indicação (referral) para o staff.** Valores e elegibilidade vêm de variáveis de ambiente, sem relatório. **Proposta:** `GET/PUT /referrals/config` (admin; recompensa do indicado e de quem indicou em centavos, ativo) e `GET /reports/referrals?from&to` (admin, financeiro; indicações, resgates e valor creditado).
+3. **Configuração das janelas de manutenção.** `GET /me/maintenance-slots` usa janelas fixas (seg–sáb, 8–18 h). **Proposta:** `GET/PUT /maintenance/slots-config` (admin, operacao: dias, horário, duração, capacidade por janela, local) e filtro `source` em `GET /maintenance/tasks` (o painel hoje filtra pedidos de clientes na página carregada).
+4. **`operatorId` em `load`/`unload` da van.** `BatteryTransferRequest` vale só para a van de quem chama; o painel mostra a van de outro operador só para leitura. **Proposta:** `operatorId` opcional em `POST /batteries/van-stock/load|unload`, aceito só para admin/operacao, com AuditLog.
+5. **Relatório de cupons.** Só existe `Coupon.redemptions`. **Proposta:** `GET /reports/coupons?from&to` (admin, financeiro): resgates por cupom no período e desconto concedido em centavos, com `format=csv`.
+
+Regra de exibição adotada no painel (sem mudança de contrato): em Operação > Manutenção > Agenda e no histórico da moto, `operacao` vê só o primeiro nome do cliente; `admin` e `suporte` veem o nome inteiro (alinhado ao M2 da API para `campo`).
