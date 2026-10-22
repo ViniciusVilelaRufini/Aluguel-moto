@@ -391,14 +391,14 @@ void main() {
       rt.emit(const ZoneNotice(zoneType: 'reduced_speed', transition: 'ENTER', message: 'Área de pedestres.', speedLimitKmh: 6));
       await t.pump();
       await t.pump(const Duration(milliseconds: 500));
-      expect(find.text('Velocidade máxima: 6 km/h'), findsOneWidget);
+      expect(find.text('Velocidade reduzida · limite 6 km/h'), findsOneWidget);
       rt.emit(const ZoneNotice(zoneType: 'reduced_speed', transition: 'EXIT', message: 'Área de pedestres.'));
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
       // Saindo: o texto continua (ultimo aviso) enquanto a faixa encolhe.
-      expect(find.text('Velocidade máxima: 6 km/h'), findsOneWidget);
+      expect(find.text('Velocidade reduzida · limite 6 km/h'), findsOneWidget);
       await t.pump(const Duration(milliseconds: 500));
-      expect(find.text('Velocidade máxima: 6 km/h'), findsNothing);
+      expect(find.text('Velocidade reduzida · limite 6 km/h'), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
 

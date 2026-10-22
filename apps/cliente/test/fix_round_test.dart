@@ -57,9 +57,9 @@ class _EndBackend extends FakeBackend {
 Future<void> _endFlow(WidgetTester t) async {
   await t.tap(find.byType(PhotoCapture));
   await t.pumpAndSettle();
-  await t.tap(find.widgetWithText(VoltiButton, 'Encerrar corrida'));
+  await t.tap(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
   await t.pumpAndSettle();
-  await t.tap(find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(VoltiButton, 'Encerrar corrida')));
+  await t.tap(find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(VoltiButton, 'Travar e encerrar')));
   await t.pump();
   await t.pump(const Duration(milliseconds: 50));
 }
@@ -132,8 +132,8 @@ void main() {
 }
 
 Future<void> _endFlow2(WidgetTester t) async {
-  await t.tap(find.widgetWithText(VoltiButton, 'Encerrar corrida'));
+  await t.tap(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
   await t.pumpAndSettle();
-  await t.tap(find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(VoltiButton, 'Encerrar corrida')));
+  await t.tap(find.descendant(of: find.byType(Dialog), matching: find.widgetWithText(VoltiButton, 'Travar e encerrar')));
   await t.pumpAndSettle();
 }

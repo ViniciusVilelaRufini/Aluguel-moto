@@ -533,5 +533,141 @@
     }
   },
   "pickVehicleTaken": "Essa moto acabou de ser reservada. Escolha outra.",
-  "pickupZonesError": "Não conseguimos carregar os pontos de retirada."
+  "pickupZonesError": "Não conseguimos carregar os pontos de retirada.",
+  "fareLabel": "Tarifa",
+  "coverageBasicLong": "Seguro básico",
+  "coverageFullLong": "Seguro completo",
+  "unpauseRide": "Destravar",
+  "zoneReducedSpeed": "Velocidade reduzida",
+  "zoneForbidden": "Área proibida",
+  "zoneOperationEdge": "Limite da área de operação",
+  "wellbeingLead": "Detectamos uma possível queda. Sem resposta em ",
+  "wellbeingTail": ", acionamos o suporte.",
+  "wellbeingTimedOut": "Sem resposta: acionamos o suporte.",
+  "addEmergencyContact": "Cadastrar contato de emergência",
+  "noEmergencyContactHint": "Com um contato salvo, o link vai direto para ele.",
+  "reportOnly": "Só reportar",
+  "swapNoFee": "Trocar de moto sem nova taxa",
+  "returnPointTitle": "Ponto de devolução",
+  "returnOutsideShort": "Fora dos pontos verdes",
+  "returnCheckingShort": "Procurando pontos de devolução",
+  "returnStepPhoto": "Passo 1 de 2 · Foto",
+  "returnStepLock": "Passo 2 de 2 · Travar",
+  "returnPhotoTitle": "Fotografe a moto estacionada",
+  "takePhoto": "Tirar foto",
+  "returnPhotoHintDesign": "Mostre a moto inteira e a calçada livre",
+  "returnZoneRule": "Fora dos pontos verdes não é possível encerrar sem taxa.",
+  "returnOutsideBlocked": "Leve a moto até uma área verde do mapa para encerrar. Fora dela, encerrar só com o suporte, com taxa.",
+  "lockAndEnd": "Travar e encerrar",
+  "confirmingLock": "Confirmando…",
+  "returnPinLabel": "Ponto de devolução mais próximo",
+  "rideFinished": "Corrida finalizada",
+  "rideFinishedText": "Moto travada. Caução liberada.",
+  "receiptAndInvoice": "Recibo e nota fiscal",
+  "paidWithPix": "Pix",
+  "paidWithWallet": "Carteira Volti",
+  "receiptPdfPending": "O PDF fica pronto em instantes.",
+  "rateRideTrip": "Como foi a moto e a viagem?",
+  "ratingCommentHint": "Comentário (opcional)",
+  "finishSummary": "Concluir",
+  "farePerMinute": "{price}/min",
+  "@farePerMinute": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "farePerHour": "{price}/h",
+  "@farePerHour": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "farePerDay": "{price}/dia",
+  "@farePerDay": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "pausedFareSemantics": "Pausada, {price}",
+  "@pausedFareSemantics": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "zoneTitle": "{name} · limite {limit} km/h",
+  "@zoneTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "secondsShort": "{seconds} s",
+  "@secondsShort": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "shareWithNamedContact": "Enviar localização para {name}",
+  "@shareWithNamedContact": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "returnInsideZone": "{name} · você está dentro",
+  "@returnInsideZone": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "returnZonesMap": "Mapa com {count} pontos de devolução",
+  "@returnZonesMap": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paidWithCard": "Cartão •••• {last4}",
+  "@paidWithCard": {
+    "placeholders": {
+      "last4": {
+        "type": "String"
+      }
+    }
+  },
+  "invoiceNumberLabel": "NFS-e {number}",
+  "@invoiceNumberLabel": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "receiptOpenError": "Não foi possível abrir o recibo. Tente de novo.",
+  "shareLocationMessageTimed": "Estou numa corrida Volti e preciso de ajuda. Minha localização (link válido por 1 h): {url}",
+  "@shareLocationMessageTimed": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  }
 }

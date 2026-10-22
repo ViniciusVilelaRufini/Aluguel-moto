@@ -9,6 +9,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
+import '../../core/launcher.dart';
 import '../../core/widgets.dart';
 import '../ride/ride_screen.dart';
 
@@ -25,11 +26,19 @@ class SummaryScreen extends ConsumerStatefulWidget {
 class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   int _stars = 0;
   bool _rated = false;
+  final _comment = TextEditingController();
+
+  @override
+  void dispose() {
+    _comment.dispose();
+    super.dispose();
+  }
 
   Future<void> _rate() async {
     final l = context.l;
+    final comment = _comment.text.trim();
     try {
-      await ref.read(backendProvider).rate(widget.rentalId, _stars, null);
+      await ref.read(backendProvider).rate(widget.rentalId, _stars, comment.isEmpty ? null : comment);
       VoltiHaptics.tap();
       if (mounted) setState(() => _rated = true);
     } catch (e) {
@@ -59,6 +68,41 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     }
   }
 
+  /// O link do PDF expira em 15 min: busca um novo antes de abrir.
+  Future<void> _openPdf(Receipt current) async {
+    final l = context.l;
+    var url = current.pdfUrl;
+    try {
+      url = (await ref.read(backendProvider).receipt(widget.rentalId)).pdfUrl ?? url;
+    } catch (_) {}
+    if (url == null) {
+      if (mounted) VoltiToast.show(context, l.receiptPdfPending);
+      return;
+    }
+    var ok = false;
+    try {
+      ok = await ref.read(urlLauncherProvider)(Uri.parse(url));
+    } catch (_) {
+      // URL invalida ou nenhum app para abrir: cai no aviso abaixo.
+    }
+    if (!ok && mounted) VoltiToast.show(context, l.receiptOpenError, tone: VoltiToastTone.danger);
+  }
+
+  /// "Cartao •••• 4821 · NFS-e 2026-77" (ou o numero do recibo).
+  String _paymentLine(Receipt r) {
+    final l = context.l;
+    final parts = <String>[
+      if (r.cardLast4 != null)
+        l.paidWithCard(r.cardLast4!)
+      else if (r.paymentMethod == PaymentMethod.pix)
+        l.paidWithPix
+      else if (r.paymentMethod == PaymentMethod.wallet)
+        l.paidWithWallet,
+      r.invoiceNumber != null ? l.invoiceNumberLabel(r.invoiceNumber!) : l.receiptNumber(r.number),
+    ];
+    return parts.join(' · ');
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = context.l;
@@ -79,11 +123,16 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
             return ListView(
               padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
               children: VoltiStagger.wrap([
-                const Center(child: VoltiSuccessCheck()),
-                const SizedBox(height: 8),
-                Center(child: Semantics(header: true, child: Text(l.lockedBye, style: VoltiTypography.title, textAlign: TextAlign.center))),
-                const SizedBox(height: 4),
-                Center(child: Text(l.receiptNumber(r.number), style: VoltiTypography.caption)),
+                Row(children: [
+                  const VoltiSuccessCheck(size: 56),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Semantics(header: true, child: Text(l.rideFinished, style: VoltiTypography.title)),
+                      Text(l.rideFinishedText, style: VoltiTypography.body.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    ]),
+                  ),
+                ]),
                 const SizedBox(height: VoltiSpacing.s16),
                 if (mapOn && pts.length >= 2)
                   ClipRRect(
@@ -103,11 +152,12 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   padding: const EdgeInsets.all(VoltiSpacing.s16),
                   decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
                   child: Column(children: [
-                    _Line(l.duration, clock(r.durationSeconds)),
+                    _Line(l.duration, durationLabel(r.durationSeconds)),
                     for (final line in r.breakdown.lines) _Line(line.description, money(line.amountCents)),
-                    if (r.breakdown.insuranceCents > 0) _Line(l.insurance, money(r.breakdown.insuranceCents)),
+                    if (r.breakdown.insuranceCents > 0)
+                      _Line(r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong, money(r.breakdown.insuranceCents)),
                     if (r.breakdown.feesCents > 0) _Line(l.fees, money(r.breakdown.feesCents)),
-                    if (r.breakdown.discountCents > 0) _Line(l.discount, money(-r.breakdown.discountCents)),
+                    if (r.breakdown.discountCents > 0) _Line(l.coupon, money(-r.breakdown.discountCents)),
                     const Divider(),
                     // O total conta depois do check (300 ms + 600 ms de pop).
                     _Line(l.total, money(r.breakdown.totalCents),
@@ -121,7 +171,20 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                         )),
                   ]),
                 ),
-                SectionTitle(l.rateRide),
+                const SizedBox(height: VoltiSpacing.s10),
+                Container(
+                  decoration: BoxDecoration(borderRadius: VoltiRadii.rMd, boxShadow: VoltiShadows.shadow1),
+                  child: ListRow(
+                    key: const Key('receipt-invoice'),
+                    icon: LucideIcons.receipt,
+                    iconTone: ListRowTone.brand,
+                    title: l.receiptAndInvoice,
+                    subtitle: _paymentLine(r),
+                    trailing: ListRowTrailing.chevron,
+                    onTap: () => _openPdf(r),
+                  ),
+                ),
+                SectionTitle(l.rateRideTrip),
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -146,8 +209,17 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                       ),
                   ],
                 ),
-                if (_stars > 0 && !_rated)
+                if (_stars > 0 && !_rated) ...[
+                  TextField(
+                    controller: _comment,
+                    maxLength: 500,
+                    maxLines: 2,
+                    minLines: 1,
+                    decoration: InputDecoration(hintText: l.ratingCommentHint, counterText: ''),
+                  ),
+                  const SizedBox(height: VoltiSpacing.s8),
                   VoltiButton(label: l.sendRating, variant: VoltiButtonVariant.secondary, fullWidth: true, onPressed: _rate),
+                ],
                 if (_rated)
                   Center(
                     child: VoltiEnter.pop(
@@ -161,7 +233,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                 const SizedBox(height: VoltiSpacing.s16),
                 VoltiButton(label: l.disputeCharge, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: _dispute),
                 const SizedBox(height: VoltiSpacing.s8),
-                VoltiButton(label: l.backToMap, size: VoltiButtonSize.lg, fullWidth: true, onPressed: () => context.go('/home')),
+                VoltiButton(label: l.finishSummary, size: VoltiButtonSize.lg, fullWidth: true, onPressed: () => context.go('/home')),
               ]),
             );
           },
