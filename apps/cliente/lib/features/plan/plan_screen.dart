@@ -11,6 +11,7 @@ import '../../core/geo.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
+import '../../l10n/app_localizations.dart';
 import '../home/providers.dart';
 import 'pix_sheet.dart';
 
@@ -180,7 +181,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                     title: p.name,
                     description: p.description ?? l.unlockFee(money(p.unlockFeeCents)),
                     price: money(p.unitPriceCents),
-                    priceNote: l.perUnit(p.unit.name),
+                    priceNote: l.perUnit(unitLabel(l, p.unit)),
                     selected: _plan == p.code,
                     onTap: () {
                       setState(() => _plan = p.code);
@@ -309,6 +310,16 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
     );
   }
 }
+
+/// Unidade do plano em pt-BR (o enum vem em ingles do contrato).
+String unitLabel(AppLocalizations l, PlanUnit u) => switch (u) {
+      PlanUnit.minute => l.unitMinute,
+      PlanUnit.hour => l.unitHour,
+      PlanUnit.day => l.unitDay,
+      PlanUnit.week => l.unitWeek,
+      PlanUnit.month => l.unitMonth,
+      _ => u.name,
+    };
 
 class _QuoteSummary extends StatelessWidget {
   const _QuoteSummary({required this.quote, required this.onRetry});

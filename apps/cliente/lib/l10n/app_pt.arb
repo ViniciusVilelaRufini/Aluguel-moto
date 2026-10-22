@@ -142,7 +142,7 @@
   "pixCopied": "Código Pix copiado",
   "pixFailed": "O Pix não foi concluído. Tente de novo.",
   "pixTitle": "Pague com Pix",
-  "pixWaiting": "Aguardando o pagamento...",
+  "pixWaiting": "Aguardando o pagamento…",
   "planMonthly": "Plano mensal",
   "planTitle": "Escolha como andar",
   "planWeekly": "Plano semanal",
@@ -188,7 +188,7 @@
   "send": "Enviar",
   "sendForReview": "Enviar para análise",
   "sendRating": "Enviar avaliação",
-  "sending": "Enviando...",
+  "sending": "Enviando…",
   "shareTrip": "Compartilhar trajeto",
   "shareWithContact": "Enviar localização a um contato",
   "signIn": "Entrar",
@@ -314,7 +314,7 @@
       }
     }
   },
-  "starsLabel": "{n} estrelas",
+  "starsLabel": "{n, plural, =1{1 estrela} other{{n} estrelas}}",
   "@starsLabel": {
     "placeholders": {
       "n": {
@@ -349,7 +349,7 @@
       }
     }
   },
-  "unreadMessages": "{n} mensagens novas",
+  "unreadMessages": "{n, plural, =1{1 mensagem nova} other{{n} mensagens novas}}",
   "@unreadMessages": {
     "placeholders": {
       "n": {
@@ -403,5 +403,32 @@
   "locationRationaleText": "Usamos sua localização para mostrar as motos mais próximas e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.",
   "allowLocation": "Continuar",
   "birthInvalid": "Data inválida. Use dd/mm/aaaa.",
-  "birthUnderage": "É preciso ter 18 anos ou mais."
+  "birthUnderage": "É preciso ter 18 anos ou mais.",
+  "historyEmptyTitle": "Nenhuma corrida ainda",
+  "supportEmptyText": "Quando precisar, abra uma conversa. A equipe responde por aqui mesmo.",
+  "noVehiclesNearbyText": "Afaste o mapa ou tente de novo em alguns minutos.",
+  "noReservationText": "Escolha uma moto no mapa e reserve por 15 minutos sem custo.",
+  "sosHint": "Ligar para o suporte ou compartilhar sua localização",
+  "cancelRenewalTitle": "Cancelar a renovação?",
+  "cancelRenewalConfirm": "Cancelar renovação",
+  "keepPlan": "Manter plano",
+  "unitMinute": "minuto",
+  "unitHour": "hora",
+  "unitDay": "dia",
+  "unitWeek": "semana",
+  "unitMonth": "mês",
+  "pixPaid": "Pix confirmado",
+  "realtimeOfflineText": "O tempo e o custo seguem contando. Estamos reconectando.",
+  "lockConfirmed": "Moto travada",
+  "dragToClose": "Arraste para baixo para fechar",
+  "packagesEmpty": "Nenhum pacote disponível agora.",
+  "subscriptionsEmpty": "Você ainda não tem plano semanal ou mensal.",
+  "cancelRenewalText": "Seu plano continua valendo até {date}. Depois disso, não renova.",
+  "@cancelRenewalText": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  }
 }
