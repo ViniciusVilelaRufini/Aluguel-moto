@@ -1489,11 +1489,12 @@
   "@buttonDone": {
     "description": "Leitor de tela: botao no estado de sucesso"
   },
-  "welcomeHeroPickup": "Retire no galpão",
+  "welcomeHeroPickupTitle": "Retire no galpão",
+  "welcomeHeroPickupText": "Escolha no app, retire no galpão",
   "welcomeHeroPlansTitle": "Planos diário, semanal e mensal",
   "welcomeHeroPlansText": "ou por minuto e hora",
-  "welcomeHeroInsurance": "Seguro incluso",
-  "welcomeHeroBatterySwap": "Troca de bateria",
+  "welcomeHeroInsuranceTitle": "Seguro incluso",
+  "welcomeHeroInsuranceText": "Troca de bateria no galpão e nas estações",
   "pickDetails": "Ver detalhes",
   "pickCollapse": "Recolher",
   "pickSpecCategory": "Categoria",

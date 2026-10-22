@@ -4354,11 +4354,17 @@ abstract class AppLocalizations {
   /// **'Concluído'**
   String get buttonDone;
 
-  /// No description provided for @welcomeHeroPickup.
+  /// No description provided for @welcomeHeroPickupTitle.
   ///
   /// In pt, this message translates to:
   /// **'Retire no galpão'**
-  String get welcomeHeroPickup;
+  String get welcomeHeroPickupTitle;
+
+  /// No description provided for @welcomeHeroPickupText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha no app, retire no galpão'**
+  String get welcomeHeroPickupText;
 
   /// No description provided for @welcomeHeroPlansTitle.
   ///
@@ -4372,17 +4378,17 @@ abstract class AppLocalizations {
   /// **'ou por minuto e hora'**
   String get welcomeHeroPlansText;
 
-  /// No description provided for @welcomeHeroInsurance.
+  /// No description provided for @welcomeHeroInsuranceTitle.
   ///
   /// In pt, this message translates to:
   /// **'Seguro incluso'**
-  String get welcomeHeroInsurance;
+  String get welcomeHeroInsuranceTitle;
 
-  /// No description provided for @welcomeHeroBatterySwap.
+  /// No description provided for @welcomeHeroInsuranceText.
   ///
   /// In pt, this message translates to:
-  /// **'Troca de bateria'**
-  String get welcomeHeroBatterySwap;
+  /// **'Troca de bateria no galpão e nas estações'**
+  String get welcomeHeroInsuranceText;
 
   /// No description provided for @pickDetails.
   ///

@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/auth_store.dart';
 import 'package:volti_cliente/core/backend.dart';
@@ -68,6 +69,26 @@ void screen(WidgetTester t, {double scale = 1, Size size = const Size(360, 740)}
 }
 
 final _opened = <Uri>[];
+
+/// Titulo e texto das tres afirmacoes do hero.
+const _statementTexts = [
+  'Retire no galpão',
+  'Escolha no app, retire no galpão',
+  'Planos diário, semanal e mensal',
+  'ou por minuto e hora',
+  'Seguro incluso',
+  'Troca de bateria no galpão e nas estações',
+];
+
+/// Rotulo de cada afirmacao no leitor de tela.
+const _statementLabels = [
+  'Retire no galpão, Escolha no app, retire no galpão',
+  'Planos diário, semanal e mensal, ou por minuto e hora',
+  'Seguro incluso, Troca de bateria no galpão e nas estações',
+];
+
+/// Cartoes de afirmacao (hero-statement-0..2).
+final _statementCards = find.byWidgetPredicate((w) => w.key is ValueKey<String> && RegExp(r'^hero-statement-\d$').hasMatch((w.key! as ValueKey<String>).value));
 
 /// Opacidade de entrada em andamento (os botoes tem um Opacity fixo em 1).
 final _fading = find.byWidgetPredicate((w) => w is Opacity && w.opacity < 1);
@@ -146,7 +167,7 @@ void main() {
       expect(find.byKey(const Key('welcome-logo')), findsOneWidget);
       // Chips ilustrativos.
       // So afirmacoes do servico (galpao, planos, seguro, troca de bateria).
-      for (final s in ['Retire no galpão', 'Planos diário, semanal e mensal', 'ou por minuto e hora', 'Seguro incluso', 'Troca de bateria']) {
+      for (final s in _statementTexts) {
         expect(find.text(s), findsOneWidget, reason: s);
       }
       // Nada de promocao nem numeros inventados.
@@ -256,16 +277,23 @@ void main() {
       await _pumpWelcome(t);
       // Os numeros ilustrativos sao desenhados, mas nao chegam ao leitor de tela.
       // Os textos visiveis do hero chegam ao leitor de tela pelos nos nos retangulos reais.
-      expect(t.getRect(find.byKey(const Key('welcome-pickup-semantics'))), t.getRect(find.byKey(const Key('hero-pickup'))));
-      expect(t.getRect(find.byKey(const Key('welcome-perks-semantics'))), t.getRect(find.byKey(const Key('hero-perks'))));
-      expect(find.bySemanticsLabel('Seguro incluso, Troca de bateria'), findsOneWidget);
-      expect(find.bySemanticsLabel('Retire no galpão'), findsOneWidget);
+      // Cada afirmacao uma vez (nos estaticos na faixa do carrossel; as copias do
+      // marquee nao chegam ao leitor de tela).
+      for (final label in _statementLabels) {
+        expect(find.bySemanticsLabel(label), findsOneWidget, reason: label);
+      }
+      final band = t.getRect(find.byKey(const Key('hero-statements')));
+      for (var i = 0; i < 3; i++) {
+        final r = t.getRect(find.byKey(Key('welcome-statement-semantics-$i')));
+        expect(band.contains(r.topLeft) && band.contains(r.bottomRight - const Offset(.01, .01)), isTrue, reason: 'no $i na faixa');
+      }
+      for (final s in _statementTexts) {
+        expect(find.bySemanticsLabel(s), findsNothing, reason: 'texto solto do marquee: $s');
+      }
       expect(find.byKey(const Key('welcome-art')).evaluate().single.widget, isA<ExcludeSemantics>());
       // Logo (cabecalho "Volti") e planos: nos de semantica fora da camada decorativa.
       expect(t.getSemantics(find.byKey(const Key('welcome-logo-semantics'))), isSemantics(label: 'Volti', isHeader: true));
       expect(t.getRect(find.byKey(const Key('welcome-logo-semantics'))), t.getRect(find.byKey(const Key('welcome-logo'))));
-      expect(find.bySemanticsLabel('Planos diário, semanal e mensal, ou por minuto e hora'), findsOneWidget);
-      expect(t.getRect(find.byKey(const Key('welcome-plans-semantics'))), t.getRect(find.byKey(const Key('welcome-plans'))));
       // A moto em destaque fica fora.
       expect(find.descendant(of: find.byKey(const Key('welcome-art')), matching: find.byType(Image)), findsOneWidget);
       expect(t.getSemantics(find.byKey(const Key('welcome-phone'))),
@@ -290,16 +318,20 @@ void main() {
       expect(t.takeException(), isNull);
       expect(find.byKey(const Key('welcome-social-column')), findsOneWidget);
       // As tres afirmacoes do servico descem para a folha e escalam com o texto.
-      for (final k in ['hero-pickup', 'welcome-plans', 'hero-perks']) {
-        expect(find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.byKey(Key(k))), findsOneWidget, reason: k);
+      for (var i = 0; i < 3; i++) {
+        final card = find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.byKey(Key('hero-statement-$i')));
+        expect(card, findsOneWidget, reason: 'cartao $i');
+        expect((t.widget<Container>(card).decoration! as BoxDecoration).color, VoltiColors.surfaceCard);
       }
-      for (final s in ['Retire no galpão', 'Planos diário, semanal e mensal', 'Seguro incluso', 'Troca de bateria']) {
+      expect(find.byKey(const Key('welcome-sheet-statements')).evaluate().single.widget, isA<Wrap>());
+      for (final s in _statementTexts) {
         final p = t.renderObject<RenderParagraph>(find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.text(s)));
         expect(p.textScaler.scale(10), closeTo(20, .01), reason: s);
         expect(p.didExceedMaxLines, isFalse, reason: s);
       }
       // No hero so o logo.
       expect(find.descendant(of: find.byType(WelcomeHero), matching: find.text('Retire no galpão')), findsNothing);
+      expect(find.byKey(const Key('hero-statements')), findsNothing);
       for (final k in ['welcome-phone', 'welcome-apple', 'welcome-google', 'welcome-email', 'welcome-terms']) {
         await t.ensureVisible(find.byKey(Key(k)));
         await t.pump();
@@ -319,9 +351,12 @@ void main() {
     testWidgets('reduzir movimento: folha e pins ja no lugar no primeiro quadro', (t) async {
       screen(t);
       await _pumpWelcome(t, reduceMotion: true, settleAll: false);
-      // Um quadro a mais: a geometria do hero (medida no layout) posiciona o galpao.
-      await t.pump();
-      await t.pump();
+      // Quadros a mais, sem tempo passando: a geometria do hero (medida no layout)
+      // posiciona o galpao e diz quantas afirmacoes couberam (as outras vao para a
+      // folha, que e medida de novo).
+      for (var i = 0; i < 4; i++) {
+        await t.pump();
+      }
       expect(find.descendant(of: find.byType(VoltiEnter), matching: _fading), findsNothing);
       expect(t.binding.hasScheduledFrame, isFalse);
     });
@@ -349,6 +384,162 @@ void main() {
     });
   });
 
+  group('carrossel das afirmacoes', () {
+    WelcomeHeroState hero(WidgetTester t) => t.state<WelcomeHeroState>(find.byType(WelcomeHero));
+    RenderHeroStatements band(WidgetTester t) => t.renderObject<RenderHeroStatements>(find.byKey(const Key('hero-statements')));
+
+    testWidgets('tres cartoes brancos iguais (superficie, raio md, sombra 1, icone verde); sem pilula escura', (t) async {
+      screen(t, size: const Size(393, 852));
+      await _pumpWelcome(t);
+      const icons = [LucideIcons.warehouse, LucideIcons.calendarDays, LucideIcons.shieldCheck];
+      for (var i = 0; i < 3; i++) {
+        final card = find.byKey(Key('hero-statement-$i'));
+        expect(find.descendant(of: find.byKey(const Key('hero-statements')), matching: card), findsOneWidget, reason: 'uma copia na arvore');
+        final d = t.widget<Container>(card).decoration! as BoxDecoration;
+        expect(d.color, VoltiColors.surfaceCard, reason: 'cartao $i branco');
+        expect(d.borderRadius, VoltiRadii.rMd);
+        expect(d.boxShadow, VoltiShadows.shadow1);
+        final tile = find.descendant(of: card, matching: find.byKey(const Key('hero-statement-icon')));
+        expect((t.widget<Container>(tile).decoration! as BoxDecoration).color, VoltiColors.brandSoft);
+        final icon = t.widget<Icon>(find.descendant(of: tile, matching: find.byType(Icon)));
+        expect(icon.icon, icons[i]);
+        expect(icon.color, VoltiColors.brandAction);
+        for (final txt in t.widgetList<Text>(find.descendant(of: card, matching: find.byType(Text)))) {
+          expect(txt.style!.color, isIn([VoltiColors.ink900, VoltiColors.ink500]), reason: 'texto escuro: ${txt.data}');
+        }
+      }
+      // Segunda linha do seguro com a bateria.
+      expect(find.descendant(of: find.byKey(const Key('hero-statement-2')), matching: find.byIcon(LucideIcons.batteryCharging)), findsOneWidget);
+      // Nenhum fundo escuro na faixa e nada da pilula antiga.
+      final dark = find.descendant(
+        of: find.byKey(const Key('hero-statements')),
+        matching: find.byWidgetPredicate((w) =>
+            w is Container &&
+            w.decoration is BoxDecoration &&
+            const [VoltiColors.ink900, VoltiColors.green900].contains((w.decoration! as BoxDecoration).color)),
+      );
+      expect(dark, findsNothing);
+      for (final k in ['hero-perks', 'hero-pickup', 'welcome-plans']) {
+        expect(find.byKey(Key(k)), findsNothing, reason: k);
+      }
+    });
+
+    testWidgets('faixa: logo em cima a esquerda, carrossel embaixo de ponta a ponta com mascara nas bordas', (t) async {
+      screen(t, size: const Size(393, 852));
+      await _pumpWelcome(t);
+      final logo = t.getRect(find.byKey(const Key('welcome-logo')));
+      final b = t.getRect(find.byKey(const Key('hero-statements')));
+      expect(logo.left, lessThan(30));
+      expect(b.top, greaterThan(logo.bottom));
+      expect(b.left, 0);
+      expect(b.width, 393);
+      expect(find.ancestor(of: find.byKey(const Key('hero-statements')), matching: find.byType(ShaderMask)), findsOneWidget);
+      expect(find.ancestor(of: find.byKey(const Key('hero-statements')), matching: find.byType(RepaintBoundary)), findsWidgets);
+    });
+
+    testWidgets('marquee anda para a esquerda em velocidade constante e emenda sem fresta', (t) async {
+      expect(kHeroMarqueeSpeed, inInclusiveRange(30, 40));
+      screen(t, size: const Size(393, 852));
+      await _pumpWelcome(t);
+      final r = band(t);
+      final width = r.size.width;
+      final x0 = t.getRect(find.byKey(const Key('hero-statement-0'))).left;
+      final o0 = r.debugOffset;
+      await t.pump(const Duration(milliseconds: 500));
+      final x1 = t.getRect(find.byKey(const Key('hero-statement-0'))).left;
+      expect(r.debugOffset - o0, closeTo(kHeroMarqueeSpeed * .5, 1), reason: 'velocidade constante');
+      // O primeiro cartao andou para a esquerda (ou deu a volta).
+      expect(x1 < x0 || x1 - x0 > r.debugCycle / 2, isTrue, reason: 'para a esquerda: $x0 -> $x1');
+
+      const dt = Duration(milliseconds: 250);
+      final shift = kHeroMarqueeSpeed * dt.inMicroseconds / 1e6;
+      final steps = (r.debugCycle / shift).ceil() + 8;
+      var prev = r.debugPainted;
+      var wrapped = false;
+      var prevScroll = r.debugScroll;
+      for (var s = 0; s < steps; s++) {
+        await t.pump(dt);
+        final now = r.debugPainted;
+        // Sem fresta: cartoes em sequencia, separados so pelo gap, cobrindo a faixa.
+        final sorted = [...now]..sort((a, b) => a.rect.left.compareTo(b.rect.left));
+        expect(sorted.first.rect.left, lessThanOrEqualTo(kHeroMarqueeGap + .5), reason: 'passo $s: borda esquerda coberta');
+        expect(sorted.last.rect.right, greaterThanOrEqualTo(width - kHeroMarqueeGap - .5), reason: 'passo $s: borda direita coberta');
+        for (var i = 1; i < sorted.length; i++) {
+          expect(sorted[i].rect.left - sorted[i - 1].rect.right, closeTo(kHeroMarqueeGap, .5), reason: 'passo $s: gap $i');
+          expect(sorted[i].index, (sorted[i - 1].index + 1) % 3, reason: 'passo $s: ordem');
+        }
+        // Continuidade: cada cartao visivel ja estava la, um passo mais a direita.
+        for (final c in now) {
+          if (c.rect.left + shift > width) continue; // acabou de entrar pela direita
+          final had = prev.any((p) => p.index == c.index && (p.rect.left - shift - c.rect.left).abs() < .5);
+          expect(had, isTrue, reason: 'passo $s: cartao ${c.index} em ${c.rect.left} pulou');
+        }
+        if (r.debugScroll < prevScroll) wrapped = true;
+        prevScroll = r.debugScroll;
+        prev = now;
+      }
+      expect(wrapped, isTrue, reason: 'deu a volta pelo menos uma vez');
+    });
+
+    testWidgets('reduzir movimento: cartoes parados; os que nao cabem vao para a folha (cada um uma vez)', (t) async {
+      screen(t, size: const Size(393, 852));
+      final h = t.ensureSemantics();
+      await _pumpWelcome(t, reduceMotion: true, settleAll: false);
+      await t.pump();
+      await t.pump();
+      final r = band(t);
+      expect(hero(t).debugMarqueeAnimating, isFalse);
+      final before = r.debugPainted.map((c) => c.rect).toList();
+      expect(before, isNotEmpty);
+      expect(t.getRect(find.byKey(const Key('hero-statement-0'))).left, HeroLayoutDelegate.side);
+      // Cartoes inteiros, dentro do gutter.
+      for (final c in r.debugPainted) {
+        expect(c.rect.left, greaterThanOrEqualTo(HeroLayoutDelegate.side - .01));
+        expect(c.rect.right, lessThanOrEqualTo(r.size.width - HeroLayoutDelegate.side + .01));
+      }
+      await t.pump(const Duration(seconds: 2));
+      expect(r.debugPainted.map((c) => c.rect).toList(), before);
+      expect(t.binding.hasScheduledFrame, isFalse);
+      final shown = r.debugShown;
+      expect(shown, inInclusiveRange(1, 3));
+      expect(before.length, shown);
+      final inSheet = find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: _statementCards);
+      expect(inSheet.evaluate().length, 3 - shown);
+      for (final label in _statementLabels) {
+        expect(find.bySemanticsLabel(label), findsOneWidget, reason: label);
+      }
+      h.dispose();
+    });
+
+    testWidgets('segundo plano: o marquee para e retoma de onde estava', (t) async {
+      screen(t, size: const Size(393, 852));
+      await _pumpWelcome(t);
+      expect(hero(t).debugMarqueeAnimating, isTrue);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await t.pump();
+      expect(hero(t).debugMarqueeAnimating, isFalse);
+      final o = band(t).debugOffset;
+      await t.pump(const Duration(seconds: 3));
+      expect(band(t).debugOffset, o);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await t.pump();
+      expect(hero(t).debugMarqueeAnimating, isTrue);
+      await t.pump(const Duration(milliseconds: 500));
+      expect(band(t).debugOffset - o, closeTo(kHeroMarqueeSpeed * .5, 1), reason: 'sem salto na volta');
+    });
+
+    testWidgets('com movimento a folha nao repete as afirmacoes', (t) async {
+      screen(t, size: const Size(360, 740));
+      await _pumpWelcome(t);
+      expect(find.byKey(const Key('welcome-sheet-statements')), findsNothing);
+      expect(band(t).debugShown, 3);
+    });
+  });
+
   group('hero animado', () {
     WelcomeHeroState hero(WidgetTester t) => t.state<WelcomeHeroState>(find.byType(WelcomeHero));
 
@@ -357,14 +548,14 @@ void main() {
       await _pumpWelcome(t, settleAll: false);
       await t.pump(const Duration(milliseconds: 16));
       // Chips ainda entrando (cascata).
-      expect(find.ancestor(of: find.byKey(const Key('hero-perks')), matching: _fading), findsWidgets);
+      expect(find.ancestor(of: find.byKey(const Key('hero-statements')), matching: _fading), findsWidgets);
       final bike = find.byKey(const Key('hero-bike'));
       final opacity = t.widget<Opacity>(find.ancestor(of: bike, matching: find.byType(Opacity)).first);
       expect(opacity.opacity, lessThan(1));
       final before = t.widget<Transform>(find.byKey(const Key('hero-bike-image')));
       expect(before.transform.getTranslation().y, greaterThan(10), reason: 'comeca abaixo e sobe');
       await t.pump(const Duration(milliseconds: 1200));
-      expect(find.ancestor(of: find.byKey(const Key('hero-perks')), matching: _fading), findsNothing);
+      expect(find.ancestor(of: find.byKey(const Key('hero-statements')), matching: _fading), findsNothing);
       expect(t.widget<Opacity>(find.ancestor(of: bike, matching: find.byType(Opacity)).first).opacity, 1);
       expect(hero(t).debugAnimating, isTrue, reason: 'loops seguem (deriva, motos, flutuacao)');
       // As motos andam.
@@ -376,9 +567,10 @@ void main() {
     testWidgets('reduzir movimento: tudo parado no estado final, sem entrada', (t) async {
       screen(t);
       await _pumpWelcome(t, reduceMotion: true, settleAll: false);
-      await t.pump();
-      await t.pump();
-      expect(find.text('Seguro incluso'), findsOneWidget);
+      for (var i = 0; i < 4; i++) {
+        await t.pump();
+      }
+      expect(find.text('Seguro incluso'), findsWidgets);
       expect(hero(t).debugAnimating, isFalse);
       final p0 = t.getTopLeft(find.byKey(const Key('hero-pin-0')));
       final bike = t.getRect(find.byKey(const Key('hero-bike')));
@@ -463,7 +655,7 @@ void main() {
           expect(t.takeException(), isNull);
           Rect r(String k) => t.getRect(find.byKey(Key(k)));
           final chips = {
-            for (final k in ['welcome-logo', 'hero-pickup', 'welcome-plans', 'hero-perks']) k: r(k),
+            for (final k in ['welcome-logo', 'hero-statements']) k: r(k),
           };
           final keys = chips.keys.toList();
           for (var i = 0; i < keys.length; i++) {
@@ -475,14 +667,14 @@ void main() {
           // Largura atual da moto por tela (fracao da largura; debug = com a nota de dev).
           // Ela encolhe em telas baixas porque nenhum chip pode cobri-la.
           const expected = {
-            'Size(360.0, 740.0) true': .216,
-            'Size(360.0, 740.0) false': .314,
-            'Size(360.0, 800.0) true': .379,
+            'Size(360.0, 740.0) true': .292,
+            'Size(360.0, 740.0) false': .389,
+            'Size(360.0, 800.0) true': .450,
             'Size(360.0, 800.0) false': .450,
-            'Size(393.0, 852.0) true': .379,
-            'Size(393.0, 852.0) false': .450,
-            'Size(412.0, 915.0) true': .529,
-            'Size(412.0, 915.0) false': .614,
+            'Size(393.0, 852.0) true': .450,
+            'Size(393.0, 852.0) false': .535,
+            'Size(412.0, 915.0) true': .574,
+            'Size(412.0, 915.0) false': .659,
           };
           expect(bike.width / size.width, closeTo(expected['$size $dev']!, .02), reason: 'largura da moto');
           expect(bike.width, lessThanOrEqualTo(size.width * .7 + .5));

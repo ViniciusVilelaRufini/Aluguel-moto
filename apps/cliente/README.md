@@ -53,40 +53,42 @@ Em release, o `main` silencia o `debugPrint`, porque o z/x/y do tile revela a re
 
 A nota do modo dev só aparece em debug, pequena, sob os termos.
 
-O hero ocupa a faixa livre acima da folha. A altura da folha é medida e o layout dos chips é relativo a essa faixa (`HeroLayoutDelegate`). O hero tem:
+O hero ocupa a faixa livre acima da folha. A altura da folha é medida e o layout do logo, do carrossel e da moto é relativo a essa faixa (`HeroLayoutDelegate`). O hero tem:
 
 - **Mapa real** de Pinheiros (tiles do `MAP_TILE_URL`, filtro do DS, sem interação), centrado no galpão (-23.5654, -46.6847, zoom 15), com deriva lenta da câmera (pan + zoom, 20 s ida e volta). A deriva é um `Transform` sobre um `RepaintBoundary` estático e não reconstrói os tiles.
 - **Galpão** com anel pulsando.
 - **Quatro motos andando** por trechos reais (Rua dos Pinheiros, Teodoro Sampaio, Faria Lima e Fradique Coutinho), com velocidades e defasagens diferentes, aparecendo e sumindo nas pontas. Ficam recortadas 16 px acima da folha.
 - **Moto em destaque** (`assets/images/volti_moto_hero.webp`, fundo transparente), centrada embaixo com até 70% da largura. Sobe e cresce de 0,92 a 1 em cerca de 600 ms, depois flutua 2,5 px num ciclo de 3 s, com uma sombra elíptica que acompanha a flutuação.
-- **Chips**, com afirmações verdadeiras do serviço e sem números inventados. Entram em cascata, com 80 ms entre eles:
-  - linha 1: logo e "• Retire no galpão" (ícone do galpão);
-  - linha 2: o cartão "Planos diário, semanal e mensal · ou por minuto e hora" (ícone de calendário) e a pílula escura "Seguro incluso | Troca de bateria". Em telas estreitas (< 392 px), a pílula desce para uma linha própria, com as duas partes lado a lado.
+- **Logo** em cima, à esquerda.
+- **Carrossel das afirmações**, embaixo do logo, de ponta a ponta. São afirmações verdadeiras do serviço, sem números inventados, em três cartões brancos iguais (`HeroStatementCard`: superfície, raio md, `shadow1`, ícone verde num quadrado brand-soft, texto escuro):
+  - "Retire no galpão" / "Escolha no app, retire no galpão" (galpão);
+  - "Planos diário, semanal e mensal" / "ou por minuto e hora" (calendário);
+  - "Seguro incluso" / "Troca de bateria no galpão e nas estações" (escudo; a segunda linha tem o ícone da bateria).
 
-  Nenhum chip é pintado sobre a moto, que fica com o que sobra (até 70% da largura). Não há promoção na boas-vindas: o `FIRST_RIDE_PROMO` vale só para a home e a lista.
+  Os cartões andam para a esquerda a 36 px/s (`kHeroMarqueeSpeed`), num marquee contínuo: um `AnimationController` sem limite com simulação linear e um render próprio (`RenderHeroStatements`) que só repinta. Cada cartão existe uma vez na árvore; o render pinta as cópias em sequência, a 10 px uma da outra, até cobrir a faixa, então a volta não tem fresta nem salto. A faixa fica num `RepaintBoundary` com máscara de fade (`ShaderMask`, 24 px) nas duas bordas; o gutter de 16 px fica dentro dela. A faixa inteira é obstáculo: nem a moto nem os pins passam por ela. Não há promoção na boas-vindas: o `FIRST_RIDE_PROMO` vale só para a home e a lista.
 - **Área livre do mapa:** o galpão fica entre os chips e a moto ou, em telas baixas, à esquerda da moto. As motos **saem do galpão** pelas ruas (Rua dos Pinheiros e Fradique Coutinho) e só andam na faixa do mapa, a 16 px das bordas. Somem onde ficariam atrás de um chip ou da moto e seguem a mesma matriz de deriva do mapa, ficando sobre as ruas.
 - **Mapa:** o mapa é maior que o hero (32 px de folga em cada lado) e é criado uma vez só; mudanças de layout movem a câmera pelo `MapController`. O `VoltiMap` guarda um provedor de tiles por camada durante a vida do mapa, e tiles com erro são pedidos de novo até 3 vezes. Todos os mapas usam **um cliente HTTP de tiles compartilhado, que nenhum mapa fecha** (`RetryClient` sobre `IOClient` com até 6 conexões por host; no web, o cliente padrão), sem abortar pedidos obsoletos. O abort fica desligado em todos os mapas, inclusive na home: um pedido abortado vira PNG transparente no `ImageCache`, e qualquer outro mapa que peça a mesma URL enquanto ele está em andamento recebe a imagem vazia. O `ImageCache` identifica o tile pela URL, então mapas diferentes dividem o mesmo pedido em andamento. No flutter_map 8, um cliente fechado (o `TileLayer` descartava o provedor ao sair da tela) ou um pedido abortado vira um PNG transparente "carregado". A home monta o mapa por um instante na abertura e era fechada no meio dos pedidos; a boas-vindas, que esperava os mesmos tiles, ficava com a coluna em comum vazia para sempre. Essa era a costura do hero, diagnosticada no emulador. Com `--dart-define=MAP_DEBUG=true`, o build de debug registra no logcat (tag `VOLTI_DBG`) a câmera e cada tile. A `TileLayer` tem `panBuffer: 1` e `keepBuffer: 2`, e o mapa do hero só é criado quando a folha já foi medida, para a câmera não se mover logo depois de abrir. Enquanto os tiles chegam, o fundo é um cinza liso: a ilustração desenhada só entra quando o mapa falha de vez.
 
-A camada visual do hero é decorativa: fica dentro de `ExcludeSemantics` e `IgnorePointer`. Fora dela, há nós de semântica nos retângulos reais do logo ("Volti", cabeçalho), do "Retire no galpão", do cartão dos planos e da pílula. Cada grupo de animação tem um ticker próprio.
+A camada visual do hero é decorativa: fica dentro de `ExcludeSemantics` e `IgnorePointer`. Fora dela, há nós de semântica estáticos: o logo ("Volti", cabeçalho) e cada afirmação mostrada uma vez ("título, texto"), lado a lado na faixa do carrossel. As cópias pintadas do marquee não chegam ao leitor de tela. Cada grupo de animação tem um ticker próprio.
 
 Em situações especiais:
 
-- **Reduced motion:** tudo fica parado no estado final.
+- **Reduced motion:** tudo fica parado no estado final. O carrossel não anda e mostra só os primeiros cartões que cabem inteiros na linha. Os outros vão para a folha (`onStatementsShown`), estáticos, e cada afirmação aparece uma vez.
 - **App em segundo plano ou rota coberta** (`TickerMode`): os controllers param.
-- **Tiles falhando** (4 erros): o mapa sai e entra a ilustração desenhada, sob os mesmos chips. A tela nunca fica cinza.
+- **Tiles falhando** (4 erros): o mapa sai e entra a ilustração desenhada, sob o mesmo logo e carrossel. A tela nunca fica cinza.
 
 A atribuição do mapa fica na borda de cima da folha.
 
-Com texto acima de 100%, as três afirmações ("Retire no galpão", o cartão dos planos e a pílula) descem para a folha e escalam com o texto. No hero, os textos escalam até 1,3x.
+Com texto acima de 100%, os três cartões das afirmações descem para a folha (estáticos, quebrando linha) e escalam com o texto. O hero fica só com o logo. No hero, os textos escalam até 1,3x.
 
-**Tamanho da moto (trade-off):** nenhum chip pode cobrir a moto, então ela fica com o espaço que sobra entre os chips e a folha, e encolhe em telas baixas. Valores atuais, em fração da largura da tela (debug tem a nota de dev na folha; release não tem):
+**Tamanho da moto (trade-off):** nenhum cartão pode cobrir a moto, então ela fica com o espaço que sobra entre o carrossel e a folha, e encolhe em telas baixas. Valores atuais, em fração da largura da tela (debug tem a nota de dev na folha; release não tem):
 
 | Tela | Debug | Release |
 |---|---|---|
-| 360×740 | 0,22 | 0,31 |
-| 360×800 | 0,38 | 0,45 |
-| 393×852 | 0,38 | 0,45 |
-| 412×915 | 0,53 | 0,61 |
+| 360×740 | 0,29 | 0,39 |
+| 360×800 | 0,45 | 0,45 |
+| 393×852 | 0,45 | 0,54 |
+| 412×915 | 0,57 | 0,66 |
 
 Os testes de sobreposição fixam esses valores com tolerância de 0,02. Com 200%, os botões quebram linha, Apple/Google/E-mail empilham e a folha rola por cima do hero.
 

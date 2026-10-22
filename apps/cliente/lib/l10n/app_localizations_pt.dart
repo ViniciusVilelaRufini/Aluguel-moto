@@ -2508,7 +2508,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get buttonDone => 'Concluído';
 
   @override
-  String get welcomeHeroPickup => 'Retire no galpão';
+  String get welcomeHeroPickupTitle => 'Retire no galpão';
+
+  @override
+  String get welcomeHeroPickupText => 'Escolha no app, retire no galpão';
 
   @override
   String get welcomeHeroPlansTitle => 'Planos diário, semanal e mensal';
@@ -2517,10 +2520,11 @@ class AppLocalizationsPt extends AppLocalizations {
   String get welcomeHeroPlansText => 'ou por minuto e hora';
 
   @override
-  String get welcomeHeroInsurance => 'Seguro incluso';
+  String get welcomeHeroInsuranceTitle => 'Seguro incluso';
 
   @override
-  String get welcomeHeroBatterySwap => 'Troca de bateria';
+  String get welcomeHeroInsuranceText =>
+      'Troca de bateria no galpão e nas estações';
 
   @override
   String get pickDetails => 'Ver detalhes';
