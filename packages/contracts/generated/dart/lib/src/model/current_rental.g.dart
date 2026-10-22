@@ -11,11 +11,15 @@ class _$CurrentRental extends CurrentRental {
   final Rental? rental;
   @override
   final StationSwap? currentStationSwap;
+  @override
+  final int? batterySwapFeeCents;
 
   factory _$CurrentRental([void Function(CurrentRentalBuilder)? updates]) =>
       (CurrentRentalBuilder()..update(updates))._build();
 
-  _$CurrentRental._({this.rental, this.currentStationSwap}) : super._();
+  _$CurrentRental._(
+      {this.rental, this.currentStationSwap, this.batterySwapFeeCents})
+      : super._();
   @override
   CurrentRental rebuild(void Function(CurrentRentalBuilder) updates) =>
       (toBuilder()..update(updates)).build();
@@ -28,7 +32,8 @@ class _$CurrentRental extends CurrentRental {
     if (identical(other, this)) return true;
     return other is CurrentRental &&
         rental == other.rental &&
-        currentStationSwap == other.currentStationSwap;
+        currentStationSwap == other.currentStationSwap &&
+        batterySwapFeeCents == other.batterySwapFeeCents;
   }
 
   @override
@@ -36,6 +41,7 @@ class _$CurrentRental extends CurrentRental {
     var _$hash = 0;
     _$hash = $jc(_$hash, rental.hashCode);
     _$hash = $jc(_$hash, currentStationSwap.hashCode);
+    _$hash = $jc(_$hash, batterySwapFeeCents.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -44,7 +50,8 @@ class _$CurrentRental extends CurrentRental {
   String toString() {
     return (newBuiltValueToStringHelper(r'CurrentRental')
           ..add('rental', rental)
-          ..add('currentStationSwap', currentStationSwap))
+          ..add('currentStationSwap', currentStationSwap)
+          ..add('batterySwapFeeCents', batterySwapFeeCents))
         .toString();
   }
 }
@@ -63,6 +70,11 @@ class CurrentRentalBuilder
   set currentStationSwap(StationSwapBuilder? currentStationSwap) =>
       _$this._currentStationSwap = currentStationSwap;
 
+  int? _batterySwapFeeCents;
+  int? get batterySwapFeeCents => _$this._batterySwapFeeCents;
+  set batterySwapFeeCents(int? batterySwapFeeCents) =>
+      _$this._batterySwapFeeCents = batterySwapFeeCents;
+
   CurrentRentalBuilder() {
     CurrentRental._defaults(this);
   }
@@ -72,6 +84,7 @@ class CurrentRentalBuilder
     if ($v != null) {
       _rental = $v.rental?.toBuilder();
       _currentStationSwap = $v.currentStationSwap?.toBuilder();
+      _batterySwapFeeCents = $v.batterySwapFeeCents;
       _$v = null;
     }
     return this;
@@ -97,6 +110,7 @@ class CurrentRentalBuilder
           _$CurrentRental._(
             rental: _rental?.build(),
             currentStationSwap: _currentStationSwap?.build(),
+            batterySwapFeeCents: batterySwapFeeCents,
           );
     } catch (_) {
       late String _$failedField;

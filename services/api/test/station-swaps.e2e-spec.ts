@@ -125,10 +125,15 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
   it('caminho feliz (plano por minuto): opening_slot → awaiting_return → returned → releasing → completed, com estoque, moto e taxa no fechamento', async () => {
     station.setAuto(true);
     const { token, rentalId, vehicle, batterySerial } = await rideOn('minute');
+    // Taxa mostrada na confirmação antes do POST = a que o POST congela.
+    const before = await http().get('/rentals/current').set(bearer(token)).expect(200);
+    expect(before).toSatisfyApiSpec();
+    expect(before.body.batterySwapFeeCents).toBe(500);
     const key = randomUUID();
     const created = await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(token)).set('Idempotency-Key', key).send(swapBody(rentalId)).expect(201);
     expect(created).toSatisfyApiSpec();
     expect(created.body).toMatchObject({ stationId: st.id, rentalId, status: 'opening_slot', feeCents: 500 });
+    expect(created.body.feeCents).toBe(before.body.batterySwapFeeCents);
     expect(created.body).not.toHaveProperty('distanceM');
     const replay = await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(token)).set('Idempotency-Key', key).send(swapBody(rentalId)).expect(201);
     expect(replay.body).toEqual(created.body);
@@ -166,6 +171,7 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
   it('plano diário: troca grátis e nenhuma linha battery_swap_fee no fechamento', async () => {
     station.setAuto(true);
     const { token, rentalId } = await rideOn('day');
+    expect((await http().get('/rentals/current').set(bearer(token)).expect(200)).body.batterySwapFeeCents).toBe(0);
     const created = await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(token)).set('Idempotency-Key', randomUUID()).send(swapBody(rentalId)).expect(201);
     expect(created.body.feeCents).toBe(0);
     await waitStatus(token, created.body.id, 'completed');

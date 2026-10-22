@@ -459,3 +459,9 @@ A re-revisão aprovou C1, I1–I8 e M1. Itens novos, todos aditivos (o app do cl
 33. **M-4 — devolução numa troca encerrada por outro motivo** (fora de `canceled_by_customer`/`return_timeout`/`station_timeout`): registra a devolução e gera alerta só com ids; a troca não muda.
 34. **Contrato:** `StationSwapEndReason` ganhou `return_after_close` e `rental_force_ended` no fim da lista (migração `20261024110000_troca_qr_fix2`, só `ADD VALUE`); clientes TS e Dart regenerados. Para o app: os dois são finais (`failed` e `canceled`).
 
+## 2026-10-22 · troca de bateria via QR — taxa visível antes da troca (branch `feat/troca-qr`) · status: decisão (coordenador, 2026-10-22); contrato aditivo aplicado
+
+35. **`CurrentRental.batterySwapFeeCents` (opcional, inteiro ≥ 0).** Lacuna achada pelo app do cliente: a spec pede "Taxa R$ X" na confirmação antes do `POST /swap-stations/{id}/swaps`, mas `GET /pricing/fees` é só do staff. `GET /rentals/current` passa a trazer a taxa que uma troca iniciada agora congelaria: 0 nos planos `day`/`weekly`/`monthly`; nos `minute`/`hour`, o valor ativo de `battery_swap_fee` (taxa desativada → padrão 500). Calculado com as mesmas funções da criação da troca (`PricingService.feeAmount` + `swapFeeCents`), então o número mostrado é o `feeCents` que o POST congela (o admin pode mudar a taxa entre a tela e o POST; vale o congelado). Presente sempre que há `rental`. Clientes TS e Dart regenerados.
+
+Rodada 3 da re-revisão (mesmo branch): a troca de moto trava o aluguel antes das motos (ordem aluguel → moto, igual à liberação na estação, sem deadlock) e reconfere a troca aberta sob o lock (`409 swap-open`); encerramento forçado e chegada no galpão fecham as trocas abertas também depois do `finalize` (idempotente).
+
