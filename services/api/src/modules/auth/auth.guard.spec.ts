@@ -3,6 +3,7 @@ import { createHarness, customerToken, Harness, staffToken } from '../../../test
 import { IOT_GATEWAY } from '../../ports/iot-gateway.port';
 import { CommandsController } from '../commands/commands.controller';
 import { CommandsService } from '../commands/commands.service';
+import { PrincipalResolver } from './principal-resolver.service';
 
 const VEHICLE_ID = '33333333-3333-4333-8333-333333333333';
 
@@ -88,5 +89,43 @@ describe('AuthGuard (grupos e pools)', () => {
       .get(`/vehicles/${VEHICLE_ID}/commands`)
       .set('Authorization', `Bearer ${await staffToken(['financeiro'])}`);
     expect(no.status).toBe(403);
+  });
+});
+
+/** QA-04: a autorização vale pelos grupos atuais do cadastro (resolvidos a cada requisição), não só pelos do token. */
+describe('AuthGuard (grupos atuais do cadastro, QA-04)', () => {
+  let h: Harness;
+  const commands = { dispatch: jest.fn(), listForVehicle: jest.fn(), get: jest.fn() };
+  const resolver = { resolve: jest.fn() };
+
+  beforeAll(async () => {
+    h = await createHarness({
+      controllers: [CommandsController],
+      providers: [
+        { provide: CommandsService, useValue: commands },
+        { provide: IOT_GATEWAY, useValue: {} },
+        { provide: PrincipalResolver, useValue: resolver },
+      ],
+    });
+  });
+  afterAll(() => h.app.close());
+  beforeEach(() => jest.clearAllMocks());
+
+  it('token ainda com operacao, mas o grupo foi removido no painel → 403', async () => {
+    resolver.resolve.mockResolvedValue({ pool: 'staff', sub: 'staff-teste', email: '', groups: ['suporte'], userId: 's1', staffId: 's1' });
+    const res = await request(h.app.getHttpServer())
+      .post(`/vehicles/${VEHICLE_ID}/commands`)
+      .set('Authorization', `Bearer ${await staffToken(['operacao'])}`)
+      .send({ type: 'horn', reason: 'Teste de buzina' });
+    expect(res.status).toBe(403);
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('grupo do token sem grupo exigido continua 403 sem consultar o cadastro', async () => {
+    const res = await request(h.app.getHttpServer())
+      .post(`/vehicles/${VEHICLE_ID}/commands`)
+      .set('Authorization', `Bearer ${await staffToken(['financeiro'])}`)
+      .send({ type: 'horn', reason: 'Teste de buzina' });
+    expect(res.status).toBe(403);
   });
 });

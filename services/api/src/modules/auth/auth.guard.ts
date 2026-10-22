@@ -42,10 +42,12 @@ export class AuthGuard implements CanActivate {
     if (!req.pools.includes(verified.pool)) {
       throw new ProblemException(403, 'forbidden', 'Este recurso não está disponível para o seu tipo de conta.');
     }
-    if (verified.pool === 'staff' && !verified.groups.some((g) => req.groups.includes(g))) {
-      throw new ProblemException(403, 'forbidden', 'Seu grupo não tem acesso a este recurso.');
-    }
-    request.principal = await this.resolver.resolve(verified);
+    // Pré-filtro barato pelo token; a decisão vale pelos grupos atuais do cadastro (QA-04: grupo removido no painel).
+    const denied = () => new ProblemException(403, 'forbidden', 'Seu grupo não tem acesso a este recurso.');
+    if (verified.pool === 'staff' && !verified.groups.some((g) => req.groups.includes(g))) throw denied();
+    const principal = await this.resolver.resolve(verified);
+    if (principal.pool === 'staff' && !principal.groups.some((g) => req.groups.includes(g))) throw denied();
+    request.principal = principal;
     return true;
   }
 }

@@ -1,5 +1,8 @@
 import { Global, Inject, Logger, Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { CognitoAuthVerifier } from './adapters/auth/cognito-auth-verifier';
+import { CognitoStaffDirectory } from './adapters/identity/cognito-staff-directory';
+import { LocalStaffDirectory } from './adapters/identity/local-staff-directory';
 import { DevAuthVerifier } from './adapters/auth/dev-auth-verifier';
 import { MockKycProvider } from './adapters/kyc/mock-kyc-provider';
 import { LogPushNotifier } from './adapters/push/log-push-notifier';
@@ -15,6 +18,7 @@ import { KYC_PROVIDER } from './ports/kyc-provider.port';
 import { OBJECT_STORAGE } from './ports/object-storage.port';
 import { PUSH_NOTIFIER } from './ports/push-notifier.port';
 import { QUEUE_BUS } from './ports/queue-bus.port';
+import { STAFF_DIRECTORY, type StaffDirectory } from './ports/staff-directory.port';
 import { PrismaService } from './prisma/prisma.service';
 import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis/redis-store';
 
@@ -45,6 +49,14 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
     },
     { provide: KYC_PROVIDER, useFactory: () => new MockKycProvider() },
     { provide: PUSH_NOTIFIER, useFactory: () => new LogPushNotifier() },
+    {
+      provide: STAFF_DIRECTORY,
+      inject: [APP_CONFIG],
+      useFactory: (cfg: AppConfig): StaffDirectory =>
+        cfg.authMode === 'cognito' && cfg.cognito.staffPoolId
+          ? new CognitoStaffDirectory(new CognitoIdentityProviderClient({ region: cfg.cognito.region }), cfg.cognito.staffPoolId)
+          : new LocalStaffDirectory(),
+    },
   ],
   exports: [
     APP_CONFIG,
@@ -58,6 +70,7 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
     QUEUE_BUS,
     KYC_PROVIDER,
     PUSH_NOTIFIER,
+    STAFF_DIRECTORY,
   ],
 })
 export class CoreModule implements OnModuleDestroy, OnApplicationBootstrap {

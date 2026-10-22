@@ -19,6 +19,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-cognito-identity-provider": "3.709.0",
     "@aws-sdk/client-iot": "3.709.0",
     "@aws-sdk/client-iot-data-plane": "3.709.0",
     "@aws-sdk/client-location": "3.709.0",
