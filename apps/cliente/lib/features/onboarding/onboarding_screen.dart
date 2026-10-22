@@ -13,116 +13,78 @@ import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
+import 'payment_step.dart';
+import 'step_shell.dart';
 
-/// Onboarding em 3 passos: dados + termos + consentimento de localizacao,
-/// documento e selfie, e status da verificacao.
+/// Cadastro depois do login (o codigo e o passo 1 de 4, em otp_step.dart):
+/// 2 dados + termos (localizacao opcional), 3 documento e selfie, 4 forma de
+/// pagamento. Ao concluir vai ao mapa com o toast "Cadastro enviado". O status da
+/// verificacao aparece ao retomar com KYC ja enviado (ex.: recusado).
 class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
   @override
   ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
-/// Passo inicial do onboarding. Sem KYC iniciado o passo 0 (nome, CPF e
+const onboardingDataStep = 0, onboardingDocsStep = 1, onboardingPaymentStep = 2, onboardingStatusStep = 3;
+
+/// Passo inicial do onboarding. Sem KYC iniciado o passo de dados (nome, CPF e
 /// nascimento) e obrigatorio mesmo com termos ja aceitos: esses dados so existem
-/// em memoria e o envio do KYC os exige (antes, retomar no passo 1 enviava
-/// campos vazios e `DateTime.parse('')` estourava).
-int initialOnboardingStep({required bool termsAccepted, required bool locationConsent, required KycStatus kyc}) {
-  if (kyc == KycStatus.notStarted) return 0;
-  if (!termsAccepted || !locationConsent) return 0;
-  return 2;
+/// em memoria e o envio do KYC os exige (antes, retomar no passo seguinte enviava
+/// campos vazios e `DateTime.parse('')` estourava). A localizacao nao conta: e
+/// opcional no cadastro e pedida de novo antes do aluguel.
+int initialOnboardingStep({required bool termsAccepted, required KycStatus kyc}) {
+  if (kyc == KycStatus.notStarted) return onboardingDataStep;
+  if (!termsAccepted) return onboardingDataStep;
+  return onboardingStatusStep;
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int? _step;
   String _name = '', _cpf = '', _birth = '';
 
+  void _finish() {
+    VoltiToast.show(context, context.l.onboardingSentToast);
+    context.go('/home');
+  }
+
   @override
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider).value;
     if (session == null) return const Scaffold(body: LoadingState());
-    _step ??= initialOnboardingStep(
-      termsAccepted: session.termsAccepted,
-      locationConsent: session.locationConsent,
-      kyc: session.kyc,
-    );
+    _step ??= initialOnboardingStep(termsAccepted: session.termsAccepted, kyc: session.kyc);
     return switch (_step!) {
-      0 => ConsentStep(
+      onboardingDataStep => ConsentStep(
           initialName: session.customer?.name ?? '',
           initialTerms: session.termsAccepted,
+          // LGPD: consentimento so por acao do cliente. A caixa vem desmarcada (o design
+          // a mostra marcada; ver docs/decisoes.md) e reflete o que ja foi gravado.
           initialLocation: session.locationConsent,
           initialMarketing: session.consents?.marketing ?? false,
+          onBack: () => ref.read(sessionProvider.notifier).signOut(),
           onDone: (name, cpf, birth) {
             setState(() {
               _name = name;
               _cpf = cpf;
               _birth = birth;
-              _step = 1;
+              _step = onboardingDocsStep;
             });
           },
         ),
-      1 => DocumentsStep(
+      onboardingDocsStep => DocumentsStep(
           name: _name,
           cpf: _cpf,
           birth: _birth,
-          onBack: () => setState(() => _step = 0),
-          onSubmitted: () => setState(() => _step = 2),
+          alreadySubmitted: session.kyc == KycStatus.pending || session.kyc == KycStatus.approved,
+          onBack: () => setState(() => _step = onboardingDataStep),
+          onSubmitted: () => setState(() => _step = onboardingPaymentStep),
         ),
-      _ => VerificationStatusScreen(fromOnboarding: true, onResend: () => setState(() => _step = 0)),
+      onboardingPaymentStep => PaymentStep(
+          onBack: () => setState(() => _step = onboardingDocsStep),
+          onDone: _finish,
+        ),
+      _ => VerificationStatusScreen(fromOnboarding: true, onResend: () => setState(() => _step = onboardingDataStep)),
     };
-  }
-}
-
-class _StepShell extends StatelessWidget {
-  const _StepShell({required this.step, required this.title, required this.subtitle, required this.children, required this.cta, this.onBack});
-  final int step;
-  final String title, subtitle;
-  final List<Widget> children;
-  final Widget cta;
-  final VoidCallback? onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.l;
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, 0),
-              child: Row(children: [
-                if (onBack != null) ...[
-                  VoltiIconButton(
-                    icon: LucideIcons.arrowLeft,
-                    variant: VoltiIconButtonVariant.soft,
-                    label: l.back,
-                    onPressed: onBack,
-                  ),
-                  const SizedBox(width: VoltiSpacing.s14),
-                ],
-                Expanded(child: ProgressSteps(total: 3, current: step, label: l.stepOf(step + 1, 3))),
-              ]),
-            ),
-            Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-                children: [
-                  Semantics(header: true, child: Text(title, style: VoltiTypography.title)),
-                  const SizedBox(height: VoltiSpacing.s6),
-                  Text(subtitle, style: VoltiTypography.body),
-                  const SizedBox(height: VoltiSpacing.s20),
-                  ...children,
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(
-                  VoltiSpacing.screenGutter, 0, VoltiSpacing.screenGutter, VoltiSpacing.s16),
-              child: cta,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }
 
@@ -165,16 +127,37 @@ BirthError? validateBirth(String text, {DateTime? now}) {
   return age >= 18 ? null : BirthError.underage;
 }
 
+/// CPF com 11 digitos e digitos verificadores validos (rejeita sequencias repetidas).
+bool isValidCpf(String text) {
+  final d = text.replaceAll(RegExp(r'\D'), '');
+  if (d.length != 11 || RegExp(r'^(\d)\1{10}$').hasMatch(d)) return false;
+  final n = d.split('').map(int.parse).toList();
+  int check(int len) {
+    var sum = 0;
+    for (var i = 0; i < len; i++) {
+      sum += n[i] * (len + 1 - i);
+    }
+    final r = (sum * 10) % 11;
+    return r == 10 ? 0 : r;
+  }
+
+  return check(9) == n[9] && check(10) == n[10];
+}
+
 class ConsentStep extends ConsumerStatefulWidget {
   const ConsentStep({
     super.key,
     required this.onDone,
+    this.onBack,
     this.initialName = '',
     this.initialTerms = false,
     this.initialLocation = false,
     this.initialMarketing = false,
   });
   final void Function(String name, String cpf, String birth) onDone;
+
+  /// Voltar: sai do cadastro (encerra a sessao e volta as boas-vindas).
+  final VoidCallback? onBack;
   final String initialName;
   final bool initialTerms, initialLocation, initialMarketing;
   @override
@@ -197,8 +180,10 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
     super.dispose();
   }
 
-  bool get _valid =>
-      _terms && _location && _name.text.trim().isNotEmpty && _cpf.text.replaceAll(RegExp(r'\D'), '').length == 11 && validateBirth(_birth.text) == null;
+  /// So os termos sao obrigatorios; localizacao e marketing sao opcionais.
+  bool get _valid => _terms && _name.text.trim().isNotEmpty && isValidCpf(_cpf.text) && validateBirth(_birth.text) == null;
+
+  bool get _cpfComplete => _cpf.text.replaceAll(RegExp(r'\D'), '').length == 11;
 
   Future<void> _save() async {
     setState(() {
@@ -223,9 +208,10 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-    return _StepShell(
-      step: 0,
+    return OnboardingStepShell(
+      step: 1,
       title: l.dataTitle,
+      onBack: _busy ? null : widget.onBack,
       subtitle: l.dataSubtitle,
       cta: Column(mainAxisSize: MainAxisSize.min, children: [
         if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(failureText(l, _error!), style: const TextStyle(color: VoltiColors.danger))),
@@ -251,7 +237,12 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
           onChanged: (_) => setState(() {}),
           keyboardType: TextInputType.number,
           inputFormatters: [MaskFormatter('###.###.###-##')],
-          decoration: InputDecoration(labelText: l.cpf, hintText: '000.000.000-00', prefixIcon: const Icon(LucideIcons.idCard)),
+          decoration: InputDecoration(
+            labelText: l.cpf,
+            hintText: '000.000.000-00',
+            errorText: _cpfComplete && !isValidCpf(_cpf.text) ? l.cpfInvalidShort : null,
+            prefixIcon: const Icon(LucideIcons.idCard),
+          ),
         ),
         const SizedBox(height: VoltiSpacing.s12),
         TextField(
@@ -302,8 +293,19 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
 }
 
 class DocumentsStep extends ConsumerStatefulWidget {
-  const DocumentsStep({super.key, required this.name, required this.cpf, required this.birth, required this.onBack, required this.onSubmitted});
+  const DocumentsStep({
+    super.key,
+    required this.name,
+    required this.cpf,
+    required this.birth,
+    required this.onBack,
+    required this.onSubmitted,
+    this.alreadySubmitted = false,
+  });
   final String name, cpf, birth;
+
+  /// KYC ja enviado (voltando do passo de pagamento): nada a reenviar.
+  final bool alreadySubmitted;
   final VoidCallback onBack, onSubmitted;
   @override
   ConsumerState<DocumentsStep> createState() => _DocumentsStepState();
@@ -330,7 +332,7 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
   /// mostrar, ou null se estiver tudo certo.
   String? _validateInputs(AppLocalizations l) {
     if (widget.name.trim().isEmpty) return l.nameRequired;
-    if (widget.cpf.replaceAll(RegExp(r'\D'), '').length != 11) return l.cpfInvalid;
+    if (!isValidCpf(widget.cpf)) return l.cpfInvalid;
     if (validateBirth(widget.birth) != null) return l.birthInvalid;
     return null;
   }
@@ -370,8 +372,24 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-    return _StepShell(
-      step: 1,
+    if (widget.alreadySubmitted) {
+      return OnboardingStepShell(
+        step: 2,
+        title: l.kycTitle,
+        subtitle: l.kycSubtitle,
+        onBack: widget.onBack,
+        cta: VoltiButton(label: l.continueLabel, size: VoltiButtonSize.lg, fullWidth: true, onPressed: widget.onSubmitted),
+        children: [
+          PhotoCapture(label: l.documentPhoto, icon: LucideIcons.idCard, height: 140, done: true),
+          const SizedBox(height: VoltiSpacing.s14),
+          PhotoCapture(label: l.selfiePhoto, icon: LucideIcons.scanFace, height: 140, done: true),
+          const SizedBox(height: VoltiSpacing.s14),
+          NoticeBanner(message: l.docsAlreadySent, icon: LucideIcons.shieldCheck),
+        ],
+      );
+    }
+    return OnboardingStepShell(
+      step: 2,
       title: l.kycTitle,
       subtitle: l.kycSubtitle,
       onBack: _busy ? null : widget.onBack,

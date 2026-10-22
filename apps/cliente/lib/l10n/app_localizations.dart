@@ -3123,6 +3123,258 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Preço do plano indisponível agora. Tente de novo em instantes.'**
   String get subscriptionPriceUnavailable;
+
+  /// No description provided for @welcomePhone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar com celular'**
+  String get welcomePhone;
+
+  /// No description provided for @welcomeApple.
+  ///
+  /// In pt, this message translates to:
+  /// **'Apple'**
+  String get welcomeApple;
+
+  /// No description provided for @welcomeAppleLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrar com Apple'**
+  String get welcomeAppleLabel;
+
+  /// No description provided for @welcomeGoogle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Google'**
+  String get welcomeGoogle;
+
+  /// No description provided for @welcomeGoogleLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrar com Google'**
+  String get welcomeGoogleLabel;
+
+  /// No description provided for @welcomeDevHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Modo dev: celular aceita o código 123456; Google e Apple só funcionam com o Cognito.'**
+  String get welcomeDevHint;
+
+  /// No description provided for @welcomeSocialDevOnly.
+  ///
+  /// In pt, this message translates to:
+  /// **'No modo dev, Google e Apple não estão disponíveis. Entre com celular ou e-mail.'**
+  String get welcomeSocialDevOnly;
+
+  /// No description provided for @socialSignInError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível entrar. Tente de novo.'**
+  String get socialSignInError;
+
+  /// No description provided for @otpPhoneTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu celular'**
+  String get otpPhoneTitle;
+
+  /// No description provided for @otpPhoneSubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Vamos mandar um código por SMS para confirmar que é você.'**
+  String get otpPhoneSubtitle;
+
+  /// No description provided for @otpPhoneLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Celular com DDD'**
+  String get otpPhoneLabel;
+
+  /// No description provided for @otpPhoneInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Informe um celular com DDD, ex.: (11) 98765-4321.'**
+  String get otpPhoneInvalid;
+
+  /// No description provided for @otpEmailTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu e-mail'**
+  String get otpEmailTitle;
+
+  /// No description provided for @otpEmailSubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Vamos mandar um código por e-mail para confirmar que é você.'**
+  String get otpEmailSubtitle;
+
+  /// No description provided for @otpEmailInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Informe um e-mail válido.'**
+  String get otpEmailInvalid;
+
+  /// No description provided for @otpSend.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar código'**
+  String get otpSend;
+
+  /// No description provided for @otpCodeTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Digite o código'**
+  String get otpCodeTitle;
+
+  /// No description provided for @otpCodeSentSms.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviamos 6 dígitos por SMS para {destination}.'**
+  String otpCodeSentSms(String destination);
+
+  /// No description provided for @otpCodeSentEmail.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviamos 6 dígitos por e-mail para {destination}.'**
+  String otpCodeSentEmail(String destination);
+
+  /// No description provided for @otpCodeLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código de 6 dígitos'**
+  String get otpCodeLabel;
+
+  /// No description provided for @otpNotReceived.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não chegou?'**
+  String get otpNotReceived;
+
+  /// No description provided for @otpResendIn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reenviar em {time}'**
+  String otpResendIn(String time);
+
+  /// No description provided for @otpResend.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reenviar código'**
+  String get otpResend;
+
+  /// No description provided for @otpSendIn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar código em {time}'**
+  String otpSendIn(String time);
+
+  /// No description provided for @otpAccountConfirmed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conta confirmada. Enviamos um novo código para entrar.'**
+  String get otpAccountConfirmed;
+
+  /// No description provided for @otpResent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviamos um novo código.'**
+  String get otpResent;
+
+  /// No description provided for @otpConfirm.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confirmar'**
+  String get otpConfirm;
+
+  /// No description provided for @otpEditDestination.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corrigir'**
+  String get otpEditDestination;
+
+  /// No description provided for @otpDevHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Modo dev: o código é 123456.'**
+  String get otpDevHint;
+
+  /// No description provided for @otpErrorInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código inválido. Confira e tente de novo.'**
+  String get otpErrorInvalid;
+
+  /// No description provided for @otpErrorExpired.
+  ///
+  /// In pt, this message translates to:
+  /// **'O código expirou. Peça um novo.'**
+  String get otpErrorExpired;
+
+  /// No description provided for @otpErrorTooMany.
+  ///
+  /// In pt, this message translates to:
+  /// **'Muitas tentativas. Aguarde alguns minutos e tente de novo.'**
+  String get otpErrorTooMany;
+
+  /// No description provided for @otpErrorDestination.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos enviar para esse contato. Confira e tente de novo.'**
+  String get otpErrorDestination;
+
+  /// No description provided for @cpfInvalidShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'CPF inválido'**
+  String get cpfInvalidShort;
+
+  /// No description provided for @docsAlreadySent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Documentos já enviados para análise.'**
+  String get docsAlreadySent;
+
+  /// No description provided for @payTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Forma de pagamento'**
+  String get payTitle;
+
+  /// No description provided for @paySubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'O cartão garante a caução. Você também pode pagar a caução por Pix em cada aluguel.'**
+  String get paySubtitle;
+
+  /// No description provided for @payPixWallet.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix + carteira Volti'**
+  String get payPixWallet;
+
+  /// No description provided for @payCardMissing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Adicione um cartão para a caução'**
+  String get payCardMissing;
+
+  /// No description provided for @payPixExplain.
+  ///
+  /// In pt, this message translates to:
+  /// **'Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.'**
+  String get payPixExplain;
+
+  /// No description provided for @payFinish.
+  ///
+  /// In pt, this message translates to:
+  /// **'Concluir cadastro'**
+  String get payFinish;
+
+  /// No description provided for @onboardingSentToast.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cadastro enviado. Verificação em até 2 min.'**
+  String get onboardingSentToast;
 }
 
 class _AppLocalizationsDelegate

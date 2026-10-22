@@ -33,16 +33,16 @@ class _Picker implements PhotoPicker {
 void main() {
   group('initialOnboardingStep', () {
     test('KYC nao iniciado comeca no passo 0 mesmo com termos aceitos', () {
-      expect(initialOnboardingStep(termsAccepted: true, locationConsent: true, kyc: KycStatus.notStarted), 0);
+      expect(initialOnboardingStep(termsAccepted: true, kyc: KycStatus.notStarted), onboardingDataStep);
     });
 
-    test('sem consentimentos comeca no passo 0', () {
-      expect(initialOnboardingStep(termsAccepted: false, locationConsent: true, kyc: KycStatus.pending), 0);
+    test('sem termos comeca no passo de dados', () {
+      expect(initialOnboardingStep(termsAccepted: false, kyc: KycStatus.pending), onboardingDataStep);
     });
 
     test('pendente, aprovado e recusado vao ao status', () {
       for (final k in [KycStatus.pending, KycStatus.approved, KycStatus.rejected]) {
-        expect(initialOnboardingStep(termsAccepted: true, locationConsent: true, kyc: k), 2, reason: '$k');
+        expect(initialOnboardingStep(termsAccepted: true, kyc: k), onboardingStatusStep, reason: '$k');
       }
     });
   });

@@ -1758,4 +1758,149 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get subscriptionPriceUnavailable =>
       'Preço do plano indisponível agora. Tente de novo em instantes.';
+
+  @override
+  String get welcomePhone => 'Continuar com celular';
+
+  @override
+  String get welcomeApple => 'Apple';
+
+  @override
+  String get welcomeAppleLabel => 'Entrar com Apple';
+
+  @override
+  String get welcomeGoogle => 'Google';
+
+  @override
+  String get welcomeGoogleLabel => 'Entrar com Google';
+
+  @override
+  String get welcomeDevHint =>
+      'Modo dev: celular aceita o código 123456; Google e Apple só funcionam com o Cognito.';
+
+  @override
+  String get welcomeSocialDevOnly =>
+      'No modo dev, Google e Apple não estão disponíveis. Entre com celular ou e-mail.';
+
+  @override
+  String get socialSignInError => 'Não foi possível entrar. Tente de novo.';
+
+  @override
+  String get otpPhoneTitle => 'Seu celular';
+
+  @override
+  String get otpPhoneSubtitle =>
+      'Vamos mandar um código por SMS para confirmar que é você.';
+
+  @override
+  String get otpPhoneLabel => 'Celular com DDD';
+
+  @override
+  String get otpPhoneInvalid =>
+      'Informe um celular com DDD, ex.: (11) 98765-4321.';
+
+  @override
+  String get otpEmailTitle => 'Seu e-mail';
+
+  @override
+  String get otpEmailSubtitle =>
+      'Vamos mandar um código por e-mail para confirmar que é você.';
+
+  @override
+  String get otpEmailInvalid => 'Informe um e-mail válido.';
+
+  @override
+  String get otpSend => 'Enviar código';
+
+  @override
+  String get otpCodeTitle => 'Digite o código';
+
+  @override
+  String otpCodeSentSms(String destination) {
+    return 'Enviamos 6 dígitos por SMS para $destination.';
+  }
+
+  @override
+  String otpCodeSentEmail(String destination) {
+    return 'Enviamos 6 dígitos por e-mail para $destination.';
+  }
+
+  @override
+  String get otpCodeLabel => 'Código de 6 dígitos';
+
+  @override
+  String get otpNotReceived => 'Não chegou?';
+
+  @override
+  String otpResendIn(String time) {
+    return 'Reenviar em $time';
+  }
+
+  @override
+  String get otpResend => 'Reenviar código';
+
+  @override
+  String otpSendIn(String time) {
+    return 'Enviar código em $time';
+  }
+
+  @override
+  String get otpAccountConfirmed =>
+      'Conta confirmada. Enviamos um novo código para entrar.';
+
+  @override
+  String get otpResent => 'Enviamos um novo código.';
+
+  @override
+  String get otpConfirm => 'Confirmar';
+
+  @override
+  String get otpEditDestination => 'Corrigir';
+
+  @override
+  String get otpDevHint => 'Modo dev: o código é 123456.';
+
+  @override
+  String get otpErrorInvalid => 'Código inválido. Confira e tente de novo.';
+
+  @override
+  String get otpErrorExpired => 'O código expirou. Peça um novo.';
+
+  @override
+  String get otpErrorTooMany =>
+      'Muitas tentativas. Aguarde alguns minutos e tente de novo.';
+
+  @override
+  String get otpErrorDestination =>
+      'Não conseguimos enviar para esse contato. Confira e tente de novo.';
+
+  @override
+  String get cpfInvalidShort => 'CPF inválido';
+
+  @override
+  String get docsAlreadySent => 'Documentos já enviados para análise.';
+
+  @override
+  String get payTitle => 'Forma de pagamento';
+
+  @override
+  String get paySubtitle =>
+      'O cartão garante a caução. Você também pode pagar a caução por Pix em cada aluguel.';
+
+  @override
+  String get payPixWallet => 'Pix + carteira Volti';
+
+  @override
+  String get payCardMissing => 'Adicione um cartão para a caução';
+
+  @override
+  String get payPixExplain =>
+      'Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.';
+
+  @override
+  String get payFinish => 'Concluir cadastro';
+
+  @override
+  String get onboardingSentToast =>
+      'Cadastro enviado. Verificação em até 2 min.';
 }
