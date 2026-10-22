@@ -114,7 +114,7 @@ export class RentalStartService {
 
     const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
     if (open) {
-      this.requestDepositRelease(dto.depositId, customerId);
+      await this.requestDepositRelease(dto.depositId, customerId);
       throw conflict('rental-already-active', 'Você já tem um aluguel em andamento.');
     }
 
@@ -129,12 +129,12 @@ export class RentalStartService {
     const ownReservation = reservation && reservation.customerId === customerId ? reservation : null;
     // QA-21: moto offline não começa aluguel (o desbloqueio ficaria pendente e o relógio correria com a moto travada).
     if (vehicle.status === 'offline' || vehicle.online === false || (await this.liveOffline(vehicle.thingName))) {
-      this.requestDepositRelease(dto.depositId, customerId);
+      await this.requestDepositRelease(dto.depositId, customerId);
       throw conflict('vehicle-offline', 'A moto está sem conexão agora. Escolha outra moto; nada foi cobrado.');
     }
     const available = (vehicle.status === 'free' && !reservation) || (vehicle.status === 'reserved' && !!ownReservation);
     if (!available) {
-      this.requestDepositRelease(dto.depositId, customerId);
+      await this.requestDepositRelease(dto.depositId, customerId);
       throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
     }
 
@@ -151,15 +151,26 @@ export class RentalStartService {
       const d = await this.prisma.deposit.findUnique({ where: { id: dto.depositId } });
       if (!d || d.customerId !== customerId) throw notFound('Caução não encontrada.');
       if (d.status !== 'held') throw new ProblemException(402, 'deposit-not-held', 'A caução ainda não foi confirmada.');
+      if (await this.prisma.depositRelease.findUnique({ where: { depositId: d.id } })) {
+        throw new ProblemException(402, 'deposit-not-held', 'Esta caução está sendo liberada; pague uma nova caução.');
+      }
       deposit = d;
       heldDepositId = d.id;
       rentalId = d.rentalId ?? randomUUID();
     } else {
       rentalId = randomUUID();
       const held = await this.billing.holdDeposit({ customerId, rentalId, method: dto.depositMethod, idempotencyKey: `deposit:${customerId}:${idempotencyKey}` });
-      if (held.status === 'failed') throw new ProblemException(402, 'payment-failed', 'Não foi possível reter a caução. Tente outro meio de pagamento.');
       const d = await this.prisma.deposit.findUnique({ where: { id: held.depositId } });
+      // Repetição com a mesma chave depois de um 409: a caução daquela tentativa já foi liberada/capturada.
+      if (held.status === 'failed' && d && (d.status === 'released' || d.status === 'captured')) {
+        throw new ProblemException(402, 'deposit-not-held', 'A caução desta tentativa já foi liberada. Tente de novo com uma nova requisição.');
+      }
+      if (held.status === 'failed') throw new ProblemException(402, 'payment-failed', 'Não foi possível reter a caução. Tente outro meio de pagamento.');
       if (!d) throw new ProblemException(402, 'payment-failed', 'Caução não registrada pelo provedor.');
+      if (held.status === 'held' && d.status !== 'held') throw new ProblemException(402, 'deposit-not-held', 'A caução ainda não foi confirmada.');
+      if (held.status === 'held' && (await this.prisma.depositRelease.findUnique({ where: { depositId: d.id } }))) {
+        throw new ProblemException(402, 'deposit-not-held', 'A caução desta tentativa está sendo liberada. Tente de novo com uma nova requisição.');
+      }
       deposit = d;
       if (held.status === 'held') heldDepositId = d.id;
       if (held.status === 'awaiting_pix') {
@@ -228,7 +239,7 @@ export class RentalStartService {
           this.logger.error({ msg: 'policy_cancel_failed', policyId, error: (e as Error).message });
         }
       }
-      if (heldDepositId) this.requestDepositRelease(heldDepositId, customerId);
+      if (heldDepositId) await this.requestDepositRelease(heldDepositId, customerId);
       throw err;
     }
 
@@ -241,10 +252,14 @@ export class RentalStartService {
     return { status: 201, body: { outcome: 'started', rental: mapped, deposit: toDeposit({ ...deposit, rentalId }) } };
   }
 
-  private requestDepositRelease(depositId: string | undefined, customerId: string): void {
+  /**
+   * Fix round 1: espera o consumidor registrar a liberação (`DepositRelease`) antes de responder, para que uma repetição
+   * com a mesma `Idempotency-Key` já encontre a caução liberada (ou em liberação) e não comece um aluguel sobre ela.
+   */
+  private async requestDepositRelease(depositId: string | undefined, customerId: string): Promise<void> {
     if (!depositId) return;
     const ev: DepositReleaseRequestedEvent = { depositId, customerId, reason: 'rental_not_started' };
-    this.events.emit(EV.DEPOSIT_RELEASE_REQUESTED, ev);
+    await this.events.emitAsync(EV.DEPOSIT_RELEASE_REQUESTED, ev).catch((err) => this.logger.error({ msg: 'deposit_release_request_failed', depositId, error: (err as Error).message }));
   }
 }
 

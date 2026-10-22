@@ -89,6 +89,15 @@ describe('RentalBillingService.holdDeposit', () => {
     expect(await depositPayment(ctx.db, r.depositId)).toMatchObject({ status: 'authorized', kind: 'deposit', amountCents: 5000, providerPaymentId: d.providerReference, cardLast4: '4242' });
   });
 
+  it.each(['released', 'captured'] as const)('mesma idempotencyKey com a caução já %s → failed (nunca "held"; fix round 1)', async (status) => {
+    const ctx = await setup();
+    const a = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });
+    await ctx.db.deposit.update({ where: { id: a.depositId }, data: { status } });
+    const b = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });
+    expect(b).toEqual({ depositId: a.depositId, status: 'failed' });
+    expect(ctx.provider.operations('preAuthorize')).toBe(1);
+  });
+
   it('mesma idempotencyKey → mesma resposta e uma única chamada ao provider', async () => {
     const ctx = await setup();
     const a = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });

@@ -1,6 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
+import { IOT_GATEWAY, type IotGateway } from '../src/ports/iot-gateway.port';
 import { approvedCustomer, bootE2eApp, devToken, freeVehicleInReturnZone } from './helpers/e2e-app';
 
 /** Regressões dos achados do relatório de QA (docs/relatorio-qa.md) contra a API completa (Postgres/Redis do compose). */
@@ -48,6 +49,32 @@ describe('Correções do QA (e2e)', () => {
       expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('free');
     } finally {
       await prisma.vehicle.update({ where: { id: v.id }, data: { online: true } });
+    }
+  });
+
+  it('QA-21 (fix round 1): desbloqueio não confirmado → 409; repetir com a mesma chave não começa aluguel nem cobra', async () => {
+    const { token, customerId } = await approvedCustomer(app, prisma, 'qa21-retry');
+    const auth = { Authorization: `Bearer ${token}` };
+    await http().post('/payments/cards').set(auth).set('Idempotency-Key', `card-${Date.now()}`).send({ cardToken: 'tok_visa_4242' }).expect(201);
+    const v = await freeVehicleInReturnZone(prisma);
+    const gateway = app.get<IotGateway>(IOT_GATEWAY);
+    const spy = jest.spyOn(gateway, 'unlock').mockImplementation(async (req) => ({ commandId: req.commandId, status: 'pending', reason: 'offline' }));
+    try {
+      const key = `qa21-retry-${Date.now()}`;
+      const body = { vehicleId: v.id, planCode: 'minute', coverage: 'basic', depositMethod: 'card' };
+      const first = await http().post('/rentals').set(auth).set('Idempotency-Key', key).send(body);
+      expect(first.status).toBe(409);
+      expect(first.body.type).toBe('https://api.volti.com.br/problems/vehicle-offline');
+      spy.mockRestore();
+      const retry = await http().post('/rentals').set(auth).set('Idempotency-Key', key).send(body);
+      expect(retry.status).toBe(402);
+      expect(retry.body.type).toBe('https://api.volti.com.br/problems/deposit-not-held');
+      expect(await prisma.rental.count({ where: { customerId } })).toBe(0);
+      expect(await prisma.payment.count({ where: { customerId, kind: { in: ['rental', 'fee'] } } })).toBe(0);
+      expect(await prisma.deposit.count({ where: { customerId, status: 'held' } })).toBe(0);
+      expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('free');
+    } finally {
+      spy.mockRestore();
     }
   });
 

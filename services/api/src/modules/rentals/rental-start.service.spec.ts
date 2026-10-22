@@ -187,6 +187,16 @@ describe('Início do aluguel (POST /rentals)', () => {
     expect(res.body.type).toBe('https://api.volti.com.br/problems/payment-failed');
   });
 
+  it('fix round 1: repetição com a mesma chave depois de 409 (caução já liberada) → 402 deposit-not-held, sem aluguel', async () => {
+    billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'failed' });
+    h.prisma.deposit.findUnique.mockResolvedValue({ id: DEPOSIT_ID, customerId: CUSTOMER_ID, rentalId: null, method: 'card', status: 'released', amountCents: 5000 } as any);
+    const res = await post('chave-retry-0001');
+    expect(res.status).toBe(402);
+    expect(res.body.type).toBe('https://api.volti.com.br/problems/deposit-not-held');
+    expect(h.prisma.rental.create).not.toHaveBeenCalled();
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
   it('QA-24: termos não aceitos → 403 e nada é retido', async () => {
     h.prisma.customer.findUnique.mockResolvedValue({ ...customer, termsAccepted: false } as any);
     const res = await post('chave-terms-0001');
