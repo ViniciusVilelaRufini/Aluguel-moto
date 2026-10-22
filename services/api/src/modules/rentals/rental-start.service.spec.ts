@@ -17,7 +17,7 @@ const VEHICLE_ID = '33333333-3333-4333-8333-333333333333';
 const DEPOSIT_ID = '66666666-6666-4666-8666-666666666666';
 const POLICY_ID = '77777777-7777-4777-8777-777777777777';
 
-const customer = { id: CUSTOMER_ID, kycStatus: 'approved', status: 'active', delinquent: false, locationConsent: true };
+const customer = { id: CUSTOMER_ID, kycStatus: 'approved', status: 'active', delinquent: false, locationConsent: true, termsAccepted: true, termsVersion: '2026-10' };
 const vehicle = { id: VEHICLE_ID, code: 'VLT-0001', model: 'Volti S1', thingName: 'moto-0001', status: 'free', lat: -23.560412, lng: -46.689871, batteryPct: 90, speedLimitKmh: 32 };
 const plan = { id: 'p', code: 'minute', name: 'Por minuto', unit: 'minute', unlockFeeCents: 300, unitPriceCents: 79, pausePerMinuteCents: 20, recurring: false, active: true };
 const body = { vehicleId: VEHICLE_ID, planCode: 'minute', coverage: 'basic', depositMethod: 'card' };
@@ -185,6 +185,13 @@ describe('Início do aluguel (POST /rentals)', () => {
     const res = await post('chave-fail-0001');
     expect(res.status).toBe(402);
     expect(res.body.type).toBe('https://api.volti.com.br/problems/payment-failed');
+  });
+
+  it('QA-24: termos não aceitos → 403 e nada é retido', async () => {
+    h.prisma.customer.findUnique.mockResolvedValue({ ...customer, termsAccepted: false } as any);
+    const res = await post('chave-terms-0001');
+    expect(res.status).toBe(403);
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
   });
 
   describe('QA-21: não começa (nem cobra) com a moto offline ou sem desbloqueio confirmado', () => {

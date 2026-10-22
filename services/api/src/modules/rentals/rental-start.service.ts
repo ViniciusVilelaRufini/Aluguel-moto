@@ -110,7 +110,7 @@ export class RentalStartService {
   async start(user: Principal, dto: StartRentalDto, idempotencyKey: string): Promise<StartResult> {
     const customerId = user.customerId!;
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
-    await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: true });
+    await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: true, requireTerms: true });
 
     const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
     if (open) {
