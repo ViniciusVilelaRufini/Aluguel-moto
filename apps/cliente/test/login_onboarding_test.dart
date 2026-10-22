@@ -108,16 +108,19 @@ void main() {
         authRepositoryProvider.overrideWithValue(devAuth()),
         sessionProvider.overrideWith(() => s),
       ]));
-      await t.pumpAndSettle();
+      // Hero com loops infinitos: sem pumpAndSettle.
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 300));
+      }
 
       expect(find.text('Continuar com celular'), findsOneWidget);
       expect(find.text('Apple'), findsOneWidget);
       expect(find.text('Google'), findsOneWidget);
-      expect(find.text('Entrar com e-mail'), findsOneWidget);
+      expect(find.text('E-mail'), findsOneWidget);
       for (final b in ['Sem CNH', 'Sem placa', '18+']) {
         expect(find.widgetWithText(SuccessBadge, b), findsOneWidget);
       }
-      expect(t.widget<VoltiButton>(find.byKey(const Key('welcome-email'))).variant, VoltiButtonVariant.ghost);
+      expect(t.widget<VoltiButton>(find.byKey(const Key('welcome-email'))).variant, VoltiButtonVariant.soft);
       expect(find.byKey(const Key('welcome-dev-hint')), findsOneWidget);
       expect(find.bySemanticsLabel('Entrar com Google'), findsOneWidget);
 
@@ -134,7 +137,10 @@ void main() {
         authRepositoryProvider.overrideWithValue(cognitoAuth(config)),
         sessionProvider.overrideWith(() => s),
       ]));
-      await t.pumpAndSettle();
+      // Hero com loops infinitos: sem pumpAndSettle.
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 300));
+      }
       expect(find.byKey(const Key('welcome-dev-hint')), findsNothing);
 
       await t.tap(find.byKey(const Key('welcome-apple')));
@@ -152,7 +158,10 @@ void main() {
             cognitoAuth(const CognitoConfig(region: 'sa-east-1', userPoolId: 'p', clientId: 'c'))),
         sessionProvider.overrideWith(() => s),
       ]));
-      await t.pumpAndSettle();
+      // Hero com loops infinitos: sem pumpAndSettle.
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 300));
+      }
       await t.tap(find.byKey(const Key('welcome-google')));
       await t.pump();
       expect(find.text('A entrada pelo Cognito ainda não está configurada neste ambiente.'), findsOneWidget);

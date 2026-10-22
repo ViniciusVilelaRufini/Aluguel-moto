@@ -222,8 +222,7 @@
   "waitingLockText": "A moto precisa parar para travar com segurança. Isso leva alguns segundos.",
   "wallet": "Carteira",
   "walletBalanceTitle": "Saldo",
-  "welcomeSubtitle": "Por minuto, hora, dia ou semana. Liberada pelo app em segundos.",
-  "welcomeTitle": "Pegue uma moto e vá.",
+  "welcomeSubtitle": "Escolha a moto no app e retire no galpão. Por dia, semana ou mês.",
   "wellbeingText": "Detectamos uma possível queda. Sem resposta em 60 segundos, acionamos o suporte.",
   "wellbeingTitle": "Você está bem?",
   "yourLocation": "Sua localização",
@@ -263,7 +262,7 @@
       }
     }
   },
-  "pixText": "Pague {amount} para liberar a moto. A caução volta quando você encerra a corrida.",
+  "pixText": "Pague {amount} para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução volta quando você encerra a corrida.",
   "@pixText": {
     "placeholders": {
       "amount": {
@@ -399,8 +398,8 @@
   "lockNotConfirmedText": "A moto ainda não confirmou que travou. Tente de novo ou fale com o suporte para não ser cobrado a mais.",
   "contactSupport": "Falar com o suporte",
   "realtimeOffline": "Sem conexão em tempo real",
-  "locationRationaleTitle": "Motos por perto",
-  "locationRationaleText": "Usamos sua localização para mostrar as motos mais próximas e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.",
+  "locationRationaleTitle": "Galpão mais perto",
+  "locationRationaleText": "Usamos sua localização para mostrar o galpão Volti mais perto de você e, durante o aluguel, para sua segurança. Fora do aluguel, não rastreamos você. Na próxima tela o sistema vai pedir a permissão.",
   "allowLocation": "Continuar",
   "birthInvalid": "Data inválida. Use dd/mm/aaaa.",
   "cpfInvalid": "CPF inválido. Confira os 11 dígitos.",
@@ -1250,17 +1249,6 @@
   },
   "depotsEmpty": "Nenhum galpão disponível",
   "depotsEmptyText": "Tente de novo em instantes.",
-  "pickContinue": "Continuar com {model} · {code}",
-  "@pickContinue": {
-    "placeholders": {
-      "model": {
-        "type": "String"
-      },
-      "code": {
-        "type": "String"
-      }
-    }
-  },
   "pickDepotCount": "{count, plural, =0{Nenhuma moto no galpão} =1{1 moto no galpão} other{{count} motos no galpão}}",
   "@pickDepotCount": {
     "placeholders": {
@@ -1462,8 +1450,69 @@
   "returnDepotText": "Leve a moto ao galpão e entregue ao operador. Ele faz o checklist de chegada e encerra o aluguel; o recibo abre aqui.",
   "returnDepotWaiting": "Aguardando o operador registrar a chegada…",
   "returnDepotMissing": "Não encontramos o galpão. Tente de novo.",
+  "pickContinueLabel": "Continuar",
+  "pickContinueBike": "{model} · {code}",
+  "@pickContinueBike": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "nearDepot": "Perto do {depot}",
+  "@nearDepot": {
+    "placeholders": {
+      "depot": {
+        "type": "String"
+      }
+    }
+  },
+  "welcomeTitleLead": "Pegue uma moto",
+  "welcomeTitleAccent": "e vá.",
+  "welcomeOr": "ou entre com",
+  "welcomeEmail": "E-mail",
+  "welcomeTermsPrefix": "Ao continuar, você aceita os ",
+  "welcomeTermsLink": "termos de uso",
+  "welcomeTermsMiddle": " e a ",
+  "welcomePrivacyLink": "política de privacidade",
+  "welcomeTermsSuffix": ".",
+  "welcomeLegalUnavailable": "Este documento ainda não está publicado neste ambiente.",
+  "welcomeLegalOpenError": "Não foi possível abrir o link. Tente de novo.",
   "buttonBusy": "Carregando…",
-  "@buttonBusy": {"description": "Leitor de tela: botao ocupado (loading)"},
+  "@buttonBusy": {
+    "description": "Leitor de tela: botao ocupado (loading)"
+  },
   "buttonDone": "Concluído",
-  "@buttonDone": {"description": "Leitor de tela: botao no estado de sucesso"}
+  "@buttonDone": {
+    "description": "Leitor de tela: botao no estado de sucesso"
+  },
+  "welcomeHeroPickup": "Retire no galpão",
+  "welcomeHeroPlansTitle": "Planos diário, semanal e mensal",
+  "welcomeHeroPlansText": "ou por minuto e hora",
+  "welcomeHeroInsurance": "Seguro incluso",
+  "welcomeHeroBatterySwap": "Troca de bateria",
+  "pickDetails": "Ver detalhes",
+  "pickCollapse": "Recolher",
+  "pickSpecCategory": "Categoria",
+  "pickSpecPower": "Potência",
+  "pickSpecSpeed": "Velocidade máxima",
+  "pickSpecBattery": "Bateria e autonomia",
+  "pickSpecBatteryValue": "{pct}% · ~{km} km",
+  "@pickSpecBatteryValue": {
+    "placeholders": {
+      "pct": {
+        "type": "int"
+      },
+      "km": {
+        "type": "int"
+      }
+    }
+  },
+  "pickSpecPrice": "Preço por minuto",
+  "pickSpecUnlock": "Taxa de desbloqueio",
+  "pickSpecCode": "Código",
+  "pickDetailsShort": "Detalhes"
 }

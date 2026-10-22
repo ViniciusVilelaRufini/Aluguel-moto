@@ -29,6 +29,18 @@ final minutePriceProvider = FutureProvider.autoDispose<int?>((ref) async {
   return null;
 });
 
+/// Taxa de desbloqueio do plano avulso (`PricingPlan` `minute`), em centavos, para
+/// os detalhes da moto. `null` se indisponivel.
+final minuteUnlockFeeProvider = FutureProvider.autoDispose<int?>((ref) async {
+  try {
+    final plans = await ref.watch(backendProvider).plans();
+    for (final p in plans) {
+      if (p.code == PlanCode.minute && p.active) return p.unlockFeeCents;
+    }
+  } catch (_) {}
+  return null;
+});
+
 /// Ha mensagem do suporte nao lida (bolinha do sino). Falha = sem bolinha.
 final supportUnreadProvider = FutureProvider.autoDispose<bool>((ref) async {
   try {

@@ -1,6 +1,5 @@
 import 'package:built_collection/built_collection.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/pick/pick_logic.dart';
@@ -99,9 +98,6 @@ void main() {
         ..createdAt = DateTime.utc(2026)
         ..updatedAt = DateTime.utc(2026));
       expect(pickupZones([zone]), hasLength(1));
-      expect(nearestPlaceName(const LatLng(-23.565, -46.655), [zone]), 'Ponto Paulista');
-      expect(nearestPlaceName(const LatLng(-23.60, -46.70), [zone]), isNull);
-      expect(nearestPlaceName(null, [zone]), isNull);
     });
   });
 

@@ -11,7 +11,17 @@ import 'motion.dart';
 import 'haptics.dart';
 import 'pressable.dart';
 
-enum VoltiButtonVariant { primary, secondary, ghost, dark, danger }
+/// [neutral]: contorno cinza e texto escuro (ex.: "Google" na boas-vindas).
+/// [soft]: fundo cinza claro do tema e texto escuro (ex.: "E-mail" na boas-vindas).
+enum VoltiButtonVariant {
+  primary,
+  secondary,
+  ghost,
+  dark,
+  danger,
+  neutral,
+  soft,
+}
 
 enum VoltiButtonSize { sm, md, lg }
 
@@ -33,7 +43,20 @@ class VoltiButton extends StatelessWidget {
     this.success = false,
     this.loadingSemanticLabel,
     this.successSemanticLabel,
+    this.subtitle,
+    this.wrap = false,
   });
+
+  /// Segunda linha menor sob o [label] (ex.: modelo e codigo da moto). Com ela o
+  /// botao cresce na altura e a linha quebra em vez de cortar com reticencias,
+  /// legivel com texto grande. O leitor de tela ouve "label: subtitle".
+  final String? subtitle;
+
+  /// Rotulo quebra linha (e o botao cresce) em vez de cortar com reticencias:
+  /// para CTAs que precisam ficar legiveis a 200% de texto.
+  final bool wrap;
+
+  bool get _grows => wrap || subtitle != null;
 
   /// Haptica a cada toque: [VoltiHapticKind.tap] nos CTAs de confirmacao.
   final VoltiHapticKind? haptic;
@@ -141,6 +164,19 @@ class VoltiButton extends StatelessWidget {
         Colors.transparent,
         VoltiShadows.shadowCoral,
       ),
+      VoltiButtonVariant.neutral => (
+        scheme.surface,
+        scheme.onSurface,
+        VoltiColors.borderStrong,
+        const <BoxShadow>[],
+      ),
+      // Do tema: claro = ink100 / ink900; escuro = ink700 / branco.
+      VoltiButtonVariant.soft => (
+        scheme.surfaceContainerHighest,
+        scheme.onSurface,
+        Colors.transparent,
+        const <BoxShadow>[],
+      ),
     };
     final disabled = onPressed == null;
     final busy = loading || success;
@@ -153,6 +189,8 @@ class VoltiButton extends StatelessWidget {
       VoltiButtonVariant.ghost => VoltiColors.rippleInk,
       VoltiButtonVariant.dark => VoltiColors.rippleOnDark,
       VoltiButtonVariant.danger => VoltiColors.rippleOnDanger,
+      VoltiButtonVariant.neutral ||
+      VoltiButtonVariant.soft => VoltiColors.rippleInk,
     };
     final labels = VoltiButtonLabels.maybeOf(context);
     final busyValue = success
@@ -170,12 +208,36 @@ class VoltiButton extends StatelessWidget {
           const SizedBox(width: 10),
         ],
         Flexible(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: _labelStyle(fs, fg),
-          ),
+          child: subtitle == null
+              ? Text(
+                  label,
+                  maxLines: wrap ? null : 1,
+                  overflow: wrap ? null : TextOverflow.ellipsis,
+                  textAlign: wrap ? TextAlign.center : null,
+                  style: wrap
+                      ? _labelStyle(fs, fg).copyWith(height: 1.2)
+                      : _labelStyle(fs, fg),
+                )
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: _labelStyle(fs, fg),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle!,
+                      key: const Key('volti-button-subtitle'),
+                      textAlign: TextAlign.center,
+                      style: _labelStyle(fs - 3, fg).copyWith(
+                        fontWeight: VoltiTypography.fwMedium,
+                        height: 1.25,
+                      ),
+                    ),
+                  ],
+                ),
         ),
         if (iconRight != null) ...[
           const SizedBox(width: 10),
@@ -234,30 +296,44 @@ class VoltiButton extends StatelessWidget {
         builder: (context) {
           final pressed = VoltiPressScope.pressedOf(context);
           final reduced = VoltiMotion.reduced(context);
-          return AnimatedContainer(
-            key: const Key('volti-button-surface'),
-            height: h,
-            duration: reduced
-                ? Duration.zero
-                : (pressed ? VoltiMotion.durFast : VoltiMotion.durSpring),
-            curve: VoltiMotion.easeOut,
-            // Como o `overflow: hidden` do Button.jsx: o anel do check de
-            // sucesso fica dentro da pilula.
-            clipBehavior: success ? Clip.antiAlias : Clip.none,
-            decoration: BoxDecoration(
-              color: pressed ? pressedColor(variant, bg) : bg,
-              borderRadius: VoltiRadii.rPill,
-              border: Border.all(color: bd, width: 1.5),
-              boxShadow: dim
-                  ? const <BoxShadow>[]
-                  : (pressed ? VoltiMotion.pressedShadow(sh) : sh),
-            ),
-            child: VoltiRipple(
-              color: off ? null : ripple,
-              borderRadius: VoltiRadii.rPill,
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: px),
-                child: Center(widthFactor: fullWidth ? null : 1, child: inner),
+          // Altura fora do AnimatedContainer: ele anima as restricoes, e trocar de
+          // altura fixa para "minima" (subtitle aparece) passaria por alturas
+          // intermediarias que cortam o texto.
+          return ConstrainedBox(
+            constraints: _grows
+                ? BoxConstraints(minHeight: h)
+                : BoxConstraints.tightFor(height: h),
+            child: AnimatedContainer(
+              key: const Key('volti-button-surface'),
+              duration: reduced
+                  ? Duration.zero
+                  : (pressed ? VoltiMotion.durFast : VoltiMotion.durSpring),
+              curve: VoltiMotion.easeOut,
+              // Como o `overflow: hidden` do Button.jsx: o anel do check de
+              // sucesso fica dentro da pilula.
+              clipBehavior: success ? Clip.antiAlias : Clip.none,
+              decoration: BoxDecoration(
+                color: pressed ? pressedColor(variant, bg) : bg,
+                borderRadius: VoltiRadii.rPill,
+                border: Border.all(color: bd, width: 1.5),
+                boxShadow: dim
+                    ? const <BoxShadow>[]
+                    : (pressed ? VoltiMotion.pressedShadow(sh) : sh),
+              ),
+              child: VoltiRipple(
+                color: off ? null : ripple,
+                borderRadius: VoltiRadii.rPill,
+                child: Padding(
+                  // subtitle/wrap: cresce com o texto, com folga vertical.
+                  padding: EdgeInsets.symmetric(
+                    horizontal: px,
+                    vertical: _grows ? 8 : 0,
+                  ),
+                  child: Center(
+                    widthFactor: fullWidth ? null : 1,
+                    child: inner,
+                  ),
+                ),
               ),
             ),
           );
@@ -268,18 +344,21 @@ class VoltiButton extends StatelessWidget {
     return _BusyAnnouncer(
       message: busyValue,
       child: VoltiPressable(
-      onTap: off ? null : onPressed,
-      semanticLabel: semanticLabel ?? label,
-      semanticValue: busyValue,
-      liveRegion: busyValue != null,
-      haptic: haptic,
-      child: semanticLabel == null
-          ? (fullWidth ? SizedBox(width: double.infinity, child: shown) : shown)
-          : ExcludeSemantics(
-              child: fullWidth
+        onTap: off ? null : onPressed,
+        semanticLabel:
+            semanticLabel ?? (subtitle == null ? label : '$label: $subtitle'),
+        semanticValue: busyValue,
+        liveRegion: busyValue != null,
+        haptic: haptic,
+        child: semanticLabel == null
+            ? (fullWidth
                   ? SizedBox(width: double.infinity, child: shown)
-                  : shown,
-            ),
+                  : shown)
+            : ExcludeSemantics(
+                child: fullWidth
+                    ? SizedBox(width: double.infinity, child: shown)
+                    : shown,
+              ),
       ),
     );
   }
@@ -302,7 +381,12 @@ class VoltiButton extends StatelessWidget {
 /// `MaterialApp`; [VoltiButton.loadingSemanticLabel] e
 /// [VoltiButton.successSemanticLabel] sobrepoem por botao.
 class VoltiButtonLabels extends InheritedWidget {
-  const VoltiButtonLabels({super.key, this.loading, this.success, required super.child});
+  const VoltiButtonLabels({
+    super.key,
+    this.loading,
+    this.success,
+    required super.child,
+  });
 
   final String? loading;
   final String? success;
@@ -311,7 +395,8 @@ class VoltiButtonLabels extends InheritedWidget {
       context.dependOnInheritedWidgetOfExactType<VoltiButtonLabels>();
 
   @override
-  bool updateShouldNotify(VoltiButtonLabels old) => old.loading != loading || old.success != success;
+  bool updateShouldNotify(VoltiButtonLabels old) =>
+      old.loading != loading || old.success != success;
 }
 
 /// Anuncia [message] quando ele aparece/muda. No Android o `liveRegion` do
@@ -330,9 +415,14 @@ class _BusyAnnouncerState extends State<_BusyAnnouncer> {
   void didUpdateWidget(_BusyAnnouncer old) {
     super.didUpdateWidget(old);
     final m = widget.message;
-    if (m != null && m != old.message && defaultTargetPlatform == TargetPlatform.iOS) {
+    if (m != null &&
+        m != old.message &&
+        defaultTargetPlatform == TargetPlatform.iOS) {
       // ignore: deprecated_member_use
-      SemanticsService.announce(m, Directionality.maybeOf(context) ?? TextDirection.ltr);
+      SemanticsService.announce(
+        m,
+        Directionality.maybeOf(context) ?? TextDirection.ltr,
+      );
     }
   }
 
@@ -526,29 +616,29 @@ class VoltiIconButton extends StatelessWidget {
             ),
             // Como o IconButton.jsx: escala .88 e troca de fundo, sem ondulacao.
             child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Icon(
-                    icon,
-                    size: (size * .46).roundToDouble(),
-                    color: iconColor ?? fg,
-                  ),
-                  if (dot)
-                    Positioned(
-                      top: size * .24,
-                      right: size * .26,
-                      child: Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: VoltiColors.warning,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: scheme.surface, width: 1.5),
-                        ),
+              alignment: Alignment.center,
+              children: [
+                Icon(
+                  icon,
+                  size: (size * .46).roundToDouble(),
+                  color: iconColor ?? fg,
+                ),
+                if (dot)
+                  Positioned(
+                    top: size * .24,
+                    right: size * .26,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: VoltiColors.warning,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: scheme.surface, width: 1.5),
                       ),
                     ),
-                ],
-              ),
+                  ),
+              ],
+            ),
           );
         },
       ),

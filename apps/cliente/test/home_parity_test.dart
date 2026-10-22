@@ -69,7 +69,8 @@ void main() {
     await pump(t, ParityBackend());
     expect(find.text('AL'), findsOneWidget);
     expect(find.text('Sua localização'), findsOneWidget);
-    expect(find.text('Perto de você'), findsOneWidget);
+    expect(find.text('Galpão Volti · Pinheiros'), findsOneWidget);
+    expect(find.textContaining('Perto'), findsNothing);
     expect(find.text('Desbloqueie seu passe'), findsOneWidget);
     expect(find.text('1ª corrida grátis'), findsNothing);
     for (final f in ['Todas', 'Autonomia 10+ km', 'Pontos de retirada', 'Escanear para andar']) {

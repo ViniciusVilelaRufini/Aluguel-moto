@@ -147,9 +147,17 @@ abstract final class VoltiColors {
     return (hi + .05) / (lo + .05);
   }
 
-  /// Cor da bateria: > 50 verde, 21-50 amarelo, <= 20 coral.
-  static Color batteryColor(int pct) =>
-      pct > 50 ? batteryHigh : (pct > 20 ? batteryMid : batteryLow);
+  /// Faixa da bateria, a mesma em todas as pilulas e temas: >= 50 alta, >= 20
+  /// media, abaixo de 20 baixa.
+  static int batteryLevel(int pct) => pct >= 50 ? 2 : (pct >= 20 ? 1 : 0);
+
+  /// Cor da bateria (tons vivos, sobre o mapa e no tema escuro): >= 50 verde,
+  /// 20-49 amarelo, < 20 coral.
+  static Color batteryColor(int pct) => const [batteryLow, batteryMid, batteryHigh][batteryLevel(pct)];
+
+  /// Cor da bateria sobre fundo claro (>= 3:1), mesmas faixas de [batteryColor]:
+  /// verde, ambar e coral fortes.
+  static Color batteryInkColor(int pct) => const [dangerInk, warningInk, successInk][batteryLevel(pct)];
 
   /// Cor de status da frota (mesmas de `--status-*`).
   static Color statusColor(VehicleStatus status) {

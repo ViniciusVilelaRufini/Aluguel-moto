@@ -16,9 +16,10 @@ void main() {
   group('BatteryPill', () {
     for (final (pct, color) in [
       (51, VoltiColors.batteryHigh),
-      (50, VoltiColors.batteryMid),
-      (21, VoltiColors.batteryMid),
-      (20, VoltiColors.batteryLow),
+      (50, VoltiColors.batteryHigh),
+      (49, VoltiColors.batteryMid),
+      (20, VoltiColors.batteryMid),
+      (19, VoltiColors.batteryLow),
     ]) {
       testWidgets('$pct% usa a cor correta', (t) async {
         await t.pumpWidget(_wrap(BatteryPill(pct, rangeKm: 12)));

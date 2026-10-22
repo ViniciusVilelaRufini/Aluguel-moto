@@ -13,9 +13,84 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:4010
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
 ```
 
-Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `dev`; build release sempre usa cognito), `SUPPORT_PHONE` (telefone do botão SOS), no modo cognito `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_REDIRECT_URI` (ver Login), `FIRST_RIDE_PROMO=true` (liga o cartão "1ª corrida grátis" e o selo "1ª grátis" para clientes sem aluguéis; padrão desligado, porque o contrato ainda não diz se a promoção existe).
+Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `dev`; build release sempre usa cognito), `SUPPORT_PHONE` (telefone do botão SOS), no modo cognito `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_REDIRECT_URI` (ver Login), `FIRST_RIDE_PROMO=true` (liga o cartão "1ª corrida grátis" da home e o selo "1ª grátis" da lista para clientes sem aluguéis; padrão desligado, porque o contrato ainda não diz se a promoção existe; a boas-vindas não mostra promoção), `MAP_TILE_URL`, `MAP_TILE_REFERENCE_URL` e `MAP_TILE_ATTRIBUTION` (tiles dos mapas, ver abaixo), `TERMS_URL` e `PRIVACY_URL` (links dos termos de uso e da política de privacidade no rodapé da boas-vindas; sem eles, o link avisa que o documento não está publicado neste ambiente).
 
-O Prism exige um header `Authorization: Bearer ...`; o login de dev (`POST /dev/token`, pool customer) já devolve um. No mock as respostas são exemplos fixos do contrato.
+## Mapas (tiles)
+
+Todos os mapas do app (home, boas-vindas, corrida, devolução e recibo) passam por `VoltiMap` e pela camada comum `voltiTileLayer` (`lib/core/map_tiles.dart`).
+
+**Padrão de desenvolvimento:** Esri World Light Gray Canvas, raster sem chave. A URL é `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}` (atenção à ordem `{y}/{x}`). Por cima vai a camada de rótulos `World_Light_Gray_Reference`, sem o filtro de cor. A atribuição "Esri, HERE, Garmin, © OpenStreetMap contributors" fica numa pílula de vidro; tocar nela abre `openstreetmap.org/copyright`.
+
+Provedores descartados:
+- o OSM público é proibido para apps;
+- o CARTO público passou a exigir chave e devolve um tile "API KEY" com status 200.
+
+**Configuração:** `--dart-define=MAP_TILE_URL=...`, `MAP_TILE_REFERENCE_URL=...` (vazio desliga a camada de rótulos; com um `MAP_TILE_URL` próprio ela já vem desligada) e `MAP_TILE_ATTRIBUTION=...`. O User-Agent usa o id real do pacote (`br.com.volti.volti_cliente`). `@2x` só é pedido quando o template tem `{r}`.
+
+**Falhas de tile:**
+- o `NetworkTileProvider` tenta de novo (`RetryClient`);
+- tiles com erro são descartados ao sair da tela;
+- em debug, cada falha vira uma linha JSON `map.tile_error`.
+
+**Proteções contra mapa quebrado:**
+- Em debug, a sonda da inicialização (`checkMapTilesAtStartup`) baixa dois tiles de lugares diferentes. Bytes idênticos (tile de aviso), erro HTTP ou resposta que não é imagem gravam `map.tile_probe_failed`.
+- Em release com um provedor de dev, um aviso vai para o log do sistema.
+- Na boas-vindas, 4 erros trocam o mapa pela ilustração e escondem a atribuição.
+
+Em release, o `main` silencia o `debugPrint`, porque o z/x/y do tile revela a região que o mapa mostra.
+
+**Bloqueio de lançamento (docs/decisoes.md, 2026-10-22):** os basemaps da Esri sem chave são só para desenvolvimento e testes. Antes de lançar, troque por um provedor licenciado (MapTiler, Stadia ou Esri com chave) via `MAP_TILE_URL`.
+
+## Boas-vindas (referência `login-referencia.png`)
+
+`WelcomeScreen` (`features/onboarding/welcome_screen.dart`) tem duas partes. Em cima fica o hero animado (`WelcomeHero`, `welcome_hero.dart`). Embaixo fica a folha branca, com estes elementos:
+
+- selos com ícone;
+- "Pegue uma moto **e vá.**";
+- **Continuar com celular** (OTP);
+- "ou entre com", seguido de Apple / Google / E-mail. Apple e Google usam o Hosted UI do Cognito; no modo dev só mostram um aviso;
+- os termos, com os dois links.
+
+A nota do modo dev só aparece em debug, pequena, sob os termos.
+
+O hero ocupa a faixa livre acima da folha. A altura da folha é medida e o layout dos chips é relativo a essa faixa (`HeroLayoutDelegate`). O hero tem:
+
+- **Mapa real** de Pinheiros (tiles do `MAP_TILE_URL`, filtro do DS, sem interação), centrado no galpão (-23.5654, -46.6847, zoom 15), com deriva lenta da câmera (pan + zoom, 20 s ida e volta). A deriva é um `Transform` sobre um `RepaintBoundary` estático e não reconstrói os tiles.
+- **Galpão** com anel pulsando.
+- **Quatro motos andando** por trechos reais (Rua dos Pinheiros, Teodoro Sampaio, Faria Lima e Fradique Coutinho), com velocidades e defasagens diferentes, aparecendo e sumindo nas pontas. Ficam recortadas 16 px acima da folha.
+- **Moto em destaque** (`assets/images/volti_moto_hero.webp`, fundo transparente), centrada embaixo com até 70% da largura. Sobe e cresce de 0,92 a 1 em cerca de 600 ms, depois flutua 2,5 px num ciclo de 3 s, com uma sombra elíptica que acompanha a flutuação.
+- **Chips**, com afirmações verdadeiras do serviço e sem números inventados. Entram em cascata, com 80 ms entre eles:
+  - linha 1: logo e "• Retire no galpão" (ícone do galpão);
+  - linha 2: o cartão "Planos diário, semanal e mensal · ou por minuto e hora" (ícone de calendário) e a pílula escura "Seguro incluso | Troca de bateria". Em telas estreitas (< 392 px), a pílula desce para uma linha própria, com as duas partes lado a lado.
+
+  Nenhum chip é pintado sobre a moto, que fica com o que sobra (até 70% da largura). Não há promoção na boas-vindas: o `FIRST_RIDE_PROMO` vale só para a home e a lista.
+- **Área livre do mapa:** o galpão fica entre os chips e a moto ou, em telas baixas, à esquerda da moto. As motos **saem do galpão** pelas ruas (Rua dos Pinheiros e Fradique Coutinho) e só andam na faixa do mapa, a 16 px das bordas. Somem onde ficariam atrás de um chip ou da moto e seguem a mesma matriz de deriva do mapa, ficando sobre as ruas.
+- **Mapa:** o mapa é maior que o hero (32 px de folga em cada lado) e é criado uma vez só; mudanças de layout movem a câmera pelo `MapController`. O `VoltiMap` guarda um provedor de tiles por camada durante a vida do mapa, e tiles com erro são pedidos de novo até 3 vezes. Todos os mapas usam **um cliente HTTP de tiles compartilhado, que nenhum mapa fecha** (`RetryClient` sobre `IOClient` com até 6 conexões por host; no web, o cliente padrão), sem abortar pedidos obsoletos. O abort fica desligado em todos os mapas, inclusive na home: um pedido abortado vira PNG transparente no `ImageCache`, e qualquer outro mapa que peça a mesma URL enquanto ele está em andamento recebe a imagem vazia. O `ImageCache` identifica o tile pela URL, então mapas diferentes dividem o mesmo pedido em andamento. No flutter_map 8, um cliente fechado (o `TileLayer` descartava o provedor ao sair da tela) ou um pedido abortado vira um PNG transparente "carregado". A home monta o mapa por um instante na abertura e era fechada no meio dos pedidos; a boas-vindas, que esperava os mesmos tiles, ficava com a coluna em comum vazia para sempre. Essa era a costura do hero, diagnosticada no emulador. Com `--dart-define=MAP_DEBUG=true`, o build de debug registra no logcat (tag `VOLTI_DBG`) a câmera e cada tile. A `TileLayer` tem `panBuffer: 1` e `keepBuffer: 2`, e o mapa do hero só é criado quando a folha já foi medida, para a câmera não se mover logo depois de abrir. Enquanto os tiles chegam, o fundo é um cinza liso: a ilustração desenhada só entra quando o mapa falha de vez.
+
+A camada visual do hero é decorativa: fica dentro de `ExcludeSemantics` e `IgnorePointer`. Fora dela, há nós de semântica nos retângulos reais do logo ("Volti", cabeçalho), do "Retire no galpão", do cartão dos planos e da pílula. Cada grupo de animação tem um ticker próprio.
+
+Em situações especiais:
+
+- **Reduced motion:** tudo fica parado no estado final.
+- **App em segundo plano ou rota coberta** (`TickerMode`): os controllers param.
+- **Tiles falhando** (4 erros): o mapa sai e entra a ilustração desenhada, sob os mesmos chips. A tela nunca fica cinza.
+
+A atribuição do mapa fica na borda de cima da folha.
+
+Com texto acima de 100%, as três afirmações ("Retire no galpão", o cartão dos planos e a pílula) descem para a folha e escalam com o texto. No hero, os textos escalam até 1,3x.
+
+**Tamanho da moto (trade-off):** nenhum chip pode cobrir a moto, então ela fica com o espaço que sobra entre os chips e a folha, e encolhe em telas baixas. Valores atuais, em fração da largura da tela (debug tem a nota de dev na folha; release não tem):
+
+| Tela | Debug | Release |
+|---|---|---|
+| 360×740 | 0,22 | 0,31 |
+| 360×800 | 0,38 | 0,45 |
+| 393×852 | 0,38 | 0,45 |
+| 412×915 | 0,53 | 0,61 |
+
+Os testes de sobreposição fixam esses valores com tolerância de 0,02. Com 200%, os botões quebram linha, Apple/Google/E-mail empilham e a folha rola por cima do hero.
+
+Testes em `test/cliente_login_test.dart`.
 
 ## Estrutura
 
@@ -38,7 +113,10 @@ Auditoria em `docs/design/auditoria-app.md` e evoluções em `docs/design/evoluc
 O cliente não acha moto na rua: escolhe no app e retira no galpão.
 
 - **Home** (`/home`): mapa com o galpão em destaque, pontos verdes de devolução (zonas `return`) e estações de bateria (`GET /swap-stations`); sem motos na rua e sem "Escanear para andar". Cartão fixo "Galpão Volti · <bairro> · N motos disponíveis" (`Depot.district`, `availableVehicleCount`), "Aberto até 20h" / "Fechado · abre seg. às 7h", endereço e **Escolher moto**. Com vários galpões o cartão vira seletor (chips, mais perto primeiro por `distanceM`; sem localização — sem consentimento ou sem GPS — a API não manda `distanceM` e fica a ordem da API). `currentDepotProvider` = galpão escolhido ou, sem escolha, o mais perto.
-- **Escolher moto** (`/pick`): `GET /depots/{id}/vehicles`; foto do modelo (`VehicleModel.photoUrl`, inteira — `contain` — num quadro branco, para foto de produto em fundo branco; sem foto, ícone), categoria (`categoryLabel`) e, embaixo, a descrição curta do modelo em até 2 linhas (`VehicleModel.description`, fatos-chave primeiro, ex.: "32 km/h · sem CNH · 1000 W · cesto e garupa"; a foto é decodificada no tamanho da miniatura e o catálogo fica 12 h em memória na sessão para o link assinado — e a foto em cache — não mudar a cada visita), código, bateria/autonomia e preço por modelo (`pricePerMinuteCents`); sem distância. Filtro por modelo na ordem do catálogo (`VehicleModel.sortOrder`; fora do catálogo, alfabética); **Continuar com <modelo> · <código>** não reserva, só segue.
+- **Escolher moto** (`/pick`): `GET /depots/{id}/vehicles`; foto do modelo (`VehicleModel.photoUrl`, inteira — `contain` — num quadro branco, para foto de produto em fundo branco; sem foto, ícone), categoria (`categoryLabel`) e, embaixo, a descrição curta do modelo em até 2 linhas (`VehicleModel.description`, fatos-chave primeiro, ex.: "32 km/h · sem CNH · 1000 W · cesto e garupa"; a foto é decodificada no tamanho da miniatura e o catálogo fica 12 h em memória na sessão para o link assinado — e a foto em cache — não mudar a cada visita), código, bateria/autonomia e preço por modelo (`pricePerMinuteCents`); sem distância. Filtro por modelo na ordem do catálogo (`VehicleModel.sortOrder`; fora do catálogo, alfabética); **Continuar** (com "<modelo> · <código>" na segunda linha do botão, que quebra em vez de cortar o código) não reserva, só segue.
+  - **Pílula de bateria clara** (`BatteryPill(light: true)`): fundo `surfaceContainerHighest`, texto escuro e raio colorido pela carga. As faixas são as mesmas em todas as pílulas e temas (`VoltiColors.batteryLevel`): ≥ 50% verde, ≥ 20% âmbar, abaixo disso coral. É usada na lista, na conferência da moto e no HUD da corrida.
+  - **Detalhes:** pressionar e segurar um cartão abre os detalhes no lugar, com altura animada pelos tokens (reduced motion: instantâneo). Aparecem a descrição inteira, a categoria, a potência e a velocidade (lidas da descrição), a bateria e a autonomia, o preço por minuto, a taxa de desbloqueio do plano avulso e o código. Fechado, o cartão mostra uma dica pequena "Detalhes ⌄", que também abre ao tocar. Segurar de novo, tocar na seta ou segurar outro cartão fecha; fica um aberto por vez. O toque normal continua só selecionando. Ao abrir há háptica de seleção. O leitor de tela ganha a ação "Ver detalhes"/"Recolher" e ouve o estado aberto/fechado.
+  - **Botão flutuante:** não há rodapé opaco. A lista rola por baixo do botão (16 px nas laterais, mais a área segura), com um véu suave (transparente → superfície a 60%) que não recebe toques (`IgnorePointer`). A lista tem espaço embaixo para o último cartão subir acima do botão, e o aviso de KYC flutua como cartão acima dele.
 - **Plano** (`/plan`, extra `DepotSelection`): diário, semanal e mensal em destaque; "Outras opções" (minuto, hora) recolhidas; semanal/mensal avisam que renovam.
 - **Seguro** (`/insurance`): básico obrigatório, pré-marcado e não removível; completo opcional com o que cobre.
 - **Retirada** (`/pickup`): "Retirar agora (até HH:MM)" ou "Agendar" (dias até `maxScheduleDays`, domingo/dia sem horário aparece "Fechado", horários de 30 em 30 min). Resumo (plano, seguro, caução pela cotação), cupom, caução cartão ou Pix (Pix pré-selecionado sem cartão), consentimento de localização (decisão #8) e **Confirmar reserva** (`POST /reservations` com `depotId`, `pickupMode`, `pickupAt`, `planCode`, `coverage`, `depositMethod`, `cardId`, Idempotency-Key). Caução Pix abre a folha Pix existente. 409 `vehicle-unavailable` → "Essa moto acabou de ser reservada" e volta à lista.
@@ -118,3 +196,10 @@ Android: serviço em primeiro plano do tipo `location` e permissões no manifest
 flutter analyze && flutter test
 ```
 Cobrem login (dev × cognito), código por SMS com reenvio e limite de 60 s, passo de pagamento, CPF inválido, o fluxo do galpão (`test/galpao_flow_test.dart`: home, seletor de galpões, lista, plano, seguro, retirada, reserva com QR, 409, handover, 200% em 360×740 e reduced motion), a entrega, a bateria e a devolução no galpão (`test/handover_test.dart`: `handover.pending` abre "Confira sua moto", app aberto com reserva em `handover`, aceite com toque duplo e mesma chave na nova tentativa, pagamento recusado, caução não retida, entrega não pendente, 404, apontar problema, galpão primeiro na troca de bateria, devolução no galpão com `handover.updated`, 200% em 360×740, reduced motion e semântica), as regras de horário (`test/depot_hours_test.dart`), `test/pick_logic_test.dart`, a home (`test/home_parity_test.dart`), onboarding sem consentimento, seguro básico fixo, reserva bloqueada sem consentimento de localização, `zone.notice`, `device.event` de queda, encerrar sem foto e erro de rede com "Tentar de novo".
+
+## Correções do emulador (2026-10-22, branch `feat/cliente-login`)
+
+- A explicação da localização fala do galpão ("Galpão mais perto"), não de motos por perto.
+- O Pix da caução diz "para confirmar a reserva"; a moto é liberada na entrega no galpão.
+- O cabeçalho "Sua localização" mostra "Perto do Galpão Volti · <bairro>" (ou "Perto de você"), nunca o nome de uma zona de devolução.
+- O mapa da home centra o galpão ao abrir e quando ele muda (`MapController.move` com deslocamento para a faixa livre acima do cartão). Recriar o `FlutterMap` com outro `initialCenter` não movia a câmera (o controller guarda a câmera), e o pin ficava fora da tela.

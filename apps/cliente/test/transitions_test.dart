@@ -197,7 +197,7 @@ void main() {
           .where((e) => e.findAncestorWidgetOfExactType<Hero>() == null)
           .length;
       final before = shuttles();
-      await t.tap(find.textContaining(RegExp(r'Continuar com .*VLT-001')));
+      await t.tap(find.textContaining(RegExp(r' · VLT-001')));
       await t.pump();
       await t.pump(const Duration(milliseconds: 120));
       expect(shuttles(), greaterThan(before), reason: 'a midia da moto voa no overlay durante a troca');
@@ -234,7 +234,7 @@ void main() {
     }
 
     expect(urlIn(heroes().single), 'https://exemplo.test/flash.png');
-    await t.tap(find.textContaining(RegExp(r'Continuar com .*VLT-001')));
+    await t.tap(find.textContaining(RegExp(r' · VLT-001')));
     await settle(t);
     expect(find.byType(PlanScreen), findsOneWidget);
     final header = heroes().single;
