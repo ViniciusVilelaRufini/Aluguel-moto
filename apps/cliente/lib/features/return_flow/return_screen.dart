@@ -67,6 +67,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   }
 
   void _finish() {
+    VoltiHaptics.success();
     ref.invalidate(currentRentalProvider);
     if (mounted) context.go('/summary/${widget.rentalId}');
   }
@@ -145,7 +146,14 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
           child: Padding(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(LucideIcons.circleAlert, size: 40, color: VoltiColors.danger),
+              VoltiEnter.pop(
+                child: Container(
+                  width: 72,
+                  height: 72,
+                  decoration: const BoxDecoration(color: VoltiColors.dangerSoft, shape: BoxShape.circle),
+                  child: const Icon(LucideIcons.lockOpen, size: 32, color: VoltiColors.dangerInk),
+                ),
+              ),
               const SizedBox(height: 16),
               Semantics(liveRegion: true, child: Text(l.lockNotConfirmed, style: VoltiTypography.heading, textAlign: TextAlign.center)),
               const SizedBox(height: 8),
@@ -169,8 +177,22 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
           child: Padding(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 20),
+              // Cadeado com pulso (VoltiPulse): o momento de maior espera do fluxo.
+              Semantics(
+                label: l.waitingLock,
+                child: VoltiPulse(
+                  key: const Key('lock-pulse'),
+                  size: 72,
+                  maxScale: 1.9,
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: const BoxDecoration(color: VoltiColors.brandSoft, shape: BoxShape.circle),
+                    child: const Icon(LucideIcons.lock, size: 32, color: VoltiColors.successInk),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 28),
               Semantics(liveRegion: true, child: Text(l.waitingLock, style: VoltiTypography.heading, textAlign: TextAlign.center)),
               const SizedBox(height: 8),
               Text(l.waitingLockText, style: VoltiTypography.body, textAlign: TextAlign.center),
@@ -198,7 +220,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                     icon: LucideIcons.circleCheck,
                     title: inZone == true ? l.insideReturnTitle : l.checkReturnTitle,
                     message: inZone == true ? l.insideReturnText : l.checkReturnText),
-            loading: () => const LinearProgressIndicator(),
+            loading: () => VoltiSkeleton.card(height: 64, label: l.loading),
             error: (e, _) => ErrorState(error: e, onRetry: () => ref.invalidate(inReturnZoneProvider(widget.rentalId))),
           ),
           const SizedBox(height: VoltiSpacing.s16),

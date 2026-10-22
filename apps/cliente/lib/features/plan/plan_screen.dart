@@ -42,6 +42,8 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
   bool _useWallet = false;
   bool _busy = false;
   AsyncValue<Quote> _quote = const AsyncLoading();
+  /// Recotando com um resumo ja na tela: mantem os valores (o total rola) e escurece.
+  bool _requoting = false;
   String? _error;
 
   @override
@@ -53,9 +55,20 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
   Future<void> _loadQuote() async {
     final plan = _plan;
     if (plan == null) return;
-    setState(() => _quote = const AsyncLoading());
+    setState(() {
+      if (_quote.hasValue) {
+        _requoting = true;
+      } else {
+        _quote = const AsyncLoading();
+      }
+    });
     final result = await AsyncValue.guard(() => ref.read(backendProvider).quote(plan, _coverage, coupon: _coupon));
-    if (mounted && plan == _plan) setState(() => _quote = result);
+    if (mounted && plan == _plan) {
+      setState(() {
+        _quote = result;
+        _requoting = false;
+      });
+    }
   }
 
   Future<bool> _ensureLocationConsent() async {
@@ -147,7 +160,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
     _cardId ??= cardList.where((c) => c.isDefault).map((c) => c.id).firstOrNull ?? cardList.map((c) => c.id).firstOrNull;
     final needsCard = _method == DepositMethod.card && _cardId == null;
     final quote = _quote.value;
-    final canPay = !_busy && _plan != null && quote != null && !needsCard;
+    final canPay = !_busy && !_requoting && _plan != null && quote != null && !needsCard;
 
     return VoltiScaffold(
       title: l.planTitle,
@@ -173,6 +186,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
           AsyncView<List<PricingPlan>>(
             value: plans,
             onRetry: () => ref.invalidate(plansProvider),
+            loading: (_) => VoltiSkeleton.card(height: 76, count: 2, label: l.loading),
             data: (list) => Column(children: [
               for (final p in list)
                 Padding(
@@ -184,6 +198,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                     priceNote: l.perUnit(unitLabel(l, p.unit)),
                     selected: _plan == p.code,
                     onTap: () {
+                      if (_plan != p.code) VoltiHaptics.selection();
                       setState(() => _plan = p.code);
                       _loadQuote();
                     },
@@ -195,6 +210,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
           AsyncView<List<InsuranceCoverageOption>>(
             value: coverages,
             onRetry: () => ref.invalidate(coveragesProvider),
+            loading: (_) => VoltiSkeleton.card(height: 88, count: 2, label: l.loading),
             data: (list) => Column(children: [
               for (final c in list)
                 Padding(
@@ -211,6 +227,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                       final next = c.coverage == InsuranceCoverage.full && _coverage == InsuranceCoverage.full
                           ? InsuranceCoverage.basic
                           : c.coverage;
+                      if (next != _coverage) VoltiHaptics.selection();
                       setState(() => _coverage = next);
                       _loadQuote();
                     },
@@ -260,7 +277,11 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                   style: VoltiTypography.caption.copyWith(color: quote.couponApplied ? VoltiColors.successInk : VoltiColors.danger)),
             ),
           SectionTitle(l.summary),
-          _QuoteSummary(quote: _quote, onRetry: _loadQuote),
+          AnimatedOpacity(
+            opacity: _requoting ? .5 : 1,
+            duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
+            child: _QuoteSummary(quote: _quote, onRetry: _loadQuote),
+          ),
           SectionTitle(l.deposit),
           OptionCard(
             title: l.payCard,
@@ -269,7 +290,10 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                 ? l.noCard
                 : cardList.where((c) => c.id == _cardId).map((c) => '${c.brand} •••• ${c.last4}').firstOrNull,
             selected: _method == DepositMethod.card,
-            onTap: () => setState(() => _method = DepositMethod.card),
+            onTap: () {
+              if (_method != DepositMethod.card) VoltiHaptics.selection();
+              setState(() => _method = DepositMethod.card);
+            },
           ),
           if (_method == DepositMethod.card && cardList.isEmpty && !cards.isLoading)
             Padding(
@@ -288,7 +312,10 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
             icon: LucideIcons.wallet,
             description: l.payPixHint,
             selected: _method == DepositMethod.pix,
-            onTap: () => setState(() => _method = DepositMethod.pix),
+            onTap: () {
+              if (_method != DepositMethod.pix) VoltiHaptics.selection();
+              setState(() => _method = DepositMethod.pix);
+            },
           ),
           if (wallet != null && (wallet.balanceCents > 0 || wallet.minutesBalance > 0))
             SwitchListTile(
@@ -330,14 +357,18 @@ class _QuoteSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = context.l;
     return quote.when(
-      loading: () => const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator())),
+      loading: () => VoltiSkeleton.card(height: 132, label: l.loading),
       error: (e, _) => ErrorState(error: e, onRetry: onRetry),
       data: (q) {
-        Widget row(String a, String b, {bool strong = false}) => Padding(
+        Widget row(String a, String b, {bool strong = false, bool tick = false}) => Padding(
               padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Row(children: [
+              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(child: Text(a, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body)),
-                Text(b, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body),
+                const SizedBox(width: VoltiSpacing.s12),
+                // O total rola os digitos quando o seguro ou o cupom mudam.
+                tick
+                    ? VoltiTicker(b, key: const Key('quote-total'), style: VoltiTypography.bodyStrong)
+                    : Text(b, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body),
               ]),
             );
         final bd = q.breakdown;
@@ -350,7 +381,7 @@ class _QuoteSummary extends StatelessWidget {
             if (bd.feesCents > 0) row(l.fees, money(bd.feesCents)),
             if (bd.discountCents > 0) row(l.discount, money(-bd.discountCents)),
             const Divider(),
-            row(l.estimatedTotal, money(bd.totalCents), strong: true),
+            row(l.estimatedTotal, money(bd.totalCents), strong: true, tick: true),
             row(l.depositAmount, money(q.depositCents)),
             Align(alignment: Alignment.centerLeft, child: Text(l.depositHint, style: VoltiTypography.caption)),
           ]),

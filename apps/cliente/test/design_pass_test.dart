@@ -8,9 +8,13 @@ import 'package:volti_cliente/core/services.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/account/account_screens.dart';
+import 'package:volti_cliente/core/geo.dart';
 import 'package:volti_cliente/features/home/home_screen.dart';
+import 'package:volti_cliente/features/plan/plan_screen.dart';
+import 'package:volti_cliente/features/summary/summary_screen.dart';
 import 'package:volti_cliente/features/reservation/reserved_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
+import 'package:volti_cliente/l10n/app_localizations.dart';
 
 import 'helpers.dart';
 
@@ -80,7 +84,79 @@ Future<void> pumpHome(WidgetTester t, HomeBackend backend, {KycStatus kyc = KycS
   ]));
 }
 
+class ReceiptBackend extends FakeBackend {
+  @override
+  Future<Receipt> receipt(String rentalId) async => Receipt((b) => b
+    ..rentalId = 'r1'
+    ..number = '000123'
+    ..issuedAt = DateTime.utc(2026, 10, 21)
+    ..vehicleCode = 'VLT-001'
+    ..planCode = PlanCode.minute
+    ..coverage = InsuranceCoverage.basic
+    ..startedAt = DateTime.utc(2026, 10, 21, 10)
+    ..endedAt = DateTime.utc(2026, 10, 21, 10, 25)
+    ..durationSeconds = 1500
+    ..breakdown = PriceBreakdown((p) => p
+      ..lines.add(PriceLine((l) => l
+        ..code = 'time'
+        ..description = 'Tempo de uso com tarifa por minuto no plano avulso'
+        ..amountCents = 1975))
+      ..subtotalCents = 1975
+      ..discountCents = 0
+      ..insuranceCents = 0
+      ..feesCents = 100
+      ..totalCents = 2075).toBuilder());
+}
+
 void main() {
+  group('recibo', () {
+    testWidgets('total conta ate o valor depois do check', (t) async {
+      tallScreen(t);
+      await t.pumpWidget(testApp(const SummaryScreen(rentalId: 'r1'), overrides: [
+        backendProvider.overrideWithValue(ReceiptBackend()),
+      ]));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 300));
+      expect(find.text(money(2075)), findsNothing, reason: 'ainda contando');
+      await t.pump(const Duration(seconds: 2));
+      expect(find.text(money(2075)), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('texto a 200% nao estoura', (t) async {
+      phone(t, scale: 2);
+      await t.pumpWidget(testApp(const SummaryScreen(rentalId: 'r1'), overrides: [
+        backendProvider.overrideWithValue(ReceiptBackend()),
+      ]));
+      await t.pump();
+      await t.pump(const Duration(seconds: 2));
+      await t.scrollUntilVisible(find.byKey(const Key('receipt-total')), 200, scrollable: find.byType(Scrollable).first);
+      await t.pump(const Duration(seconds: 2));
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('reduced motion: total final de imediato', (t) async {
+      phone(t);
+      await t.pumpWidget(MediaQuery(
+        data: const MediaQueryData(disableAnimations: true),
+        child: testApp(const SummaryScreen(rentalId: 'r1'), overrides: [backendProvider.overrideWithValue(ReceiptBackend())]),
+      ));
+      await t.pump();
+      await t.pump();
+      expect(find.text(money(2075)), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+  });
+
+  test('unidade do plano em pt-BR', () async {
+    final l = await AppLocalizations.delegate.load(const Locale('pt', 'BR'));
+    expect(unitLabel(l, PlanUnit.minute), 'minuto');
+    expect(l.perUnit(unitLabel(l, PlanUnit.hour)), 'por hora');
+    expect(l.starsLabel(1), '1 estrela');
+    expect(l.unreadMessages(3), '3 mensagens novas');
+  });
+
   group('mapa', () {
     testWidgets('esqueleto enquanto carrega e estado vazio com tentar de novo, 200% sem estouro', (t) async {
       phone(t, scale: 2);

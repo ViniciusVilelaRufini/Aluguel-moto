@@ -48,6 +48,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     try {
       final backend = ref.read(backendProvider);
       final vehicle = await backend.vehicleByCode(vehicleCodeFromQr(raw));
+      VoltiHaptics.success();
       if (mounted) setState(() => _found = true);
       if (widget.swapRentalId != null) {
         await backend.swap(widget.swapRentalId!, vehicle.id, 'vehicle_problem');
@@ -59,6 +60,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       }
       if (mounted) context.push('/plan', extra: vehicle);
     } catch (e) {
+      VoltiHaptics.warning();
       if (mounted) {
         setState(() {
           _found = false;
