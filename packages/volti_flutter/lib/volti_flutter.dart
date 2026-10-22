@@ -10,6 +10,7 @@ export 'src/tokens/spacing.dart';
 export 'src/tokens/typography.dart';
 export 'src/widgets/buttons.dart';
 export 'src/widgets/chips.dart';
+export 'src/widgets/drag_dismiss.dart';
 export 'src/widgets/feedback.dart';
 export 'src/widgets/forms.dart';
 export 'src/widgets/gauge.dart';
