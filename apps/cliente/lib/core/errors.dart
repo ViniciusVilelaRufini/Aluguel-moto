@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../l10n/app_localizations.dart';
 
@@ -43,6 +44,7 @@ class AppFailure implements Exception {
 
 AppFailure toFailure(Object error) {
   if (error is AppFailure) return error;
+  debugLogError(error);
   if (error is DioException) {
     final res = error.response;
     if (res == null) return AppFailure(kind: FailureKind.network);
@@ -69,3 +71,22 @@ AppFailure toFailure(Object error) {
 }
 
 String failureText(AppLocalizations l, Object error) => toFailure(error).message(l);
+
+/// Linha de log SEM PII: so tipo, status HTTP, `code`/`title` do problem+json e
+/// metodo + rota sem query. Nunca corpo, mensagem ou valores de entrada.
+String describeErrorForLog(Object error) {
+  if (error is DioException) {
+    final req = error.requestOptions;
+    final data = error.response?.data;
+    final code = data is Map ? data['code'] : null;
+    final title = data is Map ? data['title'] : null;
+    return '[toFailure] DioException ${error.type.name} ${req.method} ${req.uri.path} '
+        'status=${error.response?.statusCode} code=$code title=$title';
+  }
+  return '[toFailure] ${error.runtimeType}';
+}
+
+/// Em debug, registra o erro original que o AppFailure esconde (sem PII).
+void debugLogError(Object error) {
+  if (kDebugMode) debugPrint(describeErrorForLog(error));
+}

@@ -12,6 +12,7 @@ import '../../core/errors.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Onboarding em 3 passos: dados + termos + consentimento de localizacao,
 /// documento e selfie, e status da verificacao.
@@ -19,6 +20,16 @@ class OnboardingScreen extends ConsumerStatefulWidget {
   const OnboardingScreen({super.key});
   @override
   ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
+}
+
+/// Passo inicial do onboarding. Sem KYC iniciado o passo 0 (nome, CPF e
+/// nascimento) e obrigatorio mesmo com termos ja aceitos: esses dados so existem
+/// em memoria e o envio do KYC os exige (antes, retomar no passo 1 enviava
+/// campos vazios e `DateTime.parse('')` estourava).
+int initialOnboardingStep({required bool termsAccepted, required bool locationConsent, required KycStatus kyc}) {
+  if (kyc == KycStatus.notStarted) return 0;
+  if (!termsAccepted || !locationConsent) return 0;
+  return 2;
 }
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
@@ -29,11 +40,17 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider).value;
     if (session == null) return const Scaffold(body: LoadingState());
-    _step ??= (!session.termsAccepted || !session.locationConsent)
-        ? 0
-        : (session.kyc == KycStatus.notStarted ? 1 : 2);
+    _step ??= initialOnboardingStep(
+      termsAccepted: session.termsAccepted,
+      locationConsent: session.locationConsent,
+      kyc: session.kyc,
+    );
     return switch (_step!) {
       0 => ConsentStep(
+          initialName: session.customer?.name ?? '',
+          initialTerms: session.termsAccepted,
+          initialLocation: session.locationConsent,
+          initialMarketing: session.consents?.marketing ?? false,
           onDone: (name, cpf, birth) {
             setState(() {
               _name = name;
@@ -50,7 +67,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
           onBack: () => setState(() => _step = 0),
           onSubmitted: () => setState(() => _step = 2),
         ),
-      _ => const VerificationStatusScreen(fromOnboarding: true),
+      _ => VerificationStatusScreen(fromOnboarding: true, onResend: () => setState(() => _step = 0)),
     };
   }
 }
@@ -149,17 +166,27 @@ BirthError? validateBirth(String text, {DateTime? now}) {
 }
 
 class ConsentStep extends ConsumerStatefulWidget {
-  const ConsentStep({super.key, required this.onDone});
+  const ConsentStep({
+    super.key,
+    required this.onDone,
+    this.initialName = '',
+    this.initialTerms = false,
+    this.initialLocation = false,
+    this.initialMarketing = false,
+  });
   final void Function(String name, String cpf, String birth) onDone;
+  final String initialName;
+  final bool initialTerms, initialLocation, initialMarketing;
   @override
   ConsumerState<ConsentStep> createState() => _ConsentStepState();
 }
 
 class _ConsentStepState extends ConsumerState<ConsentStep> {
-  final _name = TextEditingController();
+  late final _name = TextEditingController(text: widget.initialName);
   final _cpf = TextEditingController();
   final _birth = TextEditingController();
-  bool _terms = false, _location = false, _marketing = false, _busy = false;
+  late bool _terms = widget.initialTerms, _location = widget.initialLocation, _marketing = widget.initialMarketing;
+  bool _busy = false;
   Object? _error;
 
   @override
@@ -299,7 +326,22 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
     return p.length == 3 ? '${p[2]}-${p[1]}-${p[0]}' : widget.birth;
   }
 
+  /// Valida os dados do passo 0 antes de qualquer upload. Devolve o aviso a
+  /// mostrar, ou null se estiver tudo certo.
+  String? _validateInputs(AppLocalizations l) {
+    if (widget.name.trim().isEmpty) return l.nameRequired;
+    if (widget.cpf.replaceAll(RegExp(r'\D'), '').length != 11) return l.cpfInvalid;
+    if (validateBirth(widget.birth) != null) return l.birthInvalid;
+    return null;
+  }
+
   Future<void> _submit() async {
+    final problem = _validateInputs(context.l);
+    if (problem != null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(problem)));
+      widget.onBack();
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
@@ -373,8 +415,11 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
 
 /// Status da verificacao de identidade (onboarding e Conta).
 class VerificationStatusScreen extends ConsumerStatefulWidget {
-  const VerificationStatusScreen({super.key, this.fromOnboarding = false});
+  const VerificationStatusScreen({super.key, this.fromOnboarding = false, this.onResend});
   final bool fromOnboarding;
+
+  /// Reinicia o envio de documentos (so oferecido quando a verificacao foi recusada).
+  final VoidCallback? onResend;
   @override
   ConsumerState<VerificationStatusScreen> createState() => _VerificationStatusScreenState();
 }
@@ -416,6 +461,15 @@ class _VerificationStatusScreenState extends ConsumerState<VerificationStatusScr
                       fullWidth: true,
                       onPressed: () => context.go('/home'),
                     ),
+                  if (s.status == KycStatus.rejected && widget.onResend != null) ...[
+                    const SizedBox(height: VoltiSpacing.s8),
+                    VoltiButton(
+                      label: l.kycResend,
+                      size: VoltiButtonSize.lg,
+                      fullWidth: true,
+                      onPressed: widget.onResend,
+                    ),
+                  ],
                   const SizedBox(height: VoltiSpacing.s8),
                   VoltiButton(
                     label: l.refreshStatus,
