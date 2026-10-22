@@ -39,10 +39,11 @@ export class PrincipalResolver {
    */
   private async resolveStaff(token: VerifiedToken): Promise<Principal> {
     const select = { id: true, active: true, groups: true, cognitoSub: true, lastLoginAt: true } as const;
-    const existing = await this.prisma.staffUser.findFirst({
-      where: { OR: [{ cognitoSub: token.sub }, ...(token.email ? [{ email: token.email }] : [])] },
-      select,
-    });
+    // QA-17: casa pelo sub. O e-mail só liga um cadastro ainda sem sub (criado pelo painel antes do primeiro login) e só
+    // existe em tokens dev; o access token do Cognito não traz e-mail, e o `username` nunca é usado como e-mail.
+    const existing =
+      (await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select })) ??
+      (token.email ? await this.prisma.staffUser.findFirst({ where: { email: token.email, cognitoSub: null }, select }) : null);
     if (!existing) {
       const created = await this.prisma.staffUser.create({
         data: {

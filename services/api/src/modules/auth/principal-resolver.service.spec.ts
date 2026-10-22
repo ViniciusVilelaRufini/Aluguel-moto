@@ -72,7 +72,7 @@ describe('PrincipalResolver (staff, QA-04)', () => {
     return {
       staffUser: {
         findUnique: jest.fn().mockImplementation(async () => rows.shift() ?? null),
-        findFirst: jest.fn().mockImplementation(async () => rows.shift() ?? null),
+        findFirst: jest.fn().mockResolvedValue(null),
         update: jest.fn().mockResolvedValue({}),
         create: jest.fn().mockResolvedValue({ id: 'novo', groups: ['operacao'] }),
       },
@@ -98,4 +98,13 @@ describe('PrincipalResolver (staff, QA-04)', () => {
     await expect(new PrincipalResolver(prisma as any).resolve(token)).rejects.toMatchObject({ status: 403 });
   });
 
+  it('QA-17: casa pelo sub; o e-mail só liga um cadastro ainda sem sub (criado pelo painel)', async () => {
+    const prisma = prismaWith([]);
+    prisma.staffUser.findFirst.mockResolvedValue({ id: 's2', active: true, groups: ['operacao'], cognitoSub: null, lastLoginAt: null });
+    const p = await new PrincipalResolver(prisma as any).resolve(token);
+    expect(prisma.staffUser.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { cognitoSub: 'sub-op' } }));
+    expect(prisma.staffUser.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { email: 'operacao@volti.dev', cognitoSub: null } }));
+    expect(p).toMatchObject({ staffId: 's2', groups: ['operacao'] });
+    expect(prisma.staffUser.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 's2' }, data: expect.objectContaining({ cognitoSub: 'sub-op' }) }));
+  });
 });
