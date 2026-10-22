@@ -11,6 +11,7 @@ import 'package:http/retry.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'launcher.dart';
+import 'tile_client/tile_client.dart';
 
 /// Base padrao de desenvolvimento: Esri World Light Gray Canvas (raster sem chave).
 /// Atencao a ordem `{y}/{x}` do ArcGIS. **So dev/teste** (docs/decisoes.md): lancar
@@ -135,11 +136,14 @@ TileProvider Function()? debugTileProviderFactory;
 /// nao fecham, o pedido termina com a imagem real para todos.
 @visibleForTesting
 http.Client? debugTileHttpClient;
-final http.Client _sharedTileClient = RetryClient(http.Client());
+final http.Client _sharedTileClient = RetryClient(createTileBaseClient());
 
 /// Provedor de tiles de rede (ou o de teste): cliente compartilhado (ver acima) e
-/// sem `abortObsoleteRequests` (um pedido abortado tambem vira PNG transparente
-/// para quem compartilha a mesma URL no cache).
+/// sem `abortObsoleteRequests`. O abort fica desligado em **todos** os mapas, inclusive
+/// na home sem a boas-vindas montada: o pedido abortado vira PNG transparente no
+/// `ImageCache`, e qualquer outro mapa que peca a mesma URL enquanto ele esta em
+/// andamento (home e corrida, devolucao, recibo, a propria home recriada) recebe a
+/// imagem vazia. O custo e terminar de baixar alguns tiles que sairam da tela.
 TileProvider newTileProvider() =>
     debugTileProviderFactory?.call() ??
     NetworkTileProvider(httpClient: debugTileHttpClient ?? _sharedTileClient, abortObsoleteRequests: false);

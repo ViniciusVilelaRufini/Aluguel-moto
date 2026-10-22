@@ -95,7 +95,8 @@ void main() {
       phone(t, scale: scale, size: const Size(360, 800));
       await pumpApp(t, CatalogBackend(withSportExtras: true), initial: '/pick');
       expect(t.takeException(), isNull);
-      for (final d in [urbanaDesc, sportDesc]) {
+      // Na ordem da lista (Sport antes da Urbana): o scrollUntilVisible so desce.
+      for (final d in [sportDesc, urbanaDesc]) {
         final f = find.text(d);
         await t.scrollUntilVisible(f, 120, scrollable: find.descendant(of: find.byKey(const Key('pick-list')), matching: find.byType(Scrollable)).first);
         await t.pump();

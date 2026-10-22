@@ -289,8 +289,17 @@ void main() {
       await _pumpWelcome(t, dev: false, session: s);
       expect(t.takeException(), isNull);
       expect(find.byKey(const Key('welcome-social-column')), findsOneWidget);
-      // Cartao dos planos desce para a folha com texto grande.
-      expect(find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.byKey(const Key('welcome-plans'))), findsOneWidget);
+      // As tres afirmacoes do servico descem para a folha e escalam com o texto.
+      for (final k in ['hero-pickup', 'welcome-plans', 'hero-perks']) {
+        expect(find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.byKey(Key(k))), findsOneWidget, reason: k);
+      }
+      for (final s in ['Retire no galpão', 'Planos diário, semanal e mensal', 'Seguro incluso', 'Troca de bateria']) {
+        final p = t.renderObject<RenderParagraph>(find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.text(s)));
+        expect(p.textScaler.scale(10), closeTo(20, .01), reason: s);
+        expect(p.didExceedMaxLines, isFalse, reason: s);
+      }
+      // No hero so o logo.
+      expect(find.descendant(of: find.byType(WelcomeHero), matching: find.text('Retire no galpão')), findsNothing);
       for (final k in ['welcome-phone', 'welcome-apple', 'welcome-google', 'welcome-email', 'welcome-terms']) {
         await t.ensureVisible(find.byKey(Key(k)));
         await t.pump();
@@ -463,8 +472,19 @@ void main() {
             }
           }
           final bike = r('hero-bike');
-          // 360x740 com a nota de dev e o caso mais apertado.
-          expect(bike.width, greaterThan(size.width * (size.height < 760 ? .2 : (size.height < 900 ? .3 : .5))), reason: 'a moto aparece');
+          // Largura atual da moto por tela (fracao da largura; debug = com a nota de dev).
+          // Ela encolhe em telas baixas porque nenhum chip pode cobri-la.
+          const expected = {
+            'Size(360.0, 740.0) true': .216,
+            'Size(360.0, 740.0) false': .314,
+            'Size(360.0, 800.0) true': .379,
+            'Size(360.0, 800.0) false': .450,
+            'Size(393.0, 852.0) true': .379,
+            'Size(393.0, 852.0) false': .450,
+            'Size(412.0, 915.0) true': .529,
+            'Size(412.0, 915.0) false': .614,
+          };
+          expect(bike.width / size.width, closeTo(expected['$size $dev']!, .02), reason: 'largura da moto');
           expect(bike.width, lessThanOrEqualTo(size.width * .7 + .5));
           // Nenhum chip sobre a moto (folga de 3 px: ela flutua 2,5 px).
           for (final e in chips.entries) {
@@ -505,7 +525,9 @@ void main() {
             }
             await t.pump(const Duration(milliseconds: 1700));
           }
-          expect(seen, greaterThan(0), reason: 'alguma moto aparece andando');
+          // Em telas baixas a faixa do mapa e pequena e as motos (que saem do anel do
+          // galpao) podem ficar todas escondidas; com espaco, alguma aparece andando.
+          if (size.height >= 900) expect(seen, greaterThan(0), reason: 'alguma moto aparece andando');
         });
       }
     }
@@ -621,6 +643,29 @@ void main() {
         expect(l.panBuffer, greaterThanOrEqualTo(1));
         expect(l.keepBuffer, greaterThanOrEqualTo(1));
       }
+    });
+
+    testWidgets('a 130% os textos do hero escalam ate 1,3x (teto) e a 110% vao para a folha', (t) async {
+      screen(t, size: const Size(412, 915));
+      await _pumpWelcome(t);
+      final hero = find.byType(WelcomeHero);
+      final p = t.renderObject<RenderParagraph>(find.descendant(of: hero, matching: find.text('Retire no galpão')));
+      expect(p.textScaler.scale(10), closeTo(10, .01));
+      // O teto de 1,3 vale para o hero (a 100% nao muda nada; acima, a folha recebe os textos).
+      expect(MediaQuery.textScalerOf(t.element(find.descendant(of: hero, matching: find.text('Seguro incluso')))).scale(20), closeTo(20, .01));
+      t.platformDispatcher.textScaleFactorTestValue = 1.1;
+      await t.pump();
+      await t.pump();
+      expect(find.descendant(of: hero, matching: find.text('Retire no galpão')), findsNothing);
+      expect(find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.text('Retire no galpão')), findsOneWidget);
+    });
+
+    test('anel do galpao e obstaculo para as motos', () {
+      final g = HeroGeometry()..update(zone: const Rect.fromLTWH(16, 200, 380, 60), mapTop: 150, rects: const {});
+      const depot = Offset(200, 230);
+      expect(g.isClear(depot, const Size(412, 450), depot: depot), isFalse);
+      expect(g.isClear(const Offset(200 + 30, 230), const Size(412, 450), depot: depot), isFalse);
+      expect(g.isClear(const Offset(200 + 70, 230), const Size(412, 450), depot: depot), isTrue);
     });
 
     test('rotas das motos saem do galpao', () {

@@ -38,6 +38,9 @@ const kHeroTileErrorLimit = 4;
 /// nunca aparece.
 const kHeroMapBleed = 32.0;
 
+/// Raio maximo do anel do galpao (34 px + 40 px de pulso, metade).
+const kHeroDepotRadius = 37.0;
+
 /// Folga das motos que andam ate as bordas do hero (nunca cortadas).
 const kHeroPinInset = 16.0;
 
@@ -88,7 +91,7 @@ class WelcomeHero extends StatefulWidget {
     required this.band,
     required this.topInset,
     required this.mapOn,
-    required this.showPlans,
+    required this.showStatements,
     required this.texts,
     this.onMapFallback,
     this.overlap = 28,
@@ -102,8 +105,9 @@ class WelcomeHero extends StatefulWidget {
   final double band, topInset, overlap;
   final bool mapOn;
 
-  /// Cartao dos planos no hero (com texto grande ele vai para a folha).
-  final bool showPlans;
+  /// "Retire no galpão", o cartao dos planos e a pilula no hero. Com texto
+  /// grande os tres vao para a folha (escalam com o texto).
+  final bool showStatements;
   final WelcomeHeroTexts texts;
   final VoidCallback? onMapFallback;
 
@@ -450,20 +454,21 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                       ),
                     ),
                     LayoutId(id: HeroSlot.logo, child: _chip(0, const _Logo())),
-                    LayoutId(
-                      id: HeroSlot.pickup,
-                      child: _chip(1, _PickupChip(text: texts.pickup)),
-                    ),
-                    if (widget.showPlans)
+                    if (widget.showStatements) ...[
+                      LayoutId(
+                        id: HeroSlot.pickup,
+                        child: _chip(1, HeroPickupChip(text: texts.pickup)),
+                      ),
                       LayoutId(
                         id: HeroSlot.plans,
                         child: _chip(2, HeroPlansCard(title: texts.plansTitle, text: texts.plansText)),
                       ),
-                    LayoutId(
-                      id: HeroSlot.perks,
-                      // Tela estreita: o cartao dos planos ocupa a linha e a pilula desce, em linha.
-                      child: _chip(3, _PerksPill(insurance: texts.insurance, swap: texts.batterySwap, horizontal: c.maxWidth < 392)),
-                    ),
+                      LayoutId(
+                        id: HeroSlot.perks,
+                        // Tela estreita: o cartao dos planos ocupa a linha e a pilula desce, em linha.
+                        child: _chip(3, HeroPerksPill(insurance: texts.insurance, swap: texts.batterySwap, horizontal: c.maxWidth < 392)),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -479,7 +484,9 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
               Positioned.fill(
                 child: ExcludeSemantics(
                   key: const Key('welcome-art'),
-                  child: IgnorePointer(child: MediaQuery.withNoTextScaling(child: visual)),
+                  // Os textos do hero escalam ate 1,3x; acima do padrao eles vao para a
+                  // folha (WelcomeScreen), onde escalam sem teto.
+                  child: IgnorePointer(child: MediaQuery.withClampedTextScaling(maxScaleFactor: 1.3, child: visual)),
                 ),
               ),
               // Semantica real (afirmacoes do servico) nos retangulos do layout.
@@ -495,7 +502,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                     children: [
                       if (r[HeroSlot.logo] != null) node(HeroSlot.logo, 'welcome-logo-semantics', 'Volti', header: true),
                       if (r[HeroSlot.pickup] != null) node(HeroSlot.pickup, 'welcome-pickup-semantics', texts.pickup),
-                      if (widget.showPlans && r[HeroSlot.plans] != null)
+                      if (r[HeroSlot.plans] != null)
                         node(HeroSlot.plans, 'welcome-plans-semantics', '${texts.plansTitle}, ${texts.plansText}'),
                       if (r[HeroSlot.perks] != null) node(HeroSlot.perks, 'welcome-perks-semantics', '${texts.insurance}, ${texts.batterySwap}'),
                     ],
@@ -516,7 +523,11 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
     final t = (_bikes.value * _bikeSpeed[i] + _bikeOffset[i]) % 1.0;
     final p = pointAlong(route, t);
     final fade = t < .15 ? t / .15 : (t > .85 ? (1 - t) / .15 : 1.0);
-    final clear = _geometry.isClear(MatrixUtils.transformPoint(m, p), Size(size.width, widget.band - 16));
+    final clear = _geometry.isClear(
+      MatrixUtils.transformPoint(m, p),
+      Size(size.width, widget.band - 16),
+      depot: MatrixUtils.transformPoint(m, _depotTarget(size)),
+    );
     return Positioned(
       key: Key('hero-pin-$i'),
       left: p.dx - 15,
@@ -586,7 +597,11 @@ class HeroGeometry extends ChangeNotifier {
 
   /// O pin centrado em [c] (disco de 30 px e barra) nao cruza nenhum obstaculo e
   /// fica a [kHeroPinInset] das bordas de [area].
-  bool isClear(Offset c, Size area, {double margin = 6}) {
+  ///
+  /// [depot] e o centro do galpao (ja com a deriva): o anel pulsando (raio 37) conta
+  /// como obstaculo, e as motos que saem dele so aparecem fora do anel.
+  bool isClear(Offset c, Size area, {double margin = 6, Offset? depot}) {
+    if (depot != null && (c - depot).distance < kHeroDepotRadius + 15 + margin) return false;
     final pin = Rect.fromLTWH(c.dx - 15, c.dy - 15, 30, 37);
     final inside = Rect.fromLTRB(kHeroPinInset, math.max(kHeroPinInset, mapTop + 4), area.width - kHeroPinInset, area.height - kHeroPinInset);
     if (pin.left < inside.left || pin.top < inside.top || pin.right > inside.right || pin.bottom > inside.bottom) return false;
@@ -621,15 +636,21 @@ class HeroLayoutDelegate extends MultiChildLayoutDelegate {
     }
 
     final logo = layoutChild(HeroSlot.logo, loose);
-    final pickup = layoutChild(HeroSlot.pickup, loose);
-    final perks = layoutChild(HeroSlot.perks, loose);
+    final statements = hasChild(HeroSlot.pickup);
+    final pickup = statements ? layoutChild(HeroSlot.pickup, loose) : Size.zero;
+    final perks = statements ? layoutChild(HeroSlot.perks, loose) : Size.zero;
     final y1 = topInset + 10;
     final row1 = math.max(logo.height, pickup.height);
     place(HeroSlot.logo, logo, Offset(side + 4, y1 + (row1 - logo.height) / 2));
-    place(HeroSlot.pickup, pickup, Offset(w - side - pickup.width, y1 + (row1 - pickup.height) / 2));
-    var y = y1 + row1 + 14;
+    var y = y1 + row1;
+    if (statements) {
+      place(HeroSlot.pickup, pickup, Offset(w - side - pickup.width, y1 + (row1 - pickup.height) / 2));
+      y += 14;
+    }
 
-    if (hasChild(HeroSlot.plans)) {
+    if (!statements) {
+      // Texto grande: as afirmacoes estao na folha; so o logo fica no hero.
+    } else if (hasChild(HeroSlot.plans)) {
       final besideMax = w - 2 * side - 12 - perks.width;
       final beside = besideMax >= math.min(minCard, plansNaturalWidth);
       final plans = layoutChild(HeroSlot.plans, BoxConstraints.loose(Size(beside ? besideMax : w - 2 * side, size.height)));
@@ -839,8 +860,8 @@ class _Logo extends StatelessWidget {
 const _chipText = TextStyle(fontFamily: VoltiTypography.fontSans, fontWeight: VoltiTypography.fwBold, fontSize: 13, height: 1.2);
 
 /// "• 🏭 Retire no galpão": pilula branca com o ponto verde e o icone do galpao.
-class _PickupChip extends StatelessWidget {
-  const _PickupChip({required this.text});
+class HeroPickupChip extends StatelessWidget {
+  const HeroPickupChip({super.key, required this.text});
   final String text;
 
   @override
@@ -905,8 +926,8 @@ class HeroPlansCard extends StatelessWidget {
 }
 
 /// Pilula escura em duas partes empilhadas: "🛡 Seguro incluso" e "🔋 Troca de bateria".
-class _PerksPill extends StatelessWidget {
-  const _PerksPill({required this.insurance, required this.swap, this.horizontal = false});
+class HeroPerksPill extends StatelessWidget {
+  const HeroPerksPill({super.key, required this.insurance, required this.swap, this.horizontal = false});
   final String insurance, swap;
 
   /// As duas partes lado a lado (telas estreitas, linha propria).

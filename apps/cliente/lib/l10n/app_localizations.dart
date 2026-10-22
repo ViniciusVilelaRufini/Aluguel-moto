@@ -4443,6 +4443,12 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Código'**
   String get pickSpecCode;
+
+  /// No description provided for @pickDetailsShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'Detalhes'**
+  String get pickDetailsShort;
 }
 
 class _AppLocalizationsDelegate

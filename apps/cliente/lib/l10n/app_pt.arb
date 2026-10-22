@@ -1513,5 +1513,6 @@
   },
   "pickSpecPrice": "Preço por minuto",
   "pickSpecUnlock": "Taxa de desbloqueio",
-  "pickSpecCode": "Código"
+  "pickSpecCode": "Código",
+  "pickDetailsShort": "Detalhes"
 }

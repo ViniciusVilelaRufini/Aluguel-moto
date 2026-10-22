@@ -20,10 +20,10 @@ class BatteryPill extends StatelessWidget {
   /// continua para sobre o mapa.
   final bool light;
 
-  /// Cor do raio na pilula clara (>= 3:1 sobre o fundo claro): verde a partir de
-  /// 50%, ambar de 20% a 49% e vermelho abaixo de 20%.
-  static Color lightBoltColor(int pct) =>
-      pct >= 50 ? VoltiColors.successInk : (pct >= 20 ? VoltiColors.warningInk : VoltiColors.dangerInk);
+  /// Cor do raio na pilula clara (>= 3:1 sobre o fundo claro), nas mesmas faixas
+  /// de [VoltiColors.batteryLevel]: verde a partir de 50%, ambar de 20% a 49% e
+  /// coral abaixo de 20%.
+  static Color lightBoltColor(int pct) => VoltiColors.batteryInkColor(pct);
 
   /// 0-100.
   final int pct;

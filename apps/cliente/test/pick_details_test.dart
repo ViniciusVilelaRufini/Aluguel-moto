@@ -119,7 +119,7 @@ void main() {
   testWidgets('botao flutuante: sem rodape opaco, so o veu; o ultimo cartao sobe acima do botao', (t) async {
     phone(t, size: const Size(360, 640));
     await pumpApp(t, CatalogBackend(withSportExtras: true), initial: '/pick');
-    final footer = t.widget<DecoratedBox>(find.byKey(const Key('pick-footer')));
+    final footer = t.widget<DecoratedBox>(find.byKey(const Key('pick-footer-veil')));
     final deco = footer.decoration as BoxDecoration;
     expect(deco.color, isNull, reason: 'sem fundo opaco');
     expect(deco.boxShadow, isNull);
@@ -138,7 +138,8 @@ void main() {
     // A lista rola ate o ultimo cartao ficar inteiro acima do botao.
     await t.drag(find.byKey(const Key('pick-list')), const Offset(0, -2000));
     await settle(t);
-    final last = t.getRect(card('v3'));
+    // Ultimo cartao da lista (ordem da API: v3, v2, v1).
+    final last = t.getRect(card('v1'));
     expect(last.bottom, lessThanOrEqualTo(btn.top), reason: 'ultimo cartao acima do botao');
     // A lista passa por baixo do botao (vai ate o fundo da tela).
     expect(t.getRect(find.byKey(const Key('pick-list'))).bottom, greaterThan(btn.top));
@@ -151,5 +152,48 @@ void main() {
     final btn = t.getRect(find.byKey(const Key('pick-continue')));
     expect(notice.bottom, lessThan(btn.top));
     expect(find.descendant(of: find.byKey(const Key('pick-footer')), matching: find.text('Verificação em análise')), findsOneWidget);
+  });
+
+  testWidgets('o veu do botao nao rouba toques: tocar nele seleciona o cartao de baixo', (t) async {
+    phone(t, size: const Size(360, 640));
+    await pumpApp(t, CatalogBackend(withSportExtras: true), initial: '/pick');
+    final veil = t.getRect(find.byKey(const Key('pick-footer-veil')));
+    final btn = t.getRect(find.byKey(const Key('pick-continue')));
+    // Faixa do veu acima do botao, sobre um cartao.
+    final point = Offset(60, (veil.top + btn.top) / 2);
+    final under = [for (final id in ['v1', 'v2', 'v3']) if (t.getRect(card(id)).contains(point)) id];
+    expect(under, hasLength(1), reason: 'ha um cartao sob o veu');
+    await t.tapAt(point);
+    await settle(t);
+    final v = {'v1': 'Volti Urbana · VLT-011', 'v2': 'Volti Sport · VLT-012', 'v3': 'Volti Touring · VLT-013'}[under.single];
+    expect(t.widget<VoltiButton>(find.byKey(const Key('pick-continue'))).subtitle, v);
+  });
+
+  testWidgets('cartao fechado mostra "Detalhes" (dica); tocar nele abre', (t) async {
+    phone(t);
+    await pumpApp(t, CatalogBackend(), initial: '/pick');
+    final hint = find.descendant(of: card('v1'), matching: find.byKey(const Key('pick-expand')));
+    expect(hint, findsOneWidget);
+    expect(find.descendant(of: hint, matching: find.text('Detalhes')), findsOneWidget);
+    await t.ensureVisible(hint);
+    await t.pump();
+    await t.tap(hint);
+    await settle(t);
+    expect(details('v1'), findsOneWidget);
+    expect(find.descendant(of: card('v1'), matching: find.byKey(const Key('pick-expand'))), findsNothing);
+  });
+
+  testWidgets('com area segura de 24 px e aviso de KYC, o ultimo cartao sobe acima do aviso e do botao', (t) async {
+    phone(t, size: const Size(360, 640));
+    t.view.padding = const FakeViewPadding(bottom: 24);
+    await pumpApp(t, CatalogBackend(withSportExtras: true), initial: '/pick', kyc: KycStatus.pending);
+    await t.drag(find.byKey(const Key('pick-list')), const Offset(0, -3000));
+    await settle(t);
+    // Ultimo cartao da lista (ordem da API: v3, v2, v1).
+    final last = t.getRect(card('v1'));
+    final notice = t.getRect(find.text('Verificação em análise'));
+    final btn = t.getRect(find.byKey(const Key('pick-continue')));
+    expect(btn.bottom, lessThanOrEqualTo(640 - 24), reason: 'botao acima da area segura');
+    expect(last.bottom, lessThanOrEqualTo(notice.top), reason: 'ultimo cartao acima do aviso');
   });
 }

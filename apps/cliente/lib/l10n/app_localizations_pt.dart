@@ -2553,4 +2553,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get pickSpecCode => 'Código';
+
+  @override
+  String get pickDetailsShort => 'Detalhes';
 }

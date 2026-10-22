@@ -189,7 +189,10 @@ class VoltiMap extends StatefulWidget {
   ]);
 
   /// Novas tentativas automaticas depois de tiles com erro (rede instavel na
-  /// abertura): ate 3, espacadas.
+  /// abertura): ate 3 seguidas, espacadas; um tile carregado zera a contagem. A
+  /// nova tentativa recarrega a camada (o flutter_map 8 nao tem recarga por tile),
+  /// mas os tiles ja carregados vem do `ImageCache` (chave = URL): so os que
+  /// falharam voltam a rede.
   static const maxRetries = 3;
 
   @override
@@ -197,8 +200,9 @@ class VoltiMap extends StatefulWidget {
 }
 
 class _VoltiMapState extends State<VoltiMap> {
-  // Um provedor (e cliente HTTP) por camada durante a vida do mapa: reconstruir a
-  // tela nao troca o cliente no meio das cargas. O TileLayer o descarta ao sair.
+  // Um provedor por camada durante a vida do mapa (reconstruir a tela nao troca de
+  // provedor). Todos usam o cliente HTTP compartilhado de `map_tiles.dart`, que o
+  // descarte do provedor (TileLayer ao sair) nao fecha.
   late final TileProvider _base = newTileProvider();
   late final TileProvider? _reference = kMapReferenceUrl.isEmpty ? null : newTileProvider();
   final _reset = StreamController<void>.broadcast();
@@ -243,6 +247,7 @@ class _VoltiMapState extends State<VoltiMap> {
           onError: _onError,
           reset: _reset.stream,
           tileBuilder: (context, tile, image) {
+            if (image.readyToDisplay && !image.loadError) _retries = 0;
             if (kMapDebug) debugPrint('VOLTI_DBG tile ${image.coordinates.z}/${image.coordinates.x}/${image.coordinates.y} ready=${image.readyToDisplay} err=${image.loadError}');
             if (image.readyToDisplay && widget.onTileLoaded != null) widget.onTileLoaded!();
             return ColorFiltered(colorFilter: VoltiMap.colorFilter, child: tile);

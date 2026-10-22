@@ -310,47 +310,57 @@ class _Footer extends StatelessWidget {
     }
     // Botao flutuante: sem fundo opaco; so um veu suave (transparente -> superficie
     // a 60%) para o texto do botao e do aviso ficar legivel sobre os cartoes.
-    return DecoratedBox(
+    return Stack(
       key: const Key('pick-footer'),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [scheme.surface.withValues(alpha: 0), scheme.surface.withValues(alpha: .6)],
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(VoltiSpacing.s16, 20, VoltiSpacing.s16, VoltiSpacing.s16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Texto grande: o motivo tem teto e rola, para a lista continuar visivel.
-              if (reasonView != null) ...[
-                ConstrainedBox(
-                  // Com moto escolhida o botao tem a segunda linha (modelo · codigo): teto menor.
-                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * (v != null ? .17 : .22)),
-                  child: SingleChildScrollView(child: reasonView),
+      children: [
+        // O veu nao recebe toques: so o botao e o aviso; o resto vai para a lista.
+        Positioned.fill(
+          child: IgnorePointer(
+            child: DecoratedBox(
+              key: const Key('pick-footer-veil'),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [scheme.surface.withValues(alpha: 0), scheme.surface.withValues(alpha: .6)],
                 ),
-                const SizedBox(height: VoltiSpacing.s10),
-              ],
-              VoltiButton(
-                key: const Key('pick-continue'),
-                // Modelo e codigo na segunda linha: "Continuar com <modelo> · <codigo>" numa
-                // linha so cortava o codigo ("VLT-0…") no emulador.
-                label: v == null ? l.selectABike : l.pickContinueLabel,
-                subtitle: v == null ? null : l.pickContinueBike(v.model, v.code),
-                icon: LucideIcons.arrowRight,
-                size: VoltiButtonSize.lg,
-                fullWidth: true,
-                onPressed: block == ReserveBlock.none ? onContinue : null,
               ),
-            ],
+            ),
           ),
         ),
-      ),
+        SafeArea(
+          top: false,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(VoltiSpacing.s16, 20, VoltiSpacing.s16, VoltiSpacing.s16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Texto grande: o motivo tem teto e rola, para a lista continuar visivel.
+                if (reasonView != null) ...[
+                  ConstrainedBox(
+                    // Com moto escolhida o botao tem a segunda linha (modelo · codigo): teto menor.
+                    constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * (v != null ? .17 : .22)),
+                    child: SingleChildScrollView(child: reasonView),
+                  ),
+                  const SizedBox(height: VoltiSpacing.s10),
+                ],
+                VoltiButton(
+                  key: const Key('pick-continue'),
+                  // Modelo e codigo na segunda linha: "Continuar com <modelo> · <codigo>" numa
+                  // linha so cortava o codigo ("VLT-0…") no emulador.
+                  label: v == null ? l.selectABike : l.pickContinueLabel,
+                  subtitle: v == null ? null : l.pickContinueBike(v.model, v.code),
+                  icon: LucideIcons.arrowRight,
+                  size: VoltiButtonSize.lg,
+                  fullWidth: true,
+                  onPressed: block == ReserveBlock.none ? onContinue : null,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -618,7 +628,31 @@ class _PickCardState extends State<_PickCard> {
                               ],
                             ),
                           )
-                        : const SizedBox(width: double.infinity),
+                        // Fechado: "Detalhes ⌄" pequeno, dica do pressionar e segurar (o toque tambem abre).
+                        : widget.onToggleExpanded == null
+                        ? const SizedBox(width: double.infinity)
+                        : Align(
+                            alignment: Alignment.centerRight,
+                            child: GestureDetector(
+                              key: const Key('pick-expand'),
+                              behavior: HitTestBehavior.opaque,
+                              onTap: widget.onToggleExpanded,
+                              child: Padding(
+                                padding: const EdgeInsets.fromLTRB(12, 6, 2, 0),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      l.pickDetailsShort,
+                                      style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant, fontWeight: VoltiTypography.fwSemibold),
+                                    ),
+                                    const SizedBox(width: 2),
+                                    Icon(LucideIcons.chevronDown, size: 16, color: scheme.onSurfaceVariant),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
                   ),
                 ],
               ),

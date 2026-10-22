@@ -104,9 +104,16 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (bigText) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: HeroPlansCard(title: l.welcomeHeroPlansTitle, text: l.welcomeHeroPlansText),
+            // Texto grande: as tres afirmacoes do servico saem do hero e escalam aqui.
+            Wrap(
+              key: const Key('welcome-sheet-statements'),
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                HeroPickupChip(text: l.welcomeHeroPickup),
+                HeroPlansCard(title: l.welcomeHeroPlansTitle, text: l.welcomeHeroPlansText),
+                HeroPerksPill(insurance: l.welcomeHeroInsurance, swap: l.welcomeHeroBatterySwap),
+              ],
             ),
             const SizedBox(height: VoltiSpacing.s14),
           ],
@@ -240,7 +247,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   band: band,
                   topInset: padding.top,
                   mapOn: mapOn,
-                  showPlans: !bigText,
+                  showStatements: !bigText,
                   texts: WelcomeHeroTexts(
                     pickup: l.welcomeHeroPickup,
                     plansTitle: l.welcomeHeroPlansTitle,
