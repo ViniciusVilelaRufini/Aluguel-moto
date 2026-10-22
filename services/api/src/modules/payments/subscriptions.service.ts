@@ -184,7 +184,8 @@ export class SubscriptionsService {
         // Expirada: a recorrência ainda está viva no gateway → cancelamento pendente (gravado junto) e tentativa já.
         // Cancelamento agendado já foi feito no gateway em `cancel()`.
         const done = await this.prisma.subscription.updateMany({
-          where: { id: sub.id, status: sub.status },
+          // Mesmo período e agendamento lidos: renovação paga no meio do caminho não pode ser expirada.
+          where: { id: sub.id, status: sub.status, currentPeriodEnd: sub.currentPeriodEnd, cancelAtPeriodEnd: sub.cancelAtPeriodEnd },
           data: { status: to, ...(to === 'canceled' ? { canceledAt: sub.canceledAt ?? now } : { gatewayCancelPendingAt: now }) },
         });
         if (done.count) {
