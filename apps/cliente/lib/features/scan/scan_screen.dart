@@ -22,11 +22,18 @@ String vehicleCodeFromQr(String raw) {
 abstract class ScanCamera {
   Widget preview({required ValueChanged<String> onCode, required WidgetBuilder onError});
   Future<void> toggleTorch();
+
+  /// Para a leitura (e apaga a lanterna) enquanto outra tela esta por cima.
+  Future<void> stop();
+
+  /// Volta a ler.
+  Future<void> start();
   Future<void> dispose();
 }
 
 class MobileScanCamera implements ScanCamera {
-  final _controller = MobileScannerController();
+  // Sem duplicatas: o mesmo QR parado na frente da camera dispara uma vez so.
+  final _controller = MobileScannerController(detectionSpeed: DetectionSpeed.noDuplicates);
 
   @override
   Widget preview({required ValueChanged<String> onCode, required WidgetBuilder onError}) => MobileScanner(
@@ -40,6 +47,12 @@ class MobileScanCamera implements ScanCamera {
 
   @override
   Future<void> toggleTorch() => _controller.toggleTorch();
+
+  @override
+  Future<void> stop() => _controller.stop();
+
+  @override
+  Future<void> start() => _controller.start();
 
   @override
   Future<void> dispose() => _controller.dispose();
@@ -89,6 +102,20 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
   }
 
+  Future<void> _stopCamera() async {
+    try {
+      await _camera.stop();
+    } catch (_) {}
+    if (mounted) setState(() => _torch = false);
+  }
+
+  Future<void> _startCamera() async {
+    if (_manual) return;
+    try {
+      await _camera.start();
+    } catch (_) {}
+  }
+
   Future<void> _resolve(String raw) async {
     if (_busy || raw.trim().isEmpty) return;
     final l = context.l;
@@ -109,7 +136,15 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         }
         return;
       }
-      if (mounted) context.push('/plan', extra: vehicle);
+      if (!mounted) return;
+      // A camera para (e a lanterna apaga) antes de abrir o plano: nada de leituras
+      // por baixo empilhando outros /plan. Ao voltar, limpa o "encontrada" e le de novo.
+      await _stopCamera();
+      if (!mounted) return;
+      await context.push('/plan', extra: vehicle);
+      if (!mounted) return;
+      setState(() => _foundCode = null);
+      await _startCamera();
     } catch (e) {
       VoltiHaptics.warning();
       if (mounted) {

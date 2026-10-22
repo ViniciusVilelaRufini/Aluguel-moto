@@ -49,6 +49,7 @@ class _CodeEntrySheetState extends State<CodeEntrySheet> {
       TextField(
         key: widget.fieldKey,
         controller: _ctrl,
+        maxLength: 32,
         textCapitalization: TextCapitalization.characters,
         decoration: InputDecoration(hintText: l.couponHint, prefixIcon: const Icon(LucideIcons.ticket)),
         onSubmitted: (_) => _done(),

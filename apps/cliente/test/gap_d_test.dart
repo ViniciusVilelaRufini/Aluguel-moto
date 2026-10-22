@@ -127,6 +127,23 @@ class GapBackend extends FakeBackend {
     return sampleVehicle();
   }
 
+  int starts = 0;
+  @override
+  Future<RentalStartResult> startRental(StartRentalRequest request, {String? idempotencyKey}) async {
+    starts++;
+    return RentalStartResult((b) => b
+      ..outcome = RentalStartOutcome.started
+      ..rental = sampleRental().toBuilder()
+      ..deposit = Deposit((d) => d
+        ..id = 'd1'
+        ..customerId = 'c1'
+        ..method = DepositMethod.pix
+        ..status = DepositStatus.held
+        ..amountCents = 15000
+        ..createdAt = DateTime.utc(2026)
+        ..updatedAt = DateTime.utc(2026)).toBuilder());
+  }
+
   @override
   Future<Reservation?> currentReservation() async => reservation;
   @override
@@ -154,7 +171,20 @@ class FakeLauncher {
 }
 
 class FakeCamera implements ScanCamera {
-  int torch = 0;
+  int torch = 0, stops = 0, starts = 0;
+  bool running = true;
+  @override
+  Future<void> stop() async {
+    stops++;
+    running = false;
+  }
+
+  @override
+  Future<void> start() async {
+    starts++;
+    running = true;
+  }
+
   ValueChanged<String>? onCode;
   @override
   Widget preview({required ValueChanged<String> onCode, required WidgetBuilder onError}) {
@@ -316,6 +346,13 @@ void main() {
       await t.pump(const Duration(seconds: 5));
     });
 
+    testWidgets('campo do cupom limita a 32 caracteres', (t) async {
+      await pumpSheet(t);
+      await t.tap(find.byKey(const Key('sheet-coupon')));
+      await t.pumpAndSettle();
+      expect(t.widget<TextField>(find.byKey(const Key('coupon-field'))).maxLength, 32);
+    });
+
     testWidgets('Escanear QR e Reservar chamam as acoes; reservar bloqueado fica desligado', (t) async {
       var scans = 0, reserves = 0;
       await pumpSheet(t, onScan: () => scans++, onReserve: () => reserves++);
@@ -430,6 +467,29 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    testWidgets('tem um "Voltar" acessivel que volta ao mapa', (t) async {
+      phone(t);
+      final router = GoRouter(initialLocation: '/home', routes: [
+        GoRoute(path: '/home', builder: (_, _) => const Scaffold(body: Text('mapa'))),
+        GoRoute(path: '/reserved', builder: (_, _) => const ReservedScreen()),
+      ]);
+      await t.pumpWidget(testRouterApp(router, overrides: [
+        backendProvider.overrideWithValue(GapBackend(reservation: reservation())),
+        locationServiceProvider.overrideWithValue(FakeLocation()),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+        clockProvider.overrideWithValue(() => t0),
+      ]));
+      router.push('/reserved');
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(find.bySemanticsLabel('Voltar'), findsOneWidget);
+      await t.tap(find.byKey(const Key('reserved-back')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(find.text('mapa'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+
     testWidgets('expirada: aviso e o botao leva ao mapa', (t) async {
       phone(t);
       await t.pumpWidget(testApp(const ReservedScreen(), overrides: [
@@ -513,6 +573,23 @@ void main() {
       expect(find.text('plano VLT-001'), findsOneWidget);
     });
 
+    testWidgets('leitura dupla abre um plano so; a camera para antes e volta depois, sem "encontrada"', (t) async {
+      final (b, cam, router) = await pumpScan(t);
+      cam.onCode!('VLT-001');
+      cam.onCode!('VLT-001');
+      await settle(t);
+      expect(b.codes, ['VLT-001'], reason: 'uma consulta');
+      expect(find.text('plano VLT-001'), findsOneWidget);
+      expect(cam.stops, 1);
+      expect(cam.running, isFalse, reason: 'camera e lanterna nao ficam ligadas embaixo do plano');
+      router.pop();
+      await settle(t);
+      expect(find.text('plano VLT-001'), findsNothing, reason: 'so um /plan na pilha');
+      expect(cam.running, isTrue);
+      expect(find.text('Moto VLT-001 encontrada'), findsNothing);
+      expect(find.text('Aponte para o QR no guidão'), findsOneWidget);
+    });
+
     testWidgets('vindo do mapa mostra a moto esperada com o Hero', (t) async {
       await pumpScan(t, expected: 'VT-4821');
       expect(find.text('Procurando VT-4821'), findsOneWidget);
@@ -571,6 +648,36 @@ void main() {
       expect(b.quotes.last.$3, 'VOLTI10');
     });
 
+    testWidgets('cupom pendente e limpo depois que o aluguel comeca', (t) async {
+      tallScreen(t);
+      final b = GapBackend();
+      late ProviderContainer container;
+      final router = GoRouter(initialLocation: '/plan', routes: [
+        GoRoute(
+          path: '/plan',
+          builder: (context, _) {
+            container = ProviderScope.containerOf(context);
+            return PlanScreen(vehicle: sampleVehicle());
+          },
+        ),
+        GoRoute(path: '/ride', builder: (_, _) => const Scaffold(body: Text('corrida'))),
+      ]);
+      await t.pumpWidget(testRouterApp(router, overrides: [
+        backendProvider.overrideWithValue(b),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+        pendingCouponProvider.overrideWith(() => _Coupon('VOLTI10')),
+      ]));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Pix'));
+      await t.pumpAndSettle();
+      expect(t.widget<VoltiButton>(find.byKey(const Key('plan-confirm'))).onPressed, isNotNull);
+      await t.tap(find.byKey(const Key('plan-confirm')));
+      await t.pumpAndSettle();
+      expect(b.starts, 1);
+      expect(find.text('corrida'), findsOneWidget);
+      expect(container.read(pendingCouponProvider), '');
+    });
+
     testWidgets('caucao: escolhe Pix', (t) async {
       await pumpPlan(t);
       await t.tap(find.text('Pix'));
@@ -578,6 +685,80 @@ void main() {
       expect(t.widget<OptionCard>(find.widgetWithText(OptionCard, 'Pix')).selected, isTrue);
       expect(t.widget<VoltiButton>(find.byKey(const Key('plan-confirm'))).onPressed, isNotNull,
           reason: 'Pix nao exige cartao cadastrado');
+    });
+  });
+
+  test('cupom pendente e limpo ao sair da conta', () async {
+    final container = ProviderContainer(overrides: [
+      sessionProvider.overrideWith(() => _SignOutSession(session())),
+    ]);
+    addTearDown(container.dispose);
+    await container.read(sessionProvider.future);
+    container.listen(pendingCouponProvider, (_, _) {});
+    container.read(pendingCouponProvider.notifier).set('VOLTI10');
+    expect(container.read(pendingCouponProvider), 'VOLTI10');
+    await container.read(sessionProvider.notifier).signOut();
+    await Future<void>.delayed(Duration.zero);
+    expect(container.read(pendingCouponProvider), '');
+  });
+
+  group('texto a 200% em tela de 360 px', () {
+    void small(WidgetTester t) {
+      t.view.physicalSize = const Size(360, 740);
+      t.view.devicePixelRatio = 1;
+      t.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(t.view.reset);
+      addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
+    }
+
+    testWidgets('plano', (t) async {
+      small(t);
+      await t.pumpWidget(testApp(PlanScreen(vehicle: sampleVehicle()), overrides: [
+        backendProvider.overrideWithValue(GapBackend()),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+      ]));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+      await t.drag(find.byType(ListView), const Offset(0, -900));
+      await t.pumpAndSettle();
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('cartao da moto', (t) async {
+      small(t);
+      await t.pumpWidget(testApp(
+        Scaffold(body: SingleChildScrollView(child: VehicleSheet(vehicle: bike(), onClose: () {}, onScan: () {}, onReserve: () {}))),
+        overrides: [
+          backendProvider.overrideWithValue(GapBackend()),
+          sessionProvider.overrideWith(() => FakeSession(session())),
+        ],
+      ));
+      await t.pump();
+      await t.pump(const Duration(seconds: 1));
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('reserva', (t) async {
+      small(t);
+      final t0 = DateTime.utc(2026, 10, 22, 12);
+      await t.pumpWidget(testApp(const ReservedScreen(), overrides: [
+        backendProvider.overrideWithValue(GapBackend(
+          reservation: Reservation((b) => b
+            ..id = 'res1'
+            ..vehicleId = 'v1'
+            ..vehicle = bike().toBuilder()
+            ..status = ReservationStatus.active
+            ..createdAt = t0
+            ..expiresAt = t0.add(const Duration(minutes: 15))),
+        )),
+        locationServiceProvider.overrideWithValue(FakeLocation()),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+        clockProvider.overrideWithValue(() => t0),
+      ]));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 100));
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
     });
   });
 
@@ -680,4 +861,10 @@ class _Coupon extends PendingCouponNotifier {
   final String code;
   @override
   String build() => code;
+}
+
+class _SignOutSession extends FakeSession {
+  _SignOutSession(super.initial);
+  @override
+  Future<void> signOut() async => state = const AsyncData(SessionState.signedOut());
 }

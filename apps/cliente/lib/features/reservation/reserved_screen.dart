@@ -179,10 +179,20 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
             label: l.walkRouteSemantics(walkingMinutes(walkM), walkingDistanceLabel(walkM)),
             child: const SizedBox.shrink(),
           ),
-        const SafeArea(
+        SafeArea(
           child: Padding(
-            padding: EdgeInsets.all(VoltiSpacing.screenGutter),
-            child: LocationHeader(),
+            padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
+            child: Row(children: [
+              // "Voltar" acessivel (o design so tem o cabecalho): volta ao mapa.
+              VoltiIconButton(
+                key: const Key('reserved-back'),
+                icon: LucideIcons.arrowLeft,
+                label: l.back,
+                onPressed: () => context.canPop() ? context.pop() : context.go('/home'),
+              ),
+              const SizedBox(width: VoltiSpacing.s10),
+              const Expanded(child: LocationHeader()),
+            ]),
           ),
         ),
         Positioned(

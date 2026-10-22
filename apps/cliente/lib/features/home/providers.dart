@@ -67,7 +67,13 @@ final currentRentalProvider = FutureProvider.autoDispose<Rental?>((ref) => ref.w
 final pendingCouponProvider = NotifierProvider<PendingCouponNotifier, String>(PendingCouponNotifier.new);
 
 class PendingCouponNotifier extends Notifier<String> {
+  /// Some ao sair da conta (ou trocar de conta): o cupom e de quem digitou.
   @override
-  String build() => '';
+  String build() {
+    ref.watch(sessionProvider.select((s) => s.value?.signedIn == true ? s.value?.customer?.id ?? '' : null));
+    return '';
+  }
+
+  void clear() => state = '';
   void set(String code) => state = code.trim().toUpperCase();
 }

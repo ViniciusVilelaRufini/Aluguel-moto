@@ -76,8 +76,10 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
   }
 
   Future<bool> _ensureLocationConsent() async {
-    final session = ref.read(sessionProvider).value;
-    if (session?.locationConsent ?? false) return true;
+    // Espera a sessao carregar: sem isso, um provider ainda frio pediria o consentimento a toa.
+    final session = ref.read(sessionProvider).value ?? await ref.read(sessionProvider.future).catchError((Object _) => const SessionState.signedOut());
+    if (session.locationConsent) return true;
+    if (!mounted) return false;
     final l = context.l;
     final ok = await VoltiDialog.show<bool>(
       context,
@@ -92,7 +94,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
     if (ok != true) return false;
     await ref
         .read(sessionProvider.notifier)
-        .saveConsents(terms: session?.termsAccepted ?? true, location: true, marketing: session?.consents?.marketing ?? false);
+        .saveConsents(terms: session.termsAccepted, location: true, marketing: session.consents?.marketing ?? false);
     return true;
   }
 
@@ -124,6 +126,8 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
         // Decisao #1: depois do Pix pago, chama POST /rentals de novo com nova Idempotency-Key e depositId.
         result = await backend.startRental(request.rebuild((b) => b..depositId = result.deposit.id));
       }
+      // Cupom usado: nao fica pendurado para o proximo aluguel.
+      ref.read(pendingCouponProvider.notifier).clear();
       ref.invalidate(currentRentalProvider);
       ref.invalidate(currentReservationProvider);
       if (mounted) context.go('/ride');

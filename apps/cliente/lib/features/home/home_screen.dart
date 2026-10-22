@@ -58,6 +58,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
   }
 
+  /// Encerra o voo pin -> cartao (cartao fechado, scan aberto ou sem voo).
+  void _cancelFlight() {
+    if (_flight?.mounted ?? false) _flight!.remove();
+    _flight = null;
+    _hideSheetMedia.value = false;
+  }
+
   @override
   void dispose() {
     if (_flight?.mounted ?? false) _flight!.remove();
@@ -81,8 +88,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (from == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      if (_flight?.mounted ?? false) _flight!.remove();
+      _cancelFlight();
       _flight = SharedFlight.run(context, from: from, to: _sheetMedia, hide: _hideSheetMedia);
+      if (_flight == null) _hideSheetMedia.value = false;
     });
   }
 
@@ -347,7 +355,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         child: VoltiDragToDismiss(
                           key: const Key('vehicle-sheet-drag'),
                           dismissLabel: l.close,
-                          onDismiss: () => setState(() => _selectedId = null),
+                          onDismiss: () {
+                            _cancelFlight();
+                            setState(() => _selectedId = null);
+                          },
                           child: VehicleSheet(
                         vehicle: selected,
                         busy: _busy,
@@ -364,8 +375,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         onReserve: () => _reserve(selected!),
                         // Contrato: buzina so na moto reservada ou alugada pelo cliente.
                         ringAllowed: reservation?.vehicleId == selected.id || rental?.vehicleId == selected.id,
-                        onScan: () => context.push(Uri(path: '/scan', queryParameters: {'v': selected!.code}).toString()),
-                        onClose: () => setState(() => _selectedId = null),
+                        onScan: () {
+                          _cancelFlight();
+                          context.push(Uri(path: '/scan', queryParameters: {'v': selected!.code}).toString());
+                        },
+                        onClose: () {
+                          _cancelFlight();
+                          setState(() => _selectedId = null);
+                        },
                       ),
                         ),
                       )
