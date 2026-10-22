@@ -119,6 +119,26 @@ describe('StationSim — abort_swap (fix 1, I2)', () => {
     expect(types()).toEqual(['slot_closed', 'slot_closed']);
   });
 
+  it('fix 2 (I-2): cancelamento cruzou com a devolução → abort fecha a vaga, mas o release_battery seguinte é aceito e completa a troca', () => {
+    const { sim, tick, types, events } = harness();
+    sim.onCommand(THING, open);
+    tick(200); // slot_opened, battery_returned (a vaga ainda não fechou)
+    expect(types()).toEqual(['slot_opened', 'battery_returned']);
+    sim.onCommand(THING, abort(SWAP, 1)); // a API cancelou antes de ver a devolução
+    tick(1000);
+    expect(types()).toEqual(['slot_opened', 'battery_returned', 'slot_closed']);
+    sim.onCommand(THING, release); // a API registrou a devolução atrasada e pede a liberação
+    tick(100);
+    expect(types()).toEqual(['slot_opened', 'battery_returned', 'slot_closed', 'battery_released']);
+    expect(events[3][1]).toEqual(expect.objectContaining({ swapId: SWAP, serial: 'BT-S1001' }));
+    expect(sim.swaps.get(SWAP)!.phase).toBe('done');
+    // Repetido não libera outra.
+    sim.onCommand(THING, { ...release, commandId: `${SWAP}:release_battery:2` });
+    tick(1000);
+    expect(types()).toHaveLength(4);
+    for (const [, e] of events) expect(validEvent(e)).toBe(true);
+  });
+
   it('o comando abort_swap da API passa no schema', () => {
     expect(validCommand({ ...abort(SWAP, 2), ts: '2026-10-22T15:00:00.000Z' })).toBe(true);
     expect(parseCommand({ ...abort(SWAP, 2), ts: 'x' })).toEqual(abort(SWAP, 2));

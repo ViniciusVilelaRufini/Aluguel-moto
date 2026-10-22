@@ -35,6 +35,11 @@ describe('contrato da troca de bateria na estação', () => {
   it('fix 1: currentStationSwap em CurrentRental, motivos novos e SwapStationQr', () => {
     expect(s.CurrentRental.properties.currentStationSwap.$ref).toBe('#/components/schemas/StationSwap');
     expect(s.StationSwapEndReason.enum).toEqual(expect.arrayContaining(['no_battery_after_return', 'serial_mismatch']));
+    // Fix 2: só acréscimos (o app do cliente já consome o contrato); a ordem dos valores antigos não muda.
+    expect(s.StationSwapEndReason.enum).toEqual([
+      'canceled_by_customer', 'slot_closed_without_return', 'station_timeout', 'return_timeout', 'release_timeout', 'no_battery_after_return', 'serial_mismatch',
+      'return_after_close', 'rental_force_ended',
+    ]);
     expect({ stationId: base.stationId, stationCode: 'vst1.x.y' }).toSatisfySchemaInApiSpec('SwapStationQr');
     expect(toStationSwap({ ...base, status: 'failed', endReason: 'serial_mismatch' }, { staff: true })).toSatisfySchemaInApiSpec('StationSwap');
   });

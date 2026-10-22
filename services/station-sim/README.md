@@ -7,7 +7,7 @@ Faz o papel do armário de baterias enquanto não há fornecedor: escuta os coma
 - **Modo automático** (padrão): depois devolve a bateria que a moto leva (`battery_returned` com a série enviada em `expectedSerial` e carga baixa sorteada), fecha a vaga (`slot_closed`) e, quando a API pede `release_battery`, libera a bateria sugerida (`serialHint`) ou uma do estoque simulado (`SIM-<id>-001`…) — um passo a cada `STATION_SIM_STEP_MS`.
 - **Modo manual** (demonstração): a vaga abre sozinha; o resto é pelo teclado.
 - `abort_swap` (troca cancelada pelo cliente ou vencida na API) → fecha a vaga, se aberta ou ainda abrindo, e confirma com `slot_closed`; nada mais é devolvido nem liberado nessa troca.
-- Comando repetido (mesmo `commandId`) é ignorado. `release_battery` sem devolução registrada é **recusado** (a estação real também não libera bateria sem receber a descarregada).
+- Comando repetido (mesmo `commandId`) é ignorado. `release_battery` sem devolução recebida nesta estação é **recusado** (a estação real também não libera bateria sem receber a descarregada); com a devolução recebida, vale **mesmo depois de um `abort_swap`** (cancelamento que cruzou com a devolução, contrato em `mqtt.md`). Nunca libera duas vezes na mesma troca.
 - Logs em JSON só com ids (o simulador não conhece o cliente nem a posição).
 
 ## Como rodar

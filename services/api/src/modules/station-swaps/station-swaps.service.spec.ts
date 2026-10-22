@@ -51,7 +51,10 @@ function setup(opts: { planCode?: string; rentalStatus?: string; known?: number 
   prisma.rental.findUnique.mockImplementation((async (a: any) => (a.where.id === RENTAL_ID ? rental : null)) as any);
   prisma.stationSwap.findFirst.mockResolvedValue(null);
   prisma.stationSwap.count.mockResolvedValue(0);
-  (prisma.$queryRaw as any).mockImplementation(async () => [{ availableBatteries: station.availableBatteries }]);
+  // Locks: linha da estação (estoque) e linha do aluguel (status relido sob lock, fix 2 / M-3 e I-1).
+  (prisma.$queryRaw as any).mockImplementation(async (sql: TemplateStringsArray) =>
+    sql.join('?').includes('"Rental"') ? [{ status: rental.lockedStatus ?? rental.status }] : [{ availableBatteries: station.availableBatteries }],
+  );
   prisma.fee.findUnique.mockResolvedValue({ code: 'battery_swap_fee', amountCents: opts.feeCents ?? 500, active: true } as any);
   prisma.stationSwap.create.mockImplementation((async (a: any) => {
     const s = { id: SWAP_ID, endReason: null, slotNumber: null, returnedSerial: null, returnedPct: null, releasedSerial: null, completedAt: null, createdAt: new Date(), updatedAt: new Date(), ...a.data };
@@ -170,6 +173,21 @@ describe('StationSwapsService.create (regras)', () => {
     expect(sql).toMatch(/FROM "SwapStation" WHERE "id" = \?::uuid FOR UPDATE/);
     const where = (prisma.stationSwap.count.mock.calls[1][0] as any).where;
     expect(where.OR).toEqual(expect.arrayContaining([expect.objectContaining({ status: 'failed', endReason: 'release_timeout' })]));
+  });
+
+  it('fix 2 (M-3): status do aluguel relido sob lock (FOR UPDATE no Rental) na transação da estação; encerrou no meio → 409, nada inserido', async () => {
+    const a = setup();
+    a.rental.lockedStatus = 'ending';
+    expect(await problem(a.service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 409, slug: 'rental-not-active' });
+    expect(a.prisma.stationSwap.create).not.toHaveBeenCalled();
+    const sqls = (a.prisma.$queryRaw as any).mock.calls.map((c: any[]) => (c[0] as string[]).join('?'));
+    // Ordem dos locks: estação e depois aluguel (a mesma da devolução atrasada).
+    expect(sqls.findIndex((q: string) => q.includes('"SwapStation"'))).toBeLessThan(sqls.findIndex((q: string) => /FROM "Rental" WHERE "id" = \?::uuid FOR UPDATE/.test(q)));
+    // Troca aberta aparecendo depois da pré-checagem também é barrada sob o lock.
+    const b = setup();
+    b.prisma.stationSwap.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'outra' } as any);
+    expect(await problem(b.service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 409, slug: 'swap-open' });
+    expect(b.prisma.stationSwap.create).not.toHaveBeenCalled();
   });
 
   it('celular a mais de 50 m → 422 too-far', async () => {
@@ -339,13 +357,84 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     expect(JSON.stringify(alerts.create.mock.calls[0][0])).not.toMatch(/BAT-00001/);
   });
 
-  it('devolução numa troca encerrada por outro motivo (vaga fechada vazia) só entra no estoque', async () => {
-    const { service, swaps, prisma, gateway } = await created();
+  it('fix 2 (M-2): encerramento pelo staff cancela troca sem devolução (rental_force_ended) e manda abort_swap', async () => {
+    const { service, swaps, prisma, gateway, emitted } = await created();
+    await service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 6, ts: ts() });
+    emitted.length = 0;
+    prisma.stationSwap.findMany.mockResolvedValue([{ id: SWAP_ID }] as any);
+    await service.closeForRentalEnd(RENTAL_ID);
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'canceled', endReason: 'rental_force_ended' }));
+    expect(gateway.send).toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'abort_swap', swapId: SWAP_ID, slotNumber: 6 }));
+    expect(emitted.map((e) => e.status)).toEqual(['canceled']);
+    expect((prisma.stationSwap.findMany.mock.calls.at(-1)![0] as any).where).toEqual({ rentalId: RENTAL_ID, status: { in: ['opening_slot', 'awaiting_return', 'returned', 'releasing'] } });
+  });
+
+  it('fix 2 (M-2): com a devolução já registrada, o encerramento deixa a liberação terminar; a bateria da moto não muda e há alerta', async () => {
+    const { service, swaps, prisma, gateway, alerts, rental } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'releasing', returnedSerial: 'BAT-00001' });
+    prisma.stationSwap.findMany.mockResolvedValue([{ id: SWAP_ID }] as any);
+    await service.closeForRentalEnd(RENTAL_ID);
+    expect(swaps.get(SWAP_ID).status).toBe('releasing');
+    expect(gateway.send).not.toHaveBeenCalled();
+    // Aluguel já encerrado quando a estação libera.
+    rental.lockedStatus = 'force_ended';
+    prisma.rental.findUnique.mockResolvedValue({ ...rental, status: 'force_ended' } as any);
+    prisma.battery.findUnique.mockResolvedValue({ id: 'b1', serial: 'BT-S1001', status: 'in_station', stationId: STATION_ID } as any);
+    await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-S1001', ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'completed', releasedSerial: 'BT-S1001' }));
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expect(prisma.battery.upsert).not.toHaveBeenCalled();
+    expect(prisma.swapStation.updateMany).toHaveBeenCalledWith({ where: { id: STATION_ID, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
+    expect(alerts.create).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(alerts.create.mock.calls[0][0])).not.toMatch(/BT-S1001/);
+  });
+
+  it('fix 2 (M-4): devolução numa troca encerrada por outro motivo (vaga fechada vazia) entra no estoque e gera alerta só com ids', async () => {
+    const { service, swaps, prisma, gateway, alerts } = await created();
     Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'slot_closed_without_return' });
     await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() });
-    expect(swaps.get(SWAP_ID).status).toBe('canceled');
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'canceled', returnedSerial: 'BAT-00001' }));
     expect(prisma.battery.upsert).toHaveBeenCalledTimes(1);
     expect(gateway.send).not.toHaveBeenCalled();
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'command_failed', vehicleId: VEHICLE_ID, rentalId: RENTAL_ID }), expect.anything());
+    expect(JSON.stringify(alerts.create.mock.calls[0][0])).not.toMatch(/BAT-00001/);
+  });
+
+  it('fix 2 (I-1): devolução atrasada com o aluguel já encerrado → registra a devolução, failed/return_after_close + alerta, sem liberar', async () => {
+    const { service, swaps, prisma, gateway, alerts, rental } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'canceled_by_customer' });
+    rental.lockedStatus = 'ended';
+    await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'return_after_close', returnedSerial: 'BAT-00001' }));
+    expect(prisma.battery.upsert).toHaveBeenCalledTimes(1);
+    expect(gateway.send).not.toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery' }));
+    expect(alerts.create).toHaveBeenCalledTimes(1);
+    const sqls = (prisma.$queryRaw as any).mock.calls.map((c: any[]) => (c[0] as string[]).join('?'));
+    expect(sqls.some((q: string) => /FROM "Rental" WHERE "id" = \?::uuid FOR UPDATE/.test(q))).toBe(true);
+  });
+
+  it('fix 2 (I-1): devolução atrasada com outra troca aberta no aluguel → failed/return_after_close (nunca P2002)', async () => {
+    const { service, swaps, prisma, gateway } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'return_timeout' });
+    prisma.stationSwap.findFirst.mockResolvedValue({ id: 'outra-troca' } as any);
+    await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'return_after_close', returnedSerial: 'BAT-00001' }));
+    expect(gateway.send).not.toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery' }));
+    const where = (prisma.stationSwap.findFirst.mock.calls.at(-1)![0] as any).where;
+    expect(where).toEqual(expect.objectContaining({ rentalId: RENTAL_ID, id: { not: SWAP_ID } }));
+  });
+
+  it('fix 2 (I-1): se ainda assim o índice único recusar (P2002), a devolução é registrada como return_after_close e o evento não falha', async () => {
+    const { service, swaps, prisma, gateway } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'canceled_by_customer' });
+    const base = prisma.stationSwap.updateMany.getMockImplementation()!;
+    prisma.stationSwap.updateMany.mockImplementation((async (a: any) => {
+      if (a.data?.status === 'releasing') throw new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '5' });
+      return base(a);
+    }) as any);
+    await expect(service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() })).resolves.toBeUndefined();
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'return_after_close', returnedSerial: 'BAT-00001' }));
+    expect(gateway.send).not.toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery' }));
   });
 
   it('fix 1 (M1): bateria devolvida registrada em outra moto → não é desvinculada; troca failed/serial_mismatch + alerta', async () => {

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import type { Prisma, Rental, Vehicle } from '@prisma/client';
@@ -13,6 +13,7 @@ import { isAdmin, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
 import { FeeCharge, PriceSnapshot, PricingService } from '../pricing/pricing.service';
 import { OPEN_SWAP_STATUSES } from '../station-swaps/station-swap.rules';
+import { StationSwapsService } from '../station-swaps/station-swaps.service';
 import { ZonesService } from '../zones/zones.service';
 import { rentalTimes, toRental } from './rentals.mapper';
 
@@ -74,7 +75,15 @@ export class RentalEndService {
     private readonly events: EventEmitter2,
     private readonly audit: AuditService,
     private readonly alerts: AlertsService,
+    // Fix 2 (M-2): fecha trocas abertas na estação quando o staff encerra o aluguel. Opcional: módulos que montam o serviço
+    // sem a estação (testes) seguem funcionando.
+    @Optional() private readonly stationSwaps?: StationSwapsService,
   ) {}
+
+  /** Fecha as trocas na estação ainda abertas antes de um encerramento pelo staff (forçado ou no galpão). */
+  private async closeStationSwaps(rentalId: string): Promise<void> {
+    await this.stationSwaps?.closeForRentalEnd(rentalId).catch((err) => this.logger.error({ msg: 'station_swaps_close_failed', rentalId, error: (err as Error).message }));
+  }
 
   private async load(rentalId: string): Promise<RentalWithVehicle> {
     const r = await this.prisma.rental.findUnique({ where: { id: rentalId }, include: { vehicle: true } });
@@ -109,18 +118,24 @@ export class RentalEndService {
 
     const now = new Date();
     const closedPause = rental.status === 'paused' && rental.pausedAt ? Math.floor((now.getTime() - rental.pausedAt.getTime()) / 1000) : 0;
-    const moved = await this.prisma.rental.updateMany({
-      where: { id: rentalId, status: { in: ['active', 'paused'] } },
-      data: {
-        status: 'ending',
-        endRequestedAt: now,
-        pausedAt: null,
-        pausedSecondsAcc: rental.pausedSecondsAcc + closedPause,
-        endZoneId: zone.id,
-        returnPhotoObjectKey: dto.returnPhotoObjectKey,
-        endLastAttemptAt: now,
-        endAttempts: { increment: 1 },
-      },
+    // Fix 2 (M-3): trava a linha do aluguel (a mesma que a criação da troca trava) antes de conferir a troca aberta e passar a
+    // `ending`: criação da troca e encerramento se serializam.
+    const moved = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Rental" WHERE "id" = ${rentalId}::uuid FOR UPDATE`;
+      if (await hasOpenStationSwap(tx, rentalId)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de encerrar o aluguel.');
+      return tx.rental.updateMany({
+        where: { id: rentalId, status: { in: ['active', 'paused'] } },
+        data: {
+          status: 'ending',
+          endRequestedAt: now,
+          pausedAt: null,
+          pausedSecondsAcc: rental.pausedSecondsAcc + closedPause,
+          endZoneId: zone.id,
+          returnPhotoObjectKey: dto.returnPhotoObjectKey,
+          endLastAttemptAt: now,
+          endAttempts: { increment: 1 },
+        },
+      });
     });
     if (moved.count === 0) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
     await this.prisma.rentalEvent.create({ data: { rentalId, type: 'ending', actorType: 'customer', actorId: customerId, data: { zoneId: zone.id } } });
@@ -163,6 +178,7 @@ export class RentalEndService {
     await this.audit.record({ actor, action: 'rental.force_end', entityType: 'Rental', entityId: rentalId, reason: reason.trim(), metadata: { outsideReturnZone: !zone } });
     // Bloqueio seguro (rampa até parar) — o encerramento não espera a confirmação.
     await this.requestLock(rentalId, rental.vehicleId, 'rental_force_end').catch(() => false);
+    await this.closeStationSwaps(rentalId);
     return this.finalize(rentalId, 'force_ended', { fees, actor });
   }
 
@@ -175,6 +191,7 @@ export class RentalEndService {
     const rental = await this.load(rentalId);
     if (rental.status === 'ended' || rental.status === 'force_ended') return toRental(rental);
     if (!['active', 'paused', 'ending'].includes(rental.status)) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+    await this.closeStationSwaps(rentalId);
     await this.requestLock(rentalId, rental.vehicleId, 'rental_depot_return');
     return this.finalize(rentalId, 'ended', { actor, returnTo: 'depot', depot });
   }

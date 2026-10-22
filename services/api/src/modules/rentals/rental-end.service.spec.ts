@@ -56,8 +56,9 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
   const audit = { record: jest.fn() };
   const alerts = { create: jest.fn().mockResolvedValue({ id: 'alert-1' }) };
   const events = new EventEmitter2();
-  const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, events, audit as any, alerts as any);
-  return { service, prisma, rental, billing, commands, zones, audit, alerts, events, vehicle: vehicle as Record<string, unknown> };
+  const stationSwaps = { closeForRentalEnd: jest.fn().mockResolvedValue(undefined) };
+  const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, events, audit as any, alerts as any, stationSwaps as any);
+  return { service, prisma, rental, billing, commands, zones, audit, alerts, events, stationSwaps, vehicle: vehicle as Record<string, unknown> };
 }
 
 describe('Encerramento do aluguel', () => {
@@ -85,6 +86,26 @@ describe('Encerramento do aluguel', () => {
     expect(err.getStatus()).toBe(422);
     expect(err.slug).toBe('rental-outside-return-zone');
     expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('fix 2 (M-3): a troca aberta é conferida de novo com o aluguel travado (FOR UPDATE) na transação que passa a ending', async () => {
+    const { service, prisma, commands, rental } = setup();
+    // Pré-checagem não vê troca; uma criação concorrente entrou antes do lock → 409, nada muda.
+    prisma.stationSwap.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'swap-1' } as any);
+    await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY })).rejects.toMatchObject({ status: 409, slug: 'swap-open' });
+    expect(rental.status).toBe('active');
+    expect(commands.dispatch).not.toHaveBeenCalled();
+    const sqls = (prisma.$queryRaw as any).mock.calls.map((c: any[]) => (c[0] as string[]).join('?'));
+    expect(sqls.some((q: string) => /FROM "Rental" WHERE "id" = \?::uuid FOR UPDATE/.test(q))).toBe(true);
+  });
+
+  it('fix 2 (M-2): encerramento forçado (e chegada no galpão) fecha as trocas abertas na estação antes de liquidar', async () => {
+    const a = setup({ inZone: true });
+    await a.service.forceEnd(support, RENTAL_ID, 'Aplicativo travou');
+    expect(a.stationSwaps.closeForRentalEnd).toHaveBeenCalledWith(RENTAL_ID);
+    const b = setup();
+    await b.service.endAtDepot(admin, RENTAL_ID, { depotId: '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c', targetStatus: 'free' });
+    expect(b.stationSwaps.closeForRentalEnd).toHaveBeenCalledWith(RENTAL_ID);
   });
 
   it('fix 1 (I7): troca de bateria na estação em andamento → 409 swap-open, sem travar nem encerrar (encerramento forçado continua)', async () => {

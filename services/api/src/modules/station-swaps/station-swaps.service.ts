@@ -32,6 +32,7 @@ export interface StationSwapConfig {
 export const RELEASE_LATE_WINDOW_MS = 30 * 60 * 1000;
 /** Fim de troca depois do qual uma devolução ainda vale (fix 1, I2): cancelada pelo cliente ou por prazo antes da devolução. */
 const LATE_RETURN_REASONS: StationSwapEndReason[] = ['canceled_by_customer', 'return_timeout', 'station_timeout'];
+const TERMINAL_SWAP_STATUSES: StationSwapStatus[] = ['completed', 'canceled', 'failed'];
 const noBattery = () => unprocessable('station-unavailable', 'Esta estação está sem bateria carregada agora.');
 const stationNotFound = () => new ProblemException(404, 'station-not-found', 'QR inválido ou estação não encontrada.');
 const TIMEOUT_TARGET: Partial<Record<StationSwapStatus, { status: StationSwapStatus; reason: StationSwapEndReason }>> = {
@@ -81,8 +82,30 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   }
 
   /**
+   * Trava a linha do aluguel até o fim da transação e devolve o status atual (fix 2, M-3/I-1). Ordem dos locks em toda a
+   * API: estação e depois aluguel (o encerramento só trava o aluguel), sem ciclo.
+   */
+  private async lockRental(tx: Prisma.TransactionClient, rentalId: string): Promise<string | null> {
+    const rows = await tx.$queryRaw<Array<{ status: string }>>`SELECT "status"::text AS "status" FROM "Rental" WHERE "id" = ${rentalId}::uuid FOR UPDATE`;
+    return rows?.[0]?.status ?? null;
+  }
+
+  /** Outra troca aberta no aluguel (fora `exceptId`). Lido depois do lock do aluguel. */
+  private async otherOpenSwap(tx: Prisma.TransactionClient, rentalId: string, exceptId?: string): Promise<boolean> {
+    const open = await tx.stationSwap.findFirst({
+      where: { rentalId, status: { in: OPEN_SWAP_STATUSES }, ...(exceptId ? { id: { not: exceptId } } : {}) },
+      select: { id: true },
+    });
+    return !!open;
+  }
+
+  /**
    * Carregadas já prometidas pela estação: trocas em andamento e as que falharam por prazo de liberação há pouco (a estação
    * ainda pode liberar a bateria atrasada, `RELEASE_LATE_WINDOW_MS`).
+   *
+   * Fix 2 (I-2): a janela de 30 min fica. Um `release_battery` para uma troca cuja devolução foi recebida continua válido
+   * mesmo depois de um `abort_swap` (contrato MQTT), e a estação pode liberar atrasada depois do `release_timeout`; enquanto
+   * isso a carregada tem de contar como prometida, senão outra troca a ofereceria de novo.
    */
   private promisedWhere(stationId: string, now: Date): Prisma.StationSwapWhereInput {
     return {
@@ -145,6 +168,10 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
       // bateria: a segunda espera o commit da primeira, recontagem já inclui a troca nova → 422.
       swap = await this.prisma.$transaction(async (tx) => {
         const available = await this.lockStation(tx, stationId);
+        // Fix 2 (M-3): aluguel travado (mesma linha que o encerramento trava) e relido: encerramento e criação se serializam.
+        const status = await this.lockRental(tx, rental.id);
+        if (status !== 'active' && status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+        if (await this.otherOpenSwap(tx, rental.id)) throw conflict('swap-open', 'Já existe uma troca de bateria em andamento neste aluguel.');
         const promised = await tx.stationSwap.count({ where: this.promisedWhere(stationId, now) });
         if (available - promised <= 0) throw noBattery();
         return tx.stationSwap.create({
@@ -201,6 +228,25 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
       }
       return toStationSwap(current, { staff: false });
     });
+  }
+
+  /**
+   * Fix 2 (M-2): o staff encerrou o aluguel (forçado ou chegada no galpão). Troca sem devolução → `canceled/rental_force_ended`
+   * + `abort_swap`; troca com a devolução registrada (`returned`/`releasing`) segue até a estação liberar (a moto não recebe
+   * a bateria nova, ver `onBatteryReleased`). Cada troca pela fila dela.
+   */
+  async closeForRentalEnd(rentalId: string): Promise<void> {
+    const open = await this.prisma.stationSwap.findMany({ where: { rentalId, status: { in: OPEN_SWAP_STATUSES } }, select: { id: true } });
+    for (const o of open) {
+      await this.enqueue(o.id, async () => {
+        const swap = await this.prisma.stationSwap.findUnique({ where: { id: o.id } });
+        if (!swap || !CANCELABLE_SWAP_STATUSES.includes(swap.status)) return;
+        if (!(await this.transition(swap, 'canceled', { endReason: 'rental_force_ended' }))) return;
+        this.logger.log({ msg: 'station_swap_closed_by_rental_end', swapId: swap.id, stationId: swap.stationId, rentalId });
+        this.emit({ ...swap, status: 'canceled' });
+        await this.sendAbort(swap);
+      });
+    }
   }
 
   // ───────────── painel ─────────────
@@ -336,10 +382,17 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     if (late) return this.onLateReturn(swap, serial, pct);
 
     const next = nextStepAfter(swap.status, 'battery_returned');
+    let recorded = false;
     const advanced = await this.prisma.$transaction(async (tx) => {
       if (!(await this.recordReturn(tx, swap, serial, pct))) return false;
+      recorded = true;
       return next ? this.transition(swap, next, { expiresAt: this.deadline() }, tx) : false;
     });
+    // Fix 2 (M-4): troca encerrada por outro motivo (fora de LATE_RETURN_REASONS): a bateria está na estação, a troca não
+    // volta; a operação precisa saber (cliente pode ter ficado sem bateria).
+    if (recorded && !next && TERMINAL_SWAP_STATUSES.includes(swap.status)) {
+      await this.alert(swap, 'Troca na estação: bateria devolvida numa troca já encerrada. Conferir a estação e o cliente.', 'station_return_on_closed_swap');
+    }
     if (advanced && next) {
       this.logger.log({ msg: 'station_swap_returned', swapId: swap.id, stationId: swap.stationId });
       this.emit({ ...swap, status: next });
@@ -364,16 +417,37 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
    * alerta para a operação levar uma bateria.
    */
   private async onLateReturn(swap: StationSwap, serial: string, pct: number): Promise<void> {
-    const outcome = await this.prisma.$transaction(async (tx) => {
-      if (!(await this.recordReturn(tx, swap, serial, pct))) return null;
-      const available = await this.lockStation(tx, swap.stationId);
-      const promised = await tx.stationSwap.count({ where: { ...this.promisedWhere(swap.stationId, new Date()), id: { not: swap.id } } });
-      if (available - promised > 0) {
-        return (await this.transition(swap, 'releasing', { endReason: null, expiresAt: this.deadline() }, tx)) ? 'releasing' : null;
-      }
-      return (await this.transition(swap, 'failed', { endReason: 'no_battery_after_return' }, tx)) ? 'no_battery' : null;
-    });
-    if (outcome === 'releasing') {
+    type Outcome = 'releasing' | 'no_battery' | 'after_close' | null;
+    let outcome: Outcome;
+    try {
+      outcome = await this.prisma.$transaction(async (tx): Promise<Outcome> => {
+        if (!(await this.recordReturn(tx, swap, serial, pct))) return null;
+        const available = await this.lockStation(tx, swap.stationId);
+        // Fix 2 (I-1): só volta a liberar com o aluguel ainda em andamento e sem outra troca aberta (sob o lock do aluguel:
+        // nunca bate no índice único `StationSwap_one_open_per_rental`).
+        const status = await this.lockRental(tx, swap.rentalId);
+        if ((status !== 'active' && status !== 'paused') || (await this.otherOpenSwap(tx, swap.rentalId, swap.id))) {
+          return (await this.transition(swap, 'failed', { endReason: 'return_after_close' }, tx)) ? 'after_close' : null;
+        }
+        const promised = await tx.stationSwap.count({ where: { ...this.promisedWhere(swap.stationId, new Date()), id: { not: swap.id } } });
+        if (available - promised > 0) {
+          return (await this.transition(swap, 'releasing', { endReason: null, expiresAt: this.deadline() }, tx)) ? 'releasing' : null;
+        }
+        return (await this.transition(swap, 'failed', { endReason: 'no_battery_after_return' }, tx)) ? 'no_battery' : null;
+      });
+    } catch (err) {
+      // Defesa: um P2002 aqui viraria mensagem envenenada no grupo FIFO da estação. A devolução é registrada como
+      // `return_after_close` numa transação nova (a anterior foi desfeita) e o evento termina sem erro.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+      outcome = await this.prisma.$transaction(async (tx): Promise<Outcome> => {
+        await this.recordReturn(tx, swap, serial, pct);
+        return (await this.transition(swap, 'failed', { endReason: 'return_after_close' }, tx)) ? 'after_close' : null;
+      });
+    }
+    if (outcome === 'after_close') {
+      this.emit({ ...swap, status: 'failed' });
+      await this.alert(swap, 'Troca na estação: bateria devolvida depois do fim do aluguel ou com outra troca aberta. Conferir a estação e o cliente.', 'station_return_after_close');
+    } else if (outcome === 'releasing') {
       this.logger.log({ msg: 'station_swap_late_return', swapId: swap.id, stationId: swap.stationId });
       this.emit({ ...swap, status: 'releasing' });
       await this.sendRelease(swap);
@@ -418,6 +492,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     if (!record || record.status !== 'in_station' || record.stationId !== swap.stationId) {
       await this.alert(swap, 'Troca na estação: a bateria liberada não constava no estoque desta estação.', 'station_release_serial_mismatch');
     }
+    let rentalClosed = false;
     const done = await this.prisma.$transaction(async (tx) => {
       const moved = await tx.stationSwap.updateMany({
         where: { id: swap.id, status: swap.status, releasedSerial: null },
@@ -425,6 +500,13 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
       });
       if (!moved.count) return false;
       await tx.swapStation.updateMany({ where: { id: swap.stationId, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
+      // Fix 2 (M-2): aluguel já encerrado (forçado pelo staff) → a bateria liberada saiu da estação, mas a moto (com a
+      // operação) não a recebe: `Vehicle.batterySerial` e o registro da bateria ficam como estão; alerta para conferir.
+      const rentalStatus = await this.lockRental(tx, swap.rentalId);
+      if (rentalStatus !== 'active' && rentalStatus !== 'paused') {
+        rentalClosed = true;
+        return true;
+      }
       const installed = await tx.battery.upsert({
         where: { serial },
         create: { serial, chargePct: 100, status: 'in_vehicle', vehicleId: swap.vehicleId, cycleCount: 1 },
@@ -437,6 +519,9 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     if (done) {
       this.logger.log({ msg: 'station_swap_completed', swapId: swap.id, stationId: swap.stationId, vehicleId: swap.vehicleId });
       this.emit({ ...swap, status: 'completed' });
+      if (rentalClosed) {
+        await this.alert(swap, 'Troca na estação: bateria liberada depois do encerramento do aluguel. A moto não foi atualizada; conferir com o cliente.', 'station_release_after_rental_end');
+      }
     }
   }
 

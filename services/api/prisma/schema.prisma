@@ -410,6 +410,8 @@ enum StationSwapEndReason {
   release_timeout
   no_battery_after_return
   serial_mismatch
+  return_after_close
+  rental_force_ended
 }
 
 // ───────────── pessoas ─────────────

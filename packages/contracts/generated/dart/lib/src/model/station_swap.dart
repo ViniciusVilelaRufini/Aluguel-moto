@@ -50,7 +50,7 @@ abstract class StationSwap implements Built<StationSwap, StationSwapBuilder> {
 
   @BuiltValueField(wireName: r'endReason')
   StationSwapEndReason? get endReason;
-  // enum endReasonEnum {  canceled_by_customer,  slot_closed_without_return,  station_timeout,  return_timeout,  release_timeout,  no_battery_after_return,  serial_mismatch,  };
+  // enum endReasonEnum {  canceled_by_customer,  slot_closed_without_return,  station_timeout,  return_timeout,  release_timeout,  no_battery_after_return,  serial_mismatch,  return_after_close,  rental_force_ended,  };
 
   /// Vaga aberta (a partir de `awaiting_return`).
   @BuiltValueField(wireName: r'slotNumber')
