@@ -54,4 +54,10 @@ describe('IotStack', () => {
       t().hasResourceProperties('AWS::SSM::Parameter', { Name: `/volti/dev/${n}` });
     }
   });
+
+  it('QA-16: iot:Connect requires the certificate to be attached to a thing', () => {
+    const doc = (Object.values(t().findResources('AWS::IoT::Policy'))[0] as any).Properties.PolicyDocument;
+    const connect = doc.Statement.find((s: any) => s.Action === 'iot:Connect');
+    expect(connect.Condition).toEqual({ Bool: { 'iot:Connection.Thing.IsAttached': 'true' } });
+  });
 });

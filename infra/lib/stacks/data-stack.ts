@@ -20,6 +20,7 @@ export class DataStack extends Stack {
   public readonly kycBucket: s3.Bucket;
   public readonly returnPhotosBucket: s3.Bucket;
   public readonly reportsBucket: s3.Bucket;
+  public readonly attachmentsBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -139,11 +140,27 @@ export class DataStack extends Stack {
       ],
     });
 
+    // QA-06: anexos de suporte e tarefas de campo (S3_BUCKET_ATTACHMENTS). Upload por URL pré-assinada; só a task da API acessa.
+    this.attachmentsBucket = new s3.Bucket(this, 'AttachmentsBucket', {
+      ...common,
+      bucketName: name('anexos'),
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      lifecycleRules: [
+        {
+          id: 'tier-and-expire',
+          transitions: [{ storageClass: s3.StorageClass.INFREQUENT_ACCESS, transitionAfter: Duration.days(90) }],
+          expiration: Duration.days(365),
+          abortIncompleteMultipartUploadAfter: Duration.days(7),
+        },
+      ],
+    });
+
     publishParam(this, env, 'rds/endpoint', this.db.dbInstanceEndpointAddress);
     publishParam(this, env, 'rds/secret-arn', this.db.secret!.secretArn);
     publishParam(this, env, 'redis/endpoint', this.redis.attrPrimaryEndPointAddress);
     publishParam(this, env, 's3/kyc-bucket', this.kycBucket.bucketName);
     publishParam(this, env, 's3/return-photos-bucket', this.returnPhotosBucket.bucketName);
     publishParam(this, env, 's3/reports-bucket', this.reportsBucket.bucketName);
+    publishParam(this, env, 's3/attachments-bucket', this.attachmentsBucket.bucketName);
   }
 }

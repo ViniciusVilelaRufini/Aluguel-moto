@@ -8,6 +8,7 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import { EnvConfig } from '../config';
 import { publishParam } from '../ssm';
@@ -24,6 +25,8 @@ export interface ApiStackProps extends StackProps {
   messaging: MessagingStack;
   iot: IotStack;
   certificateArn: string;
+  /** Origem do painel admin (https://...), a única aceita em CORS_ORIGINS. */
+  adminOrigin: string;
   imageTag: string;
   /** 0 on the first deploy (no image in ECR yet); set to >= 1 once an image is pushed. */
   desiredCount: number;
@@ -54,11 +57,11 @@ export class ApiStack extends Stack {
       secretName: `volti/${env}/app`,
       description: 'Volti API third-party credentials (fill after deploy)',
       generateSecretString: {
-        secretStringTemplate: JSON.stringify({
-          MERCADOPAGO_ACCESS_TOKEN: 'CHANGE_ME',
-          MERCADOPAGO_WEBHOOK_SECRET: 'CHANGE_ME',
-        }),
-        generateStringKey: 'unused',
+        // QA-19: o segredo do webhook nasce aleatório (nunca um valor conhecido). Só o access token precisa ser colado à mão.
+        secretStringTemplate: JSON.stringify({ MERCADOPAGO_ACCESS_TOKEN: 'CHANGE_ME' }),
+        generateStringKey: 'MERCADOPAGO_WEBHOOK_SECRET',
+        passwordLength: 48,
+        excludePunctuation: true,
       },
     });
 
@@ -108,6 +111,10 @@ export class ApiStack extends Stack {
           S3_BUCKET_KYC: data.kycBucket.bucketName,
           S3_BUCKET_RETURN_PHOTOS: data.returnPhotosBucket.bucketName,
           S3_BUCKET_REPORTS: data.reportsBucket.bucketName,
+          S3_BUCKET_ATTACHMENTS: data.attachmentsBucket.bucketName,
+          // QA-10/QA-18: CORS só para o painel; a API está atrás do ALB (um salto de proxy).
+          CORS_ORIGINS: props.adminOrigin,
+          TRUST_PROXY: '1',
           AUTH_MODE: 'cognito',
           COGNITO_CUSTOMER_POOL_ID: auth.customerPool.userPoolId,
           COGNITO_CUSTOMER_CLIENT_ID: auth.customerClient.userPoolClientId,
@@ -165,6 +172,7 @@ export class ApiStack extends Stack {
     data.kycBucket.grantReadWrite(role);
     data.returnPhotosBucket.grantReadWrite(role);
     data.reportsBucket.grantReadWrite(role);
+    data.attachmentsBucket.grantReadWrite(role);
     messaging.telemetry.queue.grantConsumeMessages(role);
     messaging.alerts.queue.grantConsumeMessages(role);
     messaging.paymentsWebhook.queue.grantSendMessages(role);
@@ -173,7 +181,12 @@ export class ApiStack extends Stack {
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['iot:Publish'],
-        resources: [arn(`iot:${this.region}:${this.account}:topic/motos/*`), arn(`iot:${this.region}:${this.account}:topic/$aws/things/*/shadow/*`)],
+        // QA-16: só comandos e shadow; nunca telemetria/eventos (que são do rastreador).
+        resources: [
+          arn(`iot:${this.region}:${this.account}:topic/motos/*/comandos`),
+          arn(`iot:${this.region}:${this.account}:topic/$aws/things/*/shadow/update`),
+          arn(`iot:${this.region}:${this.account}:topic/$aws/things/*/shadow/get`),
+        ],
       }),
     );
     role.addToPolicy(
@@ -194,12 +207,54 @@ export class ApiStack extends Stack {
         resources: [arn(`geo:${this.region}:${this.account}:geofence-collection/${iot.geofenceCollectionName}`)],
       }),
     );
+    // QA-04/QA-07: grupos e exclusão/bloqueio de identidades. Escopo: só os dois pools.
     role.addToPolicy(
       new iam.PolicyStatement({
-        actions: ['cognito-idp:AdminGetUser', 'cognito-idp:AdminDeleteUser', 'cognito-idp:AdminDisableUser', 'cognito-idp:AdminUserGlobalSignOut'],
+        actions: [
+          'cognito-idp:AdminAddUserToGroup',
+          'cognito-idp:AdminRemoveUserFromGroup',
+          'cognito-idp:AdminEnableUser',
+          'cognito-idp:AdminDisableUser',
+          'cognito-idp:AdminDeleteUser',
+          'cognito-idp:AdminUserGlobalSignOut',
+        ],
+        resources: [auth.staffPool.userPoolArn],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['cognito-idp:AdminDeleteUser', 'cognito-idp:AdminDisableUser', 'cognito-idp:AdminUserGlobalSignOut'],
+        resources: [auth.customerPool.userPoolArn],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['cognito-idp:AdminGetUser'],
         resources: [auth.customerPool.userPoolArn, auth.staffPool.userPoolArn],
       }),
     );
+
+    // QA-18: WAF regional no ALB com limite por IP (2000 requisições em 5 minutos) e regras gerenciadas básicas.
+    const vis = (name: string) => ({ cloudWatchMetricsEnabled: true, sampledRequestsEnabled: true, metricName: name });
+    const albAcl = new wafv2.CfnWebACL(this, 'AlbAcl', {
+      name: `volti-${env}-api`,
+      scope: 'REGIONAL',
+      defaultAction: { allow: {} },
+      visibilityConfig: vis(`volti-${env}-api`),
+      rules: [
+        {
+          name: 'RateLimitPerIp',
+          priority: 10,
+          action: { block: {} },
+          statement: { rateBasedStatement: { limit: 2000, aggregateKeyType: 'IP', evaluationWindowSec: 300 } },
+          visibilityConfig: vis('ApiRateLimitPerIp'),
+        },
+      ],
+    });
+    new wafv2.CfnWebACLAssociation(this, 'AlbAclAssociation', {
+      resourceArn: this.service.loadBalancer.loadBalancerArn,
+      webAclArn: albAcl.attrArn,
+    });
 
     publishParam(this, env, 'api/load-balancer-dns', this.service.loadBalancer.loadBalancerDnsName);
     publishParam(this, env, 'api/ecr-repository', this.repository.repositoryUri);

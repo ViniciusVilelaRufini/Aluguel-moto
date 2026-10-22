@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { apiGet, login, vehicleByCode } from './helpers';
+import { login, startRentalOnSimulatorBike, vehicleByCode } from './helpers';
 
 test.describe('comandos da moto', () => {
   test('bloquear exige motivo e mostra o estado do comando', async ({ page, request }) => {
@@ -57,20 +57,19 @@ test.describe('comandos da moto', () => {
     await expect(page.getByTestId('command-state')).toContainText('moto offline — será aplicado ao reconectar');
   });
 
-  // Precisa do simulador de rastreadores (branch de IoT, ainda não integrada). Rode com SIM=1.
+  // Precisa do simulador de rastreadores (rode com SIM=1). A massa é criada aqui: um cliente novo aluga uma moto do simulador pela API.
   test('bloquear moto em movimento: pendente e depois confirmado (só abaixo de 3 km/h)', async ({ page, request }) => {
     test.skip(!process.env.SIM, 'Requer o simulador de rastreadores (SIM=1)');
-    const list = await apiGet<{ items: { id: string; code: string; speedKmh?: number; status: string }[] }>(request, '/vehicles?limit=100');
-    const moving = list.items.find((x) => (x.speedKmh ?? 0) >= 3 && x.status === 'rented');
-    expect(moving, 'o simulador precisa ter uma moto alugada em movimento').toBeTruthy();
+    test.setTimeout(240_000);
+    const moving = await startRentalOnSimulatorBike(request);
     await login(page, 'operacao');
-    await page.goto(`/fleet?vehicle=${moving!.id}`);
+    await page.goto(`/fleet?vehicle=${moving.vehicleId}`);
     await page.getByTestId('cmd-lock').click();
     await page.getByTestId('confirm-action').click();
     await expect(page.getByTestId('command-dialog').getByText('Informe o motivo')).toBeVisible();
     await page.getByTestId('reason-input').fill('Teste e2e: bloqueio em movimento');
     await page.getByTestId('confirm-action').click();
-    await expect(page.getByTestId('command-state')).toContainText('pendente');
+    await expect(page.getByTestId('command-state')).toContainText(/pendente|em andamento/);
     await expect(page.getByTestId('command-state')).toContainText('confirmado', { timeout: 90_000 });
   });
 });

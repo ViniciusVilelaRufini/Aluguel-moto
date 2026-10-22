@@ -39,7 +39,13 @@ export function buildDevicePolicyDocument(region: string, account: string): Reco
   return {
     Version: '2012-10-17',
     Statement: [
-      { Effect: 'Allow', Action: 'iot:Connect', Resource: `${arn}:client/${THING_VAR}` },
+      {
+        Effect: 'Allow',
+        Action: 'iot:Connect',
+        Resource: `${arn}:client/${THING_VAR}`,
+        // QA-16: só conecta com certificado anexado a uma thing (o clientId sozinho não basta).
+        Condition: { Bool: { 'iot:Connection.Thing.IsAttached': 'true' } },
+      },
       { Effect: 'Allow', Action: 'iot:Publish', Resource: publishTopics.map((t) => `${arn}:topic/${t}`) },
       { Effect: 'Allow', Action: 'iot:Receive', Resource: receiveTopics.map((t) => `${arn}:topic/${t}`) },
       { Effect: 'Allow', Action: 'iot:Subscribe', Resource: receiveTopics.map((t) => `${arn}:topicfilter/${t}`) },

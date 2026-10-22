@@ -40,7 +40,7 @@ pnpm --filter admin test        # Vitest: status->cor, menu por grupo, máscara 
 pnpm --filter admin test:e2e    # Playwright contra a API real (sobe `next dev` em :3100)
 ```
 
-E2E: configure `E2E_API_URL` (padrão `http://localhost:3004`) para uma API com `AUTH_MODE=dev`, `IOT_MODE=stub`, banco migrado e com seed. O cenário de bloquear moto em movimento precisa do simulador de rastreadores e só roda com `SIM=1`. O cenário de moto offline simula a resposta `pending` + `offline` na rede, porque o stub de IoT confirma tudo na hora.
+E2E: configure `E2E_API_URL` (padrão `http://localhost:3004`) para uma API com `AUTH_MODE=dev`, `IOT_MODE=stub`, banco migrado e com seed. Os testes criam a própria massa pela API (cliente com CPF e KYC aprovado; aluguel de uma moto livre do simulador). O cenário de bloquear moto em movimento precisa do simulador de rastreadores (`VLT-0001…0050`) e só roda com `SIM=1`. O cenário de moto offline simula a resposta `pending` + `offline` na rede, porque o stub de IoT confirma tudo na hora.
 
 ## Notas
 
