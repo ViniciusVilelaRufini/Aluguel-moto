@@ -18,6 +18,13 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 /// Backend de teste: cada teste sobrescreve so o que usa.
 class FakeBackend implements Backend {
+  /// Troca na estacao em andamento devolvida por [currentRentalState].
+  StationSwap? currentStationSwap;
+
+  /// Padrao dos testes: o aluguel de [currentRental] e [currentStationSwap].
+  @override
+  Future<CurrentRentalState> currentRentalState() async => (rental: await currentRental(), stationSwap: currentStationSwap);
+
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('FakeBackend.${invocation.memberName} nao configurado no teste');

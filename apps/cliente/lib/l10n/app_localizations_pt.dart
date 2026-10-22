@@ -2646,4 +2646,255 @@ class AppLocalizationsPt extends AppLocalizations {
   String homeReservationA11yExpired(String vehicle) {
     return 'Reserva da $vehicle, o prazo de retirada acabou';
   }
+
+  @override
+  String swapNearbyTitle(String station) {
+    return 'Você está na $station';
+  }
+
+  @override
+  String get swapNearbyAction => 'Trocar bateria';
+
+  @override
+  String get swapHere => 'Trocar aqui';
+
+  @override
+  String swapHereSemantics(String station) {
+    return 'Trocar a bateria na $station';
+  }
+
+  @override
+  String get swapResumeTitle => 'Troca de bateria em andamento';
+
+  @override
+  String get swapResumeText => 'Toque para ver em que passo está.';
+
+  @override
+  String get swapResumeAction => 'Continuar';
+
+  @override
+  String get swapScanTitle => 'Escanear QR da estação';
+
+  @override
+  String get swapScanHint => 'Aponte a câmera para o QR colado na estação.';
+
+  @override
+  String get swapScanDenied =>
+      'Sem acesso à câmera. Permita a câmera nas configurações do aparelho ou digite o código impresso abaixo do QR.';
+
+  @override
+  String get swapScanUnavailable =>
+      'Não foi possível abrir a câmera. Digite o código impresso abaixo do QR.';
+
+  @override
+  String get swapManualLabel => 'Código da estação';
+
+  @override
+  String get swapManualHint => 'Ex.: vst1.…';
+
+  @override
+  String get swapManualContinue => 'Continuar';
+
+  @override
+  String get swapManualToggle => 'Digitar o código';
+
+  @override
+  String swapConfirmTitle(String vehicle) {
+    return 'Trocar a bateria da $vehicle aqui?';
+  }
+
+  @override
+  String swapConfirmAvailable(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: 'Baterias disponíveis: $count',
+      one: 'Baterias disponíveis: 1',
+      zero: 'Baterias disponíveis: nenhuma',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get swapConfirmFeeLine =>
+      'Taxa por troca no seu plano, cobrada no fechamento do aluguel.';
+
+  @override
+  String swapConfirmFeeAmount(String amount) {
+    return 'Taxa $amount';
+  }
+
+  @override
+  String get swapConfirmSteps =>
+      'A estação abre uma vaga vazia: devolva a bateria descarregada e pegue a carregada que ela liberar.';
+
+  @override
+  String get swapOpenSlot => 'Abrir compartimento';
+
+  @override
+  String get swapSeeOpen => 'Ver troca em andamento';
+
+  @override
+  String get swapLocationNeeded =>
+      'Precisamos da sua localização para confirmar que você está na estação.';
+
+  @override
+  String get swapErrorInvalidQr =>
+      'QR inválido. Confira se é o QR de uma estação Volti.';
+
+  @override
+  String get swapErrorTooFar =>
+      'Você precisa estar a até 50 m da estação. Chegue mais perto e tente de novo.';
+
+  @override
+  String get swapErrorMoving =>
+      'Pare e trave a moto antes de trocar a bateria.';
+
+  @override
+  String get swapErrorNoBattery =>
+      'Esta estação está sem baterias carregadas agora. Tente outra estação.';
+
+  @override
+  String swapErrorClosed(String hours) {
+    return 'Esta estação está fechada agora ($hours).';
+  }
+
+  @override
+  String get swapErrorUnavailable =>
+      'Esta estação não está disponível agora. Tente outra estação.';
+
+  @override
+  String get swapErrorOpen => 'Você já tem uma troca de bateria em andamento.';
+
+  @override
+  String get swapErrorRentalNotActive =>
+      'A troca só pode ser feita com um aluguel em andamento.';
+
+  @override
+  String get swapNoRental =>
+      'Você precisa de um aluguel em andamento para trocar a bateria.';
+
+  @override
+  String get swapProgressTitle => 'Troca de bateria';
+
+  @override
+  String get swapStepOpening => 'Abrindo uma vaga…';
+
+  @override
+  String get swapStepOpeningText =>
+      'A estação está abrindo uma vaga vazia para você.';
+
+  @override
+  String swapStepAwaiting(int slot) {
+    return 'Devolva a bateria na vaga $slot';
+  }
+
+  @override
+  String get swapStepAwaitingNoSlot => 'Devolva a bateria na vaga aberta';
+
+  @override
+  String get swapStepAwaitingText =>
+      'Tire a bateria descarregada da moto, coloque na vaga e feche a porta.';
+
+  @override
+  String get swapStepReturned => 'Bateria recebida';
+
+  @override
+  String get swapStepReturnedText =>
+      'Feche a porta da vaga. A estação vai liberar uma bateria carregada.';
+
+  @override
+  String get swapStepReleasing => 'Pegue a bateria carregada';
+
+  @override
+  String get swapStepReleasingText =>
+      'Retire a bateria liberada e encaixe na moto.';
+
+  @override
+  String swapDoneTitle(int pct) {
+    return 'Bateria trocada · $pct%';
+  }
+
+  @override
+  String get swapDoneText =>
+      'Tudo certo. A autonomia da moto já foi atualizada.';
+
+  @override
+  String swapStepSemantics(int current, int total) {
+    return 'Passo $current de $total';
+  }
+
+  @override
+  String swapTimeLeft(String time) {
+    return 'Prazo: $time';
+  }
+
+  @override
+  String get swapTimeUp => 'Aguardando a estação…';
+
+  @override
+  String swapFeeNote(String amount) {
+    return 'Taxa $amount · cobrada no fechamento do aluguel';
+  }
+
+  @override
+  String get swapCancel => 'Cancelar troca';
+
+  @override
+  String get swapCancelConfirmTitle => 'Cancelar a troca?';
+
+  @override
+  String get swapCancelConfirmText =>
+      'A vaga será fechada. Se você já colocou a bateria, a estação libera uma carregada mesmo assim.';
+
+  @override
+  String get swapCancelKeep => 'Continuar troca';
+
+  @override
+  String get swapCanceledTitle => 'Troca cancelada';
+
+  @override
+  String get swapFailedTitle => 'Troca não concluída';
+
+  @override
+  String get swapEndCanceledByCustomer =>
+      'Você cancelou a troca. Nenhuma bateria foi trocada.';
+
+  @override
+  String get swapEndSlotClosed =>
+      'A vaga fechou sem a bateria. Tente de novo quando quiser.';
+
+  @override
+  String get swapEndStationTimeout =>
+      'A estação não respondeu a tempo. Tente de novo ou use outra estação.';
+
+  @override
+  String get swapEndReturnTimeout => 'O tempo para devolver a bateria acabou.';
+
+  @override
+  String get swapEndReleaseTimeout =>
+      'A estação recebeu sua bateria, mas não liberou a carregada. Já avisamos a equipe; fale com o suporte se precisar.';
+
+  @override
+  String get swapEndNoBatteryAfterReturn =>
+      'Sua bateria foi recebida, mas não havia bateria carregada para liberar. Nossa equipe já foi avisada; fale com o suporte.';
+
+  @override
+  String get swapEndSerialMismatch =>
+      'Não conseguimos confirmar a bateria da estação. Fale com o suporte.';
+
+  @override
+  String get swapEndGeneric => 'A troca não foi concluída. Tente de novo.';
+
+  @override
+  String get swapLateReturnNote =>
+      'Se você já colocou a bateria na vaga, a estação ainda libera uma carregada. Esta tela atualiza sozinha.';
+
+  @override
+  String get swapBackToRide => 'Voltar à corrida';
+
+  @override
+  String swapCountdownSemantics(String time) {
+    return 'Tempo restante: $time';
+  }
 }

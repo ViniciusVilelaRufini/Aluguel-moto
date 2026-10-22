@@ -76,6 +76,8 @@ Fonte: `apps/cliente/lib/core/transitions.dart` (`routeTransitions`); o teste `t
 | `/ride` | fade-through | início ↔ corrida |
 | `/return/:id` | push | devolução a partir da corrida |
 | `/summary/:id` | modal (sobe) | recibo (também ao abrir pelo histórico) |
+| `/station-swap/scan` | push | leitor do QR da estação (troca de bateria) a partir da corrida ou do início |
+| `/station-swap/:stationId/:swapId` | modal (sobe) | progresso da troca na estação (momento); substitui o leitor |
 | `/account` e filhas (`history`, `wallet`, `subscriptions`, `support`, `support/:id`, `help`, `rules`, `requests`, `emergency`, `privacy`, `verification`, `claim/:rentalId`) | push | conta |
 | Bottom sheets (`VoltiBottomSheet.show`) | sobe de baixo, 440 ms `--ease-screen`, scrim `surfaceScrim` com fade da rota | conteúdo entra com fade-up 420 ms após 120 ms (kit `BottomSheet`) |
 

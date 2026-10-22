@@ -18,6 +18,10 @@ String newIdempotencyKey() {
       '${h(10)}${h(11)}${h(12)}${h(13)}${h(14)}${h(15)}';
 }
 
+/// `GET /rentals/current`: o aluguel e a troca de bateria na estacao em
+/// andamento nele (`currentStationSwap`), para o app retomar a tela da troca.
+typedef CurrentRentalState = ({Rental? rental, StationSwap? stationSwap});
+
 /// Fronteira unica entre as telas e a API. As telas nunca usam `VoltiApi` direto,
 /// o que permite trocar por um fake nos testes de widget.
 abstract class Backend {
@@ -47,6 +51,22 @@ abstract class Backend {
   Future<List<SwapStation>> swapStations({double? lat, double? lng});
   Future<Vehicle> vehicleByCode(String code);
   Future<void> ring(String vehicleId);
+
+  // troca de bateria na estacao (QR)
+  /// `POST /swap-stations/{id}/swaps`. [idempotencyKey]: uma por tentativa de
+  /// "Abrir compartimento", reutilizada nas repeticoes (nao abre outra vaga).
+  /// [lat]/[lng]: posicao do celular, so para a validacao de 50 m.
+  Future<StationSwap> createStationSwap({
+    required String stationId,
+    required String stationCode,
+    required String rentalId,
+    required double lat,
+    required double lng,
+    required String idempotencyKey,
+  });
+  Future<StationSwap> stationSwap(String stationId, String swapId);
+  /// So antes da devolucao (`opening_slot`/`awaiting_return`).
+  Future<StationSwap> cancelStationSwap(String stationId, String swapId);
 
   // reserva
   Future<Reservation?> currentReservation();
@@ -81,6 +101,8 @@ abstract class Backend {
 
   // aluguel
   Future<Rental?> currentRental();
+  /// Aluguel atual com a troca na estacao em andamento (um GET so).
+  Future<CurrentRentalState> currentRentalState();
   Future<Rental> rental(String id);
   Future<Rental> pause(String id);
   Future<Rental> resume(String id);
@@ -228,6 +250,35 @@ class ApiBackend implements Backend {
       });
 
   @override
+  Future<StationSwap> createStationSwap({
+    required String stationId,
+    required String stationCode,
+    required String rentalId,
+    required double lat,
+    required double lng,
+    required String idempotencyKey,
+  }) =>
+      _run(() async => (await _api.getStationsApi().createStationSwap(
+            id: stationId,
+            idempotencyKey: idempotencyKey,
+            stationSwapRequest: StationSwapRequest((b) => b
+              ..stationCode = stationCode
+              ..rentalId = rentalId
+              ..lat = lat
+              ..lng = lng),
+            validateStatus: (s) => s != null && s >= 200 && s < 300,
+          ))
+          .data!);
+
+  @override
+  Future<StationSwap> stationSwap(String stationId, String swapId) =>
+      _run(() async => (await _api.getStationsApi().getStationSwap(id: stationId, swapId: swapId)).data!);
+
+  @override
+  Future<StationSwap> cancelStationSwap(String stationId, String swapId) =>
+      _run(() async => (await _api.getStationsApi().cancelStationSwap(id: stationId, swapId: swapId)).data!);
+
+  @override
   Future<Reservation?> currentReservation() =>
       _run(() async => (await _api.getReservationsApi().getCurrentReservation()).data?.reservation);
 
@@ -335,7 +386,13 @@ class ApiBackend implements Backend {
   Future<Deposit> deposit(String id) => _run(() async => (await _api.getPaymentsApi().getDeposit(id: id)).data!);
 
   @override
-  Future<Rental?> currentRental() => _run(() async => (await _api.getRentalsApi().getCurrentRental()).data?.rental);
+  Future<Rental?> currentRental() async => (await currentRentalState()).rental;
+
+  @override
+  Future<CurrentRentalState> currentRentalState() => _run(() async {
+        final data = (await _api.getRentalsApi().getCurrentRental()).data;
+        return (rental: data?.rental, stationSwap: data?.currentStationSwap);
+      });
 
   @override
   Future<Rental> rental(String id) => _run(() async => (await _api.getRentalsApi().getRental(id: id)).data!);

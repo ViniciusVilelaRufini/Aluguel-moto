@@ -1611,5 +1611,157 @@
         "type": "String"
       }
     }
+  },
+  "swapNearbyTitle": "Você está na {station}",
+  "@swapNearbyTitle": {
+    "placeholders": {
+      "station": {
+        "type": "String"
+      }
+    }
+  },
+  "swapNearbyAction": "Trocar bateria",
+  "swapHere": "Trocar aqui",
+  "swapHereSemantics": "Trocar a bateria na {station}",
+  "@swapHereSemantics": {
+    "placeholders": {
+      "station": {
+        "type": "String"
+      }
+    }
+  },
+  "swapResumeTitle": "Troca de bateria em andamento",
+  "swapResumeText": "Toque para ver em que passo está.",
+  "swapResumeAction": "Continuar",
+  "swapScanTitle": "Escanear QR da estação",
+  "swapScanHint": "Aponte a câmera para o QR colado na estação.",
+  "swapScanDenied": "Sem acesso à câmera. Permita a câmera nas configurações do aparelho ou digite o código impresso abaixo do QR.",
+  "swapScanUnavailable": "Não foi possível abrir a câmera. Digite o código impresso abaixo do QR.",
+  "swapManualLabel": "Código da estação",
+  "swapManualHint": "Ex.: vst1.…",
+  "swapManualContinue": "Continuar",
+  "swapManualToggle": "Digitar o código",
+  "swapConfirmTitle": "Trocar a bateria da {vehicle} aqui?",
+  "@swapConfirmTitle": {
+    "placeholders": {
+      "vehicle": {
+        "type": "String"
+      }
+    }
+  },
+  "swapConfirmAvailable": "{count, plural, =0{Baterias disponíveis: nenhuma} =1{Baterias disponíveis: 1} other{Baterias disponíveis: {count}}}",
+  "@swapConfirmAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "swapConfirmFeeLine": "Taxa por troca no seu plano, cobrada no fechamento do aluguel.",
+  "swapConfirmFeeAmount": "Taxa {amount}",
+  "@swapConfirmFeeAmount": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "swapConfirmSteps": "A estação abre uma vaga vazia: devolva a bateria descarregada e pegue a carregada que ela liberar.",
+  "swapOpenSlot": "Abrir compartimento",
+  "swapSeeOpen": "Ver troca em andamento",
+  "swapLocationNeeded": "Precisamos da sua localização para confirmar que você está na estação.",
+  "swapErrorInvalidQr": "QR inválido. Confira se é o QR de uma estação Volti.",
+  "swapErrorTooFar": "Você precisa estar a até 50 m da estação. Chegue mais perto e tente de novo.",
+  "swapErrorMoving": "Pare e trave a moto antes de trocar a bateria.",
+  "swapErrorNoBattery": "Esta estação está sem baterias carregadas agora. Tente outra estação.",
+  "swapErrorClosed": "Esta estação está fechada agora ({hours}).",
+  "@swapErrorClosed": {
+    "placeholders": {
+      "hours": {
+        "type": "String"
+      }
+    }
+  },
+  "swapErrorUnavailable": "Esta estação não está disponível agora. Tente outra estação.",
+  "swapErrorOpen": "Você já tem uma troca de bateria em andamento.",
+  "swapErrorRentalNotActive": "A troca só pode ser feita com um aluguel em andamento.",
+  "swapNoRental": "Você precisa de um aluguel em andamento para trocar a bateria.",
+  "swapProgressTitle": "Troca de bateria",
+  "swapStepOpening": "Abrindo uma vaga…",
+  "swapStepOpeningText": "A estação está abrindo uma vaga vazia para você.",
+  "swapStepAwaiting": "Devolva a bateria na vaga {slot}",
+  "@swapStepAwaiting": {
+    "placeholders": {
+      "slot": {
+        "type": "int"
+      }
+    }
+  },
+  "swapStepAwaitingNoSlot": "Devolva a bateria na vaga aberta",
+  "swapStepAwaitingText": "Tire a bateria descarregada da moto, coloque na vaga e feche a porta.",
+  "swapStepReturned": "Bateria recebida",
+  "swapStepReturnedText": "Feche a porta da vaga. A estação vai liberar uma bateria carregada.",
+  "swapStepReleasing": "Pegue a bateria carregada",
+  "swapStepReleasingText": "Retire a bateria liberada e encaixe na moto.",
+  "swapDoneTitle": "Bateria trocada · {pct}%",
+  "@swapDoneTitle": {
+    "placeholders": {
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "swapDoneText": "Tudo certo. A autonomia da moto já foi atualizada.",
+  "swapStepSemantics": "Passo {current} de {total}",
+  "@swapStepSemantics": {
+    "placeholders": {
+      "current": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "swapTimeLeft": "Prazo: {time}",
+  "@swapTimeLeft": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "swapTimeUp": "Aguardando a estação…",
+  "swapFeeNote": "Taxa {amount} · cobrada no fechamento do aluguel",
+  "@swapFeeNote": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "swapCancel": "Cancelar troca",
+  "swapCancelConfirmTitle": "Cancelar a troca?",
+  "swapCancelConfirmText": "A vaga será fechada. Se você já colocou a bateria, a estação libera uma carregada mesmo assim.",
+  "swapCancelKeep": "Continuar troca",
+  "swapCanceledTitle": "Troca cancelada",
+  "swapFailedTitle": "Troca não concluída",
+  "swapEndCanceledByCustomer": "Você cancelou a troca. Nenhuma bateria foi trocada.",
+  "swapEndSlotClosed": "A vaga fechou sem a bateria. Tente de novo quando quiser.",
+  "swapEndStationTimeout": "A estação não respondeu a tempo. Tente de novo ou use outra estação.",
+  "swapEndReturnTimeout": "O tempo para devolver a bateria acabou.",
+  "swapEndReleaseTimeout": "A estação recebeu sua bateria, mas não liberou a carregada. Já avisamos a equipe; fale com o suporte se precisar.",
+  "swapEndNoBatteryAfterReturn": "Sua bateria foi recebida, mas não havia bateria carregada para liberar. Nossa equipe já foi avisada; fale com o suporte.",
+  "swapEndSerialMismatch": "Não conseguimos confirmar a bateria da estação. Fale com o suporte.",
+  "swapEndGeneric": "A troca não foi concluída. Tente de novo.",
+  "swapLateReturnNote": "Se você já colocou a bateria na vaga, a estação ainda libera uma carregada. Esta tela atualiza sozinha.",
+  "swapBackToRide": "Voltar à corrida",
+  "swapCountdownSemantics": "Tempo restante: {time}",
+  "@swapCountdownSemantics": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
   }
 }

@@ -55,7 +55,11 @@ final zonesProvider = FutureProvider.autoDispose<List<GeoZone>>((ref) => ref.wat
 
 final currentReservationProvider = FutureProvider.autoDispose<Reservation?>((ref) => ref.watch(backendProvider).currentReservation());
 
-final currentRentalProvider = FutureProvider.autoDispose<Rental?>((ref) => ref.watch(backendProvider).currentRental());
+/// `GET /rentals/current` (aluguel + troca na estacao em andamento). Para
+/// recarregar, invalide este (o [currentRentalProvider] deriva dele).
+final currentRentalStateProvider = FutureProvider.autoDispose<CurrentRentalState>((ref) => ref.watch(backendProvider).currentRentalState());
+
+final currentRentalProvider = FutureProvider.autoDispose<Rental?>((ref) async => (await ref.watch(currentRentalStateProvider.future)).rental);
 
 /// Cupom digitado no cartao da moto ("Cupom promocional"); o plano ja comeca
 /// com ele aplicado na cotacao. Vazio = sem cupom.

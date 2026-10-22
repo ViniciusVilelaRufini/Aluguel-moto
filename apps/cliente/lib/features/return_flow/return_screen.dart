@@ -153,7 +153,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     _finished = true;
     _poll?.cancel();
     VoltiHaptics.success();
-    ref.invalidate(currentRentalProvider);
+    ref.invalidate(currentRentalStateProvider);
     if (mounted) context.go('/summary/${widget.rentalId}');
   }
 

@@ -2,6 +2,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:volti_api/volti_api.dart' show StationSwap;
 
 import '../features/account/account_screens.dart';
 import '../features/handover/handover_screen.dart';
@@ -15,6 +16,8 @@ import '../features/plan/insurance_screen.dart';
 import '../features/plan/plan_screen.dart';
 import '../features/reservation/depot_reservation_screen.dart';
 import '../features/return_flow/return_screen.dart';
+import '../features/station_swap/swap_progress_screen.dart';
+import '../features/station_swap/swap_scan_screen.dart';
 import '../features/ride/ride_screen.dart';
 import '../features/summary/summary_screen.dart';
 import 'session.dart';
@@ -73,6 +76,23 @@ List<RouteBase> appRoutes() => [
       GoRoute(path: '/handover/:id', pageBuilder: (c, state) => voltiPage(c, state, HandoverScreen(handoverId: state.pathParameters['id']!))),
       GoRoute(path: '/ride', pageBuilder: (c, state) => voltiPage(c, state, const RideScreen())),
       GoRoute(path: '/return/:id', pageBuilder: (c, state) => voltiPage(c, state, ReturnScreen(rentalId: state.pathParameters['id']!))),
+      // Troca de bateria na estacao (QR): leitor + confirmacao e progresso.
+      GoRoute(
+        path: '/station-swap/scan',
+        pageBuilder: (c, state) => voltiPage(c, state, SwapScanScreen(stationHint: state.uri.queryParameters['station'])),
+      ),
+      GoRoute(
+        path: '/station-swap/:stationId/:swapId',
+        pageBuilder: (c, state) => voltiPage(
+          c,
+          state,
+          SwapProgressScreen(
+            stationId: state.pathParameters['stationId']!,
+            swapId: state.pathParameters['swapId']!,
+            initial: state.extra is StationSwap ? state.extra! as StationSwap : null,
+          ),
+        ),
+      ),
       GoRoute(path: '/summary/:id', pageBuilder: (c, state) => voltiPage(c, state, SummaryScreen(rentalId: state.pathParameters['id']!))),
       GoRoute(
         path: '/account',

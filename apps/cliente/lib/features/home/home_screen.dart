@@ -22,6 +22,7 @@ import '../pick/pick_logic.dart';
 import '../pickup/depot_hours.dart';
 import '../pickup/depot_labels.dart';
 import '../ride/ride_screen.dart' show mapEnabledProvider;
+import '../station_swap/swap_widgets.dart';
 import 'depot_providers.dart';
 import 'home_reservation_card.dart';
 import 'location_header.dart';
@@ -158,6 +159,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (mounted) _moveMap(p ?? fallback);
   }
 
+  /// Leitor do QR (troca nova) ou a tela da troca em andamento; na volta,
+  /// relê o aluguel (troca encerrada, bateria nova).
+  Future<void> _openSwapFlow(StationSwap? open, {String? stationId}) async {
+    if (open != null) {
+      await openSwapProgress(context, open);
+    } else {
+      await openSwapScan(context, stationId: stationId);
+    }
+    if (mounted) ref.invalidate(currentRentalStateProvider);
+  }
+
   void _selectDepot(Depot d) {
     VoltiHaptics.selection();
     ref.read(selectedDepotIdProvider.notifier).select(d.id);
@@ -180,6 +192,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     // (sem "Escolher moto" nem seletor: so uma reserva por vez) e o passe some.
     final pending = rental == null && isPendingReservation(reservation) ? reservation : null;
     final session = ref.watch(sessionProvider).value;
+    // Troca de bateria na estacao: retomar a que esta em andamento ou, a ate
+    // 50 m de uma estacao com aluguel em andamento, oferecer a troca.
+    final openSwap = rental != null ? ref.watch(homeOpenSwapProvider) : null;
+    final nearStation = rental != null && openSwap == null ? ref.watch(homeNearbySwapStationProvider) : null;
     final now = ref.watch(clockProvider)();
     // Flash que chega com o mapa ja aberto (ex.: voltou por pop).
     ref.listen(flashProvider, (_, next) {
@@ -307,9 +323,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
                                   const SizedBox(height: VoltiSpacing.s10),
-                                  if (rental != null)
-                                    _ActiveBanner(icon: LucideIcons.bike, text: l.rentalInProgress, action: l.backToRide, onTap: () => context.push('/ride'))
-                                  else if (reservation != null)
+                                  if (rental != null) ...[
+                                    _ActiveBanner(icon: LucideIcons.bike, text: l.rentalInProgress, action: l.backToRide, onTap: () => context.push('/ride')),
+                                    if (openSwap != null) ...[
+                                      const SizedBox(height: VoltiSpacing.s8),
+                                      SwapResumeCard(onResume: () => _openSwapFlow(openSwap)),
+                                    ] else if (nearStation != null) ...[
+                                      const SizedBox(height: VoltiSpacing.s8),
+                                      SwapNearbyCard(station: nearStation, onSwap: () => _openSwapFlow(null, stationId: nearStation.id)),
+                                    ],
+                                  ] else if (reservation != null)
                                     // Entrega no galpao: abre "Confira sua moto" (evento ou app aberto depois).
                                     HandoverWatcher(reservation: reservation),
                                   if (session != null && session.kyc != KycStatus.approved)
@@ -402,7 +425,23 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 duration: VoltiMotion.durScreen,
                                 curve: VoltiMotion.easeScreen,
                                 fromOffset: const Offset(0, 80),
-                                child: StationsSheet(onClose: () => _setStationsMode(false), onFocus: _focusStation),
+                                child: StationsSheet(
+                                  onClose: () => _setStationsMode(false),
+                                  onFocus: _focusStation,
+                                  // "Trocar aqui" so na estacao a ate 50 m, com aluguel em andamento.
+                                  extraActions: (context, p) => [
+                                    if (nearStation != null && p.station.id == nearStation.id)
+                                      VoltiButton(
+                                        key: Key('station-swap-here-${p.station.id}'),
+                                        label: l.swapHere,
+                                        semanticLabel: l.swapHereSemantics(p.station.name),
+                                        icon: LucideIcons.qrCode,
+                                        size: VoltiButtonSize.sm,
+                                        wrap: true,
+                                        onPressed: () => _openSwapFlow(null, stationId: p.station.id),
+                                      ),
+                                  ],
+                                ),
                               ),
                             )
                           else

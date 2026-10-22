@@ -4563,6 +4563,396 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Reserva da {vehicle}, o prazo de retirada acabou'**
   String homeReservationA11yExpired(String vehicle);
+
+  /// No description provided for @swapNearbyTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você está na {station}'**
+  String swapNearbyTitle(String station);
+
+  /// No description provided for @swapNearbyAction.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trocar bateria'**
+  String get swapNearbyAction;
+
+  /// No description provided for @swapHere.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trocar aqui'**
+  String get swapHere;
+
+  /// No description provided for @swapHereSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trocar a bateria na {station}'**
+  String swapHereSemantics(String station);
+
+  /// No description provided for @swapResumeTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Troca de bateria em andamento'**
+  String get swapResumeTitle;
+
+  /// No description provided for @swapResumeText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Toque para ver em que passo está.'**
+  String get swapResumeText;
+
+  /// No description provided for @swapResumeAction.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar'**
+  String get swapResumeAction;
+
+  /// No description provided for @swapScanTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escanear QR da estação'**
+  String get swapScanTitle;
+
+  /// No description provided for @swapScanHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aponte a câmera para o QR colado na estação.'**
+  String get swapScanHint;
+
+  /// No description provided for @swapScanDenied.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem acesso à câmera. Permita a câmera nas configurações do aparelho ou digite o código impresso abaixo do QR.'**
+  String get swapScanDenied;
+
+  /// No description provided for @swapScanUnavailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível abrir a câmera. Digite o código impresso abaixo do QR.'**
+  String get swapScanUnavailable;
+
+  /// No description provided for @swapManualLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código da estação'**
+  String get swapManualLabel;
+
+  /// No description provided for @swapManualHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ex.: vst1.…'**
+  String get swapManualHint;
+
+  /// No description provided for @swapManualContinue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar'**
+  String get swapManualContinue;
+
+  /// No description provided for @swapManualToggle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Digitar o código'**
+  String get swapManualToggle;
+
+  /// No description provided for @swapConfirmTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trocar a bateria da {vehicle} aqui?'**
+  String swapConfirmTitle(String vehicle);
+
+  /// No description provided for @swapConfirmAvailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =0{Baterias disponíveis: nenhuma} =1{Baterias disponíveis: 1} other{Baterias disponíveis: {count}}}'**
+  String swapConfirmAvailable(int count);
+
+  /// No description provided for @swapConfirmFeeLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Taxa por troca no seu plano, cobrada no fechamento do aluguel.'**
+  String get swapConfirmFeeLine;
+
+  /// No description provided for @swapConfirmFeeAmount.
+  ///
+  /// In pt, this message translates to:
+  /// **'Taxa {amount}'**
+  String swapConfirmFeeAmount(String amount);
+
+  /// No description provided for @swapConfirmSteps.
+  ///
+  /// In pt, this message translates to:
+  /// **'A estação abre uma vaga vazia: devolva a bateria descarregada e pegue a carregada que ela liberar.'**
+  String get swapConfirmSteps;
+
+  /// No description provided for @swapOpenSlot.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abrir compartimento'**
+  String get swapOpenSlot;
+
+  /// No description provided for @swapSeeOpen.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ver troca em andamento'**
+  String get swapSeeOpen;
+
+  /// No description provided for @swapLocationNeeded.
+  ///
+  /// In pt, this message translates to:
+  /// **'Precisamos da sua localização para confirmar que você está na estação.'**
+  String get swapLocationNeeded;
+
+  /// No description provided for @swapErrorInvalidQr.
+  ///
+  /// In pt, this message translates to:
+  /// **'QR inválido. Confira se é o QR de uma estação Volti.'**
+  String get swapErrorInvalidQr;
+
+  /// No description provided for @swapErrorTooFar.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você precisa estar a até 50 m da estação. Chegue mais perto e tente de novo.'**
+  String get swapErrorTooFar;
+
+  /// No description provided for @swapErrorMoving.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pare e trave a moto antes de trocar a bateria.'**
+  String get swapErrorMoving;
+
+  /// No description provided for @swapErrorNoBattery.
+  ///
+  /// In pt, this message translates to:
+  /// **'Esta estação está sem baterias carregadas agora. Tente outra estação.'**
+  String get swapErrorNoBattery;
+
+  /// No description provided for @swapErrorClosed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Esta estação está fechada agora ({hours}).'**
+  String swapErrorClosed(String hours);
+
+  /// No description provided for @swapErrorUnavailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'Esta estação não está disponível agora. Tente outra estação.'**
+  String get swapErrorUnavailable;
+
+  /// No description provided for @swapErrorOpen.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você já tem uma troca de bateria em andamento.'**
+  String get swapErrorOpen;
+
+  /// No description provided for @swapErrorRentalNotActive.
+  ///
+  /// In pt, this message translates to:
+  /// **'A troca só pode ser feita com um aluguel em andamento.'**
+  String get swapErrorRentalNotActive;
+
+  /// No description provided for @swapNoRental.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você precisa de um aluguel em andamento para trocar a bateria.'**
+  String get swapNoRental;
+
+  /// No description provided for @swapProgressTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Troca de bateria'**
+  String get swapProgressTitle;
+
+  /// No description provided for @swapStepOpening.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abrindo uma vaga…'**
+  String get swapStepOpening;
+
+  /// No description provided for @swapStepOpeningText.
+  ///
+  /// In pt, this message translates to:
+  /// **'A estação está abrindo uma vaga vazia para você.'**
+  String get swapStepOpeningText;
+
+  /// No description provided for @swapStepAwaiting.
+  ///
+  /// In pt, this message translates to:
+  /// **'Devolva a bateria na vaga {slot}'**
+  String swapStepAwaiting(int slot);
+
+  /// No description provided for @swapStepAwaitingNoSlot.
+  ///
+  /// In pt, this message translates to:
+  /// **'Devolva a bateria na vaga aberta'**
+  String get swapStepAwaitingNoSlot;
+
+  /// No description provided for @swapStepAwaitingText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tire a bateria descarregada da moto, coloque na vaga e feche a porta.'**
+  String get swapStepAwaitingText;
+
+  /// No description provided for @swapStepReturned.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria recebida'**
+  String get swapStepReturned;
+
+  /// No description provided for @swapStepReturnedText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Feche a porta da vaga. A estação vai liberar uma bateria carregada.'**
+  String get swapStepReturnedText;
+
+  /// No description provided for @swapStepReleasing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pegue a bateria carregada'**
+  String get swapStepReleasing;
+
+  /// No description provided for @swapStepReleasingText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retire a bateria liberada e encaixe na moto.'**
+  String get swapStepReleasingText;
+
+  /// No description provided for @swapDoneTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria trocada · {pct}%'**
+  String swapDoneTitle(int pct);
+
+  /// No description provided for @swapDoneText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tudo certo. A autonomia da moto já foi atualizada.'**
+  String get swapDoneText;
+
+  /// No description provided for @swapStepSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Passo {current} de {total}'**
+  String swapStepSemantics(int current, int total);
+
+  /// No description provided for @swapTimeLeft.
+  ///
+  /// In pt, this message translates to:
+  /// **'Prazo: {time}'**
+  String swapTimeLeft(String time);
+
+  /// No description provided for @swapTimeUp.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aguardando a estação…'**
+  String get swapTimeUp;
+
+  /// No description provided for @swapFeeNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'Taxa {amount} · cobrada no fechamento do aluguel'**
+  String swapFeeNote(String amount);
+
+  /// No description provided for @swapCancel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar troca'**
+  String get swapCancel;
+
+  /// No description provided for @swapCancelConfirmTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar a troca?'**
+  String get swapCancelConfirmTitle;
+
+  /// No description provided for @swapCancelConfirmText.
+  ///
+  /// In pt, this message translates to:
+  /// **'A vaga será fechada. Se você já colocou a bateria, a estação libera uma carregada mesmo assim.'**
+  String get swapCancelConfirmText;
+
+  /// No description provided for @swapCancelKeep.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar troca'**
+  String get swapCancelKeep;
+
+  /// No description provided for @swapCanceledTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Troca cancelada'**
+  String get swapCanceledTitle;
+
+  /// No description provided for @swapFailedTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Troca não concluída'**
+  String get swapFailedTitle;
+
+  /// No description provided for @swapEndCanceledByCustomer.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você cancelou a troca. Nenhuma bateria foi trocada.'**
+  String get swapEndCanceledByCustomer;
+
+  /// No description provided for @swapEndSlotClosed.
+  ///
+  /// In pt, this message translates to:
+  /// **'A vaga fechou sem a bateria. Tente de novo quando quiser.'**
+  String get swapEndSlotClosed;
+
+  /// No description provided for @swapEndStationTimeout.
+  ///
+  /// In pt, this message translates to:
+  /// **'A estação não respondeu a tempo. Tente de novo ou use outra estação.'**
+  String get swapEndStationTimeout;
+
+  /// No description provided for @swapEndReturnTimeout.
+  ///
+  /// In pt, this message translates to:
+  /// **'O tempo para devolver a bateria acabou.'**
+  String get swapEndReturnTimeout;
+
+  /// No description provided for @swapEndReleaseTimeout.
+  ///
+  /// In pt, this message translates to:
+  /// **'A estação recebeu sua bateria, mas não liberou a carregada. Já avisamos a equipe; fale com o suporte se precisar.'**
+  String get swapEndReleaseTimeout;
+
+  /// No description provided for @swapEndNoBatteryAfterReturn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua bateria foi recebida, mas não havia bateria carregada para liberar. Nossa equipe já foi avisada; fale com o suporte.'**
+  String get swapEndNoBatteryAfterReturn;
+
+  /// No description provided for @swapEndSerialMismatch.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos confirmar a bateria da estação. Fale com o suporte.'**
+  String get swapEndSerialMismatch;
+
+  /// No description provided for @swapEndGeneric.
+  ///
+  /// In pt, this message translates to:
+  /// **'A troca não foi concluída. Tente de novo.'**
+  String get swapEndGeneric;
+
+  /// No description provided for @swapLateReturnNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'Se você já colocou a bateria na vaga, a estação ainda libera uma carregada. Esta tela atualiza sozinha.'**
+  String get swapLateReturnNote;
+
+  /// No description provided for @swapBackToRide.
+  ///
+  /// In pt, this message translates to:
+  /// **'Voltar à corrida'**
+  String get swapBackToRide;
+
+  /// No description provided for @swapCountdownSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tempo restante: {time}'**
+  String swapCountdownSemantics(String time);
 }
 
 class _AppLocalizationsDelegate
