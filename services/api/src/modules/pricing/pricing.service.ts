@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { customerCpfHash } from '../../common/fraud-hash';
+import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
 import type { Coupon, PricingPlan } from '@prisma/client';
 import type { InsuranceCoverage, PlanCode } from '../../common/enums';
 import { notFound, unprocessable } from '../../common/problem';
@@ -60,7 +62,15 @@ const startedUnits = (seconds: number, unitSeconds: number) => (seconds <= 0 ? 0
 
 @Injectable()
 export class PricingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(V2_CONFIG) private readonly v2?: V2Config,
+  ) {}
+
+  /** Fix round 1 (I4): HMAC do CPF do cliente (prevenção a fraude; sobrevive à exclusão da conta). */
+  cpfHashFor(customerId: string): Promise<string | null> {
+    return customerCpfHash(this.prisma, customerId, (this.v2 ?? loadV2Config()).fraudHashSecret);
+  }
 
   /**
    * Regra de preço (centavos):
@@ -152,7 +162,9 @@ export class PricingService {
     if (planCode && coupon.planCodes.length > 0 && !coupon.planCodes.includes(planCode)) return { message: 'Cupom não vale para este plano.' };
     if (coupon.maxRedemptions != null && coupon.redemptions >= coupon.maxRedemptions) return { message: 'Cupom esgotado.' };
     if (customerId && coupon.maxRedemptionsPerCustomer != null) {
-      const used = await this.prisma.couponRedemption.count({ where: { couponId: coupon.id, customerId } });
+      // Fix round 1 (I4): conta também os usos do mesmo CPF em contas excluídas/recriadas.
+      const hash = await this.cpfHashFor(customerId);
+      const used = await this.prisma.couponRedemption.count({ where: { couponId: coupon.id, OR: [{ customerId }, ...(hash ? [{ cpfHash: hash }] : [])] } });
       if (used >= coupon.maxRedemptionsPerCustomer) return { message: 'Você já usou este cupom.' };
     }
     return { coupon };

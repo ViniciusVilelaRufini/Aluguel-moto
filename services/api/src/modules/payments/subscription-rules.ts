@@ -54,3 +54,46 @@ export function nextCharge(sub: SubLike): { nextChargeAt?: Date; nextChargeCents
   if (sub.status !== 'active' || sub.cancelAtPeriodEnd) return {};
   return { nextChargeAt: sub.currentPeriodEnd, nextChargeCents: sub.priceCents };
 }
+
+// ───────────── fix round 1 ─────────────
+
+const OPEN = ['active', 'paused'];
+
+/** Período vigente: assinatura aberta (ativa ou pausada) com `currentPeriodEnd` no futuro. Só ela dá moto fixa e plano ativo. */
+export function isCurrent(sub: Pick<Subscription, 'status' | 'currentPeriodEnd'>, now: Date): boolean {
+  return OPEN.includes(sub.status) && sub.currentPeriodEnd > now;
+}
+
+/**
+ * Ciclo de vida (C1): cancelamento agendado com período vencido → `canceled`; ativa ou inadimplente sem renovação além da
+ * carência → `expired`. Pausada não expira (a retomada estende o período).
+ */
+export function lifecycleTransition(
+  sub: Pick<Subscription, 'status' | 'cancelAtPeriodEnd' | 'currentPeriodEnd'>,
+  now: Date,
+  graceMs: number,
+): 'canceled' | 'expired' | null {
+  if (OPEN.includes(sub.status) && sub.cancelAtPeriodEnd && sub.currentPeriodEnd <= now) return 'canceled';
+  if ((sub.status === 'active' || sub.status === 'past_due') && sub.currentPeriodEnd.getTime() + graceMs <= now.getTime()) return 'expired';
+  return null;
+}
+
+/**
+ * Renovação paga (I1): período seguinte a partir do fim atual. Pausada continua pausada e a pausa em curso conta no novo
+ * período (o tempo pausado é somado na retomada); ativa ganha a pausa do período de volta.
+ */
+export function renewEffect(sub: Pick<Subscription, 'status' | 'currentPeriodEnd' | 'planCode' | 'pausesUsedInPeriod'>, periodMs: number) {
+  const start = sub.currentPeriodEnd;
+  const end = new Date(start.getTime() + periodMs);
+  if (sub.status === 'paused') return { currentPeriodStart: start, currentPeriodEnd: end };
+  return { status: 'active' as const, currentPeriodStart: start, currentPeriodEnd: end, pausesUsedInPeriod: 0, pausedAt: null, pauseEndsAt: null };
+}
+
+/** Troca da moto fixa pelo cliente: no máximo uma a cada `cooldownMs` (M9). Staff não espera. */
+export function assertVehicleSwapAllowed(sub: Pick<Subscription, 'assignedVehicleId' | 'assignedVehicleAt'>, now: Date, cooldownMs: number): void {
+  if (!sub.assignedVehicleId || !sub.assignedVehicleAt) return;
+  const waitMs = sub.assignedVehicleAt.getTime() + cooldownMs - now.getTime();
+  if (waitMs > 0) {
+    throw unprocessable('subscription-vehicle-cooldown', `Você pode trocar a moto fixa de novo em ${Math.ceil(waitMs / 3_600_000)} h.`);
+  }
+}

@@ -46,6 +46,7 @@ part 'vehicle.g.dart';
 /// * [service]
 /// * [battery]
 /// * [assignedSubscriptionId] - staff. Moto fixa de uma assinatura semanal/mensal.
+/// * [locationHidden] - Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
 /// * [createdAt]
 /// * [updatedAt]
 @BuiltValue()
@@ -164,6 +165,10 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   /// staff. Moto fixa de uma assinatura semanal/mensal.
   @BuiltValueField(wireName: r'assignedSubscriptionId')
   String? get assignedSubscriptionId;
+
+  /// Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
+  @BuiltValueField(wireName: r'locationHidden')
+  bool? get locationHidden;
 
   @BuiltValueField(wireName: r'createdAt')
   DateTime? get createdAt;
@@ -398,6 +403,13 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
       yield serializers.serialize(
         object.assignedSubscriptionId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.locationHidden != null) {
+      yield r'locationHidden';
+      yield serializers.serialize(
+        object.locationHidden,
+        specifiedType: const FullType(bool),
       );
     }
     if (object.createdAt != null) {
@@ -685,6 +697,14 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
           ) as String?;
           if (valueDes == null) continue;
           result.assignedSubscriptionId = valueDes;
+          break;
+        case r'locationHidden':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(bool),
+          ) as bool?;
+          if (valueDes == null) continue;
+          result.locationHidden = valueDes;
           break;
         case r'createdAt':
           final valueDes = serializers.deserialize(

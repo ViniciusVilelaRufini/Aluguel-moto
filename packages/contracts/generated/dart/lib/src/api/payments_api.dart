@@ -140,7 +140,7 @@ class PaymentsApi {
   }
 
   /// Definir a moto fixa do plano
-  /// A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver &#x60;active&#x60; ou &#x60;paused&#x60; e some do &#x60;GET /vehicles/nearby&#x60; dos demais clientes. Cliente: só a própria assinatura e uma moto &#x60;free&#x60; sem outro assinante (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;). Staff (&#x60;admin&#x60;, &#x60;operacao&#x60;): qualquer assinatura e moto; grava AuditLog.
+  /// A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver &#x60;active&#x60; ou &#x60;paused&#x60; e some do &#x60;GET /vehicles/nearby&#x60; dos demais clientes. Cliente: só a própria assinatura e uma moto &#x60;free&#x60; sem outro assinante (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;); o cliente troca a moto fixa no máximo uma vez a cada 24 h (&#x60;422&#x60; &#x60;subscription-vehicle-cooldown&#x60;). Staff (&#x60;admin&#x60;, &#x60;operacao&#x60;): qualquer assinatura e moto, sem espera; grava AuditLog. A exclusividade vale só com o período vigente (&#x60;currentPeriodEnd&#x60; no futuro).
   ///
   /// Parameters:
   /// * [id]
@@ -1155,7 +1155,7 @@ class PaymentsApi {
   }
 
   /// Pausar assinatura
-  /// Suspende o plano por &#x60;days&#x60; dias; o período e a próxima cobrança andam o tempo efetivamente pausado. Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança (&#x60;422&#x60; &#x60;subscription-pause-limit-reached&#x60;). Só assinatura &#x60;active&#x60; sem cancelamento agendado (&#x60;409&#x60; &#x60;subscription-not-pausable&#x60;) e sem aluguel em andamento no plano (&#x60;409&#x60; &#x60;rental-already-active&#x60;). Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em &#x60;pauseEndsAt&#x60;.
+  /// Suspende o plano por &#x60;days&#x60; dias; o período e a próxima cobrança andam o tempo efetivamente pausado. Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança (&#x60;422&#x60; &#x60;subscription-pause-limit-reached&#x60;). Só assinatura &#x60;active&#x60; sem cancelamento agendado (&#x60;409&#x60; &#x60;subscription-not-pausable&#x60;) e sem aluguel em andamento no plano (&#x60;409&#x60; &#x60;rental-already-active&#x60;). Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em &#x60;pauseEndsAt&#x60;. O gateway de pagamento é a fonte da verdade das datas: se ele não confirmar a pausa, nada muda e a resposta é &#x60;503&#x60; &#x60;gateway-unavailable&#x60;.
   ///
   /// Parameters:
   /// * [id]
@@ -1371,7 +1371,7 @@ class PaymentsApi {
   }
 
   /// Retomar assinatura pausada
-  /// Antecipa o fim da pausa. Só &#x60;paused&#x60; (senão &#x60;409&#x60; &#x60;subscription-not-pausable&#x60;). &#x60;currentPeriodEnd&#x60; e &#x60;nextChargeAt&#x60; andam o tempo pausado.
+  /// Antecipa o fim da pausa. Só &#x60;paused&#x60; (senão &#x60;409&#x60; &#x60;subscription-not-pausable&#x60;). &#x60;currentPeriodEnd&#x60; e &#x60;nextChargeAt&#x60; andam o tempo pausado e a nova data da cobrança é enviada ao gateway; sem confirmação do gateway → &#x60;503&#x60; &#x60;gateway-unavailable&#x60; (continua pausada).
   ///
   /// Parameters:
   /// * [id]

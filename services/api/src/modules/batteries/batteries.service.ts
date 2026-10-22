@@ -37,18 +37,25 @@ export class BatteriesService {
     return { operatorId: target, total: items.length, chargedCount: charged, depletedCount: items.length - charged, items: items.map((b) => toBattery(b)) };
   }
 
-  /** Põe baterias na van do usuário (série desconhecida é cadastrada). Bateria instalada numa moto → 409. */
-  async load(user: Principal, serials: string[], chargePct = 100) {
+  /**
+   * Põe baterias na van do usuário (série desconhecida é cadastrada com `chargePct` ou 100). Bateria instalada numa moto → 409.
+   * Fix round 1 (M5): sem `chargePct`, a carga conhecida é mantida; bateria carregada retirada de uma estação sai do
+   * `availableBatteries` dela.
+   */
+  async load(user: Principal, serials: string[], chargePct?: number) {
     const unique = [...new Set(serials.map((s) => s.trim()))];
     await this.prisma.$transaction(async (tx) => {
       const existing = await tx.battery.findMany({ where: { serial: { in: unique } } });
       const installed = existing.filter((b) => b.status === 'in_vehicle');
       if (installed.length) throw conflict('conflict', `Bateria instalada numa moto: ${installed.map((b) => b.serial).join(', ')}.`);
+      for (const b of existing.filter((x) => x.status === 'in_station' && x.stationId && x.chargePct >= CHARGED_PCT)) {
+        await tx.swapStation.updateMany({ where: { id: b.stationId!, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
+      }
       for (const serial of unique) {
         await tx.battery.upsert({
           where: { serial },
-          create: { serial, chargePct, status: 'in_van', holderId: user.userId },
-          update: { status: 'in_van', holderId: user.userId, stationId: null, vehicleId: null, chargePct },
+          create: { serial, chargePct: chargePct ?? 100, status: 'in_van', holderId: user.userId },
+          update: { status: 'in_van', holderId: user.userId, stationId: null, vehicleId: null, ...(chargePct !== undefined ? { chargePct } : {}) },
         });
       }
     });

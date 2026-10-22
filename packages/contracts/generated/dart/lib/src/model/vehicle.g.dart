@@ -72,6 +72,8 @@ class _$Vehicle extends Vehicle {
   @override
   final String? assignedSubscriptionId;
   @override
+  final bool? locationHidden;
+  @override
   final DateTime? createdAt;
   @override
   final DateTime? updatedAt;
@@ -112,6 +114,7 @@ class _$Vehicle extends Vehicle {
       this.service,
       this.battery,
       this.assignedSubscriptionId,
+      this.locationHidden,
       this.createdAt,
       this.updatedAt})
       : super._();
@@ -158,6 +161,7 @@ class _$Vehicle extends Vehicle {
         service == other.service &&
         battery == other.battery &&
         assignedSubscriptionId == other.assignedSubscriptionId &&
+        locationHidden == other.locationHidden &&
         createdAt == other.createdAt &&
         updatedAt == other.updatedAt;
   }
@@ -197,6 +201,7 @@ class _$Vehicle extends Vehicle {
     _$hash = $jc(_$hash, service.hashCode);
     _$hash = $jc(_$hash, battery.hashCode);
     _$hash = $jc(_$hash, assignedSubscriptionId.hashCode);
+    _$hash = $jc(_$hash, locationHidden.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jc(_$hash, updatedAt.hashCode);
     _$hash = $jf(_$hash);
@@ -238,6 +243,7 @@ class _$Vehicle extends Vehicle {
           ..add('service', service)
           ..add('battery', battery)
           ..add('assignedSubscriptionId', assignedSubscriptionId)
+          ..add('locationHidden', locationHidden)
           ..add('createdAt', createdAt)
           ..add('updatedAt', updatedAt))
         .toString();
@@ -386,6 +392,11 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
   set assignedSubscriptionId(String? assignedSubscriptionId) =>
       _$this._assignedSubscriptionId = assignedSubscriptionId;
 
+  bool? _locationHidden;
+  bool? get locationHidden => _$this._locationHidden;
+  set locationHidden(bool? locationHidden) =>
+      _$this._locationHidden = locationHidden;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -433,6 +444,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
       _service = $v.service?.toBuilder();
       _battery = $v.battery?.toBuilder();
       _assignedSubscriptionId = $v.assignedSubscriptionId;
+      _locationHidden = $v.locationHidden;
       _createdAt = $v.createdAt;
       _updatedAt = $v.updatedAt;
       _$v = null;
@@ -496,6 +508,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
             service: _service?.build(),
             battery: _battery?.build(),
             assignedSubscriptionId: assignedSubscriptionId,
+            locationHidden: locationHidden,
             createdAt: createdAt,
             updatedAt: updatedAt,
           );

@@ -5,6 +5,7 @@ import jestOpenAPI from 'jest-openapi';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { EV } from '../src/common/events';
+import { PAYMENT_PROVIDER } from '../src/modules/payments/provider/payment-provider';
 import { loadSpecAs30 } from './contract/openapi-30';
 import { approvedCustomer, bootE2eApp, devToken, freeVehicleInReturnZone } from './helpers/e2e-app';
 
@@ -92,6 +93,14 @@ describe('Contrato v2 (e2e)', () => {
     const meA = await http().get('/me').set(bearer(a.token)).expect(200);
     expect(meA.body.customer).toMatchObject({ activePlanCode: 'weekly', activeSubscriptionId: subId });
 
+    // Fix round 1 (I3): reserva da moto fixa por outro cliente → 409.
+    expect((await http().post('/reservations').set(bearer(b.token)).send({ vehicleId: fixed.id }).expect(409)).body.code).toBe('vehicle-unavailable');
+    // Fix round 1 (I1): gateway indisponível → 503 e nada muda.
+    (app.get(PAYMENT_PROVIDER) as any).failNextPauseCall = true;
+    const down = await http().post(`/payments/subscriptions/${subId}/pause`).set(bearer(a.token)).send({ days: 2 }).expect(503);
+    expect(down.body.code).toBe('gateway-unavailable');
+    expect(down).toSatisfyApiSpec();
+    expect((await prisma.subscription.findUniqueOrThrow({ where: { id: subId } })).status).toBe('active');
     // Pausa: 4 dias no semanal → 422; 2 dias → paused; segunda pausa no período → 422.
     expect((await http().post(`/payments/subscriptions/${subId}/pause`).set(bearer(a.token)).send({ days: 4 }).expect(422)).body.code).toBe('subscription-pause-limit-reached');
     const paused = await http().post(`/payments/subscriptions/${subId}/pause`).set(bearer(a.token)).send({ days: 2 }).expect(200);
@@ -108,6 +117,13 @@ describe('Contrato v2 (e2e)', () => {
     expect((await http().post(`/payments/subscriptions/${subId}/pause`).set(bearer(a.token)).send({ days: 1 }).expect(422)).body.code).toBe('subscription-pause-limit-reached');
     expect((await http().post(`/payments/subscriptions/${subId}/resume`).set(bearer(a.token)).expect(409)).body.code).toBe('subscription-not-pausable');
 
+    // O gateway (fake) recebeu a nova data da próxima cobrança.
+    const providerSubId = (await prisma.paymentProviderRef.findFirstOrThrow({ where: { entityType: 'subscription', entityId: subId } })).providerId;
+    expect((app.get(PAYMENT_PROVIDER) as any).subscriptionNextChargeAt(providerSubId)?.toISOString()).toBe(resumed.body.currentPeriodEnd);
+    // Fix round 1 (M9): o cliente não troca a moto fixa de novo antes de 24 h.
+    const another = await freeVehicleInReturnZone(prisma);
+    await prisma.subscription.update({ where: { id: subId }, data: { assignedVehicleAt: new Date() } });
+    expect((await http().put(`/payments/subscriptions/${subId}/vehicle`).set(bearer(a.token)).send({ vehicleId: another.id }).expect(422)).body.code).toBe('subscription-vehicle-cooldown');
     // Cliente não troca para moto ocupada por outro plano; staff troca e audita.
     const other = await freeVehicleInReturnZone(prisma);
     const swapped = await http().put(`/payments/subscriptions/${subId}/vehicle`).set(bearer(admin)).send({ vehicleId: other.id }).expect(200);
@@ -121,6 +137,30 @@ describe('Contrato v2 (e2e)', () => {
     const canceled = await http().delete(`/payments/subscriptions/${subId}`).set(bearer(a.token)).expect(200);
     expect(canceled.body).toMatchObject({ cancelAtPeriodEnd: true });
     expect(canceled.body.nextChargeAt).toBeUndefined();
+    // Fix round 1 (C1): período vencido → a assinatura fecha, a moto fixa volta ao mapa e o cliente assina de novo.
+    await prisma.subscription.update({ where: { id: subId }, data: { currentPeriodEnd: new Date(Date.now() - 1000) } });
+    const again = await http().get('/vehicles/nearby?lat=-23.5614&lng=-46.6559&radiusM=300').set(bearer(b.token)).expect(200);
+    expect(again.body.items.map((v: { id: string }) => v.id)).toContain(other.id);
+    expect((await http().get('/me').set(bearer(a.token)).expect(200)).body.customer.activePlanCode).toBeUndefined();
+    const renewed = await http().post('/payments/subscriptions').set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send({ planCode: 'weekly' }).expect(201);
+    expect((await prisma.subscription.findUniqueOrThrow({ where: { id: subId } })).status).toBe('canceled');
+    await http().delete(`/payments/subscriptions/${renewed.body.id}`).set(bearer(a.token)).expect(200);
+    await prisma.subscription.update({ where: { id: renewed.body.id }, data: { status: 'canceled' } });
+  });
+
+  it('cliente não vê posição nem endereço de moto em uso por outra pessoa (I5)', async () => {
+    const owner = await approvedCustomer(app, prisma, 'loc-owner');
+    const other = await approvedCustomer(app, prisma, 'loc-other');
+    const v = await freeVehicleInReturnZone(prisma);
+    await http().post('/reservations').set(bearer(owner.token)).send({ vehicleId: v.id }).expect(201);
+    const mine = await http().get(`/vehicles/${v.id}`).set(bearer(owner.token)).expect(200);
+    expect(mine.body.lat).not.toBe(0);
+    expect(mine.body.address).toBeTruthy();
+    const theirs = await http().get(`/vehicles/${v.id}`).set(bearer(other.token)).expect(200);
+    expect(theirs.body).toMatchObject({ status: 'reserved', lat: 0, lng: 0, locationHidden: true });
+    expect(theirs.body.address).toBeUndefined();
+    expect(theirs).toSatisfyApiSpec();
+    expect((await http().get(`/vehicles/${v.id}`).set(bearer(admin)).expect(200)).body.locationHidden).toBeUndefined();
   });
 
   it('auto-retomada das pausas vencidas', async () => {
@@ -169,13 +209,47 @@ describe('Contrato v2 (e2e)', () => {
     const pending = await http().get('/me/referral/rewards').set(bearer(a.token)).expect(200);
     expect(pending.body.items[0]).toMatchObject({ refereeName: 'Cliente', status: 'pending', amountCents: 1000 });
     expect(pending).toSatisfyApiSpec();
-    // Primeira corrida terminada do indicado (evento interno do encerramento).
+    // Fix round 1 (M8): só o encerramento não paga; corrida paga abaixo do mínimo também não.
     await app.get(EventEmitter2).emitAsync(EV.RENTAL_CHANGED, { rentalId: randomUUID(), customerId: b.customerId, vehicleId: randomUUID(), status: 'ended', elapsedSeconds: 600, costCents: 900, ts: new Date().toISOString() });
+    const small = await prisma.payment.create({ data: { customerId: b.customerId, kind: 'rental', method: 'card', status: 'paid', amountCents: 300 } });
+    await app.get(EventEmitter2).emitAsync(EV.PAYMENT_UPDATED, { paymentId: small.id, status: 'paid' });
+    expect((await http().get('/me/referral/rewards').set(bearer(a.token)).expect(200)).body.items[0].status).toBe('pending');
+    const paid = await prisma.payment.create({ data: { customerId: b.customerId, kind: 'rental', method: 'card', status: 'paid', amountCents: 900 } });
+    await app.get(EventEmitter2).emitAsync(EV.PAYMENT_UPDATED, { paymentId: paid.id, status: 'paid' });
     const granted = await http().get('/me/referral/rewards').set(bearer(a.token)).expect(200);
     expect(granted.body.items[0]).toMatchObject({ status: 'granted' });
     expect((await http().get('/wallet').set(bearer(a.token)).expect(200)).body.balanceCents).toBe(1000);
     expect((await http().get('/me/referral').set(bearer(a.token)).expect(200)).body).toMatchObject({ invitedCount: 1, qualifiedCount: 1, totalEarnedCents: 1000 });
     expect((await http().get('/me/referral').set(bearer(b.token)).expect(200)).body.referredBy).toBe('Cliente');
+  });
+
+  it('indicação e cupom: o CPF (HMAC) sobrevive à exclusão da conta e barra o reuso', async () => {
+    const cpf = () => String(Date.now()).slice(-9) + String(Math.floor(Math.random() * 90) + 10);
+    const a = await approvedCustomer(app, prisma, 'fraud-a');
+    const b = await approvedCustomer(app, prisma, 'fraud-b');
+    const bCpf = cpf();
+    await prisma.customer.update({ where: { id: b.customerId }, data: { cpf: bCpf } });
+    const code = (await http().get('/me/referral').set(bearer(a.token)).expect(200)).body.code;
+    await http().post('/me/referral/redeem').set(bearer(b.token)).send({ code }).expect(201);
+    const ref = await prisma.referral.findUniqueOrThrow({ where: { refereeId: b.customerId } });
+    expect(ref.refereeCpfHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(ref.refereeCpfHash).not.toContain(bCpf);
+    // B usa o cupom de uso único e exclui a conta: o CPF some, o HMAC fica.
+    const coupon = await prisma.coupon.findUniqueOrThrow({ where: { code: 'BEMVINDO10' } });
+    const vehicle = await freeVehicleInReturnZone(prisma);
+    const rental = await prisma.rental.create({ data: { customerId: b.customerId, vehicleId: vehicle.id, planCode: 'minute', coverage: 'basic', status: 'ended', priceSnapshot: {}, depositId: randomUUID(), endedAt: new Date() } });
+    await prisma.couponRedemption.create({ data: { couponId: coupon.id, customerId: b.customerId, rentalId: rental.id, cpfHash: ref.refereeCpfHash } });
+    await http().delete('/lgpd/account').set(bearer(b.token)).expect(202);
+    const deleted = await prisma.customer.findUniqueOrThrow({ where: { id: b.customerId } });
+    expect(deleted.cpf).toBeNull();
+    expect(deleted.cpfHash).toBe(ref.refereeCpfHash);
+    // Nova conta com o mesmo CPF: indicação e cupom de uso único recusados.
+    const d = await approvedCustomer(app, prisma, 'fraud-d');
+    await prisma.customer.update({ where: { id: d.customerId }, data: { cpf: bCpf } });
+    const again = await http().post('/me/referral/redeem').set(bearer(d.token)).send({ code }).expect(422);
+    expect(again.body).toMatchObject({ code: 'referral-not-eligible', detail: 'Este CPF já usou um código de indicação.' });
+    const v = await http().post('/me/coupons/validate').set(bearer(d.token)).send({ code: 'BEMVINDO10' }).expect(200);
+    expect(v.body).toMatchObject({ valid: false, message: 'Você já usou este cupom.' });
   });
 
   it('estações de troca: lista por distância', async () => {
@@ -206,6 +280,8 @@ describe('Contrato v2 (e2e)', () => {
     const staff = await http().get(`/maintenance/tasks?vehicleId=${v.id}`).set(bearer(admin)).expect(200);
     expect(staff.body.items[0]).toMatchObject({ source: 'customer', customerId: a.customerId, customerName: 'Cliente E2E' });
     expect(staff).toSatisfyApiSpec();
+    const forCampo = await http().get(`/maintenance/tasks?vehicleId=${v.id}`).set(bearer(campo)).expect(200);
+    expect(forCampo.body.items[0].customerName).toBe('Cliente');
     const list = await http().get('/me/maintenance-requests').set(bearer(a.token)).expect(200);
     expect(list).toSatisfyApiSpec();
     const canceled = await http().delete(`/me/maintenance-requests/${created.body.id}`).set(bearer(a.token)).expect(200);
@@ -304,6 +380,15 @@ describe('Contrato v2 (e2e)', () => {
     expect(unloaded.body.items.map((b: { serial: string }) => b.serial)).not.toContain(oldSerial);
     expect((await http().post('/batteries/van-stock/unload').set(bearer(campo)).send({ serials: [oldSerial] }).expect(409)).body.code).toBe('conflict');
     expect((await http().get(`/batteries/van-stock?operatorId=${randomUUID()}`).set(bearer(campo)).expect(403)).body.code).toBe('forbidden');
+    await http().get('/batteries?holderId=qualquer').set(bearer(admin)).expect(400);
+    // Fix round 1 (M5): carregar da estação tira das disponíveis e mantém a carga conhecida.
+    const st = await prisma.swapStation.findFirstOrThrow({ where: { name: 'Estação Largo da Batata' } });
+    const stSerial = `BT-ST-${Date.now()}`;
+    await prisma.battery.create({ data: { serial: stSerial, chargePct: 97, status: 'in_station', stationId: st.id } });
+    const before = st.availableBatteries;
+    const fromStation = await http().post('/batteries/van-stock/load').set(bearer(campo)).send({ serials: [stSerial] }).expect(200);
+    expect(fromStation.body.items.find((b: { serial: string }) => b.serial === stSerial).chargePct).toBe(97);
+    expect((await prisma.swapStation.findUniqueOrThrow({ where: { id: st.id } })).availableBatteries).toBe(before - 1);
   });
 
   it('catálogo: lista com foto e preço, admin cria/edita; cotação usa o preço do modelo', async () => {
@@ -319,7 +404,13 @@ describe('Contrato v2 (e2e)', () => {
     await http().post('/vehicle-models').set(bearer(admin)).send({ name: `Volti ${slug}`, slug, categoryLabel: 'Teste', pricePerMinuteCents: 50 }).expect(409);
     const patched = await http().patch(`/vehicle-models/${created.body.id}`).set(bearer(admin)).send({ pricePerMinuteCents: 55 }).expect(200);
     expect(patched.body.pricePerMinuteCents).toBe(55);
-    expect(await prisma.auditLog.count({ where: { entityId: created.body.id, action: 'vehicle_model.update' } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { entityId: created.body.id, action: 'vehicle_model.update' } })).toBeGreaterThanOrEqual(1);
+    // Fix round 1 (M11): foto só do prefixo catalog/; desbloqueio próprio pode ser removido.
+    await http().patch(`/vehicle-models/${created.body.id}`).set(bearer(admin)).send({ photoObjectKey: 'kyc/x/doc.png' }).expect(400);
+    expect((await http().patch(`/vehicle-models/${created.body.id}`).set(bearer(admin)).send({ unlockFeeCents: 100 }).expect(200)).body.unlockFeeCents).toBe(100);
+    expect((await http().patch(`/vehicle-models/${created.body.id}`).set(bearer(admin)).send({ unlockFeeCents: null }).expect(200)).body.unlockFeeCents).toBeUndefined();
+    await http().patch(`/vehicle-models/${created.body.id}`).set(bearer(admin)).send({ unlockFeeCents: 50 }).expect(200);
+    expect((await http().patch(`/vehicle-models/${created.body.id}`).set(bearer(admin)).send({ inheritPlanUnlockFee: true }).expect(200)).body.unlockFeeCents).toBeUndefined();
     const upload = await http().post('/vehicle-models/uploads').set(bearer(admin)).send({ contentType: 'image/png' }).expect(201);
     expect(upload.body.objectKey).toMatch(/^catalog\//);
     expect(upload).toSatisfyApiSpec();

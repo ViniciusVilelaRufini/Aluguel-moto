@@ -22,8 +22,20 @@ export const firstName = (name: string | null | undefined, fallback = 'Amigo') =
  * Quem pode usar um código de indicação: conta com KYC aprovado, sem corrida, que ainda não foi indicada, e nunca o
  * próprio código. Lança `422 referral-not-eligible`.
  */
-export function assertReferralEligible(input: { refereeId: string; referrerId: string; kycApproved: boolean; rentalsCount: number; alreadyReferred: boolean }): void {
-  if (input.referrerId === input.refereeId) throw unprocessable('referral-not-eligible', 'Você não pode usar o seu próprio código.');
+export function assertReferralEligible(input: {
+  refereeId: string;
+  referrerId: string;
+  kycApproved: boolean;
+  rentalsCount: number;
+  alreadyReferred: boolean;
+  /** Fix round 1 (M8/I4): conta do indicado ativa; mesmo CPF (HMAC) do indicador; CPF que já resgatou em outra conta. */
+  refereeActive?: boolean;
+  sameCpfAsReferrer?: boolean;
+  cpfAlreadyReferred?: boolean;
+}): void {
+  if (input.referrerId === input.refereeId || input.sameCpfAsReferrer) throw unprocessable('referral-not-eligible', 'Você não pode usar o seu próprio código.');
+  if (input.refereeActive === false) throw unprocessable('referral-not-eligible', 'Sua conta não está ativa.');
+  if (input.cpfAlreadyReferred) throw unprocessable('referral-not-eligible', 'Este CPF já usou um código de indicação.');
   if (input.alreadyReferred) throw unprocessable('referral-not-eligible', 'Sua conta já usou um código de indicação.');
   if (input.rentalsCount > 0) throw unprocessable('referral-not-eligible', 'O código de indicação vale só antes da primeira corrida.');
   if (!input.kycApproved) throw unprocessable('referral-not-eligible', 'Conclua a verificação de identidade para usar o código.');

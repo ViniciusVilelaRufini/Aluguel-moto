@@ -61,7 +61,7 @@ const round1 = (n: number) => Math.round(n * 10) / 10;
 /** Prisma → `Vehicle`. Clientes recebem só os campos públicos; staff recebe telemetria, rastreador, revisão e bateria. */
 export function toVehicle(
   v: VehicleRow,
-  opts: { staff: boolean; currentRentalId?: string; battery?: Battery | null; assignedSubscriptionId?: string; serviceDefaults?: ServiceDefaults },
+  opts: { staff: boolean; currentRentalId?: string; battery?: Battery | null; assignedSubscriptionId?: string; serviceDefaults?: ServiceDefaults; hideLocation?: boolean },
 ) {
   const base = {
     id: v.id,
@@ -78,6 +78,8 @@ export function toVehicle(
     address: v.addressLabel ?? undefined,
     addressUpdatedAt: iso(v.addressUpdatedAt),
   };
+  // Fix round 1 (I5): moto em uso por outra pessoa — posição oculta para o cliente.
+  if (!opts.staff && opts.hideLocation) return compact({ ...base, lat: 0, lng: 0, address: undefined, addressUpdatedAt: undefined, locationHidden: true });
   if (!opts.staff) return compact(base);
   return compact({
     ...base,

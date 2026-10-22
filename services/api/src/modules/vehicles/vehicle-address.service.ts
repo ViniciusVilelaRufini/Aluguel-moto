@@ -6,7 +6,17 @@ import { REVERSE_GEOCODER, type ReverseGeocoder } from '../../ports/reverse-geoc
 /** A moto andou mais que isto desde o último endereço → geocodifica de novo. */
 export const ADDRESS_REFRESH_M = 50;
 /** Orçamento por leitura: o que não couber fica para a próxima (no modo aws cada consulta vai à rede, com cache). */
-const BUDGET_MS = 1500;
+export const BUDGET_MS = 1500;
+/** Fix round 1 (M6): teto por consulta, para uma chamada lenta ao provedor não estourar o orçamento da lista. */
+export const CALL_TIMEOUT_MS = 800;
+
+/** Resolve com `null` se a promessa passar de `ms`. */
+export function withTimeout<T>(p: Promise<T>, ms: number): Promise<T | null> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => resolve(null), Math.max(0, ms));
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
 
 export interface AddressRow {
   id: string;
@@ -40,9 +50,10 @@ export class VehicleAddressService {
     const started = Date.now();
     for (const r of rows) {
       if (!needsAddress(r)) continue;
-      if (Date.now() - started > BUDGET_MS) break;
+      const remaining = BUDGET_MS - (Date.now() - started);
+      if (remaining <= 0) break;
       try {
-        const label = await this.geocoder.reverse(r.lat, r.lng);
+        const label = await withTimeout(this.geocoder.reverse(r.lat, r.lng), Math.min(CALL_TIMEOUT_MS, remaining));
         if (!label) continue;
         const now = new Date();
         Object.assign(r, { addressLabel: label, addressLat: r.lat, addressLng: r.lng, addressUpdatedAt: now });
@@ -55,10 +66,10 @@ export class VehicleAddressService {
   }
 
   /** Endereço de um ponto qualquer (destino de tarefa de campo). */
-  async label(lat: number | null | undefined, lng: number | null | undefined): Promise<string | undefined> {
-    if (lat == null || lng == null) return undefined;
+  async label(lat: number | null | undefined, lng: number | null | undefined, timeoutMs = CALL_TIMEOUT_MS): Promise<string | undefined> {
+    if (lat == null || lng == null || timeoutMs <= 0) return undefined;
     try {
-      return (await this.geocoder.reverse(lat, lng)) ?? undefined;
+      return (await withTimeout(this.geocoder.reverse(lat, lng), timeoutMs)) ?? undefined;
     } catch {
       return undefined;
     }

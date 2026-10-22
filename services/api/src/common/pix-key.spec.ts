@@ -5,7 +5,8 @@ describe('chave Pix para estornos', () => {
     expect(isValidCpf('529.982.247-25')).toBe(true);
     expect(isValidCpf('111.111.111-11')).toBe(false);
     expect(isValidCpf('52998224726')).toBe(false);
-    expect(normalizePixKey('cpf', '529.982.247-25')).toEqual({ ok: true, value: '52998224725' });
+    expect(normalizePixKey('cpf', '529.982.247-25', '529.982.247-25')).toEqual({ ok: true, value: '52998224725' });
+    expect(normalizePixKey('cpf', '52998224725')).toEqual({ ok: false, message: 'Conclua a verificação de identidade para usar o CPF como chave.' });
     expect(normalizePixKey('cpf', '52998224725', '52998224725')).toEqual({ ok: true, value: '52998224725' });
     expect(normalizePixKey('cpf', '11144477735', '52998224725')).toEqual({ ok: false, message: 'A chave CPF precisa ser o CPF da sua conta.' });
     expect(normalizePixKey('cpf', '12345678900').ok).toBe(false);

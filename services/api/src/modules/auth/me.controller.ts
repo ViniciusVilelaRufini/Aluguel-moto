@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Inject, Patch, Post } from '@nestjs/common';
+import { currentSubscriptionWhere } from '../../common/fixed-vehicle';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Prisma, StaffUser } from '@prisma/client';
 import { STAFF_GROUPS } from '../../common/enums';
@@ -40,7 +41,7 @@ export class MeController {
       const c = await this.prisma.customer.findUnique({ where: { id: u.customerId } });
       if (!c) throw notFound('Cliente não encontrado.');
       const restricted = c.cpf ? !!(await this.prisma.restrictionEntry.findUnique({ where: { cpf: c.cpf } })) : false;
-      const activeSubscription = await this.prisma.subscription.findFirst({ where: { customerId: c.id, status: { in: ['active', 'paused'] } }, select: { id: true, planCode: true } });
+      const activeSubscription = await this.prisma.subscription.findFirst({ where: { customerId: c.id, ...currentSubscriptionWhere() }, select: { id: true, planCode: true } });
       return { id: c.id, sub: u.sub, pool: 'customer', email: c.email, groups: [], customer: toCustomer(c, { fullCpf: true, restricted, activeSubscription }) };
     }
     const s = await this.prisma.staffUser.findUnique({ where: { id: u.staffId } });

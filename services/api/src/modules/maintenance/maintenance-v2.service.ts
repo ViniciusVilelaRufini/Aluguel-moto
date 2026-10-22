@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../common/problem';
 import { iso } from '../../common/util';
 import { V2_CONFIG, type V2Config } from '../../config/v2-config';
@@ -10,6 +10,10 @@ import { VEHICLE_MODEL_SELECT } from '../catalog/catalog.service';
 import { vehicleServiceInfo } from '../vehicles/vehicles.mapper';
 import { generateSlots, isValidSlotStart } from './maintenance-slots';
 import { compareServiceRows, publicServiceInfo, type VehicleServiceStatus } from './service-due';
+
+/** Conflito de serialização do Postgres/Prisma (P2034 ou SQLSTATE 40001). */
+export const isSerializationFailure = (err: unknown): boolean =>
+  err instanceof Prisma.PrismaClientKnownRequestError ? err.code === 'P2034' : /40001|could not serialize/i.test(String((err as Error)?.message ?? ''));
 
 const OPEN_MAINTENANCE = ['scheduled', 'in_progress'] as const;
 
@@ -143,22 +147,32 @@ export class MaintenanceV2Service {
     const startsAt = new Date(dto.slotStartsAt);
     const now = new Date();
     if (!isValidSlotStart(startsAt, now)) throw conflict('maintenance-slot-unavailable', 'Escolha um dos horários livres.');
-    const pending = await this.prisma.maintenanceTask.findFirst({ where: { customerId, source: 'customer', status: { in: [...OPEN_MAINTENANCE] } }, select: { id: true } });
-    if (pending) throw conflict('conflict', 'Você já tem uma manutenção agendada.');
     const vehicleId = sub.assignedVehicleId;
-    const created = await this.prisma.$transaction(
-      async (tx) => {
-        const taken = await tx.maintenanceTask.count({ where: { source: 'customer', status: { in: [...OPEN_MAINTENANCE] }, scheduledFor: startsAt } });
-        if (taken >= this.v2.maintenanceSlotCapacity) throw conflict('maintenance-slot-unavailable', 'Este horário acabou de lotar. Escolha outro.');
-        const m = await tx.maintenanceTask.create({
-          data: { vehicleId, kind: 'preventive', title: 'Manutenção agendada pelo cliente', description: dto.description, scheduledFor: startsAt, source: 'customer', customerId },
-          include: { vehicle: { select: { code: true } } },
-        });
-        await this.audit.record({ actor: user, action: 'maintenance.customer_request', entityType: 'MaintenanceTask', entityId: m.id, metadata: { vehicleId, scheduledFor: startsAt.toISOString() } }, tx as any);
-        return m;
-      },
-      { isolationLevel: 'Serializable' },
-    );
+    // Fix round 1 (M3): checagem de pedido aberto e de lotação dentro da transação serializável; conflito de serialização
+    // (P2034) é refeito até 3 vezes e, se persistir, vira 409 (o cliente escolhe de novo).
+    let created: RequestRow | undefined;
+    for (let attempt = 1; !created; attempt++) {
+      try {
+        created = await this.prisma.$transaction(
+          async (tx) => {
+            const pending = await tx.maintenanceTask.findFirst({ where: { customerId, source: 'customer', status: { in: [...OPEN_MAINTENANCE] } }, select: { id: true } });
+            if (pending) throw conflict('conflict', 'Você já tem uma manutenção agendada.');
+            const taken = await tx.maintenanceTask.count({ where: { source: 'customer', status: { in: [...OPEN_MAINTENANCE] }, scheduledFor: startsAt } });
+            if (taken >= this.v2.maintenanceSlotCapacity) throw conflict('maintenance-slot-unavailable', 'Este horário acabou de lotar. Escolha outro.');
+            const m = await tx.maintenanceTask.create({
+              data: { vehicleId, kind: 'preventive', title: 'Manutenção agendada pelo cliente', description: dto.description, scheduledFor: startsAt, source: 'customer', customerId },
+              include: { vehicle: { select: { code: true } } },
+            });
+            await this.audit.record({ actor: user, action: 'maintenance.customer_request', entityType: 'MaintenanceTask', entityId: m.id, metadata: { vehicleId, scheduledFor: startsAt.toISOString() } }, tx as any);
+            return m;
+          },
+          { isolationLevel: 'Serializable' },
+        );
+      } catch (err) {
+        if (!isSerializationFailure(err)) throw err;
+        if (attempt >= 3) throw conflict('maintenance-slot-unavailable', 'Muitos agendamentos ao mesmo tempo. Escolha o horário de novo.');
+      }
+    }
     return this.toRequest(created);
   }
 

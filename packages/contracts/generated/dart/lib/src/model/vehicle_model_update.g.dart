@@ -20,6 +20,8 @@ class _$VehicleModelUpdate extends VehicleModelUpdate {
   @override
   final int? unlockFeeCents;
   @override
+  final bool? inheritPlanUnlockFee;
+  @override
   final int? serviceIntervalKm;
   @override
   final int? serviceIntervalHours;
@@ -39,6 +41,7 @@ class _$VehicleModelUpdate extends VehicleModelUpdate {
       this.photoObjectKey,
       this.pricePerMinuteCents,
       this.unlockFeeCents,
+      this.inheritPlanUnlockFee,
       this.serviceIntervalKm,
       this.serviceIntervalHours,
       this.active,
@@ -63,6 +66,7 @@ class _$VehicleModelUpdate extends VehicleModelUpdate {
         photoObjectKey == other.photoObjectKey &&
         pricePerMinuteCents == other.pricePerMinuteCents &&
         unlockFeeCents == other.unlockFeeCents &&
+        inheritPlanUnlockFee == other.inheritPlanUnlockFee &&
         serviceIntervalKm == other.serviceIntervalKm &&
         serviceIntervalHours == other.serviceIntervalHours &&
         active == other.active &&
@@ -78,6 +82,7 @@ class _$VehicleModelUpdate extends VehicleModelUpdate {
     _$hash = $jc(_$hash, photoObjectKey.hashCode);
     _$hash = $jc(_$hash, pricePerMinuteCents.hashCode);
     _$hash = $jc(_$hash, unlockFeeCents.hashCode);
+    _$hash = $jc(_$hash, inheritPlanUnlockFee.hashCode);
     _$hash = $jc(_$hash, serviceIntervalKm.hashCode);
     _$hash = $jc(_$hash, serviceIntervalHours.hashCode);
     _$hash = $jc(_$hash, active.hashCode);
@@ -95,6 +100,7 @@ class _$VehicleModelUpdate extends VehicleModelUpdate {
           ..add('photoObjectKey', photoObjectKey)
           ..add('pricePerMinuteCents', pricePerMinuteCents)
           ..add('unlockFeeCents', unlockFeeCents)
+          ..add('inheritPlanUnlockFee', inheritPlanUnlockFee)
           ..add('serviceIntervalKm', serviceIntervalKm)
           ..add('serviceIntervalHours', serviceIntervalHours)
           ..add('active', active)
@@ -135,6 +141,11 @@ class VehicleModelUpdateBuilder
   set unlockFeeCents(int? unlockFeeCents) =>
       _$this._unlockFeeCents = unlockFeeCents;
 
+  bool? _inheritPlanUnlockFee;
+  bool? get inheritPlanUnlockFee => _$this._inheritPlanUnlockFee;
+  set inheritPlanUnlockFee(bool? inheritPlanUnlockFee) =>
+      _$this._inheritPlanUnlockFee = inheritPlanUnlockFee;
+
   int? _serviceIntervalKm;
   int? get serviceIntervalKm => _$this._serviceIntervalKm;
   set serviceIntervalKm(int? serviceIntervalKm) =>
@@ -166,6 +177,7 @@ class VehicleModelUpdateBuilder
       _photoObjectKey = $v.photoObjectKey;
       _pricePerMinuteCents = $v.pricePerMinuteCents;
       _unlockFeeCents = $v.unlockFeeCents;
+      _inheritPlanUnlockFee = $v.inheritPlanUnlockFee;
       _serviceIntervalKm = $v.serviceIntervalKm;
       _serviceIntervalHours = $v.serviceIntervalHours;
       _active = $v.active;
@@ -197,6 +209,7 @@ class VehicleModelUpdateBuilder
           photoObjectKey: photoObjectKey,
           pricePerMinuteCents: pricePerMinuteCents,
           unlockFeeCents: unlockFeeCents,
+          inheritPlanUnlockFee: inheritPlanUnlockFee,
           serviceIntervalKm: serviceIntervalKm,
           serviceIntervalHours: serviceIntervalHours,
           active: active,

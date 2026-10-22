@@ -1,5 +1,5 @@
 import { Transform, Type } from 'class-transformer';
-import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsBoolean, IsInt, IsNumber, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateIf } from 'class-validator';
 
 const toBool = ({ value }: { value: unknown }) => (value === undefined ? undefined : value === true || value === 'true');
 
@@ -28,9 +28,10 @@ export class VehicleModelUpdateDto {
   @MaxLength(500)
   description?: string;
 
+  /** Fix round 1 (M11): só chaves do bucket de catálogo emitidas por `POST /vehicle-models/uploads`. */
   @IsOptional()
-  @IsString()
   @MaxLength(300)
+  @Matches(/^catalog\/[A-Za-z0-9._-]+$/)
   photoObjectKey?: string;
 
   @IsOptional()
@@ -39,11 +40,17 @@ export class VehicleModelUpdateDto {
   @Max(10000)
   pricePerMinuteCents?: number;
 
+  /** `null` (ou `inheritPlanUnlockFee: true`) remove o desbloqueio próprio do modelo (M11). */
   @IsOptional()
+  @ValidateIf((_o, v) => v !== null)
   @IsInt()
   @Min(0)
   @Max(10000)
-  unlockFeeCents?: number;
+  unlockFeeCents?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  inheritPlanUnlockFee?: boolean;
 
   @IsOptional()
   @IsInt()
@@ -87,9 +94,10 @@ export class VehicleModelInputDto {
   @MaxLength(500)
   description?: string;
 
+  /** Fix round 1 (M11): só chaves do bucket de catálogo emitidas por `POST /vehicle-models/uploads`. */
   @IsOptional()
-  @IsString()
   @MaxLength(300)
+  @Matches(/^catalog\/[A-Za-z0-9._-]+$/)
   photoObjectKey?: string;
 
   @IsInt()

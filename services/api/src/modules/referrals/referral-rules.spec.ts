@@ -31,6 +31,11 @@ describe('regras de indicação e cupons da conta', () => {
     expect(slug({ alreadyReferred: true })).toBe('422 referral-not-eligible');
     expect(slug({ rentalsCount: 1 })).toBe('422 referral-not-eligible');
     expect(slug({ kycApproved: false })).toBe('422 referral-not-eligible');
+    // Fix round 1: mesmo CPF do indicador, CPF que já resgatou (conta excluída e recriada) e conta inativa.
+    expect(slug({ sameCpfAsReferrer: true } as any)).toBe('422 referral-not-eligible');
+    expect(slug({ cpfAlreadyReferred: true } as any)).toBe('422 referral-not-eligible');
+    expect(slug({ refereeActive: false } as any)).toBe('422 referral-not-eligible');
+    expect(slug({ refereeActive: true, sameCpfAsReferrer: false, cpfAlreadyReferred: false } as any)).toBe('ok');
   });
 
   it('situação do cupom salvo: available, used (limite por cliente) e expired', () => {

@@ -403,6 +403,8 @@ model Customer {
   pixRefundKey              String?
   /// Código de indicação (gerado no primeiro GET /me/referral).
   referralCode              String?        @unique
+  /// Fix round 1 (I4): HMAC-SHA256 do CPF (FRAUD_HASH_SECRET), retido após a exclusão LGPD para prevenção a fraude.
+  cpfHash                   String?
   deletedAt                 DateTime?
   createdAt                 DateTime       @default(now())
   updatedAt                 DateTime       @updatedAt
@@ -422,6 +424,7 @@ model Customer {
   conversations SupportConversation[]
 
   @@index([kycStatus])
+  @@index([cpfHash])
   @@index([status])
 }
 
@@ -636,9 +639,12 @@ model CouponRedemption {
   coupon     Coupon   @relation(fields: [couponId], references: [id])
   customerId String   @db.Uuid
   rentalId   String   @unique @db.Uuid
+  /// Fix round 1 (I4): HMAC do CPF de quem usou (limite por cliente sobrevive à exclusão da conta).
+  cpfHash    String?
   createdAt  DateTime @default(now())
 
   @@index([couponId, customerId])
+  @@index([couponId, cpfHash])
 }
 
 model Fee {
@@ -820,6 +826,8 @@ model Subscription {
   pauseEndsAt        DateTime?
   pausesUsedInPeriod Int                @default(0)
   assignedVehicleId  String?            @db.Uuid
+  /// Fix round 1 (M9): quando a moto fixa foi definida (espera entre trocas pelo cliente).
+  assignedVehicleAt  DateTime?
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
@@ -1354,8 +1362,12 @@ model Referral {
   refereeRewardCents    Int
   refereeWalletEntryId  String?              @db.Uuid
   referrerWalletEntryId String?              @db.Uuid
+  /// Fix round 1 (I4): HMAC do CPF do indicado e de quem indicou.
+  refereeCpfHash        String?
+  referrerCpfHash       String?
   createdAt             DateTime             @default(now())
   grantedAt             DateTime?
 
   @@index([referrerId, createdAt])
+  @@index([refereeCpfHash])
 }

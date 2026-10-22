@@ -12,7 +12,7 @@ Name | Type | Description | Notes
 **slug** | **String** |  | 
 **categoryLabel** | **String** |  | 
 **description** | **String** |  | [optional] 
-**photoObjectKey** | **String** |  | [optional] 
+**photoObjectKey** | **String** | Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`). | [optional] 
 **pricePerMinuteCents** | **int** |  | 
 **unlockFeeCents** | **int** |  | [optional] 
 **serviceIntervalKm** | **int** |  | [optional] [default to 1000]

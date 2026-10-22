@@ -11,6 +11,10 @@ export interface RedisStore {
   exists(key: string): Promise<boolean>;
   hset(key: string, values: Record<string, string>): Promise<void>;
   hgetall(key: string): Promise<Record<string, string>>;
+  /** Contrato v2 (fix round 1, M4): soma atômica num campo numérico do hash. */
+  hincrbyfloat(key: string, field: string, by: number): Promise<number>;
+  /** Lê e zera campos numéricos do hash numa operação atômica (ausente = 0). */
+  htakeFloats(key: string, fields: string[]): Promise<number[]>;
   /** Contador de janela fixa: INCR e, no primeiro hit, expira em `ttlMs`. Devolve a contagem e o tempo restante (ms). */
   incrWindow(key: string, ttlMs: number): Promise<{ count: number; ttlMs: number }>;
   /** Chamado quando uma chave expira por TTL (keyspace notifications `Ex`). */
@@ -19,6 +23,7 @@ export interface RedisStore {
   close(): Promise<void>;
 }
 
+const HTAKE_LUA = "local out = {} for i, f in ipairs(ARGV) do out[i] = redis.call('HGET', KEYS[1], f) or '0' redis.call('HSET', KEYS[1], f, '0') end return out";
 const INCR_WINDOW_LUA = "local c = redis.call('INCR', KEYS[1]) if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end return {c, redis.call('PTTL', KEYS[1])}";
 
 /** Redis real (ioredis). Liga `notify-keyspace-events Ex` para receber expirações. */
@@ -51,6 +56,13 @@ export class IoRedisStore implements RedisStore {
   }
   async hgetall(key: string) {
     return this.client.hgetall(key);
+  }
+  async hincrbyfloat(key: string, field: string, by: number) {
+    return Number(await this.client.hincrbyfloat(key, field, by));
+  }
+  async htakeFloats(key: string, fields: string[]) {
+    const out = (await this.client.eval(HTAKE_LUA, 1, key, ...fields)) as string[];
+    return out.map((v) => Number(v) || 0);
   }
   async incrWindow(key: string, ttlMs: number) {
     const [count, pttl] = (await this.client.eval(INCR_WINDOW_LUA, 1, key, String(Math.ceil(ttlMs)))) as [number, number];
@@ -131,6 +143,18 @@ export class MemoryRedisStore implements RedisStore {
   }
   async hgetall(key: string) {
     return { ...(this.hashes.get(key) ?? {}) };
+  }
+  async hincrbyfloat(key: string, field: string, by: number) {
+    const h = this.hashes.get(key) ?? {};
+    const v = (Number(h[field]) || 0) + by;
+    this.hashes.set(key, { ...h, [field]: String(v) });
+    return v;
+  }
+  async htakeFloats(key: string, fields: string[]) {
+    const h = this.hashes.get(key) ?? {};
+    const out = fields.map((f) => Number(h[f]) || 0);
+    this.hashes.set(key, { ...h, ...Object.fromEntries(fields.map((f) => [f, '0'])) });
+    return out;
   }
   async incrWindow(key: string, ttlMs: number) {
     const now = Date.now();

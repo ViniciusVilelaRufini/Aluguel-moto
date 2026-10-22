@@ -1,8 +1,8 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import type { Coupon, CustomerCoupon } from '@prisma/client';
+import type { Coupon, CustomerCoupon, Referral } from '@prisma/client';
 import type { PlanCode } from '../../common/enums';
-import { EV, type RentalChangedEvent } from '../../common/events';
+import { EV, type PaymentUpdatedEvent } from '../../common/events';
 import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, unprocessable } from '../../common/problem';
 import { compact, iso } from '../../common/util';
@@ -28,6 +28,20 @@ function couponFields(c: Coupon) {
   };
 }
 
+/** Cupom salvo → `CustomerCoupon` (situação calculada). Também usado na exportação LGPD. */
+export function toCustomerCoupon(r: CustomerCoupon & { coupon: Coupon }, usedByCustomer: number, now: Date) {
+  const st = customerCouponStatus(r.coupon, usedByCustomer, now);
+  return compact({ id: r.id, ...couponFields(r.coupon), usesRemaining: st.usesRemaining, status: st.status, source: r.source, addedAt: r.createdAt.toISOString() });
+}
+
+/** Indicação feita → `ReferralReward` (só o primeiro nome do amigo). */
+export function toReferralReward(r: Referral, refereeName: string | null | undefined) {
+  return compact({
+    id: r.id, refereeName: firstName(refereeName), status: r.status, amountCents: r.referrerRewardCents,
+    walletEntryId: r.referrerWalletEntryId ?? undefined, createdAt: r.createdAt.toISOString(), grantedAt: iso(r.grantedAt),
+  });
+}
+
 /** Cupons na conta do cliente e programa de indicação (contrato v2). */
 @Injectable()
 export class ReferralsService {
@@ -51,10 +65,7 @@ export class ReferralsService {
     const used = await this.prisma.couponRedemption.groupBy({ by: ['couponId'], where: { customerId, couponId: { in: rows.map((r) => r.couponId) } }, _count: { _all: true } });
     const usedBy = new Map(used.map((u) => [u.couponId, u._count._all]));
     const now = new Date();
-    return rows.map((r) => {
-      const st = customerCouponStatus(r.coupon, usedBy.get(r.couponId) ?? 0, now);
-      return compact({ id: r.id, ...couponFields(r.coupon), usesRemaining: st.usesRemaining, status: st.status, source: r.source, addedAt: r.createdAt.toISOString() });
-    });
+    return rows.map((r) => toCustomerCoupon(r, usedBy.get(r.couponId) ?? 0, now));
   }
 
   async listCoupons(customerId: string) {
@@ -123,17 +134,7 @@ export class ReferralsService {
     const rows = await this.prisma.referral.findMany({ where: { referrerId: customerId }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], ...pageArgs(q) });
     const names = await this.prisma.customer.findMany({ where: { id: { in: rows.map((r) => r.refereeId) } }, select: { id: true, name: true } });
     const nameBy = new Map(names.map((n) => [n.id, n.name]));
-    return toPage(rows, q, (r) =>
-      compact({
-        id: r.id,
-        refereeName: firstName(nameBy.get(r.refereeId)),
-        status: r.status,
-        amountCents: r.referrerRewardCents,
-        walletEntryId: r.referrerWalletEntryId ?? undefined,
-        createdAt: r.createdAt.toISOString(),
-        grantedAt: iso(r.grantedAt),
-      }),
-    );
+    return toPage(rows, q, (r) => toReferralReward(r, nameBy.get(r.refereeId)));
   }
 
   /** O indicado usa o código: indicação `pending` + bônus do indicado na carteira, na mesma transação. */
@@ -141,17 +142,24 @@ export class ReferralsService {
     const code = normalizeReferralCode(rawCode);
     const referrer = await this.prisma.customer.findUnique({ where: { referralCode: code }, select: { id: true, name: true, status: true } });
     if (!referrer || referrer.status !== 'active') throw unprocessable('referral-code-invalid', 'Código de indicação não encontrado.');
-    const me = await this.prisma.customer.findUnique({ where: { id: customerId }, select: { kycStatus: true } });
-    const [rentalsCount, already] = await Promise.all([
+    const me = await this.prisma.customer.findUnique({ where: { id: customerId }, select: { kycStatus: true, status: true } });
+    // Fix round 1 (I4): HMAC do CPF (sobrevive à exclusão da conta) contra autoindicação e resgate repetido pelo mesmo CPF.
+    const [rentalsCount, already, refereeHash, referrerHash] = await Promise.all([
       this.prisma.rental.count({ where: { customerId } }),
       this.prisma.referral.findUnique({ where: { refereeId: customerId }, select: { id: true } }),
+      this.pricing.cpfHashFor(customerId),
+      this.pricing.cpfHashFor(referrer.id),
     ]);
-    assertReferralEligible({ refereeId: customerId, referrerId: referrer.id, kycApproved: me?.kycStatus === 'approved', rentalsCount, alreadyReferred: !!already });
+    const cpfAlreadyReferred = refereeHash ? !!(await this.prisma.referral.findFirst({ where: { refereeCpfHash: refereeHash }, select: { id: true } })) : false;
+    assertReferralEligible({
+      refereeId: customerId, referrerId: referrer.id, kycApproved: me?.kycStatus === 'approved', rentalsCount, alreadyReferred: !!already,
+      refereeActive: me?.status === 'active', sameCpfAsReferrer: !!refereeHash && refereeHash === referrerHash, cpfAlreadyReferred,
+    });
     const reward = this.v2.referralRefereeRewardCents;
     try {
       const entry = await this.prisma.$transaction(async (tx) => {
         const ref = await tx.referral.create({
-          data: { referrerId: referrer.id, refereeId: customerId, code, referrerRewardCents: this.v2.referralReferrerRewardCents, refereeRewardCents: reward },
+          data: { referrerId: referrer.id, refereeId: customerId, code, referrerRewardCents: this.v2.referralReferrerRewardCents, refereeRewardCents: reward, refereeCpfHash: refereeHash, referrerCpfHash: referrerHash },
         });
         if (reward <= 0) return null;
         const e = await appendWalletEntry(tx, { customerId, type: 'bonus', amountCents: reward, description: `Bônus de indicação (código ${code})` });
@@ -166,12 +174,20 @@ export class ReferralsService {
     }
   }
 
-  /** Primeira corrida terminada do indicado → bônus de quem indicou (uma vez, por transição condicional). */
-  @OnEvent(EV.RENTAL_CHANGED, { async: true, promisify: true })
-  async onRentalChanged(ev: RentalChangedEvent): Promise<void> {
-    if (ev.status !== 'ended') return;
+  /**
+   * Fix round 1 (M8): bônus de quem indicou só com a primeira corrida **paga** do indicado, de pelo menos
+   * `REFERRAL_MIN_RENTAL_CENTS` (líquido de estornos), e com a conta do indicado ativa. Uma vez, por transição condicional.
+   */
+  @OnEvent(EV.PAYMENT_UPDATED, { async: true, promisify: true })
+  async onPaymentUpdated(ev: PaymentUpdatedEvent): Promise<void> {
+    if (ev.status !== 'paid' && ev.status !== 'captured') return;
     try {
-      await this.grantReferrer(ev.customerId);
+      const pay = await this.prisma.payment.findUnique({ where: { id: ev.paymentId }, select: { kind: true, customerId: true, amountCents: true, refundedCents: true, status: true } });
+      if (!pay || pay.kind !== 'rental' || (pay.status !== 'paid' && pay.status !== 'captured')) return;
+      if (pay.amountCents - pay.refundedCents < this.v2.referralMinRentalCents) return;
+      const referee = await this.prisma.customer.findUnique({ where: { id: pay.customerId }, select: { status: true } });
+      if (referee?.status !== 'active') return;
+      await this.grantReferrer(pay.customerId);
     } catch (err) {
       this.logger.error({ msg: 'referral_grant_failed', error: (err as Error).message });
     }

@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { assertNotFixedForOther } from '../../common/fixed-vehicle';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Coupon, Deposit, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -173,10 +174,11 @@ export class RentalStartService {
     const vehicle = await this.prisma.vehicle.findUnique({ where: { id: dto.vehicleId }, include: { vehicleModel: { select: { pricePerMinuteCents: true, unlockFeeCents: true } } } });
     if (!vehicle) throw notFound('Moto não encontrada.');
     // Contrato v2: moto fixa de assinatura aberta só pode ser alugada pelo assinante.
-    const fixedFor = await this.prisma.subscription.findFirst({ where: { assignedVehicleId: vehicle.id, status: { in: ['active', 'paused'] } }, select: { customerId: true } });
-    if (fixedFor && fixedFor.customerId !== customerId) {
+    try {
+      await assertNotFixedForOther(this.prisma, vehicle.id, customerId);
+    } catch (err) {
       await this.requestDepositRelease(dto.depositId, customerId);
-      throw conflict('vehicle-unavailable', 'Esta moto é a moto fixa de outro plano.');
+      throw err;
     }
     const reservation = await this.prisma.reservation.findFirst({
       where: { vehicleId: vehicle.id, status: 'active', expiresAt: { gt: new Date() } },
@@ -284,7 +286,7 @@ export class RentalStartService {
       });
       await tx.rentalEvent.create({ data: { rentalId, type: 'started', actorType: 'customer', actorId: customerId } });
       if (coupon) {
-        await tx.couponRedemption.create({ data: { couponId: coupon.id, customerId, rentalId } });
+        await tx.couponRedemption.create({ data: { couponId: coupon.id, customerId, rentalId, cpfHash: await this.pricing.cpfHashFor(customerId) } });
         await tx.coupon.update({ where: { id: coupon.id }, data: { redemptions: { increment: 1 } } });
       }
       if (!deposit.rentalId) await tx.deposit.update({ where: { id: deposit.id }, data: { rentalId } });

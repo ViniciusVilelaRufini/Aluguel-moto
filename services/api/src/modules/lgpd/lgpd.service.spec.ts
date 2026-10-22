@@ -29,6 +29,13 @@ function setup() {
   prisma.incident.findMany.mockResolvedValue([]);
   prisma.dispute.findMany.mockResolvedValue([]);
   prisma.claim.findMany.mockResolvedValue([]);
+  // Contrato v2 (fix round 1, M10): assinaturas, cupons, indicações e manutenções também vão na exportação.
+  prisma.subscription.findMany.mockResolvedValue([]);
+  prisma.customerCoupon.findMany.mockResolvedValue([]);
+  (prisma.couponRedemption.groupBy as any).mockResolvedValue([]);
+  prisma.referral.findMany.mockResolvedValue([]);
+  prisma.maintenanceTask.findMany.mockResolvedValue([]);
+  prisma.customer.findMany.mockResolvedValue([]);
   prisma.rental.findFirst.mockResolvedValue(null);
   prisma.payment.count.mockResolvedValue(0);
   return { prisma, storage, service };
@@ -60,7 +67,11 @@ describe('LgpdService', () => {
     expect(out.customer.id).toBe(ME);
     expect(out.customer.cpf).toBe('12345678901'); // dados do próprio titular, sem máscara
     expect(out.consents).toMatchObject({ termsAccepted: true, locationTracking: true, marketing: false });
-    expect(Object.keys(out).sort()).toEqual(['claims', 'consents', 'customer', 'disputes', 'generatedAt', 'incidents', 'payments', 'rentals', 'tracks', 'walletEntries']);
+    expect(Object.keys(out).sort()).toEqual(['claims', 'consents', 'coupons', 'customer', 'disputes', 'generatedAt', 'incidents', 'maintenanceRequests', 'payments', 'referrals', 'rentals', 'subscriptions', 'tracks', 'walletEntries']);
+    expect((prisma.subscription.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
+    expect((prisma.customerCoupon.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
+    expect((prisma.referral.findMany as jest.Mock).mock.calls[0][0].where.referrerId).toBe(ME);
+    expect((prisma.maintenanceTask.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
   });
 
   it('QA-07: DELETE /lgpd/account exclui a identidade no diretório e guarda só o hash do sub (para recusar o token antigo)', async () => {

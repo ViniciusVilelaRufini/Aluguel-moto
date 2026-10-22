@@ -76,7 +76,7 @@ Name | Type | Description  | Notes
 
 Definir a moto fixa do plano
 
-A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver `active` ou `paused` e some do `GET /vehicles/nearby` dos demais clientes. Cliente: só a própria assinatura e uma moto `free` sem outro assinante (`409` `vehicle-unavailable`). Staff (`admin`, `operacao`): qualquer assinatura e moto; grava AuditLog. 
+A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver `active` ou `paused` e some do `GET /vehicles/nearby` dos demais clientes. Cliente: só a própria assinatura e uma moto `free` sem outro assinante (`409` `vehicle-unavailable`); o cliente troca a moto fixa no máximo uma vez a cada 24 h (`422` `subscription-vehicle-cooldown`). Staff (`admin`, `operacao`): qualquer assinatura e moto, sem espera; grava AuditLog. A exclusividade vale só com o período vigente (`currentPeriodEnd` no futuro). 
 
 ### Example
 ```dart
@@ -554,7 +554,7 @@ This endpoint does not need any parameter.
 
 Pausar assinatura
 
-Suspende o plano por `days` dias; o período e a próxima cobrança andam o tempo efetivamente pausado. Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança (`422` `subscription-pause-limit-reached`). Só assinatura `active` sem cancelamento agendado (`409` `subscription-not-pausable`) e sem aluguel em andamento no plano (`409` `rental-already-active`). Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`. 
+Suspende o plano por `days` dias; o período e a próxima cobrança andam o tempo efetivamente pausado. Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança (`422` `subscription-pause-limit-reached`). Só assinatura `active` sem cancelamento agendado (`409` `subscription-not-pausable`) e sem aluguel em andamento no plano (`409` `rental-already-active`). Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`. O gateway de pagamento é a fonte da verdade das datas: se ele não confirmar a pausa, nada muda e a resposta é `503` `gateway-unavailable`. 
 
 ### Example
 ```dart
@@ -646,7 +646,7 @@ Name | Type | Description  | Notes
 
 Retomar assinatura pausada
 
-Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado.
+Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado e a nova data da cobrança é enviada ao gateway; sem confirmação do gateway → `503` `gateway-unavailable` (continua pausada).
 
 ### Example
 ```dart

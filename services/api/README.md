@@ -96,6 +96,11 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 | `MAINTENANCE_SLOT_CAPACITY` / `MAINTENANCE_LOCATION` | 2 / Oficina Volti (Pinheiros) | agendamento pelo cliente |
 | `SERVICE_INTERVAL_KM` / `SERVICE_INTERVAL_HOURS` | 1000 / 100 | intervalo de revisão de moto sem modelo |
 | `S3_BUCKET_CATALOG` | `catalogo` | fotos do catálogo (criado na subida em `STORAGE_MODE=local`) |
+| `FRAUD_HASH_SECRET` | segredo local em dev | HMAC do CPF (indicação/cupom), retido após a exclusão LGPD; **obrigatório em produção** |
+| `SUBSCRIPTION_RENEWAL_GRACE_HOURS` / `SUBSCRIPTION_VEHICLE_SWAP_COOLDOWN_HOURS` | 72 / 24 | carência antes de `expired`; espera entre trocas da moto fixa pelo cliente |
+| `REFERRAL_MIN_RENTAL_CENTS` | 500 | corrida paga mínima para o bônus de quem indicou |
+
+Fix round 1 (`docs/decisoes.md`): pausa/retomada só com confirmação do gateway (`503 gateway-unavailable`), ciclo de vida das assinaturas (`canceled`/`expired` pelo job), regra única da moto fixa com período vigente (`common/fixed-vehicle.ts`), posição oculta de motos em uso por outros clientes (`locationHidden`), HMAC do CPF contra fraude. `test/migration-v2.e2e-spec.ts` aplica as migrações v2 sobre um banco com as anteriores e dados legados (assinaturas duplicadas).
 
 ## Segurança e LGPD (correções do QA, `docs/relatorio-qa.md`)
 

@@ -23,6 +23,12 @@ export interface V2Config {
   /** Intervalo de revisão padrão (moto sem modelo no catálogo). */
   defaultServiceIntervalKm: number;
   defaultServiceIntervalHours: number;
+  /** Fix round 1. */
+  subscriptionGraceMs: number;
+  vehicleSwapCooldownMs: number;
+  referralMinRentalCents: number;
+  /** Segredo do HMAC do CPF (prevenção a fraude, I4). Obrigatório em produção. */
+  fraudHashSecret: string;
 }
 
 const int = (name: string, fallback: number): number => {
@@ -53,7 +59,19 @@ export function loadV2Config(): V2Config {
     maintenanceLocation: process.env.MAINTENANCE_LOCATION || 'Oficina Volti · R. Fradique Coutinho, 1000 · Pinheiros, São Paulo',
     defaultServiceIntervalKm: Math.max(1, int('SERVICE_INTERVAL_KM', 1000)),
     defaultServiceIntervalHours: Math.max(1, int('SERVICE_INTERVAL_HOURS', 100)),
+    subscriptionGraceMs: Math.max(0, int('SUBSCRIPTION_RENEWAL_GRACE_HOURS', 72)) * 3_600_000,
+    vehicleSwapCooldownMs: Math.max(0, int('SUBSCRIPTION_VEHICLE_SWAP_COOLDOWN_HOURS', 24)) * 3_600_000,
+    referralMinRentalCents: Math.max(0, int('REFERRAL_MIN_RENTAL_CENTS', 500)),
+    fraudHashSecret: fraudSecret(),
   };
+}
+
+/** Sem `FRAUD_HASH_SECRET` em produção a API não sobe; em dev/teste usa um segredo local fixo. */
+function fraudSecret(): string {
+  const v = process.env.FRAUD_HASH_SECRET;
+  if (v && v.trim()) return v;
+  if (process.env.NODE_ENV === 'production') throw new Error('FRAUD_HASH_SECRET é obrigatório em produção (HMAC do CPF para prevenção a fraude).');
+  return 'volti-dev-fraud-hash-secret';
 }
 
 export const V2_CONFIG = Symbol('V2_CONFIG');

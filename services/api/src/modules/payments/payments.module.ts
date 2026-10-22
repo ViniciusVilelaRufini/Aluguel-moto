@@ -43,6 +43,6 @@ import { WebhookProcessor } from './webhook-processor.service';
     WebhookProcessor,
     PaymentsService,
   ],
-  exports: [RENTAL_BILLING, PAYMENT_PROVIDER, BILLING_OPTIONS, PaymentStateService, ProviderCustomersService, RentalBillingService],
+  exports: [RENTAL_BILLING, PAYMENT_PROVIDER, BILLING_OPTIONS, PaymentStateService, ProviderCustomersService, RentalBillingService, SubscriptionsService],
 })
 export class PaymentsModule {}

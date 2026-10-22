@@ -221,9 +221,23 @@ export class FakePaymentProvider implements PaymentProvider {
     if (this.subscriptions.has(input.providerSubscriptionId)) this.subscriptions.set(input.providerSubscriptionId, 'canceled');
   }
 
-  async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean }): Promise<void> {
+  /** Datas da próxima cobrança por assinatura (o fake é a fonte da verdade nos testes). */
+  private readonly nextCharges = new Map<string, Date>();
+  /** Teste: faz a próxima chamada de pausa/retomada falhar. */
+  failNextPauseCall = false;
+
+  async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean; nextChargeAt?: Date }): Promise<void> {
+    if (this.failNextPauseCall) {
+      this.failNextPauseCall = false;
+      throw new Error('fake_gateway_unavailable');
+    }
     const current = this.subscriptions.get(input.providerSubscriptionId);
     if (current && current !== 'canceled') this.subscriptions.set(input.providerSubscriptionId, input.paused ? 'paused' : 'active');
+    if (!input.paused && input.nextChargeAt) this.nextCharges.set(input.providerSubscriptionId, input.nextChargeAt);
+  }
+
+  subscriptionNextChargeAt(id: string): Date | undefined {
+    return this.nextCharges.get(id);
   }
 
   verifyWebhook(input: { signature?: string; requestId?: string; dataId: string }): boolean {

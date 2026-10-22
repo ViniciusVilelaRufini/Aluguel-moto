@@ -90,7 +90,8 @@ export class CatalogService {
       throw conflict('conflict', 'Já existe um modelo com este nome.');
     }
     const m = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.vehicleModel.update({ where: { id }, data: { ...dto } });
+      const { inheritPlanUnlockFee, ...fields } = dto;
+      const updated = await tx.vehicleModel.update({ where: { id }, data: { ...fields, ...(inheritPlanUnlockFee ? { unlockFeeCents: null } : {}) } });
       // O nome do modelo também é o `Vehicle.model` exibido nas listas.
       if (dto.name && dto.name !== current.name) await tx.vehicle.updateMany({ where: { vehicleModelId: id }, data: { model: dto.name } });
       await this.audit.record(

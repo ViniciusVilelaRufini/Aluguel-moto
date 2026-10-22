@@ -162,6 +162,22 @@ ALTER TABLE "Vehicle" ADD CONSTRAINT "Vehicle_vehicleModelId_fkey" FOREIGN KEY (
 ALTER TABLE "CustomerCoupon" ADD CONSTRAINT "CustomerCoupon_couponId_fkey" FOREIGN KEY ("couponId") REFERENCES "Coupon"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 
+-- Fix round 1 (C1/M1): saneia dados legados antes dos índices parciais, para a migração aplicar em bancos que já rodaram as
+-- anteriores. (1) cancelamento agendado com período vencido → canceled; (2) ativa/inadimplente sem renovação há mais de 3 dias
+-- (a carência de SUBSCRIPTION_RENEWAL_GRACE_HOURS) → expired; (3) mais de uma aberta por cliente → só a mais nova continua.
+UPDATE "Subscription" SET "status" = 'canceled', "canceledAt" = COALESCE("canceledAt", now())
+  WHERE "status" = 'active' AND "cancelAtPeriodEnd" AND "currentPeriodEnd" <= now();
+UPDATE "Subscription" SET "status" = 'expired'
+  WHERE "status" IN ('active', 'past_due') AND "currentPeriodEnd" <= now() - interval '3 days';
+UPDATE "Subscription" s SET "status" = 'canceled', "canceledAt" = COALESCE(s."canceledAt", now())
+  FROM (
+    SELECT "id", row_number() OVER (PARTITION BY "customerId" ORDER BY "createdAt" DESC, "id" DESC) AS rn
+    FROM "Subscription" WHERE "status" IN ('active', 'paused')
+  ) d
+  WHERE s."id" = d."id" AND d.rn > 1;
+-- Bateria já ligada a uma moto está instalada nela.
+UPDATE "Battery" SET "status" = 'in_vehicle' WHERE "vehicleId" IS NOT NULL;
+
 -- Escrito à mão (o Prisma não modela índices parciais): uma assinatura aberta (ativa ou pausada) por cliente e uma moto
 -- fixa por assinatura aberta. O e2e confere que existem (`HAND_WRITTEN_INDEXES`).
 CREATE UNIQUE INDEX "Subscription_one_open_per_customer" ON "Subscription" ("customerId") WHERE "status" IN ('active', 'paused');

@@ -41,7 +41,8 @@ info:
     `speed-limiter-noncompliant`, `battery-serials-must-differ`, `account-deletion-blocked`,
     `webhook-signature-invalid`, `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`,
     `subscription-pause-limit-reached`, `subscription-required`, `subscription-vehicle-required`,
-    `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`.
+    `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`, `gateway-unavailable`,
+    `subscription-vehicle-cooldown`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -269,6 +270,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /me/coupons/validate:
     post:
       tags: [pricing]
@@ -290,6 +292,7 @@ paths:
               schema: { $ref: '#/components/schemas/CouponValidation' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /me/referral:
     get:
       tags: [referrals]
@@ -352,6 +355,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /me/maintenance-slots:
     get:
       tags: [maintenance]
@@ -2102,7 +2106,8 @@ paths:
         Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança
         (`422` `subscription-pause-limit-reached`). Só assinatura `active` sem cancelamento agendado
         (`409` `subscription-not-pausable`) e sem aluguel em andamento no plano (`409` `rental-already-active`).
-        Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`.
+        Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`. O gateway de pagamento é a
+        fonte da verdade das datas: se ele não confirmar a pausa, nada muda e a resposta é `503` `gateway-unavailable`.
       security:
         - customerAuth: []
       parameters:
@@ -2123,12 +2128,13 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /payments/subscriptions/{id}/resume:
     post:
       tags: [payments]
       operationId: resumeSubscription
       summary: Retomar assinatura pausada
-      description: Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado.
+      description: Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado e a nova data da cobrança é enviada ao gateway; sem confirmação do gateway → `503` `gateway-unavailable` (continua pausada).
       security:
         - customerAuth: []
       parameters:
@@ -2142,6 +2148,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /payments/subscriptions/{id}/vehicle:
     put:
       tags: [payments]
@@ -2150,7 +2157,9 @@ paths:
       description: |
         A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver `active` ou `paused` e some do
         `GET /vehicles/nearby` dos demais clientes. Cliente: só a própria assinatura e uma moto `free` sem outro
-        assinante (`409` `vehicle-unavailable`). Staff (`admin`, `operacao`): qualquer assinatura e moto; grava AuditLog.
+        assinante (`409` `vehicle-unavailable`); o cliente troca a moto fixa no máximo uma vez a cada 24 h
+        (`422` `subscription-vehicle-cooldown`). Staff (`admin`, `operacao`): qualquer assinatura e moto, sem espera; grava AuditLog.
+        A exclusividade vale só com o período vigente (`currentPeriodEnd` no futuro).
       security:
         - customerAuth: []
         - staffAuth: []
@@ -2173,6 +2182,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /payments:
     get:
@@ -3507,7 +3517,7 @@ paths:
         - name: holderId
           in: query
           description: Operador que leva a bateria na van (`me` = o próprio usuário).
-          schema: { type: string, maxLength: 36 }
+          schema: { type: string, pattern: '^(me|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$' }
         - name: q
           in: query
           description: Busca por número de série.
@@ -4228,6 +4238,15 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    ServiceUnavailable:
+      description: 'Gateway de pagamento indisponível (`gateway-unavailable`); nada foi alterado, tente de novo.'
+      headers:
+        Retry-After:
+          description: Segundos sugeridos até tentar de novo.
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     TooManyRequests:
       description: Limite de requisições excedido.
       headers:
@@ -4667,6 +4686,11 @@ components:
         service: { $ref: '#/components/schemas/VehicleServiceInfo' }
         battery: { $ref: '#/components/schemas/Battery' }
         assignedSubscriptionId: { type: string, format: uuid, description: staff. Moto fixa de uma assinatura semanal/mensal. }
+        locationHidden:
+          type: boolean
+          description: |
+            Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição
+            é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     VehiclePage:
@@ -6237,6 +6261,20 @@ components:
         claims:
           type: array
           items: { $ref: '#/components/schemas/Claim' }
+        subscriptions:
+          type: array
+          items: { $ref: '#/components/schemas/Subscription' }
+        coupons:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerCoupon' }
+        referrals:
+          type: array
+          description: Indicações feitas pelo titular (só o primeiro nome do amigo).
+          items: { $ref: '#/components/schemas/ReferralReward' }
+        referralCode: { type: string }
+        maintenanceRequests:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerMaintenanceRequest' }
     AccountDeletion:
       type: object
       required: [status, requestedAt]
@@ -6310,7 +6348,7 @@ components:
         slug: { type: string, pattern: '^[a-z0-9-]{2,40}$' }
         categoryLabel: { type: string, minLength: 2, maxLength: 60 }
         description: { type: string, maxLength: 500 }
-        photoObjectKey: { type: string, maxLength: 300 }
+        photoObjectKey: { type: string, maxLength: 300, pattern: '^catalog/[A-Za-z0-9._-]+$', description: 'Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`).' }
         pricePerMinuteCents: { type: integer, minimum: 0, maximum: 10000 }
         unlockFeeCents: { type: integer, minimum: 0, maximum: 10000 }
         serviceIntervalKm: { type: integer, minimum: 1, maximum: 100000, default: 1000 }
@@ -6323,9 +6361,10 @@ components:
         name: { type: string, minLength: 2, maxLength: 60 }
         categoryLabel: { type: string, minLength: 2, maxLength: 60 }
         description: { type: string, maxLength: 500 }
-        photoObjectKey: { type: string, maxLength: 300 }
+        photoObjectKey: { type: string, maxLength: 300, pattern: '^catalog/[A-Za-z0-9._-]+$', description: 'Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`).' }
         pricePerMinuteCents: { type: integer, minimum: 0, maximum: 10000 }
         unlockFeeCents: { type: integer, minimum: 0, maximum: 10000 }
+        inheritPlanUnlockFee: { type: boolean, description: '`true` remove o desbloqueio próprio do modelo (volta ao do plano). A API também aceita `unlockFeeCents: null`.' }
         serviceIntervalKm: { type: integer, minimum: 1, maximum: 100000 }
         serviceIntervalHours: { type: integer, minimum: 1, maximum: 10000 }
         active: { type: boolean }

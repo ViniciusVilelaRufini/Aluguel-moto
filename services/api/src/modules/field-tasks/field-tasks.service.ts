@@ -13,7 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
 import { hasGroup, type Principal } from '../auth/principal';
-import { VehicleAddressService } from '../vehicles/vehicle-address.service';
+import { BUDGET_MS, CALL_TIMEOUT_MS, VehicleAddressService } from '../vehicles/vehicle-address.service';
 import type { BatterySwapDto, FieldTaskCompleteDto, FieldTaskCreateDto, FieldTaskUpdateDto, InspectionDto, ListFieldTasksQuery } from './field-tasks.dto';
 
 type TaskVehicle = Pick<Vehicle, 'code' | 'lat' | 'lng' | 'batteryPct'> & Partial<Pick<Vehicle, 'status' | 'addressLabel' | 'batterySerial'>>;
@@ -92,8 +92,11 @@ export class FieldTasksService {
     const vm = new Map(vehicles.map((v) => [v.id, v]));
     const sm = new Map(staff.map((s) => [s.id, s]));
     const out: TaskRow[] = [];
+    // Fix round 1 (M6): endereço dos destinos dentro de um orçamento de tempo por lista.
+    const started = Date.now();
     for (const r of rows) {
-      const targetAddress = this.addresses && r.targetLat != null ? await this.addresses.label(r.targetLat, r.targetLng) : undefined;
+      const remaining = BUDGET_MS - (Date.now() - started);
+      const targetAddress = this.addresses && r.targetLat != null && remaining > 0 ? await this.addresses.label(r.targetLat, r.targetLng, Math.min(CALL_TIMEOUT_MS, remaining)) : undefined;
       out.push({ ...r, vehicle: vm.get(r.vehicleId) ?? null, assignee: r.assigneeId ? (sm.get(r.assigneeId) ?? null) : null, battery: bm.get(r.vehicleId) ?? null, targetAddress });
     }
     return out;

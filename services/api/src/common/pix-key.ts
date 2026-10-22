@@ -33,7 +33,9 @@ export function normalizePixKey(type: PixKeyType, raw: string, accountCpf?: stri
     case 'cpf': {
       const d = v.replace(/[.\-\s]/g, '');
       if (!/^\d{11}$/.test(d) || !isValidCpf(d)) return { ok: false, message: 'CPF inválido.' };
-      if (accountCpf && accountCpf.replace(/\D/g, '') !== d) return { ok: false, message: 'A chave CPF precisa ser o CPF da sua conta.' };
+      // Fix round 1 (M7): CPF como chave só depois do KYC (a conta precisa ter CPF) e só o do titular.
+      if (!accountCpf) return { ok: false, message: 'Conclua a verificação de identidade para usar o CPF como chave.' };
+      if (accountCpf.replace(/\D/g, '') !== d) return { ok: false, message: 'A chave CPF precisa ser o CPF da sua conta.' };
       return { ok: true, value: d };
     }
     case 'email': {

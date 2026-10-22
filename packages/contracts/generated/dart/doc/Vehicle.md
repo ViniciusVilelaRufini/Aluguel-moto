@@ -40,6 +40,7 @@ Name | Type | Description | Notes
 **service** | [**VehicleServiceInfo**](VehicleServiceInfo.md) |  | [optional] 
 **battery** | [**Battery**](Battery.md) |  | [optional] 
 **assignedSubscriptionId** | **String** | staff. Moto fixa de uma assinatura semanal/mensal. | [optional] 
+**locationHidden** | **bool** | Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.  | [optional] 
 **createdAt** | [**DateTime**](DateTime.md) |  | [optional] 
 **updatedAt** | [**DateTime**](DateTime.md) |  | [optional] 
 

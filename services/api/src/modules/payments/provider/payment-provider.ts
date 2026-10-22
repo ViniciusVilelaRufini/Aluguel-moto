@@ -81,7 +81,8 @@ export interface PaymentProvider {
   }): Promise<{ providerSubscriptionId: string; status: 'active' | 'failed'; failureReason?: string; /** Primeira cobrança, quando o gateway a devolve na hora (o fake devolve; o Mercado Pago avisa por webhook). */ firstPayment?: ProviderPayment }>;
   cancelSubscription(input: { providerSubscriptionId: string }): Promise<void>;
   /** Contrato v2: pausa/retomada da recorrência no gateway (a extensão do período é controlada pela Volti). */
-  setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean }): Promise<void>;
+  /** Na retomada, `nextChargeAt` é a nova data da próxima cobrança (o gateway é a fonte da verdade das datas). Lança se falhar. */
+  setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean; nextChargeAt?: Date }): Promise<void>;
   /** Valida a assinatura do webhook (`x-signature` do Mercado Pago). */
   verifyWebhook(input: { signature?: string; requestId?: string; dataId: string }): boolean;
 }

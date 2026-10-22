@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PageQuery } from '../../common/pagination';
 import { CurrentUser, Principal, StaffOnly } from '../auth/principal';
 import { BatteriesService } from './batteries.service';
@@ -11,9 +11,9 @@ export class ListBatteriesQuery extends PageQuery {
   @IsIn(BATTERY_STATUSES)
   status?: (typeof BATTERY_STATUSES)[number];
 
+  /** Fix round 1 (M5): `me` ou UUID. */
   @IsOptional()
-  @IsString()
-  @MaxLength(36)
+  @Matches(/^(me|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/)
   holderId?: string;
 
   @IsOptional()

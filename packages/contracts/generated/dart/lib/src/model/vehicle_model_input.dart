@@ -15,7 +15,7 @@ part 'vehicle_model_input.g.dart';
 /// * [slug]
 /// * [categoryLabel]
 /// * [description]
-/// * [photoObjectKey]
+/// * [photoObjectKey] - Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`).
 /// * [pricePerMinuteCents]
 /// * [unlockFeeCents]
 /// * [serviceIntervalKm]
@@ -37,6 +37,7 @@ abstract class VehicleModelInput
   @BuiltValueField(wireName: r'description')
   String? get description;
 
+  /// Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`).
   @BuiltValueField(wireName: r'photoObjectKey')
   String? get photoObjectKey;
 

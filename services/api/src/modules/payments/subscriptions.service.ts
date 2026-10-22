@@ -7,7 +7,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { toVehicleSummary } from '../vehicles/vehicles.mapper';
-import { checkPause, resumeEffect } from './subscription-rules';
+import { assertNotFixedForOther, currentSubscriptionWhere } from '../../common/fixed-vehicle';
+import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
+import { assertVehicleSwapAllowed, checkPause, lifecycleTransition, renewEffect, resumeEffect } from './subscription-rules';
 import { canTransition } from './payment-state';
 import { isUniqueViolation, PaymentStateService } from './payment-state.service';
 import { toSubscription } from './payments.mapper';
@@ -34,7 +36,13 @@ export class SubscriptionsService {
     private readonly customers: ProviderCustomersService,
     private readonly billing: RentalBillingService,
     @Optional() private readonly audit?: AuditService,
+    @Optional() @Inject(V2_CONFIG) private readonly v2: V2Config = loadV2Config(),
   ) {}
+
+  /** Gateway indisponível: nada mudou e o cliente pode tentar de novo (I1). */
+  private gatewayUnavailable(): ProblemException {
+    return new ProblemException(503, 'gateway-unavailable', 'Não conseguimos falar com o meio de pagamento agora. Nada foi alterado; tente de novo em instantes.');
+  }
 
   /** Contrato v2: assinatura com cartão da recorrência, última cobrança e moto fixa. */
   async view(sub: Subscription) {
@@ -63,18 +71,30 @@ export class SubscriptionsService {
     return this.view(await this.own(customerId, id));
   }
 
-  /** Pausa (limites em subscription-rules.ts): sem aluguel aberto no plano; o gateway suspende a recorrência. */
+  /**
+   * Pausa (limites em subscription-rules.ts), sem aluguel aberto no plano. O gateway é a fonte da verdade das datas (I1):
+   * a pausa é reservada no banco (transição condicional), confirmada no gateway e desfeita se o gateway falhar (503).
+   */
   async pause(customerId: string, id: string, days: number) {
     const sub = await this.own(customerId, id);
     const now = new Date();
     const open = await this.prisma.rental.findFirst({ where: { customerId, planCode: sub.planCode, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
     const { pauseEndsAt } = checkPause(sub, { days, now, hasOpenRental: !!open });
     const claimed = await this.prisma.subscription.updateMany({
-      where: { id, status: 'active', pausesUsedInPeriod: sub.pausesUsedInPeriod },
+      where: { id, status: 'active', pausesUsedInPeriod: sub.pausesUsedInPeriod, cancelAtPeriodEnd: false },
       data: { status: 'paused', pausedAt: now, pauseEndsAt, pausesUsedInPeriod: { increment: 1 } },
     });
     if (claimed.count === 0) throw conflict('subscription-not-pausable', 'A assinatura mudou enquanto pausava. Tente de novo.');
-    await this.providerPaused(id, true);
+    try {
+      await this.providerPaused(id, true);
+    } catch (err) {
+      await this.prisma.subscription.updateMany({
+        where: { id, status: 'paused', pausedAt: now },
+        data: { status: 'active', pausedAt: null, pauseEndsAt: null, pausesUsedInPeriod: sub.pausesUsedInPeriod },
+      });
+      this.logger.error({ msg: 'subscription_pause_provider_failed', subscriptionId: id, error: (err as Error).message });
+      throw this.gatewayUnavailable();
+    }
     this.logger.log({ msg: 'subscription_paused', subscriptionId: id, days });
     return this.get(customerId, id);
   }
@@ -83,34 +103,44 @@ export class SubscriptionsService {
     return this.view(await this.resumeSub(await this.own(customerId, id), new Date()));
   }
 
+  /**
+   * Retomada: o período (e a próxima cobrança) anda o tempo pausado; a nova data vai para o gateway. Falha do gateway desfaz
+   * a retomada (continua pausada) e responde 503; o job de retomada automática tenta de novo no minuto seguinte.
+   */
   private async resumeSub(sub: Subscription, now: Date): Promise<Subscription> {
     const { currentPeriodEnd } = resumeEffect(sub, now);
     const claimed = await this.prisma.subscription.updateMany({
-      where: { id: sub.id, status: 'paused' },
+      where: { id: sub.id, status: 'paused', pausedAt: sub.pausedAt },
       data: { status: 'active', pausedAt: null, pauseEndsAt: null, currentPeriodEnd },
     });
     if (claimed.count === 0) throw conflict('subscription-not-pausable', 'A assinatura não está pausada.');
-    await this.providerPaused(sub.id, false);
+    try {
+      await this.providerPaused(sub.id, false, currentPeriodEnd);
+    } catch (err) {
+      await this.prisma.subscription.updateMany({
+        where: { id: sub.id, status: 'active', currentPeriodEnd },
+        data: { status: 'paused', pausedAt: sub.pausedAt, pauseEndsAt: sub.pauseEndsAt, currentPeriodEnd: sub.currentPeriodEnd },
+      });
+      this.logger.error({ msg: 'subscription_resume_provider_failed', subscriptionId: sub.id, error: (err as Error).message });
+      throw this.gatewayUnavailable();
+    }
     this.logger.log({ msg: 'subscription_resumed', subscriptionId: sub.id });
     return (await this.prisma.subscription.findUnique({ where: { id: sub.id } }))!;
   }
 
-  private async providerPaused(id: string, paused: boolean): Promise<void> {
+  /** Pausa/retomada no gateway; na retomada, empurra a nova data da próxima cobrança. Lança se o gateway falhar. */
+  private async providerPaused(id: string, paused: boolean, nextChargeAt?: Date): Promise<void> {
     const providerId = await this.customers.providerRef('subscription', id);
     if (!providerId) return;
-    try {
-      await this.provider.setSubscriptionPaused({ providerSubscriptionId: providerId, paused });
-    } catch (err) {
-      // A pausa vale pela Volti (aluguéis não cobertos, período estendido); a divergência no gateway fica no log.
-      this.logger.error({ msg: 'subscription_pause_provider_failed', subscriptionId: id, paused, error: (err as Error).message });
-    }
+    await this.provider.setSubscriptionPaused({ providerSubscriptionId: providerId, paused, nextChargeAt });
   }
 
-  /** Retomada automática das pausas vencidas (a cada minuto, `JOBS_ENABLED`). */
+  /** Retomada automática das pausas vencidas e ciclo de vida (a cada minuto, `JOBS_ENABLED`). */
   @Interval('subscriptions-auto-resume', 60_000)
   async autoResumeJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.autoResume(new Date());
+    await this.expireStale(new Date()).catch((err) => this.logger.error({ msg: 'subscription_lifecycle_failed', error: (err as Error).message }));
   }
 
   async autoResume(now: Date): Promise<number> {
@@ -128,24 +158,69 @@ export class SubscriptionsService {
   }
 
   /**
-   * Moto fixa: cliente só na própria assinatura e com moto `free` sem outro assinante; staff (admin/operacao) em qualquer
-   * assinatura aberta, com AuditLog. O índice parcial `Subscription_one_open_per_vehicle` garante uma assinatura por moto.
+   * C1: assinaturas que precisam sair do estado aberto — cancelamento agendado com período vencido → `canceled`;
+   * sem renovação além da carência (`SUBSCRIPTION_RENEWAL_GRACE_HOURS`) → `expired`. Libera a moto fixa e o índice parcial.
+   */
+  async expireStale(now: Date, where: { customerId?: string; assignedVehicleId?: string } = {}): Promise<number> {
+    const rows = await this.prisma.subscription.findMany({
+      where: { ...where, status: { in: ['active', 'paused', 'past_due'] }, currentPeriodEnd: { lte: now } },
+      take: 200,
+    });
+    let n = 0;
+    for (const sub of rows) {
+      const to = lifecycleTransition(sub, now, this.v2.subscriptionGraceMs);
+      if (!to) continue;
+      const done = await this.prisma.subscription.updateMany({
+        where: { id: sub.id, status: sub.status },
+        data: { status: to, ...(to === 'canceled' ? { canceledAt: sub.canceledAt ?? now } : {}) },
+      });
+      if (done.count) {
+        n++;
+        this.logger.log({ msg: 'subscription_closed', subscriptionId: sub.id, status: to });
+      }
+    }
+    return n;
+  }
+
+  /** Valida a moto antes de qualquer cobrança (I2): existe, livre e sem outro assinante vigente. */
+  private async assertAssignableByCustomer(customerId: string, vehicleId: string, currentVehicleId?: string | null) {
+    await this.expireStale(new Date(), { assignedVehicleId: vehicleId });
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true, status: true, code: true } });
+    if (!vehicle) throw notFound('Moto não encontrada.');
+    await assertNotFixedForOther(this.prisma, vehicleId, customerId);
+    if (vehicle.status !== 'free' && currentVehicleId !== vehicleId) throw conflict('vehicle-unavailable', 'Escolha uma moto livre.');
+    return vehicle;
+  }
+
+  /**
+   * Moto fixa: cliente só na própria assinatura vigente, moto `free` sem outro assinante e no máximo uma troca a cada
+   * `SUBSCRIPTION_VEHICLE_SWAP_COOLDOWN_HOURS`; staff (admin/operacao) em qualquer assinatura vigente, com AuditLog. O índice
+   * parcial `Subscription_one_open_per_vehicle` garante uma assinatura aberta por moto.
    */
   async assignVehicle(user: Principal, id: string, vehicleId: string) {
     const sub = isStaff(user) ? await this.prisma.subscription.findUnique({ where: { id } }) : await this.own(user.customerId!, id).catch(() => null);
     if (!sub) throw notFound('Assinatura não encontrada.');
-    if (sub.status !== 'active' && sub.status !== 'paused') throw conflict('conflict', 'A assinatura não está ativa.');
-    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true, status: true, code: true } });
-    if (!vehicle) throw notFound('Moto não encontrada.');
-    const taken = await this.prisma.subscription.findFirst({ where: { assignedVehicleId: vehicleId, status: { in: ['active', 'paused'] }, NOT: { id } }, select: { id: true } });
-    if (taken) throw conflict('vehicle-unavailable', 'Esta moto já é a moto fixa de outro plano.');
-    if (!isStaff(user) && vehicle.status !== 'free' && sub.assignedVehicleId !== vehicleId) throw conflict('vehicle-unavailable', 'Escolha uma moto livre.');
+    const now = new Date();
+    if ((sub.status !== 'active' && sub.status !== 'paused') || sub.currentPeriodEnd <= now) throw conflict('conflict', 'A assinatura não está vigente.');
+    if (sub.assignedVehicleId === vehicleId) return this.view(sub);
+    let vehicleCode: string;
+    if (isStaff(user)) {
+      await this.expireStale(now, { assignedVehicleId: vehicleId });
+      const vehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { code: true } });
+      if (!vehicle) throw notFound('Moto não encontrada.');
+      const taken = await this.prisma.subscription.findFirst({ where: { assignedVehicleId: vehicleId, ...currentSubscriptionWhere(now), NOT: { id } }, select: { id: true } });
+      if (taken) throw conflict('vehicle-unavailable', 'Esta moto já é a moto fixa de outro plano.');
+      vehicleCode = vehicle.code;
+    } else {
+      assertVehicleSwapAllowed(sub, now, this.v2.vehicleSwapCooldownMs);
+      vehicleCode = (await this.assertAssignableByCustomer(sub.customerId, vehicleId, sub.assignedVehicleId)).code;
+    }
     try {
       await this.prisma.$transaction(async (tx) => {
-        await tx.subscription.update({ where: { id }, data: { assignedVehicleId: vehicleId } });
+        await tx.subscription.update({ where: { id }, data: { assignedVehicleId: vehicleId, assignedVehicleAt: now } });
         if (isStaff(user) && this.audit) {
           await this.audit.record(
-            { actor: user, action: 'subscription.assign_vehicle', entityType: 'Subscription', entityId: id, metadata: { vehicleId, vehicleCode: vehicle.code, previousVehicleId: sub.assignedVehicleId } },
+            { actor: user, action: 'subscription.assign_vehicle', entityType: 'Subscription', entityId: id, metadata: { vehicleId, vehicleCode, previousVehicleId: sub.assignedVehicleId } },
             tx as any,
           );
         }
@@ -157,13 +232,33 @@ export class SubscriptionsService {
     return this.view((await this.prisma.subscription.findUnique({ where: { id } }))!);
   }
 
+  /** M10: exclusão de conta — cancela no gateway e fecha a assinatura aberta, liberando a moto fixa. */
+  async closeForAccountDeletion(customerId: string): Promise<void> {
+    const open = await this.prisma.subscription.findMany({ where: { customerId, status: { in: ['active', 'paused', 'past_due'] } } });
+    for (const sub of open) {
+      const providerId = await this.customers.providerRef('subscription', sub.id);
+      if (providerId) {
+        try {
+          await this.provider.cancelSubscription({ providerSubscriptionId: providerId });
+        } catch (err) {
+          this.logger.error({ msg: 'subscription_cancel_on_deletion_failed', subscriptionId: sub.id, error: (err as Error).message });
+        }
+      }
+      await this.prisma.subscription.update({ where: { id: sub.id }, data: { status: 'canceled', canceledAt: new Date(), cancelAtPeriodEnd: true, assignedVehicleId: null } });
+    }
+  }
+
   async create(customerId: string, dto: { planCode: 'weekly' | 'monthly'; cardId?: string; vehicleId?: string }) {
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer || customer.kycStatus !== 'approved') throw forbidden('Conclua a verificação de identidade.', 'kyc-not-approved');
     if (customer.status !== 'active') throw forbidden('Sua conta está bloqueada.', 'customer-blocked');
     if (customer.delinquent) throw forbidden('Há um pagamento pendente. Regularize para assinar.', 'customer-delinquent');
-    const active = await this.prisma.subscription.findFirst({ where: { customerId, status: { in: ['active', 'paused'] }, currentPeriodEnd: { gt: new Date() } } });
+    // C1: fecha assinaturas vencidas antes de checar (senão o índice parcial acusaria duplicidade).
+    await this.expireStale(new Date(), { customerId });
+    const active = await this.prisma.subscription.findFirst({ where: { customerId, status: { in: ['active', 'paused', 'past_due'] } } });
     if (active) throw conflict('conflict', 'Você já tem uma assinatura ativa.');
+    // I2: a moto fixa é validada antes de cobrar.
+    if (dto.vehicleId) await this.assertAssignableByCustomer(customerId, dto.vehicleId);
     const card = await this.customers.card(customerId, dto.cardId);
     if (!card) throw new ProblemException(402, 'card-not-found', 'Cadastre um cartão para assinar.');
     const plan = await this.prisma.pricingPlan.findFirst({ where: { code: dto.planCode, active: true } });
@@ -193,8 +288,17 @@ export class SubscriptionsService {
       await this.state.transition(pay.id, res.firstPayment.status, { providerPaymentId: res.firstPayment.providerPaymentId });
     }
     this.logger.log({ msg: 'subscription_created', subscriptionId: sub.id, planCode: dto.planCode });
-    if (dto.vehicleId) return this.assignVehicle({ pool: 'customer', customerId, userId: customerId, sub: '', email: '', groups: [] }, sub.id, dto.vehicleId);
-    return this.view(sub);
+    if (dto.vehicleId) {
+      try {
+        await this.prisma.subscription.update({ where: { id: sub.id }, data: { assignedVehicleId: dto.vehicleId, assignedVehicleAt: new Date() } });
+      } catch (err) {
+        // Corrida rara (outra assinatura levou a moto entre a validação e agora): a cobrança já aconteceu, então a
+        // assinatura é devolvida sem moto fixa e o cliente escolhe outra (`PUT .../vehicle`).
+        if (!isUniqueViolation(err)) throw err;
+        this.logger.warn({ msg: 'subscription_vehicle_race', subscriptionId: sub.id });
+      }
+    }
+    return this.view((await this.prisma.subscription.findUnique({ where: { id: sub.id } }))!);
   }
 
   async cancel(customerId: string, id: string) {
@@ -242,12 +346,8 @@ export class SubscriptionsService {
     }
   }
 
+  /** Renovação paga: período seguinte; pausada continua pausada (I1, regra em `renewEffect`). */
   private async renew(sub: Subscription): Promise<void> {
-    const start = sub.currentPeriodEnd;
-    await this.prisma.subscription.update({
-      where: { id: sub.id },
-      // Contrato v2: período novo devolve a pausa do período.
-      data: { status: 'active', currentPeriodStart: start, currentPeriodEnd: new Date(start.getTime() + periodMs(sub.planCode)), pausesUsedInPeriod: 0, pausedAt: null, pauseEndsAt: null },
-    });
+    await this.prisma.subscription.update({ where: { id: sub.id }, data: renewEffect(sub, periodMs(sub.planCode)) });
   }
 }

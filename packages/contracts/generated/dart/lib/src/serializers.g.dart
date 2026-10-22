@@ -398,6 +398,19 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(Claim)]),
           () => ListBuilder<Claim>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Subscription)]),
+          () => ListBuilder<Subscription>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(CustomerCoupon)]),
+          () => ListBuilder<CustomerCoupon>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(ReferralReward)]),
+          () => ListBuilder<ReferralReward>())
+      ..addBuilderFactory(
+          const FullType(
+              BuiltList, const [const FullType(CustomerMaintenanceRequest)]),
+          () => ListBuilder<CustomerMaintenanceRequest>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(RentalEvent)]),
           () => ListBuilder<RentalEvent>())
       ..addBuilderFactory(

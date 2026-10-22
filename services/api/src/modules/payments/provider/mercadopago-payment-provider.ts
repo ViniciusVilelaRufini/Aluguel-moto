@@ -353,9 +353,12 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
     }
   }
 
-  async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean }): Promise<void> {
+  async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean; nextChargeAt?: Date }): Promise<void> {
     try {
-      await this.request('PUT', `/preapproval/${encodeURIComponent(input.providerSubscriptionId)}`, { status: input.paused ? 'paused' : 'authorized' });
+      const body: Record<string, unknown> = { status: input.paused ? 'paused' : 'authorized' };
+      // Retomada: a próxima cobrança passa para o fim do período estendido pela pausa.
+      if (!input.paused && input.nextChargeAt) body.auto_recurring = { start_date: input.nextChargeAt.toISOString() };
+      await this.request('PUT', `/preapproval/${encodeURIComponent(input.providerSubscriptionId)}`, body);
     } catch (err) {
       this.rethrow(err, 'setSubscriptionPaused');
     }

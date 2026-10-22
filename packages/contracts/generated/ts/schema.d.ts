@@ -1348,7 +1348,8 @@ export interface paths {
          *     Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança
          *     (`422` `subscription-pause-limit-reached`). Só assinatura `active` sem cancelamento agendado
          *     (`409` `subscription-not-pausable`) e sem aluguel em andamento no plano (`409` `rental-already-active`).
-         *     Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`.
+         *     Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`. O gateway de pagamento é a
+         *     fonte da verdade das datas: se ele não confirmar a pausa, nada muda e a resposta é `503` `gateway-unavailable`.
          */
         post: operations["pauseSubscription"];
         delete?: never;
@@ -1368,7 +1369,7 @@ export interface paths {
         put?: never;
         /**
          * Retomar assinatura pausada
-         * @description Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado.
+         * @description Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado e a nova data da cobrança é enviada ao gateway; sem confirmação do gateway → `503` `gateway-unavailable` (continua pausada).
          */
         post: operations["resumeSubscription"];
         delete?: never;
@@ -1389,7 +1390,9 @@ export interface paths {
          * Definir a moto fixa do plano
          * @description A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver `active` ou `paused` e some do
          *     `GET /vehicles/nearby` dos demais clientes. Cliente: só a própria assinatura e uma moto `free` sem outro
-         *     assinante (`409` `vehicle-unavailable`). Staff (`admin`, `operacao`): qualquer assinatura e moto; grava AuditLog.
+         *     assinante (`409` `vehicle-unavailable`); o cliente troca a moto fixa no máximo uma vez a cada 24 h
+         *     (`422` `subscription-vehicle-cooldown`). Staff (`admin`, `operacao`): qualquer assinatura e moto, sem espera; grava AuditLog.
+         *     A exclusividade vale só com o período vigente (`currentPeriodEnd` no futuro).
          */
         put: operations["assignSubscriptionVehicle"];
         post?: never;
@@ -3071,6 +3074,11 @@ export interface components {
              * @description staff. Moto fixa de uma assinatura semanal/mensal.
              */
             assignedSubscriptionId?: string;
+            /**
+             * @description Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição
+             *     é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
+             */
+            locationHidden?: boolean;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -4640,6 +4648,12 @@ export interface components {
             incidents: components["schemas"]["Incident"][];
             disputes: components["schemas"]["Dispute"][];
             claims: components["schemas"]["Claim"][];
+            subscriptions?: components["schemas"]["Subscription"][];
+            coupons?: components["schemas"]["CustomerCoupon"][];
+            /** @description Indicações feitas pelo titular (só o primeiro nome do amigo). */
+            referrals?: components["schemas"]["ReferralReward"][];
+            referralCode?: string;
+            maintenanceRequests?: components["schemas"]["CustomerMaintenanceRequest"][];
         };
         AccountDeletion: {
             status: components["schemas"]["AccountDeletionStatus"];
@@ -4722,6 +4736,7 @@ export interface components {
             slug: string;
             categoryLabel: string;
             description?: string;
+            /** @description Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`). */
             photoObjectKey?: string;
             pricePerMinuteCents: number;
             unlockFeeCents?: number;
@@ -4738,9 +4753,12 @@ export interface components {
             name?: string;
             categoryLabel?: string;
             description?: string;
+            /** @description Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`). */
             photoObjectKey?: string;
             pricePerMinuteCents?: number;
             unlockFeeCents?: number;
+            /** @description `true` remove o desbloqueio próprio do modelo (volta ao do plano). A API também aceita `unlockFeeCents: null`. */
+            inheritPlanUnlockFee?: boolean;
             serviceIntervalKm?: number;
             serviceIntervalHours?: number;
             active?: boolean;
@@ -5112,6 +5130,17 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
+        /** @description Gateway de pagamento indisponível (`gateway-unavailable`); nada foi alterado, tente de novo. */
+        ServiceUnavailable: {
+            headers: {
+                /** @description Segundos sugeridos até tentar de novo. */
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
         /** @description Limite de requisições excedido. */
         TooManyRequests: {
             headers: {
@@ -5326,6 +5355,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     validateMyCoupon: {
@@ -5352,6 +5382,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     getMyReferral: {
@@ -5427,6 +5458,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
         };
     };
     listMyMaintenanceSlots: {
@@ -7497,6 +7529,7 @@ export interface operations {
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     resumeSubscription: {
@@ -7522,6 +7555,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     assignSubscriptionVehicle: {
@@ -7553,6 +7587,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listPayments: {

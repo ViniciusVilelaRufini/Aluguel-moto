@@ -23,19 +23,15 @@ export class UsageTracker {
     // Amostra fora de ordem não substitui a referência.
     if (prev && next.ts <= prev.ts) return;
     const { km, hours } = accumulateUsage(prev, next);
-    await this.redis.hset(key(ev.vehicleId), {
-      lat: String(next.lat), lng: String(next.lng), ts: String(next.ts), ignition: String(next.ignition), speedKmh: String(next.speedKmh),
-      pendingKm: String((Number(h.pendingKm) || 0) + km),
-      pendingHours: String((Number(h.pendingHours) || 0) + hours),
-    });
+    await this.redis.hset(key(ev.vehicleId), { lat: String(next.lat), lng: String(next.lng), ts: String(next.ts), ignition: String(next.ignition), speedKmh: String(next.speedKmh) });
+    // Fix round 1 (M4): acumulado com incremento atômico (várias instâncias/eventos concorrentes não perdem km).
+    if (km > 0) await this.redis.hincrbyfloat(key(ev.vehicleId), 'pendingKm', km);
+    if (hours > 0) await this.redis.hincrbyfloat(key(ev.vehicleId), 'pendingHours', hours);
   }
 
   /** Lê e zera o acumulado pendente (para somar no Postgres). */
   async take(vehicleId: string): Promise<{ km: number; hours: number }> {
-    const h = await this.redis.hgetall(key(vehicleId));
-    const km = Number(h.pendingKm) || 0;
-    const hours = Number(h.pendingHours) || 0;
-    if (km || hours) await this.redis.hset(key(vehicleId), { pendingKm: '0', pendingHours: '0' });
+    const [km, hours] = await this.redis.htakeFloats(key(vehicleId), ['pendingKm', 'pendingHours']);
     return { km, hours };
   }
 

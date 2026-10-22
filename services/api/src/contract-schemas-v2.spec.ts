@@ -33,6 +33,11 @@ describe('Mapeadores v2 × schemas do contrato', () => {
     expect(customer).toSatisfySchemaInApiSpec('Vehicle');
     expect(customer).not.toHaveProperty('service');
     expect(customer.address).toContain('Pinheiros');
+    // Fix round 1 (I5): moto em uso por outro cliente — posição e endereço ocultos.
+    const hidden = toVehicle({ ...vehicle, status: 'rented' }, { staff: false, hideLocation: true });
+    expect(hidden).toMatchObject({ lat: 0, lng: 0, locationHidden: true });
+    expect(hidden.address).toBeUndefined();
+    expect(hidden).toSatisfySchemaInApiSpec('Vehicle');
     expect(toVehicleSummary(vehicle, 12)).toSatisfySchemaInApiSpec('VehicleSummary');
     expect(toVehicleSummary({ ...vehicle, vehicleModel: undefined, categoryLabel: 'Urbana', pricePerMinuteCents: 79 })).toMatchObject({ categoryLabel: 'Urbana', pricePerMinuteCents: 79 });
   });

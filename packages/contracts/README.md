@@ -131,7 +131,10 @@ Acréscimos aprovados em `docs/decisoes.md` (nenhuma renomeação; todos os camp
 - **Catálogo:** `/vehicle-models` (foto assinada, `pricePerMinuteCents` usado no plano por minuto), `VehicleSummary`/`Vehicle`
   com `vehicleModelId`, `categoryLabel`, `pricePerMinuteCents`; `QuoteRequest.vehicleId`.
 
-Slugs novos: `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`, `subscription-pause-limit-reached`,
+Fix round 1: `503 gateway-unavailable` em pausar/retomar, `422 subscription-vehicle-cooldown`, `429` em cupons/indicação, `Vehicle.locationHidden`,
+`VehicleModelUpdate.inheritPlanUnlockFee`, `LgpdExport` com assinaturas/cupons/indicações/manutenções.
+
+Slugs novos: `gateway-unavailable`, `subscription-vehicle-cooldown`, `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`, `subscription-pause-limit-reached`,
 `subscription-required`, `subscription-vehicle-required`, `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`.
 
 ## Regras que o contrato garante

@@ -1,4 +1,5 @@
 import { withLiveState } from './live-overlay';
+import { currentSubscriptionWhere, notFixedForOtherSql } from '../../common/fixed-vehicle';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma, type Vehicle } from '@prisma/client';
@@ -60,14 +61,20 @@ export class VehiclesService {
    * Contrato v2: endereço (geocodificação reversa em cache), bateria instalada e moto fixa de assinatura, para a ficha
    * e a lista. Clientes só recebem o endereço.
    */
-  private async enrich<T extends Vehicle & { tracker?: { id: string } | null }>(rows: T[], staff: boolean, currentRental?: Map<string, string>) {
+  private async enrich<T extends Vehicle & { tracker?: { id: string } | null }>(rows: T[], staff: boolean, currentRental?: Map<string, string>, viewerCustomerId?: string) {
+    if (!staff) {
+      // Fix round 1 (I5): para cliente, posição e endereço só de moto livre ou da própria reserva/aluguel (LGPD).
+      const own = await this.ownVehicleIds(viewerCustomerId, rows.map((r) => r.id));
+      const visible = rows.filter((v) => v.status === 'free' || own.has(v.id));
+      await this.addresses.ensure(visible);
+      return rows.map((v) => (visible.includes(v) ? toVehicle(v, { staff: false }) : toVehicle(v, { staff: false, hideLocation: true })));
+    }
     await this.addresses.ensure(rows);
-    if (!staff) return rows.map((v) => toVehicle(v, { staff: false }));
     const ids = rows.map((r) => r.id);
     const serials = rows.map((r) => r.batterySerial).filter((x): x is string => !!x);
     const [batteries, subs] = await Promise.all([
       this.prisma.battery.findMany({ where: { OR: [{ vehicleId: { in: ids } }, { serial: { in: serials } }] } }),
-      this.prisma.subscription.findMany({ where: { assignedVehicleId: { in: ids }, status: { in: ['active', 'paused'] } }, select: { id: true, assignedVehicleId: true } }),
+      this.prisma.subscription.findMany({ where: { assignedVehicleId: { in: ids }, ...currentSubscriptionWhere() }, select: { id: true, assignedVehicleId: true } }),
     ]);
     const subBy = new Map(subs.map((x) => [x.assignedVehicleId!, x.id]));
     const defaults = { km: this.v2.defaultServiceIntervalKm, hours: this.v2.defaultServiceIntervalHours };
@@ -86,9 +93,7 @@ export class VehiclesService {
     // Contrato v2: moto fixa de assinatura aberta só aparece para o próprio assinante.
     const statusFilter = isStaff(user)
       ? Prisma.empty
-      : Prisma.sql`AND v."status" = 'free'::"VehicleStatus" AND NOT EXISTS (
-          SELECT 1 FROM "Subscription" s
-          WHERE s."assignedVehicleId" = v."id" AND s."status" IN ('active', 'paused') AND s."customerId" <> ${user.customerId}::uuid)`;
+      : Prisma.sql`AND v."status" = 'free'::"VehicleStatus" AND ${notFixedForOtherSql(user.customerId!)}`;
     type NearbyRow = Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct' | 'vehicleModelId'> & {
       distance: number;
       categoryLabel: string | null;
@@ -107,6 +112,16 @@ export class VehiclesService {
     return { items: rows.map((r) => toVehicleSummary(r, Number(r.distance))) };
   }
 
+  /** Motos da reserva ativa ou do aluguel aberto do cliente. */
+  private async ownVehicleIds(customerId: string | undefined, ids: string[]): Promise<Set<string>> {
+    if (!customerId || ids.length === 0) return new Set();
+    const [res, ren] = await Promise.all([
+      this.prisma.reservation.findMany({ where: { customerId, vehicleId: { in: ids }, status: 'active', expiresAt: { gt: new Date() } }, select: { vehicleId: true } }),
+      this.prisma.rental.findMany({ where: { customerId, vehicleId: { in: ids }, status: { in: OPEN_RENTAL_STATUSES } }, select: { vehicleId: true } }),
+    ]);
+    return new Set([...res, ...ren].map((x) => x.vehicleId));
+  }
+
   private async currentRentalId(vehicleId: string): Promise<string | undefined> {
     const r = await this.prisma.rental.findFirst({ where: { vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
     return r?.id;
@@ -118,7 +133,7 @@ export class VehiclesService {
     const v = await this.prisma.vehicle.findUnique({ where: { code: normalized }, include: VEHICLE_INCLUDE });
     if (!v) throw notFound('Moto não encontrada.');
     const rental = isStaff(user) ? await this.currentRentalId(v.id) : undefined;
-    return (await this.enrich([v], isStaff(user), rental ? new Map([[v.id, rental]]) : undefined))[0];
+    return (await this.enrich([v], isStaff(user), rental ? new Map([[v.id, rental]]) : undefined, user.customerId))[0];
   }
 
   async list(q: ListVehiclesQuery) {
@@ -161,7 +176,7 @@ export class VehiclesService {
     if (!row) throw notFound('Moto não encontrada.');
     const [v] = await withLiveState(this.redis, [row]);
     const rental = isStaff(user) ? await this.currentRentalId(id) : undefined;
-    return (await this.enrich([v], isStaff(user), rental ? new Map([[id, rental]]) : undefined))[0];
+    return (await this.enrich([v], isStaff(user), rental ? new Map([[id, rental]]) : undefined, user.customerId))[0];
   }
 
   async update(actor: Principal, id: string, dto: VehicleUpdateDto) {

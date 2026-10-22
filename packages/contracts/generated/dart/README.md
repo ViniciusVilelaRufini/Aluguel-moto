@@ -36,7 +36,8 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `speed-limiter-noncompliant`, `battery-serials-must-differ`, `account-deletion-blocked`,
 `webhook-signature-invalid`, `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`,
 `subscription-pause-limit-reached`, `subscription-required`, `subscription-vehicle-required`,
-`maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`.
+`maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`, `gateway-unavailable`,
+`subscription-vehicle-cooldown`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por

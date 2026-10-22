@@ -14,9 +14,10 @@ part 'vehicle_model_update.g.dart';
 /// * [name]
 /// * [categoryLabel]
 /// * [description]
-/// * [photoObjectKey]
+/// * [photoObjectKey] - Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`).
 /// * [pricePerMinuteCents]
 /// * [unlockFeeCents]
+/// * [inheritPlanUnlockFee] - `true` remove o desbloqueio próprio do modelo (volta ao do plano). A API também aceita `unlockFeeCents: null`.
 /// * [serviceIntervalKm]
 /// * [serviceIntervalHours]
 /// * [active]
@@ -33,6 +34,7 @@ abstract class VehicleModelUpdate
   @BuiltValueField(wireName: r'description')
   String? get description;
 
+  /// Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`).
   @BuiltValueField(wireName: r'photoObjectKey')
   String? get photoObjectKey;
 
@@ -41,6 +43,10 @@ abstract class VehicleModelUpdate
 
   @BuiltValueField(wireName: r'unlockFeeCents')
   int? get unlockFeeCents;
+
+  /// `true` remove o desbloqueio próprio do modelo (volta ao do plano). A API também aceita `unlockFeeCents: null`.
+  @BuiltValueField(wireName: r'inheritPlanUnlockFee')
+  bool? get inheritPlanUnlockFee;
 
   @BuiltValueField(wireName: r'serviceIntervalKm')
   int? get serviceIntervalKm;
@@ -120,6 +126,13 @@ class _$VehicleModelUpdateSerializer
       yield serializers.serialize(
         object.unlockFeeCents,
         specifiedType: const FullType(int),
+      );
+    }
+    if (object.inheritPlanUnlockFee != null) {
+      yield r'inheritPlanUnlockFee';
+      yield serializers.serialize(
+        object.inheritPlanUnlockFee,
+        specifiedType: const FullType(bool),
       );
     }
     if (object.serviceIntervalKm != null) {
@@ -222,6 +235,14 @@ class _$VehicleModelUpdateSerializer
           ) as int?;
           if (valueDes == null) continue;
           result.unlockFeeCents = valueDes;
+          break;
+        case r'inheritPlanUnlockFee':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(bool),
+          ) as bool?;
+          if (valueDes == null) continue;
+          result.inheritPlanUnlockFee = valueDes;
           break;
         case r'serviceIntervalKm':
           final valueDes = serializers.deserialize(

@@ -1,4 +1,5 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { PLAN_CODES, type PlanCode } from '../../common/enums';
 import { PageQuery } from '../../common/pagination';
@@ -36,6 +37,8 @@ export class ReferralsController {
 
   @Post('coupons')
   @CustomerOnly()
+  // Fix round 1 (M8): limita tentativas de adivinhar códigos.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   addCoupon(@Body() dto: CouponCodeDto, @CurrentUser() u: Principal) {
     return this.referrals.addCoupon(u.customerId!, dto.code, dto.planCode);
   }
@@ -43,6 +46,8 @@ export class ReferralsController {
   @Post('coupons/validate')
   @HttpCode(200)
   @CustomerOnly()
+  // Fix round 1 (M8): limita tentativas de adivinhar códigos.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   validateCoupon(@Body() dto: CouponCodeDto, @CurrentUser() u: Principal) {
     return this.referrals.validateCoupon(u.customerId!, dto.code, dto.planCode);
   }
@@ -61,6 +66,8 @@ export class ReferralsController {
 
   @Post('referral/redeem')
   @CustomerOnly()
+  // Fix round 1 (M8): limita tentativas de adivinhar códigos.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   redeem(@Body() dto: ReferralRedeemDto, @CurrentUser() u: Principal) {
     return this.referrals.redeem(u.customerId!, dto.code);
   }
