@@ -2,16 +2,17 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { PRIORITY_LABEL, PRIORITY_ORDER, priorityTone } from '@/lib/status';
 import { timeAgo } from '@/lib/format';
 import { ALERT_TYPE } from '@/lib/labels';
+import { assignToast, criticalBanner, pickAssignee } from '@/lib/fleet-copy';
 import { useRealtimeEvent } from '@/lib/realtime';
 import type { S } from '@/lib/types';
-import { DataTable, ErrorNote, Page, PageHeader, Pill, ReasonDialog, usePagedQuery, useToast } from '@/components/ui';
+import { DataTable, ErrorNote, Field, Modal, Page, PageHeader, Pill, ReasonDialog, Select, usePagedQuery, useToast } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
@@ -33,6 +34,7 @@ export default function AlertsPage() {
   const toast = useToast();
   const [tab, setTab] = useState<Tab>('open');
   const [resolving, setResolving] = useState<S<'Alert'> | null>(null);
+  const [assigning, setAssigning] = useState<S<'Alert'> | null>(null);
   const canManage = can(groups, 'alert.manage');
   // Alertas que chegaram pelo tempo real nesta visita piscam em coral ao entrar na fila.
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
@@ -42,11 +44,12 @@ export default function AlertsPage() {
     unwrap(api.GET('/alerts', { params: { query: { status: tab, limit: 20, cursor } } })),
   );
   const sorted = useMemo(() => [...rows].sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] || b.createdAt.localeCompare(a.createdAt)), [rows]);
-  const critical = tab === 'open' ? sorted.filter((a) => a.priority === 'critical').length : 0;
+  const criticalRows = tab === 'open' ? sorted.filter((a) => a.priority === 'critical') : [];
+  const critical = criticalRows.length;
 
   const assign = useMutation({
-    mutationFn: (id: string) => unwrap(api.POST('/alerts/{id}/assign', { params: { path: { id } }, body: { assigneeId: me!.id } })),
-    onSuccess: () => { toast('Alerta atribuído a você'); qc.invalidateQueries({ queryKey: ['alerts'] }); },
+    mutationFn: ({ id, assigneeId }: { id: string; assigneeId: string; name?: string }) => unwrap(api.POST('/alerts/{id}/assign', { params: { path: { id } }, body: { assigneeId } })),
+    onSuccess: (_a, v) => { toast(assignToast(v.assigneeId, me?.id, v.name)); qc.invalidateQueries({ queryKey: ['alerts'] }); setAssigning(null); },
   });
 
   return (
@@ -55,7 +58,7 @@ export default function AlertsPage() {
         <SegmentedControl options={TABS} value={tab} onChange={setTab} style={{ width: 340 }} />
       </PageHeader>
       {critical > 0 && (
-        <Alert tone="danger" title={`${critical} ${critical === 1 ? 'alerta crítico' : 'alertas críticos'}`} icon="Siren">Exigem ação imediata.</Alert>
+        <Alert tone="danger" title={`${critical} ${critical === 1 ? 'alerta crítico' : 'alertas críticos'}`} icon="Siren">{criticalBanner(criticalRows.map((a) => a.type))}</Alert>
       )}
       <ErrorNote error={error ?? assign.error} />
       <DataTable
@@ -81,12 +84,13 @@ export default function AlertsPage() {
           { key: 'a', label: '', align: 'right', render: (r) => r.status === 'resolved' ? <Pill>Resolvido</Pill> : (
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
               {r.vehicleId && <Button size="sm" variant="secondary" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => router.push(`/fleet?vehicle=${r.vehicleId}`)}>Ver no mapa</Button>}
-              {canManage && r.status === 'open' && <Button size="sm" variant="secondary" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => assign.mutate(r.id)}>Atribuir a mim</Button>}
+              {canManage && <Button size="sm" variant="secondary" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setAssigning(r)}>{r.assigneeId ? 'Reatribuir' : 'Atribuir'}</Button>}
               {canManage && <Button size="sm" variant="dark" onClick={() => setResolving(r)}>Resolver</Button>}
             </div>
           ) },
         ]}
       />
+      {assigning && <AssignModal alert={assigning} meId={me?.id} busy={assign.isPending} onClose={() => setAssigning(null)} onAssign={(assigneeId, name) => assign.mutate({ id: assigning.id, assigneeId, name })} />}
       <ReasonDialog
         open={!!resolving}
         title="Resolver alerta"
@@ -100,5 +104,40 @@ export default function AlertsPage() {
         }}
       />
     </Page>
+  );
+}
+
+/** Escolhe quem assume o alerta (lista de usuários internos ativos; padrão: quem está logado). */
+function AssignModal({ alert, meId, busy, onClose, onAssign }: { alert: S<'Alert'>; meId?: string; busy: boolean; onClose: () => void; onAssign: (assigneeId: string, name: string) => void }) {
+  // Carrega todas as páginas de usuários ativos (a lista é paginada por cursor).
+  const staff = useQuery({
+    queryKey: ['staff-assignees'],
+    queryFn: async () => {
+      const all: S<'StaffUser'>[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await unwrap(api.GET('/staff', { params: { query: { active: true, limit: 100, cursor } } }));
+        all.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor && all.length < 2000);
+      return all;
+    },
+  });
+  const people = staff.data ?? [];
+  const [pick, setPick] = useState<string>('');
+  const value = pickAssignee(people, meId, pick);
+  const chosen = people.find((x) => x.id === value);
+  return (
+    <Modal open title="Atribuir alerta" onClose={onClose} testId="assign-dialog"
+      actions={<>
+        <Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button>
+        <Button size="sm" variant="dark" testId="assign-confirm" disabled={busy || !chosen} onClick={() => chosen && onAssign(chosen.id, chosen.name)}>{busy ? 'Atribuindo...' : 'Atribuir'}</Button>
+      </>}>
+      <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{TYPE_INFO[alert.type]?.[0] ?? alert.type}{alert.vehicleCode ? ` · ${alert.vehicleCode}` : ''}</div>
+      <ErrorNote error={staff.error} />
+      <Field label="Responsável">
+        <Select testId="assign-select" value={value} onChange={setPick} options={people.map((x) => ({ value: x.id, label: x.id === meId ? `${x.name} (você)` : x.name }))} />
+      </Field>
+    </Modal>
   );
 }

@@ -81,6 +81,24 @@ export const ALERT_TYPE: Record<S<'AlertType'>, [string, string]> = {
   speed_limiter_noncompliant: ['Limitador de velocidade acima de 32 km/h', 'Gauge'],
 };
 
+/** Ações de auditoria da moto (`/audit-logs?entityId=`), no vocabulário do log do design. */
+export const AUDIT_ACTION_LABEL: Record<string, string> = {
+  'vehicle.command.lock': 'Bloqueio',
+  'vehicle.command.unlock': 'Desbloqueio',
+  'vehicle.command.horn': 'Buzina',
+  'vehicle.command.speed_limit': 'Limite de velocidade',
+  'vehicle.command.stolen_mode': 'Modo roubada',
+  'vehicle.service_unlock': 'Modo serviço',
+  'vehicle.status': 'Mudança de situação',
+  'vehicle.update': 'Cadastro alterado',
+  'vehicle.create': 'Moto cadastrada',
+};
+
+/** Tipos de cerca no menu de camadas e no tooltip. */
+export const ZONE_TYPE_LABEL: Record<S<'ZoneType'>, string> = {
+  operation: 'Área de operação', return: 'Ponto de devolução', forbidden: 'Zona proibida', reduced_speed: 'Velocidade reduzida',
+};
+
 export const CONVERSATION_STATUS: Record<'open' | 'closed', [string, Tone]> = { open: ['Aberta', 'info'], closed: ['Fechada', 'neutral'] };
 export const MAINTENANCE_STATUS: Record<S<'MaintenanceTask'>['status'], [string, Tone]> = {
   scheduled: ['Agendada', 'warning'], in_progress: ['Em andamento', 'info'], done: ['Concluída', 'success'], canceled: ['Cancelada', 'neutral'],
