@@ -61,3 +61,13 @@ final zonesProvider = FutureProvider.autoDispose<List<GeoZone>>((ref) => ref.wat
 final currentReservationProvider = FutureProvider.autoDispose<Reservation?>((ref) => ref.watch(backendProvider).currentReservation());
 
 final currentRentalProvider = FutureProvider.autoDispose<Rental?>((ref) => ref.watch(backendProvider).currentRental());
+
+/// Cupom digitado no cartao da moto ("Cupom promocional"); o plano ja comeca
+/// com ele aplicado na cotacao. Vazio = sem cupom.
+final pendingCouponProvider = NotifierProvider<PendingCouponNotifier, String>(PendingCouponNotifier.new);
+
+class PendingCouponNotifier extends Notifier<String> {
+  @override
+  String build() => '';
+  void set(String code) => state = code.trim().toUpperCase();
+}

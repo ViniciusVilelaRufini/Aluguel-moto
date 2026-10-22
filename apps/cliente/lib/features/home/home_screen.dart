@@ -11,25 +11,37 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
 import '../../core/errors.dart';
+import '../../core/flash.dart';
 import '../../core/geo.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
+import '../../core/shared_vehicle.dart';
 import '../../core/widgets.dart';
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 import '../pick/pick_logic.dart';
+import 'location_header.dart';
 import 'nearby_refresh.dart';
 import 'providers.dart';
+import 'vehicle_sheet.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({super.key, @visibleForTesting this.initialSelectedId});
+
+  /// Moto ja selecionada ao abrir (testes; o design tem `initialSel`).
+  final String? initialSelectedId;
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _map = MapController();
-  String? _selectedId;
+  late String? _selectedId = widget.initialSelectedId;
   bool _busy = false;
+
+  /// Destino e controle do voo pin -> cartao (E-15).
+  final _sheetMedia = GlobalKey(debugLabel: 'sheet-media');
+  final _hideSheetMedia = ValueNotifier<bool>(false);
+  OverlayEntry? _flight;
 
   /// Pins que ja cairam: remontar (pan/culling, lista mudando, GPS chegando)
   /// nao repete a animacao. A sequencia com atraso so vale na primeira carga.
@@ -40,7 +52,38 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     super.initState();
     // Push: registra o token (no-op sem Firebase).
     Future.microtask(() => ref.read(pushServiceProvider).register(ref.read(backendProvider)));
-    WidgetsBinding.instance.addPostFrameCallback((_) => _askLocationOnce());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _showFlash();
+      _askLocationOnce();
+    });
+  }
+
+  @override
+  void dispose() {
+    if (_flight?.mounted ?? false) _flight!.remove();
+    _hideSheetMedia.dispose();
+    super.dispose();
+  }
+
+  /// Toast deixado por outra tela (reserva cancelada, recibo, cadastro).
+  void _showFlash() {
+    if (!mounted) return;
+    final m = ref.read(flashProvider.notifier).take();
+    if (m != null) VoltiToast.show(context, m.text, tone: m.tone);
+  }
+
+  /// Seleciona a moto do pin e faz o voo do pin ate a midia do cartao.
+  void _select(VehicleSummary v, BuildContext pinContext) {
+    if (_selectedId == v.id) return;
+    VoltiHaptics.selection();
+    final from = SharedFlight.rectOf(pinContext);
+    setState(() => _selectedId = v.id);
+    if (from == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (_flight?.mounted ?? false) _flight!.remove();
+      _flight = SharedFlight.run(context, from: from, to: _sheetMedia, hide: _hideSheetMedia);
+    });
   }
 
   /// Explica para que serve a localizacao e so entao abre o dialogo do sistema.
@@ -86,16 +129,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<void> _ring(VehicleSummary v) async {
-    final l = context.l;
-    try {
-      await ref.read(backendProvider).ring(v.id);
-      if (mounted) VoltiToast.show(context, l.ringSent);
-    } catch (e) {
-      if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final l = context.l;
@@ -107,10 +140,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final rental = ref.watch(currentRentalProvider).value;
     final filter = ref.watch(homeFilterProvider);
     final session = ref.watch(sessionProvider).value;
-    final unread = ref.watch(supportUnreadProvider).value ?? false;
+    // Flash que chega com o mapa ja aberto (ex.: voltou por pop).
+    ref.listen(flashProvider, (_, next) {
+      if (next != null) WidgetsBinding.instance.addPostFrameCallback((_) => _showFlash());
+    });
     final promoFirstRide = firstRideFree(session?.customer, promoActive: kFirstRidePromo);
     final vehicles = applyHomeFilter(nearby.value ?? const <VehicleSummary>[], filter, zones);
-    final place = nearestPlaceName(loc, zones);
     VehicleSummary? selected;
     for (final v in vehicles) {
       if (v.id == _selectedId) selected = v;
@@ -161,15 +196,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       child: Semantics(
                         button: true,
                         label: l.vehicleSemantics(v.model, v.batteryPct),
-                        child: VehicleMarker(v.status, v.batteryPct,
-                            customerStyle: true,
-                            animateIn: !_dropped.contains(v.id),
-                            delay: firstLoad ? Duration(milliseconds: 260 + (i < 12 ? i : 12) * 70) : Duration.zero,
-                            selected: v.id == _selectedId,
-                            onTap: () {
-                              if (_selectedId != v.id) VoltiHaptics.selection();
-                              setState(() => _selectedId = v.id);
-                            }),
+                        child: Builder(
+                          builder: (pinContext) => VehicleMarker(v.status, v.batteryPct,
+                              customerStyle: true,
+                              animateIn: !_dropped.contains(v.id),
+                              delay: firstLoad ? Duration(milliseconds: 260 + (i < 12 ? i : 12) * 70) : Duration.zero,
+                              selected: v.id == _selectedId,
+                              onTap: () => _select(v, pinContext)),
+                        ),
                       ),
                     ),
                 ]),
@@ -190,23 +224,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       delay: const Duration(milliseconds: 80),
                       fromOffset: const Offset(0, -12),
                       curve: VoltiMotion.easeOut,
-                      child: Row(children: [
-                        _Avatar(
-                          initials: initialsOf(session?.customer?.name),
-                          label: l.account,
-                          onTap: () => context.push('/account'),
-                        ),
-                        const SizedBox(width: VoltiSpacing.s12),
-                        Expanded(child: Center(child: _LocationPill(label: l.yourLocation, place: place ?? l.nearYou))),
-                        const SizedBox(width: VoltiSpacing.s12),
-                        VoltiIconButton(
-                          key: const Key('home-bell'),
-                          icon: LucideIcons.bell,
-                          dot: unread,
-                          label: unread ? l.notificationsUnread : l.notifications,
-                          onPressed: () => context.push('/account/support'),
-                        ),
-                      ]),
+                      child: const LocationHeader(),
                     ),
                   ),
                   Padding(
@@ -330,9 +348,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           key: const Key('vehicle-sheet-drag'),
                           dismissLabel: l.close,
                           onDismiss: () => setState(() => _selectedId = null),
-                          child: _VehicleSheet(
+                          child: VehicleSheet(
                         vehicle: selected,
                         busy: _busy,
+                        mediaKey: _sheetMedia,
+                        hideMedia: _hideSheetMedia,
                         // Mesmas regras da lista: KYC, inadimplencia, reserva ou corrida ativa.
                         reserveBlocked: reserveBlock(
                               session: session,
@@ -342,7 +362,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ) !=
                             ReserveBlock.none,
                         onReserve: () => _reserve(selected!),
-                        onRing: reservation?.vehicleId == selected.id ? () => _ring(selected!) : null,
+                        // Contrato: buzina so na moto reservada ou alugada pelo cliente.
+                        ringAllowed: reservation?.vehicleId == selected.id || rental?.vehicleId == selected.id,
+                        onScan: () => context.push(Uri(path: '/scan', queryParameters: {'v': selected!.code}).toString()),
                         onClose: () => setState(() => _selectedId = null),
                       ),
                         ),
@@ -414,18 +436,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         ]),
                       ),
                     ],
-                    const SizedBox(height: VoltiSpacing.s16),
-                    VoltiFadeUp(
-                      delay: VoltiMotion.staggerDelay(1),
-                      child: VoltiButton(
-                        label: l.scanToRide,
-                        icon: LucideIcons.scanLine,
-                        size: VoltiButtonSize.lg,
-                        fullWidth: true,
-                        shine: true,
-                        onPressed: () => context.push('/scan'),
+                    // Com o cartao aberto o CTA sai: o cartao ja traz "Escanear QR" (H7).
+                    if (selected == null) ...[
+                      const SizedBox(height: VoltiSpacing.s16),
+                      VoltiFadeUp(
+                        delay: VoltiMotion.staggerDelay(1),
+                        child: VoltiButton(
+                          key: const Key('home-scan-cta'),
+                          label: l.scanToRide,
+                          icon: LucideIcons.scanQrCode,
+                          size: VoltiButtonSize.lg,
+                          fullWidth: true,
+                          shine: true,
+                          onPressed: () => context.push('/scan'),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -459,168 +485,6 @@ class _ActiveBanner extends StatelessWidget {
           child: Text(action, style: const TextStyle(color: VoltiColors.green400, fontWeight: FontWeight.w600)),
         ),
       ]),
-    );
-  }
-}
-
-class _VehicleSheet extends StatelessWidget {
-  const _VehicleSheet({
-    required this.vehicle,
-    required this.busy,
-    required this.reserveBlocked,
-    required this.onReserve,
-    required this.onRing,
-    required this.onClose,
-  });
-  final VehicleSummary vehicle;
-  final bool busy, reserveBlocked;
-  final VoidCallback onReserve, onClose;
-  final VoidCallback? onRing;
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.l;
-    final dist = vehicle.distanceM;
-    return Container(
-      padding: const EdgeInsets.all(VoltiSpacing.s16),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: VoltiRadii.rXl,
-        boxShadow: VoltiShadows.shadowSheet,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Grabber: sinaliza que o cartao arrasta para baixo.
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.outlineVariant,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Row(children: [
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(vehicle.model, style: VoltiTypography.heading),
-                Text(l.vehicleCode(vehicle.code), style: VoltiTypography.caption),
-              ]),
-            ),
-            VoltiIconButton(icon: LucideIcons.x, variant: VoltiIconButtonVariant.ghost, label: l.close, onPressed: onClose),
-          ]),
-          const SizedBox(height: VoltiSpacing.s10),
-          Wrap(spacing: 8, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: VoltiStagger.wrap([
-            BatteryPill(vehicle.batteryPct, rangeKm: vehicle.estimatedRangeKm.round()),
-            if (dist != null) RouteInfoPill(minutes: walkingMinutes(dist), distance: walkingDistanceLabel(dist)),
-          ])),
-          const SizedBox(height: VoltiSpacing.s14),
-          Row(children: [
-            Expanded(
-              child: VoltiButton(
-                label: l.reserve15,
-                variant: VoltiButtonVariant.secondary,
-                icon: LucideIcons.clock,
-                fullWidth: true,
-                onPressed: (busy || reserveBlocked) ? null : onReserve,
-              ),
-            ),
-            if (onRing != null) ...[
-              const SizedBox(width: VoltiSpacing.s10),
-              VoltiIconButton(icon: LucideIcons.volume2, label: l.ringHorn, onPressed: onRing),
-            ],
-          ]),
-        ],
-      ),
-    );
-  }
-}
-
-/// Avatar com as iniciais (design `LocationHeader`): abre a conta.
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.initials, required this.label, required this.onTap});
-  final String? initials;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return VoltiPressable(
-      onTap: onTap,
-      scale: VoltiMotion.iconPressScale,
-      semanticLabel: label,
-      child: Container(
-        key: const Key('home-avatar'),
-        width: 44,
-        height: 44,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: VoltiColors.sun300,
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 2),
-          boxShadow: VoltiShadows.shadow1,
-        ),
-        child: initials == null
-            ? const Icon(LucideIcons.user, size: 20, color: VoltiColors.ink900)
-            : Text(
-                initials!,
-                // Cabe no disco de 44 px em qualquer escala de texto (a semantica diz "Conta").
-                textScaler: TextScaler.noScaling,
-                style: const TextStyle(
-                  fontFamily: VoltiTypography.fontSans,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                  height: 1,
-                  color: VoltiColors.ink900,
-                ),
-              ),
-      ),
-    );
-  }
-}
-
-/// Pilula central "Sua localizacao · lugar".
-class _LocationPill extends StatelessWidget {
-  const _LocationPill({required this.label, required this.place});
-  final String label, place;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      container: true,
-      label: '$label · $place',
-      child: ExcludeSemantics(
-        child: Container(
-          key: const Key('home-location'),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: const BoxDecoration(color: VoltiColors.glassBg, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Row(mainAxisSize: MainAxisSize.min, children: [
-              const Icon(LucideIcons.navigation, size: 12, color: VoltiColors.brand),
-              const SizedBox(width: 4),
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
-                ),
-              ),
-            ]),
-            Text(
-              place,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.ink900),
-            ),
-          ]),
-        ),
-      ),
     );
   }
 }

@@ -907,7 +907,7 @@ abstract class AppLocalizations {
   /// No description provided for @payAndUnlock.
   ///
   /// In pt, this message translates to:
-  /// **'Pagar caução e destravar'**
+  /// **'Confirmar e destravar'**
   String get payAndUnlock;
 
   /// No description provided for @payCard.
@@ -961,7 +961,7 @@ abstract class AppLocalizations {
   /// No description provided for @planTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Escolha como andar'**
+  /// **'Escolha seu plano'**
   String get planTitle;
 
   /// No description provided for @planWeekly.
@@ -1369,7 +1369,7 @@ abstract class AppLocalizations {
   /// No description provided for @typeNumber.
   ///
   /// In pt, this message translates to:
-  /// **'Digitar o número da moto'**
+  /// **'Digitar número da moto'**
   String get typeNumber;
 
   /// No description provided for @useCamera.
@@ -1995,6 +1995,210 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Não conseguimos carregar os pontos de retirada.'**
   String get pickupZonesError;
+
+  /// No description provided for @vehicleCategoryDefault.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto elétrica'**
+  String get vehicleCategoryDefault;
+
+  /// No description provided for @pricePerMinutePlusFee.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price}/min + taxa'**
+  String pricePerMinutePlusFee(String price);
+
+  /// No description provided for @promoFirstRideBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Grátis na 1ª corrida'**
+  String get promoFirstRideBadge;
+
+  /// No description provided for @hornAndFlash.
+  ///
+  /// In pt, this message translates to:
+  /// **'Buzinar e piscar'**
+  String get hornAndFlash;
+
+  /// No description provided for @hornNeedsReservation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserve a moto para buzinar e piscar.'**
+  String get hornNeedsReservation;
+
+  /// No description provided for @navigate.
+  ///
+  /// In pt, this message translates to:
+  /// **'Navegar'**
+  String get navigate;
+
+  /// No description provided for @navigateFailed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível abrir o app de mapas.'**
+  String get navigateFailed;
+
+  /// No description provided for @promoCoupon.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cupom promocional'**
+  String get promoCoupon;
+
+  /// No description provided for @couponSaved.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cupom guardado. Ele entra na cotação do plano.'**
+  String get couponSaved;
+
+  /// No description provided for @couponRemove.
+  ///
+  /// In pt, this message translates to:
+  /// **'Remover cupom'**
+  String get couponRemove;
+
+  /// No description provided for @couponSave.
+  ///
+  /// In pt, this message translates to:
+  /// **'Guardar cupom'**
+  String get couponSave;
+
+  /// No description provided for @scanQr.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escanear QR'**
+  String get scanQr;
+
+  /// No description provided for @reserve.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reservar'**
+  String get reserve;
+
+  /// No description provided for @reportVehicleSentText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recebemos o seu relato. Obrigado por avisar.'**
+  String get reportVehicleSentText;
+
+  /// No description provided for @reservationCanceled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserva cancelada'**
+  String get reservationCanceled;
+
+  /// No description provided for @offlineTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem conexão'**
+  String get offlineTitle;
+
+  /// No description provided for @offlineText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tentando reconectar. Algumas ações podem falhar.'**
+  String get offlineText;
+
+  /// No description provided for @backOnline.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conexão restabelecida'**
+  String get backOnline;
+
+  /// No description provided for @torch.
+  ///
+  /// In pt, this message translates to:
+  /// **'Lanterna'**
+  String get torch;
+
+  /// No description provided for @scanAimTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aponte para o QR no guidão'**
+  String get scanAimTitle;
+
+  /// No description provided for @scanAimText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ou digite o número da moto.'**
+  String get scanAimText;
+
+  /// No description provided for @vehicleFound.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto {code} encontrada'**
+  String vehicleFound(String code);
+
+  /// No description provided for @lookingFor.
+  ///
+  /// In pt, this message translates to:
+  /// **'Procurando {code}'**
+  String lookingFor(String code);
+
+  /// No description provided for @planSubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'{code} · {model} · {pct}%'**
+  String planSubtitle(String code, String model, int pct);
+
+  /// No description provided for @perUnitShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'/{unit}'**
+  String perUnitShort(String unit);
+
+  /// No description provided for @unitMinuteShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'min'**
+  String get unitMinuteShort;
+
+  /// No description provided for @unitHourShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'hora'**
+  String get unitHourShort;
+
+  /// No description provided for @unitDayShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'dia'**
+  String get unitDayShort;
+
+  /// No description provided for @unitWeekShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'semana'**
+  String get unitWeekShort;
+
+  /// No description provided for @unitMonthShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'mês'**
+  String get unitMonthShort;
+
+  /// No description provided for @perRental.
+  ///
+  /// In pt, this message translates to:
+  /// **'/aluguel'**
+  String get perRental;
+
+  /// No description provided for @couponOrCredit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cupom ou crédito'**
+  String get couponOrCredit;
+
+  /// No description provided for @walletCredits.
+  ///
+  /// In pt, this message translates to:
+  /// **'Créditos da carteira'**
+  String get walletCredits;
+
+  /// No description provided for @walkRouteSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Rota a pé até a moto: {minutes} min, {distance}'**
+  String walkRouteSemantics(int minutes, String distance);
 }
 
 class _AppLocalizationsDelegate

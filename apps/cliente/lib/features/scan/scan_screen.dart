@@ -7,6 +7,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
 import '../../core/errors.dart';
+import '../../core/shared_vehicle.dart';
 import '../../core/widgets.dart';
 
 /// Extrai o codigo da moto do conteudo do QR (codigo puro ou URL `.../v/<codigo>`).
@@ -17,25 +18,75 @@ String vehicleCodeFromQr(String raw) {
   return t;
 }
 
-/// Leitor de QR ou digitacao do numero da moto. Com [swapRentalId], troca a moto do aluguel.
+/// Camera do leitor (mobile_scanner; falsa nos testes).
+abstract class ScanCamera {
+  Widget preview({required ValueChanged<String> onCode, required WidgetBuilder onError});
+  Future<void> toggleTorch();
+  Future<void> dispose();
+}
+
+class MobileScanCamera implements ScanCamera {
+  final _controller = MobileScannerController();
+
+  @override
+  Widget preview({required ValueChanged<String> onCode, required WidgetBuilder onError}) => MobileScanner(
+        controller: _controller,
+        onDetect: (capture) {
+          final v = capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
+          if (v != null) onCode(v);
+        },
+        errorBuilder: (context, _) => onError(context),
+      );
+
+  @override
+  Future<void> toggleTorch() => _controller.toggleTorch();
+
+  @override
+  Future<void> dispose() => _controller.dispose();
+}
+
+final scanCameraFactoryProvider = Provider<ScanCamera Function()>((ref) => MobileScanCamera.new);
+
+/// Fundo do leitor (design `#0d0f10`).
+const scanBackground = Color(0xFF0D0F10);
+const _glass = Color(0x1FFFFFFF); // rgba(255,255,255,.12)
+
+/// Leitor de QR (design `ScanScreen`): tela escura, X e lanterna em vidro,
+/// visor de 250 px com cantos verdes, titulo e subtitulo e "Digitar numero da
+/// moto". Com [swapRentalId], troca a moto do aluguel. [expectedCode] (moto
+/// vinda do mapa ou da reserva) aparece acima do visor e liga o Hero da moto.
 class ScanScreen extends ConsumerStatefulWidget {
-  const ScanScreen({super.key, this.swapRentalId});
+  const ScanScreen({super.key, this.swapRentalId, this.expectedCode});
   final String? swapRentalId;
+  final String? expectedCode;
   @override
   ConsumerState<ScanScreen> createState() => _ScanScreenState();
 }
 
 class _ScanScreenState extends ConsumerState<ScanScreen> {
   final _code = TextEditingController();
+  late final ScanCamera _camera = ref.read(scanCameraFactoryProvider)();
   bool _busy = false;
   bool _manual = false;
-  bool _found = false;
+  bool _torch = false;
+  String? _foundCode;
   String? _error;
 
   @override
   void dispose() {
     _code.dispose();
+    _camera.dispose();
     super.dispose();
+  }
+
+  Future<void> _toggleTorch() async {
+    try {
+      await _camera.toggleTorch();
+      VoltiHaptics.selection();
+      if (mounted) setState(() => _torch = !_torch);
+    } catch (_) {
+      if (mounted) VoltiToast.show(context, context.l.cameraUnavailable, tone: VoltiToastTone.danger);
+    }
   }
 
   Future<void> _resolve(String raw) async {
@@ -49,7 +100,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       final backend = ref.read(backendProvider);
       final vehicle = await backend.vehicleByCode(vehicleCodeFromQr(raw));
       VoltiHaptics.success();
-      if (mounted) setState(() => _found = true);
+      if (mounted) setState(() => _foundCode = vehicle.code);
       if (widget.swapRentalId != null) {
         await backend.swap(widget.swapRentalId!, vehicle.id, 'vehicle_problem');
         if (mounted) {
@@ -63,7 +114,7 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
       VoltiHaptics.warning();
       if (mounted) {
         setState(() {
-          _found = false;
+          _foundCode = null;
           _error = failureText(l, e);
         });
       }
@@ -75,89 +126,253 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-    return VoltiScaffold(
-      title: widget.swapRentalId != null ? l.swapTitle : l.scanTitle,
-      body: ListView(
-        padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-        children: [
-          Text(l.scanHint, style: VoltiTypography.body),
-          const SizedBox(height: VoltiSpacing.s16),
-          if (!_manual)
-            ClipRRect(
-              borderRadius: VoltiRadii.rXl,
-              child: SizedBox(
-                height: 320,
-                child: Stack(fit: StackFit.expand, children: [
-                  Semantics(
-                  label: l.scanCameraSemantics,
-                  child: MobileScanner(
-                    onDetect: (capture) {
-                      final v = capture.barcodes.isEmpty ? null : capture.barcodes.first.rawValue;
-                      if (v != null) _resolve(v);
-                    },
-                    errorBuilder: (context, error) => Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(l.cameraUnavailable, textAlign: TextAlign.center),
+    final heroCode = _foundCode ?? widget.expectedCode;
+    return Theme(
+      data: VoltiTheme.dark(),
+      child: Scaffold(
+        backgroundColor: scanBackground,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s8, VoltiSpacing.screenGutter, VoltiSpacing.s24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  _GlassButton(
+                    key: const Key('scan-close'),
+                    icon: LucideIcons.x,
+                    label: l.close,
+                    onTap: () => Navigator.of(context).maybePop(),
+                  ),
+                  Expanded(
+                    child: Semantics(
+                      header: true,
+                      child: Text(
+                        widget.swapRentalId != null ? l.swapTitle : l.scanQr,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: VoltiTypography.bodyStrong.copyWith(color: Colors.white),
                       ),
                     ),
                   ),
+                  _GlassButton(
+                    key: const Key('scan-torch'),
+                    icon: _torch ? LucideIcons.flashlight : LucideIcons.flashlightOff,
+                    label: l.torch,
+                    toggled: _torch,
+                    onTap: _manual ? null : _toggleTorch,
                   ),
-                  _ScanOverlay(found: _found),
                 ]),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: MediaQuery.sizeOf(context).height * .55),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const SizedBox(height: VoltiSpacing.s16),
+                          if (heroCode != null) ...[
+                            _ExpectedVehicle(code: heroCode, found: _foundCode != null),
+                            const SizedBox(height: VoltiSpacing.s16),
+                          ],
+                          if (_manual) _manualForm(context) else _viewfinder(context),
+                          const SizedBox(height: VoltiSpacing.s24),
+                          if (!_manual) ...[
+                            Text(l.scanAimTitle,
+                                textAlign: TextAlign.center, style: VoltiTypography.heading.copyWith(color: Colors.white)),
+                            const SizedBox(height: 6),
+                            Text(l.scanAimText,
+                                textAlign: TextAlign.center,
+                                style: VoltiTypography.body.copyWith(color: Colors.white.withValues(alpha: .7))),
+                          ],
+                          if (_error != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: VoltiSpacing.s16),
+                              child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                _OutlineLightButton(
+                  key: const Key('scan-mode'),
+                  label: _manual ? l.useCamera : l.typeNumber,
+                  icon: _manual ? LucideIcons.scanQrCode : LucideIcons.keyboard,
+                  onTap: () => setState(() {
+                    _manual = !_manual;
+                    _error = null;
+                  }),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _viewfinder(BuildContext context) {
+    final l = context.l;
+    return SizedBox(
+      width: 250,
+      height: 250,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(28),
+        child: Stack(fit: StackFit.expand, children: [
+          const ColoredBox(color: Color(0x0AFFFFFF)),
+          Semantics(
+            label: l.scanCameraSemantics,
+            child: _camera.preview(
+              onCode: _resolve,
+              onError: (context) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(l.cameraUnavailable,
+                      textAlign: TextAlign.center, style: VoltiTypography.caption.copyWith(color: Colors.white70)),
+                ),
               ),
             ),
-          const SizedBox(height: VoltiSpacing.s16),
-          if (_manual) ...[
-            TextField(
-              key: const Key('vehicle-code'),
-              controller: _code,
-              textCapitalization: TextCapitalization.characters,
-              decoration: InputDecoration(labelText: l.vehicleNumber, prefixIcon: const Icon(LucideIcons.hash)),
-              onSubmitted: _resolve,
+          ),
+          _ScanOverlay(found: _foundCode != null, foundLabel: _foundCode == null ? null : l.vehicleFound(_foundCode!)),
+        ]),
+      ),
+    );
+  }
+
+  Widget _manualForm(BuildContext context) {
+    final l = context.l;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      TextField(
+        key: const Key('vehicle-code'),
+        controller: _code,
+        autofocus: true,
+        textCapitalization: TextCapitalization.characters,
+        textInputAction: TextInputAction.go,
+        style: VoltiTypography.body.copyWith(color: Colors.white),
+        decoration: InputDecoration(labelText: l.vehicleNumber, prefixIcon: const Icon(LucideIcons.hash)),
+        onSubmitted: _resolve,
+      ),
+      const SizedBox(height: VoltiSpacing.s12),
+      VoltiButton(
+        key: const Key('vehicle-code-submit'),
+        label: l.continueLabel,
+        size: VoltiButtonSize.lg,
+        fullWidth: true,
+        loading: _busy,
+        onPressed: () => _resolve(_code.text),
+      ),
+    ]);
+  }
+}
+
+/// Moto esperada (veio do mapa/reserva) ou achada: miniatura compartilhada (Hero) + codigo.
+class _ExpectedVehicle extends StatelessWidget {
+  const _ExpectedVehicle({required this.code, required this.found});
+  final String code;
+  final bool found;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(6, 6, 16, 6),
+      decoration: const BoxDecoration(color: _glass, borderRadius: VoltiRadii.rPill),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        VehicleHero(code: code, child: const VehicleThumb(size: 36)),
+        const SizedBox(width: 10),
+        Flexible(
+          child: Text(
+            found ? l.vehicleFound(code) : l.lookingFor(code),
+            style: VoltiTypography.label.copyWith(color: Colors.white),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Botao redondo de vidro escuro (X, lanterna).
+class _GlassButton extends StatelessWidget {
+  const _GlassButton({super.key, required this.icon, required this.label, this.onTap, this.toggled});
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool? toggled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      toggled: toggled,
+      child: VoltiPressable(
+        onTap: onTap,
+        scale: VoltiMotion.iconPressScale,
+        semanticLabel: label,
+        child: Opacity(
+          opacity: onTap == null ? .4 : 1,
+          child: Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: toggled == true ? Colors.white : _glass,
+              shape: BoxShape.circle,
             ),
-            const SizedBox(height: VoltiSpacing.s12),
-            VoltiButton(
-              label: _busy ? l.loading : l.continueLabel,
-              size: VoltiButtonSize.lg,
-              fullWidth: true,
-              onPressed: _busy ? null : () => _resolve(_code.text),
-            ),
-          ] else
-            VoltiButton(
-              label: l.typeNumber,
-              variant: VoltiButtonVariant.secondary,
-              icon: LucideIcons.keyboard,
-              fullWidth: true,
-              onPressed: () => setState(() => _manual = true),
-            ),
-          if (_manual)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: VoltiButton(
-                label: l.useCamera,
-                variant: VoltiButtonVariant.ghost,
-                icon: LucideIcons.scanLine,
-                fullWidth: true,
-                onPressed: () => setState(() => _manual = false),
-              ),
-            ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
-            ),
-        ],
+            child: Icon(icon, size: 20, color: toggled == true ? scanBackground : Colors.white),
+          ),
+        ),
       ),
     );
   }
 }
 
-/// Moldura do visor: cantos, respiracao da escala (2,4 s) e linha de varredura
-/// enquanto procura; ao achar a moto, check com pop e anel.
+/// "Digitar numero da moto": contorno branco sobre o fundo escuro.
+class _OutlineLightButton extends StatelessWidget {
+  const _OutlineLightButton({super.key, required this.label, required this.icon, required this.onTap});
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return VoltiPressable(
+      onTap: onTap,
+      semanticLabel: label,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: VoltiSpacing.controlLg),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: VoltiRadii.rPill,
+          border: Border.all(color: Colors.white.withValues(alpha: .3), width: 1.5),
+        ),
+        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+          Icon(icon, size: 22, color: Colors.white),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontFamily: VoltiTypography.fontSans,
+                fontWeight: VoltiTypography.fwSemibold,
+                fontSize: 16,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Moldura do visor: cantos verdes, respiracao da escala (2,4 s) e linha de
+/// varredura enquanto procura; ao achar a moto, check com pop e anel e o texto
+/// "Moto X encontrada".
 class _ScanOverlay extends StatefulWidget {
-  const _ScanOverlay({required this.found});
+  const _ScanOverlay({required this.found, this.foundLabel});
   final bool found;
+  final String? foundLabel;
   @override
   State<_ScanOverlay> createState() => _ScanOverlayState();
 }
@@ -197,16 +412,16 @@ class _ScanOverlayState extends State<_ScanOverlay> with SingleTickerProviderSta
     super.dispose();
   }
 
-  static const _corner = BorderSide(color: Colors.white, width: 4);
+  static const _corner = BorderSide(color: VoltiColors.green400, width: 4);
 
   Widget _bracket(Alignment a) {
     final top = a.y < 0, left = a.x < 0;
     return Align(
       alignment: a,
       child: Container(
-        width: 36,
-        height: 36,
-        margin: const EdgeInsets.all(18),
+        key: Key('scan-corner-${top ? 't' : 'b'}${left ? 'l' : 'r'}'),
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
           border: Border(
             top: top ? _corner : BorderSide.none,
@@ -215,10 +430,10 @@ class _ScanOverlayState extends State<_ScanOverlay> with SingleTickerProviderSta
             right: left ? BorderSide.none : _corner,
           ),
           borderRadius: BorderRadius.only(
-            topLeft: Radius.circular(top && left ? 16 : 0),
-            topRight: Radius.circular(top && !left ? 16 : 0),
-            bottomLeft: Radius.circular(!top && left ? 16 : 0),
-            bottomRight: Radius.circular(!top && !left ? 16 : 0),
+            topLeft: Radius.circular(top && left ? 24 : 0),
+            topRight: Radius.circular(top && !left ? 24 : 0),
+            bottomLeft: Radius.circular(!top && left ? 24 : 0),
+            bottomRight: Radius.circular(!top && !left ? 24 : 0),
           ),
         ),
       ),
@@ -254,7 +469,23 @@ class _ScanOverlayState extends State<_ScanOverlay> with SingleTickerProviderSta
               ),
             )
           else
-            const Center(child: VoltiSuccessCheck(icon: LucideIcons.lockOpen, delay: Duration.zero)),
+            Center(
+              child: Semantics(
+                liveRegion: true,
+                child: Column(mainAxisSize: MainAxisSize.min, children: [
+                  const VoltiSuccessCheck(icon: LucideIcons.lockOpen, delay: Duration.zero),
+                  if (widget.foundLabel != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      widget.foundLabel!,
+                      key: const Key('scan-found-label'),
+                      textAlign: TextAlign.center,
+                      style: VoltiTypography.label.copyWith(color: Colors.white),
+                    ),
+                  ],
+                ]),
+              ),
+            ),
         ]),
       ),
     );

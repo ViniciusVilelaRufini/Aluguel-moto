@@ -151,13 +151,13 @@ void main() {
       await t.pumpAndSettle();
       expect(isSelected(t, 'basic'), isTrue);
 
-      final cta = t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Pagar caução e destravar'));
+      final cta = t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
       expect(cta.onPressed, isNotNull);
     });
 
     testWidgets('sem consentimento de localizacao o inicio do aluguel e bloqueado (decisao #8)', (t) async {
       final backend = await pumpPlan(t, location: false);
-      await t.tap(find.widgetWithText(VoltiButton, 'Pagar caução e destravar'));
+      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
       await t.pumpAndSettle();
       expect(find.text('Permitir localização?'), findsOneWidget);
       expect(backend.startCalls, 0);
@@ -166,7 +166,7 @@ void main() {
       await t.pumpAndSettle();
       expect(backend.startCalls, 0, reason: 'recusou o consentimento: nao inicia');
 
-      await t.tap(find.widgetWithText(VoltiButton, 'Pagar caução e destravar'));
+      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
       await t.pumpAndSettle();
       await t.tap(find.text('Permitir e continuar'));
       await t.pumpAndSettle();

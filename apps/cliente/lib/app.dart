@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import 'core/offline_banner.dart';
 import 'core/router.dart';
 import 'l10n/app_localizations.dart';
 
@@ -26,6 +27,8 @@ class VoltiClienteApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       routerConfig: ref.watch(routerProvider),
+      // Faixa "Sem conexão" por cima de todas as telas (E-17).
+      builder: (context, child) => OfflineBanner(child: child ?? const SizedBox.shrink()),
     );
   }
 }
