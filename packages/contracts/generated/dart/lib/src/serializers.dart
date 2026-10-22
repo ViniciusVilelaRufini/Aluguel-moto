@@ -72,6 +72,13 @@ import 'package:volti_api/src/model/deposit.dart';
 import 'package:volti_api/src/model/deposit_method.dart';
 import 'package:volti_api/src/model/deposit_page.dart';
 import 'package:volti_api/src/model/deposit_status.dart';
+import 'package:volti_api/src/model/depot.dart';
+import 'package:volti_api/src/model/depot_input.dart';
+import 'package:volti_api/src/model/depot_list.dart';
+import 'package:volti_api/src/model/depot_opening_hours.dart';
+import 'package:volti_api/src/model/depot_pickup_list.dart';
+import 'package:volti_api/src/model/depot_update.dart';
+import 'package:volti_api/src/model/depot_vehicle_list.dart';
 import 'package:volti_api/src/model/dev_token_request.dart';
 import 'package:volti_api/src/model/dev_token_response.dart';
 import 'package:volti_api/src/model/device_platform.dart';
@@ -102,6 +109,13 @@ import 'package:volti_api/src/model/geo_json_polygon_type.dart';
 import 'package:volti_api/src/model/geo_zone.dart';
 import 'package:volti_api/src/model/geo_zone_input.dart';
 import 'package:volti_api/src/model/geo_zone_list.dart';
+import 'package:volti_api/src/model/handover.dart';
+import 'package:volti_api/src/model/handover_checklist_item.dart';
+import 'package:volti_api/src/model/handover_create.dart';
+import 'package:volti_api/src/model/handover_dispute.dart';
+import 'package:volti_api/src/model/handover_page.dart';
+import 'package:volti_api/src/model/handover_status.dart';
+import 'package:volti_api/src/model/handover_type.dart';
 import 'package:volti_api/src/model/health_state.dart';
 import 'package:volti_api/src/model/health_status.dart';
 import 'package:volti_api/src/model/heatmap_point.dart';
@@ -156,6 +170,7 @@ import 'package:volti_api/src/model/payment_kind.dart';
 import 'package:volti_api/src/model/payment_method.dart';
 import 'package:volti_api/src/model/payment_page.dart';
 import 'package:volti_api/src/model/payment_status.dart';
+import 'package:volti_api/src/model/pickup_mode.dart';
 import 'package:volti_api/src/model/pix_charge.dart';
 import 'package:volti_api/src/model/pix_key_type.dart';
 import 'package:volti_api/src/model/plan_code.dart';
@@ -329,6 +344,13 @@ part 'serializers.g.dart';
   DepositMethod,
   DepositPage,
   DepositStatus,
+  Depot,
+  DepotInput,
+  DepotList,
+  DepotOpeningHours,
+  DepotPickupList,
+  DepotUpdate,
+  DepotVehicleList,
   DevTokenRequest,
   DevTokenResponse,
   DevicePlatform,
@@ -359,6 +381,13 @@ part 'serializers.g.dart';
   GeoZone,
   GeoZoneInput,
   GeoZoneList,
+  Handover,
+  HandoverChecklistItem,
+  HandoverCreate,
+  HandoverDispute,
+  HandoverPage,
+  HandoverStatus,
+  HandoverType,
   HealthState,
   HealthStatus,
   HeatmapPoint,
@@ -413,6 +442,7 @@ part 'serializers.g.dart';
   PaymentMethod,
   PaymentPage,
   PaymentStatus,
+  PickupMode,
   PixCharge,
   PixKeyType,
   PlanCode,
@@ -539,6 +569,10 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<CustomerCoupon>(),
       )
       ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(Handover)]),
+        () => ListBuilder<Handover>(),
+      )
+      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(MinutePackage)]),
         () => ListBuilder<MinutePackage>(),
       )
@@ -643,6 +677,10 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<SwapStation>(),
       )
       ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(Depot)]),
+        () => ListBuilder<Depot>(),
+      )
+      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Subscription)]),
         () => ListBuilder<Subscription>(),
       )
@@ -657,6 +695,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(PricingPlan)]),
         () => ListBuilder<PricingPlan>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(DepotOpeningHours)]),
+        () => ListBuilder<DepotOpeningHours>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(SupportConversation)]),
@@ -721,6 +763,10 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<Customer>(),
       )
       ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(HandoverChecklistItem)]),
+        () => ListBuilder<HandoverChecklistItem>(),
+      )
+      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Rental)]),
         () => ListBuilder<Rental>(),
       )
@@ -760,6 +806,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(String)]),
         () => ListBuilder<String>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(Reservation)]),
+        () => ListBuilder<Reservation>(),
       )
       ..add(const OneOfSerializer())
       ..add(const AnyOfSerializer())

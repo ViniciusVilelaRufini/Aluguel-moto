@@ -42,7 +42,8 @@ info:
     `webhook-signature-invalid`, `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`,
     `subscription-pause-limit-reached`, `subscription-required`, `subscription-vehicle-required`,
     `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`, `gateway-unavailable`,
-    `subscription-vehicle-cooldown`.
+    `subscription-vehicle-cooldown`, `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`,
+    `depot-inactive`, `handover-not-pending`, `payment-declined`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -58,7 +59,14 @@ info:
       `***.456.789-**`.
 
     ## Tempo real
-    Eventos WebSocket (Socket.IO, namespace `/realtime`) estão em `packages/contracts/realtime.md`.
+    Eventos WebSocket (Socket.IO, namespace `/realtime`) estão em `packages/contracts/realtime.md`. Os eventos da
+    entrega no galpão (`handover.*`) também estão descritos na extensão `x-ws-events` deste arquivo.
+
+    ## Retirada em galpão
+    As motos ficam num galpão (`Depot`). Disponível para retirada = `status: free` com `depotId` preenchido.
+    O cliente reserva com `POST /reservations` informando `depotId` (retirar agora ou agendar); o operador lê o
+    `pickupCode`, faz o checklist de saída (`POST /handovers`) e o cliente confere e aceita
+    (`POST /handovers/{id}/accept`), o que cria o aluguel, cobra o plano e destrava a moto.
   contact:
     name: Volti
     email: dev@volti.com.br
@@ -118,9 +126,38 @@ tags:
     description: Estações de troca de bateria.
   - name: referrals
     description: Programa de indicação de amigos.
+  - name: depots
+    description: Galpões da Volti (endereço, horário de funcionamento, prazos de retirada, motos e agenda).
+  - name: handovers
+    description: Entrega formal da moto no galpão (checklist de saída com aceite do cliente e checklist de chegada).
   - name: batteries
     description: Baterias (série, carga, ciclos) e estoque na van do operador.
 
+x-ws-events:
+  handover.pending:
+    description: |
+      O operador criou a entrega de saída (`POST /handovers`, `type: pickup`). O app abre "Confira sua moto" e carrega
+      `GET /handovers/{handoverId}`.
+    rooms: ['customer:{customerId}', 'depot:{depotId}']
+    payload:
+      type: object
+      required: [handoverId, reservationId]
+      properties:
+        handoverId: { type: string, format: uuid }
+        reservationId: { type: string, format: uuid }
+  handover.updated:
+    description: |
+      Mudança de status da entrega (aceite, disputa, cancelamento) ou falha no aceite (`lastError`, ex.:
+      `payment-declined`, com a entrega ainda `pending_customer`). O operador vê "Aceito", "Pagamento não aprovado"
+      ou "Problema apontado".
+    rooms: ['customer:{customerId}', 'depot:{depotId}']
+    payload:
+      type: object
+      required: [handoverId, status]
+      properties:
+        handoverId: { type: string, format: uuid }
+        status: { type: string, enum: [pending_customer, accepted, disputed, canceled], description: '`HandoverStatus`.' }
+        lastError: { type: string }
 paths:
   # ───────────────────────────── health ─────────────────────────────
   /health:
@@ -989,6 +1026,352 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  # ───────────────────────────── galpões ─────────────────────────────
+  /depots:
+    get:
+      tags: [depots]
+      operationId: listDepots
+      summary: Galpões (home do cliente e painel)
+      description: |
+        Galpões ativos (staff com `includeInactive=true` vê todos). Com `lat`/`lng`, ordena pelo mais perto e preenche
+        `distanceM` (seletor de galpão no app); sem eles, ordem alfabética. `availableVehicleCount` conta as motos
+        `free` com o `depotId` do galpão.
+      security:
+        - customerAuth: []
+        - staffAuth: []
+      x-required-groups: [admin, operacao, financeiro, suporte, campo]
+      parameters:
+        - name: lat
+          in: query
+          schema: { type: number, format: double, minimum: -90, maximum: 90 }
+        - name: lng
+          in: query
+          schema: { type: number, format: double, minimum: -180, maximum: 180 }
+        - name: includeInactive
+          in: query
+          description: Só staff.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Galpões.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepotList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [depots]
+      operationId: createDepot
+      summary: Cadastrar galpão
+      description: |
+        Endereço, posição, horário por dia da semana e prazos de retirada. Dia ausente em `openingHours` = fechado;
+        `opensAt` precisa ser anterior a `closesAt` (`400`). Grava AuditLog (`depot.create`).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepotInput' }
+      responses:
+        '201':
+          description: Galpão criado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Depot' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /depots/{id}:
+    get:
+      tags: [depots]
+      operationId: getDepot
+      summary: Galpão
+      description: Cliente só vê galpão ativo (inativo → `404`); staff vê qualquer um.
+      security:
+        - customerAuth: []
+        - staffAuth: []
+      x-required-groups: [admin, operacao, financeiro, suporte, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Galpão.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Depot' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [depots]
+      operationId: updateDepot
+      summary: Editar galpão (horários, prazos, ativo)
+      description: |
+        Campos ausentes não mudam; `openingHours`, quando enviado, substitui a lista inteira. Mudança de horário ou
+        prazo vale para reservas criadas depois. Grava AuditLog (`depot.update`).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DepotUpdate' }
+      responses:
+        '200':
+          description: Galpão atualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Depot' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /depots/{id}/vehicles:
+    get:
+      tags: [depots]
+      operationId: listDepotVehicles
+      summary: Motos do galpão ("Escolher moto")
+      description: |
+        Cliente: só as motos disponíveis para retirada (`free` com este `depotId`), com modelo, categoria, bateria,
+        autonomia e preço do modelo; sem distância. Staff: todas as motos do galpão, com filtro por `status`.
+      security:
+        - customerAuth: []
+        - staffAuth: []
+      x-required-groups: [admin, operacao, financeiro, suporte, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - name: status
+          in: query
+          description: Só staff (o cliente sempre recebe só `free`).
+          schema: { $ref: '#/components/schemas/VehicleStatus' }
+        - name: vehicleModelId
+          in: query
+          description: Filtro por modelo do catálogo.
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Motos do galpão.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepotVehicleList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /depots/{id}/pickups:
+    get:
+      tags: [depots]
+      operationId: listDepotPickups
+      summary: Agenda de retiradas do dia
+      description: |
+        Reservas do galpão com retirada no dia informado (no fuso do galpão), `now` e `scheduled`, em ordem de horário
+        (`pickupAt`, ou `createdAt` em `now`). Inclui reservas `active` e `handover` e as já `converted`/`canceled`/
+        `expired` do dia. Do cliente, só `customerFirstName`; nunca vem `pickupCode`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - name: date
+          in: query
+          required: true
+          description: Dia da agenda (`YYYY-MM-DD`, fuso do galpão).
+          schema: { type: string, format: date, examples: ['2026-10-22'] }
+      responses:
+        '200':
+          description: Agenda do dia.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DepotPickupList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────────── entregas no galpão ─────────────────────────────
+  /handovers:
+    post:
+      tags: [handovers]
+      operationId: createHandover
+      summary: Registrar entrega (saída ou chegada no galpão)
+      description: |
+        - `pickup`: o operador lê o `pickupCode` da reserva (precisa estar `active`, no galpão, com a moto `reserved`),
+          envia checklist de saída, fotos (`POST /handovers/uploads`) e bateria. Cria a entrega `pending_customer`, a
+          reserva passa a `handover` e o cliente recebe o evento `handover.pending`. Código adulterado ou vencido → `404`.
+        - `return_depot`: chegada do aluguel `rentalId` no galpão. A entrega já nasce `accepted`, o aluguel é encerrado
+          pelo fechamento normal e a moto volta a `free` com o `depotId` do galpão, ou vai para `maintenance` se algum
+          item do checklist vier com `ok: false`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HandoverCreate' }
+            example:
+              type: pickup
+              depotId: 9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c
+              pickupCode: v1.6c1f0a52-8f3e-4b8e-9d55-0d6a7f1e2c11.1792663200.Zm9vYmFy
+              checklist:
+                - { code: freios, ok: true }
+                - { code: pneus, ok: true }
+                - { code: carenagem, ok: true, note: 'Risco leve no lado direito, já registrado.' }
+              photoKeys: [handovers/2c4e9a10.jpg, handovers/7d1b3c22.jpg]
+              batteryPct: 98
+              batterySerial: BT-190577
+      responses:
+        '201':
+          description: Entrega registrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Handover' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+    get:
+      tags: [handovers]
+      operationId: listHandovers
+      summary: Entregas (operação, painel e disputas)
+      description: Mais recentes primeiro. `suporte` usa `status=disputed` para a fila de disputas.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo, suporte]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/HandoverStatus' }
+        - name: depotId
+          in: query
+          schema: { type: string, format: uuid }
+        - name: type
+          in: query
+          schema: { $ref: '#/components/schemas/HandoverType' }
+      responses:
+        '200':
+          description: Página de entregas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HandoverPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /handovers/uploads:
+    post:
+      tags: [handovers]
+      operationId: createHandoverPhotoUpload
+      summary: URL de upload da foto da entrega
+      description: Upload direto ao bucket (`handovers/<uuid>.<ext>`); depois envie as chaves em `photoKeys` de `POST /handovers`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UploadRequest' }
+      responses:
+        '201':
+          description: URL pré-assinada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PresignedUpload' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /handovers/{id}:
+    get:
+      tags: [handovers]
+      operationId: getHandover
+      summary: Entrega ("Confira sua moto")
+      description: |
+        Cliente: só a entrega da própria reserva ou aluguel (senão `404`). Traz checklist, bateria e as fotos em
+        `photoUrls` (links assinados, 24 h). O operador acompanha o status e `lastError` (ex.: pagamento não aprovado).
+      security:
+        - customerAuth: []
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo, suporte]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Entrega.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Handover' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /handovers/{id}/accept:
+    post:
+      tags: [handovers]
+      operationId: acceptHandover
+      summary: Aceitar a moto e destravar
+      description: |
+        Só o cliente dono (outro cliente → `404`) e só com a entrega `pending_customer` (senão `422`
+        `handover-not-pending`). Numa transação idempotente por entrega: cria o aluguel com o plano, o seguro e a
+        caução da reserva, cobra o plano (assinatura em `weekly`/`monthly`), converte a reserva, pede o destravamento
+        e a moto vai de `reserved` a `rented`. Aceites repetidos (mesma ou outra `Idempotency-Key`) devolvem o mesmo
+        aluguel, com uma única cobrança. Exige consentimento de localização (`403` `location-consent-required`).
+
+        Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError`
+        e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409`
+        `rental-already-active`.
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: Aluguel iniciado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rental' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /handovers/{id}/dispute:
+    post:
+      tags: [handovers]
+      operationId: disputeHandover
+      summary: Apontar problema na moto
+      description: |
+        Só o cliente dono (outro cliente → `404`) e só com a entrega `pending_customer` (`422` `handover-not-pending`).
+        A entrega passa a `disputed`, abre um ticket de suporte e a moto continua separada (`reserved`) até o suporte
+        resolver.
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HandoverDispute' }
+      responses:
+        '200':
+          description: Problema registrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Handover' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   # ───────────────────────────── zones ─────────────────────────────
   /zones:
     get:
@@ -1122,13 +1505,38 @@ paths:
         Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis);
         ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem
         bloqueio nem inadimplência.
+
+        **Retirada em galpão** (com `depotId`): exige `Idempotency-Key`, `pickupMode`, `planCode`, `coverage` e
+        `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422`
+        `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409`
+        `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem
+        reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização,
+        recusa → `422` `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano
+        só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar
+        (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva.
       security:
         - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKeyOptional'
       requestBody:
         required: true
         content:
           application/json:
             schema: { $ref: '#/components/schemas/ReservationCreate' }
+            examples:
+              rua:
+                summary: Reserva de rua (fluxo antigo)
+                value: { vehicleId: 3f1c2a9e-0b4d-4c8e-9a55-7d6e5f4a3b2c }
+              galpaoAgendado:
+                summary: Retirada agendada no galpão
+                value:
+                  vehicleId: 3f1c2a9e-0b4d-4c8e-9a55-7d6e5f4a3b2c
+                  depotId: 9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c
+                  pickupMode: scheduled
+                  pickupAt: '2026-10-23T13:00:00Z'
+                  planCode: day
+                  coverage: basic
+                  depositMethod: pix
       responses:
         '201':
           description: Reserva criada.
@@ -1140,6 +1548,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /reservations/current:
     get:
       tags: [reservations]
@@ -4261,8 +4670,11 @@ components:
     # ───────────── enums compartilhados (nomes fixos do plano mestre) ─────────────
     VehicleStatus:
       type: string
-      enum: [free, rented, reserved, paused, blocked, maintenance, offline]
-      description: Mesmas cores de `--status-*` do design system.
+      enum: [free, rented, reserved, paused, blocked, maintenance, offline, awaiting_pickup]
+      description: |
+        Mesmas cores de `--status-*` do design system. Retirada em galpão: disponível = `free` com `depotId`;
+        `reserved` = separada para uma reserva; `awaiting_pickup` = devolvida em ponto verde, esperando o operador
+        recolher ao galpão (não alugável).
     ZoneType:
       type: string
       enum: [operation, return, forbidden, reduced_speed]
@@ -4320,7 +4732,8 @@ components:
       enum: [Polygon]
     ReservationStatus:
       type: string
-      enum: [active, converted, canceled, expired]
+      enum: [active, converted, canceled, expired, handover]
+      description: '`handover` = reserva de galpão com entrega aberta, aguardando o aceite do cliente.'
     DepositMethod:
       type: string
       enum: [card, pix]
@@ -4686,6 +5099,7 @@ components:
         service: { $ref: '#/components/schemas/VehicleServiceInfo' }
         battery: { $ref: '#/components/schemas/Battery' }
         assignedSubscriptionId: { type: string, format: uuid, description: staff. Moto fixa de uma assinatura semanal/mensal. }
+        depotId: { type: string, format: uuid, description: 'Galpão de origem/atual. Disponível para retirada = `status: free` com `depotId`.' }
         locationHidden:
           type: boolean
           description: |
@@ -4854,9 +5268,20 @@ components:
     # ───────────── reservations ─────────────
     ReservationCreate:
       type: object
+      description: |
+        Só `vehicleId` = reserva de rua (fluxo antigo, 15 min). Com `depotId` = reserva de retirada no galpão: exige
+        `pickupMode`, `planCode`, `coverage` e `depositMethod` (`400`), e `pickupAt` em `scheduled`.
       required: [vehicleId]
       properties:
         vehicleId: { type: string, format: uuid }
+        depotId: { type: string, format: uuid }
+        pickupMode: { $ref: '#/components/schemas/PickupMode' }
+        pickupAt: { type: string, format: date-time, description: 'Obrigatório em `scheduled`: dentro do funcionamento e de `maxScheduleDays`.' }
+        planCode: { $ref: '#/components/schemas/PlanCode' }
+        coverage: { $ref: '#/components/schemas/InsuranceCoverage' }
+        depositMethod: { $ref: '#/components/schemas/DepositMethod' }
+        cardId: { type: string, format: uuid, description: 'Cartão da caução com `depositMethod: card` (ausente = cartão padrão).' }
+        couponCode: { type: string, maxLength: 40, description: Cupom aplicado ao plano na entrega. }
     Reservation:
       type: object
       required: [id, vehicleId, status, createdAt, expiresAt]
@@ -4866,7 +5291,26 @@ components:
         vehicle: { $ref: '#/components/schemas/VehicleSummary' }
         status: { $ref: '#/components/schemas/ReservationStatus' }
         createdAt: { type: string, format: date-time }
-        expiresAt: { type: string, format: date-time, description: Base da contagem regressiva no app. }
+        expiresAt:
+          type: string
+          format: date-time
+          description: |
+            Base da contagem regressiva no app. Galpão: `now` → criação + `pickupNowWindowMinutes`; `scheduled` →
+            `pickupAt` + `scheduledGraceMinutes`.
+        depotId: { type: string, format: uuid, description: Só em reserva de galpão. }
+        pickupMode: { $ref: '#/components/schemas/PickupMode' }
+        pickupAt: { type: string, format: date-time }
+        planCode: { $ref: '#/components/schemas/PlanCode' }
+        coverage: { $ref: '#/components/schemas/InsuranceCoverage' }
+        depositMethod: { $ref: '#/components/schemas/DepositMethod' }
+        deposit: { $ref: '#/components/schemas/Deposit' }
+        pickupCode:
+          type: string
+          description: |
+            Conteúdo do QR de retirada (assinado, curto, sem dado pessoal). Só na resposta ao cliente dono da reserva.
+          examples: [v1.6c1f0a52-8f3e-4b8e-9d55-0d6a7f1e2c11.1792663200.Zm9vYmFy]
+        handoverId: { type: string, format: uuid, description: 'Entrega aberta ou concluída (status `handover`/`converted`).' }
+        customerFirstName: { type: string, description: 'staff. Só o primeiro nome (agenda de retiradas).', examples: [Ana] }
     CurrentReservation:
       type: object
       properties:
@@ -5807,6 +6251,7 @@ components:
       properties:
         notes: { type: string, maxLength: 2000 }
         vehicleStatus: { $ref: '#/components/schemas/ServiceVehicleStatus' }
+        depotId: { type: string, format: uuid, description: 'Tarefa `collect`: galpão onde a moto chegou; a moto volta a `free` com esse `depotId`.' }
         completedAt: { type: string, format: date-time, description: Instante real (modo offline). }
     ChecklistItem:
       type: object
@@ -6275,6 +6720,14 @@ components:
         maintenanceRequests:
           type: array
           items: { $ref: '#/components/schemas/CustomerMaintenanceRequest' }
+        depotReservations:
+          type: array
+          description: Reservas de retirada no galpão (sem `pickupCode`).
+          items: { $ref: '#/components/schemas/Reservation' }
+        handovers:
+          type: array
+          description: Entregas do titular (fotos só como chaves, sem links).
+          items: { $ref: '#/components/schemas/Handover' }
     AccountDeletion:
       type: object
       required: [status, requestedAt]
@@ -6631,3 +7084,183 @@ components:
           items: { type: string, minLength: 3, maxLength: 64 }
         stationId: { type: string, format: uuid, description: Só em `unload`; ausente = `charging`. }
         chargePct: { type: integer, minimum: 0, maximum: 100, description: Só em `load`; carga informada (padrão 100). }
+
+    # ───────────── galpões (retirada em galpão) ─────────────
+    PickupMode:
+      type: string
+      enum: [now, scheduled]
+      description: '`now` = retirar agora (prazo `pickupNowWindowMinutes`); `scheduled` = dia e hora agendados.'
+    DepotOpeningHours:
+      type: object
+      description: Funcionamento num dia da semana, no fuso do galpão. Dia ausente na lista = fechado.
+      required: [weekday, opensAt, closesAt]
+      properties:
+        weekday: { type: integer, minimum: 0, maximum: 6, description: '0 = domingo … 6 = sábado.', examples: [1] }
+        opensAt: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', description: '"HH:MM", anterior a `closesAt`.', examples: ['08:00'] }
+        closesAt: { type: string, pattern: '^([01]\d|2[0-3]):[0-5]\d$', description: '"HH:MM".', examples: ['20:00'] }
+    Depot:
+      type: object
+      description: Galpão da Volti, onde as motos ficam e são retiradas e devolvidas.
+      required: [id, name, address, lat, lng, timezone, openingHours, pickupNowWindowMinutes, maxScheduleDays, scheduledGraceMinutes, active]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, examples: [Galpão Volti Pinheiros] }
+        address: { type: string, examples: ['R. Fradique Coutinho, 1500 · Pinheiros, São Paulo'] }
+        district: { type: string, description: Bairro mostrado no cartão da home., examples: [Pinheiros] }
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lng: { type: number, format: double, minimum: -180, maximum: 180 }
+        timezone: { type: string, default: America/Sao_Paulo, examples: [America/Sao_Paulo] }
+        openingHours:
+          type: array
+          maxItems: 7
+          description: No máximo um intervalo por dia da semana.
+          items: { $ref: '#/components/schemas/DepotOpeningHours' }
+        pickupNowWindowMinutes: { type: integer, minimum: 15, maximum: 480, default: 120, description: 'Prazo de "retirar agora", a partir da reserva.' }
+        maxScheduleDays: { type: integer, minimum: 0, maximum: 30, default: 7, description: Quantos dias à frente o cliente pode agendar. }
+        scheduledGraceMinutes: { type: integer, minimum: 0, maximum: 120, default: 30, description: Tolerância depois do horário agendado. }
+        swapStationId: { type: string, format: uuid, description: Estação de troca de bateria do próprio galpão (`GET /swap-stations`). }
+        active: { type: boolean }
+        availableVehicleCount: { type: integer, minimum: 0, description: 'Motos `free` neste galpão.', examples: [12] }
+        distanceM: { type: integer, minimum: 0, description: 'Só com `lat`/`lng` em `GET /depots`.' }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    DepotInput:
+      type: object
+      required: [name, address, lat, lng, openingHours]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        address: { type: string, minLength: 1, maxLength: 300 }
+        district: { type: string, maxLength: 80 }
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lng: { type: number, format: double, minimum: -180, maximum: 180 }
+        timezone: { type: string, maxLength: 64, default: America/Sao_Paulo }
+        openingHours:
+          type: array
+          maxItems: 7
+          items: { $ref: '#/components/schemas/DepotOpeningHours' }
+        pickupNowWindowMinutes: { type: integer, minimum: 15, maximum: 480, default: 120 }
+        maxScheduleDays: { type: integer, minimum: 0, maximum: 30, default: 7 }
+        scheduledGraceMinutes: { type: integer, minimum: 0, maximum: 120, default: 30 }
+        swapStationId: { type: string, format: uuid }
+        active: { type: boolean, default: true }
+    DepotUpdate:
+      type: object
+      description: Campos ausentes não mudam; `openingHours` substitui a lista inteira.
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        address: { type: string, minLength: 1, maxLength: 300 }
+        district: { type: string, maxLength: 80 }
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lng: { type: number, format: double, minimum: -180, maximum: 180 }
+        timezone: { type: string, maxLength: 64 }
+        openingHours:
+          type: array
+          maxItems: 7
+          items: { $ref: '#/components/schemas/DepotOpeningHours' }
+        pickupNowWindowMinutes: { type: integer, minimum: 15, maximum: 480 }
+        maxScheduleDays: { type: integer, minimum: 0, maximum: 30 }
+        scheduledGraceMinutes: { type: integer, minimum: 0, maximum: 120 }
+        swapStationId: { type: string, format: uuid }
+        active: { type: boolean }
+    DepotList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Depot' }
+    DepotVehicleList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Vehicle' }
+    DepotPickupList:
+      type: object
+      required: [date, items]
+      properties:
+        date: { type: string, format: date, examples: ['2026-10-22'] }
+        items:
+          type: array
+          description: Reservas do dia em ordem de horário, com `customerFirstName` e sem `pickupCode`.
+          items: { $ref: '#/components/schemas/Reservation' }
+
+    # ───────────── entregas no galpão ─────────────
+    HandoverType:
+      type: string
+      enum: [pickup, return_depot]
+      description: '`pickup` = saída do galpão com aceite do cliente; `return_depot` = chegada no galpão (encerra o aluguel).'
+    HandoverStatus:
+      type: string
+      enum: [pending_customer, accepted, disputed, canceled]
+    HandoverChecklistItem:
+      type: object
+      required: [code, ok]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 40, description: 'Item do checklist (ex.: `freios`, `pneus`, `luzes`, `carenagem`).', examples: [freios] }
+        ok: { type: boolean }
+        note: { type: string, maxLength: 500 }
+    HandoverDispute:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500, examples: [Retrovisor esquerdo quebrado.] }
+    HandoverCreate:
+      type: object
+      required: [type, checklist, photoKeys, batteryPct]
+      properties:
+        type: { $ref: '#/components/schemas/HandoverType' }
+        depotId: { type: string, format: uuid, description: 'Galpão onde a entrega acontece. Obrigatório em `return_depot` (`400`); em `pickup` precisa ser o da reserva, quando enviado.' }
+        pickupCode: { type: string, minLength: 8, maxLength: 256, description: 'Só em `pickup` (obrigatório): conteúdo do QR da reserva.' }
+        rentalId: { type: string, format: uuid, description: 'Só em `return_depot` (obrigatório): aluguel que chega.' }
+        checklist:
+          type: array
+          minItems: 1
+          maxItems: 40
+          items: { $ref: '#/components/schemas/HandoverChecklistItem' }
+        photoKeys:
+          type: array
+          maxItems: 12
+          description: Chaves devolvidas por `POST /handovers/uploads` (prefixo `handovers/`).
+          items: { type: string, pattern: '^handovers/', maxLength: 300 }
+        batteryPct: { type: integer, minimum: 0, maximum: 100 }
+        batterySerial: { type: string, maxLength: 64 }
+    Handover:
+      type: object
+      required: [id, type, depotId, vehicleId, operatorId, checklist, photoKeys, batteryPct, status, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { $ref: '#/components/schemas/HandoverType' }
+        depotId: { type: string, format: uuid }
+        reservationId: { type: string, format: uuid }
+        rentalId: { type: string, format: uuid, description: Preenchido no aceite (`pickup`) ou desde a criação (`return_depot`). }
+        vehicleId: { type: string, format: uuid }
+        vehicleCode: { type: string, examples: [VLT-0001] }
+        operatorId: { type: string, format: uuid }
+        operatorFirstName: { type: string, examples: [Rafael] }
+        checklist:
+          type: array
+          items: { $ref: '#/components/schemas/HandoverChecklistItem' }
+        photoKeys:
+          type: array
+          items: { type: string }
+        photoUrls:
+          type: array
+          description: Links assinados (24 h), na mesma ordem de `photoKeys`.
+          items: { type: string, format: uri }
+        batteryPct: { type: integer, minimum: 0, maximum: 100 }
+        batterySerial: { type: string }
+        status: { $ref: '#/components/schemas/HandoverStatus' }
+        lastError: { type: string, description: 'Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo.', examples: [payment-declined] }
+        disputeReason: { type: string }
+        createdAt: { type: string, format: date-time }
+        respondedAt: { type: string, format: date-time, description: Aceite ou disputa do cliente. }
+    HandoverPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Handover' }
+        nextCursor: { type: string }

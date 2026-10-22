@@ -16,7 +16,9 @@ import 'package:volti_api/src/api/batteries_api.dart';
 import 'package:volti_api/src/api/catalog_api.dart';
 import 'package:volti_api/src/api/commands_api.dart';
 import 'package:volti_api/src/api/customers_api.dart';
+import 'package:volti_api/src/api/depots_api.dart';
 import 'package:volti_api/src/api/field_tasks_api.dart';
+import 'package:volti_api/src/api/handovers_api.dart';
 import 'package:volti_api/src/api/health_api.dart';
 import 'package:volti_api/src/api/insurance_api.dart';
 import 'package:volti_api/src/api/kyc_api.dart';
@@ -198,10 +200,22 @@ class VoltiApi {
     return CustomersApi(dio, serializers);
   }
 
+  /// Get DepotsApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  DepotsApi getDepotsApi() {
+    return DepotsApi(dio, serializers);
+  }
+
   /// Get FieldTasksApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   FieldTasksApi getFieldTasksApi() {
     return FieldTasksApi(dio, serializers);
+  }
+
+  /// Get HandoversApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  HandoversApi getHandoversApi() {
+    return HandoversApi(dio, serializers);
   }
 
   /// Get HealthApi instance, base route and serializer can be overridden by a given but be careful,

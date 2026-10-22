@@ -10,6 +10,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **notes** | **String** |  | [optional] 
 **vehicleStatus** | [**ServiceVehicleStatus**](ServiceVehicleStatus.md) |  | [optional] 
+**depotId** | **String** | Tarefa `collect`: galpão onde a moto chegou; a moto volta a `free` com esse `depotId`. | [optional] 
 **completedAt** | [**DateTime**](DateTime.md) | Instante real (modo offline). | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

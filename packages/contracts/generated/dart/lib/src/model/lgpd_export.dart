@@ -4,8 +4,10 @@
 
 // ignore_for_file: unused_element
 import 'package:volti_api/src/model/customer_maintenance_request.dart';
+import 'package:volti_api/src/model/reservation.dart';
 import 'package:volti_api/src/model/consents.dart';
 import 'package:volti_api/src/model/rental.dart';
+import 'package:volti_api/src/model/handover.dart';
 import 'package:volti_api/src/model/customer_coupon.dart';
 import 'package:volti_api/src/model/payment.dart';
 import 'package:volti_api/src/model/subscription.dart';
@@ -40,6 +42,8 @@ part 'lgpd_export.g.dart';
 /// * [referrals] - Indicações feitas pelo titular (só o primeiro nome do amigo).
 /// * [referralCode]
 /// * [maintenanceRequests]
+/// * [depotReservations] - Reservas de retirada no galpão (sem `pickupCode`).
+/// * [handovers] - Entregas do titular (fotos só como chaves, sem links).
 @BuiltValue()
 abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
   @BuiltValueField(wireName: r'generatedAt')
@@ -87,6 +91,14 @@ abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
 
   @BuiltValueField(wireName: r'maintenanceRequests')
   BuiltList<CustomerMaintenanceRequest>? get maintenanceRequests;
+
+  /// Reservas de retirada no galpão (sem `pickupCode`).
+  @BuiltValueField(wireName: r'depotReservations')
+  BuiltList<Reservation>? get depotReservations;
+
+  /// Entregas do titular (fotos só como chaves, sem links).
+  @BuiltValueField(wireName: r'handovers')
+  BuiltList<Handover>? get handovers;
 
   LgpdExport._();
 
@@ -195,6 +207,20 @@ class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
         object.maintenanceRequests,
         specifiedType:
             const FullType(BuiltList, [FullType(CustomerMaintenanceRequest)]),
+      );
+    }
+    if (object.depotReservations != null) {
+      yield r'depotReservations';
+      yield serializers.serialize(
+        object.depotReservations,
+        specifiedType: const FullType(BuiltList, [FullType(Reservation)]),
+      );
+    }
+    if (object.handovers != null) {
+      yield r'handovers';
+      yield serializers.serialize(
+        object.handovers,
+        specifiedType: const FullType(BuiltList, [FullType(Handover)]),
       );
     }
   }
@@ -335,6 +361,24 @@ class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
           ) as BuiltList<CustomerMaintenanceRequest>?;
           if (valueDes == null) continue;
           result.maintenanceRequests.replace(valueDes);
+          break;
+        case r'depotReservations':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(Reservation)]),
+          ) as BuiltList<Reservation>?;
+          if (valueDes == null) continue;
+          result.depotReservations.replace(valueDes);
+          break;
+        case r'handovers':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(Handover)]),
+          ) as BuiltList<Handover>?;
+          if (valueDes == null) continue;
+          result.handovers.replace(valueDes);
           break;
         default:
           unhandled.add(key);

@@ -13,6 +13,7 @@ const VehicleStatus _$paused = const VehicleStatus._('paused');
 const VehicleStatus _$blocked = const VehicleStatus._('blocked');
 const VehicleStatus _$maintenance = const VehicleStatus._('maintenance');
 const VehicleStatus _$offline = const VehicleStatus._('offline');
+const VehicleStatus _$awaitingPickup = const VehicleStatus._('awaitingPickup');
 const VehicleStatus _$unknownDefaultOpenApi =
     const VehicleStatus._('unknownDefaultOpenApi');
 
@@ -32,6 +33,8 @@ VehicleStatus _$valueOf(String name) {
       return _$maintenance;
     case 'offline':
       return _$offline;
+    case 'awaitingPickup':
+      return _$awaitingPickup;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -48,6 +51,7 @@ final BuiltSet<VehicleStatus> _$values =
   _$blocked,
   _$maintenance,
   _$offline,
+  _$awaitingPickup,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -60,6 +64,7 @@ class _$VehicleStatusMeta {
   VehicleStatus get blocked => _$blocked;
   VehicleStatus get maintenance => _$maintenance;
   VehicleStatus get offline => _$offline;
+  VehicleStatus get awaitingPickup => _$awaitingPickup;
   VehicleStatus get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   VehicleStatus valueOf(String name) => _$valueOf(name);
   BuiltSet<VehicleStatus> get values => _$values;
@@ -82,6 +87,7 @@ class _$VehicleStatusSerializer implements PrimitiveSerializer<VehicleStatus> {
     'blocked': 'blocked',
     'maintenance': 'maintenance',
     'offline': 'offline',
+    'awaitingPickup': 'awaiting_pickup',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -92,6 +98,7 @@ class _$VehicleStatusSerializer implements PrimitiveSerializer<VehicleStatus> {
     'blocked': 'blocked',
     'maintenance': 'maintenance',
     'offline': 'offline',
+    'awaiting_pickup': 'awaitingPickup',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

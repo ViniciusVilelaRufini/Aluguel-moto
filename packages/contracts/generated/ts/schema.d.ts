@@ -613,6 +613,221 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/depots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Galpões (home do cliente e painel)
+         * @description Galpões ativos (staff com `includeInactive=true` vê todos). Com `lat`/`lng`, ordena pelo mais perto e preenche
+         *     `distanceM` (seletor de galpão no app); sem eles, ordem alfabética. `availableVehicleCount` conta as motos
+         *     `free` com o `depotId` do galpão.
+         */
+        get: operations["listDepots"];
+        put?: never;
+        /**
+         * Cadastrar galpão
+         * @description Endereço, posição, horário por dia da semana e prazos de retirada. Dia ausente em `openingHours` = fechado;
+         *     `opensAt` precisa ser anterior a `closesAt` (`400`). Grava AuditLog (`depot.create`).
+         */
+        post: operations["createDepot"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/depots/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Galpão
+         * @description Cliente só vê galpão ativo (inativo → `404`); staff vê qualquer um.
+         */
+        get: operations["getDepot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Editar galpão (horários, prazos, ativo)
+         * @description Campos ausentes não mudam; `openingHours`, quando enviado, substitui a lista inteira. Mudança de horário ou
+         *     prazo vale para reservas criadas depois. Grava AuditLog (`depot.update`).
+         */
+        patch: operations["updateDepot"];
+        trace?: never;
+    };
+    "/depots/{id}/vehicles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Motos do galpão ("Escolher moto")
+         * @description Cliente: só as motos disponíveis para retirada (`free` com este `depotId`), com modelo, categoria, bateria,
+         *     autonomia e preço do modelo; sem distância. Staff: todas as motos do galpão, com filtro por `status`.
+         */
+        get: operations["listDepotVehicles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/depots/{id}/pickups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Agenda de retiradas do dia
+         * @description Reservas do galpão com retirada no dia informado (no fuso do galpão), `now` e `scheduled`, em ordem de horário
+         *     (`pickupAt`, ou `createdAt` em `now`). Inclui reservas `active` e `handover` e as já `converted`/`canceled`/
+         *     `expired` do dia. Do cliente, só `customerFirstName`; nunca vem `pickupCode`.
+         */
+        get: operations["listDepotPickups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/handovers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entregas (operação, painel e disputas)
+         * @description Mais recentes primeiro. `suporte` usa `status=disputed` para a fila de disputas.
+         */
+        get: operations["listHandovers"];
+        put?: never;
+        /**
+         * Registrar entrega (saída ou chegada no galpão)
+         * @description - `pickup`: o operador lê o `pickupCode` da reserva (precisa estar `active`, no galpão, com a moto `reserved`),
+         *       envia checklist de saída, fotos (`POST /handovers/uploads`) e bateria. Cria a entrega `pending_customer`, a
+         *       reserva passa a `handover` e o cliente recebe o evento `handover.pending`. Código adulterado ou vencido → `404`.
+         *     - `return_depot`: chegada do aluguel `rentalId` no galpão. A entrega já nasce `accepted`, o aluguel é encerrado
+         *       pelo fechamento normal e a moto volta a `free` com o `depotId` do galpão, ou vai para `maintenance` se algum
+         *       item do checklist vier com `ok: false`.
+         */
+        post: operations["createHandover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/handovers/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * URL de upload da foto da entrega
+         * @description Upload direto ao bucket (`handovers/<uuid>.<ext>`); depois envie as chaves em `photoKeys` de `POST /handovers`.
+         */
+        post: operations["createHandoverPhotoUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/handovers/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Entrega ("Confira sua moto")
+         * @description Cliente: só a entrega da própria reserva ou aluguel (senão `404`). Traz checklist, bateria e as fotos em
+         *     `photoUrls` (links assinados, 24 h). O operador acompanha o status e `lastError` (ex.: pagamento não aprovado).
+         */
+        get: operations["getHandover"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/handovers/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Aceitar a moto e destravar
+         * @description Só o cliente dono (outro cliente → `404`) e só com a entrega `pending_customer` (senão `422`
+         *     `handover-not-pending`). Numa transação idempotente por entrega: cria o aluguel com o plano, o seguro e a
+         *     caução da reserva, cobra o plano (assinatura em `weekly`/`monthly`), converte a reserva, pede o destravamento
+         *     e a moto vai de `reserved` a `rented`. Aceites repetidos (mesma ou outra `Idempotency-Key`) devolvem o mesmo
+         *     aluguel, com uma única cobrança. Exige consentimento de localização (`403` `location-consent-required`).
+         *
+         *     Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError`
+         *     e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409`
+         *     `rental-already-active`.
+         */
+        post: operations["acceptHandover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/handovers/{id}/dispute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apontar problema na moto
+         * @description Só o cliente dono (outro cliente → `404`) e só com a entrega `pending_customer` (`422` `handover-not-pending`).
+         *     A entrega passa a `disputed`, abre um ticket de suporte e a moto continua separada (`reserved`) até o suporte
+         *     resolver.
+         */
+        post: operations["disputeHandover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/zones": {
         parameters: {
             query?: never;
@@ -679,6 +894,15 @@ export interface paths {
          * @description Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis);
          *     ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem
          *     bloqueio nem inadimplência.
+         *
+         *     **Retirada em galpão** (com `depotId`): exige `Idempotency-Key`, `pickupMode`, `planCode`, `coverage` e
+         *     `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422`
+         *     `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409`
+         *     `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem
+         *     reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização,
+         *     recusa → `422` `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano
+         *     só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar
+         *     (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva.
          */
         post: operations["createReservation"];
         delete?: never;
@@ -2648,10 +2872,12 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         /**
-         * @description Mesmas cores de `--status-*` do design system.
+         * @description Mesmas cores de `--status-*` do design system. Retirada em galpão: disponível = `free` com `depotId`;
+         *     `reserved` = separada para uma reserva; `awaiting_pickup` = devolvida em ponto verde, esperando o operador
+         *     recolher ao galpão (não alugável).
          * @enum {string}
          */
-        VehicleStatus: "free" | "rented" | "reserved" | "paused" | "blocked" | "maintenance" | "offline";
+        VehicleStatus: "free" | "rented" | "reserved" | "paused" | "blocked" | "maintenance" | "offline" | "awaiting_pickup";
         /** @enum {string} */
         ZoneType: "operation" | "return" | "forbidden" | "reduced_speed";
         /** @enum {string} */
@@ -2692,8 +2918,11 @@ export interface components {
         ServiceVehicleStatus: "free" | "maintenance";
         /** @enum {string} */
         GeoJsonPolygonType: "Polygon";
-        /** @enum {string} */
-        ReservationStatus: "active" | "converted" | "canceled" | "expired";
+        /**
+         * @description `handover` = reserva de galpão com entrega aberta, aguardando o aceite do cliente.
+         * @enum {string}
+         */
+        ReservationStatus: "active" | "converted" | "canceled" | "expired" | "handover";
         /** @enum {string} */
         DepositMethod: "card" | "pix";
         /**
@@ -3075,6 +3304,11 @@ export interface components {
              */
             assignedSubscriptionId?: string;
             /**
+             * Format: uuid
+             * @description Galpão de origem/atual. Disponível para retirada = `status: free` com `depotId`.
+             */
+            depotId?: string;
+            /**
              * @description Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição
              *     é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
              */
@@ -3216,9 +3450,31 @@ export interface components {
         GeoZoneList: {
             items: components["schemas"]["GeoZone"][];
         };
+        /**
+         * @description Só `vehicleId` = reserva de rua (fluxo antigo, 15 min). Com `depotId` = reserva de retirada no galpão: exige
+         *     `pickupMode`, `planCode`, `coverage` e `depositMethod` (`400`), e `pickupAt` em `scheduled`.
+         */
         ReservationCreate: {
             /** Format: uuid */
             vehicleId: string;
+            /** Format: uuid */
+            depotId?: string;
+            pickupMode?: components["schemas"]["PickupMode"];
+            /**
+             * Format: date-time
+             * @description Obrigatório em `scheduled`: dentro do funcionamento e de `maxScheduleDays`.
+             */
+            pickupAt?: string;
+            planCode?: components["schemas"]["PlanCode"];
+            coverage?: components["schemas"]["InsuranceCoverage"];
+            depositMethod?: components["schemas"]["DepositMethod"];
+            /**
+             * Format: uuid
+             * @description Cartão da caução com `depositMethod: card` (ausente = cartão padrão).
+             */
+            cardId?: string;
+            /** @description Cupom aplicado ao plano na entrega. */
+            couponCode?: string;
         };
         Reservation: {
             /** Format: uuid */
@@ -3231,9 +3487,37 @@ export interface components {
             createdAt: string;
             /**
              * Format: date-time
-             * @description Base da contagem regressiva no app.
+             * @description Base da contagem regressiva no app. Galpão: `now` → criação + `pickupNowWindowMinutes`; `scheduled` →
+             *     `pickupAt` + `scheduledGraceMinutes`.
              */
             expiresAt: string;
+            /**
+             * Format: uuid
+             * @description Só em reserva de galpão.
+             */
+            depotId?: string;
+            pickupMode?: components["schemas"]["PickupMode"];
+            /** Format: date-time */
+            pickupAt?: string;
+            planCode?: components["schemas"]["PlanCode"];
+            coverage?: components["schemas"]["InsuranceCoverage"];
+            depositMethod?: components["schemas"]["DepositMethod"];
+            deposit?: components["schemas"]["Deposit"];
+            /**
+             * @description Conteúdo do QR de retirada (assinado, curto, sem dado pessoal). Só na resposta ao cliente dono da reserva.
+             * @example v1.6c1f0a52-8f3e-4b8e-9d55-0d6a7f1e2c11.1792663200.Zm9vYmFy
+             */
+            pickupCode?: string;
+            /**
+             * Format: uuid
+             * @description Entrega aberta ou concluída (status `handover`/`converted`).
+             */
+            handoverId?: string;
+            /**
+             * @description staff. Só o primeiro nome (agenda de retiradas).
+             * @example Ana
+             */
+            customerFirstName?: string;
         };
         CurrentReservation: {
             reservation?: components["schemas"]["Reservation"];
@@ -4228,6 +4512,11 @@ export interface components {
             notes?: string;
             vehicleStatus?: components["schemas"]["ServiceVehicleStatus"];
             /**
+             * Format: uuid
+             * @description Tarefa `collect`: galpão onde a moto chegou; a moto volta a `free` com esse `depotId`.
+             */
+            depotId?: string;
+            /**
              * Format: date-time
              * @description Instante real (modo offline).
              */
@@ -4654,6 +4943,10 @@ export interface components {
             referrals?: components["schemas"]["ReferralReward"][];
             referralCode?: string;
             maintenanceRequests?: components["schemas"]["CustomerMaintenanceRequest"][];
+            /** @description Reservas de retirada no galpão (sem `pickupCode`). */
+            depotReservations?: components["schemas"]["Reservation"][];
+            /** @description Entregas do titular (fotos só como chaves, sem links). */
+            handovers?: components["schemas"]["Handover"][];
         };
         AccountDeletion: {
             status: components["schemas"]["AccountDeletionStatus"];
@@ -5050,6 +5343,227 @@ export interface components {
             stationId?: string;
             /** @description Só em `load`; carga informada (padrão 100). */
             chargePct?: number;
+        };
+        /**
+         * @description `now` = retirar agora (prazo `pickupNowWindowMinutes`); `scheduled` = dia e hora agendados.
+         * @enum {string}
+         */
+        PickupMode: "now" | "scheduled";
+        /** @description Funcionamento num dia da semana, no fuso do galpão. Dia ausente na lista = fechado. */
+        DepotOpeningHours: {
+            /**
+             * @description 0 = domingo … 6 = sábado.
+             * @example 1
+             */
+            weekday: number;
+            /**
+             * @description "HH:MM", anterior a `closesAt`.
+             * @example 08:00
+             */
+            opensAt: string;
+            /**
+             * @description "HH:MM".
+             * @example 20:00
+             */
+            closesAt: string;
+        };
+        /** @description Galpão da Volti, onde as motos ficam e são retiradas e devolvidas. */
+        Depot: {
+            /** Format: uuid */
+            id: string;
+            /** @example Galpão Volti Pinheiros */
+            name: string;
+            /** @example R. Fradique Coutinho, 1500 · Pinheiros, São Paulo */
+            address: string;
+            /**
+             * @description Bairro mostrado no cartão da home.
+             * @example Pinheiros
+             */
+            district?: string;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+            /**
+             * @default America/Sao_Paulo
+             * @example America/Sao_Paulo
+             */
+            timezone: string;
+            /** @description No máximo um intervalo por dia da semana. */
+            openingHours: components["schemas"]["DepotOpeningHours"][];
+            /**
+             * @description Prazo de "retirar agora", a partir da reserva.
+             * @default 120
+             */
+            pickupNowWindowMinutes: number;
+            /**
+             * @description Quantos dias à frente o cliente pode agendar.
+             * @default 7
+             */
+            maxScheduleDays: number;
+            /**
+             * @description Tolerância depois do horário agendado.
+             * @default 30
+             */
+            scheduledGraceMinutes: number;
+            /**
+             * Format: uuid
+             * @description Estação de troca de bateria do próprio galpão (`GET /swap-stations`).
+             */
+            swapStationId?: string;
+            active: boolean;
+            /**
+             * @description Motos `free` neste galpão.
+             * @example 12
+             */
+            availableVehicleCount?: number;
+            /** @description Só com `lat`/`lng` em `GET /depots`. */
+            distanceM?: number;
+            /** Format: date-time */
+            createdAt?: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        DepotInput: {
+            name: string;
+            address: string;
+            district?: string;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+            /** @default America/Sao_Paulo */
+            timezone?: string;
+            openingHours: components["schemas"]["DepotOpeningHours"][];
+            /** @default 120 */
+            pickupNowWindowMinutes?: number;
+            /** @default 7 */
+            maxScheduleDays?: number;
+            /** @default 30 */
+            scheduledGraceMinutes?: number;
+            /** Format: uuid */
+            swapStationId?: string;
+            /** @default true */
+            active?: boolean;
+        };
+        /** @description Campos ausentes não mudam; `openingHours` substitui a lista inteira. */
+        DepotUpdate: {
+            name?: string;
+            address?: string;
+            district?: string;
+            /** Format: double */
+            lat?: number;
+            /** Format: double */
+            lng?: number;
+            timezone?: string;
+            openingHours?: components["schemas"]["DepotOpeningHours"][];
+            pickupNowWindowMinutes?: number;
+            maxScheduleDays?: number;
+            scheduledGraceMinutes?: number;
+            /** Format: uuid */
+            swapStationId?: string;
+            active?: boolean;
+        };
+        DepotList: {
+            items: components["schemas"]["Depot"][];
+        };
+        DepotVehicleList: {
+            items: components["schemas"]["Vehicle"][];
+        };
+        DepotPickupList: {
+            /**
+             * Format: date
+             * @example 2026-10-22
+             */
+            date: string;
+            /** @description Reservas do dia em ordem de horário, com `customerFirstName` e sem `pickupCode`. */
+            items: components["schemas"]["Reservation"][];
+        };
+        /**
+         * @description `pickup` = saída do galpão com aceite do cliente; `return_depot` = chegada no galpão (encerra o aluguel).
+         * @enum {string}
+         */
+        HandoverType: "pickup" | "return_depot";
+        /** @enum {string} */
+        HandoverStatus: "pending_customer" | "accepted" | "disputed" | "canceled";
+        HandoverChecklistItem: {
+            /**
+             * @description Item do checklist (ex.: `freios`, `pneus`, `luzes`, `carenagem`).
+             * @example freios
+             */
+            code: string;
+            ok: boolean;
+            note?: string;
+        };
+        HandoverDispute: {
+            /** @example Retrovisor esquerdo quebrado. */
+            reason: string;
+        };
+        HandoverCreate: {
+            type: components["schemas"]["HandoverType"];
+            /**
+             * Format: uuid
+             * @description Galpão onde a entrega acontece. Obrigatório em `return_depot` (`400`); em `pickup` precisa ser o da reserva, quando enviado.
+             */
+            depotId?: string;
+            /** @description Só em `pickup` (obrigatório): conteúdo do QR da reserva. */
+            pickupCode?: string;
+            /**
+             * Format: uuid
+             * @description Só em `return_depot` (obrigatório): aluguel que chega.
+             */
+            rentalId?: string;
+            checklist: components["schemas"]["HandoverChecklistItem"][];
+            /** @description Chaves devolvidas por `POST /handovers/uploads` (prefixo `handovers/`). */
+            photoKeys: string[];
+            batteryPct: number;
+            batterySerial?: string;
+        };
+        Handover: {
+            /** Format: uuid */
+            id: string;
+            type: components["schemas"]["HandoverType"];
+            /** Format: uuid */
+            depotId: string;
+            /** Format: uuid */
+            reservationId?: string;
+            /**
+             * Format: uuid
+             * @description Preenchido no aceite (`pickup`) ou desde a criação (`return_depot`).
+             */
+            rentalId?: string;
+            /** Format: uuid */
+            vehicleId: string;
+            /** @example VLT-0001 */
+            vehicleCode?: string;
+            /** Format: uuid */
+            operatorId: string;
+            /** @example Rafael */
+            operatorFirstName?: string;
+            checklist: components["schemas"]["HandoverChecklistItem"][];
+            photoKeys: string[];
+            /** @description Links assinados (24 h), na mesma ordem de `photoKeys`. */
+            photoUrls?: string[];
+            batteryPct: number;
+            batterySerial?: string;
+            status: components["schemas"]["HandoverStatus"];
+            /**
+             * @description Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo.
+             * @example payment-declined
+             */
+            lastError?: string;
+            disputeReason?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description Aceite ou disputa do cliente.
+             */
+            respondedAt?: string;
+        };
+        HandoverPage: {
+            items: components["schemas"]["Handover"][];
+            nextCursor?: string;
         };
     };
     responses: {
@@ -6180,6 +6694,376 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    listDepots: {
+        parameters: {
+            query?: {
+                lat?: number;
+                lng?: number;
+                /** @description Só staff. */
+                includeInactive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Galpões. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepotList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createDepot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepotInput"];
+            };
+        };
+        responses: {
+            /** @description Galpão criado. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Depot"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    getDepot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Galpão. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Depot"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateDepot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DepotUpdate"];
+            };
+        };
+        responses: {
+            /** @description Galpão atualizado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Depot"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listDepotVehicles: {
+        parameters: {
+            query?: {
+                /** @description Só staff (o cliente sempre recebe só `free`). */
+                status?: components["schemas"]["VehicleStatus"];
+                /** @description Filtro por modelo do catálogo. */
+                vehicleModelId?: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Motos do galpão. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepotVehicleList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listDepotPickups: {
+        parameters: {
+            query: {
+                /** @description Dia da agenda (`YYYY-MM-DD`, fuso do galpão). */
+                date: string;
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agenda do dia. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepotPickupList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    listHandovers: {
+        parameters: {
+            query?: {
+                /** @description Cursor opaco devolvido em `nextCursor` da página anterior. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Itens por página. */
+                limit?: components["parameters"]["Limit"];
+                status?: components["schemas"]["HandoverStatus"];
+                depotId?: string;
+                type?: components["schemas"]["HandoverType"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de entregas. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HandoverPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createHandover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "type": "pickup",
+                 *       "depotId": "9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c",
+                 *       "pickupCode": "v1.6c1f0a52-8f3e-4b8e-9d55-0d6a7f1e2c11.1792663200.Zm9vYmFy",
+                 *       "checklist": [
+                 *         {
+                 *           "code": "freios",
+                 *           "ok": true
+                 *         },
+                 *         {
+                 *           "code": "pneus",
+                 *           "ok": true
+                 *         },
+                 *         {
+                 *           "code": "carenagem",
+                 *           "ok": true,
+                 *           "note": "Risco leve no lado direito, já registrado."
+                 *         }
+                 *       ],
+                 *       "photoKeys": [
+                 *         "handovers/2c4e9a10.jpg",
+                 *         "handovers/7d1b3c22.jpg"
+                 *       ],
+                 *       "batteryPct": 98,
+                 *       "batterySerial": "BT-190577"
+                 *     }
+                 */
+                "application/json": components["schemas"]["HandoverCreate"];
+            };
+        };
+        responses: {
+            /** @description Entrega registrada. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Handover"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    createHandoverPhotoUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadRequest"];
+            };
+        };
+        responses: {
+            /** @description URL pré-assinada. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignedUpload"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getHandover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entrega. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Handover"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    acceptHandover: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Chave única por intenção (UUID v4 recomendado). Válida por 24 h. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Aluguel iniciado. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rental"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            503: components["responses"]["ServiceUnavailable"];
+        };
+    };
+    disputeHandover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["HandoverDispute"];
+            };
+        };
+        responses: {
+            /** @description Problema registrado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Handover"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
     listZones: {
         parameters: {
             query?: {
@@ -6320,7 +7204,10 @@ export interface operations {
     createReservation: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description Recomendado para reenvios da fila offline. Válida por 24 h. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKeyOptional"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -6344,6 +7231,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getCurrentReservation: {

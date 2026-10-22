@@ -9,6 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'reservation_status.g.dart';
 
+/// `handover` = reserva de galpão com entrega aberta, aguardando o aceite do cliente.
 class ReservationStatus extends EnumClass {
   @BuiltValueEnumConst(wireName: r'active')
   static const ReservationStatus active = _$active;
@@ -18,6 +19,8 @@ class ReservationStatus extends EnumClass {
   static const ReservationStatus canceled = _$canceled;
   @BuiltValueEnumConst(wireName: r'expired')
   static const ReservationStatus expired = _$expired;
+  @BuiltValueEnumConst(wireName: r'handover')
+  static const ReservationStatus handover = _$handover;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const ReservationStatus unknownDefaultOpenApi =
       _$unknownDefaultOpenApi;

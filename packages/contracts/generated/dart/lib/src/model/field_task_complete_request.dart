@@ -14,6 +14,7 @@ part 'field_task_complete_request.g.dart';
 /// Properties:
 /// * [notes]
 /// * [vehicleStatus]
+/// * [depotId] - Tarefa `collect`: galpão onde a moto chegou; a moto volta a `free` com esse `depotId`.
 /// * [completedAt] - Instante real (modo offline).
 @BuiltValue()
 abstract class FieldTaskCompleteRequest
@@ -25,6 +26,10 @@ abstract class FieldTaskCompleteRequest
   @BuiltValueField(wireName: r'vehicleStatus')
   ServiceVehicleStatus? get vehicleStatus;
   // enum vehicleStatusEnum {  free,  maintenance,  };
+
+  /// Tarefa `collect`: galpão onde a moto chegou; a moto volta a `free` com esse `depotId`.
+  @BuiltValueField(wireName: r'depotId')
+  String? get depotId;
 
   /// Instante real (modo offline).
   @BuiltValueField(wireName: r'completedAt')
@@ -74,6 +79,13 @@ class _$FieldTaskCompleteRequestSerializer
         specifiedType: const FullType(ServiceVehicleStatus),
       );
     }
+    if (object.depotId != null) {
+      yield r'depotId';
+      yield serializers.serialize(
+        object.depotId,
+        specifiedType: const FullType(String),
+      );
+    }
     if (object.completedAt != null) {
       yield r'completedAt';
       yield serializers.serialize(
@@ -121,6 +133,14 @@ class _$FieldTaskCompleteRequestSerializer
           ) as ServiceVehicleStatus?;
           if (valueDes == null) continue;
           result.vehicleStatus = valueDes;
+          break;
+        case r'depotId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.depotId = valueDes;
           break;
         case r'completedAt':
           final valueDes = serializers.deserialize(

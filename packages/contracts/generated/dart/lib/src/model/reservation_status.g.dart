@@ -10,6 +10,7 @@ const ReservationStatus _$active = const ReservationStatus._('active');
 const ReservationStatus _$converted = const ReservationStatus._('converted');
 const ReservationStatus _$canceled = const ReservationStatus._('canceled');
 const ReservationStatus _$expired = const ReservationStatus._('expired');
+const ReservationStatus _$handover = const ReservationStatus._('handover');
 const ReservationStatus _$unknownDefaultOpenApi =
     const ReservationStatus._('unknownDefaultOpenApi');
 
@@ -23,6 +24,8 @@ ReservationStatus _$valueOf(String name) {
       return _$canceled;
     case 'expired':
       return _$expired;
+    case 'handover':
+      return _$handover;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -36,6 +39,7 @@ final BuiltSet<ReservationStatus> _$values =
   _$converted,
   _$canceled,
   _$expired,
+  _$handover,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -45,6 +49,7 @@ class _$ReservationStatusMeta {
   ReservationStatus get converted => _$converted;
   ReservationStatus get canceled => _$canceled;
   ReservationStatus get expired => _$expired;
+  ReservationStatus get handover => _$handover;
   ReservationStatus get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   ReservationStatus valueOf(String name) => _$valueOf(name);
   BuiltSet<ReservationStatus> get values => _$values;
@@ -66,6 +71,7 @@ class _$ReservationStatusSerializer
     'converted': 'converted',
     'canceled': 'canceled',
     'expired': 'expired',
+    'handover': 'handover',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -73,6 +79,7 @@ class _$ReservationStatusSerializer
     'converted': 'converted',
     'canceled': 'canceled',
     'expired': 'expired',
+    'handover': 'handover',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

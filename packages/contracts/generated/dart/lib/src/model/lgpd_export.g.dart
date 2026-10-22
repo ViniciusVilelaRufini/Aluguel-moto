@@ -37,6 +37,10 @@ class _$LgpdExport extends LgpdExport {
   final String? referralCode;
   @override
   final BuiltList<CustomerMaintenanceRequest>? maintenanceRequests;
+  @override
+  final BuiltList<Reservation>? depotReservations;
+  @override
+  final BuiltList<Handover>? handovers;
 
   factory _$LgpdExport([void Function(LgpdExportBuilder)? updates]) =>
       (LgpdExportBuilder()..update(updates))._build();
@@ -56,7 +60,9 @@ class _$LgpdExport extends LgpdExport {
       this.coupons,
       this.referrals,
       this.referralCode,
-      this.maintenanceRequests})
+      this.maintenanceRequests,
+      this.depotReservations,
+      this.handovers})
       : super._();
   @override
   LgpdExport rebuild(void Function(LgpdExportBuilder) updates) =>
@@ -83,7 +89,9 @@ class _$LgpdExport extends LgpdExport {
         coupons == other.coupons &&
         referrals == other.referrals &&
         referralCode == other.referralCode &&
-        maintenanceRequests == other.maintenanceRequests;
+        maintenanceRequests == other.maintenanceRequests &&
+        depotReservations == other.depotReservations &&
+        handovers == other.handovers;
   }
 
   @override
@@ -104,6 +112,8 @@ class _$LgpdExport extends LgpdExport {
     _$hash = $jc(_$hash, referrals.hashCode);
     _$hash = $jc(_$hash, referralCode.hashCode);
     _$hash = $jc(_$hash, maintenanceRequests.hashCode);
+    _$hash = $jc(_$hash, depotReservations.hashCode);
+    _$hash = $jc(_$hash, handovers.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -125,7 +135,9 @@ class _$LgpdExport extends LgpdExport {
           ..add('coupons', coupons)
           ..add('referrals', referrals)
           ..add('referralCode', referralCode)
-          ..add('maintenanceRequests', maintenanceRequests))
+          ..add('maintenanceRequests', maintenanceRequests)
+          ..add('depotReservations', depotReservations)
+          ..add('handovers', handovers))
         .toString();
   }
 }
@@ -208,6 +220,18 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
           ListBuilder<CustomerMaintenanceRequest>? maintenanceRequests) =>
       _$this._maintenanceRequests = maintenanceRequests;
 
+  ListBuilder<Reservation>? _depotReservations;
+  ListBuilder<Reservation> get depotReservations =>
+      _$this._depotReservations ??= ListBuilder<Reservation>();
+  set depotReservations(ListBuilder<Reservation>? depotReservations) =>
+      _$this._depotReservations = depotReservations;
+
+  ListBuilder<Handover>? _handovers;
+  ListBuilder<Handover> get handovers =>
+      _$this._handovers ??= ListBuilder<Handover>();
+  set handovers(ListBuilder<Handover>? handovers) =>
+      _$this._handovers = handovers;
+
   LgpdExportBuilder() {
     LgpdExport._defaults(this);
   }
@@ -230,6 +254,8 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
       _referrals = $v.referrals?.toBuilder();
       _referralCode = $v.referralCode;
       _maintenanceRequests = $v.maintenanceRequests?.toBuilder();
+      _depotReservations = $v.depotReservations?.toBuilder();
+      _handovers = $v.handovers?.toBuilder();
       _$v = null;
     }
     return this;
@@ -269,6 +295,8 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
             referrals: _referrals?.build(),
             referralCode: referralCode,
             maintenanceRequests: _maintenanceRequests?.build(),
+            depotReservations: _depotReservations?.build(),
+            handovers: _handovers?.build(),
           );
     } catch (_) {
       late String _$failedField;
@@ -300,6 +328,10 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
 
         _$failedField = 'maintenanceRequests';
         _maintenanceRequests?.build();
+        _$failedField = 'depotReservations';
+        _depotReservations?.build();
+        _$failedField = 'handovers';
+        _handovers?.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'LgpdExport', _$failedField, e.toString());

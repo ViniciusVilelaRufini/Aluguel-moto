@@ -1,6 +1,6 @@
 import type { AlertPriority, CommandStatus, CommandStatusReason, VehicleStatus } from './types';
 
-export const VEHICLE_STATUSES: VehicleStatus[] = ['free', 'rented', 'reserved', 'paused', 'blocked', 'maintenance', 'offline'];
+export const VEHICLE_STATUSES: VehicleStatus[] = ['free', 'rented', 'reserved', 'paused', 'blocked', 'maintenance', 'offline', 'awaiting_pickup'];
 
 /** Hex dos tokens `--status-*` (o MapLibre não lê variáveis CSS). */
 export const STATUS_COLOR: Record<VehicleStatus, string> = {
@@ -11,6 +11,8 @@ export const STATUS_COLOR: Record<VehicleStatus, string> = {
   blocked: '#E04E42',
   maintenance: '#8B7CF6',
   offline: '#9AA0A6',
+  // Galpão: sem token próprio ainda (a task do painel define); provisório = cor de atenção (sun-400).
+  awaiting_pickup: '#FBC531',
 };
 
 export const STATUS_LABEL: Record<VehicleStatus, string> = {
@@ -21,6 +23,7 @@ export const STATUS_LABEL: Record<VehicleStatus, string> = {
   blocked: 'Bloqueada',
   maintenance: 'Manutenção',
   offline: 'Sem sinal',
+  awaiting_pickup: 'Aguardando recolhimento',
 };
 
 export function batteryColor(pct: number): string {

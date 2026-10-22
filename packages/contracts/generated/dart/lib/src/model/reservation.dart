@@ -3,8 +3,13 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:volti_api/src/model/plan_code.dart';
+import 'package:volti_api/src/model/pickup_mode.dart';
 import 'package:volti_api/src/model/vehicle_summary.dart';
 import 'package:volti_api/src/model/reservation_status.dart';
+import 'package:volti_api/src/model/insurance_coverage.dart';
+import 'package:volti_api/src/model/deposit_method.dart';
+import 'package:volti_api/src/model/deposit.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -18,7 +23,17 @@ part 'reservation.g.dart';
 /// * [vehicle]
 /// * [status]
 /// * [createdAt]
-/// * [expiresAt] - Base da contagem regressiva no app.
+/// * [expiresAt] - Base da contagem regressiva no app. Galpão: `now` → criação + `pickupNowWindowMinutes`; `scheduled` → `pickupAt` + `scheduledGraceMinutes`.
+/// * [depotId] - Só em reserva de galpão.
+/// * [pickupMode]
+/// * [pickupAt]
+/// * [planCode]
+/// * [coverage]
+/// * [depositMethod]
+/// * [deposit]
+/// * [pickupCode] - Conteúdo do QR de retirada (assinado, curto, sem dado pessoal). Só na resposta ao cliente dono da reserva.
+/// * [handoverId] - Entrega aberta ou concluída (status `handover`/`converted`).
+/// * [customerFirstName] - staff. Só o primeiro nome (agenda de retiradas).
 @BuiltValue()
 abstract class Reservation implements Built<Reservation, ReservationBuilder> {
   @BuiltValueField(wireName: r'id')
@@ -32,14 +47,52 @@ abstract class Reservation implements Built<Reservation, ReservationBuilder> {
 
   @BuiltValueField(wireName: r'status')
   ReservationStatus get status;
-  // enum statusEnum {  active,  converted,  canceled,  expired,  };
+  // enum statusEnum {  active,  converted,  canceled,  expired,  handover,  };
 
   @BuiltValueField(wireName: r'createdAt')
   DateTime get createdAt;
 
-  /// Base da contagem regressiva no app.
+  /// Base da contagem regressiva no app. Galpão: `now` → criação + `pickupNowWindowMinutes`; `scheduled` → `pickupAt` + `scheduledGraceMinutes`.
   @BuiltValueField(wireName: r'expiresAt')
   DateTime get expiresAt;
+
+  /// Só em reserva de galpão.
+  @BuiltValueField(wireName: r'depotId')
+  String? get depotId;
+
+  @BuiltValueField(wireName: r'pickupMode')
+  PickupMode? get pickupMode;
+  // enum pickupModeEnum {  now,  scheduled,  };
+
+  @BuiltValueField(wireName: r'pickupAt')
+  DateTime? get pickupAt;
+
+  @BuiltValueField(wireName: r'planCode')
+  PlanCode? get planCode;
+  // enum planCodeEnum {  minute,  hour,  day,  weekly,  monthly,  };
+
+  @BuiltValueField(wireName: r'coverage')
+  InsuranceCoverage? get coverage;
+  // enum coverageEnum {  basic,  full,  };
+
+  @BuiltValueField(wireName: r'depositMethod')
+  DepositMethod? get depositMethod;
+  // enum depositMethodEnum {  card,  pix,  };
+
+  @BuiltValueField(wireName: r'deposit')
+  Deposit? get deposit;
+
+  /// Conteúdo do QR de retirada (assinado, curto, sem dado pessoal). Só na resposta ao cliente dono da reserva.
+  @BuiltValueField(wireName: r'pickupCode')
+  String? get pickupCode;
+
+  /// Entrega aberta ou concluída (status `handover`/`converted`).
+  @BuiltValueField(wireName: r'handoverId')
+  String? get handoverId;
+
+  /// staff. Só o primeiro nome (agenda de retiradas).
+  @BuiltValueField(wireName: r'customerFirstName')
+  String? get customerFirstName;
 
   Reservation._();
 
@@ -96,6 +149,76 @@ class _$ReservationSerializer implements PrimitiveSerializer<Reservation> {
       object.expiresAt,
       specifiedType: const FullType(DateTime),
     );
+    if (object.depotId != null) {
+      yield r'depotId';
+      yield serializers.serialize(
+        object.depotId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.pickupMode != null) {
+      yield r'pickupMode';
+      yield serializers.serialize(
+        object.pickupMode,
+        specifiedType: const FullType(PickupMode),
+      );
+    }
+    if (object.pickupAt != null) {
+      yield r'pickupAt';
+      yield serializers.serialize(
+        object.pickupAt,
+        specifiedType: const FullType(DateTime),
+      );
+    }
+    if (object.planCode != null) {
+      yield r'planCode';
+      yield serializers.serialize(
+        object.planCode,
+        specifiedType: const FullType(PlanCode),
+      );
+    }
+    if (object.coverage != null) {
+      yield r'coverage';
+      yield serializers.serialize(
+        object.coverage,
+        specifiedType: const FullType(InsuranceCoverage),
+      );
+    }
+    if (object.depositMethod != null) {
+      yield r'depositMethod';
+      yield serializers.serialize(
+        object.depositMethod,
+        specifiedType: const FullType(DepositMethod),
+      );
+    }
+    if (object.deposit != null) {
+      yield r'deposit';
+      yield serializers.serialize(
+        object.deposit,
+        specifiedType: const FullType(Deposit),
+      );
+    }
+    if (object.pickupCode != null) {
+      yield r'pickupCode';
+      yield serializers.serialize(
+        object.pickupCode,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.handoverId != null) {
+      yield r'handoverId';
+      yield serializers.serialize(
+        object.handoverId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.customerFirstName != null) {
+      yield r'customerFirstName';
+      yield serializers.serialize(
+        object.customerFirstName,
+        specifiedType: const FullType(String),
+      );
+    }
   }
 
   @override
@@ -163,6 +286,86 @@ class _$ReservationSerializer implements PrimitiveSerializer<Reservation> {
             specifiedType: const FullType(DateTime),
           ) as DateTime;
           result.expiresAt = valueDes;
+          break;
+        case r'depotId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.depotId = valueDes;
+          break;
+        case r'pickupMode':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(PickupMode),
+          ) as PickupMode?;
+          if (valueDes == null) continue;
+          result.pickupMode = valueDes;
+          break;
+        case r'pickupAt':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DateTime),
+          ) as DateTime?;
+          if (valueDes == null) continue;
+          result.pickupAt = valueDes;
+          break;
+        case r'planCode':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(PlanCode),
+          ) as PlanCode?;
+          if (valueDes == null) continue;
+          result.planCode = valueDes;
+          break;
+        case r'coverage':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(InsuranceCoverage),
+          ) as InsuranceCoverage?;
+          if (valueDes == null) continue;
+          result.coverage = valueDes;
+          break;
+        case r'depositMethod':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DepositMethod),
+          ) as DepositMethod?;
+          if (valueDes == null) continue;
+          result.depositMethod = valueDes;
+          break;
+        case r'deposit':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(Deposit),
+          ) as Deposit?;
+          if (valueDes == null) continue;
+          result.deposit.replace(valueDes);
+          break;
+        case r'pickupCode':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.pickupCode = valueDes;
+          break;
+        case r'handoverId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.handoverId = valueDes;
+          break;
+        case r'customerFirstName':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.customerFirstName = valueDes;
           break;
         default:
           unhandled.add(key);

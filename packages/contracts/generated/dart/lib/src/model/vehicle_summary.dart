@@ -38,7 +38,7 @@ abstract class VehicleSummary
 
   @BuiltValueField(wireName: r'status')
   VehicleStatus get status;
-  // enum statusEnum {  free,  rented,  reserved,  paused,  blocked,  maintenance,  offline,  };
+  // enum statusEnum {  free,  rented,  reserved,  paused,  blocked,  maintenance,  offline,  awaiting_pickup,  };
 
   @BuiltValueField(wireName: r'lat')
   double get lat;

@@ -77,7 +77,7 @@ abstract class FieldTask implements Built<FieldTask, FieldTaskBuilder> {
 
   @BuiltValueField(wireName: r'vehicleStatus')
   VehicleStatus? get vehicleStatus;
-  // enum vehicleStatusEnum {  free,  rented,  reserved,  paused,  blocked,  maintenance,  offline,  };
+  // enum vehicleStatusEnum {  free,  rented,  reserved,  paused,  blocked,  maintenance,  offline,  awaiting_pickup,  };
 
   /// Endereço aproximado da moto.
   @BuiltValueField(wireName: r'vehicleAddress')

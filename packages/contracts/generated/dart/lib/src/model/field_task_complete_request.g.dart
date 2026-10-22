@@ -12,6 +12,8 @@ class _$FieldTaskCompleteRequest extends FieldTaskCompleteRequest {
   @override
   final ServiceVehicleStatus? vehicleStatus;
   @override
+  final String? depotId;
+  @override
   final DateTime? completedAt;
 
   factory _$FieldTaskCompleteRequest(
@@ -19,7 +21,7 @@ class _$FieldTaskCompleteRequest extends FieldTaskCompleteRequest {
       (FieldTaskCompleteRequestBuilder()..update(updates))._build();
 
   _$FieldTaskCompleteRequest._(
-      {this.notes, this.vehicleStatus, this.completedAt})
+      {this.notes, this.vehicleStatus, this.depotId, this.completedAt})
       : super._();
   @override
   FieldTaskCompleteRequest rebuild(
@@ -36,6 +38,7 @@ class _$FieldTaskCompleteRequest extends FieldTaskCompleteRequest {
     return other is FieldTaskCompleteRequest &&
         notes == other.notes &&
         vehicleStatus == other.vehicleStatus &&
+        depotId == other.depotId &&
         completedAt == other.completedAt;
   }
 
@@ -44,6 +47,7 @@ class _$FieldTaskCompleteRequest extends FieldTaskCompleteRequest {
     var _$hash = 0;
     _$hash = $jc(_$hash, notes.hashCode);
     _$hash = $jc(_$hash, vehicleStatus.hashCode);
+    _$hash = $jc(_$hash, depotId.hashCode);
     _$hash = $jc(_$hash, completedAt.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -54,6 +58,7 @@ class _$FieldTaskCompleteRequest extends FieldTaskCompleteRequest {
     return (newBuiltValueToStringHelper(r'FieldTaskCompleteRequest')
           ..add('notes', notes)
           ..add('vehicleStatus', vehicleStatus)
+          ..add('depotId', depotId)
           ..add('completedAt', completedAt))
         .toString();
   }
@@ -73,6 +78,10 @@ class FieldTaskCompleteRequestBuilder
   set vehicleStatus(ServiceVehicleStatus? vehicleStatus) =>
       _$this._vehicleStatus = vehicleStatus;
 
+  String? _depotId;
+  String? get depotId => _$this._depotId;
+  set depotId(String? depotId) => _$this._depotId = depotId;
+
   DateTime? _completedAt;
   DateTime? get completedAt => _$this._completedAt;
   set completedAt(DateTime? completedAt) => _$this._completedAt = completedAt;
@@ -86,6 +95,7 @@ class FieldTaskCompleteRequestBuilder
     if ($v != null) {
       _notes = $v.notes;
       _vehicleStatus = $v.vehicleStatus;
+      _depotId = $v.depotId;
       _completedAt = $v.completedAt;
       _$v = null;
     }
@@ -110,6 +120,7 @@ class FieldTaskCompleteRequestBuilder
         _$FieldTaskCompleteRequest._(
           notes: notes,
           vehicleStatus: vehicleStatus,
+          depotId: depotId,
           completedAt: completedAt,
         );
     replace(_$result);

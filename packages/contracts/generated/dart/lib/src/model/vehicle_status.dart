@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'vehicle_status.g.dart';
 
-/// Mesmas cores de `--status-*` do design system.
+/// Mesmas cores de `--status-*` do design system. Retirada em galpão: disponível = `free` com `depotId`; `reserved` = separada para uma reserva; `awaiting_pickup` = devolvida em ponto verde, esperando o operador recolher ao galpão (não alugável).
 class VehicleStatus extends EnumClass {
   @BuiltValueEnumConst(wireName: r'free')
   static const VehicleStatus free = _$free;
@@ -25,6 +25,8 @@ class VehicleStatus extends EnumClass {
   static const VehicleStatus maintenance = _$maintenance;
   @BuiltValueEnumConst(wireName: r'offline')
   static const VehicleStatus offline = _$offline;
+  @BuiltValueEnumConst(wireName: r'awaiting_pickup')
+  static const VehicleStatus awaitingPickup = _$awaitingPickup;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const VehicleStatus unknownDefaultOpenApi = _$unknownDefaultOpenApi;
 

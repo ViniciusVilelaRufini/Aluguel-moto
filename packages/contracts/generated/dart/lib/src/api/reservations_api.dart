@@ -78,10 +78,11 @@ class ReservationsApi {
   }
 
   /// Reservar moto
-  /// Uma reserva ativa por cliente (&#x60;409&#x60; &#x60;reservation-already-active&#x60;). Dura 15 minutos (TTL no Redis); ao expirar, a moto volta a &#x60;free&#x60;. Exige KYC aprovado (&#x60;403&#x60; &#x60;kyc-not-approved&#x60;) e cliente sem bloqueio nem inadimplência.
+  /// Uma reserva ativa por cliente (&#x60;409&#x60; &#x60;reservation-already-active&#x60;). Dura 15 minutos (TTL no Redis); ao expirar, a moto volta a &#x60;free&#x60;. Exige KYC aprovado (&#x60;403&#x60; &#x60;kyc-not-approved&#x60;) e cliente sem bloqueio nem inadimplência.  **Retirada em galpão** (com &#x60;depotId&#x60;): exige &#x60;Idempotency-Key&#x60;, &#x60;pickupMode&#x60;, &#x60;planCode&#x60;, &#x60;coverage&#x60; e &#x60;depositMethod&#x60;. Valida galpão ativo (&#x60;422&#x60; &#x60;depot-inactive&#x60;), horário dentro do funcionamento (&#x60;422&#x60; &#x60;pickup-outside-hours&#x60;) e de &#x60;maxScheduleDays&#x60; (&#x60;422&#x60; &#x60;pickup-too-far-ahead&#x60;), moto &#x60;free&#x60; no galpão (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (&#x60;409&#x60; &#x60;rental-already-active&#x60; / &#x60;reservation-open&#x60;). Bloqueia a caução (cartão: pré-autorização, recusa → &#x60;422&#x60; &#x60;payment-declined&#x60;; Pix: &#x60;deposit.pix&#x60; com o QR) e separa a moto (&#x60;free&#x60; → &#x60;reserved&#x60;). O plano só é cobrado no aceite da entrega. A resposta traz &#x60;pickupCode&#x60; (QR de retirada). Cancelar (&#x60;DELETE /reservations/{id}&#x60;) é grátis e libera a caução; ao vencer &#x60;expiresAt&#x60;, um job expira a reserva.
   ///
   /// Parameters:
   /// * [reservationCreate]
+  /// * [idempotencyKey] - Recomendado para reenvios da fila offline. Válida por 24 h.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -93,6 +94,7 @@ class ReservationsApi {
   /// Throws [DioException] if API call or serialization fails
   Future<Response<Reservation>> createReservation({
     required ReservationCreate reservationCreate,
+    String? idempotencyKey,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -104,6 +106,7 @@ class ReservationsApi {
     final _options = Options(
       method: r'POST',
       headers: <String, dynamic>{
+        if (idempotencyKey != null) r'Idempotency-Key': idempotencyKey,
         ...?headers,
       },
       extra: <String, dynamic>{

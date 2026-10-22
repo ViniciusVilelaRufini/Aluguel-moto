@@ -23,6 +23,8 @@ Name | Type | Description | Notes
 **referrals** | [**BuiltList&lt;ReferralReward&gt;**](ReferralReward.md) | Indicações feitas pelo titular (só o primeiro nome do amigo). | [optional] 
 **referralCode** | **String** |  | [optional] 
 **maintenanceRequests** | [**BuiltList&lt;CustomerMaintenanceRequest&gt;**](CustomerMaintenanceRequest.md) |  | [optional] 
+**depotReservations** | [**BuiltList&lt;Reservation&gt;**](Reservation.md) | Reservas de retirada no galpão (sem `pickupCode`). | [optional] 
+**handovers** | [**BuiltList&lt;Handover&gt;**](Handover.md) | Entregas do titular (fotos só como chaves, sem links). | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

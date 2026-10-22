@@ -65,6 +65,13 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(DepositMethod.serializer)
       ..add(DepositPage.serializer)
       ..add(DepositStatus.serializer)
+      ..add(Depot.serializer)
+      ..add(DepotInput.serializer)
+      ..add(DepotList.serializer)
+      ..add(DepotOpeningHours.serializer)
+      ..add(DepotPickupList.serializer)
+      ..add(DepotUpdate.serializer)
+      ..add(DepotVehicleList.serializer)
       ..add(DevTokenRequest.serializer)
       ..add(DevTokenResponse.serializer)
       ..add(DevTokenResponseTokenTypeEnum.serializer)
@@ -96,6 +103,13 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(GeoZone.serializer)
       ..add(GeoZoneInput.serializer)
       ..add(GeoZoneList.serializer)
+      ..add(Handover.serializer)
+      ..add(HandoverChecklistItem.serializer)
+      ..add(HandoverCreate.serializer)
+      ..add(HandoverDispute.serializer)
+      ..add(HandoverPage.serializer)
+      ..add(HandoverStatus.serializer)
+      ..add(HandoverType.serializer)
       ..add(HealthState.serializer)
       ..add(HealthStatus.serializer)
       ..add(HeatmapPoint.serializer)
@@ -150,6 +164,7 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(PaymentMethod.serializer)
       ..add(PaymentPage.serializer)
       ..add(PaymentStatus.serializer)
+      ..add(PickupMode.serializer)
       ..add(PixCharge.serializer)
       ..add(PixKeyType.serializer)
       ..add(PlanCode.serializer)
@@ -307,6 +322,18 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(Deposit)]),
           () => ListBuilder<Deposit>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Depot)]),
+          () => ListBuilder<Depot>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(DepotOpeningHours)]),
+          () => ListBuilder<DepotOpeningHours>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(DepotOpeningHours)]),
+          () => ListBuilder<DepotOpeningHours>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(DepotOpeningHours)]),
+          () => ListBuilder<DepotOpeningHours>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Dispute)]),
           () => ListBuilder<Dispute>())
       ..addBuilderFactory(
@@ -318,6 +345,26 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(GeoZone)]),
           () => ListBuilder<GeoZone>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Handover)]),
+          () => ListBuilder<Handover>())
+      ..addBuilderFactory(
+          const FullType(
+              BuiltList, const [const FullType(HandoverChecklistItem)]),
+          () => ListBuilder<HandoverChecklistItem>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(String)]),
+          () => ListBuilder<String>())
+      ..addBuilderFactory(
+          const FullType(
+              BuiltList, const [const FullType(HandoverChecklistItem)]),
+          () => ListBuilder<HandoverChecklistItem>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(String)]),
+          () => ListBuilder<String>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(String)]),
+          () => ListBuilder<String>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(HeatmapPoint)]),
           () => ListBuilder<HeatmapPoint>())
@@ -411,8 +458,17 @@ Serializers _$serializers = (Serializers().toBuilder()
               BuiltList, const [const FullType(CustomerMaintenanceRequest)]),
           () => ListBuilder<CustomerMaintenanceRequest>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Reservation)]),
+          () => ListBuilder<Reservation>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Handover)]),
+          () => ListBuilder<Handover>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(RentalEvent)]),
           () => ListBuilder<RentalEvent>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Reservation)]),
+          () => ListBuilder<Reservation>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(RestrictionEntry)]),
           () => ListBuilder<RestrictionEntry>())
@@ -486,6 +542,9 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(ValidationIssue)]),
           () => ListBuilder<ValidationIssue>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Vehicle)]),
+          () => ListBuilder<Vehicle>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Vehicle)]),
           () => ListBuilder<Vehicle>())

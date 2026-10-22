@@ -1,6 +1,6 @@
 # API Volti (`services/api`)
 
-NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as 165 operações de `packages/contracts/openapi.yaml` e o WebSocket de `packages/contracts/realtime.md` (Socket.IO, namespace `/realtime`).
+NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as operações de `packages/contracts/openapi.yaml` (177; as 12 do galpão, `/depots*` e `/handovers*`, ficam em `PENDING_GALPAO` no `contract-security.spec.ts` até as Tasks 4 e 6 do plano do galpão) e o WebSocket de `packages/contracts/realtime.md` (Socket.IO, namespace `/realtime`).
 
 ## Como rodar localmente
 

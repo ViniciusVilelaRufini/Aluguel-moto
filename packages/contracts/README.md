@@ -4,7 +4,7 @@ Contrato da plataforma Volti: **fonte única da verdade** para a API, o painel e
 
 | Arquivo | Conteúdo |
 |---|---|
-| `openapi.yaml` | API REST (OpenAPI 3.1): 165 operações em 26 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
+| `openapi.yaml` | API REST (OpenAPI 3.1): 177 operações em 28 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
 | `realtime.md` | Eventos do WebSocket (Socket.IO, namespace `/realtime`), salas e payloads |
 | `generated/ts/schema.d.ts` | Tipos TypeScript gerados com `openapi-typescript` (painel, com `openapi-fetch`) |
 | `generated/dart/` | Pacote Dart `volti_api` gerado com `openapi-generator` (`dart-dio` + `built_value`) para os apps Flutter |
@@ -136,6 +136,23 @@ Fix round 1: `503 gateway-unavailable` em pausar/retomar, `422 subscription-vehi
 
 Slugs novos: `gateway-unavailable`, `subscription-vehicle-cooldown`, `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`, `subscription-pause-limit-reached`,
 `subscription-required`, `subscription-vehicle-required`, `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`.
+
+## Retirada em galpão (2026-10-22)
+
+Acréscimos aprovados em `docs/decisoes.md` (abordagem A: galpão como entidade, reserva de retirada e entrega formal):
+
+- **Galpão:** `Depot` (horário por dia em `openingHours`, prazos `pickupNowWindowMinutes` 120, `maxScheduleDays` 7,
+  `scheduledGraceMinutes` 30), `GET/POST /depots`, `GET/PATCH /depots/{id}`, `GET /depots/{id}/vehicles`,
+  `GET /depots/{id}/pickups?date=`. Moto disponível = `free` com `Vehicle.depotId`; `VehicleStatus` ganha `awaiting_pickup`.
+- **Reserva de retirada:** `POST /reservations` com `depotId`, `pickupMode` (`now | scheduled`), `pickupAt`, `planCode`,
+  `coverage`, `depositMethod` (+ `Idempotency-Key`); `Reservation.pickupCode` (QR, só para o dono); `ReservationStatus`
+  ganha `handover`. Só `vehicleId` continua sendo a reserva de rua.
+- **Entrega:** `Handover` (`pickup | return_depot`; `pending_customer | accepted | disputed | canceled`), `POST/GET /handovers`,
+  `POST /handovers/uploads`, `GET /handovers/{id}`, `POST /handovers/{id}/accept` (`Idempotency-Key`, devolve o `Rental`),
+  `POST /handovers/{id}/dispute`. Eventos `handover.pending`/`handover.updated` em `x-ws-events` e em `realtime.md`.
+- **LGPD:** `LgpdExport.depotReservations` e `LgpdExport.handovers`.
+
+Slugs novos: `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`, `depot-inactive`, `handover-not-pending`, `payment-declined`.
 
 ## Regras que o contrato garante
 

@@ -46,6 +46,7 @@ part 'vehicle.g.dart';
 /// * [service]
 /// * [battery]
 /// * [assignedSubscriptionId] - staff. Moto fixa de uma assinatura semanal/mensal.
+/// * [depotId] - Galpão de origem/atual. Disponível para retirada = `status: free` com `depotId`.
 /// * [locationHidden] - Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
 /// * [createdAt]
 /// * [updatedAt]
@@ -66,7 +67,7 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
 
   @BuiltValueField(wireName: r'status')
   VehicleStatus get status;
-  // enum statusEnum {  free,  rented,  reserved,  paused,  blocked,  maintenance,  offline,  };
+  // enum statusEnum {  free,  rented,  reserved,  paused,  blocked,  maintenance,  offline,  awaiting_pickup,  };
 
   @BuiltValueField(wireName: r'lat')
   double get lat;
@@ -165,6 +166,10 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   /// staff. Moto fixa de uma assinatura semanal/mensal.
   @BuiltValueField(wireName: r'assignedSubscriptionId')
   String? get assignedSubscriptionId;
+
+  /// Galpão de origem/atual. Disponível para retirada = `status: free` com `depotId`.
+  @BuiltValueField(wireName: r'depotId')
+  String? get depotId;
 
   /// Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
   @BuiltValueField(wireName: r'locationHidden')
@@ -402,6 +407,13 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
       yield r'assignedSubscriptionId';
       yield serializers.serialize(
         object.assignedSubscriptionId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.depotId != null) {
+      yield r'depotId';
+      yield serializers.serialize(
+        object.depotId,
         specifiedType: const FullType(String),
       );
     }
@@ -697,6 +709,14 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
           ) as String?;
           if (valueDes == null) continue;
           result.assignedSubscriptionId = valueDes;
+          break;
+        case r'depotId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.depotId = valueDes;
           break;
         case r'locationHidden':
           final valueDes = serializers.deserialize(

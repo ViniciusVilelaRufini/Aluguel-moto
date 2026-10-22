@@ -43,8 +43,10 @@ O servidor coloca o socket nas salas automaticamente, a partir do token; o clien
 |---|---|---|
 | `fleet` | staff com grupo `admin`, `operacao` ou `suporte` | ao conectar |
 | `rental:{rentalId}` | só o cliente dono do aluguel | enquanto o aluguel estiver `active`, `paused` ou `ending` (entra ao conectar, ou quando o aluguel começa; sai quando termina) |
+| `customer:{customerId}` | o próprio cliente | ao conectar (só eventos da entrega no galpão; nunca posição) |
+| `depot:{depotId}` | staff `admin`, `operacao` ou `campo` | ao conectar (todos os galpões) |
 
-Staff de outros grupos (`financeiro`, `campo`) conecta, mas não recebe eventos da frota. Clientes sem aluguel ativo não recebem nada (LGPD: a posição só é enviada durante o aluguel).
+Staff de outros grupos (`financeiro`, `campo`) conecta, mas não recebe eventos da frota. Clientes sem aluguel ativo só recebem os eventos da entrega no galpão (`handover.*`, sem posição; LGPD: a posição só é enviada durante o aluguel).
 
 ## Eventos
 
@@ -59,6 +61,8 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 | `rental.updated` | `rental:{id}` | `{ rentalId, status: RentalStatus, elapsedSeconds, costCents, ts }` |
 | `zone.notice` | `rental:{id}` | `{ rentalId, zoneType: ZoneType, speedLimitKmh?, transition: 'ENTER' \| 'EXIT', message }` |
 | `device.event` | `rental:{id}` | `{ rentalId, type: 'queda', ts }` (dispara o "você está bem?") |
+| `handover.pending` | `customer:{id}`, `depot:{id}` | `{ handoverId, reservationId }` |
+| `handover.updated` | `customer:{id}`, `depot:{id}` | `{ handoverId, status: HandoverStatus, lastError? }` |
 
 ### Detalhes por evento
 
@@ -68,6 +72,8 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 - **`alert.created`** — `type` usa os valores de `AlertType` do `openapi.yaml`; `priority` é `AlertPriority`. Detalhes completos por `GET /alerts/{id}`.
 - **`rental.updated`** — a cada mudança de status e a cada 30 s com o aluguel `active`/`paused` (atualiza tempo e custo parcial). `costCents` segue a mesma regra de `Rental.costCents`.
 - **`zone.notice`** — entrada/saída de zonas que afetam o cliente: `reduced_speed` (com o novo `speedLimitKmh`), `forbidden`, `operation` (saída da área: aviso imediato e bloqueio seguro após 5 minutos fora) e `return`. `message` vem pronto em pt-BR para a UI (ex.: "Você entrou numa área de pedestres. Velocidade máxima: 6 km/h.").
+- **`handover.pending`** — o operador registrou a entrega de saída (`POST /handovers`, `type: pickup`). O app do cliente abre "Confira sua moto" e carrega `GET /handovers/{handoverId}`. Também descrito em `x-ws-events` no `openapi.yaml`.
+- **`handover.updated`** — aceite, disputa ou cancelamento da entrega, ou falha no aceite (`lastError`, ex.: `payment-declined`, com `status` ainda `pending_customer`). O operador vê "Aceito", "Pagamento não aprovado" ou "Problema apontado".
 - **`device.event`** — hoje só `queda`. O app abre o "Você está bem?" e responde por `POST /rentals/{id}/wellbeing`; sem resposta em 60 s, a API abre alerta `customer_not_ok` (`critical`).
 
 ### Tipos TypeScript (referência)
@@ -87,6 +93,8 @@ export interface RealtimeEvents {
   'rental.updated': { rentalId: string; status: S['RentalStatus']; elapsedSeconds: number; costCents: number; ts: string };
   'zone.notice': { rentalId: string; zoneType: S['ZoneType']; speedLimitKmh?: number; transition: 'ENTER' | 'EXIT'; message: string };
   'device.event': { rentalId: string; type: 'queda'; ts: string };
+  'handover.pending': { handoverId: string; reservationId: string };
+  'handover.updated': { handoverId: string; status: S['HandoverStatus']; lastError?: string };
 }
 ```
 

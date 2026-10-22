@@ -44,6 +44,25 @@ function collectRoutes() {
   return routes;
 }
 
+/**
+ * Operações do contrato do galpão (Task 1 do plano 2026-10-22-volti-galpao) ainda sem controller. Cada task que
+ * implementar uma rota a remove daqui (Task 4: `/depots*`; Task 6: `/handovers*`); a lista tem que terminar vazia.
+ */
+const PENDING_GALPAO = new Set([
+  'GET /depots',
+  'POST /depots',
+  'GET /depots/:id',
+  'PATCH /depots/:id',
+  'GET /depots/:id/vehicles',
+  'GET /depots/:id/pickups',
+  'POST /handovers',
+  'GET /handovers',
+  'POST /handovers/uploads',
+  'GET /handovers/:id',
+  'POST /handovers/:id/accept',
+  'POST /handovers/:id/dispute',
+]);
+
 describe('Contrato × controllers (segurança e grupos)', () => {
   process.env.AUTH_MODE = 'dev';
   const spec = yaml.load(fs.readFileSync(path.join(__dirname, '../../../packages/contracts/openapi.yaml'), 'utf8')) as {
@@ -58,14 +77,21 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     }
   }
 
-  it('cobre as 165 operações do contrato, sem rotas extras', () => {
-    expect(ops).toHaveLength(165);
-    const missing = ops.map(([k]) => k).filter((k) => !routes.has(k));
+  it('cobre as 177 operações do contrato, sem rotas extras', () => {
+    expect(ops).toHaveLength(177);
+    const missing = ops.map(([k]) => k).filter((k) => !routes.has(k) && !PENDING_GALPAO.has(k));
     const extra = [...routes.keys()].filter((k) => !ops.some(([o]) => o === k));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });
   });
 
-  it.each(ops.map(([k, op]) => [op.operationId, k, op] as const))('%s (%s): esquemas e grupos iguais ao contrato', (_id, key, op) => {
+  it('as operações pendentes do galpão existem no contrato e ainda não têm controller', () => {
+    for (const k of PENDING_GALPAO) {
+      expect(ops.some(([o]) => o === k)).toBe(true);
+      expect(routes.has(k)).toBe(false);
+    }
+  });
+
+  it.each(ops.filter(([k]) => !PENDING_GALPAO.has(k)).map(([k, op]) => [op.operationId, k, op] as const))('%s (%s): esquemas e grupos iguais ao contrato', (_id, key, op) => {
     const route = routes.get(key)!;
     const schemes = (op.security ?? []).map((s) => Object.keys(s)[0]).sort();
     if (schemes.length === 0) {
