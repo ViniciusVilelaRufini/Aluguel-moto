@@ -38,10 +38,11 @@ export class LgpdService {
     private readonly prisma: PrismaService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    /** Fix round 2 (M10): obrigatório — a exclusão sempre fecha a assinatura (e agenda o cancelamento no gateway). */
+    private readonly subscriptions: SubscriptionsService,
     @Optional() @Inject(CUSTOMER_IDENTITY) private readonly identity?: CustomerIdentityDirectory,
     @Optional() private readonly events?: EventEmitter2,
     @Optional() @Inject(V2_CONFIG) private readonly v2?: V2Config,
-    @Optional() private readonly subscriptions?: SubscriptionsService,
   ) {}
 
   private async customer(customerId: string) {
@@ -157,8 +158,8 @@ export class LgpdService {
       throw conflict('account-deletion-blocked', 'Encerre o aluguel e regularize os pagamentos antes de excluir a conta.');
     }
 
-    // Fix round 1 (M10): cancela a assinatura aberta no gateway e libera a moto fixa.
-    await this.subscriptions?.closeForAccountDeletion(customerId);
+    // M10: fecha a assinatura aberta e libera a moto fixa; o cancelamento no gateway fica pendente e retentável se falhar.
+    await this.subscriptions.closeForAccountDeletion(customerId);
 
     const kycKeys = [customer.kycDocumentFrontKey, customer.kycDocumentBackKey, customer.kycSelfieKey].filter((k): k is string => !!k);
     const rentals = await this.prisma.rental.findMany({ where: { customerId }, select: { id: true, returnPhotoObjectKey: true, returnPhotoUploadKey: true } });

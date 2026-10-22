@@ -215,6 +215,25 @@ describe('Contrato v2 (e2e)', () => {
     await prisma.subscription.update({ where: { id: fresh.body.id }, data: { status: 'canceled' } });
   });
 
+  it('fix round 2 (M10): exclusão da conta fecha a assinatura e libera a moto mesmo com o gateway fora; o job cancela depois', async () => {
+    const { SubscriptionsService } = await import('../src/modules/payments/subscriptions.service');
+    const fake = app.get(PAYMENT_PROVIDER) as any;
+    const a = await customerWithCard('plan-lgpd');
+    const taken = (await prisma.subscription.findMany({ where: { assignedVehicleId: { not: null } }, select: { assignedVehicleId: true } })).map((x) => x.assignedVehicleId!);
+    const v = await prisma.vehicle.findFirstOrThrow({ where: { status: 'free', id: { notIn: taken } } });
+    const sub = await http().post('/payments/subscriptions').set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send({ planCode: 'weekly', vehicleId: v.id }).expect(201);
+    const providerSubId = (await prisma.paymentProviderRef.findFirstOrThrow({ where: { entityType: 'subscription', entityId: sub.body.id } })).providerId;
+    fake.failNextCancelCall = true;
+    await http().delete('/lgpd/account').set(bearer(a.token)).expect(202);
+    const row = await prisma.subscription.findUniqueOrThrow({ where: { id: sub.body.id } });
+    expect(row).toMatchObject({ status: 'canceled', assignedVehicleId: null, gatewayCancelAttempts: 1 });
+    expect(row.gatewayCancelPendingAt).not.toBeNull();
+    expect(fake.subscriptionStatus(providerSubId)).toBe('active');
+    await app.get(SubscriptionsService).retryGatewayCancellations();
+    expect(fake.subscriptionStatus(providerSubId)).toBe('canceled');
+    expect((await prisma.subscription.findUniqueOrThrow({ where: { id: sub.body.id } })).gatewayCancelPendingAt).toBeNull();
+  });
+
   it('cupons na conta: validar, salvar, duplicado e inválido', async () => {
     const { token } = await approvedCustomer(app, prisma, 'coupon');
     const v = await http().post('/me/coupons/validate').set(bearer(token)).send({ code: 'volti20' }).expect(200);

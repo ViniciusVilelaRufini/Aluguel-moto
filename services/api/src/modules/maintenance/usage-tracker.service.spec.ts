@@ -19,4 +19,17 @@ describe('UsageTracker (acumulado de odômetro/horas no Redis)', () => {
     await t.reset('v1');
     expect(await t.take('v1')).toEqual({ km: 0, hours: 0 });
   });
+
+  it('fix round 2 (M4): leitura da amostra anterior + gravação são atômicas — entrega duplicada concorrente em duas instâncias conta uma vez', async () => {
+    const redis = new MemoryRedisStore();
+    const a = new UsageTracker(redis);
+    const b = new UsageTracker(redis);
+    await a.record(ev(0, -23.5614));
+    // As duas instâncias leem a mesma amostra anterior antes de qualquer uma gravar.
+    await Promise.all([a.record(ev(20, -23.5604)), b.record(ev(20, -23.5604))]);
+    await Promise.all([a.record(ev(40, -23.5594)), b.record(ev(40, -23.5594))]);
+    const got = await a.take('v1');
+    expect(got.km).toBeCloseTo(0.222, 2);
+    expect(got.hours).toBeCloseTo(40 / 3600, 6);
+  });
 });

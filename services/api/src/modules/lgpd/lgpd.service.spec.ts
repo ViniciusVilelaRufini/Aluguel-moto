@@ -16,11 +16,14 @@ const me = {
   kycDocumentBackKey: null, kycSelfieKey: 'kyc/me/selfie.jpg', createdAt: now, updatedAt: now,
 };
 
+const subs = () => ({ closeForAccountDeletion: jest.fn().mockResolvedValue(undefined) });
+
 function setup() {
   const prisma = mockDeep<PrismaClient>();
+  const subscriptions = subs();
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
-  const service = new LgpdService(prisma as any, storage, loadConfig());
+  const service = new LgpdService(prisma as any, storage, loadConfig(), subscriptions as any);
   prisma.customer.findUnique.mockResolvedValue(me as any);
   prisma.rental.findMany.mockResolvedValue([]);
   prisma.payment.findMany.mockResolvedValue([]);
@@ -38,7 +41,7 @@ function setup() {
   prisma.customer.findMany.mockResolvedValue([]);
   prisma.rental.findFirst.mockResolvedValue(null);
   prisma.payment.count.mockResolvedValue(0);
-  return { prisma, storage, service };
+  return { prisma, storage, service, subscriptions };
 }
 
 describe('LgpdService', () => {
@@ -81,7 +84,7 @@ describe('LgpdService', () => {
     prisma.rental.findMany.mockResolvedValue([]);
     const identity = { deleteIdentity: jest.fn().mockResolvedValue(undefined) };
     const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
-    await new LgpdService(prisma as any, storage, loadConfig(), identity).deleteAccount(ME);
+    await new LgpdService(prisma as any, storage, loadConfig(), subs() as any, identity).deleteAccount(ME);
     expect(identity.deleteIdentity).toHaveBeenCalledWith('sub-me');
     const update = prisma.customer.update.mock.calls[0][0] as any;
     expect(update.data.cognitoSub).toBe(deletedSubMarker('sub-me'));
@@ -95,7 +98,7 @@ describe('LgpdService', () => {
     prisma.rental.findMany.mockResolvedValue([]);
     const identity = { deleteIdentity: jest.fn().mockRejectedValue(new Error('cognito fora')) };
     const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
-    const out = await new LgpdService(prisma as any, storage, loadConfig(), identity).deleteAccount(ME);
+    const out = await new LgpdService(prisma as any, storage, loadConfig(), subs() as any, identity).deleteAccount(ME);
     expect(out.status).toBe('completed');
     expect(prisma.customer.update).toHaveBeenCalled();
     // Fix round 1: a exclusão pendente fica registrada (na mesma transação) para o job de retentativa.
@@ -111,7 +114,7 @@ describe('LgpdService', () => {
     prisma.rental.findMany.mockResolvedValue([]);
     const events = { emit: jest.fn() };
     const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
-    await new LgpdService(prisma as any, storage, loadConfig(), undefined, events as any).deleteAccount(ME);
+    await new LgpdService(prisma as any, storage, loadConfig(), subs() as any, undefined, events as any).deleteAccount(ME);
     expect(events.emit).toHaveBeenCalledWith(EV.PRINCIPAL_REVOKED, { pool: 'customer', userId: ME });
   });
 
@@ -125,7 +128,7 @@ describe('LgpdService', () => {
       { customerId: 'c-last', sub: 'sub-last', attempts: 9 },
     ] as any);
     prisma.customerIdentityDeletion.update.mockResolvedValue({ customerId: 'c-last', attempts: 10 } as any);
-    await new LgpdService(prisma as any, storage, loadConfig(), identity, events as any).retryIdentityDeletions();
+    await new LgpdService(prisma as any, storage, loadConfig(), subs() as any, identity, events as any).retryIdentityDeletions();
     expect(prisma.customerIdentityDeletion.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { attempts: { lt: 10 } } }));
     expect(prisma.customerIdentityDeletion.delete).toHaveBeenCalledWith({ where: { customerId: 'c-ok' } });
     expect(events.emit).toHaveBeenCalledWith(EV.LGPD_IDENTITY_DELETION_FAILED, { customerId: 'c-last', attempts: 10 });
@@ -155,6 +158,18 @@ describe('LgpdService', () => {
     expect(prisma.payment.deleteMany).not.toHaveBeenCalled();
     expect(prisma.payment.update).not.toHaveBeenCalled();
     expect(out.status).toBe('completed');
+  });
+
+  it('fix round 2 (M10): exclusão fecha a assinatura pelo SubscriptionsService (obrigatório) antes de anonimizar; falha dele interrompe', async () => {
+    const { service, prisma, subscriptions } = setup();
+    await service.deleteAccount(ME);
+    expect(subscriptions.closeForAccountDeletion).toHaveBeenCalledWith(ME);
+    expect(subscriptions.closeForAccountDeletion.mock.invocationCallOrder[0]).toBeLessThan(prisma.customer.update.mock.invocationCallOrder[0]);
+
+    const other = setup();
+    other.subscriptions.closeForAccountDeletion.mockRejectedValueOnce(new Error('db fora'));
+    await expect(other.service.deleteAccount(ME)).rejects.toThrow('db fora');
+    expect(other.prisma.customer.update).not.toHaveBeenCalled();
   });
 
   it('exclusão bloqueada com aluguel em andamento → 409 account-deletion-blocked', async () => {
@@ -222,7 +237,7 @@ describe('LgpdService', () => {
     prisma.customer.update.mockResolvedValue({ ...me, locationConsent: false } as any);
     const events = { emit: jest.fn() };
     const storage = { deleteObject: jest.fn(), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
-    await new LgpdService(prisma as any, storage, loadConfig(), undefined, events as any).updateConsents(ME, { termsVersion: '2026-10', termsAccepted: true, locationTracking: false, marketing: false });
+    await new LgpdService(prisma as any, storage, loadConfig(), subs() as any, undefined, events as any).updateConsents(ME, { termsVersion: '2026-10', termsAccepted: true, locationTracking: false, marketing: false });
     expect(events.emit).toHaveBeenCalledWith(EV.CUSTOMER_CONSENT_CHANGED, { customerId: ME, locationTracking: false });
   });
 

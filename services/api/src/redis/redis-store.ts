@@ -11,10 +11,13 @@ export interface RedisStore {
   exists(key: string): Promise<boolean>;
   hset(key: string, values: Record<string, string>): Promise<void>;
   hgetall(key: string): Promise<Record<string, string>>;
-  /** Contrato v2 (fix round 1, M4): soma atômica num campo numérico do hash. */
-  hincrbyfloat(key: string, field: string, by: number): Promise<number>;
   /** Lê e zera campos numéricos do hash numa operação atômica (ausente = 0). */
   htakeFloats(key: string, fields: string[]): Promise<number[]>;
+  /**
+   * Fix round 2 (M4): compare-and-set atômico no hash — só se `guardField` ainda vale `expected` (`null` = ausente), grava
+   * `values` e soma `increments` (HINCRBYFLOAT), tudo numa operação. Devolve `false` se outro escritor mudou o campo antes.
+   */
+  hcas(key: string, guardField: string, expected: string | null, values: Record<string, string>, increments?: Record<string, number>): Promise<boolean>;
   /** Contador de janela fixa: INCR e, no primeiro hit, expira em `ttlMs`. Devolve a contagem e o tempo restante (ms). */
   incrWindow(key: string, ttlMs: number): Promise<{ count: number; ttlMs: number }>;
   /** Chamado quando uma chave expira por TTL (keyspace notifications `Ex`). */
@@ -24,7 +27,18 @@ export interface RedisStore {
 }
 
 const HTAKE_LUA = "local out = {} for i, f in ipairs(ARGV) do out[i] = redis.call('HGET', KEYS[1], f) or '0' redis.call('HSET', KEYS[1], f, '0') end return out";
+// ARGV: guardField, expected ('' = ausente), nº de pares a gravar, pares campo/valor, depois pares campo/incremento.
+const HCAS_LUA = `local cur = redis.call('HGET', KEYS[1], ARGV[1]) or ''
+if cur ~= ARGV[2] then return 0 end
+local n = tonumber(ARGV[3])
+local i = 4
+for _ = 1, n do redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1]) i = i + 2 end
+while i <= #ARGV do redis.call('HINCRBYFLOAT', KEYS[1], ARGV[i], ARGV[i + 1]) i = i + 2 end
+return 1`;
 const INCR_WINDOW_LUA = "local c = redis.call('INCR', KEYS[1]) if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end return {c, redis.call('PTTL', KEYS[1])}";
+
+/** Incremento como texto decimal sem notação científica (o HINCRBYFLOAT não aceita `1e-7`). */
+const floatArg = (v: number) => v.toFixed(9);
 
 /** Redis real (ioredis). Liga `notify-keyspace-events Ex` para receber expirações. */
 export class IoRedisStore implements RedisStore {
@@ -57,12 +71,15 @@ export class IoRedisStore implements RedisStore {
   async hgetall(key: string) {
     return this.client.hgetall(key);
   }
-  async hincrbyfloat(key: string, field: string, by: number) {
-    return Number(await this.client.hincrbyfloat(key, field, by));
-  }
   async htakeFloats(key: string, fields: string[]) {
     const out = (await this.client.eval(HTAKE_LUA, 1, key, ...fields)) as string[];
     return out.map((v) => Number(v) || 0);
+  }
+  async hcas(key: string, guardField: string, expected: string | null, values: Record<string, string>, increments: Record<string, number> = {}) {
+    const sets = Object.entries(values);
+    const incs = Object.entries(increments).filter(([, v]) => v !== 0);
+    const args = [guardField, expected ?? '', String(sets.length), ...sets.flat(), ...incs.flatMap(([f, v]) => [f, floatArg(v)])];
+    return Number(await this.client.eval(HCAS_LUA, 1, key, ...args)) === 1;
   }
   async incrWindow(key: string, ttlMs: number) {
     const [count, pttl] = (await this.client.eval(INCR_WINDOW_LUA, 1, key, String(Math.ceil(ttlMs)))) as [number, number];
@@ -144,17 +161,19 @@ export class MemoryRedisStore implements RedisStore {
   async hgetall(key: string) {
     return { ...(this.hashes.get(key) ?? {}) };
   }
-  async hincrbyfloat(key: string, field: string, by: number) {
-    const h = this.hashes.get(key) ?? {};
-    const v = (Number(h[field]) || 0) + by;
-    this.hashes.set(key, { ...h, [field]: String(v) });
-    return v;
-  }
   async htakeFloats(key: string, fields: string[]) {
     const h = this.hashes.get(key) ?? {};
     const out = fields.map((f) => Number(h[f]) || 0);
     this.hashes.set(key, { ...h, ...Object.fromEntries(fields.map((f) => [f, '0'])) });
     return out;
+  }
+  async hcas(key: string, guardField: string, expected: string | null, values: Record<string, string>, increments: Record<string, number> = {}) {
+    const h = this.hashes.get(key) ?? {};
+    if ((h[guardField] ?? '') !== (expected ?? '')) return false;
+    const next = { ...h, ...values };
+    for (const [f, v] of Object.entries(increments)) if (v !== 0) next[f] = String((Number(next[f]) || 0) + Number(floatArg(v)));
+    this.hashes.set(key, next);
+    return true;
   }
   async incrWindow(key: string, ttlMs: number) {
     const now = Date.now();
