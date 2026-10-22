@@ -400,7 +400,7 @@ void main() {
       phone(t);
       final b = GalpaoBackend()..current = reservation();
       final router = await pumpApp(t, b);
-      await tapText(t, 'Ver reserva');
+      await tapText(t, 'Ver QR da reserva');
       expect(router.state.uri.path, '/reservation/res1');
     });
   });
@@ -609,11 +609,11 @@ void main() {
         ..depositMethod = DepositMethod.card));
       await pumpApp(t, b, kyc: KycStatus.pending);
       expect(t.takeException(), isNull);
-      expect(find.text('Ver reserva'), findsOneWidget);
+      expect(find.text('Ver QR da reserva'), findsOneWidget);
       expect(find.text('Verificação em análise'), findsOneWidget);
-      final card = t.getRect(find.byKey(const Key('depot-card')));
+      final card = t.getRect(find.byKey(const Key('home-reservation-card')));
       final top = t.getRect(find.byKey(const Key('home-top')));
-      expect(top.bottom, lessThanOrEqualTo(card.top), reason: 'cabecalho e avisos acima do cartao do galpao');
+      expect(top.bottom, lessThanOrEqualTo(card.top), reason: 'cabecalho e avisos acima do cartao da reserva');
       expect(card.bottom, lessThanOrEqualTo(740));
       expect(top.top, greaterThanOrEqualTo(0));
     });

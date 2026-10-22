@@ -1186,12 +1186,6 @@ abstract class AppLocalizations {
   /// **'Escanear para andar'**
   String get scanToRide;
 
-  /// No description provided for @seeReservation.
-  ///
-  /// In pt, this message translates to:
-  /// **'Ver reserva'**
-  String get seeReservation;
-
   /// No description provided for @selfiePhoto.
   ///
   /// In pt, this message translates to:
@@ -4503,6 +4497,66 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Fechar pontos de troca'**
   String get stationsCloseSemantics;
+
+  /// No description provided for @homeReservationTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua reserva'**
+  String get homeReservationTitle;
+
+  /// No description provided for @homeReservationScheduled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirada agendada · {day} às {time}'**
+  String homeReservationScheduled(String day, String time);
+
+  /// No description provided for @homeReservationHandover.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua moto está sendo entregue'**
+  String get homeReservationHandover;
+
+  /// No description provided for @homeReservationExpired.
+  ///
+  /// In pt, this message translates to:
+  /// **'O prazo de retirada acabou'**
+  String get homeReservationExpired;
+
+  /// No description provided for @homeReservationShowQr.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ver QR da reserva'**
+  String get homeReservationShowQr;
+
+  /// No description provided for @homeReservationRemaining.
+  ///
+  /// In pt, this message translates to:
+  /// **'{minutes, plural, =0{Falta menos de 1 minuto} =1{Falta 1 minuto} other{Faltam {minutes} minutos}}'**
+  String homeReservationRemaining(int minutes);
+
+  /// No description provided for @homeReservationA11yNow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserva da {vehicle}, retire até {time}'**
+  String homeReservationA11yNow(String vehicle, String time);
+
+  /// No description provided for @homeReservationA11yScheduled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserva da {vehicle}, retirada agendada {day} às {time}'**
+  String homeReservationA11yScheduled(String vehicle, String day, String time);
+
+  /// No description provided for @homeReservationA11yHandover.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserva da {vehicle}, sua moto está sendo entregue'**
+  String homeReservationA11yHandover(String vehicle);
+
+  /// No description provided for @homeReservationA11yExpired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserva da {vehicle}, o prazo de retirada acabou'**
+  String homeReservationA11yExpired(String vehicle);
 }
 
 class _AppLocalizationsDelegate
