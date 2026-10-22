@@ -1,4 +1,5 @@
-import type { S } from './types';
+import type { S, StaffGroup } from './types';
+import { loadAllPages, type Page } from './paging';
 import type { Tone } from './status';
 
 export type ServiceInfo = S<'VehicleServiceInfo'>;
@@ -37,9 +38,39 @@ export function nextServiceLabel(s: ServiceInfo): string {
   return kmShare <= hShare ? `em ${formatKm(s.kmUntilService)}` : `em ${formatHours(s.hoursUntilService)}`;
 }
 
+/**
+ * Nome do cliente para o grupo: admin e suporte veem o nome inteiro; operação (e os demais), só o
+ * primeiro nome (mesma regra da API para `campo`).
+ */
+export function customerNameFor(name: string | undefined, groups: StaffGroup[]): string | undefined {
+  if (!name) return undefined;
+  const full = groups.includes('admin') || groups.includes('suporte');
+  return full ? name.trim() : name.trim().split(/\s+/)[0];
+}
+
 /** Origem da manutenção: painel, pedido do cliente do plano (com o nome) ou regra automática. */
-export function maintenanceOrigin(t: Pick<S<'MaintenanceTask'>, 'source' | 'customerName'>): string {
+export function maintenanceOrigin(t: Pick<S<'MaintenanceTask'>, 'source' | 'customerName'>, fullName = true): string {
   const src = t.source ?? 'staff';
-  if (src === 'customer') return t.customerName ? `Cliente · ${t.customerName}` : 'Cliente';
+  if (src === 'customer') {
+    if (!t.customerName) return 'Cliente';
+    return `Cliente · ${fullName ? t.customerName.trim() : t.customerName.trim().split(/\s+/)[0]}`;
+  }
   return MAINTENANCE_SOURCE[src];
+}
+
+type OpenStatus = 'scheduled' | 'in_progress';
+
+/**
+ * "Em aberto": consulta já filtrada no servidor por `scheduled` e por `in_progress` (todas as páginas, até o
+ * limite) e junta por data, sem duplicar. Filtrar no navegador uma página sem filtro esconderia as abertas
+ * atrás de páginas de concluídas.
+ */
+export async function loadOpenTasks(
+  get: (status: OpenStatus, cursor?: string) => Promise<Page<S<'MaintenanceTask'>>>, maxPages = 10,
+): Promise<{ items: S<'MaintenanceTask'>[]; capped: boolean }> {
+  const [a, b] = await Promise.all((['scheduled', 'in_progress'] as const).map((st) => loadAllPages((c) => get(st, c), maxPages)));
+  const seen = new Set<string>();
+  const items = [...b.items, ...a.items].filter((t) => (seen.has(t.id) ? false : (seen.add(t.id), true)));
+  items.sort((x, y) => (x.scheduledFor ?? '9999').localeCompare(y.scheduledFor ?? '9999'));
+  return { items, capped: a.capped || b.capped };
 }

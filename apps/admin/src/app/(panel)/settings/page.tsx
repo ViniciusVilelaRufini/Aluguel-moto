@@ -15,6 +15,7 @@ import { Card } from '@/ds/Card';
 import { Switch } from '@/ds/Switch';
 import { toCents, toReais, validMoney } from '@/lib/money';
 import { ModelsSection } from '@/components/ModelsSection';
+import { couponLimitsError } from '@/lib/coupon';
 import { formatDate, dayEndIso, dayStartIso } from '@/lib/format';
 
 const UNIT_SUFFIX: Record<S<'PlanUnit'>, string> = { minute: '/min', hour: '/hora', day: '/dia', week: '/semana', month: '/mês' };
@@ -154,7 +155,7 @@ export default function SettingsPage() {
             ]} />
         ))}
         {sec('Modelos', 'Catálogo "Escolha sua moto": foto, preço por minuto e desbloqueio por modelo', (
-          <ModelsSection canEdit={canEdit} minuteUnlockCents={plans.data?.items.find((p) => p.code === 'minute')?.unlockFeeCents} />
+          <ModelsSection minuteUnlockCents={plans.data?.items.find((p) => p.code === 'minute')?.unlockFeeCents} />
         ))}
         {sec('Cupons e indicação', 'Campanhas ativas', (
           <>
@@ -195,7 +196,8 @@ function CouponModal({ onClose }: { onClose: () => void }) {
       if (type === 'percent' && (n > 100 || !Number.isInteger(n))) throw new Error('O desconto percentual é um inteiro de 1 a 100');
       if (!/^[A-Z0-9_-]{3,32}$/.test(code.trim().toUpperCase())) throw new Error('Código com 3 a 32 letras, números, _ ou -');
       if (from && until && until < from) throw new Error('A validade termina antes de começar');
-      if (perCustomer.trim() && !(Number(perCustomer) >= 1)) throw new Error('Limite por cliente a partir de 1');
+      const limits = couponLimitsError(max, perCustomer);
+      if (limits) throw new Error(limits);
       await unwrap(api.POST('/pricing/coupons', { body: {
         code: code.trim().toUpperCase(), discountType: type,
         ...(type === 'percent' ? { percentOff: n } : { amountOffCents: Math.round(n * 100) }),

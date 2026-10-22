@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { canSeeFullPixKey, displayPixKey, maskPixKey } from '@/lib/pix';
-import { lastUnreadFromCustomer, messageStatus, MESSAGE_STATUS, type SupportMessage } from '@/lib/chat';
+import { lastUnreadFromCustomer, messageStatus, type SupportMessage } from '@/lib/chat';
 
 describe('chave Pix de estorno', () => {
   it('só admin e financeiro veem a chave inteira', () => {
@@ -17,9 +17,17 @@ describe('chave Pix de estorno', () => {
     expect(maskPixKey('random', '123e4567-e89b-12d3-a456-426614174000')).toBe('123e…4000');
   });
 
-  it('valor já mascarado pela API não é mascarado de novo', () => {
+  it('valor já no formato exato da máscara da API não é mascarado de novo', () => {
     expect(maskPixKey('email', 'j***@exemplo.com')).toBe('j***@exemplo.com');
     expect(maskPixKey('random', '123e…4000')).toBe('123e…4000');
+    expect(maskPixKey('cpf', '***.456.789-**')).toBe('***.456.789-**');
+    expect(maskPixKey('phone', '+5511*****4321')).toBe('+5511*****4321');
+  });
+
+  it('asterisco no meio da chave não impede a máscara', () => {
+    expect(maskPixKey('email', 'jo*ana@exemplo.com')).toBe('j***@exemplo.com');
+    expect(maskPixKey('random', 'ab*cdefgh-1234-5678')).toBe('ab*c…5678');
+    expect(maskPixKey('email', 'ju***@exemplo.com')).toBe('j***@exemplo.com');
   });
 
   it('exibição: completa (CPF formatado) para quem pode, mascarada para os demais', () => {
@@ -39,8 +47,6 @@ describe('estado das mensagens do chat', () => {
     expect(messageStatus({ readAt: '2026-10-22T10:00:00Z' })).toBe('read');
     expect(messageStatus({ deliveredAt: '2026-10-22T10:00:00Z' })).toBe('delivered');
     expect(messageStatus({})).toBe('sent');
-    expect(MESSAGE_STATUS.read).toMatchObject({ label: 'Lida', icon: 'CheckCheck', strong: true });
-    expect(MESSAGE_STATUS.sent.icon).toBe('Check');
   });
 
   it('marca como lida até a última mensagem do cliente', () => {

@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { draftFromModel, modelInputFromDraft, modelPatchFromDraft, slugify, unlockFeeLabel, validateModelDraft, validatePhoto, type ModelDraft, type VehicleModel } from '@/lib/catalog';
 import { uploadModelPhoto } from '@/lib/catalog-upload';
+import { useAuth } from '@/lib/auth';
+import { can } from '@/lib/permissions';
 import { formatBRL } from '@/lib/format';
 import { Button } from '@/ds/Button';
 import { Icon } from '@/ds/Icon';
@@ -26,7 +28,9 @@ function Thumb({ url, size = 44 }: { url?: string; size?: number }) {
  * Preços e planos > Modelos (catálogo "Escolha sua moto"): foto, categoria, preço por minuto próprio do modelo
  * e desbloqueio próprio ou herdado do plano por minuto. Edição só para admin (`POST/PATCH /vehicle-models`).
  */
-export function ModelsSection({ canEdit, minuteUnlockCents }: { canEdit: boolean; minuteUnlockCents?: number }) {
+export function ModelsSection({ minuteUnlockCents }: { minuteUnlockCents?: number }) {
+  const { groups } = useAuth();
+  const canEdit = can(groups, 'catalog.edit');
   const models = useQuery({ queryKey: ['vehicle-models', 'all'], queryFn: () => unwrap(api.GET('/vehicle-models', { params: { query: { includeInactive: true } } })) });
   const [edit, setEdit] = useState<VehicleModel | 'new' | null>(null);
   return (
@@ -42,7 +46,7 @@ export function ModelsSection({ canEdit, minuteUnlockCents }: { canEdit: boolean
           { key: 'active', label: 'Situação', render: (m) => <Pill tone={m.active ? 'success' : 'neutral'}>{m.active ? 'Ativo' : 'Inativo'}</Pill> },
         ]} />
       {canEdit && <div><Button size="sm" variant="secondary" icon="Plus" style={ghost} testId="new-model" onClick={() => setEdit('new')}>Novo modelo</Button></div>}
-      {edit && <ModelModal model={edit === 'new' ? undefined : edit} minuteUnlockCents={minuteUnlockCents} onClose={() => setEdit(null)} />}
+      {edit && canEdit && <ModelModal model={edit === 'new' ? undefined : edit} minuteUnlockCents={minuteUnlockCents} onClose={() => setEdit(null)} />}
     </>
   );
 }
@@ -101,7 +105,7 @@ function ModelModal({ model, minuteUnlockCents, onClose }: { model?: VehicleMode
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="Nome"><TextInput testId="model-name" value={d.name} onChange={(v) => setD((x) => ({ ...x, name: v, ...(isNew && (x.slug === '' || x.slug === slugify(x.name)) ? { slug: slugify(v) } : {}) }))} /></Field>
         <Field label="Identificador" hint={isNew ? 'Letras minúsculas, números e hífen.' : 'Não pode ser alterado.'}>
-          {isNew ? <TextInput testId="model-slug" value={d.slug} onChange={(v) => set('slug', v)} /> : <TextInput value={d.slug} onChange={() => {}} />}
+          <TextInput testId="model-slug" value={d.slug} readOnly={!isNew} onChange={isNew ? (v) => set('slug', v) : undefined} />
         </Field>
         <Field label="Categoria"><TextInput testId="model-category" value={d.categoryLabel} onChange={(v) => set('categoryLabel', v)} placeholder="Urbana" /></Field>
         <Field label="Ordem no app"><TextInput type="number" value={d.sortOrder} onChange={(v) => set('sortOrder', v)} /></Field>
@@ -110,7 +114,7 @@ function ModelModal({ model, minuteUnlockCents, onClose }: { model?: VehicleMode
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
         <Field label="Preço por minuto (R$)" hint="Vale no plano por minuto para motos deste modelo."><TextInput testId="model-price" value={d.price} onChange={(v) => set('price', v)} /></Field>
         <Field label="Desbloqueio (R$)" hint={d.inheritUnlock ? `Usa o do plano por minuto${minuteUnlockCents !== undefined ? ` (${formatBRL(minuteUnlockCents)})` : ''}.` : 'Valor próprio do modelo.'}>
-          {d.inheritUnlock ? <TextInput value={minuteUnlockCents !== undefined ? formatBRL(minuteUnlockCents) : 'Do plano'} onChange={() => {}} /> : <TextInput testId="model-unlock" value={d.unlock} onChange={(v) => set('unlock', v)} placeholder="3,00" />}
+          {d.inheritUnlock ? <TextInput testId="model-unlock-inherited" readOnly value={minuteUnlockCents !== undefined ? formatBRL(minuteUnlockCents) : 'Do plano'} /> : <TextInput testId="model-unlock" value={d.unlock} onChange={(v) => set('unlock', v)} placeholder="3,00" />}
         </Field>
       </div>
       <Switch label="Usar o desbloqueio do plano" checked={d.inheritUnlock} onChange={(v: boolean) => setD((x) => ({ ...x, inheritUnlock: v, unlock: v ? x.unlock : x.unlock || (minuteUnlockCents !== undefined ? (minuteUnlockCents / 100).toFixed(2).replace('.', ',') : '') }))} />

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { loadAllPages } from '@/lib/paging';
 import { batteryLocation, chargeTone, countByStatus, parseSerials, type Battery } from '@/lib/batteries';
 
 const b = (over: Partial<Battery>): Battery => ({ id: 'b1', serial: 'BT-1', chargePct: 100, cycleCount: 3, status: 'charging', updatedAt: '2026-10-22T10:00:00Z', ...over });
@@ -34,5 +35,16 @@ describe('baterias', () => {
     expect(chargeTone(90)).toBe('success');
     expect(chargeTone(89)).toBe('warning');
     expect(chargeTone(12)).toBe('danger');
+  });
+});
+
+describe('carga de todas as páginas', () => {
+  it('para no limite de páginas e avisa', async () => {
+    const r = await loadAllPages(async (cursor?: string) => ({ items: [cursor ?? 'first'], nextCursor: 'next' }), 3);
+    expect(r).toEqual({ items: ['first', 'next', 'next'], capped: true });
+  });
+  it('sem próxima página não está no limite', async () => {
+    const r = await loadAllPages(async () => ({ items: [1, 2] }), 3);
+    expect(r).toEqual({ items: [1, 2], capped: false });
   });
 });

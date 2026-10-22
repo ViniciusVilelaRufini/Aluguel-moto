@@ -141,7 +141,12 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         <KV k="GPS / 4G" v={signalLabel(v.online, v.signal)} />
         <KV k="Cliente" v={!v.currentRentalId ? '—' : !canSeeCustomer ? 'Restrito' : (customer.data?.name ?? (rental.isLoading || customer.isLoading ? '...' : '—'))} />
         <KV k="Aluguel" v={v.currentRentalId ? (rentalHref(groups, v.currentRentalId) ? <Link href={rentalHref(groups, v.currentRentalId)!} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Ver aluguel atual</Link> : 'Em andamento') : '—'} />
-        <KV k="Endereço" v={v.address ? <span data-testid="vehicle-address" title={v.addressUpdatedAt ? `Atualizado ${timeAgo(v.addressUpdatedAt)}` : undefined}>{v.address}</span> : '—'} />
+        <KV k="Endereço" v={v.address ? (
+          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <span data-testid="vehicle-address">{v.address}</span>
+            {v.addressUpdatedAt && <span data-testid="vehicle-address-updated" style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>atualizado {timeAgo(v.addressUpdatedAt)}</span>}
+          </span>
+        ) : '—'} />
         <KV k="Posição" v={`${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`} mono />
         <KV k="Modelo" v={v.categoryLabel ? `${v.model} · ${v.categoryLabel}` : v.model} />
         <KV k="Km desde revisão" v={v.service ? (
@@ -305,7 +310,7 @@ function HistoryModal({ vehicleId, code, groups, onClose }: { vehicleId: string;
         columns={[
           { key: 'title', label: 'Serviço' },
           { key: 'kind', label: 'Tipo', render: (r) => (r.kind === 'preventive' ? 'Preventiva' : 'Corretiva') },
-          { key: 'source', label: 'Origem', render: (r) => maintenanceOrigin(r) },
+          { key: 'source', label: 'Origem', render: (r) => maintenanceOrigin(r, groups.includes('admin') || groups.includes('suporte')) },
           { key: 'status', label: 'Situação', render: (r) => <Pill tone={MAINTENANCE_STATUS[r.status][1]}>{MAINTENANCE_STATUS[r.status][0]}</Pill> },
         ]} />
       </>}

@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { BATTERY_STATUS, BATTERY_STATUSES, batteryLocation, chargeTone, countByStatus, parseSerials, type Battery, type BatteryStatus } from '@/lib/batteries';
 import { timeAgo } from '@/lib/format';
+import { loadAllPages } from '@/lib/paging';
 import type { S } from '@/lib/types';
 import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
@@ -17,16 +18,9 @@ import { DataTable, ErrorNote, Field, Modal, Pill, SectionTitle, Select, Skeleto
 const ME = 'me';
 const ghost = { color: 'var(--text-primary)', borderColor: 'var(--border-strong)' };
 
-async function loadAllBatteries(): Promise<Battery[]> {
-  const all: Battery[] = [];
-  let cursor: string | undefined;
-  for (let i = 0; i < 20; i++) {
-    const page = await unwrap(api.GET('/batteries', { params: { query: { limit: 100, cursor } } }));
-    all.push(...page.items);
-    cursor = page.nextCursor;
-    if (!cursor) break;
-  }
-  return all;
+/** Todas as baterias para as contagens (até 20 páginas de 100 = 2000; acima disso a tela avisa). */
+function loadAllBatteries() {
+  return loadAllPages<Battery>((cursor) => unwrap(api.GET('/batteries', { params: { query: { limit: 100, cursor } } })));
 }
 
 /**
@@ -36,21 +30,22 @@ async function loadAllBatteries(): Promise<Battery[]> {
 export function BatteriesPanel() {
   const { groups } = useAuth();
   const canTransfer = can(groups, 'battery.transfer');
-  const all = useQuery({ queryKey: ['batteries', 'all'], queryFn: loadAllBatteries, refetchInterval: 30_000 });
+  const all = useQuery({ queryKey: ['batteries', 'all'], queryFn: loadAllBatteries, refetchInterval: 120_000 });
   const stations = useQuery({ queryKey: ['swap-stations'], queryFn: () => unwrap(api.GET('/swap-stations')) });
   const staff = useQuery({ queryKey: ['staff', 'campo'], queryFn: () => unwrap(api.GET('/staff', { params: { query: { group: 'campo', active: true, limit: 100 } } })) });
   const stationNames = useMemo(() => new Map((stations.data?.items ?? []).map((s) => [s.id, s.name])), [stations.data]);
   const staffNames = useMemo(() => new Map((staff.data?.items ?? []).map((s) => [s.id, s.name])), [staff.data]);
-  const counts = useMemo(() => countByStatus(all.data ?? []), [all.data]);
+  const counts = useMemo(() => countByStatus(all.data?.items ?? []), [all.data]);
   const inStation = useMemo(() => {
     const m = new Map<string, number>();
-    for (const b of all.data ?? []) if (b.status === 'in_station' && b.stationId) m.set(b.stationId, (m.get(b.stationId) ?? 0) + 1);
+    for (const b of all.data?.items ?? []) if (b.status === 'in_station' && b.stationId) m.set(b.stationId, (m.get(b.stationId) ?? 0) + 1);
     return m;
   }, [all.data]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <ErrorNote error={all.error ?? stations.error} />
+      {all.data?.capped && <Alert tone="warning" icon="TriangleAlert">Mais de 2.000 baterias: as contagens abaixo consideram só as 2.000 primeiras. Use a lista filtrada para o restante.</Alert>}
       <div data-testid="battery-counts" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         {BATTERY_STATUSES.map((s) => (
           <Card key={s} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>

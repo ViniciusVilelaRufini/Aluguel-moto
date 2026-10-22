@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GeoJSONSource, Map as MlMap, Marker, Popup } from 'maplibre-gl';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -84,6 +84,14 @@ export default function FleetPage() {
   }, [router]);
 
   const changeView = (v: 'map' | 'list') => { setView(v); if (v === 'list') setReplay(false); };
+
+  // Na lista, o endereço vem do `GET /vehicles` (o tempo real só traz posição): recarrega a frota a cada 60 s.
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (view !== 'list') return;
+    const t = setInterval(() => qc.invalidateQueries({ queryKey: ['fleet'] }), 60_000);
+    return () => clearInterval(t);
+  }, [view, qc]);
 
   // Esc fecha a ficha da moto (quando nenhum diálogo está aberto).
   useEffect(() => {

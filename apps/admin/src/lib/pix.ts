@@ -12,11 +12,18 @@ export function canSeeFullPixKey(groups: StaffGroup[]): boolean {
   return groups.includes('admin') || groups.includes('financeiro');
 }
 
-const isMasked = (v: string) => /[*…]/.test(v);
+/** Formato exato que a API devolve mascarado, por tipo (`services/api/src/common/pix-key.ts`). */
+const API_MASK: Record<PixKeyType, RegExp> = {
+  cpf: /^\*{3}\.\d{3}\.\d{3}-\*{2}$/,
+  email: /^[^@*]\*{3}@[^@]*$/,
+  phone: /^.{5}\*{5}.{4}$/,
+  random: /^.{4}….{4}$/,
+};
+const isApiMasked = (type: PixKeyType, v: string) => API_MASK[type].test(v);
 
 /** Mesma máscara da API (`services/api/src/common/pix-key.ts`); valor já mascarado passa direto. */
 export function maskPixKey(type: PixKeyType, value: string): string {
-  if (isMasked(value)) return value;
+  if (isApiMasked(type, value)) return value;
   switch (type) {
     case 'cpf': {
       const d = value.replace(/\D/g, '');
@@ -39,6 +46,6 @@ export function maskPixKey(type: PixKeyType, value: string): string {
  */
 export function displayPixKey(type: PixKeyType | undefined, value: string | undefined, full: boolean): string {
   if (!value || !type) return 'Não cadastrada';
-  const shown = full ? (type === 'cpf' && !isMasked(value) ? formatCpf(value) : value) : maskPixKey(type, value);
+  const shown = full ? (type === 'cpf' && !isApiMasked(type, value) ? formatCpf(value) : value) : maskPixKey(type, value);
   return `${PIX_KEY_TYPE_LABEL[type]} · ${shown}`;
 }

@@ -16,6 +16,21 @@ describe('dinheiro em centavos', () => {
     expect(validMoney('3,5')).toBe(true);
     expect(validMoney('abc')).toBe(false);
   });
+
+  it('ponto sozinho com 1 ou 2 casas é o separador decimal', () => {
+    expect(toCents('0.79')).toBe(79);
+    expect(toCents('3.5')).toBe(350);
+    expect(validMoney('0.79')).toBe(true);
+  });
+
+  it('ponto como milhar só no formato 1.234(,56)', () => {
+    expect(toCents('1.234,56')).toBe(123456);
+    expect(toCents('1.234')).toBe(123400);
+    expect(toCents('12.345.678,90')).toBe(1234567890);
+    expect(validMoney('1.23.4')).toBe(false);
+    expect(validMoney('1,234.56')).toBe(false);
+    expect(validMoney('')).toBe(false);
+  });
 });
 
 describe('catálogo de modelos', () => {
