@@ -54,6 +54,7 @@ function setup() {
   prisma.handover.findUnique.mockResolvedValue({ ...handover, reservation } as any);
   prisma.deposit.findUnique.mockResolvedValue({ id: DEPOSIT_ID, customerId: CUSTOMER_ID, method: 'card', status: 'held' } as any);
   prisma.depositRelease.findUnique.mockResolvedValue(null);
+  prisma.handover.updateMany.mockResolvedValue({ count: 1 });
   prisma.rental.findUnique.mockResolvedValue(rentalRow as any);
   starter.start.mockResolvedValue({ status: 201, body: { outcome: 'started', rental: { id: RENTAL_ID, status: 'active' }, deposit: {} } });
   return { prisma, starter, ender, support, events, storage, svc, audit, reservations, locks };
@@ -160,11 +161,50 @@ describe('HandoversService — aceite', () => {
     await expect(svc.accept(customer, HO_ID)).resolves.toMatchObject({ id: RENTAL_ID });
   });
 
-  it('fix 1: 402 que não é recusa de pagamento (deposit-not-held) mantém o slug e o status', async () => {
+  it('fix 1/2: 402 que não é recusa de pagamento (deposit-not-held) mantém o slug e vira 422 (o aceite não tem 402 no contrato)', async () => {
     const { prisma, starter, svc } = setup();
     starter.start.mockRejectedValue(new ProblemException(402, 'deposit-not-held', 'em liberação'));
-    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ slug: 'deposit-not-held', status: 402 });
+    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ slug: 'deposit-not-held', status: 422 });
     expect(prisma.handover.updateMany).toHaveBeenCalledWith({ where: { id: HO_ID, status: 'pending_customer' }, data: { lastError: 'deposit-not-held' } });
+  });
+
+  it('fix 2: 402 com start() em andamento desta entrega também sai como 422 (sem lastError)', async () => {
+    const { prisma, starter, svc } = setup();
+    starter.start.mockRejectedValue(new ProblemException(402, 'deposit-not-held', 'em liberação'));
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'rented' } as any);
+    prisma.rentalStart.findFirst.mockResolvedValue({ rentalId: 'r-em-andamento' } as any);
+    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ slug: 'deposit-not-held', status: 422 });
+    expect(prisma.handover.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each(['disputed', 'canceled'])('fix 2: aceite perde a corrida para %s → 422 handover-not-pending, sem lastError e sem handover.updated obsoleto', async (status) => {
+    const { prisma, starter, events, svc } = setup();
+    starter.start.mockRejectedValue(new ProblemException(422, 'handover-not-pending', 'x'));
+    prisma.handover.findUnique
+      .mockResolvedValueOnce({ ...handover, reservation } as any)
+      .mockResolvedValueOnce({ ...handover, status } as any);
+    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ slug: 'handover-not-pending', status: 422 });
+    expect(prisma.handover.updateMany).not.toHaveBeenCalled();
+    expect(events.emit).not.toHaveBeenCalledWith(EV.HANDOVER_UPDATED, expect.anything());
+  });
+
+  it('fix 2: erro de domínio do start() com a entrega já cancelada (ex.: vehicle-unavailable) → sem lastError nem evento', async () => {
+    const { prisma, starter, events, svc } = setup();
+    starter.start.mockRejectedValue(conflict('vehicle-unavailable', 'x'));
+    prisma.handover.findUnique
+      .mockResolvedValueOnce({ ...handover, reservation } as any)
+      .mockResolvedValueOnce({ ...handover, status: 'canceled' } as any);
+    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ slug: 'handover-not-pending' });
+    expect(prisma.handover.updateMany).not.toHaveBeenCalled();
+    expect(events.emit).not.toHaveBeenCalledWith(EV.HANDOVER_UPDATED, expect.anything());
+  });
+
+  it('fix 2: a entrega sai de pending_customer entre a releitura e a marcação (updateMany sem linha) → sem evento', async () => {
+    const { prisma, starter, events, svc } = setup();
+    starter.start.mockRejectedValue(conflict('vehicle-offline', 'x'));
+    prisma.handover.updateMany.mockResolvedValue({ count: 0 });
+    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ slug: 'handover-not-pending' });
+    expect(events.emit).not.toHaveBeenCalledWith(EV.HANDOVER_UPDATED, expect.anything());
   });
 
   it('fix 1: moto já rented por um start() em andamento desta mesma entrega → sem lastError e sem evento', async () => {

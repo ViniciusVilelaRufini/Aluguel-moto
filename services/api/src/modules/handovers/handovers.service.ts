@@ -167,18 +167,22 @@ export class HandoversService {
       // Outro aceite (outra instância, trava vencida) já concluiu: converge no mesmo aluguel.
       const now = await this.prisma.handover.findUnique({ where: { id } });
       if (now?.status === 'accepted' && now.rentalId) return this.rentalOf(now.rentalId);
+      // Fix round 2: o aceite perdeu a corrida para um cancelamento ou disputa → sem lastError e sem evento obsoleto.
+      if (now && now.status !== 'pending_customer') throw notPending();
       if (err instanceof ProblemException && err.slug !== 'handover-not-pending') {
         // Moto já `rented` por um start() em andamento desta mesma entrega (mesma caução): não é falha do aceite.
-        if (await this.startInFlight(h.vehicleId, deposit.id)) throw err;
-        // Só recusa de pagamento de verdade vira `payment-declined`; o resto mantém o slug (e o status) do start().
+        if (await this.startInFlight(h.vehicleId, deposit.id)) throw acceptError(err);
+        // Só recusa de pagamento de verdade vira `payment-declined`; o resto mantém o slug do start().
         const declined = PAYMENT_REFUSALS.has(err.slug);
         const lastError = declined ? 'payment-declined' : err.slug;
-        await this.prisma.handover.updateMany({ where: { id, status: 'pending_customer' }, data: { lastError } });
+        const marked = await this.prisma.handover.updateMany({ where: { id, status: 'pending_customer' }, data: { lastError } });
+        if (marked.count !== 1) throw notPending();
         this.emitUpdated({ handoverId: id, status: 'pending_customer', lastError, customerId: r.customerId, depotId: h.depotId });
         this.logger.warn({ msg: 'handover_accept_failed', handoverId: id, lastError });
         if (declined) {
           throw new ProblemException(422, 'payment-declined', 'O pagamento não foi aprovado. Tente outro cartão ou fale com o operador.', undefined, 'Pagamento não aprovado');
         }
+        throw acceptError(err);
       }
       throw err;
     } finally {
@@ -436,6 +440,15 @@ export class HandoversService {
   private emitUpdated(ev: HandoverUpdatedEvent): void {
     this.events.emit(EV.HANDOVER_UPDATED, ev);
   }
+}
+
+/**
+ * Fix round 2: o contrato do aceite não tem `402`. Um `402` do `start()` que não é recusa de pagamento (ex.:
+ * `deposit-not-held` numa corrida com a liberação da caução) vira `422` com o mesmo slug.
+ */
+function acceptError(err: ProblemException): ProblemException {
+  if (err.getStatus() !== 402) return err;
+  return new ProblemException(422, err.slug, err.detail, err.errors, err.title);
 }
 
 /** `free`, ou `maintenance` se algum item do checklist veio `ok: false`. */
