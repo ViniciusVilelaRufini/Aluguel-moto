@@ -6,27 +6,41 @@ import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart' hide VehicleStatus;
 import 'package:volti_flutter/volti_flutter.dart';
+import 'package:volti_operador/data/device.dart';
 import 'package:volti_operador/data/field_repository.dart';
+import 'package:volti_operador/data/local_state.dart';
+import 'package:volti_operador/data/location.dart';
 import 'package:volti_operador/data/models.dart';
+import 'package:volti_operador/data/service_unlock.dart';
 import 'package:volti_operador/data/sync.dart';
 import 'package:volti_operador/data/tasks_provider.dart';
+import 'package:volti_operador/features/tasks/completion.dart';
+import 'package:volti_operador/features/tasks/task_list_page.dart' show TaskBadges;
 import 'package:volti_operador/features/tasks/task_ui.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
 import 'package:volti_operador/ui/widgets.dart';
 
-/// Detalhe da tarefa: mapa, modo servico, checklist, troca de bateria, status e conclusao.
+/// Detalhe da tarefa (TaskDetail do design): mapa de 230 px com a moto e o
+/// operador, folha de raio 28 sobreposta ao mapa, modo servico, troca de
+/// bateria, checklist n/5, foto obrigatoria e "Concluir tarefa" fixo, que so
+/// habilita com modo servico + checklist + foto (e troca, nas de bateria).
 class TaskDetailPage extends ConsumerStatefulWidget {
-  const TaskDetailPage({super.key, required this.taskId});
+  const TaskDetailPage({super.key, required this.taskId, this.onOpenInspection, this.onOpenBattery});
 
   final String taskId;
+
+  /// Navegacao para o checklist/troca (padrao: `go_router`). Injetavel nos testes.
+  final VoidCallback? onOpenInspection;
+  final VoidCallback? onOpenBattery;
 
   @override
   ConsumerState<TaskDetailPage> createState() => _TaskDetailPageState();
 }
 
 class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
-  bool _unlocked = false;
   bool _busy = false;
+
+  static const double _mapHeight = 230;
 
   Future<void> _run(Future<void> Function() body) async {
     final t = AppLocalizations.of(context);
@@ -44,16 +58,31 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     }
   }
 
+  void _openInspection(FieldTask task) => widget.onOpenInspection != null
+      ? widget.onOpenInspection!()
+      : context.push('/tasks/${task.id}/inspection');
+
+  void _openBattery(FieldTask task) => widget.onOpenBattery != null
+      ? widget.onOpenBattery!()
+      : context.push('/tasks/${task.id}/battery');
+
   Future<void> _serviceUnlock(FieldTask task) => _run(() async {
         final t = AppLocalizations.of(context);
         await ref
             .read(fieldRepositoryProvider)
             .serviceUnlock(task.vehicleId, reason: t.serviceUnlockReason, taskId: task.id);
-        if (mounted) setState(() => _unlocked = true);
+        await ref.read(serviceUnlockProvider.notifier).markUnlocked(task.id);
+        VoltiHaptics.success();
       });
 
   Future<void> _start(FieldTask task) =>
       _run(() => ref.read(tasksProvider.notifier).start(task.id));
+
+  Future<void> _takePhoto(FieldTask task) async {
+    final path = await ref.read(photoPickerProvider).take();
+    if (path == null || !mounted) return;
+    ref.read(inspectionDraftsProvider.notifier).addPhoto(task.id, path);
+  }
 
   Future<void> _setStatus(FieldTask task) async {
     final t = AppLocalizations.of(context);
@@ -66,28 +95,44 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
       await ref
           .read(fieldRepositoryProvider)
           .setVehicleStatus(task.vehicleId, status: result.$1, reason: result.$2);
+      ref.read(knownVehicleStatusProvider.notifier).set(task.vehicleId,
+          result.$1 == ServiceVehicleStatus.free ? VehicleStatus.free : VehicleStatus.maintenance);
       if (mounted) VoltiToast.show(context, t.statusChanged);
     });
   }
 
-  Future<void> _complete(FieldTask task, {required bool registered}) async {
+  Future<void> _complete(FieldTask task, {required bool inspectionRegistered}) async {
     final t = AppLocalizations.of(context);
-    if (!registered) {
-      final what = task.type == FieldTaskType.batterySwap ? t.actionBatterySwap : t.actionChecklist;
-      VoltiToast.show(context, t.completeRequires(what), tone: VoltiToastTone.warning);
-      return;
-    }
     final draft = await VoltiBottomSheet.show<CompletionDraft>(
       context,
       builder: (_) => const _CompleteSheet(),
     );
     if (draft == null || !mounted) return;
-    final outcome =
-        await ref.read(syncControllerProvider.notifier).completeTask(task.id, draft);
+    setState(() => _busy = true);
+    final sync = ref.read(syncControllerProvider.notifier);
+    // Checklist completo mas ainda nao enviado: entra na fila antes da conclusao.
+    if (!inspectionRegistered) {
+      final inspection = ref.read(inspectionDraftsProvider.notifier).of(task.id);
+      final outcome = await sync.submitInspection(task.id, inspection);
+      final result = outcome.result;
+      if (mounted && result is Inspection && result.maintenanceTaskId != null) {
+        VoltiToast.show(context, t.speedNonCompliant, tone: VoltiToastTone.warning);
+      }
+    }
+    final outcome = await sync.completeTask(task.id, draft);
     if (!mounted) return;
     ref.read(tasksProvider.notifier).markDone(task.id);
+    await ref.read(serviceUnlockProvider.notifier).clear(task.id);
+    ref.read(inspectionDraftsProvider.notifier).clear(task.id);
+    final status = draft.vehicleStatus;
+    if (status != null) {
+      ref.read(knownVehicleStatusProvider.notifier).set(
+          task.vehicleId, status == 'free' ? VehicleStatus.free : VehicleStatus.maintenance);
+    }
+    if (!mounted) return;
+    setState(() => _busy = false);
     VoltiToast.show(context, outcome.synced ? t.taskCompleted : t.taskCompletePending);
-    context.pop();
+    await Navigator.of(context).maybePop();
   }
 
   @override
@@ -97,8 +142,15 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     final sync = ref.watch(syncControllerProvider);
     if (task == null) {
       return Scaffold(
-          appBar: AppBar(title: Text(t.taskDetailTitle)),
-          body: Center(child: Text(t.taskNotFound)));
+        body: Column(
+          children: [
+            OperatorTopBar(title: t.taskDetailTitle),
+            Expanded(
+              child: VoltiEmptyState(icon: LucideIcons.searchX, title: t.taskNotFound),
+            ),
+          ],
+        ),
+      );
     }
     bool registered(JobKind kind) =>
         sync.hasPending(task.id, kind) ||
@@ -107,13 +159,22 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
               JobKind.batterySwap => r is BatterySwap && r.fieldTaskId == task.id,
               _ => false,
             });
+    final unlocked = ref.watch(serviceUnlockProvider).contains(task.id);
+    final draft = ref.watch(inspectionDraftsProvider)[task.id] ?? const InspectionDraft();
+    final knownStatus = ref.watch(knownVehicleStatusProvider)[task.vehicleId];
+    final user = ref.watch(locationProvider).position;
     final isBattery = task.type == FieldTaskType.batterySwap;
-    final needsInspection = task.type == FieldTaskType.inspection;
     final inspected = registered(JobKind.inspection);
     final swapped = registered(JobKind.batterySwap);
-    final canComplete = isBattery ? swapped : (needsInspection ? inspected : true);
     final done = isDone(task);
     final started = task.status == FieldTaskStatus.inProgress;
+    final blockers = completionBlockers(
+      task: task,
+      unlocked: unlocked,
+      draft: draft,
+      inspectionRegistered: inspected,
+      swapRegistered: swapped,
+    );
     final lat = task.type == FieldTaskType.reposition && task.targetLat != null
         ? task.targetLat!
         : task.vehicleLat;
@@ -121,141 +182,183 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
         ? task.targetLng!
         : task.vehicleLng;
     final pct = task.vehicleBatteryPct;
+    final hasPosition = task.vehicleLat != null && task.vehicleLng != null;
+    final photoDone = inspected || draft.photoPaths.isNotEmpty;
+
+    final sheet = <Widget>[
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(typeLabel(t, task.type),
+                    style: VoltiTypography.caption.copyWith(color: VoltiColors.textSecondary)),
+                Semantics(
+                  header: true,
+                  child: Text(task.vehicleCode,
+                      style: VoltiTypography.title.copyWith(
+                          fontFamily: VoltiTypography.fontMono, letterSpacing: 0)),
+                ),
+                // Endereco depende de contrato: mostra as observacoes da tarefa.
+                if (task.notes != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(task.notes!,
+                        style:
+                            VoltiTypography.caption.copyWith(color: VoltiColors.textSecondary)),
+                  ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              if (pct != null) BatteryPill(pct, rangeKm: batteryRangeKm(pct)),
+              // Status da moto so quando conhecido (o FieldTask nao traz vehicleStatus).
+              if (knownStatus != null) ...[
+                const SizedBox(height: 6),
+                Semantics(
+                  label: t.vehicleStatusLabel(VoltiColors.statusLabel(knownStatus)),
+                  excludeSemantics: true,
+                  child: FleetStatusBadge(knownStatus,
+                      key: const Key('fleet-status'), pill: false),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+      TaskBadges(
+        task: task,
+        showBattery: false,
+        distanceMeters: distanceToTaskMeters(task, user?.lat, user?.lng),
+      ),
+      const ConnectivityBanner(padding: EdgeInsets.zero),
+      if (done)
+        Notice(
+          key: const Key('task-done'),
+          tone: NoticeTone.success,
+          icon: LucideIcons.circleCheck,
+          title: t.taskDoneTitle,
+          body: task.completionNotes == null || task.completionNotes!.trim().isEmpty
+              ? null
+              : '${t.completionNotesLabel}: ${task.completionNotes}',
+        ),
+      if (task.type == FieldTaskType.reposition &&
+          task.targetLat != null &&
+          task.targetLng != null &&
+          hasPosition)
+        Notice(
+          tone: NoticeTone.neutral,
+          icon: LucideIcons.mapPinned,
+          title: t.targetLabel,
+          body: t.distanceToTarget(distanceKm(
+                  task.vehicleLat!, task.vehicleLng!, task.targetLat!, task.targetLng!)
+              .toStringAsFixed(1)
+              .replaceAll('.', ',')),
+        ),
+      if (lat != null && lng != null)
+        VoltiButton(
+          key: const Key('route'),
+          label: t.actionRoute,
+          icon: LucideIcons.navigation,
+          variant: VoltiButtonVariant.secondary,
+          fullWidth: true,
+          onPressed: () => openRoute(lat, lng),
+        ),
+      if (!done && !started)
+        VoltiButton(
+          key: const Key('start'),
+          label: t.actionStart,
+          icon: LucideIcons.play,
+          variant: VoltiButtonVariant.secondary,
+          fullWidth: true,
+          onPressed: _busy ? null : () => _start(task),
+        ),
+      if (!done)
+        if (unlocked)
+          Notice(
+            key: const Key('service-unlock-active'),
+            tone: NoticeTone.success,
+            icon: LucideIcons.lockOpen,
+            title: t.serviceUnlockActive,
+            body: t.serviceUnlockActiveBody,
+          )
+        else
+          VoltiButton(
+            key: const Key('service-unlock'),
+            label: t.actionServiceUnlock,
+            icon: LucideIcons.wrench,
+            variant: VoltiButtonVariant.dark,
+            fullWidth: true,
+            size: VoltiButtonSize.lg,
+            onPressed: _busy ? null : () => _serviceUnlock(task),
+          ),
+      if (isBattery) _batteryCard(t, task, sync, swapped, done),
+      _checklistCard(t, task, sync, draft, inspected, done),
+      PhotoCapture(
+        key: const Key('detail-photo'),
+        label: t.photoAfterService,
+        hint: t.photoHint,
+        height: 110,
+        done: photoDone,
+        onTap: done || inspected ? null : () => _takePhoto(task),
+      ),
+      if (!inspected && draft.photoPaths.isNotEmpty)
+        PhotoThumbnails(
+          paths: draft.photoPaths,
+          onRemove: (i) => ref.read(inspectionDraftsProvider.notifier).removePhoto(task.id, i),
+        ),
+      ListRow(
+        key: const Key('set-status'),
+        icon: LucideIcons.arrowLeftRight,
+        title: t.actionSetStatus,
+        trailing: ListRowTrailing.chevron,
+        onTap: done ? null : () => _setStatus(task),
+      ),
+    ];
 
     return Scaffold(
       body: Column(
         children: [
-          SizedBox(
-            height: 220,
+          Expanded(
             child: Stack(
               children: [
-                if (task.vehicleLat != null && task.vehicleLng != null)
-                  _MiniMap(task: task)
-                else
-                  Container(color: VoltiColors.mapLand),
+                SizedBox(
+                  height: _mapHeight,
+                  width: double.infinity,
+                  child: hasPosition
+                      ? _MiniMap(task: task, user: user)
+                      : _NoPosition(label: t.noVehiclePosition),
+                ),
                 Positioned(
                   top: MediaQuery.paddingOf(context).top + 8,
-                  left: 12,
+                  left: VoltiSpacing.screenGutter,
                   child: VoltiIconButton(
+                    key: const Key('detail-back'),
                     icon: LucideIcons.arrowLeft,
                     label: t.back,
-                    onPressed: () => context.pop(),
+                    onPressed: () => Navigator.of(context).maybePop(),
                   ),
                 ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(typeLabel(t, task.type), style: VoltiTypography.caption),
-                          Text(task.vehicleCode,
-                              style: VoltiTypography.title
-                                  .copyWith(fontFamily: VoltiTypography.fontMono)),
-                          Text(priorityLabel(t, task.priority), style: VoltiTypography.caption),
-                          if (task.notes != null)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 4),
-                              child: Text(task.notes!, style: VoltiTypography.body),
-                            ),
-                        ],
-                      ),
+                Positioned.fill(
+                  top: _mapHeight - 24,
+                  child: Container(
+                    key: const Key('detail-sheet'),
+                    clipBehavior: Clip.antiAlias,
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).scaffoldBackgroundColor,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
                     ),
-                    if (pct != null) BatteryPill(pct),
-                  ],
-                ),
-                const SizedBox(height: VoltiSpacing.s12),
-                if (task.type == FieldTaskType.reposition &&
-                    task.targetLat != null &&
-                    task.vehicleLat != null &&
-                    task.vehicleLng != null &&
-                    task.targetLng != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: VoltiSpacing.s12),
-                    child: Notice(
-                      tone: NoticeTone.neutral,
-                      icon: LucideIcons.mapPinned,
-                      title: t.targetLabel,
-                      body: t.distanceToTarget(distanceKm(task.vehicleLat!, task.vehicleLng!,
-                              task.targetLat!, task.targetLng!)
-                          .toStringAsFixed(1)
-                          .replaceAll('.', ',')),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+                      itemCount: sheet.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: VoltiSpacing.s14),
+                      itemBuilder: (_, i) => sheet[i],
                     ),
                   ),
-                if (lat != null && lng != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: VoltiSpacing.s12),
-                    child: VoltiButton(
-                      key: const Key('route'),
-                      label: t.actionRoute,
-                      icon: LucideIcons.navigation,
-                      variant: VoltiButtonVariant.secondary,
-                      fullWidth: true,
-                      onPressed: () => openRoute(lat, lng),
-                    ),
-                  ),
-                if (!done && !started)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: VoltiSpacing.s12),
-                    child: VoltiButton(
-                      key: const Key('start'),
-                      label: t.actionStart,
-                      fullWidth: true,
-                      size: VoltiButtonSize.lg,
-                      onPressed: _busy ? null : () => _start(task),
-                    ),
-                  ),
-                if (_unlocked)
-                  Notice(
-                    tone: NoticeTone.success,
-                    icon: LucideIcons.lockOpen,
-                    title: t.serviceUnlockActive,
-                    body: t.serviceUnlockActiveBody,
-                  )
-                else
-                  VoltiButton(
-                    key: const Key('service-unlock'),
-                    label: t.actionServiceUnlock,
-                    icon: LucideIcons.wrench,
-                    variant: VoltiButtonVariant.dark,
-                    fullWidth: true,
-                    size: VoltiButtonSize.lg,
-                    onPressed: _busy || done ? null : () => _serviceUnlock(task),
-                  ),
-                const SizedBox(height: VoltiSpacing.s12),
-                ListRow(
-                  key: const Key('open-checklist'),
-                  icon: LucideIcons.clipboardList,
-                  title: t.actionChecklist,
-                  subtitle: sync.hasPending(task.id, JobKind.inspection)
-                      ? t.awaitingSync
-                      : (inspected ? t.sectionRegistered : null),
-                  onTap: done ? null : () => context.push('/tasks/${task.id}/inspection'),
-                ),
-                if (isBattery)
-                  ListRow(
-                    key: const Key('open-battery'),
-                    icon: LucideIcons.batteryCharging,
-                    iconTone: ListRowTone.info,
-                    title: t.actionBatterySwap,
-                    subtitle: sync.hasPending(task.id, JobKind.batterySwap)
-                        ? t.awaitingSync
-                        : (swapped ? t.sectionRegistered : null),
-                    onTap: done ? null : () => context.push('/tasks/${task.id}/battery'),
-                  ),
-                ListRow(
-                  key: const Key('set-status'),
-                  icon: LucideIcons.arrowLeftRight,
-                  title: t.actionSetStatus,
-                  onTap: done ? null : () => _setStatus(task),
                 ),
               ],
             ),
@@ -267,15 +370,170 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
               color: Theme.of(context).colorScheme.surfaceContainerLowest,
               boxShadow: VoltiShadows.shadowSheet,
             ),
-            child: VoltiButton(
-              key: const Key('complete'),
-              label: t.actionComplete,
-              icon: LucideIcons.clipboardCheck,
-              fullWidth: true,
-              size: VoltiButtonSize.lg,
-              onPressed: done ? null : () => _complete(task, registered: canComplete),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!done && blockers.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: VoltiSpacing.s8),
+                    child: Semantics(
+                      liveRegion: true,
+                      child: Text(
+                        completionHint(t, blockers),
+                        key: const Key('complete-hint'),
+                        textAlign: TextAlign.center,
+                        style: VoltiTypography.caption.copyWith(color: VoltiColors.textSecondary),
+                      ),
+                    ),
+                  ),
+                VoltiButton(
+                  key: const Key('complete'),
+                  label: t.actionComplete,
+                  icon: LucideIcons.clipboardCheck,
+                  fullWidth: true,
+                  size: VoltiButtonSize.lg,
+                  loading: _busy && blockers.isEmpty,
+                  onPressed: done || _busy || blockers.isNotEmpty
+                      ? null
+                      : () => _complete(task, inspectionRegistered: inspected),
+                ),
+              ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _batteryCard(
+      AppLocalizations t, FieldTask task, SyncState sync, bool swapped, bool done) {
+    String? installed;
+    for (final r in sync.results.values) {
+      if (r is BatterySwap && r.fieldTaskId == task.id) installed = r.installedBatterySerial;
+    }
+    for (final j in sync.pending) {
+      if (j.taskId == task.id && j.kind == JobKind.batterySwap) {
+        installed = BatterySwapDraft.fromJson(j.payload['swap'] as Map<String, dynamic>)
+            .installedSerial;
+      }
+    }
+    final waiting = sync.hasPending(task.id, JobKind.batterySwap);
+    return SectionCard(
+      key: const Key('battery-card'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(t.actionBatterySwap, style: VoltiTypography.label),
+          if (swapped && installed != null) ...[
+            const SizedBox(height: VoltiSpacing.s6),
+            Text(t.batteryInstalledSummary(installed),
+                style: VoltiTypography.body.copyWith(fontFamily: VoltiTypography.fontMono)),
+            Text(waiting ? t.awaitingSync : t.sectionRegistered,
+                style: VoltiTypography.caption.copyWith(color: VoltiColors.textSecondary)),
+          ],
+          // "Retirada: BT-... · % · ciclos" depende de contrato (bateria atual da moto): oculto.
+          if (!swapped && !done) ...[
+            const SizedBox(height: VoltiSpacing.s10),
+            VoltiButton(
+              key: const Key('open-battery'),
+              label: t.batteryRegister,
+              icon: LucideIcons.scanBarcode,
+              variant: VoltiButtonVariant.secondary,
+              fullWidth: true,
+              onPressed: () => _openBattery(task),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _checklistCard(AppLocalizations t, FieldTask task, SyncState sync, InspectionDraft d,
+      bool inspected, bool done) {
+    final items = [
+      (t.itemBrakes, d.brakes),
+      (t.itemTires, d.tires),
+      (t.itemLights, d.lights),
+      (t.itemBell, d.bell),
+      (t.itemSpeed, d.speedReading == null ? null : d.effectiveSpeedOk),
+    ];
+    final answered = inspected && d.answered == 0 ? InspectionDraft.totalItems : d.answered;
+    final waiting = sync.hasPending(task.id, JobKind.inspection);
+    return SectionCard(
+      key: const Key('open-checklist'),
+      onTap: done || inspected ? null : () => _openInspection(task),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text(t.inspectionTitle, style: VoltiTypography.label)),
+              Text(
+                t.itemsCounter(answered, InspectionDraft.totalItems),
+                key: const Key('detail-items-counter'),
+                style: const TextStyle(
+                  fontFamily: VoltiTypography.fontMono,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  height: 1,
+                  color: VoltiColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+          if (inspected)
+            Padding(
+              padding: const EdgeInsets.only(top: VoltiSpacing.s4),
+              child: Text(waiting ? t.awaitingSync : t.sectionRegistered,
+                  style: VoltiTypography.caption.copyWith(color: VoltiColors.textSecondary)),
+            ),
+          const SizedBox(height: VoltiSpacing.s12),
+          for (final (label, value) in items)
+            Semantics(
+              label: value == null
+                  ? t.checklistItemPending(label)
+                  : (value ? t.checklistItemOk(label) : t.checklistItemProblem(label)),
+              excludeSemantics: true,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: VoltiSpacing.s10),
+                child: Row(
+                  children: [
+                    ChecklistMark(value: inspected && value == null ? true : value),
+                    const SizedBox(width: VoltiSpacing.s10),
+                    Expanded(child: Text(label, style: VoltiTypography.body)),
+                  ],
+                ),
+              ),
+            ),
+          if (!done && !inspected)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(t.checklistOpen,
+                  style: VoltiTypography.label.copyWith(color: VoltiColors.textLink)),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NoPosition extends StatelessWidget {
+  const _NoPosition({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: VoltiColors.mapLand,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(LucideIcons.mapPinOff, color: VoltiColors.ink500, size: 28),
+          const SizedBox(height: VoltiSpacing.s6),
+          Text(label, style: VoltiTypography.caption.copyWith(color: VoltiColors.ink500)),
         ],
       ),
     );
@@ -283,16 +541,19 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
 }
 
 class _MiniMap extends StatelessWidget {
-  const _MiniMap({required this.task});
+  const _MiniMap({required this.task, this.user});
 
   final FieldTask task;
+  final GeoPoint? user;
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
     final pos = LatLng(task.vehicleLat!, task.vehicleLng!);
     final target = task.targetLat != null && task.targetLng != null
         ? LatLng(task.targetLat!, task.targetLng!)
         : null;
+    final me = user == null ? null : LatLng(user!.lat, user!.lng);
     return FlutterMap(
       options: MapOptions(initialCenter: pos, initialZoom: 15),
       children: [
@@ -323,6 +584,19 @@ class _MiniMap extends StatelessWidget {
               width: 40,
               height: 40,
               child: const Icon(LucideIcons.mapPin, color: VoltiColors.brand, size: 32),
+            ),
+          if (me != null)
+            Marker(
+              point: me,
+              width: 48,
+              height: 48,
+              child: Semantics(
+                label: t.yourLocation,
+                child: Transform.rotate(
+                  angle: (user!.heading ?? 0) * 3.141592653589793 / 180,
+                  child: const VoltiUserDot(heading: true),
+                ),
+              ),
             ),
         ]),
         const RichAttributionWidget(
@@ -361,14 +635,18 @@ class _StatusSheetState extends State<_StatusSheet> {
         children: [
           Text(t.statusSheetTitle, style: VoltiTypography.heading),
           const SizedBox(height: VoltiSpacing.s12),
-          SegmentedButton<ServiceVehicleStatus>(
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(value: ServiceVehicleStatus.maintenance, label: Text(t.statusMaintenance)),
-              ButtonSegment(value: ServiceVehicleStatus.free, label: Text(t.statusAvailable)),
+          VoltiSegmentedControl<ServiceVehicleStatus>(
+            options: [
+              VoltiSegment(value: ServiceVehicleStatus.maintenance, label: t.statusMaintenance),
+              VoltiSegment(value: ServiceVehicleStatus.free, label: t.statusAvailable),
             ],
-            selected: {_status},
-            onSelectionChanged: (s) => setState(() => _status = s.first),
+            value: _status,
+            onChanged: (s) => setState(() => _status = s),
+          ),
+          const SizedBox(height: VoltiSpacing.s10),
+          FleetStatusBadge(
+            _status == ServiceVehicleStatus.free ? VehicleStatus.free : VehicleStatus.maintenance,
+            pill: false,
           ),
           const SizedBox(height: VoltiSpacing.s12),
           TextField(
@@ -421,15 +699,15 @@ class _CompleteSheetState extends State<_CompleteSheet> {
           const SizedBox(height: VoltiSpacing.s12),
           Text(t.completeVehicleStatus, style: VoltiTypography.label),
           const SizedBox(height: VoltiSpacing.s8),
-          SegmentedButton<String?>(
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(value: null, label: Text(t.keepStatus)),
-              ButtonSegment(value: 'free', label: Text(t.statusAvailable)),
-              ButtonSegment(value: 'maintenance', label: Text(t.statusMaintenance)),
+          VoltiSegmentedControl<String?>(
+            key: const Key('complete-status'),
+            options: [
+              VoltiSegment(value: null, label: t.keepStatus),
+              VoltiSegment(value: 'free', label: t.statusAvailable),
+              VoltiSegment(value: 'maintenance', label: t.statusMaintenance),
             ],
-            selected: {_status},
-            onSelectionChanged: (s) => setState(() => _status = s.first),
+            value: _status,
+            onChanged: (s) => setState(() => _status = s),
           ),
           const SizedBox(height: VoltiSpacing.s12),
           TextField(
