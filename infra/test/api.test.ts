@@ -37,4 +37,14 @@ describe('ApiStack', () => {
   it('creates the ECR repository for the API image', () => {
     t().resourceCountIs('AWS::ECR::Repository', 1);
   });
+
+  it('QA-06: the attachments bucket is wired into the container env and the task role', () => {
+    const td = Object.values(t().findResources('AWS::ECS::TaskDefinition'))[0] as any;
+    const c = td.Properties.ContainerDefinitions[0];
+    const env = c.Environment.find((e: any) => e.Name === 'S3_BUCKET_ATTACHMENTS');
+    expect(env).toBeDefined();
+    expect(JSON.stringify(env.Value)).toMatch(/RefAttachmentsBucket/);
+    const policies = JSON.stringify(Object.values(t().findResources('AWS::IAM::Policy')));
+    expect(policies).toMatch(/AttachmentsBucket/);
+  });
 });

@@ -71,6 +71,7 @@ O workflow de deploy do dev faz 2 a 4 sozinho: deploy com 0 tarefas, build e pus
 | `s3/kyc-bucket` | `S3_BUCKET_KYC` |
 | `s3/return-photos-bucket` | `S3_BUCKET_RETURN_PHOTOS` |
 | `s3/reports-bucket` | `S3_BUCKET_REPORTS` |
+| `s3/attachments-bucket` | `S3_BUCKET_ATTACHMENTS` |
 | `cognito/customer-pool-id`, `cognito/customer-client-id` | `COGNITO_CUSTOMER_POOL_ID`, `COGNITO_CUSTOMER_CLIENT_ID` |
 | `cognito/staff-pool-id`, `cognito/staff-client-id` | `COGNITO_STAFF_POOL_ID`, `COGNITO_STAFF_CLIENT_ID` |
 | `iot/endpoint` | `IOT_ENDPOINT` (substitui `MQTT_URL` local) |

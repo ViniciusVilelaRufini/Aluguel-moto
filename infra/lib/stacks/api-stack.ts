@@ -108,6 +108,7 @@ export class ApiStack extends Stack {
           S3_BUCKET_KYC: data.kycBucket.bucketName,
           S3_BUCKET_RETURN_PHOTOS: data.returnPhotosBucket.bucketName,
           S3_BUCKET_REPORTS: data.reportsBucket.bucketName,
+          S3_BUCKET_ATTACHMENTS: data.attachmentsBucket.bucketName,
           AUTH_MODE: 'cognito',
           COGNITO_CUSTOMER_POOL_ID: auth.customerPool.userPoolId,
           COGNITO_CUSTOMER_CLIENT_ID: auth.customerClient.userPoolClientId,
@@ -165,6 +166,7 @@ export class ApiStack extends Stack {
     data.kycBucket.grantReadWrite(role);
     data.returnPhotosBucket.grantReadWrite(role);
     data.reportsBucket.grantReadWrite(role);
+    data.attachmentsBucket.grantReadWrite(role);
     messaging.telemetry.queue.grantConsumeMessages(role);
     messaging.alerts.queue.grantConsumeMessages(role);
     messaging.paymentsWebhook.queue.grantSendMessages(role);
