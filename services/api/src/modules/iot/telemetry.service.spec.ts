@@ -25,7 +25,7 @@ const msg = (over: Record<string, unknown> = {}) => ({
   lat: -23.5614, lng: -46.6914, velocidade_kmh: 12.5, bateria_pct: 81, travada: false, ignicao: true, sinal: 4, timestamp: '2026-10-21T15:00:00.000Z', ...over,
 });
 
-function setup(opts: { rentalId?: string } = {}) {
+function setup(opts: { rentalId?: string; consent?: boolean } = {}) {
   const clock = new FakeClock(Date.parse('2026-10-21T15:00:00Z'));
   const events = new EventEmitter2();
   const emitted: Record<string, any[]> = {};
@@ -37,7 +37,11 @@ function setup(opts: { rentalId?: string } = {}) {
   const live = new LiveStateStore(new MemoryRedisStore(), clock, 180_000);
   const gateway = new TestGateway(transport, live, clock, events, { confirmWaitMs: 1000, commandTimeoutMs: 30_000 });
   const geofence = { onPosition: jest.fn().mockResolvedValue(undefined) };
-  const rentals = { openRentalId: jest.fn().mockResolvedValue(opts.rentalId), invalidate: jest.fn() };
+  const rentals = {
+    openRentalId: jest.fn().mockResolvedValue(opts.rentalId),
+    trackingRentalId: jest.fn().mockResolvedValue(opts.consent === false ? undefined : opts.rentalId),
+    invalidate: jest.fn(),
+  };
   const prisma = {
     vehicle: { findUnique: jest.fn(async ({ where }: any) => (where.thingName === T ? { id: VEHICLE_ID } : null)) },
     trackPoint: { create: jest.fn().mockResolvedValue({}) },
@@ -81,6 +85,14 @@ describe('TelemetryService', () => {
     await svc.telemetry(T, msg());
     expect(prisma.trackPoint.create).not.toHaveBeenCalled();
     expect(emitted[EV.IOT_TELEMETRY]).toHaveLength(1);
+  });
+
+  it('QA-09: consentimento de localização revogado durante o aluguel → para de gravar o trajeto (a frota ao vivo continua)', async () => {
+    const { svc, prisma, emitted, geofence } = setup({ rentalId: RENTAL_ID, consent: false });
+    await svc.telemetry(T, msg());
+    expect(prisma.trackPoint.create).not.toHaveBeenCalled();
+    expect(emitted[EV.IOT_TELEMETRY]).toHaveLength(1);
+    expect(geofence.onPosition).toHaveBeenCalled();
   });
 
   it('timestamp do rastreador muito fora do relógio do servidor → usa a hora do servidor', async () => {

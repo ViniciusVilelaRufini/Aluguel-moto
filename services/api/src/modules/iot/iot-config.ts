@@ -1,3 +1,5 @@
+import { oneOf } from '../../config/env';
+
 /** Configuração do módulo IoT (variáveis de ambiente; nenhum segredo). */
 export interface IotConfig {
   iotMode: 'local' | 'aws' | 'stub';
@@ -31,8 +33,8 @@ export function loadIotConfig(): IotConfig {
   const env = process.env.VOLTI_ENV ?? 'dev';
   const endpoint = process.env.IOT_ENDPOINT;
   return {
-    iotMode: (process.env.IOT_MODE as IotConfig['iotMode']) || 'local',
-    geofenceMode: (process.env.GEOFENCE_MODE as IotConfig['geofenceMode']) || 'local',
+    iotMode: oneOf('IOT_MODE', ['local', 'aws', 'stub'] as const, 'local'),
+    geofenceMode: oneOf('GEOFENCE_MODE', ['local', 'aws'] as const, 'local'),
     mqttUrl: process.env.MQTT_URL || 'mqtt://localhost:1883',
     iotEndpoint: endpoint ? (endpoint.startsWith('http') ? endpoint : `https://${endpoint}`) : undefined,
     region: process.env.AWS_REGION || 'sa-east-1',

@@ -1,3 +1,4 @@
+import { withLiveState } from './live-overlay';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma, type Vehicle } from '@prisma/client';
@@ -80,7 +81,9 @@ export class VehiclesService {
     if (q.status) where.status = q.status;
     if (q.maxBatteryPct !== undefined) where.batteryPct = { lte: q.maxBatteryPct };
     if (q.q) where.OR = [{ code: { contains: q.q, mode: 'insensitive' } }, { thingName: { contains: q.q, mode: 'insensitive' } }, { model: { contains: q.q, mode: 'insensitive' } }];
-    const rows = await this.prisma.vehicle.findMany({ where, include: { tracker: { select: { id: true } } }, orderBy: [{ code: 'asc' }, { id: 'asc' }], ...pageArgs(q) });
+    const dbRows = await this.prisma.vehicle.findMany({ where, include: { tracker: { select: { id: true } } }, orderBy: [{ code: 'asc' }, { id: 'asc' }], ...pageArgs(q) });
+    // QA-20: posição/telemetria ao vivo do Redis quando mais nova que o Postgres (gravado a cada 30 s).
+    const rows = await withLiveState(this.redis, dbRows);
     const open = await this.prisma.rental.findMany({ where: { vehicleId: { in: rows.map((r) => r.id) }, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true, vehicleId: true } });
     const byVehicle = new Map(open.map((r) => [r.vehicleId, r.id]));
     return toPage(rows, q, (v) => toVehicle(v, { staff: true, currentRentalId: byVehicle.get(v.id) }));
@@ -98,8 +101,9 @@ export class VehiclesService {
   }
 
   async get(user: Principal, id: string) {
-    const v = await this.prisma.vehicle.findUnique({ where: { id }, include: { tracker: { select: { id: true } } } });
-    if (!v) throw notFound('Moto não encontrada.');
+    const row = await this.prisma.vehicle.findUnique({ where: { id }, include: { tracker: { select: { id: true } } } });
+    if (!row) throw notFound('Moto não encontrada.');
+    const [v] = await withLiveState(this.redis, [row]);
     return toVehicle(v, { staff: isStaff(user), currentRentalId: isStaff(user) ? await this.currentRentalId(id) : undefined });
   }
 

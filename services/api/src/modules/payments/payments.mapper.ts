@@ -2,7 +2,8 @@ import type { InsurancePolicy, Payment, PaymentCard, Subscription, TopUp, Wallet
 import { compact, iso } from '../../common/util';
 import type { PixCharge } from '../../ports/rental-billing.port';
 
-export function toPayment(p: Payment) {
+/** `receiptUrl`: link assinado gerado na leitura (QA-11); o valor gravado em `Payment.receiptUrl` é legado e ignorado. */
+export function toPayment(p: Payment, receiptUrl?: string) {
   return compact({
     id: p.id,
     customerId: p.customerId,
@@ -17,7 +18,7 @@ export function toPayment(p: Payment) {
     cardLast4: p.cardLast4 ?? undefined,
     failureReason: p.failureReason ?? undefined,
     providerPaymentId: p.providerPaymentId ?? undefined,
-    receiptUrl: p.receiptUrl ?? undefined,
+    receiptUrl,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   });

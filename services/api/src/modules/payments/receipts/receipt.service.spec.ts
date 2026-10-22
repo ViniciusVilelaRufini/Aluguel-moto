@@ -30,14 +30,15 @@ describe('ReceiptService (PDF no bucket de relatórios + NFS-e)', () => {
     paymentId = (await db.payment.create({ data: { customerId: CUSTOMER, rentalId: RENTAL, kind: 'rental', method: 'card', status: 'paid', amountCents: 1290, cardLast4: '4242' } })).id;
   });
 
-  it('gera o PDF, grava no bucket de relatórios e liga o link ao pagamento', async () => {
+  it('gera o PDF, grava no bucket de relatórios e guarda só a chave do objeto (QA-11: nenhum link que expira no banco)', async () => {
     await svc.issueForPayment(paymentId);
     expect(storage.putObject).toHaveBeenCalledTimes(1);
     const put = storage.putObject.mock.calls[0][0];
     expect(put).toMatchObject({ bucket: 'relatorios', key: `recibos/2026/10/${RENTAL}.pdf`, contentType: 'application/pdf' });
     expect(put.body.subarray(0, 5).toString()).toBe('%PDF-');
     expect(await db.paymentReceipt.findUnique({ where: { paymentId } })).toMatchObject({ bucket: 'relatorios', objectKey: put.key, rentalId: RENTAL });
-    expect((await db.payment.findUnique({ where: { id: paymentId } })).receiptUrl).toBe('https://s3.local/relatorios/recibo.pdf?sig');
+    expect((await db.payment.findUnique({ where: { id: paymentId } })).receiptUrl).toBeNull();
+    expect(storage.presignGet).not.toHaveBeenCalled();
   });
 
   it('emite a NFS-e pelo InvoiceIssuer uma única vez', async () => {

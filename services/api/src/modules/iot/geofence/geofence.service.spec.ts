@@ -37,7 +37,7 @@ function setup(opts: { rentalId?: string | null } = {}) {
   events.on(EV.GEOFENCE_TRANSITION, (e: GeofenceTransitionEvent) => transitions.push(e));
   const commander: jest.Mocked<GeofenceCommander> = { setSpeedLimit: jest.fn().mockResolvedValue(undefined), safeLock: jest.fn().mockResolvedValue(undefined) };
   const rentalId = opts.rentalId === undefined ? 'rent-1' : opts.rentalId;
-  const rentals: jest.Mocked<RentalLookup> = { openRentalId: jest.fn().mockResolvedValue(rentalId ?? undefined), invalidate: jest.fn() };
+  const rentals: jest.Mocked<RentalLookup> = { openRentalId: jest.fn().mockResolvedValue(rentalId ?? undefined), trackingRentalId: jest.fn().mockResolvedValue(rentalId ?? undefined), invalidate: jest.fn() };
   const svc = new GeofenceService(engine, commander, rentals, events, clock, new MemoryRedisStore(), { outOfAreaLockMinutes: 5 });
   return { clock, engine, events, transitions, commander, rentals, svc };
 }
@@ -150,6 +150,60 @@ describe('GeofenceService', () => {
     const { svc, engine } = setup();
     await svc.onZoneChanged({ zoneId: 'z-ped', action: 'updated' });
     expect(engine.synced).toEqual([{ zoneId: 'z-ped', action: 'updated' }]);
+  });
+
+  describe('QA-03: limite da cerca editado com a moto dentro', () => {
+    const BIKE_AS_PED: ZoneRef = { id: 'z-bike', type: 'reduced_speed', speedLimitKmh: 6 };
+    const parked = [{ vehicleId: 'veh-1', thingName: 'moto-0001', lat: -23.56, lng: -46.69 }];
+
+    it('mesma zona com limite novo (20 → 6) → a próxima posição reenvia 6', async () => {
+      const { svc, engine, commander } = setup();
+      engine.zones = [OPERATION, BIKE_LANE];
+      await svc.onPosition(pos());
+      expect(commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 20, expect.anything());
+      engine.zones = [OPERATION, BIKE_AS_PED];
+      await svc.onPosition(pos('2026-10-21T15:00:05.000Z'));
+      expect(commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 6, expect.objectContaining({ purpose: 'zone_speed_limit' }));
+      expect(svc.effectiveLimit('moto-0001')).toBe(6);
+      await svc.onPosition(pos('2026-10-21T15:00:10.000Z'));
+      expect(commander.setSpeedLimit).toHaveBeenCalledTimes(2);
+    });
+
+    it('zone.changed reavalia na hora as motos dentro da zona (sem esperar posição nova)', async () => {
+      const a = setup();
+      const positions = { vehiclesInZone: jest.fn().mockResolvedValue(parked) };
+      const svc = new GeofenceService(a.engine, a.commander, a.rentals, a.events, a.clock, new MemoryRedisStore(), { outOfAreaLockMinutes: 5 }, positions);
+      a.engine.zones = [OPERATION, BIKE_LANE];
+      await svc.onPosition(pos());
+      a.engine.zones = [OPERATION, BIKE_AS_PED];
+      await svc.onZoneChanged({ zoneId: 'z-bike', action: 'updated', type: 'reduced_speed', speedLimitKmh: 6, active: true });
+      expect(positions.vehiclesInZone).toHaveBeenCalledWith('z-bike');
+      expect(a.commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 6, expect.objectContaining({ purpose: 'zone_speed_limit' }));
+      expect(svc.effectiveLimit('moto-0001')).toBe(6);
+    });
+
+    it('zone.changed também reavalia motos que o processo já viu dentro da zona (geometria encolheu → volta a 32)', async () => {
+      const a = setup();
+      const positions = { vehiclesInZone: jest.fn().mockResolvedValue([]) };
+      const svc = new GeofenceService(a.engine, a.commander, a.rentals, a.events, a.clock, new MemoryRedisStore(), { outOfAreaLockMinutes: 5 }, positions);
+      a.engine.zones = [OPERATION, PEDESTRIAN];
+      await svc.onPosition(pos());
+      a.engine.zones = [OPERATION];
+      await svc.onZoneChanged({ zoneId: 'z-ped', action: 'updated', type: 'reduced_speed', speedLimitKmh: 6, active: true });
+      expect(a.commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 32, expect.anything());
+    });
+
+    it('zona nova cobrindo uma moto parada → menor limite das zonas, nunca acima de 32', async () => {
+      const a = setup();
+      const positions = { vehiclesInZone: jest.fn().mockResolvedValue(parked) };
+      const svc = new GeofenceService(a.engine, a.commander, a.rentals, a.events, a.clock, new MemoryRedisStore(), { outOfAreaLockMinutes: 5 }, positions);
+      a.engine.zones = [OPERATION];
+      await svc.onPosition(pos());
+      a.engine.zones = [OPERATION, BIKE_LANE, PEDESTRIAN];
+      await svc.onZoneChanged({ zoneId: 'z-ped', action: 'created', type: 'reduced_speed', speedLimitKmh: 6, active: true });
+      expect(a.commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 6, expect.anything());
+      for (const [, kmh] of a.commander.setSpeedLimit.mock.calls) expect(kmh).toBeLessThanOrEqual(32);
+    });
   });
 
   it('repassa a posição ao engine (tracker)', async () => {

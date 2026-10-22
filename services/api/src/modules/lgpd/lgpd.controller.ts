@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, Put } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { IsBoolean, IsString, MaxLength } from 'class-validator';
 import { CurrentUser, CustomerOnly, Principal } from '../auth/principal';
@@ -17,6 +17,7 @@ export class LgpdController {
 
   @Get('consents')
   @CustomerOnly()
+  @Header('Cache-Control', 'no-store')
   consents(@CurrentUser() u: Principal) {
     return this.lgpd.getConsents(u.customerId!);
   }
@@ -28,8 +29,10 @@ export class LgpdController {
   }
 
   /** Só os dados do próprio titular. Limitado a 5 por hora. */
+  /** QA-13: `no-store` — todos os dados pessoais do titular não ficam em cache de proxy nem do navegador. */
   @Get('export')
   @CustomerOnly()
+  @Header('Cache-Control', 'no-store')
   @Throttle({ default: { limit: 5, ttl: 3_600_000 } })
   export(@CurrentUser() u: Principal) {
     return this.lgpd.export(u.customerId!);

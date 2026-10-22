@@ -187,7 +187,9 @@ export class RentalBillingService implements RentalBillingPort {
   }
 
   private depositResult(d: Deposit): HoldResult {
-    const status = d.status === 'awaiting_pix' ? 'awaiting_pix' : d.status === 'failed' ? 'failed' : 'held';
+    // Fix round 1 (QA-21): só `held` é caução retida. Uma caução já liberada/capturada (repetição com a mesma chave depois
+    // de um 409) nunca volta como `held`, senão um aluguel começaria sem garantia.
+    const status = d.status === 'awaiting_pix' ? 'awaiting_pix' : d.status === 'held' ? 'held' : 'failed';
     const pix = (d.pix as PixCharge | null) ?? undefined;
     return { depositId: d.id, status, ...(pix && status === 'awaiting_pix' ? { pix } : {}) };
   }

@@ -22,6 +22,10 @@ const DESIRED_KEYS = ['travada', 'limite_kmh', 'modo_roubada'] as const;
  */
 export class LocalShadowStore {
   private readonly docs = new Map<string, ShadowDocument>();
+  /** Load a frio em curso por thing: leituras concorrentes compartilham a mesma leitura do Redis (QA-23). */
+  private readonly loading = new Map<string, Promise<ShadowDocument>>();
+  /** Fila por thing: leitura-modificação-gravação nunca se intercala (QA-23: desired perdido na reconexão). */
+  private readonly chains = new Map<string, Promise<unknown>>();
 
   constructor(
     private readonly redis: RedisStore,
@@ -32,9 +36,28 @@ export class LocalShadowStore {
     return `iot:shadow:${thingName}`;
   }
 
+  /** Executa `fn` depois das operações anteriores da mesma thing (erros não travam a fila). */
+  private serial<T>(thingName: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.chains.get(thingName) ?? Promise.resolve();
+    const next = prev.catch(() => undefined).then(fn);
+    this.chains.set(thingName, next);
+    void next.catch(() => undefined).then(() => {
+      if (this.chains.get(thingName) === next) this.chains.delete(thingName);
+    });
+    return next;
+  }
+
   async load(thingName: string): Promise<ShadowDocument> {
     const cached = this.docs.get(thingName);
     if (cached) return cached;
+    const inflight = this.loading.get(thingName);
+    if (inflight) return inflight;
+    const p = this.loadFromRedis(thingName).finally(() => this.loading.delete(thingName));
+    this.loading.set(thingName, p);
+    return p;
+  }
+
+  private async loadFromRedis(thingName: string): Promise<ShadowDocument> {
     let doc: ShadowDocument = { desired: {}, reported: {}, version: 0 };
     const raw = await this.redis.get(this.key(thingName)).catch(() => null);
     if (raw) {
@@ -44,6 +67,9 @@ export class LocalShadowStore {
         /* documento corrompido: recomeça */
       }
     }
+    // Um save concorrente (não deveria haver, com a fila) ganha do documento lido.
+    const current = this.docs.get(thingName);
+    if (current) return current;
     this.docs.set(thingName, doc);
     return doc;
   }
@@ -67,7 +93,11 @@ export class LocalShadowStore {
     return { state: { desired: { ...doc.desired }, reported: { ...doc.reported } }, version: doc.version };
   }
 
-  async applyDesired(thingName: string, desired: DesiredState): Promise<OutboundMessage[]> {
+  applyDesired(thingName: string, desired: DesiredState): Promise<OutboundMessage[]> {
+    return this.serial(thingName, () => this.doApplyDesired(thingName, desired));
+  }
+
+  private async doApplyDesired(thingName: string, desired: DesiredState): Promise<OutboundMessage[]> {
     const prev = await this.load(thingName);
     const doc: ShadowDocument = { desired: { ...prev.desired, ...desired }, reported: { ...prev.reported }, version: prev.version + 1 };
     await this.save(thingName, doc);
@@ -81,7 +111,11 @@ export class LocalShadowStore {
     return out;
   }
 
-  async applyReported(thingName: string, reported: ReportedState): Promise<OutboundMessage[]> {
+  applyReported(thingName: string, reported: ReportedState): Promise<OutboundMessage[]> {
+    return this.serial(thingName, () => this.doApplyReported(thingName, reported));
+  }
+
+  private async doApplyReported(thingName: string, reported: ReportedState): Promise<OutboundMessage[]> {
     const prev = await this.load(thingName);
     const doc: ShadowDocument = { desired: { ...prev.desired }, reported: { ...prev.reported, ...reported }, version: prev.version + 1 };
     await this.save(thingName, doc);
@@ -92,7 +126,11 @@ export class LocalShadowStore {
     ];
   }
 
-  async get(thingName: string): Promise<OutboundMessage[]> {
+  get(thingName: string): Promise<OutboundMessage[]> {
+    return this.serial(thingName, () => this.doGet(thingName));
+  }
+
+  private async doGet(thingName: string): Promise<OutboundMessage[]> {
     const doc = await this.load(thingName);
     const delta = computeDelta(doc);
     const state: Record<string, unknown> = { desired: { ...doc.desired }, reported: { ...doc.reported } };

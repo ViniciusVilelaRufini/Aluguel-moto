@@ -98,6 +98,10 @@ describe('Pagamentos (e2e)', () => {
 
     // O PDF existe de verdade no MinIO (link assinado do recibo).
     const rec = await http().get(`/rentals/${rentalId}/receipt`).set(auth).expect(200);
+    // QA-11: nada que expira fica gravado; o link é gerado na leitura e vale 15 min.
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: pay.id } })).receiptUrl).toBeNull();
+    expect(rec.body.pdfUrl).toContain('X-Amz-Expires=900');
+    expect((await http().get(`/payments/${pay.id}`).set(auth).expect(200)).body.receiptUrl).toContain('X-Amz-Expires=900');
     const pdf = await fetch(rec.body.pdfUrl);
     expect(pdf.status).toBe(200);
     expect(Buffer.from(await pdf.arrayBuffer()).subarray(0, 5).toString()).toBe('%PDF-');

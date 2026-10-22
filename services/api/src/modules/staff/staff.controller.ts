@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Inject, Logger, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import { ArrayMinSize, ArrayUnique, IsArray, IsBoolean, IsEmail, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import type { Prisma } from '@prisma/client';
@@ -9,7 +9,9 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { toStaffUser } from '../auth/me.controller';
 import { CurrentUser, Principal, StaffOnly } from '../auth/principal';
-import { PrincipalResolver } from '../auth/principal-resolver.service';
+import { STAFF_DIRECTORY, type StaffDirectory } from '../../ports/staff-directory.port';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EV, type PrincipalRevokedEvent } from '../../common/events';
 
 class ListStaffQuery extends PageQuery {
   @IsOptional() @IsIn(STAFF_GROUPS) group?: StaffGroup;
@@ -28,15 +30,19 @@ class StaffUpdateDto {
 }
 
 /**
- * Usuários internos. O cadastro local é a fonte para a API; a criação do usuário no pool interno do Cognito
- * (convite + MFA) é feita pela infraestrutura — ver decisões propostas.
+ * Usuários internos. O cadastro local é a fonte da autorização (grupos efetivos = cadastro ∩ token, QA-04); mudanças de
+ * grupo/ativo são espelhadas no pool interno pela porta `StaffDirectory` (aws: Cognito; local: no-op). A criação do
+ * usuário no pool (convite + MFA) continua proposta (decisões, Task 3 item 8).
  */
 @Controller('staff')
 export class StaffController {
+  private readonly logger = new Logger('StaffController');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
-    private readonly resolver: PrincipalResolver,
+    @Inject(STAFF_DIRECTORY) private readonly directory: StaffDirectory,
+    private readonly events: EventEmitter2,
   ) {}
 
   @Get()
@@ -78,7 +84,31 @@ export class StaffController {
     }
     const updated = await this.prisma.staffUser.update({ where: { id }, data: { name: dto.name, groups: dto.groups, active: dto.active } });
     await this.audit.record({ actor: u, action: 'staff.update', entityType: 'StaffUser', entityId: id, metadata: { ...dto } });
-    this.resolver.invalidate();
+    await this.syncDirectory(s, dto);
+    // Grupo removido ou desativado: sockets abertos desse usuário caem e reautenticam com os grupos atuais.
+    const removedGroup = !!dto.groups && s.groups.some((g) => !dto.groups!.includes(g));
+    if (removedGroup || (dto.active === false && s.active)) {
+      this.events.emit(EV.PRINCIPAL_REVOKED, { pool: 'staff', userId: id } satisfies PrincipalRevokedEvent);
+    }
     return toStaffUser(updated);
+  }
+
+  /** Espelha no pool interno. Falha não desfaz o cadastro: a remoção de grupo/desativação já vale pela API. */
+  private async syncDirectory(
+    before: { id: string; cognitoSub: string | null; email: string; groups: StaffGroup[]; active: boolean },
+    dto: StaffUpdateDto,
+  ): Promise<void> {
+    const who = { sub: before.cognitoSub, email: before.email };
+    try {
+      if (dto.groups) {
+        const next = dto.groups;
+        const add = next.filter((g) => !before.groups.includes(g));
+        const remove = before.groups.filter((g) => !next.includes(g));
+        if (add.length || remove.length) await this.directory.updateGroups(who, { add, remove });
+      }
+      if (dto.active !== undefined && dto.active !== before.active) await this.directory.setActive(who, dto.active);
+    } catch (err) {
+      this.logger.error({ msg: 'staff_directory_sync_failed', staffId: before.id, error: (err as Error).message });
+    }
   }
 }

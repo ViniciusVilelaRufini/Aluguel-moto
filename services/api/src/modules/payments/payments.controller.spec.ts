@@ -7,6 +7,7 @@ import type { Principal } from '../auth/principal';
 import { PaymentStateService } from './payment-state.service';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { OBJECT_STORAGE } from '../../ports/object-storage.port';
 import { FakePaymentProvider } from './provider/fake-payment-provider';
 import { PAYMENT_PROVIDER, PaymentProviderError, RefundRejectedError } from './provider/payment-provider';
 import { ProviderCustomersService } from './provider-customers.service';
@@ -32,6 +33,7 @@ describe('PaymentsController (HTTP)', () => {
         { provide: ProviderCustomersService, useValue: customers },
         { provide: PaymentStateService, useValue: {} },
         { provide: SubscriptionsService, useValue: {} },
+        { provide: OBJECT_STORAGE, useValue: {} },
       ],
     });
   });
@@ -106,7 +108,7 @@ describe('PaymentsService.refund (via gateway)', () => {
     const charged = await provider.charge({ providerCustomerId: 'x', providerCardId: card.providerCardId, amountCents: 5000, description: 'x', idempotencyKey: 'c', externalReference: 'r' });
     const p = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'rental', method: 'card', status: 'paid', amountCents: 5000, providerPaymentId: charged.providerPaymentId } });
     const audit = { record: jest.fn() };
-    const svc = new PaymentsService(db as any, audit as any, { publish: jest.fn() } as any, provider, customers, state, {} as any);
+    const svc = new PaymentsService(db as any, audit as any, { publish: jest.fn() } as any, provider, customers, state, {} as any, {} as any);
     return { db, provider, svc, p, audit };
   }
 

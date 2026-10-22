@@ -33,6 +33,16 @@ describe('RealtimeGateway', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
+  it('fix round 1: acesso revogado → desconecta os sockets daquele usuário (sala principal:{pool}:{id})', () => {
+    const { gw } = setup();
+    const disconnectSockets = jest.fn();
+    const inFn = jest.fn(() => ({ disconnectSockets }));
+    (gw.server as any).in = inFn;
+    gw.onPrincipalRevoked({ pool: 'customer', userId: 'c1' });
+    expect(inFn).toHaveBeenCalledWith('principal:customer:c1');
+    expect(disconnectSockets).toHaveBeenCalledWith(true);
+  });
+
   it('zone.notice: mensagens em pt-BR', () => {
     expect(zoneMessage({ zoneType: 'reduced_speed', transition: 'ENTER', speedLimitKmh: 6 })).toBe('Você entrou numa área de pedestres. Velocidade máxima: 6 km/h.');
     expect(zoneMessage({ zoneType: 'operation', transition: 'EXIT' })).toMatch(/5 minutos/);

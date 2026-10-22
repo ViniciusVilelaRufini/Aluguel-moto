@@ -6,6 +6,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { IdempotencyInterceptor } from './common/idempotency/idempotency.interceptor';
 import { RequestLogInterceptor } from './common/request-log.interceptor';
 import { CoreModule } from './core.module';
+import { RedisThrottlerStorage } from './common/redis-throttler-storage';
+import { REDIS_STORE, type RedisStore } from './redis/redis-store';
 import { AlertsModule } from './modules/alerts/alerts.module';
 import { AuditController } from './modules/audit/audit.controller';
 import { AuthGuard } from './modules/auth/auth.guard';
@@ -40,7 +42,14 @@ import { ZonesModule } from './modules/zones/zones.module';
   imports: [
     EventEmitterModule.forRoot({ wildcard: false, ignoreErrors: false }),
     ScheduleModule.forRoot(),
-    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT_PER_MINUTE ?? 300) }]),
+    // QA-18: contagem no Redis, compartilhada entre as tasks (REDIS_STORE vem do CoreModule global).
+    ThrottlerModule.forRootAsync({
+      inject: [REDIS_STORE],
+      useFactory: (redis: RedisStore) => ({
+        throttlers: [{ name: 'default', ttl: 60_000, limit: Number(process.env.THROTTLE_LIMIT_PER_MINUTE ?? 300) }],
+        storage: new RedisThrottlerStorage(redis),
+      }),
+    }),
     CoreModule,
     // Portas das Tasks 4 e 5 (stubs da Task 3).
     IotModule,

@@ -30,18 +30,16 @@ export class CognitoAuthVerifier implements AuthVerifier {
     if (!entry) throw new InvalidTokenError('emissor desconhecido');
     try {
       const { payload } = await jwtVerify(token, entry.jwks, { issuer: entry.issuer });
-      if (payload.token_use !== 'access' && payload.token_use !== 'id') throw new InvalidTokenError('token_use inválido');
-      // App client do pool: access token traz `client_id`; id token traz `aud`.
-      if (entry.clientId) {
-        const client = payload.token_use === 'access' ? payload.client_id : Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
-        if (client !== entry.clientId) throw new InvalidTokenError('client_id/aud não pertence ao app do pool');
-      }
+      // QA-17: só access token autoriza a API (o id token é para o app, e o `aud` dele não prova o escopo de acesso).
+      if (payload.token_use !== 'access') throw new InvalidTokenError('token_use inválido (só access token)');
+      if (entry.clientId && payload.client_id !== entry.clientId) throw new InvalidTokenError('client_id não pertence ao app do pool');
       const groups = ((payload['cognito:groups'] as string[] | undefined) ?? []).filter((g): g is StaffGroup =>
         (STAFF_GROUPS as string[]).includes(g),
       );
       return {
         sub: String(payload.sub),
-        email: String(payload.email ?? payload.username ?? ''),
+        // Access token do Cognito não traz e-mail; `username` não é e-mail (QA-17). O cadastro é casado pelo sub.
+        email: typeof payload.email === 'string' ? payload.email : '',
         groups: entry.pool === 'staff' ? groups : [],
         pool: entry.pool,
       };

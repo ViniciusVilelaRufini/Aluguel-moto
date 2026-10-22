@@ -1,5 +1,5 @@
 // Segurança, LGPD e regras legais (agente 8), caixa-preta contra a API no ar (AUTH_MODE=dev, IOT_MODE=local + Mosquitto).
-// Testes marcados com `todo` documentam achados abertos do docs/relatorio-qa.md: falham hoje sem quebrar a suíte.
+// Os achados que eram `todo` (QA-03, QA-07, QA-10) foram corrigidos na branch fix/qa-api e passaram a ser testes normais.
 //   node --test tests/e2e/security.e2e.mjs
 import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';
@@ -85,7 +85,7 @@ test('API8 webhook do Mercado Pago sem assinatura ou com assinatura inválida �
   assert.equal(bad.status, 401);
 });
 
-test('API8 CORS não reflete origem arbitrária com credenciais', { todo: 'QA-10 (origin: true + credentials: true)' }, async () => {
+test('API8 CORS não reflete origem arbitrária com credenciais', async () => {
   const r = await fetch(`${API}/vehicles`, { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization' } });
   assert.notEqual(r.headers.get('access-control-allow-origin'), 'https://evil.example');
 });
@@ -137,7 +137,7 @@ test('QA-01 Legal: comando manual não sobe o limite acima do da zona em que a m
   }
 });
 
-test('QA-03 Legal: editar o limite de uma cerca reaplica às motos que já estão dentro', { todo: 'QA-03', timeout: 60_000 }, async () => {
+test('QA-03 Legal: editar o limite de uma cerca reaplica às motos que já estão dentro', { timeout: 60_000 }, async () => {
   const c = { lat: -23.5450, lng: -46.6650 };
   const d = 0.0008;
   const geometry = { type: 'Polygon', coordinates: [[[c.lng - d, c.lat - d], [c.lng + d, c.lat - d], [c.lng + d, c.lat + d], [c.lng - d, c.lat + d], [c.lng - d, c.lat - d]]] };
@@ -188,7 +188,7 @@ test('LGPD: consentimento obrigatório para alugar, exportação só do titular,
   assert.equal((await db.customer.findUniqueOrThrow({ where: { id: me.body.customer.id } })).name, 'Cliente removido');
 });
 
-test('QA-07 LGPD: depois da exclusão a mesma identidade não volta a usar a plataforma', { todo: 'QA-07 (usuário do Cognito não é excluído; o token cria uma conta nova)' }, async () => {
+test('QA-07 LGPD: depois da exclusão a mesma identidade não volta a usar a plataforma', async () => {
   const t = await customer('lgpd2');
   await http('GET', '/me', { token: t });
   await http('DELETE', '/lgpd/account', { token: t });

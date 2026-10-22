@@ -4,39 +4,48 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { VerifiedToken } from '../../ports/auth-verifier.port';
 import type { Principal } from './principal';
 import { ProblemException } from '../../common/problem';
+import { deletedSubMarker } from './deleted-identity';
 
-/** Mapeia o token para o cadastro local (cria o cliente no primeiro acesso; sincroniza o staff). Cache curto em memória. */
+/** Login do staff gravado no máximo a cada 5 min (o staff é resolvido a cada requisição). */
+const STAFF_LOGIN_TOUCH_MS = 5 * 60_000;
+
+/**
+ * Mapeia o token para o cadastro local (cria o cliente no primeiro acesso). Sem cache: uma leitura indexada por requisição,
+ * para que exclusão de conta (QA-07) e mudança de grupos do staff (QA-04) valham na requisição seguinte em qualquer instância.
+ * Staff: grupos efetivos = cadastro ∩ token — o painel é a fonte, mesmo com o token antigo ainda trazendo o grupo.
+ * Cliente excluído: o token (sub) é recusado pelo hash guardado na exclusão, em vez de recriar uma conta.
+ */
 @Injectable()
 export class PrincipalResolver {
-  private readonly cache = new Map<string, { principal: Principal; at: number }>();
-  private static readonly TTL_MS = 30_000;
-
   constructor(private readonly prisma: PrismaService) {}
 
   async resolve(token: VerifiedToken): Promise<Principal> {
-    const cacheKey = `${token.pool}:${token.sub}:${token.groups.join(',')}`;
-    const hit = this.cache.get(cacheKey);
-    if (hit && Date.now() - hit.at < PrincipalResolver.TTL_MS) return hit.principal;
+    if (token.pool === 'staff') return this.resolveStaff(token);
+    const select = { id: true, status: true } as const;
+    let customer: { id: string; status: string } | null = await this.prisma.customer.findUnique({ where: { cognitoSub: token.sub }, select });
+    if (!customer) {
+      if (await this.prisma.customer.findUnique({ where: { cognitoSub: deletedSubMarker(token.sub) }, select })) {
+        throw new ProblemException(401, 'unauthorized', 'Conta excluída.');
+      }
+      customer = await this.upsertCustomer(token);
+    }
+    if (customer.status === 'deleted') throw new ProblemException(401, 'unauthorized', 'Conta excluída.');
+    return { pool: 'customer', sub: token.sub, email: token.email, groups: [], userId: customer.id, customerId: customer.id };
+  }
 
-    let principal: Principal;
-    if (token.pool === 'customer') {
-      const customer = await this.upsertCustomer(token);
-      if (customer.status === 'deleted') throw new ProblemException(401, 'unauthorized', 'Conta excluída.');
-      principal = { pool: 'customer', sub: token.sub, email: token.email, groups: [], userId: customer.id, customerId: customer.id };
-    } else {
-      const existing = await this.prisma.staffUser.findFirst({
-        where: { OR: [{ cognitoSub: token.sub }, ...(token.email ? [{ email: token.email }] : [])] },
-        select: { id: true, active: true },
-      });
-      let staffId: string;
-      if (existing) {
-        if (!existing.active) throw new ProblemException(403, 'forbidden', 'Usuário interno desativado.');
-        await this.prisma.staffUser.update({
-          where: { id: existing.id },
-          data: { cognitoSub: token.sub, groups: token.groups, lastLoginAt: new Date() },
-        });
-        staffId = existing.id;
-      } else {
+  /**
+   * Staff: lido do banco a cada requisição. O token não regrava mais `StaffUser.groups` (antes o `PATCH` era desfeito na
+   * requisição seguinte do próprio usuário). Primeiro acesso de um usuário do pool sem cadastro: criado com os grupos do token.
+   */
+  private async resolveStaff(token: VerifiedToken): Promise<Principal> {
+    const select = { id: true, active: true, groups: true, cognitoSub: true, lastLoginAt: true } as const;
+    // QA-17: casa pelo sub. O e-mail só liga um cadastro ainda sem sub (criado pelo painel antes do primeiro login) e só
+    // existe em tokens dev; o access token do Cognito não traz e-mail, e o `username` nunca é usado como e-mail.
+    let existing =
+      (await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select })) ??
+      (token.email ? await this.prisma.staffUser.findFirst({ where: { email: token.email, cognitoSub: null }, select }) : null);
+    if (!existing) {
+      try {
         const created = await this.prisma.staffUser.create({
           data: {
             cognitoSub: token.sub,
@@ -47,12 +56,21 @@ export class PrincipalResolver {
           },
           select: { id: true },
         });
-        staffId = created.id;
+        return { pool: 'staff', sub: token.sub, email: token.email, groups: [...token.groups], userId: created.id, staffId: created.id };
+      } catch (err) {
+        // QA-08 (resto): requisições paralelas no primeiro acesso → relê o cadastro criado pela concorrente.
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+        existing = await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select });
+        if (!existing) throw err;
       }
-      principal = { pool: 'staff', sub: token.sub, email: token.email, groups: token.groups, userId: staffId, staffId };
     }
-    this.cache.set(cacheKey, { principal, at: Date.now() });
-    return principal;
+    if (!existing.active) throw new ProblemException(403, 'forbidden', 'Usuário interno desativado.');
+    const now = Date.now();
+    if (existing.cognitoSub !== token.sub || !existing.lastLoginAt || now - existing.lastLoginAt.getTime() > STAFF_LOGIN_TOUCH_MS) {
+      await this.prisma.staffUser.update({ where: { id: existing.id }, data: { cognitoSub: token.sub, lastLoginAt: new Date(now) } });
+    }
+    const groups = existing.groups.filter((g) => token.groups.includes(g));
+    return { pool: 'staff', sub: token.sub, email: token.email, groups, userId: existing.id, staffId: existing.id };
   }
 
   /**
@@ -73,9 +91,5 @@ export class PrincipalResolver {
       if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
       return this.prisma.customer.findUniqueOrThrow({ where, select });
     }
-  }
-
-  invalidate(): void {
-    this.cache.clear();
   }
 }

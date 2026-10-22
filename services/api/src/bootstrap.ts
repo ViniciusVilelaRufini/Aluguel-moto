@@ -3,6 +3,8 @@ import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { ProblemException, ValidationIssue } from './common/problem';
 import { ProblemFilter } from './common/problem.filter';
+import { corsOptions } from './common/cors';
+import helmet from 'helmet';
 
 function flatten(errors: ValidationError[], parent = ''): ValidationIssue[] {
   const out: ValidationIssue[] = [];
@@ -33,6 +35,13 @@ export const validationPipe = () =>
     },
   });
 
+/** `TRUST_PROXY`: número de saltos (ex.: 1 = ALB), `true`/`false` ou lista do Express (`loopback`…); ausente = desligado. */
+export function trustProxySetting(raw: string | undefined): boolean | number | string {
+  if (raw === undefined || raw.trim() === '' || raw === 'false') return false;
+  if (raw === 'true') return true;
+  return /^[0-9]+$/.test(raw.trim()) ? Number(raw) : raw.trim();
+}
+
 /** Configuração HTTP comum à aplicação e aos testes. */
 export function configureApp(app: INestApplication): INestApplication {
   app.use((req: Request & { traceId?: string }, res: Response, next: NextFunction) => {
@@ -43,9 +52,18 @@ export function configureApp(app: INestApplication): INestApplication {
   });
   app.useGlobalPipes(validationPipe());
   app.useGlobalFilters(new ProblemFilter());
-  app.enableCors({ origin: true, credentials: true, exposedHeaders: ['X-Request-Id', 'Retry-After', 'Idempotent-Replayed'] });
+  app.enableCors(corsOptions());
+  // QA-18: HSTS, nosniff, frame-ancestors 'none' etc. A API só serve JSON: CSP mínima.
+  app.use(
+    helmet({
+      contentSecurityPolicy: { useDefaults: false, directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"] } },
+      crossOriginResourcePolicy: { policy: 'same-site' },
+    }),
+  );
   const http = app.getHttpAdapter().getInstance();
-  http.set?.('trust proxy', 1);
+  // QA-18: só confia no X-Forwarded-For com proxy declarado (TRUST_PROXY=1 atrás do ALB); senão um cabeçalho forjado
+  // trocaria o IP usado pelo rate limit.
+  http.set?.('trust proxy', trustProxySetting(process.env.TRUST_PROXY));
   http.disable?.('x-powered-by');
   return app;
 }

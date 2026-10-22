@@ -1,12 +1,18 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, Interval } from '@nestjs/schedule';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEvent, type PrincipalRevokedEvent } from '../../common/events';
+
+/** Tentativas de excluir a identidade no Cognito antes do alerta de revisão manual. */
+export const MAX_IDENTITY_DELETION_ATTEMPTS = 10;
 import type { TrackPoint } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { conflict, notFound } from '../../common/problem';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PrincipalResolver } from '../auth/principal-resolver.service';
+import { CUSTOMER_IDENTITY, type CustomerIdentityDirectory } from '../../ports/customer-identity.port';
+import { deletedSubMarker } from '../auth/deleted-identity';
 import { toConsents, toCustomer } from '../customers/customers.mapper';
 import { toPayment, toWalletEntry } from '../payments/payments.mapper';
 import { toRental } from '../rentals/rentals.mapper';
@@ -28,7 +34,8 @@ export class LgpdService {
     private readonly prisma: PrismaService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
-    @Optional() private readonly resolver?: PrincipalResolver,
+    @Optional() @Inject(CUSTOMER_IDENTITY) private readonly identity?: CustomerIdentityDirectory,
+    @Optional() private readonly events?: EventEmitter2,
   ) {}
 
   private async customer(customerId: string) {
@@ -56,6 +63,9 @@ export class LgpdService {
         consentsUpdatedAt: now,
       },
     });
+    if (input.locationTracking !== current.locationConsent) {
+      this.events?.emit(EV.CUSTOMER_CONSENT_CHANGED, { customerId, locationTracking: input.locationTracking } satisfies CustomerConsentChangedEvent);
+    }
     return toConsents(updated);
   }
 
@@ -92,7 +102,7 @@ export class LgpdService {
       customer: toCustomer(customer, { fullCpf: true }),
       consents: toConsents(customer),
       rentals: rentals.map((r) => toRental(r)),
-      payments: payments.map(toPayment),
+      payments: payments.map((p) => toPayment(p)),
       tracks,
       walletEntries: walletEntries.map(toWalletEntry),
       incidents: incidents.map(toIncident),
@@ -115,11 +125,15 @@ export class LgpdService {
     }
 
     const kycKeys = [customer.kycDocumentFrontKey, customer.kycDocumentBackKey, customer.kycSelfieKey].filter((k): k is string => !!k);
-    const rentals = await this.prisma.rental.findMany({ where: { customerId }, select: { id: true } });
+    const rentals = await this.prisma.rental.findMany({ where: { customerId }, select: { id: true, returnPhotoObjectKey: true, returnPhotoUploadKey: true } });
     const rentalIds = rentals.map((r) => r.id);
+    // QA-14: a foto de devolução pode identificar o titular (rosto, casa); sai junto com a conta.
+    const photoKeys = [...new Set(rentals.flatMap((r) => [r.returnPhotoObjectKey, r.returnPhotoUploadKey]).filter((k): k is string => !!k))];
 
     await this.prisma.$transaction(async (tx) => {
       if (rentalIds.length) await tx.trackPoint.deleteMany({ where: { rentalId: { in: rentalIds } } });
+      // QA-12: a posição de início é localização ligada ao titular.
+      await tx.rental.updateMany({ where: { customerId }, data: { startLat: null, startLng: null, returnPhotoObjectKey: null, returnPhotoUploadKey: null } });
       await tx.device.deleteMany({ where: { ownerId: customerId } });
       await tx.customer.update({
         where: { id: customerId },
@@ -131,7 +145,8 @@ export class LgpdService {
           birthDate: null,
           emergencyContactName: null,
           emergencyContactPhone: null,
-          cognitoSub: `deleted:${customerId}`,
+          // QA-07: só o hash do sub, para recusar o token antigo sem guardar o identificador.
+          cognitoSub: customer.cognitoSub.startsWith('deleted:') ? customer.cognitoSub : deletedSubMarker(customer.cognitoSub),
           kycDocumentFrontKey: null,
           kycDocumentBackKey: null,
           kycSelfieKey: null,
@@ -142,11 +157,15 @@ export class LgpdService {
           deletedAt: requestedAt,
         },
       });
+      // Fix round 1: a exclusão no Cognito fica registrada na mesma transação; o job refaz se falhar (ou se o processo cair).
+      if (!customer.cognitoSub.startsWith('deleted:')) {
+        await tx.customerIdentityDeletion.upsert({ where: { customerId }, create: { customerId, sub: customer.cognitoSub }, update: {} });
+      }
     });
 
-    // QA-07: sem isso o token do titular continuava valendo por até 30 s (cache do resolver) sobre o cadastro anonimizado,
-    // inclusive para gravar nome/telefone de volta (PATCH /me).
-    this.resolver?.invalidate();
+    // QA-07: a identidade sai do pool de clientes e as sessões são encerradas. Falha só é registrada: o token antigo já é
+    // recusado pelo hash do sub (PrincipalResolver, sem cache) e a exclusão no pool pode ser refeita.
+    if (!customer.cognitoSub.startsWith('deleted:')) await this.attemptIdentityDeletion({ customerId, sub: customer.cognitoSub, attempts: 0 });
 
     for (const key of kycKeys) {
       try {
@@ -155,8 +174,59 @@ export class LgpdService {
         this.logger.warn({ msg: 'kyc_object_delete_failed', customerId, error: (err as Error).message });
       }
     }
+    for (const key of photoKeys) {
+      try {
+        await this.storage.deleteObject({ bucket: this.cfg.buckets.returnPhotos, key });
+      } catch (err) {
+        this.logger.warn({ msg: 'return_photo_delete_failed', customerId, error: (err as Error).message });
+      }
+    }
+    this.events?.emit(EV.PRINCIPAL_REVOKED, { pool: 'customer', userId: customerId } satisfies PrincipalRevokedEvent);
     this.logger.log({ msg: 'account_anonymized', customerId });
     return { status: 'completed' as const, requestedAt: requestedAt.toISOString(), completedAt: new Date().toISOString() };
+  }
+
+  /**
+   * Fix round 1 (QA-07): exclui a identidade no pool; sucesso apaga a pendência (e o `sub` guardado), falha conta tentativa.
+   * Esgotadas as tentativas → alerta: evento `lgpd.identity-deletion-failed` + log de erro para revisão manual.
+   */
+  private async attemptIdentityDeletion(row: { customerId: string; sub: string; attempts: number }): Promise<void> {
+    if (!this.identity) return;
+    try {
+      await this.identity.deleteIdentity(row.sub);
+      await this.quiet(() => this.prisma.customerIdentityDeletion.delete({ where: { customerId: row.customerId } }));
+    } catch (err) {
+      const message = (err as Error).message.slice(0, 500);
+      const updated = await this.quiet(() =>
+        this.prisma.customerIdentityDeletion.update({ where: { customerId: row.customerId }, data: { attempts: { increment: 1 }, lastError: message } }),
+      );
+      const attempts = updated?.attempts ?? row.attempts + 1;
+      this.logger.warn({ msg: 'customer_identity_delete_failed', customerId: row.customerId, attempts, error: message });
+      if (attempts >= MAX_IDENTITY_DELETION_ATTEMPTS) {
+        this.logger.error({ msg: 'lgpd_identity_deletion_needs_manual_review', customerId: row.customerId, attempts });
+        this.events?.emit(EV.LGPD_IDENTITY_DELETION_FAILED, { customerId: row.customerId, attempts } satisfies LgpdIdentityDeletionFailedEvent);
+      }
+    }
+  }
+
+  private async quiet<T>(fn: () => Promise<T>): Promise<T | null> {
+    try {
+      return (await fn()) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Retentativa das exclusões de identidade pendentes (a cada 5 min). */
+  async retryIdentityDeletions(): Promise<void> {
+    const pending = await this.prisma.customerIdentityDeletion.findMany({ where: { attempts: { lt: MAX_IDENTITY_DELETION_ATTEMPTS } }, orderBy: { updatedAt: 'asc' }, take: 50 });
+    for (const row of pending) await this.attemptIdentityDeletion(row);
+  }
+
+  @Interval('lgpd-identity-deletion-retry', 5 * 60_000)
+  async identityRetryJob(): Promise<void> {
+    if (!this.cfg.jobsEnabled) return;
+    await this.retryIdentityDeletions().catch((err) => this.logger.error({ msg: 'identity_deletion_retry_failed', error: (err as Error).message }));
   }
 
   /** Apaga pontos de trajeto expirados (`expiresAt < now`). */
@@ -165,11 +235,19 @@ export class LgpdService {
     return res.count;
   }
 
+  /** QA-12: posição de início dos aluguéis segue a retenção dos trajetos (TRACK_RETENTION_DAYS). */
+  async purgeExpiredStartLocations(): Promise<number> {
+    const cutoff = new Date(Date.now() - this.cfg.trackRetentionDays * 86_400_000);
+    const res = await this.prisma.rental.updateMany({ where: { startedAt: { lt: cutoff }, startLat: { not: null } }, data: { startLat: null, startLng: null } });
+    return res.count;
+  }
+
   /** Job diário (03:30 em São Paulo). */
   @Cron('30 3 * * *', { name: 'purge-expired-tracks', timeZone: 'America/Sao_Paulo' })
   async purgeJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     const count = await this.purgeExpiredTracks();
-    this.logger.log({ msg: 'expired_tracks_purged', count });
+    const startLocations = await this.purgeExpiredStartLocations();
+    this.logger.log({ msg: 'expired_tracks_purged', count, startLocations });
   }
 }

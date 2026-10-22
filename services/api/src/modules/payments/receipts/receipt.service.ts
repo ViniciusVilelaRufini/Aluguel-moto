@@ -12,9 +12,6 @@ export interface ReceiptOptions {
 }
 export const RECEIPT_OPTIONS = Symbol('RECEIPT_OPTIONS');
 
-/** Link do PDF devolvido em `Payment.receiptUrl` (URL assinada; o objeto fica no bucket privado). */
-const RECEIPT_LINK_TTL_SECONDS = 7 * 24 * 3600;
-
 interface BreakdownLine {
   label?: string;
   description?: string;
@@ -68,8 +65,7 @@ export class ReceiptService {
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;
     }
-    const link = await this.storage.presignGet({ bucket: this.opts.reportsBucket, key, expiresInSeconds: RECEIPT_LINK_TTL_SECONDS });
-    await this.prisma.payment.update({ where: { id: payment.id }, data: { receiptUrl: link.url } });
+    // QA-11: só a chave fica gravada (PaymentReceipt); o link de 15 min é gerado a cada leitura (receipt-links.ts).
     this.logger.log({ msg: 'receipt_stored', paymentId: payment.id });
   }
 

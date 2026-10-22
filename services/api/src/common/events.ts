@@ -16,7 +16,28 @@ export const EV = {
   ZONE_CHANGED: 'zone.changed',
   RESERVATION_ENDED: 'reservation.ended',
   DEPOSIT_RELEASE_REQUESTED: 'deposit.release-requested',
+  CUSTOMER_CONSENT_CHANGED: 'customer.consent-changed',
+  LGPD_IDENTITY_DELETION_FAILED: 'lgpd.identity-deletion-failed',
+  PRINCIPAL_REVOKED: 'auth.principal-revoked',
 } as const;
+
+/** Exclusão da identidade no Cognito esgotou as tentativas (fix round 1, QA-07): revisão manual. */
+export interface LgpdIdentityDeletionFailedEvent {
+  customerId: string;
+  attempts: number;
+}
+
+/** Acesso revogado (conta excluída, grupo removido, staff desativado): o realtime desconecta os sockets do usuário. */
+export interface PrincipalRevokedEvent {
+  pool: 'customer' | 'staff';
+  userId: string;
+}
+
+/** Consentimento de localização mudou (QA-09): o módulo IoT relê o aluguel/consentimento antes de gravar trajeto. */
+export interface CustomerConsentChangedEvent {
+  customerId: string;
+  locationTracking: boolean;
+}
 
 export interface IotTelemetryEvent {
   thingName: string;
@@ -106,6 +127,10 @@ export interface RentalChangedEvent {
 export interface ZoneChangedEvent {
   zoneId: string;
   action: 'created' | 'updated' | 'deleted';
+  /** Estado da zona depois da mudança (QA-03: o motor de cercas reavalia as motos dentro com o limite novo). */
+  type?: ZoneType;
+  speedLimitKmh?: number | null;
+  active?: boolean;
 }
 
 /** Reserva encerrada sem virar aluguel: a Task 5 libera a caução Pix associada (decisão #16). */

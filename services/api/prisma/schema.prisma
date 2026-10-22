@@ -1187,3 +1187,31 @@ model PaymentRefund {
   @@index([status, updatedAt])
   @@index([paymentId])
 }
+
+/// QA-21 (fix round 1): início de aluguel em andamento (moto reivindicada, desbloqueio pedido, aluguel ainda não criado).
+/// Apagado quando o aluguel é criado ou compensado; o job de varredura compensa os que sobraram (processo morreu no meio).
+model RentalStart {
+  rentalId       String        @id @db.Uuid
+  vehicleId      String        @db.Uuid
+  customerId     String        @db.Uuid
+  depositId      String?       @db.Uuid
+  policyId       String?       @db.Uuid
+  previousStatus VehicleStatus
+  createdAt      DateTime      @default(now())
+
+  @@index([createdAt])
+  @@index([customerId])
+}
+
+/// QA-07 (fix round 1): exclusão da identidade no pool de clientes pendente (falhou na hora). Guarda o `sub` só até o
+/// Cognito confirmar a exclusão; o job de retentativa apaga a linha no sucesso.
+model CustomerIdentityDeletion {
+  customerId String   @id @db.Uuid
+  sub        String
+  attempts   Int      @default(0)
+  lastError  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([attempts])
+}

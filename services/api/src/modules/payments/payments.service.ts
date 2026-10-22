@@ -4,7 +4,9 @@ import type { Payment, PaymentRefund, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
+import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
+import { receiptLinks } from './receipts/receipt-links';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
@@ -38,6 +40,7 @@ export class PaymentsService {
     private readonly customers: ProviderCustomersService,
     private readonly state: PaymentStateService,
     private readonly subscriptions: SubscriptionsService,
+    @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
   ) {}
 
   // ── cartões (só token do gateway) ──
@@ -108,13 +111,15 @@ export class PaymentsService {
     const createdAt = range(q.from, q.to);
     if (createdAt) where.createdAt = createdAt;
     const rows = await this.prisma.payment.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], ...pageArgs(q) });
-    return toPage(rows, q, toPayment);
+    const links = await receiptLinks(this.prisma, this.storage, rows.map((r) => r.id));
+    return toPage(rows, q, (p: Payment) => toPayment(p, links.get(p.id)));
   }
 
   async getPayment(user: Principal, id: string) {
     const p = await this.prisma.payment.findUnique({ where: { id } });
     if (!p || (!isStaff(user) && p.customerId !== user.customerId)) throw notFound('Pagamento não encontrado.');
-    return toPayment(p);
+    const links = await receiptLinks(this.prisma, this.storage, [p.id]);
+    return toPayment(p, links.get(p.id));
   }
 
   /**

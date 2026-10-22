@@ -11,7 +11,7 @@ pnpm install
 pnpm dev:deps                           # postgres, redis, mosquitto, minio (a API cria os buckets ao subir)
 pnpm --filter api prisma migrate deploy # aplica prisma/migrations
 pnpm --filter api prisma db seed        # São Paulo: 60 motos, zonas, preços, usuários dev
-pnpm --filter api dev                   # compila (tsc) e sobe em http://localhost:3000
+pnpm --filter api dev                   # prisma generate + tsc e sobe em http://localhost:3000
 ```
 
 Ou tudo em containers: `docker compose up -d --build api` (sobe sem `.env`, com padrões de dev; porta do host em `API_PORT`, padrão 3000) (o container aplica as migrações com `RUN_MIGRATIONS=true`; `RUN_SEED=true` roda o seed).
@@ -42,8 +42,8 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 
 ## Estrutura
 
-- `src/ports/` — interfaces fixas: `IotGateway`, `RentalBillingPort`, `InsurancePort` (plano mestre), `ObjectStorage`, `QueueBus`, `KycProvider`, `PushNotifier`, `AuthVerifier`.
-- `src/adapters/` — implementações local/aws escolhidas por variável (`AUTH_MODE`, `STORAGE_MODE`, `QUEUE_MODE`, `KYC_PROVIDER`, `PUSH_MODE`).
+- `src/ports/` — interfaces fixas: `IotGateway`, `RentalBillingPort`, `InsurancePort` (plano mestre), `ObjectStorage`, `QueueBus`, `KycProvider`, `PushNotifier`, `AuthVerifier`, `StaffDirectory` e `CustomerIdentityDirectory` (Cognito; local = no-op).
+- `src/adapters/` — implementações local/aws escolhidas por variável (`AUTH_MODE`, `STORAGE_MODE`, `QUEUE_MODE`, `KYC_PROVIDER`, `PUSH_MODE`). Valor desconhecido em qualquer `*_MODE` recusa subir.
 - `src/modules/iot` — **Task 4** (ver "IoT" abaixo).
 - `src/modules/payments`, `insurance`, `wallet` — **Task 5** (`docs/pagamentos.md`): `RentalBillingService` (caução por pré-autorização ou Pix, liquidação com captura parcial, inadimplência) sobre `PaymentProvider` (`PAYMENT_PROVIDER=fake|mercadopago`), webhooks do Mercado Pago validados, enfileirados e deduplicados (`ProcessedWebhook`), carteira em ledger somente inserção, `InsuranceService` com `MockInsuranceProvider` e repasse, recibo em PDF no bucket de relatórios e NFS-e (`MockInvoiceIssuer`). No fake, o cartão precisa ser cadastrado antes de alugar (`POST /payments/cards` com `cardToken: tok_visa_4242`); o Pix se confirma sozinho após `FAKE_PIX_AUTOCONFIRM_SECONDS`.
 - `src/common/` — enums compartilhados, erros RFC 7807 (`ProblemException` → `type: https://api.volti.com.br/problems/<slug>`), idempotência (`@Idempotent`), paginação por cursor, logger JSON sem dados pessoais.
@@ -72,6 +72,21 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 - Provisionar rastreador: `pnpm --filter api exec tsx scripts/provision-tracker.ts --vehicle VLT-0061 --thing moto-0061 --imei 860000000000061 --mode aws|local`.
 - Simulador: `services/iot-sim` (`docker compose --profile sim up -d iot-sim`).
 - Teste de integração: `pnpm --filter api test:e2e -- test/iot` (Mosquitto + Postgres/Redis do compose; sobe o simulador sozinho).
+
+## Segurança e LGPD (correções do QA, `docs/relatorio-qa.md`)
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `CORS_ORIGINS` | vazio | origens aceitas (vírgulas), HTTP e Socket.IO, sem credenciais; vazio = só `localhost` fora de produção, nenhuma em produção |
+| `TRUST_PROXY` | vazio | saltos de proxy confiáveis (`1` atrás do ALB); vazio = ignora `X-Forwarded-For` |
+| `TERMS_CURRENT_VERSION` | vazio | versão dos termos exigida em `POST /rentals` (vazio = basta ter aceitado) |
+
+- Produção (`NODE_ENV=production`) recusa `AUTH_MODE=dev` e `MERCADOPAGO_WEBHOOK_SECRET=CHANGE_ME`.
+- Autorização: grupos do staff = cadastro ∩ token, lidos a cada requisição (`PATCH /staff/{id}` vale na hora e é espelhado no pool pelo `StaffDirectory`). Cognito: só access token; staff casado pelo `sub`.
+- Exclusão de conta: identidade excluída no pool de clientes, `cognitoSub` vira `deleted:<sha256(sub)>` e o token antigo recebe 401; trajetos, posição de início, fotos de devolução e documentos de KYC são apagados.
+- Consentimento de localização revogado durante o aluguel: o trajeto para de ser gravado na hora.
+- `POST /rentals`: moto offline ou desbloqueio não confirmado → `409 vehicle-offline`, sem aluguel nem cobrança; o relógio começa no desbloqueio confirmado.
+- Rate limit no Redis (compartilhado entre instâncias); cabeçalhos `helmet`; exportação LGPD com `Cache-Control: no-store`; link do recibo assinado na leitura (15 min).
 
 ## Regras que nunca mudam
 
