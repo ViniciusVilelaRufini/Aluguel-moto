@@ -11,11 +11,14 @@ const DAY = 86_400_000;
 function matches(row: Row, where: Row = {}): boolean {
   return Object.entries(where).every(([k, cond]) => {
     if (k === 'NOT') return !matches(row, cond);
+    if (k === 'OR') return (cond as Row[]).some((c) => matches(row, c));
+    if (k === 'AND') return (cond as Row[]).every((c) => matches(row, c));
     const v = row[k];
     if (cond && typeof cond === 'object' && !(cond instanceof Date)) {
       if ('in' in cond) return cond.in.includes(v);
       if ('lte' in cond) return v != null && v <= cond.lte;
       if ('gt' in cond) return v != null && v > cond.gt;
+      if ('not' in cond) return cond.not === null ? v != null : v !== cond.not;
       return false;
     }
     return v instanceof Date && cond instanceof Date ? v.getTime() === cond.getTime() : v === cond;
@@ -30,7 +33,11 @@ function table(rows: Row[] = []) {
     rows,
     findUnique: jest.fn(async ({ where }) => { const r = rows.find((x) => matches(x, where)); return r ? { ...r } : null; }),
     findFirst: jest.fn(async ({ where }) => { const r = rows.find((x) => matches(x, where)); return r ? { ...r } : null; }),
-    findMany: jest.fn(async ({ where } = {}) => rows.filter((r) => matches(r, where)).map((r) => ({ ...r }))),
+    findMany: jest.fn(async ({ where, take, orderBy }: Row = {}) => {
+      let out = rows.filter((r) => matches(r, where));
+      if (orderBy?.id) out = [...out].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      return out.slice(0, take ?? out.length).map((r) => ({ ...r }));
+    }),
     updateMany: jest.fn(async ({ where, data }) => {
       const hit = rows.filter((r) => matches(r, where));
       hit.forEach((r) => apply(r, data));
@@ -135,6 +142,23 @@ describe('SubscriptionsService — ciclo de vida (C1) e moto fixa (I2/M9)', () =
     );
     expect(await svc.expireStale(now)).toBe(2);
     expect(prisma.subscription.rows.map((r: Row) => r.status)).toEqual(['canceled', 'expired']);
+  });
+
+  it('fix round 2 (achado 3): expireStale filtra a carência no WHERE e pagina — 250 dentro da carência não escondem a vencida', async () => {
+    const now = new Date();
+    const fresh = Array.from({ length: 250 }, (_, i) => ({
+      id: `a${String(i).padStart(3, '0')}`, customerId: `c${i}`, planCode: 'weekly', status: 'active', cancelAtPeriodEnd: false, canceledAt: null,
+      currentPeriodEnd: new Date(now.getTime() - 3600_000), // venceu há 1 h: ainda na carência de 72 h
+    }));
+    const due = Array.from({ length: 205 }, (_, i) => ({
+      id: `z${String(i).padStart(3, '0')}`, customerId: `d${i}`, planCode: 'weekly', status: 'past_due', cancelAtPeriodEnd: false, canceledAt: null,
+      currentPeriodEnd: new Date(now.getTime() - 4 * DAY),
+    }));
+    const { svc, prisma } = setup({ id: '0', status: 'canceled' }, { others: [...fresh, ...due] });
+    expect(await svc.expireStale(now)).toBe(205);
+    expect(prisma.subscription.rows.filter((r: Row) => r.status === 'expired')).toHaveLength(205);
+    expect(prisma.subscription.rows.filter((r: Row) => r.id.startsWith('a') && r.status === 'active')).toHaveLength(250);
+    for (const [args] of prisma.subscription.findMany.mock.calls) expect(args.take).toBeLessThanOrEqual(200);
   });
 
   it('cliente troca a moto fixa no máximo uma vez a cada 24 h; staff não espera', async () => {

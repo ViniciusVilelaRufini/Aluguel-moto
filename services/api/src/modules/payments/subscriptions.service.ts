@@ -9,7 +9,7 @@ import { isStaff, type Principal } from '../auth/principal';
 import { toVehicleSummary } from '../vehicles/vehicles.mapper';
 import { assertNotFixedForOther, currentSubscriptionWhere } from '../../common/fixed-vehicle';
 import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
-import { assertVehicleSwapAllowed, checkPause, lifecycleTransition, renewEffect, resumeEffect } from './subscription-rules';
+import { assertVehicleSwapAllowed, checkPause, lifecycleCandidatesWhere, lifecycleTransition, renewEffect, resumeEffect } from './subscription-rules';
 import { canTransition } from './payment-state';
 import { isUniqueViolation, PaymentStateService } from './payment-state.service';
 import { toSubscription } from './payments.mapper';
@@ -18,6 +18,8 @@ import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderPayment } from './
 import { RentalBillingService } from './rental-billing.service';
 
 const DAY_MS = 86_400_000;
+/** Página do job de ciclo de vida. */
+const EXPIRE_PAGE = 200;
 const periodMs = (planCode: string) => (planCode === 'weekly' ? 7 : 30) * DAY_MS;
 
 /**
@@ -162,24 +164,30 @@ export class SubscriptionsService {
    * sem renovação além da carência (`SUBSCRIPTION_RENEWAL_GRACE_HOURS`) → `expired`. Libera a moto fixa e o índice parcial.
    */
   async expireStale(now: Date, where: { customerId?: string; assignedVehicleId?: string } = {}): Promise<number> {
-    const rows = await this.prisma.subscription.findMany({
-      where: { ...where, status: { in: ['active', 'paused', 'past_due'] }, currentPeriodEnd: { lte: now } },
-      take: 200,
-    });
     let n = 0;
-    for (const sub of rows) {
-      const to = lifecycleTransition(sub, now, this.v2.subscriptionGraceMs);
-      if (!to) continue;
-      const done = await this.prisma.subscription.updateMany({
-        where: { id: sub.id, status: sub.status },
-        data: { status: to, ...(to === 'canceled' ? { canceledAt: sub.canceledAt ?? now } : {}) },
+    let after: string | undefined;
+    // Fix round 2 (achado 3): só candidatas que já devem mudar (carência no WHERE), em páginas por id.
+    for (;;) {
+      const rows = await this.prisma.subscription.findMany({
+        where: { ...where, ...lifecycleCandidatesWhere(now, this.v2.subscriptionGraceMs), ...(after ? { id: { gt: after } } : {}) },
+        orderBy: { id: 'asc' },
+        take: EXPIRE_PAGE,
       });
-      if (done.count) {
-        n++;
-        this.logger.log({ msg: 'subscription_closed', subscriptionId: sub.id, status: to });
+      for (const sub of rows) {
+        const to = lifecycleTransition(sub, now, this.v2.subscriptionGraceMs);
+        if (!to) continue;
+        const done = await this.prisma.subscription.updateMany({
+          where: { id: sub.id, status: sub.status },
+          data: { status: to, ...(to === 'canceled' ? { canceledAt: sub.canceledAt ?? now } : {}) },
+        });
+        if (done.count) {
+          n++;
+          this.logger.log({ msg: 'subscription_closed', subscriptionId: sub.id, status: to });
+        }
       }
+      if (rows.length < EXPIRE_PAGE) return n;
+      after = rows[rows.length - 1].id;
     }
-    return n;
   }
 
   /** Valida a moto antes de qualquer cobrança (I2): existe, livre e sem outro assinante vigente. */

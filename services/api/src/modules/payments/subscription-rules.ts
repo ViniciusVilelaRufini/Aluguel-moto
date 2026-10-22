@@ -1,4 +1,4 @@
-import type { Subscription } from '@prisma/client';
+import type { Subscription, SubscriptionStatus } from '@prisma/client';
 import { conflict, unprocessable } from '../../common/problem';
 
 /**
@@ -76,6 +76,19 @@ export function lifecycleTransition(
   if (OPEN.includes(sub.status) && sub.cancelAtPeriodEnd && sub.currentPeriodEnd <= now) return 'canceled';
   if ((sub.status === 'active' || sub.status === 'past_due') && sub.currentPeriodEnd.getTime() + graceMs <= now.getTime()) return 'expired';
   return null;
+}
+
+/**
+ * Fix round 2 (achado 3): o mesmo critério de `lifecycleTransition` como filtro do banco, para o job só ler assinaturas que
+ * já devem mudar (sem isso, as que estão na carência ocupavam a página e escondiam as vencidas).
+ */
+export function lifecycleCandidatesWhere(now: Date, graceMs: number) {
+  return {
+    OR: [
+      { status: { in: ['active', 'paused'] as SubscriptionStatus[] }, cancelAtPeriodEnd: true, currentPeriodEnd: { lte: now } },
+      { status: { in: ['active', 'past_due'] as SubscriptionStatus[] }, currentPeriodEnd: { lte: new Date(now.getTime() - graceMs) } },
+    ],
+  };
 }
 
 /**
