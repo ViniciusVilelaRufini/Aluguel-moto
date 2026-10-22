@@ -1187,3 +1187,18 @@ model PaymentRefund {
   @@index([status, updatedAt])
   @@index([paymentId])
 }
+
+/// QA-21 (fix round 1): início de aluguel em andamento (moto reivindicada, desbloqueio pedido, aluguel ainda não criado).
+/// Apagado quando o aluguel é criado ou compensado; o job de varredura compensa os que sobraram (processo morreu no meio).
+model RentalStart {
+  rentalId       String        @id @db.Uuid
+  vehicleId      String        @db.Uuid
+  customerId     String        @db.Uuid
+  depositId      String?       @db.Uuid
+  policyId       String?       @db.Uuid
+  previousStatus VehicleStatus
+  createdAt      DateTime      @default(now())
+
+  @@index([createdAt])
+  @@index([customerId])
+}

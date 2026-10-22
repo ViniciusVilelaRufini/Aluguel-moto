@@ -85,6 +85,6 @@ import { TelemetryService } from './telemetry.service';
     },
     IotRuntime,
   ],
-  exports: [IOT_GATEWAY],
+  exports: [IOT_GATEWAY, IOT_CONFIG],
 })
 export class IotModule {}

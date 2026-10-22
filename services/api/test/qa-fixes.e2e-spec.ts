@@ -73,6 +73,7 @@ describe('Correções do QA (e2e)', () => {
       expect(await prisma.payment.count({ where: { customerId, kind: { in: ['rental', 'fee'] } } })).toBe(0);
       expect(await prisma.deposit.count({ where: { customerId, status: 'held' } })).toBe(0);
       expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('free');
+      expect(await prisma.rentalStart.count({ where: { customerId } })).toBe(0);
     } finally {
       spy.mockRestore();
     }

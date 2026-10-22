@@ -4,6 +4,7 @@ import { EV } from '../../common/events';
 import { createHarness, CUSTOMER_ID, customerToken, Harness } from '../../../test/helpers/http-harness';
 import { INSURANCE } from '../../ports/insurance.port';
 import { IOT_GATEWAY } from '../../ports/iot-gateway.port';
+import { IOT_CONFIG } from '../iot/iot-config';
 import { RENTAL_BILLING } from '../../ports/rental-billing.port';
 import { CommandsService } from '../commands/commands.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -43,6 +44,7 @@ describe('Início do aluguel (POST /rentals)', () => {
         { provide: RENTAL_BILLING, useValue: billing },
         { provide: INSURANCE, useValue: insurance },
         { provide: IOT_GATEWAY, useValue: iot },
+        { provide: IOT_CONFIG, useValue: { commandTimeoutMs: 30_000 } },
       ],
     });
   });
@@ -73,6 +75,7 @@ describe('Início do aluguel (POST /rentals)', () => {
     insurance.issueForRental.mockResolvedValue({ policyId: POLICY_ID, premiumCents: 200 });
     commands.dispatch.mockResolvedValue({ id: 'cmd-1', status: 'confirmed' });
     iot.getLiveState.mockResolvedValue(null);
+    p.rentalStart.deleteMany.mockResolvedValue({ count: 1 });
   });
 
   const post = async (key: string | null, b: object = body) => {
@@ -271,6 +274,52 @@ describe('Início do aluguel (POST /rentals)', () => {
       expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-offline');
       expect(h.prisma.rental.create).not.toHaveBeenCalled();
       expect(released).toHaveBeenCalled();
+    });
+  });
+
+  describe('QA-21 fix round 1: marcador RentalStart e varredura', () => {
+    let released: jest.Mock;
+    beforeEach(() => {
+      released = jest.fn();
+      h.app.get(EventEmitter2).removeAllListeners(EV.DEPOSIT_RELEASE_REQUESTED);
+      h.app.get(EventEmitter2).on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+    });
+
+    it('reivindicação grava o marcador junto; aluguel criado apaga o marcador na mesma transação', async () => {
+      const res = await post('chave-mark-0001');
+      expect(res.status).toBe(201);
+      expect(h.prisma.rentalStart.create).toHaveBeenCalledWith({ data: expect.objectContaining({ vehicleId: VEHICLE_ID, customerId: CUSTOMER_ID, depositId: DEPOSIT_ID, policyId: POLICY_ID, previousStatus: 'free' }) });
+      expect(h.prisma.rentalStart.deleteMany).toHaveBeenCalledTimes(1);
+    });
+
+    it('marcador que sobrou (processo morreu) → a varredura compensa uma única vez', async () => {
+      const svc = h.app.get(RentalStartService);
+      const marker = { rentalId: 'r-orfao', vehicleId: VEHICLE_ID, customerId: CUSTOMER_ID, depositId: DEPOSIT_ID, policyId: POLICY_ID, previousStatus: 'reserved', createdAt: new Date(Date.now() - 10 * 60_000) };
+      h.prisma.rentalStart.findMany.mockResolvedValue([marker] as any);
+      h.prisma.rentalStart.deleteMany.mockReset();
+      h.prisma.rentalStart.deleteMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValue({ count: 0 });
+      h.prisma.rental.findUnique.mockResolvedValue(null);
+      h.prisma.rental.findFirst.mockResolvedValue(null);
+      commands.dispatch.mockResolvedValue({ id: 'cmd-l', status: 'pending' });
+      expect(await svc.sweepStaleStarts()).toBe(1);
+      expect(await svc.sweepStaleStarts()).toBe(0);
+      expect(h.prisma.vehicle.updateMany).toHaveBeenCalledTimes(1);
+      expect(h.prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
+      expect(commands.dispatch).toHaveBeenCalledTimes(1);
+      expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'lock' }));
+      expect(insurance.cancel).toHaveBeenCalledTimes(1);
+      expect(released).toHaveBeenCalledTimes(1);
+      const cutoff = (h.prisma.rentalStart.findMany.mock.calls[0][0] as any).where.createdAt.lt.getTime();
+      expect(Date.now() - cutoff).toBeGreaterThanOrEqual(30_000 + 5_000 + 60_000 - 1000);
+    });
+
+    it('a varredura já compensou (marcador sumiu) → a requisição não cria aluguel nem compensa de novo', async () => {
+      h.prisma.rentalStart.deleteMany.mockResolvedValue({ count: 0 });
+      const res = await post('chave-mark-0002');
+      expect(res.status).toBe(409);
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(insurance.cancel).not.toHaveBeenCalled();
+      expect(released).not.toHaveBeenCalled();
     });
   });
 

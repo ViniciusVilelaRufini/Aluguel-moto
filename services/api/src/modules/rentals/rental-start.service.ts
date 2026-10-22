@@ -7,6 +7,13 @@ import { CommandChangedEvent, DepositReleaseRequestedEvent, EV, RentalChangedEve
 import { conflict, notFound, ProblemException } from '../../common/problem';
 import { INSURANCE, type InsurancePort } from '../../ports/insurance.port';
 import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
+import { IOT_CONFIG, type IotConfig } from '../iot/iot-config';
+import { Interval } from '@nestjs/schedule';
+
+/** Folga da espera do desbloqueio além do prazo do comando. */
+const UNLOCK_WAIT_MARGIN_MS = 5_000;
+/** Marcador `RentalStart` mais velho que a espera máxima + isto é compensado pela varredura. */
+const STALE_START_MARGIN_MS = 60_000;
 import { RENTAL_BILLING, type RentalBillingPort } from '../../ports/rental-billing.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Principal } from '../auth/principal';
@@ -42,7 +49,49 @@ export class RentalStartService {
     @Inject(INSURANCE) private readonly insurance: InsurancePort,
     private readonly events: EventEmitter2,
     @Inject(IOT_GATEWAY) private readonly iot: IotGateway,
+    @Inject(IOT_CONFIG) private readonly iotCfg: IotConfig,
   ) {}
+
+  /** Espera máxima do desbloqueio: prazo do comando (`IOT_COMMAND_TIMEOUT_MS`) + folga. */
+  private unlockWaitMs(): number {
+    return this.iotCfg.commandTimeoutMs + UNLOCK_WAIT_MARGIN_MS;
+  }
+
+  /**
+   * Fix round 1: compensa inícios de aluguel que ficaram no meio (processo morreu durante a espera do desbloqueio).
+   * Marcador mais velho que a espera máxima + 1 min: quem apaga o marcador (uma instância só) devolve a moto ao status
+   * anterior, manda o lock de sistema, cancela a apólice e libera a caução. Idempotente.
+   */
+  async sweepStaleStarts(now = new Date()): Promise<number> {
+    const cutoff = new Date(now.getTime() - this.unlockWaitMs() - STALE_START_MARGIN_MS);
+    const stale = await this.prisma.rentalStart.findMany({ where: { createdAt: { lt: cutoff } }, take: 50 });
+    let done = 0;
+    for (const m of stale) {
+      const claimed = await this.prisma.rentalStart.deleteMany({ where: { rentalId: m.rentalId, createdAt: { lt: cutoff } } });
+      if (claimed.count !== 1) continue;
+      if (await this.prisma.rental.findUnique({ where: { id: m.rentalId }, select: { id: true } })) continue;
+      const open = await this.prisma.rental.findFirst({ where: { vehicleId: m.vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
+      if (!open) await this.prisma.vehicle.updateMany({ where: { id: m.vehicleId, status: 'rented' }, data: { status: m.previousStatus } });
+      await this.relock(m.vehicleId, m.rentalId);
+      if (m.policyId) {
+        try {
+          await this.insurance.cancel(m.policyId);
+        } catch (e) {
+          this.logger.error({ msg: 'policy_cancel_failed', policyId: m.policyId, error: (e as Error).message });
+        }
+      }
+      await this.requestDepositRelease(m.depositId ?? undefined, m.customerId);
+      this.logger.warn({ msg: 'rental_start_compensated_by_sweep', rentalId: m.rentalId, vehicleId: m.vehicleId });
+      done++;
+    }
+    return done;
+  }
+
+  @Interval('rental-start-sweep', 60_000)
+  async sweepJob(): Promise<void> {
+    if (process.env.JOBS_ENABLED === 'false') return;
+    await this.sweepStaleStarts().catch((err) => this.logger.error({ msg: 'rental_start_sweep_failed', error: (err as Error).message }));
+  }
 
   /** Estado ao vivo do rastreador diz offline (sem estado conhecido = indefinido; o desbloqueio decide). */
   private async liveOffline(thingName: string): Promise<boolean> {
@@ -70,7 +119,7 @@ export class RentalStartService {
       return { status: 'failed' };
     }
     if (cmd.status !== 'in_progress') return cmd;
-    const timeoutMs = Number(process.env.IOT_COMMAND_TIMEOUT_MS || 30_000) + 5_000;
+    const timeoutMs = this.unlockWaitMs();
     const final = new Promise<string>((resolve) => {
       const timer = setTimeout(() => done('failed'), timeoutMs);
       const onChange = (ev: CommandChangedEvent) => {
@@ -145,6 +194,7 @@ export class RentalStartService {
     let policyId: string | undefined;
     let rental;
     let claimedFrom: 'free' | 'reserved' | undefined;
+    let compensatedBySweep = false;
     let unlock: { status: string } | undefined;
     try {
     if (dto.depositId) {
@@ -189,13 +239,25 @@ export class RentalStartService {
     const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription);
 
     // QA-21: reivindica a moto, desbloqueia e só cria o aluguel (relógio e cobrança) com o desbloqueio confirmado.
-    const claimed = await this.prisma.vehicle.updateMany({ where: { id: vehicle.id, status: { in: ['free', 'reserved'] } }, data: { status: 'rented' } });
-    if (claimed.count === 0) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
-    claimedFrom = vehicle.status === 'reserved' ? 'reserved' : 'free';
+    // Fix round 1: a reivindicação grava junto o marcador `RentalStart`; se o processo morrer durante a espera do
+    // desbloqueio, o job de varredura compensa (moto, lock, caução, apólice).
+    const previousStatus = vehicle.status === 'reserved' ? 'reserved' : 'free';
+    await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.vehicle.updateMany({ where: { id: vehicle.id, status: { in: ['free', 'reserved'] } }, data: { status: 'rented' } });
+      if (claimed.count === 0) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
+      await tx.rentalStart.create({ data: { rentalId, vehicleId: vehicle.id, customerId, depositId: deposit.id, policyId: policy.policyId, previousStatus } });
+    });
+    claimedFrom = previousStatus;
     unlock = await this.unlockAndWait(vehicle.id, user, rentalId);
     if (unlock.status !== 'confirmed') throw conflict('vehicle-offline', 'A moto não respondeu ao desbloqueio. Nada foi cobrado e a caução foi liberada.');
 
     rental = await this.prisma.$transaction(async (tx) => {
+      // O marcador já foi compensado pela varredura (espera maior que o prazo): não cria o aluguel.
+      const marker = await tx.rentalStart.deleteMany({ where: { rentalId } });
+      if (marker.count !== 1) {
+        compensatedBySweep = true;
+        throw conflict('vehicle-offline', 'A moto não respondeu a tempo. Nada foi cobrado e a caução foi liberada.');
+      }
       if (ownReservation) await this.reservations.convert(tx, ownReservation.id);
       const created = await tx.rental.create({
         data: {
@@ -223,6 +285,12 @@ export class RentalStartService {
       return created;
     });
     } catch (err) {
+      // Marcador ausente = a varredura já compensou tudo (moto, lock, apólice, caução): não compensa de novo.
+      if (claimedFrom && !rental && !compensatedBySweep) {
+        const owned = await this.prisma.rentalStart.deleteMany({ where: { rentalId } }).then((r) => r.count === 1, () => true);
+        if (!owned) compensatedBySweep = true;
+      }
+      if (compensatedBySweep) throw err;
       // QA-21: moto reivindicada e aluguel não criado → volta ao estado anterior; desbloqueio pedido (pendente ou já
       // aplicado) → bloqueio de sistema, que substitui o desbloqueio pendente e trava com segurança ao reconectar.
       if (claimedFrom && !rental) {
