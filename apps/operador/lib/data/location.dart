@@ -93,16 +93,40 @@ class LocationState {
       );
 }
 
+/// Ultima posicao conhecida (sobrevive ao autoDispose do [locationProvider]):
+/// ao descobrir a lista, a distancia aparece na hora em vez de piscar.
+class LastPositionController extends Notifier<(GeoPoint, DateTime)?> {
+  @override
+  (GeoPoint, DateTime)? build() => null;
+
+  void set(GeoPoint p) => state = (p, DateTime.now());
+
+  /// Posicao com no maximo [maxAge].
+  GeoPoint? fresh({Duration maxAge = const Duration(minutes: 2)}) {
+    final s = state;
+    if (s == null || DateTime.now().difference(s.$2) > maxAge) return null;
+    return s.$1;
+  }
+}
+
+final lastPositionProvider =
+    NotifierProvider<LastPositionController, (GeoPoint, DateTime)?>(LastPositionController.new);
+
 /// Posicao do operador, so com o app em primeiro plano: o stream para quando
 /// o app vai para segundo plano e volta ao retomar.
 class LocationController extends Notifier<LocationState> {
   StreamSubscription<GeoPoint>? _sub;
   bool _foreground = true;
 
+  /// `true` depois do onDispose: nenhuma continuacao assincrona assina o GPS
+  /// nem escreve estado (evita assinatura orfa com o autoDispose).
+  bool _disposed = false;
+
   LocationService get _service => ref.read(locationServiceProvider);
 
   @override
   LocationState build() {
+    _disposed = false;
     final lifecycle = AppLifecycleListener(
       onResume: () {
         _foreground = true;
@@ -114,28 +138,35 @@ class LocationController extends Notifier<LocationState> {
       },
     );
     ref.onDispose(() {
+      _disposed = true;
       lifecycle.dispose();
       _stop();
     });
     unawaited(_refresh());
-    return const LocationState();
+    return LocationState(position: ref.read(lastPositionProvider.notifier).fresh());
   }
 
   Future<void> _refresh() async {
     try {
       final access = await _service.check();
+      if (_disposed) return;
       state = state.copyWith(access: access, checked: true);
       _apply();
     } catch (e) {
       debugPrint('localizacao indisponivel: $e');
-      state = state.copyWith(checked: true);
+      if (!_disposed) state = state.copyWith(checked: true);
     }
   }
 
   void _apply() {
+    if (_disposed) return;
     if (state.access == LocationAccess.granted && _foreground) {
       _sub ??= _service.watch().listen(
-            (p) => state = state.copyWith(position: p),
+            (p) {
+              if (_disposed) return;
+              ref.read(lastPositionProvider.notifier).set(p);
+              state = state.copyWith(position: p);
+            },
             onError: (Object e) => debugPrint('gps: $e'),
           );
     } else {
@@ -156,6 +187,7 @@ class LocationController extends Notifier<LocationState> {
       return;
     }
     final access = await _service.request();
+    if (_disposed) return;
     state = state.copyWith(access: access, checked: true);
     _apply();
   }

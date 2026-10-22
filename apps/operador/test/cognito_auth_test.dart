@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_operador/data/cognito_auth.dart';
+import 'package:volti_operador/data/service_unlock.dart';
+import 'package:volti_operador/features/auth/auth.dart';
 
 String _jwt(Map<String, dynamic> claims) {
   String seg(Object o) => base64Url.encode(utf8.encode(jsonEncode(o))).replaceAll('=', '');
@@ -48,6 +51,13 @@ class _FakeClient implements CognitoOAuthClient {
   @override
   Future<void> endSession(CognitoConfig config, {String? idToken}) async =>
       endSessions.add(idToken);
+}
+
+/// Armazenamento cuja limpeza falha (Hive corrompido/fechado).
+class _BrokenUnlockStore extends MemoryServiceUnlockStore {
+  _BrokenUnlockStore() : super(['task-1']);
+  @override
+  Future<void> clear() async => throw StateError('hive fechado');
 }
 
 CognitoTokens _tokens({
@@ -222,12 +232,22 @@ void main() {
       expect(store.value, isNull);
     });
 
+    test('saida forcada (sem pedido do operador) nao abre o Hosted UI', () async {
+      client.authorizeResult = _tokens();
+      final r = repo();
+      await r.signIn();
+      await r.signOut();
+      expect(r.session, isNull);
+      expect(client.revoked, ['r1']);
+      expect(client.endSessions, isEmpty);
+    });
+
     test('sair apaga o token local e revoga no Cognito', () async {
       client.authorizeResult = _tokens();
       final r = repo();
       await r.signIn();
       client.revokeGate = Completer<void>(); // revogacao presa na rede
-      await r.signOut(); // nao espera a revogacao
+      await r.signOut(endHostedSession: true); // nao espera a revogacao
       expect(r.session, isNull);
       expect(store.value, isNull);
       expect(client.revoked, ['r1']);
@@ -235,6 +255,48 @@ void main() {
       expect(client.endSessions.single, isNotNull); // id token como hint
       expect(await r.accessToken(), isNull);
       client.revokeGate!.complete();
+    });
+  });
+
+  group('SessionController.signOut', () {
+    late _FakeClient client;
+    late OperatorCognitoAuthRepository auth;
+
+    Future<ProviderContainer> signedIn({ServiceUnlockStore? store}) async {
+      client = _FakeClient()..authorizeResult = _tokens();
+      auth = OperatorCognitoAuthRepository(
+          config: _config, client: client, store: MemoryRefreshTokenStore());
+      await auth.signIn();
+      final c = ProviderContainer(overrides: [
+        authRepositoryProvider.overrideWithValue(auth),
+        if (store != null) serviceUnlockStoreProvider.overrideWithValue(store),
+      ]);
+      addTearDown(c.dispose);
+      expect(c.read(sessionProvider), 'rafael@volti.com.br');
+      return c;
+    }
+
+    test('saida forcada (token expirado na sincronizacao) nao abre o Hosted UI', () async {
+      final c = await signedIn();
+      await c.read(sessionProvider.notifier).signOut();
+      expect(c.read(sessionProvider), isNull);
+      expect(auth.session, isNull);
+      expect(client.endSessions, isEmpty);
+    });
+
+    test('"Sair" do operador encerra tambem o Hosted UI', () async {
+      final c = await signedIn();
+      await c.read(sessionProvider.notifier).signOut(userInitiated: true);
+      expect(c.read(sessionProvider), isNull);
+      expect(client.endSessions, hasLength(1));
+    });
+
+    test('falha ao limpar o Hive nao impede a saida', () async {
+      final c = await signedIn(store: _BrokenUnlockStore());
+      await c.read(sessionProvider.notifier).signOut(userInitiated: true);
+      expect(c.read(sessionProvider), isNull);
+      expect(auth.session, isNull);
+      expect(client.revoked, ['r1']);
     });
   });
 }

@@ -403,8 +403,10 @@ class OperatorCognitoAuthRepository implements AuthRepository {
     }
   }
 
+  /// [endHostedSession] = sair pedido pelo operador: tambem encerra a sessao
+  /// do Hosted UI (abre o navegador). Saida forcada (token expirado) nao abre.
   @override
-  Future<void> signOut() async {
+  Future<void> signOut({bool endHostedSession = false}) async {
     final rt = _refreshToken;
     final id = _idToken;
     final hadSession = _session != null;
@@ -418,7 +420,7 @@ class OperatorCognitoAuthRepository implements AuthRepository {
         // Sem rede: o token local ja foi apagado; ele expira sozinho.
       }));
     }
-    if (hadSession && config.isComplete) {
+    if (endHostedSession && hadSession && config.isComplete) {
       unawaited(_client.endSession(config, idToken: id).catchError((Object _) {}));
     }
   }

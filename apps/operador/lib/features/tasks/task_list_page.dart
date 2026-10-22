@@ -268,7 +268,7 @@ class _AccountSheet extends ConsumerWidget {
             trailing: ListRowTrailing.none,
             onTap: () {
               Navigator.of(context).pop();
-              ref.read(sessionProvider.notifier).signOut();
+              ref.read(sessionProvider.notifier).signOut(userInitiated: true);
             },
           ),
         ],

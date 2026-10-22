@@ -20,7 +20,7 @@ Login dev: `campo@volti.dev` (seed da API; `POST /dev/token`, pool `staff`, grup
 flutter run   --dart-define=API_BASE_URL=https://api.volti.com.br   --dart-define=AUTH_MODE=cognito   --dart-define=COGNITO_DOMAIN=volti-staff.auth.sa-east-1.amazoncognito.com   --dart-define=COGNITO_CLIENT_ID=<app client id, sem secret>   --dart-define=COGNITO_REDIRECT_URI=br.com.volti.operador://callback
 ```
 
-Opcionais: `--dart-define=COGNITO_SCOPES="openid email profile"` (padrão) e `--dart-define=COGNITO_LOGOUT_URI=...` ("Sign out URL" do app client; padrão = `COGNITO_REDIRECT_URI`).
+Opcionais: `--dart-define=COGNITO_SCOPES="openid email profile"` (padrão) e `--dart-define=COGNITO_LOGOUT_URI=...` ("Sign out URL" do app client; padrão = `COGNITO_REDIRECT_URI`). A URI de logout usada (por padrão a própria callback, ex.: `br.com.volti.operador://callback`) precisa estar cadastrada em **Sign out URL(s)** do app client, senão o `/logout` do Cognito responde erro.
 
 Configuração do app client no pool interno:
 
@@ -35,7 +35,7 @@ Comportamento:
 - Só o refresh token é guardado (Keystore/Keychain via `flutter_secure_storage`); ao abrir o app a sessão é restaurada com ele. O access token é renovado sozinho 60 s antes de expirar (uma renovação por vez).
 - Nome da saudação: `given_name` (ou `name`) do id token; sem ele, a parte local do e-mail.
 - Na abertura, uma falha de rede ao restaurar é tentada de novo uma vez antes de mostrar o login; refresh recusado (`invalid_grant`) apaga o token salvo.
-- Sair apaga o refresh token local na hora; a revogação em `/oauth2/revoke` (timeout de 5 s) e o logout do Hosted UI (`/logout?client_id=&logout_uri=`, encerra o cookie do navegador) rodam em segundo plano, sem segurar a tela.
+- Sair apaga o refresh token local na hora; a revogação em `/oauth2/revoke` (timeout de 5 s) e o logout do Hosted UI (`/logout?client_id=&logout_uri=`, encerra o cookie do navegador) rodam em segundo plano, sem segurar a tela. O logout do Hosted UI só roda quando o operador toca em "Sair"; a saída forçada (token expirado durante a sincronização) não abre o navegador. Uma falha ao limpar o estado local (Hive) não impede a saída.
 - Faltando um `--dart-define`, a tela de login diz quais.
 - Não testado contra um pool real neste repositório: os testes cobrem a configuração/URLs, a leitura dos tokens, o grupo `campo`, a renovação, a restauração e o logout (`test/cognito_auth_test.dart`).
 

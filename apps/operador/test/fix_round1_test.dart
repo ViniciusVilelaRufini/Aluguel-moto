@@ -50,6 +50,15 @@ class _TrackingLocation extends FakeLocationService {
   }
 }
 
+/// GPS fake com check() preso ate o teste liberar.
+class _GatedLocation extends _TrackingLocation {
+  _GatedLocation(this.gate);
+  final Future<LocationAccess> gate;
+
+  @override
+  Future<LocationAccess> check() => gate;
+}
+
 const _full = InspectionDraft(
   brakes: true,
   tires: true,
@@ -251,6 +260,42 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
       expect(location.listens, 2);
+    });
+
+    test('descartado com check() pendente: nenhuma assinatura do GPS fica aberta', () async {
+      final gate = Completer<LocationAccess>();
+      final location = _GatedLocation(gate.future);
+      final errors = <Object>[];
+      await runZonedGuarded(() async {
+        final c =
+            ProviderContainer(overrides: [locationServiceProvider.overrideWithValue(location)]);
+        final sub = c.listen(locationProvider, (_, _) {});
+        await Future<void>.delayed(Duration.zero);
+        sub.close();
+        c.dispose(); // onDispose roda com o check() ainda pendente
+        gate.complete(LocationAccess.granted);
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }, (e, _) => errors.add(e));
+      // Sem assinatura orfa e sem escrever estado/ler ref depois do descarte.
+      expect(location.listens, 0);
+      expect(errors, isEmpty);
+    });
+
+    testWidgets('ultima posicao fica ao cobrir e descobrir a lista (sem piscar)', (tester) async {
+      final location = _TrackingLocation();
+      final c = ProviderContainer(overrides: [locationServiceProvider.overrideWithValue(location)]);
+      addTearDown(c.dispose);
+      var sub = c.listen(locationProvider, (_, _) {});
+      await tester.pump();
+      expect(c.read(locationProvider).position, isNotNull);
+      sub.close();
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(location.cancels, 1);
+      // Recriado: comeca ja com a ultima posicao, antes do GPS responder.
+      sub = c.listen(locationProvider, (_, _) {});
+      addTearDown(sub.close);
+      expect(c.read(locationProvider).position, isNotNull);
     });
 
     for (final (access, label) in [

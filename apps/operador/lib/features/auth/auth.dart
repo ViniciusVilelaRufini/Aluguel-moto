@@ -45,12 +45,28 @@ class SessionController extends Notifier<String?> {
     }
   }
 
-  Future<void> signOut() async {
-    // Nada do operador anterior fica destravado nem em rascunho.
-    await ref.read(serviceUnlockProvider.notifier).clearAll();
-    ref.invalidate(inspectionDraftsProvider);
-    await ref.read(authRepositoryProvider).signOut();
-    state = null;
+  /// [userInitiated] = o operador tocou em "Sair" (encerra tambem o Hosted UI).
+  /// A saida forcada (token expirado, na sincronizacao) usa o padrao `false`.
+  Future<void> signOut({bool userInitiated = false}) async {
+    try {
+      // Nada do operador anterior fica destravado nem em rascunho.
+      await ref.read(serviceUnlockProvider.notifier).clearAll();
+    } catch (e) {
+      // Falha local (Hive) nunca impede a saida da conta.
+      debugPrint('falha ao limpar o modo servico: $e');
+    } finally {
+      ref.invalidate(inspectionDraftsProvider);
+      final auth = ref.read(authRepositoryProvider);
+      try {
+        if (auth is OperatorCognitoAuthRepository) {
+          await auth.signOut(endHostedSession: userInitiated);
+        } else {
+          await auth.signOut();
+        }
+      } finally {
+        state = null;
+      }
+    }
   }
 }
 
