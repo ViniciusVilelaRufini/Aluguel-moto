@@ -25,7 +25,11 @@ class VoltiButton extends StatelessWidget {
     this.fullWidth = false,
     this.loading = false,
     this.shine = false,
+    this.semanticLabel,
   });
+
+  /// Rotulo para leitor de tela mais completo que [label] (ex.: com a serie).
+  final String? semanticLabel;
 
   final String label;
 
@@ -151,8 +155,11 @@ class VoltiButton extends StatelessWidget {
     final shown = shine && !off ? VoltiShine(child: body) : body;
     return VoltiPressable(
       onTap: off ? null : onPressed,
-      semanticLabel: label,
-      child: fullWidth ? SizedBox(width: double.infinity, child: shown) : shown,
+      semanticLabel: semanticLabel ?? label,
+      child: semanticLabel == null
+          ? (fullWidth ? SizedBox(width: double.infinity, child: shown) : shown)
+          : ExcludeSemantics(
+              child: fullWidth ? SizedBox(width: double.infinity, child: shown) : shown),
     );
   }
 }
