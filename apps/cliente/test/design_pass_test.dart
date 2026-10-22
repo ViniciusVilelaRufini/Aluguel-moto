@@ -108,7 +108,110 @@ class ReceiptBackend extends FakeBackend {
       ..totalCents = 2075).toBuilder());
 }
 
+/// Cotacoes que so respondem quando o teste manda (para simular fora de ordem).
+class RaceQuoteBackend extends FakeBackend {
+  final pending = <(InsuranceCoverage, Completer<Quote>)>[];
+  @override
+  Future<List<PricingPlan>> plans() async => [
+        PricingPlan((b) => b
+          ..id = 'p1'
+          ..code = PlanCode.minute
+          ..name = 'Por minuto'
+          ..unit = PlanUnit.minute
+          ..unlockFeeCents = 100
+          ..unitPriceCents = 79
+          ..pausePerMinuteCents = 20
+          ..recurring = false
+          ..active = true
+          ..createdAt = DateTime.utc(2026)
+          ..updatedAt = DateTime.utc(2026)),
+      ];
+  @override
+  Future<List<InsuranceCoverageOption>> coverages() async => [
+        for (final (c, n, p) in [(InsuranceCoverage.basic, 'Básico', 0), (InsuranceCoverage.full, 'Completo', 300)])
+          InsuranceCoverageOption((b) => b
+            ..coverage = c
+            ..name = n
+            ..description = n
+            ..premiumCents = p
+            ..mandatory = c == InsuranceCoverage.basic
+            ..active = true),
+      ];
+  @override
+  Future<List<PaymentCard>> cards() async => [
+        PaymentCard((b) => b
+          ..id = 'card1'
+          ..brand = 'visa'
+          ..last4 = '4242'
+          ..expMonth = 12
+          ..expYear = 2030
+          ..isDefault = true
+          ..createdAt = DateTime.utc(2026)),
+      ];
+  @override
+  Future<Wallet> wallet() async => Wallet((b) => b
+    ..balanceCents = 0
+    ..minutesBalance = 0
+    ..updatedAt = DateTime.utc(2026));
+  @override
+  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon}) {
+    final c = Completer<Quote>();
+    pending.add((coverage, c));
+    return c.future;
+  }
+
+  static Quote quoteFor(InsuranceCoverage c) => Quote((b) => b
+    ..planCode = PlanCode.minute
+    ..coverage = c
+    ..depositCents = 5000
+    ..couponApplied = false
+    ..breakdown = PriceBreakdown((p) => p
+      ..subtotalCents = 100
+      ..discountCents = 0
+      ..insuranceCents = c == InsuranceCoverage.full ? 300 : 0
+      ..feesCents = 0
+      ..totalCents = c == InsuranceCoverage.full ? 400 : 100).toBuilder());
+
+  void resolve(int i) => pending[i].$2.complete(quoteFor(pending[i].$1));
+}
+
 void main() {
+  group('plano (cotacao)', () {
+    testWidgets('respostas fora de ordem: vale a ultima e o pagamento espera por ela', (t) async {
+      tallScreen(t);
+      final b = RaceQuoteBackend();
+      await t.pumpWidget(testApp(PlanScreen(vehicle: sampleVehicle()), overrides: [
+        backendProvider.overrideWithValue(b),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+      ]));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 50));
+      b.resolve(0); // cotacao inicial (basico)
+      await t.pump(const Duration(seconds: 1));
+      VoltiButton pay() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Pagar caução e destravar'));
+      expect(pay().onPressed, isNotNull);
+
+      await t.tap(find.byKey(const Key('coverage-full'))); // pedido 1: completo
+      await t.pump();
+      await t.tap(find.byKey(const Key('coverage-full'))); // pedido 2: volta ao basico
+      await t.pump();
+      expect(b.pending, hasLength(3));
+      expect(pay().onPressed, isNull, reason: 'recotando');
+
+      b.resolve(1); // resposta velha (completo) chega primeiro: descartada
+      await t.pump(const Duration(milliseconds: 500));
+      expect(pay().onPressed, isNull, reason: 'ainda falta a cotacao mais recente');
+      expect(find.text(money(400)), findsNothing);
+
+      b.resolve(2); // a mais recente (basico)
+      await t.pump(const Duration(seconds: 1));
+      expect(pay().onPressed, isNotNull);
+      expect(find.bySemanticsLabel(money(100)), findsWidgets);
+      expect(find.bySemanticsLabel(money(400)), findsNothing);
+      await t.pumpWidget(const SizedBox());
+    });
+  });
+
   group('recibo', () {
     testWidgets('total conta ate o valor depois do check', (t) async {
       tallScreen(t);
@@ -269,6 +372,17 @@ void main() {
         isSemantics(label: 'SOS', hint: 'Ligar para o suporte ou compartilhar sua localização', isButton: true),
       );
       h.dispose();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('acoes Reportar problema e Compartilhar trajeto tem alvo >= 44 px', (t) async {
+      await pumpRide(t);
+      for (final label in ['Reportar problema', 'Compartilhar trajeto']) {
+        final chip = find.ancestor(of: find.text(label), matching: find.byType(VoltiPressable));
+        final size = t.getSize(chip.first);
+        expect(size.height, greaterThanOrEqualTo(44), reason: label);
+        expect(size.width, greaterThanOrEqualTo(44), reason: label);
+      }
       await t.pumpWidget(const SizedBox());
     });
 

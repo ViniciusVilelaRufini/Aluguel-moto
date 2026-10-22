@@ -44,6 +44,10 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
   AsyncValue<Quote> _quote = const AsyncLoading();
   /// Recotando com um resumo ja na tela: mantem os valores (o total rola) e escurece.
   bool _requoting = false;
+
+  /// Numero da ultima cotacao pedida: so a mais recente vale (respostas fora
+  /// de ordem sao descartadas e o pagamento fica bloqueado ate ela chegar).
+  int _quoteSeq = 0;
   String? _error;
 
   @override
@@ -55,6 +59,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
   Future<void> _loadQuote() async {
     final plan = _plan;
     if (plan == null) return;
+    final seq = ++_quoteSeq;
     setState(() {
       if (_quote.hasValue) {
         _requoting = true;
@@ -63,12 +68,11 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
       }
     });
     final result = await AsyncValue.guard(() => ref.read(backendProvider).quote(plan, _coverage, coupon: _coupon));
-    if (mounted && plan == _plan) {
-      setState(() {
-        _quote = result;
-        _requoting = false;
-      });
-    }
+    if (!mounted || seq != _quoteSeq) return;
+    setState(() {
+      _quote = result;
+      _requoting = false;
+    });
   }
 
   Future<bool> _ensureLocationConsent() async {
