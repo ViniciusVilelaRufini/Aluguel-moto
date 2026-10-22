@@ -17,6 +17,9 @@ import { AlertsService } from '../alerts/alerts.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
 import type { PriceBreakdown } from '../pricing/pricing.service';
+import { OPEN_SWAP_STATUSES } from '../station-swaps/station-swap.rules';
+import { toStationSwap } from '../station-swaps/station-swaps.mapper';
+import { hasOpenStationSwap } from './rental-end.service';
 import { isDepotLocked } from './rental-start.service';
 import type { ListRentalsQuery, LocationShareDto, RatingDto, SwapVehicleDto, WellbeingDto } from './rentals.dto';
 import { toRental, toRentalEvent } from './rentals.mapper';
@@ -72,7 +75,10 @@ export class RentalsService {
       include: { vehicle: { select: { code: true } } },
       orderBy: { startedAt: 'desc' },
     });
-    return r ? { rental: toRental(r) } : {};
+    if (!r) return {};
+    // Fix 1 (I1): troca de bateria na estação em andamento, para o app retomar a tela da troca ao reabrir.
+    const swap = await this.prisma.stationSwap.findFirst({ where: { rentalId: r.id, status: { in: OPEN_SWAP_STATUSES } } });
+    return swap ? { rental: toRental(r), currentStationSwap: toStationSwap(swap, { staff: false }) } : { rental: toRental(r) };
   }
 
   async get(user: Principal, id: string) {
@@ -114,6 +120,8 @@ export class RentalsService {
   async swap(user: Principal, id: string, dto: SwapVehicleDto) {
     const r = await this.loadFor(user, id);
     if (r.status !== 'active' && r.status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+    // Fix 1 (I7): no meio de uma troca de bateria na estação a moto não muda.
+    if (await hasOpenStationSwap(this.prisma, id)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de trocar de moto.');
     const target = await this.prisma.vehicle.findUnique({ where: { id: dto.newVehicleId } });
     if (!target) throw notFound('Moto não encontrada.');
     // Retirada em galpão: moto do galpão (ou esperando recolhimento) só sai pela entrega, nunca pela troca.

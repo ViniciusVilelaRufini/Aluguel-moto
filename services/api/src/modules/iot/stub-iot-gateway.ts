@@ -62,6 +62,11 @@ export class StubIotGateway implements IotGateway {
     return { ...live, locked: s.locked, speedLimitKmh: s.speedLimitKmh, stolenMode: s.stolenMode };
   }
 
+  /** Sem telemetria definida = desconhecida (`null`, em movimento); com `setLiveState`, a velocidade definida. */
+  async knownSpeedKmh(thingName: string): Promise<number | null> {
+    return this.live.get(thingName)?.speedKmh ?? null;
+  }
+
   /** Apoio a testes/dev: define a posição ao vivo de uma moto. */
   setLiveState(state: VehicleLiveState): void {
     this.live.set(state.thingName, state);

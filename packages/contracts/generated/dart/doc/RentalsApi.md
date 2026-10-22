@@ -75,7 +75,7 @@ Name | Type | Description  | Notes
 
 Encerrar aluguel
 
-Só dentro de uma zona `return` (`422` `rental-outside-return-zone`) e com a foto enviada (`422` `return-photo-missing`). Pede o travamento ao rastreador: - travada confirmada → `200`, status `ended`, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por   `rental.updated` ou `GET /rentals/{id}`.  Liquidação idempotente por `rentalId`: no máximo uma liquidação por aluguel, não importa quantas vezes a chamada seja repetida (com ou sem `Idempotency-Key`). A `Idempotency-Key` opcional faz a repetição devolver a mesma resposta. 
+Só dentro de uma zona `return` (`422` `rental-outside-return-zone`) e com a foto enviada (`422` `return-photo-missing`). Com troca de bateria na estação em andamento (`currentStationSwap` em `GET /rentals/current`) → `409` `swap-open` (termine ou cancele a troca antes; o encerramento forçado pelo staff continua permitido). Pede o travamento ao rastreador: - travada confirmada → `200`, status `ended`, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por   `rental.updated` ou `GET /rentals/{id}`.  Liquidação idempotente por `rentalId`: no máximo uma liquidação por aluguel, não importa quantas vezes a chamada seja repetida (com ou sem `Idempotency-Key`). A `Idempotency-Key` opcional faz a repetição devolver a mesma resposta. 
 
 ### Example
 ```dart
@@ -696,7 +696,7 @@ Name | Type | Description  | Notes
 
 Trocar de moto
 
-Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para `maintenance`, e destrava a nova (precisa estar `free` e a até 200 m). O aluguel continua o mesmo, com evento `vehicle_swapped`. 
+Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para `maintenance`, e destrava a nova (precisa estar `free` e a até 200 m). O aluguel continua o mesmo, com evento `vehicle_swapped`. Com troca de bateria na estação em andamento (`currentStationSwap`) → `409` `swap-open`. 
 
 ### Example
 ```dart

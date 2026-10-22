@@ -58,8 +58,8 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     }
   }
 
-  it('cobre as 178 operações do contrato, sem rotas extras', () => {
-    expect(ops).toHaveLength(178);
+  it('cobre as 183 operações do contrato, sem rotas extras', () => {
+    expect(ops).toHaveLength(183);
     const missing = ops.map(([k]) => k).filter((k) => !routes.has(k));
     const extra = [...routes.keys()].filter((k) => !ops.some(([o]) => o === k));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });
@@ -88,7 +88,38 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     expect((spec.security ?? []).map((s) => Object.keys(s)[0])).toContain('customerAuth');
     const route = routes.get(key)!;
     expect(route.requirement?.pools).toContain('customer');
-    // Nenhuma outra operação em /swap-stations (o cliente só lê).
-    expect(ops.filter(([k]) => k.endsWith(' /swap-stations') || k.includes(' /swap-stations/')).map(([k]) => k)).toEqual(['GET /swap-stations']);
+    // Na raiz /swap-stations o cliente só lê (as estações não são criadas pela API).
+    expect(ops.filter(([k]) => k.endsWith(' /swap-stations')).map(([k]) => k)).toEqual(['GET /swap-stations']);
+  });
+
+  it('troca de bateria na estação (QR): criar e cancelar só cliente; consultar dono + staff; listar só staff', () => {
+    const byId = (id: string) => ops.find(([, o]) => o.operationId === id)!;
+    const pools = (key: string) => [...(routes.get(key)?.requirement?.pools ?? [])].sort();
+    const groups = (key: string) => [...(routes.get(key)?.requirement?.groups ?? [])].sort();
+    expect(ops.filter(([k]) => k.includes(' /swap-stations/')).map(([k]) => k).sort()).toEqual([
+      'GET /swap-stations/:id/qr',
+      'GET /swap-stations/:id/swaps',
+      'GET /swap-stations/:id/swaps/:swapId',
+      'POST /swap-stations/:id/swaps',
+      'POST /swap-stations/:id/swaps/:swapId/cancel',
+    ]);
+    const [create] = byId('createStationSwap');
+    expect(create).toBe('POST /swap-stations/:id/swaps');
+    expect(pools(create)).toEqual(['customer']);
+    expect(pools(byId('cancelStationSwap')[0])).toEqual(['customer']);
+    const [get] = byId('getStationSwap');
+    expect(pools(get)).toEqual(['customer', 'staff']);
+    expect(groups(get)).toEqual(['admin', 'operacao', 'suporte']);
+    const [list] = byId('listStationSwaps');
+    expect(pools(list)).toEqual(['staff']);
+    expect(groups(list)).toEqual(['admin', 'operacao', 'suporte']);
+    // Idempotency-Key obrigatória na criação.
+    const params = ((byId('createStationSwap')[1] as unknown as { parameters?: Array<{ $ref?: string }> }).parameters ?? []).map((p) => p.$ref);
+    expect(params).toContain('#/components/parameters/IdempotencyKey');
+    // Fix 1 (I6): QR da estação só para admin (staff), nunca para cliente.
+    const [qr] = byId('getSwapStationQr');
+    expect(qr).toBe('GET /swap-stations/:id/qr');
+    expect(pools(qr)).toEqual(['staff']);
+    expect(groups(qr)).toEqual(['admin']);
   });
 });

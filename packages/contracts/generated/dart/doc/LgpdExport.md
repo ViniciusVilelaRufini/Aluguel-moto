@@ -25,6 +25,7 @@ Name | Type | Description | Notes
 **maintenanceRequests** | [**BuiltList&lt;CustomerMaintenanceRequest&gt;**](CustomerMaintenanceRequest.md) |  | [optional] 
 **depotReservations** | [**BuiltList&lt;Reservation&gt;**](Reservation.md) | Reservas de retirada no galpão (sem `pickupCode`). | [optional] 
 **handovers** | [**BuiltList&lt;Handover&gt;**](Handover.md) | Entregas do titular (fotos só como chaves, sem links). | [optional] 
+**stationSwaps** | [**BuiltList&lt;StationSwap&gt;**](StationSwap.md) | Trocas de bateria na estação feitas pelo titular (sem posição). | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

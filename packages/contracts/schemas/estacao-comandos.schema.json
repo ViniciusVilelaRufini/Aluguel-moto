@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/estacao-comandos.schema.json",
+  "title": "Comando da estação de troca",
+  "description": "Publicado pelo servidor em estacoes/{thing}/comandos (thing = station-{stationId}). QoS 1. open_slot: abrir uma vaga vazia para a devolução; release_battery: liberar uma bateria carregada (só depois da devolução registrada e da vaga fechada); abort_swap: troca cancelada pelo cliente ou vencida — fechar a vaga (se aberta) e confirmar com slot_closed, sem liberar bateria.",
+  "type": "object",
+  "required": ["commandId", "swapId", "action", "ts"],
+  "additionalProperties": false,
+  "properties": {
+    "commandId": { "type": "string", "minLength": 1, "maxLength": 80, "description": "<swapId>:<action> (idempotente: o mesmo comando repetido não abre outra vaga)" },
+    "swapId": { "type": "string", "format": "uuid", "description": "StationSwap.id" },
+    "action": { "type": "string", "enum": ["open_slot", "release_battery", "abort_swap"] },
+    "expectedSerial": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$", "description": "open_slot: série da bateria instalada na moto do cliente (conferência opcional)" },
+    "serialHint": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$", "description": "release_battery: bateria carregada sugerida pelo estoque da API (a estação pode liberar outra e informa a série no evento)" },
+    "slotNumber": { "type": "integer", "minimum": 1, "maximum": 999, "description": "abort_swap: vaga a fechar (ausente se a vaga ainda não tinha aberto)" },
+    "ts": { "type": "string", "format": "date-time" }
+  },
+  "examples": [
+    { "commandId": "5b0e7c1a-1111-4111-8111-111111111111:open_slot", "swapId": "5b0e7c1a-1111-4111-8111-111111111111", "action": "open_slot", "expectedSerial": "BAT-00001", "ts": "2026-10-22T15:00:00.000Z" }
+  ]
+}

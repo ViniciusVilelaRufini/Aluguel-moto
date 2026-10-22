@@ -110,6 +110,11 @@ export abstract class BaseIotGateway implements IotGateway {
     return wait();
   }
 
+  /** Mesma velocidade usada pelo bloqueio seguro: só fresca; desconhecida = `null` (em movimento). */
+  async knownSpeedKmh(thingName: string): Promise<number | null> {
+    return this.live.knownSpeed(thingName);
+  }
+
   async unlock(req: CommandRequest): Promise<CommandOutcome> {
     this.safeLock.cancel(req.thingName);
     await this.live.setHeld(req.thingName, false);

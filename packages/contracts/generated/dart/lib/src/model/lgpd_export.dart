@@ -8,6 +8,7 @@ import 'package:volti_api/src/model/reservation.dart';
 import 'package:volti_api/src/model/consents.dart';
 import 'package:volti_api/src/model/rental.dart';
 import 'package:volti_api/src/model/handover.dart';
+import 'package:volti_api/src/model/station_swap.dart';
 import 'package:volti_api/src/model/customer_coupon.dart';
 import 'package:volti_api/src/model/payment.dart';
 import 'package:volti_api/src/model/subscription.dart';
@@ -44,6 +45,7 @@ part 'lgpd_export.g.dart';
 /// * [maintenanceRequests]
 /// * [depotReservations] - Reservas de retirada no galpão (sem `pickupCode`).
 /// * [handovers] - Entregas do titular (fotos só como chaves, sem links).
+/// * [stationSwaps] - Trocas de bateria na estação feitas pelo titular (sem posição).
 @BuiltValue()
 abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
   @BuiltValueField(wireName: r'generatedAt')
@@ -99,6 +101,10 @@ abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
   /// Entregas do titular (fotos só como chaves, sem links).
   @BuiltValueField(wireName: r'handovers')
   BuiltList<Handover>? get handovers;
+
+  /// Trocas de bateria na estação feitas pelo titular (sem posição).
+  @BuiltValueField(wireName: r'stationSwaps')
+  BuiltList<StationSwap>? get stationSwaps;
 
   LgpdExport._();
 
@@ -221,6 +227,13 @@ class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
       yield serializers.serialize(
         object.handovers,
         specifiedType: const FullType(BuiltList, [FullType(Handover)]),
+      );
+    }
+    if (object.stationSwaps != null) {
+      yield r'stationSwaps';
+      yield serializers.serialize(
+        object.stationSwaps,
+        specifiedType: const FullType(BuiltList, [FullType(StationSwap)]),
       );
     }
   }
@@ -379,6 +392,15 @@ class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
           ) as BuiltList<Handover>?;
           if (valueDes == null) continue;
           result.handovers.replace(valueDes);
+          break;
+        case r'stationSwaps':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(StationSwap)]),
+          ) as BuiltList<StationSwap>?;
+          if (valueDes == null) continue;
+          result.stationSwaps.replace(valueDes);
           break;
         default:
           unhandled.add(key);

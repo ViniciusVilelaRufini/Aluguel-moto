@@ -6,7 +6,7 @@ import type { Namespace, Socket } from 'socket.io';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import {
   AlertCreatedEvent, CommandChangedEvent, EV, GeofenceTransitionEvent, HandoverPendingEvent, HandoverUpdatedEvent, IotDeviceEvent, IotTelemetryEvent,
-  PaymentUpdatedEvent, RentalChangedEvent, PrincipalRevokedEvent, VehicleStatusChangedEvent,
+  PaymentUpdatedEvent, RentalChangedEvent, PrincipalRevokedEvent, StationSwapUpdatedEvent, VehicleStatusChangedEvent,
 } from '../../common/events';
 import { AUTH_VERIFIER, type AuthVerifier } from '../../ports/auth-verifier.port';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -183,6 +183,12 @@ export class RealtimeGateway implements OnGatewayInit {
     if (ev.lastError) payload.lastError = ev.lastError;
     if (ev.customerId) this.server?.to(`customer:${ev.customerId}`).emit('handover.updated', payload);
     this.server?.to(`depot:${ev.depotId}`).emit('handover.updated', payload);
+  }
+
+  /** Troca de bateria na estação: só o dono (sala `customer:{id}`), sem posição nem número de série. */
+  @OnEvent(EV.STATION_SWAP_UPDATED)
+  onStationSwapUpdated(ev: StationSwapUpdatedEvent): void {
+    this.server?.to(`customer:${ev.customerId}`).emit('station_swap.updated', { swapId: ev.swapId, status: ev.status });
   }
 
   @OnEvent(EV.IOT_DEVICE_EVENT, { async: true, promisify: true })

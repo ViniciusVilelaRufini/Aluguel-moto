@@ -87,6 +87,17 @@ describe('Encerramento do aluguel', () => {
     expect(commands.dispatch).not.toHaveBeenCalled();
   });
 
+  it('fix 1 (I7): troca de bateria na estação em andamento → 409 swap-open, sem travar nem encerrar (encerramento forçado continua)', async () => {
+    const { service, prisma, commands, rental } = setup({ photo: false });
+    prisma.stationSwap.findFirst.mockResolvedValue({ id: 'swap-1' } as any);
+    await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY })).rejects.toMatchObject({ status: 409, slug: 'swap-open' });
+    expect(commands.dispatch).not.toHaveBeenCalled();
+    expect(rental.status).toBe('active');
+    expect((prisma.stationSwap.findFirst.mock.calls[0][0] as any).where).toEqual({ rentalId: RENTAL_ID, status: { in: ['opening_slot', 'awaiting_return', 'returned', 'releasing'] } });
+    // A operação ainda consegue encerrar à força (emergência).
+    await expect(service.forceEnd(admin, RENTAL_ID, 'Cliente sumiu')).resolves.toMatchObject({ status: 'force_ended' });
+  });
+
   it('sem foto → 422 return-photo-missing', async () => {
     const { service } = setup({ photo: false });
     await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY })).rejects.toMatchObject({ status: 422, slug: 'return-photo-missing' });
@@ -186,6 +197,17 @@ describe('Encerramento do aluguel', () => {
     await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY })).rejects.toMatchObject({ slug: 'rental-not-active' });
     await service.finalize(RENTAL_ID, 'ended');
     expect(billing.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('troca de bateria na estação: cada troca concluída com taxa vira uma linha battery_swap_fee no fechamento (sem cobrança à parte)', async () => {
+    const { service, billing, prisma } = setup();
+    prisma.stationSwap.findMany.mockResolvedValue([{ id: 's1', feeCents: 500 }, { id: 's2', feeCents: 650 }] as any);
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+    expect(billing.settle).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 1290 + 1150 }));
+    expect(r.rental.breakdown?.lines.filter((l: any) => l.code === 'battery_swap_fee').map((l: any) => l.amountCents)).toEqual([500, 650]);
+    // Só trocas concluídas e com taxa (cancelada/falha não cobra; plano diário congela taxa 0).
+    expect((prisma.stationSwap.findMany.mock.calls[0][0] as any).where).toEqual({ rentalId: RENTAL_ID, status: 'completed', feeCents: { gt: 0 } });
   });
 
   it('pausado: o tempo de pausa é fechado no encerramento', async () => {

@@ -22,7 +22,16 @@ export const EV = {
   // Retirada em galpão (Task 6): entrega de saída criada e mudança de status/erro do aceite.
   HANDOVER_PENDING: 'handover.pending',
   HANDOVER_UPDATED: 'handover.updated',
+  // Troca de bateria na estação via QR: mudança de status → `station_swap.updated` na sala `customer:{customerId}`.
+  STATION_SWAP_UPDATED: 'station-swap.updated',
 } as const;
+
+/** Troca na estação mudou de status (WS `station_swap.updated { swapId, status }`, só para o dono). */
+export interface StationSwapUpdatedEvent {
+  swapId: string;
+  customerId: string;
+  status: 'opening_slot' | 'awaiting_return' | 'returned' | 'releasing' | 'completed' | 'canceled' | 'failed';
+}
 
 /** Entrega de saída criada: `handover.pending` nas salas `customer:{customerId}` e `depot:{depotId}`. */
 export interface HandoverPendingEvent {

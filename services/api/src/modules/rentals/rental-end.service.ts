@@ -12,11 +12,23 @@ import { AuditService } from '../audit/audit.service';
 import { isAdmin, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
 import { FeeCharge, PriceSnapshot, PricingService } from '../pricing/pricing.service';
+import { OPEN_SWAP_STATUSES } from '../station-swaps/station-swap.rules';
 import { ZonesService } from '../zones/zones.service';
 import { rentalTimes, toRental } from './rentals.mapper';
 
 export const FORCE_END_FEE_CODE = 'force_end_outside_return_zone';
 export const FORCE_END_FEE_DEFAULT_CENTS = 1500;
+/** Mesmo código de `SWAP_FEE_CODE` (módulo station-swaps), sem importar o módulo para cá. */
+export const STATION_SWAP_FEE_CODE = 'battery_swap_fee';
+
+/**
+ * Troca de bateria na estação em andamento no aluguel (fix 1, I7): o cliente não encerra nem troca de moto no meio dela
+ * (`409 swap-open`). O encerramento forçado pelo staff continua permitido (emergência).
+ */
+export async function hasOpenStationSwap(prisma: Pick<PrismaService, 'stationSwap'>, rentalId: string): Promise<boolean> {
+  const open = await prisma.stationSwap.findFirst({ where: { rentalId, status: { in: OPEN_SWAP_STATUSES } }, select: { id: true } });
+  return !!open;
+}
 /** Intervalo mínimo entre tentativas de travamento de um aluguel em `ending`. */
 export const END_RETRY_INTERVAL_MS = 30_000;
 /** Depois de tantas tentativas sem "travada", para de reenviar e chama a operação (alerta). */
@@ -86,6 +98,8 @@ export class RentalEndService {
     if (rental.customerId !== customerId) throw notFound('Aluguel não encontrado.');
     if (rental.status === 'ending') return { status: 202 as const, rental: toRental(rental) };
     if (rental.status !== 'active' && rental.status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+    // Fix 1 (I7): a moto está sem bateria (ou com a vaga da estação aberta) no meio de uma troca.
+    if (await hasOpenStationSwap(this.prisma, rentalId)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de encerrar o aluguel.');
 
     if (!rental.returnPhotoUploadKey || dto.returnPhotoObjectKey !== rental.returnPhotoUploadKey) {
       throw unprocessable('return-photo-missing', 'Envie a foto da moto estacionada antes de encerrar.');
@@ -207,7 +221,7 @@ export class RentalEndService {
       snapshot: rental.priceSnapshot as unknown as PriceSnapshot,
       elapsedSeconds: timing.elapsedSeconds,
       pausedSeconds: timing.pausedSeconds,
-      fees: opts.fees,
+      fees: [...(opts.fees ?? []), ...(await this.stationSwapFees(rentalId))],
     });
     const claimed = await this.prisma.rental.updateMany({
       where: { id: rentalId, status: { in: ['active', 'paused', 'ending'] } },
@@ -258,6 +272,15 @@ export class RentalEndService {
     this.emitRental(final);
     this.logger.log({ msg: 'rental_finalized', rentalId, status: kind, costCents: breakdown.totalCents });
     return toRental(final);
+  }
+
+  /**
+   * Troca de bateria na estação (spec 2026-10-22): cada troca concluída com taxa (congelada na criação; 0 nos planos
+   * diário/semanal/mensal) entra como linha `battery_swap_fee` desta liquidação — nunca cobrada à parte.
+   */
+  private async stationSwapFees(rentalId: string): Promise<FeeCharge[]> {
+    const swaps = (await this.prisma.stationSwap.findMany({ where: { rentalId, status: 'completed', feeCents: { gt: 0 } }, orderBy: { createdAt: 'asc' }, select: { id: true, feeCents: true } })) ?? [];
+    return swaps.map((s) => ({ code: STATION_SWAP_FEE_CODE, description: 'Troca de bateria na estação', amountCents: s.feeCents }));
   }
 
   /** Moto do galpão: tem `depotId` ou saiu por uma entrega de galpão aceita para este aluguel. Só sai de novo pela entrega. */

@@ -4,6 +4,7 @@
 
 // ignore_for_file: unused_element
 import 'package:volti_api/src/model/rental.dart';
+import 'package:volti_api/src/model/station_swap.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -13,11 +14,16 @@ part 'current_rental.g.dart';
 ///
 /// Properties:
 /// * [rental]
+/// * [currentStationSwap] - Troca de bateria na estação em andamento neste aluguel (ausente quando não há), para o app retomar a tela da troca.
 @BuiltValue()
 abstract class CurrentRental
     implements Built<CurrentRental, CurrentRentalBuilder> {
   @BuiltValueField(wireName: r'rental')
   Rental? get rental;
+
+  /// Troca de bateria na estação em andamento neste aluguel (ausente quando não há), para o app retomar a tela da troca.
+  @BuiltValueField(wireName: r'currentStationSwap')
+  StationSwap? get currentStationSwap;
 
   CurrentRental._();
 
@@ -49,6 +55,13 @@ class _$CurrentRentalSerializer implements PrimitiveSerializer<CurrentRental> {
       yield serializers.serialize(
         object.rental,
         specifiedType: const FullType(Rental),
+      );
+    }
+    if (object.currentStationSwap != null) {
+      yield r'currentStationSwap';
+      yield serializers.serialize(
+        object.currentStationSwap,
+        specifiedType: const FullType(StationSwap),
       );
     }
   }
@@ -83,6 +96,14 @@ class _$CurrentRentalSerializer implements PrimitiveSerializer<CurrentRental> {
           ) as Rental?;
           if (valueDes == null) continue;
           result.rental.replace(valueDes);
+          break;
+        case r'currentStationSwap':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(StationSwap),
+          ) as StationSwap?;
+          if (valueDes == null) continue;
+          result.currentStationSwap.replace(valueDes);
           break;
         default:
           unhandled.add(key);
