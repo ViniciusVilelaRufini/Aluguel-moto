@@ -7,7 +7,8 @@
  * CNH (o Citycoco de 1.500–2.500 W ficou de fora). Nada de marca de terceiro no nome.
  *
  * Fotos: pertencem aos fabricantes/lojas e servem SÓ de exemplo em dev. Nunca vão para o git: são baixadas aqui, no seed,
- * direto para o MinIO (`catalog/<slug>.<ext>`). O download é tratado como dado não confiável — só HTTPS, teto de 5 MB,
+ * direto para o MinIO (`catalog/<slug>.<ext>`). O download é tratado como dado não confiável — só HTTPS e host público em
+ * cada salto (redirecionamento manual, no máximo 3), teto de 5 MB,
  * assinatura de JPEG/PNG/WebP conferida nos bytes (o Content-Type do servidor é ignorado) e nada é executado. Sem rede o
  * seed segue: o modelo fica sem foto e o app mostra o ícone.
  */
@@ -52,7 +53,7 @@ export const CATALOG_EXAMPLES: readonly CatalogExample[] = [
     name: 'Volti Urbana',
     slug: 'urbana',
     categoryLabel: 'Urbana com cesto',
-    description: '1000 W · 48 V · 32 km/h · cesto e garupa · sem CNH',
+    description: '32 km/h · sem CNH · 1000 W · 48 V · cesto e garupa',
     pricePerMinuteCents: 79,
     unlockFeeCents: null,
     serviceIntervalKm: 1000,
@@ -68,7 +69,7 @@ export const CATALOG_EXAMPLES: readonly CatalogExample[] = [
     name: 'Volti Sport',
     slug: 'sport',
     categoryLabel: 'Esportiva compacta',
-    description: '1000 W · 32 km/h · 2 lugares · bateria removível · sem CNH',
+    description: '32 km/h · sem CNH · 1000 W · 2 lugares · bateria removível',
     pricePerMinuteCents: 89,
     unlockFeeCents: null,
     serviceIntervalKm: 1000,
@@ -84,7 +85,7 @@ export const CATALOG_EXAMPLES: readonly CatalogExample[] = [
     name: 'Volti Touring',
     slug: 'touring',
     categoryLabel: 'Touring com baú',
-    description: '1000 W · 32 km/h · baú traseiro e encosto · sem CNH',
+    description: '32 km/h · sem CNH · 1000 W · baú traseiro e encosto',
     pricePerMinuteCents: 99,
     unlockFeeCents: null,
     serviceIntervalKm: 800,
@@ -120,7 +121,7 @@ export function sniffImage(buf: Buffer): SniffedImage | null {
   return null;
 }
 
-export type FetchLike = (url: string, init: { headers: Record<string, string>; redirect: 'follow'; signal: AbortSignal }) => Promise<{
+export type FetchLike = (url: string, init: { headers: Record<string, string>; redirect: 'manual'; signal: AbortSignal }) => Promise<{
   ok: boolean;
   status: number;
   url: string;
@@ -128,40 +129,98 @@ export type FetchLike = (url: string, init: { headers: Record<string, string>; r
   body: AsyncIterable<Uint8Array> | null;
 }>;
 
+/** Resolve o host para os IPs que o fetch vai usar (padrão: DNS do sistema). */
+export type ResolveHost = (host: string) => Promise<string[]>;
+
+export const MAX_PHOTO_REDIRECTS = 3;
+
+const defaultResolveHost: ResolveHost = async (host) => {
+  const { lookup } = await import('node:dns/promises');
+  return (await lookup(host, { all: true })).map((a) => a.address);
+};
+
+/** IP de loopback, rede privada, link-local, CGNAT, "não especificado" ou ULA/link-local IPv6. */
+export function isPrivateAddress(ip: string): boolean {
+  const v = ip.replace(/^\[|\]$/g, '').toLowerCase();
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(v);
+  if (mapped) return isPrivateAddress(mapped[1]);
+  const m = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(v);
+  if (m) {
+    const [a, b] = [Number(m[1]), Number(m[2])];
+    return a === 0 || a === 10 || a === 127 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+  }
+  if (v.includes(':')) return v === '::' || v === '::1' || /^f[cd]/.test(v) || /^fe[89ab]/.test(v);
+  return false;
+}
+
+/** Cada salto: só HTTPS e host público (literal e pelo DNS). `null` = ok; senão o motivo. */
+async function hopProblem(url: string, resolveHost: ResolveHost): Promise<string | null> {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return 'invalid_url';
+  }
+  if (u.protocol !== 'https:') return 'not_https';
+  const host = u.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  if (host === 'localhost' || host.endsWith('.localhost') || isPrivateAddress(host)) return 'private_host';
+  if (/^[\d.]+$/.test(host) || host.includes(':')) return null;
+  const ips = await resolveHost(host);
+  if (ips.length === 0 || ips.some(isPrivateAddress)) return 'private_host';
+  return null;
+}
+
 export interface DownloadedImage extends SniffedImage {
   body: Buffer;
 }
 
 /**
- * Baixa uma foto de exemplo com teto de bytes (cabeçalho e corpo) e confere a assinatura. Qualquer falha devolve `null`
- * com o motivo no log (sem lançar): o seed continua sem a foto.
+ * Baixa uma foto de exemplo com teto de bytes (cabeçalho e corpo) e confere a assinatura. Redirecionamento manual,
+ * no máximo 3, e cada salto só em HTTPS e para host público (nada de loopback/rede interna, ex.: o próprio MinIO).
+ * Qualquer falha devolve `null` com o motivo no log (sem lançar): o seed continua sem a foto.
  */
-export async function downloadImage(url: string, fetchImpl: FetchLike, opts: { maxBytes?: number; timeoutMs?: number } = {}): Promise<DownloadedImage | null> {
+export async function downloadImage(
+  url: string,
+  fetchImpl: FetchLike,
+  opts: { maxBytes?: number; timeoutMs?: number; resolveHost?: ResolveHost } = {},
+): Promise<DownloadedImage | null> {
   const maxBytes = opts.maxBytes ?? MAX_PHOTO_BYTES;
+  const resolveHost = opts.resolveHost ?? defaultResolveHost;
   const skip = (reason: string) => {
     console.warn(JSON.stringify({ msg: 'seed_catalog_photo_skipped', host: safeHost(url), reason }));
     return null;
   };
-  if (!url.startsWith('https://')) return skip('not_https');
+  const signal = AbortSignal.timeout(opts.timeoutMs ?? 15000);
   try {
-    // Alguns CDNs recusam requisição sem User-Agent (403).
-    const res = await fetchImpl(url, { headers: { 'User-Agent': 'Mozilla/5.0 (VoltiDevSeed)', Accept: 'image/*' }, redirect: 'follow', signal: AbortSignal.timeout(opts.timeoutMs ?? 15000) });
-    if (!res.ok) return skip(`http_${res.status}`);
-    if (!res.url.startsWith('https://')) return skip('redirect_not_https');
-    const declared = Number(res.headers.get('content-length') ?? 0);
-    if (declared > maxBytes) return skip('too_large');
-    if (!res.body) return skip('empty');
-    const chunks: Buffer[] = [];
-    let total = 0;
-    for await (const chunk of res.body) {
-      total += chunk.byteLength;
-      if (total > maxBytes) return skip('too_large');
-      chunks.push(Buffer.from(chunk));
+    let current = url;
+    for (let hop = 0; ; hop++) {
+      const problem = await hopProblem(current, resolveHost);
+      if (problem) return skip(hop === 0 ? problem : `redirect_${problem}`);
+      // Alguns CDNs recusam requisição sem User-Agent (403).
+      const res = await fetchImpl(current, { headers: { 'User-Agent': 'Mozilla/5.0 (VoltiDevSeed)', Accept: 'image/*' }, redirect: 'manual', signal });
+      if (res.status >= 300 && res.status < 400) {
+        if (hop >= MAX_PHOTO_REDIRECTS) return skip('too_many_redirects');
+        const location = res.headers.get('location');
+        if (!location) return skip('redirect_without_location');
+        current = new URL(location, current).toString();
+        continue;
+      }
+      if (!res.ok) return skip(`http_${res.status}`);
+      const declared = Number(res.headers.get('content-length') ?? 0);
+      if (declared > maxBytes) return skip('too_large');
+      if (!res.body) return skip('empty');
+      const chunks: Buffer[] = [];
+      let total = 0;
+      for await (const chunk of res.body) {
+        total += chunk.byteLength;
+        if (total > maxBytes) return skip('too_large');
+        chunks.push(Buffer.from(chunk));
+      }
+      const body = Buffer.concat(chunks);
+      const kind = sniffImage(body);
+      if (!kind) return skip('not_an_image');
+      return { ...kind, body };
     }
-    const body = Buffer.concat(chunks);
-    const kind = sniffImage(body);
-    if (!kind) return skip('not_an_image');
-    return { ...kind, body };
   } catch (err) {
     return skip((err as Error).name === 'TimeoutError' ? 'timeout' : 'network');
   }
@@ -182,6 +241,8 @@ export interface CatalogPhotoStorage {
 
 export interface SeedCatalogDeps {
   fetchImpl: FetchLike;
+  /** Para testes; padrão: DNS do sistema. */
+  resolveHost?: ResolveHost;
   /** `null` = sem MinIO/S3 configurado: modelos sem foto. */
   storage: CatalogPhotoStorage | null;
   bucket: string;
@@ -208,7 +269,7 @@ export async function seedCatalog(prisma: CatalogPrisma, deps: SeedCatalogDeps):
   for (const m of CATALOG_EXAMPLES) {
     let photoObjectKey: string | undefined;
     if (storageReady && deps.storage) {
-      const img = await downloadImage(m.photoSourceUrl, deps.fetchImpl);
+      const img = await downloadImage(m.photoSourceUrl, deps.fetchImpl, { resolveHost: deps.resolveHost });
       if (img) {
         const key = `catalog/${m.slug}.${img.ext}`;
         try {

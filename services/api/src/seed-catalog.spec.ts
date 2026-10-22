@@ -20,7 +20,7 @@ async function* chunks(...parts: Buffer[]): AsyncIterable<Uint8Array> {
   for (const p of parts) yield p;
 }
 
-function fakeFetch(body: Buffer | Buffer[] | Error, init: { status?: number; url?: string; contentLength?: number } = {}): FetchLike & jest.Mock {
+function fakeFetch(body: Buffer | Buffer[] | Error, init: { status?: number; contentLength?: number } = {}): FetchLike & jest.Mock {
   return jest.fn(async (url: string) => {
     if (body instanceof Error) throw body;
     const parts = Array.isArray(body) ? body : [body];
@@ -28,7 +28,7 @@ function fakeFetch(body: Buffer | Buffer[] | Error, init: { status?: number; url
     return {
       ok: status >= 200 && status < 300,
       status,
-      url: init.url ?? url,
+      url,
       headers: { get: (n: string) => (n === 'content-length' && init.contentLength !== undefined ? String(init.contentLength) : null) },
       body: chunks(...parts),
     };
@@ -69,6 +69,8 @@ describe('catálogo de exemplo (Contran 996/2023)', () => {
       expect(m.description).toContain(`${m.powerW} W`);
       expect(m.description).toContain(`${m.speedLimitKmh} km/h`);
       expect(m.description).toContain('sem CNH');
+      // Fatos-chave primeiro: o cartão do app corta o fim em telas estreitas.
+      expect(m.description.startsWith(`${m.speedLimitKmh} km/h · sem CNH · ${m.powerW} W`)).toBe(true);
       expect(m.description.length).toBeLessThanOrEqual(80);
     }
     expect(CONTRAN_MAX_POWER_W).toBe(1000);
@@ -118,29 +120,89 @@ describe('sniffImage', () => {
   });
 });
 
+/** DNS falso: todo host resolve para um IP público, exceto os listados. */
+const dns = (privateHosts: Record<string, string> = {}) => async (host: string) => [privateHosts[host] ?? '93.184.216.34'];
+const NET = { resolveHost: dns() };
+
+/** fetch falso por URL, para seguir redirecionamentos manuais. */
+function routeFetch(routes: Record<string, { status: number; location?: string; body?: Buffer }>): FetchLike & jest.Mock {
+  return jest.fn(async (url: string) => {
+    const r = routes[url];
+    if (!r) throw new Error(`rota inesperada ${url}`);
+    return {
+      ok: r.status >= 200 && r.status < 300,
+      status: r.status,
+      url,
+      headers: { get: (n: string) => (n === 'location' ? (r.location ?? null) : null) },
+      body: r.body ? chunks(r.body) : null,
+    };
+  }) as unknown as FetchLike & jest.Mock;
+}
+
 describe('downloadImage (dado não confiável)', () => {
   beforeEach(() => jest.spyOn(console, 'warn').mockImplementation(() => undefined));
   afterEach(() => jest.restoreAllMocks());
 
-  it('baixa uma imagem válida com User-Agent e o tipo pelos bytes', async () => {
+  it('baixa uma imagem válida com User-Agent, redirect manual e o tipo pelos bytes', async () => {
     const f = fakeFetch(JPEG);
-    const img = await downloadImage('https://cdn.example/a.png', f);
+    const img = await downloadImage('https://cdn.example/a.png', f, NET);
     expect(img).toMatchObject({ ext: 'jpg', contentType: 'image/jpeg' });
     expect(img?.body.equals(JPEG)).toBe(true);
     expect(f.mock.calls[0][1].headers['User-Agent']).toBeTruthy();
+    expect(f.mock.calls[0][1].redirect).toBe('manual');
   });
 
-  it('recusa HTTP, redirecionamento para HTTP, erro HTTP, HTML e falha de rede', async () => {
-    expect(await downloadImage('http://cdn.example/a.jpg', fakeFetch(JPEG))).toBeNull();
-    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(JPEG, { url: 'http://evil.example/a.jpg' }))).toBeNull();
-    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(HTML, { status: 403 }))).toBeNull();
-    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(HTML))).toBeNull();
-    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(new Error('ENOTFOUND')))).toBeNull();
+  it('recusa HTTP, erro HTTP, HTML e falha de rede', async () => {
+    expect(await downloadImage('http://cdn.example/a.jpg', fakeFetch(JPEG), NET)).toBeNull();
+    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(HTML, { status: 403 }), NET)).toBeNull();
+    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(HTML), NET)).toBeNull();
+    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(new Error('ENOTFOUND')), NET)).toBeNull();
+  });
+
+  it('segue até 3 redirecionamentos HTTPS (Location relativo também)', async () => {
+    const f = routeFetch({
+      'https://a.example/1': { status: 301, location: 'https://b.example/2' },
+      'https://b.example/2': { status: 302, location: '/3' },
+      'https://b.example/3': { status: 307, location: 'https://c.example/4' },
+      'https://c.example/4': { status: 200, body: JPEG },
+    });
+    expect(await downloadImage('https://a.example/1', f, NET)).toMatchObject({ ext: 'jpg' });
+    expect(f).toHaveBeenCalledTimes(4);
+  });
+
+  it('recusa o 4º redirecionamento, salto para HTTP e Location ausente', async () => {
+    const loop = routeFetch({
+      'https://a.example/1': { status: 302, location: 'https://a.example/2' },
+      'https://a.example/2': { status: 302, location: 'https://a.example/3' },
+      'https://a.example/3': { status: 302, location: 'https://a.example/4' },
+      'https://a.example/4': { status: 302, location: 'https://a.example/5' },
+      'https://a.example/5': { status: 200, body: JPEG },
+    });
+    expect(await downloadImage('https://a.example/1', loop, NET)).toBeNull();
+    expect(loop).toHaveBeenCalledTimes(4);
+    const toHttp = routeFetch({ 'https://a.example/1': { status: 301, location: 'http://a.example/img.jpg' }, 'http://a.example/img.jpg': { status: 200, body: JPEG } });
+    expect(await downloadImage('https://a.example/1', toHttp, NET)).toBeNull();
+    expect(toHttp).toHaveBeenCalledTimes(1);
+    expect(await downloadImage('https://a.example/1', routeFetch({ 'https://a.example/1': { status: 302 } }), NET)).toBeNull();
+  });
+
+  it('recusa host privado/loopback (literal, por DNS ou no meio do redirecionamento)', async () => {
+    for (const url of ['https://localhost/a.jpg', 'https://127.0.0.1/a.jpg', 'https://10.0.0.5/a.jpg', 'https://172.20.1.1/a.jpg', 'https://192.168.0.10/a.jpg', 'https://169.254.169.254/latest', 'https://[::1]/a.jpg', 'https://[fd00::1]/a.jpg', 'https://0.0.0.0/a.jpg']) {
+      const f = fakeFetch(JPEG);
+      expect(await downloadImage(url, f, NET)).toBeNull();
+      expect(f).not.toHaveBeenCalled();
+    }
+    const f = fakeFetch(JPEG);
+    expect(await downloadImage('https://interno.example/a.jpg', f, { resolveHost: dns({ 'interno.example': '10.1.2.3' }) })).toBeNull();
+    expect(f).not.toHaveBeenCalled();
+    const hop = routeFetch({ 'https://a.example/1': { status: 302, location: 'https://minio.local:9000/x.jpg' }, 'https://minio.local:9000/x.jpg': { status: 200, body: JPEG } });
+    expect(await downloadImage('https://a.example/1', hop, { resolveHost: dns({ 'minio.local': '127.0.0.1' }) })).toBeNull();
+    expect(hop).toHaveBeenCalledTimes(1);
   });
 
   it('para no teto de bytes (cabeçalho ou corpo em pedaços)', async () => {
-    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(JPEG, { contentLength: MAX_PHOTO_BYTES + 1 }))).toBeNull();
-    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch([JPEG, Buffer.alloc(40)]), { maxBytes: 80 })).toBeNull();
+    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch(JPEG, { contentLength: MAX_PHOTO_BYTES + 1 }), NET)).toBeNull();
+    expect(await downloadImage('https://cdn.example/a.jpg', fakeFetch([JPEG, Buffer.alloc(40)]), { ...NET, maxBytes: 80 })).toBeNull();
   });
 });
 
@@ -151,7 +213,7 @@ describe('seedCatalog', () => {
   it('sobe as fotos em catalog/<slug>.<ext> e grava photoObjectKey; rodar de novo dá o mesmo estado', async () => {
     const { prisma, rows } = memoryPrisma();
     const storage = memoryStorage();
-    const deps = { fetchImpl: fakeFetch(JPEG), storage, bucket: 'catalogo' };
+    const deps = { fetchImpl: fakeFetch(JPEG), storage, bucket: 'catalogo', ...NET };
 
     expect(await seedCatalog(prisma, deps)).toEqual({ models: 3, photos: 3 });
     const first = JSON.stringify([...rows.entries()]);
@@ -167,7 +229,7 @@ describe('seedCatalog', () => {
   it('offline: semeia os modelos sem foto e não lança', async () => {
     const { prisma, rows } = memoryPrisma();
     const storage = memoryStorage();
-    expect(await seedCatalog(prisma, { fetchImpl: fakeFetch(new Error('offline')), storage, bucket: 'catalogo' })).toEqual({ models: 3, photos: 0 });
+    expect(await seedCatalog(prisma, { fetchImpl: fakeFetch(new Error('offline')), storage, bucket: 'catalogo', ...NET })).toEqual({ models: 3, photos: 0 });
     expect(rows.size).toBe(3);
     for (const row of rows.values()) expect(row.photoObjectKey).toBeUndefined();
     expect(storage.putObject).not.toHaveBeenCalled();
@@ -177,7 +239,7 @@ describe('seedCatalog', () => {
     const { prisma, rows } = memoryPrisma();
     const storage = { ensureBuckets: jest.fn(async () => { throw new Error('ECONNREFUSED'); }), putObject: jest.fn() };
     const f = fakeFetch(JPEG);
-    expect(await seedCatalog(prisma, { fetchImpl: f, storage, bucket: 'catalogo' })).toEqual({ models: 3, photos: 0 });
+    expect(await seedCatalog(prisma, { fetchImpl: f, storage, bucket: 'catalogo', ...NET })).toEqual({ models: 3, photos: 0 });
     expect(f).not.toHaveBeenCalled();
     expect(rows.size).toBe(3);
   });
@@ -188,7 +250,7 @@ describe('seedCatalog', () => {
       [urbana.id]: { id: urbana.id, name: 'Volti Flash', slug: 'flash', photoObjectKey: 'catalog/flash.png' },
       [sport.id]: { id: sport.id, name: 'Volti Urban', slug: 'urban', photoObjectKey: 'catalog/3f1c.jpg' },
     });
-    await seedCatalog(prisma, { fetchImpl: fakeFetch(new Error('offline')), storage: memoryStorage(), bucket: 'catalogo' });
+    await seedCatalog(prisma, { fetchImpl: fakeFetch(new Error('offline')), storage: memoryStorage(), bucket: 'catalogo', ...NET });
     expect(rows.get(urbana.id)).toMatchObject({ name: 'Volti Urbana', slug: 'urbana', photoObjectKey: null });
     expect(rows.get(sport.id)).toMatchObject({ name: 'Volti Sport', slug: 'sport', photoObjectKey: 'catalog/3f1c.jpg' });
   });
