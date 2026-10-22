@@ -4449,6 +4449,60 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Detalhes'**
   String get pickDetailsShort;
+
+  /// No description provided for @stationsToggle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pontos de troca de bateria'**
+  String get stationsToggle;
+
+  /// No description provided for @stationsSheetTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Troca de bateria'**
+  String get stationsSheetTitle;
+
+  /// No description provided for @stationsEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhum ponto de troca por perto'**
+  String get stationsEmpty;
+
+  /// No description provided for @stationAvailability.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =0{Sem baterias no momento} =1{1 bateria disponível} other{{count} baterias disponíveis}}'**
+  String stationAvailability(int count);
+
+  /// No description provided for @stationOpen24h.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aberto 24h'**
+  String get stationOpen24h;
+
+  /// No description provided for @stationShowOnMapHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mostra o ponto no mapa'**
+  String get stationShowOnMapHint;
+
+  /// No description provided for @stationMarkerSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{name}: {availability}'**
+  String stationMarkerSemantics(String name, String availability);
+
+  /// No description provided for @stationDirectionsSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Como chegar a {name}'**
+  String stationDirectionsSemantics(String name);
+
+  /// No description provided for @stationsCloseSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fechar pontos de troca'**
+  String get stationsCloseSemantics;
 }
 
 class _AppLocalizationsDelegate

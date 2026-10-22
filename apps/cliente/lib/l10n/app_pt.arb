@@ -1514,5 +1514,38 @@
   "pickSpecPrice": "Preço por minuto",
   "pickSpecUnlock": "Taxa de desbloqueio",
   "pickSpecCode": "Código",
-  "pickDetailsShort": "Detalhes"
+  "pickDetailsShort": "Detalhes",
+  "stationsToggle": "Pontos de troca de bateria",
+  "stationsSheetTitle": "Troca de bateria",
+  "stationsEmpty": "Nenhum ponto de troca por perto",
+  "stationAvailability": "{count, plural, =0{Sem baterias no momento} =1{1 bateria disponível} other{{count} baterias disponíveis}}",
+  "@stationAvailability": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stationOpen24h": "Aberto 24h",
+  "stationShowOnMapHint": "Mostra o ponto no mapa",
+  "stationMarkerSemantics": "{name}: {availability}",
+  "@stationMarkerSemantics": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "availability": {
+        "type": "String"
+      }
+    }
+  },
+  "stationDirectionsSemantics": "Como chegar a {name}",
+  "@stationDirectionsSemantics": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "stationsCloseSemantics": "Fechar pontos de troca"
 }

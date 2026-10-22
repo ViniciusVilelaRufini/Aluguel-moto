@@ -2556,4 +2556,44 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get pickDetailsShort => 'Detalhes';
+
+  @override
+  String get stationsToggle => 'Pontos de troca de bateria';
+
+  @override
+  String get stationsSheetTitle => 'Troca de bateria';
+
+  @override
+  String get stationsEmpty => 'Nenhum ponto de troca por perto';
+
+  @override
+  String stationAvailability(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count baterias disponíveis',
+      one: '1 bateria disponível',
+      zero: 'Sem baterias no momento',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get stationOpen24h => 'Aberto 24h';
+
+  @override
+  String get stationShowOnMapHint => 'Mostra o ponto no mapa';
+
+  @override
+  String stationMarkerSemantics(String name, String availability) {
+    return '$name: $availability';
+  }
+
+  @override
+  String stationDirectionsSemantics(String name) {
+    return 'Como chegar a $name';
+  }
+
+  @override
+  String get stationsCloseSemantics => 'Fechar pontos de troca';
 }

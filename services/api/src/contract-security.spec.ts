@@ -79,4 +79,16 @@ describe('Contrato × controllers (segurança e grupos)', () => {
       expect([...(route.requirement?.groups ?? [])].sort()).toEqual([...(op['x-required-groups'] ?? [])].sort());
     }
   });
+
+  it('listSwapStations: leitura aberta ao cliente (sem grupo) e a staff só dos grupos do contrato', () => {
+    const op = ops.find(([, o]) => o.operationId === 'listSwapStations');
+    expect(op).toBeDefined();
+    const [key, spec] = op!;
+    expect(key).toBe('GET /swap-stations');
+    expect((spec.security ?? []).map((s) => Object.keys(s)[0])).toContain('customerAuth');
+    const route = routes.get(key)!;
+    expect(route.requirement?.pools).toContain('customer');
+    // Nenhuma outra operação em /swap-stations (o cliente só lê).
+    expect(ops.filter(([k]) => k.endsWith(' /swap-stations') || k.includes(' /swap-stations/')).map(([k]) => k)).toEqual(['GET /swap-stations']);
+  });
 });

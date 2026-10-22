@@ -20,7 +20,7 @@ class StationsApi {
   const StationsApi(this._dio, this._serializers);
 
   /// Estações de troca de bateria (mapa)
-  /// Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com &#x60;lat&#x60;/&#x60;lng&#x60;, filtra pelo raio e ordena por distância (&#x60;distanceM&#x60;); sem eles, todas em ordem alfabética.
+  /// Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com &#x60;lat&#x60;/&#x60;lng&#x60;, filtra pelo raio e ordena por distância (&#x60;distanceM&#x60;); sem eles, todas em ordem alfabética.  Leitura aberta a qualquer cliente autenticado (&#x60;customerAuth&#x60;, sem grupo: o mapa e a folha \&quot;Troca de bateria\&quot; do app). &#x60;x-required-groups&#x60; vale só para &#x60;staffAuth&#x60;. A resposta traz apenas os campos públicos de &#x60;SwapStation&#x60; (identificador, nome, endereço, posição, baterias, vagas, horário e distância); dados internos da estação (ativa/inativa, datas de cadastro) não saem da API, para nenhum pool.
   ///
   /// Parameters:
   /// * [lat]

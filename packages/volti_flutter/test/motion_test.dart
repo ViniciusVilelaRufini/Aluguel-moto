@@ -407,4 +407,10 @@ void main() {
       expect(VoltiPageTransitions.recede.value, 0);
     });
   });
+
+  testWidgets('VoltiShine com reduced motion sai da tela sem erro (controller nao nasce no dispose)', (t) async {
+    await t.pumpWidget(_wrap(VoltiShine(child: const SizedBox(width: 100, height: 40)), reduced: true));
+    await t.pumpWidget(_wrap(const SizedBox(), reduced: true));
+    expect(t.takeException(), isNull);
+  });
 }
