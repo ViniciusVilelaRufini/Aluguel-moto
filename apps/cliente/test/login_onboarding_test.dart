@@ -108,7 +108,10 @@ void main() {
         authRepositoryProvider.overrideWithValue(devAuth()),
         sessionProvider.overrideWith(() => s),
       ]));
-      await t.pumpAndSettle();
+      // Hero com loops infinitos: sem pumpAndSettle.
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 300));
+      }
 
       expect(find.text('Continuar com celular'), findsOneWidget);
       expect(find.text('Apple'), findsOneWidget);
@@ -134,7 +137,10 @@ void main() {
         authRepositoryProvider.overrideWithValue(cognitoAuth(config)),
         sessionProvider.overrideWith(() => s),
       ]));
-      await t.pumpAndSettle();
+      // Hero com loops infinitos: sem pumpAndSettle.
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 300));
+      }
       expect(find.byKey(const Key('welcome-dev-hint')), findsNothing);
 
       await t.tap(find.byKey(const Key('welcome-apple')));
@@ -152,7 +158,10 @@ void main() {
             cognitoAuth(const CognitoConfig(region: 'sa-east-1', userPoolId: 'p', clientId: 'c'))),
         sessionProvider.overrideWith(() => s),
       ]));
-      await t.pumpAndSettle();
+      // Hero com loops infinitos: sem pumpAndSettle.
+      for (var i = 0; i < 6; i++) {
+        await t.pump(const Duration(milliseconds: 300));
+      }
       await t.tap(find.byKey(const Key('welcome-google')));
       await t.pump();
       expect(find.text('A entrada pelo Cognito ainda não está configurada neste ambiente.'), findsOneWidget);

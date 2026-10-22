@@ -28,6 +28,17 @@ void main() {
       expect(taps, 1);
     });
 
+    testWidgets('soft segue o tema escuro', (t) async {
+      await t.pumpWidget(MaterialApp(
+        theme: VoltiTheme.dark(),
+        home: Scaffold(body: Center(child: VoltiButton(label: 'E-mail', variant: VoltiButtonVariant.soft, onPressed: () {}))),
+      ));
+      final scheme = VoltiTheme.dark().colorScheme;
+      expect(_decoration(t).color, scheme.surfaceContainerHighest);
+      expect(t.widget<Text>(find.text('E-mail')).style!.color, scheme.onSurface);
+      expect(scheme.onSurface, isNot(VoltiColors.textPrimary));
+    });
+
     testWidgets('soft: fundo cinza claro e texto escuro', (t) async {
       await t.pumpWidget(_wrap(VoltiButton(label: 'E-mail', variant: VoltiButtonVariant.soft, onPressed: () {})));
       expect(_decoration(t).color, VoltiColors.surfaceSunken);

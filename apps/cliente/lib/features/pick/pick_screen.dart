@@ -253,8 +253,8 @@ class _Footer extends StatelessWidget {
               // Texto grande: o motivo tem teto e rola, para a lista continuar visivel.
               if (reasonView != null) ...[
                 ConstrainedBox(
-                  // Teto menor que antes: o botao agora tem a segunda linha (modelo · codigo).
-                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .17),
+                  // Com moto escolhida o botao tem a segunda linha (modelo · codigo): teto menor.
+                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * (v != null ? .17 : .22)),
                   child: SingleChildScrollView(child: reasonView),
                 ),
                 const SizedBox(height: VoltiSpacing.s10),

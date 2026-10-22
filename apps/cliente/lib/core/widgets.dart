@@ -153,7 +153,16 @@ class VoltiMap extends StatelessWidget {
     this.showAttribution = true,
     this.attributionAlignment = Alignment.centerLeft,
     this.backgroundColor = VoltiColors.mapLand,
+    this.embedded = false,
+    this.onTileError,
   });
+
+  /// Mapa dentro de um cartao (ex.: trajeto no recibo): a atribuicao nao soma o
+  /// recuo da area segura (barra de status), que nao toca o cartao.
+  final bool embedded;
+
+  /// Cada tile que falhou (ver [voltiTileLayer]).
+  final VoidCallback? onTileError;
   final LatLng center;
   final double zoom;
   final MapController? controller;
@@ -164,7 +173,7 @@ class VoltiMap extends StatelessWidget {
   final Color backgroundColor;
 
   // saturate(.55) brightness(1.06) contrast(.92) aproximado em matriz de cor.
-  static const _filter = ColorFilter.matrix(<double>[
+  static const colorFilter = ColorFilter.matrix(<double>[
     0.69, 0.30, 0.04, 0, 8, //
     0.17, 0.82, 0.04, 0, 8, //
     0.17, 0.30, 0.56, 0, 8, //
@@ -186,10 +195,14 @@ class VoltiMap extends StatelessWidget {
         ),
       ),
       children: [
-        voltiTileLayer(context, tileBuilder: (context, tile, _) => ColorFiltered(colorFilter: _filter, child: tile)),
+        voltiTileLayer(context, onError: onTileError, tileBuilder: (context, tile, _) => ColorFiltered(colorFilter: colorFilter, child: tile)),
         ...layers,
         if (showAttribution)
           SafeArea(
+            top: !embedded,
+            bottom: !embedded,
+            left: !embedded,
+            right: !embedded,
             child: Align(
               alignment: attributionAlignment,
               child: const Padding(padding: EdgeInsets.all(6), child: MapAttribution()),

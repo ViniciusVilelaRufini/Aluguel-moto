@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_flutter/volti_flutter.dart';
@@ -14,6 +15,8 @@ import 'core/cognito_auth.dart';
 /// `COGNITO_REDIRECT_URI` (ver README).
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Release: nenhum log de depuracao (tiles com erro, etc.) sai do aparelho.
+  if (kReleaseMode) debugPrint = (String? message, {int? wrapWidth}) {};
   final mode = resolveAuthMode(AuthRepository.modeFromEnvironment());
   final overrides = [
     authRepositoryProvider.overrideWithValue(

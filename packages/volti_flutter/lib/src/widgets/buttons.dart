@@ -136,9 +136,10 @@ class VoltiButton extends StatelessWidget {
         VoltiColors.borderStrong,
         const <BoxShadow>[],
       ),
+      // Do tema: claro = ink100 / ink900; escuro = ink700 / branco.
       VoltiButtonVariant.soft => (
-        VoltiColors.surfaceSunken,
-        VoltiColors.textPrimary,
+        scheme.surfaceContainerHighest,
+        scheme.onSurface,
         Colors.transparent,
         const <BoxShadow>[],
       ),

@@ -46,6 +46,8 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   generate: true
+  assets:
+    - assets/images/volti_moto_hero.webp
 
 flutter_launcher_icons:
   android: true

@@ -17,13 +17,41 @@ Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `de
 
 ## Mapas (tiles)
 
-Todos os mapas (home, boas-vindas, corrida, devolução) passam por `VoltiMap` e pela camada comum `voltiTileLayer` (`lib/core/map_tiles.dart`). O servidor público do OpenStreetMap (`tile.openstreetmap.org`) não pode ser usado por apps (política de tiles da OSMF; corta quem usa muito e os tiles ficavam cinza no emulador), então o padrão é o **CARTO Voyager** raster, `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png` (subdomínios `a,b,c`, `@2x` em telas densas), com a atribuição exigida "© OpenStreetMap contributors © CARTO" numa pílula de vidro (`MapAttribution`; na home fica ao lado do botão de localizar, na boas-vindas logo acima da folha). Para outro provedor: `--dart-define=MAP_TILE_URL=...` e `--dart-define=MAP_ATTRIBUTION=...`. O User-Agent usa o id real do pacote (`br.com.volti.volti_cliente`). Falhas de tile: o `NetworkTileProvider` já tenta de novo (`RetryClient`), tiles com erro são descartados ao sair da tela (pedidos de novo na volta) e, em debug, cada falha vira uma linha JSON `map.tile_error` com a URL e o erro (status HTTP). O filtro de cor suave do design continua. Antes do lançamento, confira os termos de uso do CARTO para uso comercial (ou troque a URL por um provedor contratado).
+Todos os mapas (home, boas-vindas, corrida, devolução) passam por `VoltiMap` e pela camada comum `voltiTileLayer` (`lib/core/map_tiles.dart`). O servidor público do OpenStreetMap (`tile.openstreetmap.org`) não pode ser usado por apps (política de tiles da OSMF; corta quem usa muito e os tiles ficavam cinza no emulador), então o padrão é o **CARTO Voyager** raster, `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png` (subdomínios `a,b,c`, `@2x` em telas densas), com a atribuição exigida "© OpenStreetMap contributors © CARTO" numa pílula de vidro (`MapAttribution`; na home fica ao lado do botão de localizar, na boas-vindas logo acima da folha). Para outro provedor: `--dart-define=MAP_TILE_URL=...` e `--dart-define=MAP_ATTRIBUTION=...`. O User-Agent usa o id real do pacote (`br.com.volti.volti_cliente`). Falhas de tile: o `NetworkTileProvider` já tenta de novo (`RetryClient`), tiles com erro são descartados ao sair da tela (pedidos de novo na volta) e, em debug, cada falha vira uma linha JSON `map.tile_error` com a URL e o erro (status HTTP). O filtro de cor suave do design continua. **Bloqueio de lançamento (docs/decisoes.md, 2026-10-22):** os basemaps públicos do CARTO são só para desenvolvimento e testes; antes de lançar, troque por um provedor licenciado via `MAP_TILE_URL` (ou contrate a licença comercial do CARTO). Tocar na atribuição abre `openstreetmap.org/copyright`. Em release o `main` silencia o `debugPrint` (o z/x/y do tile revela a região que o mapa mostra).
 
 ## Boas-vindas (referência `login-referencia.png`)
 
-`WelcomeScreen` (`features/onboarding/welcome_screen.dart`): em cima, o mapa decorativo de São Paulo (`VoltiMap` sem interação, sobre um fundo desenhado que aparece sem rede) com pins e chips ilustrativos ("108 motos perto", "92% | ~20 km", "2 min | 120 m"): são números de marketing, não dados ao vivo, e a camada inteira fica fora da semântica. O logo "volti" e o cartão "1ª corrida grátis · até 15 min" (só com a promoção ligada) ficam sobre o mapa. Embaixo, a folha branca: selos com ícone, "Pegue uma moto **e vá.**", **Continuar com celular** (OTP), "ou entre com" e Apple / Google / E-mail (Apple e Google pelo Hosted UI do Cognito; no modo dev só avisam), e os termos com os dois links. A nota do modo dev só aparece em debug, pequena, sob os termos. Texto a 200%: os botões quebram linha e crescem (`VoltiButton.wrap`), Apple/Google/E-mail empilham, o cartão da promoção desce para a folha e a folha rola por cima do mapa. Reduced motion: sem entrada animada. Testes em `test/cliente_login_test.dart`.
+`WelcomeScreen` (`features/onboarding/welcome_screen.dart`) tem duas partes. Em cima fica o hero animado (`WelcomeHero`, `welcome_hero.dart`). Embaixo fica a folha branca, com estes elementos:
 
-O Prism exige um header `Authorization: Bearer ...`; o login de dev (`POST /dev/token`, pool customer) já devolve um. No mock as respostas são exemplos fixos do contrato.
+- selos com ícone;
+- "Pegue uma moto **e vá.**";
+- **Continuar com celular** (OTP);
+- "ou entre com", seguido de Apple / Google / E-mail. Apple e Google usam o Hosted UI do Cognito; no modo dev só mostram um aviso;
+- os termos, com os dois links.
+
+A nota do modo dev só aparece em debug, pequena, sob os termos.
+
+O hero ocupa a faixa livre acima da folha. A altura da folha é medida e o layout dos chips é relativo a essa faixa (`HeroLayoutDelegate`). O hero tem:
+
+- **Mapa real** de Pinheiros (tiles do `MAP_TILE_URL`, filtro do DS, sem interação), centrado no galpão (-23.5654, -46.6847, zoom 15), com deriva lenta da câmera (pan + zoom, 20 s ida e volta). A deriva é um `Transform` sobre um `RepaintBoundary` estático e não reconstrói os tiles.
+- **Galpão** com anel pulsando.
+- **Quatro motos andando** por trechos reais (Rua dos Pinheiros, Teodoro Sampaio, Faria Lima e Fradique Coutinho), com velocidades e defasagens diferentes, aparecendo e sumindo nas pontas. Ficam recortadas 16 px acima da folha.
+- **Moto em destaque** (`assets/images/volti_moto_hero.webp`, fundo transparente), centrada embaixo com até 70% da largura. Sobe e cresce de 0,92 a 1 em cerca de 600 ms, depois flutua 2,5 px num ciclo de 3 s, com uma sombra elíptica que acompanha a flutuação.
+- **Chips** (logo, "108 motos perto", "1ª corrida grátis" com `FIRST_RIDE_PROMO`, bateria e "2 min | 120 m"), que entram em cascata com 80 ms entre eles. A bateria conta de 0 até 92%. Em telas baixas (360×740), bateria e tempo viram etiquetas sobre as bordas da moto, pintadas por cima dela.
+
+O hero é decorativo: fica dentro de `ExcludeSemantics` e `IgnorePointer`. A promoção chega ao leitor de tela por um nó na folha. Cada grupo de animação tem um ticker próprio.
+
+Em situações especiais:
+
+- **Reduced motion:** tudo fica parado no estado final.
+- **App em segundo plano ou rota coberta** (`TickerMode`): os controllers param.
+- **Tiles falhando** (4 erros): o mapa sai e entra a ilustração desenhada, sob os mesmos chips. A tela nunca fica cinza.
+
+A atribuição do mapa fica na borda de cima da folha.
+
+Com texto acima de 100%, o cartão da promoção desce para a folha e escala com o texto. Com 200%, os botões quebram linha, Apple/Google/E-mail empilham e a folha rola por cima do hero.
+
+Testes em `test/cliente_login_test.dart`.
 
 ## Estrutura
 

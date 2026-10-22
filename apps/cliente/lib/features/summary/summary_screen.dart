@@ -145,6 +145,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                         center: pts.first,
                         zoom: 15,
                         interactive: false,
+                        embedded: true,
                         layers: [DrawnPolyline(points: pts, color: VoltiColors.brand)],
                       ),
                     ),

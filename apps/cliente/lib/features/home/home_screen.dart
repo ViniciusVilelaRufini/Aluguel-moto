@@ -50,6 +50,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// Galpao em que a camera ja foi centrada (centra de novo quando ele muda).
   String? _focusedDepotId;
 
+  /// O cliente tocou em Localizar: a camera fica nele (a recarga dos galpoes que a
+  /// nova posicao provoca nao volta a centrar no galpao).
+  bool _userCentered = false;
+
   @override
   void initState() {
     super.initState();
@@ -62,6 +66,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _showFlash();
       _askLocationOnce();
     });
+    // Fora do build: centra no galpao ao abrir e quando ele muda.
+    ref.listenManual(currentDepotProvider, (_, next) => _focusDepot(next.value), fireImmediately: true);
   }
 
   @override
@@ -115,11 +121,21 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// controller, entao recriar o mapa com outro `initialCenter` nao a move: o
   /// galpao ficava fora da tela (so as zonas e a estacao perto do centro de SP).
   void _focusDepot(Depot? d) {
-    if (d == null || d.id == _focusedDepotId) return;
+    if (d == null || d.id == _focusedDepotId || _userCentered) return;
     _focusedDepotId = d.id;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _moveMap(LatLng(d.lat, d.lng));
     });
+  }
+
+  /// Localizar: pede a posicao de novo e centra no cliente (nao no galpao).
+  Future<void> _locateMe(LatLng fallback) async {
+    _userCentered = true;
+    LatLng? p;
+    try {
+      p = await ref.refresh(userLocationProvider.future);
+    } catch (_) {}
+    if (mounted) _moveMap(p ?? fallback);
   }
 
   void _selectDepot(Depot d) {
@@ -144,7 +160,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.listen(flashProvider, (_, next) {
       if (next != null) WidgetsBinding.instance.addPostFrameCallback((_) => _showFlash());
     });
-    _focusDepot(current);
     final promoFirstRide = firstRideFree(session?.customer, promoActive: kFirstRidePromo);
     final center = current != null ? LatLng(current.lat, current.lng) : (loc ?? fallbackCenter);
     final surface = Theme.of(context).colorScheme.surface;
@@ -321,10 +336,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 icon: LucideIcons.locateFixed,
                                 iconColor: VoltiColors.brand,
                                 label: l.locateMe,
-                                onPressed: () {
-                                  ref.invalidate(userLocationProvider);
-                                  _moveMap(loc ?? center);
-                                },
+                                onPressed: () => _locateMe(loc ?? center),
                               ),
                             ],
                           ),

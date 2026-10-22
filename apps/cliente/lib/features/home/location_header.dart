@@ -13,10 +13,16 @@ import '../pickup/depot_labels.dart';
 import 'depot_providers.dart';
 import 'providers.dart';
 
-/// Segunda linha da pilula "Sua localização": o contexto do galpao ("Perto do
-/// Galpão Volti · Pinheiros") ou "Perto de você". Nunca o nome de uma zona de
+/// Segunda linha da pilula "Sua localização". "Perto do Galpão Volti · Pinheiros"
+/// so quando a posicao do cliente e conhecida **e** o galpao mostrado e o mais
+/// perto pela `distanceM` da API; senao so "Galpão Volti · Pinheiros" (sem
+/// afirmar proximidade). Sem galpao, "Perto de você". Nunca o nome de uma zona de
 /// devolucao: ela nao e onde o cliente esta (spec do galpao, emulador 2026-10-22).
-String locationPlaceLabel(AppLocalizations l, Depot? depot) => depot == null ? l.nearYou : l.nearDepot(depotTitle(l, depot));
+String locationPlaceLabel(AppLocalizations l, Depot? depot, {required bool located, Depot? nearest}) {
+  if (depot == null) return l.nearYou;
+  final isNearest = located && depot.distanceM != null && nearest?.id == depot.id;
+  return isNearest ? l.nearDepot(depotTitle(l, depot)) : depotTitle(l, depot);
+}
 
 /// Cabecalho do mapa (design `LocationHeader`): avatar com as iniciais (abre a
 /// conta), pilula "Sua localização · lugar" e sino. Usado no mapa e na reserva.
@@ -28,7 +34,9 @@ class LocationHeader extends ConsumerWidget {
     final l = context.l;
     final session = ref.watch(sessionProvider).value;
     final unread = ref.watch(supportUnreadProvider).value ?? false;
-    final place = locationPlaceLabel(l, ref.watch(currentDepotProvider).value);
+    final located = ref.watch(userLocationProvider).value != null;
+    final nearest = ref.watch(depotsProvider).value?.firstOrNull;
+    final place = locationPlaceLabel(l, ref.watch(currentDepotProvider).value, located: located, nearest: nearest);
     return Row(children: [
       _Avatar(
         initials: initialsOf(session?.customer?.name),

@@ -21,6 +21,7 @@ import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/core/widgets.dart';
 import 'package:volti_cliente/features/home/home_screen.dart';
 import 'package:volti_cliente/features/onboarding/login_screen.dart';
+import 'package:volti_cliente/features/onboarding/welcome_hero.dart';
 import 'package:volti_cliente/features/plan/pix_sheet.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart' show mapEnabledProvider;
 import 'package:volti_flutter/volti_flutter.dart';
@@ -49,7 +50,7 @@ class _GrantedLocation extends FakeLocation {
 }
 
 class _ZoneBackend extends GalpaoBackend {
-  _ZoneBackend(this.list);
+  _ZoneBackend(this.list, {super.depots});
   final List<GeoZone> list;
   @override
   Future<List<GeoZone>> zones() async => list;
@@ -268,7 +269,11 @@ void main() {
         expect(find.bySemanticsLabel(RegExp(RegExp.escape(s))), findsNothing, reason: s);
       }
       expect(find.byKey(const Key('welcome-art')).evaluate().single.widget, isA<ExcludeSemantics>());
-      expect(find.bySemanticsLabel('Volti'), findsOneWidget);
+      // A promocao (oferta real) chega ao leitor de tela pela folha.
+      expect(find.bySemanticsLabel('1ª corrida grátis, até 15 min'), findsOneWidget);
+      // A moto em destaque e os pins tambem ficam fora.
+      expect(find.descendant(of: find.byKey(const Key('welcome-art')), matching: find.byType(Image)), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('volti', caseSensitive: false)), findsNothing);
       expect(t.getSemantics(find.byKey(const Key('welcome-phone'))),
           isSemantics(label: 'Continuar com celular', isButton: true, hasTapAction: true));
       expect(t.getSemantics(find.byKey(const Key('welcome-apple'))),
@@ -321,17 +326,145 @@ void main() {
       await _pumpWelcome(t, settleAll: false);
       await t.pump(const Duration(milliseconds: 16));
       expect(find.descendant(of: find.byKey(const Key('welcome-sheet-enter')), matching: _fading), findsWidgets);
-      await t.pumpAndSettle();
+      // Loops infinitos (deriva, motos, flutuacao): sem pumpAndSettle.
+      await t.pump(const Duration(seconds: 2));
     });
 
-    testWidgets('com o mapa ligado: VoltiMap sem interacao no centro de SP e atribuicao', (t) async {
+    testWidgets('com o mapa ligado: mapa real sem interacao, galpao de Pinheiros e atribuicao na folha', (t) async {
       screen(t);
       await _pumpWelcome(t, map: true);
       final map = t.widget<VoltiMap>(find.byKey(const Key('welcome-map')));
       expect(map.interactive, isFalse);
-      expect(map.center, kWelcomeMapCenter);
-      expect(find.text(kMapAttribution), findsOneWidget);
+      expect(map.zoom, kHeroZoom);
+      expect(map.showAttribution, isFalse);
+      expect(find.byKey(const Key('hero-depot')), findsOneWidget);
+      final attribution = find.byKey(const Key('map-attribution'));
+      expect(find.descendant(of: find.byKey(const Key('welcome-sheet-enter')), matching: attribution), findsOneWidget);
       expect(t.takeException(), isNull);
+    });
+  });
+
+  group('hero animado', () {
+    WelcomeHeroState hero(WidgetTester t) => t.state<WelcomeHeroState>(find.byType(WelcomeHero));
+
+    testWidgets('entrada: chips em cascata, bateria conta ate 92% e a moto sobe e cresce', (t) async {
+      screen(t);
+      await _pumpWelcome(t, settleAll: false);
+      await t.pump(const Duration(milliseconds: 16));
+      expect(find.text('92%'), findsNothing, reason: 'a contagem comeca do zero');
+      final bike = find.byKey(const Key('hero-bike'));
+      final opacity = t.widget<Opacity>(find.ancestor(of: bike, matching: find.byType(Opacity)).first);
+      expect(opacity.opacity, lessThan(1));
+      final before = t.widget<Transform>(find.byKey(const Key('hero-bike-image')));
+      expect(before.transform.getTranslation().y, greaterThan(10), reason: 'comeca abaixo e sobe');
+      await t.pump(const Duration(milliseconds: 1200));
+      expect(find.text('92%'), findsOneWidget);
+      expect(t.widget<Opacity>(find.ancestor(of: bike, matching: find.byType(Opacity)).first).opacity, 1);
+      expect(hero(t).debugAnimating, isTrue, reason: 'loops seguem (deriva, motos, flutuacao)');
+      // As motos andam.
+      final p0 = t.getTopLeft(find.byKey(const Key('hero-pin-0')));
+      await t.pump(const Duration(seconds: 1));
+      expect(t.getTopLeft(find.byKey(const Key('hero-pin-0'))), isNot(p0));
+    });
+
+    testWidgets('reduzir movimento: tudo parado no estado final, sem entrada', (t) async {
+      screen(t);
+      await _pumpWelcome(t, reduceMotion: true, settleAll: false);
+      await t.pump();
+      expect(find.text('92%'), findsOneWidget);
+      expect(hero(t).debugAnimating, isFalse);
+      final p0 = t.getTopLeft(find.byKey(const Key('hero-pin-0')));
+      final bike = t.getRect(find.byKey(const Key('hero-bike')));
+      await t.pump(const Duration(seconds: 2));
+      expect(t.getTopLeft(find.byKey(const Key('hero-pin-0'))), p0);
+      expect(t.getRect(find.byKey(const Key('hero-bike'))), bike);
+      expect(t.binding.hasScheduledFrame, isFalse);
+    });
+
+    testWidgets('app em segundo plano ou rota coberta: controllers param; na volta, retomam', (t) async {
+      screen(t);
+      final router = await _pumpWelcome(t);
+      expect(hero(t).debugAnimating, isTrue);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await t.pump();
+      expect(hero(t).debugAnimating, isFalse);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await t.pump();
+      expect(hero(t).debugAnimating, isTrue);
+      // Outra tela por cima: o Navigator desliga o TickerMode da boas-vindas.
+      router.push('/login?via=phone');
+      await t.pump();
+      await t.pump(const Duration(seconds: 1));
+      expect(t.state<WelcomeHeroState>(find.byType(WelcomeHero, skipOffstage: false)).debugAnimating, isFalse);
+    });
+
+    testWidgets('tiles falhando: o mapa sai e fica a ilustracao desenhada (nunca cinza)', (t) async {
+      screen(t);
+      await _pumpWelcome(t, map: true);
+      expect(find.byKey(const Key('welcome-map')), findsOneWidget);
+      for (var i = 0; i < kHeroTileErrorLimit; i++) {
+        hero(t).reportTileError();
+      }
+      await t.pump();
+      await t.pump();
+      expect(hero(t).debugTilesFailed, isTrue);
+      expect(find.byKey(const Key('welcome-map')), findsNothing);
+      expect(find.byKey(const Key('welcome-map-fallback')), findsOneWidget);
+      // Os chips e a moto continuam por cima.
+      expect(find.byKey(const Key('hero-bike')), findsOneWidget);
+      expect(find.text('108 motos perto'), findsOneWidget);
+    });
+
+    for (final size in const [Size(360, 740), Size(393, 852), Size(412, 915)]) {
+      testWidgets('sem sobreposicao em ${size.width.toInt()}x${size.height.toInt()}', (t) async {
+        screen(t, size: size);
+        t.view.padding = const FakeViewPadding(top: 24, bottom: 16);
+        await _pumpWelcome(t, map: true);
+        await t.pump(const Duration(seconds: 1));
+        expect(t.takeException(), isNull);
+        Rect r(String k) => t.getRect(find.byKey(Key(k)));
+        final chips = {for (final k in ['welcome-logo', 'hero-nearby', 'welcome-promo', 'hero-battery', 'hero-time']) k: r(k)};
+        final keys = chips.keys.toList();
+        for (var i = 0; i < keys.length; i++) {
+          for (var j = i + 1; j < keys.length; j++) {
+            expect(chips[keys[i]]!.overlaps(chips[keys[j]]!), isFalse, reason: '${keys[i]} x ${keys[j]}');
+          }
+        }
+        final bike = r('hero-bike');
+        // Quanto mais alta a tela, maior a moto (ate 70% da largura).
+        final minBike = size.height < 800 ? .35 : (size.height < 900 ? .55 : .7);
+        expect(bike.width, greaterThanOrEqualTo(size.width * minBike - .5), reason: 'a moto aparece');
+        expect(bike.width, lessThanOrEqualTo(size.width * .7 + .5));
+        if (size.width >= 412) expect(bike.width, closeTo(size.width * .7, .5));
+        for (final k in ['welcome-logo', 'hero-nearby', 'welcome-promo']) {
+          // A moto flutua 2,5 px: folga de 3 px.
+          expect(bike.inflate(3).overlaps(chips[k]!), isFalse, reason: 'moto x $k');
+        }
+        // Bateria e tempo podem ser etiquetas sobre a borda da moto: a moto e pintada antes (embaixo).
+        final layout = t.widget<CustomMultiChildLayout>(find.descendant(of: find.byType(WelcomeHero), matching: find.byType(CustomMultiChildLayout)));
+        expect((layout.children.first as LayoutId).id, HeroSlot.bike);
+        final sheetTop = r('welcome-sheet').top;
+        expect(bike.bottom, lessThanOrEqualTo(sheetTop));
+        expect(r('hero-pins').bottom, lessThanOrEqualTo(sheetTop + .5), reason: 'pins nunca por baixo da folha');
+        expect(r('map-attribution').top, greaterThanOrEqualTo(r('hero-pins').bottom - .5), reason: 'atribuicao fora da faixa dos pins');
+        for (final e in chips.entries) {
+          expect(e.value.bottom, lessThanOrEqualTo(sheetTop), reason: '${e.key} acima da folha');
+          expect(e.value.left, greaterThanOrEqualTo(0));
+          expect(e.value.right, lessThanOrEqualTo(size.width));
+        }
+      });
+    }
+
+    test('ponto ao longo da rota', () {
+      const pts = [Offset(0, 0), Offset(10, 0), Offset(10, 10)];
+      expect(pointAlong(pts, 0), Offset.zero);
+      expect(pointAlong(pts, .5), const Offset(10, 0));
+      expect(pointAlong(pts, .75), const Offset(10, 5));
+      expect(pointAlong(pts, 1), const Offset(10, 10));
     });
   });
 
@@ -346,7 +479,7 @@ void main() {
 
     testWidgets('VoltiMap usa a camada comum com retentativa e atribuicao', (t) async {
       screen(t);
-      await t.pumpWidget(const MaterialApp(home: VoltiMap(center: kWelcomeMapCenter)));
+      await t.pumpWidget(const ProviderScope(child: MaterialApp(home: VoltiMap(center: kHeroDepot))));
       await t.pump();
       final layer = t.widget<TileLayer>(find.byType(TileLayer));
       expect(layer.urlTemplate, kMapTileUrl);
@@ -354,6 +487,36 @@ void main() {
       expect(layer.evictErrorTileStrategy, EvictErrorTileStrategy.notVisibleRespectMargin);
       expect(layer.errorTileCallback, isNotNull);
       expect(find.byKey(const Key('map-attribution')), findsOneWidget);
+    });
+
+    testWidgets('atribuicao: toque abre os direitos do OSM e o texto escala no maximo 1,3x', (t) async {
+      screen(t, scale: 2);
+      final opened = <Uri>[];
+      await t.pumpWidget(ProviderScope(
+        overrides: [
+          urlLauncherProvider.overrideWithValue((u) async {
+            opened.add(u);
+            return true;
+          }),
+        ],
+        child: const MaterialApp(home: Scaffold(body: Center(child: MapAttribution()))),
+      ));
+      final text = find.text(kMapAttribution);
+      expect(MediaQuery.textScalerOf(t.element(text)).scale(10), closeTo(13, .01));
+      await t.tap(find.byKey(const Key('map-attribution')));
+      await t.pump();
+      expect(opened, [kOsmCopyrightUri]);
+    });
+
+    testWidgets('mapa dentro de cartao nao soma a area segura na atribuicao', (t) async {
+      screen(t);
+      t.view.padding = const FakeViewPadding(top: 40, bottom: 30);
+      await t.pumpWidget(const ProviderScope(
+        child: MaterialApp(home: Scaffold(body: Center(child: SizedBox(height: 200, child: VoltiMap(center: kHeroDepot, embedded: true))))),
+      ));
+      await t.pump();
+      final safe = t.widget<SafeArea>(find.ancestor(of: find.byKey(const Key('map-attribution')), matching: find.byType(SafeArea)).first);
+      expect(safe.top || safe.bottom || safe.left || safe.right, isFalse);
     });
   });
 
@@ -448,7 +611,7 @@ void main() {
       final router = GoRouter(initialLocation: '/home', routes: [GoRoute(path: '/home', builder: (_, _) => const HomeScreen())]);
       addTearDown(router.dispose);
       await t.pumpWidget(testRouterApp(router, overrides: [
-        backendProvider.overrideWithValue(_ZoneBackend([zone])),
+        backendProvider.overrideWithValue(_ZoneBackend([zone], depots: [depotFixture(distanceM: 450)])),
         pushServiceProvider.overrideWithValue(NoopPushService()),
         locationServiceProvider.overrideWithValue(_GrantedLocation(const LatLng(-23.5661, -46.6845))),
         sessionProvider.overrideWith(() => FakeSession(session())),
@@ -459,5 +622,89 @@ void main() {
       expect(find.text('Perto do Galpão Volti · Pinheiros'), findsOneWidget);
       expect(find.textContaining('Fradique'), findsNothing);
     });
+
+    testWidgets('I2. sem localizacao: "Galpão Volti · bairro", sem dizer que esta perto', (t) async {
+      screen(t, size: const Size(412, 915));
+      final router = GoRouter(initialLocation: '/home', routes: [GoRoute(path: '/home', builder: (_, _) => const HomeScreen())]);
+      addTearDown(router.dispose);
+      await t.pumpWidget(testRouterApp(router, overrides: [
+        backendProvider.overrideWithValue(GalpaoBackend(depots: [depotFixture(distanceM: 450)])),
+        pushServiceProvider.overrideWithValue(NoopPushService()),
+        locationServiceProvider.overrideWithValue(FakeLocation()),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+        clockProvider.overrideWithValue(() => thu10),
+      ]));
+      await settle(t);
+      expect(find.text('Galpão Volti · Pinheiros'), findsOneWidget);
+      expect(find.textContaining('Perto'), findsNothing);
+    });
+
+    testWidgets('I2. galpao escolhido nao e o mais perto: sem "Perto"', (t) async {
+      screen(t, size: const Size(412, 915));
+      final router = GoRouter(initialLocation: '/home', routes: [GoRoute(path: '/home', builder: (_, _) => const HomeScreen())]);
+      addTearDown(router.dispose);
+      await t.pumpWidget(testRouterApp(router, overrides: [
+        backendProvider.overrideWithValue(GalpaoBackend(depots: [
+          depotFixture(id: 'dep1', distanceM: 400),
+          depotFixture(id: 'far', name: 'Galpão Volti — Mooca', district: 'Mooca', distanceM: 9000),
+        ])),
+        pushServiceProvider.overrideWithValue(NoopPushService()),
+        locationServiceProvider.overrideWithValue(_GrantedLocation(const LatLng(-23.566, -46.684))),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+        clockProvider.overrideWithValue(() => thu10),
+      ]));
+      await settle(t);
+      expect(find.text('Perto do Galpão Volti · Pinheiros'), findsOneWidget);
+      final mooca = find.byKey(const Key('depot-option-far'));
+      await t.ensureVisible(mooca);
+      await t.pump();
+      await t.tap(mooca);
+      await settle(t);
+      expect(find.text('Galpão Volti · Mooca'), findsOneWidget);
+      expect(find.textContaining('Perto do'), findsNothing);
+    });
+
+    testWidgets('Localizar centra no cliente e nao volta para o galpao', (t) async {
+      screen(t, size: const Size(412, 915));
+      const user = LatLng(-23.5560, -46.6700);
+      final router = GoRouter(initialLocation: '/home', routes: [
+        GoRoute(
+          path: '/home',
+          builder: (_, _) => ProviderScope(overrides: [mapEnabledProvider.overrideWithValue(true)], child: const HomeScreen()),
+        ),
+      ]);
+      addTearDown(router.dispose);
+      await t.pumpWidget(testRouterApp(router, overrides: [
+        backendProvider.overrideWithValue(GalpaoBackend(depots: [depotFixture(distanceM: 450)])),
+        pushServiceProvider.overrideWithValue(NoopPushService()),
+        locationServiceProvider.overrideWithValue(_GrantedLocation(user)),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+        clockProvider.overrideWithValue(() => thu10),
+      ]));
+      await settle(t);
+      await t.tap(find.bySemanticsLabel(RegExp('Localizar|Minha localização|Centralizar')).first);
+      await settle(t);
+      await settle(t);
+      final camera = MapCamera.of(t.element(find.byKey(const ValueKey('user-dot'))));
+      final shifted = camera.latLngToScreenOffset(user);
+      // O cliente fica no meio da largura (a camera esta nele, nao no galpao).
+      expect(shifted.dx, closeTo(412 / 2, 2));
+    });
+
+    for (final withBike in [true, false]) {
+      testWidgets('teto do aviso de KYC na lista: ${withBike ? '17% com moto escolhida' : '22% sem moto'}', (t) async {
+        screen(t, size: const Size(412, 915));
+        await pumpApp(
+          t,
+          GalpaoBackend(vehicles: {'dep1': withBike ? [bike('v1', 'VLT-0011', 'Volti Flash')] : <Vehicle>[]}),
+          initial: '/pick',
+          kyc: KycStatus.pending,
+        );
+        final box = t.widget<ConstrainedBox>(
+          find.ancestor(of: find.text('Verificação em análise'), matching: find.byWidgetPredicate((w) => w is ConstrainedBox && w.constraints.maxHeight < 900)).first,
+        );
+        expect(box.constraints.maxHeight, closeTo(915 * (withBike ? .17 : .22), .01));
+      });
+    }
   });
 }
