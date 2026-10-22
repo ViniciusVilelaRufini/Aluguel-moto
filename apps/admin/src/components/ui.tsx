@@ -1,6 +1,7 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { FOCUSABLE, cycleFocusIndex, dialogStack } from '@/lib/focus';
 import { keepPreviousData, useQuery, type QueryKey } from '@tanstack/react-query';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
@@ -162,19 +163,47 @@ export function MiniInput({ value, onChange, width = 110, align = 'right', label
 
 /* ---------- Dialog ---------- */
 
+/**
+ * Diálogo modal: entra com fade do scrim e "pop" curto do cartão, prende o foco (Tab/Shift+Tab),
+ * foca o primeiro campo ao abrir, devolve o foco a quem abriu ao fechar e só o do topo responde ao Esc.
+ */
 export function Modal({ open, title, children, actions, onClose, width = 440, testId }: { open: boolean; title: string; children: ReactNode; actions?: ReactNode; onClose: () => void; width?: number; testId?: string }) {
+  const box = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const titleId = useId();
   useEffect(() => {
     if (!open) return;
-    const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
+    const id = Symbol('dialog');
+    dialogStack.push(id);
+    const opener = document.activeElement as HTMLElement | null;
+    const el = box.current;
+    const first = el?.querySelector<HTMLElement>('input:not([disabled]),textarea:not([disabled]),select:not([disabled])') ?? el;
+    first?.focus({ preventScroll: true });
+    const h = (e: KeyboardEvent) => {
+      if (!dialogStack.isTop(id) || !el) return;
+      if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); return; }
+      if (e.key !== 'Tab') return;
+      const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((x) => x.offsetParent !== null);
+      const idx = items.indexOf(document.activeElement as HTMLElement);
+      const atEdge = idx < 0 || (e.shiftKey ? idx === 0 : idx === items.length - 1);
+      const next = cycleFocusIndex(items.length, idx, e.shiftKey);
+      if (atEdge && next >= 0) { e.preventDefault(); items[next].focus(); }
+    };
     window.addEventListener('keydown', h);
-    return () => window.removeEventListener('keydown', h);
-  }, [open, onClose]);
+    return () => {
+      window.removeEventListener('keydown', h);
+      dialogStack.remove(id);
+      if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
+    };
+  }, [open]);
   if (!open) return null;
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'var(--surface-scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <div role="dialog" aria-modal="true" aria-label={title} data-testid={testId} onClick={(e) => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflow: 'auto', background: 'var(--surface-card)', borderRadius: 'var(--radius-xl)', padding: 24, boxShadow: 'var(--shadow-2)', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <div style={{ font: 'var(--type-heading)', fontWeight: 700, fontSize: 18 }}>{title}</div>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'var(--surface-scrim)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24, animation: 'vt-scrim-in var(--dur-base) var(--ease-out) backwards' }}>
+      <div ref={box} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby={titleId} data-testid={testId} onClick={(e) => e.stopPropagation()}
+        style={{ width: '100%', maxWidth: width, maxHeight: '90vh', overflow: 'auto', background: 'var(--surface-card)', borderRadius: 'var(--radius-xl)', padding: 24, boxShadow: 'var(--shadow-2)', display: 'flex', flexDirection: 'column', gap: 14, outline: 'none',
+          animation: 'vt-dialog-in var(--dur-slow) var(--ease-screen) backwards' }}>
+        <h2 id={titleId} style={{ font: 'var(--type-heading)', letterSpacing: 'var(--ls-tight)', margin: 0 }}>{title}</h2>
         {children}
         {actions && <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4, flexWrap: 'wrap' }}>{actions}</div>}
       </div>
@@ -207,7 +236,7 @@ export function ReasonDialog({
             if (invalid) return;
             setBusy(true); setError(null);
             try { await onConfirm(reason.trim()); onClose(); } catch (e) { setError(e); } finally { setBusy(false); }
-          }}>{confirmLabel}</Button>
+          }}>{busy ? 'Enviando...' : confirmLabel}</Button>
       </>}>
       {description && <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{description}</div>}
       {children}
