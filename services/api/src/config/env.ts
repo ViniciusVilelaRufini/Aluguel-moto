@@ -89,11 +89,15 @@ export const APP_CONFIG = Symbol('APP_CONFIG');
 
 /**
  * Recusa subir com configuração perigosa em produção (chamada no `loadConfig`, então vale para a API e para os módulos que
- * leem o ambiente). QA-15: `AUTH_MODE=dev` (emissor local `POST /dev/token`) nunca em produção.
+ * leem o ambiente). QA-15: `AUTH_MODE=dev` (emissor local `POST /dev/token`) nunca em produção. QA-19: o segredo do webhook
+ * do Mercado Pago com o placeholder da infra (`CHANGE_ME`) deixaria qualquer um assinar webhooks.
  */
 export function assertSafeConfig(cfg: Pick<AppConfig, 'nodeEnv' | 'authMode' | 'mercadoPagoWebhookSecret'>): void {
   if (cfg.nodeEnv !== 'production') return;
   if (cfg.authMode !== 'cognito') {
     throw new Error(`AUTH_MODE=${cfg.authMode} não é permitido com NODE_ENV=production (use AUTH_MODE=cognito).`);
+  }
+  if (cfg.mercadoPagoWebhookSecret && cfg.mercadoPagoWebhookSecret.trim().toUpperCase() === 'CHANGE_ME') {
+    throw new Error('MERCADOPAGO_WEBHOOK_SECRET ainda com o placeholder CHANGE_ME: defina o segredo real no Secrets Manager.');
   }
 }
