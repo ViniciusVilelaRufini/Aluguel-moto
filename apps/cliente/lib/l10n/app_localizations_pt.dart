@@ -861,6 +861,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get birthInvalid => 'Data inválida. Use dd/mm/aaaa.';
 
   @override
+  String get cpfInvalid => 'CPF inválido. Confira os 11 dígitos.';
+
+  @override
+  String get nameRequired => 'Informe seu nome completo.';
+
+  @override
+  String get kycResend => 'Enviar de novo';
+
+  @override
   String get birthUnderage => 'É preciso ter 18 anos ou mais.';
 
   @override

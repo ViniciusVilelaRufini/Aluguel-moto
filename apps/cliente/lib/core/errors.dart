@@ -44,7 +44,7 @@ class AppFailure implements Exception {
 
 AppFailure toFailure(Object error) {
   if (error is AppFailure) return error;
-  _logError(error);
+  debugLogError(error);
   if (error is DioException) {
     final res = error.response;
     if (res == null) return AppFailure(kind: FailureKind.network);
@@ -72,14 +72,21 @@ AppFailure toFailure(Object error) {
 
 String failureText(AppLocalizations l, Object error) => toFailure(error).message(l);
 
-/// Em debug, registra o erro original (DioException etc.) que o AppFailure esconde.
-void _logError(Object error) {
-  if (!kDebugMode) return;
+/// Linha de log SEM PII: so tipo, status HTTP, `code`/`title` do problem+json e
+/// metodo + rota sem query. Nunca corpo, mensagem ou valores de entrada.
+String describeErrorForLog(Object error) {
   if (error is DioException) {
     final req = error.requestOptions;
-    debugPrint('[toFailure] DioException ${error.type} ${req.method} ${req.uri.origin}${req.uri.path} '
-        'status=${error.response?.statusCode} body=${error.response?.data} cause=${error.error}');
-  } else {
-    debugPrint('[toFailure] ${error.runtimeType}: $error');
+    final data = error.response?.data;
+    final code = data is Map ? data['code'] : null;
+    final title = data is Map ? data['title'] : null;
+    return '[toFailure] DioException ${error.type.name} ${req.method} ${req.uri.path} '
+        'status=${error.response?.statusCode} code=$code title=$title';
   }
+  return '[toFailure] ${error.runtimeType}';
+}
+
+/// Em debug, registra o erro original que o AppFailure esconde (sem PII).
+void debugLogError(Object error) {
+  if (kDebugMode) debugPrint(describeErrorForLog(error));
 }

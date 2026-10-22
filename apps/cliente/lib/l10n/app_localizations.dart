@@ -1624,6 +1624,24 @@ abstract class AppLocalizations {
   /// **'Data inválida. Use dd/mm/aaaa.'**
   String get birthInvalid;
 
+  /// No description provided for @cpfInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'CPF inválido. Confira os 11 dígitos.'**
+  String get cpfInvalid;
+
+  /// No description provided for @nameRequired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Informe seu nome completo.'**
+  String get nameRequired;
+
+  /// No description provided for @kycResend.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar de novo'**
+  String get kycResend;
+
   /// No description provided for @birthUnderage.
   ///
   /// In pt, this message translates to:
