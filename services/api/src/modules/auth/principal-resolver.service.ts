@@ -4,33 +4,33 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { VerifiedToken } from '../../ports/auth-verifier.port';
 import type { Principal } from './principal';
 import { ProblemException } from '../../common/problem';
+import { deletedSubMarker } from './deleted-identity';
 
 /** Login do staff gravado no máximo a cada 5 min (o staff é resolvido a cada requisição). */
 const STAFF_LOGIN_TOUCH_MS = 5 * 60_000;
 
 /**
- * Mapeia o token para o cadastro local (cria o cliente no primeiro acesso). Clientes: cache curto em memória.
- * Staff (QA-04): sem cache e grupos efetivos = cadastro ∩ token — o painel é a fonte; tirar um grupo no `PATCH /staff/{id}`
- * vale na requisição seguinte, em qualquer instância, mesmo com o token antigo ainda trazendo o grupo.
+ * Mapeia o token para o cadastro local (cria o cliente no primeiro acesso). Sem cache: uma leitura indexada por requisição,
+ * para que exclusão de conta (QA-07) e mudança de grupos do staff (QA-04) valham na requisição seguinte em qualquer instância.
+ * Staff: grupos efetivos = cadastro ∩ token — o painel é a fonte, mesmo com o token antigo ainda trazendo o grupo.
+ * Cliente excluído: o token (sub) é recusado pelo hash guardado na exclusão, em vez de recriar uma conta.
  */
 @Injectable()
 export class PrincipalResolver {
-  private readonly cache = new Map<string, { principal: Principal; at: number }>();
-  private static readonly TTL_MS = 30_000;
-
   constructor(private readonly prisma: PrismaService) {}
 
   async resolve(token: VerifiedToken): Promise<Principal> {
     if (token.pool === 'staff') return this.resolveStaff(token);
-    const cacheKey = `${token.pool}:${token.sub}`;
-    const hit = this.cache.get(cacheKey);
-    if (hit && Date.now() - hit.at < PrincipalResolver.TTL_MS) return hit.principal;
-
-    const customer = await this.upsertCustomer(token);
+    const select = { id: true, status: true } as const;
+    let customer: { id: string; status: string } | null = await this.prisma.customer.findUnique({ where: { cognitoSub: token.sub }, select });
+    if (!customer) {
+      if (await this.prisma.customer.findUnique({ where: { cognitoSub: deletedSubMarker(token.sub) }, select })) {
+        throw new ProblemException(401, 'unauthorized', 'Conta excluída.');
+      }
+      customer = await this.upsertCustomer(token);
+    }
     if (customer.status === 'deleted') throw new ProblemException(401, 'unauthorized', 'Conta excluída.');
-    const principal: Principal = { pool: 'customer', sub: token.sub, email: token.email, groups: [], userId: customer.id, customerId: customer.id };
-    this.cache.set(cacheKey, { principal, at: Date.now() });
-    return principal;
+    return { pool: 'customer', sub: token.sub, email: token.email, groups: [], userId: customer.id, customerId: customer.id };
   }
 
   /**
@@ -83,9 +83,5 @@ export class PrincipalResolver {
       if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
       return this.prisma.customer.findUniqueOrThrow({ where, select });
     }
-  }
-
-  invalidate(): void {
-    this.cache.clear();
   }
 }

@@ -6,7 +6,8 @@ import { conflict, notFound } from '../../common/problem';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
-import { PrincipalResolver } from '../auth/principal-resolver.service';
+import { CUSTOMER_IDENTITY, type CustomerIdentityDirectory } from '../../ports/customer-identity.port';
+import { deletedSubMarker } from '../auth/deleted-identity';
 import { toConsents, toCustomer } from '../customers/customers.mapper';
 import { toPayment, toWalletEntry } from '../payments/payments.mapper';
 import { toRental } from '../rentals/rentals.mapper';
@@ -28,7 +29,7 @@ export class LgpdService {
     private readonly prisma: PrismaService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
-    @Optional() private readonly resolver?: PrincipalResolver,
+    @Optional() @Inject(CUSTOMER_IDENTITY) private readonly identity?: CustomerIdentityDirectory,
   ) {}
 
   private async customer(customerId: string) {
@@ -131,7 +132,8 @@ export class LgpdService {
           birthDate: null,
           emergencyContactName: null,
           emergencyContactPhone: null,
-          cognitoSub: `deleted:${customerId}`,
+          // QA-07: só o hash do sub, para recusar o token antigo sem guardar o identificador.
+          cognitoSub: customer.cognitoSub.startsWith('deleted:') ? customer.cognitoSub : deletedSubMarker(customer.cognitoSub),
           kycDocumentFrontKey: null,
           kycDocumentBackKey: null,
           kycSelfieKey: null,
@@ -144,9 +146,15 @@ export class LgpdService {
       });
     });
 
-    // QA-07: sem isso o token do titular continuava valendo por até 30 s (cache do resolver) sobre o cadastro anonimizado,
-    // inclusive para gravar nome/telefone de volta (PATCH /me).
-    this.resolver?.invalidate();
+    // QA-07: a identidade sai do pool de clientes e as sessões são encerradas. Falha só é registrada: o token antigo já é
+    // recusado pelo hash do sub (PrincipalResolver, sem cache) e a exclusão no pool pode ser refeita.
+    if (!customer.cognitoSub.startsWith('deleted:')) {
+      try {
+        await this.identity?.deleteIdentity(customer.cognitoSub);
+      } catch (err) {
+        this.logger.error({ msg: 'customer_identity_delete_failed', customerId, error: (err as Error).message });
+      }
+    }
 
     for (const key of kycKeys) {
       try {

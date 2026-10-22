@@ -33,4 +33,17 @@ describe('Correções do QA (e2e)', () => {
     await http().get(`/vehicles/${vehicle.id}/commands`).set('Authorization', `Bearer ${token}`).expect(403);
     expect((await prisma.staffUser.findUniqueOrThrow({ where: { id: created.body.id } })).groups).toEqual(['campo']);
   });
+
+  it('QA-07: depois da exclusão LGPD o mesmo token é recusado e não recria a conta', async () => {
+    const sub = `qa07-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const token = await devToken(app, { sub, email: `${sub}@example.com`, groups: [], pool: 'customer' });
+    const me = await http().get('/me').set('Authorization', `Bearer ${token}`).expect(200);
+    await http().delete('/lgpd/account').set('Authorization', `Bearer ${token}`).expect(202);
+    await http().get('/me').set('Authorization', `Bearer ${token}`).expect(401);
+    await http().patch('/me').set('Authorization', `Bearer ${token}`).send({ name: 'Regravado' }).expect(401);
+    expect(await prisma.customer.count({ where: { cognitoSub: sub } })).toBe(0);
+    const row = await prisma.customer.findUniqueOrThrow({ where: { id: me.body.id } });
+    expect(row.cognitoSub).toMatch(/^deleted:[0-9a-f]{64}$/);
+    expect(row.name).toBe('Cliente removido');
+  });
 });

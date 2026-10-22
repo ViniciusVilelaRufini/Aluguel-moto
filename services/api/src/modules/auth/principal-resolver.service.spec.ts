@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import { deletedSubMarker } from './deleted-identity';
 import { PrincipalResolver } from './principal-resolver.service';
 
 /** QA-08: corrida do primeiro acesso (requisições paralelas do mesmo cliente novo). */
@@ -9,6 +10,7 @@ describe('PrincipalResolver (primeiro acesso)', () => {
   it('violação de unicidade no upsert → relê o cliente criado pela requisição concorrente', async () => {
     const prisma = {
       customer: {
+        findUnique: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockRejectedValue(p2002()),
         findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'c1', status: 'active' }),
       },
@@ -19,13 +21,45 @@ describe('PrincipalResolver (primeiro acesso)', () => {
   });
 
   it('outros erros continuam subindo', async () => {
-    const prisma = { customer: { upsert: jest.fn().mockRejectedValue(new Error('db fora')), findUniqueOrThrow: jest.fn() } };
+    const prisma = { customer: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn().mockRejectedValue(new Error('db fora')), findUniqueOrThrow: jest.fn() } };
     await expect(new PrincipalResolver(prisma as any).resolve(token)).rejects.toThrow('db fora');
   });
 
   it('cliente excluído continua recusado', async () => {
-    const prisma = { customer: { upsert: jest.fn().mockResolvedValue({ id: 'c1', status: 'deleted' }) } };
+    const prisma = { customer: { upsert: jest.fn().mockResolvedValue({ id: 'c1', status: 'deleted' }), findUnique: jest.fn().mockResolvedValue({ id: 'c1', status: 'deleted' }) } };
     await expect(new PrincipalResolver(prisma as any).resolve(token)).rejects.toMatchObject({ status: 401 });
+  });
+});
+
+/** QA-07: depois da exclusão o mesmo token (sub) não recria a conta, em nenhuma instância. */
+describe('PrincipalResolver (conta excluída, QA-07)', () => {
+  const token = { sub: 'sub-excluido', email: 'x@volti.dev', groups: [], pool: 'customer' as const };
+
+  it('sub de cliente excluído (hash guardado na exclusão) → 401 e nenhuma conta nova', async () => {
+    const prisma = {
+      customer: {
+        findUnique: jest.fn().mockImplementation(async ({ where }: any) => (where.cognitoSub === deletedSubMarker('sub-excluido') ? { id: 'c-old', status: 'deleted' } : null)),
+        upsert: jest.fn(),
+        create: jest.fn(),
+      },
+    };
+    await expect(new PrincipalResolver(prisma as any).resolve(token)).rejects.toMatchObject({ status: 401 });
+    expect(prisma.customer.upsert).not.toHaveBeenCalled();
+    expect(prisma.customer.create).not.toHaveBeenCalled();
+  });
+
+  it('sem cache: exclusão feita por outra instância vale já na requisição seguinte', async () => {
+    const rows = [{ id: 'c1', status: 'active' }, null];
+    const prisma = {
+      customer: {
+        findUnique: jest.fn().mockImplementation(async ({ where }: any) => (where.cognitoSub === 'sub-excluido' ? rows.shift() ?? null : { id: 'c1', status: 'deleted' })),
+        upsert: jest.fn(),
+        create: jest.fn(),
+      },
+    };
+    const r = new PrincipalResolver(prisma as any);
+    await expect(r.resolve(token)).resolves.toMatchObject({ customerId: 'c1' });
+    await expect(r.resolve(token)).rejects.toMatchObject({ status: 401 });
   });
 });
 

@@ -188,7 +188,7 @@ test('LGPD: consentimento obrigatório para alugar, exportação só do titular,
   assert.equal((await db.customer.findUniqueOrThrow({ where: { id: me.body.customer.id } })).name, 'Cliente removido');
 });
 
-test('QA-07 LGPD: depois da exclusão a mesma identidade não volta a usar a plataforma', { todo: 'QA-07 (usuário do Cognito não é excluído; o token cria uma conta nova)' }, async () => {
+test('QA-07 LGPD: depois da exclusão a mesma identidade não volta a usar a plataforma', async () => {
   const t = await customer('lgpd2');
   await http('GET', '/me', { token: t });
   await http('DELETE', '/lgpd/account', { token: t });
