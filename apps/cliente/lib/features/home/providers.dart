@@ -5,6 +5,7 @@ import 'package:volti_api/volti_api.dart';
 import '../../core/backend.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
+import '../pick/pick_logic.dart';
 
 /// Centro de Sao Paulo quando a localizacao nao esta disponivel.
 const fallbackCenter = LatLng(-23.5614, -46.6559);
@@ -17,19 +18,42 @@ final userLocationProvider = FutureProvider<LatLng?>((ref) async {
   return ref.watch(locationServiceProvider).currentPosition();
 });
 
-final minBatteryFilterProvider = NotifierProvider<MinBatteryFilter, int>(MinBatteryFilter.new);
+/// Filtro do mapa (chips "Todas", "Autonomia 10+ km", "Pontos de retirada").
+final homeFilterProvider = NotifierProvider<HomeFilterNotifier, HomeFilter>(HomeFilterNotifier.new);
 
-class MinBatteryFilter extends Notifier<int> {
+class HomeFilterNotifier extends Notifier<HomeFilter> {
   @override
-  int build() => 0;
-  void set(int v) => state = v;
+  HomeFilter build() => HomeFilter.all;
+  void set(HomeFilter v) => state = v;
 }
 
+/// Motos livres perto do cliente (ou do centro padrao), sem filtro: o mapa aplica
+/// [homeFilterProvider] e a lista "Escolha sua moto" filtra por modelo.
 final nearbyProvider = FutureProvider.autoDispose<List<VehicleSummary>>((ref) async {
   final loc = await ref.watch(userLocationProvider.future) ?? fallbackCenter;
-  final all = await ref.watch(backendProvider).nearby(loc.latitude, loc.longitude);
-  final min = ref.watch(minBatteryFilterProvider);
-  return all.where((v) => v.batteryPct >= min).toList();
+  return ref.watch(backendProvider).nearby(loc.latitude, loc.longitude);
+});
+
+/// Preco por minuto do plano avulso (`PricingPlan` `minute`), em centavos. `null` se o
+/// plano nao estiver ativo ou a consulta falhar (a tela so esconde o preco).
+final minutePriceProvider = FutureProvider.autoDispose<int?>((ref) async {
+  try {
+    final plans = await ref.watch(backendProvider).plans();
+    for (final p in plans) {
+      if (p.code == PlanCode.minute && p.active) return p.unitPriceCents;
+    }
+  } catch (_) {}
+  return null;
+});
+
+/// Ha mensagem do suporte nao lida (bolinha do sino). Falha = sem bolinha.
+final supportUnreadProvider = FutureProvider.autoDispose<bool>((ref) async {
+  try {
+    final list = await ref.watch(backendProvider).conversations();
+    return list.any((c) => (c.unreadCount ?? 0) > 0);
+  } catch (_) {
+    return false;
+  }
 });
 
 final zonesProvider = FutureProvider.autoDispose<List<GeoZone>>((ref) => ref.watch(backendProvider).zones());

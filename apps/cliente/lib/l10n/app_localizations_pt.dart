@@ -929,4 +929,138 @@ class AppLocalizationsPt extends AppLocalizations {
   String cancelRenewalText(String date) {
     return 'Seu plano continua valendo até $date. Depois disso, não renova.';
   }
+
+  @override
+  String get pickTitle => 'Escolha sua moto';
+
+  @override
+  String pickAvailable(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count disponíveis perto de você',
+      one: '1 disponível perto de você',
+      zero: 'Nenhuma disponível perto de você',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get pickSeeMap => 'Ver no mapa';
+
+  @override
+  String get pickAllModels => 'Todas';
+
+  @override
+  String get pickModelFilters => 'Filtrar por modelo';
+
+  @override
+  String get categoryUrban => 'Urbana';
+
+  @override
+  String get categoryDoubleSeat => 'Assento duplo';
+
+  @override
+  String get categoryCargo => 'Com baú · entregas';
+
+  @override
+  String get firstRideFreeBadge => '1ª grátis';
+
+  @override
+  String pickHoldNote(int minutes) {
+    return 'A moto fica reservada por $minutes min, sem custo.';
+  }
+
+  @override
+  String reserveModelCode(String model, String code) {
+    return 'Reservar $model · $code';
+  }
+
+  @override
+  String get selectABike => 'Selecione uma moto';
+
+  @override
+  String walkSemantics(String distance, int minutes) {
+    return '$distance a pé, $minutes minutos';
+  }
+
+  @override
+  String rangeSemantics(int km) {
+    return 'autonomia de cerca de $km quilômetros';
+  }
+
+  @override
+  String priceSemantics(String price) {
+    return '$price por minuto';
+  }
+
+  @override
+  String get selectedSemantics => 'selecionada';
+
+  @override
+  String get blockKycPending =>
+      'Você pode reservar depois da aprovação dos seus documentos.';
+
+  @override
+  String get blockKycRejected =>
+      'Sua verificação foi recusada. Envie novos documentos em Conta.';
+
+  @override
+  String get blockDelinquent =>
+      'Há um pagamento pendente. Regularize para reservar.';
+
+  @override
+  String get blockActiveReservation => 'Você já tem uma reserva ativa.';
+
+  @override
+  String get blockActiveRental => 'Você está com uma corrida em andamento.';
+
+  @override
+  String get pickEmptyModel => 'Nenhuma moto deste modelo por perto';
+
+  @override
+  String get pickEmptyModelText => 'Escolha outro modelo ou veja todas.';
+
+  @override
+  String get chooseBike => 'Escolher moto';
+
+  @override
+  String get filterAll => 'Todas';
+
+  @override
+  String get filterRange10 => 'Autonomia 10+ km';
+
+  @override
+  String get filterPickupPoints => 'Pontos de retirada';
+
+  @override
+  String get promoPassTitle => 'Desbloqueie seu passe';
+
+  @override
+  String get promoPassText => 'Ande mais, pague menos';
+
+  @override
+  String get promoFirstRideTitle => '1ª corrida grátis';
+
+  @override
+  String get promoFirstRideText => 'Até 15 minutos';
+
+  @override
+  String yourLocationAt(String place) {
+    return 'Sua localização · $place';
+  }
+
+  @override
+  String get nearYou => 'Perto de você';
+
+  @override
+  String get notifications => 'Notificações';
+
+  @override
+  String get notificationsUnread => 'Notificações, há mensagens novas';
+
+  @override
+  String batterySemantics(int pct) {
+    return 'bateria $pct por cento';
+  }
 }

@@ -16,6 +16,7 @@ import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../ride/ride_screen.dart' show mapEnabledProvider;
+import '../pick/pick_logic.dart';
 import 'providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -102,9 +103,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final zones = ref.watch(zonesProvider).value ?? const <GeoZone>[];
     final reservation = ref.watch(currentReservationProvider).value;
     final rental = ref.watch(currentRentalProvider).value;
-    final minBattery = ref.watch(minBatteryFilterProvider);
+    final filter = ref.watch(homeFilterProvider);
     final session = ref.watch(sessionProvider).value;
-    final vehicles = nearby.value ?? const <VehicleSummary>[];
+    final unread = ref.watch(supportUnreadProvider).value ?? false;
+    final promoFirstRide = firstRideFree(session?.customer, promoActive: kFirstRidePromo);
+    final vehicles = applyHomeFilter(nearby.value ?? const <VehicleSummary>[], filter, zones);
+    final place = nearestPlaceName(loc, zones);
     VehicleSummary? selected;
     for (final v in vehicles) {
       if (v.id == _selectedId) selected = v;
@@ -155,6 +159,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         button: true,
                         label: l.vehicleSemantics(v.model, v.batteryPct),
                         child: VehicleMarker(v.status, v.batteryPct,
+                            customerStyle: true,
                             animateIn: !_dropped.contains(v.id),
                             delay: firstLoad ? Duration(milliseconds: 260 + (i < 12 ? i : 12) * 70) : Duration.zero,
                             selected: v.id == _selectedId,
@@ -170,75 +175,123 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
+              padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.screenGutter),
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  VoltiEnter(
-                    key: const Key('home-header'),
-                    duration: VoltiMotion.staggerItem,
-                    delay: const Duration(milliseconds: 80),
-                    fromOffset: const Offset(0, -12),
-                    curve: VoltiMotion.easeOut,
-                    child: Row(children: [
-                    VoltiIconButton(
-                      icon: LucideIcons.user,
-                      label: l.account,
-                      onPressed: () => context.push('/account'),
-                    ),
-                    const SizedBox(width: VoltiSpacing.s10),
-                    Expanded(
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                            color: VoltiColors.glassBg, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
-                        child: Text(
-                          session?.customer?.name == null ? l.nearbyTitle : l.greeting(session!.customer!.name!.split(' ').first),
-                          style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.ink900),
-                          overflow: TextOverflow.ellipsis,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                    child: VoltiEnter(
+                      key: const Key('home-header'),
+                      duration: VoltiMotion.staggerItem,
+                      delay: const Duration(milliseconds: 80),
+                      fromOffset: const Offset(0, -12),
+                      curve: VoltiMotion.easeOut,
+                      child: Row(children: [
+                        _Avatar(
+                          initials: initialsOf(session?.customer?.name),
+                          label: l.account,
+                          onTap: () => context.push('/account'),
                         ),
-                      ),
+                        const SizedBox(width: VoltiSpacing.s12),
+                        Expanded(child: Center(child: _LocationPill(label: l.yourLocation, place: place ?? l.nearYou))),
+                        const SizedBox(width: VoltiSpacing.s12),
+                        VoltiIconButton(
+                          key: const Key('home-bell'),
+                          icon: LucideIcons.bell,
+                          dot: unread,
+                          label: unread ? l.notificationsUnread : l.notifications,
+                          onPressed: () => context.push('/account/support'),
+                        ),
+                      ]),
                     ),
-                  ]),
                   ),
-                  const SizedBox(height: VoltiSpacing.s10),
-                  if (rental != null)
-                    _ActiveBanner(
-                      icon: LucideIcons.bike,
-                      text: l.rentalInProgress,
-                      action: l.backToRide,
-                      onTap: () => context.push('/ride'),
-                    )
-                  else if (reservation != null)
-                    _ActiveBanner(
-                      icon: LucideIcons.clock,
-                      text: l.reservationActive,
-                      action: l.seeReservation,
-                      onTap: () => context.push('/reserved'),
-                    ),
-                  if (session != null && session.kyc != KycStatus.approved)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: VoltiPressable(
-                        semanticLabel: '${l.kycPendingTitle}. ${l.kycHomeNotice}',
-                        onTap: () => context.push('/account/verification'),
-                        child: NoticeBanner(
-                          icon: LucideIcons.shieldCheck,
-                          title: l.kycPendingTitle,
-                          message: l.kycHomeNotice,
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                      const SizedBox(height: VoltiSpacing.s10),
+                      if (rental != null)
+                        _ActiveBanner(
+                          icon: LucideIcons.bike,
+                          text: l.rentalInProgress,
+                          action: l.backToRide,
+                          onTap: () => context.push('/ride'),
+                        )
+                      else if (reservation != null)
+                        _ActiveBanner(
+                          icon: LucideIcons.clock,
+                          text: l.reservationActive,
+                          action: l.seeReservation,
+                          onTap: () => context.push('/reserved'),
                         ),
-                      ),
+                      if (session != null && session.kyc != KycStatus.approved)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: VoltiPressable(
+                            semanticLabel: '${l.kycPendingTitle}. ${l.kycHomeNotice}',
+                            onTap: () => context.push('/account/verification'),
+                            child: NoticeBanner(
+                              icon: LucideIcons.shieldCheck,
+                              title: l.kycPendingTitle,
+                              message: l.kycHomeNotice,
+                            ),
+                          ),
+                        ),
+                    ]),
+                  ),
+                  // Promocoes (PassCard) e filtros, em faixas que rolam na horizontal.
+                  SingleChildScrollView(
+                    key: const Key('home-promos'),
+                    scrollDirection: Axis.horizontal,
+                    clipBehavior: Clip.none,
+                    padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
+                    child: Row(
+                      children: VoltiStagger.wrap([
+                        PassCard(
+                          title: l.promoPassTitle,
+                          subtitle: l.promoPassText,
+                          icon: LucideIcons.ticket,
+                          tone: PassCardTone.sun,
+                          onTap: () => context.push('/account/subscriptions'),
+                        ),
+                        if (promoFirstRide) ...[
+                          const SizedBox(width: VoltiSpacing.s10),
+                          PassCard(
+                            title: l.promoFirstRideTitle,
+                            subtitle: l.promoFirstRideText,
+                            icon: LucideIcons.gift,
+                            tone: PassCardTone.coral,
+                          ),
+                        ],
+                      ]),
                     ),
-                  const SizedBox(height: VoltiSpacing.s8),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: VoltiFadeUp(
-                      child: VoltiChip(
-                        label: l.filterBattery,
-                        icon: LucideIcons.batteryFull,
-                        selected: minBattery >= 50,
-                        elevated: true,
-                        onTap: () => ref.read(minBatteryFilterProvider.notifier).set(minBattery >= 50 ? 0 : 50),
-                      ),
+                  ),
+                  SingleChildScrollView(
+                    key: const Key('home-filters'),
+                    scrollDirection: Axis.horizontal,
+                    clipBehavior: Clip.none,
+                    padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                    child: Row(
+                      children: VoltiStagger.wrap(startIndex: 2, [
+                        for (final (f, label, icon) in [
+                          (HomeFilter.all, l.filterAll, LucideIcons.bike),
+                          (HomeFilter.range10, l.filterRange10, LucideIcons.zap),
+                          (HomeFilter.pickupPoints, l.filterPickupPoints, LucideIcons.mapPinned),
+                        ])
+                          Padding(
+                            padding: const EdgeInsets.only(right: VoltiSpacing.s8),
+                            child: VoltiChip(
+                              label: label,
+                              icon: icon,
+                              selected: filter == f,
+                              elevated: true,
+                              onTap: () {
+                                if (filter != f) VoltiHaptics.selection();
+                                ref.read(homeFilterProvider.notifier).set(f);
+                              },
+                            ),
+                          ),
+                      ]),
                     ),
                   ),
                 ],
@@ -277,7 +330,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           child: _VehicleSheet(
                         vehicle: selected,
                         busy: _busy,
-                        hasReservation: reservation != null,
+                        // Mesmas regras da lista: KYC, inadimplencia, reserva ou corrida ativa.
+                        reserveBlocked: reserveBlock(
+                              session: session,
+                              selected: true,
+                              hasReservation: reservation != null,
+                              hasRental: rental != null,
+                            ) !=
+                            ReserveBlock.none,
                         onReserve: () => _reserve(selected!),
                         onRing: reservation?.vehicleId == selected.id ? () => _ring(selected!) : null,
                         onClose: () => setState(() => _selectedId = null),
@@ -307,31 +367,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           onAction: () => ref.invalidate(nearbyProvider),
                         ),
                       ),
-                    const SizedBox(height: VoltiSpacing.s12),
+                    if (selected == null) ...[
+                      const SizedBox(height: VoltiSpacing.s12),
+                      VoltiFadeUp(
+                        child: Row(children: [
+                          Flexible(
+                            child: VoltiChip(
+                              key: const Key('home-pick'),
+                              label: l.chooseBike,
+                              icon: LucideIcons.list,
+                              elevated: true,
+                              onTap: () => context.push('/pick'),
+                            ),
+                          ),
+                          const SizedBox(width: VoltiSpacing.s12),
+                          const Spacer(),
+                          VoltiIconButton(
+                            icon: LucideIcons.locateFixed,
+                            iconColor: VoltiColors.brand,
+                            label: l.locateMe,
+                            onPressed: () {
+                              ref.invalidate(userLocationProvider);
+                              _map.move(center, 16);
+                            },
+                          ),
+                        ]),
+                      ),
+                    ],
+                    const SizedBox(height: VoltiSpacing.s16),
                     VoltiFadeUp(
                       delay: VoltiMotion.staggerDelay(1),
-                      child: Row(children: [
-                      Expanded(
-                        child: VoltiButton(
-                          label: l.scanToRide,
-                          icon: LucideIcons.scanLine,
-                          size: VoltiButtonSize.lg,
-                          fullWidth: true,
-                          shine: true,
-                          onPressed: () => context.push('/scan'),
-                        ),
+                      child: VoltiButton(
+                        label: l.scanToRide,
+                        icon: LucideIcons.scanLine,
+                        size: VoltiButtonSize.lg,
+                        fullWidth: true,
+                        shine: true,
+                        onPressed: () => context.push('/scan'),
                       ),
-                      const SizedBox(width: VoltiSpacing.s10),
-                      VoltiIconButton(
-                        icon: LucideIcons.locateFixed,
-                        label: l.locateMe,
-                        size: 56,
-                        onPressed: () {
-                          ref.invalidate(userLocationProvider);
-                          _map.move(center, 16);
-                        },
-                      ),
-                    ]),
                     ),
                   ],
                 ),
@@ -373,13 +446,13 @@ class _VehicleSheet extends StatelessWidget {
   const _VehicleSheet({
     required this.vehicle,
     required this.busy,
-    required this.hasReservation,
+    required this.reserveBlocked,
     required this.onReserve,
     required this.onRing,
     required this.onClose,
   });
   final VehicleSummary vehicle;
-  final bool busy, hasReservation;
+  final bool busy, reserveBlocked;
   final VoidCallback onReserve, onClose;
   final VoidCallback? onRing;
 
@@ -432,7 +505,7 @@ class _VehicleSheet extends StatelessWidget {
                 variant: VoltiButtonVariant.secondary,
                 icon: LucideIcons.clock,
                 fullWidth: true,
-                onPressed: (busy || hasReservation) ? null : onReserve,
+                onPressed: (busy || reserveBlocked) ? null : onReserve,
               ),
             ),
             if (onRing != null) ...[
@@ -441,6 +514,91 @@ class _VehicleSheet extends StatelessWidget {
             ],
           ]),
         ],
+      ),
+    );
+  }
+}
+
+/// Avatar com as iniciais (design `LocationHeader`): abre a conta.
+class _Avatar extends StatelessWidget {
+  const _Avatar({required this.initials, required this.label, required this.onTap});
+  final String? initials;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return VoltiPressable(
+      onTap: onTap,
+      scale: VoltiMotion.iconPressScale,
+      semanticLabel: label,
+      child: Container(
+        key: const Key('home-avatar'),
+        width: 44,
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: VoltiColors.sun300,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: VoltiShadows.shadow1,
+        ),
+        child: initials == null
+            ? const Icon(LucideIcons.user, size: 20, color: VoltiColors.ink900)
+            : Text(
+                initials!,
+                // Cabe no disco de 44 px em qualquer escala de texto (a semantica diz "Conta").
+                textScaler: TextScaler.noScaling,
+                style: const TextStyle(
+                  fontFamily: VoltiTypography.fontSans,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                  height: 1,
+                  color: VoltiColors.ink900,
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// Pilula central "Sua localizacao · lugar".
+class _LocationPill extends StatelessWidget {
+  const _LocationPill({required this.label, required this.place});
+  final String label, place;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      container: true,
+      label: '$label · $place',
+      child: ExcludeSemantics(
+        child: Container(
+          key: const Key('home-location'),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+          decoration: const BoxDecoration(color: VoltiColors.glassBg, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              const Icon(LucideIcons.navigation, size: 12, color: VoltiColors.brand),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
+                ),
+              ),
+            ]),
+            Text(
+              place,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.ink900),
+            ),
+          ]),
+        ),
       ),
     );
   }

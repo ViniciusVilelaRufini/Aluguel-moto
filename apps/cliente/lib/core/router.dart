@@ -9,6 +9,7 @@ import '../features/account/account_screens.dart';
 import '../features/home/home_screen.dart';
 import '../features/onboarding/login_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
+import '../features/pick/pick_screen.dart';
 import '../features/plan/plan_screen.dart';
 import '../features/reservation/reserved_screen.dart';
 import '../features/return_flow/return_screen.dart';
@@ -63,6 +64,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', pageBuilder: (c, state) => voltiPage(c, state, const LoginScreen())),
       GoRoute(path: '/onboarding', pageBuilder: (c, state) => voltiPage(c, state, const OnboardingScreen())),
       GoRoute(path: '/home', pageBuilder: (c, state) => voltiPage(c, state, const HomeScreen())),
+      GoRoute(path: '/pick', pageBuilder: (c, state) => voltiPage(c, state, const PickScreen())),
       GoRoute(path: '/reserved', pageBuilder: (c, state) => voltiPage(c, state, const ReservedScreen())),
       GoRoute(
         path: '/scan',
