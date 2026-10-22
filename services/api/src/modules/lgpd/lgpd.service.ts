@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import type { TrackPoint } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
@@ -6,6 +6,7 @@ import { conflict, notFound } from '../../common/problem';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PrincipalResolver } from '../auth/principal-resolver.service';
 import { toConsents, toCustomer } from '../customers/customers.mapper';
 import { toPayment, toWalletEntry } from '../payments/payments.mapper';
 import { toRental } from '../rentals/rentals.mapper';
@@ -27,6 +28,7 @@ export class LgpdService {
     private readonly prisma: PrismaService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    @Optional() private readonly resolver?: PrincipalResolver,
   ) {}
 
   private async customer(customerId: string) {
@@ -141,6 +143,10 @@ export class LgpdService {
         },
       });
     });
+
+    // QA-07: sem isso o token do titular continuava valendo por até 30 s (cache do resolver) sobre o cadastro anonimizado,
+    // inclusive para gravar nome/telefone de volta (PATCH /me).
+    this.resolver?.invalidate();
 
     for (const key of kycKeys) {
       try {
