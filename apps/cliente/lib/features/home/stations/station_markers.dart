@@ -41,10 +41,11 @@ class StationMarker extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = context.l;
     final a = stationAvailability(station);
-    final (bg, fg) = badgeColors(a);
     final disc = a == StationAvailability.none ? VoltiColors.ink400 : VoltiColors.blue600;
     return Semantics(
       button: onTap != null,
+      // O toque tambem pelo leitor de tela (o GestureDetector fica sob excludeSemantics).
+      onTap: onTap,
       label: l.stationMarkerSemantics(station.name, l.stationAvailability(station.availableBatteries)),
       excludeSemantics: true,
       child: GestureDetector(
@@ -53,10 +54,10 @@ class StationMarker extends StatelessWidget {
         child: SizedBox(
           width: stationMarkerSize,
           height: stationMarkerSize,
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Container(
+          child: StationBadgeOverlay(
+            station: station,
+            child: Center(
+              child: Container(
                 width: 38,
                 height: 38,
                 decoration: BoxDecoration(
@@ -67,36 +68,71 @@ class StationMarker extends StatelessWidget {
                 ),
                 child: const Icon(LucideIcons.batteryCharging, color: VoltiColors.white, size: 17),
               ),
-              Positioned(
-                top: 0,
-                right: 0,
-                child: DecoratedBox(
-                  key: const Key('station-count-badge'),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: VoltiRadii.rPill,
-                    border: Border.all(color: VoltiColors.white, width: 1.5),
-                  ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(minWidth: 20, minHeight: 20, maxHeight: 20),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 5),
-                      child: Center(
-                        widthFactor: 1,
-                        // O selo nao cresce com o texto do sistema (cabe no marcador);
-                        // o numero tambem e lido no rotulo do marcador.
-                        child: MediaQuery.withNoTextScaling(
-                          child: Text(
-                            '${station.availableBatteries}',
-                            style: TextStyle(fontFamily: VoltiTypography.fontSans, fontWeight: VoltiTypography.fwBold, fontSize: 11, height: 1, color: fg),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// [child] com o selo de baterias de [station] no canto superior direito
+/// (marcador da estacao e, no modo estacoes, o do galpao que e ponto de troca).
+/// Sem [station], so o [child].
+class StationBadgeOverlay extends StatelessWidget {
+  const StationBadgeOverlay({super.key, required this.station, required this.child});
+  final SwapStation? station;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = station;
+    if (s == null) return child;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned.fill(child: child),
+        Positioned(top: 0, right: 0, child: StationCountBadge(station: s)),
+      ],
+    );
+  }
+}
+
+/// Selo com `availableBatteries`, colorido por [StationMarker.badgeColors].
+class StationCountBadge extends StatelessWidget {
+  const StationCountBadge({super.key, required this.station});
+  final SwapStation station;
+
+  /// Teto da escala de texto do selo (cresce com o texto do sistema sem sair do marcador).
+  static const maxTextScale = 1.3;
+
+  @override
+  Widget build(BuildContext context) {
+    final (bg, fg) = StationMarker.badgeColors(stationAvailability(station));
+    // O numero tambem e lido no rotulo do marcador.
+    return ExcludeSemantics(
+      child: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: maxTextScale,
+        child: DecoratedBox(
+          key: const Key('station-count-badge'),
+          decoration: BoxDecoration(
+            color: bg,
+            borderRadius: VoltiRadii.rPill,
+            border: Border.all(color: VoltiColors.white, width: 1.5),
+          ),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              child: Center(
+                widthFactor: 1,
+                heightFactor: 1,
+                child: Text(
+                  '${station.availableBatteries}',
+                  style: TextStyle(fontFamily: VoltiTypography.fontSans, fontWeight: VoltiTypography.fwBold, fontSize: 11, height: 1, color: fg),
                 ),
               ),
-            ],
+            ),
           ),
         ),
       ),

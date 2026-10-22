@@ -78,7 +78,13 @@ class StationsSheet extends ConsumerWidget {
                 child: Semantics(header: true, child: Text(l.stationsSheetTitle, style: VoltiTypography.title)),
               ),
               const SizedBox(width: VoltiSpacing.s8),
-              VoltiIconButton(key: const Key('stations-close'), icon: LucideIcons.x, variant: VoltiIconButtonVariant.soft, label: l.stationsCloseSemantics, onPressed: onClose),
+              VoltiIconButton(
+                key: const Key('stations-close'),
+                icon: LucideIcons.x,
+                variant: VoltiIconButtonVariant.soft,
+                label: l.stationsCloseSemantics,
+                onPressed: onClose,
+              ),
             ],
           ),
           const SizedBox(height: VoltiSpacing.s12),
@@ -136,7 +142,11 @@ class StationRow extends StatelessWidget {
                       width: 40,
                       height: 40,
                       decoration: BoxDecoration(color: depot != null ? VoltiColors.brandSoft : VoltiColors.infoSoft, borderRadius: VoltiRadii.rMd),
-                      child: Icon(depot != null ? LucideIcons.warehouse : LucideIcons.batteryCharging, color: depot != null ? VoltiColors.brandAction : VoltiColors.infoInk, size: 20),
+                      child: Icon(
+                        depot != null ? LucideIcons.warehouse : LucideIcons.batteryCharging,
+                        color: depot != null ? VoltiColors.brandAction : VoltiColors.infoInk,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: VoltiSpacing.s12),
                     Expanded(

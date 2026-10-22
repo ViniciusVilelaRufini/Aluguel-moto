@@ -1,3 +1,4 @@
+import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
 
 import '../../../l10n/app_localizations.dart';
@@ -38,3 +39,34 @@ List<SwapPoint> orderSwapPoints(Depot? depot, List<SwapStation> stations) {
 /// "Aberto 24h" ou o horario publicado pela estacao (`openingHours` e texto
 /// livre no contrato, ex.: "Seg a sáb, 7h às 22h").
 String stationHoursLabel(AppLocalizations l, SwapStation s) => s.open24h == true ? l.stationOpen24h : s.openingHours;
+
+/// Distancia ate a qual uma estacao "coincide" com o galpao no mapa.
+const depotStationMatchMeters = 30.0;
+
+/// Separa as estacoes que coincidem com um galpao (a dele, `Depot.swapStationId`,
+/// ou a ate [depotStationMatchMeters]) das demais. No modo estacoes o galpao
+/// mostra o selo de baterias no proprio marcador (continua tocavel) e a
+/// estacao coincidente nao ganha um marcador por cima.
+({List<SwapStation> loose, Map<String, SwapStation> byDepot}) splitDepotStations(List<Depot> depots, List<SwapStation> stations) {
+  const dist = Distance();
+  final byDepot = <String, SwapStation>{};
+  final loose = <SwapStation>[];
+  for (final s in stations) {
+    Depot? owner;
+    for (final d in depots) {
+      if (d.swapStationId == s.id) {
+        owner = d;
+        break;
+      }
+    }
+    owner ??= depots
+        .where((d) => !byDepot.containsKey(d.id) && dist.as(LengthUnit.Meter, LatLng(d.lat, d.lng), LatLng(s.lat, s.lng)) <= depotStationMatchMeters)
+        .firstOrNull;
+    if (owner != null && !byDepot.containsKey(owner.id)) {
+      byDepot[owner.id] = s;
+    } else {
+      loose.add(s);
+    }
+  }
+  return (loose: loose, byDepot: byDepot);
+}

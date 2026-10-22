@@ -15,6 +15,9 @@ import 'package:volti_cliente/core/launcher.dart';
 import 'package:volti_cliente/core/router.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
+import 'package:volti_cliente/features/ride/ride_screen.dart' show mapEnabledProvider;
+import 'package:flutter_map/flutter_map.dart';
+import 'package:volti_cliente/features/home/home_screen.dart';
 import 'package:volti_cliente/features/home/stations/station_logic.dart';
 import 'package:volti_cliente/features/home/stations/station_markers.dart';
 import 'package:volti_cliente/features/home/stations/stations_sheet.dart';
@@ -75,8 +78,19 @@ Future<void> settle(WidgetTester t) async {
   }
 }
 
-Future<void> pumpHome(WidgetTester t, StationsBackend b, {bool reduceMotion = false}) async {
-  final router = GoRouter(initialLocation: '/home', routes: appRoutes());
+Future<void> pumpHome(WidgetTester t, StationsBackend b, {bool reduceMotion = false, bool mapOn = false}) async {
+  // Mapa ligado no escopo filho (como em cliente_login_test), so na home.
+  final router = GoRouter(
+    initialLocation: '/home',
+    routes: mapOn
+        ? [
+            GoRoute(
+              path: '/home',
+              builder: (_, _) => ProviderScope(overrides: [mapEnabledProvider.overrideWithValue(true)], child: const HomeScreen()),
+            ),
+          ]
+        : appRoutes(),
+  );
   addTearDown(router.dispose);
   if (reduceMotion) {
     t.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
@@ -143,6 +157,28 @@ void main() {
       expect(pts.every((p) => p.depot == null), isTrue);
     });
 
+    test('estacao do galpao (swapStationId ou ate 30 m) vira selo do galpao', () {
+      final dep = depotFixture(); // -23.566, -46.684
+      final own = depotFixture(id: 'dep2').rebuild(
+        (d) => d
+          ..swapStationId = 'st-own'
+          ..lat = -23.60
+          ..lng = -46.70,
+      );
+      final r = splitDepotStations(
+        [dep, own],
+        [
+          st('st-own', 'Propria', lat: -23.50, lng: -46.60), // longe, mas e a do galpao
+          st('st-near', 'Colada', lat: -23.56615, lng: -46.68415), // ~22 m do dep1
+          st('st-40', 'Vizinha', lat: -23.56636, lng: -46.684), // ~40 m: fica solta
+          st('st-far', 'Longe'),
+        ],
+      );
+      expect({for (final e in r.byDepot.entries) e.key: e.value.id}, {'dep2': 'st-own', 'dep1': 'st-near'});
+      expect([for (final s in r.loose) s.id], ['st-40', 'st-far']);
+      expect(splitDepotStations([dep], const []).byDepot, isEmpty);
+    });
+
     test('verde >= 3, ambar 1-2, cinza 0', () {
       expect(stationAvailability(st('a', 'A', available: 3)), StationAvailability.many);
       expect(stationAvailability(st('a', 'A', available: 12)), StationAvailability.many);
@@ -153,14 +189,16 @@ void main() {
   });
 
   group('marcadores', () {
-    Future<void> pumpMarker(WidgetTester t, SwapStation s) => t.pumpWidget(
+    Future<void> pumpMarker(WidgetTester t, SwapStation s, {VoidCallback? onTap}) => t.pumpWidget(
       MaterialApp(
         theme: VoltiTheme.light(),
         locale: const Locale('pt', 'BR'),
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: AppLocalizations.localizationsDelegates,
         home: Scaffold(
-          body: Center(child: StationMarker(station: s)),
+          body: Center(
+            child: StationMarker(station: s, onTap: onTap),
+          ),
         ),
       ),
     );
@@ -192,6 +230,29 @@ void main() {
       expect(size.width, greaterThanOrEqualTo(44));
       expect(size.height, greaterThanOrEqualTo(44));
       h.dispose();
+    });
+
+    testWidgets('o leitor de tela ativa o marcador (acao de toque no no)', (t) async {
+      final h = t.ensureSemantics();
+      var taps = 0;
+      await pumpMarker(t, st('a', 'Faria Lima', available: 1), onTap: () => taps++);
+      final node = t.getSemantics(find.byType(StationMarker));
+      expect(node.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+      t.semantics.tap(find.semantics.byLabel('Faria Lima: 1 bateria disponível'));
+      await t.pump();
+      expect(taps, 1);
+      h.dispose();
+    });
+
+    testWidgets('o numero do selo cresce com o texto do sistema, com teto de 1,3', (t) async {
+      t.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
+      await pumpMarker(t, st('a', 'A', available: 8));
+      expect(MediaQuery.textScalerOf(t.element(find.text('8'))).scale(10), closeTo(13, 0.01));
+      expect(t.takeException(), isNull);
+      t.platformDispatcher.textScaleFactorTestValue = 1.2;
+      await t.pump();
+      expect(MediaQuery.textScalerOf(t.element(find.text('8'))).scale(10), closeTo(12, 0.01));
     });
 
     test('stationMarkers: um marcador por estacao, com chave', () {
@@ -278,9 +339,18 @@ void main() {
       final go = find.byKey(const Key('station-directions-st-near'));
       await t.ensureVisible(go);
       await t.pump();
+      // Abrir o modo e a lista nao abre nada: so o toque em "Como chegar".
+      expect(opened, isEmpty);
+      await t.ensureVisible(find.byKey(const Key('station-focus-st-near')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('station-focus-st-near')));
+      await t.pump();
+      expect(opened, isEmpty);
+      await t.ensureVisible(go);
+      await t.pump();
       await t.tap(go);
       await t.pump();
-      expect(opened, isNotEmpty);
+      expect(opened, hasLength(1));
       expect(opened.first.toString(), contains('-23.57,-46.69'));
     });
 
@@ -349,6 +419,67 @@ void main() {
       await pumpHome(t, b);
       await tapToggle(t);
       expect(t.takeException(), isNull);
+    });
+  });
+
+  group('mapa ligado', () {
+    StationsBackend onMap() => StationsBackend(depots: [depotFixture().rebuild((d) => d.swapStationId = 'st-dep')])
+      ..stations = [
+        st('st-dep', 'Estacao do galpao', available: 4, distanceM: 0, lat: -23.566, lng: -46.684),
+        st('st-near', 'Largo da Batata', available: 1, distanceM: 250, lat: -23.567, lng: -46.686),
+        st('st-far', 'Faria Lima', available: 8, distanceM: 700, lat: -23.5645, lng: -46.6895),
+      ];
+
+    testWidgets('modo estacoes: estacao do galpao vira selo no galpao, que segue tocavel; marcadores e linhas centram o mapa', (t) async {
+      phone(t);
+      final h = t.ensureSemantics();
+      await pumpHome(t, onMap(), mapOn: true);
+      await settle(t);
+      expect(find.byType(FlutterMap), findsOneWidget);
+      final pin = find.byKey(const ValueKey('depot-pin-dep1'));
+      expect(find.descendant(of: pin, matching: find.byKey(const Key('station-count-badge'))), findsNothing);
+      expect(find.byKey(const ValueKey('station-st-dep')), findsOneWidget, reason: 'fora do modo: marcador azul simples');
+
+      await tapToggle(t);
+      expect(find.byKey(const ValueKey('station-mode-st-dep')), findsNothing, reason: 'coincide com o galpao');
+      expect(find.byKey(const ValueKey('station-st-dep')), findsNothing);
+      expect(find.byKey(const ValueKey('station-mode-st-near')), findsOneWidget);
+      expect(find.byKey(const ValueKey('station-mode-st-far')), findsOneWidget);
+      expect(find.descendant(of: pin, matching: find.text('4')), findsOneWidget);
+      final pinNode = t.getSemantics(find.descendant(of: pin, matching: find.byType(GestureDetector)).first);
+      expect(pinNode.label, contains('4 baterias disponíveis'));
+      expect(pinNode.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+
+      final width = t.view.physicalSize.width;
+      final near = find.byKey(const ValueKey('station-mode-st-near'));
+      expect((t.getCenter(near).dx - width / 2).abs(), greaterThan(20));
+      await t.tap(near);
+      await settle(t);
+      expect(t.getCenter(near).dx, closeTo(width / 2, 2));
+      expect(t.getCenter(near).dy, lessThan(t.getRect(sheet).top));
+
+      // Linha da folha tambem centra.
+      final far = find.byKey(const ValueKey('station-mode-st-far'));
+      expect((t.getCenter(far).dx - width / 2).abs(), greaterThan(20));
+      await t.ensureVisible(find.byKey(const Key('station-focus-st-far')));
+      await t.pump();
+      await t.tap(find.byKey(const Key('station-focus-st-far')));
+      await settle(t);
+      expect(t.getCenter(far).dx, closeTo(width / 2, 2));
+
+      // O galpao segue tocavel no modo (centra).
+      // O ponto azul do cliente (na mesma posicao do galpao) cobre o centro do pin.
+      await t.tapAt(t.getCenter(pin) + const Offset(-18, 0));
+      await settle(t);
+      expect(t.getCenter(pin).dx, closeTo(width / 2, 2));
+
+      // Sair do modo: estacao do galpao volta como marcador simples, sem selo.
+      await tapToggle(t);
+      expect(find.byKey(const ValueKey('station-st-dep')), findsOneWidget);
+      expect(find.byKey(const Key('station-count-badge')), findsNothing);
+      expect(opened, isEmpty);
+      expect(t.takeException(), isNull);
+      h.dispose();
     });
   });
 
