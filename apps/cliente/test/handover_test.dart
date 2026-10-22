@@ -5,6 +5,7 @@ import 'package:built_collection/built_collection.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
@@ -14,6 +15,9 @@ import 'package:volti_cliente/core/launcher.dart';
 import 'package:volti_cliente/core/router.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
+import 'package:volti_cliente/features/handover/handover_screen.dart';
+import 'package:volti_cliente/features/home/depot_providers.dart';
+import 'package:volti_cliente/features/home/providers.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'galpao_fixtures.dart';
@@ -366,6 +370,82 @@ void main() {
       expect(where(router), '/handover/h1');
       await settle(t);
       expect(where(router), '/ride');
+    });
+
+    testWidgets('durante o check de sucesso: voltar fica bloqueado, sem excecao nem haptica de aviso, provedores ja invalidados', (t) async {
+      phone(t);
+      final haptics = <VoltiHapticKind>[];
+      VoltiHaptics.debugHandler = (k) async => haptics.add(k);
+      addTearDown(() => VoltiHaptics.debugHandler = null);
+      final b = _CountingHandoverBackend()..acceptGate = Completer<void>();
+      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
+      final container = ProviderScope.containerOf(t.element(find.byType(HandoverScreen)));
+      container.read(createdReservationProvider.notifier).set(reservationFixture());
+      final subs = [
+        container.listen(currentRentalProvider, (_, _) {}),
+        container.listen(currentReservationProvider, (_, _) {}),
+        container.listen(depotsProvider, (_, _) {}),
+      ];
+      addTearDown(() {
+        for (final s in subs) {
+          s.close();
+        }
+      });
+      await settle(t);
+      final rental0 = b.currentRentalCalls, reservation0 = b.currentReservationCalls, depots0 = b.depotsCalls;
+
+      final accept = find.byKey(const Key('handover-accept'));
+      await t.ensureVisible(accept);
+      await t.pump();
+      await t.tap(accept);
+      await t.pump();
+      // Aceitando: o voltar da tela e o do sistema nao saem.
+      expect(t.widget<VoltiIconButton>(find.byKey(const Key('handover-back'))).onPressed, isNull);
+      b.acceptGate!.complete();
+      await t.pump();
+      await t.pump();
+      expect(find.descendant(of: accept, matching: find.byType(VoltiSuccessCheck)), findsOneWidget);
+      // Estado global ja atualizado antes da espera.
+      expect(container.read(createdReservationProvider), isNull);
+      await t.pump(const Duration(milliseconds: 50));
+      expect(b.currentRentalCalls, greaterThan(rental0));
+      expect(b.currentReservationCalls, greaterThan(reservation0));
+      expect(b.depotsCalls, greaterThan(depots0));
+      await t.tap(find.byKey(const Key('handover-back')), warnIfMissed: false);
+      await t.binding.handlePopRoute();
+      await t.pump();
+      expect(where(router), '/handover/h1');
+      await settle(t);
+      expect(t.takeException(), isNull);
+      expect(haptics, isNot(contains(VoltiHapticKind.warning)));
+      expect(where(router), '/ride');
+    });
+
+    testWidgets('botao de voltar da entrega tem alvo de 44 px', (t) async {
+      phone(t);
+      await pumpApp(t, HandoverBackend(), RtHub(), initial: '/handover/h1');
+      final s = t.getSize(find.byKey(const Key('handover-back')));
+      expect(s.width, greaterThanOrEqualTo(44));
+      expect(s.height, greaterThanOrEqualTo(44));
+    });
+
+    testWidgets('"Aceitar e destravar" anuncia "Carregando…" e "Concluído"', (t) async {
+      phone(t);
+      final h = t.ensureSemantics();
+      final b = HandoverBackend()..acceptGate = Completer<void>();
+      await pumpApp(t, b, RtHub(), initial: '/handover/h1');
+      final accept = find.byKey(const Key('handover-accept'));
+      await t.ensureVisible(accept);
+      await t.pump();
+      await t.tap(accept);
+      await t.pump();
+      expect(t.getSemantics(accept), isSemantics(label: 'Aceitar e destravar', value: 'Carregando…', isLiveRegion: true));
+      b.acceptGate!.complete();
+      await t.pump();
+      await t.pump();
+      expect(t.getSemantics(accept), isSemantics(label: 'Aceitar e destravar', value: 'Concluído', isLiveRegion: true));
+      await settle(t);
+      h.dispose();
     });
 
     testWidgets('pagamento recusado mostra o motivo, mantem a tela e a nova tentativa usa a mesma chave', (t) async {
@@ -862,4 +942,28 @@ void main() {
       expect(t.takeException(), isNull);
     });
   });
+}
+
+class _CountingHandoverBackend extends HandoverBackend {
+  int currentRentalCalls = 0;
+  int currentReservationCalls = 0;
+  int depotsCalls = 0;
+
+  @override
+  Future<Rental?> currentRental() {
+    currentRentalCalls++;
+    return super.currentRental();
+  }
+
+  @override
+  Future<Reservation?> currentReservation() {
+    currentReservationCalls++;
+    return super.currentReservation();
+  }
+
+  @override
+  Future<List<Depot>> depots({double? lat, double? lng}) {
+    depotsCalls++;
+    return super.depots(lat: lat, lng: lng);
+  }
 }

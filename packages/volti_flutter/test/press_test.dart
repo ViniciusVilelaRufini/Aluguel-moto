@@ -89,21 +89,25 @@ void main() {
       await t.pump(const Duration(milliseconds: 150));
       final s = _scaleOf(t, find.byType(VoltiButton));
       expect(s.scale, 1);
-      final o = t.widget<AnimatedOpacity>(find.byKey(const Key('volti-press-opacity')).first);
+      final o = t.widget<Opacity>(find.byKey(const Key('volti-press-opacity')).first);
       expect(o.opacity, VoltiMotion.pressOpacityReduced);
-      expect(o.duration, Duration.zero);
       await g.up();
       await t.pump();
-      expect(t.widget<AnimatedOpacity>(find.byKey(const Key('volti-press-opacity')).first).opacity, 1);
+      expect(t.widget<Opacity>(find.byKey(const Key('volti-press-opacity')).first).opacity, 1);
     });
 
-    testWidgets('icon button: escala .88, ondulacao e reduced sem escala', (t) async {
-      await t.pumpWidget(_wrap(VoltiIconButton(icon: Icons.add, label: 'Mais', onPressed: () {})));
+    testWidgets('icon button: escala .88 e troca de fundo, sem ondulacao (IconButton.jsx)', (t) async {
+      await t.pumpWidget(_wrap(VoltiIconButton(icon: Icons.add, label: 'Mais', variant: VoltiIconButtonVariant.brand, onPressed: () {})));
       expect(t.getSize(find.byType(VoltiIconButton)).width, greaterThanOrEqualTo(44));
+      final rest = _surface(t, 'volti-icon-button-surface');
       final g = await t.startGesture(t.getCenter(find.byType(VoltiIconButton)));
       await t.pump(const Duration(milliseconds: 150));
+      await t.pump(const Duration(milliseconds: 300));
       expect(_scaleOf(t, find.byType(VoltiIconButton)).scale, VoltiMotion.iconPressScale);
-      expect(find.byKey(const Key('volti-ripple')), findsOneWidget);
+      expect(find.byType(VoltiRipple), findsNothing);
+      final down = _surface(t, 'volti-icon-button-surface');
+      expect(down.color, isNot(rest.color));
+      expect(down.boxShadow, rest.boxShadow);
       await g.up();
       await t.pumpAndSettle();
 
@@ -140,6 +144,26 @@ void main() {
         expect(t.getSize(find.byType(VoltiButton)), before);
       });
     }
+
+    testWidgets('texto a 200% sem fullWidth: loading mantem a largura', (t) async {
+      await t.pumpWidget(_wrap(VoltiButton(label: 'Enviar', icon: Icons.send, onPressed: () {}), textScale: 2));
+      final before = t.getSize(find.byType(VoltiButton));
+      await t.pumpWidget(_wrap(VoltiButton(label: 'Enviar', icon: Icons.send, loading: true, onPressed: () {}), textScale: 2));
+      await t.pump(const Duration(milliseconds: 300));
+      expect(t.takeException(), isNull);
+      expect(t.getSize(find.byType(VoltiButton)), before);
+    });
+
+    testWidgets('anel do sucesso fica recortado na pilula', (t) async {
+      await t.pumpWidget(_wrap(VoltiButton(label: 'Ir', onPressed: () {})));
+      Container surface() => t.widget<Container>(
+            find.descendant(of: find.byKey(const Key('volti-button-surface')), matching: find.byType(Container)).first,
+          );
+      expect(surface().clipBehavior, Clip.none);
+      await t.pumpWidget(_wrap(VoltiButton(label: 'Ir', success: true, onPressed: () {})));
+      expect(surface().clipBehavior, Clip.antiAlias);
+      await t.pumpAndSettle();
+    });
 
     testWidgets('loading nao esmaece mesmo com onPressed null', (t) async {
       await t.pumpWidget(_wrap(const VoltiButton(label: 'Ir', loading: true)));
@@ -211,6 +235,47 @@ void main() {
         t.getSemantics(find.byType(VoltiButton)),
         matchesSemantics(label: 'Confirmar reserva', isButton: true, hasEnabledState: true),
       );
+      h.dispose();
+    });
+
+    testWidgets('loading e sucesso sao anunciados (valor + live region)', (t) async {
+      final h = t.ensureSemantics();
+      await t.pumpWidget(_wrap(VoltiButton(label: 'Ir', loadingSemanticLabel: 'Carregando…', onPressed: () {})));
+      expect(t.getSemantics(find.byType(VoltiButton)), isSemantics(label: 'Ir', value: '', isLiveRegion: false));
+      await t.pumpWidget(_wrap(VoltiButton(label: 'Ir', loading: true, loadingSemanticLabel: 'Carregando…', onPressed: () {})));
+      expect(
+        t.getSemantics(find.byType(VoltiButton)),
+        isSemantics(label: 'Ir', value: 'Carregando…', isButton: true, isLiveRegion: true),
+      );
+      // Textos vindos do app pelo VoltiButtonLabels.
+      await t.pumpWidget(_wrap(const VoltiButtonLabels(
+        loading: 'Carregando…',
+        success: 'Concluído',
+        child: VoltiButton(label: 'Ir', success: true),
+      )));
+      expect(
+        t.getSemantics(find.byType(VoltiButton)),
+        isSemantics(label: 'Ir', value: 'Concluído', isButton: true, isLiveRegion: true),
+      );
+      await t.pumpAndSettle();
+      h.dispose();
+    });
+
+    testWidgets('VoltiCheckbox com rotulo: linha toda tocavel e lida com o texto', (t) async {
+      final h = t.ensureSemantics();
+      var v = false;
+      await t.pumpWidget(_wrap(StatefulBuilder(
+        builder: (context, set) => VoltiCheckbox(value: v, label: const Text('Aceito os termos'), onChanged: (n) => set(() => v = n)),
+      )));
+      expect(
+        t.getSemantics(find.byType(VoltiCheckbox)),
+        isSemantics(label: 'Aceito os termos', hasCheckedState: true, isChecked: false, hasTapAction: true),
+      );
+      await t.tap(find.text('Aceito os termos'));
+      await t.pump();
+      expect(v, isTrue);
+      expect(t.getSize(find.byType(VoltiCheckbox)).height, greaterThanOrEqualTo(44));
+      await t.pumpAndSettle();
       h.dispose();
     });
 

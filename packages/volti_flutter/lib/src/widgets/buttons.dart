@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../tokens/colors.dart';
@@ -29,6 +31,8 @@ class VoltiButton extends StatelessWidget {
     this.semanticLabel,
     this.haptic,
     this.success = false,
+    this.loadingSemanticLabel,
+    this.successSemanticLabel,
   });
 
   /// Haptica a cada toque: [VoltiHapticKind.tap] nos CTAs de confirmacao.
@@ -38,6 +42,14 @@ class VoltiButton extends StatelessWidget {
   /// largura; o botao fica inerte. Use por [VoltiMotion.successHold] antes de
   /// seguir (ex.: "Confirmar reserva", "Aceitar e destravar").
   final bool success;
+
+  /// Valor anunciado pelo leitor de tela enquanto [loading] (ex.:
+  /// "Carregando…"). `null` usa [VoltiButtonLabels] do app.
+  final String? loadingSemanticLabel;
+
+  /// Valor anunciado no estado [success] (ex.: "Concluído"). `null` usa
+  /// [VoltiButtonLabels] do app.
+  final String? successSemanticLabel;
 
   /// Rotulo para leitor de tela mais completo que [label] (ex.: com a serie).
   final String? semanticLabel;
@@ -136,12 +148,18 @@ class VoltiButton extends StatelessWidget {
     // Carregando/sucesso nao esmaecem: so o botao realmente desabilitado.
     final dim = disabled && !busy;
     final ripple = switch (variant) {
-      VoltiButtonVariant.primary => const Color(0x61FFFFFF),
-      VoltiButtonVariant.secondary => const Color(0x3334C25C),
-      VoltiButtonVariant.ghost => const Color(0x1415181A),
-      VoltiButtonVariant.dark => const Color(0x38FFFFFF),
-      VoltiButtonVariant.danger => const Color(0x59FFFFFF),
+      VoltiButtonVariant.primary => VoltiColors.rippleOnFilled,
+      VoltiButtonVariant.secondary => VoltiColors.rippleBrand,
+      VoltiButtonVariant.ghost => VoltiColors.rippleInk,
+      VoltiButtonVariant.dark => VoltiColors.rippleOnDark,
+      VoltiButtonVariant.danger => VoltiColors.rippleOnDanger,
     };
+    final labels = VoltiButtonLabels.maybeOf(context);
+    final busyValue = success
+        ? (successSemanticLabel ?? labels?.success)
+        : loading
+        ? (loadingSemanticLabel ?? labels?.loading)
+        : null;
     final morph = VoltiMotion.scaled(context, VoltiMotion.durBase);
     final content = Row(
       mainAxisSize: fullWidth ? MainAxisSize.max : MainAxisSize.min,
@@ -209,7 +227,7 @@ class VoltiButton extends StatelessWidget {
     );
     final body = AnimatedOpacity(
       key: const Key('volti-button-enabled-fade'),
-      opacity: dim ? .4 : 1,
+      opacity: dim ? VoltiColors.disabledOpacity : 1,
       duration: morph,
       curve: VoltiMotion.easeOut,
       child: Builder(
@@ -223,6 +241,9 @@ class VoltiButton extends StatelessWidget {
                 ? Duration.zero
                 : (pressed ? VoltiMotion.durFast : VoltiMotion.durSpring),
             curve: VoltiMotion.easeOut,
+            // Como o `overflow: hidden` do Button.jsx: o anel do check de
+            // sucesso fica dentro da pilula.
+            clipBehavior: success ? Clip.antiAlias : Clip.none,
             decoration: BoxDecoration(
               color: pressed ? pressedColor(variant, bg) : bg,
               borderRadius: VoltiRadii.rPill,
@@ -244,9 +265,13 @@ class VoltiButton extends StatelessWidget {
       ),
     );
     final shown = shine && !off ? VoltiShine(child: body) : body;
-    return VoltiPressable(
+    return _BusyAnnouncer(
+      message: busyValue,
+      child: VoltiPressable(
       onTap: off ? null : onPressed,
       semanticLabel: semanticLabel ?? label,
+      semanticValue: busyValue,
+      liveRegion: busyValue != null,
       haptic: haptic,
       child: semanticLabel == null
           ? (fullWidth ? SizedBox(width: double.infinity, child: shown) : shown)
@@ -255,6 +280,7 @@ class VoltiButton extends StatelessWidget {
                   ? SizedBox(width: double.infinity, child: shown)
                   : shown,
             ),
+      ),
     );
   }
 
@@ -269,6 +295,49 @@ class VoltiButton extends StatelessWidget {
         ),
         _ => Color.lerp(bg, const Color(0xFF000000), VoltiMotion.pressDarken)!,
       };
+}
+
+/// Textos de acessibilidade dos estados do [VoltiButton], fornecidos pelo
+/// app (pt-BR: "Carregando…", "Concluído"). Coloque no `builder` do
+/// `MaterialApp`; [VoltiButton.loadingSemanticLabel] e
+/// [VoltiButton.successSemanticLabel] sobrepoem por botao.
+class VoltiButtonLabels extends InheritedWidget {
+  const VoltiButtonLabels({super.key, this.loading, this.success, required super.child});
+
+  final String? loading;
+  final String? success;
+
+  static VoltiButtonLabels? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<VoltiButtonLabels>();
+
+  @override
+  bool updateShouldNotify(VoltiButtonLabels old) => old.loading != loading || old.success != success;
+}
+
+/// Anuncia [message] quando ele aparece/muda. No Android o `liveRegion` do
+/// no ja anuncia; o iOS nao tem live region, entao anuncia explicitamente.
+class _BusyAnnouncer extends StatefulWidget {
+  const _BusyAnnouncer({required this.message, required this.child});
+  final String? message;
+  final Widget child;
+
+  @override
+  State<_BusyAnnouncer> createState() => _BusyAnnouncerState();
+}
+
+class _BusyAnnouncerState extends State<_BusyAnnouncer> {
+  @override
+  void didUpdateWidget(_BusyAnnouncer old) {
+    super.didUpdateWidget(old);
+    final m = widget.message;
+    if (m != null && m != old.message && defaultTargetPlatform == TargetPlatform.iOS) {
+      // ignore: deprecated_member_use
+      SemanticsService.announce(m, Directionality.maybeOf(context) ?? TextDirection.ltr);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// Dois botoes lado a lado na proporcao do design (`flex` 1 : 1,3 por
@@ -432,11 +501,6 @@ class VoltiIconButton extends StatelessWidget {
         const <BoxShadow>[],
       ),
     };
-    final ripple = switch (variant) {
-      VoltiIconButtonVariant.brand ||
-      VoltiIconButtonVariant.dark => const Color(0x52FFFFFF),
-      _ => const Color(0x1F15181A),
-    };
     return VoltiPressable(
       onTap: onPressed,
       scale: VoltiMotion.iconPressScale,
@@ -458,13 +522,10 @@ class VoltiIconButton extends StatelessWidget {
                   ? VoltiButton.pressedColor(VoltiButtonVariant.primary, bg)
                   : bg,
               shape: BoxShape.circle,
-              boxShadow: pressed ? VoltiMotion.pressedShadow(sh) : sh,
+              boxShadow: sh,
             ),
-            // Ondulacao a partir do toque, recortada no circulo (sem splash Material).
-            child: VoltiRipple(
-              color: onPressed == null ? null : ripple,
-              borderRadius: BorderRadius.circular(size / 2),
-              child: Stack(
+            // Como o IconButton.jsx: escala .88 e troca de fundo, sem ondulacao.
+            child: Stack(
                 alignment: Alignment.center,
                 children: [
                   Icon(
@@ -488,7 +549,6 @@ class VoltiIconButton extends StatelessWidget {
                     ),
                 ],
               ),
-            ),
           );
         },
       ),

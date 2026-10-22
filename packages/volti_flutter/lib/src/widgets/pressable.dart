@@ -21,7 +21,15 @@ class VoltiPressable extends StatefulWidget {
     this.scale = VoltiMotion.pressScale,
     this.semanticLabel,
     this.haptic,
+    this.semanticValue,
+    this.liveRegion = false,
   });
+
+  /// Valor do no de semantica (ex.: "Carregando…" num botao ocupado).
+  final String? semanticValue;
+
+  /// Anuncia mudancas do no (Android). Use com [semanticValue].
+  final bool liveRegion;
 
   final Widget child;
   final VoidCallback? onTap;
@@ -75,6 +83,8 @@ class _VoltiPressableState extends State<VoltiPressable> {
       button: true,
       enabled: enabled,
       label: widget.semanticLabel,
+      value: widget.semanticValue,
+      liveRegion: widget.liveRegion,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTapDown: enabled ? (_) => _set(true) : null,
@@ -87,10 +97,9 @@ class _VoltiPressableState extends State<VoltiPressable> {
             scale: pressed && !reduced ? widget.scale : 1,
             duration: reduced ? Duration.zero : (pressed ? VoltiMotion.durFast : VoltiMotion.durSpring),
             curve: pressed ? VoltiMotion.easeOut : VoltiMotion.easeSpring,
-            child: AnimatedOpacity(
+            child: Opacity(
               key: const Key('volti-press-opacity'),
               opacity: pressed && reduced ? VoltiMotion.pressOpacityReduced : 1,
-              duration: Duration.zero,
               child: inner,
             ),
           ),

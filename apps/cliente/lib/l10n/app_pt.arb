@@ -1461,5 +1461,9 @@
   "returnDepotTitle": "Devolver no galpão",
   "returnDepotText": "Leve a moto ao galpão e entregue ao operador. Ele faz o checklist de chegada e encerra o aluguel; o recibo abre aqui.",
   "returnDepotWaiting": "Aguardando o operador registrar a chegada…",
-  "returnDepotMissing": "Não encontramos o galpão. Tente de novo."
+  "returnDepotMissing": "Não encontramos o galpão. Tente de novo.",
+  "buttonBusy": "Carregando…",
+  "@buttonBusy": {"description": "Leitor de tela: botao ocupado (loading)"},
+  "buttonDone": "Concluído",
+  "@buttonDone": {"description": "Leitor de tela: botao no estado de sucesso"}
 }

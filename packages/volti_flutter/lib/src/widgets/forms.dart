@@ -174,7 +174,7 @@ class OptionCard extends StatelessWidget {
       checked: selected,
       enabled: !disabled,
       child: Opacity(
-        opacity: disabled ? .5 : 1,
+        opacity: disabled ? VoltiColors.disabledOpacityCard : 1,
         child: disabled || onTap == null
             ? card
             : VoltiPressable(onTap: onTap, scale: .99, child: card),
@@ -188,7 +188,7 @@ class OptionCard extends StatelessWidget {
 /// linha que o contem, que tambem leva a semantica. Reduced motion = troca
 /// instantanea.
 class VoltiRadio extends StatelessWidget {
-  const VoltiRadio({super.key, required this.selected, this.size = 22, this.dotKey});
+  const VoltiRadio({super.key, required this.selected, this.size = VoltiSpacing.radio, this.dotKey});
 
   final bool selected;
   final double size;
@@ -218,8 +218,8 @@ class VoltiRadio extends StatelessWidget {
           duration: reduced ? Duration.zero : (selected ? VoltiMotion.durSpring : VoltiMotion.durFast),
           curve: selected ? VoltiMotion.easeSpring : VoltiMotion.easeOut,
           child: Container(
-            width: size * 12 / 22,
-            height: size * 12 / 22,
+            width: size * VoltiSpacing.radioDot / VoltiSpacing.radio,
+            height: size * VoltiSpacing.radioDot / VoltiSpacing.radio,
             decoration: const BoxDecoration(color: VoltiColors.brand, shape: BoxShape.circle),
           ),
         ),
@@ -228,11 +228,14 @@ class VoltiRadio extends StatelessWidget {
   }
 }
 
-/// Caixa de selecao do design: 22 px dentro de um alvo de 44 px, fundo e
-/// borda em tween rapido, check com pop. Marcada = tom de acao
-/// ([VoltiColors.brandAction]) com check branco (E-12). Toca
-/// [VoltiHaptics.selection] ao mudar. Semantica: caixa marcavel com
-/// [semanticLabel].
+/// Caixa de selecao do design (`Checkbox.jsx`): 22 px dentro de um alvo de
+/// 44 px, fundo e borda em tween rapido, check com mola. Marcada = tom de
+/// acao ([VoltiColors.brandAction]) com check branco (E-12). Toca
+/// [VoltiHaptics.selection] ao mudar.
+///
+/// Com [label] vira uma linha inteira tocavel (caixa + texto), no lugar do
+/// `CheckboxListTile`. Semantica: um no marcavel com [semanticLabel] ou, sem
+/// ele, com o texto do [label].
 class VoltiCheckbox extends StatelessWidget {
   const VoltiCheckbox({
     super.key,
@@ -240,6 +243,7 @@ class VoltiCheckbox extends StatelessWidget {
     this.onChanged,
     this.semanticLabel,
     this.haptic = true,
+    this.label,
   });
 
   final bool value;
@@ -251,46 +255,71 @@ class VoltiCheckbox extends StatelessWidget {
   /// Toca [VoltiHaptics.selection] ao mudar.
   final bool haptic;
 
+  /// Texto ao lado da caixa (titulo e, se quiser, descricao numa `Column`).
+  final Widget? label;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final enabled = onChanged != null;
     final reduced = VoltiMotion.reduced(context);
-    return Semantics(
-      checked: value,
-      enabled: enabled,
-      label: semanticLabel,
-      onTap: enabled ? () => _toggle() : null,
-      excludeSemantics: true,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: enabled ? _toggle : null,
-        child: SizedBox(
-          width: VoltiSpacing.hitMin,
-          height: VoltiSpacing.hitMin,
-          child: Center(
-            child: Opacity(
-              opacity: enabled ? 1 : .5,
-              child: AnimatedContainer(
-                key: const Key('volti-checkbox-box'),
-                duration: VoltiMotion.scaled(context, VoltiMotion.durSelect),
-                curve: VoltiMotion.easeOut,
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: value ? VoltiColors.brandAction : scheme.surface,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: value ? VoltiColors.brandAction : scheme.outline, width: 1.5),
-                ),
-                alignment: Alignment.center,
-                child: AnimatedScale(
-                  key: const Key('volti-checkbox-check'),
-                  scale: value ? 1 : 0,
-                  duration: reduced ? Duration.zero : (value ? VoltiMotion.durSpring : VoltiMotion.durFast),
-                  curve: value ? VoltiMotion.easeSpring : VoltiMotion.easeOut,
-                  child: const Icon(Icons.check_rounded, size: 16, color: VoltiColors.onBrandAction),
+    final box = SizedBox(
+      width: VoltiSpacing.hitMin,
+      height: VoltiSpacing.hitMin,
+      child: Center(
+        child: AnimatedContainer(
+          key: const Key('volti-checkbox-box'),
+          duration: VoltiMotion.scaled(context, VoltiMotion.durSelect),
+          curve: VoltiMotion.easeOut,
+          width: VoltiSpacing.checkbox,
+          height: VoltiSpacing.checkbox,
+          decoration: BoxDecoration(
+            color: value ? VoltiColors.brandAction : scheme.surface,
+            borderRadius: VoltiRadii.rCheckbox,
+            border: Border.all(color: value ? VoltiColors.brandAction : scheme.outline, width: 1.5),
+          ),
+          alignment: Alignment.center,
+          child: AnimatedScale(
+            key: const Key('volti-checkbox-check'),
+            scale: value ? 1 : 0,
+            duration: reduced ? Duration.zero : (value ? VoltiMotion.durSpring : VoltiMotion.durFast),
+            curve: value ? VoltiMotion.easeSpring : VoltiMotion.easeOut,
+            child: const Icon(Icons.check_rounded, size: VoltiSpacing.checkboxIcon, color: VoltiColors.onBrandAction),
+          ),
+        ),
+      ),
+    );
+    final content = label == null
+        ? box
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              box,
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 11, bottom: 11, left: 2),
+                  child: DefaultTextStyle.merge(
+                    style: VoltiTypography.body.copyWith(color: scheme.onSurface),
+                    child: label!,
+                  ),
                 ),
               ),
+            ],
+          );
+    return MergeSemantics(
+      child: Semantics(
+        checked: value,
+        enabled: enabled,
+        label: semanticLabel,
+        onTap: enabled ? _toggle : null,
+        child: ExcludeSemantics(
+          excluding: semanticLabel != null,
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: enabled ? _toggle : null,
+            child: Opacity(
+              opacity: enabled ? 1 : VoltiColors.disabledOpacity,
+              child: content,
             ),
           ),
         ),

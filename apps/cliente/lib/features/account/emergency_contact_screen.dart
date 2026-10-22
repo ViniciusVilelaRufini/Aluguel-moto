@@ -153,13 +153,11 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
           ),
           const SizedBox(height: VoltiSpacing.s16),
           Text(l.emergencyConsentText, style: VoltiTypography.caption),
-          CheckboxListTile(
+          VoltiCheckbox(
             key: const Key('emergency-consent'),
-            contentPadding: EdgeInsets.zero,
-            controlAffinity: ListTileControlAffinity.leading,
             value: _authorized,
-            onChanged: _busy ? null : (v) => setState(() => _authorized = v ?? false),
-            title: Text(l.emergencyConsentLabel, style: VoltiTypography.body),
+            onChanged: _busy ? null : (v) => setState(() => _authorized = v),
+            label: Text(l.emergencyConsentLabel, style: VoltiTypography.body),
           ),
         ],
       ),

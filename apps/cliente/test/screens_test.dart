@@ -44,7 +44,7 @@ void main() {
       await t.pump();
 
       VoltiButton cta() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Continuar'));
-      expect(t.widget<CheckboxListTile>(find.byKey(const Key('consent-location'))).value, isFalse,
+      expect(t.widget<VoltiCheckbox>(find.byKey(const Key('consent-location'))).value, isFalse,
           reason: 'LGPD: consentimento so por acao do cliente');
       expect(cta().onPressed, isNull, reason: 'sem termos');
 

@@ -100,7 +100,7 @@ abstract final class VoltiTheme {
         fillColor: _checkFill,
         checkColor: const WidgetStatePropertyAll(VoltiColors.onBrandAction),
         overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(6))),
+        shape: const RoundedRectangleBorder(borderRadius: VoltiRadii.rCheckbox),
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,

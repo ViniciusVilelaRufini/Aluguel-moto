@@ -8,6 +8,7 @@ import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/errors.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
+import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_cliente/features/onboarding/onboarding_screen.dart';
 
 import 'helpers.dart';
@@ -139,8 +140,8 @@ void main() {
       ]));
       await t.pumpAndSettle();
       expect(find.text('Ana Lima'), findsOneWidget);
-      expect(t.widget<CheckboxListTile>(find.byKey(const Key('consent-terms'))).value, isTrue);
-      expect(t.widget<CheckboxListTile>(find.byKey(const Key('consent-location'))).value, isTrue);
+      expect(t.widget<VoltiCheckbox>(find.byKey(const Key('consent-terms'))).value, isTrue);
+      expect(t.widget<VoltiCheckbox>(find.byKey(const Key('consent-location'))).value, isTrue);
     });
   });
 }

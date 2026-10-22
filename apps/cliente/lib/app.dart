@@ -28,7 +28,12 @@ class VoltiClienteApp extends ConsumerWidget {
       ],
       routerConfig: ref.watch(routerProvider),
       // Faixa "Sem conexão" por cima de todas as telas (E-17).
-      builder: (context, child) => OfflineBanner(child: child ?? const SizedBox.shrink()),
+      // Textos de leitor de tela do loading/sucesso dos botoes (E-21).
+      builder: (context, child) => VoltiButtonLabels(
+        loading: AppLocalizations.of(context).buttonBusy,
+        success: AppLocalizations.of(context).buttonDone,
+        child: OfflineBanner(child: child ?? const SizedBox.shrink()),
+      ),
     );
   }
 }

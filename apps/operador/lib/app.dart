@@ -85,6 +85,12 @@ class OperatorApp extends ConsumerWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       routerConfig: ref.watch(routerProvider),
+      // Textos de leitor de tela do loading/sucesso dos botoes (E-21).
+      builder: (context, child) => VoltiButtonLabels(
+        loading: AppLocalizations.of(context).buttonBusy,
+        success: AppLocalizations.of(context).buttonDone,
+        child: child ?? const SizedBox.shrink(),
+      ),
     );
   }
 }
