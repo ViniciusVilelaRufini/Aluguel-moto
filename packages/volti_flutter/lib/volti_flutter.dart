@@ -12,6 +12,7 @@ export 'src/widgets/buttons.dart';
 export 'src/widgets/chips.dart';
 export 'src/widgets/feedback.dart';
 export 'src/widgets/forms.dart';
+export 'src/widgets/gauge.dart';
 export 'src/widgets/haptics.dart';
 export 'src/widgets/mobility.dart';
 export 'src/widgets/motion.dart';
