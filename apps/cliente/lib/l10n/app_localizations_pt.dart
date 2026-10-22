@@ -938,4 +938,170 @@ class AppLocalizationsPt extends AppLocalizations {
   String cancelRenewalText(String date) {
     return 'Seu plano continua valendo até $date. Depois disso, não renova.';
   }
+
+  @override
+  String get fareLabel => 'Tarifa';
+
+  @override
+  String get coverageBasicLong => 'Seguro básico';
+
+  @override
+  String get coverageFullLong => 'Seguro completo';
+
+  @override
+  String get unpauseRide => 'Destravar';
+
+  @override
+  String get zoneReducedSpeed => 'Velocidade reduzida';
+
+  @override
+  String get zoneForbidden => 'Área proibida';
+
+  @override
+  String get zoneOperationEdge => 'Limite da área de operação';
+
+  @override
+  String get wellbeingLead => 'Detectamos uma possível queda. Sem resposta em ';
+
+  @override
+  String get wellbeingTail => ', acionamos o suporte.';
+
+  @override
+  String get wellbeingTimedOut => 'Sem resposta: acionamos o suporte.';
+
+  @override
+  String get addEmergencyContact => 'Cadastrar contato de emergência';
+
+  @override
+  String get noEmergencyContactHint =>
+      'Com um contato salvo, o link vai direto para ele.';
+
+  @override
+  String get reportOnly => 'Só reportar';
+
+  @override
+  String get swapNoFee => 'Trocar de moto sem nova taxa';
+
+  @override
+  String get returnPointTitle => 'Ponto de devolução';
+
+  @override
+  String get returnOutsideShort => 'Fora dos pontos verdes';
+
+  @override
+  String get returnCheckingShort => 'Procurando pontos de devolução';
+
+  @override
+  String get returnStepPhoto => 'Passo 1 de 2 · Foto';
+
+  @override
+  String get returnStepLock => 'Passo 2 de 2 · Travar';
+
+  @override
+  String get returnPhotoTitle => 'Fotografe a moto estacionada';
+
+  @override
+  String get takePhoto => 'Tirar foto';
+
+  @override
+  String get returnPhotoHintDesign => 'Mostre a moto inteira e a calçada livre';
+
+  @override
+  String get returnZoneRule =>
+      'Fora dos pontos verdes não é possível encerrar sem taxa.';
+
+  @override
+  String get returnOutsideBlocked =>
+      'Leve a moto até uma área verde do mapa para encerrar. Fora dela, encerrar só com o suporte, com taxa.';
+
+  @override
+  String get lockAndEnd => 'Travar e encerrar';
+
+  @override
+  String get confirmingLock => 'Confirmando…';
+
+  @override
+  String get returnPinLabel => 'Ponto de devolução mais próximo';
+
+  @override
+  String get rideFinished => 'Corrida finalizada';
+
+  @override
+  String get rideFinishedText => 'Moto travada. Caução liberada.';
+
+  @override
+  String get receiptAndInvoice => 'Recibo e nota fiscal';
+
+  @override
+  String get paidWithPix => 'Pix';
+
+  @override
+  String get paidWithWallet => 'Carteira Volti';
+
+  @override
+  String get receiptPdfPending => 'O PDF fica pronto em instantes.';
+
+  @override
+  String get rateRideTrip => 'Como foi a moto e a viagem?';
+
+  @override
+  String get ratingCommentHint => 'Comentário (opcional)';
+
+  @override
+  String get finishSummary => 'Concluir';
+
+  @override
+  String farePerMinute(String price) {
+    return '$price/min';
+  }
+
+  @override
+  String farePerHour(String price) {
+    return '$price/h';
+  }
+
+  @override
+  String farePerDay(String price) {
+    return '$price/dia';
+  }
+
+  @override
+  String pausedFareSemantics(String price) {
+    return 'Pausada, $price';
+  }
+
+  @override
+  String zoneTitle(String name, int limit) {
+    return '$name · limite $limit km/h';
+  }
+
+  @override
+  String secondsShort(int seconds) {
+    return '$seconds s';
+  }
+
+  @override
+  String shareWithNamedContact(String name) {
+    return 'Enviar localização para $name';
+  }
+
+  @override
+  String returnInsideZone(String name) {
+    return '$name · você está dentro';
+  }
+
+  @override
+  String returnZonesMap(int count) {
+    return 'Mapa com $count pontos de devolução';
+  }
+
+  @override
+  String paidWithCard(String last4) {
+    return 'Cartão •••• $last4';
+  }
+
+  @override
+  String invoiceNumberLabel(String number) {
+    return 'NFS-e $number';
+  }
 }

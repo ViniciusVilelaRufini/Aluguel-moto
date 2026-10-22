@@ -13,6 +13,7 @@ import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'helpers.dart';
+import 'zone_fixtures.dart';
 
 class PlanBackend extends FakeBackend {
   int startCalls = 0;
@@ -204,8 +205,8 @@ void main() {
       await t.pump();
       await t.pump();
 
-      expect(find.text('Velocidade máxima: 6 km/h'), findsOneWidget);
-      expect(find.textContaining('limite 6'), findsOneWidget);
+      expect(find.text('Velocidade reduzida · limite 6 km/h'), findsOneWidget);
+      expect(find.text('km/h · limite 6'), findsOneWidget);
       expect(find.textContaining('limite 32'), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
@@ -233,7 +234,7 @@ void main() {
       ]));
       await t.pumpAndSettle();
 
-      VoltiButton end() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Encerrar corrida'));
+      VoltiButton end() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
       expect(end().onPressed, isNull);
 
       await t.tap(find.byType(PhotoCapture));
@@ -269,7 +270,7 @@ class _RideBackend extends FakeBackend {
   @override
   Future<Vehicle> vehicleByCode(String code) async => sampleVehicle();
   @override
-  Future<List<GeoZone>> zones() async => [];
+  Future<List<GeoZone>> zones() async => [zoneAround(-23.56, -46.65)]; // a moto esta num ponto de devolucao
   @override
   Future<void> wellbeing(String id, {required bool ok, String? note}) async => wellbeingOk = ok;
 }

@@ -27,6 +27,52 @@ List<LatLng> zoneRing(GeoZone zone) {
   return [for (final p in rings.first) LatLng(p[1], p[0])];
 }
 
+/// Centro aproximado da zona (media dos vertices do anel externo, sem o ponto de fechamento).
+LatLng zoneCenter(GeoZone zone) {
+  var ring = zoneRing(zone);
+  if (ring.length > 1 && ring.first == ring.last) ring = ring.sublist(0, ring.length - 1);
+  if (ring.isEmpty) return const LatLng(0, 0);
+  var lat = 0.0, lng = 0.0;
+  for (final p in ring) {
+    lat += p.latitude;
+    lng += p.longitude;
+  }
+  return LatLng(lat / ring.length, lng / ring.length);
+}
+
+/// Primeira zona que contem o ponto.
+GeoZone? zoneContaining(double lat, double lng, Iterable<GeoZone> zones) {
+  for (final z in zones) {
+    if (pointInZone(lat, lng, z)) return z;
+  }
+  return null;
+}
+
+const _distance = Distance();
+
+/// Zona que contem [p] ou, se nenhuma, a de centro mais proximo.
+GeoZone? nearestZone(LatLng p, Iterable<GeoZone> zones) {
+  final inside = zoneContaining(p.latitude, p.longitude, zones);
+  if (inside != null) return inside;
+  GeoZone? best;
+  var bestD = double.infinity;
+  for (final z in zones) {
+    final d = _distance.as(LengthUnit.Meter, p, zoneCenter(z));
+    if (d < bestD) {
+      bestD = d;
+      best = z;
+    }
+  }
+  return best;
+}
+
+/// Acrescenta [p] a trilha da corrida se a moto andou pelo menos [minMeters]
+/// (evita tremidas do GPS parado). Devolve uma lista nova.
+List<LatLng> appendTrail(List<LatLng> trail, LatLng p, {double minMeters = 3}) {
+  if (trail.isNotEmpty && _distance.as(LengthUnit.Meter, trail.last, p) < minMeters) return trail;
+  return [...trail, p];
+}
+
 /// Minutos a pe (~80 m/min). Nunca mostramos km rodados, so a distancia a pe ate a moto.
 int walkingMinutes(int meters) => math.max(1, (meters / 80).round());
 
@@ -41,6 +87,16 @@ String money(int cents) {
   final c = (abs % 100).toString().padLeft(2, '0');
   final s = reais.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
   return '${neg ? '-' : ''}R\$ $s,$c';
+}
+
+/// "12 min 14 s", "25 min", "42 s", "1 h 02 min" (recibo; CONTENT: numeros BR).
+String durationLabel(int seconds) {
+  final h = seconds ~/ 3600;
+  final m = (seconds % 3600) ~/ 60;
+  final s = seconds % 60;
+  if (h > 0) return '$h h ${m.toString().padLeft(2, '0')} min';
+  if (m > 0) return s > 0 ? '$m min $s s' : '$m min';
+  return '$s s';
 }
 
 String clock(int seconds) {
@@ -62,29 +118,34 @@ String formatDateTimeSp(DateTime d) {
 }
 
 /// Polyline que se desenha sozinha (1,1 s, apos 300 ms), para camadas do
-/// flutter_map. Com reduced motion ja aparece completa.
+/// flutter_map. Com reduced motion ja aparece completa. Com [animate] falso
+/// (ex.: mapa recriado durante a corrida) aparece completa direto.
 class DrawnPolyline extends StatelessWidget {
-  const DrawnPolyline({super.key, required this.points, required this.color, this.strokeWidth = 4});
+  const DrawnPolyline({super.key, required this.points, required this.color, this.strokeWidth = 4, this.animate = true});
   final List<LatLng> points;
   final Color color;
   final double strokeWidth;
+  final bool animate;
+
+  Polyline _line(List<LatLng> pts) => Polyline(
+        points: pts,
+        color: color,
+        strokeWidth: strokeWidth,
+        strokeCap: StrokeCap.round,
+        strokeJoin: StrokeJoin.round,
+      );
 
   @override
   Widget build(BuildContext context) {
+    if (!animate) return PolylineLayer(polylines: [_line(points)]);
     return VoltiRouteDraw(
       builder: (context, t) => PolylineLayer(polylines: [
-        Polyline(
-          points: VoltiRouteDraw.partial<LatLng>(
-            points,
-            t,
-            lerp: (a, b, f) => LatLng(a.latitude + (b.latitude - a.latitude) * f, a.longitude + (b.longitude - a.longitude) * f),
-            dist: (a, b) => math.sqrt(math.pow(a.latitude - b.latitude, 2) + math.pow(a.longitude - b.longitude, 2)),
-          ),
-          color: color,
-          strokeWidth: strokeWidth,
-          strokeCap: StrokeCap.round,
-          strokeJoin: StrokeJoin.round,
-        ),
+        _line(VoltiRouteDraw.partial<LatLng>(
+          points,
+          t,
+          lerp: (a, b, f) => LatLng(a.latitude + (b.latitude - a.latitude) * f, a.longitude + (b.longitude - a.longitude) * f),
+          dist: (a, b) => math.sqrt(math.pow(a.latitude - b.latitude, 2) + math.pow(a.longitude - b.longitude, 2)),
+        )),
       ]),
     );
   }

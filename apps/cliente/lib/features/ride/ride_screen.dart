@@ -6,16 +6,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
+import '../../core/launcher.dart';
 import '../../core/services.dart';
 import '../../core/widgets.dart';
+import '../../l10n/app_localizations.dart';
+import 'ride_data.dart';
 
 const kSupportPhone = String.fromEnvironment('SUPPORT_PHONE', defaultValue: '+551100000000');
 
@@ -48,6 +49,13 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   bool _fallOpen = false;
   bool _busy = false;
   bool _markerDropped = false;
+
+  /// Rota percorrida (trajeto salvo + posicoes ao vivo). Nunca vira "km rodados".
+  List<LatLng> _trail = const [];
+  bool _routeDrawn = false;
+
+  /// Zonas (para dar nome ao aviso de zona, ex. "Ciclovia Faria Lima").
+  List<GeoZone> _zones = const [];
 
   RealtimeService? _realtime;
   StreamSubscription<RealtimeEvent>? _events;
@@ -99,6 +107,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           _vehiclePos = LatLng(vehicle.lat, vehicle.lng);
         }
       });
+      _loadTrail(rental.id);
+      _loadZones();
       _startRealtime();
       _startTracking();
       _tick?.cancel();
@@ -108,6 +118,29 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     } catch (e) {
       if (mounted) setState(() => _loadError = e);
     }
+  }
+
+  Future<void> _loadTrail(String rentalId) async {
+    try {
+      final saved = await ref.read(rentalTrackProvider(rentalId).future);
+      if (!mounted || saved.isEmpty) return;
+      setState(() {
+        var t = <LatLng>[];
+        for (final p in [...saved, ..._trail]) {
+          t = appendTrail(t, p);
+        }
+        _trail = t;
+      });
+    } catch (_) {
+      // Sem trajeto salvo: a rota comeca dos eventos ao vivo.
+    }
+  }
+
+  Future<void> _loadZones() async {
+    try {
+      final zones = await ref.read(backendProvider).zones();
+      if (mounted) setState(() => _zones = zones);
+    } catch (_) {}
   }
 
   Future<void> _startRealtime() async {
@@ -161,6 +194,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           _battery = e.batteryPct;
           _limit = e.speedLimitKmh;
           _vehiclePos = LatLng(e.lat, e.lng);
+          _trail = appendTrail(_trail, _vehiclePos!);
         });
       case ZoneNotice():
         // Haptica so quando a zona muda (eventos ENTER repetidos nao vibram de novo).
@@ -183,6 +217,47 @@ class _RideScreenState extends ConsumerState<RideScreen> {
 
   String _camel(String s) => s.replaceAllMapped(RegExp(r'_([a-z])'), (m) => m[1]!.toUpperCase());
 
+  static final _zoneTypes = {
+    'reduced_speed': ZoneType.reducedSpeed,
+    'forbidden': ZoneType.forbidden,
+    'operation': ZoneType.operation,
+    'return': ZoneType.return_,
+  };
+
+  /// Nome da zona onde a moto esta (ex. "Ciclovia Faria Lima") ou o tipo dela.
+  String _zoneName(AppLocalizations l, ZoneNotice z) {
+    final type = _zoneTypes[z.zoneType];
+    final p = _vehiclePos;
+    if (type != null && p != null) {
+      final hit = zoneContaining(p.latitude, p.longitude, _zones.where((g) => g.active && g.type == type));
+      if (hit != null) return hit.name;
+    }
+    return switch (z.zoneType) {
+      'reduced_speed' => l.zoneReducedSpeed,
+      'forbidden' => l.zoneForbidden,
+      'operation' => l.zoneOperationEdge,
+      _ => l.zoneNotice,
+    };
+  }
+
+  String _zoneTitle(AppLocalizations l, ZoneNotice z) {
+    final name = _zoneName(l, z);
+    return z.speedLimitKmh != null ? l.zoneTitle(name, z.speedLimitKmh!) : name;
+  }
+
+  /// "R$ 0,79/min" (ou /h, /dia) do plano; pausada, a tarifa da pausa.
+  String? _fare(AppLocalizations l, PricingPlan? plan, {required bool paused}) {
+    if (plan == null) return null;
+    if (paused) return l.farePerMinute(money(plan.pausePerMinuteCents));
+    final price = money(plan.unitPriceCents);
+    return switch (plan.unit) {
+      PlanUnit.minute => l.farePerMinute(price),
+      PlanUnit.hour => l.farePerHour(price),
+      PlanUnit.day => l.farePerDay(price),
+      _ => price,
+    };
+  }
+
   Future<void> _showWellbeing() async {
     if (_fallOpen || _rental == null) return;
     _fallOpen = true;
@@ -194,7 +269,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       barrierDismissible: false,
       title: l.wellbeingTitle,
       icon: const _RoundIcon(icon: LucideIcons.activity, bg: VoltiColors.coral50, fg: VoltiColors.coral600),
-      message: Text(l.wellbeingText),
+      // Prazo do contrato (60 s), contando na tela. Sem resposta, o servidor aciona o suporte.
+      message: const _FallCountdown(seconds: 60),
       actions: [
         VoltiButton(label: l.imFine, fullWidth: true, onPressed: () => Navigator.of(context).pop(true)),
         VoltiButton(
@@ -202,8 +278,12 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       ],
     );
     _fallOpen = false;
+    if (ok == null) {
+      if (mounted) VoltiToast.show(context, l.wellbeingTimedOut, tone: VoltiToastTone.danger);
+      return;
+    }
     try {
-      await ref.read(backendProvider).wellbeing(id, ok: ok ?? true);
+      await ref.read(backendProvider).wellbeing(id, ok: ok);
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     }
@@ -213,6 +293,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   Future<void> _showSos() async {
     final l = context.l;
     VoltiHaptics.alert();
+    // Contato de emergencia salvo na Conta: o link vai direto para ele (SMS).
+    final contact = ref.read(emergencyContactProvider).value;
     await VoltiDialog.show<void>(
       context,
       title: l.sosTitle,
@@ -226,29 +308,51 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           fullWidth: true,
           onPressed: () async {
             Navigator.of(context).pop();
-            await launchUrl(Uri(scheme: 'tel', path: kSupportPhone));
+            await ref.read(urlLauncherProvider)(Uri(scheme: 'tel', path: kSupportPhone));
           },
         ),
         VoltiButton(
-          label: l.shareWithContact,
+          key: const Key('sos-share-contact'),
+          label: contact != null ? l.shareWithNamedContact(contact.name) : l.shareWithContact,
           icon: LucideIcons.share2,
           variant: VoltiButtonVariant.secondary,
           fullWidth: true,
           onPressed: () async {
             Navigator.of(context).pop();
-            await _shareLocation();
+            await _shareLocation(contact: contact);
           },
         ),
+        if (contact == null)
+          Semantics(
+            hint: l.noEmergencyContactHint,
+            child: VoltiButton(
+              key: const Key('sos-add-contact'),
+              label: l.addEmergencyContact,
+              icon: LucideIcons.userPlus,
+              variant: VoltiButtonVariant.ghost,
+              fullWidth: true,
+              onPressed: () async {
+                Navigator.of(context).pop();
+                await context.push('/account');
+                ref.invalidate(emergencyContactProvider);
+              },
+            ),
+          ),
         VoltiButton(label: l.cancel, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(context).pop()),
       ],
     );
   }
 
-  Future<void> _shareLocation() async {
+  /// Gera o link temporario (`/rentals/{id}/location-share`). Com [contact], manda
+  /// por SMS direto ao numero dele; sem contato (ou sem app de SMS), abre a folha
+  /// de compartilhar do sistema.
+  Future<void> _shareLocation({EmergencyContact? contact}) async {
     final l = context.l;
     try {
       final share = await ref.read(backendProvider).shareLocation(_rental!.id);
-      await SharePlus.instance.share(ShareParams(text: l.shareLocationMessage(share.url)));
+      final text = l.shareLocationMessage(share.url);
+      if (contact != null && await ref.read(urlLauncherProvider)(smsUri(contact.phone, text))) return;
+      await ref.read(shareTextProvider)(text);
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     }
@@ -270,40 +374,58 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     }
   }
 
+  /// Um dialogo so: escolhe o problema (chips) e decide trocar de moto sem nova
+  /// taxa ou so reportar.
   Future<void> _report() async {
     final l = context.l;
-    final problems = {
-      l.problemTire: 'tire',
-      l.problemBrake: 'brake',
-      l.problemBattery: 'battery',
-      l.problemLights: 'lights',
-      l.problemOther: 'other',
-    };
-    final picked = await VoltiBottomSheet.show<String>(
-      context,
-      builder: (ctx) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Text(l.reportTitle, style: VoltiTypography.title),
-        const SizedBox(height: 12),
-        Wrap(spacing: 8, runSpacing: 8, children: [
-          for (final e in problems.entries) ActionChip(label: Text(e.key), onPressed: () => Navigator.of(ctx).pop(e.key)),
-        ]),
-      ]),
+    final problems = [l.problemTire, l.problemBrake, l.problemBattery, l.problemLights, l.problemOther];
+    String? picked;
+    final swap = await showDialog<bool>(
+      context: context,
+      barrierColor: VoltiColors.surfaceScrim,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => VoltiDialog(
+          title: l.reportTitle,
+          message: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 4, children: [
+            for (final p in problems)
+              VoltiChip(
+                label: p,
+                selected: picked == p,
+                onTap: () {
+                  VoltiHaptics.selection();
+                  setLocal(() => picked = p);
+                },
+              ),
+          ]),
+          actions: [
+            VoltiButton(
+              label: l.swapNoFee,
+              icon: LucideIcons.repeat,
+              fullWidth: true,
+              onPressed: picked == null ? null : () => Navigator.of(ctx).pop(true),
+            ),
+            VoltiButton(
+              label: l.reportOnly,
+              variant: VoltiButtonVariant.secondary,
+              fullWidth: true,
+              onPressed: picked == null ? null : () => Navigator.of(ctx).pop(false),
+            ),
+            VoltiButton(label: l.cancel, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(ctx).pop()),
+          ],
+        ),
+      ),
     );
-    if (picked == null || !mounted) return;
+    final problem = picked;
+    if (swap == null || problem == null || !mounted) return;
     try {
       final r = _rental!;
-      await ref.read(backendProvider).reportIncident(IncidentCategory.vehicleProblem, picked, rentalId: r.id, vehicleId: r.vehicleId);
+      await ref.read(backendProvider).reportIncident(IncidentCategory.vehicleProblem, problem, rentalId: r.id, vehicleId: r.vehicleId);
       if (!mounted) return;
-      final swap = await VoltiDialog.show<bool>(
-        context,
-        title: l.reportSentTitle,
-        message: Text(l.reportSentText),
-        actions: [
-          VoltiButton(label: l.swapVehicle, fullWidth: true, onPressed: () => Navigator.of(context).pop(true)),
-          VoltiButton(label: l.notNow, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(context).pop(false)),
-        ],
-      );
-      if (swap == true && mounted) context.push('/scan?swap=${_rental!.id}');
+      if (swap) {
+        context.push('/scan?swap=${r.id}');
+      } else {
+        VoltiToast.show(context, l.reportSentTitle);
+      }
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     }
@@ -318,11 +440,22 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     final r = _rental;
     if (r == null) return Scaffold(body: const LoadingState());
     final paused = r.status == RentalStatus.paused;
+    final plan = ref.watch(rentalPlanProvider(r.planCode)).value;
+    // Carrega o contato de emergencia antes do SOS (o dialogo le o valor pronto).
+    ref.watch(emergencyContactProvider);
+    final fare = _fare(l, plan, paused: paused);
+    final coverageLabel = r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong;
+    final caption = [paused ? l.ridePaused : l.rideLive, if (plan != null) plan.name, coverageLabel].join(' · ');
     final center = _vehiclePos ?? _userPos ?? const LatLng(-23.5614, -46.6559);
     final mapOn = ref.watch(mapEnabledProvider);
     // O mapa e recriado quando a posicao muda: o pin so cai na primeira vez.
     final firstMarkerDrop = !_markerDropped;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _markerDropped = true);
+    // A rota se desenha (vt-draw) so na primeira vez que aparece.
+    final animateRoute = !_routeDrawn;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markerDropped = true;
+      if (_trail.length >= 2) _routeDrawn = true;
+    });
 
     return Scaffold(
       body: Stack(children: [
@@ -332,6 +465,13 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                   key: ValueKey(center.latitude.toStringAsFixed(4) + center.longitude.toStringAsFixed(4)),
                   center: center,
                   layers: [
+                    if (_trail.length >= 2)
+                      DrawnPolyline(
+                        key: const Key('ride-route'),
+                        points: _trail,
+                        color: VoltiColors.brand,
+                        animate: animateRoute,
+                      ),
                     MarkerLayer(markers: [
                       if (_userPos != null)
                         Marker(point: _userPos!, width: 34, height: 34, child: const VoltiUserDot(heading: true)),
@@ -412,7 +552,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                 visible: _zone != null,
                 icon: LucideIcons.gauge,
                 tone: _isDangerZone(_lastZone) ? VoltiStatusTone.danger : VoltiStatusTone.warning,
-                title: _lastZone?.speedLimitKmh != null ? l.zoneLimit(_lastZone!.speedLimitKmh!) : l.zoneNotice,
+                title: _lastZone != null ? _zoneTitle(l, _lastZone!) : l.zoneNotice,
                 message: _lastZone?.message ?? '',
               ),
             ]),
@@ -437,7 +577,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                   Row(children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(paused ? l.ridePaused : l.rideLive, style: VoltiTypography.caption),
+                        Text(caption, style: VoltiTypography.caption),
                         FittedBox(
                           fit: BoxFit.scaleDown,
                           alignment: Alignment.centerLeft,
@@ -445,16 +585,20 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                         ),
                       ]),
                     ),
-                    _StateBadge(paused: paused, label: paused ? l.pausedBadge : l.liveBadge),
+                    _StateBadge(
+                      paused: paused,
+                      label: paused ? (fare ?? l.pausedBadge) : l.liveBadge,
+                      semanticsLabel: paused && fare != null ? l.pausedFareSemantics(fare) : null,
+                    ),
                   ]),
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
                     child: Row(children: [
+                      _Stat(l.fareLabel, fare ?? '—', key: const Key('ride-fare')),
                       _Stat(l.accumulatedCost, money(_cost), ticker: true),
                       _Stat(l.battery, '$_battery%', ticker: true),
-                      _Stat(l.coverage, r.coverage == InsuranceCoverage.full ? l.coverageFull : l.coverageBasic),
                     ]),
                   ),
                   const SizedBox(height: 12),
@@ -465,8 +609,9 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                   const SizedBox(height: 12),
                   Row(children: [
                     Expanded(
+                      flex: 10,
                       child: VoltiButton(
-                        label: paused ? l.resume : l.pause,
+                        label: paused ? l.unpauseRide : l.pause,
                         icon: paused ? LucideIcons.circlePlay : LucideIcons.pause,
                         variant: VoltiButtonVariant.secondary,
                         size: VoltiButtonSize.lg,
@@ -476,6 +621,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
+                      flex: 13,
                       child: VoltiButton(
                         label: l.returnVehicle,
                         variant: VoltiButtonVariant.dark,
@@ -496,7 +642,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat(this.label, this.value, {this.ticker = false});
+  const _Stat(this.label, this.value, {super.key, this.ticker = false});
   final String label, value;
 
   /// Valor que muda ao vivo: rola os digitos (`VoltiTicker`).
@@ -519,9 +665,10 @@ class _Stat extends StatelessWidget {
 
 /// Selo "Ao vivo" (ponto piscando) ou "Pausada", troca com cross-fade.
 class _StateBadge extends StatelessWidget {
-  const _StateBadge({required this.paused, required this.label});
+  const _StateBadge({required this.paused, required this.label, this.semanticsLabel});
   final bool paused;
   final String label;
+  final String? semanticsLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -536,7 +683,7 @@ class _StateBadge extends StatelessWidget {
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           if (paused) Icon(LucideIcons.pause, size: 14, color: fg) else const _LiveDot(),
           const SizedBox(width: 6),
-          Text(label, style: VoltiTypography.label.copyWith(color: fg)),
+          Text(label, style: VoltiTypography.label.copyWith(color: fg), semanticsLabel: semanticsLabel),
         ]),
       ),
     );
@@ -593,4 +740,53 @@ class _LiveDotState extends State<_LiveDot> with SingleTickerProviderStateMixin 
           decoration: const BoxDecoration(color: VoltiColors.success, shape: BoxShape.circle),
         ),
       );
+}
+
+/// Texto do "Voce esta bem?" com o prazo contando em negrito. Ao zerar, fecha o
+/// dialogo sem resposta (o servidor ja aciona o suporte pelo prazo do contrato).
+class _FallCountdown extends StatefulWidget {
+  const _FallCountdown({required this.seconds});
+  final int seconds;
+  @override
+  State<_FallCountdown> createState() => _FallCountdownState();
+}
+
+class _FallCountdownState extends State<_FallCountdown> {
+  late int _left = widget.seconds;
+  Timer? _t;
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (_left <= 1) {
+        _t?.cancel();
+        Navigator.of(context).pop();
+        return;
+      }
+      setState(() => _left--);
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final strong = TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface);
+    return Text.rich(
+      key: const Key('fall-countdown'),
+      TextSpan(children: [
+        TextSpan(text: l.wellbeingLead),
+        TextSpan(text: l.secondsShort(_left), style: strong),
+        TextSpan(text: l.wellbeingTail),
+      ]),
+      textAlign: TextAlign.center,
+    );
+  }
 }

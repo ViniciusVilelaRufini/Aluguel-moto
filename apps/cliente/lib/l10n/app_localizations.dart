@@ -1767,6 +1767,288 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Seu plano continua valendo até {date}. Depois disso, não renova.'**
   String cancelRenewalText(String date);
+
+  /// No description provided for @fareLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tarifa'**
+  String get fareLabel;
+
+  /// No description provided for @coverageBasicLong.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seguro básico'**
+  String get coverageBasicLong;
+
+  /// No description provided for @coverageFullLong.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seguro completo'**
+  String get coverageFullLong;
+
+  /// No description provided for @unpauseRide.
+  ///
+  /// In pt, this message translates to:
+  /// **'Destravar'**
+  String get unpauseRide;
+
+  /// No description provided for @zoneReducedSpeed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Velocidade reduzida'**
+  String get zoneReducedSpeed;
+
+  /// No description provided for @zoneForbidden.
+  ///
+  /// In pt, this message translates to:
+  /// **'Área proibida'**
+  String get zoneForbidden;
+
+  /// No description provided for @zoneOperationEdge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Limite da área de operação'**
+  String get zoneOperationEdge;
+
+  /// No description provided for @wellbeingLead.
+  ///
+  /// In pt, this message translates to:
+  /// **'Detectamos uma possível queda. Sem resposta em '**
+  String get wellbeingLead;
+
+  /// No description provided for @wellbeingTail.
+  ///
+  /// In pt, this message translates to:
+  /// **', acionamos o suporte.'**
+  String get wellbeingTail;
+
+  /// No description provided for @wellbeingTimedOut.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem resposta: acionamos o suporte.'**
+  String get wellbeingTimedOut;
+
+  /// No description provided for @addEmergencyContact.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cadastrar contato de emergência'**
+  String get addEmergencyContact;
+
+  /// No description provided for @noEmergencyContactHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Com um contato salvo, o link vai direto para ele.'**
+  String get noEmergencyContactHint;
+
+  /// No description provided for @reportOnly.
+  ///
+  /// In pt, this message translates to:
+  /// **'Só reportar'**
+  String get reportOnly;
+
+  /// No description provided for @swapNoFee.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trocar de moto sem nova taxa'**
+  String get swapNoFee;
+
+  /// No description provided for @returnPointTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ponto de devolução'**
+  String get returnPointTitle;
+
+  /// No description provided for @returnOutsideShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fora dos pontos verdes'**
+  String get returnOutsideShort;
+
+  /// No description provided for @returnCheckingShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'Procurando pontos de devolução'**
+  String get returnCheckingShort;
+
+  /// No description provided for @returnStepPhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'Passo 1 de 2 · Foto'**
+  String get returnStepPhoto;
+
+  /// No description provided for @returnStepLock.
+  ///
+  /// In pt, this message translates to:
+  /// **'Passo 2 de 2 · Travar'**
+  String get returnStepLock;
+
+  /// No description provided for @returnPhotoTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotografe a moto estacionada'**
+  String get returnPhotoTitle;
+
+  /// No description provided for @takePhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tirar foto'**
+  String get takePhoto;
+
+  /// No description provided for @returnPhotoHintDesign.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mostre a moto inteira e a calçada livre'**
+  String get returnPhotoHintDesign;
+
+  /// No description provided for @returnZoneRule.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fora dos pontos verdes não é possível encerrar sem taxa.'**
+  String get returnZoneRule;
+
+  /// No description provided for @returnOutsideBlocked.
+  ///
+  /// In pt, this message translates to:
+  /// **'Leve a moto até uma área verde do mapa para encerrar. Fora dela, encerrar só com o suporte, com taxa.'**
+  String get returnOutsideBlocked;
+
+  /// No description provided for @lockAndEnd.
+  ///
+  /// In pt, this message translates to:
+  /// **'Travar e encerrar'**
+  String get lockAndEnd;
+
+  /// No description provided for @confirmingLock.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confirmando…'**
+  String get confirmingLock;
+
+  /// No description provided for @returnPinLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ponto de devolução mais próximo'**
+  String get returnPinLabel;
+
+  /// No description provided for @rideFinished.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corrida finalizada'**
+  String get rideFinished;
+
+  /// No description provided for @rideFinishedText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto travada. Caução liberada.'**
+  String get rideFinishedText;
+
+  /// No description provided for @receiptAndInvoice.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recibo e nota fiscal'**
+  String get receiptAndInvoice;
+
+  /// No description provided for @paidWithPix.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix'**
+  String get paidWithPix;
+
+  /// No description provided for @paidWithWallet.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carteira Volti'**
+  String get paidWithWallet;
+
+  /// No description provided for @receiptPdfPending.
+  ///
+  /// In pt, this message translates to:
+  /// **'O PDF fica pronto em instantes.'**
+  String get receiptPdfPending;
+
+  /// No description provided for @rateRideTrip.
+  ///
+  /// In pt, this message translates to:
+  /// **'Como foi a moto e a viagem?'**
+  String get rateRideTrip;
+
+  /// No description provided for @ratingCommentHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Comentário (opcional)'**
+  String get ratingCommentHint;
+
+  /// No description provided for @finishSummary.
+  ///
+  /// In pt, this message translates to:
+  /// **'Concluir'**
+  String get finishSummary;
+
+  /// No description provided for @farePerMinute.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price}/min'**
+  String farePerMinute(String price);
+
+  /// No description provided for @farePerHour.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price}/h'**
+  String farePerHour(String price);
+
+  /// No description provided for @farePerDay.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price}/dia'**
+  String farePerDay(String price);
+
+  /// No description provided for @pausedFareSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pausada, {price}'**
+  String pausedFareSemantics(String price);
+
+  /// No description provided for @zoneTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'{name} · limite {limit} km/h'**
+  String zoneTitle(String name, int limit);
+
+  /// No description provided for @secondsShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'{seconds} s'**
+  String secondsShort(int seconds);
+
+  /// No description provided for @shareWithNamedContact.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar localização para {name}'**
+  String shareWithNamedContact(String name);
+
+  /// No description provided for @returnInsideZone.
+  ///
+  /// In pt, this message translates to:
+  /// **'{name} · você está dentro'**
+  String returnInsideZone(String name);
+
+  /// No description provided for @returnZonesMap.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mapa com {count} pontos de devolução'**
+  String returnZonesMap(int count);
+
+  /// No description provided for @paidWithCard.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cartão •••• {last4}'**
+  String paidWithCard(String last4);
+
+  /// No description provided for @invoiceNumberLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'NFS-e {number}'**
+  String invoiceNumberLabel(String number);
 }
 
 class _AppLocalizationsDelegate
