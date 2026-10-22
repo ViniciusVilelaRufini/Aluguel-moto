@@ -18,6 +18,7 @@ import { FleetStatus } from '@/ds/FleetStatus';
 import { Alert } from '@/ds/Alert';
 import { CommandTimeline } from './CommandTimeline';
 import { commandOutcome } from '@/lib/command-steps';
+import { commandSentMessage, signalLabel, toAuditRows } from '@/lib/fleet-copy';
 import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
 import { Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
 
@@ -25,9 +26,6 @@ interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; 
 
 const COMMAND_LABEL: Record<CommandType, string> = {
   lock: 'Bloquear', unlock: 'Desbloquear', horn: 'Buzina', speed_limit: 'Limitar velocidade', stolen_mode: 'Modo roubada',
-};
-const SENT_LABEL: Record<CommandType, string> = {
-  lock: 'Bloqueio enviado', unlock: 'Desbloqueio enviado', horn: 'Buzina acionada', speed_limit: 'Limite de velocidade enviado', stolen_mode: 'Modo roubada enviado',
 };
 
 export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
@@ -63,6 +61,30 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
     enabled: canCommand || groups.includes('suporte'),
   });
 
+  // Cliente do aluguel atual (aluguel -> cliente); só quem pode abrir clientes (admin, suporte).
+  const canSeeCustomer = groups.includes('admin') || groups.includes('suporte');
+  const currentRentalId = v?.currentRentalId;
+  const rental = useQuery({
+    queryKey: ['rental', currentRentalId],
+    enabled: !!currentRentalId && canSeeCustomer,
+    queryFn: () => unwrap(api.GET('/rentals/{id}', { params: { path: { id: currentRentalId! } } })),
+  });
+  const customerId = rental.data?.customerId;
+  const customer = useQuery({
+    queryKey: ['customer', customerId],
+    enabled: !!customerId,
+    queryFn: () => unwrap(api.GET('/customers/{id}', { params: { path: { id: customerId! } } })),
+  });
+
+  // Log de auditoria completo (comandos, sistema e campo) só para o admin; os demais veem os comandos.
+  const isAdmin = groups.includes('admin');
+  const audit = useQuery({
+    queryKey: ['vehicle-audit', vehicleId],
+    enabled: isAdmin,
+    queryFn: () => unwrap(api.GET('/audit-logs', { params: { query: { entityId: vehicleId, limit: 5 } } })),
+  });
+  const auditRows = useMemo(() => toAuditRows(audit.data?.items ?? []), [audit.data]);
+
   useRealtimeEvent('command.updated', (p) => {
     if (p.vehicleId !== vehicleId) return;
     setActive((a) => (a && a.id === p.commandId ? { ...a, status: p.status, reason: p.reason } : a));
@@ -90,7 +112,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
     if (type === 'speed_limit') assertSpeedLimit(extra.speedLimitKmh);
     const cmd = await unwrap(api.POST('/vehicles/{id}/commands', { params: { path: { id: vehicleId } }, body: { type, reason, ...extra } }));
     setActive({ id: cmd.id, type, status: cmd.status, reason: cmd.statusReason });
-    toast(SENT_LABEL[type]);
+    toast(commandSentMessage(type, extra));
     qc.invalidateQueries({ queryKey: ['vehicle-commands', vehicleId] });
   };
 
@@ -113,7 +135,8 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       </div>
       <div>
         <KV k="Último sinal" v={v.lastSeenAt ? timeAgo(v.lastSeenAt) : '—'} />
-        <KV k="GPS / 4G" v={v.online === false ? 'Sem sinal' : v.signal != null ? `Sinal ${v.signal}/5` : '—'} />
+        <KV k="GPS / 4G" v={signalLabel(v.online, v.signal)} />
+        <KV k="Cliente" v={v.currentRentalId ? (customer.data?.name ?? (canSeeCustomer && (rental.isLoading || customer.isLoading) ? '...' : '—')) : '—'} />
         <KV k="Aluguel" v={v.currentRentalId ? (rentalHref(groups, v.currentRentalId) ? <Link href={rentalHref(groups, v.currentRentalId)!} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Ver aluguel atual</Link> : 'Em andamento') : '—'} />
         <KV k="Posição" v={`${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`} mono />
         <KV k="Travada" v={v.locked === undefined ? '—' : v.locked ? 'Sim' : 'Não'} />
@@ -128,7 +151,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
             <Button size="sm" variant="danger" icon="Lock" testId="cmd-lock" onClick={() => setDialog('lock')}>Bloquear</Button>
             <Button size="sm" variant="secondary" icon="LockOpen" testId="cmd-unlock" onClick={() => setDialog('unlock')}>Desbloquear</Button>
             <Button size="sm" variant="secondary" icon="Megaphone" testId="cmd-horn" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('horn')}>Buzina</Button>
-            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Velocidade</Button>
+            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Limitar vel.</Button>
           </div>
           <Button size="sm" variant="dark" icon="ShieldAlert" fullWidth style={{ marginTop: 8 }} testId="cmd-stolen" onClick={() => setDialog('stolen_mode')}>Modo roubada</Button>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>Sem sinal, o comando fica pendente e é aplicado ao reconectar.</div>
@@ -153,9 +176,23 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         </div>
       )}
 
-      {commands.data && commands.data.items.length > 0 && (
-        <div>
-          <SectionTitle>Log de comandos</SectionTitle>
+      {isAdmin && auditRows.length > 0 ? (
+        <div data-testid="audit-log">
+          <SectionTitle>Log de auditoria</SectionTitle>
+          {auditRows.map((r) => (
+            <div key={r.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--ink-100)' }}>
+              <span style={{ font: '500 12px/1.4 var(--font-mono)', color: 'var(--text-secondary)' }}>{formatDateTime(r.at).slice(-5)}</span>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{r.what}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{r.who} · {r.why}</div>
+              </div>
+            </div>
+          ))}
+          <Link href="/team" style={{ display: 'inline-block', marginTop: 8, fontSize: 13, fontWeight: 600, color: 'var(--text-link)' }}>Ver auditoria completa</Link>
+        </div>
+      ) : commands.data && commands.data.items.length > 0 && (
+        <div data-testid="audit-log">
+          <SectionTitle>Log de auditoria</SectionTitle>
           {commands.data.items.map((c) => (
             <div key={c.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--ink-100)' }}>
               <span style={{ font: '500 12px/1.4 var(--font-mono)', color: 'var(--text-secondary)' }}>{formatDateTime(c.createdAt).slice(-5)}</span>

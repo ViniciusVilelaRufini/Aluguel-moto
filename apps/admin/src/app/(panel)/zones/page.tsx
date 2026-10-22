@@ -7,6 +7,8 @@ import type MapboxDraw from '@mapbox/mapbox-gl-draw';
 import { api, problemMessage, unwrap, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
+import { allLayers, filterByLayers, toggleLayer, visibleCount, ZONE_TYPES, zoneTooltip } from '@/lib/zone-layers';
+import { formatBRL } from '@/lib/format';
 import { validateZone, type ZoneErrors } from '@/lib/zone-validation';
 import { MAX_REDUCED_SPEED_KMH, type S, type ZoneType } from '@/lib/types';
 import { MapView } from '@/components/MapView';
@@ -42,8 +44,13 @@ export default function ZonesPage() {
   const [errors, setErrors] = useState<ZoneErrors>({});
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [serverError, setServerError] = useState<unknown>(null);
-  const [layers, setLayers] = useState(true);
+  const [layers, setLayers] = useState(allLayers());
+  const [menu, setMenu] = useState(false);
   draftRef.current = draft;
+
+  // Taxa de encerramento fora do ponto de devolução (a leitura de taxas é de admin/financeiro).
+  const feesQ = useQuery({ queryKey: ['fees'], enabled: groups.includes('admin') || groups.includes('financeiro'), queryFn: () => unwrap(api.GET('/pricing/fees')) });
+  const returnFee = feesQ.data?.items.find((f) => f.code === 'force_end_outside_return_zone')?.amountCents;
 
   const zonesQ = useQuery({ queryKey: ['zones'], queryFn: () => unwrap(api.GET('/zones')) });
   const zones = useMemo(() => (zonesQ.data?.items ?? []).filter((z) => z.active), [zonesQ.data]);
@@ -54,6 +61,31 @@ export default function ZonesPage() {
     map.addLayer({ id: 'zones-fill', type: 'fill', source: 'zones', filter: ['!=', ['get', 'type'], 'operation'], paint: { 'fill-color': colorExpr, 'fill-opacity': 0.18 } });
     map.addLayer({ id: 'zones-line', type: 'line', source: 'zones', filter: ['!=', ['get', 'type'], 'operation'], paint: { 'line-color': colorExpr, 'line-width': 2.5 } });
     map.addLayer({ id: 'zones-operation', type: 'line', source: 'zones', filter: ['==', ['get', 'type'], 'operation'], paint: { 'line-color': ZONE_COLOR.operation, 'line-width': 2.5, 'line-dasharray': [3, 2] } });
+    // Área de acerto larga para a linha tracejada da operação (o tooltip também vale para ela).
+    map.addLayer({ id: 'zones-operation-hit', type: 'line', source: 'zones', filter: ['==', ['get', 'type'], 'operation'], paint: { 'line-color': '#000', 'line-opacity': 0, 'line-width': 16 } });
+    import('maplibre-gl').then((ml) => {
+      if (mapRef.current !== map) return;
+      const popup = new ml.Popup({ closeButton: false, closeOnClick: false, offset: 10, className: 'vt-popup' });
+      const show = (e: { lngLat: { lng: number; lat: number }; features?: GeoJSON.Feature[] }) => {
+        const p = e.features?.[0]?.properties as { name?: string; type?: ZoneType; limit?: number | null } | undefined;
+        if (!p?.name || !p.type) return;
+        const t = zoneTooltip({ name: p.name, type: p.type, speedLimitKmh: p.limit ?? undefined }, ZONE_LABEL);
+        const el = document.createElement('div');
+        el.className = 'vt-tip';
+        el.setAttribute('data-testid', 'zone-tooltip');
+        const strong = document.createElement('strong');
+        strong.style.fontFamily = 'var(--font-sans)';
+        strong.textContent = t.title;
+        const span = document.createElement('span');
+        span.textContent = t.detail;
+        el.append(strong, span);
+        popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map);
+      };
+      for (const l of ['zones-fill', 'zones-operation-hit']) {
+        map.on('mousemove', l, show as never);
+        map.on('mouseleave', l, () => popup.remove());
+      }
+    });
     map.on('click', 'zones-fill', (e) => {
       if (draftRef.current || !canEditRef.current) return;
       const id = e.features?.[0]?.properties?.id as string | undefined;
@@ -87,9 +119,8 @@ export default function ZonesPage() {
     const src = map.getSource('zones') as GeoJSONSource | undefined;
     src?.setData({
       type: 'FeatureCollection',
-      features: zones.filter((z) => z.id !== draft?.id).map((z) => ({ type: 'Feature', geometry: z.geometry as GeoJSON.Polygon, properties: { id: z.id, type: z.type, name: z.name } })),
+      features: filterByLayers(zones, layers).filter((z) => z.id !== draft?.id).map((z) => ({ type: 'Feature', geometry: z.geometry as GeoJSON.Polygon, properties: { id: z.id, type: z.type, name: z.name, limit: z.speedLimitKmh ?? null } })),
     });
-    for (const l of ['zones-fill', 'zones-line', 'zones-operation']) map.setLayoutProperty(l, 'visibility', layers ? 'visible' : 'none');
   }, [zones, draft?.id, mapReady, layers]);
 
   const startNew = () => {
@@ -179,7 +210,21 @@ export default function ZonesPage() {
         <MapView onReady={onReady} onDestroy={() => { mapRef.current = null; drawRef.current = null; setMapReady(false); }} />
         <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 8 }}>
           {canEdit && <Button size="sm" variant="dark" icon="PenTool" testId="draw-zone" disabled={!mapReady} onClick={startNew}>Desenhar área</Button>}
-          <Button size="sm" variant="secondary" icon="Layers" style={{ background: '#fff', color: 'var(--text-primary)', borderColor: 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => setLayers(!layers)}>{layers ? 'Ocultar camadas' : 'Mostrar camadas'}</Button>
+          <div style={{ position: 'relative' }}>
+            <Button size="sm" variant="secondary" icon="Layers" testId="layers-toggle" title="Escolher camadas de cercas" style={{ background: '#fff', color: 'var(--text-primary)', borderColor: 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => setMenu(!menu)}>Camadas{visibleCount(layers) < ZONE_TYPES.length ? ` (${visibleCount(layers)}/${ZONE_TYPES.length})` : ''}</Button>
+            {menu && (
+              <div role="group" aria-label="Camadas de cercas" data-testid="layers-menu" onKeyDown={(e) => { if (e.key === 'Escape') { e.stopPropagation(); setMenu(false); } }}
+                style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, minWidth: 220, background: 'var(--surface-card)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-2)', padding: 6, display: 'flex', flexDirection: 'column' }}>
+                {ZONE_TYPES.map((t) => (
+                  <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', fontSize: 14, fontWeight: 500, cursor: 'pointer', borderRadius: 'var(--radius-sm)' }}>
+                    <input type="checkbox" data-testid={`layer-${t}`} checked={layers[t]} onChange={() => setLayers((v) => toggleLayer(v, t))} />
+                    <span style={{ width: 12, height: 12, borderRadius: 4, background: ZONE_COLOR[t], flexShrink: 0 }} />
+                    {ZONE_LABEL[t]}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
       <SidePanel width={360} testId="zones-panel">
@@ -235,7 +280,7 @@ export default function ZonesPage() {
           ['Saiu da área de operação', 'Alerta imediato; reduz e bloqueia com segurança após 5 min'],
           ['Entrou em área de pedestres ou ciclovia', 'Limite de 6 km/h (pedestres) ou 20 km/h (ciclovia)'],
           ['Zona proibida', 'Não permite encerrar o aluguel'],
-          ['Fora do ponto de devolução', 'Só o admin encerra à força, com taxa'],
+          ['Fora do ponto de devolução', returnFee !== undefined ? `Só o admin encerra à força, com taxa de ${formatBRL(returnFee)}` : 'Só o admin encerra à força, com taxa'],
         ].map(([t, d]) => (
           <div key={t} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: '1px solid var(--ink-100)' }}>
             <div style={{ flex: 1 }}>

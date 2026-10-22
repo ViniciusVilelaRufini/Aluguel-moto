@@ -12,6 +12,8 @@ import { formatBRL } from '@/lib/format';
 import { anyMoved, batteryHex, interpolatePositions, positionsOf, type LngLat } from '@/lib/map-anim';
 import { easeInOutCubic, prefersReducedMotion, tween } from '@/lib/motion';
 import { dialogStack } from '@/lib/focus';
+import { rentalWindow } from '@/lib/fleet-copy';
+import { BIKE_ICON, registerFleetImages } from '@/lib/map-icons';
 import { MapView } from '@/components/MapView';
 import { VehicleSheet } from '@/components/VehicleSheet';
 import { Field, Select } from '@/components/ui';
@@ -93,11 +95,14 @@ export default function FleetPage() {
   const onReady = useCallback((map: MlMap) => {
     mapRef.current = map;
     map.addSource(FLEET_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, cluster: true, clusterRadius: 44, clusterMaxZoom: 14 });
-    map.addLayer({ id: 'clusters', type: 'circle', source: FLEET_SRC, filter: ['has', 'point_count'], paint: { 'circle-color': '#15181A', 'circle-radius': ['step', ['get', 'point_count'], 12, 5, 16, 15, 20, 40, 26], 'circle-opacity': 0.85, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 } });
-    // Anel de bateria por fora do pin (mesma regra da BatteryPill), depois o pin na cor do status.
-    map.addLayer({ id: 'vehicles-battery', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': ['get', 'batteryColor'] as never, 'circle-radius': 11.5, 'circle-opacity': 0.95 } });
-    map.addLayer({ id: 'vehicles', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': colorExpr, 'circle-radius': 7.5, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 } });
-    map.addLayer({ id: 'vehicle-selected', type: 'circle', source: FLEET_SRC, filter: ['==', ['get', 'id'], ''], paint: { 'circle-color': colorExpr, 'circle-radius': 12, 'circle-stroke-color': '#15181A', 'circle-stroke-width': 3 } });
+    registerFleetImages(map);
+    // Cluster: imagem em canvas com a contagem (sem glifos externos); o clique continua nesta camada.
+    map.addLayer({ id: 'clusters', type: 'symbol', source: FLEET_SRC, filter: ['has', 'point_count'], layout: { 'icon-image': ['concat', 'cluster-', ['to-string', ['get', 'point_count']]] as never, 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
+    // Anel de bateria por fora do pin (mesma regra da BatteryPill), depois o pin na cor do status com o ícone da moto.
+    map.addLayer({ id: 'vehicles-battery', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': ['get', 'batteryColor'] as never, 'circle-radius': 14.5, 'circle-opacity': 0.95 } });
+    map.addLayer({ id: 'vehicles', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': colorExpr, 'circle-radius': 12, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 } });
+    map.addLayer({ id: 'vehicle-selected', type: 'circle', source: FLEET_SRC, filter: ['==', ['get', 'id'], ''], paint: { 'circle-color': colorExpr, 'circle-radius': 17, 'circle-stroke-color': '#15181A', 'circle-stroke-width': 3 } });
+    map.addLayer({ id: 'vehicles-icon', type: 'symbol', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], layout: { 'icon-image': BIKE_ICON, 'icon-size': 0.5, 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
     map.on('click', 'vehicles', (e) => { const id = e.features?.[0]?.properties?.id as string | undefined; if (id) select(id); });
     map.on('click', 'clusters', async (e) => {
       const f = e.features?.[0];
@@ -174,6 +179,7 @@ export default function FleetPage() {
     const map = mapRef.current;
     if (!mapReady || !map) return;
     map.setFilter('vehicle-selected', ['==', ['get', 'id'], selected ?? '']);
+    map.setLayoutProperty('vehicles-icon', 'icon-size', ['case', ['==', ['get', 'id'], selected ?? ''], 0.7, 0.5] as never);
     const v = vehicles.find((x) => x.id === selected);
     const pulse = pulseRef.current;
     if (v && pulse) pulse.setLngLat([v.lng, v.lat]).addTo(map);
@@ -250,16 +256,26 @@ const SPEEDS = [1, 4, 16] as const;
  * play/pausa anima o marcador pela linha do tempo (velocidade 1x, 4x, 16x).
  */
 function ReplayBar({ vehicleId, mapRef, mapReady }: { vehicleId: string; mapRef: React.MutableRefObject<MlMap | null>; mapReady: boolean }) {
-  const [hours, setHours] = useState<'2' | '24' | '168'>('24');
+  // Período (2 h, 24 h, 7 dias) ou aluguel da moto ("rental:<id>").
+  const [range, setRange] = useState<string>('24');
   const [idx, setIdx] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [speed, setSpeed] = useState<(typeof SPEEDS)[number]>(4);
+  const rentals = useQuery({ queryKey: ['replay-rentals', vehicleId], queryFn: () => unwrap(api.GET('/rentals', { params: { query: { vehicleId, limit: 10 } } })) });
+  const rentalItems = useMemo(() => rentals.data?.items ?? [], [rentals.data]);
+  const fmtStart = (iso: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+  const rangeOptions = useMemo(() => [
+    { value: '2', label: 'Últimas 2 h' }, { value: '24', label: 'Últimas 24 h' }, { value: '168', label: 'Últimos 7 dias' },
+    ...rentalItems.map((r) => ({ value: `rental:${r.id}`, label: `Aluguel de ${fmtStart(r.startedAt)}` })),
+  ], [rentalItems]);
+  const rentalSel = range.startsWith('rental:') ? rentalItems.find((r) => `rental:${r.id}` === range) : undefined;
+  const waitingRental = range.startsWith('rental:') && !rentalSel;
   const track = useQuery({
-    queryKey: ['track', vehicleId, hours],
+    queryKey: ['track', vehicleId, range, rentalSel?.endedAt ?? null],
+    enabled: !waitingRental,
     queryFn: () => {
-      const to = new Date();
-      const from = new Date(to.getTime() - Number(hours) * 3600_000);
-      return unwrap(api.GET('/vehicles/{id}/track', { params: { path: { id: vehicleId }, query: { from: from.toISOString(), to: to.toISOString() } } }));
+      const w = rentalSel ? rentalWindow(rentalSel) : (() => { const to = new Date(); return { from: new Date(to.getTime() - Number(range) * 3600_000).toISOString(), to: to.toISOString() }; })();
+      return unwrap(api.GET('/vehicles/{id}/track', { params: { path: { id: vehicleId }, query: w } }));
     },
   });
   const points = useMemo(() => track.data?.points ?? [], [track.data]);
@@ -319,13 +335,13 @@ function ReplayBar({ vehicleId, mapRef, mapReady }: { vehicleId: string; mapRef:
   const progress = points.length > 1 ? idx / (points.length - 1) : 0;
   return (
     <div data-testid="replay-bar" className="replay-bar" style={{ position: 'absolute', left: 16, right: 60, bottom: 24, background: 'var(--glass-bg)', backdropFilter: 'var(--blur-glass)', WebkitBackdropFilter: 'var(--blur-glass)', borderRadius: 'var(--radius-lg)', padding: 14, boxShadow: 'var(--shadow-2)', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
-      <div style={{ width: 150 }}>
-        <Field label="Período">
-          <Select value={hours} onChange={setHours} options={[{ value: '2', label: 'Últimas 2 h' }, { value: '24', label: 'Últimas 24 h' }, { value: '168', label: 'Últimos 7 dias' }]} />
+      <div style={{ width: 190 }}>
+        <Field label="Período ou aluguel">
+          <Select testId="replay-range" value={range} onChange={setRange} options={rangeOptions} />
         </Field>
       </div>
       {points.length === 0 ? (
-        <span role="status" style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{track.isLoading ? 'Carregando trajeto...' : 'Sem trajeto no período. Tente um período maior.'}</span>
+        <span role="status" style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{track.isLoading || waitingRental ? 'Carregando trajeto...' : (rentalSel ? 'Sem trajeto neste aluguel.' : 'Sem trajeto no período. Tente um período maior.')}</span>
       ) : (
         <>
           <IconButton icon={playing ? 'Pause' : 'Play'} variant="dark" size={40} label={playing ? 'Pausar replay' : 'Reproduzir replay'}
