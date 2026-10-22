@@ -20,6 +20,8 @@ import { CommandTimeline } from './CommandTimeline';
 import { commandOutcome } from '@/lib/command-steps';
 import { commandSentMessage, signalLabel, toAuditRows } from '@/lib/fleet-copy';
 import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
+import { SERVICE_STATUS, formatHours, formatKm, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
+import { SubscriptionVehicleDialog } from './SubscriptionVehicleDialog';
 import { Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
 
 interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason }
@@ -39,6 +41,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   const [dialog, setDialog] = useState<CommandType | null>(null);
   const [active, setActive] = useState<ActiveCommand | null>(null);
   const [history, setHistory] = useState(false);
+  const [moveFixed, setMoveFixed] = useState(false);
 
   useEffect(() => { setActive(null); }, [vehicleId]);
 
@@ -138,7 +141,23 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         <KV k="GPS / 4G" v={signalLabel(v.online, v.signal)} />
         <KV k="Cliente" v={!v.currentRentalId ? '—' : !canSeeCustomer ? 'Restrito' : (customer.data?.name ?? (rental.isLoading || customer.isLoading ? '...' : '—'))} />
         <KV k="Aluguel" v={v.currentRentalId ? (rentalHref(groups, v.currentRentalId) ? <Link href={rentalHref(groups, v.currentRentalId)!} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Ver aluguel atual</Link> : 'Em andamento') : '—'} />
+        <KV k="Endereço" v={v.address ? (
+          <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
+            <span data-testid="vehicle-address">{v.address}</span>
+            {v.addressUpdatedAt && <span data-testid="vehicle-address-updated" style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>atualizado {timeAgo(v.addressUpdatedAt)}</span>}
+          </span>
+        ) : '—'} />
         <KV k="Posição" v={`${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`} mono />
+        <KV k="Modelo" v={v.categoryLabel ? `${v.model} · ${v.categoryLabel}` : v.model} />
+        <KV k="Km desde revisão" v={v.service ? (
+          <span data-testid="vehicle-service" style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            {formatKm(v.service.kmSinceService)}<Pill tone={SERVICE_STATUS[v.service.status][1]}>{SERVICE_STATUS[v.service.status][0]}</Pill>
+          </span>
+        ) : '—'} />
+        {v.service && <KV k="Horas de uso" v={`${formatHours(v.service.hoursSinceService)} desde a revisão · ${formatHours(v.usageHours ?? v.service.usageHours)} no total`} />}
+        {v.service && <KV k="Próxima revisão" v={nextServiceLabel(v.service)} />}
+        <KV k="Bateria" v={v.battery ? <span data-testid="vehicle-battery" style={{ fontFamily: 'var(--font-mono)' }}>{v.battery.serial} · {v.battery.cycleCount} ciclos</span> : (v.batterySerial ?? '—')} />
+        {v.assignedSubscriptionId && <KV k="Moto fixa" v={<span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Pill tone="info" icon="Repeat">Plano semanal/mensal</Pill>{can(groups, 'subscription.assignVehicle') && <Button size="sm" variant="ghost" testId="move-fixed" style={{ height: 26, padding: '0 6px' }} onClick={() => setMoveFixed(true)}>Trocar</Button>}</span>} />}
         <KV k="Travada" v={v.locked === undefined ? '—' : v.locked ? 'Sim' : 'Não'} />
         <KV k="Modo roubada" v={v.stolenMode ? 'Ligado' : 'Desligado'} />
         <KV k="Firmware" v={v.firmwareVersion ?? '—'} mono />
@@ -198,7 +217,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
               <span style={{ font: '500 12px/1.4 var(--font-mono)', color: 'var(--text-secondary)' }}>{formatDateTime(c.createdAt).slice(-5)}</span>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{COMMAND_LABEL[c.type]} · {commandStateLabel(c.status, c.statusReason)}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.requestedByName ?? (c.requestedByType === 'system' ? 'Sistema' : c.requestedByType === 'customer' ? 'Cliente' : 'Equipe')} · {c.reason}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{/* Nome do cliente só para quem pode ver clientes (admin, suporte); operação vê "Cliente". */}{c.requestedByType === 'customer' ? (canSeeCustomer && c.requestedByName ? c.requestedByName : 'Cliente') : (c.requestedByName ?? (c.requestedByType === 'system' ? 'Sistema' : 'Equipe'))} · {c.reason}</div>
               </div>
             </div>
           ))}
@@ -206,6 +225,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       )}
 
       {dialog && <CommandDialog type={dialog} vehicle={v} moving={moving} onClose={() => setDialog(null)} onSend={send} />}
+      {moveFixed && v.assignedSubscriptionId && <SubscriptionVehicleDialog subscriptionId={v.assignedSubscriptionId} currentCode={v.code} onClose={() => setMoveFixed(false)} />}
       {history && <HistoryModal vehicleId={vehicleId} code={v.code} groups={groups} onClose={() => setHistory(false)} />}
     </SidePanel>
   );
@@ -273,7 +293,7 @@ function CommandDialog({ type, vehicle, moving, onClose, onSend }: {
 
 function HistoryModal({ vehicleId, code, groups, onClose }: { vehicleId: string; code: string; groups: S<'StaffGroup'>[]; onClose: () => void }) {
   const rentals = useQuery({ queryKey: ['vehicle-rentals', vehicleId], queryFn: () => unwrap(api.GET('/rentals', { params: { query: { vehicleId, limit: 10 } } })) });
-  const maint = useQuery({ queryKey: ['vehicle-maint', vehicleId], queryFn: () => unwrap(api.GET('/maintenance/tasks', { params: { query: { vehicleId, limit: 10 } } })) });
+  const maint = useQuery({ queryKey: ['vehicle-maint', vehicleId], enabled: can(groups, 'maintenance.view'), queryFn: () => unwrap(api.GET('/maintenance/tasks', { params: { query: { vehicleId, limit: 10 } } })) });
   return (
     <Modal open title={`Histórico de ${code}`} onClose={onClose} width={560}
       actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
@@ -284,13 +304,16 @@ function HistoryModal({ vehicleId, code, groups, onClose }: { vehicleId: string;
           { key: 'status', label: 'Situação', render: (r) => <Pill tone={RENTAL_STATUS[r.status][1]}>{RENTAL_STATUS[r.status][0]}</Pill> },
           { key: 'id', label: '', align: 'right', render: (r) => { const h = rentalHref(groups, r.id); return h ? <Link href={h} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Abrir</Link> : null; } },
         ]} />
+      {can(groups, 'maintenance.view') && <>
       <SectionTitle>Manutenção</SectionTitle>
       <DataTable dense loading={maint.isLoading} rows={maint.data?.items ?? []} empty="Nenhuma manutenção registrada" emptyIcon="Wrench"
         columns={[
           { key: 'title', label: 'Serviço' },
           { key: 'kind', label: 'Tipo', render: (r) => (r.kind === 'preventive' ? 'Preventiva' : 'Corretiva') },
+          { key: 'source', label: 'Origem', render: (r) => maintenanceOrigin(r, groups.includes('admin') || groups.includes('suporte')) },
           { key: 'status', label: 'Situação', render: (r) => <Pill tone={MAINTENANCE_STATUS[r.status][1]}>{MAINTENANCE_STATUS[r.status][0]}</Pill> },
         ]} />
+      </>}
     </Modal>
   );
 }
