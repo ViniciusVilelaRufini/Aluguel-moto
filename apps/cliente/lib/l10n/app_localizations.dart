@@ -1303,7 +1303,7 @@ abstract class AppLocalizations {
   /// No description provided for @supportEmpty.
   ///
   /// In pt, this message translates to:
-  /// **'Nenhuma conversa ainda.'**
+  /// **'Nenhuma conversa ainda'**
   String get supportEmpty;
 
   /// No description provided for @swapDone.

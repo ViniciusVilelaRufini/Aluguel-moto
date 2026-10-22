@@ -643,7 +643,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get support => 'Suporte';
 
   @override
-  String get supportEmpty => 'Nenhuma conversa ainda.';
+  String get supportEmpty => 'Nenhuma conversa ainda';
 
   @override
   String get swapDone => 'Moto trocada';

@@ -65,15 +65,18 @@ class LoadingState extends StatelessWidget {
 
 /// Renderiza `AsyncValue` com carregamento, erro e "Tentar de novo".
 class AsyncView<T> extends StatelessWidget {
-  const AsyncView({super.key, required this.value, required this.data, required this.onRetry});
+  const AsyncView({super.key, required this.value, required this.data, required this.onRetry, this.loading});
   final AsyncValue<T> value;
   final Widget Function(T) data;
   final VoidCallback onRetry;
 
+  /// Carregamento no formato do conteudo (ex.: `VoltiSkeleton.list`). Padrao: spinner.
+  final WidgetBuilder? loading;
+
   @override
   Widget build(BuildContext context) => value.when(
         data: data,
-        loading: () => const LoadingState(),
+        loading: () => loading?.call(context) ?? const LoadingState(),
         error: (e, _) => ErrorState(error: e, onRetry: onRetry),
         skipLoadingOnReload: true,
         skipLoadingOnRefresh: true,

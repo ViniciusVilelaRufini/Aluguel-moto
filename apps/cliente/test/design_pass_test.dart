@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_flutter/volti_flutter.dart';
+import 'package:volti_cliente/features/account/account_screens.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 
 import 'helpers.dart';
@@ -28,7 +31,65 @@ class RideBackend extends FakeBackend {
   Future<List<GeoZone>> zones() async => [];
 }
 
+class SubsBackend extends FakeBackend {
+  int cancels = 0;
+  @override
+  Future<List<Subscription>> subscriptions() async => [
+        Subscription((b) => b
+          ..id = 's1'
+          ..planCode = SubscriptionPlanCode.weekly
+          ..status = SubscriptionStatus.active
+          ..priceCents = 9900
+          ..currentPeriodStart = DateTime.utc(2026, 10, 20)
+          ..currentPeriodEnd = DateTime.utc(2026, 10, 27)
+          ..cancelAtPeriodEnd = false
+          ..createdAt = DateTime.utc(2026, 10, 20)),
+      ];
+  @override
+  Future<void> cancelSubscription(String id) async => cancels++;
+}
+
+class SlowHistory extends FakeBackend {
+  final done = Completer<List<Rental>>();
+  @override
+  Future<List<Rental>> rentals() => done.future;
+}
+
 void main() {
+  group('conta', () {
+    testWidgets('cancelar a renovacao pede confirmacao', (t) async {
+      phone(t);
+      final backend = SubsBackend();
+      await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Plano semanal').first);
+      await t.pumpAndSettle();
+      expect(find.text('Cancelar a renovação?'), findsOneWidget);
+      await t.tap(find.text('Manter plano'));
+      await t.pumpAndSettle();
+      expect(backend.cancels, 0);
+      await t.tap(find.text('Plano semanal').first);
+      await t.pumpAndSettle();
+      await t.tap(find.text('Cancelar renovação'));
+      await t.pumpAndSettle();
+      expect(backend.cancels, 1);
+    });
+
+    testWidgets('historico: esqueleto no carregamento, estado vazio com acao, 200% sem estouro', (t) async {
+      phone(t, scale: 2);
+      final backend = SlowHistory();
+      await t.pumpWidget(testApp(const HistoryScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
+      await t.pump();
+      expect(find.byType(VoltiSkeleton), findsOneWidget);
+      backend.done.complete([]);
+      await t.pumpAndSettle();
+      expect(find.byType(VoltiSkeleton), findsNothing);
+      expect(find.text('Nenhuma corrida ainda'), findsOneWidget);
+      expect(find.text('Ir para o mapa'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+  });
+
   group('corrida (HUD)', () {
     late FakeRealtime rt;
 
@@ -55,7 +116,7 @@ void main() {
       expect(VoltiSpeedGauge.colorFor(gauge.speedKmh, gauge.limitKmh), VoltiColors.sun400);
       expect(
         t.getSemantics(find.byKey(const Key('sos-button'))),
-        containsSemantics(label: 'SOS', hint: 'Ligar para o suporte ou compartilhar sua localização', isButton: true),
+        isSemantics(label: 'SOS', hint: 'Ligar para o suporte ou compartilhar sua localização', isButton: true),
       );
       h.dispose();
       await t.pumpWidget(const SizedBox());
