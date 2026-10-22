@@ -4,7 +4,7 @@ Contrato da plataforma Volti: **fonte única da verdade** para a API, o painel e
 
 | Arquivo | Conteúdo |
 |---|---|
-| `openapi.yaml` | API REST (OpenAPI 3.1): 140 operações em 22 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
+| `openapi.yaml` | API REST (OpenAPI 3.1): 165 operações em 26 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
 | `realtime.md` | Eventos do WebSocket (Socket.IO, namespace `/realtime`), salas e payloads |
 | `generated/ts/schema.d.ts` | Tipos TypeScript gerados com `openapi-typescript` (painel, com `openapi-fetch`) |
 | `generated/dart/` | Pacote Dart `volti_api` gerado com `openapi-generator` (`dart-dio` + `built_value`) para os apps Flutter |
@@ -112,6 +112,27 @@ Observações do pacote Dart: os enums aceitam valores desconhecidos (`unknownDe
 valor novo no servidor não quebra o app; o campo `on` de `SendCommandRequest`/`VehicleCommand` virou `on_`
 (palavra reservada no Dart); os modelos são `built_value` (imutáveis, criados com
 `SendCommandRequest((b) => b..type = CommandType.lock..reason = '...')`).
+
+## Contrato v2 (2026-10-22)
+
+Acréscimos aprovados em `docs/decisoes.md` (nenhuma renomeação; todos os campos novos são opcionais na resposta):
+
+- **Conta do cliente:** chave Pix para estornos em `PATCH/GET /me` (`pixRefundKeyType` + `pixRefundKey`, `422 pix-key-invalid`);
+  limites da recarga de valor livre em `GET /wallet` (`topUpMinCents`, `topUpMaxCents`, `suggestedTopUpAmountsCents`); cupons salvos
+  (`/me/coupons`, `/me/coupons/validate`) e indicação (`/me/referral`, `/me/referral/rewards`, `/me/referral/redeem`).
+- **Plano semanal/mensal:** `GET /payments/subscriptions/{id}`, `POST .../pause` (3 dias no semanal, 7 no mensal, 1 por período),
+  `POST .../resume`, `PUT .../vehicle` (moto fixa); `Subscription` ganha `nextChargeAt`, `pausedAt`, `pauseEndsAt`,
+  `assignedVehicle`, cartão e última cobrança; `SubscriptionStatus` ganha `paused`.
+- **Mapa e manutenção do cliente:** `GET /swap-stations`; `/me/maintenance-slots` e `/me/maintenance-requests` (plano + moto fixa).
+- **Chat:** `SupportMessage.status` (`sent | delivered | read`), `deliveredAt`, `readAt`; `POST /support/conversations/{id}/read`.
+- **Operação:** `Vehicle.address`, odômetro/horas e `service` (`VehicleServiceInfo`: `ok | due_soon | overdue`), `battery`;
+  `GET /maintenance/vehicles` (tabela "Manutenção"); `FieldTask.vehicleAddress`/`targetAddress`/`vehicleStatus`/bateria;
+  `BatterySwap` com carga e ciclos; `/batteries`, `/batteries/van-stock` (+ `/load`, `/unload`).
+- **Catálogo:** `/vehicle-models` (foto assinada, `pricePerMinuteCents` usado no plano por minuto), `VehicleSummary`/`Vehicle`
+  com `vehicleModelId`, `categoryLabel`, `pricePerMinuteCents`; `QuoteRequest.vehicleId`.
+
+Slugs novos: `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`, `subscription-pause-limit-reached`,
+`subscription-required`, `subscription-vehicle-required`, `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`.
 
 ## Regras que o contrato garante
 
