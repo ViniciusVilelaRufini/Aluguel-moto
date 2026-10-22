@@ -1,5 +1,5 @@
 // services/api/src/common/enums.ts (e espelhados no openapi.yaml)
-export type VehicleStatus = 'free' | 'rented' | 'reserved' | 'paused' | 'blocked' | 'maintenance' | 'offline';
+export type VehicleStatus = 'free' | 'rented' | 'reserved' | 'paused' | 'blocked' | 'maintenance' | 'offline' | 'awaiting_pickup';
 export type ZoneType = 'operation' | 'return' | 'forbidden' | 'reduced_speed';
 export type StaffGroup = 'admin' | 'operacao' | 'financeiro' | 'suporte' | 'campo';
 export type RentalStatus = 'active' | 'paused' | 'ending' | 'ended' | 'force_ended';
@@ -12,7 +12,7 @@ export const MAX_SPEED_KMH = 32;
 export const SAFE_LOCK_SPEED_KMH = 3;
 
 // Listas de valores (validação com class-validator).
-export const VEHICLE_STATUSES: VehicleStatus[] = ['free', 'rented', 'reserved', 'paused', 'blocked', 'maintenance', 'offline'];
+export const VEHICLE_STATUSES: VehicleStatus[] = ['free', 'rented', 'reserved', 'paused', 'blocked', 'maintenance', 'offline', 'awaiting_pickup'];
 export const ZONE_TYPES: ZoneType[] = ['operation', 'return', 'forbidden', 'reduced_speed'];
 export const STAFF_GROUPS: StaffGroup[] = ['admin', 'operacao', 'financeiro', 'suporte', 'campo'];
 export const RENTAL_STATUSES: RentalStatus[] = ['active', 'paused', 'ending', 'ended', 'force_ended'];

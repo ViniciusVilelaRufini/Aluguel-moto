@@ -24,6 +24,8 @@ enum VehicleStatus {
   blocked
   maintenance
   offline
+  /// Retirada em galpão: devolvida em ponto verde, esperando o recolhimento (não alugável).
+  awaiting_pickup
 }
 
 enum ZoneType {
@@ -116,6 +118,8 @@ enum ReservationStatus {
   converted
   canceled
   expired
+  /// Retirada em galpão: entrega aberta (o cancelamento é recusado com 409).
+  handover
 }
 
 enum DepositMethod {
@@ -367,6 +371,25 @@ enum CustomerCouponSource {
   referral
 }
 
+// ───────────── retirada em galpão (docs/decisoes.md, 2026-10-22) ─────────────
+
+enum PickupMode {
+  now
+  scheduled
+}
+
+enum HandoverType {
+  pickup
+  return_depot
+}
+
+enum HandoverStatus {
+  pending_customer
+  accepted
+  disputed
+  canceled
+}
+
 // ───────────── pessoas ─────────────
 
 model Customer {
@@ -465,40 +488,44 @@ model RestrictionEntry {
 // ───────────── frota ─────────────
 
 model Vehicle {
-  id                  String         @id @default(uuid()) @db.Uuid
-  code                String         @unique
-  qrCode              String?
-  model               String
-  thingName           String         @unique
-  status              VehicleStatus  @default(free)
-  statusBeforeOffline VehicleStatus?
-  lat                 Float          @default(0)
-  lng                 Float          @default(0)
-  batteryPct          Int            @default(100)
-  speedLimitKmh       Int            @default(32)
-  speedKmh            Float?
-  online              Boolean        @default(true)
-  locked              Boolean        @default(true)
-  ignition            Boolean        @default(false)
-  signal              Int?
-  stolenMode          Boolean        @default(false)
-  firmwareVersion     String?
-  lastSeenAt          DateTime?
-  batterySerial       String?
+  id                    String         @id @default(uuid()) @db.Uuid
+  code                  String         @unique
+  qrCode                String?
+  model                 String
+  thingName             String         @unique
+  status                VehicleStatus  @default(free)
+  statusBeforeOffline   VehicleStatus?
+  lat                   Float          @default(0)
+  lng                   Float          @default(0)
+  batteryPct            Int            @default(100)
+  speedLimitKmh         Int            @default(32)
+  speedKmh              Float?
+  online                Boolean        @default(true)
+  locked                Boolean        @default(true)
+  ignition              Boolean        @default(false)
+  signal                Int?
+  stolenMode            Boolean        @default(false)
+  firmwareVersion       String?
+  lastSeenAt            DateTime?
+  batterySerial         String?
   /// Contrato v2: catálogo, endereço em cache e manutenção preventiva por km/horas.
-  vehicleModelId        String?       @db.Uuid
-  vehicleModel          VehicleModel? @relation(fields: [vehicleModelId], references: [id])
+  vehicleModelId        String?        @db.Uuid
+  vehicleModel          VehicleModel?  @relation(fields: [vehicleModelId], references: [id])
   addressLabel          String?
   addressLat            Float?
   addressLng            Float?
   addressUpdatedAt      DateTime?
-  odometerKm            Float         @default(0)
-  usageHours            Float         @default(0)
+  odometerKm            Float          @default(0)
+  usageHours            Float          @default(0)
   lastServiceAt         DateTime?
-  lastServiceOdometerKm Float         @default(0)
-  lastServiceUsageHours Float         @default(0)
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  lastServiceOdometerKm Float          @default(0)
+  lastServiceUsageHours Float          @default(0)
+  /// Retirada em galpão: galpão de origem/atual. Disponível no galpão = `free` com `depotId`; moto com `depotId` só sai
+  /// pela entrega (nunca pelo aluguel/reserva de rua — regra no código).
+  depotId               String?        @db.Uuid
+  depot                 Depot?         @relation(fields: [depotId], references: [id])
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   tracker      Tracker?
   reservations Reservation[]
@@ -506,8 +533,10 @@ model Vehicle {
   commands     VehicleCommand[]
   fieldTasks   FieldTask[]
   maintenance  MaintenanceTask[]
+  handovers    Handover[]
 
   @@index([status])
+  @@index([depotId, status])
 }
 
 model Tracker {
@@ -662,21 +691,35 @@ model Fee {
 // ───────────── reserva e aluguel ─────────────
 
 model Reservation {
-  id         String            @id @default(uuid()) @db.Uuid
-  customerId String            @db.Uuid
-  customer   Customer          @relation(fields: [customerId], references: [id])
-  vehicleId  String            @db.Uuid
-  vehicle    Vehicle           @relation(fields: [vehicleId], references: [id])
-  status     ReservationStatus @default(active)
-  depositId  String?           @db.Uuid
-  expiresAt  DateTime
-  endedAt    DateTime?
-  createdAt  DateTime          @default(now())
-  updatedAt  DateTime          @updatedAt
+  id             String             @id @default(uuid()) @db.Uuid
+  customerId     String             @db.Uuid
+  customer       Customer           @relation(fields: [customerId], references: [id])
+  vehicleId      String             @db.Uuid
+  vehicle        Vehicle            @relation(fields: [vehicleId], references: [id])
+  status         ReservationStatus  @default(active)
+  depositId      String?            @db.Uuid
+  expiresAt      DateTime
+  endedAt        DateTime?
+  /// Retirada em galpão (todos nulos na reserva de rua). Plano, seguro e cupom são aplicados no aceite da entrega.
+  depotId        String?            @db.Uuid
+  depot          Depot?             @relation(fields: [depotId], references: [id])
+  pickupMode     PickupMode?
+  pickupAt       DateTime?
+  planCode       PlanCode?
+  coverage       InsuranceCoverage?
+  depositMethod  DepositMethod?
+  cardId         String?            @db.Uuid
+  couponCode     String?
+  reminderSentAt DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  handover Handover?
 
   @@index([customerId, status])
   @@index([vehicleId, status])
   @@index([status, expiresAt])
+  @@index([depotId, pickupAt])
 }
 
 model Rental {
@@ -1375,4 +1418,67 @@ model Referral {
 
   @@index([referrerId, createdAt])
   @@index([refereeCpfHash])
+}
+
+// ───────────── retirada em galpão (docs/decisoes.md, 2026-10-22) ─────────────
+
+model Depot {
+  id                     String   @id @default(uuid()) @db.Uuid
+  name                   String
+  address                String
+  /// Bairro mostrado no cartão da home.
+  district               String?
+  lat                    Float
+  lng                    Float
+  timezone               String   @default("America/Sao_Paulo")
+  /// [{ weekday 0–6 (0 = domingo), opensAt "HH:MM", closesAt "HH:MM" }]; dia ausente = fechado.
+  openingHours           Json
+  pickupNowWindowMinutes Int      @default(120)
+  maxScheduleDays        Int      @default(7)
+  scheduledGraceMinutes  Int      @default(30)
+  swapStationId          String?  @db.Uuid
+  active                 Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  vehicles     Vehicle[]
+  reservations Reservation[]
+  handovers    Handover[]
+
+  @@index([active])
+}
+
+/// Entrega no galpão: saída (`pickup`, com aceite do cliente) ou chegada (`return_depot`, encerra o aluguel).
+/// Uma saída por reserva (`reservationId` único); uma chegada não cancelada por aluguel (índice parcial
+/// `Handover_one_open_return_per_rental`, escrito à mão na migração).
+model Handover {
+  id            String         @id @default(uuid()) @db.Uuid
+  type          HandoverType
+  status        HandoverStatus @default(pending_customer)
+  depotId       String         @db.Uuid
+  depot         Depot          @relation(fields: [depotId], references: [id])
+  reservationId String?        @unique @db.Uuid
+  reservation   Reservation?   @relation(fields: [reservationId], references: [id])
+  /// Aluguel criado no aceite (`pickup`) ou que chega (`return_depot`); sem FK, como `Dispute.rentalId`.
+  rentalId      String?        @db.Uuid
+  vehicleId     String         @db.Uuid
+  vehicle       Vehicle        @relation(fields: [vehicleId], references: [id])
+  /// StaffUser.id do operador (o cliente vê só o primeiro nome).
+  operatorId    String         @db.Uuid
+  /// [{ code, ok, note? }]
+  checklist     Json
+  /// Chaves S3 com prefixo `handovers/`.
+  photoKeys     String[]
+  batteryPct    Int
+  batterySerial String?
+  disputeReason String?
+  /// Slug do último erro do aceite (ex.: `payment-declined`); limpo quando o aceite dá certo.
+  lastError     String?
+  respondedAt   DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([depotId, status])
+  @@index([rentalId])
+  @@index([vehicleId])
 }
