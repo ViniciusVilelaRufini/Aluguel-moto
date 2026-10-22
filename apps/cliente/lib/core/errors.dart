@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../l10n/app_localizations.dart';
 
@@ -43,6 +44,7 @@ class AppFailure implements Exception {
 
 AppFailure toFailure(Object error) {
   if (error is AppFailure) return error;
+  _logError(error);
   if (error is DioException) {
     final res = error.response;
     if (res == null) return AppFailure(kind: FailureKind.network);
@@ -69,3 +71,15 @@ AppFailure toFailure(Object error) {
 }
 
 String failureText(AppLocalizations l, Object error) => toFailure(error).message(l);
+
+/// Em debug, registra o erro original (DioException etc.) que o AppFailure esconde.
+void _logError(Object error) {
+  if (!kDebugMode) return;
+  if (error is DioException) {
+    final req = error.requestOptions;
+    debugPrint('[toFailure] DioException ${error.type} ${req.method} ${req.uri.origin}${req.uri.path} '
+        'status=${error.response?.statusCode} body=${error.response?.data} cause=${error.error}');
+  } else {
+    debugPrint('[toFailure] ${error.runtimeType}: $error');
+  }
+}

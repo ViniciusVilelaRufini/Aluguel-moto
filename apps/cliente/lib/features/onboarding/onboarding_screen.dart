@@ -21,6 +21,16 @@ class OnboardingScreen extends ConsumerStatefulWidget {
   ConsumerState<OnboardingScreen> createState() => _OnboardingScreenState();
 }
 
+/// Passo inicial do onboarding. Sem KYC iniciado o passo 0 (nome, CPF e
+/// nascimento) e obrigatorio mesmo com termos ja aceitos: esses dados so existem
+/// em memoria e o envio do KYC os exige (antes, retomar no passo 1 enviava
+/// campos vazios e `DateTime.parse('')` estourava).
+int initialOnboardingStep({required bool termsAccepted, required bool locationConsent, required KycStatus kyc}) {
+  if (kyc == KycStatus.notStarted) return 0;
+  if (!termsAccepted || !locationConsent) return 0;
+  return 2;
+}
+
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int? _step;
   String _name = '', _cpf = '', _birth = '';
@@ -29,9 +39,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   Widget build(BuildContext context) {
     final session = ref.watch(sessionProvider).value;
     if (session == null) return const Scaffold(body: LoadingState());
-    _step ??= (!session.termsAccepted || !session.locationConsent)
-        ? 0
-        : (session.kyc == KycStatus.notStarted ? 1 : 2);
+    _step ??= initialOnboardingStep(
+      termsAccepted: session.termsAccepted,
+      locationConsent: session.locationConsent,
+      kyc: session.kyc,
+    );
     return switch (_step!) {
       0 => ConsentStep(
           onDone: (name, cpf, birth) {
