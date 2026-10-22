@@ -31,7 +31,12 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
   }, [ready, token, me, allowed, menu, router]);
 
   if (!ready || !token || !me || !allowed) {
-    return <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>Carregando...</div>;
+    return (
+      <div role="status" aria-label="Carregando o painel" style={{ height: '100vh', display: 'flex', flexDirection: 'column', gap: 14, alignItems: 'center', justifyContent: 'center', background: 'var(--surface-app)' }}>
+        <div style={{ font: '800 32px/1 var(--font-sans)', letterSpacing: '-.04em', color: 'var(--green-500)', animation: 'vt-breathe 1.6s var(--ease-in-out) infinite' }}>volti</div>
+        <div style={{ font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>Carregando o painel</div>
+      </div>
+    );
   }
 
   const items = menu.map((m) => ({ value: m.href, label: m.label, icon: m.icon, badge: m.key === 'alerts' && openAlerts > 0 ? openAlerts : undefined }));

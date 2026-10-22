@@ -51,7 +51,7 @@ function Team() {
         ))}
       </div>
       <ErrorNote error={error} />
-      <DataTable<S<'StaffUser'>> rows={rows} loading={loading} pager={pager} onRowClick={setEdit} empty="Nenhuma pessoa na equipe."
+      <DataTable<S<'StaffUser'>> rows={rows} loading={loading} pager={pager} onRowClick={setEdit} empty="Nenhuma pessoa na equipe" emptyIcon="Users"
         columns={[
           { key: 'name', label: 'Pessoa', render: (r) => <span style={{ fontWeight: 600 }}>{r.name}</span> },
           { key: 'email', label: 'E-mail' },
@@ -119,7 +119,7 @@ function Audit() {
         <div style={{ width: 170 }}><Field label="Até"><TextInput type="date" value={to} onChange={setTo} /></Field></div>
       </div>
       <ErrorNote error={error} />
-      <DataTable<S<'AuditLog'>> testId="audit-table" rows={rows} loading={loading} pager={pager} empty="Nenhum registro."
+      <DataTable<S<'AuditLog'>> testId="audit-table" rows={rows} loading={loading} pager={pager} empty="Nenhum registro com esses filtros" emptyIcon="ScrollText"
         columns={[
           { key: 'createdAt', label: 'Quando', render: (r) => formatDateTime(r.createdAt) },
           { key: 'actorName', label: 'Quem', render: (r) => r.actorName ?? (r.actorType === 'system' ? 'Sistema' : '—') },

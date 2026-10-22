@@ -70,7 +70,10 @@ export default function AlertsPage() {
         rows={sorted}
         loading={loading}
         pager={pager}
-        empty="Nenhum alerta nesta lista."
+        label="Fila de alertas"
+        empty={tab === 'open' ? 'Nenhum alerta aberto' : tab === 'assigned' ? 'Nenhum alerta atribuído' : 'Nenhum alerta resolvido ainda'}
+        emptyIcon={tab === 'open' ? 'CircleCheck' : 'Siren'}
+        emptyHint={tab === 'open' ? 'A frota está em ordem. Alertas novos aparecem aqui na hora.' : undefined}
         columns={[
           { key: 'priority', label: 'Nível', render: (r) => <Badge size="sm" tone={priorityTone(r.priority)} icon={TYPE_INFO[r.type]?.[1] ?? 'Info'}>{PRIORITY_LABEL[r.priority]}</Badge> },
           { key: 'type', label: 'Alerta', render: (r) => (

@@ -8,7 +8,7 @@ import { can } from '@/lib/permissions';
 import { TASK_PRIORITY, TASK_TYPE } from '@/lib/labels';
 import { formatDate } from '@/lib/format';
 import type { S } from '@/lib/types';
-import { DataTable, ErrorNote, Field, Modal, Page, PageHeader, Pill, Select, TabPanel, TextArea, TextInput, usePagedQuery, useToast } from '@/components/ui';
+import { DataTable, Empty, ErrorNote, Field, Modal, Page, PageHeader, Pill, Select, Skeleton, TabPanel, TextArea, TextInput, usePagedQuery, useToast } from '@/components/ui';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
@@ -64,7 +64,7 @@ function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void 
                 <span style={{ font: '700 12px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{col.length}</span>
               </div>
               {col.map((t) => (
-                <Card key={t.id} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Card key={t.id} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 10, animation: 'vt-fade-up 320ms var(--ease-out) backwards' }}>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                     <span style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--surface-sunken)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={TASK_TYPE[t.type][1]} size={16} /></span>
                     <div style={{ flex: 1 }}>
@@ -82,7 +82,13 @@ function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void 
                   </div>
                 </Card>
               ))}
-              {col.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: 6 }}>Nenhuma tarefa.</div>}
+              {q.isLoading && [0, 1].map((i) => <Skeleton key={i} h={96} r={20} />)}
+              {!q.isLoading && col.length === 0 && (
+                <Empty compact icon={c.key === 'done' ? 'CircleCheck' : 'ClipboardList'}
+                  action={c.key === 'pending' && canEdit ? <Button size="sm" variant="ghost" icon="Plus" onClick={onCreate}>Nova tarefa</Button> : undefined}>
+                  {c.key === 'pending' ? 'Nenhuma tarefa pendente' : c.key === 'doing' ? 'Nada em andamento' : 'Nenhuma tarefa concluída'}
+                </Empty>
+              )}
             </div>
           );
         })}
@@ -150,7 +156,7 @@ function Maintenance() {
   return (
     <>
       <ErrorNote error={error} />
-      <DataTable<S<'MaintenanceTask'>> rows={rows} loading={loading} pager={pager} empty="Nenhuma manutenção."
+      <DataTable<S<'MaintenanceTask'>> rows={rows} loading={loading} pager={pager} empty="Nenhuma manutenção agendada" emptyIcon="Wrench"
         columns={[
           { key: 'vehicleCode', label: 'Moto', mono: true, render: (r) => r.vehicleCode ?? '—' },
           { key: 'title', label: 'Serviço' },

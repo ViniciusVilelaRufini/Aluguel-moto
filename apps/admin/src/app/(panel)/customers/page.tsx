@@ -10,7 +10,7 @@ import { displayCpf } from '@/lib/cpf';
 import { CUSTOMER_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
 import { formatBRL, formatDate, formatDateTime } from '@/lib/format';
 import type { S } from '@/lib/types';
-import { DataTable, ErrorNote, Field, Initials, KV, Modal, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, TextInput, usePagedQuery, useToast } from '@/components/ui';
+import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { SupportPanel } from '@/components/SupportPanel';
 import { Badge } from '@/ds/Badge';
@@ -90,7 +90,11 @@ function CustomersTab({ selected, onSelect, onRentals }: { selected: string | nu
           pager={pager}
           selectedKey={selected}
           onRowClick={(r) => onSelect(r.id)}
-          empty="Nenhum cliente encontrado."
+          label="Clientes"
+          empty={debounced ? `Nenhum cliente para "${debounced}"` : 'Nenhum cliente nesta lista'}
+          emptyIcon={debounced ? 'Search' : 'Users'}
+          emptyHint={debounced ? 'Confira a grafia ou busque por CPF, e-mail ou telefone.' : undefined}
+          emptyAction={debounced || filter !== 'all' ? <Button size="sm" variant="ghost" icon="X" onClick={() => { setQ(''); setFilter('all'); }}>Limpar busca e filtros</Button> : undefined}
           columns={[
             { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={r.name ?? r.email} /><span style={{ fontWeight: 600 }}>{r.name ?? r.email}</span></div> },
             { key: 'cpf', label: 'CPF', mono: true, render: (r) => displayCpf(r.cpf, full) },
@@ -139,6 +143,7 @@ function CustomerSheet({ id, onClose, onRentals }: { id: string; onClose: () => 
       )
     }>
       <ErrorNote error={q.error} />
+      {q.isLoading && <PanelSkeleton />}
       {c && (
         <>
           <SegmentedControl options={[{ value: 'kyc', label: 'Verificação' }, { value: 'support', label: 'Atendimento' }, { value: 'history', label: 'Histórico' }]} value={tab} onChange={setTab} />
@@ -233,7 +238,8 @@ function CustomerTickets({ customerId }: { customerId: string }) {
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {rows.length === 0 && <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Nenhum atendimento deste cliente.</div>}
+      {(d.isLoading || cl.isLoading || cv.isLoading) && rows.length === 0 && [0, 1].map((i) => <Skeleton key={i} h={52} r={14} />)}
+      {!(d.isLoading || cl.isLoading || cv.isLoading) && rows.length === 0 && <Empty compact icon="MessageCircle">Nenhum atendimento deste cliente</Empty>}
       {rows.map((r) => (
         <div key={r.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)' }}>
           <div style={{ flex: 1, minWidth: 0 }}>

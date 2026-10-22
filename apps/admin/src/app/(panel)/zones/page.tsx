@@ -10,7 +10,7 @@ import { can } from '@/lib/permissions';
 import { validateZone, type ZoneErrors } from '@/lib/zone-validation';
 import { MAX_REDUCED_SPEED_KMH, type S, type ZoneType } from '@/lib/types';
 import { MapView } from '@/components/MapView';
-import { ErrorNote, Field, Modal, Select, SidePanel, SectionTitle, TextInput, useToast } from '@/components/ui';
+import { Empty, ErrorNote, Field, Modal, Select, SidePanel, SectionTitle, Skeleton, TextInput, useToast } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
@@ -212,7 +212,10 @@ export default function ZonesPage() {
         )}
 
         <Card variant="sunken" padding={4}>
-          {zones.length === 0 && <div style={{ padding: 12, fontSize: 14, color: 'var(--text-secondary)' }}>{zonesQ.isLoading ? 'Carregando...' : 'Nenhuma cerca cadastrada.'}</div>}
+          {zonesQ.isLoading && <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 12 }}>{[0, 1, 2].map((i) => <Skeleton key={i} h={30} />)}</div>}
+          {!zonesQ.isLoading && zones.length === 0 && (
+            <Empty compact icon="Hexagon" action={canEdit ? <Button size="sm" variant="ghost" icon="PenTool" disabled={!mapReady} onClick={startNew}>Desenhar área</Button> : undefined}>Nenhuma cerca cadastrada</Empty>
+          )}
           {zones.map((z) => (
             <div key={z.id} data-testid="zone-item" onClick={() => canEdit && !draft && pick(z.id)}
               style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: canEdit && !draft ? 'pointer' : 'default', borderRadius: 10, background: draft?.id === z.id ? 'var(--brand-soft)' : undefined }}>

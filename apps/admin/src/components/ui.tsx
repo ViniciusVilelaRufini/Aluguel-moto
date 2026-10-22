@@ -62,8 +62,41 @@ export function SectionTitle({ children }: { children: ReactNode }) {
   return <div style={{ font: 'var(--type-label)', marginBottom: 6, fontWeight: 600 }}>{children}</div>;
 }
 
-export function Empty({ children }: { children: ReactNode }) {
-  return <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-secondary)', fontSize: 14 }}>{children}</div>;
+/** Estado vazio: ícone, frase que explica e, quando faz sentido, a ação que resolve. */
+export function Empty({ children, icon, hint, action, compact }: { children: ReactNode; icon?: string; hint?: ReactNode; action?: ReactNode; compact?: boolean }) {
+  return (
+    <div className="section-in" style={{ padding: compact ? 16 : '36px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
+      {icon && (
+        <span style={{ width: compact ? 36 : 48, height: compact ? 36 : 48, borderRadius: '50%', background: 'var(--surface-sunken)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+          <Icon name={icon} size={compact ? 18 : 22} />
+        </span>
+      )}
+      <div style={{ font: 'var(--type-label)', color: 'var(--text-primary)' }}>{children}</div>
+      {hint && <div style={{ font: 'var(--type-caption)', color: 'var(--text-secondary)', maxWidth: 360 }}>{hint}</div>}
+      {action && <div style={{ marginTop: 6 }}>{action}</div>}
+    </div>
+  );
+}
+
+/** Bloco de carregamento com brilho (com movimento reduzido fica estático). */
+export function Skeleton({ w = '100%', h = 12, r = 6, style }: { w?: number | string; h?: number | string; r?: number | string; style?: CSSProperties }) {
+  return <span aria-hidden className="skeleton" style={{ display: 'block', width: w, height: h, borderRadius: r, ...style }} />;
+}
+
+/** Esqueleto de painel lateral: título, pílulas e linhas chave-valor. */
+export function PanelSkeleton({ rows = 6 }: { rows?: number }) {
+  return (
+    <div role="status" aria-label="Carregando" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <Skeleton w={140} h={24} />
+      <div style={{ display: 'flex', gap: 8 }}><Skeleton w={110} h={30} r={999} /><Skeleton w={70} h={26} /></div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginTop: 6 }}>
+        {Array.from({ length: rows }).map((_, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}><Skeleton w={90} /><Skeleton w={60 + ((i * 37) % 60)} /></div>
+        ))}
+      </div>
+      <Skeleton h={36} r={999} style={{ marginTop: 8 }} />
+    </div>
+  );
 }
 
 export function ErrorNote({ error }: { error: unknown }) {
@@ -228,30 +261,49 @@ export interface Pager {
 }
 
 export function DataTable<T extends object>({
-  columns, rows, rowKey = 'id', selectedKey, onRowClick, dense, loading, empty = 'Nada por aqui ainda.', pager, testId,
+  columns, rows, rowKey = 'id', selectedKey, onRowClick, dense, loading, empty = 'Nada por aqui ainda.', emptyIcon = 'Search', emptyHint, emptyAction, pager, testId, rowClassName, label,
 }: {
   columns: Column<T>[]; rows: T[]; rowKey?: string; selectedKey?: string | null; onRowClick?: (r: T) => void;
-  dense?: boolean; loading?: boolean; empty?: string; pager?: Pager; testId?: string;
+  dense?: boolean; loading?: boolean; empty?: ReactNode; emptyIcon?: string; emptyHint?: ReactNode; emptyAction?: ReactNode; pager?: Pager; testId?: string;
+  /** Classe extra por linha (ex.: destaque de linha recém-chegada). */
+  rowClassName?: (r: T) => string | undefined;
+  label?: string;
 }) {
   const pad = dense ? '8px 12px' : '12px 16px';
   const get = (r: T, k: string) => (r as Record<string, unknown>)[k];
+  const skeleton = loading && rows.length === 0;
+  const refetching = !!pager?.loading && rows.length > 0;
   return (
-    <div data-testid={testId} style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--border-subtle)' }}>
+    <div data-testid={testId} className="dt" style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
       <div className="table-scroll">
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14, fontWeight: 500 }}>
+        <table aria-label={label} aria-busy={skeleton || refetching || undefined} style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 14, fontWeight: 500 }}>
           <thead>
             <tr>
               {columns.map((c) => (
-                <th key={c.key} style={{ textAlign: c.align ?? 'left', padding: pad, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--ink-50)', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap', width: c.width }}>{c.label}</th>
+                <th key={c.key} scope="col" style={{ textAlign: c.align ?? 'left', padding: pad, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--ink-50)', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap', width: c.width }}>{c.label}</th>
               ))}
             </tr>
           </thead>
-          <tbody>
+          <tbody style={{ opacity: refetching ? 0.55 : 1, transition: 'opacity var(--dur-base) var(--ease-out)' }}>
+            {skeleton && Array.from({ length: dense ? 3 : 5 }).map((_, i) => (
+              <tr key={'sk-' + i} aria-hidden>
+                {columns.map((c, j) => (
+                  <td key={c.key} style={{ padding: pad, borderBottom: '1px solid var(--ink-100)' }}>
+                    <Skeleton w={c.label ? (50 + ((i * 17 + j * 23) % 40)) + '%' : 64} h={dense ? 10 : 12} style={{ marginLeft: c.align === 'right' ? 'auto' : undefined }} />
+                  </td>
+                ))}
+              </tr>
+            ))}
             {rows.map((r, i) => {
               const k = String(get(r, rowKey) ?? i);
+              const sel = k === selectedKey;
+              const extra = rowClassName?.(r);
+              const cls = ['dt-row', onRowClick ? 'dt-click' : '', extra ?? ''].filter(Boolean).join(' ');
               return (
-                <tr key={k} data-testid="row" onClick={onRowClick ? () => onRowClick(r) : undefined}
-                  style={{ cursor: onRowClick ? 'pointer' : 'default', background: k === selectedKey ? 'var(--brand-soft)' : 'transparent' }}>
+                <tr key={k} data-testid="row" className={cls} data-selected={sel || undefined}
+                  aria-selected={onRowClick ? sel : undefined} tabIndex={onRowClick ? 0 : undefined}
+                  onClick={onRowClick ? () => onRowClick(r) : undefined}
+                  onKeyDown={onRowClick ? (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); onRowClick(r); } } : undefined}>
                   {columns.map((c) => (
                     <td key={c.key} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: 'nowrap' }}>
                       {c.render ? c.render(r) : (get(r, c.key) as ReactNode)}
@@ -263,8 +315,8 @@ export function DataTable<T extends object>({
           </tbody>
         </table>
       </div>
-      {loading && rows.length === 0 && <Empty>Carregando...</Empty>}
-      {!loading && rows.length === 0 && <Empty>{empty}</Empty>}
+      {skeleton && <span role="status" className="sr-only">Carregando</span>}
+      {!loading && rows.length === 0 && <Empty icon={emptyIcon} hint={emptyHint} action={emptyAction} compact={dense}>{empty}</Empty>}
       {pager && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '8px 12px', borderTop: '1px solid var(--ink-100)' }}>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginRight: 'auto' }}>Página {pager.page + 1}</span>

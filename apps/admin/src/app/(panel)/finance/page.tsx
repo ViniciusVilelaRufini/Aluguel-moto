@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/labels';
 import { dayStartIso, formatBRL, localDay } from '@/lib/format';
-import { ErrorNote, Page, PageHeader, Pill, DataTable, TabPanel, useToast } from '@/components/ui';
+import { Empty, ErrorNote, Page, PageHeader, Pill, DataTable, Skeleton, TabPanel, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { StatTile } from '@/ds/StatTile';
 import { Card } from '@/ds/Card';
@@ -83,7 +83,8 @@ export default function FinancePage() {
                     <span hidden>{i}</span>
                   </div>
                 ))}
-                {barList.length === 0 && <div style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 'auto' }}>Sem receita no período.</div>}
+                {rev.isLoading && [40, 70, 55, 90, 65, 80, 50].map((h, i) => <Skeleton key={i} h={h + '%'} r={8} style={{ flex: 1, alignSelf: 'flex-end' }} />)}
+                {!rev.isLoading && barList.length === 0 && <div style={{ margin: 'auto' }}><Empty compact icon="ChartColumn">Sem receita no período</Empty></div>}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8 }}>Valores em R$ mil.</div>
             </Card>

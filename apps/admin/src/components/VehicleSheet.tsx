@@ -16,7 +16,7 @@ import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { FleetStatus } from '@/ds/FleetStatus';
 import { Alert } from '@/ds/Alert';
-import { Field, KV, Modal, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
+import { Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
 
 interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason }
 
@@ -70,7 +70,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
     return () => clearInterval(t);
   }, [pendingId, qc, vehicleId]);
 
-  if (!v) return <SidePanel width={360} onClose={onClose}><div style={{ color: 'var(--text-secondary)' }}>Carregando moto...</div></SidePanel>;
+  if (!v) return <SidePanel width={360} onClose={onClose}><PanelSkeleton rows={7} /></SidePanel>;
 
   const moving = (v.speedKmh ?? 0) >= 3;
   const send = async (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => {

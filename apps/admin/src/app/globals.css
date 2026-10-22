@@ -96,6 +96,23 @@ a:hover{color:var(--brand-press)}
   .side-panel { width: 100% !important; max-height: 50vh; border-left: 0 !important; border-top: 1px solid var(--border-subtle); }
 }
 .table-scroll { overflow-x: auto; }
+@media (min-width: 1024px) { .table-scroll { overflow: visible; } }
+
+/* Tabela: cantos recortados sem criar contêiner de rolagem (o cabeçalho fica fixo ao rolar a página) */
+.dt { overflow: clip; }
+.dt thead th { position: sticky; top: 0; z-index: 1; }
+.dt-row { transition: background var(--dur-base) var(--ease-out); }
+.dt-click { cursor: pointer; }
+.dt-click:hover { background: var(--ink-50); }
+.dt-row[data-selected] { background: var(--brand-soft); }
+.dt-row[data-selected]:hover { background: var(--green-100); }
+.dt-click:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.row-new > td { animation: vt-row-new 2.4s var(--ease-out) backwards; }
+
+/* Carregamento */
+.skeleton { background: linear-gradient(90deg, var(--ink-100) 25%, var(--ink-50) 50%, var(--ink-100) 75%); background-size: 200% 100%; animation: vt-shimmer 1.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 /* Entradas: seção, aba e painel lateral */
 .section-in { animation: vt-section-in 280ms var(--ease-out) backwards; }
