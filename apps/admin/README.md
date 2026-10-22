@@ -6,11 +6,14 @@ Next.js 14 (App Router, `output: 'export'`), TypeScript, Tailwind 3, MapLibre GL
 
 | Seção | Grupos | Conteúdo |
 |---|---|---|
-| Frota ao vivo | admin, operacao, suporte | Mapa ao vivo (cluster, filtros por status, mapa de calor de demanda) ou **Lista** (endereço, modelo, revisão, busca por código/endereço/modelo/bateria, filtro "Motos fixas de plano"), faixa de dashboard (ocupação, aluguéis ativos, receita do dia, alertas), ficha da moto no painel lateral (endereço, posição, modelo, km/horas desde a revisão e situação, bateria com série e ciclos, moto fixa com "Trocar" para admin/operação, bateria, velocidade, comandos com motivo e estado ao vivo, replay de trajeto, histórico, log de comandos) |
+| Frota ao vivo | admin, operacao, suporte | Mapa ao vivo (cluster, filtros por status, mapa de calor de demanda, pino do galpão, motos `awaiting_pickup` com halo e legenda) ou **Lista** (endereço, modelo, revisão, busca por código/endereço/modelo/bateria, filtro "Motos fixas de plano"), faixa de dashboard (ocupação, aluguéis ativos, receita do dia, alertas), ficha da moto no painel lateral (endereço, posição, modelo, km/horas desde a revisão e situação, bateria com série e ciclos, moto fixa com "Trocar" para admin/operação, bateria, velocidade, comandos com motivo e estado ao vivo, replay de trajeto, histórico, log de comandos) |
 | Alertas | admin, operacao, suporte | Fila por prioridade em tempo real; atribuir, resolver (com motivo), ver no mapa |
 | Cercas e regras | admin, operacao | Desenhar, editar e excluir polígonos (operação, devolução, proibida, velocidade reduzida) com validação (limite <= 20 em velocidade reduzida; qualquer limite <= 32) |
 | Clientes | admin, suporte | Abas **Clientes** (busca, coluna Plano, ficha com verificação/atendimento/histórico, chave Pix de estorno completa só para admin/financeiro e mascarada para os demais, assinatura com moto fixa — definir/trocar só admin —, bloqueio, lista de restrição, CPF mascarado exceto admin), **Aluguéis** (filtros, detalhe com eventos, encerramento forçado, estorno) e **Suporte** (conversas com estado enviada/entregue/lida e leitura ao abrir, contestações, sinistros, ocorrências) |
 | Operação | admin, operacao | **Tarefas** (kanban; cartão com endereço da moto/destino e bateria retirada com série, carga e ciclos), **Manutenção** (revisões por km/horas com situação Vencida/Próxima/Em dia e "Agendar" por linha; agenda com origem Painel/Cliente/Automática — operação vê só o primeiro nome do cliente —, "Em aberto" consultado no servidor por agendadas e em andamento, filtro de pedidos de clientes, iniciar/concluir/cancelar) e **Baterias** (contagem por situação, estações com carregadas/vagas e estoque, van de cada operador, carregar/descarregar a própria van por série, lista com série, carga, ciclos e local) |
+| Galpões | admin, operacao (editam), financeiro (leitura) | Cadastro do galpão: ponto no mapa (clique), endereço, horário por dia da semana (HH:MM, abertura antes do fechamento), prazos (retirar agora, agendar até, tolerância) e motos do galpão por status. Desativar/Reativar só para admin (não há exclusão no contrato) |
+| Retiradas | admin, operacao | Agenda do dia por galpão (`GET /depots/{id}/pickups`): horário em São Paulo, Agora/Agendadas, filtro de status, só o primeiro nome do cliente, nunca o `pickupCode` |
+| Entregas | admin, operacao, suporte | Saídas e chegadas com fotos (links assinados), checklist, bateria e status; aba Disputas (`status=disputed`) com o motivo e "Abrir no suporte" (fila de Clientes > Suporte) |
 | Financeiro | admin, financeiro | Receita, ocupação, planos, cauções/seguros/estornos, exportação CSV; aba **Aluguéis** (mesmo painel de Clientes) |
 | Preços e planos | admin, financeiro (leitura) | Planos, taxas, seguros, **modelos** (catálogo com foto enviada por URL pré-assinada no prefixo `catalog/`, preço por minuto e desbloqueio próprio ou herdado do plano por minuto, intervalos de revisão, ativo) e cupons (validade, planos, limite total e por cliente) |
 | Equipe e acessos | admin | Usuários internos e permissões; aba **Auditoria** |
@@ -43,7 +46,8 @@ pnpm --filter admin test        # Vitest: status->cor, menu por grupo, máscara 
                                 # linha do tempo do comando, paleta (Ctrl+K) e foco preso em diálogo; contrato v2:
                                 # revisão por km/horas, baterias (séries, local), catálogo (rascunho -> POST/PATCH,
                                 # desbloqueio herdado), chave Pix (máscara por grupo), estado do chat, busca por endereço
-                                # e permissões novas
+                                # e permissões novas; galpão (horários, agenda, entregas;
+                                # componentes .tsx renderizados com react-dom/server sobre respostas simuladas do contrato)
 pnpm --filter admin test:e2e    # Playwright contra a API real (sobe `next dev` em :3100)
 ```
 
@@ -64,6 +68,17 @@ Passada visual (`e2e/visual.spec.ts`): abre todas as seções e abas em desktop 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 pnpm --filter admin build && npx serve apps/admin/out -l 3110
 E2E_PORT=3110 E2E_API_URL=http://localhost:3001 E2E_CHROME="C:/Program Files/Google/Chrome/Application/chrome.exe"   SHOTS_DIR=../../docs/design/screenshots/depois pnpm --filter admin test:e2e
+```
+
+### E2E do galpão (`e2e/galpao.spec.ts`)
+
+Cadastro, permissões, mapa e agenda rodam contra a API real (galpões e reserva de galpão). A reserva da agenda é criada pela API: galpão aberto todos os dias, moto nova levada ao galpão por um recolhimento (`collect`) concluído com `depotId`, cliente com KYC aprovado, cartão fake e `POST /reservations` com `depotId` e `Idempotency-Key`; o teste cancela a reserva no fim. Todo galpão do teste nasce em Maceió (longe das cercas de São Paulo) e é desativado no `afterEach`. Entregas e disputas ficam em `test.skip` até a Task 6 (handovers).
+
+```bash
+# API do worktree numa porta livre (services/api/.env com DATABASE_URL próprio, migrate + seed)
+NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=http://localhost:3112 pnpm --filter admin build
+npx serve apps/admin/out -l 3113
+E2E_PORT=3113 E2E_API_URL=http://localhost:3112   pnpm --filter admin exec playwright test e2e/galpao.spec.ts --workers=1
 ```
 
 ## Design e movimento

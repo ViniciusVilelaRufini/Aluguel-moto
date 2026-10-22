@@ -14,6 +14,7 @@ import { easeInOutCubic, prefersReducedMotion, tween } from '@/lib/motion';
 import { dialogStack } from '@/lib/focus';
 import { rentalWindow } from '@/lib/fleet-copy';
 import { BIKE_ICON, registerFleetImages } from '@/lib/map-icons';
+import { addDepotLayer, DEPOT_LAYER, setDepots } from '@/lib/depot-layer';
 import { MapView } from '@/components/MapView';
 import { VehicleSheet } from '@/components/VehicleSheet';
 import { FleetList } from '@/components/FleetList';
@@ -23,6 +24,7 @@ import { FleetStatus } from '@/ds/FleetStatus';
 import { StatTile, StatTileSkeleton } from '@/ds/StatTile';
 import { Button } from '@/ds/Button';
 import { IconButton } from '@/ds/IconButton';
+import { Icon } from '@/ds/Icon';
 import { canOpen } from '@/lib/permissions';
 import type { VehicleStatus } from '@/lib/types';
 
@@ -114,10 +116,14 @@ export default function FleetPage() {
     // Cluster: imagem em canvas com a contagem (sem glifos externos); o clique continua nesta camada.
     map.addLayer({ id: 'clusters', type: 'symbol', source: FLEET_SRC, filter: ['has', 'point_count'], layout: { 'icon-image': ['concat', 'cluster-', ['to-string', ['get', 'point_count']]] as never, 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
     // Anel de bateria por fora do pin (mesma regra da BatteryPill), depois o pin na cor do status com o ícone da moto.
+    // Retirada em galpão: moto devolvida em ponto verde, esperando recolhimento, ganha um halo na cor do status.
+    map.addLayer({ id: 'vehicles-awaiting-halo', type: 'circle', source: FLEET_SRC, filter: ['all', ['!', ['has', 'point_count']], ['==', ['get', 'status'], 'awaiting_pickup']], paint: { 'circle-color': STATUS_COLOR.awaiting_pickup, 'circle-opacity': 0.22, 'circle-radius': 24, 'circle-stroke-color': STATUS_COLOR.awaiting_pickup, 'circle-stroke-width': 2, 'circle-stroke-opacity': 0.8 } });
     map.addLayer({ id: 'vehicles-battery', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': ['get', 'batteryColor'] as never, 'circle-radius': 14.5, 'circle-opacity': 0.95 } });
     map.addLayer({ id: 'vehicles', type: 'circle', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], paint: { 'circle-color': colorExpr, 'circle-radius': 12, 'circle-stroke-color': '#fff', 'circle-stroke-width': 2.5 } });
     map.addLayer({ id: 'vehicle-selected', type: 'circle', source: FLEET_SRC, filter: ['==', ['get', 'id'], ''], paint: { 'circle-color': colorExpr, 'circle-radius': 17, 'circle-stroke-color': '#15181A', 'circle-stroke-width': 3 } });
     map.addLayer({ id: 'vehicles-icon', type: 'symbol', source: FLEET_SRC, filter: ['!', ['has', 'point_count']], layout: { 'icon-image': BIKE_ICON, 'icon-size': 0.5, 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
+    // Pino do galpão por cima das motos (a ponta aponta para o cluster das motos guardadas).
+    addDepotLayer(map);
     map.on('click', 'vehicles', (e) => { const id = e.features?.[0]?.properties?.id as string | undefined; if (id) select(id); });
     map.on('click', 'clusters', async (e) => {
       const f = e.features?.[0];
@@ -149,6 +155,20 @@ export default function FleetPage() {
           .setLngLat((e.features![0].geometry as GeoJSON.Point).coordinates as [number, number]).setDOMContent(el).addTo(map);
       });
       map.on('mouseleave', 'vehicles', () => { popup?.remove(); popup = null; });
+      map.on('mouseenter', DEPOT_LAYER, (e) => {
+        const p = e.features?.[0]?.properties as { name?: string; address?: string } | undefined;
+        if (!p?.name) return;
+        const el = document.createElement('div');
+        el.className = 'vt-tip';
+        const strong = document.createElement('strong');
+        strong.textContent = p.name;
+        const span = document.createElement('span');
+        span.textContent = p.address ?? '';
+        el.append(strong, span);
+        popup = new ml.Popup({ closeButton: false, closeOnClick: false, offset: [0, -40], className: 'vt-popup' })
+          .setLngLat((e.features![0].geometry as GeoJSON.Point).coordinates as [number, number]).setDOMContent(el).addTo(map);
+      });
+      map.on('mouseleave', DEPOT_LAYER, () => { popup?.remove(); popup = null; });
       // Pulso da moto selecionada (HTML, para usar vt-pulse-ring e respeitar movimento reduzido no CSS).
       const el = document.createElement('div');
       el.className = 'map-pulse';
@@ -225,6 +245,14 @@ export default function FleetPage() {
     map.addLayer({ id: 'heat', type: 'heatmap', source: 'heat', paint: { 'heatmap-weight': ['get', 'weight'], 'heatmap-radius': 28, 'heatmap-opacity': 0.7, 'heatmap-color': ['interpolate', ['linear'], ['heatmap-density'], 0, 'rgba(52,194,92,0)', 0.3, '#A8E4BA', 0.6, '#FBC531', 1, '#E04E42'] } }, 'clusters');
   }, [showHeat, heat.data, mapReady]);
 
+  // Galpões ativos no mapa (GET /depots: todos os grupos que abrem a frota).
+  const depotsQ = useQuery({ queryKey: ['depots', 'active'], queryFn: () => unwrap(api.GET('/depots')) });
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) return;
+    setDepots(map, depotsQ.data?.items ?? []);
+  }, [depotsQ.data, mapReady]);
+
   const dash = useQuery({ queryKey: ['dashboard'], queryFn: () => unwrap(api.GET('/reports/dashboard')), refetchInterval: 30_000 });
 
   return (
@@ -261,6 +289,19 @@ export default function FleetPage() {
           </div>
           {view === 'list' && <div className="section-in"><FleetList vehicles={shown} selected={selected} onSelect={(id) => select(id)} onlyFixed={onlyFixed} onToggleFixed={() => setOnlyFixed((x) => !x)} /></div>}
         </div>
+        {view === 'map' && !(selected && replay) && <div data-testid="map-legend" aria-label="Legenda do mapa" role="group" className="map-legend"
+          style={{ position: 'absolute', left: 16, bottom: 24, display: 'flex', gap: 14, alignItems: 'center', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: 'var(--glass-bg)', backdropFilter: 'var(--blur-glass)', WebkitBackdropFilter: 'var(--blur-glass)', boxShadow: 'var(--shadow-1)', font: 'var(--type-caption)', fontWeight: 600 }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span aria-hidden style={{ width: 18, height: 18, borderRadius: 5, background: 'var(--ink-900)', color: '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}><Icon name="Warehouse" size={12} /></span>
+            Galpão
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <span aria-hidden style={{ width: 18, height: 18, borderRadius: '50%', background: 'color-mix(in srgb, var(--status-awaiting-pickup) 22%, transparent)', border: '2px solid var(--status-awaiting-pickup)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--status-awaiting-pickup)' }} />
+            </span>
+            Aguardando recolhimento ({counts.awaiting_pickup ?? 0})
+          </span>
+        </div>}
         {selected && replay && view === 'map' && <ReplayBar vehicleId={selected} mapRef={mapRef} mapReady={mapReady} />}
       </div>
       {selected && <VehicleSheet vehicleId={selected} onClose={() => select(null)} onReplay={() => setReplay((r) => !r)} replayActive={replay} />}

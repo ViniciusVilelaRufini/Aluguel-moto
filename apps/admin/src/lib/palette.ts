@@ -59,7 +59,8 @@ export function paletteResults(
 ): PaletteItem[] {
   const q = query.trim();
   const limit = opts.limit ?? 8;
-  if (!q) return opts.sections.slice(0, limit);
+  // Sem consulta: todas as seções do menu (são poucas e fixas).
+  if (!q) return opts.sections;
   const ranked = [...opts.vehicles, ...opts.sections]
     .map((item) => ({ item, s: scoreItem(item, q) }))
     .filter((x) => x.s > 0)

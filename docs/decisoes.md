@@ -312,6 +312,15 @@ Implementação de `/handovers*` sem mudar o `openapi.yaml`.
 
 **Proposta (contrato): `POST /handovers/{id}/cancel`** (`admin`, `operacao`, `suporte`; corpo `{ reason, releaseReservation?: boolean }`, AuditLog). Cancela uma entrega `pending_customer` ou `disputed` (`canceled`, `handover.updated`). Com `releaseReservation`, a reserva vai a `canceled`, a caução é liberada e a moto volta a `free` no galpão. Sem `releaseReservation`, a reserva volta a `active` com prazo novo, para uma nova saída. Hoje uma reserva em `handover` com a entrega disputada não vence, não pode ser cancelada pelo cliente (`409 reservation-in-handover`) e só sai desse estado por ação manual no banco.
 
+### Painel do galpão — Task 12 (branch `feat/galpao-t12`) · status: proposta (agente do painel, 2026-10-22)
+
+- **Menu:** três seções novas depois de Financeiro e Preços (antes de Equipe; a primeira seção do grupo é a tela inicial, então financeiro continua abrindo em Financeiro): **Galpões** (`/galpoes`: admin e operacao editam; financeiro só lê, porque `GET /depots` aceita o grupo), **Retiradas** (`/retiradas`: admin e operacao; a agenda aceita `campo`, mas `campo` não usa o painel) e **Entregas** (`/entregas`: admin, operacao e suporte; suporte abre direto na aba Disputas). A paleta (Ctrl+K) sem consulta passa a listar todas as seções (eram as 8 primeiras).
+- **Sem exclusão de galpão:** o contrato não tem `DELETE /depots/{id}`. O painel oferece **Desativar/Reativar** (`PATCH active`), só para `admin` (ação `depot.deactivate`), com confirmação; `operacao` edita mas não vê o botão. A API aceita o `PATCH` de `operacao`, então a restrição é só de interface.
+- **Agenda:** lista todas as reservas do dia (fuso do galpão) com filtro de status no servidor e filtro Agora/Agendadas no painel; mostra só o primeiro nome (o painel corta o que vier depois do primeiro espaço) e nunca o `pickupCode`. Horários em `America/Sao_Paulo`.
+- **"Abrir no suporte" (disputa):** `Handover` não traz `customerId` nem o id do ticket/conversa aberto pela disputa, então o painel mostra os detalhes da entrega e o motivo e o botão leva à fila de atendimento (`/customers?tab=support`), só para quem abre Clientes. **Proposta de contrato (aditiva):** `Handover.supportConversationId` (ou `customerId`) para abrir a conversa certa; até lá, nada muda na API.
+- **Cor de `awaiting_pickup`:** token próprio `--status-awaiting-pickup` = `--teal-500` (`#13A8A8`), primitivo novo no painel (detalhes em `docs/design/evolucoes-admin.md`, E23). Substitui a cor provisória (sun-400, igual a `paused`).
+- **Pendente (antes de os apps mostrarem `awaiting_pickup`):** promover `--teal-50/500/600` e `--status-awaiting-pickup` para `design-system/tokens/colors.css` e para `packages/volti_flutter` (tokens Flutter), para o app do operador e o do cliente usarem a mesma cor do painel.
+
 ## 2026-10-22 · agente de correções do emulador, rodada 1 (branch `fix/emulador-1`) · status: decisão (app) + proposta
 
 Achados do teste no emulador (`.superpowers/sdd/2026-10-21-volti-plataforma/emulador-1-achados.md`). Nada mudou no `openapi.yaml`.

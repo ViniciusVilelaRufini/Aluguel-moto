@@ -19,6 +19,8 @@
 --sky-100:#DDF1FA;--sky-200:#C3E6F5;
 --sun-300:#FFD45C;--sun-400:#FBC531;
 --violet-50:#F0EDFE;--violet-500:#8B7CF6;--violet-600:#6F5EE8;
+/* Teal: só o status awaiting_pickup (retirada em galpão); distinto de free (verde) e de rented (azul). */
+--teal-50:#E3F6F6;--teal-500:#13A8A8;--teal-600:#0E8787;
 --ink-900:#15181A;--ink-800:#1F2326;--ink-700:#3A3F44;--ink-600:#50565C;--ink-500:#6B7178;--ink-400:#9AA0A6;--ink-300:#C9CDD2;--ink-200:#E4E7EA;--ink-100:#F1F3F5;--ink-50:#F7F8FA;--white:#FFFFFF;
 
 --brand:var(--green-500);--brand-hover:var(--green-600);--brand-press:var(--green-700);--brand-soft:var(--green-50);--on-brand:var(--white);
@@ -29,7 +31,7 @@
 --danger:var(--coral-500);--danger-soft:var(--coral-50);--danger-ink:var(--coral-600);
 --warning:var(--orange-500);--warning-soft:var(--orange-50);--warning-ink:var(--orange-600);
 --info:var(--blue-500);--info-soft:var(--blue-50);--info-ink:var(--blue-600);
---status-free:var(--green-500);--status-rented:var(--blue-500);--status-reserved:var(--orange-500);--status-paused:var(--sun-400);--status-blocked:var(--coral-600);--status-maintenance:var(--violet-500);--status-offline:var(--ink-400);
+--status-free:var(--green-500);--status-rented:var(--blue-500);--status-reserved:var(--orange-500);--status-paused:var(--sun-400);--status-blocked:var(--coral-600);--status-maintenance:var(--violet-500);--status-offline:var(--ink-400);--status-awaiting-pickup:var(--teal-500);
 --battery-high:var(--green-500);--battery-mid:var(--sun-400);--battery-low:var(--coral-500);
 
 --shadow-1:0 1px 2px rgba(21,24,26,.06),0 2px 8px rgba(21,24,26,.06);

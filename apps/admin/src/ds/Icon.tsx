@@ -71,6 +71,7 @@ import {
   Send as ISend,
   CircleDot as ICircleDot,
   Flame as IFlame,
+  PackageCheck as IPackageCheck,
   type LucideIcon,
   Battery as IBattery,
   CheckCheck as ICheckCheck,
@@ -167,6 +168,7 @@ const ICONS: Record<string, LucideIcon> = {
   ArrowDownToLine: IArrowDownToLine,
   ArrowUpFromLine: IArrowUpFromLine,
   Warehouse: IWarehouse,
+  PackageCheck: IPackageCheck,
 };
 
 interface IconProps {

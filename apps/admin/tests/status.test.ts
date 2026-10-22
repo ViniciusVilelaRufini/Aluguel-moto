@@ -12,6 +12,11 @@ describe('status -> color', () => {
     expect(STATUS_COLOR.offline).toBe('#9AA0A6');
     expect(Object.keys(STATUS_COLOR).sort()).toEqual([...VEHICLE_STATUSES].sort());
   });
+  it('awaiting_pickup has its own token (teal-500), distinct from every other status', () => {
+    expect(STATUS_COLOR.awaiting_pickup).toBe('#13A8A8');
+    const others = VEHICLE_STATUSES.filter((s) => s !== 'awaiting_pickup').map((s) => STATUS_COLOR[s]);
+    expect(others).not.toContain(STATUS_COLOR.awaiting_pickup);
+  });
   it('has pt-BR labels', () => {
     expect(STATUS_LABEL.offline).toBe('Sem sinal');
     expect(STATUS_LABEL.free).toBe('Livre');
