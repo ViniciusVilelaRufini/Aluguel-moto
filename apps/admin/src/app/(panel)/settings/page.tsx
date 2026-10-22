@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { PLAN_LABEL } from '@/lib/labels';
 import type { S } from '@/lib/types';
+import { reportMessage, runSaveSteps, type SaveStep } from '@/lib/save-report';
 import { DataTable, ErrorNote, Field, MiniInput, Modal, Page, PageHeader, Pill, Select, TextInput, useToast } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
@@ -18,6 +19,9 @@ const toCents = (v: string) => Math.round(Number(v.replace(/\./g, '').replace(',
 const validMoney = (v: string) => /^\d{1,6}([.,]\d{1,2})?$/.test(v.trim().replace(/\./g, ',').replace(/,(?=.*,)/g, ''));
 
 const UNIT_SUFFIX: Record<S<'PlanUnit'>, string> = { minute: '/min', hour: '/hora', day: '/dia', week: '/semana', month: '/mês' };
+
+/** Taxas cobradas por minuto (pausa, reserva) mostram a unidade como no design: "0,20 /min". */
+const feeSuffix = (code: string) => (/pause|pausa|reserv/i.test(code) ? '/min' : '');
 
 export default function SettingsPage() {
   const { groups } = useAuth();
@@ -44,40 +48,59 @@ export default function SettingsPage() {
   const save = async () => {
     setBusy(true); setErr(null);
     try {
+      // Valida tudo antes de gravar qualquer coisa: erro de digitação não deixa estado parcial.
+      for (const p of plans.data?.items ?? []) {
+        const e = planEdit[p.id];
+        if (e) for (const v of [e.unit, e.unlock, e.pause]) if (v !== undefined && !validMoney(v)) throw new Error('Informe os valores em reais, por exemplo 0,79');
+      }
+      for (const f of fees.data?.items ?? []) {
+        const e = feeEdit[f.id];
+        if (e?.amount !== undefined && !validMoney(e.amount)) throw new Error('Informe os valores em reais, por exemplo 15,00');
+      }
+      for (const c of cov.data?.items ?? []) {
+        const e = covEdit[c.coverage];
+        if (e?.premium !== undefined && !validMoney(e.premium)) throw new Error('Informe o preço do seguro em reais, por exemplo 2,00');
+      }
+      const steps: SaveStep[] = [];
+      const labels: Record<string, string> = {};
+      const add = (key: string, label: string, run: () => Promise<unknown>) => { steps.push({ key, label, run }); labels[key] = label; };
       for (const p of plans.data?.items ?? []) {
         const e = planEdit[p.id];
         if (!e) continue;
-        for (const v of [e.unit, e.unlock, e.pause]) if (v !== undefined && !validMoney(v)) throw new Error('Informe os valores em reais, por exemplo 0,79');
-        await unwrap(api.PUT('/pricing/plans/{id}', { params: { path: { id: p.id } }, body: {
+        add(`plan:${p.id}`, `Plano ${PLAN_LABEL[p.code] ?? p.name}`, () => unwrap(api.PUT('/pricing/plans/{id}', { params: { path: { id: p.id } }, body: {
           code: p.code, name: p.name, description: p.description, unit: p.unit, recurring: p.recurring,
           unitPriceCents: e.unit !== undefined ? toCents(e.unit) : p.unitPriceCents,
           unlockFeeCents: e.unlock !== undefined ? toCents(e.unlock) : p.unlockFeeCents,
           pausePerMinuteCents: e.pause !== undefined ? toCents(e.pause) : p.pausePerMinuteCents,
           active: e.active ?? p.active,
-        } }));
+        } })));
       }
       for (const f of fees.data?.items ?? []) {
         const e = feeEdit[f.id];
         if (!e) continue;
-        if (e.amount !== undefined && !validMoney(e.amount)) throw new Error('Informe os valores em reais, por exemplo 15,00');
-        await unwrap(api.PUT('/pricing/fees/{id}', { params: { path: { id: f.id } }, body: { code: f.code, name: f.name, description: f.description, amountCents: e.amount !== undefined ? toCents(e.amount) : f.amountCents, active: e.active ?? f.active } }));
+        add(`fee:${f.id}`, `Taxa ${f.name}`, () => unwrap(api.PUT('/pricing/fees/{id}', { params: { path: { id: f.id } }, body: { code: f.code, name: f.name, description: f.description, amountCents: e.amount !== undefined ? toCents(e.amount) : f.amountCents, active: e.active ?? f.active } })));
       }
       for (const c of cov.data?.items ?? []) {
         const e = covEdit[c.coverage];
         if (!e) continue;
-        if (e.premium !== undefined && !validMoney(e.premium)) throw new Error('Informe o preço do seguro em reais, por exemplo 2,00');
-        await unwrap(api.PUT('/insurance/coverages/{coverage}', { params: { path: { coverage: c.coverage } }, body: { ...(e.premium !== undefined ? { premiumCents: toCents(e.premium) } : {}), ...(e.active !== undefined ? { active: e.active } : {}) } }));
+        add(`cov:${c.coverage}`, `Seguro ${c.name}`, () => unwrap(api.PUT('/insurance/coverages/{coverage}', { params: { path: { coverage: c.coverage } }, body: { ...(e.premium !== undefined ? { premiumCents: toCents(e.premium) } : {}), ...(e.active !== undefined ? { active: e.active } : {}) } })));
       }
       for (const c of coupons.data?.items ?? []) {
         if (couponEdit[c.id] === undefined) continue;
-        await unwrap(api.PUT('/pricing/coupons/{id}', { params: { path: { id: c.id } }, body: {
+        add(`coupon:${c.id}`, `Cupom ${c.code}`, () => unwrap(api.PUT('/pricing/coupons/{id}', { params: { path: { id: c.id } }, body: {
           code: c.code, description: c.description, discountType: c.discountType, percentOff: c.percentOff, amountOffCents: c.amountOffCents, planCodes: c.planCodes,
           validFrom: c.validFrom, validUntil: c.validUntil, maxRedemptions: c.maxRedemptions, maxRedemptionsPerCustomer: c.maxRedemptionsPerCustomer, active: couponEdit[c.id],
-        } }));
+        } })));
       }
-      toast('Preços salvos · log de auditoria atualizado');
-      discard();
+      const report = await runSaveSteps(steps);
+      // Itens salvos saem do rascunho; os que falharam continuam editáveis para tentar de novo.
+      const keep = (m: Record<string, unknown>, prefix: string) => Object.fromEntries(Object.entries(m).filter(([k]) => !report.saved.includes(`${prefix}:${k}`)));
+      setPlanEdit((m) => keep(m, 'plan') as typeof m); setFeeEdit((m) => keep(m, 'fee') as typeof m);
+      setCovEdit((m) => keep(m, 'cov') as typeof m); setCouponEdit((m) => keep(m, 'coupon') as typeof m);
       await Promise.all(['plans', 'fees', 'coverages', 'coupons'].map((k) => qc.invalidateQueries({ queryKey: [k] })));
+      const msg = reportMessage(report, labels);
+      if (msg) { setErr(new Error(msg)); toast(msg, 'danger'); }
+      else toast('Preços salvos · log de auditoria atualizado');
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
 
@@ -103,7 +126,8 @@ export default function SettingsPage() {
           <DataTable<S<'PricingPlan'>> loading={plans.isLoading} rows={plans.data?.items ?? []}
             columns={[
               { key: 'name', label: 'Plano', render: (p) => PLAN_LABEL[p.code] ?? p.name },
-              { key: 'unit', label: 'Preço', align: 'right', render: (p) => canEdit ? <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><MiniInput label={`Preço ${p.name}`} width={84} value={planEdit[p.id]?.unit ?? toReais(p.unitPriceCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], unit: v } }))} /><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{UNIT_SUFFIX[p.unit]}</span></span> : `${toReais(p.unitPriceCents)} ${UNIT_SUFFIX[p.unit]}` },
+              { key: 'unit', label: 'Preço', align: 'right', render: (p) => canEdit ? <MiniInput label={`Preço ${p.name}`} width={84} value={planEdit[p.id]?.unit ?? toReais(p.unitPriceCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], unit: v } }))} /> : toReais(p.unitPriceCents) },
+              { key: 'unitLabel', label: 'Unidade', render: (p) => <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{UNIT_SUFFIX[p.unit]}</span> },
               { key: 'unlock', label: 'Desbloqueio', align: 'right', render: (p) => canEdit ? <MiniInput label={`Desbloqueio ${p.name}`} width={76} value={planEdit[p.id]?.unlock ?? toReais(p.unlockFeeCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], unlock: v } }))} /> : toReais(p.unlockFeeCents) },
               { key: 'pause', label: 'Pausa/min', align: 'right', render: (p) => canEdit ? <MiniInput label={`Pausa ${p.name}`} width={76} value={planEdit[p.id]?.pause ?? toReais(p.pausePerMinuteCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], pause: v } }))} /> : toReais(p.pausePerMinuteCents) },
               { key: 'active', label: 'Ativo', align: 'right', render: (p) => <Switch label="" disabled={!canEdit} checked={planEdit[p.id]?.active ?? p.active} onChange={(v: boolean) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], active: v } }))} /> },
@@ -114,6 +138,7 @@ export default function SettingsPage() {
             {(fees.data?.items ?? []).map((f) => (
               <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderBottom: '1px solid var(--ink-100)' }}>
                 <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{f.name}{f.system && <span style={{ marginLeft: 8 }}><Pill>Sistema</Pill></span>}</span>
+                {feeSuffix(f.code) && <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{feeSuffix(f.code)}</span>}
                 {canEdit ? <MiniInput label={f.name} width={110} value={feeEdit[f.id]?.amount ?? toReais(f.amountCents)} onChange={(v) => setFeeEdit((m) => ({ ...m, [f.id]: { ...m[f.id], amount: v } }))} /> : <span style={{ font: '500 13px var(--font-mono)' }}>{toReais(f.amountCents)}</span>}
               </div>
             ))}

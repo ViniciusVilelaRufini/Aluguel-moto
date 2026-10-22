@@ -9,6 +9,7 @@ export async function login(page: Page, group: Group = 'admin') {
   await page.goto('/login');
   await page.getByTestId('group-select').selectOption({ label: LABEL[group] });
   await page.getByTestId('login-continue').click();
+  await page.getByLabel('Código de 6 dígitos').fill('123456');
   await page.getByTestId('login-submit').click();
   await expect(page.getByTestId('logout')).toBeVisible();
 }
