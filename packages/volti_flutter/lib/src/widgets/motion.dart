@@ -43,6 +43,7 @@ class _VoltiFadeUpState extends State<VoltiFadeUp>
     ),
   );
   bool _started = false;
+  final _keep = GlobalKey();
 
   @override
   void didChangeDependencies() {
@@ -66,7 +67,9 @@ class _VoltiFadeUpState extends State<VoltiFadeUp>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _t,
-      child: widget.child,
+      // GlobalKey: ao terminar, o filho sai de Opacity/Transform sem perder o
+      // estado (antes era remontado e reiniciava contadores, pulsos, campos).
+      child: KeyedSubtree(key: _keep, child: widget.child),
       builder: (context, child) {
         final v = _t.value;
         if (_c.isCompleted) return child!;
@@ -142,6 +145,7 @@ class _VoltiEnterState extends State<VoltiEnter>
     ),
   );
   bool _started = false;
+  final _keep = GlobalKey();
 
   @override
   void didChangeDependencies() {
@@ -164,7 +168,8 @@ class _VoltiEnterState extends State<VoltiEnter>
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
     animation: _t,
-    child: widget.child,
+    // Mesmo cuidado do VoltiFadeUp: preserva o estado do filho ao terminar.
+    child: KeyedSubtree(key: _keep, child: widget.child),
     builder: (context, child) {
       if (_c.isCompleted) return child!;
       final e = widget.curve.transform(_t.value.clamp(0.0, 1.0));

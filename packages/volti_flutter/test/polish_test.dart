@@ -168,8 +168,19 @@ void main() {
   testWidgets('VoltiButton e lido uma vez so (sem rotulo duplicado)', (t) async {
     final h = t.ensureSemantics();
     await t.pumpWidget(_wrap(VoltiButton(label: 'Entrar', onPressed: () {})));
-    expect(t.getSemantics(find.byType(VoltiButton)), containsSemantics(label: 'Entrar', isButton: true));
+    expect(t.getSemantics(find.byType(VoltiButton)), isSemantics(label: 'Entrar', isButton: true));
     h.dispose();
+  });
+
+  testWidgets('VoltiFadeUp e VoltiEnter preservam o estado do filho ao terminar', (t) async {
+    await t.pumpWidget(_wrap(Column(children: [
+      VoltiFadeUp(child: VoltiCountUp(key: const Key('a'), value: 100, format: (v) => 'a$v')),
+      VoltiEnter(child: VoltiCountUp(key: const Key('b'), value: 100, format: (v) => 'b$v', duration: const Duration(seconds: 2))),
+    ])));
+    await t.pump(const Duration(milliseconds: 1500));
+    await t.pump(const Duration(milliseconds: 600));
+    expect(find.text('a100'), findsOneWidget);
+    expect(find.text('b100'), findsOneWidget);
   });
 
   test('tokens de texto forte em banners', () {
