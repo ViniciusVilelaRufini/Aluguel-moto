@@ -132,6 +132,10 @@ export class RentalsService {
       throw unprocessable('validation-error', `A nova moto precisa estar a até ${SWAP_MAX_DISTANCE_M} m.`);
     }
     await this.prisma.$transaction(async (tx) => {
+      // Rodada 3: aluguel travado antes das motos (mesma ordem da liberação na estação: aluguel → moto, sem deadlock) e
+      // troca aberta reconferida sob o lock (uma troca criada depois da pré-checagem também barra).
+      await tx.$queryRaw`SELECT "id" FROM "Rental" WHERE "id" = ${id}::uuid FOR UPDATE`;
+      if (await hasOpenStationSwap(tx, id)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de trocar de moto.');
       const claimed = await tx.vehicle.updateMany({ where: { id: target.id, status: 'free', depotId: null }, data: { status: r.status === 'paused' ? 'paused' : 'rented' } });
       if (claimed.count === 0) throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
       await tx.vehicle.update({ where: { id: r.vehicleId }, data: { status: 'maintenance' } });

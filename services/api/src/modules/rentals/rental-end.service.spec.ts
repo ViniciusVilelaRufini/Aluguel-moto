@@ -108,6 +108,19 @@ describe('Encerramento do aluguel', () => {
     expect(b.stationSwaps.closeForRentalEnd).toHaveBeenCalledWith(RENTAL_ID);
   });
 
+  it('rodada 3: trocas abertas são fechadas também depois de finalizar (troca criada na janela não fica aberta num aluguel encerrado)', async () => {
+    for (const run of ['force', 'depot'] as const) {
+      const ctx = setup({ inZone: true });
+      const calls: string[] = [];
+      ctx.stationSwaps.closeForRentalEnd.mockImplementation(async () => void calls.push(`close:${ctx.rental.status}`));
+      if (run === 'force') await ctx.service.forceEnd(support, RENTAL_ID, 'Aplicativo travou');
+      else await ctx.service.endAtDepot(admin, RENTAL_ID, { depotId: '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c', targetStatus: 'free' });
+      // A última chamada acontece com o aluguel já encerrado (depois do finalize).
+      expect(calls.at(-1)).toBe(run === 'force' ? 'close:force_ended' : 'close:ended');
+      expect(calls.length).toBeGreaterThanOrEqual(2);
+    }
+  });
+
   it('fix 1 (I7): troca de bateria na estação em andamento → 409 swap-open, sem travar nem encerrar (encerramento forçado continua)', async () => {
     const { service, prisma, commands, rental } = setup({ photo: false });
     prisma.stationSwap.findFirst.mockResolvedValue({ id: 'swap-1' } as any);

@@ -73,6 +73,39 @@ describe('RentalsService.swap — moto do galpão (Task 6)', () => {
     expect(commands.dispatch).not.toHaveBeenCalled();
   });
 
+  it('rodada 3: a transação trava o aluguel (FOR UPDATE) antes das motos e reconfere a troca aberta → 409 swap-open sem tocar nas motos', async () => {
+    const { prisma, commands, svc } = setup();
+    const order: string[] = [];
+    (prisma.$queryRaw as any).mockImplementation(async (sql: TemplateStringsArray) => {
+      order.push(sql.join('?'));
+      return [];
+    });
+    prisma.vehicle.findUnique.mockResolvedValue({ id: NEW_ID, status: 'free', depotId: null, speedLimitKmh: 20, ...here } as any);
+    // Pré-checagem não vê troca; uma troca nova entrou antes do lock.
+    prisma.stationSwap.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'swap-1' } as any);
+    await expect(svc.swap(user, RENTAL_ID, { newVehicleId: NEW_ID, reason: 'Pneu furado' } as any)).rejects.toMatchObject({ status: 409, slug: 'swap-open' });
+    expect(order.some((q) => /FROM "Rental" WHERE "id" = \?::uuid FOR UPDATE/.test(q))).toBe(true);
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('rodada 3: sem troca aberta, o lock do aluguel vem antes da reivindicação da moto (mesma ordem da liberação na estação)', async () => {
+    const { prisma, svc } = setup();
+    const order: string[] = [];
+    (prisma.$queryRaw as any).mockImplementation(async (sql: TemplateStringsArray) => {
+      order.push(sql.join('?').includes('"Rental"') ? 'lock-rental' : 'outro');
+      return [];
+    });
+    prisma.vehicle.findUnique.mockResolvedValue({ id: NEW_ID, status: 'free', depotId: null, speedLimitKmh: 20, ...here } as any);
+    prisma.vehicle.updateMany.mockImplementation((async () => {
+      order.push('claim-vehicle');
+      return { count: 1 };
+    }) as any);
+    await svc.swap(user, RENTAL_ID, { newVehicleId: NEW_ID, reason: 'Pneu furado' } as any).catch(() => undefined);
+    expect(order.slice(0, 2)).toEqual(['lock-rental', 'claim-vehicle']);
+  });
+
   it('a reivindicação da moto alvo exige depotId nulo (corrida com a volta ao galpão)', async () => {
     const { prisma, svc } = setup();
     prisma.vehicle.findUnique.mockResolvedValue({ id: NEW_ID, status: 'free', depotId: null, speedLimitKmh: 20, ...here } as any);

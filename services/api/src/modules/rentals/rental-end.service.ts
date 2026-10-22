@@ -179,7 +179,11 @@ export class RentalEndService {
     // Bloqueio seguro (rampa até parar) — o encerramento não espera a confirmação.
     await this.requestLock(rentalId, rental.vehicleId, 'rental_force_end').catch(() => false);
     await this.closeStationSwaps(rentalId);
-    return this.finalize(rentalId, 'force_ended', { fees, actor });
+    const closed = await this.finalize(rentalId, 'force_ended', { fees, actor });
+    // Rodada 3: de novo depois do fechamento (idempotente) — uma troca criada entre a primeira chamada e o finalize não fica
+    // aberta num aluguel encerrado.
+    await this.closeStationSwaps(rentalId);
+    return closed;
   }
 
   /**
@@ -193,7 +197,9 @@ export class RentalEndService {
     if (!['active', 'paused', 'ending'].includes(rental.status)) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
     await this.closeStationSwaps(rentalId);
     await this.requestLock(rentalId, rental.vehicleId, 'rental_depot_return');
-    return this.finalize(rentalId, 'ended', { actor, returnTo: 'depot', depot });
+    const closed = await this.finalize(rentalId, 'ended', { actor, returnTo: 'depot', depot });
+    await this.closeStationSwaps(rentalId); // rodada 3: idem ao encerramento forçado
+    return closed;
   }
 
   /** Pede o travamento (bloqueio seguro). `true` se o rastreador confirmou na hora. */
