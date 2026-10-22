@@ -107,7 +107,7 @@ export class CommandsService {
     const outcome = await this.callGateway(command.id, vehicle.thingName, input);
     const updated = await this.applyOutcome(command, outcome);
     if (updated.status === 'confirmed') await this.reflectOnVehicle(vehicle.id, input);
-    return toVehicleCommand(updated);
+    return this.present([updated]).then(([c]) => c);
   }
 
   private async callGateway(commandId: string, thingName: string, input: DispatchInput): Promise<CommandOutcome> {
@@ -196,12 +196,27 @@ export class CommandsService {
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       ...pageArgs(q),
     });
-    return toPage(rows, q, toVehicleCommand);
+    const named = await this.present(rows.slice(0, q.limit ?? 20));
+    const byId = new Map(named.map((c) => [c.id as string, c]));
+    return toPage(rows, q, (r) => byId.get(r.id) ?? toVehicleCommand(r));
   }
 
   async get(id: string) {
     const c = await this.prisma.vehicleCommand.findUnique({ where: { id } });
     if (!c) throw notFound('Comando não encontrado.');
-    return toVehicleCommand(c);
+    return (await this.present([c]))[0];
+  }
+
+  /** Nome de quem pediu: não é gravado no comando; vem do cadastro (StaffUser/Customer) pelo requestedById. */
+  private async present(rows: VehicleCommand[]) {
+    const ids = (type: string) => [...new Set(rows.filter((r) => r.requestedByType === type && r.requestedById).map((r) => r.requestedById!))];
+    const staffIds = ids('staff');
+    const customerIds = ids('customer');
+    const [staff, customers] = await Promise.all([
+      staffIds.length ? this.prisma.staffUser.findMany({ where: { id: { in: staffIds } }, select: { id: true, name: true } }) : [],
+      customerIds.length ? this.prisma.customer.findMany({ where: { id: { in: customerIds } }, select: { id: true, name: true } }) : [],
+    ]);
+    const names = new Map<string, string | null>([...staff, ...customers].map((u) => [u.id, u.name]));
+    return rows.map((r) => toVehicleCommand({ ...r, requestedByName: r.requestedByName ?? (r.requestedById ? names.get(r.requestedById) ?? null : null) }));
   }
 }
