@@ -54,6 +54,8 @@ class SubsBackend extends FakeBackend {
       ];
   @override
   Future<void> cancelSubscription(String id) async => cancels++;
+  @override
+  Future<List<PaymentCard>> cards() async => [];
 }
 
 class SlowHistory extends FakeBackend {
@@ -315,15 +317,15 @@ void main() {
       final backend = SubsBackend();
       await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
       await t.pumpAndSettle();
-      await t.tap(find.text('Plano semanal').first);
+      await t.tap(find.text('Cancelar renovação'));
       await t.pumpAndSettle();
       expect(find.text('Cancelar a renovação?'), findsOneWidget);
       await t.tap(find.text('Manter plano'));
       await t.pumpAndSettle();
       expect(backend.cancels, 0);
-      await t.tap(find.text('Plano semanal').first);
-      await t.pumpAndSettle();
       await t.tap(find.text('Cancelar renovação'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Cancelar renovação').last);
       await t.pumpAndSettle();
       expect(backend.cancels, 1);
     });
