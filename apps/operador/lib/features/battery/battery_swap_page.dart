@@ -70,9 +70,11 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
     final t = AppLocalizations.of(context);
     final o = _outcome;
     return Scaffold(
-      appBar: AppBar(title: Text(t.batteryTitle)),
-      body: SafeArea(
-        child: o != null && o.job.error == null
+      body: Column(
+        children: [
+          OperatorTopBar(title: t.batteryTitle),
+          Expanded(
+            child: o != null && o.job.error == null
             ? ListView(
                 padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
                 children: [
@@ -98,6 +100,8 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
                 ],
               )
             : _form(t, o?.job.error),
+          ),
+        ],
       ),
     );
   }
@@ -110,13 +114,18 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
           child: ListView(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             children: [
-              _serialField(
-                  key: 'removed-serial', label: t.batteryRemoved, controller: _removed, t: t),
-              const SizedBox(height: VoltiSpacing.s12),
+              // Design: serie da bateria nova primeiro. A retirada ainda e digitada/lida:
+              // serie, % e ciclos da bateria atual dependem de contrato.
               _serialField(
                   key: 'installed-serial',
-                  label: t.batteryInstalled,
+                  label: t.serialNewLabel,
                   controller: _installed,
+                  t: t),
+              const SizedBox(height: VoltiSpacing.s12),
+              _serialField(
+                  key: 'removed-serial',
+                  label: t.serialRemovedLabel,
+                  controller: _removed,
                   t: t),
               if (showDiffer) ...[
                 const SizedBox(height: VoltiSpacing.s12),
@@ -137,9 +146,13 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
             ],
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12,
-              VoltiSpacing.screenGutter, VoltiSpacing.s16),
+        Container(
+          padding: EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12,
+              VoltiSpacing.screenGutter, MediaQuery.paddingOf(context).bottom + VoltiSpacing.s16),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLowest,
+            boxShadow: VoltiShadows.shadowSheet,
+          ),
           child: VoltiButton(
             key: const Key('submit-swap'),
             label: t.submitSwap,
@@ -160,31 +173,43 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
     required AppLocalizations t,
   }) {
     final tooShort = controller.text.isNotEmpty && !BatterySwapDraft.validSerial(controller.text);
+    // Input do VDS: rotulo acima, campo sunken de 52 px com icone de leitura.
     return SectionCard(
-      child: TextField(
-        key: Key(key),
-        controller: controller,
-        textCapitalization: TextCapitalization.characters,
-        maxLength: 64,
-        decoration: InputDecoration(
-          labelText: label,
-          hintText: t.serialHint,
-          counterText: '',
-          errorText: tooShort ? t.serialTooShort : null,
-          suffixIcon: IconButton(
-            key: Key('$key-scan'),
-            tooltip: t.scanAction,
-            icon: const Icon(LucideIcons.scanBarcode),
-            onPressed: () => _scan(controller),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: VoltiTypography.label),
+          const SizedBox(height: VoltiSpacing.s6),
+          TextField(
+            key: Key(key),
+            controller: controller,
+            textCapitalization: TextCapitalization.characters,
+            maxLength: 64,
+            style: VoltiTypography.body.copyWith(fontFamily: VoltiTypography.fontMono),
+            decoration: InputDecoration(
+              hintText: t.serialPlaceholder,
+              semanticCounterText: label,
+              counterText: '',
+              errorText: tooShort ? t.serialTooShort : null,
+              prefixIcon: const Icon(LucideIcons.scanBarcode, color: VoltiColors.textTertiary),
+              suffixIcon: IconButton(
+                key: Key('$key-scan'),
+                tooltip: t.scanAction,
+                constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                icon: const Icon(LucideIcons.camera),
+                onPressed: () => _scan(controller),
+              ),
+            ),
+            onChanged: (_) => setState(() {}),
           ),
-        ),
-        onChanged: (_) => setState(() {}),
+        ],
       ),
     );
   }
 }
 
-/// Tela de camera que le QR ou codigo de barras e devolve o texto.
+/// Tela de camera que le QR ou codigo de barras e devolve o texto: moldura
+/// de mira, lanterna e "Digitar o numero" (volta sem leitura para digitar).
 class SerialScannerPage extends StatefulWidget {
   const SerialScannerPage({super.key});
 
@@ -196,33 +221,115 @@ class SerialScannerPage extends StatefulWidget {
 }
 
 class _SerialScannerPageState extends State<SerialScannerPage> {
+  final _controller = MobileScannerController();
   bool _done = false;
+  bool _torch = false;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
     return Scaffold(
       backgroundColor: VoltiColors.ink900,
-      appBar: AppBar(title: Text(t.scanTitle)),
-      body: MobileScanner(
-        onDetect: (capture) {
-          if (_done) return;
-          final raw = capture.barcodes
-              .map((b) => b.rawValue)
-              .firstWhere((v) => v != null && v.trim().isNotEmpty, orElse: () => null);
-          if (raw != null) {
-            _done = true;
-            Navigator.of(context).pop(raw);
-          }
-        },
-        errorBuilder: (context, error) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(VoltiSpacing.s24),
-            child: Text(t.scanCameraError,
-                textAlign: TextAlign.center,
-                style: VoltiTypography.body.copyWith(color: VoltiColors.white)),
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: MobileScanner(
+              controller: _controller,
+              onDetect: (capture) {
+                if (_done) return;
+                final raw = capture.barcodes
+                    .map((b) => b.rawValue)
+                    .firstWhere((v) => v != null && v.trim().isNotEmpty, orElse: () => null);
+                if (raw != null) {
+                  _done = true;
+                  VoltiHaptics.success();
+                  Navigator.of(context).pop(raw);
+                }
+              },
+              errorBuilder: (context, error) => Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(VoltiSpacing.s24),
+                  child: Text(t.scanCameraError,
+                      textAlign: TextAlign.center,
+                      style: VoltiTypography.body.copyWith(color: VoltiColors.white)),
+                ),
+              ),
+            ),
           ),
-        ),
+          // Moldura de mira.
+          Center(
+            child: Container(
+              key: const Key('scan-frame'),
+              width: 260,
+              height: 160,
+              decoration: BoxDecoration(
+                borderRadius: VoltiRadii.rLg,
+                border: Border.all(color: VoltiColors.brand, width: 3),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            top: MediaQuery.paddingOf(context).top + 8,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+              child: Row(
+                children: [
+                  VoltiIconButton(
+                    icon: LucideIcons.x,
+                    variant: VoltiIconButtonVariant.dark,
+                    label: t.close,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: VoltiSpacing.s12),
+                  Expanded(
+                    child: Text(t.scanTitle,
+                        style: VoltiTypography.label.copyWith(color: VoltiColors.white)),
+                  ),
+                  VoltiIconButton(
+                    key: const Key('scan-torch'),
+                    icon: _torch ? LucideIcons.flashlightOff : LucideIcons.flashlight,
+                    variant: VoltiIconButtonVariant.dark,
+                    label: t.scanTorch,
+                    onPressed: () async {
+                      await _controller.toggleTorch();
+                      if (mounted) setState(() => _torch = !_torch);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          Positioned(
+            left: VoltiSpacing.screenGutter,
+            right: VoltiSpacing.screenGutter,
+            bottom: MediaQuery.paddingOf(context).bottom + VoltiSpacing.s24,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(t.scanAimHint,
+                    textAlign: TextAlign.center,
+                    style: VoltiTypography.caption.copyWith(color: const Color(0xCCFFFFFF))),
+                const SizedBox(height: VoltiSpacing.s12),
+                VoltiButton(
+                  key: const Key('scan-manual'),
+                  label: t.scanManual,
+                  icon: LucideIcons.keyboard,
+                  variant: VoltiButtonVariant.secondary,
+                  fullWidth: true,
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
