@@ -77,6 +77,7 @@ export function toVehicle(
     ...modelFields(v),
     address: v.addressLabel ?? undefined,
     addressUpdatedAt: iso(v.addressUpdatedAt),
+    depotId: v.depotId ?? undefined,
   };
   // Fix round 1 (I5): moto em uso por outra pessoa — posição oculta para o cliente.
   if (!opts.staff && opts.hideLocation) return compact({ ...base, lat: 0, lng: 0, address: undefined, addressUpdatedAt: undefined, locationHidden: true });

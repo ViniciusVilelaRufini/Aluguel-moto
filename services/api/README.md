@@ -1,6 +1,6 @@
 # API Volti (`services/api`)
 
-NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as operações de `packages/contracts/openapi.yaml` (177; as 12 do galpão, `/depots*` e `/handovers*`, ficam em `PENDING_GALPAO` no `contract-security.spec.ts` até as Tasks 4 e 6 do plano do galpão) e o WebSocket de `packages/contracts/realtime.md` (Socket.IO, namespace `/realtime`).
+NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as operações de `packages/contracts/openapi.yaml` (177; as 6 da entrega no galpão, `/handovers*`, ficam em `PENDING_GALPAO` no `contract-security.spec.ts` até a Task 6 do plano do galpão) e o WebSocket de `packages/contracts/realtime.md` (Socket.IO, namespace `/realtime`).
 
 ## Como rodar localmente
 
@@ -36,7 +36,7 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 | Comando | O que roda | Precisa de |
 |---|---|---|
 | `pnpm --filter api test` | unitários (preço, início/encerramento, reservas, comandos, auth, LGPD, inspeção, IoT/bloqueio seguro/cercas, pagamentos/carteira/seguro com Prisma em memória e Mercado Pago via nock) + conformidade com o contrato (rotas, grupos, schemas) | nada |
-| `pnpm --filter api test:e2e` | `test/iot/iot-safe-lock.e2e-spec.ts`: lock pela API com moto simulada andando (Mosquitto) e cerca PostGIS; `test/rental-flow.e2e-spec.ts`: dev token → cartão → reserva → aluguel → pausa → retoma → foto (PUT real no MinIO) → encerra, TTL da reserva, auth, TrackPoint; `test/reports.e2e-spec.ts`: relatórios no fuso de São Paulo; `test/payments.e2e-spec.ts`: caução/captura/recibo/NFS-e/repasse, Pix por webhook assinado (dedup), inadimplência → 403, carteira (`PAYMENT_PROVIDER=fake`); `test/contrato-v2.e2e-spec.ts`: chave Pix, limites da recarga, pausa/moto fixa do plano, cupons, indicação, estações, manutenção pelo cliente, estados do chat, revisão por km/horas, baterias/van e catálogo (respostas validadas contra o contrato). O setup lê o `.env` do pacote (`DATABASE_URL`/`REDIS_URL` por worktree) | compose + migrate + seed |
+| `pnpm --filter api test:e2e` | `test/iot/iot-safe-lock.e2e-spec.ts`: lock pela API com moto simulada andando (Mosquitto) e cerca PostGIS; `test/rental-flow.e2e-spec.ts`: dev token → cartão → reserva → aluguel → pausa → retoma → foto (PUT real no MinIO) → encerra, TTL da reserva, auth, TrackPoint; `test/reports.e2e-spec.ts`: relatórios no fuso de São Paulo; `test/payments.e2e-spec.ts`: caução/captura/recibo/NFS-e/repasse, Pix por webhook assinado (dedup), inadimplência → 403, carteira (`PAYMENT_PROVIDER=fake`); `test/contrato-v2.e2e-spec.ts`: chave Pix, limites da recarga, pausa/moto fixa do plano, cupons, indicação, estações, manutenção pelo cliente, estados do chat, revisão por km/horas, baterias/van e catálogo (respostas validadas contra o contrato). `test/depots.e2e-spec.ts`: galpões (grupos do CRUD, motos do galpão para cliente × staff, inativo some para o cliente, agenda do dia no fuso do galpão só com primeiro nome). O setup lê o `.env` do pacote (`DATABASE_URL`/`REDIS_URL` por worktree) | compose + migrate + seed |
 | `pnpm --filter api test:contract` | sobe a API e valida respostas reais de 12 grupos de endpoints com `jest-openapi` (o 12º cobre o contrato v2) | compose + migrate + seed |
 | `pnpm --filter api lint` | ESLint + `tsc --noEmit` | nada |
 
@@ -87,6 +87,7 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 | Revisão por km/horas | `maintenance/service-due.ts`, `usage-accumulator.ts`, `usage-tracker.service.ts` | odômetro/horas somados da telemetria (descarta saltos > 45 km/h, ruído < 5 m e lacunas > 10 min); `due_soon` a 90% do intervalo; preventiva concluída = revisão |
 | Baterias | `batteries/`, troca em `field-tasks.service.ts` | retirada vai para a van do operador com a última carga; instalada +1 ciclo; carregar/descarregar a van |
 | Catálogo | `catalog/`, `PricingService.snapshotFrom` | preço por minuto do modelo vale no plano `minute` (aluguel e cotação com `vehicleId`); foto em bucket `catalogo` com link assinado de 24 h |
+| Galpões | `depots/` (`GET/POST /depots`, `GET/PATCH /depots/{id}`, `/vehicles`, `/pickups`) | cliente só vê galpão ativo (inativo → `404`) e, nas motos, só `free` com o `depotId` (nunca `reserved`/`awaiting_pickup`), bateria desc; staff vê todas com filtro de `status`; `openingHours` HH:MM, `opensAt < closesAt`, um intervalo por dia (`400`); `distanceM` só com `lat`/`lng`; agenda = todas as reservas do dia no fuso do galpão (agendada por `pickupAt`, agora por `createdAt`), só `customerFirstName`, nunca `pickupCode`; `DepotsService.requireActive` → `422 depot-inactive`; AuditLog `depot.create`/`depot.update` |
 
 | Variável | Padrão | Efeito |
 |---|---|---|

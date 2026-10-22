@@ -37,6 +37,7 @@ import { BatteriesModule } from './modules/batteries/batteries.module';
 import { CatalogModule } from './modules/catalog/catalog.module';
 import { MaintenanceV2Module } from './modules/maintenance/maintenance-v2.module';
 import { ReferralsModule } from './modules/referrals/referrals.module';
+import { DepotsModule } from './modules/depots/depots.module';
 
 /**
  * Módulo raiz. Arquivo compartilhado (spec §6): Tasks 4 e 5 só acrescentam imports.
@@ -78,6 +79,8 @@ import { ReferralsModule } from './modules/referrals/referrals.module';
     BatteriesModule,
     ReferralsModule,
     MaintenanceV2Module,
+    // Retirada em galpão (plano 2026-10-22-volti-galpao).
+    DepotsModule,
   ],
   controllers: [HealthController, KycController, CustomersController, StaffController, AuditController, LgpdController],
   providers: [
