@@ -9,7 +9,7 @@ export interface AppConfig {
   cognito: { region: string; customerPoolId?: string; staffPoolId?: string; customerClientId?: string; staffClientId?: string };
   storageMode: 'local' | 's3';
   s3: { endpoint?: string; region: string; accessKey?: string; secretKey?: string; publicEndpoint?: string };
-  buckets: { kyc: string; returnPhotos: string; reports: string; attachments: string };
+  buckets: { kyc: string; returnPhotos: string; reports: string; attachments: string; catalog: string };
   queueMode: 'local' | 'sqs';
   sqs: { endpoint?: string; region: string; queueUrls: Record<string, string | undefined> };
   kycProvider: 'mock';
@@ -69,6 +69,8 @@ export function loadConfig(): AppConfig {
       returnPhotos: str('S3_BUCKET_RETURN_PHOTOS', 'fotos-devolucao')!,
       reports: str('S3_BUCKET_REPORTS', 'relatorios')!,
       attachments: str('S3_BUCKET_ATTACHMENTS', 'anexos')!,
+      // Contrato v2: fotos do catálogo de modelos.
+      catalog: str('S3_BUCKET_CATALOG', 'catalogo')!,
     },
     queueMode: oneOf('QUEUE_MODE', ['local', 'sqs'] as const, 'local'),
     sqs: {

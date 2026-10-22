@@ -3,6 +3,7 @@
  * Rodar: `pnpm --filter api prisma db seed`.
  */
 import { PrismaClient, type StaffGroup } from '@prisma/client';
+import { seedV2 } from './seed-v2';
 
 const prisma = new PrismaClient();
 
@@ -201,8 +202,11 @@ async function main(): Promise<void> {
     update: { kycStatus: 'pending' },
   });
 
+  // ── contrato v2: catálogo, estações, odômetro/revisões, baterias, cupom e indicação ──
+  const v2 = await seedV2(prisma);
+
   const counts = await Promise.all([prisma.vehicle.count(), prisma.zone.count(), prisma.pricingPlan.count({ where: { active: true } }), prisma.staffUser.count(), prisma.customer.count()]);
-  console.log(JSON.stringify({ msg: 'seed_done', vehicles: counts[0], zones: counts[1], plans: counts[2], staff: counts[3], customers: counts[4] }));
+  console.log(JSON.stringify({ msg: 'seed_done', vehicles: counts[0], zones: counts[1], plans: counts[2], staff: counts[3], customers: counts[4], ...v2 }));
 }
 
 if (require.main === module) {
