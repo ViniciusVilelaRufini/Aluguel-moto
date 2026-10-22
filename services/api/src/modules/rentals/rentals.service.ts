@@ -19,6 +19,7 @@ import { CommandsService } from '../commands/commands.service';
 import type { PriceBreakdown } from '../pricing/pricing.service';
 import type { ListRentalsQuery, LocationShareDto, RatingDto, SwapVehicleDto, WellbeingDto } from './rentals.dto';
 import { toRental, toRentalEvent } from './rentals.mapper';
+import { receiptLinks } from '../payments/receipts/receipt-links';
 
 export const SWAP_MAX_DISTANCE_M = 200;
 type RentalWithVehicle = Rental & { vehicle: Vehicle };
@@ -164,8 +165,8 @@ export class RentalsService {
       this.track(user, id),
     ]);
     const endedAt = r.endedAt ?? r.updatedAt;
-    let pdfUrl: string | undefined;
-    if (payment?.receiptUrl) pdfUrl = payment.receiptUrl;
+    // QA-11: link de 15 min gerado agora a partir da chave do objeto (nada que expire fica gravado).
+    const pdfUrl = payment ? (await receiptLinks(this.prisma, this.storage, [payment.id])).get(payment.id) : undefined;
     return compact({
       rentalId: r.id,
       number: `VLT-${endedAt.toISOString().slice(0, 10).replace(/-/g, '')}-${r.id.slice(0, 8).toUpperCase()}`,

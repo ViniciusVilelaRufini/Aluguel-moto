@@ -99,7 +99,7 @@ export class LgpdService {
       customer: toCustomer(customer, { fullCpf: true }),
       consents: toConsents(customer),
       rentals: rentals.map((r) => toRental(r)),
-      payments: payments.map(toPayment),
+      payments: payments.map((p) => toPayment(p)),
       tracks,
       walletEntries: walletEntries.map(toWalletEntry),
       incidents: incidents.map(toIncident),
