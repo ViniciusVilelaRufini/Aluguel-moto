@@ -72,6 +72,17 @@ import {
   CircleDot as ICircleDot,
   Flame as IFlame,
   type LucideIcon,
+  Battery as IBattery,
+  CheckCheck as ICheckCheck,
+  Package as IPackage,
+  Upload as IUpload,
+  Image as IImage,
+  List as IList,
+  CalendarClock as ICalendarClock,
+  Repeat as IRepeat,
+  ArrowDownToLine as IArrowDownToLine,
+  ArrowUpFromLine as IArrowUpFromLine,
+  Warehouse as IWarehouse,
 } from 'lucide-react';
 
 const ICONS: Record<string, LucideIcon> = {
@@ -145,6 +156,17 @@ const ICONS: Record<string, LucideIcon> = {
   Send: ISend,
   CircleDot: ICircleDot,
   Flame: IFlame,
+  Battery: IBattery,
+  CheckCheck: ICheckCheck,
+  Package: IPackage,
+  Upload: IUpload,
+  Image: IImage,
+  List: IList,
+  CalendarClock: ICalendarClock,
+  Repeat: IRepeat,
+  ArrowDownToLine: IArrowDownToLine,
+  ArrowUpFromLine: IArrowUpFromLine,
+  Warehouse: IWarehouse,
 };
 
 interface IconProps {
