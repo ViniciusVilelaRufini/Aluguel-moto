@@ -132,8 +132,15 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
   }
 
   Future<void> _report() async {
-    final updated = await VoltiBottomSheet.show<Handover>(context, builder: (_) => HandoverDisputeSheet(handoverId: widget.handoverId));
-    if (updated != null && mounted) {
+    final result = await VoltiBottomSheet.show<Object>(context, builder: (_) => HandoverDisputeSheet(handoverId: widget.handoverId));
+    if (!mounted) return;
+    if (identical(result, HandoverDisputeSheet.stale)) {
+      // A entrega mudou (aceita, cancelada ou ja disputada): mostra o estado novo.
+      await _load();
+      return;
+    }
+    final updated = result is Handover ? result : null;
+    if (updated != null) {
       ref.invalidate(currentReservationProvider);
       setState(() {
         _h = updated;
@@ -216,7 +223,8 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
     final code = h.vehicleCode ?? '';
     final operator = h.operatorFirstName?.trim() ?? '';
     final photos = h.photoUrls?.toList() ?? const <String>[];
-    final error = _error ?? (h.lastError == null ? null : handoverErrorText(l, h.lastError!));
+    // Aceitando: o motivo antigo some ate a resposta nova.
+    final error = _accepting ? null : _error ?? (h.lastError == null ? null : handoverErrorText(l, h.lastError!));
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -423,10 +431,13 @@ class _Outcome extends StatelessWidget {
 }
 
 /// Folha "Apontar problema": motivo (3 a 500 caracteres) e envio. Devolve a
-/// entrega ja `disputed`.
+/// entrega ja `disputed`, ou [stale] quando ela deixou de estar pendente (422
+/// `handover-not-pending`): a tela fecha a folha e recarrega.
 class HandoverDisputeSheet extends ConsumerStatefulWidget {
   const HandoverDisputeSheet({super.key, required this.handoverId});
   final String handoverId;
+
+  static const Object stale = #handoverStale;
   @override
   ConsumerState<HandoverDisputeSheet> createState() => _HandoverDisputeSheetState();
 }
@@ -455,7 +466,12 @@ class _HandoverDisputeSheetState extends ConsumerState<HandoverDisputeSheet> {
       final h = await ref.read(backendProvider).disputeHandover(widget.handoverId, _reason.text.trim());
       if (mounted) Navigator.of(context).pop(h);
     } catch (e) {
-      if (mounted) setState(() => _error = failureText(l, e));
+      final f = toFailure(e);
+      if (f.slug == 'handover-not-pending') {
+        if (mounted) Navigator.of(context).pop(HandoverDisputeSheet.stale);
+        return;
+      }
+      if (mounted) setState(() => _error = f.message(l));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

@@ -70,12 +70,10 @@ final vehicleModelsProvider = FutureProvider.autoDispose<Map<String, VehicleMode
   }
 });
 
-/// Estacoes de troca de bateria no mapa da home. Falha = mapa sem estacoes.
+/// Estacoes de troca de bateria (mapa da home e "Trocar bateria"). O erro
+/// sobe: a home mostra o mapa sem estacoes (`.value`), a folha mostra o erro
+/// com "Tentar de novo".
 final swapStationsProvider = FutureProvider.autoDispose<List<SwapStation>>((ref) async {
   final loc = await ref.watch(userLocationProvider.future);
-  try {
-    return await ref.watch(backendProvider).swapStations(lat: loc?.latitude, lng: loc?.longitude);
-  } catch (_) {
-    return const [];
-  }
+  return ref.watch(backendProvider).swapStations(lat: loc?.latitude, lng: loc?.longitude);
 });

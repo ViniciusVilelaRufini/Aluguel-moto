@@ -118,6 +118,16 @@ class HandoverBackend extends GalpaoBackend {
   final acceptErrors = <Object>[];
   Rental? rentalNow;
   List<SwapStation> stations = [];
+  Object? stationsError;
+  Object? disputeError;
+
+  /// Status devolvido por `GET /rentals/{id}` (a consulta da devolucao no galpao).
+  RentalStatus rentalStatus = RentalStatus.active;
+  int rentalCalls = 0;
+  int vehicleByCodeCalls = 0;
+
+  /// Galpao da moto do aluguel (`Vehicle.depotId`).
+  String? vehicleDepotId = 'dep1';
 
   @override
   Future<Handover> handover(String id) async {
@@ -141,6 +151,7 @@ class HandoverBackend extends GalpaoBackend {
   @override
   Future<Handover> disputeHandover(String id, String reason) async {
     disputeReasons.add(reason);
+    if (disputeError != null) throw toFailure(disputeError!);
     final h = handovers[id]!.rebuild((b) => b
       ..status = HandoverStatus.disputed
       ..disputeReason = reason);
@@ -151,11 +162,24 @@ class HandoverBackend extends GalpaoBackend {
   @override
   Future<Rental?> currentRental() async => rentalNow;
   @override
-  Future<Rental> rental(String id) async => rentalNow ?? sampleRental();
+  Future<Rental> rental(String id) async {
+    rentalCalls++;
+    return (rentalNow ?? sampleRental()).rebuild((b) => b
+      ..id = id
+      ..status = rentalStatus);
+  }
+
   @override
-  Future<Vehicle> vehicleByCode(String code) async => bike('v1', 'VLT-001', 'Volti Flash');
+  Future<Vehicle> vehicleByCode(String code) async {
+    vehicleByCodeCalls++;
+    return bike('v1', code, 'Volti Flash').rebuild((b) => b.depotId = vehicleDepotId);
+  }
+
   @override
-  Future<List<SwapStation>> swapStations({double? lat, double? lng}) async => stations;
+  Future<List<SwapStation>> swapStations({double? lat, double? lng}) async {
+    if (stationsError != null) throw toFailure(stationsError!);
+    return stations;
+  }
   @override
   Future<Me> me() async => Me((b) => b
     ..id = 'c1'
@@ -215,7 +239,12 @@ Future<GoRouter> pumpApp(WidgetTester t, HandoverBackend b, RtHub hub, {String i
       return true;
     }),
   ]);
-  await t.pumpWidget(reduceMotion ? MediaQuery(data: const MediaQueryData(disableAnimations: true), child: app) : app);
+  if (reduceMotion) {
+    // Pelo sistema (o MaterialApp le a MediaQuery da janela).
+    t.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(t.platformDispatcher.clearAccessibilityFeaturesTestValue);
+  }
+  await t.pumpWidget(app);
   await settle(t);
   return router;
 }
@@ -430,6 +459,126 @@ void main() {
       expect(find.bySemanticsLabel(RegExp(r'^Carenagem: Com problema')), findsOneWidget);
       handle.dispose();
     });
+    testWidgets('aviso antigo de lastError some enquanto aceita', (t) async {
+      phone(t);
+      final b = HandoverBackend()
+        ..handovers['h1'] = handoverFixture(lastError: 'payment-declined')
+        ..acceptGate = Completer<void>();
+      await pumpApp(t, b, RtHub(), initial: '/handover/h1');
+      expect(find.byKey(const Key('handover-error')), findsOneWidget);
+      final accept = find.byKey(const Key('handover-accept'));
+      await t.ensureVisible(accept);
+      await t.pump();
+      await t.tap(accept);
+      await t.pump();
+      expect(find.byKey(const Key('handover-error')), findsNothing);
+      b.acceptGate!.complete();
+      await settle(t);
+    });
+
+    testWidgets('apontar problema com a entrega ja nao pendente fecha a folha e recarrega', (t) async {
+      phone(t);
+      final b = HandoverBackend()..disputeError = problem(422, 'handover-not-pending');
+      await pumpApp(t, b, RtHub(), initial: '/handover/h1');
+      await tapKey(t, 'handover-report');
+      await t.enterText(find.byKey(const Key('handover-dispute-reason')), 'Retrovisor quebrado');
+      await t.pump();
+      b.handovers['h1'] = handoverFixture(status: HandoverStatus.canceled);
+      await tapKey(t, 'handover-dispute-send');
+      expect(find.byKey(const Key('handover-dispute-reason')), findsNothing);
+      expect(find.text('Entrega cancelada'), findsOneWidget);
+    });
+  });
+
+  group('consulta da reserva (HandoverWatcher)', () {
+    testWidgets('reserva ativa: uma consulta a cada 15 s mesmo com inicio e reserva abertos', (t) async {
+      phone(t);
+      final b = HandoverBackend()..current = reservationFixture();
+      final router = await pumpApp(t, b, RtHub());
+      router.push('/reservation/res1');
+      await settle(t);
+      final c0 = b.currentCalls;
+      await t.pump(const Duration(seconds: 15));
+      await t.pump();
+      expect(b.currentCalls, c0 + 1);
+      await t.pump(const Duration(seconds: 15));
+      await t.pump();
+      expect(b.currentCalls, c0 + 2);
+    });
+
+    testWidgets('app em segundo plano pausa a consulta; ao voltar consulta e retoma', (t) async {
+      phone(t);
+      addTearDown(() => t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed));
+      final b = HandoverBackend()..current = reservationFixture();
+      await pumpApp(t, b, RtHub());
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await t.pump();
+      final c0 = b.currentCalls;
+      await t.pump(const Duration(seconds: 60));
+      await t.pump();
+      expect(b.currentCalls, c0, reason: 'parada em segundo plano');
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await t.pump();
+      await t.pump();
+      expect(b.currentCalls, c0 + 1, reason: 'consulta ao voltar');
+      await t.pump(const Duration(seconds: 15));
+      await t.pump();
+      expect(b.currentCalls, c0 + 2, reason: 'retomou');
+    });
+
+    testWidgets('para quando a reserva vira handover e volta quando fica ativa', (t) async {
+      phone(t);
+      final b = HandoverBackend()..current = reservationFixture();
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub);
+      b.current = reservationFixture(status: ReservationStatus.handover, handoverId: 'h1');
+      await t.pump(const Duration(seconds: 15));
+      await settle(t);
+      expect(where(router), '/handover/h1');
+      // De volta ao inicio (visivel), a reserva continua em handover: sem consulta.
+      await tapKey(t, 'handover-back');
+      expect(where(router), '/home');
+      final c1 = b.currentCalls;
+      await t.pump(const Duration(seconds: 60));
+      await t.pump();
+      expect(b.currentCalls, c1, reason: 'parada em handover');
+
+      // Entrega cancelada: a reserva volta a ativa e a consulta retoma.
+      b.current = reservationFixture();
+      hub.emit(const HandoverUpdated(handoverId: 'h1', status: 'canceled'));
+      await settle(t);
+      final c2 = b.currentCalls;
+      await t.pump(const Duration(seconds: 15));
+      await t.pump();
+      expect(b.currentCalls, c2 + 1);
+    });
+  });
+
+  group('Trocar bateria (erros)', () {
+    testWidgets('falha das estacoes mostra erro com "Tentar de novo"; o galpao continua', (t) async {
+      phone(t);
+      final b = HandoverBackend()
+        ..rentalNow = sampleRental()
+        ..stationsError = problem(500, 'internal');
+      await pumpApp(t, b, RtHub(), initial: '/ride');
+      await t.tap(find.text('Trocar bateria'));
+      await settle(t);
+      expect(find.byKey(const Key('swap-depot')), findsOneWidget);
+      expect(find.byKey(const Key('swap-stations-error')), findsOneWidget);
+      b
+        ..stationsError = null
+        ..stations = [station('st1', 'Faria Lima')];
+      final retry = find.descendant(of: find.byKey(const Key('swap-stations-error')), matching: find.text('Tentar de novo'));
+      await t.ensureVisible(retry);
+      await t.pump();
+      await t.tap(retry);
+      await settle(t);
+      expect(find.byKey(const Key('swap-station-st1')), findsOneWidget);
+    });
   });
 
   group('Trocar bateria', () {
@@ -492,28 +641,123 @@ void main() {
   });
 
   group('devolucao no galpao', () {
-    testWidgets('mostra o endereco, manda entregar ao operador e abre o recibo com handover.updated', (t) async {
+    testWidgets('mostra o endereco, manda entregar ao operador e abre o recibo com handover.updated (um handler, um socket)', (t) async {
       phone(t);
       final b = HandoverBackend()..rentalNow = sampleRental();
       b.handovers['h-other'] = handoverFixture(id: 'h-other', type: HandoverType.returnDepot, rentalId: 'outro', reservationId: null, status: HandoverStatus.accepted);
       b.handovers['h-ret'] = handoverFixture(id: 'h-ret', type: HandoverType.returnDepot, rentalId: 'r1', reservationId: null, status: HandoverStatus.accepted);
       final hub = RtHub();
-      final router = await pumpApp(t, b, hub, initial: '/return/r1');
+      final router = await pumpApp(t, b, hub, initial: '/ride');
+      router.push('/return/r1');
+      await settle(t);
       await t.tap(find.text('Galpão'));
       await settle(t);
       expect(find.text('Devolver no galpão'), findsWidgets);
       expect(find.text('R. dos Pinheiros, 1000'), findsOneWidget);
       expect(find.textContaining('entregue ao operador'), findsOneWidget);
       expect(find.text('Travar e encerrar'), findsNothing);
+      // So o socket da corrida: a devolucao reusa os eventos dela.
+      expect(hub.all, hasLength(1));
 
       // Chegada de outro aluguel: fica.
+      final before = b.handoverCalls;
       hub.emit(const HandoverUpdated(handoverId: 'h-other', status: 'accepted'));
       await settle(t);
       expect(where(router), '/return/r1');
+      expect(b.handoverCalls, before + 1, reason: 'um handler so');
 
       hub.emit(const HandoverUpdated(handoverId: 'h-ret', status: 'accepted'));
       await settle(t);
+      expect(b.handoverCalls, before + 2, reason: 'um handler so');
       expect(where(router), '/summary/r1');
+    });
+
+    testWidgets('rental.updated encerrado (pela corrida) abre o recibo', (t) async {
+      phone(t);
+      final b = HandoverBackend()..rentalNow = sampleRental();
+      final hub = RtHub();
+      final router = await pumpApp(t, b, hub, initial: '/ride');
+      router.push('/return/r1');
+      await settle(t);
+      await t.tap(find.text('Galpão'));
+      await settle(t);
+      hub.emit(const RentalUpdated(rentalId: 'r1', status: 'ended', elapsedSeconds: 600, costCents: 8900));
+      await settle(t);
+      expect(where(router), '/summary/r1');
+    });
+
+    testWidgets('consulta do aluguel a cada 10 s abre o recibo e para depois', (t) async {
+      phone(t);
+      final b = HandoverBackend()..rentalNow = sampleRental();
+      final router = await pumpApp(t, b, RtHub(), initial: '/return/r1');
+      await t.tap(find.text('Galpão'));
+      await settle(t);
+      final start = b.rentalCalls;
+      await t.pump(const Duration(seconds: 10));
+      await t.pump();
+      expect(b.rentalCalls, start + 1);
+      expect(where(router), '/return/r1');
+      b.rentalStatus = RentalStatus.ended;
+      await t.pump(const Duration(seconds: 10));
+      await settle(t);
+      expect(where(router), '/summary/r1');
+      final after = b.rentalCalls;
+      await t.pump(const Duration(seconds: 60));
+      expect(b.rentalCalls, after, reason: 'timer parado depois do recibo');
+    });
+
+    testWidgets('voltar para "Ponto verde" para a consulta', (t) async {
+      phone(t);
+      final b = HandoverBackend()..rentalNow = sampleRental();
+      final router = await pumpApp(t, b, RtHub(), initial: '/return/r1');
+      await t.tap(find.text('Galpão'));
+      await settle(t);
+      await t.tap(find.text('Ponto verde'));
+      await settle(t);
+      final calls = b.rentalCalls;
+      await t.pump(const Duration(seconds: 60));
+      expect(b.rentalCalls, calls);
+      expect(where(router), '/return/r1');
+    });
+
+    testWidgets('usa o galpao da moto (Vehicle.depotId), nao o mais perto', (t) async {
+      phone(t);
+      final b = HandoverBackend(depots: [
+        depotFixture(id: 'near', district: 'Mooca', distanceM: 100).rebuild((d) => d.address = 'Rua Perto, 1'),
+        depotFixture(distanceM: 5000),
+      ])
+        ..rentalNow = sampleRental()
+        ..stations = [station('st1', 'Faria Lima')];
+      await pumpApp(t, b, RtHub(), initial: '/return/r1');
+      await t.tap(find.text('Galpão'));
+      await settle(t);
+      expect(b.vehicleByCodeCalls, greaterThan(0));
+      expect(find.text('R. dos Pinheiros, 1000'), findsOneWidget);
+      expect(find.text('Rua Perto, 1'), findsNothing);
+    });
+
+    testWidgets('galpao nao encontrado: "Tentar de novo" busca de novo', (t) async {
+      phone(t);
+      final b = HandoverBackend(depots: [])
+        ..rentalNow = sampleRental()
+        ..vehicleDepotId = null;
+      await pumpApp(t, b, RtHub(), initial: '/return/r1');
+      await t.tap(find.text('Galpão'));
+      await settle(t);
+      expect(find.text('Não encontramos o galpão. Tente de novo.'), findsOneWidget);
+      b.depotList.add(depotFixture());
+      await tapKey(t, 'return-depot-retry');
+      expect(find.text('R. dos Pinheiros, 1000'), findsOneWidget);
+    });
+
+    testWidgets('reduced motion: icone fixo no lugar do spinner', (t) async {
+      phone(t);
+      final b = HandoverBackend()..rentalNow = sampleRental();
+      await pumpApp(t, b, RtHub(), initial: '/return/r1', reduceMotion: true);
+      await t.tap(find.text('Galpão'));
+      await settle(t);
+      expect(find.byKey(const Key('return-depot-waiting-icon')), findsOneWidget);
+      expect(find.descendant(of: find.byKey(const Key('return-depot')), matching: find.byType(CircularProgressIndicator)), findsNothing);
     });
 
     testWidgets('corrida aberta tambem abre o recibo com handover.updated de return_depot', (t) async {

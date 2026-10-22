@@ -115,7 +115,12 @@ class BatterySwapSheet extends ConsumerWidget {
                 tone: ListRowTone.info,
                 onTap: () => _go(context, ref, s.lat, s.lng),
               ),
-            if (places.others.isEmpty)
+            if (stationsAsync.hasError && !stationsAsync.isLoading)
+              KeyedSubtree(
+                key: const Key('swap-stations-error'),
+                child: ErrorState(error: stationsAsync.error!, onRetry: () => ref.invalidate(swapStationsProvider)),
+              )
+            else if (places.others.isEmpty)
               Padding(
                 padding: const EdgeInsets.only(top: VoltiSpacing.s4),
                 child: Text(l.swapStationsEmpty, style: VoltiTypography.caption),

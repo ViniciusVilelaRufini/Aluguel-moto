@@ -30,29 +30,69 @@ class AutoOpenedHandovers extends Notifier<Set<String>> {
   }
 }
 
+/// Intervalo da consulta da reserva ativa (sobrescrito nos testes).
+final reservationPollIntervalProvider = Provider<Duration>((ref) => const Duration(seconds: 15));
+
+/// Consulta unica da reserva atual (`GET /reservations/current`), compartilhada
+/// por todos os [HandoverWatcher] montados (inicio e reserva): um timer so.
+/// Roda apenas com a reserva `active` e o app em primeiro plano; para em
+/// `handover` (a tela da entrega segue pelos eventos) ou sem reserva, e volta
+/// quando a reserva fica ativa de novo. Ao voltar do segundo plano consulta na
+/// hora e retoma. Tela coberta por outra (ex.: inicio sob a entrega): o
+/// Riverpod pausa os ouvintes dela e a reserva so recarrega ao voltar.
+final reservationPollerProvider = Provider.autoDispose<void>((ref) {
+  final every = ref.watch(reservationPollIntervalProvider);
+  Timer? timer;
+  var active = false;
+  var foreground = (WidgetsBinding.instance.lifecycleState ?? AppLifecycleState.resumed) == AppLifecycleState.resumed;
+
+  void sync() {
+    final run = active && foreground;
+    if (run && timer == null) {
+      timer = Timer.periodic(every, (_) => ref.invalidate(currentReservationProvider));
+    } else if (!run) {
+      timer?.cancel();
+      timer = null;
+    }
+  }
+
+  ref.listen<AsyncValue<Reservation?>>(currentReservationProvider, (_, next) {
+    // Recarregando: mantem o estado anterior ate a resposta chegar.
+    if (next.isLoading && !next.hasValue) return;
+    active = next.value?.status == ReservationStatus.active;
+    sync();
+  }, fireImmediately: true);
+
+  final lifecycle = AppLifecycleListener(onStateChange: (state) {
+    final wasForeground = foreground;
+    foreground = state == AppLifecycleState.resumed;
+    if (foreground && !wasForeground && active) ref.invalidate(currentReservationProvider);
+    sync();
+  });
+
+  ref.onDispose(() {
+    timer?.cancel();
+    lifecycle.dispose();
+  });
+});
+
 /// Fica atras da tela enquanto ha reserva de galpao aberta (inicio e reserva):
 /// - `handover.pending` da reserva atual abre `/handover/:id`;
 /// - reserva ja em `handover` (app aberto depois do evento) tambem abre;
-/// - `handover.updated` e a consulta periodica ([poll]) atualizam a reserva,
-///   para o app seguir mesmo sem tempo real.
+/// - `handover.updated` e a consulta compartilhada ([reservationPollerProvider])
+///   atualizam a reserva, para o app seguir mesmo sem tempo real.
 class HandoverWatcher extends ConsumerStatefulWidget {
-  const HandoverWatcher({super.key, required this.reservation, this.poll = const Duration(seconds: 15)});
+  const HandoverWatcher({super.key, required this.reservation});
   final Reservation reservation;
-  final Duration poll;
 
   @override
   ConsumerState<HandoverWatcher> createState() => _HandoverWatcherState();
 }
 
 class _HandoverWatcherState extends ConsumerState<HandoverWatcher> {
-  Timer? _timer;
-
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(widget.poll, (_) {
-      if (mounted) ref.invalidate(currentReservationProvider);
-    });
     _checkStatus();
   }
 
@@ -60,12 +100,6 @@ class _HandoverWatcherState extends ConsumerState<HandoverWatcher> {
   void didUpdateWidget(HandoverWatcher old) {
     super.didUpdateWidget(old);
     if (old.reservation != widget.reservation) _checkStatus();
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    super.dispose();
   }
 
   void _checkStatus() {
@@ -82,6 +116,7 @@ class _HandoverWatcherState extends ConsumerState<HandoverWatcher> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(reservationPollerProvider);
     ref.listen(customerEventsProvider, (_, next) {
       final e = next.value;
       if (e is HandoverPending && e.reservationId == widget.reservation.id) {

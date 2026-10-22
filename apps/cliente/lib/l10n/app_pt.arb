@@ -1273,7 +1273,7 @@
   "pickDepotEmptyText": "Volte mais tarde ou escolha outro galpão.",
   "planOtherOptions": "Outras opções",
   "planRenews": "Renova automaticamente, cancele quando quiser",
-  "planChargedAtPickup": "O plano é cobrado na retirada, quando você aceitar a moto.",
+  "planChargedAtPickup": "O plano é acertado no fim do aluguel; a caução fica como garantia.",
   "vehicleModelCode": "{model} · {code}",
   "@vehicleModelCode": {
     "placeholders": {
@@ -1305,7 +1305,7 @@
   "pickupNoSlots": "Sem horários neste dia",
   "pickupChooseTime": "Escolha um horário",
   "pickupPlan": "Plano",
-  "pickupDepositNote": "Confirmar bloqueia só a caução. O plano é cobrado quando você aceitar a moto no galpão.",
+  "pickupDepositNote": "Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.",
   "confirmReservation": "Confirmar reserva",
   "vehicleJustTaken": "Essa moto acabou de ser reservada",
   "depotReservationTitle": "Reserva confirmada",

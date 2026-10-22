@@ -6,6 +6,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/services.dart';
 
 /// Trajeto ja gravado do aluguel (`GET /rentals/{id}/track`), para a rota da
 /// corrida continuar desenhada depois de reabrir o app. Os pontos novos vem
@@ -15,6 +16,14 @@ final rentalTrackProvider = FutureProvider.autoDispose.family<List<LatLng>, Stri
   final api = ref.watch(apiClientProvider);
   final track = (await api.getRentalsApi().getRentalTrack(id: rentalId)).data;
   return [for (final p in track?.points ?? const <TrackPoint>[]) LatLng(p.lat, p.lng)];
+});
+
+/// Eventos de tempo real da corrida repassados as telas abertas por cima dela
+/// (devolucao): reusam o socket da corrida, sem abrir outro.
+final rideEventBusProvider = Provider<StreamController<RealtimeEvent>>((ref) {
+  final c = StreamController<RealtimeEvent>.broadcast();
+  ref.onDispose(c.close);
+  return c;
 });
 
 /// Quanto tempo as zonas ficam em cache entre telas (corrida, devolucao).

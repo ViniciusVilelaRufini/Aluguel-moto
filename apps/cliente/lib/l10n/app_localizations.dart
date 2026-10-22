@@ -3733,7 +3733,7 @@ abstract class AppLocalizations {
   /// No description provided for @planChargedAtPickup.
   ///
   /// In pt, this message translates to:
-  /// **'O plano é cobrado na retirada, quando você aceitar a moto.'**
+  /// **'O plano é acertado no fim do aluguel; a caução fica como garantia.'**
   String get planChargedAtPickup;
 
   /// No description provided for @vehicleModelCode.
@@ -3823,7 +3823,7 @@ abstract class AppLocalizations {
   /// No description provided for @pickupDepositNote.
   ///
   /// In pt, this message translates to:
-  /// **'Confirmar bloqueia só a caução. O plano é cobrado quando você aceitar a moto no galpão.'**
+  /// **'Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.'**
   String get pickupDepositNote;
 
   /// No description provided for @confirmReservation.

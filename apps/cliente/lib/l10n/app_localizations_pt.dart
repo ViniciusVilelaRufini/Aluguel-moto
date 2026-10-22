@@ -2144,7 +2144,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get planChargedAtPickup =>
-      'O plano é cobrado na retirada, quando você aceitar a moto.';
+      'O plano é acertado no fim do aluguel; a caução fica como garantia.';
 
   @override
   String vehicleModelCode(String model, String code) {
@@ -2196,7 +2196,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get pickupDepositNote =>
-      'Confirmar bloqueia só a caução. O plano é cobrado quando você aceitar a moto no galpão.';
+      'Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.';
 
   @override
   String get confirmReservation => 'Confirmar reserva';

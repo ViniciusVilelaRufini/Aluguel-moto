@@ -171,7 +171,12 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     }, onError: (_) {});
   }
 
+  /// A corrida esta no topo? Com a devolucao aberta por cima, quem reage ao fim
+  /// do aluguel e a devolucao (os eventos chegam a ela por [rideEventBusProvider]).
+  bool get _onTop => ModalRoute.of(context)?.isCurrent ?? true;
+
   void _onEvent(RealtimeEvent e) {
+    ref.read(rideEventBusProvider).add(e);
     if (!mounted) return;
     switch (e) {
       case RentalUpdated():
@@ -180,7 +185,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           _cost = e.costCents;
           _rental = _rental?.rebuild((b) => b..status = RentalStatus.values.firstWhere((s) => s.name == _camel(e.status), orElse: () => _rental!.status));
         });
-        if (e.status == 'ended' || e.status == 'force_ended') {
+        if ((e.status == 'ended' || e.status == 'force_ended') && _onTop) {
           context.go('/summary/${e.rentalId}');
         }
       case VehiclePositionEvent():
@@ -219,7 +224,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   /// O operador registrou a chegada no galpao: o aluguel acabou, abre o recibo.
   Future<void> _onHandoverUpdated(String handoverId) async {
     final r = _rental;
-    if (r == null) return;
+    if (r == null || !_onTop) return;
     if (await isDepotReturnOf(ref.read(backendProvider), handoverId, r.id) && mounted) {
       context.go('/summary/${r.id}');
     }

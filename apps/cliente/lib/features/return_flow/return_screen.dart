@@ -17,10 +17,11 @@ import '../../core/launcher.dart';
 import '../../core/services.dart';
 import '../../core/widgets.dart';
 import '../handover/handover_watch.dart';
+import '../home/depot_providers.dart' show depotsProvider;
 import '../home/providers.dart';
 import '../pickup/depot_labels.dart';
 import '../ride/battery_sheet.dart' show rentalDepotProvider;
-import '../ride/ride_data.dart' show sharedZonesProvider;
+import '../ride/ride_data.dart' show rideEventBusProvider, sharedZonesProvider;
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 
 /// Zonas de devolucao e onde a moto esta em relacao a elas.
@@ -95,12 +96,40 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   String? _photoKey; // objeto ja enviado desta foto
   String? _error;
   Timer? _poll;
+  StreamSubscription<RealtimeEvent>? _rideEvents;
+  bool _finished = false;
   ReturnMode _mode = ReturnMode.point;
+
+  @override
+  void initState() {
+    super.initState();
+    // Eventos da corrida aberta embaixo (mesmo socket): enquanto esta tela esta
+    // aberta, e ela que reage ao fim do aluguel.
+    _rideEvents = ref.read(rideEventBusProvider).stream.listen(_onRideEvent);
+  }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _rideEvents?.cancel();
     super.dispose();
+  }
+
+  void _onRideEvent(RealtimeEvent e) {
+    if (!mounted) return;
+    switch (e) {
+      case RentalUpdated(:final rentalId, :final status) when rentalId == widget.rentalId && (status == 'ended' || status == 'force_ended'):
+        _finish();
+      case HandoverUpdated(:final handoverId):
+        _onHandoverUpdated(handoverId);
+      default:
+        break;
+    }
+  }
+
+  /// Chegada no galpao (`return_depot` deste aluguel): o operador encerrou.
+  Future<void> _onHandoverUpdated(String handoverId) async {
+    if (await isDepotReturnOf(ref.read(backendProvider), handoverId, widget.rentalId)) _finish();
   }
 
   Future<void> _take() async {
@@ -115,6 +144,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   }
 
   void _finish() {
+    if (_finished || !mounted) return;
+    _finished = true;
+    _poll?.cancel();
     VoltiHaptics.success();
     ref.invalidate(currentRentalProvider);
     if (mounted) context.go('/summary/${widget.rentalId}');
@@ -474,8 +506,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
 
 /// Devolucao no galpao: endereco com "Como chegar", a instrucao de entregar a
 /// moto ao operador e a espera pela chegada registrada. O operador cria a
-/// entrega `return_depot`; o `handover.updated` dela (ou o aluguel ja
-/// encerrado, pelo `rental.updated` ou pela consulta periodica) chama [onEnded].
+/// entrega `return_depot`; os eventos (`handover.updated`, `rental.updated`)
+/// chegam a [ReturnScreen]; aqui fica so a consulta periodica do aluguel, que
+/// chama [onEnded] quando ele ja encerrou. Sai do painel = timer parado.
 class _DepotReturnPanel extends ConsumerStatefulWidget {
   const _DepotReturnPanel({required this.rentalId, required this.pollInterval, required this.onEnded});
   final String rentalId;
@@ -517,10 +550,6 @@ class _DepotReturnPanelState extends ConsumerState<_DepotReturnPanel> {
     }
   }
 
-  Future<void> _onUpdated(String handoverId) async {
-    if (await isDepotReturnOf(ref.read(backendProvider), handoverId, widget.rentalId)) _end();
-  }
-
   Future<void> _directions(Depot d) async {
     final ok = await openDirections(ref.read(urlLauncherProvider), d.lat, d.lng);
     if (!ok && mounted) VoltiToast.show(context, context.l.navigateFailed, tone: VoltiToastTone.danger);
@@ -530,14 +559,6 @@ class _DepotReturnPanelState extends ConsumerState<_DepotReturnPanel> {
   Widget build(BuildContext context) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
-    ref.listen(customerEventsProvider, (_, next) {
-      final e = next.value;
-      if (e is HandoverUpdated) {
-        _onUpdated(e.handoverId);
-      } else if (e is RentalUpdated && e.rentalId == widget.rentalId && (e.status == 'ended' || e.status == 'force_ended')) {
-        _end();
-      }
-    });
     final depotAsync = ref.watch(rentalDepotProvider(widget.rentalId));
     final depot = depotAsync.value;
     return Column(
@@ -576,14 +597,32 @@ class _DepotReturnPanelState extends ConsumerState<_DepotReturnPanel> {
         else if (depotAsync.isLoading)
           VoltiSkeleton.list(rows: 1, trailing: false, label: l.loading)
         else
-          NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: l.returnDepotMissing),
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: l.returnDepotMissing),
+            const SizedBox(height: VoltiSpacing.s8),
+            VoltiButton(
+              key: const Key('return-depot-retry'),
+              label: l.retry,
+              icon: LucideIcons.refreshCw,
+              variant: VoltiButtonVariant.secondary,
+              fullWidth: true,
+              onPressed: () {
+                ref.invalidate(depotsProvider);
+                ref.invalidate(rentalDepotProvider(widget.rentalId));
+              },
+            ),
+          ]),
         const SizedBox(height: 12),
         _RuleNote(text: l.returnDepotText),
         const SizedBox(height: 12),
         Semantics(
           liveRegion: true,
           child: Row(children: [
-            const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: VoltiColors.brandAction)),
+            // Reduced motion: icone fixo no lugar do spinner.
+            if (VoltiMotion.reduced(context))
+              const Icon(LucideIcons.hourglass, key: Key('return-depot-waiting-icon'), size: 18, color: VoltiColors.brandAction)
+            else
+              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: VoltiColors.brandAction)),
             const SizedBox(width: VoltiSpacing.s10),
             Expanded(child: Text(l.returnDepotWaiting, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant))),
           ]),
