@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -269,11 +271,14 @@ void main() {
         expect(find.bySemanticsLabel(RegExp(RegExp.escape(s))), findsNothing, reason: s);
       }
       expect(find.byKey(const Key('welcome-art')).evaluate().single.widget, isA<ExcludeSemantics>());
-      // A promocao (oferta real) chega ao leitor de tela pela folha.
+      // Logo (cabecalho "Volti") e promocao (oferta real): nos de semantica fora da
+      // camada decorativa, nos retangulos reais.
+      expect(t.getSemantics(find.byKey(const Key('welcome-logo-semantics'))), isSemantics(label: 'Volti', isHeader: true));
+      expect(t.getRect(find.byKey(const Key('welcome-logo-semantics'))), t.getRect(find.byKey(const Key('welcome-logo'))));
       expect(find.bySemanticsLabel('1ª corrida grátis, até 15 min'), findsOneWidget);
-      // A moto em destaque e os pins tambem ficam fora.
+      expect(t.getRect(find.byKey(const Key('welcome-promo-semantics'))), t.getRect(find.byKey(const Key('welcome-promo'))));
+      // A moto em destaque fica fora.
       expect(find.descendant(of: find.byKey(const Key('welcome-art')), matching: find.byType(Image)), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp('volti', caseSensitive: false)), findsNothing);
       expect(t.getSemantics(find.byKey(const Key('welcome-phone'))),
           isSemantics(label: 'Continuar com celular', isButton: true, hasTapAction: true));
       expect(t.getSemantics(find.byKey(const Key('welcome-apple'))),
@@ -316,6 +321,8 @@ void main() {
     testWidgets('reduzir movimento: folha e pins ja no lugar no primeiro quadro', (t) async {
       screen(t);
       await _pumpWelcome(t, reduceMotion: true, settleAll: false);
+      // Um quadro a mais: a geometria do hero (medida no layout) posiciona o galpao.
+      await t.pump();
       await t.pump();
       expect(find.descendant(of: find.byType(VoltiEnter), matching: _fading), findsNothing);
       expect(t.binding.hasScheduledFrame, isFalse);
@@ -371,6 +378,7 @@ void main() {
       screen(t);
       await _pumpWelcome(t, reduceMotion: true, settleAll: false);
       await t.pump();
+      await t.pump();
       expect(find.text('92%'), findsOneWidget);
       expect(hero(t).debugAnimating, isFalse);
       final p0 = t.getTopLeft(find.byKey(const Key('hero-pin-0')));
@@ -414,50 +422,109 @@ void main() {
       expect(hero(t).debugTilesFailed, isTrue);
       expect(find.byKey(const Key('welcome-map')), findsNothing);
       expect(find.byKey(const Key('welcome-map-fallback')), findsOneWidget);
-      // Os chips e a moto continuam por cima.
+      // Os chips e a moto continuam por cima; a atribuicao do mapa some.
       expect(find.byKey(const Key('hero-bike')), findsOneWidget);
       expect(find.text('108 motos perto'), findsOneWidget);
+      expect(find.byKey(const Key('map-attribution')), findsNothing);
     });
 
-    for (final size in const [Size(360, 740), Size(393, 852), Size(412, 915)]) {
-      testWidgets('sem sobreposicao em ${size.width.toInt()}x${size.height.toInt()}', (t) async {
-        screen(t, size: size);
-        t.view.padding = const FakeViewPadding(top: 24, bottom: 16);
-        await _pumpWelcome(t, map: true);
-        await t.pump(const Duration(seconds: 1));
-        expect(t.takeException(), isNull);
-        Rect r(String k) => t.getRect(find.byKey(Key(k)));
-        final chips = {for (final k in ['welcome-logo', 'hero-nearby', 'welcome-promo', 'hero-battery', 'hero-time']) k: r(k)};
-        final keys = chips.keys.toList();
-        for (var i = 0; i < keys.length; i++) {
-          for (var j = i + 1; j < keys.length; j++) {
-            expect(chips[keys[i]]!.overlaps(chips[keys[j]]!), isFalse, reason: '${keys[i]} x ${keys[j]}');
+    test('deriva: escala minima 1,05 cobre a caixa inteira (sem fresta na borda)', () {
+      const size = Size(360, 320);
+      for (final t in [0.0, .5, 1.0]) {
+        final r = MatrixUtils.transformRect(heroDriftMatrix(size, t), Offset.zero & size);
+        expect(r.left, lessThanOrEqualTo(0), reason: 't=$t');
+        expect(r.top, lessThanOrEqualTo(0), reason: 't=$t');
+        expect(r.right, greaterThanOrEqualTo(size.width), reason: 't=$t');
+        expect(r.bottom, greaterThanOrEqualTo(size.height), reason: 't=$t');
+      }
+    });
+
+    testWidgets('pins seguem as ruas durante a deriva (no maximo 2 px da polilinha)', (t) async {
+      screen(t);
+      await _pumpWelcome(t, map: true);
+      final size = t.getSize(find.byType(WelcomeHero));
+      for (var step = 0; step < 6; step++) {
+        for (var i = 0; i < kHeroRoutes.length; i++) {
+          final dot = find.descendant(of: find.byKey(Key('hero-pin-$i')), matching: find.byKey(const Key('hero-pin-dot')));
+          final c = t.getCenter(dot);
+          final d = distanceToPolyline(c, hero(t).debugRouteOnScreen(i, size));
+          expect(d, lessThanOrEqualTo(2), reason: 'pin $i passo $step');
+        }
+        await t.pump(const Duration(milliseconds: 2300));
+      }
+    });
+
+    for (final size in const [Size(360, 740), Size(360, 800), Size(393, 852), Size(412, 915)]) {
+      for (final dev in [true, false]) {
+        testWidgets('sem sobreposicao em ${size.width.toInt()}x${size.height.toInt()} (${dev ? 'debug' : 'release'})', (t) async {
+          screen(t, size: size);
+          t.view.padding = const FakeViewPadding(top: 24, bottom: 16);
+          await _pumpWelcome(t, map: true, dev: dev);
+          await t.pump(const Duration(seconds: 1));
+          expect(t.takeException(), isNull);
+          final geo = hero(t).debugGeometry;
+          Rect r(String k) => t.getRect(find.byKey(Key(k)));
+          final chips = {
+            for (final k in ['welcome-logo', 'hero-nearby', 'welcome-promo', 'hero-battery', if (geo.timeVisible) 'hero-time']) k: r(k),
+          };
+          final keys = chips.keys.toList();
+          for (var i = 0; i < keys.length; i++) {
+            for (var j = i + 1; j < keys.length; j++) {
+              expect(chips[keys[i]]!.overlaps(chips[keys[j]]!), isFalse, reason: '${keys[i]} x ${keys[j]}');
+            }
           }
-        }
-        final bike = r('hero-bike');
-        // Quanto mais alta a tela, maior a moto (ate 70% da largura).
-        final minBike = size.height < 800 ? .35 : (size.height < 900 ? .55 : .7);
-        expect(bike.width, greaterThanOrEqualTo(size.width * minBike - .5), reason: 'a moto aparece');
-        expect(bike.width, lessThanOrEqualTo(size.width * .7 + .5));
-        if (size.width >= 412) expect(bike.width, closeTo(size.width * .7, .5));
-        for (final k in ['welcome-logo', 'hero-nearby', 'welcome-promo']) {
-          // A moto flutua 2,5 px: folga de 3 px.
-          expect(bike.inflate(3).overlaps(chips[k]!), isFalse, reason: 'moto x $k');
-        }
-        // Bateria e tempo podem ser etiquetas sobre a borda da moto: a moto e pintada antes (embaixo).
-        final layout = t.widget<CustomMultiChildLayout>(find.descendant(of: find.byType(WelcomeHero), matching: find.byType(CustomMultiChildLayout)));
-        expect((layout.children.first as LayoutId).id, HeroSlot.bike);
-        final sheetTop = r('welcome-sheet').top;
-        expect(bike.bottom, lessThanOrEqualTo(sheetTop));
-        expect(r('hero-pins').bottom, lessThanOrEqualTo(sheetTop + .5), reason: 'pins nunca por baixo da folha');
-        expect(r('map-attribution').top, greaterThanOrEqualTo(r('hero-pins').bottom - .5), reason: 'atribuicao fora da faixa dos pins');
-        for (final e in chips.entries) {
-          expect(e.value.bottom, lessThanOrEqualTo(sheetTop), reason: '${e.key} acima da folha');
-          expect(e.value.left, greaterThanOrEqualTo(0));
-          expect(e.value.right, lessThanOrEqualTo(size.width));
-        }
-      });
+          final bike = r('hero-bike');
+          // 360x740 com a nota de dev e o caso mais apertado.
+          expect(bike.width, greaterThan(size.width * (size.height < 760 ? .25 : .4)), reason: 'a moto aparece');
+          expect(bike.width, lessThanOrEqualTo(size.width * .7 + .5));
+          // Nenhum chip sobre a moto (folga de 3 px: ela flutua 2,5 px).
+          for (final e in chips.entries) {
+            expect(bike.inflate(3).overlaps(e.value), isFalse, reason: 'moto x ${e.key}');
+          }
+          final sheetTop = r('welcome-sheet').top;
+          expect(bike.bottom, lessThanOrEqualTo(sheetTop));
+          expect(r('hero-pins').bottom, lessThanOrEqualTo(sheetTop + .5), reason: 'pins nunca por baixo da folha');
+          expect(r('map-attribution').top, greaterThanOrEqualTo(r('hero-pins').bottom - .5), reason: 'atribuicao fora da faixa dos pins');
+          for (final e in chips.entries) {
+            expect(e.value.bottom, lessThanOrEqualTo(sheetTop), reason: '${e.key} acima da folha');
+            expect(e.value.left, greaterThanOrEqualTo(0));
+            expect(e.value.right, lessThanOrEqualTo(size.width));
+          }
+          // Galpao na area livre: nem atras da promocao nem da moto.
+          final depot = r('hero-depot');
+          expect(depot.overlaps(r('welcome-promo')), isFalse, reason: 'galpao x promocao');
+          expect(depot.overlaps(bike), isFalse, reason: 'galpao x moto');
+          // Pins visiveis nunca atras da promocao, dos chips ou da moto, ao longo do ciclo.
+          final obstacles = [...chips.values, bike];
+          var seen = 0;
+          for (var step = 0; step < 8; step++) {
+            for (var i = 0; i < kHeroRoutes.length; i++) {
+              final pin = find.byKey(Key('hero-pin-$i'));
+              final o = t.widget<AnimatedOpacity>(find.descendant(of: pin, matching: find.byType(AnimatedOpacity)));
+              if (o.opacity == 0) continue;
+              seen++;
+              final dot = t.getRect(find.descendant(of: pin, matching: find.byKey(const Key('hero-pin-dot'))));
+              for (final ob in obstacles) {
+                expect(dot.overlaps(ob), isFalse, reason: 'pin $i passo $step');
+              }
+            }
+            await t.pump(const Duration(milliseconds: 1700));
+          }
+          expect(seen, greaterThan(0), reason: 'alguma moto aparece andando');
+        });
+      }
     }
+
+    testWidgets('"2 min | 120 m" aparece quando sobra espaco para a moto a 70%', (t) async {
+      screen(t, size: const Size(412, 1100));
+      t.view.padding = const FakeViewPadding(top: 24, bottom: 16);
+      await _pumpWelcome(t, map: true, dev: false);
+      final geo = hero(t).debugGeometry;
+      expect(geo.timeVisible, isTrue);
+      final bike = t.getRect(find.byKey(const Key('hero-bike')));
+      expect(bike.width, closeTo(412 * .7, .5));
+      expect(bike.inflate(3).overlaps(t.getRect(find.byKey(const Key('hero-time')))), isFalse);
+    });
 
     test('ponto ao longo da rota', () {
       const pts = [Offset(0, 0), Offset(10, 0), Offset(10, 10)];
@@ -469,20 +536,47 @@ void main() {
   });
 
   group('tiles do mapa', () {
-    test('padrao CARTO Voyager com subdominios e o id real do pacote', () {
-      expect(kMapTileUrl, 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png');
-      expect(kMapTileSubdomains, ['a', 'b', 'c']);
+    test('padrao de dev: Esri Light Gray sem chave ({y}/{x}), rotulos e atribuicao', () {
+      expect(kMapTileUrl, 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}');
+      expect(kMapReferenceUrl, 'https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Reference/MapServer/tile/{z}/{y}/{x}');
+      expect(kMapAttribution, 'Esri, HERE, Garmin, © OpenStreetMap contributors');
       expect(kMapUserAgentPackage, 'br.com.volti.volti_cliente');
-      expect(kMapAttribution, '© OpenStreetMap contributors © CARTO');
-      expect(kMapTileUrl.contains('tile.openstreetmap.org'), isFalse);
+      expect(kMapTileUrl.contains('cartocdn'), isFalse);
+      expect(isDevTileProvider(kMapTileUrl), isTrue, reason: 'bloqueio de lancamento sinalizado');
+      expect(isDevTileProvider('https://api.maptiler.com/maps/streets/{z}/{x}/{y}.png?key=x'), isFalse);
+      // Ordem do ArcGIS: z/y/x.
+      final (x, y) = tileXY(-23.5654, -46.6847, 15);
+      expect((x, y), (12134, 18592));
+      expect(tileUrl(kMapTileUrl, 15, x, y), endsWith('/tile/15/18592/12134'));
+    });
+
+    test('tile de aviso: bytes identicos em lugares diferentes', () {
+      final a = Uint8List.fromList([1, 2, 3]), b = Uint8List.fromList([1, 2, 4]);
+      expect(tilesLookLikePlaceholder([a, Uint8List.fromList([1, 2, 3])]), isTrue);
+      expect(tilesLookLikePlaceholder([a, b]), isFalse);
+      expect(tilesLookLikePlaceholder([a]), isFalse);
+    });
+
+    test('sonda do provedor: acusa o "API KEY" repetido, erro HTTP e resposta que nao e imagem', () async {
+      final placeholder = MockClient((_) async => http.Response.bytes([9, 9, 9, 9], 200, headers: {'content-type': 'image/png'}));
+      expect(await probeTileProvider(placeholder), contains('identicos'));
+      var n = 0;
+      final real = MockClient((_) async => http.Response.bytes([n++, 1, 2], 200, headers: {'content-type': 'image/jpeg'}));
+      expect(await probeTileProvider(real), isNull);
+      final denied = MockClient((_) async => http.Response('no', 403));
+      expect(await probeTileProvider(denied), contains('403'));
+      final html = MockClient((_) async => http.Response('<html>', 200, headers: {'content-type': 'text/html'}));
+      expect(await probeTileProvider(html), contains('nao e imagem'));
     });
 
     testWidgets('VoltiMap usa a camada comum com retentativa e atribuicao', (t) async {
       screen(t);
       await t.pumpWidget(const ProviderScope(child: MaterialApp(home: VoltiMap(center: kHeroDepot))));
       await t.pump();
-      final layer = t.widget<TileLayer>(find.byType(TileLayer));
-      expect(layer.urlTemplate, kMapTileUrl);
+      final layers = t.widgetList<TileLayer>(find.byType(TileLayer)).toList();
+      expect(layers.map((l) => l.urlTemplate), [kMapTileUrl, kMapReferenceUrl], reason: 'base + rotulos');
+      final layer = layers.first;
+      expect(layer.resolvedRetinaMode, RetinaMode.disabled, reason: 'sem {r}: nao pede 4x tiles');
       expect(layer.subdomains, kMapTileSubdomains);
       expect(layer.evictErrorTileStrategy, EvictErrorTileStrategy.notVisibleRespectMargin);
       expect(layer.errorTileCallback, isNotNull);

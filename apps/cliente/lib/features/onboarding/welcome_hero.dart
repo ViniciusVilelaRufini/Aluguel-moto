@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -28,20 +29,34 @@ const kHeroRoutes = <List<LatLng>>[
 const _bikeSpeed = [1.0, 0.8, 1.25, 0.65];
 const _bikeOffset = [0.0, 0.35, 0.6, 0.15];
 
-/// Numeros da ilustracao (marketing, nao sao dados ao vivo; a camada inteira fica
+/// Numeros da ilustracao (marketing, nao sao dados ao vivo; a camada visual fica
 /// fora da semantica).
 const kHeroNearby = 108, kHeroBattery = 92, kHeroRangeKm = 20, kHeroEtaMin = 2, kHeroDistanceM = 120;
 
-/// Tiles com erro antes de trocar o mapa pela ilustracao desenhada.
+/// Tiles com erro antes de trocar o mapa pela ilustracao.
 const kHeroTileErrorLimit = 4;
+
+/// Matriz da deriva da camera em [t] (0..1, ja com a curva): escala de 1,05 a 1,09
+/// em torno do centro e translacao de ate 6 x 4 px. Com escala >= 1,05 a borda do
+/// mapa nunca aparece (folga de 2,5% de cada lado > translacao).
+Matrix4 heroDriftMatrix(Size size, double t) {
+  final scale = 1.05 + .04 * t;
+  final c = size.center(Offset.zero);
+  return Matrix4.identity()
+    ..translateByDouble(c.dx + (-6 + 12 * t), c.dy + (4 - 8 * t), 0, 1)
+    ..scaleByDouble(scale, scale, 1, 1)
+    ..translateByDouble(-c.dx, -c.dy, 0, 1);
+}
 
 /// Hero animado da boas-vindas: mapa real de Pinheiros (deriva lenta da camera),
 /// galpao com anel pulsando, motos andando por ruas reais, chips com entrada em
 /// cascata (bateria conta ate 92%) e a moto em destaque que sobe, cresce e flutua.
 ///
-/// Decorativo por inteiro: fora da semantica e sem toque. Reduced motion: tudo
-/// parado no estado final. App em segundo plano ou rota coberta: os controllers
-/// param. Sem rede (ou tiles falhando): a ilustracao desenhada fica no lugar do mapa.
+/// A camada visual e decorativa (fora da semantica, sem toque); por cima, so dois
+/// nos de semantica nos retangulos reais do logo ("Volti", cabecalho) e da
+/// promocao. Reduced motion: tudo parado no estado final. App em segundo plano ou
+/// rota coberta: os controllers param. Tiles falhando: a ilustracao desenhada fica
+/// no lugar do mapa e [onMapFallback] avisa (a atribuicao some).
 ///
 /// O layout e relativo a faixa livre acima da folha ([band]); [overlap] e o trecho
 /// que continua por baixo dos cantos arredondados da folha.
@@ -58,12 +73,14 @@ class WelcomeHero extends StatefulWidget {
     required this.distanceText,
     required this.promoTitle,
     required this.promoText,
+    this.onMapFallback,
     this.overlap = 28,
   });
 
   final double band, topInset, overlap;
   final bool mapOn, showPromo;
   final String nearbyText, rangeText, etaText, distanceText, promoTitle, promoText;
+  final VoidCallback? onMapFallback;
 
   @override
   State<WelcomeHero> createState() => WelcomeHeroState();
@@ -105,6 +122,9 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
     curve: const Interval(.18, .73, curve: VoltiMotion.easeScreen),
   );
 
+  /// Retangulos do layout (pins e galpao fogem da promocao, dos chips e da moto).
+  final _geometry = HeroGeometry();
+
   AppLifecycleState? _lifecycle = WidgetsBinding.instance.lifecycleState;
   bool _tickerEnabled = true;
   bool _reduced = false;
@@ -118,6 +138,17 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
   /// O mapa real deu lugar a ilustracao desenhada.
   @visibleForTesting
   bool get debugTilesFailed => _tilesFailed;
+
+  @visibleForTesting
+  HeroGeometry get debugGeometry => _geometry;
+
+  /// Rota [i] projetada e com a deriva atual aplicada, nas coordenadas do hero.
+  @visibleForTesting
+  List<Offset> debugRouteOnScreen(int i, Size size) {
+    final cam = _cameraFor(size, _depotTarget(size));
+    final m = heroDriftMatrix(size, Curves.easeInOut.transform(_drift.value));
+    return [for (final p in kHeroRoutes[i]) MatrixUtils.transformPoint(m, cam.latLngToScreenOffset(p))];
+  }
 
   @override
   void initState() {
@@ -172,13 +203,16 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
     _tileErrors++;
     if (_tilesFailed || _tileErrors < kHeroTileErrorLimit) return;
     Future.microtask(() {
-      if (mounted) setState(() => _tilesFailed = true);
+      if (!mounted) return;
+      setState(() => _tilesFailed = true);
+      widget.onMapFallback?.call();
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _geometry.dispose();
     _entrance.dispose();
     for (final c in _loops) {
       c.dispose();
@@ -200,191 +234,267 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
     );
   }
 
+  /// Onde o galpao aparece: centro da area livre do mapa (entre os chips e a moto).
+  Offset _depotTarget(Size size) => _geometry.zone?.center ?? Offset(size.width * .5, widget.band * .4);
+
+  /// Camera com o galpao em [target].
+  MapCamera _cameraFor(Size size, Offset target) {
+    final cam0 = MapCamera(crs: const Epsg3857(), center: kHeroDepot, zoom: kHeroZoom, rotation: 0, nonRotatedSize: size);
+    final mid = size.center(Offset.zero);
+    final center = cam0.screenOffsetToLatLng(mid + (mid - target));
+    return MapCamera(crs: const Epsg3857(), center: center, zoom: kHeroZoom, rotation: 0, nonRotatedSize: size);
+  }
+
+  /// Largura natural do cartao da promocao (o layout decide se precisa estreitar).
+  double _promoNaturalWidth() {
+    double measure(String text, TextStyle style) {
+      final tp = TextPainter(
+        text: TextSpan(text: text, style: style),
+        textDirection: TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      final w = tp.width;
+      tp.dispose();
+      return w;
+    }
+
+    final text = math.max(measure(widget.promoTitle, VoltiTypography.bodyStrong), measure(widget.promoText, VoltiTypography.caption));
+    return 10 + 36 + 10 + text + 16 + 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     final mapVisible = widget.mapOn && !_tilesFailed;
     final height = widget.band + widget.overlap;
-    final count = _count;
-    final bikeIn = _bikeIn;
 
-    return ExcludeSemantics(
-      key: const Key('welcome-art'),
-      child: IgnorePointer(
-        child: MediaQuery.withNoTextScaling(
-          child: LayoutBuilder(
-            builder: (context, c) {
-              final size = Size(c.maxWidth, height);
-              // O galpao fica a 36% da faixa livre (acima da moto em destaque).
-              final cam0 = MapCamera(crs: const Epsg3857(), center: kHeroDepot, zoom: kHeroZoom, rotation: 0, nonRotatedSize: size);
-              final center = cam0.screenOffsetToLatLng(Offset(size.width / 2, size.height / 2 + (size.height / 2 - widget.band * .36)));
-              final cam = MapCamera(crs: const Epsg3857(), center: center, zoom: kHeroZoom, rotation: 0, nonRotatedSize: size);
-              final routes = [
-                for (final r in kHeroRoutes) [for (final p in r) cam.latLngToScreenOffset(p)],
-              ];
-              final depot = cam.latLngToScreenOffset(kHeroDepot);
+    return LayoutBuilder(
+      builder: (context, c) {
+        final size = Size(c.maxWidth, height);
 
-              final world = Stack(
-                clipBehavior: Clip.hardEdge,
-                children: [
-                  const Positioned.fill(
-                    child: CustomPaint(key: Key('welcome-map-fallback'), painter: HeroFallbackPainter()),
-                  ),
-                  if (mapVisible)
-                    Positioned.fill(
-                      child: VoltiMap(
-                        key: const Key('welcome-map'),
-                        center: center,
-                        zoom: kHeroZoom,
-                        interactive: false,
-                        showAttribution: false,
-                        backgroundColor: Colors.transparent,
-                        onTileError: reportTileError,
-                      ),
+        // Mapa + galpao: um RepaintBoundary estatico movido pela matriz da deriva (os
+        // tiles nao sao reconstruidos a cada quadro).
+        final world = ListenableBuilder(
+          listenable: _geometry,
+          builder: (context, _) {
+            final target = _depotTarget(size);
+            final cam = _cameraFor(size, target);
+            return Stack(
+              clipBehavior: Clip.hardEdge,
+              children: [
+                const Positioned.fill(
+                  child: CustomPaint(key: Key('welcome-map-fallback'), painter: HeroFallbackPainter()),
+                ),
+                // So depois do primeiro layout (a area livre define o centro): os tiles
+                // carregam uma vez so.
+                if (mapVisible && _geometry.zone != null)
+                  Positioned.fill(
+                    child: VoltiMap(
+                      key: const Key('welcome-map'),
+                      center: cam.center,
+                      zoom: kHeroZoom,
+                      interactive: false,
+                      showAttribution: false,
+                      backgroundColor: Colors.transparent,
+                      onTileError: reportTileError,
                     ),
-                  Positioned(
-                    left: depot.dx - 40,
-                    top: depot.dy - 40,
-                    width: 80,
-                    height: 80,
-                    child: _DepotPulse(pulse: _pulse),
                   ),
-                ],
-              );
+                Positioned(
+                  left: target.dx - 40,
+                  top: target.dy - 40,
+                  width: 80,
+                  height: 80,
+                  child: _DepotPulse(pulse: _pulse),
+                ),
+              ],
+            );
+          },
+        );
 
-              return SizedBox(
-                height: height,
-                child: Stack(
-                  clipBehavior: Clip.hardEdge,
+        final visual = SizedBox(
+          height: height,
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: AnimatedBuilder(
+                    animation: _drift,
+                    child: RepaintBoundary(child: world),
+                    builder: (context, child) => Transform(transform: heroDriftMatrix(size, Curves.easeInOut.transform(_drift.value)), child: child),
+                  ),
+                ),
+              ),
+              // Motos nas ruas: mesma matriz da deriva (ficam sobre as ruas), recortadas
+              // 16 px acima da folha (a atribuicao fica na borda dela).
+              Positioned(
+                key: const Key('hero-pins'),
+                top: 0,
+                left: 0,
+                right: 0,
+                height: widget.band - 16,
+                child: ClipRect(
+                  child: RepaintBoundary(
+                    child: AnimatedBuilder(
+                      animation: Listenable.merge([_bikes, _drift, _geometry]),
+                      builder: (context, _) {
+                        if (_geometry.zone == null) return const SizedBox.shrink();
+                        final cam = _cameraFor(size, _depotTarget(size));
+                        final m = heroDriftMatrix(size, Curves.easeInOut.transform(_drift.value));
+                        return Transform(
+                          transform: m,
+                          child: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              for (var i = 0; i < kHeroRoutes.length; i++)
+                                _movingPin(i, [for (final p in kHeroRoutes[i]) cam.latLngToScreenOffset(p)], m),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ),
+              // Escurecido no topo: o logo branco fica legivel.
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: widget.topInset + 120,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [VoltiColors.ink900.withValues(alpha: .38), VoltiColors.ink900.withValues(alpha: 0)],
+                    ),
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: widget.band,
+                child: CustomMultiChildLayout(
+                  delegate: HeroLayoutDelegate(topInset: widget.topInset, geometry: _geometry, promoNaturalWidth: _promoNaturalWidth()),
                   children: [
-                    // Mapa e galpao: um RepaintBoundary estatico movido por Transform (a deriva
-                    // nao reconstroi os tiles).
-                    Positioned.fill(
+                    LayoutId(
+                      id: HeroSlot.bike,
+                      // A flutuacao repinta so a moto.
                       child: RepaintBoundary(
                         child: AnimatedBuilder(
-                          animation: _drift,
-                          child: RepaintBoundary(child: world),
-                          builder: (context, child) {
-                            final t = Curves.easeInOut.transform(_drift.value);
-                            final scale = 1.03 + .05 * t;
-                            return Transform(
-                              alignment: Alignment.center,
-                              transform: Matrix4.identity()
-                                ..translateByDouble(-6 + 12 * t, 4 - 8 * t, 0, 1)
-                                ..scaleByDouble(scale, scale, 1, 1),
-                              child: child,
-                            );
-                          },
+                          animation: Listenable.merge([_bikeIn, _float]),
+                          builder: (context, _) => _HeroBike(entrance: _bikeIn.value, float: math.sin(_float.value * 2 * math.pi)),
                         ),
                       ),
                     ),
-                    // Motos nas ruas, recortadas na faixa livre (nunca por baixo da folha).
-                    Positioned(
-                      key: const Key('hero-pins'),
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      // 16 px de folga: a atribuicao fica na borda da folha, fora do caminho dos pins.
-                      height: widget.band - 16,
-                      child: ClipRect(
-                        child: RepaintBoundary(
-                          child: AnimatedBuilder(
-                            animation: _bikes,
-                            builder: (context, _) => Stack(children: [for (var i = 0; i < routes.length; i++) _movingPin(i, routes[i])]),
+                    LayoutId(id: HeroSlot.logo, child: _chip(0, const _Logo())),
+                    LayoutId(
+                      id: HeroSlot.nearby,
+                      child: _chip(1, _NearbyChip(text: widget.nearbyText)),
+                    ),
+                    if (widget.showPromo)
+                      LayoutId(
+                        id: HeroSlot.promo,
+                        child: _chip(2, _PromoCard(title: widget.promoTitle, text: widget.promoText)),
+                      ),
+                    LayoutId(
+                      id: HeroSlot.battery,
+                      child: _chip(
+                        3,
+                        AnimatedBuilder(
+                          animation: _count,
+                          builder: (context, _) => _DarkChip(
+                            key: const Key('hero-battery'),
+                            parts: [(LucideIcons.zap, '${(kHeroBattery * _count.value).round()}%'), (null, widget.rangeText)],
                           ),
                         ),
                       ),
                     ),
-                    // Escurecido no topo: o logo branco fica legivel.
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: widget.topInset + 120,
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [VoltiColors.ink900.withValues(alpha: .38), VoltiColors.ink900.withValues(alpha: 0)],
+                    LayoutId(
+                      id: HeroSlot.time,
+                      child: ListenableBuilder(
+                        listenable: _geometry,
+                        // Escondido sem perder o tamanho (o layout decide com a medida real).
+                        builder: (context, child) => Visibility.maintain(visible: _geometry.timeVisible, child: child!),
+                        child: _chip(
+                          4,
+                          _DarkChip(
+                            key: const Key('hero-time'),
+                            parts: [(LucideIcons.clock, widget.etaText), (LucideIcons.moveHorizontal, widget.distanceText)],
                           ),
                         ),
-                      ),
-                    ),
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      height: widget.band,
-                      child: CustomMultiChildLayout(
-                        delegate: HeroLayoutDelegate(topInset: widget.topInset),
-                        children: [
-                          LayoutId(
-                            id: HeroSlot.bike,
-                            child: AnimatedBuilder(
-                              animation: Listenable.merge([bikeIn, _float]),
-                              builder: (context, _) {
-                                final e = bikeIn.value;
-                                final f = math.sin(_float.value * 2 * math.pi);
-                                return _HeroBike(entrance: e, float: f);
-                              },
-                            ),
-                          ),
-                          LayoutId(id: HeroSlot.logo, child: _chip(0, const _Logo())),
-                          LayoutId(
-                            id: HeroSlot.nearby,
-                            child: _chip(1, _NearbyChip(text: widget.nearbyText)),
-                          ),
-                          if (widget.showPromo)
-                            LayoutId(
-                              id: HeroSlot.promo,
-                              child: _chip(2, _PromoCard(title: widget.promoTitle, text: widget.promoText)),
-                            ),
-                          LayoutId(
-                            id: HeroSlot.battery,
-                            child: _chip(
-                              3,
-                              AnimatedBuilder(
-                                animation: count,
-                                builder: (context, _) => _DarkChip(
-                                  key: const Key('hero-battery'),
-                                  parts: [(LucideIcons.zap, '${(kHeroBattery * count.value).round()}%'), (null, widget.rangeText)],
-                                ),
-                              ),
-                            ),
-                          ),
-                          LayoutId(
-                            id: HeroSlot.time,
-                            child: _chip(
-                              4,
-                              _DarkChip(
-                                key: const Key('hero-time'),
-                                parts: [(LucideIcons.clock, widget.etaText), (LucideIcons.moveHorizontal, widget.distanceText)],
-                              ),
-                            ),
-                          ),
-                        ],
                       ),
                     ),
                   ],
                 ),
-              );
-            },
+              ),
+            ],
           ),
-        ),
-      ),
+        );
+
+        return SizedBox(
+          height: height,
+          child: Stack(
+            children: [
+              // Camada visual: decorativa, fora da semantica e sem toque.
+              Positioned.fill(
+                child: ExcludeSemantics(
+                  key: const Key('welcome-art'),
+                  child: IgnorePointer(child: MediaQuery.withNoTextScaling(child: visual)),
+                ),
+              ),
+              // Semantica real so do logo e da promocao, nos retangulos do layout.
+              ListenableBuilder(
+                listenable: _geometry,
+                builder: (context, _) {
+                  final logo = _geometry.logo, promo = _geometry.promo;
+                  return Stack(
+                    children: [
+                      if (logo != null)
+                        Positioned.fromRect(
+                          rect: logo,
+                          child: Semantics(key: const Key('welcome-logo-semantics'), header: true, label: 'Volti', child: const SizedBox.expand()),
+                        ),
+                      if (promo != null && widget.showPromo)
+                        Positioned.fromRect(
+                          rect: promo,
+                          child: Semantics(
+                            key: const Key('welcome-promo-semantics'),
+                            container: true,
+                            label: '${widget.promoTitle}, ${widget.promoText}',
+                            child: const SizedBox.expand(),
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  /// Moto [i] na posicao do ciclo atual ao longo da rota projetada, com fade nas pontas.
-  Widget _movingPin(int i, List<Offset> route) {
+  /// Moto [i] na posicao do ciclo atual ao longo da rota projetada, com fade nas
+  /// pontas. Some (com fade curto) onde ficaria atras da promocao, de um chip ou da
+  /// moto; o teste de obstaculo usa a posicao ja com a deriva ([m]).
+  Widget _movingPin(int i, List<Offset> route, Matrix4 m) {
     final t = (_bikes.value * _bikeSpeed[i] + _bikeOffset[i]) % 1.0;
     final p = pointAlong(route, t);
     final fade = t < .12 ? t / .12 : (t > .88 ? (1 - t) / .12 : 1.0);
+    final clear = _geometry.isClear(MatrixUtils.transformPoint(m, p));
     return Positioned(
       key: Key('hero-pin-$i'),
       left: p.dx - 15,
       top: p.dy - 15,
-      child: Opacity(opacity: fade.clamp(0.0, 1.0), child: const _BikePin()),
+      child: AnimatedOpacity(
+        opacity: clear ? fade.clamp(0.0, 1.0) : 0,
+        duration: VoltiMotion.scaled(context, const Duration(milliseconds: 180)),
+        child: const _BikePin(),
+      ),
     );
   }
 }
@@ -408,23 +518,80 @@ Offset pointAlong(List<Offset> pts, double t) {
   return pts.last;
 }
 
+/// Distancia de [p] a polilinha [pts].
+double distanceToPolyline(Offset p, List<Offset> pts) {
+  var best = double.infinity;
+  for (var i = 1; i < pts.length; i++) {
+    final a = pts[i - 1], b = pts[i];
+    final ab = b - a;
+    final len2 = ab.dx * ab.dx + ab.dy * ab.dy;
+    final k = len2 == 0 ? 0.0 : (((p - a).dx * ab.dx + (p - a).dy * ab.dy) / len2).clamp(0.0, 1.0);
+    best = math.min(best, (p - (a + ab * k)).distance);
+  }
+  return best;
+}
+
 enum HeroSlot { logo, nearby, promo, battery, time, bike }
 
-/// Posiciona logo, chips e a moto **relativos a faixa livre** (o tamanho do
-/// layout = faixa acima da folha). Linha 1: logo e "motos perto". Linha 2: a
-/// promocao, com a bateria ao lado se couber. A moto em destaque fica centrada
-/// embaixo, com ate 70% da largura.
-///
-/// Com espaco, bateria e "2 min | 120 m" vao em linhas proprias acima da moto
-/// (nada se cruza). Em telas baixas (360x740), empilhar encolheria demais a moto:
-/// os dois viram etiquetas sobre as bordas da moto (bateria a direita, tempo a
-/// esquerda), pintadas por cima dela (a moto e o primeiro filho), sempre legiveis
-/// e sem cruzar logo, promocao nem um ao outro.
-class HeroLayoutDelegate extends MultiChildLayoutDelegate {
-  HeroLayoutDelegate({required this.topInset});
-  final double topInset;
+/// Geometria do hero calculada no layout: retangulos do logo, dos chips e da moto,
+/// a area livre do mapa e se o "2 min | 120 m" cabe. Os pins e o galpao a usam para
+/// nunca ficar atras de nada; a semantica do logo e da promocao usa os retangulos.
+/// Avisa depois do quadro (nunca durante o layout).
+class HeroGeometry extends ChangeNotifier {
+  Rect? zone, bike, promo, logo;
+  bool timeVisible = true;
+  List<Rect> obstacles = const [];
 
-  static const side = 16.0, gap = 10.0, bottomGap = 6.0;
+  void update({
+    required Rect zone,
+    required Rect bike,
+    required Rect logo,
+    required Rect? promo,
+    required bool timeVisible,
+    required List<Rect> obstacles,
+  }) {
+    if (zone == this.zone &&
+        bike == this.bike &&
+        logo == this.logo &&
+        promo == this.promo &&
+        timeVisible == this.timeVisible &&
+        listEquals(obstacles, this.obstacles)) {
+      return;
+    }
+    this.zone = zone;
+    this.bike = bike;
+    this.logo = logo;
+    this.promo = promo;
+    this.timeVisible = timeVisible;
+    this.obstacles = obstacles;
+    WidgetsBinding.instance.addPostFrameCallback((_) => notifyListeners());
+  }
+
+  /// O pin centrado em [c] (disco de 30 px e barra) nao cruza nenhum obstaculo.
+  bool isClear(Offset c, {double margin = 6}) {
+    final r = Rect.fromLTWH(c.dx - 15, c.dy - 15, 30, 37).inflate(margin);
+    return !obstacles.any(r.overlaps);
+  }
+}
+
+/// Posiciona logo, chips e a moto **relativos a faixa livre** (o tamanho do
+/// layout = faixa acima da folha). Nenhum chip e pintado sobre a moto.
+///
+/// Linha 1: logo e "motos perto". Linha 2: a promocao (e a bateria ao lado, se
+/// couber). Depois a bateria (se nao coube) e "2 min | 120 m" em linhas proprias,
+/// uma area livre de mapa (o galpao vai no centro dela) e a moto centrada embaixo.
+/// Preferencia, ate a moto chegar a ~70% da largura: 1) tudo; 2) sem o
+/// "2 min | 120 m"; 3) sem ele e com a bateria ao lado da promocao (estreitada).
+/// Se nem assim couber 70%, fica a opcao 3 e a moto ocupa o que sobra.
+class HeroLayoutDelegate extends MultiChildLayoutDelegate {
+  HeroLayoutDelegate({required this.topInset, required this.geometry, required this.promoNaturalWidth});
+  final double topInset, promoNaturalWidth;
+  final HeroGeometry geometry;
+
+  static const side = 16.0, gap = 10.0, bottomGap = 6.0, minZone = 56.0;
+
+  /// Altura estimada da promocao antes do layout (uma linha / titulo quebrado).
+  static const _promoH = 57.0, _promoWrappedH = 78.0;
 
   @override
   void performLayout(Size size) {
@@ -432,70 +599,132 @@ class HeroLayoutDelegate extends MultiChildLayoutDelegate {
     final loose = BoxConstraints.loose(Size(w - 2 * side, size.height));
     final logo = layoutChild(HeroSlot.logo, loose);
     final nearby = layoutChild(HeroSlot.nearby, loose);
-    final y1 = topInset + 10;
-    positionChild(HeroSlot.logo, Offset(side + 4, y1));
-    final row1 = math.max(logo.height, nearby.height);
-    positionChild(HeroSlot.nearby, Offset(w - side - nearby.width, y1 + (row1 - nearby.height) / 2));
-    var top = y1 + row1; // fundo do que ja foi posicionado
-
     final battery = layoutChild(HeroSlot.battery, loose);
     final time = layoutChild(HeroSlot.time, loose);
-    var batteryPlaced = false;
-    if (hasChild(HeroSlot.promo)) {
-      final y = top + 14;
-      final promo = layoutChild(HeroSlot.promo, BoxConstraints.loose(Size(w * .7, size.height)));
-      positionChild(HeroSlot.promo, Offset(side, y));
-      if (side + promo.width + 12 + battery.width + side <= w) {
-        positionChild(HeroSlot.battery, Offset(w - side - battery.width, y + (promo.height - battery.height) / 2));
-        batteryPlaced = true;
+    final hasPromo = hasChild(HeroSlot.promo);
+
+    final y1 = topInset + 10;
+    final row1 = math.max(logo.height, nearby.height);
+    final logoRect = Offset(side + 4, y1) & logo;
+    positionChild(HeroSlot.logo, logoRect.topLeft);
+    final nearbyRect = Offset(w - side - nearby.width, y1 + (row1 - nearby.height) / 2) & nearby;
+    positionChild(HeroSlot.nearby, nearbyRect.topLeft);
+    final y2 = y1 + row1 + 14;
+
+    final promoMaxNatural = math.min(w * .7, w - 2 * side);
+    final promoNatural = math.min(promoNaturalWidth, promoMaxNatural);
+    final batteryBesideNatural = hasPromo && side + promoNatural + 12 + battery.width + side <= w;
+    final promoNarrowMax = w - 2 * side - 12 - battery.width;
+
+    double bikeWidthFor(double chipsBottom) =>
+        math.max(0.0, math.min(w * .7, (size.height - chipsBottom - minZone - bottomGap) / _HeroBike.heightPerWidth));
+
+    // Fundo dos chips (estimado) de cada opcao.
+    double estimate({required bool showTime, required bool narrow}) {
+      var y = y2;
+      final beside = batteryBesideNatural || narrow;
+      if (hasPromo) {
+        y += (narrow && promoNaturalWidth > promoNarrowMax ? _promoWrappedH : _promoH);
+        if (beside) y = math.max(y, y2 + battery.height);
       }
-      top = y + math.max(promo.height, batteryPlaced ? battery.height : 0);
+      final rowsAfter = <double>[];
+      if (!hasPromo || !beside) {
+        // Bateria (e o tempo ao lado, se couber) numa linha propria.
+        final pairFits = showTime && side + time.width + 12 + battery.width + side <= w;
+        rowsAfter.add(pairFits ? math.max(battery.height, time.height) : battery.height);
+        if (showTime && !pairFits) rowsAfter.add(time.height);
+      } else if (showTime) {
+        rowsAfter.add(time.height);
+      }
+      for (final h in rowsAfter) {
+        y += (y == y2 ? 0 : gap) + h;
+      }
+      return y;
     }
 
-    double bikeWidthFor(double fromTop) => math.max(0.0, math.min(w * .7, (size.height - fromTop - 12 - bottomGap) / _HeroBike.heightPerWidth));
+    // Estreitar a promocao (bateria ao lado) so se, mesmo sem o "2 min", a moto nao
+    // chegaria a 70% com a bateria numa linha propria (estimativa: a promocao ainda
+    // nao foi medida e so pode ser medida uma vez).
+    final narrow = hasPromo && !batteryBesideNatural && bikeWidthFor(estimate(showTime: false, narrow: false)) < w * .7 - .5;
 
-    // Empilhado: bateria (se faltou) e tempo em linhas acima da moto.
-    var stackedTop = top + gap;
-    final sideBySide = side + time.width + 12 + battery.width + side <= w;
-    final stackedRows = <(HeroSlot, Offset)>[];
-    if (!batteryPlaced && sideBySide) {
-      final h = math.max(battery.height, time.height);
-      stackedRows
-        ..add((HeroSlot.battery, Offset(w - side - battery.width, stackedTop + (h - battery.height) / 2)))
-        ..add((HeroSlot.time, Offset(side, stackedTop + (h - time.height) / 2)));
-      stackedTop += h;
+    // Layout real.
+    final rects = <Rect>[logoRect, nearbyRect];
+    var y = y2;
+    Rect? promoRect;
+    final beside = hasPromo && (batteryBesideNatural || narrow);
+    if (hasPromo) {
+      final promo = layoutChild(HeroSlot.promo, BoxConstraints.loose(Size(beside && narrow ? promoNarrowMax : promoMaxNatural, size.height)));
+      promoRect = Offset(side, y2) & promo;
+      positionChild(HeroSlot.promo, promoRect.topLeft);
+      rects.add(promoRect);
+      y = promoRect.bottom;
+      if (beside) {
+        final r = Offset(w - side - battery.width, y2 + math.max(0.0, (promo.height - battery.height) / 2)) & battery;
+        positionChild(HeroSlot.battery, r.topLeft);
+        rects.add(r);
+        y = math.max(y, r.bottom);
+      }
+    }
+    // Bateria (se nao foi ao lado da promocao) e o "2 min" em linhas proprias; o
+    // "2 min" so aparece se a moto ainda chegar a 70% com ele (medida exata).
+    final rowTop = hasPromo ? y + gap : y2;
+    Rect? batteryRow;
+    var yNoTime = y;
+    if (!beside) {
+      batteryRow = Offset(w - side - battery.width, rowTop) & battery;
+      yNoTime = batteryRow.bottom;
+    }
+    Rect timeRectFor() {
+      if (!beside && side + time.width + 12 + battery.width + side <= w) {
+        return Offset(side, rowTop + (battery.height - time.height) / 2) & time;
+      }
+      return Offset(side, yNoTime + gap) & time;
+    }
+
+    final timeCandidate = timeRectFor();
+    final yWithTime = math.max(yNoTime, timeCandidate.bottom);
+    final showTime = bikeWidthFor(yWithTime) >= w * .7 - .5;
+    if (batteryRow != null) {
+      positionChild(HeroSlot.battery, batteryRow.topLeft);
+      rects.add(batteryRow);
+    }
+    if (showTime) {
+      positionChild(HeroSlot.time, timeCandidate.topLeft);
+      rects.add(timeCandidate);
+      y = yWithTime;
     } else {
-      if (!batteryPlaced) {
-        stackedRows.add((HeroSlot.battery, Offset(w - side - battery.width, stackedTop)));
-        stackedTop += battery.height + gap;
-      }
-      stackedRows.add((HeroSlot.time, Offset(side, stackedTop)));
-      stackedTop += time.height;
+      // Escondido (invisivel e fora da faixa).
+      positionChild(HeroSlot.time, Offset(-time.width - 100, 0));
+      y = yNoTime;
     }
-    final stackedBike = bikeWidthFor(stackedTop);
 
-    double bikeW;
-    if (stackedBike >= w * .7 - .5) {
-      for (final (id, o) in stackedRows) {
-        positionChild(id, o);
-      }
-      bikeW = stackedBike;
-    } else {
-      // Etiquetas sobre as bordas da moto.
-      bikeW = bikeWidthFor(top);
-      final bikeH = bikeW * _HeroBike.heightPerWidth;
-      final bikeTop = size.height - bottomGap - bikeH;
-      final calloutTop = math.max(top + gap, bikeTop + bikeH * .08);
-      if (!batteryPlaced) positionChild(HeroSlot.battery, Offset(w - side - battery.width, calloutTop));
-      final timeTop = batteryPlaced ? calloutTop : calloutTop + battery.height + gap;
-      positionChild(HeroSlot.time, Offset(side, math.min(timeTop, size.height - bottomGap - time.height)));
-    }
+    // Moto: ate 70% com a area livre do mapa inteira; em telas baixas a area encolhe
+    // (ate 24 px) antes da moto ficar menor que 45% da largura.
+    final free = size.height - y - bottomGap;
+    final hpw = _HeroBike.heightPerWidth;
+    final zoneH = free >= w * .7 * hpw + minZone ? minZone : (free - w * .45 * hpw).clamp(24.0, minZone);
+    final bikeW = math.max(0.0, math.min(w * .7, (free - zoneH) / hpw));
     final bike = layoutChild(HeroSlot.bike, BoxConstraints.tight(Size(bikeW, bikeW * _HeroBike.heightPerWidth)));
-    positionChild(HeroSlot.bike, Offset((w - bike.width) / 2, size.height - bottomGap - bike.height));
+    final bikeRect = Offset((w - bike.width) / 2, size.height - bottomGap - bike.height) & bike;
+    positionChild(HeroSlot.bike, bikeRect.topLeft);
+
+    // Area livre do mapa (o galpao vai no centro): a faixa entre os chips e a moto
+
+    // quando ela tem altura; em telas baixas, o lado esquerdo da moto, abaixo dos chips.
+
+    final strip = Rect.fromLTRB(side, y + 6, w - side, bikeRect.top - 6);
+
+    final besideBike = Rect.fromLTRB(side, y + 6, bikeRect.left - 8, size.height - 16);
+
+    final zone = strip.height >= 44 || besideBike.width < 44
+        ? Rect.fromLTRB(strip.left, strip.top, strip.right, math.max(strip.top + 40, strip.bottom))
+        : besideBike;
+    geometry.update(zone: zone, bike: bikeRect, logo: logoRect, promo: promoRect, timeVisible: showTime, obstacles: [...rects, bikeRect]);
   }
 
   @override
-  bool shouldRelayout(HeroLayoutDelegate oldDelegate) => oldDelegate.topInset != topInset;
+  bool shouldRelayout(HeroLayoutDelegate oldDelegate) =>
+      oldDelegate.topInset != topInset || oldDelegate.geometry != geometry || oldDelegate.promoNaturalWidth != promoNaturalWidth;
 }
 
 /// Moto em destaque (asset recortado, 737x713) com a sombra eliptica sob as rodas.
@@ -778,6 +1007,7 @@ class _BikePin extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     children: [
       Container(
+        key: const Key('hero-pin-dot'),
         width: 30,
         height: 30,
         decoration: BoxDecoration(

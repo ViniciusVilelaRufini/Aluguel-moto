@@ -44,6 +44,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 
   /// Altura medida da folha: a faixa livre do hero e o que sobra acima dela.
   double? _sheetHeight;
+
+  /// Os tiles falharam e o hero mostra a ilustracao: sem atribuicao de mapa.
+  bool _mapFailed = false;
   late final TapGestureRecognizer _termsTap = TapGestureRecognizer()..onTap = () => _openLegal(ref.read(legalLinksProvider).terms);
   late final TapGestureRecognizer _privacyTap = TapGestureRecognizer()..onTap = () => _openLegal(ref.read(legalLinksProvider).privacy);
 
@@ -111,14 +114,6 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // O hero e decorativo (fora da semantica): a promocao chega ao leitor de tela por aqui.
-          if (promo && !bigText)
-            Semantics(
-              key: const Key('welcome-promo-semantics'),
-              container: true,
-              label: '${l.promoFirstRideTitle}, ${l.welcomePromoText}',
-              child: const SizedBox(width: double.infinity, height: 1),
-            ),
           if (promo && bigText) ...[
             const Align(
               alignment: Alignment.centerLeft,
@@ -263,6 +258,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   distanceText: l.welcomeArtDistance(kHeroDistanceM),
                   promoTitle: l.promoFirstRideTitle,
                   promoText: l.welcomePromoText,
+                  onMapFallback: () => setState(() => _mapFailed = true),
                 ),
               ),
               Positioned.fill(
@@ -291,7 +287,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                               clipBehavior: Clip.none,
                               children: [
                                 sheet,
-                                if (mapOn) const Positioned(top: -14, right: 12, child: MapAttribution()),
+                                if (mapOn && !_mapFailed) const Positioned(top: -14, right: 12, child: MapAttribution()),
                               ],
                             ),
                           ),

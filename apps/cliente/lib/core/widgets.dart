@@ -196,6 +196,8 @@ class VoltiMap extends StatelessWidget {
       ),
       children: [
         voltiTileLayer(context, onError: onTileError, tileBuilder: (context, tile, _) => ColorFiltered(colorFilter: colorFilter, child: tile)),
+        // Rotulos das ruas por cima da base (sem filtro de cor).
+        if (kMapReferenceUrl.isNotEmpty) voltiTileLayer(context, template: kMapReferenceUrl, onError: onTileError),
         ...layers,
         if (showAttribution)
           SafeArea(

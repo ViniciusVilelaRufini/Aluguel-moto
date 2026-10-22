@@ -371,6 +371,16 @@ Regra de exibição adotada no painel (sem mudança de contrato): em Operação 
 
 ## 2026-10-22 · app do cliente: tiles de mapa e boas-vindas (branch `feat/cliente-login`) · status: decisão (coordenador, 2026-10-22)
 
-1. **Tiles de mapa: CARTO só em dev/teste. Trocar antes do lançamento é bloqueio de lançamento.** O app do cliente deixou o servidor público do OpenStreetMap (`tile.openstreetmap.org`), que a política de tiles da OSMF proíbe para apps e que cortava os tiles no emulador. Agora usa os basemaps públicos do CARTO (Voyager raster, `{s}.basemaps.cartocdn.com`) com a atribuição "© OpenStreetMap contributors © CARTO". A URL é configurável com `--dart-define=MAP_TILE_URL` (e `MAP_ATTRIBUTION`). Esses basemaps públicos servem **só para desenvolvimento e testes**. **LAUNCH BLOCKER:** antes do lançamento, trocar por um provedor licenciado via `MAP_TILE_URL` (MapTiler, Stadia, Mapbox, tiles próprios) ou contratar a licença comercial do CARTO. O app do operador e o painel ainda usam `tile.openstreetmap.org` e entram na mesma pendência.
+1. **Tiles de mapa: Esri só em dev/teste. Trocar por um provedor licenciado é bloqueio de lançamento.** O app do cliente deixou o servidor público do OpenStreetMap (`tile.openstreetmap.org`), proibido para apps pela política da OSMF. O CARTO público também saiu: agora ele exige chave e, sem ela, responde 200 com um tile de aviso "API KEY · carto.com/basemaps/apikey" (visto no emulador em 2026-10-22).
+   - **Base de dev:** Esri World Light Gray Canvas, raster sem chave: `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}`. Atenção à ordem `{y}/{x}`.
+   - **Rótulos de ruas:** camada `World_Light_Gray_Reference`.
+   - **Atribuição:** "Esri, HERE, Garmin, © OpenStreetMap contributors".
+   - **Configuração:** `--dart-define=MAP_TILE_URL`, `MAP_TILE_REFERENCE_URL` (vazio desliga) e `MAP_TILE_ATTRIBUTION`.
+   - **Proteções:**
+     - Em debug, uma sonda na inicialização baixa dois tiles de lugares diferentes. Se os bytes forem idênticos (tile de aviso, como o do CARTO), se o HTTP falhar ou se a resposta não for imagem, ela registra `map.tile_probe_failed`.
+     - Em release com um provedor de dev (`isDevTileProvider`), o app grava um aviso no log do sistema.
+     - Na boas-vindas, 4 tiles com erro trocam o mapa pela ilustração.
+   - **Verificação:** do host, o tile 15/18595/12136 da base respondeu `200 image/jpeg` (20 KB) e o de rótulos `200 image/png`. O emulador não tem `curl`, mas `ping server.arcgisonline.com` resolveu e respondeu (Akamai).
+   - **LAUNCH BLOCKER:** antes do lançamento, trocar por um provedor licenciado (MapTiler, Stadia ou Esri com chave/conta) via `MAP_TILE_URL`. O app do operador e o painel ainda usam `tile.openstreetmap.org` e entram na mesma pendência.
 2. **Links de termos e privacidade.** Não há página nem URL publicada. O rodapé da boas-vindas abre `TERMS_URL` e `PRIVACY_URL` (`--dart-define` por ambiente). Sem eles, o link avisa que o documento não está publicado.
 3. **"Perto do Galpão…" só quando é verdade.** O cabeçalho da home só diz "Perto do Galpão Volti · <bairro>" com a posição do cliente conhecida **e** o galpão mostrado sendo o mais perto por `distanceM`. Nos outros casos, mostra "Galpão Volti · <bairro>". Nunca mostra o nome de uma zona de devolução.

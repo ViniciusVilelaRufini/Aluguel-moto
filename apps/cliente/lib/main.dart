@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import 'core/auth_mode.dart';
 import 'core/auth_store.dart';
 import 'core/cognito.dart';
 import 'core/cognito_auth.dart';
+import 'core/map_tiles.dart';
 
 /// `--dart-define=API_BASE_URL=http://10.0.2.2:3000` (ou o Prism em :4010).
 /// `--dart-define=AUTH_MODE=dev|cognito` (padrao dev; release sempre cognito). No modo cognito:
@@ -17,6 +20,8 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Release: nenhum log de depuracao (tiles com erro, etc.) sai do aparelho.
   if (kReleaseMode) debugPrint = (String? message, {int? wrapWidth}) {};
+  // Provedor de tiles de dev em release / tile de aviso (ex.: falta de chave): avisa.
+  unawaited(checkMapTilesAtStartup());
   final mode = resolveAuthMode(AuthRepository.modeFromEnvironment());
   final overrides = [
     authRepositoryProvider.overrideWithValue(

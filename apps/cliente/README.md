@@ -17,7 +17,29 @@ Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `de
 
 ## Mapas (tiles)
 
-Todos os mapas (home, boas-vindas, corrida, devolução) passam por `VoltiMap` e pela camada comum `voltiTileLayer` (`lib/core/map_tiles.dart`). O servidor público do OpenStreetMap (`tile.openstreetmap.org`) não pode ser usado por apps (política de tiles da OSMF; corta quem usa muito e os tiles ficavam cinza no emulador), então o padrão é o **CARTO Voyager** raster, `https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png` (subdomínios `a,b,c`, `@2x` em telas densas), com a atribuição exigida "© OpenStreetMap contributors © CARTO" numa pílula de vidro (`MapAttribution`; na home fica ao lado do botão de localizar, na boas-vindas logo acima da folha). Para outro provedor: `--dart-define=MAP_TILE_URL=...` e `--dart-define=MAP_ATTRIBUTION=...`. O User-Agent usa o id real do pacote (`br.com.volti.volti_cliente`). Falhas de tile: o `NetworkTileProvider` já tenta de novo (`RetryClient`), tiles com erro são descartados ao sair da tela (pedidos de novo na volta) e, em debug, cada falha vira uma linha JSON `map.tile_error` com a URL e o erro (status HTTP). O filtro de cor suave do design continua. **Bloqueio de lançamento (docs/decisoes.md, 2026-10-22):** os basemaps públicos do CARTO são só para desenvolvimento e testes; antes de lançar, troque por um provedor licenciado via `MAP_TILE_URL` (ou contrate a licença comercial do CARTO). Tocar na atribuição abre `openstreetmap.org/copyright`. Em release o `main` silencia o `debugPrint` (o z/x/y do tile revela a região que o mapa mostra).
+Todos os mapas do app (home, boas-vindas, corrida, devolução e recibo) passam por `VoltiMap` e pela camada comum `voltiTileLayer` (`lib/core/map_tiles.dart`).
+
+**Padrão de desenvolvimento:** Esri World Light Gray Canvas, raster sem chave. A URL é `https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}` (atenção à ordem `{y}/{x}`). Por cima vai a camada de rótulos `World_Light_Gray_Reference`, sem o filtro de cor. A atribuição "Esri, HERE, Garmin, © OpenStreetMap contributors" fica numa pílula de vidro; tocar nela abre `openstreetmap.org/copyright`.
+
+Provedores descartados:
+- o OSM público é proibido para apps;
+- o CARTO público passou a exigir chave e devolve um tile "API KEY" com status 200.
+
+**Configuração:** `--dart-define=MAP_TILE_URL=...`, `MAP_TILE_REFERENCE_URL=...` (vazio desliga a camada de rótulos; com um `MAP_TILE_URL` próprio ela já vem desligada) e `MAP_TILE_ATTRIBUTION=...`. O User-Agent usa o id real do pacote (`br.com.volti.volti_cliente`). `@2x` só é pedido quando o template tem `{r}`.
+
+**Falhas de tile:**
+- o `NetworkTileProvider` tenta de novo (`RetryClient`);
+- tiles com erro são descartados ao sair da tela;
+- em debug, cada falha vira uma linha JSON `map.tile_error`.
+
+**Proteções contra mapa quebrado:**
+- Em debug, a sonda da inicialização (`checkMapTilesAtStartup`) baixa dois tiles de lugares diferentes. Bytes idênticos (tile de aviso), erro HTTP ou resposta que não é imagem gravam `map.tile_probe_failed`.
+- Em release com um provedor de dev, um aviso vai para o log do sistema.
+- Na boas-vindas, 4 erros trocam o mapa pela ilustração e escondem a atribuição.
+
+Em release, o `main` silencia o `debugPrint`, porque o z/x/y do tile revela a região que o mapa mostra.
+
+**Bloqueio de lançamento (docs/decisoes.md, 2026-10-22):** os basemaps da Esri sem chave são só para desenvolvimento e testes. Antes de lançar, troque por um provedor licenciado (MapTiler, Stadia ou Esri com chave) via `MAP_TILE_URL`.
 
 ## Boas-vindas (referência `login-referencia.png`)
 
@@ -37,9 +59,10 @@ O hero ocupa a faixa livre acima da folha. A altura da folha é medida e o layou
 - **Galpão** com anel pulsando.
 - **Quatro motos andando** por trechos reais (Rua dos Pinheiros, Teodoro Sampaio, Faria Lima e Fradique Coutinho), com velocidades e defasagens diferentes, aparecendo e sumindo nas pontas. Ficam recortadas 16 px acima da folha.
 - **Moto em destaque** (`assets/images/volti_moto_hero.webp`, fundo transparente), centrada embaixo com até 70% da largura. Sobe e cresce de 0,92 a 1 em cerca de 600 ms, depois flutua 2,5 px num ciclo de 3 s, com uma sombra elíptica que acompanha a flutuação.
-- **Chips** (logo, "108 motos perto", "1ª corrida grátis" com `FIRST_RIDE_PROMO`, bateria e "2 min | 120 m"), que entram em cascata com 80 ms entre eles. A bateria conta de 0 até 92%. Em telas baixas (360×740), bateria e tempo viram etiquetas sobre as bordas da moto, pintadas por cima dela.
+- **Chips** (logo, "108 motos perto", "1ª corrida grátis" com `FIRST_RIDE_PROMO`, bateria e "2 min | 120 m"), que entram em cascata com 80 ms entre eles. A bateria conta de 0 até 92%. Nenhum chip é pintado sobre a moto. Quando a moto não cabe a ~70% da largura com os chips em linhas próprias, o "2 min | 120 m" some. Se ainda faltar espaço, a bateria vai para o lado da promoção, que fica mais estreita. A moto fica com o que sobra.
+- **Área livre do mapa:** o galpão fica entre os chips e a moto ou, em telas baixas, à esquerda da moto. As motos que andam somem onde ficariam atrás da promoção, de um chip ou da moto, e seguem a mesma matriz de deriva do mapa, ficando sobre as ruas.
 
-O hero é decorativo: fica dentro de `ExcludeSemantics` e `IgnorePointer`. A promoção chega ao leitor de tela por um nó na folha. Cada grupo de animação tem um ticker próprio.
+A camada visual do hero é decorativa: fica dentro de `ExcludeSemantics` e `IgnorePointer`. Fora dela, há dois nós de semântica nos retângulos reais do logo ("Volti", cabeçalho) e da promoção. Cada grupo de animação tem um ticker próprio.
 
 Em situações especiais:
 
