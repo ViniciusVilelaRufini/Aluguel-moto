@@ -164,6 +164,9 @@ a:hover{color:var(--brand-press)}
 .zone-item[data-on] { background: var(--brand-soft); }
 .zone-item:disabled { cursor: default; }
 
+/* Alvos de foco programático (paleta): sem anel, o foco só posiciona o leitor de tela/teclado */
+#main-content h1[tabindex="-1"]:focus, .side-panel[tabindex="-1"]:focus { outline: none; }
+
 /* Carregamento */
 .skeleton { background: linear-gradient(90deg, var(--ink-100) 25%, var(--ink-50) 50%, var(--ink-100) 75%); background-size: 200% 100%; animation: vt-shimmer 1.4s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }

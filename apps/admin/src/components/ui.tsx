@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { FOCUSABLE, cycleFocusIndex, dialogStack } from '@/lib/focus';
-import { markLeaving, pushToast, removeToast, toastDuration, type ToastItem, type ToastTone } from '@/lib/toast-queue';
+import { findDuplicate, markLeaving, pushToast, removeToast, toastDuration, type ToastItem, type ToastTone } from '@/lib/toast-queue';
 import { keepPreviousData, useQuery, type QueryKey } from '@tanstack/react-query';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
@@ -262,15 +262,27 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   const [list, setList] = useState<ToastItem[]>([]);
   const seq = useRef(0);
   const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  const exits = useRef(new Set<ReturnType<typeof setTimeout>>());
+  const listRef = useRef(list);
+  listRef.current = list;
   const dismiss = useCallback((id: number) => {
     setList((l) => markLeaving(l, id));
-    setTimeout(() => setList((l) => removeToast(l, id)), 220);
+    const h = setTimeout(() => { exits.current.delete(h); setList((l) => removeToast(l, id)); }, 220);
+    exits.current.add(h);
   }, []);
-  const show = useCallback((msg: string, tone: ToastTone = 'success') => {
-    const id = ++seq.current;
-    setList((l) => pushToast(l, { id, msg, tone }));
+  const arm = useCallback((id: number, tone: ToastTone) => {
+    const old = timers.current.get(id);
+    if (old) clearTimeout(old);
     timers.current.set(id, setTimeout(() => { timers.current.delete(id); dismiss(id); }, toastDuration(tone)));
   }, [dismiss]);
+  const show = useCallback((msg: string, tone: ToastTone = 'success') => {
+    // Mensagem repetida: mesmo item (mesma chave, sem remontar), só renova o tempo.
+    const dup = findDuplicate(listRef.current, msg, tone);
+    if (dup) { arm(dup.id, tone); return; }
+    const id = ++seq.current;
+    setList((l) => pushToast(l, { id, msg, tone }));
+    arm(id, tone);
+  }, [arm]);
   // Itens marcados para sair pelo limite da pilha são removidos depois da animação.
   useEffect(() => {
     const leaving = list.filter((t) => t.leaving);
@@ -278,7 +290,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     const h = setTimeout(() => setList((l) => l.filter((t) => !t.leaving)), 220);
     return () => clearTimeout(h);
   }, [list]);
-  useEffect(() => () => { timers.current.forEach(clearTimeout); }, []);
+  useEffect(() => {
+    const t = timers.current;
+    const e = exits.current;
+    return () => { t.forEach(clearTimeout); t.clear(); e.forEach(clearTimeout); e.clear(); };
+  }, []);
   return (
     <ToastCtx.Provider value={show}>
       {children}

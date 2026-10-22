@@ -9,16 +9,20 @@ export function toastDuration(tone: ToastTone): number {
   return tone === 'danger' ? 6000 : tone === 'warning' ? 4500 : 3200;
 }
 
-/**
- * Empilha um toast novo. Mensagem igual à última visível não duplica (renova o tempo);
- * acima do limite, os mais antigos são marcados para sair.
- */
-export function pushToast(list: ToastItem[], next: ToastItem, max = MAX_TOASTS): ToastItem[] {
+/** Último toast visível com a mesma mensagem e tom (para renovar em vez de duplicar). */
+export function findDuplicate(list: ToastItem[], msg: string, tone: ToastTone): ToastItem | undefined {
   const visible = list.filter((t) => !t.leaving);
   const last = visible[visible.length - 1];
-  if (last && last.msg === next.msg && last.tone === next.tone) {
-    return list.map((t) => (t.id === last.id ? { ...t, id: next.id } : t));
-  }
+  return last && last.msg === msg && last.tone === tone ? last : undefined;
+}
+
+/**
+ * Empilha um toast novo. Mensagem igual à última visível não duplica: a lista fica igual e o item
+ * mantém o id (chave React estável, sem remontar); quem chama renova o tempo.
+ * Acima do limite, os mais antigos são marcados para sair.
+ */
+export function pushToast(list: ToastItem[], next: ToastItem, max = MAX_TOASTS): ToastItem[] {
+  if (findDuplicate(list, next.msg, next.tone)) return list;
   const out = [...list, next];
   let excess = out.filter((t) => !t.leaving).length - max;
   return out.map((t) => {

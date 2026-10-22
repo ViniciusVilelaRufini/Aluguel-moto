@@ -11,6 +11,33 @@ import type { VehicleStatus } from '@/lib/types';
 
 interface VehicleLike { id: string; code: string; status: VehicleStatus }
 
+/**
+ * Depois de navegar pela paleta, o foco vai para o destino em vez de cair no <body>:
+ * a ficha da moto (quando o item é uma moto) ou o título/conteúdo da seção.
+ * Espera a URL mudar (até ~1,5 s), porque a navegação do App Router é assíncrona.
+ */
+function focusDestination(href: string) {
+  const target = new URL(href, window.location.origin);
+  const norm = (p: string) => p.replace(/\/$/, '');
+  const vehicle = target.searchParams.get('vehicle');
+  const started = Date.now();
+  const tick = () => {
+    const here = norm(window.location.pathname) === norm(target.pathname) && window.location.search === target.search;
+    const el = here
+      ? (vehicle ? document.querySelector<HTMLElement>('[data-testid="vehicle-sheet"]') : null)
+        ?? document.querySelector<HTMLElement>('#main-content h1')
+        ?? document.getElementById('main-content')
+      : null;
+    if (el) {
+      if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
+      el.focus({ preventScroll: true });
+      return;
+    }
+    if (Date.now() - started < 1500) setTimeout(tick, 50);
+  };
+  setTimeout(tick, 50);
+}
+
 const isTyping = (t: EventTarget | null) => {
   const el = t as HTMLElement | null;
   return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
@@ -53,12 +80,18 @@ export function CommandPalette({ vehicles, menu }: { vehicles: VehicleLike[]; me
     setOpen(false);
     setQ('');
     router.push(item.href);
+    focusDestination(item.href);
   }, [router]);
 
   // Atalhos globais.
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); if (open) close(); else show(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (open) close();
+        else if (dialogStack.size() === 0) show(); // não abre por cima de um diálogo aberto
+        return;
+      }
       if (e.key === '/' && !open && !isTyping(e.target) && dialogStack.size() === 0) { e.preventDefault(); show(); }
     };
     window.addEventListener('keydown', h);

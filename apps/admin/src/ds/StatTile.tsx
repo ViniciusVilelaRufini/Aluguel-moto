@@ -1,24 +1,26 @@
 'use client';
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { Icon } from './Icon';
-import { prefersReducedMotion, tween, useReducedMotion } from '@/lib/motion';
-import { deltaTone, formatDelta, tickerValue } from '@/lib/ticker';
+import { prefersReducedMotion, useReducedMotion } from '@/lib/motion';
+import { createTicker, deltaTone, formatDelta } from '@/lib/ticker';
 
 /** Número que rola do valor anterior até o novo (700ms, --ease-out); imediato com movimento reduzido. */
 export function AnimatedNumber({ value, format = (n) => String(n), integer = true, duration = 700 }: {
   value: number; format?: (n: number) => string; integer?: boolean; duration?: number;
 }) {
   const reduced = useReducedMotion();
-  // Começa do zero: na primeira carga o número sobe até o valor (ticker); depois anima entre valores.
+  const reducedRef = useRef(reduced);
+  reducedRef.current = reduced;
+  // Começa do zero: na primeira carga o número sobe até o valor (ticker); depois anima entre valores,
+  // sempre a partir do número que está na tela (ver createTicker).
   const [shown, setShown] = useState(0);
-  const from = useRef(0);
+  const ticker = useRef<ReturnType<typeof createTicker> | null>(null);
+  if (!ticker.current) ticker.current = createTicker({ initial: 0, duration, integer, onShow: setShown, reduced: () => reducedRef.current || prefersReducedMotion() });
   useEffect(() => {
-    const start = from.current;
-    if (start === value) return;
-    const cancel = tween({ duration, reduced: reduced || prefersReducedMotion(), onUpdate: (t) => setShown(tickerValue(start, value, t, integer)) });
-    from.current = value;
-    return cancel;
-  }, [value, duration, reduced, integer]);
+    const t = ticker.current!;
+    t.to(value);
+    return () => t.stop();
+  }, [value]);
   return <span style={{ fontVariantNumeric: 'tabular-nums' }}>{format(shown)}</span>;
 }
 

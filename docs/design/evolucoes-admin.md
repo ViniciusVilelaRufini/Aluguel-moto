@@ -33,6 +33,7 @@ Novos tokens criados (em `apps/admin/src/app/globals.css`, não no DS): `--ease-
 ## Dados ao vivo
 
 ### E6. Indicadores com ticker e variação — aplicado
+- **Implementação:** `createTicker` (`lib/ticker.ts`) guarda o número exibido e toda animação parte dele; o efeito duplo do StrictMode e mudanças no meio da animação continuam de onde o número está (testado).
 - **O quê:** `StatTile` numérico: na primeira carga o número sobe do zero; depois rola entre valores (700ms). Cada mudança ao vivo mostra uma variação curta ("+1", "−R$ 12,00") por 2,4s, verde quando a mudança é boa e coral quando é ruim (`goodWhen`), com brilho rápido no cartão.
 - **Por quê:** a faixa da frota é o painel da sala de operação; a mudança precisa ser percebida sem ler números.
 - **Onde:** `ds/StatTile.tsx`, `lib/ticker.ts`. Faixa da frota e indicadores do Financeiro. "Alertas abertos" agora vem do tempo real (`alert.created`) em vez do refresh de 30s.
@@ -42,6 +43,7 @@ Novos tokens criados (em `apps/admin/src/app/globals.css`, não no DS): `--ease-
 
 ### E8. Linha do tempo do comando remoto — aplicado
 - **O quê:** três passos Pendente → Em andamento → Confirmado/Falhou ligados por uma linha que se preenche. O passo atual pulsa (azul; laranja com ícone de sem sinal quando `pending` + `offline`), passos concluídos entram com `vt-check-pop`. Quando termina, um toast avisa "confirmado pela moto" ou a falha.
+- **Contraste dos pontos (≥ 3:1, WCAG 1.4.11):** ícone `--ink-900` sobre o verde (7,7:1) e sobre o laranja (6,4:1); branco sobre o azul info (4,0:1); o ponto de falha usa `--danger-ink` (coral 600) com ícone branco (3,9:1) em vez do coral 500 (3,1:1). É um desvio do padrão "ícone branco sobre cor" do DS, só neste componente.
 - **Onde:** `components/CommandTimeline.tsx`, `lib/command-steps.ts`. O texto do estado (`data-testid="command-state"`, ex.: "moto offline — será aplicado ao reconectar") foi mantido para testes e leitores de tela.
 - Usa `command.updated` (realtime) e o fallback de consulta já existente; sem mudança de contrato.
 
@@ -67,6 +69,7 @@ Novos tokens criados (em `apps/admin/src/app/globals.css`, não no DS): `--ease-
 
 ### E15. Replay com reprodução — aplicado
 - A rota se desenha ao carregar (700ms) e o mapa enquadra o trajeto; trecho percorrido em azul forte e o restante a 35%; play/pausa (1x, 4x, 16x); trilha do slider preenchida até a posição. Barra de vidro (`--glass-bg`, `--blur-glass`, mesma receita dos cartões flutuantes do DS) recuada para não cobrir o zoom.
+- **Exceção ao movimento reduzido:** a reprodução do replay (play) continua andando com `prefers-reduced-motion`, porque é iniciada pelo usuário e é o próprio conteúdo (a posição da moto ao longo do tempo), não decoração. O que é automático segue a preferência: o desenho da rota e o enquadramento do mapa ficam instantâneos.
 
 ### E16. Contagem nos clusters — proposto
 - Exige `glyphs` no estilo do mapa para camadas `symbol`. Em produção o Amazon Location fornece; localmente dependeria de um servidor de fontes externo. Alternativa: contagem em marcadores HTML. Fora do escopo desta passada.
@@ -77,6 +80,7 @@ Novos tokens criados (em `apps/admin/src/app/globals.css`, não no DS): `--ease-
 - **O quê:** a busca "Buscar moto, cliente ou aluguel" abre uma paleta: Ctrl+K, Cmd+K ou "/" de qualquer tela; lista motos (com a cor do status), seções e a busca livre de clientes; setas, Enter, Esc. No tablet vira botão redondo.
 - **Mantém o comportamento antigo:** código exato abre a ficha da moto; texto livre busca clientes; perfil sem acesso a clientes procura a moto no mapa.
 - **Onde:** `components/CommandPalette.tsx`, `lib/palette.ts` (filtro sem acento, ranking, testado). Combobox + listbox com `aria-activedescendant`.
+- **Foco no destino:** ao abrir um item, o foco vai para a ficha da moto ou para o título/conteúdo da seção (`#main-content`), não para o `<body>`. Ctrl+K não abre por cima de um diálogo aberto.
 - **Proposto para depois:** buscar aluguel por ID e cliente por CPF direto na paleta (hoje vai para a lista de clientes) — dá para fazer com os endpoints atuais (`GET /rentals/{id}`, `GET /customers?q=`), ficou fora por escopo.
 
 ### A2. Atalhos — aplicado
