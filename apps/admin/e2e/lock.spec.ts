@@ -69,7 +69,7 @@ test.describe('comandos da moto', () => {
     await expect(page.getByTestId('command-dialog').getByText('Informe o motivo')).toBeVisible();
     await page.getByTestId('reason-input').fill('Teste e2e: bloqueio em movimento');
     await page.getByTestId('confirm-action').click();
-    await expect(page.getByTestId('command-state')).toContainText(/pendente|em andamento/);
-    await expect(page.getByTestId('command-state')).toContainText('confirmado', { timeout: 90_000 });
+    await expect(page.getByTestId('command-state')).toContainText(/pendente|em andamento/i);
+    await expect(page.getByTestId('command-state')).toContainText(/confirmado/i, { timeout: 90_000 });
   });
 });
