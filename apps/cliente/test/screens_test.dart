@@ -13,6 +13,7 @@ import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'helpers.dart';
+import 'zone_fixtures.dart';
 
 class PlanBackend extends FakeBackend {
   int startCalls = 0;
@@ -88,7 +89,7 @@ bool isSelected(WidgetTester t, String c) => t.widget<OptionCard>(coverageCard(c
 
 void main() {
   group('onboarding', () {
-    testWidgets('bloqueia sem aceite do consentimento de localizacao', (t) async {
+    testWidgets('so os termos e um CPF valido liberam; localizacao e opcional (desmarcada)', (t) async {
       tallScreen(t);
       final fake = FakeBackend();
       await t.pumpWidget(testApp(const OnboardingScreen(), overrides: [
@@ -104,15 +105,26 @@ void main() {
       await t.pump();
 
       VoltiButton cta() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Continuar'));
-      expect(cta().onPressed, isNull, reason: 'sem termos nem localizacao');
+      expect(t.widget<CheckboxListTile>(find.byKey(const Key('consent-location'))).value, isFalse,
+          reason: 'LGPD: consentimento so por acao do cliente');
+      expect(cta().onPressed, isNull, reason: 'sem termos');
 
       await t.tap(find.byKey(const Key('consent-terms')));
       await t.pump();
-      expect(cta().onPressed, isNull, reason: 'termos aceitos, mas sem consentimento de localizacao');
+      expect(find.text('CPF inválido'), findsOneWidget);
+      expect(cta().onPressed, isNull, reason: 'CPF com digito verificador errado');
+
+      await t.enterText(fields.at(1), '52998224725');
+      await t.pump();
+      expect(find.text('CPF inválido'), findsNothing);
+      expect(cta().onPressed, isNotNull);
 
       await t.tap(find.byKey(const Key('consent-location')));
       await t.pump();
-      expect(cta().onPressed, isNotNull);
+      expect(cta().onPressed, isNotNull, reason: 'marcar a localizacao nao muda a regra');
+      await t.tap(find.byKey(const Key('consent-location')));
+      await t.pump();
+      expect(cta().onPressed, isNotNull, reason: 'localizacao desmarcada nao bloqueia (o Plano pede antes do aluguel)');
     });
   });
 
@@ -204,8 +216,8 @@ void main() {
       await t.pump();
       await t.pump();
 
-      expect(find.text('Velocidade máxima: 6 km/h'), findsOneWidget);
-      expect(find.textContaining('limite 6'), findsOneWidget);
+      expect(find.text('Velocidade reduzida · limite 6 km/h'), findsOneWidget);
+      expect(find.text('km/h · limite 6'), findsOneWidget);
       expect(find.textContaining('limite 32'), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
@@ -233,7 +245,7 @@ void main() {
       ]));
       await t.pumpAndSettle();
 
-      VoltiButton end() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Encerrar corrida'));
+      VoltiButton end() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
       expect(end().onPressed, isNull);
 
       await t.tap(find.byType(PhotoCapture));
@@ -269,7 +281,7 @@ class _RideBackend extends FakeBackend {
   @override
   Future<Vehicle> vehicleByCode(String code) async => sampleVehicle();
   @override
-  Future<List<GeoZone>> zones() async => [];
+  Future<List<GeoZone>> zones() async => [zoneAround(-23.56, -46.65)]; // a moto esta num ponto de devolucao
   @override
   Future<void> wellbeing(String id, {required bool ok, String? note}) async => wellbeingOk = ok;
 }

@@ -14,13 +14,19 @@ import 'offline_queue.dart';
 abstract class ConnectivityMonitor {
   /// Emite `true` quando ha conexao.
   Stream<bool> get onlineChanges;
+
+  /// Estado atual (a abertura do app nao gera evento de conectividade).
+  Future<bool> isOnline();
 }
 
 class PlatformConnectivityMonitor implements ConnectivityMonitor {
+  static bool _online(List<ConnectivityResult> r) => r.any((e) => e != ConnectivityResult.none);
+
   @override
-  Stream<bool> get onlineChanges => Connectivity()
-      .onConnectivityChanged
-      .map((r) => r.any((e) => e != ConnectivityResult.none));
+  Stream<bool> get onlineChanges => Connectivity().onConnectivityChanged.map(_online);
+
+  @override
+  Future<bool> isOnline() async => _online(await Connectivity().checkConnectivity());
 }
 
 /// Fila persistente (sobrescrita em `main` com Hive).
@@ -28,6 +34,17 @@ final offlineQueueProvider = Provider<OfflineQueue>((ref) => MemoryOfflineQueue(
 
 final connectivityMonitorProvider =
     Provider<ConnectivityMonitor>((ref) => PlatformConnectivityMonitor());
+
+/// Ha rede? Comeca pelo estado atual e segue os eventos (banner global).
+final onlineProvider = StreamProvider<bool>((ref) async* {
+  final monitor = ref.watch(connectivityMonitorProvider);
+  try {
+    yield await monitor.isOnline();
+  } catch (_) {
+    yield true;
+  }
+  yield* monitor.onlineChanges;
+});
 
 class SyncState {
   const SyncState({this.jobs = const [], this.syncing = false, this.results = const {}});

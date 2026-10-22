@@ -54,6 +54,8 @@ class SubsBackend extends FakeBackend {
       ];
   @override
   Future<void> cancelSubscription(String id) async => cancels++;
+  @override
+  Future<List<PaymentCard>> cards() async => [];
 }
 
 class SlowHistory extends FakeBackend {
@@ -315,15 +317,15 @@ void main() {
       final backend = SubsBackend();
       await t.pumpWidget(testApp(const SubscriptionsScreen(), overrides: [backendProvider.overrideWithValue(backend)]));
       await t.pumpAndSettle();
-      await t.tap(find.text('Plano semanal').first);
+      await t.tap(find.text('Cancelar renovação'));
       await t.pumpAndSettle();
       expect(find.text('Cancelar a renovação?'), findsOneWidget);
       await t.tap(find.text('Manter plano'));
       await t.pumpAndSettle();
       expect(backend.cancels, 0);
-      await t.tap(find.text('Plano semanal').first);
-      await t.pumpAndSettle();
       await t.tap(find.text('Cancelar renovação'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Cancelar renovação').last);
       await t.pumpAndSettle();
       expect(backend.cancels, 1);
     });
@@ -391,14 +393,14 @@ void main() {
       rt.emit(const ZoneNotice(zoneType: 'reduced_speed', transition: 'ENTER', message: 'Área de pedestres.', speedLimitKmh: 6));
       await t.pump();
       await t.pump(const Duration(milliseconds: 500));
-      expect(find.text('Velocidade máxima: 6 km/h'), findsOneWidget);
+      expect(find.text('Velocidade reduzida · limite 6 km/h'), findsOneWidget);
       rt.emit(const ZoneNotice(zoneType: 'reduced_speed', transition: 'EXIT', message: 'Área de pedestres.'));
       await t.pump();
       await t.pump(const Duration(milliseconds: 100));
       // Saindo: o texto continua (ultimo aviso) enquanto a faixa encolhe.
-      expect(find.text('Velocidade máxima: 6 km/h'), findsOneWidget);
+      expect(find.text('Velocidade reduzida · limite 6 km/h'), findsOneWidget);
       await t.pump(const Duration(milliseconds: 500));
-      expect(find.text('Velocidade máxima: 6 km/h'), findsNothing);
+      expect(find.text('Velocidade reduzida · limite 6 km/h'), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
 

@@ -1,7 +1,6 @@
 {
   "@@locale": "pt",
   "appTitle": "Volti Campo",
-
   "loginTitle": "Entrar",
   "loginSubtitle": "Operador de campo",
   "loginEmail": "E-mail",
@@ -9,10 +8,15 @@
   "loginError": "Não foi possível entrar. Verifique a conexão e tente de novo.",
   "loginCognitoUnavailable": "O login pelo Cognito ainda não está disponível neste ambiente.",
   "signOut": "Sair",
-
   "headerRole": "Operador de campo",
   "greeting": "Olá, {name}",
-  "@greeting": {"placeholders": {"name": {"type": "String"}}},
+  "@greeting": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "statPending": "Pendentes",
   "statDone": "Concluídas",
   "statQueue": "Na fila",
@@ -29,7 +33,6 @@
   "errorGeneric": "Algo deu errado. Tente de novo.",
   "offlineAction": "Sem rede. Tente de novo quando a conexão voltar.",
   "back": "Voltar",
-
   "typeCollect": "Recolher moto",
   "typeBatterySwap": "Trocar bateria",
   "typeMaintenance": "Levar para manutenção",
@@ -39,7 +42,6 @@
   "priorityMedium": "Média",
   "priorityHigh": "Alta",
   "priorityUrgent": "Urgente",
-
   "taskDetailTitle": "Tarefa",
   "taskNotFound": "Tarefa não encontrada.",
   "actionStart": "Iniciar tarefa",
@@ -55,8 +57,13 @@
   "sectionRegistered": "Registrado",
   "targetLabel": "Destino do reposicionamento",
   "distanceToTarget": "{km} km até o destino",
-  "@distanceToTarget": {"placeholders": {"km": {"type": "String"}}},
-
+  "@distanceToTarget": {
+    "placeholders": {
+      "km": {
+        "type": "String"
+      }
+    }
+  },
   "completeTitle": "Concluir tarefa",
   "completeNotes": "Observações",
   "completeVehicleStatus": "Status da moto ao concluir",
@@ -65,16 +72,20 @@
   "statusMaintenance": "Manutenção",
   "completeConfirm": "Concluir",
   "completeRequires": "Antes de concluir, registre: {what}.",
-  "@completeRequires": {"placeholders": {"what": {"type": "String"}}},
+  "@completeRequires": {
+    "placeholders": {
+      "what": {
+        "type": "String"
+      }
+    }
+  },
   "taskCompleted": "Tarefa concluída.",
   "taskCompletePending": "Conclusão salva. Aguardando sincronização.",
-
   "statusSheetTitle": "Mudar status da moto",
   "statusReason": "Motivo",
   "statusReasonTooShort": "Informe o motivo (mínimo de 3 caracteres).",
   "statusChanged": "Status da moto atualizado.",
   "statusConfirm": "Atualizar status",
-
   "inspectionTitle": "Checklist de inspeção",
   "itemBrakes": "Freio dianteiro e traseiro",
   "itemTires": "Pneus",
@@ -88,20 +99,43 @@
   "speedReadingInvalid": "Informe um valor de 0 a 100.",
   "speedNonCompliant": "Moto fora do limite legal — vai para manutenção",
   "itemsCounter": "{done}/{total}",
-  "@itemsCounter": {"placeholders": {"done": {"type": "int"}, "total": {"type": "int"}}},
+  "@itemsCounter": {
+    "placeholders": {
+      "done": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
   "photoLabel": "Foto da moto",
   "photoHint": "Obrigatória",
   "photoAdd": "Adicionar foto",
   "photoCount": "{n} foto(s) anexada(s)",
-  "@photoCount": {"placeholders": {"n": {"type": "int"}}},
+  "@photoCount": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
   "notesLabel": "Observações",
   "submitInspection": "Enviar checklist",
   "inspectionSent": "Checklist enviado.",
   "inspectionQueued": "Checklist salvo. Aguardando sincronização.",
   "maintenanceOpened": "Manutenção aberta (tarefa {taskId}) e alerta registrado ({alertId}). A moto foi para manutenção.",
-  "@maintenanceOpened": {"placeholders": {"taskId": {"type": "String"}, "alertId": {"type": "String"}}},
+  "@maintenanceOpened": {
+    "placeholders": {
+      "taskId": {
+        "type": "String"
+      },
+      "alertId": {
+        "type": "String"
+      }
+    }
+  },
   "awaitingSync": "Aguardando sincronização",
-
   "batteryTitle": "Troca de bateria",
   "batteryRemoved": "Bateria retirada",
   "batteryInstalled": "Bateria instalada",
@@ -114,7 +148,6 @@
   "submitSwap": "Registrar troca",
   "swapSent": "Troca de bateria registrada.",
   "swapQueued": "Troca salva. Aguardando sincronização.",
-
   "syncTitle": "Pendências de envio",
   "syncEmpty": "Tudo sincronizado.",
   "syncNow": "Sincronizar agora",
@@ -122,6 +155,152 @@
   "jobBatterySwap": "Troca de bateria",
   "jobCompleteTask": "Conclusão de tarefa",
   "jobFailed": "Recusado: {reason}",
-  "@jobFailed": {"placeholders": {"reason": {"type": "String"}}},
-  "discard": "Descartar"
+  "@jobFailed": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "discard": "Descartar",
+  "loginCognitoAction": "Entrar com a conta Volti",
+  "loginCognitoHint": "Você entra pela página segura da Volti. O código de verificação (MFA) é pedido lá.",
+  "loginCampoRequired": "Sua conta não tem acesso ao app de campo. Fale com a operação.",
+  "loginCognitoMissing": "Login Cognito não configurado neste build (faltam: {names}).",
+  "@loginCognitoMissing": {
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "accountTitle": "Conta",
+  "accountMenu": "Conta e pendências",
+  "prioritySemantics": "Prioridade {priority}",
+  "@prioritySemantics": {
+    "placeholders": {
+      "priority": {
+        "type": "String"
+      }
+    }
+  },
+  "distanceSemantics": "A {distance} de você",
+  "@distanceSemantics": {
+    "placeholders": {
+      "distance": {
+        "type": "String"
+      }
+    }
+  },
+  "dueLate": "Atrasada",
+  "dueAt": "Até {time}",
+  "@dueAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "doneAt": "Concluída às {time}",
+  "@doneAt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "locationRationaleTitle": "Ative a localização",
+  "locationRationaleBody": "Usamos sua localização só com o app aberto, para mostrar a distância até cada moto e o seu ponto no mapa.",
+  "locationAllow": "Permitir localização",
+  "locationDeniedBody": "A localização está bloqueada para o app. Libere nos ajustes para ver a distância até as motos.",
+  "locationServiceOff": "O GPS está desligado. Ligue para ver a distância até as motos.",
+  "locationOpenSettings": "Abrir ajustes",
+  "notNow": "Agora não",
+  "offlineTitle": "Sem conexão",
+  "offlineBody": "O que você registrar fica salvo e é enviado quando a rede voltar.",
+  "loadingTasks": "Carregando tarefas",
+  "openTask": "Abrir tarefa",
+  "noVehiclePosition": "Moto sem posição conhecida",
+  "yourLocation": "Você está aqui",
+  "batteryRegister": "Registrar troca",
+  "batteryInstalledSummary": "Instalada: {serial}",
+  "@batteryInstalledSummary": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "checklistOpen": "Abrir checklist",
+  "checklistItemOk": "{item}: ok",
+  "@checklistItemOk": {
+    "placeholders": {
+      "item": {
+        "type": "String"
+      }
+    }
+  },
+  "checklistItemProblem": "{item}: com problema",
+  "@checklistItemProblem": {
+    "placeholders": {
+      "item": {
+        "type": "String"
+      }
+    }
+  },
+  "checklistItemPending": "{item}: não respondido",
+  "@checklistItemPending": {
+    "placeholders": {
+      "item": {
+        "type": "String"
+      }
+    }
+  },
+  "photoAfterService": "Foto da moto após o serviço",
+  "photoAddMore": "Adicionar outra foto",
+  "photoThumb": "Foto {n}",
+  "@photoThumb": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "photoRemove": "Remover foto {n}",
+  "@photoRemove": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "completeHint": "Para concluir: {items}.",
+  "@completeHint": {
+    "placeholders": {
+      "items": {
+        "type": "String"
+      }
+    }
+  },
+  "blockerServiceUnlock": "destrave em modo serviço",
+  "blockerChecklist": "complete o checklist",
+  "blockerPhoto": "tire a foto da moto",
+  "blockerBatterySwap": "registre a troca de bateria",
+  "taskDoneTitle": "Tarefa concluída",
+  "completionNotesLabel": "Observações da conclusão",
+  "serialNewLabel": "Nº de série da bateria nova",
+  "serialRemovedLabel": "Nº de série da bateria retirada",
+  "serialPlaceholder": "BT-000000",
+  "scanTorch": "Lanterna",
+  "scanManual": "Digitar o número",
+  "scanAimHint": "Centralize o código na moldura",
+  "vehicleStatusLabel": "Status da moto: {status}",
+  "@vehicleStatusLabel": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      }
+    }
+  },
+  "rejectedHint": "Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa."
 }

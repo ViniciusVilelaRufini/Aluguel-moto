@@ -4,6 +4,19 @@
 <dict>
 	<key>NSCameraUsageDescription</key>
 	<string>A câmera lê o número de série da bateria e registra fotos da moto.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Sua localização é usada só com o app aberto, para mostrar a distância até cada moto e o seu ponto no mapa.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>br.com.volti.operador.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>br.com.volti.operador</string>
+			</array>
+		</dict>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -30,19 +43,13 @@
 	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
-	<key>NSCameraUsageDescription</key>
-	<string>A câmera lê o número de série da bateria e registra fotos da moto.</string>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 		<key>UISceneConfigurations</key>
 		<dict>
-	<key>NSCameraUsageDescription</key>
-	<string>A câmera lê o número de série da bateria e registra fotos da moto.</string>
 			<key>UIWindowSceneSessionRoleApplication</key>
 			<array>
 				<dict>
-	<key>NSCameraUsageDescription</key>
-	<string>A câmera lê o número de série da bateria e registra fotos da moto.</string>
 					<key>UISceneClassName</key>
 					<string>UIWindowScene</string>
 					<key>UISceneConfigurationName</key>

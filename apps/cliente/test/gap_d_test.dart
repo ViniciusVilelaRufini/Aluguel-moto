@@ -143,11 +143,10 @@ class GapBackend extends FakeBackend {
   Future<List<GeoZone>> zones() async => [];
 }
 
-class FakeLauncher implements ExternalLauncher {
+class FakeLauncher {
   FakeLauncher({this.accept = true});
   final bool accept;
   final opened = <Uri>[];
-  @override
   Future<bool> open(Uri uri) async {
     opened.add(uri);
     return accept;
@@ -217,7 +216,7 @@ Future<GapBackend> pumpSheet(
     overrides: [
       backendProvider.overrideWithValue(b),
       sessionProvider.overrideWith(() => FakeSession(session())),
-      externalLauncherProvider.overrideWithValue(launcher ?? FakeLauncher()),
+      urlLauncherProvider.overrideWithValue((launcher ?? FakeLauncher()).open),
     ],
   ));
   await t.pump();

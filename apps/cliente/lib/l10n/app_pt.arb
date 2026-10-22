@@ -6,7 +6,7 @@
   "acceptTerms": "Aceito os termos de uso e a política de privacidade",
   "account": "Conta",
   "accountNoName": "Sua conta",
-  "accountTitle": "Conta",
+  "accountTitle": "Minha conta",
   "accumulatedCost": "Custo acumulado",
   "addCard": "Adicionar cartão",
   "adultOnly": "É preciso ter 18 anos ou mais",
@@ -534,6 +534,539 @@
   },
   "pickVehicleTaken": "Essa moto acabou de ser reservada. Escolha outra.",
   "pickupZonesError": "Não conseguimos carregar os pontos de retirada.",
+  "fareLabel": "Tarifa",
+  "coverageBasicLong": "Seguro básico",
+  "coverageFullLong": "Seguro completo",
+  "unpauseRide": "Destravar",
+  "zoneReducedSpeed": "Velocidade reduzida",
+  "zoneForbidden": "Área proibida",
+  "zoneOperationEdge": "Limite da área de operação",
+  "wellbeingLead": "Detectamos uma possível queda. Sem resposta em ",
+  "wellbeingTail": ", acionamos o suporte.",
+  "wellbeingTimedOut": "Sem resposta: acionamos o suporte.",
+  "addEmergencyContact": "Cadastrar contato de emergência",
+  "noEmergencyContactHint": "Com um contato salvo, o link vai direto para ele.",
+  "reportOnly": "Só reportar",
+  "swapNoFee": "Trocar de moto sem nova taxa",
+  "returnPointTitle": "Ponto de devolução",
+  "returnOutsideShort": "Fora dos pontos verdes",
+  "returnCheckingShort": "Procurando pontos de devolução",
+  "returnStepPhoto": "Passo 1 de 2 · Foto",
+  "returnStepLock": "Passo 2 de 2 · Travar",
+  "returnPhotoTitle": "Fotografe a moto estacionada",
+  "takePhoto": "Tirar foto",
+  "returnPhotoHintDesign": "Mostre a moto inteira e a calçada livre",
+  "returnZoneRule": "Fora dos pontos verdes não é possível encerrar sem taxa.",
+  "returnOutsideBlocked": "Leve a moto até uma área verde do mapa para encerrar. Fora dela, encerrar só com o suporte, com taxa.",
+  "lockAndEnd": "Travar e encerrar",
+  "confirmingLock": "Confirmando…",
+  "returnPinLabel": "Ponto de devolução mais próximo",
+  "rideFinished": "Corrida finalizada",
+  "rideFinishedText": "Moto travada. Caução liberada.",
+  "receiptAndInvoice": "Recibo e nota fiscal",
+  "paidWithPix": "Pix",
+  "paidWithWallet": "Carteira Volti",
+  "receiptPdfPending": "O PDF fica pronto em instantes.",
+  "rateRideTrip": "Como foi a moto e a viagem?",
+  "ratingCommentHint": "Comentário (opcional)",
+  "finishSummary": "Concluir",
+  "farePerMinute": "{price}/min",
+  "@farePerMinute": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "farePerHour": "{price}/h",
+  "@farePerHour": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "farePerDay": "{price}/dia",
+  "@farePerDay": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "pausedFareSemantics": "Pausada, {price}",
+  "@pausedFareSemantics": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "zoneTitle": "{name} · limite {limit} km/h",
+  "@zoneTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "limit": {
+        "type": "int"
+      }
+    }
+  },
+  "secondsShort": "{seconds} s",
+  "@secondsShort": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
+  "shareWithNamedContact": "Enviar localização para {name}",
+  "@shareWithNamedContact": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "returnInsideZone": "{name} · você está dentro",
+  "@returnInsideZone": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "returnZonesMap": "Mapa com {count} pontos de devolução",
+  "@returnZonesMap": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "paidWithCard": "Cartão •••• {last4}",
+  "@paidWithCard": {
+    "placeholders": {
+      "last4": {
+        "type": "String"
+      }
+    }
+  },
+  "invoiceNumberLabel": "NFS-e {number}",
+  "@invoiceNumberLabel": {
+    "placeholders": {
+      "number": {
+        "type": "String"
+      }
+    }
+  },
+  "receiptOpenError": "Não foi possível abrir o recibo. Tente de novo.",
+  "shareLocationMessageTimed": "Estou numa corrida Volti e preciso de ajuda. Minha localização (link válido por 1 h): {url}",
+  "@shareLocationMessageTimed": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
+  },
+  "adultBadge": "18+",
+  "attachmentFailed": "Não foi possível enviar o anexo. Toque nele para tentar de novo.",
+  "attachmentFailedLabel": "Anexo {n}: falhou, toque para tentar de novo",
+  "@attachmentFailedLabel": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "attachmentRemove": "Remover anexo {n}",
+  "@attachmentRemove": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "attachmentRetryFirst": "Reenvie ou remova os anexos que falharam.",
+  "attachmentSentLabel": "Anexo {n}: enviado",
+  "@attachmentSentLabel": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "attachmentUploading": "Enviando anexo…",
+  "attachmentUploadingLabel": "Anexo {n}: enviando",
+  "@attachmentUploadingLabel": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "buyPackageText": "{minutes} minutos por {price}, pagos com Pix. Os minutos entram assim que o pagamento for confirmado.",
+  "@buyPackageText": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "buyPackageTitle": "Comprar {name}?",
+  "@buyPackageTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatAttach": "Anexar foto",
+  "chatAttachments": "{count, plural, =1{1 foto anexada} other{{count} fotos anexadas}}",
+  "@chatAttachments": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatPhotoOnly": "Foto anexada",
+  "chatSupportAgent": "Suporte Volti",
+  "chatYou": "Você",
+  "claimAddMorePhoto": "Adicionar outra foto",
+  "claimAddMorePoliceReport": "Adicionar outra página do BO",
+  "claimAddPhoto": "Tirar foto",
+  "claimAddPoliceReport": "Fotografar o boletim de ocorrência",
+  "claimAttachmentsFull": "Limite de {max} anexos atingido.",
+  "@claimAttachmentsFull": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "claimDescriptionHint": "Onde, quando e como aconteceu",
+  "claimIntro": "O sinistro vai para a seguradora parceira. Quanto mais detalhes e fotos, mais rápida a análise.",
+  "claimMinChars": "{count, plural, =1{Falta 1 caractere} other{Faltam {count} caracteres}} (mínimo de 10)",
+  "@claimMinChars": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "claimPhotoCaptureHint": "Mostre os danos, a moto e o local",
+  "claimPhotosHint": "Até {max} anexos no total, contando o boletim de ocorrência.",
+  "@claimPhotosHint": {
+    "placeholders": {
+      "max": {
+        "type": "int"
+      }
+    }
+  },
+  "claimPhotosTitle": "Fotos",
+  "claimPoliceReportHint": "Opcional. Se você registrou um BO, fotografe as páginas.",
+  "claimPoliceReportRecommended": "Em furto ou acidente, o boletim de ocorrência agiliza a análise. Fotografe as páginas.",
+  "claimPoliceReportTitle": "Boletim de ocorrência (BO)",
+  "claimSend": "Enviar sinistro",
+  "claimTypeTitle": "O que aconteceu?",
+  "consentsRow": "Consentimentos e privacidade",
+  "credits": "Créditos",
+  "disputeDetailsLabel": "Detalhes (opcional)",
+  "disputeOrClaim": "Contestar cobrança / sinistro",
+  "disputeReasonLabel": "Motivo",
+  "disputeRefund": "Estorno de {amount}",
+  "@disputeRefund": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "downloadMyData": "Baixar meus dados",
+  "emergencyName": "Nome do contato",
+  "emergencyNameRequired": "Informe o nome do contato",
+  "emergencyNameTooLong": "Use até 120 caracteres",
+  "emergencyPhone": "Celular do contato",
+  "emergencyPhoneHint": "Com DDD. Para outro país, comece com + e o código do país.",
+  "emergencyPhoneInvalid": "Celular inválido. Use DDD + número.",
+  "emergencyRowEmpty": "Cadastre para usar no SOS",
+  "emergencySaved": "Contato de emergência salvo",
+  "emergencyTitle": "Contato de emergência",
+  "emergencyWhyText": "No SOS da corrida, enviamos sua localização em tempo real direto para esta pessoa.",
+  "emergencyWhyTitle": "Para que serve",
+  "groupHelp": "Ajuda",
+  "groupPlan": "Plano",
+  "groupPrivacy": "Privacidade (LGPD)",
+  "groupTrips": "Viagens",
+  "helpFaq1Title": "Como destravo uma moto?",
+  "helpFaq1Text": "No mapa, toque em Escanear para andar e aponte para o QR no guidão, ou digite o número da moto. Escolha o plano e o seguro e confirme.",
+  "helpFaq2Title": "O que é a caução?",
+  "helpFaq2Text": "Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela volta quando você encerra a corrida.",
+  "helpFaq3Title": "Como encerro a corrida?",
+  "helpFaq3Text": "Pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar.",
+  "helpFaq4Title": "Como uso a carteira e os pacotes?",
+  "helpFaq4Text": "Recarregue a carteira com Pix ou compre um pacote de minutos em Conta. O saldo é usado nas próximas corridas.",
+  "helpFaq5Title": "Sofri um acidente. E agora?",
+  "helpFaq5Text": "Durante a corrida, toque em SOS. Depois, abra um sinistro em Conta > Contestar cobrança / sinistro, com fotos e o boletim de ocorrência.",
+  "helpStillNeed": "Não achou a resposta? Fale com a equipe.",
+  "historyPickHint": "Escolha a corrida que você quer contestar ou para a qual quer abrir um sinistro.",
+  "historyPickTitle": "Escolha a corrida",
+  "historyTitle": "Histórico e recibos",
+  "kycNotVerified": "Não verificada",
+  "kycVerified": "Verificada",
+  "minutePackage": "Pacote de minutos",
+  "minutesDelta": "{minutes} min",
+  "@minutesDelta": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "noActivePlan": "Sem plano ativo · semanal ou mensal",
+  "payWithPix": "Pagar com Pix",
+  "perMonth": "/mês",
+  "perWeek": "/semana",
+  "pixExpired": "O Pix expirou. Gere um novo código.",
+  "pixExpiresAt": "Válido até {date}",
+  "@pixExpiresAt": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "pixPayLater": "Pagar depois",
+  "pixQrLabel": "QR code do Pix",
+  "planMonthlyDescription": "Cobrança recorrente no cartão todo mês",
+  "planWeeklyDescription": "Para entregadores · cobrança toda semana",
+  "remove": "Remover",
+  "requestsClaims": "Sinistros",
+  "requestsClaimsEmpty": "Nenhum sinistro aberto.",
+  "requestsDisputes": "Contestações",
+  "requestsDisputesEmpty": "Nenhuma contestação aberta.",
+  "requestsNew": "Nova contestação ou sinistro",
+  "requestsTitle": "Contestações e sinistros",
+  "retryShort": "Tentar",
+  "save": "Salvar",
+  "statusAccepted": "Aceita",
+  "statusApproved": "Aprovado",
+  "statusOpen": "Aberta",
+  "statusPaid": "Pago",
+  "statusRejected": "Recusado",
+  "statusSubmitted": "Enviado",
+  "statusUnderReview": "Em análise",
+  "subscribeCardHint": "Cobrança recorrente neste cartão",
+  "subscribeConfirm": "Assinar agora",
+  "subscribeConfirmTitle": "Assinar o {plan}",
+  "@subscribeConfirmTitle": {
+    "placeholders": {
+      "plan": {
+        "type": "String"
+      }
+    }
+  },
+  "subscribeContinue": "Continuar",
+  "subscribePriceMonthly": "{price} por mês",
+  "@subscribePriceMonthly": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "subscribePriceWeekly": "{price} por semana",
+  "@subscribePriceWeekly": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "subscribeRecurringMonthly": "Cobramos hoje e renovamos todo mês no cartão. Corridas no plano mensal não cobram tempo, só seguro e taxas. Cancele quando quiser.",
+  "subscribeRecurringWeekly": "Cobramos hoje e renovamos toda semana no cartão. Corridas no plano semanal não cobram tempo, só seguro e taxas. Cancele quando quiser.",
+  "subscriptionActive": "Ativo",
+  "subscriptionBenefit": "Corridas no plano não cobram tempo, só seguro e taxas",
+  "subscriptionCanceled": "Renovação cancelada",
+  "subscriptionCard": "Cartão {card}",
+  "@subscriptionCard": {
+    "placeholders": {
+      "card": {
+        "type": "String"
+      }
+    }
+  },
+  "subscriptionCreated": "Plano assinado",
+  "subscriptionEndedOn": "Terminou em {date}",
+  "@subscriptionEndedOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "subscriptionEndingBadge": "Termina",
+  "subscriptionEndingText": "A renovação foi cancelada. O plano vale até {date}.",
+  "@subscriptionEndingText": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "subscriptionEndsOn": "Termina em {date}",
+  "@subscriptionEndsOn": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "subscriptionNextCharge": "Próxima cobrança {date} · {price}",
+  "@subscriptionNextCharge": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "subscriptionPastDue": "Pagamento pendente",
+  "subscriptionsPast": "Planos anteriores",
+  "supportChat": "Chat com o suporte",
+  "topUpAmountError": "Escolha um valor entre R$ 10 e R$ 1.000",
+  "topUpAmountHint": "O crédito entra na carteira assim que o Pix for confirmado.",
+  "topUpAmountLabel": "Valor",
+  "topUpDone": "Carteira recarregada",
+  "topUpGeneratePix": "Gerar Pix de {amount}",
+  "@topUpGeneratePix": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "topUpGeneratePixDisabled": "Gerar Pix",
+  "topUpPaid": "Pix confirmado",
+  "topUpPaidAmount": "{amount} já estão na sua carteira.",
+  "@topUpPaidAmount": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "topUpPaidMinutes": "{minutes} minutos já estão na sua carteira.",
+  "@topUpPaidMinutes": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "topUpPixText": "Pague {amount} com o QR ou o código copia e cola no app do seu banco.",
+  "@topUpPixText": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "topUpWallet": "Recarregar carteira",
+  "trafficRules": "Regras de trânsito para autopropelidos",
+  "trafficRulesTitle": "Regras de trânsito",
+  "walletAndPackages": "Carteira e pacotes de minutos",
+  "walletLedgerEmpty": "Nenhum lançamento ainda.",
+  "walletLedgerTitle": "Extrato",
+  "emergencyConsentLabel": "Tenho autorização desta pessoa para receber minha localização em emergências",
+  "emergencyConsentText": "Só compartilhamos sua localização com este contato quando você aciona o SOS. Confirme que a pessoa concorda em receber esses avisos.",
+  "pendingTopUpTitle": "Pix de {amount} aguardando pagamento",
+  "@pendingTopUpTitle": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "pendingTopUpText": "O saldo atualiza sozinho quando o pagamento for confirmado. Puxe a tela para baixo para conferir agora.",
+  "subscriptionPriceUnavailable": "Preço do plano indisponível agora. Tente de novo em instantes.",
+  "welcomePhone": "Continuar com celular",
+  "welcomeApple": "Apple",
+  "welcomeAppleLabel": "Entrar com Apple",
+  "welcomeGoogle": "Google",
+  "welcomeGoogleLabel": "Entrar com Google",
+  "welcomeDevHint": "Modo dev: celular aceita o código 123456; Google e Apple só funcionam com o Cognito.",
+  "welcomeSocialDevOnly": "No modo dev, Google e Apple não estão disponíveis. Entre com celular ou e-mail.",
+  "socialSignInError": "Não foi possível entrar. Tente de novo.",
+  "otpPhoneTitle": "Seu celular",
+  "otpPhoneSubtitle": "Vamos mandar um código por SMS para confirmar que é você.",
+  "otpPhoneLabel": "Celular com DDD",
+  "otpPhoneInvalid": "Informe um celular com DDD, ex.: (11) 98765-4321.",
+  "otpEmailTitle": "Seu e-mail",
+  "otpEmailSubtitle": "Vamos mandar um código por e-mail para confirmar que é você.",
+  "otpEmailInvalid": "Informe um e-mail válido.",
+  "otpSend": "Enviar código",
+  "otpCodeTitle": "Digite o código",
+  "otpCodeSentSms": "Enviamos 6 dígitos por SMS para {destination}.",
+  "@otpCodeSentSms": {
+    "placeholders": {
+      "destination": {
+        "type": "String"
+      }
+    }
+  },
+  "otpCodeSentEmail": "Enviamos 6 dígitos por e-mail para {destination}.",
+  "@otpCodeSentEmail": {
+    "placeholders": {
+      "destination": {
+        "type": "String"
+      }
+    }
+  },
+  "otpCodeLabel": "Código de 6 dígitos",
+  "otpNotReceived": "Não chegou?",
+  "otpResendIn": "Reenviar em {time}",
+  "@otpResendIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "otpResend": "Reenviar código",
+  "otpSendIn": "Enviar código em {time}",
+  "@otpSendIn": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "otpAccountConfirmed": "Conta confirmada. Enviamos um novo código para entrar.",
+  "otpResent": "Enviamos um novo código.",
+  "otpConfirm": "Confirmar",
+  "otpEditDestination": "Corrigir",
+  "otpDevHint": "Modo dev: o código é 123456.",
+  "otpErrorInvalid": "Código inválido. Confira e tente de novo.",
+  "otpErrorExpired": "O código expirou. Peça um novo.",
+  "otpErrorTooMany": "Muitas tentativas. Aguarde alguns minutos e tente de novo.",
+  "otpErrorDestination": "Não conseguimos enviar para esse contato. Confira e tente de novo.",
+  "cpfInvalidShort": "CPF inválido",
+  "docsAlreadySent": "Documentos já enviados para análise.",
+  "payTitle": "Forma de pagamento",
+  "paySubtitle": "O cartão garante a caução. Você também pode pagar a caução por Pix em cada aluguel.",
+  "payPixWallet": "Pix + carteira Volti",
+  "payCardMissing": "Adicione um cartão para a caução",
+  "payPixExplain": "Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.",
+  "payFinish": "Concluir cadastro",
+  "onboardingSentToast": "Cadastro enviado. Verificação em até 2 min.",
   "vehicleCategoryDefault": "Moto elétrica",
   "pricePerMinutePlusFee": "{price}/min + taxa",
   "@pricePerMinutePlusFee": {
@@ -618,5 +1151,6 @@
         "type": "String"
       }
     }
-  }
+  },
+  "thanksForRiding": "Obrigado por andar de Volti"
 }

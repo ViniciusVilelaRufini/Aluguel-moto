@@ -71,7 +71,7 @@ class _VehicleSheetState extends ConsumerState<VehicleSheet> {
   Future<void> _navigate() async {
     final l = context.l;
     final v = widget.vehicle;
-    final ok = await openWalkingRoute(ref.read(externalLauncherProvider), v.lat, v.lng);
+    final ok = await openWalkingRoute(ref.read(urlLauncherProvider), v.lat, v.lng);
     if (!ok && mounted) VoltiToast.show(context, l.navigateFailed, tone: VoltiToastTone.danger);
   }
 

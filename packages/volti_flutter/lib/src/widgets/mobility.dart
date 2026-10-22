@@ -6,6 +6,7 @@ import '../tokens/colors.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
+import 'badge.dart';
 import 'motion.dart';
 import 'pressable.dart';
 
@@ -959,11 +960,22 @@ class VehicleSummaryCard extends StatelessWidget {
               // A pilula tem largura fixa: em texto grande ela encolhe em vez de estourar.
               FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: BatteryPill(batteryPct, rangeKm: rangeKm)),
               if (promo != null || price != null) const SizedBox(height: 10),
+              // Selos do VDS; encolhem em texto grande em vez de estourar (altura fixa de 26 px).
               if (promo != null)
-                _SummaryBadge(key: const Key('vehicle-summary-promo'), text: promo!, bg: VoltiColors.successSoft, fg: VoltiColors.brandAction),
+                FittedBox(
+                  key: const Key('vehicle-summary-promo'),
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: VoltiBadge(promo!, tone: VoltiBadgeTone.success),
+                ),
               if (promo != null && price != null) const SizedBox(height: 6),
               if (price != null)
-                _SummaryBadge(key: const Key('vehicle-summary-price'), text: price!, bg: VoltiColors.infoSoft, fg: VoltiColors.infoInk),
+                FittedBox(
+                  key: const Key('vehicle-summary-price'),
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: VoltiBadge(price!, tone: VoltiBadgeTone.info),
+                ),
             ],
           ),
         ),
@@ -997,26 +1009,4 @@ class VehicleThumb extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SummaryBadge extends StatelessWidget {
-  const _SummaryBadge({super.key, required this.text, required this.bg, required this.fg});
-  final String text;
-  final Color bg, fg;
-
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(color: bg, borderRadius: VoltiRadii.rPill),
-        child: Text(
-          text,
-          style: TextStyle(
-            fontFamily: VoltiTypography.fontSans,
-            fontWeight: VoltiTypography.fwSemibold,
-            fontSize: 12,
-            height: 1.2,
-            color: fg,
-          ),
-        ),
-      );
 }

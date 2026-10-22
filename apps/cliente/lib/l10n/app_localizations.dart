@@ -133,7 +133,7 @@ abstract class AppLocalizations {
   /// No description provided for @accountTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Conta'**
+  /// **'Minha conta'**
   String get accountTitle;
 
   /// No description provided for @accumulatedCost.
@@ -1996,6 +1996,1386 @@ abstract class AppLocalizations {
   /// **'Não conseguimos carregar os pontos de retirada.'**
   String get pickupZonesError;
 
+  /// No description provided for @fareLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tarifa'**
+  String get fareLabel;
+
+  /// No description provided for @coverageBasicLong.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seguro básico'**
+  String get coverageBasicLong;
+
+  /// No description provided for @coverageFullLong.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seguro completo'**
+  String get coverageFullLong;
+
+  /// No description provided for @unpauseRide.
+  ///
+  /// In pt, this message translates to:
+  /// **'Destravar'**
+  String get unpauseRide;
+
+  /// No description provided for @zoneReducedSpeed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Velocidade reduzida'**
+  String get zoneReducedSpeed;
+
+  /// No description provided for @zoneForbidden.
+  ///
+  /// In pt, this message translates to:
+  /// **'Área proibida'**
+  String get zoneForbidden;
+
+  /// No description provided for @zoneOperationEdge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Limite da área de operação'**
+  String get zoneOperationEdge;
+
+  /// No description provided for @wellbeingLead.
+  ///
+  /// In pt, this message translates to:
+  /// **'Detectamos uma possível queda. Sem resposta em '**
+  String get wellbeingLead;
+
+  /// No description provided for @wellbeingTail.
+  ///
+  /// In pt, this message translates to:
+  /// **', acionamos o suporte.'**
+  String get wellbeingTail;
+
+  /// No description provided for @wellbeingTimedOut.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem resposta: acionamos o suporte.'**
+  String get wellbeingTimedOut;
+
+  /// No description provided for @addEmergencyContact.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cadastrar contato de emergência'**
+  String get addEmergencyContact;
+
+  /// No description provided for @noEmergencyContactHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Com um contato salvo, o link vai direto para ele.'**
+  String get noEmergencyContactHint;
+
+  /// No description provided for @reportOnly.
+  ///
+  /// In pt, this message translates to:
+  /// **'Só reportar'**
+  String get reportOnly;
+
+  /// No description provided for @swapNoFee.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trocar de moto sem nova taxa'**
+  String get swapNoFee;
+
+  /// No description provided for @returnPointTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ponto de devolução'**
+  String get returnPointTitle;
+
+  /// No description provided for @returnOutsideShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fora dos pontos verdes'**
+  String get returnOutsideShort;
+
+  /// No description provided for @returnCheckingShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'Procurando pontos de devolução'**
+  String get returnCheckingShort;
+
+  /// No description provided for @returnStepPhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'Passo 1 de 2 · Foto'**
+  String get returnStepPhoto;
+
+  /// No description provided for @returnStepLock.
+  ///
+  /// In pt, this message translates to:
+  /// **'Passo 2 de 2 · Travar'**
+  String get returnStepLock;
+
+  /// No description provided for @returnPhotoTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotografe a moto estacionada'**
+  String get returnPhotoTitle;
+
+  /// No description provided for @takePhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tirar foto'**
+  String get takePhoto;
+
+  /// No description provided for @returnPhotoHintDesign.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mostre a moto inteira e a calçada livre'**
+  String get returnPhotoHintDesign;
+
+  /// No description provided for @returnZoneRule.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fora dos pontos verdes não é possível encerrar sem taxa.'**
+  String get returnZoneRule;
+
+  /// No description provided for @returnOutsideBlocked.
+  ///
+  /// In pt, this message translates to:
+  /// **'Leve a moto até uma área verde do mapa para encerrar. Fora dela, encerrar só com o suporte, com taxa.'**
+  String get returnOutsideBlocked;
+
+  /// No description provided for @lockAndEnd.
+  ///
+  /// In pt, this message translates to:
+  /// **'Travar e encerrar'**
+  String get lockAndEnd;
+
+  /// No description provided for @confirmingLock.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confirmando…'**
+  String get confirmingLock;
+
+  /// No description provided for @returnPinLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ponto de devolução mais próximo'**
+  String get returnPinLabel;
+
+  /// No description provided for @rideFinished.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corrida finalizada'**
+  String get rideFinished;
+
+  /// No description provided for @rideFinishedText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto travada. Caução liberada.'**
+  String get rideFinishedText;
+
+  /// No description provided for @receiptAndInvoice.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recibo e nota fiscal'**
+  String get receiptAndInvoice;
+
+  /// No description provided for @paidWithPix.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix'**
+  String get paidWithPix;
+
+  /// No description provided for @paidWithWallet.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carteira Volti'**
+  String get paidWithWallet;
+
+  /// No description provided for @receiptPdfPending.
+  ///
+  /// In pt, this message translates to:
+  /// **'O PDF fica pronto em instantes.'**
+  String get receiptPdfPending;
+
+  /// No description provided for @rateRideTrip.
+  ///
+  /// In pt, this message translates to:
+  /// **'Como foi a moto e a viagem?'**
+  String get rateRideTrip;
+
+  /// No description provided for @ratingCommentHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Comentário (opcional)'**
+  String get ratingCommentHint;
+
+  /// No description provided for @finishSummary.
+  ///
+  /// In pt, this message translates to:
+  /// **'Concluir'**
+  String get finishSummary;
+
+  /// No description provided for @farePerMinute.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price}/min'**
+  String farePerMinute(String price);
+
+  /// No description provided for @farePerHour.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price}/h'**
+  String farePerHour(String price);
+
+  /// No description provided for @farePerDay.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price}/dia'**
+  String farePerDay(String price);
+
+  /// No description provided for @pausedFareSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pausada, {price}'**
+  String pausedFareSemantics(String price);
+
+  /// No description provided for @zoneTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'{name} · limite {limit} km/h'**
+  String zoneTitle(String name, int limit);
+
+  /// No description provided for @secondsShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'{seconds} s'**
+  String secondsShort(int seconds);
+
+  /// No description provided for @shareWithNamedContact.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar localização para {name}'**
+  String shareWithNamedContact(String name);
+
+  /// No description provided for @returnInsideZone.
+  ///
+  /// In pt, this message translates to:
+  /// **'{name} · você está dentro'**
+  String returnInsideZone(String name);
+
+  /// No description provided for @returnZonesMap.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mapa com {count} pontos de devolução'**
+  String returnZonesMap(int count);
+
+  /// No description provided for @paidWithCard.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cartão •••• {last4}'**
+  String paidWithCard(String last4);
+
+  /// No description provided for @invoiceNumberLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'NFS-e {number}'**
+  String invoiceNumberLabel(String number);
+
+  /// No description provided for @receiptOpenError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível abrir o recibo. Tente de novo.'**
+  String get receiptOpenError;
+
+  /// No description provided for @shareLocationMessageTimed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estou numa corrida Volti e preciso de ajuda. Minha localização (link válido por 1 h): {url}'**
+  String shareLocationMessageTimed(String url);
+
+  /// No description provided for @adultBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'18+'**
+  String get adultBadge;
+
+  /// No description provided for @attachmentFailed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível enviar o anexo. Toque nele para tentar de novo.'**
+  String get attachmentFailed;
+
+  /// No description provided for @attachmentFailedLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Anexo {n}: falhou, toque para tentar de novo'**
+  String attachmentFailedLabel(int n);
+
+  /// No description provided for @attachmentRemove.
+  ///
+  /// In pt, this message translates to:
+  /// **'Remover anexo {n}'**
+  String attachmentRemove(int n);
+
+  /// No description provided for @attachmentRetryFirst.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reenvie ou remova os anexos que falharam.'**
+  String get attachmentRetryFirst;
+
+  /// No description provided for @attachmentSentLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Anexo {n}: enviado'**
+  String attachmentSentLabel(int n);
+
+  /// No description provided for @attachmentUploading.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviando anexo…'**
+  String get attachmentUploading;
+
+  /// No description provided for @attachmentUploadingLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Anexo {n}: enviando'**
+  String attachmentUploadingLabel(int n);
+
+  /// No description provided for @buyPackageText.
+  ///
+  /// In pt, this message translates to:
+  /// **'{minutes} minutos por {price}, pagos com Pix. Os minutos entram assim que o pagamento for confirmado.'**
+  String buyPackageText(int minutes, String price);
+
+  /// No description provided for @buyPackageTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Comprar {name}?'**
+  String buyPackageTitle(String name);
+
+  /// No description provided for @chatAttach.
+  ///
+  /// In pt, this message translates to:
+  /// **'Anexar foto'**
+  String get chatAttach;
+
+  /// No description provided for @chatAttachments.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =1{1 foto anexada} other{{count} fotos anexadas}}'**
+  String chatAttachments(int count);
+
+  /// No description provided for @chatPhotoOnly.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto anexada'**
+  String get chatPhotoOnly;
+
+  /// No description provided for @chatSupportAgent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Suporte Volti'**
+  String get chatSupportAgent;
+
+  /// No description provided for @chatYou.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você'**
+  String get chatYou;
+
+  /// No description provided for @claimAddMorePhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'Adicionar outra foto'**
+  String get claimAddMorePhoto;
+
+  /// No description provided for @claimAddMorePoliceReport.
+  ///
+  /// In pt, this message translates to:
+  /// **'Adicionar outra página do BO'**
+  String get claimAddMorePoliceReport;
+
+  /// No description provided for @claimAddPhoto.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tirar foto'**
+  String get claimAddPhoto;
+
+  /// No description provided for @claimAddPoliceReport.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotografar o boletim de ocorrência'**
+  String get claimAddPoliceReport;
+
+  /// No description provided for @claimAttachmentsFull.
+  ///
+  /// In pt, this message translates to:
+  /// **'Limite de {max} anexos atingido.'**
+  String claimAttachmentsFull(int max);
+
+  /// No description provided for @claimDescriptionHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Onde, quando e como aconteceu'**
+  String get claimDescriptionHint;
+
+  /// No description provided for @claimIntro.
+  ///
+  /// In pt, this message translates to:
+  /// **'O sinistro vai para a seguradora parceira. Quanto mais detalhes e fotos, mais rápida a análise.'**
+  String get claimIntro;
+
+  /// No description provided for @claimMinChars.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =1{Falta 1 caractere} other{Faltam {count} caracteres}} (mínimo de 10)'**
+  String claimMinChars(int count);
+
+  /// No description provided for @claimPhotoCaptureHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mostre os danos, a moto e o local'**
+  String get claimPhotoCaptureHint;
+
+  /// No description provided for @claimPhotosHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Até {max} anexos no total, contando o boletim de ocorrência.'**
+  String claimPhotosHint(int max);
+
+  /// No description provided for @claimPhotosTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotos'**
+  String get claimPhotosTitle;
+
+  /// No description provided for @claimPoliceReportHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Opcional. Se você registrou um BO, fotografe as páginas.'**
+  String get claimPoliceReportHint;
+
+  /// No description provided for @claimPoliceReportRecommended.
+  ///
+  /// In pt, this message translates to:
+  /// **'Em furto ou acidente, o boletim de ocorrência agiliza a análise. Fotografe as páginas.'**
+  String get claimPoliceReportRecommended;
+
+  /// No description provided for @claimPoliceReportTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Boletim de ocorrência (BO)'**
+  String get claimPoliceReportTitle;
+
+  /// No description provided for @claimSend.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar sinistro'**
+  String get claimSend;
+
+  /// No description provided for @claimTypeTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'O que aconteceu?'**
+  String get claimTypeTitle;
+
+  /// No description provided for @consentsRow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Consentimentos e privacidade'**
+  String get consentsRow;
+
+  /// No description provided for @credits.
+  ///
+  /// In pt, this message translates to:
+  /// **'Créditos'**
+  String get credits;
+
+  /// No description provided for @disputeDetailsLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Detalhes (opcional)'**
+  String get disputeDetailsLabel;
+
+  /// No description provided for @disputeOrClaim.
+  ///
+  /// In pt, this message translates to:
+  /// **'Contestar cobrança / sinistro'**
+  String get disputeOrClaim;
+
+  /// No description provided for @disputeReasonLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Motivo'**
+  String get disputeReasonLabel;
+
+  /// No description provided for @disputeRefund.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estorno de {amount}'**
+  String disputeRefund(String amount);
+
+  /// No description provided for @downloadMyData.
+  ///
+  /// In pt, this message translates to:
+  /// **'Baixar meus dados'**
+  String get downloadMyData;
+
+  /// No description provided for @emergencyName.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nome do contato'**
+  String get emergencyName;
+
+  /// No description provided for @emergencyNameRequired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Informe o nome do contato'**
+  String get emergencyNameRequired;
+
+  /// No description provided for @emergencyNameTooLong.
+  ///
+  /// In pt, this message translates to:
+  /// **'Use até 120 caracteres'**
+  String get emergencyNameTooLong;
+
+  /// No description provided for @emergencyPhone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Celular do contato'**
+  String get emergencyPhone;
+
+  /// No description provided for @emergencyPhoneHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Com DDD. Para outro país, comece com + e o código do país.'**
+  String get emergencyPhoneHint;
+
+  /// No description provided for @emergencyPhoneInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Celular inválido. Use DDD + número.'**
+  String get emergencyPhoneInvalid;
+
+  /// No description provided for @emergencyRowEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cadastre para usar no SOS'**
+  String get emergencyRowEmpty;
+
+  /// No description provided for @emergencySaved.
+  ///
+  /// In pt, this message translates to:
+  /// **'Contato de emergência salvo'**
+  String get emergencySaved;
+
+  /// No description provided for @emergencyTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Contato de emergência'**
+  String get emergencyTitle;
+
+  /// No description provided for @emergencyWhyText.
+  ///
+  /// In pt, this message translates to:
+  /// **'No SOS da corrida, enviamos sua localização em tempo real direto para esta pessoa.'**
+  String get emergencyWhyText;
+
+  /// No description provided for @emergencyWhyTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Para que serve'**
+  String get emergencyWhyTitle;
+
+  /// No description provided for @groupHelp.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ajuda'**
+  String get groupHelp;
+
+  /// No description provided for @groupPlan.
+  ///
+  /// In pt, this message translates to:
+  /// **'Plano'**
+  String get groupPlan;
+
+  /// No description provided for @groupPrivacy.
+  ///
+  /// In pt, this message translates to:
+  /// **'Privacidade (LGPD)'**
+  String get groupPrivacy;
+
+  /// No description provided for @groupTrips.
+  ///
+  /// In pt, this message translates to:
+  /// **'Viagens'**
+  String get groupTrips;
+
+  /// No description provided for @helpFaq1Title.
+  ///
+  /// In pt, this message translates to:
+  /// **'Como destravo uma moto?'**
+  String get helpFaq1Title;
+
+  /// No description provided for @helpFaq1Text.
+  ///
+  /// In pt, this message translates to:
+  /// **'No mapa, toque em Escanear para andar e aponte para o QR no guidão, ou digite o número da moto. Escolha o plano e o seguro e confirme.'**
+  String get helpFaq1Text;
+
+  /// No description provided for @helpFaq2Title.
+  ///
+  /// In pt, this message translates to:
+  /// **'O que é a caução?'**
+  String get helpFaq2Title;
+
+  /// No description provided for @helpFaq2Text.
+  ///
+  /// In pt, this message translates to:
+  /// **'Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela volta quando você encerra a corrida.'**
+  String get helpFaq2Text;
+
+  /// No description provided for @helpFaq3Title.
+  ///
+  /// In pt, this message translates to:
+  /// **'Como encerro a corrida?'**
+  String get helpFaq3Title;
+
+  /// No description provided for @helpFaq3Text.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar.'**
+  String get helpFaq3Text;
+
+  /// No description provided for @helpFaq4Title.
+  ///
+  /// In pt, this message translates to:
+  /// **'Como uso a carteira e os pacotes?'**
+  String get helpFaq4Title;
+
+  /// No description provided for @helpFaq4Text.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recarregue a carteira com Pix ou compre um pacote de minutos em Conta. O saldo é usado nas próximas corridas.'**
+  String get helpFaq4Text;
+
+  /// No description provided for @helpFaq5Title.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sofri um acidente. E agora?'**
+  String get helpFaq5Title;
+
+  /// No description provided for @helpFaq5Text.
+  ///
+  /// In pt, this message translates to:
+  /// **'Durante a corrida, toque em SOS. Depois, abra um sinistro em Conta > Contestar cobrança / sinistro, com fotos e o boletim de ocorrência.'**
+  String get helpFaq5Text;
+
+  /// No description provided for @helpStillNeed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não achou a resposta? Fale com a equipe.'**
+  String get helpStillNeed;
+
+  /// No description provided for @historyPickHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha a corrida que você quer contestar ou para a qual quer abrir um sinistro.'**
+  String get historyPickHint;
+
+  /// No description provided for @historyPickTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha a corrida'**
+  String get historyPickTitle;
+
+  /// No description provided for @historyTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Histórico e recibos'**
+  String get historyTitle;
+
+  /// No description provided for @kycNotVerified.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não verificada'**
+  String get kycNotVerified;
+
+  /// No description provided for @kycVerified.
+  ///
+  /// In pt, this message translates to:
+  /// **'Verificada'**
+  String get kycVerified;
+
+  /// No description provided for @minutePackage.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pacote de minutos'**
+  String get minutePackage;
+
+  /// No description provided for @minutesDelta.
+  ///
+  /// In pt, this message translates to:
+  /// **'{minutes} min'**
+  String minutesDelta(int minutes);
+
+  /// No description provided for @noActivePlan.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem plano ativo · semanal ou mensal'**
+  String get noActivePlan;
+
+  /// No description provided for @payWithPix.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagar com Pix'**
+  String get payWithPix;
+
+  /// No description provided for @perMonth.
+  ///
+  /// In pt, this message translates to:
+  /// **'/mês'**
+  String get perMonth;
+
+  /// No description provided for @perWeek.
+  ///
+  /// In pt, this message translates to:
+  /// **'/semana'**
+  String get perWeek;
+
+  /// No description provided for @pixExpired.
+  ///
+  /// In pt, this message translates to:
+  /// **'O Pix expirou. Gere um novo código.'**
+  String get pixExpired;
+
+  /// No description provided for @pixExpiresAt.
+  ///
+  /// In pt, this message translates to:
+  /// **'Válido até {date}'**
+  String pixExpiresAt(String date);
+
+  /// No description provided for @pixPayLater.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagar depois'**
+  String get pixPayLater;
+
+  /// No description provided for @pixQrLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'QR code do Pix'**
+  String get pixQrLabel;
+
+  /// No description provided for @planMonthlyDescription.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cobrança recorrente no cartão todo mês'**
+  String get planMonthlyDescription;
+
+  /// No description provided for @planWeeklyDescription.
+  ///
+  /// In pt, this message translates to:
+  /// **'Para entregadores · cobrança toda semana'**
+  String get planWeeklyDescription;
+
+  /// No description provided for @remove.
+  ///
+  /// In pt, this message translates to:
+  /// **'Remover'**
+  String get remove;
+
+  /// No description provided for @requestsClaims.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sinistros'**
+  String get requestsClaims;
+
+  /// No description provided for @requestsClaimsEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhum sinistro aberto.'**
+  String get requestsClaimsEmpty;
+
+  /// No description provided for @requestsDisputes.
+  ///
+  /// In pt, this message translates to:
+  /// **'Contestações'**
+  String get requestsDisputes;
+
+  /// No description provided for @requestsDisputesEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma contestação aberta.'**
+  String get requestsDisputesEmpty;
+
+  /// No description provided for @requestsNew.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nova contestação ou sinistro'**
+  String get requestsNew;
+
+  /// No description provided for @requestsTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Contestações e sinistros'**
+  String get requestsTitle;
+
+  /// No description provided for @retryShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tentar'**
+  String get retryShort;
+
+  /// No description provided for @save.
+  ///
+  /// In pt, this message translates to:
+  /// **'Salvar'**
+  String get save;
+
+  /// No description provided for @statusAccepted.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aceita'**
+  String get statusAccepted;
+
+  /// No description provided for @statusApproved.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aprovado'**
+  String get statusApproved;
+
+  /// No description provided for @statusOpen.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aberta'**
+  String get statusOpen;
+
+  /// No description provided for @statusPaid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pago'**
+  String get statusPaid;
+
+  /// No description provided for @statusRejected.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recusado'**
+  String get statusRejected;
+
+  /// No description provided for @statusSubmitted.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviado'**
+  String get statusSubmitted;
+
+  /// No description provided for @statusUnderReview.
+  ///
+  /// In pt, this message translates to:
+  /// **'Em análise'**
+  String get statusUnderReview;
+
+  /// No description provided for @subscribeCardHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cobrança recorrente neste cartão'**
+  String get subscribeCardHint;
+
+  /// No description provided for @subscribeConfirm.
+  ///
+  /// In pt, this message translates to:
+  /// **'Assinar agora'**
+  String get subscribeConfirm;
+
+  /// No description provided for @subscribeConfirmTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Assinar o {plan}'**
+  String subscribeConfirmTitle(String plan);
+
+  /// No description provided for @subscribeContinue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar'**
+  String get subscribeContinue;
+
+  /// No description provided for @subscribePriceMonthly.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price} por mês'**
+  String subscribePriceMonthly(String price);
+
+  /// No description provided for @subscribePriceWeekly.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price} por semana'**
+  String subscribePriceWeekly(String price);
+
+  /// No description provided for @subscribeRecurringMonthly.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cobramos hoje e renovamos todo mês no cartão. Corridas no plano mensal não cobram tempo, só seguro e taxas. Cancele quando quiser.'**
+  String get subscribeRecurringMonthly;
+
+  /// No description provided for @subscribeRecurringWeekly.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cobramos hoje e renovamos toda semana no cartão. Corridas no plano semanal não cobram tempo, só seguro e taxas. Cancele quando quiser.'**
+  String get subscribeRecurringWeekly;
+
+  /// No description provided for @subscriptionActive.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ativo'**
+  String get subscriptionActive;
+
+  /// No description provided for @subscriptionBenefit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corridas no plano não cobram tempo, só seguro e taxas'**
+  String get subscriptionBenefit;
+
+  /// No description provided for @subscriptionCanceled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Renovação cancelada'**
+  String get subscriptionCanceled;
+
+  /// No description provided for @subscriptionCard.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cartão {card}'**
+  String subscriptionCard(String card);
+
+  /// No description provided for @subscriptionCreated.
+  ///
+  /// In pt, this message translates to:
+  /// **'Plano assinado'**
+  String get subscriptionCreated;
+
+  /// No description provided for @subscriptionEndedOn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Terminou em {date}'**
+  String subscriptionEndedOn(String date);
+
+  /// No description provided for @subscriptionEndingBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Termina'**
+  String get subscriptionEndingBadge;
+
+  /// No description provided for @subscriptionEndingText.
+  ///
+  /// In pt, this message translates to:
+  /// **'A renovação foi cancelada. O plano vale até {date}.'**
+  String subscriptionEndingText(String date);
+
+  /// No description provided for @subscriptionEndsOn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Termina em {date}'**
+  String subscriptionEndsOn(String date);
+
+  /// No description provided for @subscriptionNextCharge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Próxima cobrança {date} · {price}'**
+  String subscriptionNextCharge(String date, String price);
+
+  /// No description provided for @subscriptionPastDue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagamento pendente'**
+  String get subscriptionPastDue;
+
+  /// No description provided for @subscriptionsPast.
+  ///
+  /// In pt, this message translates to:
+  /// **'Planos anteriores'**
+  String get subscriptionsPast;
+
+  /// No description provided for @supportChat.
+  ///
+  /// In pt, this message translates to:
+  /// **'Chat com o suporte'**
+  String get supportChat;
+
+  /// No description provided for @topUpAmountError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha um valor entre R\$ 10 e R\$ 1.000'**
+  String get topUpAmountError;
+
+  /// No description provided for @topUpAmountHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'O crédito entra na carteira assim que o Pix for confirmado.'**
+  String get topUpAmountHint;
+
+  /// No description provided for @topUpAmountLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Valor'**
+  String get topUpAmountLabel;
+
+  /// No description provided for @topUpDone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carteira recarregada'**
+  String get topUpDone;
+
+  /// No description provided for @topUpGeneratePix.
+  ///
+  /// In pt, this message translates to:
+  /// **'Gerar Pix de {amount}'**
+  String topUpGeneratePix(String amount);
+
+  /// No description provided for @topUpGeneratePixDisabled.
+  ///
+  /// In pt, this message translates to:
+  /// **'Gerar Pix'**
+  String get topUpGeneratePixDisabled;
+
+  /// No description provided for @topUpPaid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix confirmado'**
+  String get topUpPaid;
+
+  /// No description provided for @topUpPaidAmount.
+  ///
+  /// In pt, this message translates to:
+  /// **'{amount} já estão na sua carteira.'**
+  String topUpPaidAmount(String amount);
+
+  /// No description provided for @topUpPaidMinutes.
+  ///
+  /// In pt, this message translates to:
+  /// **'{minutes} minutos já estão na sua carteira.'**
+  String topUpPaidMinutes(int minutes);
+
+  /// No description provided for @topUpPixText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pague {amount} com o QR ou o código copia e cola no app do seu banco.'**
+  String topUpPixText(String amount);
+
+  /// No description provided for @topUpWallet.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recarregar carteira'**
+  String get topUpWallet;
+
+  /// No description provided for @trafficRules.
+  ///
+  /// In pt, this message translates to:
+  /// **'Regras de trânsito para autopropelidos'**
+  String get trafficRules;
+
+  /// No description provided for @trafficRulesTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Regras de trânsito'**
+  String get trafficRulesTitle;
+
+  /// No description provided for @walletAndPackages.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carteira e pacotes de minutos'**
+  String get walletAndPackages;
+
+  /// No description provided for @walletLedgerEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhum lançamento ainda.'**
+  String get walletLedgerEmpty;
+
+  /// No description provided for @walletLedgerTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Extrato'**
+  String get walletLedgerTitle;
+
+  /// No description provided for @emergencyConsentLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tenho autorização desta pessoa para receber minha localização em emergências'**
+  String get emergencyConsentLabel;
+
+  /// No description provided for @emergencyConsentText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Só compartilhamos sua localização com este contato quando você aciona o SOS. Confirme que a pessoa concorda em receber esses avisos.'**
+  String get emergencyConsentText;
+
+  /// No description provided for @pendingTopUpTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix de {amount} aguardando pagamento'**
+  String pendingTopUpTitle(String amount);
+
+  /// No description provided for @pendingTopUpText.
+  ///
+  /// In pt, this message translates to:
+  /// **'O saldo atualiza sozinho quando o pagamento for confirmado. Puxe a tela para baixo para conferir agora.'**
+  String get pendingTopUpText;
+
+  /// No description provided for @subscriptionPriceUnavailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'Preço do plano indisponível agora. Tente de novo em instantes.'**
+  String get subscriptionPriceUnavailable;
+
+  /// No description provided for @welcomePhone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar com celular'**
+  String get welcomePhone;
+
+  /// No description provided for @welcomeApple.
+  ///
+  /// In pt, this message translates to:
+  /// **'Apple'**
+  String get welcomeApple;
+
+  /// No description provided for @welcomeAppleLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrar com Apple'**
+  String get welcomeAppleLabel;
+
+  /// No description provided for @welcomeGoogle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Google'**
+  String get welcomeGoogle;
+
+  /// No description provided for @welcomeGoogleLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrar com Google'**
+  String get welcomeGoogleLabel;
+
+  /// No description provided for @welcomeDevHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Modo dev: celular aceita o código 123456; Google e Apple só funcionam com o Cognito.'**
+  String get welcomeDevHint;
+
+  /// No description provided for @welcomeSocialDevOnly.
+  ///
+  /// In pt, this message translates to:
+  /// **'No modo dev, Google e Apple não estão disponíveis. Entre com celular ou e-mail.'**
+  String get welcomeSocialDevOnly;
+
+  /// No description provided for @socialSignInError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível entrar. Tente de novo.'**
+  String get socialSignInError;
+
+  /// No description provided for @otpPhoneTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu celular'**
+  String get otpPhoneTitle;
+
+  /// No description provided for @otpPhoneSubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Vamos mandar um código por SMS para confirmar que é você.'**
+  String get otpPhoneSubtitle;
+
+  /// No description provided for @otpPhoneLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Celular com DDD'**
+  String get otpPhoneLabel;
+
+  /// No description provided for @otpPhoneInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Informe um celular com DDD, ex.: (11) 98765-4321.'**
+  String get otpPhoneInvalid;
+
+  /// No description provided for @otpEmailTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu e-mail'**
+  String get otpEmailTitle;
+
+  /// No description provided for @otpEmailSubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Vamos mandar um código por e-mail para confirmar que é você.'**
+  String get otpEmailSubtitle;
+
+  /// No description provided for @otpEmailInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Informe um e-mail válido.'**
+  String get otpEmailInvalid;
+
+  /// No description provided for @otpSend.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar código'**
+  String get otpSend;
+
+  /// No description provided for @otpCodeTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Digite o código'**
+  String get otpCodeTitle;
+
+  /// No description provided for @otpCodeSentSms.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviamos 6 dígitos por SMS para {destination}.'**
+  String otpCodeSentSms(String destination);
+
+  /// No description provided for @otpCodeSentEmail.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviamos 6 dígitos por e-mail para {destination}.'**
+  String otpCodeSentEmail(String destination);
+
+  /// No description provided for @otpCodeLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código de 6 dígitos'**
+  String get otpCodeLabel;
+
+  /// No description provided for @otpNotReceived.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não chegou?'**
+  String get otpNotReceived;
+
+  /// No description provided for @otpResendIn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reenviar em {time}'**
+  String otpResendIn(String time);
+
+  /// No description provided for @otpResend.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reenviar código'**
+  String get otpResend;
+
+  /// No description provided for @otpSendIn.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar código em {time}'**
+  String otpSendIn(String time);
+
+  /// No description provided for @otpAccountConfirmed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conta confirmada. Enviamos um novo código para entrar.'**
+  String get otpAccountConfirmed;
+
+  /// No description provided for @otpResent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviamos um novo código.'**
+  String get otpResent;
+
+  /// No description provided for @otpConfirm.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confirmar'**
+  String get otpConfirm;
+
+  /// No description provided for @otpEditDestination.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corrigir'**
+  String get otpEditDestination;
+
+  /// No description provided for @otpDevHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Modo dev: o código é 123456.'**
+  String get otpDevHint;
+
+  /// No description provided for @otpErrorInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código inválido. Confira e tente de novo.'**
+  String get otpErrorInvalid;
+
+  /// No description provided for @otpErrorExpired.
+  ///
+  /// In pt, this message translates to:
+  /// **'O código expirou. Peça um novo.'**
+  String get otpErrorExpired;
+
+  /// No description provided for @otpErrorTooMany.
+  ///
+  /// In pt, this message translates to:
+  /// **'Muitas tentativas. Aguarde alguns minutos e tente de novo.'**
+  String get otpErrorTooMany;
+
+  /// No description provided for @otpErrorDestination.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos enviar para esse contato. Confira e tente de novo.'**
+  String get otpErrorDestination;
+
+  /// No description provided for @cpfInvalidShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'CPF inválido'**
+  String get cpfInvalidShort;
+
+  /// No description provided for @docsAlreadySent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Documentos já enviados para análise.'**
+  String get docsAlreadySent;
+
+  /// No description provided for @payTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Forma de pagamento'**
+  String get payTitle;
+
+  /// No description provided for @paySubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'O cartão garante a caução. Você também pode pagar a caução por Pix em cada aluguel.'**
+  String get paySubtitle;
+
+  /// No description provided for @payPixWallet.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix + carteira Volti'**
+  String get payPixWallet;
+
+  /// No description provided for @payCardMissing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Adicione um cartão para a caução'**
+  String get payCardMissing;
+
+  /// No description provided for @payPixExplain.
+  ///
+  /// In pt, this message translates to:
+  /// **'Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.'**
+  String get payPixExplain;
+
+  /// No description provided for @payFinish.
+  ///
+  /// In pt, this message translates to:
+  /// **'Concluir cadastro'**
+  String get payFinish;
+
+  /// No description provided for @onboardingSentToast.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cadastro enviado. Verificação em até 2 min.'**
+  String get onboardingSentToast;
+
   /// No description provided for @vehicleCategoryDefault.
   ///
   /// In pt, this message translates to:
@@ -2199,6 +3579,12 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Rota a pé até a moto: {minutes} min, {distance}'**
   String walkRouteSemantics(int minutes, String distance);
+
+  /// No description provided for @thanksForRiding.
+  ///
+  /// In pt, this message translates to:
+  /// **'Obrigado por andar de Volti'**
+  String get thanksForRiding;
 }
 
 class _AppLocalizationsDelegate

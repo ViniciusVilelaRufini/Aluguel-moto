@@ -9,6 +9,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_operador/data/device.dart';
 import 'package:volti_operador/data/field_repository.dart';
+import 'package:volti_operador/data/location.dart';
 import 'package:volti_operador/data/models.dart';
 import 'package:volti_operador/data/offline_queue.dart';
 import 'package:volti_operador/data/sync.dart';
@@ -48,10 +49,23 @@ class FakeFieldRepository implements FieldRepository {
   @override
   Future<FieldTask> startTask(String id) async => throw UnimplementedError();
 
+  final unlocks = <(String, String?)>[];
+
   @override
   Future<VehicleCommand> serviceUnlock(String vehicleId,
-          {required String reason, String? taskId}) async =>
-      throw UnimplementedError();
+      {required String reason, String? taskId}) async {
+    _check();
+    unlocks.add((vehicleId, taskId));
+    final now = DateTime.now().toUtc();
+    return VehicleCommand((b) => b
+      ..id = 'cmd-1'
+      ..vehicleId = vehicleId
+      ..type = CommandType.unlock
+      ..status = CommandStatus.confirmed
+      ..reason = reason
+      ..createdAt = now
+      ..updatedAt = now);
+  }
 
   @override
   Future<void> setVehicleStatus(String vehicleId,
@@ -147,6 +161,41 @@ class FakeConnectivity implements ConnectivityMonitor {
 
   @override
   Stream<bool> get onlineChanges => controller.stream;
+
+  bool online = true;
+
+  @override
+  Future<bool> isOnline() async => online;
+}
+
+/// GPS fake: [access] e uma posicao fixa opcional.
+class FakeLocationService implements LocationService {
+  FakeLocationService({this.access = LocationAccess.notAsked, this.position, this.onRequest});
+
+  LocationAccess access;
+  GeoPoint? position;
+  LocationAccess? onRequest;
+  int requests = 0;
+  int settingsOpened = 0;
+
+  @override
+  Future<LocationAccess> check() async => access;
+
+  @override
+  Future<LocationAccess> request() async {
+    requests++;
+    if (onRequest != null) access = onRequest!;
+    return access;
+  }
+
+  @override
+  Stream<GeoPoint> watch() => position == null ? const Stream.empty() : Stream.value(position!);
+
+  @override
+  Future<bool> openSettings() async {
+    settingsOpened++;
+    return true;
+  }
 }
 
 class FakePhotoPicker implements PhotoPicker {
@@ -157,20 +206,23 @@ class FakePhotoPicker implements PhotoPicker {
 }
 
 class Harness {
-  Harness({FakeFieldRepository? repo, OfflineQueue? queue})
+  Harness({FakeFieldRepository? repo, OfflineQueue? queue, FakeLocationService? location})
       : repo = repo ?? FakeFieldRepository(),
         connectivity = FakeConnectivity(),
-        queue = queue ?? MemoryOfflineQueue();
+        queue = queue ?? MemoryOfflineQueue(),
+        location = location ?? FakeLocationService();
 
   final FakeFieldRepository repo;
   final FakeConnectivity connectivity;
   final OfflineQueue queue;
+  final FakeLocationService location;
 
   List<Override> get overrides => [
         fieldRepositoryProvider.overrideWithValue(repo),
         connectivityMonitorProvider.overrideWithValue(connectivity),
         offlineQueueProvider.overrideWithValue(queue),
         photoPickerProvider.overrideWithValue(FakePhotoPicker()),
+        locationServiceProvider.overrideWithValue(location),
       ];
 
   Future<void> pump(WidgetTester tester, Widget child,
