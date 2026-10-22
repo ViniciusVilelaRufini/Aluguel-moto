@@ -18,6 +18,7 @@ part 'vehicle_status_counts.g.dart';
 /// * [blocked]
 /// * [maintenance]
 /// * [offline]
+/// * [awaitingPickup] - Retirada em galpão: devolvidas em ponto verde, esperando recolhimento.
 @BuiltValue()
 abstract class VehicleStatusCounts
     implements Built<VehicleStatusCounts, VehicleStatusCountsBuilder> {
@@ -41,6 +42,10 @@ abstract class VehicleStatusCounts
 
   @BuiltValueField(wireName: r'offline')
   int get offline;
+
+  /// Retirada em galpão: devolvidas em ponto verde, esperando recolhimento.
+  @BuiltValueField(wireName: r'awaiting_pickup')
+  int get awaitingPickup;
 
   VehicleStatusCounts._();
 
@@ -104,6 +109,11 @@ class _$VehicleStatusCountsSerializer
     yield r'offline';
     yield serializers.serialize(
       object.offline,
+      specifiedType: const FullType(int),
+    );
+    yield r'awaiting_pickup';
+    yield serializers.serialize(
+      object.awaitingPickup,
       specifiedType: const FullType(int),
     );
   }
@@ -179,6 +189,13 @@ class _$VehicleStatusCountsSerializer
             specifiedType: const FullType(int),
           ) as int;
           result.offline = valueDes;
+          break;
+        case r'awaiting_pickup':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(int),
+          ) as int;
+          result.awaitingPickup = valueDes;
           break;
         default:
           unhandled.add(key);

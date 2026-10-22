@@ -4688,6 +4688,8 @@ export interface components {
             blocked: number;
             maintenance: number;
             offline: number;
+            /** @description Retirada em galpão: devolvidas em ponto verde, esperando recolhimento. */
+            awaiting_pickup: number;
         };
         DashboardSummary: {
             /** Format: date-time */

@@ -15,6 +15,7 @@ Name | Type | Description | Notes
 **blocked** | **int** |  | 
 **maintenance** | **int** |  | 
 **offline** | **int** |  | 
+**awaitingPickup** | **int** | Retirada em galpão: devolvidas em ponto verde, esperando recolhimento. | 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

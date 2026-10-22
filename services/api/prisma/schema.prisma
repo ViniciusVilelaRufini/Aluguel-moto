@@ -714,7 +714,7 @@ model Reservation {
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
 
-  handover Handover?
+  handovers Handover[]
 
   @@index([customerId, status])
   @@index([vehicleId, status])
@@ -1424,7 +1424,8 @@ model Referral {
 
 model Depot {
   id                     String   @id @default(uuid()) @db.Uuid
-  name                   String
+  /// Único: o seed faz upsert pelo nome.
+  name                   String   @unique
   address                String
   /// Bairro mostrado no cartão da home.
   district               String?
@@ -1449,15 +1450,16 @@ model Depot {
 }
 
 /// Entrega no galpão: saída (`pickup`, com aceite do cliente) ou chegada (`return_depot`, encerra o aluguel).
-/// Uma saída por reserva (`reservationId` único); uma chegada não cancelada por aluguel (índice parcial
-/// `Handover_one_open_return_per_rental`, escrito à mão na migração).
+/// Escritos à mão nas migrações: uma saída pendente ou aceita por reserva (`Handover_one_open_pickup_per_reservation`;
+/// disputada/cancelada libera refazer), uma chegada não cancelada por aluguel (`Handover_one_open_return_per_rental`)
+/// e `Handover_type_reference` (`pickup` exige `reservationId`; `return_depot` exige `rentalId`).
 model Handover {
   id            String         @id @default(uuid()) @db.Uuid
   type          HandoverType
   status        HandoverStatus @default(pending_customer)
   depotId       String         @db.Uuid
   depot         Depot          @relation(fields: [depotId], references: [id])
-  reservationId String?        @unique @db.Uuid
+  reservationId String?        @db.Uuid
   reservation   Reservation?   @relation(fields: [reservationId], references: [id])
   /// Aluguel criado no aceite (`pickup`) ou que chega (`return_depot`); sem FK, como `Dispute.rentalId`.
   rentalId      String?        @db.Uuid
@@ -1479,6 +1481,7 @@ model Handover {
   updatedAt     DateTime       @updatedAt
 
   @@index([depotId, status])
+  @@index([reservationId])
   @@index([rentalId])
   @@index([vehicleId])
 }

@@ -21,6 +21,8 @@ class _$VehicleStatusCounts extends VehicleStatusCounts {
   final int maintenance;
   @override
   final int offline;
+  @override
+  final int awaitingPickup;
 
   factory _$VehicleStatusCounts(
           [void Function(VehicleStatusCountsBuilder)? updates]) =>
@@ -33,7 +35,8 @@ class _$VehicleStatusCounts extends VehicleStatusCounts {
       required this.paused,
       required this.blocked,
       required this.maintenance,
-      required this.offline})
+      required this.offline,
+      required this.awaitingPickup})
       : super._();
   @override
   VehicleStatusCounts rebuild(
@@ -54,7 +57,8 @@ class _$VehicleStatusCounts extends VehicleStatusCounts {
         paused == other.paused &&
         blocked == other.blocked &&
         maintenance == other.maintenance &&
-        offline == other.offline;
+        offline == other.offline &&
+        awaitingPickup == other.awaitingPickup;
   }
 
   @override
@@ -67,6 +71,7 @@ class _$VehicleStatusCounts extends VehicleStatusCounts {
     _$hash = $jc(_$hash, blocked.hashCode);
     _$hash = $jc(_$hash, maintenance.hashCode);
     _$hash = $jc(_$hash, offline.hashCode);
+    _$hash = $jc(_$hash, awaitingPickup.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -80,7 +85,8 @@ class _$VehicleStatusCounts extends VehicleStatusCounts {
           ..add('paused', paused)
           ..add('blocked', blocked)
           ..add('maintenance', maintenance)
-          ..add('offline', offline))
+          ..add('offline', offline)
+          ..add('awaitingPickup', awaitingPickup))
         .toString();
   }
 }
@@ -117,6 +123,11 @@ class VehicleStatusCountsBuilder
   int? get offline => _$this._offline;
   set offline(int? offline) => _$this._offline = offline;
 
+  int? _awaitingPickup;
+  int? get awaitingPickup => _$this._awaitingPickup;
+  set awaitingPickup(int? awaitingPickup) =>
+      _$this._awaitingPickup = awaitingPickup;
+
   VehicleStatusCountsBuilder() {
     VehicleStatusCounts._defaults(this);
   }
@@ -131,6 +142,7 @@ class VehicleStatusCountsBuilder
       _blocked = $v.blocked;
       _maintenance = $v.maintenance;
       _offline = $v.offline;
+      _awaitingPickup = $v.awaitingPickup;
       _$v = null;
     }
     return this;
@@ -166,6 +178,8 @@ class VehicleStatusCountsBuilder
               maintenance, r'VehicleStatusCounts', 'maintenance'),
           offline: BuiltValueNullFieldError.checkNotNull(
               offline, r'VehicleStatusCounts', 'offline'),
+          awaitingPickup: BuiltValueNullFieldError.checkNotNull(
+              awaitingPickup, r'VehicleStatusCounts', 'awaitingPickup'),
         );
     replace(_$result);
     return _$result;

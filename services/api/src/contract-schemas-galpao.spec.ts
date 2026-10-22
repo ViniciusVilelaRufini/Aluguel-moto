@@ -10,6 +10,11 @@ describe('contrato do galpão', () => {
     expect(s.ReservationStatus.enum).toEqual(expect.arrayContaining(['active', 'converted', 'canceled', 'expired', 'handover']));
   });
 
+  it('VehicleStatusCounts (painel) conta todos os status da moto, inclusive awaiting_pickup', () => {
+    expect([...s.VehicleStatusCounts.required].sort()).toEqual([...s.VehicleStatus.enum].sort());
+    expect(s.VehicleStatusCounts.properties.awaiting_pickup).toMatchObject({ type: 'integer', minimum: 0 });
+  });
+
   it('ReservationCreate continua aceitando só vehicleId (compatível)', () => {
     expect(s.ReservationCreate.required).toEqual(['vehicleId']);
     expect(Object.keys(s.ReservationCreate.properties)).toEqual(

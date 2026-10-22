@@ -22,10 +22,11 @@ export const HAND_WRITTEN_INDEXES = [
   'Subscription_one_open_per_customer',
   'Subscription_one_open_per_vehicle',
   'Dispute_one_open_per_rental',
-  // Retirada em galpão: uma chegada não cancelada por aluguel.
+  // Retirada em galpão: uma chegada não cancelada por aluguel; uma saída pendente ou aceita por reserva.
   'Handover_one_open_return_per_rental',
+  'Handover_one_open_pickup_per_reservation',
 ];
-export const HAND_WRITTEN_CHECKS = ['Vehicle_speed_limit_range', 'Zone_speed_limit_range', 'Rental_speed_limit_range', 'Handover_battery_pct_range', 'Depot_windows_range'];
+export const HAND_WRITTEN_CHECKS = ['Vehicle_speed_limit_range', 'Zone_speed_limit_range', 'Rental_speed_limit_range', 'Handover_battery_pct_range', 'Depot_windows_range', 'Handover_type_reference'];
 
 export async function assertHandWrittenSchema(prisma: PrismaClient): Promise<void> {
   const idx = await prisma.$queryRaw<Array<{ indexname: string }>>`SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`;

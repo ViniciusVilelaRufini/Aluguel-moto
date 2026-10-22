@@ -6411,7 +6411,7 @@ components:
     # ───────────── reports ─────────────
     VehicleStatusCounts:
       type: object
-      required: [free, rented, reserved, paused, blocked, maintenance, offline]
+      required: [free, rented, reserved, paused, blocked, maintenance, offline, awaiting_pickup]
       properties:
         free: { type: integer, minimum: 0 }
         rented: { type: integer, minimum: 0 }
@@ -6420,6 +6420,7 @@ components:
         blocked: { type: integer, minimum: 0 }
         maintenance: { type: integer, minimum: 0 }
         offline: { type: integer, minimum: 0 }
+        awaiting_pickup: { type: integer, minimum: 0, description: 'Retirada em galpão: devolvidas em ponto verde, esperando recolhimento.' }
     DashboardSummary:
       type: object
       required: [generatedAt, occupancyPct, activeRentals, revenueTodayCents, openAlerts, vehiclesByStatus]

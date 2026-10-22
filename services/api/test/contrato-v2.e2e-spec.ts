@@ -220,7 +220,7 @@ describe('Contrato v2 (e2e)', () => {
     const fake = app.get(PAYMENT_PROVIDER) as any;
     const a = await customerWithCard('plan-lgpd');
     const taken = (await prisma.subscription.findMany({ where: { assignedVehicleId: { not: null } }, select: { assignedVehicleId: true } })).map((x) => x.assignedVehicleId!);
-    const v = await prisma.vehicle.findFirstOrThrow({ where: { status: 'free', id: { notIn: taken } } });
+    const v = await prisma.vehicle.findFirstOrThrow({ where: { status: 'free', depotId: null, id: { notIn: taken } } });
     const sub = await http().post('/payments/subscriptions').set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send({ planCode: 'weekly', vehicleId: v.id }).expect(201);
     const providerSubId = (await prisma.paymentProviderRef.findFirstOrThrow({ where: { entityType: 'subscription', entityId: sub.body.id } })).providerId;
     fake.failNextCancelCall = true;

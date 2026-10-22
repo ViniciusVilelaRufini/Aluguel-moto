@@ -111,12 +111,37 @@ describe('Migração do galpão sobre dados antigos', () => {
     await db.handover.update({ where: { id: first.id }, data: { status: 'canceled' } });
     await expect(db.handover.create({ data: base })).resolves.toMatchObject({ status: 'pending_customer' });
 
-    // Uma entrega de saída por reserva.
+    // Saída: no máximo uma entrega pendente ou aceita por reserva; disputada/cancelada libera refazer.
     const pickup = { type: 'pickup' as const, depotId: depot.id, reservationId, vehicleId, operatorId: randomUUID(), checklist: [], photoKeys: ['handovers/a.jpg'], batteryPct: 90 };
-    await db.handover.create({ data: pickup });
+    const p1 = await db.handover.create({ data: pickup });
     await expect(db.handover.create({ data: pickup })).rejects.toMatchObject({ code: 'P2002' });
+    await db.handover.update({ where: { id: p1.id }, data: { status: 'disputed', disputeReason: 'Retrovisor quebrado.' } });
+    const p2 = await db.handover.create({ data: pickup });
+    await db.handover.update({ where: { id: p2.id }, data: { status: 'accepted' } });
+    await expect(db.handover.create({ data: pickup })).rejects.toMatchObject({ code: 'P2002' });
+    expect(await db.handover.count({ where: { reservationId } })).toBe(2);
 
     const idx = await db.$queryRawUnsafe<Array<{ indexname: string }>>(`SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`);
-    expect(idx.map((i) => i.indexname)).toEqual(expect.arrayContaining(['Handover_one_open_return_per_rental', 'Handover_depotId_status_idx', 'Vehicle_depotId_status_idx']));
+    const names = idx.map((i) => i.indexname);
+    expect(names).toEqual(expect.arrayContaining(['Handover_one_open_return_per_rental', 'Handover_one_open_pickup_per_reservation', 'Handover_reservationId_idx', 'Handover_depotId_status_idx', 'Vehicle_depotId_status_idx']));
+    expect(names).not.toContain('Handover_reservationId_key');
+  });
+
+  it('barra valores fora dos limites e entrega sem a referência do tipo (CHECK)', async () => {
+    const depot = await db.depot.create({ data: { name: 'Galpão CHECK', address: 'Rua Y, 2', lat: -23.56, lng: -46.68, openingHours: [] } });
+    const insertHandover = (type: string, reservation: string | null, rental: string | null, batteryPct: number) =>
+      db.$executeRawUnsafe(
+        `INSERT INTO "Handover" ("id", "type", "depotId", "reservationId", "rentalId", "vehicleId", "operatorId", "checklist", "photoKeys", "batteryPct", "updatedAt")
+         VALUES (gen_random_uuid(), $1::"HandoverType", $2::uuid, $3::uuid, $4::uuid, $5::uuid, gen_random_uuid(), '[]'::jsonb, '{}', $6, now())`,
+        type, depot.id, reservation, rental, vehicleId, batteryPct,
+      );
+    await expect(insertHandover('return_depot', null, randomUUID(), 101)).rejects.toThrow(/23514/);
+    await expect(
+      db.$executeRawUnsafe(`INSERT INTO "Depot" ("id", "name", "address", "lat", "lng", "openingHours", "pickupNowWindowMinutes", "updatedAt") VALUES (gen_random_uuid(), 'X', 'Y', 0, 0, '[]'::jsonb, 5, now())`),
+    ).rejects.toThrow(/23514/);
+    // `pickup` exige reservationId; `return_depot` exige rentalId.
+    await expect(insertHandover('pickup', null, randomUUID(), 50)).rejects.toThrow(/23514/);
+    await expect(insertHandover('return_depot', reservationId, null, 50)).rejects.toThrow(/23514/);
+    await expect(insertHandover('return_depot', null, randomUUID(), 50)).resolves.toBe(1);
   });
 });

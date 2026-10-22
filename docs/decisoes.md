@@ -284,3 +284,9 @@ Só acréscimos e descrições; o contrato prevalece sobre o plano onde divergem
 - `x-ws-events.handover.updated.status` referencia `HandoverStatus` (`$ref`; redocly e geradores aceitam).
 - `Handover.operatorFirstName`: só o primeiro nome ("Entregue por <nome>").
 - A cor provisória de `awaiting_pickup` no painel fica até a Task 12.
+
+### Modelo de dados do galpão — Task 2, fix round 1 (revisão) · status: aprovada (coordenador, 2026-10-22)
+
+- **Contrato:** `VehicleStatusCounts` (dashboard) ganha `awaiting_pickup` (propriedade e `required`, inteiro ≥ 0), para contar todos os valores de `VehicleStatus`. Clientes TS e Dart regenerados.
+- **Saída refazível:** a entrega `pickup` deixa de ser única por reserva para sempre. Índice parcial `Handover_one_open_pickup_per_reservation` (`type = 'pickup'` e `status IN ('pending_customer','accepted')`): disputada ou cancelada libera nova saída para a mesma reserva. `CHECK` `Handover_type_reference`: `pickup` exige `reservationId`, `return_depot` exige `rentalId`. Migração nova `20261023091000_galpao_pickup_unique` (as já aplicadas não mudam).
+- **Seed:** só o lote `VLT-0011`…`VLT-0030` vai para o "Galpão Volti — Pinheiros" (nome único, upsert atômico), sem as motos usadas pelos e2e de rua; motos fora do lote que apontem para o galpão são desvinculadas (repara bancos semeados antes).
