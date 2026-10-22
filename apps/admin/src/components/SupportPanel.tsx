@@ -7,6 +7,8 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { CLAIM_STATUS, CLAIM_TYPE, DISPUTE_STATUS, INCIDENT_CATEGORY, INCIDENT_STATUS } from '@/lib/labels';
 import { formatDateTime, timeAgo } from '@/lib/format';
+import { MESSAGE_STATUS, lastUnreadFromCustomer, messageStatus } from '@/lib/chat';
+import { Icon } from '@/ds/Icon';
 import type { S } from '@/lib/types';
 import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
@@ -53,7 +55,8 @@ function Conversations({ customerId }: { customerId?: string }) {
     queryFn: () => unwrap(api.GET('/support/conversations/{id}/messages', { params: { path: { id: sel!.id }, query: { limit: 100 } } })),
     refetchInterval: 5_000,
   });
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [msgs.data]);
+  // Chrome recente devolve uma Promise em scrollIntoView: o efeito não pode retorná-la (vira "cleanup").
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [msgs.data]);
 
   const send = useMutation({
     mutationFn: () => unwrap(api.POST('/support/conversations/{id}/messages', { params: { path: { id: sel!.id } }, body: { body: text.trim() } })),
@@ -66,6 +69,18 @@ function Conversations({ customerId }: { customerId?: string }) {
 
   // O endpoint de mensagens vem em ordem do servidor; mostramos da mais antiga para a mais nova.
   const items = [...(msgs.data?.items ?? [])].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  // Ao abrir a conversa (e quando chega mensagem nova do cliente), marca como lida até a última do cliente.
+  // Só quem atende (admin, suporte) marca; o cliente passa a ver "Lida" nas mensagens dele.
+  const upTo = canReply && sel ? lastUnreadFromCustomer(msgs.data?.items ?? []) : undefined;
+  const marked = useRef<string | null>(null);
+  useEffect(() => {
+    if (!sel || !upTo || marked.current === upTo) return;
+    marked.current = upTo;
+    unwrap(api.POST('/support/conversations/{id}/read', { params: { path: { id: sel.id } }, body: { upToMessageId: upTo } }))
+      .then(() => qc.invalidateQueries({ queryKey: ['conversations'] }))
+      .catch(() => { marked.current = null; });
+  }, [sel, upTo, qc]);
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 320px) minmax(0, 1fr)', gap: 14, minHeight: 420 }}>
@@ -92,7 +107,17 @@ function Conversations({ customerId }: { customerId?: string }) {
               {items.map((m) => (
                 <div key={m.id} style={{ alignSelf: m.authorType === 'customer' ? 'flex-start' : 'flex-end', maxWidth: '75%', padding: '8px 12px', borderRadius: 14, background: m.authorType === 'customer' ? 'var(--surface-sunken)' : 'var(--brand-soft)', fontSize: 14 }}>
                   <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>{m.authorName ?? (m.authorType === 'system' ? 'Sistema' : 'Cliente')} · {formatDateTime(m.createdAt)}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, justifyContent: m.authorType === 'customer' ? 'flex-start' : 'flex-end' }}>
+                    <span>{m.authorName ?? (m.authorType === 'system' ? 'Sistema' : 'Cliente')} · {formatDateTime(m.createdAt)}</span>
+                    {m.authorType !== 'customer' && (() => {
+                      const st = MESSAGE_STATUS[messageStatus(m)];
+                      return (
+                        <span data-testid="message-status" data-status={messageStatus(m)} title={st.label} aria-label={st.label} style={{ display: 'inline-flex', color: st.strong ? 'var(--info-ink)' : 'var(--text-secondary)' }}>
+                          <Icon name={st.icon} size={14} />
+                        </span>
+                      );
+                    })()}
+                  </div>
                 </div>
               ))}
               <div ref={end} />
