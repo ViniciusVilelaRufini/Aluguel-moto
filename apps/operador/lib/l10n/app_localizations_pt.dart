@@ -860,21 +860,21 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get pickupCodeInvalidBody =>
-      'Confira se o QR é de uma reserva Volti e leia de novo.';
+      'O código está vazio ou longo demais. Leia o QR de novo.';
 
   @override
   String get pickupCodeExpired => 'Código vencido';
 
   @override
   String get pickupCodeExpiredBody =>
-      'O prazo da reserva acabou. O cliente precisa reservar de novo.';
+      'Pelo relógio deste aparelho a reserva venceu. Se quiser, siga: a API confere no envio.';
 
   @override
   String get pickupNotInAgenda => 'Reserva fora da agenda de hoje';
 
   @override
   String get pickupNotInAgendaBody =>
-      'Esta reserva não é deste galpão ou não é para hoje.';
+      'Esta reserva não aparece na agenda de hoje deste galpão. A API confere no envio.';
 
   @override
   String get pickupNotActive => 'Esta reserva não está aguardando retirada';
@@ -972,7 +972,8 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pickupOffline => 'Sem conexão: envie quando voltar a rede';
 
   @override
-  String get pickupOfflineBody => 'O rascunho fica salvo neste aparelho.';
+  String get pickupOfflineBody =>
+      'O rascunho fica guardado enquanto o app estiver aberto.';
 
   @override
   String get handoverTitle => 'Entrega da moto';
@@ -1091,4 +1092,11 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get jobReturnHandover => 'Chegada no galpão';
+
+  @override
+  String get pickupCodeProceed => 'Continuar mesmo assim';
+
+  @override
+  String get arrivalVehicleAuth =>
+      'Sua sessão expirou. Entre de novo para conferir a moto.';
 }

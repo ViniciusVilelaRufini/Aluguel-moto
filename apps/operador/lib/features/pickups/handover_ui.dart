@@ -3,16 +3,14 @@ import 'package:flutter/services.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart' hide VehicleStatus;
 import 'package:volti_flutter/volti_flutter.dart';
+import 'package:volti_operador/data/depot_time.dart';
 import 'package:volti_operador/data/handover_models.dart';
 import 'package:volti_operador/features/inspection/inspection_page.dart' show AnswerChip;
 import 'package:volti_operador/l10n/app_localizations.dart';
 import 'package:volti_operador/ui/widgets.dart';
 
-/// "14:30" no fuso do aparelho (o operador esta no galpao, America/Sao_Paulo).
-String hhmm(DateTime d) {
-  final l = d.toLocal();
-  return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
-}
+/// "14:30" no fuso do galpao (`Depot.timezone`), nunca no do aparelho.
+String hhmm(DateTime d, String zone) => depotHhmm(d, zone);
 
 String checklistLabel(AppLocalizations t, String code) => switch (code) {
       'freios' => t.hoItemFreios,
@@ -42,11 +40,11 @@ String photoAngleLabel(AppLocalizations t, PhotoAngle a) => switch (a) {
     };
 
 /// "Retirar agora · até 14:30" ou "Agendada 15:00 · até 15:30".
-String pickupWhen(AppLocalizations t, Reservation r) {
+String pickupWhen(AppLocalizations t, Reservation r, String zone) {
   if (r.pickupMode == PickupMode.scheduled && r.pickupAt != null) {
-    return t.pickupScheduled(hhmm(r.pickupAt!), hhmm(r.expiresAt));
+    return t.pickupScheduled(hhmm(r.pickupAt!, zone), hhmm(r.expiresAt, zone));
   }
-  return t.pickupNow(hhmm(r.expiresAt));
+  return t.pickupNow(hhmm(r.expiresAt, zone));
 }
 
 /// "Para enviar: responda todos os itens, informe a bateria e tire as 4 fotos."

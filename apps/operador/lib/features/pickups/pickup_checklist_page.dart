@@ -123,6 +123,17 @@ class _PickupChecklistPageState extends ConsumerState<PickupChecklistPage> {
           builder: (_) => HandoverStatusPage(handoverId: handover.id, initial: handover)));
     } on RepositoryException catch (e) {
       if (!mounted) return;
+      // Resposta perdida: a entrega ja existe. Recarrega a agenda e abre o estado.
+      if (e.status == 409 && e.slug == 'reservation-in-handover') {
+        final handoverId = await _existingHandover();
+        if (!mounted) return;
+        if (handoverId != null) {
+          _drafts.clear(widget.pickupCode);
+          await Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
+              builder: (_) => HandoverStatusPage(handoverId: handoverId)));
+          return;
+        }
+      }
       setState(() {
         _sending = false;
         if (e.kind == FailureKind.network) {
@@ -142,6 +153,27 @@ class _PickupChecklistPageState extends ConsumerState<PickupChecklistPage> {
         _errorMessage = null;
       });
     }
+  }
+
+  /// `handoverId` da reserva na agenda recarregada, se houver.
+  Future<String?> _existingHandover() async {
+    final reservationId =
+        widget.reservation?.id ?? PickupCode.parse(widget.pickupCode)?.reservationId;
+    if (reservationId == null) return null;
+    try {
+      final depots = await ref.read(depotsProvider.future);
+      final depotId = widget.reservation?.depotId ??
+          effectiveDepotId(depots.depots, ref.read(selectedDepotProvider));
+      if (depotId == null) return null;
+      ref.invalidate(pickupsProvider(depotId));
+      final agenda = await ref.read(pickupsProvider(depotId).future);
+      for (final r in agenda) {
+        if (r.id.toLowerCase() == reservationId.toLowerCase()) return r.handoverId;
+      }
+    } on Exception {
+      return null;
+    }
+    return null;
   }
 
   @override

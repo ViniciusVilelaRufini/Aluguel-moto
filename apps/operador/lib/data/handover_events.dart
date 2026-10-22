@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
+import 'package:volti_operador/features/auth/auth.dart';
 
 /// `handover.updated` (`realtime.md`): aceite, disputa, cancelamento ou falha
 /// no aceite (`lastError`, com a entrega ainda `pending_customer`).
@@ -101,13 +102,34 @@ class SocketHandoverEvents implements HandoverEvents {
   }
 }
 
-/// Conecta so quando uma tela do galpao le o provider.
+/// Sem sessao: nenhum socket aberto.
+class _NoEvents implements HandoverEvents {
+  @override
+  Stream<HandoverUpdate> get updates => const Stream.empty();
+
+  @override
+  Stream<bool> get connected => const Stream.empty();
+
+  @override
+  void dispose() {}
+}
+
+/// Cria e conecta o socket (injetavel nos testes).
+final handoverEventsFactoryProvider = Provider<HandoverEvents Function()>((ref) {
+  final baseUrl = ref.watch(apiBaseUrlProvider);
+  final auth = ref.watch(authRepositoryProvider);
+  return () {
+    final events = SocketHandoverEvents(baseUrl: baseUrl, auth: auth);
+    unawaited(events.connect());
+    return events;
+  };
+});
+
+/// Conecta so quando uma tela do galpao le o provider, e so com sessao. Trocar
+/// de sessao ou sair descarta o socket (um novo nasce com o novo login).
 final handoverEventsProvider = Provider<HandoverEvents>((ref) {
-  final events = SocketHandoverEvents(
-    baseUrl: ref.watch(apiBaseUrlProvider),
-    auth: ref.watch(authRepositoryProvider),
-  );
-  unawaited(events.connect());
+  if (ref.watch(sessionProvider) == null) return _NoEvents();
+  final events = ref.watch(handoverEventsFactoryProvider)();
   ref.onDispose(events.dispose);
   return events;
 });

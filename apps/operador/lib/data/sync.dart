@@ -312,12 +312,21 @@ class SyncController extends Notifier<SyncState> {
         await _queue.put(current);
       }
     }
-    return _repo.createReturnHandover(
-      rentalId: arrival.rentalId!,
-      depotId: arrival.depotId,
-      draft: arrival.draft,
-      photoKeys: keys,
-    );
+    try {
+      return await _repo.createReturnHandover(
+        rentalId: arrival.rentalId!,
+        depotId: arrival.depotId,
+        draft: arrival.draft,
+        photoKeys: keys,
+      );
+    } on RepositoryException catch (e) {
+      // Resposta perdida e reenvio: a chegada ja foi registrada se o aluguel
+      // guardado nao esta mais aberto na moto.
+      if (e.status != 409) rethrow;
+      final vehicle = await _repo.vehicleByCode(arrival.vehicleCode);
+      if (vehicle.currentRentalId == arrival.rentalId) rethrow;
+      return ReturnAlreadyRegistered(arrival.rentalId!);
+    }
   }
 
   QueuedJob _withPayload(QueuedJob j, Map<String, dynamic> payload) => QueuedJob(
@@ -332,6 +341,13 @@ class SyncController extends Notifier<SyncState> {
         error: j.error,
         photoKeys: j.photoKeys,
       );
+}
+
+/// Resultado de um `return_depot` reenviado que a API ja tinha registrado
+/// (409 e o aluguel nao esta mais aberto na moto).
+class ReturnAlreadyRegistered {
+  const ReturnAlreadyRegistered(this.rentalId);
+  final String rentalId;
 }
 
 /// Motivo exibido quando a moto que chegou nao tem aluguel aberto.

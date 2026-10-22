@@ -1560,7 +1560,7 @@ abstract class AppLocalizations {
   /// No description provided for @pickupCodeInvalidBody.
   ///
   /// In pt, this message translates to:
-  /// **'Confira se o QR é de uma reserva Volti e leia de novo.'**
+  /// **'O código está vazio ou longo demais. Leia o QR de novo.'**
   String get pickupCodeInvalidBody;
 
   /// No description provided for @pickupCodeExpired.
@@ -1572,7 +1572,7 @@ abstract class AppLocalizations {
   /// No description provided for @pickupCodeExpiredBody.
   ///
   /// In pt, this message translates to:
-  /// **'O prazo da reserva acabou. O cliente precisa reservar de novo.'**
+  /// **'Pelo relógio deste aparelho a reserva venceu. Se quiser, siga: a API confere no envio.'**
   String get pickupCodeExpiredBody;
 
   /// No description provided for @pickupNotInAgenda.
@@ -1584,7 +1584,7 @@ abstract class AppLocalizations {
   /// No description provided for @pickupNotInAgendaBody.
   ///
   /// In pt, this message translates to:
-  /// **'Esta reserva não é deste galpão ou não é para hoje.'**
+  /// **'Esta reserva não aparece na agenda de hoje deste galpão. A API confere no envio.'**
   String get pickupNotInAgendaBody;
 
   /// No description provided for @pickupNotActive.
@@ -1776,7 +1776,7 @@ abstract class AppLocalizations {
   /// No description provided for @pickupOfflineBody.
   ///
   /// In pt, this message translates to:
-  /// **'O rascunho fica salvo neste aparelho.'**
+  /// **'O rascunho fica guardado enquanto o app estiver aberto.'**
   String get pickupOfflineBody;
 
   /// No description provided for @handoverTitle.
@@ -1994,6 +1994,18 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Chegada no galpão'**
   String get jobReturnHandover;
+
+  /// No description provided for @pickupCodeProceed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar mesmo assim'**
+  String get pickupCodeProceed;
+
+  /// No description provided for @arrivalVehicleAuth.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua sessão expirou. Entre de novo para conferir a moto.'**
+  String get arrivalVehicleAuth;
 }
 
 class _AppLocalizationsDelegate

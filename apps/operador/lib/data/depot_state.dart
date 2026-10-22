@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_api/volti_api.dart';
 
+import 'depot_time.dart';
 import 'field_repository.dart';
 import 'handover_models.dart';
+import 'service_unlock.dart' show clockProvider;
 import 'sync.dart';
 
 class DepotsResult {
@@ -56,9 +58,19 @@ String? effectiveDepotId(List<Depot> depots, String? selected) {
   return depots.length == 1 ? depots.single.id : null;
 }
 
-/// Agenda do dia do galpao.
+/// Fuso do galpao (`Depot.timezone`), ou America/Sao_Paulo se desconhecido.
+String depotZone(DepotsResult? depots, String? depotId) =>
+    depots?.byId(depotId)?.timezone ?? defaultDepotTimezone;
+
+/// Agenda do dia do galpao: "hoje" e calculado no fuso do galpao, nao do
+/// aparelho. Ao carregar, apaga rascunhos de saida vencidos ou de reservas
+/// que ja sairam da fila (retirada, cancelada, expirada).
 final pickupsProvider = FutureProvider.family<List<Reservation>, String>((ref, depotId) async {
-  final items = await ref.read(fieldRepositoryProvider).listPickups(depotId, DateTime.now());
+  final depots = await ref.read(depotsProvider.future);
+  final now = ref.read(clockProvider)();
+  final day = depotToday(now, depotZone(depots, depotId));
+  final items = await ref.read(fieldRepositoryProvider).listPickups(depotId, day);
+  ref.read(pickupDraftsProvider.notifier).prune(items, now);
   return sortPickups(items);
 });
 
@@ -73,6 +85,22 @@ class PickupDraftsController extends Notifier<Map<String, PickupDraft>> {
   void put(PickupDraft d) => state = {...state, d.pickupCode: d};
 
   void clear(String code) => state = {...state}..remove(code);
+
+  /// Tira rascunhos vencidos ou de reservas da agenda que nao estao mais `active`.
+  void prune(List<Reservation> agenda, DateTime now) {
+    final status = {for (final r in agenda) r.id.toLowerCase(): r.status};
+    final keep = <String, PickupDraft>{};
+    for (final e in state.entries) {
+      final code = PickupCode.parse(e.key);
+      if (code != null) {
+        if (code.expiredAt(now)) continue;
+        final s = status[code.reservationId];
+        if (s != null && s != ReservationStatus.active) continue;
+      }
+      keep[e.key] = e.value;
+    }
+    if (keep.length != state.length) state = keep;
+  }
 
   /// Rascunho da reserva (pelo id dentro do codigo), se houver.
   PickupDraft? forReservation(String reservationId) {

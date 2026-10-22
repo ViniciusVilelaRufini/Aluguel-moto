@@ -215,7 +215,7 @@ class FakeFieldRepository implements FieldRepository {
   // ── Galpao ──
   List<Depot> depots = [fakeDepot()];
   List<Reservation> pickups = [];
-  final pickupQueries = <(String, DateTime)>[];
+  final pickupQueries = <(String, Date)>[];
   final handoverUploads = <String>[];
   final createdHandovers = <HandoverCreate>[];
   final handovers = <String, Handover>{};
@@ -232,7 +232,7 @@ class FakeFieldRepository implements FieldRepository {
   }
 
   @override
-  Future<List<Reservation>> listPickups(String depotId, DateTime day) async {
+  Future<List<Reservation>> listPickups(String depotId, Date day) async {
     _check();
     pickupQueries.add((depotId, day));
     return pickups;
@@ -318,13 +318,17 @@ String fakePickupCode({String reservationId = reservationUuid, DateTime? expires
   return 'v1.$reservationId.${exp.millisecondsSinceEpoch ~/ 1000}.Zm9vYmFy';
 }
 
-Depot fakeDepot({String id = 'depot-1', String name = 'Galpão Pinheiros'}) => Depot((b) => b
+Depot fakeDepot(
+        {String id = 'depot-1',
+        String name = 'Galpão Pinheiros',
+        String timezone = 'America/Sao_Paulo'}) =>
+    Depot((b) => b
   ..id = id
   ..name = name
   ..address = 'Rua dos Pinheiros, 100'
   ..lat = -23.56
   ..lng = -46.68
-  ..timezone = 'America/Sao_Paulo'
+  ..timezone = timezone
   ..pickupNowWindowMinutes = 120
   ..maxScheduleDays = 7
   ..scheduledGraceMinutes = 30

@@ -27,6 +27,9 @@ class PickupScanPage extends ConsumerStatefulWidget {
 class _PickupScanPageState extends ConsumerState<PickupScanPage> {
   final _code = TextEditingController();
   _CodeError? _error;
+
+  /// Codigo com aviso, esperando "Continuar mesmo assim".
+  (String, Reservation?)? _pending;
   bool _checking = false;
 
   @override
@@ -58,30 +61,51 @@ class _PickupScanPageState extends ConsumerState<PickupScanPage> {
     }
   }
 
+  /// So recusa codigo vazio ou longo demais (contrato). Vencido, fora da
+  /// agenda ou nao ativo viram aviso: o operador pode seguir e a API decide.
   Future<void> _check(String raw) async {
+    if (!pickupCodeAcceptable(raw)) {
+      return setState(() {
+        _error = _CodeError.invalid;
+        _pending = null;
+      });
+    }
     final code = PickupCode.parse(raw);
-    if (code == null) return setState(() => _error = _CodeError.invalid);
-    if (code.expiredAt(DateTime.now())) return setState(() => _error = _CodeError.expired);
     setState(() {
       _error = null;
-      _checking = true;
+      _pending = null;
+      _checking = code != null;
     });
+    if (code == null) return _go(raw.trim(), null); // formato desconhecido: a API decide
     final agenda = await _agenda();
     if (!mounted) return;
     setState(() => _checking = false);
     Reservation? match;
-    if (agenda != null) {
-      for (final r in agenda) {
-        if (r.id.toLowerCase() == code.reservationId) match = r;
-      }
-      if (match == null) return setState(() => _error = _CodeError.notInAgenda);
-      if (match.status != ReservationStatus.active) {
-        return setState(() => _error = _CodeError.notActive);
-      }
+    for (final r in agenda ?? const <Reservation>[]) {
+      if (r.id.toLowerCase() == code.reservationId) match = r;
     }
+    final warning = code.expiredAt(DateTime.now())
+        ? _CodeError.expired
+        : agenda == null
+            ? null
+            : match == null
+                ? _CodeError.notInAgenda
+                : match.status != ReservationStatus.active
+                    ? _CodeError.notActive
+                    : null;
+    if (warning != null) {
+      return setState(() {
+        _error = warning;
+        _pending = (code.raw, match);
+      });
+    }
+    await _go(code.raw, match);
+  }
+
+  Future<void> _go(String code, Reservation? match) async {
     VoltiHaptics.success();
     await Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
-        builder: (_) => PickupChecklistPage(pickupCode: code.raw, reservation: match)));
+        builder: (_) => PickupChecklistPage(pickupCode: code, reservation: match)));
   }
 
   @override
@@ -118,11 +142,22 @@ class _PickupScanPageState extends ConsumerState<PickupScanPage> {
                   const SizedBox(height: VoltiSpacing.s12),
                   Notice(
                     key: const Key('pickup-code-error'),
-                    tone: NoticeTone.danger,
+                    tone: _error == _CodeError.invalid ? NoticeTone.danger : NoticeTone.warning,
                     icon: LucideIcons.circleAlert,
                     title: title,
                     body: body,
                   ),
+                  if (_pending != null) ...[
+                    const SizedBox(height: VoltiSpacing.s10),
+                    VoltiButton(
+                      key: const Key('pickup-code-proceed'),
+                      label: t.pickupCodeProceed,
+                      icon: LucideIcons.arrowRight,
+                      variant: VoltiButtonVariant.secondary,
+                      fullWidth: true,
+                      onPressed: () => _go(_pending!.$1, _pending!.$2),
+                    ),
+                  ],
                 ],
                 const SizedBox(height: VoltiSpacing.s20),
                 SectionCard(

@@ -564,11 +564,11 @@
   "pickupCodeHint": "Cole ou digite o código",
   "pickupCodeContinue": "Continuar",
   "pickupCodeInvalid": "Código inválido",
-  "pickupCodeInvalidBody": "Confira se o QR é de uma reserva Volti e leia de novo.",
+  "pickupCodeInvalidBody": "O código está vazio ou longo demais. Leia o QR de novo.",
   "pickupCodeExpired": "Código vencido",
-  "pickupCodeExpiredBody": "O prazo da reserva acabou. O cliente precisa reservar de novo.",
+  "pickupCodeExpiredBody": "Pelo relógio deste aparelho a reserva venceu. Se quiser, siga: a API confere no envio.",
   "pickupNotInAgenda": "Reserva fora da agenda de hoje",
-  "pickupNotInAgendaBody": "Esta reserva não é deste galpão ou não é para hoje.",
+  "pickupNotInAgendaBody": "Esta reserva não aparece na agenda de hoje deste galpão. A API confere no envio.",
   "pickupNotActive": "Esta reserva não está aguardando retirada",
   "pickupChecklistTitle": "Checklist de saída",
   "hoItemFreios": "Freios",
@@ -607,7 +607,7 @@
   "missingPhoto": "tire uma foto",
   "missingVehicle": "informe a moto",
   "pickupOffline": "Sem conexão: envie quando voltar a rede",
-  "pickupOfflineBody": "O rascunho fica salvo neste aparelho.",
+  "pickupOfflineBody": "O rascunho fica guardado enquanto o app estiver aberto.",
   "handoverTitle": "Entrega da moto",
   "handoverWaiting": "Aguardando o cliente",
   "handoverWaitingBody": "O cliente confere a moto no app e aceita.",
@@ -664,5 +664,7 @@
   "arrivalSent": "Chegada registrada. Aluguel encerrado.",
   "arrivalSentMaintenance": "Chegada registrada. Moto em manutenção.",
   "arrivalQueued": "A chegada será enviada quando a rede voltar.",
-  "jobReturnHandover": "Chegada no galpão"
+  "jobReturnHandover": "Chegada no galpão",
+  "pickupCodeProceed": "Continuar mesmo assim",
+  "arrivalVehicleAuth": "Sua sessão expirou. Entre de novo para conferir a moto."
 }

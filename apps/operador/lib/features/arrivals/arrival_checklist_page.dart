@@ -14,7 +14,7 @@ import 'package:volti_operador/features/pickups/handover_ui.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
 import 'package:volti_operador/ui/widgets.dart';
 
-enum _Lookup { found, noRental, notFound, offline }
+enum _Lookup { found, noRental, notFound, offline, auth }
 
 /// Chegada no galpao com checklist curto (freios, pneus, luzes, carenagem) e
 /// bateria. Dois usos:
@@ -84,7 +84,11 @@ class _ArrivalChecklistPageState extends ConsumerState<ArrivalChecklistPage> {
       found = await ref.read(fieldRepositoryProvider).vehicleByCode(code);
       result = found.currentRentalId == null ? _Lookup.noRental : _Lookup.found;
     } on RepositoryException catch (e) {
-      result = e.kind == FailureKind.network ? _Lookup.offline : _Lookup.notFound;
+      result = switch (e.kind) {
+        FailureKind.network => _Lookup.offline,
+        FailureKind.auth => _Lookup.auth,
+        _ => _Lookup.notFound,
+      };
     }
     if (!mounted) return;
     setState(() {
@@ -328,6 +332,7 @@ class _ArrivalChecklistPageState extends ConsumerState<ArrivalChecklistPage> {
       _Lookup.noRental => (NoticeTone.danger, LucideIcons.circleAlert, t.arrivalNoRental),
       _Lookup.notFound => (NoticeTone.danger, LucideIcons.searchX, t.arrivalVehicleNotFound),
       _Lookup.offline => (NoticeTone.info, LucideIcons.cloudOff, t.arrivalVehicleOffline),
+      _Lookup.auth => (NoticeTone.danger, LucideIcons.logIn, t.arrivalVehicleAuth),
       null => null,
     };
     return SectionCard(

@@ -213,6 +213,7 @@ class _PickupsPageState extends ConsumerState<PickupsPage> {
   List<Widget> _agenda(AppLocalizations t, String depotId) {
     final pickups = ref.watch(pickupsProvider(depotId));
     final drafts = ref.watch(pickupDraftsProvider);
+    final zone = depotZone(ref.watch(depotsProvider).value, depotId);
     return pickups.when(
       skipLoadingOnRefresh: true,
       loading: () => [const _Skeleton()],
@@ -236,6 +237,7 @@ class _PickupsPageState extends ConsumerState<PickupsPage> {
               padding: const EdgeInsets.only(bottom: VoltiSpacing.s10),
               child: _PickupCard(
                 reservation: r,
+                zone: zone,
                 hasDraft: draftIds.contains(r.id),
                 onTap: r.status == ReservationStatus.active || r.handoverId != null
                     ? () => _open(r)
@@ -249,13 +251,14 @@ class _PickupsPageState extends ConsumerState<PickupsPage> {
           for (final r in open) card(r),
           if (done.isNotEmpty) ...[
             Semantics(
+              key: const Key('pickups-done-toggle'),
               button: true,
               expanded: _showDone,
               label: t.pickupsDoneToday(done.length),
               hint: _showDone ? t.pickupsHideDone : t.pickupsShowDone,
+              onTap: () => setState(() => _showDone = !_showDone),
               excludeSemantics: true,
               child: InkWell(
-                key: const Key('pickups-done-toggle'),
                 borderRadius: VoltiRadii.rMd,
                 onTap: () => setState(() => _showDone = !_showDone),
                 child: ConstrainedBox(
@@ -282,9 +285,11 @@ class _PickupsPageState extends ConsumerState<PickupsPage> {
 }
 
 class _PickupCard extends StatelessWidget {
-  const _PickupCard({required this.reservation, required this.hasDraft, this.onTap});
+  const _PickupCard(
+      {required this.reservation, required this.zone, required this.hasDraft, this.onTap});
 
   final Reservation reservation;
+  final String zone;
   final bool hasDraft;
   final VoidCallback? onTap;
 
@@ -294,7 +299,7 @@ class _PickupCard extends StatelessWidget {
     final r = reservation;
     final name = firstNameOf(r.customerFirstName, t.customerFallback);
     final vehicle = r.vehicle?.code ?? '-';
-    final when = pickupWhen(t, r);
+    final when = pickupWhen(t, r, zone);
     final (status, tone) = reservationStatusBadge(t, r.status);
     return Semantics(
       key: Key('pickup-${r.id}'),

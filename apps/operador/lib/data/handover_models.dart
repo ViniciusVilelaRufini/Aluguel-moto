@@ -18,7 +18,15 @@ final _uuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]
 final _sig = RegExp(r'^[A-Za-z0-9_-]+$');
 final _digits = RegExp(r'^\d+$');
 
-/// Codigo do QR da reserva: `v1.<reservationId>.<expEpoch>.<assinatura>`.
+/// Contrato: `pickupCode` tem de 8 a 256 caracteres. Fora disso o app recusa;
+/// qualquer outro conteudo segue para a API, que decide.
+bool pickupCodeAcceptable(String raw) {
+  final t = raw.trim();
+  return t.isNotEmpty && t.length <= 256;
+}
+
+/// Codigo do QR da reserva: `v1.<reservationId>.<expEpoch>.<assinatura>`
+/// (formato informativo, `docs/decisoes.md`; usado so para avisos).
 /// O app so confere o formato; a assinatura e conferida pela API no envio
 /// (`POST /handovers` responde `404` para codigo adulterado ou vencido).
 class PickupCode {

@@ -68,7 +68,8 @@ abstract class FieldRepository {
   Future<List<Depot>> listDepots();
 
   /// Agenda do dia (`GET /depots/{id}/pickups?date=`), todas as reservas do dia.
-  Future<List<Reservation>> listPickups(String depotId, DateTime day);
+  /// [day] e a data no fuso do galpao (`Depot.timezone`).
+  Future<List<Reservation>> listPickups(String depotId, Date day);
 
   /// Foto da entrega (`POST /handovers/uploads`, prefixo `handovers/`); devolve a `objectKey`.
   Future<String> uploadHandoverPhoto(String path);
@@ -86,7 +87,7 @@ abstract class FieldRepository {
 
   Future<Handover> getHandover(String id);
 
-  /// Moto pelo codigo impresso ou QR (`GET /vehicles/code/{code}`).
+  /// Moto pelo codigo impresso ou QR (`GET /vehicles/by-code/{code}`).
   Future<Vehicle> vehicleByCode(String code);
   /// Contrato v2. Ficha da moto (staff): endereco, modelo, revisao e bateria.
   Future<Vehicle> getVehicle(String id);
@@ -235,11 +236,8 @@ class ApiFieldRepository implements FieldRepository {
       });
 
   @override
-  Future<List<Reservation>> listPickups(String depotId, DateTime day) => _guard(() async {
-        final l = day.toLocal();
-        final res = await _api
-            .getDepotsApi()
-            .listDepotPickups(id: depotId, date: Date(l.year, l.month, l.day));
+  Future<List<Reservation>> listPickups(String depotId, Date day) => _guard(() async {
+        final res = await _api.getDepotsApi().listDepotPickups(id: depotId, date: day);
         return res.data!.items.toList();
       });
 
