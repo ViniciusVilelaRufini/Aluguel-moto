@@ -1,5 +1,5 @@
 import { mockDeep, DeepMockProxy } from 'jest-mock-extended';
-import { PrismaClient } from '@prisma/client';
+import { Prisma, PrismaClient } from '@prisma/client';
 import { ProblemException } from '../../common/problem';
 import type { Principal } from '../auth/principal';
 import { DepotsService } from './depots.service';
@@ -47,6 +47,7 @@ function setup() {
   prisma.vehicle.findMany.mockResolvedValue([]);
   (prisma.vehicle.groupBy as any).mockResolvedValue([] as any);
   prisma.reservation.findMany.mockResolvedValue([]);
+  prisma.subscription.findMany.mockResolvedValue([]);
   return { prisma, audit, service };
 }
 
@@ -82,6 +83,24 @@ describe('DepotsService', () => {
       expect(items.map((v) => v.id)).toEqual(['a']);
       expect(items[0]).toMatchObject({ depotId: DEPOT_ID, status: 'free' });
       expect(items[0]).not.toHaveProperty('thingName');
+    });
+
+    it('cliente: esconde moto fixa da assinatura vigente de OUTRO cliente; a própria moto fixa continua visível', async () => {
+      const { service, prisma } = setup();
+      const base = { code: 'VLT-1', model: 'Volti S1', status: 'free', depotId: DEPOT_ID, lat: 0, lng: 0, batteryPct: 80, speedLimitKmh: 32, createdAt: now, updatedAt: now };
+      prisma.vehicle.findMany.mockResolvedValue([{ ...base, id: 'mine' }, { ...base, id: 'theirs' }, { ...base, id: 'loose' }] as any);
+      prisma.subscription.findMany.mockResolvedValue([{ assignedVehicleId: 'theirs' }] as any);
+      const { items } = await service.vehicles(DEPOT_ID, customer, {});
+      expect(items.map((v) => v.id)).toEqual(['mine', 'loose']);
+      const where = prisma.subscription.findMany.mock.calls[0][0]!.where as any;
+      expect(where).toMatchObject({ assignedVehicleId: { in: ['mine', 'theirs', 'loose'] }, customerId: { not: 'cust' }, status: { in: ['active', 'paused'] } });
+      expect(where.currentPeriodEnd.gt).toBeInstanceOf(Date);
+    });
+
+    it('staff: não consulta motos fixas (vê todas)', async () => {
+      const { service, prisma } = setup();
+      await service.vehicles(DEPOT_ID, operacao, {});
+      expect(prisma.subscription.findMany).not.toHaveBeenCalled();
     });
 
     it('cliente: galpão inativo → 404', async () => {
@@ -127,6 +146,15 @@ describe('DepotsService', () => {
       prisma.depot.findUnique.mockResolvedValue(depotRow() as any);
       const e = await problemOf(service.create(operacao, validInput() as any));
       expect(e.getStatus()).toBe(409);
+    });
+
+    it('corrida no nome único (P2002) → 409 com mensagem do galpão', async () => {
+      const { service, prisma } = setup();
+      prisma.depot.findUnique.mockResolvedValue(null);
+      prisma.depot.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x', meta: { target: ['name'] } }));
+      const e = await problemOf(service.create(operacao, validInput() as any));
+      expect(e.getStatus()).toBe(409);
+      expect(e.detail).toBe('Já existe um galpão com este nome.');
     });
 
     it('cria, grava depot.create e devolve com contagem zero', async () => {
@@ -190,6 +218,17 @@ describe('DepotsService', () => {
       expect((prisma.vehicle.groupBy as any).mock.calls[0][0]).toMatchObject({ where: { status: 'free', depotId: { in: ['far', 'near'] } } });
     });
 
+    it('availableVehicleCount exclui toda moto fixa de assinatura vigente, de qualquer cliente', async () => {
+      const { service, prisma } = setup();
+      prisma.depot.findMany.mockResolvedValue([depotRow()] as any);
+      prisma.subscription.findMany.mockResolvedValue([{ assignedVehicleId: 'fixed-1' }, { assignedVehicleId: 'fixed-2' }] as any);
+      await service.list(customer, {});
+      const subWhere = prisma.subscription.findMany.mock.calls[0][0]!.where as any;
+      expect(subWhere).toMatchObject({ assignedVehicleId: { not: null }, status: { in: ['active', 'paused'] } });
+      expect(subWhere.customerId).toBeUndefined();
+      expect((prisma.vehicle.groupBy as any).mock.calls[0][0].where).toEqual({ status: 'free', depotId: { in: [DEPOT_ID] }, id: { notIn: ['fixed-1', 'fixed-2'] } });
+    });
+
     it('get: cliente com galpão inativo → 404; staff vê', async () => {
       const { service, prisma } = setup();
       prisma.depot.findUnique.mockResolvedValue(depotRow({ active: false }) as any);
@@ -217,6 +256,19 @@ describe('DepotsService', () => {
 
       await service.pickups(DEPOT_ID, { date: '2026-10-22', status: 'handover' });
       expect(prisma.reservation.findMany.mock.calls[1][0]!.where).toMatchObject({ status: 'handover' });
+    });
+
+    it.each(['2026-02-31', '2026-04-31', '2025-02-29', '2026-13-01'])('data impossível %s → 400 validation-error', async (date) => {
+      const { service, prisma } = setup();
+      const e = await problemOf(service.pickups(DEPOT_ID, { date }));
+      expect(e.getStatus()).toBe(400);
+      expect(e.slug).toBe('validation-error');
+      expect(prisma.reservation.findMany).not.toHaveBeenCalled();
+    });
+
+    it('29/02 de ano bissexto é aceito', async () => {
+      const { service } = setup();
+      await expect(service.pickups(DEPOT_ID, { date: '2028-02-29' })).resolves.toMatchObject({ date: '2028-02-29' });
     });
 
     it('galpão inexistente → 404', async () => {

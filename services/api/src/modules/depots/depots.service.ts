@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import type { Depot, Prisma } from '@prisma/client';
+import { Prisma, type Depot } from '@prisma/client';
+import { currentSubscriptionWhere } from '../../common/fixed-vehicle';
 import type { VehicleStatus } from '../../common/enums';
 import { badRequest, conflict, notFound, unprocessable, type ValidationIssue } from '../../common/problem';
 import { distanceM } from '../../common/util';
@@ -40,6 +41,22 @@ export function openingHoursIssues(hours: unknown): ValidationIssue[] {
   return issues;
 }
 
+/** `YYYY-MM-DD` que existe no calendário (ida e volta pelo `Date`: 2026-02-31 não passa). */
+export function isRealDate(day: string): boolean {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+  if (!m) return false;
+  const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return d.toISOString().slice(0, 10) === day;
+}
+
+const DUPLICATE_NAME = 'Já existe um galpão com este nome.';
+
+/** Corrida no nome único (`P2002`) → `409` com a mesma mensagem da checagem prévia. */
+function mapUniqueName(err: unknown): never {
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw conflict('conflict', DUPLICATE_NAME);
+  throw err;
+}
+
 function isValidTimezone(tz: string): boolean {
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: tz });
@@ -71,9 +88,25 @@ export class DepotsService {
     private readonly audit: AuditService,
   ) {}
 
+  /** Motos fixas de assinaturas vigentes (de qualquer cliente ou, com `exceptCustomerId`, só dos outros). */
+  private async fixedVehicleIds(opts: { among?: string[]; exceptCustomerId?: string } = {}): Promise<string[]> {
+    const rows = await this.prisma.subscription.findMany({
+      where: {
+        assignedVehicleId: opts.among ? { in: opts.among } : { not: null },
+        ...currentSubscriptionWhere(),
+        ...(opts.exceptCustomerId ? { customerId: { not: opts.exceptCustomerId } } : {}),
+      },
+      select: { assignedVehicleId: true },
+    });
+    return rows.map((r) => r.assignedVehicleId as string);
+  }
+
+  /** `availableVehicleCount`: motos `free` do galpão sem nenhuma moto fixa vigente, de qualquer cliente (decisoes.md). */
   private async freeCounts(ids: string[]): Promise<Map<string, number>> {
     if (ids.length === 0) return new Map();
-    const rows = await this.prisma.vehicle.groupBy({ by: ['depotId'], where: { status: 'free', depotId: { in: ids } }, _count: { _all: true } });
+    const fixed = await this.fixedVehicleIds();
+    const where: Prisma.VehicleWhereInput = { status: 'free', depotId: { in: ids }, ...(fixed.length ? { id: { notIn: fixed } } : {}) };
+    const rows = await this.prisma.vehicle.groupBy({ by: ['depotId'], where, _count: { _all: true } });
     return new Map(rows.map((r) => [r.depotId as string, r._count._all]));
   }
 
@@ -98,7 +131,7 @@ export class DepotsService {
       throw badRequest('Estação de troca não encontrada.', [{ field: 'swapStationId', message: 'estação de troca não encontrada' }]);
     }
     if (dto.name !== undefined && dto.name !== currentName && (await this.prisma.depot.findUnique({ where: { name: dto.name }, select: { id: true } }))) {
-      throw conflict('conflict', 'Já existe um galpão com este nome.');
+      throw conflict('conflict', DUPLICATE_NAME);
     }
   }
 
@@ -134,7 +167,7 @@ export class DepotsService {
       const created = await tx.depot.create({ data: { ...dto, openingHours: dto.openingHours as unknown as Prisma.InputJsonValue } });
       await this.audit.record({ actor, action: 'depot.create', entityType: 'Depot', entityId: created.id, metadata: { name: created.name } }, tx as any);
       return created;
-    });
+    }).catch(mapUniqueName);
     return toDepot(d, { availableVehicleCount: 0 });
   }
 
@@ -153,7 +186,7 @@ export class DepotsService {
         tx as any,
       );
       return updated;
-    });
+    }).catch(mapUniqueName);
     return this.withCount(d);
   }
 
@@ -170,13 +203,18 @@ export class DepotsService {
       orderBy: [{ batteryPct: 'desc' }, { code: 'asc' }],
       include: { vehicleModel: { select: VEHICLE_MODEL_SELECT }, ...(staff ? { tracker: { select: { id: true } } } : {}) },
     });
+    if (staff) return { items: rows.map((v) => toVehicle(v as any, { staff })) };
+    // Moto fixa da assinatura vigente de outro cliente some; a do próprio cliente continua visível.
+    const exceptCustomerId = principal.customerId ?? principal.userId;
+    const fixed = new Set(rows.length ? await this.fixedVehicleIds({ among: rows.map((v) => v.id), exceptCustomerId }) : []);
     // Defesa em profundidade: o cliente nunca recebe moto de outro galpão nem fora de `free`.
-    const visible = staff ? rows : rows.filter((v) => v.status === 'free' && v.depotId === id);
+    const visible = rows.filter((v) => v.status === 'free' && v.depotId === id && !fixed.has(v.id));
     return { items: visible.map((v) => toVehicle(v as any, { staff })) };
   }
 
   /** Agenda do dia (fuso do galpão): todas as reservas do galpão, em qualquer status, em ordem de horário. */
   async pickups(id: string, q: DepotPickupsParams) {
+    if (!isRealDate(q.date)) throw badRequest('Data inválida.', [{ field: 'date', message: 'date deve ser uma data real no formato YYYY-MM-DD' }]);
     const d = await this.prisma.depot.findUnique({ where: { id } });
     if (!d) throw notFound('Galpão não encontrado.');
     const { start, end } = localDayBounds(d.timezone, q.date);

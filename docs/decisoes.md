@@ -290,3 +290,10 @@ Só acréscimos e descrições; o contrato prevalece sobre o plano onde divergem
 - **Contrato:** `VehicleStatusCounts` (dashboard) ganha `awaiting_pickup` (propriedade e `required`, inteiro ≥ 0), para contar todos os valores de `VehicleStatus`. Clientes TS e Dart regenerados.
 - **Saída refazível:** a entrega `pickup` deixa de ser única por reserva para sempre. Índice parcial `Handover_one_open_pickup_per_reservation` (`type = 'pickup'` e `status IN ('pending_customer','accepted')`): disputada ou cancelada libera nova saída para a mesma reserva. `CHECK` `Handover_type_reference`: `pickup` exige `reservationId`, `return_depot` exige `rentalId`. Migração nova `20261023091000_galpao_pickup_unique` (as já aplicadas não mudam).
 - **Seed:** só o lote `VLT-0011`…`VLT-0030` vai para o "Galpão Volti — Pinheiros" (nome único, upsert atômico), sem as motos usadas pelos e2e de rua; motos fora do lote que apontem para o galpão são desvinculadas (repara bancos semeados antes).
+
+### Galpões — Task 4, fix round 1 (revisão) · status: aprovada (coordenador, 2026-10-22)
+
+- **`Depot.availableVehicleCount`** conta as motos `free` com o `depotId` do galpão **sem nenhuma moto fixa** de assinatura vigente (`active`/`paused` com `currentPeriodEnd` no futuro, `currentSubscriptionWhere`), de qualquer cliente, inclusive de quem consulta. É o número de motos livres para qualquer pessoa retirar, igual para todos os clientes e para o painel.
+- **`GET /depots/{id}/vehicles` (cliente)** esconde a moto fixa da assinatura vigente de **outro** cliente (mesma regra do `nearby`); a moto fixa do próprio cliente continua visível. Staff vê todas.
+- **`GET /depots/{id}/pickups?date=`**: data impossível (ex.: `2026-02-31`) → `400 validation-error` (checagem de ida e volta pelo calendário).
+- Corrida no nome único do galpão (`P2002`) → `409 conflict` "Já existe um galpão com este nome.".

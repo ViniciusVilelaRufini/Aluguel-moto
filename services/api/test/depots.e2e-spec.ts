@@ -7,6 +7,9 @@ import { approvedCustomer, bootE2eApp, devToken } from './helpers/e2e-app';
 
 jestOpenAPI(loadSpecAs30() as any);
 
+/** Longe das zonas e das motos do seed/simulador: as motos do teste não aparecem nos `nearby` dos outros e2e. */
+const FAR = { lat: -9.6658, lng: -35.7353 };
+
 const tag = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`.toUpperCase();
 
 /** Galpões: CRUD com grupos, motos do galpão (cliente × staff) e agenda do dia (só primeiro nome, nunca pickupCode). */
@@ -17,6 +20,7 @@ describe('Galpões (e2e)', () => {
   let operacao: string;
   let campo: string;
   let suporte: string;
+  let financeiro: string;
   let customer: { token: string; customerId: string };
   const http = () => request(app.getHttpServer());
   const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
@@ -25,8 +29,8 @@ describe('Galpões (e2e)', () => {
     name: `Galpão E2E ${tag()}`,
     address: 'R. Teste, 100 · Pinheiros, São Paulo',
     district: 'Pinheiros',
-    lat: -23.5617,
-    lng: -46.6908,
+    lat: FAR.lat,
+    lng: FAR.lng,
     openingHours: [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, opensAt: '07:00', closesAt: '20:00' })),
     ...over,
   });
@@ -34,7 +38,7 @@ describe('Galpões (e2e)', () => {
   async function vehicle(status: VehicleStatus, depotId: string | null) {
     const t = tag();
     return prisma.vehicle.create({
-      data: { code: `E2E-${t}`, thingName: `e2e-thing-${t.toLowerCase()}`, model: 'Volti S1', lat: -23.5617, lng: -46.6908, batteryPct: 50 + Math.floor(Math.random() * 50), status, locked: true, depotId },
+      data: { code: `E2E-${t}`, thingName: `e2e-thing-${t.toLowerCase()}`, model: 'Volti S1', lat: FAR.lat, lng: FAR.lng, batteryPct: 50 + Math.floor(Math.random() * 50), status, locked: true, depotId },
       select: { id: true },
     });
   }
@@ -45,6 +49,7 @@ describe('Galpões (e2e)', () => {
     operacao = await devToken(app, { sub: 'dev-operacao', email: 'operacao@volti.dev', groups: ['operacao'], pool: 'staff' });
     campo = await devToken(app, { sub: 'dev-campo', email: 'campo@volti.dev', groups: ['campo'], pool: 'staff' });
     suporte = await devToken(app, { sub: 'dev-suporte', email: 'suporte@volti.dev', groups: ['suporte'], pool: 'staff' });
+    financeiro = await devToken(app, { sub: 'dev-financeiro', email: 'financeiro@volti.dev', groups: ['financeiro'], pool: 'staff' });
     customer = await approvedCustomer(app, prisma, 'depots');
   });
   afterAll(async () => {
@@ -56,6 +61,7 @@ describe('Galpões (e2e)', () => {
     const forbidden = await http().post('/depots').set(bearer(campo)).send(depotBody()).expect(403);
     expect(forbidden).toSatisfyApiSpec();
     await http().post('/depots').set(bearer(customer.token)).send(depotBody()).expect(403);
+    await http().post('/depots').set(bearer(financeiro)).send(depotBody()).expect(403);
 
     const body = depotBody();
     const created = await http().post('/depots').set(bearer(admin)).send(body).expect(201);
@@ -97,7 +103,7 @@ describe('Galpões (e2e)', () => {
     const onlyAwaiting = await http().get(`/depots/${depot.id}/vehicles`).query({ status: 'awaiting_pickup' }).set(bearer(operacao)).expect(200);
     expect(onlyAwaiting.body.items.map((v: { id: string }) => v.id)).toEqual([awaiting.id]);
 
-    const list = await http().get('/depots').query({ lat: -23.56, lng: -46.69 }).set(bearer(customer.token)).expect(200);
+    const list = await http().get('/depots').query({ lat: FAR.lat + 0.01, lng: FAR.lng }).set(bearer(customer.token)).expect(200);
     expect(list).toSatisfyApiSpec();
     const mine = list.body.items.find((d: { id: string }) => d.id === depot.id);
     expect(mine.availableVehicleCount).toBe(1);
@@ -108,6 +114,7 @@ describe('Galpões (e2e)', () => {
   it('PATCH /depots/{id}: desativa (auditado); cliente não vê o inativo, staff vê com includeInactive', async () => {
     const depot = (await http().post('/depots').set(bearer(admin)).send(depotBody()).expect(201)).body;
     await http().patch(`/depots/${depot.id}`).set(bearer(campo)).send({ active: false }).expect(403);
+    await http().patch(`/depots/${depot.id}`).set(bearer(customer.token)).send({ active: false }).expect(403);
     const patched = await http().patch(`/depots/${depot.id}`).set(bearer(operacao)).send({ active: false, maxScheduleDays: 3 }).expect(200);
     expect(patched).toSatisfyApiSpec();
     expect(patched.body).toMatchObject({ active: false, maxScheduleDays: 3 });
@@ -157,9 +164,45 @@ describe('Galpões (e2e)', () => {
     expect(filtered.body.items.map((r: { id: string }) => r.id)).toEqual([scheduled.id]);
 
     await http().get(`/depots/${depot.id}/pickups`).query({ date: '2026-11-05' }).set(bearer(suporte)).expect(403);
+    await http().get(`/depots/${depot.id}/pickups`).query({ date: '2026-11-05' }).set(bearer(financeiro)).expect(403);
+    const impossible = await http().get(`/depots/${depot.id}/pickups`).query({ date: '2026-02-31' }).set(bearer(operacao)).expect(400);
+    expect(impossible.body.code).toBe('validation-error');
+    expect(impossible).toSatisfyApiSpec();
     await http().get(`/depots/${depot.id}/pickups`).query({ date: '2026-11-05' }).set(bearer(customer.token)).expect(403);
     const noDate = await http().get(`/depots/${depot.id}/pickups`).set(bearer(admin)).expect(400);
     expect(noDate).toSatisfyApiSpec();
     await http().get('/depots/00000000-0000-4000-8000-000000000000/pickups').query({ date: '2026-11-05' }).set(bearer(admin)).expect(404);
+  });
+
+  it('moto fixa: some da lista do cliente quando é de OUTRO assinante; a própria continua; a contagem exclui todas', async () => {
+    const depot = (await http().post('/depots').set(bearer(admin)).send(depotBody()).expect(201)).body;
+    const owner = await approvedCustomer(app, prisma, 'depots-fixed-owner');
+    const viewer = await approvedCustomer(app, prisma, 'depots-fixed-viewer');
+    const theirs = await vehicle('free', depot.id);
+    const mine = await vehicle('free', depot.id);
+    const loose = await vehicle('free', depot.id);
+    const expiredFixed = await vehicle('free', depot.id);
+    const day = 86_400_000;
+    const sub = (customerId: string, vehicleId: string, end: Date) => ({
+      customerId, planCode: 'weekly' as const, status: 'active' as const, priceCents: 24900, assignedVehicleId: vehicleId, assignedVehicleAt: new Date(),
+      currentPeriodStart: new Date(Date.now() - day), currentPeriodEnd: end,
+    });
+    await prisma.subscription.create({ data: sub(owner.customerId, theirs.id, new Date(Date.now() + 6 * day)) });
+    await prisma.subscription.create({ data: sub(viewer.customerId, mine.id, new Date(Date.now() + 6 * day)) });
+    // Período já vencido: a moto deixa de ser fixa.
+    const third = await approvedCustomer(app, prisma, 'depots-fixed-expired');
+    await prisma.subscription.create({ data: sub(third.customerId, expiredFixed.id, new Date(Date.now() - 1000)) });
+
+    const res = await http().get(`/depots/${depot.id}/vehicles`).set(bearer(viewer.token)).expect(200);
+    expect(res).toSatisfyApiSpec();
+    expect(res.body.items.map((v: { id: string }) => v.id).sort()).toEqual([mine.id, loose.id, expiredFixed.id].sort());
+    const ownerView = await http().get(`/depots/${depot.id}/vehicles`).set(bearer(owner.token)).expect(200);
+    expect(ownerView.body.items.map((v: { id: string }) => v.id)).toContain(theirs.id);
+    expect(ownerView.body.items.map((v: { id: string }) => v.id)).not.toContain(mine.id);
+    const staff = await http().get(`/depots/${depot.id}/vehicles`).set(bearer(operacao)).expect(200);
+    expect(staff.body.items).toHaveLength(4);
+
+    const got = await http().get(`/depots/${depot.id}`).set(bearer(viewer.token)).expect(200);
+    expect(got.body.availableVehicleCount).toBe(2);
   });
 });
