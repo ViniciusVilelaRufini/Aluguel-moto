@@ -1,6 +1,7 @@
 import type { CommandType, S } from './types';
-type AlertType = S<'AlertType'>;
 import { ALERT_TYPE, AUDIT_ACTION_LABEL } from './labels';
+
+type AlertType = S<'AlertType'>;
 
 /** "GPS / 4G" em texto, como no design (ui_kits/admin/AdminMap.jsx: "4G forte" / "4G fraco"). */
 export function signalLabel(online: boolean | undefined, signal: number | undefined): string {
@@ -61,4 +62,16 @@ export function criticalBanner(types: AlertType[]): string {
 /** Período do replay por aluguel: do início até o fim (ou agora, se em andamento). */
 export function rentalWindow(r: { startedAt: string; endedAt?: string }, now: Date = new Date()): { from: string; to: string } {
   return { from: r.startedAt, to: r.endedAt ?? now.toISOString() };
+}
+
+/** Responsável pré-selecionado no modal de atribuição: a escolha, senão quem está logado, senão o primeiro da lista. */
+export function pickAssignee(people: { id: string }[], meId: string | undefined, picked: string): string {
+  if (picked && people.some((p) => p.id === picked)) return picked;
+  if (meId && people.some((p) => p.id === meId)) return meId;
+  return people[0]?.id ?? '';
+}
+
+/** Toast após atribuir: "a você" quando é o próprio usuário, senão com o nome. */
+export function assignToast(assigneeId: string, meId: string | undefined, name?: string): string {
+  return assigneeId === meId ? 'Alerta atribuído a você' : `Alerta atribuído a ${name ?? 'outra pessoa'}`;
 }

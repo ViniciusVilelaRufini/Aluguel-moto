@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { auditWhat, commandSentMessage, criticalBanner, rentalWindow, signalLabel, toAuditRows } from '@/lib/fleet-copy';
+import { assignToast, pickAssignee, auditWhat, commandSentMessage, criticalBanner, rentalWindow, signalLabel, toAuditRows } from '@/lib/fleet-copy';
 import { allLayers, filterByLayers, toggleLayer, visibleCount, zoneTooltip } from '@/lib/zone-layers';
 import { clusterDiameter, clusterImageId, parseClusterImageId } from '@/lib/map-icons';
 
@@ -71,5 +71,21 @@ describe('cluster images', () => {
     expect(parseClusterImageId('cluster-0')).toBeNull();
     expect(clusterDiameter(3)).toBeLessThan(clusterDiameter(20));
     expect(clusterDiameter(20)).toBeLessThan(clusterDiameter(80));
+  });
+});
+
+describe('assign modal logic', () => {
+  const people = [{ id: 'a' }, { id: 'me' }, { id: 'c' }];
+  it('defaults to the logged user, then the first, and keeps a valid pick', () => {
+    expect(pickAssignee(people, 'me', '')).toBe('me');
+    expect(pickAssignee(people, 'zzz', '')).toBe('a');
+    expect(pickAssignee(people, 'me', 'c')).toBe('c');
+    expect(pickAssignee(people, 'me', 'gone')).toBe('me');
+    expect(pickAssignee([], 'me', '')).toBe('');
+  });
+  it('words the toast for self vs other', () => {
+    expect(assignToast('me', 'me', 'Eu')).toBe('Alerta atribuído a você');
+    expect(assignToast('c', 'me', 'Campo Dev')).toBe('Alerta atribuído a Campo Dev');
+    expect(assignToast('c', 'me')).toBe('Alerta atribuído a outra pessoa');
   });
 });

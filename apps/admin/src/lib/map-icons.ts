@@ -62,13 +62,15 @@ export function clusterImage(count: number): Img | null {
 }
 
 /** Registra o ícone da moto e gera as imagens de cluster sob demanda (`styleimagemissing`). */
-export function registerFleetImages(map: MlMap) {
+export function registerFleetImages(map: MlMap): () => void {
   const bike = bikeImage();
   if (bike && !map.hasImage(BIKE_ICON)) map.addImage(BIKE_ICON, bike, { pixelRatio: 2 });
-  map.on('styleimagemissing', (e: { id: string }) => {
+  const onMissing = (e: { id: string }) => {
     const n = parseClusterImageId(e.id);
     if (n == null || map.hasImage(e.id)) return;
     const img = clusterImage(n);
     if (img) map.addImage(e.id, img, { pixelRatio: 2 });
-  });
+  };
+  map.on('styleimagemissing', onMissing);
+  return () => { map.off('styleimagemissing', onMissing); };
 }

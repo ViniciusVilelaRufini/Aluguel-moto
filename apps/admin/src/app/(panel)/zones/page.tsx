@@ -37,6 +37,7 @@ export default function ZonesPage() {
   const toast = useToast();
   const canEdit = can(groups, 'zone.edit');
   const mapRef = useRef<MlMap | null>(null);
+  const tipOff = useRef<() => void>(() => {});
   const drawRef = useRef<MapboxDraw | null>(null);
   const draftRef = useRef<Draft | null>(null);
   const [mapReady, setMapReady] = useState(false);
@@ -66,25 +67,35 @@ export default function ZonesPage() {
     import('maplibre-gl').then((ml) => {
       if (mapRef.current !== map) return;
       const popup = new ml.Popup({ closeButton: false, closeOnClick: false, offset: 10, className: 'vt-popup' });
+      let shownId: string | null = null;
+      // O conteúdo só é refeito ao trocar de cerca; dentro da mesma, o popup apenas acompanha o mouse.
       const show = (e: { lngLat: { lng: number; lat: number }; features?: GeoJSON.Feature[] }) => {
-        const p = e.features?.[0]?.properties as { name?: string; type?: ZoneType; limit?: number | null } | undefined;
+        const p = e.features?.[0]?.properties as { id?: string; name?: string; type?: ZoneType; limit?: number | null } | undefined;
         if (!p?.name || !p.type) return;
-        const t = zoneTooltip({ name: p.name, type: p.type, speedLimitKmh: p.limit ?? undefined }, ZONE_LABEL);
-        const el = document.createElement('div');
-        el.className = 'vt-tip';
-        el.setAttribute('data-testid', 'zone-tooltip');
-        const strong = document.createElement('strong');
-        strong.style.fontFamily = 'var(--font-sans)';
-        strong.textContent = t.title;
-        const span = document.createElement('span');
-        span.textContent = t.detail;
-        el.append(strong, span);
-        popup.setLngLat(e.lngLat).setDOMContent(el).addTo(map);
+        if (p.id !== shownId) {
+          const t = zoneTooltip({ name: p.name, type: p.type, speedLimitKmh: p.limit ?? undefined }, ZONE_LABEL);
+          const el = document.createElement('div');
+          el.className = 'vt-tip';
+          el.setAttribute('data-testid', 'zone-tooltip');
+          const strong = document.createElement('strong');
+          strong.style.fontFamily = 'var(--font-sans)';
+          strong.textContent = t.title;
+          const span = document.createElement('span');
+          span.textContent = t.detail;
+          el.append(strong, span);
+          popup.setDOMContent(el);
+          shownId = p.id ?? null;
+        }
+        popup.setLngLat(e.lngLat);
+        if (!popup.isOpen()) popup.addTo(map);
       };
-      for (const l of ['zones-fill', 'zones-operation-hit']) {
-        map.on('mousemove', l, show as never);
-        map.on('mouseleave', l, () => popup.remove());
-      }
+      const leave = () => { popup.remove(); shownId = null; };
+      const layers = ['zones-fill', 'zones-operation-hit'];
+      for (const l of layers) { map.on('mousemove', l, show as never); map.on('mouseleave', l, leave); }
+      tipOff.current = () => {
+        for (const l of layers) { map.off('mousemove', l, show as never); map.off('mouseleave', l, leave); }
+        popup.remove();
+      };
     });
     map.on('click', 'zones-fill', (e) => {
       if (draftRef.current || !canEditRef.current) return;
@@ -207,7 +218,7 @@ export default function ZonesPage() {
   return (
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, position: 'relative', minHeight: 320 }}>
-        <MapView onReady={onReady} onDestroy={() => { mapRef.current = null; drawRef.current = null; setMapReady(false); }} />
+        <MapView onReady={onReady} onDestroy={() => { tipOff.current(); tipOff.current = () => {}; mapRef.current = null; drawRef.current = null; setMapReady(false); }} />
         <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 8 }}>
           {canEdit && <Button size="sm" variant="dark" icon="PenTool" testId="draw-zone" disabled={!mapReady} onClick={startNew}>Desenhar área</Button>}
           <div style={{ position: 'relative' }}>

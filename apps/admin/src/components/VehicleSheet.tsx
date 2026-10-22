@@ -136,7 +136,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       <div>
         <KV k="Último sinal" v={v.lastSeenAt ? timeAgo(v.lastSeenAt) : '—'} />
         <KV k="GPS / 4G" v={signalLabel(v.online, v.signal)} />
-        <KV k="Cliente" v={v.currentRentalId ? (customer.data?.name ?? (canSeeCustomer && (rental.isLoading || customer.isLoading) ? '...' : '—')) : '—'} />
+        <KV k="Cliente" v={!v.currentRentalId ? '—' : !canSeeCustomer ? 'Restrito' : (customer.data?.name ?? (rental.isLoading || customer.isLoading ? '...' : '—'))} />
         <KV k="Aluguel" v={v.currentRentalId ? (rentalHref(groups, v.currentRentalId) ? <Link href={rentalHref(groups, v.currentRentalId)!} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Ver aluguel atual</Link> : 'Em andamento') : '—'} />
         <KV k="Posição" v={`${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`} mono />
         <KV k="Travada" v={v.locked === undefined ? '—' : v.locked ? 'Sim' : 'Não'} />

@@ -9,7 +9,7 @@ import { can } from '@/lib/permissions';
 import { PRIORITY_LABEL, PRIORITY_ORDER, priorityTone } from '@/lib/status';
 import { timeAgo } from '@/lib/format';
 import { ALERT_TYPE } from '@/lib/labels';
-import { criticalBanner } from '@/lib/fleet-copy';
+import { assignToast, criticalBanner, pickAssignee } from '@/lib/fleet-copy';
 import { useRealtimeEvent } from '@/lib/realtime';
 import type { S } from '@/lib/types';
 import { DataTable, ErrorNote, Field, Modal, Page, PageHeader, Pill, ReasonDialog, Select, usePagedQuery, useToast } from '@/components/ui';
@@ -49,7 +49,7 @@ export default function AlertsPage() {
 
   const assign = useMutation({
     mutationFn: ({ id, assigneeId }: { id: string; assigneeId: string; name?: string }) => unwrap(api.POST('/alerts/{id}/assign', { params: { path: { id } }, body: { assigneeId } })),
-    onSuccess: (_a, v) => { toast(v.assigneeId === me?.id ? 'Alerta atribuído a você' : `Alerta atribuído a ${v.name ?? 'outra pessoa'}`); qc.invalidateQueries({ queryKey: ['alerts'] }); setAssigning(null); },
+    onSuccess: (_a, v) => { toast(assignToast(v.assigneeId, me?.id, v.name)); qc.invalidateQueries({ queryKey: ['alerts'] }); setAssigning(null); },
   });
 
   return (
@@ -109,10 +109,23 @@ export default function AlertsPage() {
 
 /** Escolhe quem assume o alerta (lista de usuários internos ativos; padrão: quem está logado). */
 function AssignModal({ alert, meId, busy, onClose, onAssign }: { alert: S<'Alert'>; meId?: string; busy: boolean; onClose: () => void; onAssign: (assigneeId: string, name: string) => void }) {
-  const staff = useQuery({ queryKey: ['staff-assignees'], queryFn: () => unwrap(api.GET('/staff', { params: { query: { active: true, limit: 100 } } })) });
-  const people = staff.data?.items ?? [];
+  // Carrega todas as páginas de usuários ativos (a lista é paginada por cursor).
+  const staff = useQuery({
+    queryKey: ['staff-assignees'],
+    queryFn: async () => {
+      const all: S<'StaffUser'>[] = [];
+      let cursor: string | undefined;
+      do {
+        const page = await unwrap(api.GET('/staff', { params: { query: { active: true, limit: 100, cursor } } }));
+        all.push(...page.items);
+        cursor = page.nextCursor;
+      } while (cursor && all.length < 2000);
+      return all;
+    },
+  });
+  const people = staff.data ?? [];
   const [pick, setPick] = useState<string>('');
-  const value = pick || (people.some((x) => x.id === meId) ? meId! : people[0]?.id) || '';
+  const value = pickAssignee(people, meId, pick);
   const chosen = people.find((x) => x.id === value);
   return (
     <Modal open title="Atribuir alerta" onClose={onClose} testId="assign-dialog"

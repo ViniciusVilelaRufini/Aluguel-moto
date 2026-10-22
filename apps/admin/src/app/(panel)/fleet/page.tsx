@@ -53,6 +53,7 @@ export default function FleetPage() {
   const [replay, setReplay] = useState(false);
   const mapRef = useRef<MlMap | null>(null);
   const pulseRef = useRef<Marker | null>(null);
+  const imagesOff = useRef<() => void>(() => {});
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
@@ -95,7 +96,7 @@ export default function FleetPage() {
   const onReady = useCallback((map: MlMap) => {
     mapRef.current = map;
     map.addSource(FLEET_SRC, { type: 'geojson', data: { type: 'FeatureCollection', features: [] }, cluster: true, clusterRadius: 44, clusterMaxZoom: 14 });
-    registerFleetImages(map);
+    imagesOff.current = registerFleetImages(map);
     // Cluster: imagem em canvas com a contagem (sem glifos externos); o clique continua nesta camada.
     map.addLayer({ id: 'clusters', type: 'symbol', source: FLEET_SRC, filter: ['has', 'point_count'], layout: { 'icon-image': ['concat', 'cluster-', ['to-string', ['get', 'point_count']]] as never, 'icon-allow-overlap': true, 'icon-ignore-placement': true } });
     // Anel de bateria por fora do pin (mesma regra da BatteryPill), depois o pin na cor do status com o ícone da moto.
@@ -215,7 +216,7 @@ export default function FleetPage() {
   return (
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 320 }}>
-        <MapView onReady={onReady} onDestroy={() => { pulseRef.current?.remove(); pulseRef.current = null; mapRef.current = null; drawn.current = new Map(); setMapReady(false); }} />
+        <MapView onReady={onReady} onDestroy={() => { imagesOff.current(); imagesOff.current = () => {}; pulseRef.current?.remove(); pulseRef.current = null; mapRef.current = null; drawn.current = new Map(); setMapReady(false); }} />
         <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
           {dash.data ? (
             <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
