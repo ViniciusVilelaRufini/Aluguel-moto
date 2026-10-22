@@ -32,7 +32,7 @@ class _HostState extends State<_Host> {
           subtitle: 'sub',
           onBack: step > 1 ? () => go(step - 1) : null,
           cta: TextButton(onPressed: () => go(step + 1), child: Text('avancar $step')),
-          children: const [],
+          children: const [TextField(key: Key('campo'))],
         ),
       );
 }
@@ -92,12 +92,27 @@ void main() {
     testWidgets('reduced motion (${media.disableAnimations ? 'animacoes' : 'leitor de tela'}): troca direta, sem deslize', (t) async {
       tallScreen(t);
       await t.pumpWidget(_app(media: media));
+      final rest = t.getTopLeft(find.text('Passo 1'));
       await t.tap(find.text('avancar 1'));
       await t.pump();
       expect(find.text('Passo 1'), findsNothing);
       expect(find.text('Passo 2'), findsOneWidget);
-      expect(find.byKey(const Key('onboarding-step-slide')), findsNothing);
+      // Mesma arvore, mas ja no estado final: sem deslocamento nem fade.
+      expect(t.getTopLeft(find.text('Passo 2')), rest);
+      expect(t.widget<Opacity>(find.byKey(const Key('onboarding-step-slide'))).opacity, 1);
       expect(find.byKey(const Key('progress-step-fill')), findsNothing);
     });
   }
+
+  testWidgets('ligar/desligar reduced motion ou TalkBack no meio do cadastro nao perde o que foi digitado', (t) async {
+    tallScreen(t);
+    await t.pumpWidget(_app());
+    await t.pumpAndSettle();
+    await t.enterText(find.byKey(const Key('campo')), 'Maria Silva');
+    for (final media in const [MediaQueryData(disableAnimations: true), MediaQueryData(accessibleNavigation: true), MediaQueryData()]) {
+      await t.pumpWidget(_app(media: media));
+      await t.pump();
+      expect(find.text('Maria Silva'), findsOneWidget, reason: '$media');
+    }
+  });
 }

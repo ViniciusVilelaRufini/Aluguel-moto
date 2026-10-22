@@ -292,7 +292,7 @@ class VoltiToast extends StatelessWidget {
 ///
 /// Com [animateFrom] (etapa anterior), o segmento que muda enche (ou esvazia)
 /// da esquerda para a direita em `--dur-screen` com `--ease-screen` ao aparecer.
-/// Reduced motion: estado final direto.
+/// Reduced motion ou leitor de tela: estado final direto.
 class ProgressSteps extends StatelessWidget {
   const ProgressSteps({
     super.key,
@@ -315,7 +315,7 @@ class ProgressSteps extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final animate = animateFrom != null && animateFrom != current && !VoltiMotion.reduced(context);
+    final animate = animateFrom != null && animateFrom != current && !VoltiPageTransitions.reducedOf(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -333,6 +333,9 @@ class ProgressSteps extends StatelessWidget {
                     segmentKey: Key('progress-step-$i'),
                     fill: (v + 1 - i).clamp(0.0, 1.0),
                     track: scheme.outlineVariant,
+                    // Com o enchimento animado a cor muda seca quando o segmento
+                    // completa (um tween de cor piscaria o cinza do trilho).
+                    colorDuration: animate ? Duration.zero : VoltiMotion.durBase,
                   ),
                 ),
               ],
@@ -355,8 +358,9 @@ class ProgressSteps extends StatelessWidget {
 
 /// Segmento da [ProgressSteps]: trilho e preenchimento parcial da marca.
 class _StepSegment extends StatelessWidget {
-  const _StepSegment({required this.segmentKey, required this.fill, required this.track});
+  const _StepSegment({required this.segmentKey, required this.fill, required this.track, required this.colorDuration});
   final Key segmentKey;
+  final Duration colorDuration;
   final double fill;
   final Color track;
 
@@ -364,7 +368,7 @@ class _StepSegment extends StatelessWidget {
   Widget build(BuildContext context) {
     return AnimatedContainer(
       key: segmentKey,
-      duration: VoltiMotion.durBase,
+      duration: colorDuration,
       height: 4,
       decoration: BoxDecoration(
         color: fill >= 1 ? VoltiColors.brand : track,

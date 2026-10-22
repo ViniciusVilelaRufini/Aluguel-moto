@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/router.dart';
 import 'package:volti_cliente/core/shared_vehicle.dart';
 import 'package:volti_cliente/features/pick/pick_screen.dart';
@@ -9,6 +10,28 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import 'galpao_fixtures.dart';
 import 'galpao_flow_test.dart' show phone, pumpApp, settle, tapText;
+
+class _PhotoBackend extends GalpaoBackend {
+  @override
+  Future<List<VehicleModel>> vehicleModels() async => [
+        VehicleModel((b) => b
+          ..id = 'm1'
+          ..name = 'Volti Flash'
+          ..slug = 'flash'
+          ..categoryLabel = 'Urbana'
+          ..photoUrl = 'https://exemplo.test/flash.png'
+          ..pricePerMinuteCents = 79
+          ..serviceIntervalKm = 1000
+          ..serviceIntervalHours = 100
+          ..active = true
+          ..sortOrder = 0
+          ..createdAt = DateTime.utc(2026)
+          ..updatedAt = DateTime.utc(2026)),
+      ];
+  @override
+  Future<List<Vehicle>> depotVehicles(String depotId) async =>
+      (await super.depotVehicles(depotId)).map((v) => v.rebuild((b) => b..vehicleModelId = 'm1')).toList();
+}
 
 const _push = VoltiScreenTransition.push;
 const _modal = VoltiScreenTransition.modal;
@@ -129,7 +152,9 @@ void main() {
           final page = _top(t) as CustomTransitionPage<dynamic>;
           expect(page.transitionDuration, Duration.zero, reason: loc);
           await t.pump(const Duration(milliseconds: 1));
-          expect(find.ancestor(of: find.text('tela $loc'), matching: find.byType(SlideTransition)), findsNothing, reason: loc);
+          for (final s in t.widgetList<SlideTransition>(find.ancestor(of: find.text('tela $loc'), matching: find.byType(SlideTransition)))) {
+            expect(s.position.value, Offset.zero, reason: loc);
+          }
           expect(t.getTopLeft(find.text('tela $loc')).dx, lessThan(t.view.physicalSize.width / t.view.devicePixelRatio / 2));
         }
       });
@@ -186,5 +211,22 @@ void main() {
       expect(router.state.uri.path, '/pick');
       expect(find.byType(PlanScreen), findsNothing);
     });
+  });
+
+  testWidgets('E-15: o cabecalho do plano mostra a mesma foto do cartao (voo foto -> foto) com a curva do design', (t) async {
+    phone(t);
+    await pumpApp(t, _PhotoBackend(), initial: '/pick');
+    Iterable<Hero> heroes() => t.widgetList<Hero>(find.byWidgetPredicate((w) => w is Hero && w.tag == vehicleHeroTag('VLT-001')));
+    String? urlIn(Hero h) {
+      final img = ((h.child as VehicleThumb).image as Image?)?.image;
+      return img is NetworkImage ? img.url : null;
+    }
+
+    expect(urlIn(heroes().single), 'https://exemplo.test/flash.png');
+    await tapText(t, 'Continuar com Volti Flash · VLT-001');
+    expect(find.byType(PlanScreen), findsOneWidget);
+    final header = heroes().single;
+    expect(urlIn(header), 'https://exemplo.test/flash.png');
+    expect(header.createRectTween!(Rect.zero, Rect.zero), isA<VoltiHeroRectTween>());
   });
 }

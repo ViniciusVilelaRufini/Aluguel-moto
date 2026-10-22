@@ -136,7 +136,7 @@ class OnboardingStepMotion extends InheritedWidget {
 /// primeiros 30%; o que entra vem 30 px da frente e aparece no restante, em
 /// `--dur-screen` com `--ease-screen`. Passos fora de [framed] (ex.: status da
 /// verificacao, tela inteira) trocam com fade. Reduced motion ou leitor de
-/// tela: troca direta.
+/// tela: troca direta (duracao zero, mesma arvore).
 class OnboardingStepSwitcher extends StatefulWidget {
   const OnboardingStepSwitcher({
     super.key,
@@ -172,11 +172,13 @@ class _OnboardingStepSwitcherState extends State<OnboardingStepSwitcher> {
   Widget build(BuildContext context) {
     final current = ValueKey<int>(widget.step);
     final child = KeyedSubtree(key: current, child: widget.child);
-    if (VoltiPageTransitions.reducedOf(context)) return child;
+    // Reduced motion ou leitor de tela so zeram a duracao: a arvore e a mesma,
+    // entao liga-los no meio do cadastro nao perde o que foi digitado.
+    final reduced = VoltiPageTransitions.reducedOf(context);
     return ColoredBox(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: AnimatedSwitcher(
-        duration: VoltiMotion.durScreen,
+        duration: reduced ? Duration.zero : VoltiMotion.durScreen,
         layoutBuilder: (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current]),
         // Closure nova a cada build: o AnimatedSwitcher reconstroi a transicao do
         // passo que sai com a direcao e o papel ("sai") atualizados.

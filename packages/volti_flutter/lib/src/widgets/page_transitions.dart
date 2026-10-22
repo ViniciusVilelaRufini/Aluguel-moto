@@ -21,16 +21,20 @@ enum VoltiScreenTransition {
 
 /// Transicoes de tela do design, no formato de `RouteTransitionsBuilder` (serve
 /// para `CustomTransitionPage.transitionsBuilder` do go_router e para
-/// `PageRouteBuilder`). Duracao `--dur-screen` (440 ms), curva `--ease-screen`.
+/// `PageRouteBuilder`). Duracao `--dur-screen` (440 ms), curva `--ease-screen`
+/// ao abrir e `--ease-screen` invertida ao fechar (a saida tem a mesma
+/// sensacao da entrada; a direcao fica travada ate o fim, como `reverseCurve`).
 ///
-/// - A tela coberta reage ao tipo da tela de cima (publicado pela propria
-///   transicao): parallax sob [push], recuo sob [modal], parada sob [fadeThrough].
+/// - A tela coberta reage ao tipo da rota **logo acima dela** (lido da propria
+///   `secondaryAnimation`): parallax sob [push], recuo sob [modal], parada sob
+///   [fadeThrough].
 /// - Gesto voltar preditivo do Android: a tela acompanha o dedo (curva linear
-///   durante o gesto) e, ao soltar, termina a saida de onde parou.
+///   durante o gesto; borda direita desliza para a esquerda) e, ao soltar,
+///   termina a saida de onde parou.
 /// - Reduced motion (`disableAnimations`) ou navegacao acessivel (TalkBack):
 ///   duracao zero e nenhum deslize, fade ou parallax ([reducedOf]).
-/// - A arvore de widgets e estavel durante e depois da animacao: a pagina (mapa
-///   incluso) nao e reconstruida nem remontada ao comecar/terminar a troca.
+/// - A arvore de widgets e a mesma durante e depois da animacao, e tambem com
+///   reduced motion ligado/desligado: a pagina (mapa incluso) nunca e remontada.
 abstract final class VoltiPageTransitions {
   static const Duration duration = VoltiMotion.durScreen;
 
@@ -50,14 +54,33 @@ abstract final class VoltiPageTransitions {
   static Duration durationOf(BuildContext context) =>
       reducedOf(context) ? Duration.zero : duration;
 
-  /// Progresso (0..1, ja com a curva da tela) do modal no topo da pilha. A
-  /// pagina de tras usa para recuar em vez de deslizar. Zero quando o topo nao
-  /// e um modal.
+  /// Informativo: progresso (0..1, com a curva) do modal no topo da pilha, ou
+  /// zero quando o topo nao e um modal. As telas cobertas nao dependem disto.
   static final ValueNotifier<double> recede = ValueNotifier<double>(0);
 
-  /// Tipo da tela no topo da pilha (a que cobre as demais), ou `null`.
+  /// Informativo: tipo da tela no topo da pilha, ou `null`.
   static final ValueNotifier<VoltiScreenTransition?> top =
       ValueNotifier<VoltiScreenTransition?>(null);
+
+  // Tipo de cada rota, pela `animation` da rota (a mesma que a rota de baixo
+  // recebe como `secondaryAnimation`).
+  static final Expando<VoltiScreenTransition> _kinds = Expando<VoltiScreenTransition>('volti-screen-kind');
+
+  /// Tipo da rota logo acima da que recebe [secondaryAnimation], ou `null`
+  /// (nenhuma, ou uma rota sem transicao Volti).
+  static VoltiScreenTransition? kindAbove(Animation<double> secondaryAnimation) {
+    Animation<double>? a = secondaryAnimation;
+    for (var i = 0; i < 6 && a != null; i++) {
+      final k = _kinds[a];
+      if (k != null) return k;
+      a = switch (a) {
+        final ProxyAnimation p => p.parent,
+        final TrainHoppingAnimation h => h.currentTrain,
+        _ => null,
+      };
+    }
+    return null;
+  }
 
   /// Builder do [kind].
   static RouteTransitionsBuilder builderFor(VoltiScreenTransition kind) =>
@@ -74,14 +97,9 @@ abstract final class VoltiPageTransitions {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    if (reducedOf(context)) return child;
-    final enter = _screenCurve(context, animation);
-    return _Frame(
-      kind: VoltiScreenTransition.push,
-      enter: enter,
-      cover: _screenCurve(context, secondaryAnimation),
-      child: SlideTransition(
-        position: Tween(begin: const Offset(1, 0), end: Offset.zero).animate(enter),
+    return _frame(context, VoltiScreenTransition.push, animation, secondaryAnimation, (enter, gesture) {
+      return SlideTransition(
+        position: _EdgeSlide(enter, gesture, animation),
         child: FadeTransition(
           opacity: enter.drive(
             Tween(begin: pushFadeFrom, end: 1.0)
@@ -89,8 +107,8 @@ abstract final class VoltiPageTransitions {
           ),
           child: _EdgeShadow(animation: enter, axis: Axis.horizontal, child: child),
         ),
-      ),
-    );
+      );
+    });
   }
 
   /// Modal de baixo para cima; a tela de tras recua.
@@ -100,17 +118,12 @@ abstract final class VoltiPageTransitions {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    if (reducedOf(context)) return child;
-    final enter = _screenCurve(context, animation);
-    return _Frame(
-      kind: VoltiScreenTransition.modal,
-      enter: enter,
-      cover: _screenCurve(context, secondaryAnimation),
-      child: SlideTransition(
+    return _frame(context, VoltiScreenTransition.modal, animation, secondaryAnimation, (enter, _) {
+      return SlideTransition(
         position: Tween(begin: const Offset(0, 1), end: Offset.zero).animate(enter),
         child: _EdgeShadow(animation: enter, axis: Axis.vertical, child: child),
-      ),
-    );
+      );
+    });
   }
 
   /// Fade-through: o fundo da tela cobre a de tras (primeiros 35%) e a nova
@@ -121,14 +134,9 @@ abstract final class VoltiPageTransitions {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    if (reducedOf(context)) return child;
-    final enter = _screenCurve(context, animation);
     final fill = Theme.of(context).scaffoldBackgroundColor;
-    return _Frame(
-      kind: VoltiScreenTransition.fadeThrough,
-      enter: enter,
-      cover: _screenCurve(context, secondaryAnimation),
-      child: Stack(
+    return _frame(context, VoltiScreenTransition.fadeThrough, animation, secondaryAnimation, (enter, _) {
+      return Stack(
         fit: StackFit.passthrough,
         children: [
           Positioned.fill(
@@ -147,64 +155,113 @@ abstract final class VoltiPageTransitions {
             ),
           ),
         ],
+      );
+    });
+  }
+
+  /// Pecas comuns. Com [reducedOf], as animacoes viram constantes (estado
+  /// final) mas a arvore e a mesma: ligar/desligar o reduced motion nao remonta
+  /// a pagina.
+  static Widget _frame(
+    BuildContext context,
+    VoltiScreenTransition kind,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget Function(Animation<double> enter, ValueListenable<bool>? gesture) content,
+  ) {
+    // A ModalRoute entrega um proxy da animacao do controller; a rota de baixo
+    // enxerga o controller. Marca a cadeia toda.
+    for (Animation<double>? a = animation; a != null; a = a is ProxyAnimation ? a.parent : null) {
+      _kinds[a] = kind;
+    }
+    final reduced = reducedOf(context);
+    final gesture = Navigator.maybeOf(context)?.userGestureInProgressNotifier;
+    final enter = reduced ? kAlwaysCompleteAnimation : _ScreenCurve.of(animation, gesture);
+    final cover = reduced ? kAlwaysDismissedAnimation : _ScreenCurve.of(secondaryAnimation, gesture);
+    return _CoverPublisher(
+      kind: kind,
+      animation: enter,
+      child: _PredictiveBack(
+        enabled: !reduced,
+        routeAnimation: animation,
+        child: _Covered(cover: cover, secondary: secondaryAnimation, child: content(enter, gesture)),
       ),
     );
   }
-
-  /// Curva da tela que fica linear enquanto um gesto voltar esta em curso (a
-  /// tela segue o dedo sem "acelerar").
-  static Animation<double> _screenCurve(BuildContext context, Animation<double> parent) =>
-      _ScreenCurve(parent, Navigator.maybeOf(context)?.userGestureInProgressNotifier);
 }
 
+/// `--ease-screen` ao abrir, `--ease-screen` invertida ao fechar (direcao
+/// travada ate a animacao terminar, como `CurvedAnimation.reverseCurve`) e
+/// linear durante um gesto voltar (a tela segue o dedo). Uma instancia por
+/// animacao de rota, para a trava sobreviver aos rebuilds.
 class _ScreenCurve extends Animation<double> with AnimationWithParentMixin<double> {
-  _ScreenCurve(this.parent, this.gesture);
+  _ScreenCurve._(this.parent) {
+    _direction = parent.isAnimating ? parent.status : null;
+    parent.addStatusListener(_onStatus);
+  }
+
+  static final Expando<_ScreenCurve> _cache = Expando<_ScreenCurve>('volti-screen-curve');
+
+  static _ScreenCurve of(Animation<double> parent, ValueListenable<bool>? gesture) =>
+      (_cache[parent] ??= _ScreenCurve._(parent))..gesture = gesture;
 
   @override
   final Animation<double> parent;
-  final ValueListenable<bool>? gesture;
+  ValueListenable<bool>? gesture;
+  AnimationStatus? _direction;
+
+  void _onStatus(AnimationStatus s) {
+    _direction = switch (s) {
+      AnimationStatus.dismissed || AnimationStatus.completed => null,
+      _ => _direction ?? s,
+    };
+  }
 
   @override
   double get value {
     final v = parent.value.clamp(0.0, 1.0);
     if (gesture?.value ?? false) return v;
-    return VoltiMotion.easeScreen.transform(v);
+    final curve = _direction == AnimationStatus.reverse ? VoltiMotion.easeScreen.flipped : VoltiMotion.easeScreen;
+    return curve.transform(v);
   }
 }
 
-/// Junta as pecas comuns: publica o tipo da tela, liga o voltar preditivo e
-/// aplica o efeito de "coberta" quando outra tela entra por cima.
-class _Frame extends StatelessWidget {
-  const _Frame({required this.kind, required this.enter, required this.cover, required this.child});
-  final VoltiScreenTransition kind;
-  final Animation<double> enter, cover;
-  final Widget child;
+/// Deslize horizontal do push. Durante um gesto voltar pela borda direita, a
+/// tela sai para a esquerda (segue o dedo).
+class _EdgeSlide extends Animation<Offset> with AnimationWithParentMixin<double> {
+  _EdgeSlide(this.parent, this.gesture, this.routeAnimation);
 
   @override
-  Widget build(BuildContext context) => _CoverPublisher(
-        kind: kind,
-        animation: enter,
-        child: _PredictiveBack(child: _Covered(cover: cover, child: child)),
-      );
+  final Animation<double> parent;
+  final ValueListenable<bool>? gesture;
+  final Animation<double> routeAnimation;
+
+  @override
+  Offset get value {
+    final fromRight = (gesture?.value ?? false) && _PredictiveBackState.edges[routeAnimation] == SwipeEdge.right;
+    return Offset((fromRight ? -1 : 1) * (1 - parent.value), 0);
+  }
 }
 
-/// Pagina coberta por outra. O efeito depende do tipo da tela do topo:
-/// [VoltiScreenTransition.push] desliza 30% e escurece; `modal` recua (escala,
-/// escurece, cantos); `fadeThrough` fica parada (o fundo da nova a cobre).
+/// Pagina coberta por outra. O efeito depende do tipo da rota logo acima:
+/// [VoltiScreenTransition.push] (ou rota sem transicao Volti) desliza 30% e
+/// escurece; `modal` recua (escala, escurece, cantos); `fadeThrough` fica parada
+/// (o fundo da nova a cobre).
 class _Covered extends StatelessWidget {
-  const _Covered({required this.cover, required this.child});
+  const _Covered({required this.cover, required this.secondary, required this.child});
   final Animation<double> cover;
+  final Animation<double> secondary;
   final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: Listenable.merge([cover, VoltiPageTransitions.recede, VoltiPageTransitions.top]),
+      animation: cover,
       child: child,
       builder: (context, c) {
         final t = cover.value;
-        final kind = VoltiPageTransitions.top.value;
-        final receding = t > 0 && kind == VoltiScreenTransition.modal && VoltiPageTransitions.recede.value > 0;
+        final kind = VoltiPageTransitions.kindAbove(secondary);
+        final receding = t > 0 && kind == VoltiScreenTransition.modal;
         final sliding = t > 0 && !receding && kind != VoltiScreenTransition.fadeThrough;
         final scrim = receding ? .35 * t : (sliding ? .2 * t : 0.0);
         final radius = receding ? 28 * t : 0.0;
@@ -235,7 +292,8 @@ class _Covered extends StatelessWidget {
   }
 }
 
-/// Publica o tipo e o progresso da tela do topo da pilha para as de tras.
+/// Publica [VoltiPageTransitions.top] e [VoltiPageTransitions.recede]
+/// (informativos) a partir da tela mais nova.
 class _CoverPublisher extends StatefulWidget {
   const _CoverPublisher({required this.kind, required this.animation, required this.child});
   final VoltiScreenTransition kind;
@@ -247,8 +305,6 @@ class _CoverPublisher extends StatefulWidget {
 }
 
 class _CoverPublisherState extends State<_CoverPublisher> {
-  // Telas abertas, da mais antiga a mais nova: vale a do topo, e uma que fecha
-  // nao zera o valor de outra mais nova.
   static final _stack = <_CoverPublisherState>[];
 
   static void _publish() {
@@ -272,6 +328,7 @@ class _CoverPublisherState extends State<_CoverPublisher> {
     if (old.animation != widget.animation) {
       old.animation.removeListener(_publish);
       widget.animation.addListener(_publish);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _publish());
     }
   }
 
@@ -279,7 +336,6 @@ class _CoverPublisherState extends State<_CoverPublisher> {
   void dispose() {
     widget.animation.removeListener(_publish);
     _stack.remove(this);
-    // Fora do ciclo de build/finalizacao da arvore.
     WidgetsBinding.instance.addPostFrameCallback((_) => _publish());
     super.dispose();
   }
@@ -291,9 +347,13 @@ class _CoverPublisherState extends State<_CoverPublisher> {
 /// Gesto voltar preditivo do Android (`flutter/backgesture`) para rotas com
 /// transicao propria: a rota acompanha o progresso do gesto; ao confirmar, a
 /// saida continua de onde o dedo parou (sem voltar ao inicio); ao cancelar, a
-/// tela volta ao lugar. O botao voltar (sem toque) segue o pop normal.
+/// tela volta ao lugar. Se outra rota entrou por cima durante o gesto, soltar
+/// nao fecha nada e a pagina arrastada volta ao lugar. O botao voltar (sem
+/// toque) segue o pop normal.
 class _PredictiveBack extends StatefulWidget {
-  const _PredictiveBack({required this.child});
+  const _PredictiveBack({required this.enabled, required this.routeAnimation, required this.child});
+  final bool enabled;
+  final Animation<double> routeAnimation;
   final Widget child;
 
   @override
@@ -301,6 +361,9 @@ class _PredictiveBack extends StatefulWidget {
 }
 
 class _PredictiveBackState extends State<_PredictiveBack> with WidgetsBindingObserver {
+  /// Borda do gesto em curso, por animacao de rota (lida por [_EdgeSlide]).
+  static final Expando<SwipeEdge> edges = Expando<SwipeEdge>('volti-swipe-edge');
+
   TransitionRoute<dynamic>? _route;
   TransitionRoute<dynamic>? _active;
 
@@ -326,7 +389,8 @@ class _PredictiveBackState extends State<_PredictiveBack> with WidgetsBindingObs
   @override
   bool handleStartBackGesture(PredictiveBackEvent backEvent) {
     final r = _route;
-    if (r == null || backEvent.isButtonEvent || !r.isCurrent || !r.popGestureEnabled) return false;
+    if (!widget.enabled || r == null || backEvent.isButtonEvent || !r.isCurrent || !r.popGestureEnabled) return false;
+    edges[widget.routeAnimation] = backEvent.swipeEdge;
     r.handleStartBackGesture(progress: 1 - backEvent.progress);
     _active = r;
     return true;
@@ -338,8 +402,9 @@ class _PredictiveBackState extends State<_PredictiveBack> with WidgetsBindingObs
 
   @override
   void handleCancelBackGesture() {
-    _active?.handleCancelBackGesture();
+    final r = _active;
     _active = null;
+    if (r != null) _restore(r);
   }
 
   @override
@@ -348,6 +413,12 @@ class _PredictiveBackState extends State<_PredictiveBack> with WidgetsBindingObs
     _active = null;
     final nav = r?.navigator;
     if (r == null || nav == null) return;
+    if (!r.isCurrent) {
+      // Outra rota entrou por cima durante o gesto: nao fecha nada (fecharia a
+      // rota errada) e a pagina arrastada volta ao lugar.
+      _restore(r);
+      return;
+    }
     final anim = r.animation!;
     nav.pop();
     // O gesto segue "em curso" ate a saida terminar: a curva fica linear e a
@@ -363,6 +434,16 @@ class _PredictiveBackState extends State<_PredictiveBack> with WidgetsBindingObs
     } else {
       nav.didStopUserGesture();
     }
+  }
+
+  /// Volta a rota ao lugar (cancelamento). O `handleCancelBackGesture` do
+  /// Flutter so anima a rota atual; uma rota ja coberta tambem precisa voltar
+  /// a 1, ou apareceria meio arrastada quando a de cima fechar.
+  static void _restore(TransitionRoute<dynamic> r) {
+    r.handleCancelBackGesture();
+    // ignore: invalid_use_of_protected_member
+    final c = r.controller;
+    if (c != null && !c.isAnimating && c.value < 1) c.forward();
   }
 
   @override
@@ -410,6 +491,31 @@ class _EdgeShadow extends StatelessWidget {
         ]);
       },
     );
+  }
+}
+
+/// `RectTween` dos `Hero` com a curva da tela (`--ease-screen`): o voo do
+/// `HeroController` ja aplica `fastOutSlowIn` (ou a invertida ao voltar, o que
+/// da `fastOutSlowIn(progresso)` nos dois sentidos); este tween desfaz essa
+/// curva e aplica a do design, com a mesma sensacao na ida e na volta.
+class VoltiHeroRectTween extends RectTween {
+  VoltiHeroRectTween({super.begin, super.end});
+
+  @override
+  Rect? lerp(double t) => super.lerp(VoltiMotion.easeScreen.transform(_unFastOutSlowIn(t.clamp(0.0, 1.0))));
+
+  static double _unFastOutSlowIn(double y) {
+    if (y <= 0 || y >= 1) return y;
+    var lo = 0.0, hi = 1.0;
+    for (var i = 0; i < 24; i++) {
+      final mid = (lo + hi) / 2;
+      if (Curves.fastOutSlowIn.transform(mid) < y) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    return (lo + hi) / 2;
   }
 }
 

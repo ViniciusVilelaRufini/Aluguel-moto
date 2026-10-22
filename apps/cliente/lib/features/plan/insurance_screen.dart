@@ -62,7 +62,7 @@ class _InsuranceScreenState extends ConsumerState<InsuranceScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            FlowHeader(title: l.insuranceTitle, subtitle: l.vehicleModelCode(v.model, v.code), heroCode: v.code),
+            FlowHeader(title: l.insuranceTitle, subtitle: l.vehicleModelCode(v.model, v.code), heroCode: v.code, heroModelId: v.vehicleModelId),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, VoltiSpacing.s16),

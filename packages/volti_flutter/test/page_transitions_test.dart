@@ -64,9 +64,9 @@ class _ProbeState extends State<_Probe> {
 
 double _width(WidgetTester t) => t.view.physicalSize.width / t.view.devicePixelRatio;
 
-Future<void> _backGesture(WidgetTester t, String method, [double progress = 0]) async {
+Future<void> _backGesture(WidgetTester t, String method, [double progress = 0, int edge = 0]) async {
   final args = method == 'startBackGesture' || method == 'updateBackGestureProgress'
-      ? <String, Object?>{'touchOffset': <double>[5, 300], 'progress': progress, 'swipeEdge': 0}
+      ? <String, Object?>{'touchOffset': <double>[5, 300], 'progress': progress, 'swipeEdge': edge}
       : null;
   await t.binding.defaultBinaryMessenger.handlePlatformMessage(
     SystemChannels.backGesture.name,
@@ -187,8 +187,16 @@ void main() {
           await t.tap(find.text('abrir'));
           await t.pump();
           await t.pump(const Duration(milliseconds: 1));
-          for (final type in [SlideTransition, FadeTransition, ScaleTransition]) {
-            expect(find.ancestor(of: find.text('segunda'), matching: find.byType(type)), findsNothing, reason: '$type');
+          // Estado final ja no primeiro quadro: no lugar, opaca, escala 1.
+          expect(t.getCenter(find.text('segunda')).dx, moreOrLessEquals(_width(t) / 2));
+          for (final f in t.widgetList<FadeTransition>(find.ancestor(of: find.text('segunda'), matching: find.byType(FadeTransition)))) {
+            expect(f.opacity.value, 1);
+          }
+          for (final s in t.widgetList<ScaleTransition>(find.ancestor(of: find.text('segunda'), matching: find.byType(ScaleTransition)))) {
+            expect(s.scale.value, 1);
+          }
+          for (final s in t.widgetList<SlideTransition>(find.ancestor(of: find.text('segunda'), matching: find.byType(SlideTransition)))) {
+            expect(s.position.value, Offset.zero);
           }
           expect(t.getCenter(find.text('primeira'), warnIfMissed: false), before);
           await t.pumpAndSettle();
@@ -321,6 +329,137 @@ void main() {
       await t.pump(const Duration(milliseconds: 100));
       expect(find.byKey(const Key('progress-step-fill')), findsNothing);
       expect(col(t, 2), VoltiColors.brand);
+    });
+  });
+
+  group('fix round 1', () {
+    testWidgets('voltar fecha com --ease-screen invertida (saida rapida no inicio)', (t) async {
+      await t.pumpWidget(_app());
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      final w = _width(t);
+      await t.binding.handlePopRoute();
+      await t.pump();
+      await t.pump(VoltiPageTransitions.duration * .1);
+      // 10% do tempo: easeScreen.flipped(0,9) = 1 - easeScreen(0,1).
+      final expected = VoltiMotion.easeScreen.transform(.1);
+      final dx = t.getCenter(find.text('segunda')).dx - w / 2;
+      expect(dx / w, moreOrLessEquals(expected, epsilon: .02));
+      expect(dx / w, greaterThan(.15), reason: 'a curva de ida no reverso quase nao sairia do lugar');
+      await t.pumpAndSettle();
+    });
+
+    testWidgets('modal fecha com a curva invertida', (t) async {
+      await t.pumpWidget(_app(second: VoltiScreenTransition.modal));
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      final h = t.view.physicalSize.height / t.view.devicePixelRatio;
+      final rest = t.getCenter(find.text('segunda')).dy;
+      await t.binding.handlePopRoute();
+      await t.pump();
+      await t.pump(VoltiPageTransitions.duration * .1);
+      final dy = t.getCenter(find.text('segunda')).dy - rest;
+      expect(dy / h, moreOrLessEquals(VoltiMotion.easeScreen.transform(.1), epsilon: .02));
+      await t.pumpAndSettle();
+    });
+
+    testWidgets('gesto voltar: rota nova por cima antes de soltar fica e a pagina arrastada volta', (t) async {
+      await t.pumpWidget(_app());
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      final w = _width(t);
+      await _backGesture(t, 'startBackGesture');
+      await _backGesture(t, 'updateBackGestureProgress', .5);
+      await t.pump();
+      // Ex.: o evento handover.pending abre "Confira sua moto" no meio do gesto.
+      final nav = Navigator.of(t.element(find.text('segunda')));
+      nav.push(VoltiPageRoute<void>(modal: true, builder: (_) => const Scaffold(body: Center(child: Text('terceira')))));
+      await t.pump();
+      await _backGesture(t, 'commitBackGesture');
+      await t.pumpAndSettle();
+      expect(find.text('terceira'), findsOneWidget);
+      nav.pop();
+      await t.pumpAndSettle();
+      expect(find.text('segunda'), findsOneWidget);
+      expect(t.getCenter(find.text('segunda')).dx, moreOrLessEquals(w / 2));
+    });
+
+    testWidgets('gesto pela borda direita: a tela sai para a esquerda', (t) async {
+      await t.pumpWidget(_app());
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      final w = _width(t);
+      await _backGesture(t, 'startBackGesture', 0, 1);
+      await _backGesture(t, 'updateBackGestureProgress', .5, 1);
+      await t.pump();
+      expect(t.getCenter(find.text('segunda')).dx, moreOrLessEquals(0, epsilon: 2));
+      await _backGesture(t, 'cancelBackGesture');
+      await t.pumpAndSettle();
+      expect(t.getCenter(find.text('segunda')).dx, moreOrLessEquals(w / 2));
+    });
+
+    testWidgets('voltar duas vezes rapido sobre [push, modal]: a primeira tela faz parallax, nao recua', (t) async {
+      await t.pumpWidget(_app());
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      final nav = Navigator.of(t.element(find.text('segunda')));
+      nav.push(VoltiPageRoute<void>(modal: true, builder: (_) => const Scaffold(body: Center(child: Text('terceira')))));
+      await t.pumpAndSettle();
+      nav.pop();
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 60));
+      nav.pop();
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 60));
+      // A rota acima da primeira e a "segunda" (push): desliza, nao escala.
+      final c = t.getCenter(find.text('primeira'));
+      expect(c.dx, lessThan(_width(t) / 2 - 5));
+      await t.pumpAndSettle();
+      expect(find.text('primeira'), findsOneWidget);
+    });
+
+    testWidgets('ligar reduced motion com telas abertas nao remonta as paginas', (t) async {
+      await t.pumpWidget(_app());
+      await t.tap(find.text('abrir'));
+      await t.pumpAndSettle();
+      await t.pumpWidget(_app(media: const MediaQueryData(disableAnimations: true)));
+      await t.pump();
+      await t.pumpWidget(_app(media: const MediaQueryData(accessibleNavigation: true)));
+      await t.pump();
+      await t.pumpWidget(_app());
+      await t.pump();
+      await t.binding.handlePopRoute();
+      await t.pumpAndSettle();
+      expect(find.text('primeira'), findsOneWidget);
+      expect(_inits, 1);
+      expect(_activations, 0);
+    });
+
+    testWidgets('ProgressSteps: nenhum quadro com o segmento novo cinza depois de comecar a encher', (t) async {
+      await t.pumpWidget(const MaterialApp(home: Scaffold(body: ProgressSteps(total: 4, current: 2, animateFrom: 1))));
+      final seg = find.byKey(const Key('progress-step-2'));
+      Color rendered() => ((t.widget<DecoratedBox>(find.descendant(of: seg, matching: find.byType(DecoratedBox)).first).decoration) as BoxDecoration).color!;
+      var started = false;
+      for (var i = 0; i < 60; i++) {
+        await t.pump(const Duration(milliseconds: 16));
+        final filling = find.byKey(const Key('progress-step-fill')).evaluate().isNotEmpty;
+        if (filling) started = true;
+        if (started && !filling) {
+          expect(rendered(), VoltiColors.brand, reason: 'quadro $i');
+        }
+      }
+      expect(started, isTrue);
+      expect(rendered(), VoltiColors.brand);
+    });
+
+    test('VoltiHeroRectTween segue --ease-screen sobre o progresso do voo', () {
+      final tween = VoltiHeroRectTween(begin: Rect.zero, end: const Rect.fromLTWH(100, 0, 0, 0));
+      for (final u in [.1, .3, .5, .8]) {
+        final y = Curves.fastOutSlowIn.transform(u);
+        expect(tween.lerp(y)!.left, moreOrLessEquals(100 * VoltiMotion.easeScreen.transform(u), epsilon: 1));
+      }
+      expect(tween.lerp(0)!.left, 0);
+      expect(tween.lerp(1)!.left, 100);
     });
   });
 }
