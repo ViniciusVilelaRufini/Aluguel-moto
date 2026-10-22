@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -242,6 +243,7 @@ class _VoltiMapState extends State<VoltiMap> {
           onError: _onError,
           reset: _reset.stream,
           tileBuilder: (context, tile, image) {
+            if (kMapDebug) debugPrint('VOLTI_DBG tile ${image.coordinates.z}/${image.coordinates.x}/${image.coordinates.y} ready=${image.readyToDisplay} err=${image.loadError}');
             if (image.readyToDisplay && widget.onTileLoaded != null) widget.onTileLoaded!();
             return ColorFiltered(colorFilter: VoltiMap.colorFilter, child: tile);
           },
@@ -250,6 +252,7 @@ class _VoltiMapState extends State<VoltiMap> {
         if (_reference != null)
           voltiTileLayer(context, template: kMapReferenceUrl, provider: _reference, onError: _onError, reset: _reset.stream),
         ...widget.layers,
+        if (kMapDebug) const _CameraLogger(),
         if (widget.showAttribution)
           SafeArea(
             top: !widget.embedded,
@@ -332,5 +335,22 @@ class RenderSizeReporter extends RenderProxyBox {
     _last = size;
     final s = size;
     WidgetsBinding.instance.addPostFrameCallback((_) => onSize(s));
+  }
+}
+
+/// Diagnostico do mapa no logcat (so debug, `--dart-define=MAP_DEBUG=true`).
+const kMapDebug = kDebugMode && bool.fromEnvironment('MAP_DEBUG');
+
+class _CameraLogger extends StatelessWidget {
+  const _CameraLogger();
+  @override
+  Widget build(BuildContext context) {
+    final cam = MapCamera.of(context);
+    debugPrint('VOLTI_DBG camera size=${cam.nonRotatedSize} center=${cam.center} zoom=${cam.zoom} pixelBounds=${cam.pixelBounds}');
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final box = context.findRenderObject() as RenderBox?;
+      if (box != null && box.hasSize) debugPrint('VOLTI_DBG maplayer box=${box.size} at=${box.localToGlobal(Offset.zero)}');
+    });
+    return const SizedBox.shrink();
   }
 }

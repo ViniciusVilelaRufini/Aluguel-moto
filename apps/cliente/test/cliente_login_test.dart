@@ -601,6 +601,18 @@ void main() {
       expect((p as NetworkTileProvider).abortObsoleteRequests, isFalse);
     });
 
+    test('descartar um mapa nao fecha o cliente HTTP dos tiles (pedido compartilhado no cache vira PNG transparente)', () {
+      final client = _CloseSpyClient();
+      debugTileHttpClient = client;
+      addTearDown(() => debugTileHttpClient = null);
+      final a = newTileProvider();
+      final b = newTileProvider();
+      // A home sai (o TileLayer descarta o provedor dela); a boas-vindas continua.
+      a.dispose();
+      b.dispose();
+      expect(client.closed, isFalse);
+    });
+
     testWidgets('camada de tiles com folga (panBuffer e keepBuffer >= 1)', (t) async {
       screen(t);
       await t.pumpWidget(const ProviderScope(child: MaterialApp(home: VoltiMap(center: kHeroDepot))));
@@ -910,4 +922,12 @@ class _RecTiles extends TileProvider {
     requested.add('${c.z}/${c.x}/${c.y}');
     return MemoryImage(png);
   }
+}
+
+class _CloseSpyClient extends http.BaseClient {
+  bool closed = false;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) => throw UnimplementedError();
+  @override
+  void close() => closed = true;
 }

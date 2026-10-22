@@ -319,6 +319,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
       builder: (context, c) {
         final size = Size(c.maxWidth, height);
         _lastSize = size;
+        if (kMapDebug) debugPrint('VOLTI_DBG hero size=$size band=${widget.band} ready=${widget.layoutReady} zone=${_geometry.zone}');
 
         // Mapa + galpao: RepaintBoundary estatico movido pela matriz da deriva (os
         // tiles nao sao reconstruidos a cada quadro).

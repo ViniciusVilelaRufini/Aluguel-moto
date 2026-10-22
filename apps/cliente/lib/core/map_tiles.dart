@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
+import 'package:http/retry.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'launcher.dart';
@@ -121,12 +122,27 @@ const kMapUserAgentPackage = 'br.com.volti.volti_cliente';
 @visibleForTesting
 TileProvider Function()? debugTileProviderFactory;
 
-/// Provedor de tiles de rede (ou o de teste). Sem `abortObsoleteRequests`: no
-/// flutter_map 8, um pedido abortado (tile que saiu da faixa por um instante, ex.:
-/// quando a camera se move logo apos abrir) "carrega" um PNG transparente e o tile
-/// continua na tela vazio para sempre, sem erro nem nova tentativa: era a costura
-/// vertical do hero no emulador (as colunas da direita ficavam transparentes).
-TileProvider newTileProvider() => debugTileProviderFactory?.call() ?? NetworkTileProvider(abortObsoleteRequests: false);
+/// Cliente HTTP dos tiles, unico no app e **nunca fechado** pelos mapas.
+///
+/// Causa da costura do hero (diagnosticada no emulador): o `ImageCache` do Flutter
+/// identifica o tile pela URL, entao mapas diferentes compartilham o mesmo pedido em
+/// andamento. A home monta um mapa por um instante na abertura (antes do
+/// redirecionamento para a boas-vindas) e, ao sair, o `TileLayer` descartava o
+/// provedor, que fechava o proprio cliente; o flutter_map trata "client closed"
+/// devolvendo um PNG **transparente**, e a boas-vindas, que esperava os mesmos
+/// tiles (a coluna em comum), recebia esse PNG como "carregado" e ficava com a
+/// faixa da direita vazia para sempre. Com um cliente compartilhado que os mapas
+/// nao fecham, o pedido termina com a imagem real para todos.
+@visibleForTesting
+http.Client? debugTileHttpClient;
+final http.Client _sharedTileClient = RetryClient(http.Client());
+
+/// Provedor de tiles de rede (ou o de teste): cliente compartilhado (ver acima) e
+/// sem `abortObsoleteRequests` (um pedido abortado tambem vira PNG transparente
+/// para quem compartilha a mesma URL no cache).
+TileProvider newTileProvider() =>
+    debugTileProviderFactory?.call() ??
+    NetworkTileProvider(httpClient: debugTileHttpClient ?? _sharedTileClient, abortObsoleteRequests: false);
 
 /// Camada de tiles comum: servidor configuravel, `@2x` em telas densas, retentativa
 /// (o `NetworkTileProvider` ja usa `RetryClient`) e tiles com erro descartados quando
