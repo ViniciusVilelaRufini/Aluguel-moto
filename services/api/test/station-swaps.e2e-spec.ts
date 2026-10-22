@@ -74,6 +74,9 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
     }
   });
 
+  // Cada teste inicia vários aluguéis/trocas (limites de 20/min por rota no Redis): começa com a janela zerada.
+  beforeEach(resetThrottle);
+
   afterAll(async () => {
     station?.setAuto(true);
     await prisma?.stationSwap.deleteMany({ where: { stationId: { in: [st.id, empty.id] } } });
@@ -197,6 +200,31 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
     // Idempotency-Key obrigatória.
     await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(token)).send(swapBody(rentalId)).expect(400);
     expect(await prisma.stationSwap.count({ where: { rentalId: { in: [rentalId, unknown.rentalId] } } })).toBe(0);
+  });
+
+  it('fix 1 (C1): última bateria — dois POST simultâneos numa estação com 1 carregada → um 201 e um 422 station-unavailable', async () => {
+    station.setAuto(false);
+    const one = { id: randomUUID(), lat: -23.5609, lng: -46.6569 };
+    const oneCode = signStationCode(one.id);
+    await prisma.swapStation.create({
+      data: { id: one.id, name: `Estação 1 bateria e2e ${tag}`, address: 'R. Teste, 3', lat: one.lat, lng: one.lng, availableBatteries: 1, totalSlots: 4, openingHours: '24 h', open24h: true, stationCode: oneCode },
+    });
+    try {
+      const a = await rideOn('minute');
+      const b = await rideOn('minute');
+      const post = (r: { token: string; rentalId: string }) =>
+        http().post(`/swap-stations/${one.id}/swaps`).set(bearer(r.token)).set('Idempotency-Key', randomUUID()).send({ stationCode: oneCode, rentalId: r.rentalId, lat: one.lat, lng: one.lng });
+      for (let round = 0; round < 3; round++) {
+        await prisma.stationSwap.deleteMany({ where: { stationId: one.id } });
+        const res = await Promise.all([post(a), post(b)]);
+        expect(res.map((r) => r.status).sort()).toEqual([201, 422]);
+        expect(res.find((r) => r.status === 422)!.body.code).toBe('station-unavailable');
+        expect(await prisma.stationSwap.count({ where: { stationId: one.id } })).toBe(1);
+      }
+    } finally {
+      await prisma.stationSwap.deleteMany({ where: { stationId: one.id } });
+      await prisma.swapStation.delete({ where: { id: one.id } });
+    }
   });
 
   it('prazo de 3 min: sem resposta da estação → failed; sem devolução → canceled; nenhuma bateria liberada', async () => {

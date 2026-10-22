@@ -17,12 +17,12 @@ export const CANCELABLE_SWAP_STATUSES: StationSwapStatus[] = ['opening_slot', 'a
 
 /**
  * Moto parada para a troca — mesma regra do bloqueio seguro: velocidade desconhecida ou velha (`null`) = em movimento,
- * nunca 0 por padrão. Vale: aluguel pausado (a pausa travou a moto), moto travada e online (só trava abaixo de 3 km/h), ou
- * velocidade fresca exatamente 0. Velocidade conhecida > 0 recusa mesmo com a trava reportada.
+ * nunca 0 por padrão. Vale: moto travada e online (só trava abaixo de 3 km/h) ou velocidade fresca exatamente 0.
+ * Velocidade conhecida > 0 recusa mesmo com a trava reportada. Fix 1 (I3): o aluguel `paused` sozinho não basta (a trava da
+ * pausa pode não ter sido confirmada); vale a mesma regra, `rentalStatus` fica só para registro.
  */
 export function vehicleStationary(input: { rentalStatus: string; live: VehicleLiveState | null; knownSpeedKmh: number | null }): boolean {
   if (input.knownSpeedKmh !== null && input.knownSpeedKmh > 0) return false;
-  if (input.rentalStatus === 'paused') return true;
   if (input.live?.online && input.live.locked) return true;
   return input.knownSpeedKmh === 0;
 }

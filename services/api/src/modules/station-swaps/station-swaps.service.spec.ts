@@ -51,6 +51,7 @@ function setup(opts: { planCode?: string; rentalStatus?: string; known?: number 
   prisma.rental.findUnique.mockImplementation((async (a: any) => (a.where.id === RENTAL_ID ? rental : null)) as any);
   prisma.stationSwap.findFirst.mockResolvedValue(null);
   prisma.stationSwap.count.mockResolvedValue(0);
+  (prisma.$queryRaw as any).mockImplementation(async () => [{ availableBatteries: station.availableBatteries }]);
   prisma.fee.findUnique.mockResolvedValue({ code: 'battery_swap_fee', amountCents: opts.feeCents ?? 500, active: true } as any);
   prisma.stationSwap.create.mockImplementation((async (a: any) => {
     const s = { id: SWAP_ID, endReason: null, slotNumber: null, returnedSerial: null, returnedPct: null, releasedSerial: null, completedAt: null, createdAt: new Date(), updatedAt: new Date(), ...a.data };
@@ -133,6 +134,18 @@ describe('StationSwapsService.create (regras)', () => {
     expect(await problem(busy.service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 422, slug: 'station-unavailable' });
   });
 
+  it('fix 1 (C1): a decisão final usa a estação travada (FOR UPDATE) na mesma transação da inserção, contando também liberações atrasadas', async () => {
+    const { service, prisma } = setup({ station: { availableBatteries: 1 } });
+    // Pré-checagem vê 0 prometidas; dentro da transação (depois do lock) já há 1 → 422 e nada é inserido.
+    prisma.stationSwap.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1);
+    expect(await problem(service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 422, slug: 'station-unavailable' });
+    expect(prisma.stationSwap.create).not.toHaveBeenCalled();
+    const sql = ((prisma.$queryRaw as any).mock.calls[0][0] as string[]).join('?');
+    expect(sql).toMatch(/FROM "SwapStation" WHERE "id" = \?::uuid FOR UPDATE/);
+    const where = (prisma.stationSwap.count.mock.calls[1][0] as any).where;
+    expect(where.OR).toEqual(expect.arrayContaining([expect.objectContaining({ status: 'failed', endReason: 'release_timeout' })]));
+  });
+
   it('celular a mais de 50 m → 422 too-far', async () => {
     const { service } = setup();
     expect(await problem(service.create(customer, STATION_ID, body({ lat: STATION.lat + 0.0006 }), 'k1234567'))).toEqual({ status: 422, slug: 'too-far' });
@@ -144,8 +157,9 @@ describe('StationSwapsService.create (regras)', () => {
     expect(await problem(setup({ known: null, live: null }).service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 422, slug: 'vehicle-moving' });
   });
 
-  it('pausado ou travado com velocidade desconhecida → aceita', async () => {
-    await expect(setup({ known: null, rentalStatus: 'paused' }).service.create(customer, STATION_ID, body(), 'k1234567')).resolves.toEqual(expect.objectContaining({ status: 'opening_slot' }));
+  it('travado e online com velocidade desconhecida → aceita; pausado com velocidade desconhecida (sem trava confirmada) → 422 (fix 1, I3)', async () => {
+    expect(await problem(setup({ known: null, live: null, rentalStatus: 'paused' }).service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 422, slug: 'vehicle-moving' });
+    await expect(setup({ known: null, rentalStatus: 'paused', live: { locked: true } }).service.create(customer, STATION_ID, body(), 'k1234567')).resolves.toEqual(expect.objectContaining({ status: 'opening_slot' }));
     await expect(setup({ known: null, live: { locked: true } }).service.create(customer, STATION_ID, body(), 'k1234567')).resolves.toEqual(expect.objectContaining({ status: 'opening_slot' }));
   });
 

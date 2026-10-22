@@ -23,8 +23,12 @@ describe('moto parada (mesma regra do bloqueio: velocidade desconhecida = em mov
   it('travada mas offline não conta (estado velho)', () => {
     expect(vehicleStationary({ rentalStatus: 'active', live: live({ locked: true, online: false }), knownSpeedKmh: null })).toBe(false);
   });
-  it('aluguel pausado (moto travada pela pausa) → parada', () => {
-    expect(vehicleStationary({ rentalStatus: 'paused', live: null, knownSpeedKmh: null })).toBe(true);
+  it('fix 1 (I3): aluguel pausado só conta com a moto travada e online ou velocidade 0 fresca; pausado com velocidade desconhecida → recusa', () => {
+    expect(vehicleStationary({ rentalStatus: 'paused', live: null, knownSpeedKmh: null })).toBe(false);
+    expect(vehicleStationary({ rentalStatus: 'paused', live: live({ locked: false }), knownSpeedKmh: null })).toBe(false);
+    expect(vehicleStationary({ rentalStatus: 'paused', live: live({ locked: true, online: false }), knownSpeedKmh: null })).toBe(false);
+    expect(vehicleStationary({ rentalStatus: 'paused', live: live({ locked: true }), knownSpeedKmh: null })).toBe(true);
+    expect(vehicleStationary({ rentalStatus: 'paused', live: null, knownSpeedKmh: 0 })).toBe(true);
   });
   it('velocidade conhecida > 0 vence a trava reportada', () => {
     expect(vehicleStationary({ rentalStatus: 'active', live: live({ locked: true }), knownSpeedKmh: 8 })).toBe(false);

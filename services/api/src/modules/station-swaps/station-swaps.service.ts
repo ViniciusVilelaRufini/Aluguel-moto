@@ -27,6 +27,9 @@ export interface StationSwapConfig {
   qrSecret: string;
 }
 
+/** Depois de um `release_timeout`, por quanto tempo a bateria ainda conta como prometida (a estação pode liberar atrasada). */
+export const RELEASE_LATE_WINDOW_MS = 30 * 60 * 1000;
+const noBattery = () => unprocessable('station-unavailable', 'Esta estação está sem bateria carregada agora.');
 const stationNotFound = () => new ProblemException(404, 'station-not-found', 'QR inválido ou estação não encontrada.');
 const TIMEOUT_TARGET: Partial<Record<StationSwapStatus, { status: StationSwapStatus; reason: StationSwapEndReason }>> = {
   opening_slot: { status: 'failed', reason: 'station_timeout' },
@@ -67,6 +70,26 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     await this.station.stop();
   }
 
+  /** Trava a linha da estação até o fim da transação e devolve as carregadas disponíveis. */
+  private async lockStation(tx: Prisma.TransactionClient, stationId: string): Promise<number> {
+    const rows = await tx.$queryRaw<Array<{ availableBatteries: number }>>`SELECT "availableBatteries" FROM "SwapStation" WHERE "id" = ${stationId}::uuid FOR UPDATE`;
+    return Number(rows?.[0]?.availableBatteries ?? 0);
+  }
+
+  /**
+   * Carregadas já prometidas pela estação: trocas em andamento e as que falharam por prazo de liberação há pouco (a estação
+   * ainda pode liberar a bateria atrasada, `RELEASE_LATE_WINDOW_MS`).
+   */
+  private promisedWhere(stationId: string, now: Date): Prisma.StationSwapWhereInput {
+    return {
+      stationId,
+      OR: [
+        { status: { in: OPEN_SWAP_STATUSES } },
+        { status: 'failed', endReason: 'release_timeout', updatedAt: { gt: new Date(now.getTime() - RELEASE_LATE_WINDOW_MS) } },
+      ],
+    };
+  }
+
   private deadline(from = new Date()): Date {
     return new Date(from.getTime() + this.cfg.stepTimeoutMs);
   }
@@ -98,8 +121,8 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     const now = new Date();
     if (!station.active) throw unprocessable('station-unavailable', 'Esta estação está desativada.');
     if (!isStationOpen(station, now)) throw unprocessable('station-unavailable', 'Esta estação está fechada agora.');
-    const pending = await this.prisma.stationSwap.count({ where: { stationId, status: { in: OPEN_SWAP_STATUSES } } });
-    if (station.availableBatteries - pending <= 0) throw unprocessable('station-unavailable', 'Esta estação está sem bateria carregada agora.');
+    // Pré-checagem (ordem das mensagens); a decisão vale na transação com a estação travada, abaixo.
+    if (station.availableBatteries - (await this.prisma.stationSwap.count({ where: this.promisedWhere(stationId, now) })) <= 0) throw noBattery();
 
     const range = withinSwapRange({ lat: dto.lat, lng: dto.lng }, station);
     if (!range.ok) throw unprocessable('too-far', 'Chegue mais perto da estação (até 50 m) para trocar a bateria.');
@@ -114,11 +137,18 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     const feeCents = swapFeeCents(rental.planCode, await this.pricing.feeAmount(SWAP_FEE_CODE, SWAP_FEE_DEFAULT_CENTS));
     let swap: StationSwap;
     try {
-      swap = await this.prisma.stationSwap.create({
-        data: {
-          stationId, rentalId: rental.id, customerId, vehicleId: rental.vehicleId, status: 'opening_slot', feeCents, distanceM: range.distanceM,
-          expiresAt: this.deadline(now), idempotencyKey: idempotencyKey ?? null,
-        },
+      // Fix 1 (C1): estoque e inserção serializados por estação (SELECT … FOR UPDATE na estação). Duas requisições pela última
+      // bateria: a segunda espera o commit da primeira, recontagem já inclui a troca nova → 422.
+      swap = await this.prisma.$transaction(async (tx) => {
+        const available = await this.lockStation(tx, stationId);
+        const promised = await tx.stationSwap.count({ where: this.promisedWhere(stationId, now) });
+        if (available - promised <= 0) throw noBattery();
+        return tx.stationSwap.create({
+          data: {
+            stationId, rentalId: rental.id, customerId, vehicleId: rental.vehicleId, status: 'opening_slot', feeCents, distanceM: range.distanceM,
+            expiresAt: this.deadline(now), idempotencyKey: idempotencyKey ?? null,
+          },
+        });
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
