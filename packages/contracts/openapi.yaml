@@ -1008,6 +1008,11 @@ paths:
       description: |
         Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com `lat`/`lng`, filtra pelo
         raio e ordena por distância (`distanceM`); sem eles, todas em ordem alfabética.
+
+        Leitura aberta a qualquer cliente autenticado (`customerAuth`, sem grupo: o mapa e a folha "Troca de bateria"
+        do app). `x-required-groups` vale só para `staffAuth`. A resposta traz apenas os campos públicos de
+        `SwapStation` (identificador, nome, endereço, posição, baterias, vagas, horário e distância); dados internos
+        da estação (ativa/inativa, datas de cadastro) não saem da API, para nenhum pool.
       security:
         - customerAuth: []
         - staffAuth: []
