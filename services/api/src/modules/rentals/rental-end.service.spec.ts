@@ -87,6 +87,17 @@ describe('Encerramento do aluguel', () => {
     expect(commands.dispatch).not.toHaveBeenCalled();
   });
 
+  it('fix 1 (I7): troca de bateria na estação em andamento → 409 swap-open, sem travar nem encerrar (encerramento forçado continua)', async () => {
+    const { service, prisma, commands, rental } = setup({ photo: false });
+    prisma.stationSwap.findFirst.mockResolvedValue({ id: 'swap-1' } as any);
+    await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY })).rejects.toMatchObject({ status: 409, slug: 'swap-open' });
+    expect(commands.dispatch).not.toHaveBeenCalled();
+    expect(rental.status).toBe('active');
+    expect((prisma.stationSwap.findFirst.mock.calls[0][0] as any).where).toEqual({ rentalId: RENTAL_ID, status: { in: ['opening_slot', 'awaiting_return', 'returned', 'releasing'] } });
+    // A operação ainda consegue encerrar à força (emergência).
+    await expect(service.forceEnd(admin, RENTAL_ID, 'Cliente sumiu')).resolves.toMatchObject({ status: 'force_ended' });
+  });
+
   it('sem foto → 422 return-photo-missing', async () => {
     const { service } = setup({ photo: false });
     await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY })).rejects.toMatchObject({ status: 422, slug: 'return-photo-missing' });

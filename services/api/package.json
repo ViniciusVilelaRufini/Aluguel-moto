@@ -13,6 +13,7 @@
     "test:e2e": "jest --config test/jest-e2e.config.js --runInBand",
     "test:contract": "jest --config test/jest-contract.config.js --runInBand",
     "prisma": "prisma",
+    "stations:qr": "tsx src/cli/issue-station-qr.ts",
     "postinstall": "prisma generate"
   },
   "prisma": {

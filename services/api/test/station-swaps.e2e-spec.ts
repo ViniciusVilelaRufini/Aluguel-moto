@@ -279,6 +279,37 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
     expect(await prisma.vehicle.findUnique({ where: { id: a.vehicle.id } })).toMatchObject({ batterySerial: released });
   });
 
+  it('fix 1 (I1/I7): GET /rentals/current traz a troca aberta; encerrar e trocar de moto no meio dela → 409 swap-open', async () => {
+    station.setAuto(false);
+    const a = await rideOn('minute');
+    const s1 = (await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send(swapBody(a.rentalId)).expect(201)).body;
+    const cur = await http().get('/rentals/current').set(bearer(a.token)).expect(200);
+    expect(cur).toSatisfyApiSpec();
+    expect(cur.body.currentStationSwap).toMatchObject({ id: s1.id, status: 'opening_slot', rentalId: a.rentalId });
+
+    const end = await http().post(`/rentals/${a.rentalId}/end`).set(bearer(a.token)).send({ returnPhotoObjectKey: `returns/${a.rentalId}/x.jpg` }).expect(409);
+    expect(end).toSatisfyApiSpec();
+    expect(end.body.code).toBe('swap-open');
+    const other = await freeVehicleInReturnZone(prisma);
+    const swapBike = await http().post(`/rentals/${a.rentalId}/swap`).set(bearer(a.token)).send({ newVehicleId: other.id, reason: 'Pneu furado' }).expect(409);
+    expect(swapBike.body.code).toBe('swap-open');
+    expect((await prisma.rental.findUnique({ where: { id: a.rentalId } }))!).toMatchObject({ status: 'active', vehicleId: a.vehicle.id });
+
+    await http().post(`/swap-stations/${st.id}/swaps/${s1.id}/cancel`).set(bearer(a.token)).expect(200);
+    expect((await http().get('/rentals/current').set(bearer(a.token)).expect(200)).body).not.toHaveProperty('currentStationSwap');
+  });
+
+  it('fix 1 (I6): GET /swap-stations/{id}/qr só para admin, com o conteúdo do QR', async () => {
+    const res = await http().get(`/swap-stations/${st.id}/qr`).set(bearer(admin)).expect(200);
+    expect(res).toSatisfyApiSpec();
+    expect(res.body).toEqual({ stationId: st.id, stationCode: code });
+    const sup = await devToken(app, { sub: 'dev-suporte', email: 'suporte@volti.dev', groups: ['suporte'], pool: 'staff' });
+    await http().get(`/swap-stations/${st.id}/qr`).set(bearer(sup)).expect(403);
+    const c = await approvedCustomer(app, prisma, 'swap-qr');
+    await http().get(`/swap-stations/${st.id}/qr`).set(bearer(c.token)).expect(403);
+    expect((await http().get(`/swap-stations/${randomUUID()}/qr`).set(bearer(admin)).expect(404)).body.code).toBe('station-not-found');
+  });
+
   it('cancelar: dono antes da devolução (200); outro cliente → 404; depois da devolução → 422 swap-not-cancelable', async () => {
     station.setAuto(false);
     const a = await rideOn('minute');

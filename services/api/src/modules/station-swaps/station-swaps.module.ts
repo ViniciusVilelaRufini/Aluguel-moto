@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { IoTDataPlaneClient } from '@aws-sdk/client-iot-data-plane';
 import { Module } from '@nestjs/common';
 import { connect } from 'mqtt';
+import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import { STATION_GATEWAY, type StationGateway } from '../../ports/station-gateway.port';
 import { AlertsModule } from '../alerts/alerts.module';
@@ -9,7 +10,7 @@ import { IOT_CONFIG, type IotConfig } from '../iot/iot-config';
 import type { MqttClientLike } from '../iot/local-mqtt.transport';
 import { PricingModule } from '../pricing/pricing.module';
 import { loadStationQrSecret } from './station-code';
-import { AwsStationGateway, MqttStationGateway, StubStationGateway } from './station-gateways';
+import { assertFifoQueueUrl, AwsStationGateway, MqttStationGateway, StubStationGateway } from './station-gateways';
 import { StationSwapsController } from './station-swaps.controller';
 import { STATION_SWAP_CONFIG, StationSwapsService, type StationSwapConfig } from './station-swaps.service';
 import { SWAP_STEP_TIMEOUT_MS } from './station-swap.rules';
@@ -34,10 +35,15 @@ const num = (name: string, fallback: number): number => {
     },
     {
       provide: STATION_GATEWAY,
-      inject: [IOT_CONFIG, QUEUE_BUS],
-      useFactory: (cfg: IotConfig, queue: QueueBus): StationGateway => {
+      inject: [IOT_CONFIG, QUEUE_BUS, APP_CONFIG],
+      useFactory: (cfg: IotConfig, queue: QueueBus, app: AppConfig): StationGateway => {
         if (cfg.iotMode === 'stub') return new StubStationGateway({ stepMs: num('STATION_STUB_STEP_MS', 1_500) });
-        if (cfg.iotMode === 'aws') return new AwsStationGateway(new IoTDataPlaneClient({ region: cfg.region, endpoint: cfg.iotEndpoint }), queue);
+        if (cfg.iotMode === 'aws') {
+          // Fix 1 (I4): sem fila FIFO a API não sobe (ordem dos eventos por estação).
+          const url = app.sqs.queueUrls.estacoes;
+          assertFifoQueueUrl(url);
+          return new AwsStationGateway(new IoTDataPlaneClient({ region: cfg.region, endpoint: cfg.iotEndpoint }), queue, url);
+        }
         return new MqttStationGateway(
           () => connect(cfg.mqttUrl, { clientId: `volti-api-st-${randomUUID().slice(0, 8)}`, clean: true, reconnectPeriod: 2_000, connectTimeout: 5_000 }) as unknown as MqttClientLike,
         );

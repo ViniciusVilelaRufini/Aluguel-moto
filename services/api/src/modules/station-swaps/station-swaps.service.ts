@@ -12,7 +12,8 @@ import { AlertsService } from '../alerts/alerts.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CHARGED_PCT } from '../batteries/batteries.mapper';
 import { PricingService } from '../pricing/pricing.service';
-import { verifyStationCode } from './station-code';
+import { AuditService } from '../audit/audit.service';
+import { signStationCode, verifyStationCode } from './station-code';
 import {
   CANCELABLE_SWAP_STATUSES, isStationOpen, nextStepAfter, OPEN_SWAP_STATUSES, SWAP_FEE_CODE, SWAP_FEE_DEFAULT_CENTS, swapFeeCents, vehicleStationary,
   withinSwapRange,
@@ -60,6 +61,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     private readonly events: EventEmitter2,
     private readonly alerts: AlertsService,
     @Inject(STATION_SWAP_CONFIG) private readonly cfg: StationSwapConfig,
+    private readonly audit: AuditService,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -201,13 +203,24 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     });
   }
 
-  /** Troca aberta do aluguel (`GET /rentals/current`, fix 1 / I1). */
-  async openForRental(rentalId: string) {
-    const s = await this.prisma.stationSwap.findFirst({ where: { rentalId, status: { in: OPEN_SWAP_STATUSES } }, orderBy: { createdAt: 'desc' } });
-    return s ? toStationSwap(s, { staff: false }) : undefined;
-  }
-
   // ───────────── painel ─────────────
+
+  /**
+   * Fix 1 (I6): conteúdo do QR da estação para o admin imprimir (`GET /swap-stations/{id}/qr`). Estação ainda sem código →
+   * emite agora com o segredo atual. AuditLog sem o código.
+   */
+  async qr(actor: Principal, stationId: string): Promise<{ stationId: string; stationCode: string }> {
+    const station = await this.prisma.swapStation.findUnique({ where: { id: stationId }, select: { id: true, stationCode: true } });
+    if (!station) throw new ProblemException(404, 'station-not-found', 'Estação não encontrada.');
+    let code = station.stationCode;
+    const issued = !code;
+    if (!code) {
+      code = signStationCode(station.id, this.cfg.qrSecret);
+      await this.prisma.swapStation.update({ where: { id: station.id }, data: { stationCode: code } });
+    }
+    await this.audit.record({ actor, action: 'swap_station.qr_read', entityType: 'SwapStation', entityId: station.id, metadata: { issued } });
+    return { stationId: station.id, stationCode: code };
+  }
 
   async list(stationId: string, q: ListStationSwapsQuery) {
     if (!(await this.prisma.swapStation.findUnique({ where: { id: stationId }, select: { id: true } }))) throw new ProblemException(404, 'station-not-found', 'Estação não encontrada.');

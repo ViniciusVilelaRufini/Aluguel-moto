@@ -88,9 +88,35 @@ function setup(opts: { planCode?: string; rentalStatus?: string; known?: number 
   const events = new EventEmitter2();
   const emitted: any[] = [];
   events.on(EV.STATION_SWAP_UPDATED, (e) => emitted.push(e));
-  const service = new StationSwapsService(prisma as any, new PricingService(prisma as any), iot as any, gateway as any, events, alerts as any, { stepTimeoutMs: 180_000, qrSecret: SECRET });
-  return { service, prisma, station, rental, swaps, iot, gateway, alerts, emitted };
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  prisma.swapStation.update.mockImplementation((async (a: any) => Object.assign(station, a.data)) as any);
+  const service = new StationSwapsService(prisma as any, new PricingService(prisma as any), iot as any, gateway as any, events, alerts as any, { stepTimeoutMs: 180_000, qrSecret: SECRET }, audit as any);
+  return { service, prisma, station, rental, swaps, iot, gateway, alerts, emitted, audit };
 }
+
+const admin: Principal = { pool: 'staff', sub: 'a', email: 'a@volti.com.br', groups: ['admin'], userId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', staffId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' } as Principal;
+
+describe('StationSwapsService.qr — QR da estação para o admin (fix 1, I6)', () => {
+  it('devolve o código emitido e grava AuditLog (sem o código no registro)', async () => {
+    const { service, audit } = setup();
+    expect(await service.qr(admin, STATION_ID)).toEqual({ stationId: STATION_ID, stationCode: CODE });
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'swap_station.qr_read', entityType: 'SwapStation', entityId: STATION_ID }));
+    expect(JSON.stringify(audit.record.mock.calls[0][0])).not.toContain(CODE);
+  });
+
+  it('estação sem código: emite na hora com o segredo atual', async () => {
+    const { service, station, prisma } = setup({ station: { stationCode: null } });
+    const out = await service.qr(admin, STATION_ID);
+    expect(out.stationCode).toBe(signStationCode(STATION_ID, SECRET));
+    expect(station.stationCode).toBe(out.stationCode);
+    expect(prisma.swapStation.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('estação inexistente → 404 station-not-found', async () => {
+    const { service } = setup();
+    expect(await problem(service.qr(admin, 'd0000000-0000-4000-8000-00000000000f'))).toEqual({ status: 404, slug: 'station-not-found' });
+  });
+});
 
 describe('StationSwapsService.create (regras)', () => {
   it('QR inválido, de outra estação ou revogado → 404 station-not-found', async () => {

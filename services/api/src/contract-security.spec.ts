@@ -58,8 +58,8 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     }
   }
 
-  it('cobre as 182 operações do contrato, sem rotas extras', () => {
-    expect(ops).toHaveLength(182);
+  it('cobre as 183 operações do contrato, sem rotas extras', () => {
+    expect(ops).toHaveLength(183);
     const missing = ops.map(([k]) => k).filter((k) => !routes.has(k));
     const extra = [...routes.keys()].filter((k) => !ops.some(([o]) => o === k));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });
@@ -97,6 +97,7 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     const pools = (key: string) => [...(routes.get(key)?.requirement?.pools ?? [])].sort();
     const groups = (key: string) => [...(routes.get(key)?.requirement?.groups ?? [])].sort();
     expect(ops.filter(([k]) => k.includes(' /swap-stations/')).map(([k]) => k).sort()).toEqual([
+      'GET /swap-stations/:id/qr',
       'GET /swap-stations/:id/swaps',
       'GET /swap-stations/:id/swaps/:swapId',
       'POST /swap-stations/:id/swaps',
@@ -115,5 +116,10 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     // Idempotency-Key obrigatória na criação.
     const params = ((byId('createStationSwap')[1] as unknown as { parameters?: Array<{ $ref?: string }> }).parameters ?? []).map((p) => p.$ref);
     expect(params).toContain('#/components/parameters/IdempotencyKey');
+    // Fix 1 (I6): QR da estação só para admin (staff), nunca para cliente.
+    const [qr] = byId('getSwapStationQr');
+    expect(qr).toBe('GET /swap-stations/:id/qr');
+    expect(pools(qr)).toEqual(['staff']);
+    expect(groups(qr)).toEqual(['admin']);
   });
 });

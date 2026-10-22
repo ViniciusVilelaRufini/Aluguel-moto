@@ -1,5 +1,5 @@
 import type { StationEvent } from '../../ports/station-gateway.port';
-import { MqttStationGateway, StubStationGateway } from './station-gateways';
+import { assertFifoQueueUrl, AwsStationGateway, MqttStationGateway, StubStationGateway } from './station-gateways';
 
 const SWAP = '5b0e7c1a-1111-4111-8111-111111111111';
 const THING = 'station-d0000000-0000-4000-8000-000000000001';
@@ -61,6 +61,21 @@ describe('StubStationGateway (IOT_MODE=stub)', () => {
     // Emissão manual de um evento (testes).
     await gw.emit(THING, { type: 'slot_opened', swapId: SWAP, slotNumber: 2, ts: new Date().toISOString() });
     expect(got).toHaveLength(1);
+  });
+});
+
+describe('AwsStationGateway (IOT_MODE=aws) — fix 1, I4', () => {
+  it('recusa fila sem .fifo (a ordem dos eventos de cada estação depende do MessageGroupId)', async () => {
+    const queue = { subscribe: jest.fn(), publish: jest.fn() };
+    expect(() => assertFifoQueueUrl(undefined)).toThrow(/SQS_QUEUE_ESTACOES_URL/);
+    expect(() => assertFifoQueueUrl('https://sqs.sa-east-1.amazonaws.com/1/volti-estacoes')).toThrow(/\.fifo/);
+    expect(() => assertFifoQueueUrl('https://sqs.sa-east-1.amazonaws.com/1/volti-estacoes.fifo')).not.toThrow();
+    const gw = new AwsStationGateway({ send: jest.fn() }, queue as any, 'https://sqs.sa-east-1.amazonaws.com/1/volti-estacoes');
+    await expect(gw.start(async () => undefined)).rejects.toThrow(/\.fifo/);
+    expect(queue.subscribe).not.toHaveBeenCalled();
+    const ok = new AwsStationGateway({ send: jest.fn() }, queue as any, 'https://sqs.sa-east-1.amazonaws.com/1/volti-estacoes.fifo');
+    await ok.start(async () => undefined);
+    expect(queue.subscribe).toHaveBeenCalledWith('estacoes', expect.any(Function));
   });
 });
 

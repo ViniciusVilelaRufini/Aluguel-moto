@@ -32,8 +32,11 @@ const num = (name: string, fallback: number): number => {
 export function loadIotConfig(): IotConfig {
   const env = process.env.VOLTI_ENV ?? 'dev';
   const endpoint = process.env.IOT_ENDPOINT;
+  const iotMode = oneOf('IOT_MODE', ['local', 'aws', 'stub'] as const, 'local');
+  // Fix 1 (I5, troca na estação): o stub confirma comandos e avança trocas sozinho — nunca em produção.
+  if (iotMode === 'stub' && process.env.NODE_ENV === 'production') throw new Error('IOT_MODE=stub não é permitido em produção (use aws).');
   return {
-    iotMode: oneOf('IOT_MODE', ['local', 'aws', 'stub'] as const, 'local'),
+    iotMode,
     geofenceMode: oneOf('GEOFENCE_MODE', ['local', 'aws'] as const, 'local'),
     mqttUrl: process.env.MQTT_URL || 'mqtt://localhost:1883',
     iotEndpoint: endpoint ? (endpoint.startsWith('http') ? endpoint : `https://${endpoint}`) : undefined,

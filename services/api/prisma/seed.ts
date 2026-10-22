@@ -5,7 +5,6 @@
 import { PrismaClient, type StaffGroup } from '@prisma/client';
 import { seedDepot } from './seed-depot';
 import { seedV2 } from './seed-v2';
-import { seedStationCodes } from './seed-station-codes';
 
 const prisma = new PrismaClient();
 
@@ -216,9 +215,7 @@ async function main(): Promise<void> {
   // ── retirada em galpão: galpão de Pinheiros com as motos livres ──
   const depot = await seedDepot(prisma);
 
-  // ── troca de bateria via QR: QR fixo de cada estação (payloads impressos para teste) ──
-  const stationCodes = await seedStationCodes(prisma);
-  console.log(JSON.stringify({ msg: 'station_qr_codes', stations: stationCodes }));
+  // ── troca de bateria via QR: o QR das estações é emitido fora do seed (fix 1, I6): pnpm --filter api stations:qr ──
 
   const counts = await Promise.all([prisma.vehicle.count(), prisma.zone.count(), prisma.pricingPlan.count({ where: { active: true } }), prisma.staffUser.count(), prisma.customer.count()]);
   console.log(JSON.stringify({ msg: 'seed_done', vehicles: counts[0], zones: counts[1], plans: counts[2], staff: counts[3], customers: counts[4], ...v2, depotVehicles: depot.depotVehicles }));

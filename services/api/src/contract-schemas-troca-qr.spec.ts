@@ -32,6 +32,13 @@ describe('contrato da troca de bateria na estação', () => {
     expect(toStationSwap({ ...base, status: 'canceled', endReason: 'return_timeout' }, { staff: false })).toSatisfySchemaInApiSpec('StationSwap');
   });
 
+  it('fix 1: currentStationSwap em CurrentRental, motivos novos e SwapStationQr', () => {
+    expect(s.CurrentRental.properties.currentStationSwap.$ref).toBe('#/components/schemas/StationSwap');
+    expect(s.StationSwapEndReason.enum).toEqual(expect.arrayContaining(['no_battery_after_return', 'serial_mismatch']));
+    expect({ stationId: base.stationId, stationCode: 'vst1.x.y' }).toSatisfySchemaInApiSpec('SwapStationQr');
+    expect(toStationSwap({ ...base, status: 'failed', endReason: 'serial_mismatch' }, { staff: true })).toSatisfySchemaInApiSpec('StationSwap');
+  });
+
   it('o QR da estação nunca sai em SwapStation', () => {
     expect(Object.keys(s.SwapStation.properties)).not.toContain('stationCode');
   });

@@ -116,6 +116,15 @@ export class MqttStationGateway implements StationGateway {
 }
 
 /**
+ * Fix 1 (I4): a fila `estacoes` tem de ser FIFO (`.fifo`, `MessageGroupId` = thing da estação), senão eventos da mesma troca
+ * podem chegar fora de ordem entre instâncias da API. A API não sobe com outra fila.
+ */
+export function assertFifoQueueUrl(url: string | undefined): void {
+  if (!url) throw new Error('IOT_MODE=aws exige SQS_QUEUE_ESTACOES_URL (fila FIFO dos eventos das estações).');
+  if (!url.endsWith('.fifo')) throw new Error('SQS_QUEUE_ESTACOES_URL precisa ser uma fila FIFO (nome terminando em .fifo).');
+}
+
+/**
  * IOT_MODE=aws: comandos por `Publish` do IoT Data Plane em `estacoes/{thing}/comandos`; eventos pela fila SQS `estacoes`
  * (regra IoT `SELECT *, topic(2) AS thing FROM 'estacoes/+/eventos'` — pendência de infra, ver docs/decisoes.md).
  */
@@ -125,9 +134,11 @@ export class AwsStationGateway implements StationGateway {
   constructor(
     private readonly client: Pick<IoTDataPlaneClient, 'send'>,
     private readonly queue: QueueBus,
+    private readonly queueUrl: string | undefined,
   ) {}
 
   async start(handler: StationEventHandler): Promise<void> {
+    assertFifoQueueUrl(this.queueUrl);
     this.queue.subscribe<Record<string, unknown>>('estacoes', async (m) => {
       if (!m || typeof m !== 'object' || typeof m.thing !== 'string') return;
       const { thing, ...body } = m;
