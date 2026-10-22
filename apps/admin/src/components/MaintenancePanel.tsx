@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { MAINTENANCE_STATUS } from '@/lib/labels';
-import { SERVICE_STATUS, formatHours, formatKm, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
+import { SERVICE_STATUS, formatHours, formatKm, loadOpenTasks, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
 import { formatDate, formatDateTime } from '@/lib/format';
 import type { S } from '@/lib/types';
+import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
 import { Input } from '@/ds/Input';
 import { SegmentedControl } from '@/ds/SegmentedControl';
@@ -84,10 +85,20 @@ function Agenda() {
   const [onlyCustomer, setOnlyCustomer] = useState(false);
   const [cancel, setCancel] = useState<Task | null>(null);
   const [err, setErr] = useState<unknown>(null);
-  const serverStatus = status === 'open' || status === 'all' ? undefined : status;
-  const { rows, loading, error, pager } = usePagedQuery<Task>(['maintenance', status], (cursor) =>
-    unwrap(api.GET('/maintenance/tasks', { params: { query: { cursor, limit: 20, status: serverStatus } } })));
-  const shown = rows.filter((t) => (status !== 'open' || t.status === 'scheduled' || t.status === 'in_progress') && (!onlyCustomer || t.source === 'customer'));
+  const fullName = groups.includes('admin') || groups.includes('suporte');
+  const isOpen = status === 'open';
+  // "Em aberto": consultas filtradas no servidor (agendadas + em andamento), todas as páginas, juntas.
+  const open = useQuery({
+    queryKey: ['maintenance', 'open'], enabled: isOpen,
+    queryFn: () => loadOpenTasks((st, cursor) => unwrap(api.GET('/maintenance/tasks', { params: { query: { status: st, cursor, limit: 100 } } }))),
+  });
+  // Demais filtros: paginação no servidor, já filtrada por situação.
+  const paged = usePagedQuery<Task>(['maintenance', status], (cursor) =>
+    unwrap(api.GET('/maintenance/tasks', { params: { query: { cursor, limit: 20, status: status === 'all' || status === 'open' ? undefined : status } } })), !isOpen);
+  const rows = isOpen ? open.data?.items ?? [] : paged.rows;
+  const loading = isOpen ? open.isLoading : paged.loading;
+  const error = isOpen ? open.error : paged.error;
+  const shown = rows.filter((t) => !onlyCustomer || t.source === 'customer');
   const patch = async (t: Task, body: S<'MaintenanceTaskUpdate'>, msg: string) => {
     setErr(null);
     try {
@@ -103,13 +114,14 @@ function Agenda() {
         <Button size="sm" variant={onlyCustomer ? 'dark' : 'secondary'} icon="Users" testId="only-customer-requests" style={onlyCustomer ? undefined : ghost} onClick={() => setOnlyCustomer((x) => !x)}>Pedidos de clientes</Button>
       </div>
       <ErrorNote error={error ?? err} />
-      <DataTable<Task> testId="agenda-table" rows={shown} loading={loading} pager={pager}
-        empty={onlyCustomer ? 'Nenhum pedido de cliente nesta página' : 'Nenhuma manutenção nesta lista'} emptyIcon="CalendarClock"
+      {isOpen && open.data?.capped && <Alert tone="warning" icon="TriangleAlert">Há mais de 1.000 manutenções em aberto por situação; mostrando as primeiras.</Alert>}
+      <DataTable<Task> testId="agenda-table" rows={shown} loading={loading} pager={isOpen ? undefined : paged.pager}
+        empty={onlyCustomer ? (isOpen ? 'Nenhum pedido de cliente em aberto' : 'Nenhum pedido de cliente nesta página') : 'Nenhuma manutenção nesta lista'} emptyIcon="CalendarClock"
         columns={[
           { key: 'vehicleCode', label: 'Moto', mono: true, render: (r) => r.vehicleCode ?? '—' },
           { key: 'title', label: 'Serviço', render: (r) => <span title={r.description} style={{ whiteSpace: 'normal' }}>{r.title}</span> },
           { key: 'kind', label: 'Tipo', render: (r) => (r.kind === 'preventive' ? 'Preventiva' : 'Corretiva') },
-          { key: 'source', label: 'Origem', render: (r) => r.source === 'customer' ? <Pill tone="info" icon="Users">{maintenanceOrigin(r)}</Pill> : maintenanceOrigin(r) },
+          { key: 'source', label: 'Origem', render: (r) => r.source === 'customer' ? <Pill tone="info" icon="Users">{maintenanceOrigin(r, fullName)}</Pill> : maintenanceOrigin(r, fullName) },
           { key: 'scheduledFor', label: 'Agendada para', render: (r) => formatDateTime(r.scheduledFor) },
           { key: 'status', label: 'Situação', render: (r) => <Pill tone={MAINTENANCE_STATUS[r.status][1]}>{MAINTENANCE_STATUS[r.status][0]}</Pill> },
           ...(canUpdate ? [{ key: 'a', label: '', align: 'right' as const, render: (r: Task) => (

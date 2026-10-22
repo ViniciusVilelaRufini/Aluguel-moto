@@ -13,9 +13,11 @@ const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
 
 async function freeVehicles(request: APIRequestContext, n: number): Promise<V[]> {
   const list = await apiGet<{ items: V[] }>(request, '/vehicles?limit=100&status=free');
-  const ok = list.items.filter((v) => !v.assignedSubscriptionId && !v.currentRentalId && Number(v.code.slice(4)) > 50);
-  expect(ok.length, 'motos livres fora do simulador').toBeGreaterThanOrEqual(n);
-  return ok.sort(() => Math.random() - 0.5).slice(0, n);
+  // Prefere motos fora do simulador (VLT-0051+); com elas esgotadas pelas rodadas anteriores, usa qualquer livre sem dono.
+  const ok = list.items.filter((v) => !v.assignedSubscriptionId && !v.currentRentalId)
+    .sort((a, b) => Number(Number(b.code.slice(4)) > 50) - Number(Number(a.code.slice(4)) > 50) || Math.random() - 0.5);
+  expect(ok.length, 'motos livres sem assinatura').toBeGreaterThanOrEqual(n);
+  return ok.slice(0, n);
 }
 
 /** Cliente com cartão, chave Pix (e-mail) e assinatura semanal com moto fixa. */
@@ -47,6 +49,7 @@ test('frota: lista com endereço, busca por endereço e ficha com revisão e bat
   await row.click();
   const sheet = page.getByTestId('vehicle-sheet');
   await expect(sheet.getByTestId('vehicle-address')).toContainText(street);
+  await expect(sheet.getByTestId('vehicle-address-updated')).toContainText('atualizado há');
   await expect(sheet.getByTestId('vehicle-service')).toContainText(/km/);
   await expect(sheet.getByTestId('vehicle-battery')).toContainText(`${v.battery!.serial} · ${v.battery!.cycleCount} ciclos`);
 
@@ -60,9 +63,12 @@ test('operação: revisões por km/horas, agendar por linha e concluir registra 
   await login(page, 'operacao');
   await page.goto('/tasks/');
   await page.getByRole('button', { name: 'Manutenção', exact: true }).click();
-  await page.getByRole('button', { name: 'Vencidas', exact: true }).click();
   const table = page.getByTestId('service-table');
-  await expect(table.getByRole('row').nth(1)).toContainText('Vencida');
+  // O filtro vai ao servidor: só linhas "Vencida" (ou nenhuma, se as rodadas anteriores já revisaram todas).
+  await page.getByRole('button', { name: 'Vencidas', exact: true }).click();
+  await expect(table.locator('tbody tr[data-testid="row"]').filter({ hasNotText: 'Vencida' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Todas', exact: true }).click();
+  await expect(table.getByRole('row').nth(1)).toBeVisible();
   const row = table.getByRole('row').filter({ has: page.getByTestId('schedule-row') }).first();
   const code = (await row.locator('td').first().innerText()).trim();
   await row.getByTestId('schedule-row').click();
@@ -92,6 +98,17 @@ test('operação: pedido de manutenção do cliente do plano aparece na agenda',
   await page.getByRole('button', { name: 'Agenda e pedidos' }).click();
   await page.getByTestId('only-customer-requests').click();
   await expect(page.getByTestId('agenda-table').getByRole('row', { name: new RegExp(c.fixed.code) }).first()).toContainText(`Cliente · ${c.name}`);
+
+  // Operação vê só o primeiro nome do cliente.
+  await page.getByTestId('logout').click();
+  await login(page, 'operacao');
+  await page.goto('/tasks/');
+  await page.getByRole('button', { name: 'Manutenção', exact: true }).click();
+  await page.getByRole('button', { name: 'Agenda e pedidos' }).click();
+  await page.getByTestId('only-customer-requests').click();
+  const row = page.getByTestId('agenda-table').getByRole('row', { name: new RegExp(c.fixed.code) }).first();
+  await expect(row).toContainText(`Cliente · ${c.name.split(' ')[0]}`);
+  await expect(row).not.toContainText(c.name);
 });
 
 test('baterias: carregar na van e descarregar na estação', async ({ page }) => {
