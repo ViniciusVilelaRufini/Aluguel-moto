@@ -10,6 +10,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
+import 'package:volti_cliente/core/errors.dart';
 import 'package:volti_cliente/core/geo.dart';
 import 'package:volti_cliente/core/launcher.dart';
 import 'package:volti_cliente/core/services.dart';
@@ -346,6 +347,47 @@ void main() {
     });
   });
 
+  testWidgets('devolucao: falha nas zonas e "Tentar de novo" busca as zonas de novo', (t) async {
+    tallScreen(t);
+    final b = _FlakyZones();
+    await t.pumpWidget(testApp(const ReturnScreen(rentalId: 'r1'), overrides: [
+      backendProvider.overrideWithValue(b),
+      photoPickerProvider.overrideWithValue(FakePhotoPicker()),
+    ]));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 100));
+    expect(find.text('Tentar de novo'), findsOneWidget);
+    expect(b.calls, 1);
+    await t.tap(find.text('Tentar de novo'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 100));
+    expect(b.calls, 2);
+    expect(find.text('Tentar de novo'), findsNothing);
+    expect(find.text('Pç. Oswaldo Cruz · você está dentro'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('corrida: zonas que falharam sao buscadas de novo no proximo aviso de zona', (t) async {
+    tallScreen(t);
+    final b = _FlakyZonesRide();
+    final rt = FakeRealtime();
+    await t.pumpWidget(testApp(const RideScreen(), overrides: [
+      backendProvider.overrideWithValue(b),
+      realtimeFactoryProvider.overrideWithValue(() => rt),
+      locationServiceProvider.overrideWithValue(FakeLocation()),
+      rentalTrackProvider.overrideWith((ref, id) async => const []),
+    ]));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 100));
+    expect(b.calls, 1);
+    rt.emit(const ZoneNotice(zoneType: 'reduced_speed', transition: 'ENTER', message: 'A moto reduziu a velocidade sozinha.', speedLimitKmh: 20));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(b.calls, 2);
+    expect(find.text('Ciclovia Faria Lima · limite 20 km/h'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
   group('acessibilidade', () {
     void phone2x(WidgetTester t) {
       t.view.physicalSize = const Size(412, 915);
@@ -498,5 +540,26 @@ class _CountZones extends FakeBackend {
   Future<List<GeoZone>> zones() async {
     calls++;
     return [zoneAround(-23.56, -46.65)];
+  }
+}
+
+class _FlakyZones extends _ReturnB {
+  _FlakyZones() : super([zoneAround(-23.56, -46.65)]);
+  int calls = 0;
+  @override
+  Future<List<GeoZone>> zones() async {
+    calls++;
+    if (calls == 1) throw AppFailure(kind: FailureKind.network);
+    return super.zones();
+  }
+}
+
+class _FlakyZonesRide extends _RideB {
+  int calls = 0;
+  @override
+  Future<List<GeoZone>> zones() async {
+    calls++;
+    if (calls == 1) throw AppFailure(kind: FailureKind.network);
+    return super.zones();
   }
 }

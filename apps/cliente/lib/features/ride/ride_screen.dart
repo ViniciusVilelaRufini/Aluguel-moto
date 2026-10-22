@@ -189,6 +189,9 @@ class _RideScreenState extends ConsumerState<RideScreen> {
         });
         _follow(_vehiclePos!);
       case ZoneNotice():
+        // O nome da zona vem do cache compartilhado; se a busca falhou, tenta de
+        // novo agora (enquanto isso, o aviso usa o tipo da zona).
+        if (ref.read(sharedZonesProvider).hasError) ref.invalidate(sharedZonesProvider);
         // Haptica so quando a zona muda (eventos ENTER repetidos nao vibram de novo).
         final z = _zone;
         if (e.transition == 'ENTER' &&

@@ -379,7 +379,15 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                       PhotoCapture(label: l.takePhoto, hint: l.returnPhotoHintDesign, height: 130, done: _photo != null, onTap: _take),
                       const SizedBox(height: 12),
                       if (ctx.hasError)
-                        ErrorState(error: ctx.error!, onRetry: () => ref.invalidate(returnContextProvider(widget.rentalId)))
+                        ErrorState(
+                          error: ctx.error!,
+                          // As zonas sao compartilhadas com a corrida (que pode estar
+                          // aberta embaixo, segurando o erro): busca de novo as duas.
+                          onRetry: () {
+                            ref.invalidate(sharedZonesProvider);
+                            ref.invalidate(returnContextProvider(widget.rentalId));
+                          },
+                        )
                       else if (outside)
                         NoticeBanner(
                           danger: true,
