@@ -66,7 +66,7 @@ const authHeaders = (token: string) => ({ Authorization: `Bearer ${token}` });
 export async function createCustomer(request: APIRequestContext): Promise<TestCustomer> {
   const tag = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
   const sub = `e2e-admin-${tag}`;
-  const tokenRes = await request.post(`${API}/dev/token`, { data: { sub, email: `${sub}@e2e.volti.dev`, pool: 'customer' } });
+  const tokenRes = await request.post(`${API}/dev/token`, { data: { sub, email: `${sub}@e2e.volti.dev`, groups: [], pool: 'customer' } });
   expect(tokenRes.ok()).toBeTruthy();
   const token = (await tokenRes.json()).accessToken as string;
   const headers = authHeaders(token);
