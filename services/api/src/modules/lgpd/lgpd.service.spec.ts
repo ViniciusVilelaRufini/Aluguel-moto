@@ -87,6 +87,26 @@ describe('LgpdService', () => {
     const out = await new LgpdService(prisma as any, storage, loadConfig(), identity).deleteAccount(ME);
     expect(out.status).toBe('completed');
     expect(prisma.customer.update).toHaveBeenCalled();
+    // Fix round 1: a exclusão pendente fica registrada (na mesma transação) para o job de retentativa.
+    expect(prisma.customerIdentityDeletion.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { customerId: ME }, create: { customerId: ME, sub: 'sub-me' } }));
+    expect(prisma.customerIdentityDeletion.update).toHaveBeenCalledWith({ where: { customerId: ME }, data: { attempts: { increment: 1 }, lastError: 'cognito fora' } });
+    expect(prisma.customerIdentityDeletion.delete).not.toHaveBeenCalled();
+  });
+
+  it('fix round 1: retentativa da exclusão no Cognito — sucesso apaga a pendência; esgotada → alerta (evento + log)', async () => {
+    const prisma = mockDeep<PrismaClient>();
+    const events = { emit: jest.fn() };
+    const identity = { deleteIdentity: jest.fn().mockResolvedValueOnce(undefined).mockRejectedValue(new Error('cognito fora')) };
+    const storage = { deleteObject: jest.fn(), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
+    prisma.customerIdentityDeletion.findMany.mockResolvedValue([
+      { customerId: 'c-ok', sub: 'sub-ok', attempts: 1 },
+      { customerId: 'c-last', sub: 'sub-last', attempts: 9 },
+    ] as any);
+    prisma.customerIdentityDeletion.update.mockResolvedValue({ customerId: 'c-last', attempts: 10 } as any);
+    await new LgpdService(prisma as any, storage, loadConfig(), identity, events as any).retryIdentityDeletions();
+    expect(prisma.customerIdentityDeletion.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { attempts: { lt: 10 } } }));
+    expect(prisma.customerIdentityDeletion.delete).toHaveBeenCalledWith({ where: { customerId: 'c-ok' } });
+    expect(events.emit).toHaveBeenCalledWith(EV.LGPD_IDENTITY_DELETION_FAILED, { customerId: 'c-last', attempts: 10 });
   });
 
   it('DELETE /lgpd/account anonimiza nome, CPF, e-mail e telefone e mantém os pagamentos', async () => {

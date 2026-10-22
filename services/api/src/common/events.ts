@@ -17,7 +17,21 @@ export const EV = {
   RESERVATION_ENDED: 'reservation.ended',
   DEPOSIT_RELEASE_REQUESTED: 'deposit.release-requested',
   CUSTOMER_CONSENT_CHANGED: 'customer.consent-changed',
+  LGPD_IDENTITY_DELETION_FAILED: 'lgpd.identity-deletion-failed',
+  PRINCIPAL_REVOKED: 'auth.principal-revoked',
 } as const;
+
+/** Exclusão da identidade no Cognito esgotou as tentativas (fix round 1, QA-07): revisão manual. */
+export interface LgpdIdentityDeletionFailedEvent {
+  customerId: string;
+  attempts: number;
+}
+
+/** Acesso revogado (conta excluída, grupo removido, staff desativado): o realtime desconecta os sockets do usuário. */
+export interface PrincipalRevokedEvent {
+  pool: 'customer' | 'staff';
+  userId: string;
+}
 
 /** Consentimento de localização mudou (QA-09): o módulo IoT relê o aluguel/consentimento antes de gravar trajeto. */
 export interface CustomerConsentChangedEvent {

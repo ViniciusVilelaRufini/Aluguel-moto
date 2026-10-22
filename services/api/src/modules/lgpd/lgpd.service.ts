@@ -1,7 +1,10 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Cron, Interval } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { EV, type CustomerConsentChangedEvent } from '../../common/events';
+import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEvent } from '../../common/events';
+
+/** Tentativas de excluir a identidade no Cognito antes do alerta de revisão manual. */
+export const MAX_IDENTITY_DELETION_ATTEMPTS = 10;
 import type { TrackPoint } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { conflict, notFound } from '../../common/problem';
@@ -154,17 +157,15 @@ export class LgpdService {
           deletedAt: requestedAt,
         },
       });
+      // Fix round 1: a exclusão no Cognito fica registrada na mesma transação; o job refaz se falhar (ou se o processo cair).
+      if (!customer.cognitoSub.startsWith('deleted:')) {
+        await tx.customerIdentityDeletion.upsert({ where: { customerId }, create: { customerId, sub: customer.cognitoSub }, update: {} });
+      }
     });
 
     // QA-07: a identidade sai do pool de clientes e as sessões são encerradas. Falha só é registrada: o token antigo já é
     // recusado pelo hash do sub (PrincipalResolver, sem cache) e a exclusão no pool pode ser refeita.
-    if (!customer.cognitoSub.startsWith('deleted:')) {
-      try {
-        await this.identity?.deleteIdentity(customer.cognitoSub);
-      } catch (err) {
-        this.logger.error({ msg: 'customer_identity_delete_failed', customerId, error: (err as Error).message });
-      }
-    }
+    if (!customer.cognitoSub.startsWith('deleted:')) await this.attemptIdentityDeletion({ customerId, sub: customer.cognitoSub, attempts: 0 });
 
     for (const key of kycKeys) {
       try {
@@ -182,6 +183,49 @@ export class LgpdService {
     }
     this.logger.log({ msg: 'account_anonymized', customerId });
     return { status: 'completed' as const, requestedAt: requestedAt.toISOString(), completedAt: new Date().toISOString() };
+  }
+
+  /**
+   * Fix round 1 (QA-07): exclui a identidade no pool; sucesso apaga a pendência (e o `sub` guardado), falha conta tentativa.
+   * Esgotadas as tentativas → alerta: evento `lgpd.identity-deletion-failed` + log de erro para revisão manual.
+   */
+  private async attemptIdentityDeletion(row: { customerId: string; sub: string; attempts: number }): Promise<void> {
+    if (!this.identity) return;
+    try {
+      await this.identity.deleteIdentity(row.sub);
+      await this.quiet(() => this.prisma.customerIdentityDeletion.delete({ where: { customerId: row.customerId } }));
+    } catch (err) {
+      const message = (err as Error).message.slice(0, 500);
+      const updated = await this.quiet(() =>
+        this.prisma.customerIdentityDeletion.update({ where: { customerId: row.customerId }, data: { attempts: { increment: 1 }, lastError: message } }),
+      );
+      const attempts = updated?.attempts ?? row.attempts + 1;
+      this.logger.warn({ msg: 'customer_identity_delete_failed', customerId: row.customerId, attempts, error: message });
+      if (attempts >= MAX_IDENTITY_DELETION_ATTEMPTS) {
+        this.logger.error({ msg: 'lgpd_identity_deletion_needs_manual_review', customerId: row.customerId, attempts });
+        this.events?.emit(EV.LGPD_IDENTITY_DELETION_FAILED, { customerId: row.customerId, attempts } satisfies LgpdIdentityDeletionFailedEvent);
+      }
+    }
+  }
+
+  private async quiet<T>(fn: () => Promise<T>): Promise<T | null> {
+    try {
+      return (await fn()) ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Retentativa das exclusões de identidade pendentes (a cada 5 min). */
+  async retryIdentityDeletions(): Promise<void> {
+    const pending = await this.prisma.customerIdentityDeletion.findMany({ where: { attempts: { lt: MAX_IDENTITY_DELETION_ATTEMPTS } }, orderBy: { updatedAt: 'asc' }, take: 50 });
+    for (const row of pending) await this.attemptIdentityDeletion(row);
+  }
+
+  @Interval('lgpd-identity-deletion-retry', 5 * 60_000)
+  async identityRetryJob(): Promise<void> {
+    if (!this.cfg.jobsEnabled) return;
+    await this.retryIdentityDeletions().catch((err) => this.logger.error({ msg: 'identity_deletion_retry_failed', error: (err as Error).message }));
   }
 
   /** Apaga pontos de trajeto expirados (`expiresAt < now`). */

@@ -1202,3 +1202,16 @@ model RentalStart {
   @@index([createdAt])
   @@index([customerId])
 }
+
+/// QA-07 (fix round 1): exclusão da identidade no pool de clientes pendente (falhou na hora). Guarda o `sub` só até o
+/// Cognito confirmar a exclusão; o job de retentativa apaga a linha no sucesso.
+model CustomerIdentityDeletion {
+  customerId String   @id @db.Uuid
+  sub        String
+  attempts   Int      @default(0)
+  lastError  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([attempts])
+}
