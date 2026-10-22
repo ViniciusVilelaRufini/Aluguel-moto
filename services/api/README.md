@@ -102,6 +102,8 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 
 Fix round 1 (`docs/decisoes.md`): pausa/retomada só com confirmação do gateway (`503 gateway-unavailable`), ciclo de vida das assinaturas (`canceled`/`expired` pelo job), regra única da moto fixa com período vigente (`common/fixed-vehicle.ts`), posição oculta de motos em uso por outros clientes (`locationHidden`), HMAC do CPF contra fraude. `test/migration-v2.e2e-spec.ts` aplica as migrações v2 sobre um banco com as anteriores e dados legados (assinaturas duplicadas).
 
+Fix round 2: assinatura `canceled`/`expired` nunca reabre. A cobrança tardia é estornada pelo gateway (`PaymentRefund`, chave `subscription-late-refund:<paymentId>`). O cancelamento no gateway de assinatura expirada ou de conta excluída fica pendente (`gatewayCancelPendingAt`) e é refeito pelo job `subscriptions-gateway-cancel-retry` (5 min). O odômetro usa compare-and-set atômico no Redis (`RedisStore.hcas`, testado contra o Redis real em `test/usage-tracker-redis.e2e-spec.ts`).
+
 ## Segurança e LGPD (correções do QA, `docs/relatorio-qa.md`)
 
 | Variável | Padrão | Efeito |
