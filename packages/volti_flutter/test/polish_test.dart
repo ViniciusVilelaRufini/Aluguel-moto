@@ -165,6 +165,13 @@ void main() {
     });
   });
 
+  testWidgets('VoltiButton e lido uma vez so (sem rotulo duplicado)', (t) async {
+    final h = t.ensureSemantics();
+    await t.pumpWidget(_wrap(VoltiButton(label: 'Entrar', onPressed: () {})));
+    expect(t.getSemantics(find.byType(VoltiButton)), containsSemantics(label: 'Entrar', isButton: true));
+    h.dispose();
+  });
+
   test('tokens de texto forte em banners', () {
     expect(VoltiColors.warningInkStrong, const Color(0xFF9A4A0F));
     expect(VoltiColors.dangerInkStrong, const Color(0xFFB0352B));
