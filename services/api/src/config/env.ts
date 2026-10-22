@@ -33,7 +33,7 @@ const num = (name: string, fallback: number): number => {
 };
 
 export function loadConfig(): AppConfig {
-  return {
+  const cfg: AppConfig = {
     nodeEnv: str('NODE_ENV', 'development')!,
     port: num('PORT', 3000),
     databaseUrl: str('DATABASE_URL'),
@@ -81,6 +81,19 @@ export function loadConfig(): AppConfig {
     stubPixAutoConfirmSeconds: num('STUB_PIX_AUTOCONFIRM_SECONDS', 10),
     version: str('APP_VERSION', '0.1.0')!,
   };
+  assertSafeConfig(cfg);
+  return cfg;
 }
 
 export const APP_CONFIG = Symbol('APP_CONFIG');
+
+/**
+ * Recusa subir com configuração perigosa em produção (chamada no `loadConfig`, então vale para a API e para os módulos que
+ * leem o ambiente). QA-15: `AUTH_MODE=dev` (emissor local `POST /dev/token`) nunca em produção.
+ */
+export function assertSafeConfig(cfg: Pick<AppConfig, 'nodeEnv' | 'authMode' | 'mercadoPagoWebhookSecret'>): void {
+  if (cfg.nodeEnv !== 'production') return;
+  if (cfg.authMode !== 'cognito') {
+    throw new Error(`AUTH_MODE=${cfg.authMode} não é permitido com NODE_ENV=production (use AUTH_MODE=cognito).`);
+  }
+}
