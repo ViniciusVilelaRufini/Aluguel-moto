@@ -38,6 +38,16 @@ describe('StubStationGateway (IOT_MODE=stub)', () => {
     expect(got.map((e) => [e.type, e.serial])).toEqual([['battery_released', 'BT-S1001'], ['battery_released', expect.stringMatching(/^BT-STUB-/)]]);
   });
 
+  it('fix 1 (I2): abort_swap fecha a vaga e confirma com slot_closed (nunca libera bateria)', async () => {
+    const got: StationEvent[] = [];
+    const gw = new StubStationGateway({ stepMs: 50 });
+    await gw.start(async (_t, ev) => void got.push(ev));
+    await gw.send(THING, { commandId: 'c9', swapId: SWAP, action: 'abort_swap', slotNumber: 2 });
+    jest.advanceTimersByTime(50);
+    await flush();
+    expect(got.map((e) => e.type)).toEqual(['slot_closed']);
+  });
+
   it('modo manual (auto desligado) não avança: e2e de timeout', async () => {
     const got: StationEvent[] = [];
     const gw = new StubStationGateway({ stepMs: 10 });

@@ -6,7 +6,7 @@
  */
 export const STATION_GATEWAY = Symbol('STATION_GATEWAY');
 
-export type StationCommandAction = 'open_slot' | 'release_battery';
+export type StationCommandAction = 'open_slot' | 'release_battery' | 'abort_swap';
 
 export interface StationCommand {
   commandId: string;
@@ -16,6 +16,8 @@ export interface StationCommand {
   expectedSerial?: string;
   /** `release_battery`: bateria carregada sugerida pelo estoque da API (a estação pode liberar outra). */
   serialHint?: string;
+  /** `abort_swap`: vaga a fechar (se já aberta). A estação confirma com `slot_closed`. */
+  slotNumber?: number;
 }
 
 export type StationEventType = 'slot_opened' | 'battery_returned' | 'slot_closed' | 'battery_released';

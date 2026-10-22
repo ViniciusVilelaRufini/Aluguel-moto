@@ -408,6 +408,8 @@ enum StationSwapEndReason {
   station_timeout
   return_timeout
   release_timeout
+  no_battery_after_return
+  serial_mismatch
 }
 
 // ───────────── pessoas ─────────────

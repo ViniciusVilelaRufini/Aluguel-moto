@@ -46,6 +46,9 @@ export class StubStationGateway implements StationGateway {
       this.later(1, thing, () => ({ type: 'slot_opened', swapId, slotNumber, ts: ts() }));
       this.later(2, thing, () => ({ type: 'battery_returned', swapId, serial, pct: 15, ts: ts() }));
       this.later(3, thing, () => ({ type: 'slot_closed', swapId, ts: ts() }));
+    } else if (command.action === 'abort_swap') {
+      // Fecha a vaga (se aberta) e confirma; nunca libera bateria.
+      this.later(1, thing, () => ({ type: 'slot_closed', swapId, ts: ts() }));
     } else {
       const serial = command.serialHint ?? `BT-STUB-${randomBytes(3).toString('hex').toUpperCase()}`;
       this.later(1, thing, () => ({ type: 'battery_released', swapId, serial, ts: ts() }));

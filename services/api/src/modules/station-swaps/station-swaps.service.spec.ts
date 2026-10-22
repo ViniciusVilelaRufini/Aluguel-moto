@@ -286,12 +286,81 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     expect(swaps.get(SWAP_ID).status).toBe('opening_slot');
   });
 
-  it('bateria devolvida numa troca já cancelada entra no estoque, mas a troca continua cancelada', async () => {
-    const { service, swaps, prisma } = await created();
-    await service.cancel(customer, STATION_ID, SWAP_ID);
+  it('fix 1 (I2): devolução atrasada numa troca cancelada pelo cliente ou vencida vale: entra no estoque e a estação libera uma carregada', async () => {
+    for (const [status, endReason] of [['canceled', 'canceled_by_customer'], ['canceled', 'return_timeout'], ['failed', 'station_timeout']] as const) {
+      const { service, swaps, prisma, gateway, emitted } = await created();
+      Object.assign(swaps.get(SWAP_ID), { status, endReason, slotNumber: 3 });
+      await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() });
+      expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'releasing', endReason: null, returnedSerial: 'BAT-00001' }));
+      expect(prisma.battery.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { serial: 'BAT-00001' }, update: expect.objectContaining({ status: 'charging', stationId: STATION_ID }) }));
+      expect(gateway.send).toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery', swapId: SWAP_ID }));
+      expect(emitted.map((e) => e.status)).toEqual(['releasing']);
+      // Vaga fechada depois (confirmação do abort) não muda nada; a liberação completa a troca.
+      await service.onStationEvent(THING, { type: 'slot_closed', swapId: SWAP_ID, ts: ts() });
+      await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-S1001', ts: ts() });
+      expect(swaps.get(SWAP_ID).status).toBe('completed');
+    }
+  });
+
+  it('fix 1 (I2): devolução atrasada sem carregada disponível → failed/no_battery_after_return + alerta só com ids, sem liberar', async () => {
+    const { service, swaps, prisma, gateway, alerts } = await created({ station: { availableBatteries: 1 } });
+    Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'canceled_by_customer' });
+    prisma.stationSwap.count.mockResolvedValue(1); // a única carregada já está prometida a outra troca
+    await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'no_battery_after_return' }));
+    expect(gateway.send).not.toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery' }));
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'command_failed', vehicleId: VEHICLE_ID, rentalId: RENTAL_ID }), expect.anything());
+    expect(JSON.stringify(alerts.create.mock.calls[0][0])).not.toMatch(/BAT-00001/);
+  });
+
+  it('devolução numa troca encerrada por outro motivo (vaga fechada vazia) só entra no estoque', async () => {
+    const { service, swaps, prisma, gateway } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'slot_closed_without_return' });
     await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() });
     expect(swaps.get(SWAP_ID).status).toBe('canceled');
     expect(prisma.battery.upsert).toHaveBeenCalledTimes(1);
+    expect(gateway.send).not.toHaveBeenCalled();
+  });
+
+  it('fix 1 (M1): bateria devolvida registrada em outra moto → não é desvinculada; troca failed/serial_mismatch + alerta', async () => {
+    const { service, swaps, prisma, gateway, alerts } = await created();
+    await service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 2, ts: ts() });
+    prisma.battery.findUnique.mockResolvedValue({ id: 'b9', serial: 'BAT-OUTRA', status: 'in_vehicle', vehicleId: '99999999-9999-4999-8999-999999999999' } as any);
+    await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-OUTRA', pct: 30, ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'serial_mismatch' }));
+    expect(prisma.battery.upsert).not.toHaveBeenCalled();
+    expect(gateway.send).not.toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery' }));
+    expect(alerts.create).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(alerts.create.mock.calls[0][0])).not.toMatch(/BAT-OUTRA/);
+  });
+
+  it('fix 1 (M1): série devolvida diferente da registrada na moto (sem conflito) → alerta, mas a troca segue', async () => {
+    const { service, swaps, prisma, alerts } = await created();
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, batterySerial: 'BAT-00001' } as any);
+    await service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 2, ts: ts() });
+    await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-77777', pct: 30, ts: ts() });
+    expect(swaps.get(SWAP_ID).status).toBe('returned');
+    expect(alerts.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('fix 1 (M1): bateria liberada registrada em outra moto → failed/serial_mismatch, moto e estoque intocados', async () => {
+    const { service, swaps, prisma, alerts } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'releasing', returnedSerial: 'BAT-00001' });
+    prisma.battery.findUnique.mockResolvedValue({ id: 'b9', serial: 'BT-X', status: 'in_vehicle', vehicleId: '99999999-9999-4999-8999-999999999999', stationId: null } as any);
+    await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-X', ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'serial_mismatch' }));
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expect(prisma.swapStation.updateMany).not.toHaveBeenCalled();
+    expect(alerts.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('fix 1 (M1): bateria liberada que não estava nesta estação → alerta, troca concluída', async () => {
+    const { service, swaps, prisma, alerts } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'releasing', returnedSerial: 'BAT-00001' });
+    prisma.battery.findUnique.mockResolvedValue(null);
+    await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-DESCONHECIDA', ts: ts() });
+    expect(swaps.get(SWAP_ID).status).toBe('completed');
+    expect(alerts.create).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -308,6 +377,8 @@ describe('StationSwapsService: cancelar, consultar e prazos', () => {
     expect(await problem(a.service.cancel(other, STATION_ID, SWAP_ID))).toEqual({ status: 404, slug: 'not-found' });
     expect((await a.service.cancel(customer, STATION_ID, SWAP_ID)).status).toBe('canceled');
     expect(a.swaps.get(SWAP_ID).endReason).toBe('canceled_by_customer');
+    // Fix 1 (I2): a estação é avisada para fechar a vaga.
+    expect(a.gateway.send).toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'abort_swap', swapId: SWAP_ID }));
     // repetido: devolve como está
     expect((await a.service.cancel(customer, STATION_ID, SWAP_ID)).status).toBe('canceled');
 
@@ -339,9 +410,30 @@ describe('StationSwapsService: cancelar, consultar e prazos', () => {
       prisma.stationSwap.findMany.mockResolvedValue([{ ...s }] as any);
       expect(await service.expireOverdue()).toBe(1);
       expect(s).toEqual(expect.objectContaining({ status: to, endReason: reason }));
-      expect(gateway.send).not.toHaveBeenCalled();
+      // Fix 1 (I2): todo prazo vencido avisa a estação (abort_swap) e nunca pede liberação.
+      expect(gateway.send.mock.calls.map((c: any[]) => c[1].action)).toEqual(['abort_swap']);
       expect(alerts.create).toHaveBeenCalledTimes(reason === 'release_timeout' ? 1 : 0);
     }
+  });
+
+  const ts = () => new Date().toISOString();
+
+  it('fix 1 (I2): o job de prazos entra na fila da troca — devolução em andamento vence a corrida com o prazo (CAS no status)', async () => {
+    const { service, swaps, prisma } = await created();
+    await service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 1, ts: ts() });
+    const s = swaps.get(SWAP_ID);
+    s.expiresAt = new Date(Date.now() - 1000);
+    prisma.stationSwap.findMany.mockResolvedValue([{ ...s }] as any);
+    const slowUpsert = prisma.battery.upsert.getMockImplementation()!;
+    prisma.battery.upsert.mockImplementationOnce((async (a: any) => {
+      await new Promise((r) => setTimeout(r, 30));
+      return slowUpsert(a);
+    }) as any);
+    const returned = service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 12, ts: ts() });
+    const expired = await service.expireOverdue();
+    await returned;
+    expect(expired).toBe(0);
+    expect(swaps.get(SWAP_ID).status).toBe('returned');
   });
 
   it('prazo ainda não vencido não muda nada', async () => {

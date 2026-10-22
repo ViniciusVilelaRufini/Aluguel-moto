@@ -249,10 +249,34 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
     expect((await waitStatus(a.token, s1.id, 'failed')).body.endReason).toBe('station_timeout');
     expect((await waitStatus(b.token, s2.id, 'canceled')).body.endReason).toBe('return_timeout');
     expect(station.sent.filter((s) => [s1.id, s2.id].includes(s.command.swapId) && s.command.action === 'release_battery')).toEqual([]);
+    // Fix 1 (I2): a estação é avisada (abort_swap) em todo prazo vencido.
+    expect(station.sent.filter((s) => s.command.action === 'abort_swap').map((s) => s.command.swapId)).toEqual(expect.arrayContaining([s1.id, s2.id]));
     expect((await prisma.swapStation.findUnique({ where: { id: st.id } }))!.availableBatteries).toBe(before);
     // Liberação atrasada para uma troca cancelada é ignorada.
     await station.emit(stationThingName(st.id), { type: 'battery_released', swapId: s2.id, serial: stationSerials[1], ts: new Date().toISOString() });
     expect((await prisma.stationSwap.findUnique({ where: { id: s2.id } }))!.status).toBe('canceled');
+  });
+
+  it('fix 1 (I2): cancelou e devolveu mesmo assim → a estação recebe abort_swap, a devolução vale e a carregada é liberada', async () => {
+    station.setAuto(false);
+    const a = await rideOn('minute');
+    const thing = stationThingName(st.id);
+    const s1 = (await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send(swapBody(a.rentalId)).expect(201)).body;
+    await station.emit(thing, { type: 'slot_opened', swapId: s1.id, slotNumber: 5, ts: new Date().toISOString() });
+    await http().post(`/swap-stations/${st.id}/swaps/${s1.id}/cancel`).set(bearer(a.token)).expect(200);
+    expect(station.sent.find((x) => x.command.swapId === s1.id && x.command.action === 'abort_swap')?.command).toMatchObject({ slotNumber: 5 });
+    await station.emit(thing, { type: 'battery_returned', swapId: s1.id, serial: a.batterySerial, pct: 18, ts: new Date().toISOString() });
+    const releasing = await waitStatus(a.token, s1.id, 'releasing');
+    expect(releasing.body).toMatchObject({ returnedSerial: a.batterySerial });
+    expect(releasing.body).not.toHaveProperty('endReason');
+    const rel = station.sent.find((x) => x.command.swapId === s1.id && x.command.action === 'release_battery');
+    expect(rel).toBeDefined();
+    await station.emit(thing, { type: 'slot_closed', swapId: s1.id, ts: new Date().toISOString() });
+    // As carregadas cadastradas da estação já saíram nos testes anteriores: a estação libera uma do próprio estoque.
+    const released = rel!.command.serialHint ?? `E2E-REL-${tag}`;
+    await station.emit(thing, { type: 'battery_released', swapId: s1.id, serial: released, ts: new Date().toISOString() });
+    await waitStatus(a.token, s1.id, 'completed');
+    expect(await prisma.vehicle.findUnique({ where: { id: a.vehicle.id } })).toMatchObject({ batterySerial: released });
   });
 
   it('cancelar: dono antes da devolução (200); outro cliente → 404; depois da devolução → 422 swap-not-cancelable', async () => {
