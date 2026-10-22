@@ -233,6 +233,11 @@ doc/StaffUserCreate.md
 doc/StaffUserPage.md
 doc/StaffUserUpdate.md
 doc/StartRentalRequest.md
+doc/StationSwap.md
+doc/StationSwapEndReason.md
+doc/StationSwapPage.md
+doc/StationSwapRequest.md
+doc/StationSwapStatus.md
 doc/StationsApi.md
 doc/Subscription.md
 doc/SubscriptionCreate.md
@@ -545,6 +550,11 @@ lib/src/model/staff_user_create.dart
 lib/src/model/staff_user_page.dart
 lib/src/model/staff_user_update.dart
 lib/src/model/start_rental_request.dart
+lib/src/model/station_swap.dart
+lib/src/model/station_swap_end_reason.dart
+lib/src/model/station_swap_page.dart
+lib/src/model/station_swap_request.dart
+lib/src/model/station_swap_status.dart
 lib/src/model/subscription.dart
 lib/src/model/subscription_create.dart
 lib/src/model/subscription_list.dart

@@ -621,6 +621,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/swap-stations/{id}/swaps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Trocas da estação (painel)
+         * @description Mais recentes primeiro, com nº de série devolvido/liberado. Estação inexistente → `404` `station-not-found`.
+         */
+        get: operations["listStationSwaps"];
+        put?: never;
+        /**
+         * Iniciar troca de bateria na estação (QR)
+         * @description O cliente escaneou o QR fixo da estação (`stationCode`, código assinado sem dado pessoal) com um aluguel em andamento.
+         *     A API valida, nesta ordem:
+         *     - QR inválido, adulterado ou de outra estação (o `id` do caminho tem que ser a estação do QR) → `404`
+         *       `station-not-found`;
+         *     - aluguel do próprio cliente (senão `404`) e `active` ou `paused` → senão `409` `rental-not-active`;
+         *     - uma troca aberta por aluguel → `409` `swap-open`;
+         *     - estação ativa, aberta (`open24h` ou dentro de `openingHours` quando o texto é interpretável, no fuso
+         *       America/Sao_Paulo) e com bateria carregada livre (`availableBatteries` menos as trocas em andamento) → senão
+         *       `422` `station-unavailable`;
+         *     - celular (`lat`/`lng`) a no máximo 50 m da estação → senão `422` `too-far`. A posição só é usada nesta
+         *       validação (LGPD): a troca guarda apenas a distância;
+         *     - moto parada: velocidade 0 conhecida e recente, moto travada ou aluguel pausado. Velocidade desconhecida conta
+         *       como em movimento → `422` `vehicle-moving`.
+         *
+         *     Sucesso → `201` com a troca em `opening_slot`; a estação abre uma vaga vazia. A partir daí o status avança pelos
+         *     eventos da estação (`station_swap.updated` no WebSocket): `awaiting_return` (vaga aberta, `slotNumber`) →
+         *     `returned` (bateria devolvida) → `releasing` (vaga fechada, estação libera a carregada) → `completed`. Cada etapa
+         *     tem prazo de 3 min (`expiresAt`): sem resposta da estação → `failed`; sem devolução → `canceled`; nenhuma bateria
+         *     é liberada sem a devolução registrada.
+         *
+         *     Taxa (`feeCents`, congelada aqui): 0 nos planos `day`, `weekly` e `monthly`; nos planos `minute` e `hour`, a taxa
+         *     de sistema `battery_swap_fee` (padrão 500, editável em `PUT /pricing/fees/{id}`). Não é cobrada na hora: entra
+         *     como linha `battery_swap_fee` no `breakdown` do fechamento do aluguel, só para trocas `completed`.
+         *
+         *     Idempotência: a mesma `Idempotency-Key` devolve a mesma troca e não abre outra vaga.
+         */
+        post: operations["createStationSwap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/swap-stations/{id}/swaps/{swapId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+                swapId: components["parameters"]["SwapId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Consultar troca na estação
+         * @description Dono (cliente) ou staff. Troca de outro cliente ou de outra estação → `404`.
+         */
+        get: operations["getStationSwap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/swap-stations/{id}/swaps/{swapId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+                swapId: components["parameters"]["SwapId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancelar troca na estação
+         * @description Só o dono e só antes da devolução (`opening_slot` ou `awaiting_return`) → `canceled`
+         *     (`endReason: canceled_by_customer`). Depois disso → `422` `swap-not-cancelable` (a estação precisa liberar a
+         *     carregada). Troca já cancelada → `200` como está. Bateria devolvida mesmo assim entra no estoque da estação.
+         */
+        post: operations["cancelStationSwap"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/depots": {
         parameters: {
             query?: never;
@@ -1442,7 +1540,7 @@ export interface paths {
         };
         /**
          * Listar taxas
-         * @description Inclui, no seed, `deposit` (caução, 5000) e `force_end_outside_return_zone` (1500).
+         * @description Inclui `deposit` (caução, 5000), `force_end_outside_return_zone` (1500) e `battery_swap_fee` (troca de bateria na estação nos planos por minuto/hora, 500).
          */
         get: operations["listFees"];
         put?: never;
@@ -1473,7 +1571,7 @@ export interface paths {
         post?: never;
         /**
          * Desativar taxa
-         * @description Exclusão lógica. As taxas de sistema (`deposit`, `force_end_outside_return_zone`) não podem ser desativadas (`409`). Grava AuditLog.
+         * @description Exclusão lógica. As taxas de sistema (`deposit`, `force_end_outside_return_zone`, `battery_swap_fee`) não podem ser desativadas (`409`). Grava AuditLog.
          */
         delete: operations["deleteFee"];
         options?: never;
@@ -4993,6 +5091,8 @@ export interface components {
             depotReservations?: components["schemas"]["Reservation"][];
             /** @description Entregas do titular (fotos só como chaves, sem links). */
             handovers?: components["schemas"]["Handover"][];
+            /** @description Trocas de bateria na estação feitas pelo titular (sem posição). */
+            stationSwaps?: components["schemas"]["StationSwap"][];
         };
         AccountDeletion: {
             status: components["schemas"]["AccountDeletionStatus"];
@@ -5125,6 +5225,77 @@ export interface components {
         };
         SwapStationList: {
             items: components["schemas"]["SwapStation"][];
+        };
+        /**
+         * @description `opening_slot` (estação abrindo uma vaga vazia) → `awaiting_return` (vaga aberta, devolva a bateria) → `returned`
+         *     (devolvida) → `releasing` (vaga fechada, liberando a carregada) → `completed`. Finais: `completed`, `canceled`,
+         *     `failed` (ver `endReason`).
+         * @enum {string}
+         */
+        StationSwapStatus: "opening_slot" | "awaiting_return" | "returned" | "releasing" | "completed" | "canceled" | "failed";
+        /**
+         * @description Por que a troca terminou sem `completed`: cancelada pelo cliente; vaga fechada sem bateria; estação não abriu a vaga
+         *     em 3 min (`failed`); cliente não devolveu em 3 min (`canceled`); estação não liberou a carregada em 3 min depois da
+         *     devolução (`failed`, abre alerta para a operação).
+         * @enum {string}
+         */
+        StationSwapEndReason: "canceled_by_customer" | "slot_closed_without_return" | "station_timeout" | "return_timeout" | "release_timeout";
+        StationSwapRequest: {
+            /** @description Conteúdo do QR fixo da estação. */
+            stationCode: string;
+            /** Format: uuid */
+            rentalId: string;
+            /**
+             * Format: double
+             * @description Posição do celular (só para a validação de 50 m).
+             */
+            lat: number;
+            /** Format: double */
+            lng: number;
+        };
+        StationSwap: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            stationId: string;
+            /** Format: uuid */
+            rentalId: string;
+            /** Format: uuid */
+            vehicleId?: string;
+            status: components["schemas"]["StationSwapStatus"];
+            endReason?: components["schemas"]["StationSwapEndReason"];
+            /** @description Vaga aberta (a partir de `awaiting_return`). */
+            slotNumber?: number;
+            /** @description Taxa da troca (0 nos planos diário/semanal/mensal); cobrada no fechamento do aluguel. */
+            feeCents: number;
+            /**
+             * Format: date-time
+             * @description Prazo da etapa atual (3 min por etapa).
+             */
+            expiresAt: string;
+            /** @description Nº de série da bateria devolvida. */
+            returnedSerial?: string;
+            /** @description Carga da bateria devolvida. */
+            returnedPct?: number;
+            /** @description Nº de série da bateria liberada (instalada na moto). */
+            releasedSerial?: string;
+            /** @description Só staff: distância do celular à estação na validação. */
+            distanceM?: number;
+            /**
+             * Format: uuid
+             * @description Só staff.
+             */
+            customerId?: string;
+            /** Format: date-time */
+            completedAt?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt?: string;
+        };
+        StationSwapPage: {
+            items: components["schemas"]["StationSwap"][];
+            nextCursor?: string;
         };
         SubscriptionPauseRequest: {
             /** @description Máximo: 3 no semanal, 7 no mensal. */
@@ -5722,6 +5893,7 @@ export interface components {
     };
     parameters: {
         PathId: string;
+        SwapId: string;
         /** @description Cursor opaco devolvido em `nextCursor` da página anterior. */
         Cursor: string;
         /** @description Itens por página. */
@@ -6745,6 +6917,129 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listStationSwaps: {
+        parameters: {
+            query?: {
+                /** @description Cursor opaco devolvido em `nextCursor` da página anterior. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Itens por página. */
+                limit?: components["parameters"]["Limit"];
+                status?: components["schemas"]["StationSwapStatus"];
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de trocas. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StationSwapPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    createStationSwap: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Chave única por intenção (UUID v4 recomendado). Válida por 24 h. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StationSwapRequest"];
+            };
+        };
+        responses: {
+            /** @description Troca iniciada (`opening_slot`). */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StationSwap"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getStationSwap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+                swapId: components["parameters"]["SwapId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Troca. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StationSwap"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    cancelStationSwap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+                swapId: components["parameters"]["SwapId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Troca cancelada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StationSwap"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listDepots: {

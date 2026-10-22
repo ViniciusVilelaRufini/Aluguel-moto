@@ -220,6 +220,11 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(StaffUserPage.serializer)
       ..add(StaffUserUpdate.serializer)
       ..add(StartRentalRequest.serializer)
+      ..add(StationSwap.serializer)
+      ..add(StationSwapEndReason.serializer)
+      ..add(StationSwapPage.serializer)
+      ..add(StationSwapRequest.serializer)
+      ..add(StationSwapStatus.serializer)
       ..add(Subscription.serializer)
       ..add(SubscriptionCreate.serializer)
       ..add(SubscriptionList.serializer)
@@ -465,6 +470,9 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(Handover)]),
           () => ListBuilder<Handover>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(StationSwap)]),
+          () => ListBuilder<StationSwap>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(RentalEvent)]),
           () => ListBuilder<RentalEvent>())
       ..addBuilderFactory(
@@ -494,6 +502,9 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(StaffUser)]),
           () => ListBuilder<StaffUser>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(StationSwap)]),
+          () => ListBuilder<StationSwap>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(String)]),
           () => ListBuilder<String>())

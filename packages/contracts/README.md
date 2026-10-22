@@ -4,14 +4,14 @@ Contrato da plataforma Volti: **fonte única da verdade** para a API, o painel e
 
 | Arquivo | Conteúdo |
 |---|---|
-| `openapi.yaml` | API REST (OpenAPI 3.1): 177 operações em 28 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
+| `openapi.yaml` | API REST (OpenAPI 3.1): 182 operações em 28 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
 | `realtime.md` | Eventos do WebSocket (Socket.IO, namespace `/realtime`), salas e payloads |
 | `generated/ts/schema.d.ts` | Tipos TypeScript gerados com `openapi-typescript` (painel, com `openapi-fetch`) |
 | `generated/dart/` | Pacote Dart `volti_api` gerado com `openapi-generator` (`dart-dio` + `built_value`) para os apps Flutter |
 | `scripts/generate.mjs` | Regenera os dois clientes |
 | `dart-generator.yaml`, `openapitools.json` | Opções e versão fixada do openapi-generator (7.25.0) |
 | `redocly.yaml` | Regras do lint |
-| `mqtt.md`, `schemas/` | Contrato MQTT (criado pela Task 4, agente de IoT) |
+| `mqtt.md`, `schemas/` | Contrato MQTT dos rastreadores (Task 4) e das estações de troca (`estacao-*.schema.json`) |
 
 ## Pré-requisitos
 

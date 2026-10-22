@@ -496,7 +496,7 @@ class PricingApi {
   }
 
   /// Desativar taxa
-  /// Exclusão lógica. As taxas de sistema (&#x60;deposit&#x60;, &#x60;force_end_outside_return_zone&#x60;) não podem ser desativadas (&#x60;409&#x60;). Grava AuditLog.
+  /// Exclusão lógica. As taxas de sistema (&#x60;deposit&#x60;, &#x60;force_end_outside_return_zone&#x60;, &#x60;battery_swap_fee&#x60;) não podem ser desativadas (&#x60;409&#x60;). Grava AuditLog.
   ///
   /// Parameters:
   /// * [id]
@@ -881,7 +881,7 @@ class PricingApi {
   }
 
   /// Listar taxas
-  /// Inclui, no seed, &#x60;deposit&#x60; (caução, 5000) e &#x60;force_end_outside_return_zone&#x60; (1500).
+  /// Inclui &#x60;deposit&#x60; (caução, 5000), &#x60;force_end_outside_return_zone&#x60; (1500) e &#x60;battery_swap_fee&#x60; (troca de bateria na estação nos planos por minuto/hora, 500).
   ///
   /// Parameters:
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
