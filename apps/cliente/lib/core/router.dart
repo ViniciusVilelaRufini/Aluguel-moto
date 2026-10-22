@@ -2,7 +2,6 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:volti_flutter/volti_flutter.dart';
 
 import '../features/account/account_screens.dart';
 import '../features/handover/handover_screen.dart';
@@ -19,25 +18,11 @@ import '../features/return_flow/return_screen.dart';
 import '../features/ride/ride_screen.dart';
 import '../features/summary/summary_screen.dart';
 import 'session.dart';
+import 'transitions.dart';
+
+export 'transitions.dart' show voltiPage, transitionFor, routeTransitions;
 
 const _publicPaths = {'/welcome', '/login'};
-
-/// Pagina com as transicoes do design: push lateral de 440 ms (`--ease-screen`)
-/// ou, com [modal], sobe de baixo enquanto a tela de tras recua (scan).
-/// Reduced motion: sem animacao.
-CustomTransitionPage<T> voltiPage<T>(BuildContext context, GoRouterState state, Widget child, {bool modal = false}) {
-  final d = VoltiPageTransitions.durationOf(context);
-  return CustomTransitionPage<T>(
-    key: state.pageKey,
-    name: state.name ?? state.path,
-    arguments: <String, String>{...state.pathParameters, ...state.uri.queryParameters},
-    restorationId: state.pageKey.value,
-    child: child,
-    transitionDuration: d,
-    reverseTransitionDuration: d,
-    transitionsBuilder: modal ? VoltiPageTransitions.modal : VoltiPageTransitions.push,
-  );
-}
 
 final routerProvider = Provider<GoRouter>((ref) {
   final refresh = ValueNotifier<int>(0);
@@ -66,6 +51,7 @@ final routerProvider = Provider<GoRouter>((ref) {
 });
 
 /// Rotas do app (o [routerProvider] acrescenta os redirecionamentos da sessao).
+/// A transicao de cada tela vem de [routeTransitions] (core/transitions.dart).
 /// Telas do fluxo do galpao que dependem do `extra` ([DepotSelection]) voltam a
 /// home quando ele falta (link antigo ou app restaurado).
 List<RouteBase> appRoutes() => [

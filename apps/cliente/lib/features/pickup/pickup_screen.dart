@@ -285,7 +285,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            FlowHeader(title: l.pickupTitle, subtitle: depotTitle(l, _sel.depot), heroCode: _sel.vehicle.code),
+            FlowHeader(title: l.pickupTitle, subtitle: depotTitle(l, _sel.depot), heroCode: _sel.vehicle.code, heroModelId: _sel.vehicle.vehicleModelId),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, VoltiSpacing.s16),

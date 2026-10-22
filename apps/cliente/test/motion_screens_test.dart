@@ -20,7 +20,7 @@ Widget _router({bool reduced = false}) {
         Scaffold(body: Builder(builder: (c) => TextButton(onPressed: () => c.push('/modal'), child: const Text('abrir')))),
       ),
     ),
-    GoRoute(path: '/modal', pageBuilder: (c, s) => voltiPage(c, s, const Scaffold(body: Text('modal')), modal: true)),
+    GoRoute(path: '/modal', pageBuilder: (c, s) => voltiPage(c, s, const Scaffold(body: Text('modal')), transition: VoltiScreenTransition.modal)),
   ]);
   return MediaQuery(
     data: MediaQueryData(disableAnimations: reduced),
