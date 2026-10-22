@@ -25,6 +25,8 @@ import '../ride/ride_screen.dart' show mapEnabledProvider;
 import 'depot_providers.dart';
 import 'location_header.dart';
 import 'providers.dart';
+import 'stations/station_markers.dart';
+import 'stations/stations_sheet.dart';
 
 /// Inicio (retirada em galpao, spec 2026-10-22 §3.1): mapa com o galpao em
 /// destaque, os pontos verdes de devolucao e as estacoes de bateria (sem motos na
@@ -53,6 +55,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// O cliente tocou em Localizar: a camera fica nele (a recarga dos galpoes que a
   /// nova posicao provoca nao volta a centrar no galpao).
   bool _userCentered = false;
+
+  /// Modo estacoes: marcadores com as baterias e a folha "Troca de bateria" no
+  /// lugar do cartao do galpao.
+  bool _stationsMode = false;
+
+  void _setStationsMode(bool on) {
+    if (_stationsMode == on) return;
+    setState(() => _stationsMode = on);
+    // Contagem de baterias ao vivo: busca de novo ao abrir.
+    if (on) ref.invalidate(swapStationsProvider);
+  }
+
+  void _focusStation(SwapStation s) {
+    VoltiHaptics.selection();
+    _moveMap(LatLng(s.lat, s.lng));
+  }
 
   @override
   void initState() {
@@ -164,7 +182,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final center = current != null ? LatLng(current.lat, current.lng) : (loc ?? fallbackCenter);
     final surface = Theme.of(context).colorScheme.surface;
 
-    return Scaffold(
+    return PopScope(
+      // Voltar fecha o modo estacoes antes de sair da home.
+      canPop: !_stationsMode,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _setStationsMode(false);
+      },
+      child: Scaffold(
       body: Stack(
         children: [
           Positioned.fill(
@@ -192,7 +216,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                       MarkerLayer(
                         markers: [
-                          for (final s in stations)
+                          for (final s in _stationsMode ? const <SwapStation>[] : stations)
                             Marker(
                               key: ValueKey('station-${s.id}'),
                               point: LatLng(s.lat, s.lng),
@@ -220,6 +244,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ),
                               ),
                             ),
+                          // Modo estacoes: por cima do galpao, com a contagem de baterias.
+                          if (_stationsMode) ...stationMarkers(stations, onTap: _focusStation),
                           if (loc != null)
                             Marker(
                               key: const ValueKey('user-dot'),
@@ -236,8 +262,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           // Cabecalho e avisos em cima, cartao do galpao embaixo; o meio fica livre para o mapa.
           // Com texto grande cada regiao tem um teto e rola por dentro, sem se sobrepor.
           SafeArea(
+            // A folha de estacoes encosta no rodape (ela trata a area segura).
+            bottom: !_stationsMode,
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.screenGutter),
+              padding: EdgeInsets.only(top: VoltiSpacing.screenGutter, bottom: _stationsMode ? 0 : VoltiSpacing.screenGutter),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -321,28 +349,60 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   Flexible(
                     flex: 3,
                     fit: FlexFit.loose,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Row(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                          child: Row(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
                               if (ref.watch(mapEnabledProvider)) const Flexible(child: MapAttribution()),
                               const Spacer(),
-                              VoltiIconButton(
-                                icon: LucideIcons.locateFixed,
-                                iconColor: VoltiColors.brand,
-                                label: l.locateMe,
-                                onPressed: () => _locateMe(loc ?? center),
+                              Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Semantics(
+                                    toggled: _stationsMode,
+                                    child: VoltiIconButton(
+                                      key: const Key('home-stations-toggle'),
+                                      icon: LucideIcons.batteryCharging,
+                                      variant: _stationsMode ? VoltiIconButtonVariant.brand : VoltiIconButtonVariant.surface,
+                                      iconColor: _stationsMode ? null : VoltiColors.brand,
+                                      label: l.stationsToggle,
+                                      haptic: VoltiHapticKind.selection,
+                                      onPressed: () => _setStationsMode(!_stationsMode),
+                                    ),
+                                  ),
+                                  const SizedBox(height: VoltiSpacing.s8),
+                                  VoltiIconButton(
+                                    icon: LucideIcons.locateFixed,
+                                    iconColor: VoltiColors.brand,
+                                    label: l.locateMe,
+                                    onPressed: () => _locateMe(loc ?? center),
+                                  ),
+                                ],
                               ),
                             ],
                           ),
-                          const SizedBox(height: VoltiSpacing.s12),
+                        ),
+                        const SizedBox(height: VoltiSpacing.s12),
+                        if (_stationsMode)
                           Flexible(
                             child: VoltiEnter(
+                              key: const Key('stations-sheet-enter'),
+                              duration: VoltiMotion.durScreen,
+                              curve: VoltiMotion.easeScreen,
+                              fromOffset: const Offset(0, 80),
+                              child: StationsSheet(onClose: () => _setStationsMode(false), onFocus: _focusStation),
+                            ),
+                          )
+                        else
+                          Flexible(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                              child: VoltiEnter(
                               key: const Key('depot-card-enter'),
                               duration: VoltiMotion.durScreen,
                               curve: VoltiMotion.easeScreen,
@@ -360,7 +420,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     trailing: false,
                                     label: l.loading,
                                   ),
-                                  _ when current == null => VoltiEmptyState(
+                                  // Rola por dentro com texto grande (a coluna de botoes do mapa ocupa espaco).
+                                  _ when current == null => SingleChildScrollView(
+                                    child: VoltiEmptyState(
                                     compact: true,
                                     icon: LucideIcons.warehouse,
                                     title: l.depotsEmpty,
@@ -368,6 +430,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     actionLabel: l.retry,
                                     actionIcon: LucideIcons.refreshCw,
                                     onAction: () => ref.invalidate(depotsProvider),
+                                    ),
                                   ),
                                   _ => _DepotCardBody(
                                     depots: depots.value!,
@@ -379,9 +442,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 },
                               ),
                             ),
+                            ),
                           ),
-                        ],
-                      ),
+                      ],
                     ),
                   ),
                 ],
@@ -389,6 +452,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }
