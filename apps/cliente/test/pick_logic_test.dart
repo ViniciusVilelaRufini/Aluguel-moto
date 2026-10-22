@@ -6,8 +6,10 @@ import 'package:volti_cliente/features/pick/pick_logic.dart';
 
 import 'helpers.dart';
 
-Vehicle v(String id, String model, {double lat = -23.5614, double lng = -46.6559, double range = 20, int battery = 80}) =>
+Vehicle v(String id, String model, {double lat = -23.5614, double lng = -46.6559, double range = 20, int battery = 80, String? modelId, String? category}) =>
     Vehicle((b) => b
+      ..vehicleModelId = modelId
+      ..categoryLabel = category
       ..id = id
       ..code = 'VLT-$id'
       ..model = model
@@ -18,35 +20,59 @@ Vehicle v(String id, String model, {double lat = -23.5614, double lng = -46.6559
       ..estimatedRangeKm = range
       ..speedLimitKmh = 32);
 
+VehicleModel catalogModel(String id, String name, int sortOrder, {String category = 'Urbana'}) => VehicleModel((b) => b
+  ..id = id
+  ..name = name
+  ..slug = id
+  ..categoryLabel = category
+  ..pricePerMinuteCents = 79
+  ..serviceIntervalKm = 1000
+  ..serviceIntervalHours = 100
+  ..active = true
+  ..sortOrder = sortOrder
+  ..createdAt = DateTime.utc(2026, 10, 22)
+  ..updatedAt = DateTime.utc(2026, 10, 22));
+
 void main() {
   test('preco por minuto "R\$ 0,79/min"', () {
     expect(perMinuteLabel(79), r'R$ 0,79/min');
     expect(perMinuteLabel(125), r'R$ 1,25/min');
   });
 
-  test('categoria pelo nome do modelo', () {
-    expect(categoryFor('Volti Flash'), ModelCategory.urban);
-    expect(categoryFor('volti urban'), ModelCategory.doubleSeat);
-    expect(categoryFor('Volti Cargo'), ModelCategory.cargo);
-    expect(categoryFor('Volti S1'), isNull);
+  test('categoria: a da moto; sem ela, a do modelo no catalogo', () {
+    final catalog = {'m1': catalogModel('m1', 'Volti Urbana', 1, category: 'Urbana com cesto')};
+    expect(categoryOf(v('1', 'Volti Urbana', modelId: 'm1', category: 'Rotulo da moto'), catalog), 'Rotulo da moto');
+    expect(categoryOf(v('1', 'Volti Urbana', modelId: 'm1'), catalog), 'Urbana com cesto');
+    expect(categoryOf(v('1', 'Volti S1'), catalog), isNull);
   });
 
   test('nome curto do modelo para a foto', () {
-    expect(shortModel('Volti Flash'), 'Flash');
+    expect(shortModel('Volti Urbana'), 'Urbana');
     expect(shortModel('Volti'), 'Volti');
   });
 
   group('filtros', () {
-    final list = [v('1', 'Volti Urban'), v('2', 'Volti Flash'), v('3', 'Volti Flash'), v('4', 'Volti Cargo')];
+    final list = [v('1', 'Volti Sport'), v('2', 'Volti Urbana'), v('3', 'Volti Urbana'), v('4', 'Volti Touring')];
+    final catalog = {
+      'm-t': catalogModel('m-t', 'Volti Touring', 3),
+      'm-u': catalogModel('m-u', 'Volti Urbana', 1),
+      'm-s': catalogModel('m-s', 'Volti Sport', 2),
+    };
 
-    test('modelos presentes, na ordem do design e depois alfabetica', () {
-      expect(modelsIn(list), ['Volti Flash', 'Volti Urban', 'Volti Cargo']);
-      expect(modelsIn([v('1', 'Volti S1'), v('2', 'Alfa')]), ['Alfa', 'Volti S1']);
+    test('modelos presentes na ordem do catalogo (sortOrder), pelo id ou pelo nome', () {
+      expect(modelsIn(list, catalog), ['Volti Urbana', 'Volti Sport', 'Volti Touring']);
+      final byId = [v('1', 'Outro nome', modelId: 'm-t'), v('2', 'Volti Urbana', modelId: 'm-u')];
+      expect(modelsIn(byId, catalog), ['Volti Urbana', 'Outro nome']);
+    });
+
+    test('fora do catalogo (ou sem catalogo): depois, em ordem alfabetica', () {
+      expect(modelsIn([v('1', 'Volti S1'), v('2', 'Volti Sport'), v('3', 'Alfa')], catalog), ['Volti Sport', 'Alfa', 'Volti S1']);
+      expect(modelsIn(list), ['Volti Sport', 'Volti Touring', 'Volti Urbana']);
     });
 
     test('filtrar por modelo (null = todas)', () {
       expect(filterByModel(list, null).length, 4);
-      expect(filterByModel(list, 'Volti Flash').map((e) => e.id), ['2', '3']);
+      expect(filterByModel(list, 'Volti Urbana').map((e) => e.id), ['2', '3']);
     });
 
     test('lugar conhecido: o ponto verde em que o cliente esta', () {

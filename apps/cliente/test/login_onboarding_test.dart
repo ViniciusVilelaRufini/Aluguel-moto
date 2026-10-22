@@ -356,7 +356,7 @@ void main() {
         sessionProvider.overrideWith(() => _Session(session(terms: false, location: false, kyc: KycStatus.notStarted))),
       ]));
       await t.pumpAndSettle();
-      expect(t.widget<CheckboxListTile>(find.byKey(const Key('consent-location'))).value, isFalse);
+      expect(t.widget<VoltiCheckbox>(find.byKey(const Key('consent-location'))).value, isFalse);
       await fillData(t);
       await t.tap(find.widgetWithText(VoltiButton, 'Continuar'));
       await t.pumpAndSettle();

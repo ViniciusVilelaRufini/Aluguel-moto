@@ -1513,5 +1513,9 @@
         "type": "int"
       }
     }
-  }
+  },
+  "buttonBusy": "Carregando…",
+  "@buttonBusy": {"description": "Leitor de tela: botao ocupado (loading)"},
+  "buttonDone": "Concluído",
+  "@buttonDone": {"description": "Leitor de tela: botao no estado de sucesso"}
 }

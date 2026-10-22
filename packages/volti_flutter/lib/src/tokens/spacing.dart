@@ -22,6 +22,12 @@ abstract final class VoltiSpacing {
   static const double controlMd = 48;
   static const double controlLg = 56;
   static const double hitMin = 44;
+
+  /// Caixa do checkbox e do radio (`Checkbox.jsx`), check e ponto internos.
+  static const double checkbox = 22;
+  static const double checkboxIcon = 14;
+  static const double radio = 22;
+  static const double radioDot = 12;
 }
 
 /// Raios (`spacing.css`).
@@ -33,11 +39,15 @@ abstract final class VoltiRadii {
   static const double xl = 28;
   static const double pill = 999;
 
+  /// Caixa do checkbox (`Checkbox.jsx`: 7 px).
+  static const double checkbox = 7;
+
   static const rXs = BorderRadius.all(Radius.circular(xs));
   static const rSm = BorderRadius.all(Radius.circular(sm));
   static const rMd = BorderRadius.all(Radius.circular(md));
   static const rLg = BorderRadius.all(Radius.circular(lg));
   static const rXl = BorderRadius.all(Radius.circular(xl));
   static const rPill = BorderRadius.all(Radius.circular(pill));
+  static const rCheckbox = BorderRadius.all(Radius.circular(checkbox));
   static const sheetTop = BorderRadius.vertical(top: Radius.circular(xl));
 }

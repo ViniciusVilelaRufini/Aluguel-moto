@@ -471,10 +471,17 @@ class VoltiSuccessCheck extends StatelessWidget {
     this.size = 56,
     this.icon = LucideIcons.check,
     this.delay = const Duration(milliseconds: 300),
+    this.color = VoltiColors.brand,
+    this.iconColor = Colors.white,
   });
 
   final double size;
   final IconData icon;
+
+  /// Fundo do circulo e do anel. Dentro de um botao primario use branco com
+  /// [iconColor] no tom de acao (contraste E-12).
+  final Color color;
+  final Color iconColor;
 
   /// Atraso do pop; o anel comeca 400 ms depois do pop.
   final Duration delay;
@@ -493,18 +500,19 @@ class VoltiSuccessCheck extends StatelessWidget {
           duration: const Duration(milliseconds: 1100),
           delay: delay + const Duration(milliseconds: 400),
           repeat: 2,
+          color: color,
           child: Container(
             width: size,
             height: size,
-            decoration: const BoxDecoration(
-              color: VoltiColors.brand,
+            decoration: BoxDecoration(
+              color: color,
               shape: BoxShape.circle,
-              boxShadow: VoltiShadows.shadowBrand,
+              boxShadow: color == VoltiColors.brand ? VoltiShadows.shadowBrand : null,
             ),
             child: Icon(
               icon,
               size: size * .5,
-              color: Colors.white,
+              color: iconColor,
               weight: 700,
             ),
           ),

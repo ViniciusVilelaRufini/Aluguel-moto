@@ -1,19 +1,16 @@
 /**
  * Seed do contrato v2 (docs/decisoes.md, 2026-10-22) — São Paulo. Idempotente; chamado por `seed.ts`.
- * Catálogo Flash/Urban/Cargo (preço por minuto e foto placeholder no MinIO), estações de troca, odômetro/horas e
- * revisões, baterias (instaladas, na van do operador dev e carregando nas estações), cupom de boas-vindas, chave Pix e
- * código de indicação do cliente dev.
+ * Catálogo de exemplo Urbana/Sport/Touring (`seed-catalog.ts`: preço por minuto e foto de exemplo baixada para o MinIO),
+ * estações de troca, odômetro/horas e revisões, baterias (instaladas, na van do operador dev e carregando nas estações),
+ * cupom de boas-vindas, chave Pix e código de indicação do cliente dev.
  */
 import type { PrismaClient } from '@prisma/client';
-import { deflateSync } from 'node:zlib';
+import { CATALOG_EXAMPLES, modelForCode, seedCatalog, type FetchLike, type SeedCatalogDeps } from './seed-catalog';
 
 const id = (prefix: string, n: number) => `${prefix}-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
-export const VEHICLE_MODELS = [
-  { id: id('c0000000', 1), name: 'Volti Flash', slug: 'flash', categoryLabel: 'Urbana', description: 'Leve e ágil para a cidade.', pricePerMinuteCents: 79, serviceIntervalKm: 1000, serviceIntervalHours: 100, sortOrder: 1, color: [0x00, 0xb3, 0x7e] },
-  { id: id('c0000000', 2), name: 'Volti Urban', slug: 'urban', categoryLabel: 'Assento duplo', description: 'Banco maior e mais conforto.', pricePerMinuteCents: 89, serviceIntervalKm: 1000, serviceIntervalHours: 100, sortOrder: 2, color: [0x1f, 0x6f, 0xeb] },
-  { id: id('c0000000', 3), name: 'Volti Cargo', slug: 'cargo', categoryLabel: 'Com baú · entregas', description: 'Baú traseiro para entregas.', pricePerMinuteCents: 99, serviceIntervalKm: 800, serviceIntervalHours: 80, sortOrder: 3, color: [0xff, 0x7a, 0x1a] },
-] as const;
+/** Catálogo de exemplo (urbana com cesto, esportiva de 2 lugares, touring com baú): ver `seed-catalog.ts`. */
+export const VEHICLE_MODELS = CATALOG_EXAMPLES;
 
 export const SWAP_STATIONS = [
   { id: id('d0000000', 1), name: 'Estação Largo da Batata', address: 'Largo da Batata, 40 · Pinheiros, São Paulo', lat: -23.5672, lng: -46.6930, availableBatteries: 9, totalSlots: 12, openingHours: 'Todos os dias, 24 h', open24h: true },
@@ -22,36 +19,6 @@ export const SWAP_STATIONS = [
   { id: id('d0000000', 4), name: 'Estação Paulista–Consolação', address: 'Av. Paulista, 2200 · Bela Vista, São Paulo', lat: -23.5570, lng: -46.6612, availableBatteries: 11, totalSlots: 16, openingHours: 'Todos os dias, 24 h', open24h: true },
   { id: id('d0000000', 5), name: 'Estação Faria Lima', address: 'Av. Brig. Faria Lima, 1500 · Pinheiros, São Paulo', lat: -23.5735, lng: -46.6895, availableBatteries: 0, totalSlots: 8, openingHours: 'Seg a sex, 7h às 20h', open24h: false },
 ];
-
-/** PNG sólido mínimo (placeholder da foto do modelo até a arte chegar). */
-export function solidPng(width: number, height: number, [r, g, b]: readonly number[]): Buffer {
-  const crcTable = Array.from({ length: 256 }, (_, n) => {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-    return c >>> 0;
-  });
-  const crc = (buf: Buffer) => {
-    let c = 0xffffffff;
-    for (const byte of buf) c = crcTable[(c ^ byte) & 0xff] ^ (c >>> 8);
-    return (c ^ 0xffffffff) >>> 0;
-  };
-  const chunk = (type: string, data: Buffer) => {
-    const len = Buffer.alloc(4);
-    len.writeUInt32BE(data.length);
-    const td = Buffer.concat([Buffer.from(type, 'ascii'), data]);
-    const c = Buffer.alloc(4);
-    c.writeUInt32BE(crc(td));
-    return Buffer.concat([len, td, c]);
-  };
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(width, 0);
-  ihdr.writeUInt32BE(height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 2; // RGB
-  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array.from({ length: width }, () => [r, g, b]).flat())]);
-  const raw = Buffer.concat(Array.from({ length: height }, () => row));
-  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
-}
 
 /** Pseudo-aleatório determinístico. */
 function rand(seed: number): () => number {
@@ -62,38 +29,24 @@ function rand(seed: number): () => number {
   };
 }
 
-/** Sobe as fotos placeholder para o bucket de catálogo do MinIO. Sem MinIO, o modelo fica sem foto (o seed segue). */
-async function uploadPhotos(): Promise<Map<string, string>> {
-  const keys = new Map<string, string>();
+
+/** Fotos de exemplo baixadas no seed para o bucket de catálogo do MinIO. Sem MinIO ou sem rede, o modelo fica sem foto. */
+async function catalogDeps(): Promise<SeedCatalogDeps> {
+  const fetchImpl = fetch as unknown as FetchLike;
   try {
     const { loadConfig } = await import('../src/config/env');
     const { S3ObjectStorage } = await import('../src/adapters/storage/s3-object-storage');
     const cfg = loadConfig();
-    const storage = new S3ObjectStorage(cfg);
-    await storage.ensureBuckets([cfg.buckets.catalog]);
-    for (const m of VEHICLE_MODELS) {
-      const key = `catalog/${m.slug}.png`;
-      await storage.putObject({ bucket: cfg.buckets.catalog, key, body: solidPng(480, 320, m.color), contentType: 'image/png' });
-      keys.set(m.slug, key);
-    }
+    return { fetchImpl, storage: new S3ObjectStorage(cfg), bucket: cfg.buckets.catalog };
   } catch (err) {
     console.warn(JSON.stringify({ msg: 'seed_catalog_photos_skipped', error: (err as Error).message }));
+    return { fetchImpl, storage: null, bucket: 'catalogo' };
   }
-  return keys;
 }
 
 export async function seedV2(prisma: PrismaClient): Promise<Record<string, number>> {
   // ── catálogo ──
-  const photos = await uploadPhotos();
-  for (const m of VEHICLE_MODELS) {
-    const { color: _color, ...data } = m;
-    const photoObjectKey = photos.get(m.slug);
-    await prisma.vehicleModel.upsert({
-      where: { id: m.id },
-      create: { ...data, ...(photoObjectKey ? { photoObjectKey } : {}) },
-      update: { name: m.name, categoryLabel: m.categoryLabel, pricePerMinuteCents: m.pricePerMinuteCents, serviceIntervalKm: m.serviceIntervalKm, serviceIntervalHours: m.serviceIntervalHours, active: true, ...(photoObjectKey ? { photoObjectKey } : {}) },
-    });
-  }
+  await seedCatalog(prisma, await catalogDeps());
 
   // ── estações ──
   for (const s of SWAP_STATIONS) await prisma.swapStation.upsert({ where: { id: s.id }, create: s, update: { ...s, active: true } });
@@ -102,7 +55,7 @@ export async function seedV2(prisma: PrismaClient): Promise<Record<string, numbe
   const next = rand(7);
   const vehicles = await prisma.vehicle.findMany({ where: { code: { startsWith: 'VLT-' } }, orderBy: { code: 'asc' } });
   for (const [i, v] of vehicles.entries()) {
-    const m = VEHICLE_MODELS[i % 3];
+    const m = modelForCode(v.code);
     const odometerKm = Math.round((150 + next() * 2400) * 10) / 10;
     // km desde a revisão entre 0 e 1,15 × intervalo: mistura de "em dia", "próxima" e "vencida".
     const kmSince = Math.min(odometerKm, Math.round(next() * m.serviceIntervalKm * 1.15 * 10) / 10);

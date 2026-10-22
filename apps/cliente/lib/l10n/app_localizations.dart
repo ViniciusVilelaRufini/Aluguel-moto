@@ -4371,6 +4371,18 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'{meters} m'**
   String welcomeArtDistance(int meters);
+
+  /// Leitor de tela: botao ocupado (loading)
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregando…'**
+  String get buttonBusy;
+
+  /// Leitor de tela: botao no estado de sucesso
+  ///
+  /// In pt, this message translates to:
+  /// **'Concluído'**
+  String get buttonDone;
 }
 
 class _AppLocalizationsDelegate

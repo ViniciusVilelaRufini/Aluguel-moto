@@ -2523,4 +2523,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String welcomeArtDistance(int meters) {
     return '$meters m';
   }
+
+  @override
+  String get buttonBusy => 'Carregando…';
+
+  @override
+  String get buttonDone => 'Concluído';
 }

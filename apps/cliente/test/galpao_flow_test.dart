@@ -95,8 +95,8 @@ void main() {
           depotFixture(id: 'dep1', distanceM: 1200),
         ],
         vehicles: {
-          'dep1': [bike('v1', 'VLT-001', 'Volti Flash')],
-          'far': [bike('v9', 'VLT-009', 'Volti Cargo', depotId: 'far')],
+          'dep1': [bike('v1', 'VLT-001', 'Volti Urbana')],
+          'far': [bike('v9', 'VLT-009', 'Volti Touring', depotId: 'far')],
         },
       );
       await pumpApp(t, b);
@@ -144,15 +144,15 @@ void main() {
       await pumpApp(t, GalpaoBackend(), initial: '/pick');
       expect(find.text('Escolha sua moto'), findsOneWidget);
       expect(find.text('VLT-001'), findsOneWidget);
-      expect(find.text('Dois lugares'), findsOneWidget);
+      expect(find.text('Esportiva compacta'), findsOneWidget);
       expect(find.text('R\$ 0,79/min'), findsWidgets);
       expect(find.text('R\$ 0,99/min'), findsOneWidget);
       expect(find.textContaining(' m · '), findsNothing);
-      expect(find.text('Volti Flash · VLT-001'), findsOneWidget);
+      expect(find.text('Volti Urbana · VLT-001'), findsOneWidget);
       await t.tap(find.byKey(const Key('pick-card-v2')));
       await t.pump();
-      expect(find.text('Volti Urban · VLT-002'), findsOneWidget);
-      await tapText(t, 'Volti Urban · VLT-002');
+      expect(find.text('Volti Sport · VLT-002'), findsOneWidget);
+      await tapText(t, 'Volti Sport · VLT-002');
       expect(find.byType(PlanScreen), findsOneWidget);
     });
   });
@@ -194,10 +194,10 @@ void main() {
     testWidgets('filtro por modelo', (t) async {
       phone(t);
       await pumpApp(t, GalpaoBackend(), initial: '/pick');
-      await t.tap(find.widgetWithText(VoltiChip, 'Volti Urban'));
+      await t.tap(find.widgetWithText(VoltiChip, 'Volti Sport'));
       await settle(t);
       expect(find.text('VLT-001'), findsNothing);
-      expect(find.text('Volti Urban · VLT-002'), findsOneWidget);
+      expect(find.text('Volti Sport · VLT-002'), findsOneWidget);
     });
   });
 
@@ -291,6 +291,27 @@ void main() {
       expect(find.byKey(const Key('reservation-qr')), findsOneWidget);
     });
 
+    testWidgets('"Confirmar reserva": haptica leve e check de sucesso no botao antes de abrir a reserva', (t) async {
+      phone(t);
+      final haptics = <VoltiHapticKind>[];
+      VoltiHaptics.debugHandler = (k) async => haptics.add(k);
+      addTearDown(() => VoltiHaptics.debugHandler = null);
+      final b = GalpaoBackend();
+      await pumpApp(t, b, initial: '/pickup', extra: selection(p: plan(PlanCode.weekly, 'Semanal', PlanUnit.week, 34900, recurring: true), c: InsuranceCoverage.full));
+      final confirm = find.byKey(const Key('pickup-confirm'));
+      await t.ensureVisible(confirm);
+      await t.pump();
+      await t.tap(confirm);
+      await t.pump();
+      await t.pump();
+      expect(haptics.first, VoltiHapticKind.tap);
+      expect(haptics, contains(VoltiHapticKind.success));
+      expect(find.descendant(of: confirm, matching: find.byType(VoltiSuccessCheck)), findsOneWidget);
+      expect(find.byType(DepotReservationScreen), findsNothing);
+      await settle(t);
+      expect(find.byType(DepotReservationScreen), findsOneWidget);
+    });
+
     testWidgets('retirar agora sem cartao: Pix pre-selecionado', (t) async {
       phone(t);
       final b = GalpaoBackend(withCard: false);
@@ -320,7 +341,7 @@ void main() {
       ..vehicle.replace(VehicleSummary((v) => v
         ..id = 'v1'
         ..code = 'VLT-001'
-        ..model = 'Volti Flash'
+        ..model = 'Volti Urbana'
         ..status = VehicleStatus.reserved
         ..lat = -23.566
         ..lng = -46.684
@@ -419,7 +440,7 @@ void main() {
     testWidgets('reduzir movimento: lista -> plano sem voo de Hero e sem animacao pendente', (t) async {
       phone(t);
       await pumpApp(t, GalpaoBackend(), initial: '/pick', reduceMotion: true);
-      await t.tap(find.text('Volti Flash · VLT-001'));
+      await t.tap(find.text('Volti Urbana · VLT-001'));
       await t.pump();
       await t.pump();
       expect(find.byType(PlanScreen), findsOneWidget);
@@ -431,11 +452,11 @@ void main() {
   });
 
   group('fix round 1', () {
-    final urban = bike('v2', 'VLT-002', 'Volti Urban', price: 99, category: 'Dois lugares');
+    final urban = bike('v2', 'VLT-002', 'Volti Sport', price: 99, category: 'Esportiva compacta');
     final minute = plan(PlanCode.minute, 'Por minuto', PlanUnit.minute, 79);
     final dayPlan = plan(PlanCode.day, 'Diário', PlanUnit.day, 8900);
 
-    testWidgets('preco por minuto do modelo: Urban a R\$ 0,99 no plano e no resumo, cotacao com vehicleId', (t) async {
+    testWidgets('preco por minuto do modelo: Sport a R\$ 0,99 no plano e no resumo, cotacao com vehicleId', (t) async {
       phone(t);
       final b = GalpaoBackend();
       await pumpApp(t, b, initial: '/plan', extra: DepotSelection(depot: depotFixture(), vehicle: urban));
@@ -537,7 +558,7 @@ void main() {
       final b = GalpaoBackend(vehicles: {'dep1': []});
       await pumpApp(t, b, initial: '/pick');
       final calls = b.vehicleCalls;
-      b.vehiclesByDepot['dep1'] = [bike('v1', 'VLT-001', 'Volti Flash')];
+      b.vehiclesByDepot['dep1'] = [bike('v1', 'VLT-001', 'Volti Urbana')];
       await t.fling(find.text('Nenhuma moto no galpão agora'), const Offset(0, 400), 1000);
       await settle(t);
       expect(b.vehicleCalls, calls + 1);

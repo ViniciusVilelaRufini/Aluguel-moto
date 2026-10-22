@@ -374,7 +374,7 @@ describe('Contrato v2 (e2e)', () => {
   it('moto (staff): modelo, endereço, revisão, bateria; tabela "Manutenção" e revisão concluída', async () => {
     const seeded = await prisma.vehicle.findFirstOrThrow({ where: { code: 'VLT-0003' } });
     const v = await http().get(`/vehicles/${seeded.id}`).set(bearer(admin)).expect(200);
-    expect(v.body).toMatchObject({ model: 'Volti Cargo', categoryLabel: 'Com baú · entregas', pricePerMinuteCents: 99 });
+    expect(v.body).toMatchObject({ model: 'Volti Touring', categoryLabel: 'Touring com baú', pricePerMinuteCents: 99 });
     expect(v.body.address).toMatch(/São Paulo$/);
     expect(v.body.service.serviceIntervalKm).toBe(800);
     expect(v.body.battery.serial).toBe(seeded.batterySerial);
@@ -454,7 +454,7 @@ describe('Contrato v2 (e2e)', () => {
   it('catálogo: lista com foto e preço, admin cria/edita; cotação usa o preço do modelo', async () => {
     const { token } = await approvedCustomer(app, prisma, 'catalog');
     const list = await http().get('/vehicle-models').set(bearer(token)).expect(200);
-    expect(list.body.items.map((m: { slug: string }) => m.slug).slice(0, 3)).toEqual(['flash', 'urban', 'cargo']);
+    expect(list.body.items.map((m: { slug: string }) => m.slug).slice(0, 3)).toEqual(['urbana', 'sport', 'touring']);
     expect(list.body.items[0].photoObjectKey).toBeUndefined();
     expect(list).toSatisfyApiSpec();
     await http().post('/vehicle-models').set(bearer(token)).send({ name: 'X', slug: 'x', categoryLabel: 'X', pricePerMinuteCents: 1 }).expect(403);

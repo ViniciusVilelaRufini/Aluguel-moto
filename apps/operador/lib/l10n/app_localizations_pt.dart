@@ -1099,4 +1099,10 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get arrivalVehicleAuth =>
       'Sua sessão expirou. Entre de novo para conferir a moto.';
+
+  @override
+  String get buttonBusy => 'Carregando…';
+
+  @override
+  String get buttonDone => 'Concluído';
 }

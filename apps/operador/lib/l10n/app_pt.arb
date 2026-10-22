@@ -666,5 +666,9 @@
   "arrivalQueued": "A chegada será enviada quando a rede voltar.",
   "jobReturnHandover": "Chegada no galpão",
   "pickupCodeProceed": "Continuar mesmo assim",
-  "arrivalVehicleAuth": "Sua sessão expirou. Entre de novo para conferir a moto."
+  "arrivalVehicleAuth": "Sua sessão expirou. Entre de novo para conferir a moto.",
+  "buttonBusy": "Carregando…",
+  "@buttonBusy": {"description": "Leitor de tela: botao ocupado (loading)"},
+  "buttonDone": "Concluído",
+  "@buttonDone": {"description": "Leitor de tela: botao no estado de sucesso"}
 }

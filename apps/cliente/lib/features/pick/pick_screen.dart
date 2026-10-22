@@ -73,7 +73,7 @@ class _PickScreenState extends ConsumerState<PickScreen> {
     final hasRental = ref.watch(currentRentalProvider).value != null;
 
     final all = vehiclesAsync.value ?? const <Vehicle>[];
-    final modelNames = modelsIn(all);
+    final modelNames = modelsIn(all, models);
     final model = modelNames.contains(_model) ? _model : null;
     final visible = filterByModel(all, model);
     // Radio sempre com uma escolha: a tocada, se ainda visivel; senao a primeira.
@@ -124,7 +124,9 @@ class _PickScreenState extends ConsumerState<PickScreen> {
               final card = _PickCard(
                 key: Key('pick-card-${v.id}'),
                 vehicle: v,
+                category: categoryOf(v, models),
                 photoUrl: models[v.vehicleModelId]?.photoUrl,
+                description: models[v.vehicleModelId]?.description,
                 priceCents: v.pricePerMinuteCents ?? models[v.vehicleModelId]?.pricePerMinuteCents ?? fallbackPrice,
                 selected: v.id == selected?.id,
                 onTap: () {
@@ -281,9 +283,15 @@ class _Footer extends StatelessWidget {
 /// Cartao da lista: foto do modelo (ou icone), modelo + codigo, categoria,
 /// bateria/autonomia, preco por modelo e radio. Sem distancia (a moto esta no galpao).
 class _PickCard extends StatefulWidget {
-  const _PickCard({super.key, required this.vehicle, required this.photoUrl, required this.priceCents, required this.selected, required this.onTap});
+  const _PickCard({super.key, required this.vehicle, this.category, required this.photoUrl, this.description, required this.priceCents, required this.selected, required this.onTap});
   final Vehicle vehicle;
+
+  /// Categoria da moto ou, sem ela, a do modelo no catalogo.
+  final String? category;
   final String? photoUrl;
+
+  /// Descricao curta do modelo no catalogo (ex.: "1000 W · 32 km/h · cesto e garupa · sem CNH").
+  final String? description;
   final int? priceCents;
   final bool selected;
   final VoidCallback onTap;
@@ -295,29 +303,21 @@ class _PickCard extends StatefulWidget {
 class _PickCardState extends State<_PickCard> {
   bool _down = false;
 
-  String? _category(AppLocalizations l) {
-    final label = widget.vehicle.categoryLabel?.trim();
-    if (label != null && label.isNotEmpty) return label;
-    return switch (categoryFor(widget.vehicle.model)) {
-      ModelCategory.urban => l.categoryUrban,
-      ModelCategory.doubleSeat => l.categoryDoubleSeat,
-      ModelCategory.cargo => l.categoryCargo,
-      null => null,
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
     final v = widget.vehicle;
     final on = widget.selected;
-    final category = _category(l);
+    final category = widget.category;
     final range = v.estimatedRangeKm.round();
     final price = widget.priceCents == null ? null : perMinuteLabel(widget.priceCents!);
+    final description = widget.description?.trim();
+    final hasDescription = description != null && description.isNotEmpty;
     final semantics = [
       '${v.model} ${v.code}',
       ?category,
+      if (hasDescription) description,
       l.batterySemantics(v.batteryPct),
       l.rangeSemantics(range),
       if (widget.priceCents != null) l.priceSemantics(money(widget.priceCents!)),
@@ -362,7 +362,21 @@ class _PickCardState extends State<_PickCard> {
                       size: 88,
                       image: url == null || url.isEmpty
                           ? null
-                          : Image.network(url, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600)),
+                          // Foto de produto sobre fundo branco: inteira (contain) num quadro branco, sem
+                          // faixas cinza quando a proporcao nao e quadrada.
+                          : ColoredBox(
+                              key: const Key('pick-photo-bg'),
+                              color: Colors.white,
+                              child: SizedBox.expand(
+                                child: Image.network(
+                                  url,
+                                  fit: BoxFit.contain,
+                                  // Decodifica no tamanho da miniatura (88 px x densidade), nao no da foto original.
+                                  cacheWidth: (88 * MediaQuery.devicePixelRatioOf(context)).round(),
+                                  errorBuilder: (_, _, _) => const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600),
+                                ),
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -394,6 +408,16 @@ class _PickCardState extends State<_PickCard> {
                             ),
                           ),
                         ],
+                        if (hasDescription) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            description,
+                            // Ate 2 linhas; os fatos-chave vem primeiro na descricao do catalogo.
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                        ],
                         const SizedBox(height: 6),
                         FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: BatteryPill(v.batteryPct, rangeKm: range)),
                         if (price != null) ...[
@@ -404,42 +428,13 @@ class _PickCardState extends State<_PickCard> {
                     ),
                   ),
                   const SizedBox(width: 10),
-                  _Radio(on: on),
+                  VoltiRadio(selected: on),
                 ],
               ),
             ),
           ),
         ),
       ),
-    );
-  }
-}
-
-class _Radio extends StatelessWidget {
-  const _Radio({required this.on});
-  final bool on;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.white,
-        border: Border.all(color: on ? VoltiColors.brand : VoltiColors.ink300, width: 1.5),
-      ),
-      alignment: Alignment.center,
-      child: on
-          ? const VoltiCheckPop(
-              child: SizedBox(
-                width: 12,
-                height: 12,
-                child: DecoratedBox(decoration: BoxDecoration(color: VoltiColors.brand, shape: BoxShape.circle)),
-              ),
-            )
-          : null,
     );
   }
 }

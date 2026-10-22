@@ -10,6 +10,7 @@ import '../../core/geo.dart';
 import '../../core/shared_vehicle.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
+import '../home/depot_providers.dart';
 import '../pick/depot_selection.dart';
 
 /// Planos ativos (diario/semanal/mensal em destaque; minuto e hora em "Outras opções").
@@ -102,7 +103,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            FlowHeader(title: l.planTitle, subtitle: l.vehicleModelCode(v.model, v.code), heroCode: v.code),
+            FlowHeader(title: l.planTitle, subtitle: l.vehicleModelCode(v.model, v.code), heroCode: v.code, heroModelId: v.vehicleModelId),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, VoltiSpacing.s16),
@@ -171,13 +172,16 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
 
 /// Cabecalho das telas do fluxo (plano, seguro, retirada): voltar, titulo,
 /// "modelo · codigo" e a miniatura da moto, elemento compartilhado com a lista (E-15).
-class FlowHeader extends StatelessWidget {
-  const FlowHeader({super.key, required this.title, required this.subtitle, this.heroCode});
+/// Com [heroModelId], mostra a foto do modelo (a mesma do cartao da lista).
+class FlowHeader extends ConsumerWidget {
+  const FlowHeader({super.key, required this.title, required this.subtitle, this.heroCode, this.heroModelId});
   final String title, subtitle;
   final String? heroCode;
+  final String? heroModelId;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final photoUrl = heroModelId == null ? null : ref.watch(vehicleModelsProvider).value?[heroModelId]?.photoUrl;
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
     return Padding(
@@ -199,7 +203,7 @@ class FlowHeader extends StatelessWidget {
           ),
           if (heroCode != null) ...[
             const SizedBox(width: VoltiSpacing.s12),
-            VehicleHero(code: heroCode!, child: const VehicleThumb(size: 48)),
+            VehicleHero(code: heroCode!, child: VehicleThumb(size: 48, image: vehiclePhoto(photoUrl, iconSize: 20))),
           ],
         ],
       ),

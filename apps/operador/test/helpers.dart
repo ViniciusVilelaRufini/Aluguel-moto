@@ -649,13 +649,17 @@ class Harness {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        builder: textScale == 1
-            ? null
-            : (context, w) => MediaQuery(
-                  data: MediaQuery.of(context)
-                      .copyWith(textScaler: TextScaler.linear(textScale)),
-                  child: w!,
-                ),
+        builder: (context, w) => VoltiButtonLabels(
+              loading: AppLocalizations.of(context).buttonBusy,
+              success: AppLocalizations.of(context).buttonDone,
+              child: textScale == 1
+                  ? w!
+                  : MediaQuery(
+                      data: MediaQuery.of(context)
+                          .copyWith(textScaler: TextScaler.linear(textScale)),
+                      child: w!,
+                    ),
+            ),
         home: child,
       ),
     ));

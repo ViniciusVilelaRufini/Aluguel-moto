@@ -17,7 +17,7 @@ import 'helpers.dart';
 VehicleSummary bike({String id = 'v1', String code = 'VT-4821'}) => VehicleSummary((b) => b
   ..id = id
   ..code = code
-  ..model = 'Volti Flash'
+  ..model = 'Volti Urbana'
   ..status = VehicleStatus.free
   ..lat = -23.5620
   ..lng = -46.6559
@@ -241,41 +241,6 @@ void main() {
   });
 
   group('transicao compartilhada (E-15)', () {
-    Widget host(GlobalKey target, {bool reduced = false}) => MaterialApp(
-          home: MediaQuery(
-            data: MediaQueryData(disableAnimations: reduced),
-            child: Scaffold(
-              body: Stack(children: [
-                Positioned(left: 200, top: 600, child: SizedBox(key: target, width: 132, height: 132)),
-              ]),
-            ),
-          ),
-        );
-
-    testWidgets('voo do pin ao cartao: entra, segue o destino e sai ao terminar', (t) async {
-      final target = GlobalKey();
-      final hide = ValueNotifier(false);
-      await t.pumpWidget(host(target));
-      SharedFlight.run(t.element(find.byType(Scaffold)), from: const Rect.fromLTWH(50, 100, 56, 64), to: target, hide: hide);
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 200));
-      expect(find.byKey(const Key('shared-flight')), findsOneWidget);
-      expect(hide.value, isTrue);
-      await t.pump(const Duration(milliseconds: 400));
-      expect(find.byKey(const Key('shared-flight')), findsNothing);
-      expect(hide.value, isFalse);
-    });
-
-    testWidgets('reduced motion: sem voo', (t) async {
-      final target = GlobalKey();
-      final hide = ValueNotifier(false);
-      await t.pumpWidget(host(target, reduced: true));
-      final entry = SharedFlight.run(t.element(find.byType(Scaffold)), from: Rect.zero, to: target, hide: hide);
-      await t.pump();
-      expect(entry, isNull);
-      expect(find.byKey(const Key('shared-flight')), findsNothing);
-    });
-
     testWidgets('Hero da moto desligado em reduced motion', (t) async {
       await t.pumpWidget(const MaterialApp(
         home: MediaQuery(data: MediaQueryData(disableAnimations: true), child: VehicleHero(code: 'X', child: SizedBox())),

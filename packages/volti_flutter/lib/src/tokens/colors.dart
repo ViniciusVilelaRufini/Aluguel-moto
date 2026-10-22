@@ -73,6 +73,19 @@ abstract final class VoltiColors {
   static const brandAction = Color(0xFF1C7F38);
   static const onBrandAction = white;
 
+  // Ondulacao de toque (`vt-ripple`) por variante de botao (`rip` do Button.jsx).
+  static const rippleOnFilled = Color(0x61FFFFFF); // primario: branco .38
+  static const rippleBrand = Color(0x3334C25C); // secundario: marca .2
+  static const rippleInk = Color(0x1415181A); // fantasma: tinta .08
+  static const rippleOnDark = Color(0x38FFFFFF); // escuro: branco .22
+  static const rippleOnDanger = Color(0x59FFFFFF); // perigo: branco .35
+
+  /// Opacidade de controle desabilitado (botao, checkbox, switch do kit).
+  static const double disabledOpacity = .4;
+
+  /// Opacidade de cartao de escolha desabilitado (`OptionCard.jsx`).
+  static const double disabledOpacityCard = .5;
+
   static const surfaceApp = ink50;
   static const surfaceCard = white;
   static const surfaceSunken = ink100;

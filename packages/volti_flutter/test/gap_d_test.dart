@@ -96,11 +96,6 @@ void main() {
       expect(find.byKey(const Key('vehicle-summary-price')), findsNothing);
     });
 
-    testWidgets('com heroTag envolve a midia num Hero', (t) async {
-      await t.pumpWidget(_wrap(const SizedBox(width: 360, child: VehicleSummaryCard(name: 'Volti S1', batteryPct: 40, heroTag: 'v-1'))));
-      expect(find.byType(Hero), findsOneWidget);
-    });
-
     testWidgets('texto a 200% nao estoura', (t) async {
       await t.pumpWidget(MediaQuery(
         data: const MediaQueryData(textScaler: TextScaler.linear(2)),
