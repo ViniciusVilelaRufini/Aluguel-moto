@@ -8,7 +8,7 @@ import { PLAN_LABEL } from '@/lib/labels';
 import { dayStartIso, formatBRL, localDay } from '@/lib/format';
 import { Empty, ErrorNote, Page, PageHeader, Pill, DataTable, Skeleton, TabPanel, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
-import { StatTile } from '@/ds/StatTile';
+import { StatTile, StatTileSkeleton } from '@/ds/StatTile';
 import { Card } from '@/ds/Card';
 import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
@@ -66,10 +66,13 @@ export default function FinancePage() {
         <TabPanel k="overview">
           <ErrorNote error={fin.error ?? rev.error} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
-            <StatTile icon="Wallet" label="Receita" value={f ? formatBRL(f.totalRevenueCents) : '—'} />
-            <StatTile icon="Gauge" label="Taxa de ocupação" value={occAvg === null ? '—' : `${Math.round(occAvg)}%`} />
-            <StatTile icon="Bike" label="Receita/moto/dia" value={perVehicleDay === null ? '—' : formatBRL(perVehicleDay)} />
-            <StatTile icon="CircleAlert" label="Inadimplência" value={f ? `${f.delinquentCustomers} (${formatBRL(f.delinquentAmountCents)})` : '—'} trend="down" />
+            {fin.isLoading ? [0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />) : <>
+              <StatTile icon="Wallet" label="Receita" numeric={f ? f.totalRevenueCents : null} format={formatBRL} />
+              <StatTile icon="Gauge" label="Taxa de ocupação" numeric={occAvg === null ? null : Math.round(occAvg)} format={(n) => `${n}%`} />
+              <StatTile icon="Bike" label="Receita/moto/dia" numeric={perVehicleDay} format={formatBRL} />
+              <StatTile icon="CircleAlert" label="Inadimplência" numeric={f ? f.delinquentAmountCents : null} format={formatBRL} goodWhen="down"
+                caption={f ? `${f.delinquentCustomers} ${f.delinquentCustomers === 1 ? 'cliente' : 'clientes'}` : undefined} />
+            </>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
             <Card padding={20}>

@@ -13,19 +13,20 @@ import { MapView } from '@/components/MapView';
 import { VehicleSheet } from '@/components/VehicleSheet';
 import { Field, Select } from '@/components/ui';
 import { FleetStatus } from '@/ds/FleetStatus';
-import { StatTile } from '@/ds/StatTile';
+import { StatTile, StatTileSkeleton } from '@/ds/StatTile';
 import { Button } from '@/ds/Button';
 import { canOpen } from '@/lib/permissions';
 import type { VehicleStatus } from '@/lib/types';
 
 const FLEET_SRC = 'fleet';
+const pct = (n: number) => `${n}%`;
 const colorExpr = ['match', ['get', 'status'], ...VEHICLE_STATUSES.flatMap((s) => [s, STATUS_COLOR[s]]), '#9AA0A6'] as never;
 
 export default function FleetPage() {
   const params = useSearchParams();
   const router = useRouter();
   const { groups } = useAuth();
-  const { vehicles } = useRealtime();
+  const { vehicles, openAlerts } = useRealtime();
   const [filter, setFilter] = useState<VehicleStatus | null>(null);
   const [selected, setSelected] = useState<string | null>(params.get('vehicle'));
   const [mapReady, setMapReady] = useState(false);
@@ -132,14 +133,19 @@ export default function FleetPage() {
       <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 320 }}>
         <MapView onReady={onReady} onDestroy={() => { mapRef.current = null; setMapReady(false); }} />
         <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
-          {dash.data && (
-            <div data-testid="dashboard-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
-              <StatTile icon="Gauge" label="Ocupação" value={`${Math.round(dash.data.occupancyPct)}%`} />
-              <StatTile icon="Bike" label="Aluguéis ativos" value={String(dash.data.activeRentals)} />
-              <StatTile icon="Wallet" label="Receita do dia" value={formatBRL(dash.data.revenueTodayCents)} />
-              <StatTile icon="Siren" label="Alertas abertos" value={String(dash.data.openAlerts)} trend="down" />
+          {dash.data ? (
+            <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
+              <StatTile icon="Gauge" label="Ocupação" numeric={Math.round(dash.data.occupancyPct)} format={pct} />
+              <StatTile icon="Bike" label="Aluguéis ativos" numeric={dash.data.activeRentals} />
+              <StatTile icon="Wallet" label="Receita do dia" numeric={dash.data.revenueTodayCents} format={formatBRL} />
+              {/* Alertas vêm do tempo real (alert.created), não só do refresh de 30 s do dashboard. */}
+              <StatTile icon="Siren" label="Alertas abertos" numeric={openAlerts} goodWhen="down" />
             </div>
-          )}
+          ) : dash.isLoading ? (
+            <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, maxWidth: 760 }}>
+              {[0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />)}
+            </div>
+          ) : null}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', pointerEvents: 'auto' }}>
             <FleetStatus status="free" count={counts.free ?? 0} selected={filter === 'free'} onClick={() => setFilter(filter === 'free' ? null : 'free')} style={{ boxShadow: 'var(--shadow-1)' }} />
             {VEHICLE_STATUSES.filter((s) => s !== 'free').map((s) => (

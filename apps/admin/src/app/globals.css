@@ -109,6 +109,10 @@ a:hover{color:var(--brand-press)}
 .dt-click:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
 .row-new > td { animation: vt-row-new 2.4s var(--ease-out) backwards; }
 
+/* Indicadores ao vivo: brilho curto quando o número muda */
+.stat-flash { animation: vt-flash 1.2s var(--ease-out); }
+.stat-delta { animation: vt-pop-in var(--dur-spring) var(--ease-spring) backwards; }
+
 /* Carregamento */
 .skeleton { background: linear-gradient(90deg, var(--ink-100) 25%, var(--ink-50) 50%, var(--ink-100) 75%); background-size: 200% 100%; animation: vt-shimmer 1.4s linear infinite; }
 @media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
