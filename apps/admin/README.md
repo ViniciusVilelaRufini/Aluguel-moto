@@ -72,13 +72,13 @@ E2E_PORT=3110 E2E_API_URL=http://localhost:3001 E2E_CHROME="C:/Program Files/Goo
 
 ### E2E do galpão (`e2e/galpao.spec.ts`)
 
-Cadastro, permissões, mapa e agenda rodam contra a API real (módulo de galpões). A reserva de galpão ainda não tem rota na API desta branch, então o teste da agenda grava a reserva direto no banco com o Prisma Client de `services/api` e só roda com `E2E_DATABASE_URL` (o mesmo `DATABASE_URL` da API); TODO: trocar por `POST /reservations` depois da Task 5. Entregas e disputas ficam em `test.skip` até a Task 6 (handovers).
+Cadastro, permissões, mapa e agenda rodam contra a API real (galpões e reserva de galpão). A reserva da agenda é criada pela API: galpão aberto todos os dias, moto nova levada ao galpão por um recolhimento (`collect`) concluído com `depotId`, cliente com KYC aprovado, cartão fake e `POST /reservations` com `depotId` e `Idempotency-Key`; o teste cancela a reserva no fim. Todo galpão do teste nasce em Maceió (longe das cercas de São Paulo) e é desativado no `afterEach`. Entregas e disputas ficam em `test.skip` até a Task 6 (handovers).
 
 ```bash
 # API do worktree numa porta livre (services/api/.env com DATABASE_URL próprio, migrate + seed)
 NEXT_PUBLIC_AUTH_MODE=dev NEXT_PUBLIC_API_BASE_URL=http://localhost:3112 pnpm --filter admin build
 npx serve apps/admin/out -l 3113
-E2E_PORT=3113 E2E_API_URL=http://localhost:3112 E2E_DATABASE_URL=postgresql://volti:volti@localhost:5432/<banco>   pnpm --filter admin exec playwright test e2e/galpao.spec.ts --workers=1
+E2E_PORT=3113 E2E_API_URL=http://localhost:3112   pnpm --filter admin exec playwright test e2e/galpao.spec.ts --workers=1
 ```
 
 ## Design e movimento

@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { addDepotLayer, DEPOT_LAYER, setDepots } from '@/lib/depot-layer';
 import {
-  depotToBody, draftFromDepot, emptyDepotDraft, summarizeHours, validateDepot, type DepotDraft, type DepotErrors,
+  depotCreateBody, depotUpdateBody, draftFromDepot, emptyDepotDraft, summarizeHours, validateDepot, type DepotDraft, type DepotErrors,
 } from '@/lib/depot-hours';
 import { VEHICLE_STATUSES } from '@/lib/status';
 import { prefersReducedMotion } from '@/lib/motion';
@@ -125,9 +125,8 @@ export default function DepotsPage() {
 
   const save = useMutation({
     mutationFn: (d: DepotDraft) => {
-      const body = depotToBody(d);
-      if (d.id) return unwrap(api.PATCH('/depots/{id}', { params: { path: { id: d.id } }, body }));
-      return unwrap(api.POST('/depots', { body }));
+      if (d.id) return unwrap(api.PATCH('/depots/{id}', { params: { path: { id: d.id } }, body: depotUpdateBody(d) }));
+      return unwrap(api.POST('/depots', { body: depotCreateBody(d) }));
     },
     onSuccess: (saved, d) => {
       toast(d.id ? 'Galpão atualizado' : 'Galpão criado');
@@ -259,7 +258,7 @@ export default function DepotsPage() {
           <Card variant="sunken" padding={4}>
             {depotsQ.isLoading && <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 12 }}>{[0, 1].map((i) => <Skeleton key={i} h={40} />)}</div>}
             <ErrorNote error={depotsQ.error} />
-            {!depotsQ.isLoading && depots.length === 0 && (
+            {!depotsQ.isLoading && !depotsQ.error && depots.length === 0 && (
               <Empty compact icon="Warehouse" action={canEdit ? <Button size="sm" variant="ghost" icon="Plus" onClick={startNew}>Novo galpão</Button> : undefined}>Nenhum galpão cadastrado</Empty>
             )}
             {depots.map((d) => (

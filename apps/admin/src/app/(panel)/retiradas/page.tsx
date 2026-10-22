@@ -44,7 +44,14 @@ export default function PickupsPage() {
     queryFn: () => unwrap(api.GET('/depots/{id}/pickups', { params: { path: { id: depotId }, query: { date, ...(status !== 'all' ? { status } : {}) } } })),
   });
   const items = useMemo(() => pickupsQ.data?.items ?? [], [pickupsQ.data]);
-  const all = useMemo(() => toPickupRows(items, 'all'), [items]);
+  // Indicadores do dia inteiro: consulta sem filtro de status (com "Todos os status", o React Query reaproveita a mesma).
+  const dayQ = useQuery({
+    queryKey: ['depot-pickups', depotId, date, 'all'],
+    enabled: !!depotId && validDate,
+    refetchInterval: 30_000,
+    queryFn: () => unwrap(api.GET('/depots/{id}/pickups', { params: { path: { id: depotId }, query: { date } } })),
+  });
+  const all = useMemo(() => toPickupRows(dayQ.data?.items ?? [], 'all'), [dayQ.data]);
   const waiting = all.filter((r) => r.status === 'active').length;
   const inHandover = all.filter((r) => r.status === 'handover').length;
   const done = all.filter((r) => r.status === 'converted').length;
@@ -55,7 +62,7 @@ export default function PickupsPage() {
         <div style={{ width: 260 }}>
           <Field label="Galpão">
             <Select testId="pickups-depot" value={depotId} onChange={setDepotId}
-              options={depots.length ? depots.map((d) => ({ value: d.id, label: d.active ? d.name : `${d.name} (inativo)` })) : [{ value: '', label: 'Carregando...' }]} />
+              options={depots.length ? depots.map((d) => ({ value: d.id, label: d.active ? d.name : `${d.name} (inativo)` })) : [{ value: '', label: depotsQ.isLoading ? 'Carregando...' : 'Nenhum galpão' }]} />
           </Field>
         </div>
         <div style={{ width: 180 }}>
@@ -72,9 +79,9 @@ export default function PickupsPage() {
         </div>
       </div>
 
-      {pickupsQ.data && (
+      {dayQ.data && (
         <div data-testid="pickups-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, maxWidth: 720 }}>
-          <StatTile icon="CalendarClock" label="Reservas no dia" numeric={all.length} />
+          <StatTile icon="CalendarClock" label="Reservas no dia (todas)" numeric={all.length} />
           <StatTile icon="Hourglass" label="Aguardando" numeric={waiting} />
           <StatTile icon="PackageCheck" label="Em entrega" numeric={inHandover} />
           <StatTile icon="Bike" label="Retiradas" numeric={done} />

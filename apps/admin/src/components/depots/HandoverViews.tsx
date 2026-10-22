@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { DataTable, KV, Pill, SectionTitle, type Pager } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
 import { Icon } from '@/ds/Icon';
@@ -49,9 +50,10 @@ export function HandoverTable({ rows, onSelect, selectedId, loading, pager, empt
  * Detalhe da entrega: fotos (links assinados de `photoUrls`), checklist com observações, bateria e, na disputa, o
  * motivo do cliente com "Abrir no suporte".
  */
-export function HandoverDetail({ handover: h, supportHref, rentalHref }: { handover: Handover; supportHref: string | null; rentalHref: string | null }) {
+export function HandoverDetail({ handover: h, supportHref, rentalHref, photosLoading }: { handover: Handover; supportHref: string | null; rentalHref: string | null; photosLoading?: boolean }) {
   const st = HANDOVER_STATUS[h.status];
-  const err = lastErrorLabel(h.lastError);
+  // O erro do aceite só importa enquanto a entrega espera o cliente (some quando o aceite dá certo).
+  const err = h.status === 'pending_customer' ? lastErrorLabel(h.lastError) : null;
   const photos = h.photoUrls ?? [];
   return (
     <div data-testid="handover-detail" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -67,18 +69,25 @@ export function HandoverDetail({ handover: h, supportHref, rentalHref }: { hando
         </Alert>
       )}
       {h.status === 'disputed' && supportHref && (
-        // Link com a forma do Button "dark" sm (um <button> dentro de <a> seria interativo aninhado).
-        <a href={supportHref} data-testid="open-support"
+        // Link do Next com a forma do Button "dark" sm (um <button> dentro de <a> seria interativo aninhado).
+        <Link href={supportHref} data-testid="open-support"
           style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 10, height: 36, padding: '0 16px', borderRadius: 'var(--radius-pill)', background: 'var(--surface-inverse)', color: 'var(--text-on-inverse)', font: 'var(--fw-semibold) 14px/1 var(--font-sans)', textDecoration: 'none', boxShadow: 'var(--shadow-2)' }}>
           <Icon name="LifeBuoy" size={16} />Abrir no suporte
-        </a>
+        </Link>
       )}
       {err && <Alert tone="warning" title={err}>O cliente ainda não destravou a moto. A entrega continua aguardando.</Alert>}
 
       <div>
         <SectionTitle>Fotos</SectionTitle>
         {photos.length === 0 ? (
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}><Icon name="Image" size={16} />Sem fotos nesta entrega.</div>
+          <div role="status" data-testid="handover-photos-empty" style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Icon name="Image" size={16} />
+            {h.photoKeys.length === 0
+              ? 'Sem fotos nesta entrega.'
+              : photosLoading
+                ? `Carregando as fotos (${h.photoKeys.length})...`
+                : `Fotos indisponíveis no momento (${h.photoKeys.length} registradas). Tente reabrir a entrega.`}
+          </div>
         ) : (
           <div data-testid="handover-photos" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))', gap: 8 }}>
             {photos.map((url, i) => (
@@ -114,7 +123,7 @@ export function HandoverDetail({ handover: h, supportHref, rentalHref }: { hando
         <KV k="Operador" v={h.operatorFirstName ?? '—'} />
         <KV k="Registrada em" v={formatDateTime(h.createdAt)} />
         {h.respondedAt && <KV k="Resposta do cliente" v={formatDateTime(h.respondedAt)} />}
-        {h.rentalId && <KV k="Aluguel" v={rentalHref ? <a href={rentalHref} style={{ color: 'var(--text-link)', fontWeight: 600, textDecoration: 'none' }}>Ver aluguel</a> : <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{h.rentalId.slice(0, 8)}</span>} />}
+        {h.rentalId && <KV k="Aluguel" v={rentalHref ? <Link href={rentalHref} style={{ color: 'var(--text-link)', fontWeight: 600, textDecoration: 'none' }}>Ver aluguel</Link> : <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{h.rentalId.slice(0, 8)}</span>} />}
       </div>
     </div>
   );

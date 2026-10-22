@@ -74,7 +74,7 @@ export default function HandoversPage() {
           title={<div style={{ font: '700 18px/1.25 var(--font-sans)' }}>Entrega {shown?.vehicleCode ? `· ${shown.vehicleCode}` : ''}</div>}>
           <ErrorNote error={detail.error} />
           {shown ? (
-            <HandoverDetail handover={shown} supportHref={supportHref(groups)} rentalHref={shown.rentalId ? rentalHref(groups, shown.rentalId) : null} />
+            <HandoverDetail handover={shown} photosLoading={detail.isLoading} supportHref={supportHref(groups)} rentalHref={shown.rentalId ? rentalHref(groups, shown.rentalId) : null} />
           ) : (
             <PanelSkeleton />
           )}

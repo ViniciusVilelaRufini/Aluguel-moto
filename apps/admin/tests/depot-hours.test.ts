@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  depotToBody, draftFromDepot, emptyDepotDraft, hoursFromApi, hoursToApi, isHHMM, summarizeHours, validateDepot, validateHours,
+  depotCreateBody, depotUpdateBody, draftFromDepot, emptyDepotDraft, hoursFromApi, hoursToApi, isHHMM, summarizeHours, validateDepot, validateHours,
 } from '@/lib/depot-hours';
 
 const closedWeek = () => hoursFromApi([]);
@@ -97,11 +97,20 @@ describe('cadastro do galpão', () => {
     expect(validateDepot(base).days).toEqual({ 2: 'A abertura precisa ser antes do fechamento' });
   });
 
-  it('monta o corpo do POST/PATCH com números e a lista de horários', () => {
+  it('monta o corpo do POST com números, horários, fuso e ativo', () => {
     const d = { ...emptyDepotDraft(), name: ' Galpão Sul ', address: 'Rua A, 1', district: '', lat: -23.6, lng: -46.7 };
-    const body = depotToBody(d);
+    const body = depotCreateBody(d);
     expect(body).toMatchObject({ name: 'Galpão Sul', address: 'Rua A, 1', lat: -23.6, lng: -46.7, timezone: 'America/Sao_Paulo', pickupNowWindowMinutes: 120, maxScheduleDays: 7, scheduledGraceMinutes: 30, active: true });
     expect(body).not.toHaveProperty('district');
+    expect(body.openingHours).toEqual(hoursToApi(d.hours));
+  });
+
+  it('o corpo do PATCH não leva `active` nem `timezone` (só Desativar/Reativar mexe no ativo)', () => {
+    const d = { ...emptyDepotDraft(), id: 'd1', name: 'G', address: 'R', lat: -23.6, lng: -46.7, active: false };
+    const body = depotUpdateBody(d);
+    expect(body).not.toHaveProperty('active');
+    expect(body).not.toHaveProperty('timezone');
+    expect(body).toMatchObject({ name: 'G', address: 'R', lat: -23.6, lng: -46.7, pickupNowWindowMinutes: 120 });
     expect(body.openingHours).toEqual(hoursToApi(d.hours));
   });
 

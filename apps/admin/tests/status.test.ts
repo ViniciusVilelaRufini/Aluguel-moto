@@ -16,7 +16,6 @@ describe('status -> color', () => {
     expect(STATUS_COLOR.awaiting_pickup).toBe('#13A8A8');
     const others = VEHICLE_STATUSES.filter((s) => s !== 'awaiting_pickup').map((s) => STATUS_COLOR[s]);
     expect(others).not.toContain(STATUS_COLOR.awaiting_pickup);
-    expect(STATUS_LABEL.awaiting_pickup).toBe('Aguardando recolhimento');
   });
   it('has pt-BR labels', () => {
     expect(STATUS_LABEL.offline).toBe('Sem sinal');

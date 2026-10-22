@@ -124,7 +124,8 @@ export function validateDepot(d: DepotDraft): DepotErrors {
   return e;
 }
 
-export function depotToBody(d: DepotDraft): S<'DepotInput'> {
+/** Campos editáveis do formulário (sem `active` e sem `timezone`). */
+function editableFields(d: DepotDraft) {
   const district = d.district.trim();
   return {
     name: d.name.trim(),
@@ -132,11 +133,22 @@ export function depotToBody(d: DepotDraft): S<'DepotInput'> {
     ...(district ? { district } : {}),
     lat: d.lat as number,
     lng: d.lng as number,
-    timezone: DEPOT_TIMEZONE,
     openingHours: hoursToApi(d.hours),
     pickupNowWindowMinutes: Number(d.pickupNowWindowMinutes),
     maxScheduleDays: Number(d.maxScheduleDays),
     scheduledGraceMinutes: Number(d.scheduledGraceMinutes),
-    active: d.active,
   };
+}
+
+/** `POST /depots`: o galpão nasce no fuso de São Paulo e com o `active` do rascunho. */
+export function depotCreateBody(d: DepotDraft): S<'DepotInput'> {
+  return { ...editableFields(d), timezone: DEPOT_TIMEZONE, active: d.active };
+}
+
+/**
+ * `PATCH /depots/{id}`: só os campos do formulário. `active` muda só por Desativar/Reativar e o fuso não é
+ * editável aqui, então nenhum dos dois vai no corpo (um rascunho antigo não desfaz uma desativação).
+ */
+export function depotUpdateBody(d: DepotDraft): S<'DepotUpdate'> {
+  return editableFields(d);
 }
