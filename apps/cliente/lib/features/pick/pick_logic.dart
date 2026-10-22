@@ -18,36 +18,39 @@ const kFirstRidePromo = bool.fromEnvironment('FIRST_RIDE_PROMO');
 /// "R$ 0,79/min".
 String perMinuteLabel(int cents) => '${money(cents)}/min';
 
-enum ModelCategory { urban, doubleSeat, cargo }
-
-/// Categoria pelo nome do modelo (o contrato nao tem esse campo; mapa local).
-ModelCategory? categoryFor(String model) {
-  final m = model.toLowerCase();
-  if (m.contains('flash')) return ModelCategory.urban;
-  if (m.contains('urban')) return ModelCategory.doubleSeat;
-  if (m.contains('cargo')) return ModelCategory.cargo;
-  return null;
+/// Categoria da moto (`Vehicle.categoryLabel`); sem ela, a do modelo no catalogo
+/// (`GET /vehicle-models`). Sem nenhuma das duas, nada.
+String? categoryOf(Vehicle v, Map<String, VehicleModel> catalog) {
+  final own = v.categoryLabel?.trim();
+  if (own != null && own.isNotEmpty) return own;
+  final fromCatalog = catalog[v.vehicleModelId]?.categoryLabel.trim();
+  return fromCatalog == null || fromCatalog.isEmpty ? null : fromCatalog;
 }
 
-/// "Volti Flash" -> "Flash" (rotulo do bloco de foto).
+/// "Volti Urbana" -> "Urbana" (rotulo do bloco de foto).
 String shortModel(String model) {
   final parts = model.trim().split(RegExp(r'\s+'));
   return parts.length > 1 ? parts.sublist(1).join(' ') : parts.first;
 }
 
-const _designOrder = ['volti flash', 'volti urban', 'volti cargo'];
-
-/// Modelos presentes nos dados: os do design primeiro, na ordem dele, e os demais em ordem alfabetica.
-List<String> modelsIn(Iterable<Vehicle> list) {
-  final models = {for (final v in list) v.model}.toList();
-  int rank(String m) {
-    final i = _designOrder.indexOf(m.toLowerCase());
-    return i < 0 ? _designOrder.length : i;
+/// Modelos presentes nos dados, na ordem do catalogo (`VehicleModel.sortOrder`,
+/// casando pelo `vehicleModelId` da moto ou pelo nome); os que nao estao no
+/// catalogo (ou sem catalogo) vem depois, em ordem alfabetica.
+List<String> modelsIn(Iterable<Vehicle> list, [Map<String, VehicleModel> catalog = const {}]) {
+  final byName = {for (final m in catalog.values) m.name.toLowerCase(): m.sortOrder};
+  final order = <String, int?>{};
+  for (final v in list) {
+    final sort = catalog[v.vehicleModelId]?.sortOrder ?? byName[v.model.toLowerCase()];
+    final prev = order[v.model];
+    order[v.model] = prev == null || (sort != null && sort < prev) ? sort ?? prev : prev;
   }
-
+  final models = order.keys.toList();
   models.sort((a, b) {
-    final r = rank(a).compareTo(rank(b));
-    return r != 0 ? r : a.toLowerCase().compareTo(b.toLowerCase());
+    final ra = order[a], rb = order[b];
+    if (ra != null && rb != null && ra != rb) return ra.compareTo(rb);
+    if (ra != null && rb == null) return -1;
+    if (ra == null && rb != null) return 1;
+    return a.toLowerCase().compareTo(b.toLowerCase());
   });
   return models;
 }

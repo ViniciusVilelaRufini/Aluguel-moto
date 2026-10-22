@@ -73,7 +73,7 @@ class _PickScreenState extends ConsumerState<PickScreen> {
     final hasRental = ref.watch(currentRentalProvider).value != null;
 
     final all = vehiclesAsync.value ?? const <Vehicle>[];
-    final modelNames = modelsIn(all);
+    final modelNames = modelsIn(all, models);
     final model = modelNames.contains(_model) ? _model : null;
     final visible = filterByModel(all, model);
     // Radio sempre com uma escolha: a tocada, se ainda visivel; senao a primeira.
@@ -124,6 +124,7 @@ class _PickScreenState extends ConsumerState<PickScreen> {
               final card = _PickCard(
                 key: Key('pick-card-${v.id}'),
                 vehicle: v,
+                category: categoryOf(v, models),
                 photoUrl: models[v.vehicleModelId]?.photoUrl,
                 description: models[v.vehicleModelId]?.description,
                 priceCents: v.pricePerMinuteCents ?? models[v.vehicleModelId]?.pricePerMinuteCents ?? fallbackPrice,
@@ -278,8 +279,11 @@ class _Footer extends StatelessWidget {
 /// Cartao da lista: foto do modelo (ou icone), modelo + codigo, categoria,
 /// bateria/autonomia, preco por modelo e radio. Sem distancia (a moto esta no galpao).
 class _PickCard extends StatefulWidget {
-  const _PickCard({super.key, required this.vehicle, required this.photoUrl, this.description, required this.priceCents, required this.selected, required this.onTap});
+  const _PickCard({super.key, required this.vehicle, this.category, required this.photoUrl, this.description, required this.priceCents, required this.selected, required this.onTap});
   final Vehicle vehicle;
+
+  /// Categoria da moto ou, sem ela, a do modelo no catalogo.
+  final String? category;
   final String? photoUrl;
 
   /// Descricao curta do modelo no catalogo (ex.: "1000 W · 32 km/h · cesto e garupa · sem CNH").
@@ -295,24 +299,13 @@ class _PickCard extends StatefulWidget {
 class _PickCardState extends State<_PickCard> {
   bool _down = false;
 
-  String? _category(AppLocalizations l) {
-    final label = widget.vehicle.categoryLabel?.trim();
-    if (label != null && label.isNotEmpty) return label;
-    return switch (categoryFor(widget.vehicle.model)) {
-      ModelCategory.urban => l.categoryUrban,
-      ModelCategory.doubleSeat => l.categoryDoubleSeat,
-      ModelCategory.cargo => l.categoryCargo,
-      null => null,
-    };
-  }
-
   @override
   Widget build(BuildContext context) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
     final v = widget.vehicle;
     final on = widget.selected;
-    final category = _category(l);
+    final category = widget.category;
     final range = v.estimatedRangeKm.round();
     final price = widget.priceCents == null ? null : perMinuteLabel(widget.priceCents!);
     final description = widget.description?.trim();
@@ -371,7 +364,13 @@ class _PickCardState extends State<_PickCard> {
                               key: const Key('pick-photo-bg'),
                               color: Colors.white,
                               child: SizedBox.expand(
-                                child: Image.network(url, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600)),
+                                child: Image.network(
+                                  url,
+                                  fit: BoxFit.contain,
+                                  // Decodifica no tamanho da miniatura (88 px x densidade), nao no da foto original.
+                                  cacheWidth: (88 * MediaQuery.devicePixelRatioOf(context)).round(),
+                                  errorBuilder: (_, _, _) => const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600),
+                                ),
                               ),
                             ),
                     ),
@@ -409,7 +408,8 @@ class _PickCardState extends State<_PickCard> {
                           const SizedBox(height: 2),
                           Text(
                             description,
-                            maxLines: 1,
+                            // Ate 2 linhas; os fatos-chave vem primeiro na descricao do catalogo.
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
                           ),

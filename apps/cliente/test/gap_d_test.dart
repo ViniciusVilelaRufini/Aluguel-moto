@@ -17,7 +17,7 @@ import 'helpers.dart';
 VehicleSummary bike({String id = 'v1', String code = 'VT-4821'}) => VehicleSummary((b) => b
   ..id = id
   ..code = code
-  ..model = 'Volti Flash'
+  ..model = 'Volti Urbana'
   ..status = VehicleStatus.free
   ..lat = -23.5620
   ..lng = -46.6559
