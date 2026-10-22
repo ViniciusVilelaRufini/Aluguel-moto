@@ -85,7 +85,10 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
           )}
         </header>
         <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-          <Suspense fallback={null}>{children}</Suspense>
+          {/* Troca de seção: fade + subida curta (vt-section-in, --ease-out). Só `backwards`, para não deixar transform residual. */}
+          <div key={current?.key} className="section-in" style={{ flex: 1, display: 'flex', minHeight: 0, minWidth: 0 }}>
+            <Suspense fallback={null}>{children}</Suspense>
+          </div>
         </div>
       </main>
     </div>

@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/labels';
 import { dayStartIso, formatBRL, localDay } from '@/lib/format';
-import { ErrorNote, Page, PageHeader, Pill, DataTable, useToast } from '@/components/ui';
+import { ErrorNote, Page, PageHeader, Pill, DataTable, TabPanel, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { StatTile } from '@/ds/StatTile';
 import { Card } from '@/ds/Card';
@@ -61,9 +61,9 @@ export default function FinancePage() {
       </PageHeader>
 
       {tab === 'rentals' ? (
-        <RentalsPanel selectedId={rental} onSelect={setRental} />
+        <TabPanel k="rentals" style={{ flex: 1, minHeight: 0 }}><RentalsPanel selectedId={rental} onSelect={setRental} /></TabPanel>
       ) : (
-        <>
+        <TabPanel k="overview">
           <ErrorNote error={fin.error ?? rev.error} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
             <StatTile icon="Wallet" label="Receita" value={f ? formatBRL(f.totalRevenueCents) : '—'} />
@@ -113,7 +113,7 @@ export default function FinancePage() {
             <Button size="sm" variant="secondary" icon="Download" testId="export-revenue" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/revenue', 'receita.csv')}>Exportar receita (CSV)</Button>
             <Button size="sm" variant="secondary" icon="Download" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/finance', 'financeiro.csv')}>Exportar resumo financeiro (CSV)</Button>
           </div>
-        </>
+        </TabPanel>
       )}
     </Page>
   );

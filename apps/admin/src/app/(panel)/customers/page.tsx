@@ -47,9 +47,11 @@ export default function CustomersPage() {
           <SegmentedControl options={[{ value: 'customers', label: 'Clientes' }, { value: 'rentals', label: 'Aluguéis' }, { value: 'support', label: 'Suporte' }]} value={tab} onChange={changeTab} style={{ width: 340 }} />
         </PageHeader>
       </div>
+      <div key={tab} className="section-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
       {tab === 'customers' && <CustomersTab selected={customer} onSelect={setCustomer} onRentals={(id) => { setRental(id); changeTab('rentals'); }} />}
       {tab === 'rentals' && <div style={{ flex: 1, display: 'flex', padding: '14px 0 0 28px', minHeight: 0 }}><RentalsPanel selectedId={rental} onSelect={(id) => { setRental(id); router.replace(id ? `/customers?tab=rentals&rental=${id}` : '/customers?tab=rentals', { scroll: false }); }} /></div>}
       {tab === 'support' && <Page style={{ paddingTop: 14 }}><SupportPanel /></Page>}
+      </div>
       {restrictions && <RestrictionModal onClose={() => setRestrictions(false)} />}
     </div>
   );

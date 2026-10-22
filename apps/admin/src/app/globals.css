@@ -60,6 +60,8 @@
 /* Motion e efeitos (design-system/tokens/effects.css) */
 --ease-in-out:cubic-bezier(.65,0,.35,1);--ease-screen:cubic-bezier(.32,.72,0,1);
 --dur-slow:320ms;--dur-screen:440ms;--dur-spring:280ms;
+/* Evolução (docs/design/evolucoes-admin.md): mola curta do painel lateral, overshoot ~3% */
+--ease-panel:cubic-bezier(.22,1.18,.36,1);
 --shadow-sheet:0 -8px 32px rgba(21,24,26,.12);
 --glass-bg:rgba(255,255,255,.82);--blur-glass:saturate(180%) blur(16px);
 --sky-200:#C3E6F5;--lavender-200:#C9CFF8;
@@ -94,6 +96,10 @@ a:hover{color:var(--brand-press)}
   .side-panel { width: 100% !important; max-height: 50vh; border-left: 0 !important; border-top: 1px solid var(--border-subtle); }
 }
 .table-scroll { overflow-x: auto; }
+
+/* Entradas: seção, aba e painel lateral */
+.section-in { animation: vt-section-in 280ms var(--ease-out) backwards; }
+.panel-in { animation: vt-panel-in 420ms var(--ease-panel) backwards; }
 
 /* Menu lateral: hover e item ativo */
 .nav-item { background: transparent; color: rgba(255,255,255,.62); transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out); }

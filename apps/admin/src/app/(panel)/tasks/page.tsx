@@ -8,7 +8,7 @@ import { can } from '@/lib/permissions';
 import { TASK_PRIORITY, TASK_TYPE } from '@/lib/labels';
 import { formatDate } from '@/lib/format';
 import type { S } from '@/lib/types';
-import { DataTable, ErrorNote, Field, Modal, Page, PageHeader, Pill, Select, TextArea, TextInput, usePagedQuery, useToast } from '@/components/ui';
+import { DataTable, ErrorNote, Field, Modal, Page, PageHeader, Pill, Select, TabPanel, TextArea, TextInput, usePagedQuery, useToast } from '@/components/ui';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
@@ -36,7 +36,7 @@ export default function TasksPage() {
           ? <Button size="sm" icon="Plus" testId="new-task" onClick={() => setNewTask(true)}>Nova tarefa</Button>
           : <Button size="sm" icon="Plus" onClick={() => setNewMaint(true)}>Agendar manutenção</Button>)}
       </PageHeader>
-      {view === 'tasks' ? <Kanban canEdit={canCreate} /> : <Maintenance />}
+      <TabPanel k={view}>{view === 'tasks' ? <Kanban canEdit={canCreate} onCreate={() => setNewTask(true)} /> : <Maintenance />}</TabPanel>
       {newTask && <NewTaskModal onClose={() => setNewTask(false)} />}
       {newMaint && <NewMaintenanceModal onClose={() => setNewMaint(false)} />}
     </Page>
@@ -47,7 +47,7 @@ function useFieldStaff() {
   return useQuery({ queryKey: ['staff', 'campo'], queryFn: () => unwrap(api.GET('/staff', { params: { query: { group: 'campo', active: true, limit: 100 } } })) });
 }
 
-function Kanban({ canEdit }: { canEdit: boolean }) {
+function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void }) {
   const q = useQuery({ queryKey: ['field-tasks'], queryFn: () => unwrap(api.GET('/field-tasks', { params: { query: { limit: 100 } } })), refetchInterval: 20_000 });
   const [assign, setAssign] = useState<Task | null>(null);
   const items = q.data?.items ?? [];

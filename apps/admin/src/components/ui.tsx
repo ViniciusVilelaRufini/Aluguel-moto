@@ -30,7 +30,7 @@ export function SidePanel({ children, width = 360, onClose, title, testId }: { c
   return (
     <aside
       data-testid={testId}
-      className="side-panel"
+      className="side-panel panel-in"
       style={{ width, flexShrink: 0, background: 'var(--surface-card)', borderLeft: '1px solid var(--border-subtle)', overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
     >
       {(title || onClose) && (
@@ -42,6 +42,11 @@ export function SidePanel({ children, width = 360, onClose, title, testId }: { c
       {children}
     </aside>
   );
+}
+
+/** Conteúdo de aba com a mesma entrada da troca de seção; `k` muda a cada aba para reanimar. */
+export function TabPanel({ k, children, style }: { k: string; children: ReactNode; style?: CSSProperties }) {
+  return <div key={k} className="section-in" style={{ display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0, ...style }}>{children}</div>;
 }
 
 export function KV({ k, v, mono }: { k: string; v: ReactNode; mono?: boolean }) {
