@@ -671,6 +671,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/swap-stations/{id}/qr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * QR da estação (admin)
+         * @description Conteúdo do QR fixo da estação (`stationCode`) para imprimir o adesivo. Estação ainda sem código → emitido agora
+         *     com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação
+         *     `stations:qr --reissue` (ver `services/api/README.md`). O código nunca sai em `SwapStation`.
+         */
+        get: operations["getSwapStationQr"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/swap-stations/{id}/swaps/{swapId}": {
         parameters: {
             query?: never;
@@ -1237,7 +1261,8 @@ export interface paths {
          * Trocar de moto
          * @description Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para
          *     `maintenance`, e destrava a nova (precisa estar `free` e a até 200 m). O aluguel continua o mesmo,
-         *     com evento `vehicle_swapped`.
+         *     com evento `vehicle_swapped`. Com troca de bateria na estação em andamento (`currentStationSwap`) → `409`
+         *     `swap-open`.
          */
         post: operations["swapRentalVehicle"];
         delete?: never;
@@ -1275,7 +1300,9 @@ export interface paths {
         /**
          * Encerrar aluguel
          * @description Só dentro de uma zona `return` (`422` `rental-outside-return-zone`) e com a foto enviada
-         *     (`422` `return-photo-missing`). Pede o travamento ao rastreador:
+         *     (`422` `return-photo-missing`). Com troca de bateria na estação em andamento (`currentStationSwap` em
+         *     `GET /rentals/current`) → `409` `swap-open` (termine ou cancele a troca antes; o encerramento forçado pelo
+         *     staff continua permitido). Pede o travamento ao rastreador:
          *     - travada confirmada → `200`, status `ended`, valor final calculado (plano + seguro − cupom) e
          *       liquidado uma única vez;
          *     - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por
@@ -3814,6 +3841,8 @@ export interface components {
         };
         CurrentRental: {
             rental?: components["schemas"]["Rental"];
+            /** @description Troca de bateria na estação em andamento neste aluguel (ausente quando não há), para o app retomar a tela da troca. */
+            currentStationSwap?: components["schemas"]["StationSwap"];
         };
         RentalEvent: {
             /** Format: uuid */
@@ -5236,10 +5265,13 @@ export interface components {
         /**
          * @description Por que a troca terminou sem `completed`: cancelada pelo cliente; vaga fechada sem bateria; estação não abriu a vaga
          *     em 3 min (`failed`); cliente não devolveu em 3 min (`canceled`); estação não liberou a carregada em 3 min depois da
-         *     devolução (`failed`, abre alerta para a operação).
+         *     devolução (`failed`, abre alerta para a operação); bateria devolvida depois do cancelamento/prazo sem carregada para
+         *     liberar (`failed`, alerta: a operação leva uma bateria); bateria devolvida ou liberada consta instalada em outra moto
+         *     (`failed`, alerta: conferir a estação). Uma devolução que chega depois de `canceled_by_customer`, `return_timeout`
+         *     ou `station_timeout` vale: a troca volta para `releasing` (sem `endReason`) e a estação libera uma carregada.
          * @enum {string}
          */
-        StationSwapEndReason: "canceled_by_customer" | "slot_closed_without_return" | "station_timeout" | "return_timeout" | "release_timeout";
+        StationSwapEndReason: "canceled_by_customer" | "slot_closed_without_return" | "station_timeout" | "return_timeout" | "release_timeout" | "no_battery_after_return" | "serial_mismatch";
         StationSwapRequest: {
             /** @description Conteúdo do QR fixo da estação. */
             stationCode: string;
@@ -5292,6 +5324,15 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt?: string;
+        };
+        SwapStationQr: {
+            /** Format: uuid */
+            stationId: string;
+            /**
+             * @description Conteúdo do QR (`vst1.<stationId>.<assinatura>`), sem dado pessoal.
+             * @example vst1.d0000000-0000-4000-8000-000000000001.lMyoiWvb5xuRTHIzBFoxEQ
+             */
+            stationCode: string;
         };
         StationSwapPage: {
             items: components["schemas"]["StationSwap"][];
@@ -6985,6 +7026,32 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["Unprocessable"];
             429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getSwapStationQr: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description QR da estação. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapStationQr"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getStationSwap: {

@@ -258,6 +258,7 @@ doc/SupportMessageStatus.md
 doc/SupportReadRequest.md
 doc/SwapStation.md
 doc/SwapStationList.md
+doc/SwapStationQr.md
 doc/SwapVehicleRequest.md
 doc/TaskPriority.md
 doc/TopUp.md
@@ -573,6 +574,7 @@ lib/src/model/support_message_status.dart
 lib/src/model/support_read_request.dart
 lib/src/model/swap_station.dart
 lib/src/model/swap_station_list.dart
+lib/src/model/swap_station_qr.dart
 lib/src/model/swap_vehicle_request.dart
 lib/src/model/task_priority.dart
 lib/src/model/top_up.dart

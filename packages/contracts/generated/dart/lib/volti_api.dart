@@ -273,6 +273,7 @@ export 'package:volti_api/src/model/support_message_status.dart';
 export 'package:volti_api/src/model/support_read_request.dart';
 export 'package:volti_api/src/model/swap_station.dart';
 export 'package:volti_api/src/model/swap_station_list.dart';
+export 'package:volti_api/src/model/swap_station_qr.dart';
 export 'package:volti_api/src/model/swap_vehicle_request.dart';
 export 'package:volti_api/src/model/task_priority.dart';
 export 'package:volti_api/src/model/top_up.dart';

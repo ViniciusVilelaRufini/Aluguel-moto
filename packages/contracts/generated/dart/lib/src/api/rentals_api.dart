@@ -143,7 +143,7 @@ class RentalsApi {
   }
 
   /// Encerrar aluguel
-  /// Só dentro de uma zona &#x60;return&#x60; (&#x60;422&#x60; &#x60;rental-outside-return-zone&#x60;) e com a foto enviada (&#x60;422&#x60; &#x60;return-photo-missing&#x60;). Pede o travamento ao rastreador: - travada confirmada → &#x60;200&#x60;, status &#x60;ended&#x60;, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → &#x60;202&#x60;, status &#x60;ending&#x60;; o servidor tenta de novo e o cliente acompanha por   &#x60;rental.updated&#x60; ou &#x60;GET /rentals/{id}&#x60;.  Liquidação idempotente por &#x60;rentalId&#x60;: no máximo uma liquidação por aluguel, não importa quantas vezes a chamada seja repetida (com ou sem &#x60;Idempotency-Key&#x60;). A &#x60;Idempotency-Key&#x60; opcional faz a repetição devolver a mesma resposta.
+  /// Só dentro de uma zona &#x60;return&#x60; (&#x60;422&#x60; &#x60;rental-outside-return-zone&#x60;) e com a foto enviada (&#x60;422&#x60; &#x60;return-photo-missing&#x60;). Com troca de bateria na estação em andamento (&#x60;currentStationSwap&#x60; em &#x60;GET /rentals/current&#x60;) → &#x60;409&#x60; &#x60;swap-open&#x60; (termine ou cancele a troca antes; o encerramento forçado pelo staff continua permitido). Pede o travamento ao rastreador: - travada confirmada → &#x60;200&#x60;, status &#x60;ended&#x60;, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → &#x60;202&#x60;, status &#x60;ending&#x60;; o servidor tenta de novo e o cliente acompanha por   &#x60;rental.updated&#x60; ou &#x60;GET /rentals/{id}&#x60;.  Liquidação idempotente por &#x60;rentalId&#x60;: no máximo uma liquidação por aluguel, não importa quantas vezes a chamada seja repetida (com ou sem &#x60;Idempotency-Key&#x60;). A &#x60;Idempotency-Key&#x60; opcional faz a repetição devolver a mesma resposta.
   ///
   /// Parameters:
   /// * [id]
@@ -1492,7 +1492,7 @@ class RentalsApi {
   }
 
   /// Trocar de moto
-  /// Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para &#x60;maintenance&#x60;, e destrava a nova (precisa estar &#x60;free&#x60; e a até 200 m). O aluguel continua o mesmo, com evento &#x60;vehicle_swapped&#x60;.
+  /// Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para &#x60;maintenance&#x60;, e destrava a nova (precisa estar &#x60;free&#x60; e a até 200 m). O aluguel continua o mesmo, com evento &#x60;vehicle_swapped&#x60;. Com troca de bateria na estação em andamento (&#x60;currentStationSwap&#x60;) → &#x60;409&#x60; &#x60;swap-open&#x60;.
   ///
   /// Parameters:
   /// * [id]

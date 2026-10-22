@@ -118,12 +118,15 @@ Armário com vagas que recebe a bateria descarregada e libera uma carregada (spe
 
 | Tópico | Sentido | QoS | Payload (schema) | Quando |
 |---|---|---|---|---|
-| `estacoes/{thing}/comandos` | nuvem → estação | 1 | [`estacao-comandos.schema.json`](schemas/estacao-comandos.schema.json) | `open_slot` ao criar a troca (`POST /swap-stations/{id}/swaps`); `release_battery` depois de `battery_returned` **e** `slot_closed` |
+| `estacoes/{thing}/comandos` | nuvem → estação | 1 | [`estacao-comandos.schema.json`](schemas/estacao-comandos.schema.json) | `open_slot` ao criar a troca (`POST /swap-stations/{id}/swaps`); `release_battery` depois de `battery_returned` **e** `slot_closed` (ou logo depois de uma devolução atrasada); `abort_swap {swapId, slotNumber?}` no cancelamento pelo cliente e em todo prazo vencido |
 | `estacoes/{thing}/eventos` | estação → nuvem | 1 | [`estacao-eventos.schema.json`](schemas/estacao-eventos.schema.json) | `slot_opened {slotNumber}`, `battery_returned {serial, pct}`, `slot_closed`, `battery_released {serial}` |
 
 Regras:
 - A API **nunca** manda `release_battery` sem a devolução registrada; `battery_released` de uma troca que não está liberando é ignorado (exceto atraso depois do prazo de liberação, que completa a troca: o cliente recebeu a bateria).
-- Cada etapa tem prazo de 3 min (a API cancela/falha a troca); eventos repetidos ou fora de ordem são ignorados.
+- Cada etapa tem prazo de 3 min (a API cancela/falha a troca e manda `abort_swap`: a estação fecha a vaga, se aberta, e confirma com `slot_closed`, sem liberar bateria); eventos repetidos ou fora de ordem são ignorados.
+- Devolução que chega depois do cancelamento pelo cliente ou de um prazo antes da devolução vale: a API registra a bateria, volta a troca para `releasing` e manda `release_battery`; sem carregada livre → troca `failed/no_battery_after_return` e alerta para a operação.
+- Bateria devolvida ou liberada que consta instalada em **outra** moto nunca é desvinculada: troca `failed/serial_mismatch` e alerta (só ids). Série diferente da registrada na moto, ou liberada fora do estoque da estação → alerta, a troca segue.
+- No modo aws a fila `estacoes` tem de ser **FIFO** (`.fifo`, `MessageGroupId` = `thing`): a API recusa subir com outra fila e, quando o processamento de um evento falha, não processa o resto do mesmo grupo naquele lote (volta na ordem depois do visibility timeout).
 - Estoque: `battery_returned` põe a bateria devolvida como `charging` na estação (série e carga lidas); `battery_released` tira uma do `availableBatteries`, instala a liberada na moto (+1 ciclo) e atualiza `Vehicle.batterySerial`.
 - Nada nesses tópicos identifica o cliente (só o `swapId`).
 

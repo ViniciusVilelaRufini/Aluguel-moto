@@ -12,6 +12,7 @@ Method | HTTP request | Description
 [**cancelStationSwap**](StationsApi.md#cancelstationswap) | **POST** /swap-stations/{id}/swaps/{swapId}/cancel | Cancelar troca na estação
 [**createStationSwap**](StationsApi.md#createstationswap) | **POST** /swap-stations/{id}/swaps | Iniciar troca de bateria na estação (QR)
 [**getStationSwap**](StationsApi.md#getstationswap) | **GET** /swap-stations/{id}/swaps/{swapId} | Consultar troca na estação
+[**getSwapStationQr**](StationsApi.md#getswapstationqr) | **GET** /swap-stations/{id}/qr | QR da estação (admin)
 [**listStationSwaps**](StationsApi.md#liststationswaps) | **GET** /swap-stations/{id}/swaps | Trocas da estação (painel)
 [**listSwapStations**](StationsApi.md#listswapstations) | **GET** /swap-stations | Estações de troca de bateria (mapa)
 
@@ -145,6 +146,49 @@ Name | Type | Description  | Notes
 ### Authorization
 
 [staffAuth](../README.md#staffAuth), [customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **getSwapStationQr**
+> SwapStationQr getSwapStationQr(id)
+
+QR da estação (admin)
+
+Conteúdo do QR fixo da estação (`stationCode`) para imprimir o adesivo. Estação ainda sem código → emitido agora com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação `stations:qr --reissue` (ver `services/api/README.md`). O código nunca sai em `SwapStation`. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getStationsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+
+try {
+    final response = api.getSwapStationQr(id);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling StationsApi->getSwapStationQr: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+
+### Return type
+
+[**SwapStationQr**](SwapStationQr.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
 
 ### HTTP request headers
 

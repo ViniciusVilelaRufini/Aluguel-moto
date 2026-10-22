@@ -15,6 +15,7 @@ import 'package:volti_api/src/model/station_swap_page.dart';
 import 'package:volti_api/src/model/station_swap_request.dart';
 import 'package:volti_api/src/model/station_swap_status.dart';
 import 'package:volti_api/src/model/swap_station_list.dart';
+import 'package:volti_api/src/model/swap_station_qr.dart';
 
 class StationsApi {
   final Dio _dio;
@@ -311,6 +312,91 @@ class StationsApi {
     }
 
     return Response<StationSwap>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// QR da estação (admin)
+  /// Conteúdo do QR fixo da estação (&#x60;stationCode&#x60;) para imprimir o adesivo. Estação ainda sem código → emitido agora com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação &#x60;stations:qr --reissue&#x60; (ver &#x60;services/api/README.md&#x60;). O código nunca sai em &#x60;SwapStation&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [SwapStationQr] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<SwapStationQr>> getSwapStationQr({
+    required String id,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/swap-stations/{id}/qr'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'GET',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    SwapStationQr? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(SwapStationQr),
+            ) as SwapStationQr;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<SwapStationQr>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

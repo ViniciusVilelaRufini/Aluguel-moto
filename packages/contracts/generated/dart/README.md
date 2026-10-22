@@ -273,6 +273,7 @@ Class | Method | HTTP request | Description
 [*StationsApi*](doc/StationsApi.md) | [**cancelStationSwap**](doc/StationsApi.md#cancelstationswap) | **POST** /swap-stations/{id}/swaps/{swapId}/cancel | Cancelar troca na estação
 [*StationsApi*](doc/StationsApi.md) | [**createStationSwap**](doc/StationsApi.md#createstationswap) | **POST** /swap-stations/{id}/swaps | Iniciar troca de bateria na estação (QR)
 [*StationsApi*](doc/StationsApi.md) | [**getStationSwap**](doc/StationsApi.md#getstationswap) | **GET** /swap-stations/{id}/swaps/{swapId} | Consultar troca na estação
+[*StationsApi*](doc/StationsApi.md) | [**getSwapStationQr**](doc/StationsApi.md#getswapstationqr) | **GET** /swap-stations/{id}/qr | QR da estação (admin)
 [*StationsApi*](doc/StationsApi.md) | [**listStationSwaps**](doc/StationsApi.md#liststationswaps) | **GET** /swap-stations/{id}/swaps | Trocas da estação (painel)
 [*StationsApi*](doc/StationsApi.md) | [**listSwapStations**](doc/StationsApi.md#listswapstations) | **GET** /swap-stations | Estações de troca de bateria (mapa)
 [*SupportApi*](doc/SupportApi.md) | [**createClaim**](doc/SupportApi.md#createclaim) | **POST** /support/claims | Abrir sinistro
@@ -553,6 +554,7 @@ Class | Method | HTTP request | Description
  - [SupportReadRequest](doc/SupportReadRequest.md)
  - [SwapStation](doc/SwapStation.md)
  - [SwapStationList](doc/SwapStationList.md)
+ - [SwapStationQr](doc/SwapStationQr.md)
  - [SwapVehicleRequest](doc/SwapVehicleRequest.md)
  - [TaskPriority](doc/TaskPriority.md)
  - [TopUp](doc/TopUp.md)
