@@ -301,5 +301,6 @@
         "type": "String"
       }
     }
-  }
+  },
+  "rejectedHint": "Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa."
 }

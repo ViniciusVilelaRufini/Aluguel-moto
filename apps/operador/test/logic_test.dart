@@ -123,17 +123,56 @@ void main() {
   });
 
   group('modo servico persistido', () {
-    test('le o estado salvo e grava/limpa no armazenamento', () async {
-      final store = MemoryServiceUnlockStore(['task-9']);
-      final c = ProviderContainer(
-          overrides: [serviceUnlockStoreProvider.overrideWithValue(store)]);
+    final now = DateTime.utc(2026, 10, 22, 12);
+    ProviderContainer container(ServiceUnlockStore store, {DateTime Function()? clock}) {
+      final c = ProviderContainer(overrides: [
+        serviceUnlockStoreProvider.overrideWithValue(store),
+        clockProvider.overrideWithValue(clock ?? () => now),
+      ]);
       addTearDown(c.dispose);
-      expect(c.read(serviceUnlockProvider), {'task-9'});
+      return c;
+    }
+
+    test('le o estado salvo e grava/limpa no armazenamento', () async {
+      final store = MemoryServiceUnlockStore.at({'task-9': now});
+      final c = container(store);
+      expect(c.read(serviceUnlockProvider).keys, {'task-9'});
       await c.read(serviceUnlockProvider.notifier).markUnlocked('task-1');
-      expect(store.all(), {'task-9', 'task-1'});
+      expect(store.entries().keys.toSet(), {'task-9', 'task-1'});
       await c.read(serviceUnlockProvider.notifier).clear('task-9');
-      expect(c.read(serviceUnlockProvider), {'task-1'});
-      expect(store.all(), {'task-1'});
+      expect(c.read(serviceUnlockProvider).keys, {'task-1'});
+      expect(store.entries().keys, ['task-1']);
+    });
+
+    test('entrada vencida (mais de 2 h) e ignorada e apagada', () async {
+      final store = MemoryServiceUnlockStore.at({
+        'velha': now.subtract(const Duration(hours: 3)),
+        'nova': now.subtract(const Duration(minutes: 30)),
+      });
+      final c = container(store);
+      expect(c.read(serviceUnlockProvider).keys, {'nova'});
+      expect(c.read(serviceUnlockProvider.notifier).isUnlocked('velha'), isFalse);
+      await Future<void>.delayed(Duration.zero);
+      expect(store.entries().keys, ['nova']);
+    });
+
+    test('vence durante o uso do app', () {
+      var clock = now;
+      final c = container(MemoryServiceUnlockStore.at({'t': now}), clock: () => clock);
+      expect(c.read(serviceUnlockProvider.notifier).isUnlocked('t'), isTrue);
+      clock = now.add(const Duration(hours: 2, minutes: 1));
+      expect(c.read(serviceUnlockProvider.notifier).isUnlocked('t'), isFalse);
+    });
+
+    test('validade configuravel', () {
+      final c = ProviderContainer(overrides: [
+        serviceUnlockStoreProvider.overrideWithValue(
+            MemoryServiceUnlockStore.at({'t': now.subtract(const Duration(minutes: 20))})),
+        clockProvider.overrideWithValue(() => now),
+        serviceUnlockTtlProvider.overrideWithValue(const Duration(minutes: 15)),
+      ]);
+      addTearDown(c.dispose);
+      expect(c.read(serviceUnlockProvider), isEmpty);
     });
   });
 

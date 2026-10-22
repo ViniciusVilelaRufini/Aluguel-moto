@@ -149,9 +149,9 @@ void main() {
 
       Hive.init(dir.path);
       final reopened = await HiveServiceUnlockStore.open();
-      expect(reopened.all(), {'task-7'});
+      expect(reopened.entries(), {'task-7': DateTime.utc(2026, 10, 21, 9)});
       await reopened.remove('task-7');
-      expect(reopened.all(), isEmpty);
+      expect(reopened.entries(), isEmpty);
       await Hive.close();
     });
   });

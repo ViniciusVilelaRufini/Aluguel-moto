@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -16,15 +17,18 @@ class CognitoConfig {
     required this.domain,
     required this.clientId,
     required this.redirectUri,
+    this.logoutRedirectUri,
     this.scopes = defaultScopes,
   });
 
   factory CognitoConfig.fromEnvironment() {
     const scopes = String.fromEnvironment('COGNITO_SCOPES');
+    const logout = String.fromEnvironment('COGNITO_LOGOUT_URI');
     return CognitoConfig(
       domain: const String.fromEnvironment('COGNITO_DOMAIN'),
       clientId: const String.fromEnvironment('COGNITO_CLIENT_ID'),
       redirectUri: const String.fromEnvironment('COGNITO_REDIRECT_URI'),
+      logoutRedirectUri: logout.trim().isEmpty ? null : logout.trim(),
       scopes: scopes.trim().isEmpty ? defaultScopes : scopes.trim().split(RegExp(r'\s+')),
     );
   }
@@ -37,7 +41,12 @@ class CognitoConfig {
 
   /// URI de retorno cadastrada no app client (ex.: `br.com.volti.operador://callback`).
   final String redirectUri;
+
+  /// "Sign out URL" do app client (`COGNITO_LOGOUT_URI`; padrao = [redirectUri]).
+  final String? logoutRedirectUri;
   final List<String> scopes;
+
+  String get effectiveLogoutUri => logoutRedirectUri ?? redirectUri.trim();
 
   /// Host normalizado (sem esquema, barra final ou espacos).
   String get host {
@@ -64,6 +73,16 @@ class CognitoConfig {
   Uri get authorizationEndpoint => Uri.https(host, '/oauth2/authorize');
   Uri get tokenEndpoint => Uri.https(host, '/oauth2/token');
   Uri get revokeEndpoint => Uri.https(host, '/oauth2/revoke');
+
+  /// Endpoint de logout do Hosted UI (encerra o cookie de sessao do navegador).
+  Uri get logoutEndpoint => Uri.https(host, '/logout');
+
+  /// Parametros que o Cognito exige no `/logout` (nao usa os do OIDC).
+  Map<String, String> get logoutParameters =>
+      {'client_id': clientId, 'logout_uri': effectiveLogoutUri};
+
+  /// URL completa do logout do Hosted UI.
+  Uri get logoutUri => logoutEndpoint.replace(queryParameters: logoutParameters);
 }
 
 /// Le as claims de um JWT (sem validar assinatura: a API valida o token).
@@ -145,6 +164,11 @@ class CognitoNotConfigured implements Exception {
   String toString() => 'CognitoNotConfigured(${missing.join(', ')})';
 }
 
+/// O Cognito recusou o refresh token (`invalid_grant`): expirado ou revogado.
+class CognitoRefreshRejected implements Exception {
+  const CognitoRefreshRejected();
+}
+
 /// O operador fechou o Hosted UI sem entrar.
 class CognitoSignInCancelled implements Exception {
   const CognitoSignInCancelled();
@@ -155,6 +179,9 @@ abstract class CognitoOAuthClient {
   Future<CognitoTokens> authorize(CognitoConfig config);
   Future<CognitoTokens> refresh(CognitoConfig config, String refreshToken);
   Future<void> revoke(CognitoConfig config, String refreshToken);
+
+  /// Logout do Hosted UI (`/logout?client_id=&logout_uri=`).
+  Future<void> endSession(CognitoConfig config, {String? idToken});
 }
 
 /// Implementacao com `flutter_appauth`: abre o Hosted UI no navegador do sistema
@@ -163,7 +190,12 @@ abstract class CognitoOAuthClient {
 class AppAuthCognitoClient implements CognitoOAuthClient {
   AppAuthCognitoClient({FlutterAppAuth? appAuth, Dio? dio})
       : _appAuth = appAuth ?? const FlutterAppAuth(),
-        _dio = dio ?? Dio();
+        _dio = dio ??
+            Dio(BaseOptions(
+              connectTimeout: const Duration(seconds: 5),
+              sendTimeout: const Duration(seconds: 5),
+              receiveTimeout: const Duration(seconds: 5),
+            ));
 
   final FlutterAppAuth _appAuth;
   final Dio _dio;
@@ -192,13 +224,20 @@ class AppAuthCognitoClient implements CognitoOAuthClient {
 
   @override
   Future<CognitoTokens> refresh(CognitoConfig config, String refreshToken) async {
-    final r = await _appAuth.token(TokenRequest(
-      config.clientId,
-      config.redirectUri,
-      serviceConfiguration: _service(config),
-      refreshToken: refreshToken,
-      scopes: config.scopes,
-    ));
+    final TokenResponse r;
+    try {
+      r = await _appAuth.token(TokenRequest(
+        config.clientId,
+        config.redirectUri,
+        serviceConfiguration: _service(config),
+        refreshToken: refreshToken,
+        scopes: config.scopes,
+      ));
+    } on FlutterAppAuthPlatformException catch (e) {
+      // Erro OAuth do servidor (invalid_grant...) = token recusado; sem erro OAuth = rede.
+      if (e.platformErrorDetails.error != null) throw const CognitoRefreshRejected();
+      rethrow;
+    }
     return _tokens(r.accessToken, r.idToken, r.refreshToken ?? refreshToken,
         r.accessTokenExpirationDateTime);
   }
@@ -210,6 +249,20 @@ class AppAuthCognitoClient implements CognitoOAuthClient {
       data: {'token': refreshToken, 'client_id': config.clientId},
       options: Options(contentType: Headers.formUrlEncodedContentType),
     );
+  }
+
+  @override
+  Future<void> endSession(CognitoConfig config, {String? idToken}) async {
+    await _appAuth.endSession(EndSessionRequest(
+      idTokenHint: idToken,
+      postLogoutRedirectUrl: config.effectiveLogoutUri,
+      additionalParameters: config.logoutParameters,
+      serviceConfiguration: AuthorizationServiceConfiguration(
+        authorizationEndpoint: config.authorizationEndpoint.toString(),
+        tokenEndpoint: config.tokenEndpoint.toString(),
+        endSessionEndpoint: config.logoutEndpoint.toString(),
+      ),
+    ));
   }
 
   CognitoTokens _tokens(String? access, String? id, String? refresh, DateTime? exp) {
@@ -260,9 +313,13 @@ class OperatorCognitoAuthRepository implements AuthRepository {
     required CognitoOAuthClient client,
     required RefreshTokenStore store,
     DateTime Function()? clock,
+    this.restoreRetryDelay = const Duration(seconds: 2),
   })  : _client = client,
         _store = store,
         _clock = clock ?? DateTime.now;
+
+  /// Espera antes da segunda tentativa de restaurar (falha de rede na abertura).
+  final Duration restoreRetryDelay;
 
   final CognitoConfig config;
   final CognitoOAuthClient _client;
@@ -271,6 +328,7 @@ class OperatorCognitoAuthRepository implements AuthRepository {
 
   OperatorSession? _session;
   String? _refreshToken;
+  String? _idToken;
   Future<String?>? _refreshing;
 
   /// Renova o access token quando faltar menos que isso para expirar.
@@ -294,12 +352,20 @@ class OperatorCognitoAuthRepository implements AuthRepository {
     if (!config.isComplete) return null;
     final saved = await _store.read();
     if (saved == null || saved.isEmpty) return null;
-    try {
-      return await _accept(await _client.refresh(config, saved), fallbackRefresh: saved);
-    } catch (_) {
-      // Sem rede, refresh expirado/revogado ou fora do grupo: fica deslogado.
-      return null;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await _accept(await _client.refresh(config, saved), fallbackRefresh: saved);
+      } on CognitoRefreshRejected {
+        await _store.clear(); // expirado/revogado: pede login
+        return null;
+      } on CampoGroupRequired {
+        return null;
+      } catch (_) {
+        // Falha de rede: tenta mais uma vez antes de mostrar o login.
+        if (attempt == 0) await Future<void>.delayed(restoreRetryDelay);
+      }
     }
+    return null;
   }
 
   Future<OperatorSession> _accept(CognitoTokens t, {String? fallbackRefresh}) async {
@@ -311,6 +377,7 @@ class OperatorCognitoAuthRepository implements AuthRepository {
       throw const CampoGroupRequired();
     }
     _session = s;
+    _idToken = t.idToken ?? _idToken;
     _refreshToken = t.refreshToken ?? fallbackRefresh ?? _refreshToken;
     if (_refreshToken != null) await _store.write(_refreshToken!);
     return s;
@@ -339,15 +406,20 @@ class OperatorCognitoAuthRepository implements AuthRepository {
   @override
   Future<void> signOut() async {
     final rt = _refreshToken;
+    final id = _idToken;
+    final hadSession = _session != null;
     _session = null;
     _refreshToken = null;
+    _idToken = null;
     await _store.clear();
+    // Revogacao e logout do Hosted UI em segundo plano: a UI nao espera a rede.
     if (rt != null) {
-      try {
-        await _client.revoke(config, rt);
-      } catch (_) {
+      unawaited(_client.revoke(config, rt).catchError((Object _) {
         // Sem rede: o token local ja foi apagado; ele expira sozinho.
-      }
+      }));
+    }
+    if (hadSession && config.isComplete) {
+      unawaited(_client.endSession(config, idToken: id).catchError((Object _) {}));
     }
   }
 }

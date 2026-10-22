@@ -532,4 +532,8 @@ class AppLocalizationsPt extends AppLocalizations {
   String vehicleStatusLabel(String status) {
     return 'Status da moto: $status';
   }
+
+  @override
+  String get rejectedHint =>
+      'Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.';
 }

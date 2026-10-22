@@ -1029,6 +1029,12 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Status da moto: {status}'**
   String vehicleStatusLabel(String status);
+
+  /// No description provided for @rejectedHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.'**
+  String get rejectedHint;
 }
 
 class _AppLocalizationsDelegate

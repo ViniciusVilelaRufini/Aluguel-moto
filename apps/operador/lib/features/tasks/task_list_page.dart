@@ -47,7 +47,7 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
     final tasks = ref.watch(tasksProvider);
     final sync = ref.watch(syncControllerProvider);
     final name = ref.watch(operatorNameProvider);
-    final user = ref.watch(locationProvider).position;
+    final user = watchLocationWhenVisible(ref, context)?.position;
     final all = tasks.value?.tasks ?? const <FieldTask>[];
     // Concluidas = do dia (a API devolve todo o historico; filtro por data e proposta).
     final now = DateTime.now();

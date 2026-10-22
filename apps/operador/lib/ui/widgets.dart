@@ -302,8 +302,8 @@ class _LocationRationaleState extends ConsumerState<LocationRationale> {
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
-    final loc = ref.watch(locationProvider);
-    if (_dismissed || !loc.checked || loc.access == LocationAccess.granted) {
+    final loc = watchLocationWhenVisible(ref, context);
+    if (loc == null || _dismissed || !loc.checked || loc.access == LocationAccess.granted) {
       return const SizedBox.shrink();
     }
     final (body, action) = switch (loc.access) {

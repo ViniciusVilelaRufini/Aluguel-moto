@@ -161,5 +161,13 @@ class LocationController extends Notifier<LocationState> {
   }
 }
 
+/// Some sozinho (e o GPS para) quando nenhuma tela visivel precisa de
+/// distancia ou mapa: ver [watchLocationWhenVisible].
 final locationProvider =
-    NotifierProvider<LocationController, LocationState>(LocationController.new);
+    NotifierProvider.autoDispose<LocationController, LocationState>(LocationController.new);
+
+/// Observa a localizacao so enquanto a tela esta visivel. Rotas cobertas por
+/// outra tela ficam com `TickerMode` desligado e soltam o provider; sem
+/// ninguem observando, o stream do GPS e cancelado.
+LocationState? watchLocationWhenVisible(WidgetRef ref, BuildContext context) =>
+    TickerMode.valuesOf(context).enabled ? ref.watch(locationProvider) : null;

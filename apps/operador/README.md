@@ -20,7 +20,7 @@ Login dev: `campo@volti.dev` (seed da API; `POST /dev/token`, pool `staff`, grup
 flutter run   --dart-define=API_BASE_URL=https://api.volti.com.br   --dart-define=AUTH_MODE=cognito   --dart-define=COGNITO_DOMAIN=volti-staff.auth.sa-east-1.amazoncognito.com   --dart-define=COGNITO_CLIENT_ID=<app client id, sem secret>   --dart-define=COGNITO_REDIRECT_URI=br.com.volti.operador://callback
 ```
 
-Opcional: `--dart-define=COGNITO_SCOPES="openid email profile"` (padrão).
+Opcionais: `--dart-define=COGNITO_SCOPES="openid email profile"` (padrão) e `--dart-define=COGNITO_LOGOUT_URI=...` ("Sign out URL" do app client; padrão = `COGNITO_REDIRECT_URI`).
 
 Configuração do app client no pool interno:
 
@@ -34,7 +34,8 @@ Comportamento:
 - O login sempre pede credenciais (`prompt=login`), porque o aparelho pode ser compartilhado.
 - Só o refresh token é guardado (Keystore/Keychain via `flutter_secure_storage`); ao abrir o app a sessão é restaurada com ele. O access token é renovado sozinho 60 s antes de expirar (uma renovação por vez).
 - Nome da saudação: `given_name` (ou `name`) do id token; sem ele, a parte local do e-mail.
-- Sair apaga o refresh token local e o revoga em `/oauth2/revoke`.
+- Na abertura, uma falha de rede ao restaurar é tentada de novo uma vez antes de mostrar o login; refresh recusado (`invalid_grant`) apaga o token salvo.
+- Sair apaga o refresh token local na hora; a revogação em `/oauth2/revoke` (timeout de 5 s) e o logout do Hosted UI (`/logout?client_id=&logout_uri=`, encerra o cookie do navegador) rodam em segundo plano, sem segurar a tela.
 - Faltando um `--dart-define`, a tela de login diz quais.
 - Não testado contra um pool real neste repositório: os testes cobrem a configuração/URLs, a leitura dos tokens, o grupo `campo`, a renovação, a restauração e o logout (`test/cognito_auth_test.dart`).
 
@@ -43,9 +44,10 @@ Comportamento:
 - Limitador de velocidade (decisão #13): o campo é uma leitura de 0 a 100 km/h. Acima de 32 o item não pode ser "ok": a tela mostra "Moto fora do limite legal — vai para manutenção" e o envio faz a API abrir manutenção e alerta (ids exibidos na confirmação).
 - Troca de bateria: séries da retirada e da instalada (QR/código de barras com `mobile_scanner`, ou digitadas), obrigatoriamente diferentes.
 - Offline: checklist, troca e conclusão entram numa fila Hive (`lib/data/offline_queue.dart`), em ordem, com `Idempotency-Key` fixa por item (reenvio nunca duplica). Rotulados "Aguardando sincronização"; sincronizam ao voltar a rede e em "Pendências de envio". Fotos sobem por URL pré-assinada na sincronização. Item recusado pela API (4xx) fica como "Recusado" e pode ser descartado ou reenviado.
-- Destravar em modo serviço e mudar status exigem rede (a auditoria é do servidor). O modo serviço destravado fica salvo por tarefa (Hive, `operator_service_unlock`) e sobrevive a reinícios do app; some quando a tarefa é concluída.
+- Destravar em modo serviço e mudar status exigem rede (a auditoria é do servidor). O modo serviço destravado fica salvo por tarefa (Hive, `operator_service_unlock`, com o instante) e sobrevive a reinícios do app. Vale por 2 h (`serviceUnlockTtlProvider`); some ao concluir a tarefa (quando a API confirma), ao sair da conta, e a cada lista nova da API se a tarefa foi reatribuída, cancelada, concluída ou a moto está num status incompatível.
+- Conclusão: recusada pela API (checklist ou conclusão), a tarefa continua aberta e destravada e o motivo aparece no detalhe (reenvio em "Pendências de envio"); sem rede, fica "Aguardando sincronização" (não concluída) até a fila enviar.
 - Concluir tarefa (regra do design): só com a moto destravada em modo serviço, o checklist completo (5/5) e a foto da moto após o serviço; nas tarefas de bateria, também a troca registrada. Enquanto faltar algo, o botão fica desabilitado e o motivo aparece acima dele. Se o checklist estiver completo mas ainda não enviado, "Concluir" envia o checklist antes da conclusão (mesma fila offline).
-- Localização (geolocator): só com o app em uso (permissão "durante o uso", sem segundo plano; o GPS para quando o app sai da tela). Antes de pedir a permissão o app explica para que serve. Com GPS, a lista mostra a distância até cada moto ("350 m", "1,2 km") e os mapas mostram o seu ponto.
+- Localização (geolocator): só com o app em uso (permissão "durante o uso", sem segundo plano; o GPS para quando o app sai da tela e quando nenhuma tela visível usa distância ou mapa). Antes de pedir a permissão o app explica para que serve. Com GPS, a lista mostra a distância até cada moto ("350 m", "1,2 km") e os mapas mostram o seu ponto.
 
 ## Testes
 

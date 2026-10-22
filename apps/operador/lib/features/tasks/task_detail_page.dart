@@ -109,26 +109,39 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     );
     if (draft == null || !mounted) return;
     setState(() => _busy = true);
+    void rejected(String? reason) {
+      setState(() => _busy = false);
+      VoltiToast.show(context, t.jobFailed(reason ?? t.errorGeneric), tone: VoltiToastTone.danger);
+    }
+
     final sync = ref.read(syncControllerProvider.notifier);
     // Checklist completo mas ainda nao enviado: entra na fila antes da conclusao.
     if (!inspectionRegistered) {
       final inspection = ref.read(inspectionDraftsProvider.notifier).of(task.id);
       final outcome = await sync.submitInspection(task.id, inspection);
+      if (!mounted) return;
+      // Recusado pela API (4xx): nao conclui; o checklist fica em "Pendencias".
+      if (outcome.job.status == JobStatus.failed) return rejected(outcome.job.error);
       final result = outcome.result;
-      if (mounted && result is Inspection && result.maintenanceTaskId != null) {
+      if (result is Inspection && result.maintenanceTaskId != null) {
         VoltiToast.show(context, t.speedNonCompliant, tone: VoltiToastTone.warning);
       }
     }
     final outcome = await sync.completeTask(task.id, draft);
     if (!mounted) return;
-    ref.read(tasksProvider.notifier).markDone(task.id);
-    await ref.read(serviceUnlockProvider.notifier).clear(task.id);
-    ref.read(inspectionDraftsProvider.notifier).clear(task.id);
+    if (outcome.job.status == JobStatus.failed) return rejected(outcome.job.error);
     final status = draft.vehicleStatus;
     if (status != null) {
       ref.read(knownVehicleStatusProvider.notifier).set(
           task.vehicleId, status == 'free' ? VehicleStatus.free : VehicleStatus.maintenance);
     }
+    if (outcome.synced) {
+      ref.read(tasksProvider.notifier).markDone(task.id);
+      await ref.read(serviceUnlockProvider.notifier).clear(task.id);
+      ref.read(inspectionDraftsProvider.notifier).clear(task.id);
+    }
+    // Na fila: a tarefa segue aberta como "Aguardando sincronizacao" e vira
+    // concluida quando a fila enviar (TasksController ouve o resultado).
     if (!mounted) return;
     setState(() => _busy = false);
     VoltiToast.show(context, outcome.synced ? t.taskCompleted : t.taskCompletePending);
@@ -159,14 +172,18 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
               JobKind.batterySwap => r is BatterySwap && r.fieldTaskId == task.id,
               _ => false,
             });
-    final unlocked = ref.watch(serviceUnlockProvider).contains(task.id);
+    ref.watch(serviceUnlockProvider);
+    final unlocked = ref.read(serviceUnlockProvider.notifier).isUnlocked(task.id);
     final draft = ref.watch(inspectionDraftsProvider)[task.id] ?? const InspectionDraft();
     final knownStatus = ref.watch(knownVehicleStatusProvider)[task.vehicleId];
-    final user = ref.watch(locationProvider).position;
+    final user = watchLocationWhenVisible(ref, context)?.position;
     final isBattery = task.type == FieldTaskType.batterySwap;
     final inspected = registered(JobKind.inspection);
     final swapped = registered(JobKind.batterySwap);
     final done = isDone(task);
+    // Conclusao na fila (aguardando sincronizacao) ou algo recusado pela API.
+    final completionQueued = sync.hasPending(task.id, JobKind.completeTask);
+    final rejectedJobs = sync.failed.where((j) => j.taskId == task.id).toList();
     final started = task.status == FieldTaskStatus.inProgress;
     final blockers = completionBlockers(
       task: task,
@@ -236,6 +253,22 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
         distanceMeters: distanceToTaskMeters(task, user?.lat, user?.lng),
       ),
       const ConnectivityBanner(padding: EdgeInsets.zero),
+      if (!done && completionQueued)
+        Notice(
+          key: const Key('completion-queued'),
+          tone: NoticeTone.info,
+          icon: LucideIcons.cloudOff,
+          title: t.awaitingSync,
+          body: t.taskCompletePending,
+        ),
+      for (final j in rejectedJobs)
+        Notice(
+          key: Key('rejected-${j.kind.name}'),
+          tone: NoticeTone.danger,
+          icon: LucideIcons.circleAlert,
+          title: t.jobFailed(j.error ?? t.errorGeneric),
+          body: t.rejectedHint,
+        ),
       if (done)
         Notice(
           key: const Key('task-done'),
@@ -373,7 +406,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!done && blockers.isNotEmpty)
+                if (!done && !completionQueued && rejectedJobs.isEmpty && blockers.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(bottom: VoltiSpacing.s8),
                     child: Semantics(
@@ -393,7 +426,11 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                   fullWidth: true,
                   size: VoltiButtonSize.lg,
                   loading: _busy && blockers.isEmpty,
-                  onPressed: done || _busy || blockers.isNotEmpty
+                  onPressed: done ||
+                          _busy ||
+                          completionQueued ||
+                          rejectedJobs.isNotEmpty ||
+                          blockers.isNotEmpty
                       ? null
                       : () => _complete(task, inspectionRegistered: inspected),
                 ),

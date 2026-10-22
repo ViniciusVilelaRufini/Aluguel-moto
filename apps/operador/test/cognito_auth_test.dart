@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -19,8 +20,13 @@ class _FakeClient implements CognitoOAuthClient {
   CognitoTokens? authorizeResult;
   CognitoTokens? refreshResult;
   Object? refreshError;
+
+  /// Erros das primeiras chamadas de refresh (depois usa [refreshResult]).
+  final refreshErrors = <Object>[];
   int refreshCalls = 0;
   final revoked = <String>[];
+  final endSessions = <String?>[];
+  Completer<void>? revokeGate;
 
   @override
   Future<CognitoTokens> authorize(CognitoConfig config) async => authorizeResult!;
@@ -28,12 +34,20 @@ class _FakeClient implements CognitoOAuthClient {
   @override
   Future<CognitoTokens> refresh(CognitoConfig config, String refreshToken) async {
     refreshCalls++;
+    if (refreshErrors.isNotEmpty) throw refreshErrors.removeAt(0);
     if (refreshError != null) throw refreshError!;
     return refreshResult!;
   }
 
   @override
-  Future<void> revoke(CognitoConfig config, String refreshToken) async => revoked.add(refreshToken);
+  Future<void> revoke(CognitoConfig config, String refreshToken) async {
+    revoked.add(refreshToken);
+    if (revokeGate != null) await revokeGate!.future;
+  }
+
+  @override
+  Future<void> endSession(CognitoConfig config, {String? idToken}) async =>
+      endSessions.add(idToken);
 }
 
 CognitoTokens _tokens({
@@ -62,6 +76,18 @@ void main() {
       expect(_config.redirectScheme, 'br.com.volti.operador');
       expect(_config.scopes, ['openid', 'email', 'profile']);
       expect(_config.isComplete, isTrue);
+    });
+
+    test('monta o logout do Hosted UI com client_id e logout_uri', () {
+      expect(_config.logoutUri.toString(),
+          'https://volti-staff.auth.sa-east-1.amazoncognito.com/logout'
+          '?client_id=abc123&logout_uri=br.com.volti.operador%3A%2F%2Fcallback');
+      const custom = CognitoConfig(
+          domain: 'd.example.com',
+          clientId: 'c',
+          redirectUri: 'x://cb',
+          logoutRedirectUri: 'x://saiu');
+      expect(custom.logoutParameters, {'client_id': 'c', 'logout_uri': 'x://saiu'});
     });
 
     test('lista os defines que faltam', () {
@@ -103,7 +129,11 @@ void main() {
     var now = DateTime.utc(2026, 10, 21, 12);
     OperatorCognitoAuthRepository repo({CognitoConfig config = _config}) =>
         OperatorCognitoAuthRepository(
-            config: config, client: client, store: store, clock: () => now);
+            config: config,
+            client: client,
+            store: store,
+            clock: () => now,
+            restoreRetryDelay: Duration.zero);
 
     setUp(() {
       client = _FakeClient();
@@ -167,22 +197,44 @@ void main() {
       expect(store.value, 'salvo');
     });
 
-    test('sem refresh salvo ou com falha, nao restaura', () async {
+    test('sem refresh salvo ou com falha de rede repetida, nao restaura', () async {
       expect(await repo().restore(), isNull);
       store.value = 'velho';
       client.refreshError = Exception('offline');
       expect(await repo().restore(), isNull);
+      expect(client.refreshCalls, 2); // uma nova tentativa
+      expect(store.value, 'velho'); // falha de rede nao apaga o token
+    });
+
+    test('falha de rede na abertura: tenta de novo e restaura', () async {
+      store.value = 'salvo';
+      client.refreshErrors.add(Exception('timeout'));
+      client.refreshResult = _tokens(refresh: null);
+      expect(await repo().restore(), isNotNull);
+      expect(client.refreshCalls, 2);
+    });
+
+    test('refresh recusado na abertura apaga o token e nao repete', () async {
+      store.value = 'revogado';
+      client.refreshError = const CognitoRefreshRejected();
+      expect(await repo().restore(), isNull);
+      expect(client.refreshCalls, 1);
+      expect(store.value, isNull);
     });
 
     test('sair apaga o token local e revoga no Cognito', () async {
       client.authorizeResult = _tokens();
       final r = repo();
       await r.signIn();
-      await r.signOut();
+      client.revokeGate = Completer<void>(); // revogacao presa na rede
+      await r.signOut(); // nao espera a revogacao
       expect(r.session, isNull);
       expect(store.value, isNull);
       expect(client.revoked, ['r1']);
+      expect(client.endSessions, hasLength(1)); // logout do Hosted UI
+      expect(client.endSessions.single, isNotNull); // id token como hint
       expect(await r.accessToken(), isNull);
+      client.revokeGate!.complete();
     });
   });
 }

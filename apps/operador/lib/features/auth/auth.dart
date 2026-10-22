@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_operador/data/cognito_auth.dart';
+import 'package:volti_operador/data/local_state.dart';
+import 'package:volti_operador/data/service_unlock.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
 import 'package:volti_operador/ui/widgets.dart';
 
@@ -44,6 +46,9 @@ class SessionController extends Notifier<String?> {
   }
 
   Future<void> signOut() async {
+    // Nada do operador anterior fica destravado nem em rascunho.
+    await ref.read(serviceUnlockProvider.notifier).clearAll();
+    ref.invalidate(inspectionDraftsProvider);
     await ref.read(authRepositoryProvider).signOut();
     state = null;
   }
