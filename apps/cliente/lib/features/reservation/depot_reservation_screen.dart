@@ -12,6 +12,7 @@ import '../../core/errors.dart';
 import '../../core/flash.dart';
 import '../../core/launcher.dart';
 import '../../core/widgets.dart';
+import '../handover/handover_watch.dart';
 import '../home/depot_providers.dart';
 import '../home/providers.dart';
 import '../pickup/depot_hours.dart';
@@ -22,7 +23,9 @@ import '../plan/pix_sheet.dart';
 /// operador ler no galpao, moto, horario ou prazo, endereco com "Como chegar"
 /// (o app de mapas so abre quando o cliente toca) e **Cancelar reserva** (gratis).
 /// Com a entrega aberta (`handover`) a API recusa o cancelamento: o botao some e
-/// o aviso manda usar "Apontar problema" (tela da Task 10).
+/// o aviso manda usar "Apontar problema", com **Conferir moto** para abrir a
+/// entrega. O [HandoverWatcher] abre "Confira sua moto" quando o operador cria a
+/// entrega (`handover.pending`).
 class DepotReservationScreen extends ConsumerStatefulWidget {
   const DepotReservationScreen({super.key, required this.reservationId});
   final String reservationId;
@@ -164,14 +167,24 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, VoltiSpacing.s24),
                 children: VoltiStagger.wrap([
-                  if (handover)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: VoltiSpacing.s12),
-                      child: Semantics(
-                        liveRegion: true,
-                        child: NoticeBanner(key: const Key('reservation-handover'), icon: LucideIcons.packageCheck, message: l.reservationInHandover),
-                      ),
+                  HandoverWatcher(reservation: r),
+                  if (handover) ...[
+                    Semantics(
+                      liveRegion: true,
+                      child: NoticeBanner(key: const Key('reservation-handover'), icon: LucideIcons.packageCheck, message: l.reservationInHandover),
                     ),
+                    if (r.handoverId != null) ...[
+                      const SizedBox(height: VoltiSpacing.s8),
+                      VoltiButton(
+                        key: const Key('reservation-see-handover'),
+                        label: l.reservationSeeHandover,
+                        icon: LucideIcons.clipboardCheck,
+                        fullWidth: true,
+                        onPressed: () => context.push('/handover/${r.handoverId}'),
+                      ),
+                    ],
+                    const SizedBox(height: VoltiSpacing.s12),
+                  ],
                   if (pixPending) ...[
                     NoticeBanner(icon: LucideIcons.qrCode, message: l.reservationPixPending),
                     const SizedBox(height: VoltiSpacing.s8),

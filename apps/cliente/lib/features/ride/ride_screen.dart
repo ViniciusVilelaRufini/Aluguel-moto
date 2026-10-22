@@ -16,6 +16,8 @@ import '../../core/launcher.dart';
 import '../../core/services.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
+import '../handover/handover_watch.dart';
+import 'battery_sheet.dart';
 import 'ride_data.dart';
 
 const kSupportPhone = String.fromEnvironment('SUPPORT_PHONE', defaultValue: '+551100000000');
@@ -24,7 +26,9 @@ const kSupportPhone = String.fromEnvironment('SUPPORT_PHONE', defaultValue: '+55
 final mapEnabledProvider = Provider<bool>((ref) => true);
 
 /// Aluguel em andamento: tempo, custo, bateria e velocidade ao vivo (WebSocket),
-/// avisos de zona, pausa, SOS, "Voce esta bem?", reportar problema e trocar de moto.
+/// avisos de zona, pausa, SOS, "Voce esta bem?", reportar problema e **Trocar
+/// bateria** (galpao e estacoes). Chegada no galpao (`handover.updated` de uma
+/// entrega `return_depot` deste aluguel) abre o recibo.
 class RideScreen extends ConsumerStatefulWidget {
   const RideScreen({super.key});
   @override
@@ -167,7 +171,21 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     }, onError: (_) {});
   }
 
+  /// Devolucao aberta por cima? Entao e ela que reage ao fim do aluguel (os
+  /// eventos chegam a ela por [rideEventBusProvider]). Dialogo ou folha aberta
+  /// na corrida nao conta: a corrida fecha e abre o recibo.
+  bool get _returnOpen => ref.read(returnScreensOpenProvider).any;
+
+  /// Fim do aluguel: fecha dialogos e folhas abertos sobre a corrida e abre o recibo.
+  void _goToSummary(String rentalId) {
+    if (!mounted || _returnOpen) return;
+    final route = ModalRoute.of(context);
+    if (route != null && !route.isCurrent) Navigator.of(context).popUntil((r) => r == route);
+    context.go('/summary/$rentalId');
+  }
+
   void _onEvent(RealtimeEvent e) {
+    ref.read(rideEventBusProvider).add(e);
     if (!mounted) return;
     switch (e) {
       case RentalUpdated():
@@ -177,7 +195,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           _rental = _rental?.rebuild((b) => b..status = RentalStatus.values.firstWhere((s) => s.name == _camel(e.status), orElse: () => _rental!.status));
         });
         if (e.status == 'ended' || e.status == 'force_ended') {
-          context.go('/summary/${e.rentalId}');
+          _goToSummary(e.rentalId);
         }
       case VehiclePositionEvent():
         setState(() {
@@ -205,7 +223,18 @@ class _RideScreenState extends ConsumerState<RideScreen> {
         });
       case DeviceEventReceived():
         if (e.type == 'queda') _showWellbeing();
+      case HandoverUpdated():
+        _onHandoverUpdated(e.handoverId);
+      case HandoverPending():
+        break;
     }
+  }
+
+  /// O operador registrou a chegada no galpao: o aluguel acabou, abre o recibo.
+  Future<void> _onHandoverUpdated(String handoverId) async {
+    final r = _rental;
+    if (r == null || _returnOpen) return;
+    if (await isDepotReturnOf(ref.read(backendProvider), handoverId, r.id)) _goToSummary(r.id);
   }
 
   /// Centraliza na moto. Antes do mapa existir (ou com o mapa desligado) nao faz nada.
@@ -599,6 +628,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                   ),
                   const SizedBox(height: 12),
                   Wrap(spacing: 8, runSpacing: 8, children: [
+                    VoltiChip(icon: LucideIcons.batteryCharging, label: l.swapBattery, onTap: () => BatterySwapSheet.show(context, r.id)),
                     VoltiChip(icon: LucideIcons.circleAlert, label: l.reportProblem, onTap: _report),
                     VoltiChip(icon: LucideIcons.share2, label: l.shareTrip, onTap: _shareLocation),
                   ]),

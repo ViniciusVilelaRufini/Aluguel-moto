@@ -3733,7 +3733,7 @@ abstract class AppLocalizations {
   /// No description provided for @planChargedAtPickup.
   ///
   /// In pt, this message translates to:
-  /// **'O plano é cobrado na retirada, quando você aceitar a moto.'**
+  /// **'O plano é acertado no fim do aluguel; a caução fica como garantia.'**
   String get planChargedAtPickup;
 
   /// No description provided for @vehicleModelCode.
@@ -3823,7 +3823,7 @@ abstract class AppLocalizations {
   /// No description provided for @pickupDepositNote.
   ///
   /// In pt, this message translates to:
-  /// **'Confirmar bloqueia só a caução. O plano é cobrado quando você aceitar a moto no galpão.'**
+  /// **'Confirmar bloqueia só a caução. O plano é acertado no fim do aluguel; a caução fica como garantia.'**
   String get pickupDepositNote;
 
   /// No description provided for @confirmReservation.
@@ -3963,6 +3963,312 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.'**
   String get reservationNoCode;
+
+  /// No description provided for @handoverTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confira sua moto'**
+  String get handoverTitle;
+
+  /// No description provided for @handoverIntro.
+  ///
+  /// In pt, this message translates to:
+  /// **'{operator} separou a {code} para você. Confira as fotos e o checklist antes de aceitar.'**
+  String handoverIntro(String operator, String code);
+
+  /// No description provided for @handoverIntroNoOperator.
+  ///
+  /// In pt, this message translates to:
+  /// **'A {code} está pronta. Confira as fotos e o checklist antes de aceitar.'**
+  String handoverIntroNoOperator(String code);
+
+  /// No description provided for @handoverPhotos.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fotos da saída'**
+  String get handoverPhotos;
+
+  /// No description provided for @handoverPhotoLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto {n} de {total} da moto'**
+  String handoverPhotoLabel(int n, int total);
+
+  /// No description provided for @handoverNoPhotos.
+  ///
+  /// In pt, this message translates to:
+  /// **'Esta entrega veio sem fotos.'**
+  String get handoverNoPhotos;
+
+  /// No description provided for @handoverBatterySerial.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria nº {serial}'**
+  String handoverBatterySerial(String serial);
+
+  /// No description provided for @handoverChecklist.
+  ///
+  /// In pt, this message translates to:
+  /// **'Checklist de saída'**
+  String get handoverChecklist;
+
+  /// No description provided for @handoverItemOk.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ok'**
+  String get handoverItemOk;
+
+  /// No description provided for @handoverItemProblem.
+  ///
+  /// In pt, this message translates to:
+  /// **'Com problema'**
+  String get handoverItemProblem;
+
+  /// No description provided for @handoverItemSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{item}: {state}'**
+  String handoverItemSemantics(String item, String state);
+
+  /// No description provided for @handoverItemFreios.
+  ///
+  /// In pt, this message translates to:
+  /// **'Freios'**
+  String get handoverItemFreios;
+
+  /// No description provided for @handoverItemLuzes.
+  ///
+  /// In pt, this message translates to:
+  /// **'Luzes'**
+  String get handoverItemLuzes;
+
+  /// No description provided for @handoverItemPneus.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pneus'**
+  String get handoverItemPneus;
+
+  /// No description provided for @handoverItemBuzina.
+  ///
+  /// In pt, this message translates to:
+  /// **'Buzina'**
+  String get handoverItemBuzina;
+
+  /// No description provided for @handoverItemPainel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Painel'**
+  String get handoverItemPainel;
+
+  /// No description provided for @handoverItemCarenagem.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carenagem'**
+  String get handoverItemCarenagem;
+
+  /// No description provided for @handoverStartsNow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ao aceitar, o aluguel começa agora e a moto destrava. O plano é acertado no fim do aluguel, com a caução como garantia.'**
+  String get handoverStartsNow;
+
+  /// No description provided for @handoverAccept.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aceitar e destravar'**
+  String get handoverAccept;
+
+  /// No description provided for @handoverReport.
+  ///
+  /// In pt, this message translates to:
+  /// **'Apontar problema'**
+  String get handoverReport;
+
+  /// No description provided for @handoverPaymentDeclined.
+  ///
+  /// In pt, this message translates to:
+  /// **'O pagamento não foi aprovado. Tente de novo ou fale com o operador.'**
+  String get handoverPaymentDeclined;
+
+  /// No description provided for @handoverDepositNotHeld.
+  ///
+  /// In pt, this message translates to:
+  /// **'A caução da reserva não está retida. Fale com o suporte.'**
+  String get handoverDepositNotHeld;
+
+  /// No description provided for @handoverAcceptFailed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível aceitar agora. Tente de novo ou fale com o operador.'**
+  String get handoverAcceptFailed;
+
+  /// No description provided for @handoverNotFound.
+  ///
+  /// In pt, this message translates to:
+  /// **'Essa entrega não foi encontrada.'**
+  String get handoverNotFound;
+
+  /// No description provided for @handoverDisputeTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Apontar problema'**
+  String get handoverDisputeTitle;
+
+  /// No description provided for @handoverDisputeText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conte o que está errado. O suporte recebe junto com as fotos da saída.'**
+  String get handoverDisputeText;
+
+  /// No description provided for @handoverDisputeLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'O que está errado com a moto?'**
+  String get handoverDisputeLabel;
+
+  /// No description provided for @handoverDisputeHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ex.: retrovisor quebrado'**
+  String get handoverDisputeHint;
+
+  /// No description provided for @handoverDisputeSend.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviar ao suporte'**
+  String get handoverDisputeSend;
+
+  /// No description provided for @handoverDisputedTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Problema apontado'**
+  String get handoverDisputedTitle;
+
+  /// No description provided for @handoverDisputedText.
+  ///
+  /// In pt, this message translates to:
+  /// **'O suporte vai falar com você.'**
+  String get handoverDisputedText;
+
+  /// No description provided for @handoverDisputedReason.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você disse: {reason}'**
+  String handoverDisputedReason(String reason);
+
+  /// No description provided for @handoverAcceptedTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto liberada'**
+  String get handoverAcceptedTitle;
+
+  /// No description provided for @handoverAcceptedText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu aluguel já começou.'**
+  String get handoverAcceptedText;
+
+  /// No description provided for @handoverGoToRide.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ir para a corrida'**
+  String get handoverGoToRide;
+
+  /// No description provided for @handoverCanceledTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrega cancelada'**
+  String get handoverCanceledTitle;
+
+  /// No description provided for @handoverCanceledText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fale com o operador no galpão.'**
+  String get handoverCanceledText;
+
+  /// No description provided for @reservationSeeHandover.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conferir moto'**
+  String get reservationSeeHandover;
+
+  /// No description provided for @swapBattery.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trocar bateria'**
+  String get swapBattery;
+
+  /// No description provided for @swapBatteryText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Troque no galpão, com o operador, ou numa estação. Toque para abrir a rota.'**
+  String get swapBatteryText;
+
+  /// No description provided for @swapAtDepot.
+  ///
+  /// In pt, this message translates to:
+  /// **'Troca com o operador'**
+  String get swapAtDepot;
+
+  /// No description provided for @swapAvailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =0{sem baterias disponíveis} =1{1 bateria disponível} other{{count} baterias disponíveis}}'**
+  String swapAvailable(int count);
+
+  /// No description provided for @swapStationsEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma estação de bateria encontrada.'**
+  String get swapStationsEmpty;
+
+  /// No description provided for @swapDirectionsHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abre a rota no app de mapas'**
+  String get swapDirectionsHint;
+
+  /// No description provided for @returnModePoint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ponto verde'**
+  String get returnModePoint;
+
+  /// No description provided for @returnModeDepot.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão'**
+  String get returnModeDepot;
+
+  /// No description provided for @returnModeLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Onde devolver'**
+  String get returnModeLabel;
+
+  /// No description provided for @returnDepotTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Devolver no galpão'**
+  String get returnDepotTitle;
+
+  /// No description provided for @returnDepotText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Leve a moto ao galpão e entregue ao operador. Ele faz o checklist de chegada e encerra o aluguel; o recibo abre aqui.'**
+  String get returnDepotText;
+
+  /// No description provided for @returnDepotWaiting.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aguardando o operador registrar a chegada…'**
+  String get returnDepotWaiting;
+
+  /// No description provided for @returnDepotMissing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não encontramos o galpão. Tente de novo.'**
+  String get returnDepotMissing;
 }
 
 class _AppLocalizationsDelegate

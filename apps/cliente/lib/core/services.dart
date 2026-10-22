@@ -59,6 +59,24 @@ class DeviceEventReceived extends RealtimeEvent {
   final String type;
 }
 
+/// Entrega de saida criada pelo operador (sala `customer:{id}`): abre "Confira sua moto".
+class HandoverPending extends RealtimeEvent {
+  const HandoverPending({required this.handoverId, required this.reservationId});
+  final String handoverId;
+  final String reservationId;
+}
+
+/// Entrega mudou de status (ou o aceite falhou, com [lastError]). Chegada no
+/// galpao (`return_depot`) tambem chega aqui.
+class HandoverUpdated extends RealtimeEvent {
+  const HandoverUpdated({required this.handoverId, required this.status, this.lastError});
+  final String handoverId;
+
+  /// `pending_customer`, `accepted`, `disputed` ou `canceled`.
+  final String status;
+  final String? lastError;
+}
+
 abstract class RealtimeService {
   Stream<RealtimeEvent> get events;
 
@@ -131,6 +149,18 @@ class SocketRealtimeService implements RealtimeService {
       final j = m(d);
       _controller.add(DeviceEventReceived(type: j['type'] as String));
     });
+    socket.on('handover.pending', (d) {
+      final j = m(d);
+      _controller.add(HandoverPending(handoverId: j['handoverId'] as String, reservationId: j['reservationId'] as String));
+    });
+    socket.on('handover.updated', (d) {
+      final j = m(d);
+      _controller.add(HandoverUpdated(
+        handoverId: j['handoverId'] as String,
+        status: j['status'] as String,
+        lastError: j['lastError'] as String?,
+      ));
+    });
     socket.onConnect((_) => _conn.add(true));
     socket.onDisconnect((_) => _conn.add(false));
     socket.onConnectError((_) => _conn.add(false));
@@ -152,6 +182,19 @@ final realtimeFactoryProvider = Provider<RealtimeService Function()>((ref) {
   final auth = ref.watch(authRepositoryProvider);
   return () => SocketRealtimeService(baseUrl: baseUrl, auth: auth);
 });
+
+/// Conexao do cliente fora da corrida (reserva, entrega, devolucao no galpao):
+/// a API poe o socket na sala `customer:{id}`. Uma so enquanto alguma tela ouve.
+final customerRealtimeProvider = Provider.autoDispose<RealtimeService>((ref) {
+  final rt = ref.watch(realtimeFactoryProvider)();
+  ref.onDispose(rt.dispose);
+  // Sem tempo real a tela segue pelo GET (e pela consulta periodica de quem usa).
+  rt.connect().catchError((Object _) {});
+  return rt;
+});
+
+/// Eventos da [customerRealtimeProvider] (cada evento e um valor novo).
+final customerEventsProvider = StreamProvider.autoDispose<RealtimeEvent>((ref) => ref.watch(customerRealtimeProvider).events);
 
 // ---------------------------------------------------------------------------
 // Localizacao (em segundo plano so durante o aluguel ativo)

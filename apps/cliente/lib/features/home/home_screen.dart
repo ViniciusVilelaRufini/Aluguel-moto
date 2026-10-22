@@ -16,6 +16,7 @@ import '../../core/geo.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
+import '../handover/handover_watch.dart';
 import '../pick/pick_logic.dart';
 import '../pickup/depot_hours.dart';
 import '../pickup/depot_labels.dart';
@@ -227,13 +228,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 const SizedBox(height: VoltiSpacing.s10),
                                 if (rental != null)
                                   _ActiveBanner(icon: LucideIcons.bike, text: l.rentalInProgress, action: l.backToRide, onTap: () => context.push('/ride'))
-                                else if (reservation != null)
+                                else if (reservation != null) ...[
+                                  // Entrega no galpao: abre "Confira sua moto" (evento ou app aberto depois).
+                                  HandoverWatcher(reservation: reservation),
                                   _ActiveBanner(
                                     icon: LucideIcons.clock,
                                     text: l.reservationActive,
                                     action: l.seeReservation,
                                     onTap: () => context.push('/reservation/${reservation.id}'),
                                   ),
+                                ],
                                 if (session != null && session.kyc != KycStatus.approved)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 8),

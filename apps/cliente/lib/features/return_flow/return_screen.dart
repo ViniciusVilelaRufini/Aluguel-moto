@@ -13,10 +13,15 @@ import 'package:volti_flutter/volti_flutter.dart';
 import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
+import '../../core/launcher.dart';
 import '../../core/services.dart';
 import '../../core/widgets.dart';
+import '../handover/handover_watch.dart';
+import '../home/depot_providers.dart' show depotsProvider;
 import '../home/providers.dart';
-import '../ride/ride_data.dart' show sharedZonesProvider;
+import '../pickup/depot_labels.dart';
+import '../ride/battery_sheet.dart' show rentalDepotProvider;
+import '../ride/ride_data.dart' show ReturnScreensOpen, returnScreensOpenProvider, rideEventBusProvider, sharedZonesProvider;
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 
 /// Zonas de devolucao e onde a moto esta em relacao a elas.
@@ -55,19 +60,29 @@ final returnContextProvider = FutureProvider.autoDispose.family<ReturnContext, S
   return ReturnContext(zones: zones, vehicle: pos, inside: inside, nearest: inside ?? (pos == null ? null : nearestZone(pos, zones)));
 });
 
+/// Onde o cliente devolve a moto.
+enum ReturnMode { point, depot }
+
 /// Encerrar: mapa dos pontos verdes, so em ponto de devolucao (fora dele o
 /// servidor recusa e so o suporte encerra, com taxa), foto obrigatoria, aguarda
-/// a confirmacao de "travada".
+/// a confirmacao de "travada". Ou **Devolver no galpao** (spec 2026-10-22 3.9):
+/// endereco do galpao e a instrucao de entregar a moto ao operador; quando ele
+/// registra a chegada (`handover.updated` de uma entrega `return_depot` deste
+/// aluguel, ou o aluguel encerrado), abre o recibo.
 class ReturnScreen extends ConsumerStatefulWidget {
   const ReturnScreen({
     super.key,
     required this.rentalId,
     this.pollInterval = const Duration(seconds: 2),
     this.lockTimeout = const Duration(seconds: 90),
+    this.depotPollInterval = const Duration(seconds: 10),
   });
   final String rentalId;
   final Duration pollInterval;
   final Duration lockTimeout;
+
+  /// Consulta do aluguel enquanto espera o operador (sem tempo real).
+  final Duration depotPollInterval;
   @override
   ConsumerState<ReturnScreen> createState() => _ReturnScreenState();
 }
@@ -81,11 +96,45 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   String? _photoKey; // objeto ja enviado desta foto
   String? _error;
   Timer? _poll;
+  StreamSubscription<RealtimeEvent>? _rideEvents;
+
+  /// Avisa a corrida embaixo que a devolucao cuida do fim do aluguel.
+  late final ReturnScreensOpen _openFlag;
+  bool _finished = false;
+  ReturnMode _mode = ReturnMode.point;
+
+  @override
+  void initState() {
+    super.initState();
+    // Eventos da corrida aberta embaixo (mesmo socket): enquanto esta tela esta
+    // aberta, e ela que reage ao fim do aluguel.
+    _rideEvents = ref.read(rideEventBusProvider).stream.listen(_onRideEvent);
+    _openFlag = ref.read(returnScreensOpenProvider)..count += 1;
+  }
 
   @override
   void dispose() {
     _poll?.cancel();
+    _rideEvents?.cancel();
+    _openFlag.count -= 1;
     super.dispose();
+  }
+
+  void _onRideEvent(RealtimeEvent e) {
+    if (!mounted) return;
+    switch (e) {
+      case RentalUpdated(:final rentalId, :final status) when rentalId == widget.rentalId && (status == 'ended' || status == 'force_ended'):
+        _finish();
+      case HandoverUpdated(:final handoverId):
+        _onHandoverUpdated(handoverId);
+      default:
+        break;
+    }
+  }
+
+  /// Chegada no galpao (`return_depot` deste aluguel): o operador encerrou.
+  Future<void> _onHandoverUpdated(String handoverId) async {
+    if (await isDepotReturnOf(ref.read(backendProvider), handoverId, widget.rentalId)) _finish();
   }
 
   Future<void> _take() async {
@@ -100,6 +149,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   }
 
   void _finish() {
+    if (_finished || !mounted) return;
+    _finished = true;
+    _poll?.cancel();
     VoltiHaptics.success();
     ref.invalidate(currentRentalProvider);
     if (mounted) context.go('/summary/${widget.rentalId}');
@@ -262,6 +314,8 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     final mapOn = ref.watch(mapEnabledProvider);
     final center = rc?.vehicle ?? (rc?.nearest != null ? zoneCenter(rc!.nearest!) : const LatLng(-23.5614, -46.6559));
     final canEnd = _photo != null && !_busy && ctx.hasValue && !outside;
+    final atDepot = _mode == ReturnMode.depot;
+    final depot = atDepot ? ref.watch(rentalDepotProvider(widget.rentalId)).value : null;
 
     return Scaffold(
       body: Stack(
@@ -332,13 +386,16 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                             children: [
                               Semantics(
                                 header: true,
-                                child: Text(l.returnPointTitle, style: VoltiTypography.label.copyWith(color: VoltiColors.ink900)),
+                                child: Text(atDepot ? l.returnDepotTitle : l.returnPointTitle, style: VoltiTypography.label.copyWith(color: VoltiColors.ink900)),
                               ),
-                              Text(switch (inZone) {
-                                true => l.returnInsideZone(rc!.inside!.name),
-                                false => l.returnOutsideShort,
-                                null => ctx.isLoading ? l.returnCheckingShort : l.checkReturnText,
-                              }, style: VoltiTypography.caption.copyWith(color: outside ? VoltiColors.dangerInk : VoltiColors.ink600)),
+                              if (atDepot)
+                                Text(depot != null ? depotTitle(l, depot) : l.loading, style: VoltiTypography.caption.copyWith(color: VoltiColors.ink600))
+                              else
+                                Text(switch (inZone) {
+                                  true => l.returnInsideZone(rc!.inside!.name),
+                                  false => l.returnOutsideShort,
+                                  null => ctx.isLoading ? l.returnCheckingShort : l.checkReturnText,
+                                }, style: VoltiTypography.caption.copyWith(color: outside ? VoltiColors.dangerInk : VoltiColors.ink600)),
                             ],
                           ),
                         ),
@@ -368,59 +425,77 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      ProgressSteps(
-                        total: 2,
-                        current: _photo == null ? 0 : 1,
-                        label: _photo == null ? l.returnStepPhoto : l.returnStepLock,
-                      ),
-                      const SizedBox(height: 14),
-                      Semantics(header: true, child: Text(_photo == null ? l.returnPhotoTitle : l.returnLockTitle, style: VoltiTypography.heading)),
-                      const SizedBox(height: 12),
-                      PhotoCapture(label: l.takePhoto, hint: l.returnPhotoHintDesign, height: 130, done: _photo != null, onTap: _take),
-                      const SizedBox(height: 12),
-                      if (ctx.hasError)
-                        ErrorState(
-                          error: ctx.error!,
-                          // As zonas sao compartilhadas com a corrida (que pode estar
-                          // aberta embaixo, segurando o erro): busca de novo as duas.
-                          onRetry: () {
-                            ref.invalidate(sharedZonesProvider);
-                            ref.invalidate(returnContextProvider(widget.rentalId));
-                          },
-                        )
-                      else if (outside)
-                        NoticeBanner(
-                          danger: true,
-                          icon: LucideIcons.mapPinOff,
-                          title: l.returnOutsideShort,
-                          message: l.returnOutsideBlocked,
-                        )
-                      else
-                        // Dentro do ponto verde: confirma; sem saber ainda, mostra a regra.
-                        _RuleNote(text: inZone == true ? l.returnInsideRule : l.returnZoneRule),
-                      if (_error != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
+                      Semantics(
+                        label: l.returnModeLabel,
+                        container: true,
+                        child: VoltiSegmentedControl<ReturnMode>(
+                          key: const Key('return-mode'),
+                          options: [
+                            VoltiSegment(value: ReturnMode.point, label: l.returnModePoint),
+                            VoltiSegment(value: ReturnMode.depot, label: l.returnModeDepot),
+                          ],
+                          value: _mode,
+                          onChanged: _busy ? null : (m) => setState(() => _mode = m),
                         ),
-                      const SizedBox(height: 14),
-                      VoltiButton(
-                        label: _busy ? l.confirmingLock : l.lockAndEnd,
-                        icon: LucideIcons.lock,
-                        variant: VoltiButtonVariant.dark,
-                        size: VoltiButtonSize.lg,
-                        fullWidth: true,
-                        onPressed: canEnd ? () => _end(confirm: inZone == null) : null,
                       ),
-                      if (outside) ...[
-                        const SizedBox(height: 8),
+                      const SizedBox(height: 14),
+                      if (atDepot)
+                        _DepotReturnPanel(rentalId: widget.rentalId, pollInterval: widget.depotPollInterval, onEnded: _finish)
+                      else ...[
+                        ProgressSteps(
+                          total: 2,
+                          current: _photo == null ? 0 : 1,
+                          label: _photo == null ? l.returnStepPhoto : l.returnStepLock,
+                        ),
+                        const SizedBox(height: 14),
+                        Semantics(header: true, child: Text(_photo == null ? l.returnPhotoTitle : l.returnLockTitle, style: VoltiTypography.heading)),
+                        const SizedBox(height: 12),
+                        PhotoCapture(label: l.takePhoto, hint: l.returnPhotoHintDesign, height: 130, done: _photo != null, onTap: _take),
+                        const SizedBox(height: 12),
+                        if (ctx.hasError)
+                          ErrorState(
+                            error: ctx.error!,
+                            // As zonas sao compartilhadas com a corrida (que pode estar
+                            // aberta embaixo, segurando o erro): busca de novo as duas.
+                            onRetry: () {
+                              ref.invalidate(sharedZonesProvider);
+                              ref.invalidate(returnContextProvider(widget.rentalId));
+                            },
+                          )
+                        else if (outside)
+                          NoticeBanner(
+                            danger: true,
+                            icon: LucideIcons.mapPinOff,
+                            title: l.returnOutsideShort,
+                            message: l.returnOutsideBlocked,
+                          )
+                        else
+                          // Dentro do ponto verde: confirma; sem saber ainda, mostra a regra.
+                          _RuleNote(text: inZone == true ? l.returnInsideRule : l.returnZoneRule),
+                        if (_error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
+                          ),
+                        const SizedBox(height: 14),
                         VoltiButton(
-                          label: l.contactSupport,
-                          icon: LucideIcons.messageCircle,
-                          variant: VoltiButtonVariant.secondary,
+                          label: _busy ? l.confirmingLock : l.lockAndEnd,
+                          icon: LucideIcons.lock,
+                          variant: VoltiButtonVariant.dark,
+                          size: VoltiButtonSize.lg,
                           fullWidth: true,
-                          onPressed: () => context.push('/account/support'),
+                          onPressed: canEnd ? () => _end(confirm: inZone == null) : null,
                         ),
+                        if (outside) ...[
+                          const SizedBox(height: 8),
+                          VoltiButton(
+                            label: l.contactSupport,
+                            icon: LucideIcons.messageCircle,
+                            variant: VoltiButtonVariant.secondary,
+                            fullWidth: true,
+                            onPressed: () => context.push('/account/support'),
+                          ),
+                        ],
                       ],
                     ],
                   ),
@@ -430,6 +505,134 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Devolucao no galpao: endereco com "Como chegar", a instrucao de entregar a
+/// moto ao operador e a espera pela chegada registrada. O operador cria a
+/// entrega `return_depot`; os eventos (`handover.updated`, `rental.updated`)
+/// chegam a [ReturnScreen]; aqui fica so a consulta periodica do aluguel, que
+/// chama [onEnded] quando ele ja encerrou. Sai do painel = timer parado.
+class _DepotReturnPanel extends ConsumerStatefulWidget {
+  const _DepotReturnPanel({required this.rentalId, required this.pollInterval, required this.onEnded});
+  final String rentalId;
+  final Duration pollInterval;
+  final VoidCallback onEnded;
+  @override
+  ConsumerState<_DepotReturnPanel> createState() => _DepotReturnPanelState();
+}
+
+class _DepotReturnPanelState extends ConsumerState<_DepotReturnPanel> {
+  Timer? _timer;
+  bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(widget.pollInterval, (_) => _checkRental());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _end() {
+    if (_done || !mounted) return;
+    _done = true;
+    _timer?.cancel();
+    widget.onEnded();
+  }
+
+  Future<void> _checkRental() async {
+    try {
+      final r = await ref.read(backendProvider).rental(widget.rentalId);
+      if (r.status == RentalStatus.ended || r.status == RentalStatus.forceEnded) _end();
+    } catch (_) {
+      // rede instavel: tenta na proxima
+    }
+  }
+
+  Future<void> _directions(Depot d) async {
+    final ok = await openDirections(ref.read(urlLauncherProvider), d.lat, d.lng);
+    if (!ok && mounted) VoltiToast.show(context, context.l.navigateFailed, tone: VoltiToastTone.danger);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final scheme = Theme.of(context).colorScheme;
+    final depotAsync = ref.watch(rentalDepotProvider(widget.rentalId));
+    final depot = depotAsync.value;
+    return Column(
+      key: const Key('return-depot'),
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Semantics(header: true, child: Text(l.returnDepotTitle, style: VoltiTypography.heading)),
+        const SizedBox(height: 12),
+        if (depot != null)
+          Container(
+            padding: const EdgeInsets.all(VoltiSpacing.s16),
+            decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: VoltiRadii.rLg),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Icon(LucideIcons.warehouse, size: 18, color: VoltiColors.brandAction),
+                const SizedBox(width: VoltiSpacing.s8),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(depotTitle(l, depot), style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface)),
+                    Text(depot.address, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+                  ]),
+                ),
+              ]),
+              const SizedBox(height: VoltiSpacing.s12),
+              VoltiButton(
+                key: const Key('return-depot-directions'),
+                label: l.howToGetThere,
+                icon: LucideIcons.navigation,
+                variant: VoltiButtonVariant.secondary,
+                fullWidth: true,
+                onPressed: () => _directions(depot),
+              ),
+            ]),
+          )
+        else if (depotAsync.isLoading)
+          VoltiSkeleton.list(rows: 1, trailing: false, label: l.loading)
+        else
+          Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: l.returnDepotMissing),
+            const SizedBox(height: VoltiSpacing.s8),
+            VoltiButton(
+              key: const Key('return-depot-retry'),
+              label: l.retry,
+              icon: LucideIcons.refreshCw,
+              variant: VoltiButtonVariant.secondary,
+              fullWidth: true,
+              onPressed: () {
+                ref.invalidate(depotsProvider);
+                ref.invalidate(rentalDepotProvider(widget.rentalId));
+              },
+            ),
+          ]),
+        const SizedBox(height: 12),
+        _RuleNote(text: l.returnDepotText),
+        const SizedBox(height: 12),
+        Semantics(
+          liveRegion: true,
+          child: Row(children: [
+            // Reduced motion: icone fixo no lugar do spinner.
+            if (VoltiMotion.reduced(context))
+              const Icon(LucideIcons.hourglass, key: Key('return-depot-waiting-icon'), size: 18, color: VoltiColors.brandAction)
+            else
+              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: VoltiColors.brandAction)),
+            const SizedBox(width: VoltiSpacing.s10),
+            Expanded(child: Text(l.returnDepotWaiting, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant))),
+          ]),
+        ),
+      ],
     );
   }
 }
