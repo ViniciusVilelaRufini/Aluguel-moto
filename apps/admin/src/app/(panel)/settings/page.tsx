@@ -13,10 +13,9 @@ import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
 import { Switch } from '@/ds/Switch';
-
-const toReais = (cents: number) => (cents / 100).toFixed(2).replace('.', ',');
-const toCents = (v: string) => Math.round(Number(v.replace(/\./g, '').replace(',', '.')) * 100);
-const validMoney = (v: string) => /^\d{1,6}([.,]\d{1,2})?$/.test(v.trim().replace(/\./g, ',').replace(/,(?=.*,)/g, ''));
+import { toCents, toReais, validMoney } from '@/lib/money';
+import { ModelsSection } from '@/components/ModelsSection';
+import { formatDate, dayEndIso, dayStartIso } from '@/lib/format';
 
 const UNIT_SUFFIX: Record<S<'PlanUnit'>, string> = { minute: '/min', hour: '/hora', day: '/dia', week: '/semana', month: '/mês' };
 
@@ -154,13 +153,17 @@ export default function SettingsPage() {
               { key: 'mandatory', label: '', render: (c) => (c.mandatory ? <Pill>Obrigatório</Pill> : null) },
             ]} />
         ))}
+        {sec('Modelos', 'Catálogo "Escolha sua moto": foto, preço por minuto e desbloqueio por modelo', (
+          <ModelsSection canEdit={canEdit} minuteUnlockCents={plans.data?.items.find((p) => p.code === 'minute')?.unlockFeeCents} />
+        ))}
         {sec('Cupons e indicação', 'Campanhas ativas', (
           <>
             <DataTable<S<'Coupon'>> rows={coupons.data?.items ?? []} loading={coupons.isLoading} empty="Nenhum cupom."
               columns={[
                 { key: 'code', label: 'Código', mono: true },
-                { key: 'discount', label: 'Desconto', render: (c) => (c.discountType === 'percent' ? `${c.percentOff}%` : `R$ ${toReais(c.amountOffCents ?? 0)}`) },
-                { key: 'redemptions', label: 'Usos', align: 'right' },
+                { key: 'discount', label: 'Desconto', render: (c) => (c.discountType === 'percent' ? `${c.percentOff}%` : `R$ ${toReais(c.amountOffCents ?? 0)}`) + (c.planCodes?.length ? ` · ${c.planCodes.map((p) => PLAN_LABEL[p]).join(', ')}` : '') },
+                { key: 'validUntil', label: 'Validade', render: (c) => <span style={{ fontSize: 12 }}>{c.validUntil ? `até ${formatDate(c.validUntil)}` : 'Sem prazo'}</span> },
+                { key: 'redemptions', label: 'Usos', align: 'right', render: (c) => <span style={{ fontFamily: 'var(--font-mono)' }}>{c.redemptions.toLocaleString('pt-BR')}{c.maxRedemptions ? ` / ${c.maxRedemptions.toLocaleString('pt-BR')}` : ''}</span> },
                 { key: 'active', label: 'Ativo', align: 'right', render: (c) => <Switch label="" disabled={!canEdit} checked={couponEdit[c.id] ?? c.active} onChange={(v: boolean) => setCouponEdit((m) => ({ ...m, [c.id]: v }))} /> },
               ]} />
             {canEdit && <div><Button size="sm" variant="secondary" icon="Plus" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setNewCoupon(true)}>Novo cupom</Button></div>}
@@ -179,16 +182,30 @@ function CouponModal({ onClose }: { onClose: () => void }) {
   const [type, setType] = useState<S<'DiscountType'>>('percent');
   const [value, setValue] = useState('');
   const [max, setMax] = useState('');
+  const [perCustomer, setPerCustomer] = useState('1');
+  const [description, setDescription] = useState('');
+  const [from, setFrom] = useState('');
+  const [until, setUntil] = useState('');
+  const [plans, setPlans] = useState<S<'PlanCode'>[]>([]);
   const [err, setErr] = useState<unknown>(null);
   const submit = async () => {
     try {
       const n = Number(value.replace(',', '.'));
       if (!Number.isFinite(n) || n <= 0) throw new Error('Informe o valor do desconto');
-      if (type === 'percent' && n > 100) throw new Error('O desconto percentual vai até 100%');
+      if (type === 'percent' && (n > 100 || !Number.isInteger(n))) throw new Error('O desconto percentual é um inteiro de 1 a 100');
+      if (!/^[A-Z0-9_-]{3,32}$/.test(code.trim().toUpperCase())) throw new Error('Código com 3 a 32 letras, números, _ ou -');
+      if (from && until && until < from) throw new Error('A validade termina antes de começar');
+      if (perCustomer.trim() && !(Number(perCustomer) >= 1)) throw new Error('Limite por cliente a partir de 1');
       await unwrap(api.POST('/pricing/coupons', { body: {
         code: code.trim().toUpperCase(), discountType: type,
         ...(type === 'percent' ? { percentOff: n } : { amountOffCents: Math.round(n * 100) }),
-        ...(max.trim() ? { maxRedemptions: Number(max) } : {}), active: true,
+        ...(max.trim() ? { maxRedemptions: Number(max) } : {}),
+        ...(perCustomer.trim() ? { maxRedemptionsPerCustomer: Number(perCustomer) } : {}),
+        ...(description.trim() ? { description: description.trim() } : {}),
+        ...(from ? { validFrom: dayStartIso(from) } : {}),
+        ...(until ? { validUntil: dayEndIso(until) } : {}),
+        ...(plans.length ? { planCodes: plans } : {}),
+        active: true,
       } }));
       toast('Cupom criado'); qc.invalidateQueries({ queryKey: ['coupons'] }); onClose();
     } catch (e) { setErr(e); }
@@ -199,7 +216,21 @@ function CouponModal({ onClose }: { onClose: () => void }) {
       <Field label="Código"><TextInput value={code} onChange={setCode} placeholder="PRIMEIRA" /></Field>
       <Field label="Tipo de desconto"><Select value={type} onChange={setType} options={[{ value: 'percent', label: 'Percentual (%)' }, { value: 'fixed', label: 'Valor fixo (R$)' }]} /></Field>
       <Field label={type === 'percent' ? 'Percentual' : 'Valor (R$)'}><TextInput value={value} onChange={setValue} /></Field>
-      <Field label="Limite de usos (opcional)"><TextInput type="number" value={max} onChange={setMax} /></Field>
+      <Field label="Descrição (opcional)"><TextInput value={description} onChange={setDescription} placeholder="15 min grátis na primeira corrida" /></Field>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Field label="Limite de usos (opcional)"><TextInput type="number" value={max} onChange={setMax} /></Field>
+        <Field label="Usos por cliente"><TextInput type="number" value={perCustomer} onChange={setPerCustomer} /></Field>
+        <Field label="Válido de (opcional)"><TextInput type="date" value={from} onChange={setFrom} /></Field>
+        <Field label="Válido até (opcional)"><TextInput type="date" value={until} onChange={setUntil} /></Field>
+      </div>
+      <Field label="Planos" hint="Nenhum marcado = todos os planos.">
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {(Object.keys(PLAN_LABEL) as S<'PlanCode'>[]).map((p) => {
+            const on = plans.includes(p);
+            return <Button key={p} size="sm" variant={on ? 'dark' : 'secondary'} style={on ? undefined : { color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setPlans((l) => (on ? l.filter((x) => x !== p) : [...l, p]))}>{PLAN_LABEL[p]}</Button>;
+          })}
+        </div>
+      </Field>
       <ErrorNote error={err} />
     </Modal>
   );
