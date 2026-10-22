@@ -10,6 +10,8 @@ import { AuditService } from '../audit/audit.service';
 import { toStaffUser } from '../auth/me.controller';
 import { CurrentUser, Principal, StaffOnly } from '../auth/principal';
 import { STAFF_DIRECTORY, type StaffDirectory } from '../../ports/staff-directory.port';
+import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EV, type PrincipalRevokedEvent } from '../../common/events';
 
 class ListStaffQuery extends PageQuery {
   @IsOptional() @IsIn(STAFF_GROUPS) group?: StaffGroup;
@@ -40,6 +42,7 @@ export class StaffController {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     @Inject(STAFF_DIRECTORY) private readonly directory: StaffDirectory,
+    private readonly events: EventEmitter2,
   ) {}
 
   @Get()
@@ -82,6 +85,11 @@ export class StaffController {
     const updated = await this.prisma.staffUser.update({ where: { id }, data: { name: dto.name, groups: dto.groups, active: dto.active } });
     await this.audit.record({ actor: u, action: 'staff.update', entityType: 'StaffUser', entityId: id, metadata: { ...dto } });
     await this.syncDirectory(s, dto);
+    // Grupo removido ou desativado: sockets abertos desse usuário caem e reautenticam com os grupos atuais.
+    const removedGroup = !!dto.groups && s.groups.some((g) => !dto.groups!.includes(g));
+    if (removedGroup || (dto.active === false && s.active)) {
+      this.events.emit(EV.PRINCIPAL_REVOKED, { pool: 'staff', userId: id } satisfies PrincipalRevokedEvent);
+    }
     return toStaffUser(updated);
   }
 

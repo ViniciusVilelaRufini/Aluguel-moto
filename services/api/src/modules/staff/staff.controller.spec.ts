@@ -1,4 +1,6 @@
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import request from 'supertest';
+import { EV } from '../../common/events';
 import { createHarness, Harness, STAFF_ID, staffToken } from '../../../test/helpers/http-harness';
 import { STAFF_DIRECTORY } from '../../ports/staff-directory.port';
 import { StaffController } from './staff.controller';
@@ -14,7 +16,12 @@ describe('StaffController (QA-04)', () => {
     h = await createHarness({ controllers: [StaffController], providers: [{ provide: STAFF_DIRECTORY, useValue: directory }] });
   });
   afterAll(() => h.app.close());
-  beforeEach(() => jest.clearAllMocks());
+  const revoked = jest.fn();
+  beforeEach(() => {
+    jest.clearAllMocks();
+    h.app.get(EventEmitter2).removeAllListeners(EV.PRINCIPAL_REVOKED);
+    h.app.get(EventEmitter2).on(EV.PRINCIPAL_REVOKED, revoked);
+  });
 
   const row = (groups: string[], active = true) => ({
     id: OTHER, cognitoSub: 'sub-op', email: 'op@volti.dev', name: 'Op', groups, active, mfaEnabled: false, lastLoginAt: null, createdAt: new Date(), updatedAt: new Date(),
@@ -30,6 +37,7 @@ describe('StaffController (QA-04)', () => {
     expect(res.status).toBe(200);
     expect(directory.updateGroups).toHaveBeenCalledWith({ sub: 'sub-op', email: 'op@volti.dev' }, { add: ['suporte'], remove: ['operacao'] });
     expect(directory.setActive).not.toHaveBeenCalled();
+    expect(revoked).toHaveBeenCalledWith({ pool: 'staff', userId: OTHER });
   });
 
   it('PATCH active:false → desativa no diretório', async () => {
@@ -41,6 +49,7 @@ describe('StaffController (QA-04)', () => {
       .send({ active: false })
       .expect(200);
     expect(directory.setActive).toHaveBeenCalledWith({ sub: 'sub-op', email: 'op@volti.dev' }, false);
+    expect(revoked).toHaveBeenCalledWith({ pool: 'staff', userId: OTHER });
     expect(directory.updateGroups).not.toHaveBeenCalled();
   });
 

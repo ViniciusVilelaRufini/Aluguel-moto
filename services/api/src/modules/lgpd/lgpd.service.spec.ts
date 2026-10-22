@@ -93,6 +93,17 @@ describe('LgpdService', () => {
     expect(prisma.customerIdentityDeletion.delete).not.toHaveBeenCalled();
   });
 
+  it('fix round 1: exclusão de conta revoga o principal (o realtime desconecta os sockets do titular)', async () => {
+    const prisma = mockDeep<PrismaClient>();
+    (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
+    prisma.customer.findUnique.mockResolvedValue(me as any);
+    prisma.rental.findMany.mockResolvedValue([]);
+    const events = { emit: jest.fn() };
+    const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
+    await new LgpdService(prisma as any, storage, loadConfig(), undefined, events as any).deleteAccount(ME);
+    expect(events.emit).toHaveBeenCalledWith(EV.PRINCIPAL_REVOKED, { pool: 'customer', userId: ME });
+  });
+
   it('fix round 1: retentativa da exclusão no Cognito — sucesso apaga a pendência; esgotada → alerta (evento + log)', async () => {
     const prisma = mockDeep<PrismaClient>();
     const events = { emit: jest.fn() };

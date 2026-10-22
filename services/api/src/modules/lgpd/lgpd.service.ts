@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron, Interval } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEvent } from '../../common/events';
+import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEvent, type PrincipalRevokedEvent } from '../../common/events';
 
 /** Tentativas de excluir a identidade no Cognito antes do alerta de revisão manual. */
 export const MAX_IDENTITY_DELETION_ATTEMPTS = 10;
@@ -181,6 +181,7 @@ export class LgpdService {
         this.logger.warn({ msg: 'return_photo_delete_failed', customerId, error: (err as Error).message });
       }
     }
+    this.events?.emit(EV.PRINCIPAL_REVOKED, { pool: 'customer', userId: customerId } satisfies PrincipalRevokedEvent);
     this.logger.log({ msg: 'account_anonymized', customerId });
     return { status: 'completed' as const, requestedAt: requestedAt.toISOString(), completedAt: new Date().toISOString() };
   }

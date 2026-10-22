@@ -6,7 +6,7 @@ import type { Namespace, Socket } from 'socket.io';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import {
   AlertCreatedEvent, CommandChangedEvent, EV, GeofenceTransitionEvent, IotDeviceEvent, IotTelemetryEvent, PaymentUpdatedEvent, RentalChangedEvent,
-  VehicleStatusChangedEvent,
+  PrincipalRevokedEvent, VehicleStatusChangedEvent,
 } from '../../common/events';
 import { AUTH_VERIFIER, type AuthVerifier } from '../../ports/auth-verifier.port';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -68,6 +68,8 @@ export class RealtimeGateway implements OnGatewayInit {
     if (!token) throw new Error('unauthorized');
     const principal: Principal = await this.resolver.resolve(await this.verifier.verify(token));
     socket.data.principal = principal;
+    // Sala do próprio usuário: revogação (conta excluída, grupo removido, desativado) desconecta os sockets dele.
+    await socket.join(`principal:${principal.pool}:${principal.userId}`);
     if (principal.pool === 'staff') {
       if (principal.groups.some((g) => FLEET_GROUPS.includes(g))) await socket.join('fleet');
       return;
@@ -86,6 +88,16 @@ export class RealtimeGateway implements OnGatewayInit {
     const info: VehicleCache = { status: v.status, speedLimitKmh: r?.speedLimitKmh ?? v.speedLimitKmh, rentalId: r?.id, at: Date.now() };
     this.vehicles.set(vehicleId, info);
     return info;
+  }
+
+  /**
+   * Fix round 1: acesso revogado → desconecta os sockets do usuário; o app reconecta e passa de novo pela autenticação
+   * (conta excluída → recusada; staff → salas pelos grupos atuais). Sem adaptador Redis no Socket.IO, vale para a instância
+   * que processou a revogação (ver decisões).
+   */
+  @OnEvent(EV.PRINCIPAL_REVOKED)
+  onPrincipalRevoked(ev: PrincipalRevokedEvent): void {
+    this.server?.in(`principal:${ev.pool}:${ev.userId}`).disconnectSockets(true);
   }
 
   @OnEvent(EV.IOT_TELEMETRY, { async: true, promisify: true })
