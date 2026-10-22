@@ -197,7 +197,7 @@ void main() {
           .where((e) => e.findAncestorWidgetOfExactType<Hero>() == null)
           .length;
       final before = shuttles();
-      await t.tap(find.text('Continuar com Volti Flash · VLT-001'));
+      await t.tap(find.textContaining(RegExp(r'Continuar com .*VLT-001')));
       await t.pump();
       await t.pump(const Duration(milliseconds: 120));
       expect(shuttles(), greaterThan(before), reason: 'a midia da moto voa no overlay durante a troca');
@@ -218,12 +218,24 @@ void main() {
     await pumpApp(t, _PhotoBackend(), initial: '/pick');
     Iterable<Hero> heroes() => t.widgetList<Hero>(find.byWidgetPredicate((w) => w is Hero && w.tag == vehicleHeroTag('VLT-001')));
     String? urlIn(Hero h) {
-      final img = ((h.child as VehicleThumb).image as Image?)?.image;
+      // A foto pode vir embrulhada (fundo branco do catálogo); busca a Image dentro do thumb.
+      Image? found;
+      void visit(Widget? w) {
+        if (w == null || found != null) return;
+        if (w is Image) { found = w; return; }
+        if (w is VehicleThumb) return visit(w.image);
+        if (w is SingleChildRenderObjectWidget) return visit(w.child);
+        if (w is ProxyWidget) return visit(w.child);
+      }
+      visit(h.child);
+      var img = found?.image;
+      if (img is ResizeImage) img = img.imageProvider;
       return img is NetworkImage ? img.url : null;
     }
 
     expect(urlIn(heroes().single), 'https://exemplo.test/flash.png');
-    await tapText(t, 'Continuar com Volti Flash · VLT-001');
+    await t.tap(find.textContaining(RegExp(r'Continuar com .*VLT-001')));
+    await settle(t);
     expect(find.byType(PlanScreen), findsOneWidget);
     final header = heroes().single;
     expect(urlIn(header), 'https://exemplo.test/flash.png');

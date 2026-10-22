@@ -90,5 +90,5 @@ Tela coberta (pela rota logo acima): sob push desliza 30% para a esquerda e escu
 ## Tokens e componentes novos (resumo para o DS)
 
 - Cores: `--warning-ink-strong: #9A4A0F`, `--danger-ink-strong: #B0352B`, `--brand-action: #1C7F38` (E-12).
-- Motion: troca de tela por tipo (push/modal/fade-through, E-21) com `--dur-screen`/`--ease-screen`, fade-through com escala .94 e preenchimento nos primeiros 35%, passos do cadastro 30 px no eixo X; esqueleto 1,4 s `--ease-in-out` em loop; ticker 280 ms `--ease-out` (entra de baixo, sai por cima); faixa de status 320 ms (`--dur-slow`) com `--ease-screen` no tamanho; contagem do recibo 900 ms após 700 ms; mola do arrastar (massa 1, rigidez 520, amortecimento 34).
+- Motion: troca de tela por tipo (push/modal/fade-through, E-22) com `--dur-screen`/`--ease-screen`, fade-through com escala .94 e preenchimento nos primeiros 35%, passos do cadastro 30 px no eixo X; esqueleto 1,4 s `--ease-in-out` em loop; ticker 280 ms `--ease-out` (entra de baixo, sai por cima); faixa de status 320 ms (`--dur-slow`) com `--ease-screen` no tamanho; contagem do recibo 900 ms após 700 ms; mola do arrastar (massa 1, rigidez 520, amortecimento 34).
 - Componentes: Skeleton, Ticker/CountUp, SpeedGauge, EmptyState, StatusBanner, Refresh, DragToDismiss, Haptics (intenções).
