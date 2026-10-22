@@ -42,6 +42,9 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   LatLng? _vehiclePos;
   LatLng? _userPos;
   ZoneNotice? _zone;
+
+  /// Ultimo aviso mostrado: mantem o texto enquanto a faixa sai animando.
+  ZoneNotice? _lastZone;
   bool _fallOpen = false;
   bool _busy = false;
   bool _markerDropped = false;
@@ -160,8 +163,10 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           _vehiclePos = LatLng(e.lat, e.lng);
         });
       case ZoneNotice():
+        if (e.transition == 'ENTER') VoltiHaptics.warning();
         setState(() {
           _zone = e.transition == 'ENTER' ? e : null;
+          if (_zone != null) _lastZone = _zone;
           if (e.speedLimitKmh != null && e.transition == 'ENTER') _limit = e.speedLimitKmh!;
         });
       case DeviceEventReceived():
@@ -169,11 +174,14 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     }
   }
 
+  bool _isDangerZone(ZoneNotice? z) => z != null && (z.zoneType == 'forbidden' || z.zoneType == 'operation');
+
   String _camel(String s) => s.replaceAllMapped(RegExp(r'_([a-z])'), (m) => m[1]!.toUpperCase());
 
   Future<void> _showWellbeing() async {
     if (_fallOpen || _rental == null) return;
     _fallOpen = true;
+    VoltiHaptics.alert();
     final l = context.l;
     final id = _rental!.id;
     final ok = await VoltiDialog.show<bool>(
@@ -199,6 +207,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
 
   Future<void> _showSos() async {
     final l = context.l;
+    VoltiHaptics.alert();
     await VoltiDialog.show<void>(
       context,
       title: l.sosTitle,
@@ -247,6 +256,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       final backend = ref.read(backendProvider);
       final r = _rental!;
       final updated = r.status == RentalStatus.paused ? await backend.resume(r.id) : await backend.pause(r.id);
+      VoltiHaptics.tap();
       if (mounted) setState(() => _rental = updated);
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
@@ -335,68 +345,71 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           child: Padding(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             child: Column(children: [
-              Row(children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Expanded(
-                  child: Semantics(
-                    label: l.speedSemantics(_speed.round(), _limit),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                      decoration: BoxDecoration(color: VoltiColors.glassBg, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
-                      child: Row(children: [
-                        Text('${_speed.round()}',
-                            style: const TextStyle(
-                                fontFamily: VoltiTypography.fontSans,
-                                fontSize: 34,
-                                fontWeight: FontWeight.w800,
-                                color: VoltiColors.ink900)),
-                        const SizedBox(width: 10),
-                        Text(l.speedUnit(_limit), style: VoltiTypography.caption.copyWith(color: VoltiColors.ink600)),
-                        const Spacer(),
-                        BatteryPill(_battery, rangeKm: _range),
-                      ]),
-                    ),
+                  child: Container(
+                    padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
+                    decoration: BoxDecoration(color: VoltiColors.glassBg, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
+                    child: Row(children: [
+                      VoltiSpeedGauge(
+                        key: const Key('ride-gauge'),
+                        speedKmh: _speed,
+                        limitKmh: _limit,
+                        size: 60,
+                        semanticsLabel: l.speedSemantics(_speed.round(), _limit),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                          Text(l.speedUnit(_limit), style: VoltiTypography.caption.copyWith(color: VoltiColors.ink600)),
+                          const SizedBox(height: 6),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: BatteryPill(_battery, rangeKm: _range),
+                          ),
+                        ]),
+                      ),
+                    ]),
                   ),
                 ),
                 const SizedBox(width: 10),
                 Semantics(
-                  button: true,
-                  label: 'SOS',
-                  child: GestureDetector(
+                  hint: l.sosHint,
+                  child: VoltiPressable(
+                    key: const Key('sos-button'),
+                    semanticLabel: 'SOS',
+                    scale: VoltiMotion.iconPressScale,
                     onTap: _showSos,
                     child: Container(
                       width: 64,
                       height: 64,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(color: VoltiColors.danger, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadowCoral),
-                      child: const Text('SOS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
-                    ),
-                  ),
-                ),
-              ]),
-              if (_rtDown)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Semantics(
-                      liveRegion: true,
-                      child: Chip(
-                        avatar: const Icon(LucideIcons.wifiOff, size: 16),
-                        label: Text(l.realtimeOffline),
-                        visualDensity: VisualDensity.compact,
+                      child: MediaQuery.withClampedTextScaling(
+                        maxScaleFactor: 1.4,
+                        child: const Text('SOS', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
                       ),
                     ),
                   ),
                 ),
-              if (_zone != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: NoticeBanner(
-                    title: _zone!.speedLimitKmh != null ? l.zoneLimit(_zone!.speedLimitKmh!) : l.zoneNotice,
-                    message: _zone!.message,
-                    danger: _zone!.zoneType == 'forbidden' || _zone!.zoneType == 'operation',
-                  ),
-                ),
+              ]),
+              VoltiStatusBanner(
+                key: const Key('rt-offline'),
+                visible: _rtDown,
+                tone: VoltiStatusTone.offline,
+                icon: LucideIcons.wifiOff,
+                title: l.realtimeOffline,
+                message: l.realtimeOfflineText,
+              ),
+              VoltiStatusBanner(
+                key: const Key('zone-banner'),
+                visible: _zone != null,
+                icon: LucideIcons.gauge,
+                tone: _isDangerZone(_lastZone) ? VoltiStatusTone.danger : VoltiStatusTone.warning,
+                title: _lastZone?.speedLimitKmh != null ? l.zoneLimit(_lastZone!.speedLimitKmh!) : l.zoneNotice,
+                message: _lastZone?.message ?? '',
+              ),
             ]),
           ),
         ),
@@ -410,6 +423,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
               borderRadius: VoltiRadii.sheetTop,
               boxShadow: VoltiShadows.shadowSheet,
             ),
+            constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .62),
             child: SafeArea(
               top: false,
               child: SingleChildScrollView(
@@ -419,28 +433,29 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text(paused ? l.ridePaused : l.rideLive, style: VoltiTypography.caption),
-                        Text(clock(_elapsed), style: VoltiTypography.timer),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.centerLeft,
+                          child: VoltiTicker(clock(_elapsed), key: const Key('ride-clock'), style: VoltiTypography.timer),
+                        ),
                       ]),
                     ),
-                    Chip(
-                      avatar: paused ? null : const _LiveDot(),
-                      label: Text(paused ? l.pausedBadge : l.liveBadge),
-                    ),
+                    _StateBadge(paused: paused, label: paused ? l.pausedBadge : l.liveBadge),
                   ]),
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
                     child: Row(children: [
-                      _Stat(l.accumulatedCost, money(_cost)),
-                      _Stat(l.battery, '$_battery%'),
+                      _Stat(l.accumulatedCost, money(_cost), ticker: true),
+                      _Stat(l.battery, '$_battery%', ticker: true),
                       _Stat(l.coverage, r.coverage == InsuranceCoverage.full ? l.coverageFull : l.coverageBasic),
                     ]),
                   ),
                   const SizedBox(height: 12),
-                  Wrap(spacing: 8, children: [
-                    ActionChip(avatar: const Icon(LucideIcons.circleAlert, size: 16), label: Text(l.reportProblem), onPressed: _report),
-                    ActionChip(avatar: const Icon(LucideIcons.share2, size: 16), label: Text(l.shareTrip), onPressed: _shareLocation),
+                  Wrap(spacing: 8, runSpacing: 8, children: [
+                    VoltiChip(icon: LucideIcons.circleAlert, label: l.reportProblem, onTap: _report),
+                    VoltiChip(icon: LucideIcons.share2, label: l.shareTrip, onTap: _shareLocation),
                   ]),
                   const SizedBox(height: 12),
                   Row(children: [
@@ -476,15 +491,51 @@ class _RideScreenState extends ConsumerState<RideScreen> {
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat(this.label, this.value);
+  const _Stat(this.label, this.value, {this.ticker = false});
   final String label, value;
+
+  /// Valor que muda ao vivo: rola os digitos (`VoltiTicker`).
+  final bool ticker;
   @override
   Widget build(BuildContext context) => Expanded(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(label, style: VoltiTypography.caption),
-          Text(value, style: VoltiTypography.heading),
+          if (ticker)
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: VoltiTicker(value, style: VoltiTypography.heading),
+            )
+          else
+            Text(value, style: VoltiTypography.heading),
         ]),
       );
+}
+
+/// Selo "Ao vivo" (ponto piscando) ou "Pausada", troca com cross-fade.
+class _StateBadge extends StatelessWidget {
+  const _StateBadge({required this.paused, required this.label});
+  final bool paused;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final bg = paused ? VoltiColors.sun300.withValues(alpha: .35) : VoltiColors.brandSoft;
+    final fg = paused ? VoltiColors.ink900 : VoltiColors.successInk;
+    return AnimatedSwitcher(
+      duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
+      child: Container(
+        key: ValueKey(paused),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(color: bg, borderRadius: VoltiRadii.rPill),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          if (paused) Icon(LucideIcons.pause, size: 14, color: fg) else const _LiveDot(),
+          const SizedBox(width: 6),
+          Text(label, style: VoltiTypography.label.copyWith(color: fg)),
+        ]),
+      ),
+    );
+  }
 }
 
 class _RoundIcon extends StatelessWidget {
