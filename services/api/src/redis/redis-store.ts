@@ -11,11 +11,15 @@ export interface RedisStore {
   exists(key: string): Promise<boolean>;
   hset(key: string, values: Record<string, string>): Promise<void>;
   hgetall(key: string): Promise<Record<string, string>>;
+  /** Contador de janela fixa: INCR e, no primeiro hit, expira em `ttlMs`. Devolve a contagem e o tempo restante (ms). */
+  incrWindow(key: string, ttlMs: number): Promise<{ count: number; ttlMs: number }>;
   /** Chamado quando uma chave expira por TTL (keyspace notifications `Ex`). */
   onExpired(handler: (key: string) => void): void;
   ping(): Promise<boolean>;
   close(): Promise<void>;
 }
+
+const INCR_WINDOW_LUA = "local c = redis.call('INCR', KEYS[1]) if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end return {c, redis.call('PTTL', KEYS[1])}";
 
 /** Redis real (ioredis). Liga `notify-keyspace-events Ex` para receber expirações. */
 export class IoRedisStore implements RedisStore {
@@ -47,6 +51,10 @@ export class IoRedisStore implements RedisStore {
   }
   async hgetall(key: string) {
     return this.client.hgetall(key);
+  }
+  async incrWindow(key: string, ttlMs: number) {
+    const [count, pttl] = (await this.client.eval(INCR_WINDOW_LUA, 1, key, String(Math.ceil(ttlMs)))) as [number, number];
+    return { count: Number(count), ttlMs: Number(pttl) > 0 ? Number(pttl) : ttlMs };
   }
 
   onExpired(handler: (key: string) => void): void {
@@ -123,6 +131,17 @@ export class MemoryRedisStore implements RedisStore {
   }
   async hgetall(key: string) {
     return { ...(this.hashes.get(key) ?? {}) };
+  }
+  async incrWindow(key: string, ttlMs: number) {
+    const now = Date.now();
+    const e = this.data.get(key);
+    if (!e || (e.expiresAt !== undefined && e.expiresAt <= now)) {
+      await this.set(key, '1', ttlMs);
+      return { count: 1, ttlMs };
+    }
+    const count = Number(e.value) + 1;
+    e.value = String(count);
+    return { count, ttlMs: e.expiresAt !== undefined ? e.expiresAt - now : ttlMs };
   }
   onExpired(handler: (key: string) => void) {
     this.handlers.push(handler);

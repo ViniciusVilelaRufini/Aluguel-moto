@@ -197,6 +197,9 @@ importers:
       class-validator:
         specifier: 0.14.1
         version: 0.14.1
+      helmet:
+        specifier: 8.0.0
+        version: 8.0.0
       ioredis:
         specifier: 5.4.1
         version: 5.4.1
@@ -4144,6 +4147,10 @@ packages:
 
   hat@0.0.3:
     resolution: {integrity: sha512-zpImx2GoKXy42fVDSEad2BPKuSQdLcqsCYa48K3zHSzM/ugWuYjLDr8IXxpVuL7uCLHw56eaiLxCRthhOzf5ug==}
+
+  helmet@8.0.0:
+    resolution: {integrity: sha512-VyusHLEIIO5mjQPUI1wpOAEu+wl6Q0998jzTxqUYGE45xCIcAxy3MsbEK/yyJUJ3ADeMoB6MornPH6GMWAf+Pw==}
+    engines: {node: '>=18.0.0'}
 
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
@@ -11967,6 +11974,8 @@ snapshots:
       function-bind: 1.1.2
 
   hat@0.0.3: {}
+
+  helmet@8.0.0: {}
 
   help-me@5.0.0: {}
 
