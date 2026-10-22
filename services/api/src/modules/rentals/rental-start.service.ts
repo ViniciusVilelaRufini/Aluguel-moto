@@ -25,6 +25,11 @@ import { ReservationsService } from '../reservations/reservations.service';
 import type { StartRentalDto } from './rentals.dto';
 import { toDeposit, toRental } from './rentals.mapper';
 
+/** Aceite da entrega de galpão (`POST /handovers/{id}/accept`): a única passagem de uma moto do galpão para o aluguel. */
+export interface StartOptions {
+  fromHandover?: { reservationId: string; handoverId: string };
+}
+
 export interface StartResult {
   status: 201 | 202;
   body: { outcome: 'started' | 'awaiting_deposit'; rental?: ReturnType<typeof toRental>; deposit: ReturnType<typeof toDeposit> };
@@ -81,7 +86,11 @@ export class RentalStartService {
           this.logger.error({ msg: 'policy_cancel_failed', policyId: m.policyId, error: (e as Error).message });
         }
       }
-      await this.requestDepositRelease(m.depositId ?? undefined, m.customerId);
+      // Aceite de entrega de galpão que morreu no meio: a caução continua da reserva (ainda `handover`).
+      const heldByHandover = m.depositId
+        ? await this.prisma.reservation.findFirst({ where: { depositId: m.depositId, status: 'handover' }, select: { id: true } })
+        : null;
+      if (!heldByHandover) await this.requestDepositRelease(m.depositId ?? undefined, m.customerId);
       this.logger.warn({ msg: 'rental_start_compensated_by_sweep', rentalId: m.rentalId, vehicleId: m.vehicleId });
       done++;
     }
@@ -157,14 +166,24 @@ export class RentalStartService {
     }
   }
 
-  async start(user: Principal, dto: StartRentalDto, idempotencyKey: string): Promise<StartResult> {
+  /** Reserva de galpão do próprio cliente em `handover` que separou esta moto (`reserved`); senão `null`. */
+  private async handoverReservation(reservationId: string, customerId: string, vehicle: { id: string; status: string }) {
+    const r = await this.prisma.reservation.findUnique({ where: { id: reservationId } });
+    if (!r || r.status !== 'handover' || r.customerId !== customerId || r.vehicleId !== vehicle.id || vehicle.status !== 'reserved') return null;
+    return r;
+  }
+
+  async start(user: Principal, dto: StartRentalDto, idempotencyKey: string, opts: StartOptions = {}): Promise<StartResult> {
     const customerId = user.customerId!;
+    const fromHandover = opts.fromHandover;
+    // Entrega de galpão: a caução é da reserva (que continua `handover` se o aceite falhar); quem a libera é a reserva.
+    const release = (depositId: string | undefined) => (fromHandover ? Promise.resolve() : this.requestDepositRelease(depositId, customerId));
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
     await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: true, requireTerms: true });
 
     const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
     if (open) {
-      await this.requestDepositRelease(dto.depositId, customerId);
+      await release(dto.depositId);
       throw conflict('rental-already-active', 'Você já tem um aluguel em andamento.');
     }
 
@@ -177,26 +196,29 @@ export class RentalStartService {
     try {
       await assertNotFixedForOther(this.prisma, vehicle.id, customerId);
     } catch (err) {
-      await this.requestDepositRelease(dto.depositId, customerId);
+      await release(dto.depositId);
       throw err;
     }
-    // Retirada em galpão: moto do galpão (ou esperando recolhimento) só sai pela entrega.
-    if (isDepotLocked(vehicle)) {
-      await this.requestDepositRelease(dto.depositId, customerId);
+    // Retirada em galpão: moto do galpão (ou esperando recolhimento) só sai pela entrega. O aceite da entrega passa
+    // (`fromHandover`) só com a moto `reserved` pela reserva do próprio cliente em status `handover`.
+    const handoverReservation = fromHandover ? await this.handoverReservation(fromHandover.reservationId, customerId, vehicle) : null;
+    if (fromHandover && !handoverReservation) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
+    if (!handoverReservation && isDepotLocked(vehicle)) {
+      await release(dto.depositId);
       throw conflict('vehicle-unavailable', 'Esta moto fica no galpão e só sai pela entrega do operador.');
     }
-    const reservation = await this.prisma.reservation.findFirst({
+    const reservation = handoverReservation ?? (await this.prisma.reservation.findFirst({
       where: { vehicleId: vehicle.id, status: 'active', expiresAt: { gt: new Date() } },
-    });
+    }));
     const ownReservation = reservation && reservation.customerId === customerId ? reservation : null;
     // QA-21: moto offline não começa aluguel (o desbloqueio ficaria pendente e o relógio correria com a moto travada).
     if (vehicle.status === 'offline' || vehicle.online === false || (await this.liveOffline(vehicle.thingName))) {
-      await this.requestDepositRelease(dto.depositId, customerId);
+      await release(dto.depositId);
       throw conflict('vehicle-offline', 'A moto está sem conexão agora. Escolha outra moto; nada foi cobrado.');
     }
     const available = (vehicle.status === 'free' && !reservation) || (vehicle.status === 'reserved' && !!ownReservation);
     if (!available) {
-      await this.requestDepositRelease(dto.depositId, customerId);
+      await release(dto.depositId);
       throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
     }
 
@@ -272,6 +294,16 @@ export class RentalStartService {
         throw conflict('vehicle-offline', 'A moto não respondeu a tempo. Nada foi cobrado e a caução foi liberada.');
       }
       if (ownReservation) await this.reservations.convert(tx, ownReservation.id);
+      if (fromHandover) {
+        // Aceite único: a entrega só passa a `accepted` se ainda estiver pendente (disputa/cancelamento concorrente desfaz tudo).
+        const accepted = await tx.handover.updateMany({
+          where: { id: fromHandover.handoverId, status: 'pending_customer' },
+          data: { status: 'accepted', rentalId, lastError: null, respondedAt: new Date() },
+        });
+        if (accepted.count !== 1) throw new ProblemException(422, 'handover-not-pending', 'Esta entrega não está mais aguardando o seu aceite.');
+        // A moto saiu do galpão (o fim no ponto verde a reconhece pela entrega aceita deste aluguel).
+        await tx.vehicle.update({ where: { id: vehicle.id }, data: { depotId: null } });
+      }
       const created = await tx.rental.create({
         data: {
           id: rentalId,
@@ -320,7 +352,7 @@ export class RentalStartService {
           this.logger.error({ msg: 'policy_cancel_failed', policyId, error: (e as Error).message });
         }
       }
-      if (heldDepositId) await this.requestDepositRelease(heldDepositId, customerId);
+      if (heldDepositId) await release(heldDepositId);
       throw err;
     }
 

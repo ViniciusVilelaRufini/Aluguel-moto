@@ -389,4 +389,98 @@ describe('Início do aluguel (POST /rentals)', () => {
       expect(insurance.cancel).not.toHaveBeenCalled();
     });
   });
+  describe('Task 6: aceite da entrega de galpão (fromHandover)', () => {
+    const DEPOT_ID = '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c';
+    const RES_ID = '44444444-4444-4444-8444-444444444444';
+    const HO_ID = '55555555-5555-4555-8555-555555555555';
+    const user = { pool: 'customer', sub: 's', email: 'e@example.com', groups: [], userId: CUSTOMER_ID, customerId: CUSTOMER_ID } as any;
+    const dto = { vehicleId: VEHICLE_ID, planCode: 'minute', coverage: 'basic', depositMethod: 'card', depositId: DEPOSIT_ID } as any;
+    const opts = { fromHandover: { reservationId: RES_ID, handoverId: HO_ID } };
+    const handoverRes = { id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, depotId: DEPOT_ID, status: 'handover', depositId: DEPOSIT_ID, expiresAt: new Date(Date.now() - 60_000) };
+    let released: jest.Mock;
+    const svc = () => h.app.get(RentalStartService);
+
+    beforeEach(() => {
+      released = jest.fn();
+      h.app.get(EventEmitter2).removeAllListeners(EV.DEPOSIT_RELEASE_REQUESTED);
+      h.app.get(EventEmitter2).on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved', depotId: DEPOT_ID } as any);
+      h.prisma.reservation.findUnique.mockResolvedValue(handoverRes as any);
+      h.prisma.handover.updateMany.mockResolvedValue({ count: 1 });
+    });
+
+    it('moto do galpão reservada pela reserva do próprio cliente em handover → começa, converte a reserva e aceita a entrega na mesma transação', async () => {
+      const r = await svc().start(user, dto, `handover:${HO_ID}`, opts);
+      expect(r.status).toBe(201);
+      expect(reservations.convert.mock.calls[0][1]).toBe(RES_ID);
+      expect(h.prisma.handover.updateMany).toHaveBeenCalledWith({
+        where: { id: HO_ID, status: 'pending_customer' },
+        data: expect.objectContaining({ status: 'accepted', rentalId: expect.any(String), lastError: null }),
+      });
+      expect(h.prisma.vehicle.update).toHaveBeenCalledWith({ where: { id: VEHICLE_ID }, data: { depotId: null } });
+      expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'unlock' }));
+      expect(billing.holdDeposit).not.toHaveBeenCalled();
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['de outro cliente', { customerId: '99999999-9999-4999-8999-999999999999' }],
+      ['ainda active (sem entrega)', { status: 'active' }],
+      ['de outra moto', { vehicleId: '88888888-8888-4888-8888-888888888888' }],
+    ])('reserva %s → 409 vehicle-unavailable, sem destravar', async (_n, over) => {
+      h.prisma.reservation.findUnique.mockResolvedValue({ ...handoverRes, ...over } as any);
+      await expect(svc().start(user, dto, `handover:${HO_ID}`, opts)).rejects.toMatchObject({ slug: 'vehicle-unavailable' });
+      expect(commands.dispatch).not.toHaveBeenCalled();
+      expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('moto que não está reserved → 409 vehicle-unavailable', async () => {
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'free', depotId: DEPOT_ID } as any);
+      await expect(svc().start(user, dto, `handover:${HO_ID}`, opts)).rejects.toMatchObject({ slug: 'vehicle-unavailable' });
+      expect(commands.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('caução da reserva não retida → 402 deposit-not-held, sem destravar e sem liberar a caução da reserva', async () => {
+      h.prisma.deposit.findUnique.mockResolvedValue({ id: DEPOSIT_ID, customerId: CUSTOMER_ID, rentalId: null, status: 'awaiting_pix' } as any);
+      await expect(svc().start(user, dto, `handover:${HO_ID}`, opts)).rejects.toMatchObject({ slug: 'deposit-not-held' });
+      expect(commands.dispatch).not.toHaveBeenCalled();
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it('desbloqueio não confirmado → 409, moto volta a reserved com bloqueio de sistema e a caução continua da reserva', async () => {
+      commands.dispatch.mockImplementation(async (i: any) => (i.type === 'unlock' ? { id: 'cmd-u', status: 'pending' } : { id: 'cmd-l', status: 'pending' }));
+      await expect(svc().start(user, dto, `handover:${HO_ID}`, opts)).rejects.toMatchObject({ slug: 'vehicle-offline' });
+      expect(h.prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
+      expect(commands.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'lock' }));
+      expect(insurance.cancel).toHaveBeenCalledWith(POLICY_ID);
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it('entrega disputada no meio do aceite → 422 handover-not-pending, nada criado e moto travada de novo', async () => {
+      h.prisma.handover.updateMany.mockResolvedValue({ count: 0 });
+      await expect(svc().start(user, dto, `handover:${HO_ID}`, opts)).rejects.toMatchObject({ slug: 'handover-not-pending' });
+      expect(commands.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'lock' }));
+      expect(h.prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it('sem fromHandover a mesma moto continua bloqueada (POST /rentals)', async () => {
+      h.prisma.reservation.findFirst.mockResolvedValue(null);
+      const res = await post('chave-galpao-ho-01');
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
+    });
+
+    it('varredura de um aceite que morreu no meio não libera a caução da reserva em handover', async () => {
+      const marker = { rentalId: 'r-ho', vehicleId: VEHICLE_ID, customerId: CUSTOMER_ID, depositId: DEPOSIT_ID, policyId: POLICY_ID, previousStatus: 'reserved', createdAt: new Date(Date.now() - 10 * 60_000) };
+      h.prisma.rentalStart.findMany.mockResolvedValue([marker] as any);
+      h.prisma.rentalStart.deleteMany.mockResolvedValueOnce({ count: 1 });
+      h.prisma.rental.findUnique.mockResolvedValue(null);
+      h.prisma.reservation.findFirst.mockResolvedValue({ id: RES_ID } as any);
+      expect(await svc().sweepStaleStarts()).toBe(1);
+      expect(h.prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
+      expect(released).not.toHaveBeenCalled();
+    });
+  });
 });

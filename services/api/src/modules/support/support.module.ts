@@ -3,5 +3,5 @@ import { AlertsModule } from '../alerts/alerts.module';
 import { SupportController } from './support.controller';
 import { SupportService } from './support.service';
 
-@Module({ imports: [AlertsModule], controllers: [SupportController], providers: [SupportService] })
+@Module({ imports: [AlertsModule], controllers: [SupportController], providers: [SupportService], exports: [SupportService] })
 export class SupportModule {}

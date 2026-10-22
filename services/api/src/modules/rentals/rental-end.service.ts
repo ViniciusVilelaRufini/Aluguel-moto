@@ -145,13 +145,26 @@ export class RentalEndService {
     return this.finalize(rentalId, 'force_ended', { fees, actor });
   }
 
+  /**
+   * Chegada no galpão (`POST /handovers`, `return_depot`, Task 6): pede o bloqueio seguro (rampa até parar, como no
+   * encerramento forçado; o operador está com a moto) e fecha pelo caminho normal com `returnTo: 'depot'` (sem tarefa
+   * `collect`). Quem chama põe a moto no galpão. Aluguel já encerrado → devolve como está (repetição idempotente).
+   */
+  async endAtDepot(actor: Principal, rentalId: string) {
+    const rental = await this.load(rentalId);
+    if (rental.status === 'ended' || rental.status === 'force_ended') return toRental(rental);
+    if (!['active', 'paused', 'ending'].includes(rental.status)) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+    await this.requestLock(rentalId, rental.vehicleId, 'rental_depot_return');
+    return this.finalize(rentalId, 'ended', { actor, returnTo: 'depot' });
+  }
+
   /** Pede o travamento (bloqueio seguro). `true` se o rastreador confirmou na hora. */
-  private async requestLock(rentalId: string, vehicleId: string, purpose: 'rental_end' | 'rental_force_end'): Promise<boolean> {
+  private async requestLock(rentalId: string, vehicleId: string, purpose: 'rental_end' | 'rental_force_end' | 'rental_depot_return'): Promise<boolean> {
     try {
       const cmd = await this.commands.dispatch({
         vehicleId,
         type: 'lock',
-        reason: purpose === 'rental_end' ? 'Encerramento do aluguel' : 'Encerramento forçado do aluguel',
+        reason: purpose === 'rental_end' ? 'Encerramento do aluguel' : purpose === 'rental_depot_return' ? 'Chegada no galpão' : 'Encerramento forçado do aluguel',
         actor: SYSTEM,
         context: { rentalId, purpose },
         auditAction: 'rental.lock',

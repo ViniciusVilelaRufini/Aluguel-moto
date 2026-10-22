@@ -19,7 +19,27 @@ export const EV = {
   CUSTOMER_CONSENT_CHANGED: 'customer.consent-changed',
   LGPD_IDENTITY_DELETION_FAILED: 'lgpd.identity-deletion-failed',
   PRINCIPAL_REVOKED: 'auth.principal-revoked',
+  // Retirada em galpão (Task 6): entrega de saída criada e mudança de status/erro do aceite.
+  HANDOVER_PENDING: 'handover.pending',
+  HANDOVER_UPDATED: 'handover.updated',
 } as const;
+
+/** Entrega de saída criada: `handover.pending` nas salas `customer:{customerId}` e `depot:{depotId}`. */
+export interface HandoverPendingEvent {
+  handoverId: string;
+  reservationId: string;
+  customerId: string;
+  depotId: string;
+}
+
+/** Entrega mudou de status (ou o aceite falhou, com `lastError`): `handover.updated` nas mesmas salas. */
+export interface HandoverUpdatedEvent {
+  handoverId: string;
+  status: 'pending_customer' | 'accepted' | 'disputed' | 'canceled';
+  lastError?: string;
+  customerId?: string;
+  depotId: string;
+}
 
 /** Exclusão da identidade no Cognito esgotou as tentativas (fix round 1, QA-07): revisão manual. */
 export interface LgpdIdentityDeletionFailedEvent {

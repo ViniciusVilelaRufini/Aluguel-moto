@@ -14,6 +14,7 @@ import { RentalsService } from './rentals.service';
   imports: [CommandsModule, PricingModule, ReservationsModule, ZonesModule, AlertsModule],
   controllers: [RentalsController],
   providers: [RentalStartService, RentalEndService, RentalsService, RentalsListeners],
-  exports: [RentalsService],
+  // Task 6: a entrega no galpão reaproveita o início e o fechamento do aluguel.
+  exports: [RentalsService, RentalStartService, RentalEndService],
 })
 export class RentalsModule {}

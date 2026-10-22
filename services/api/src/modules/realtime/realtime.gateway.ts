@@ -5,8 +5,8 @@ import { OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websoc
 import type { Namespace, Socket } from 'socket.io';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import {
-  AlertCreatedEvent, CommandChangedEvent, EV, GeofenceTransitionEvent, IotDeviceEvent, IotTelemetryEvent, PaymentUpdatedEvent, RentalChangedEvent,
-  PrincipalRevokedEvent, VehicleStatusChangedEvent,
+  AlertCreatedEvent, CommandChangedEvent, EV, GeofenceTransitionEvent, HandoverPendingEvent, HandoverUpdatedEvent, IotDeviceEvent, IotTelemetryEvent,
+  PaymentUpdatedEvent, RentalChangedEvent, PrincipalRevokedEvent, VehicleStatusChangedEvent,
 } from '../../common/events';
 import { AUTH_VERIFIER, type AuthVerifier } from '../../ports/auth-verifier.port';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -15,6 +15,8 @@ import { PrincipalResolver } from '../auth/principal-resolver.service';
 import { toRental } from '../rentals/rentals.mapper';
 
 const FLEET_GROUPS = ['admin', 'operacao', 'suporte'];
+/** Staff que acompanha as entregas dos galpões (salas `depot:{id}`, todos os galpões). */
+const DEPOT_GROUPS = ['admin', 'operacao', 'campo'];
 
 interface VehicleCache {
   status: VehicleStatus;
@@ -72,9 +74,15 @@ export class RealtimeGateway implements OnGatewayInit {
     await socket.join(`principal:${principal.pool}:${principal.userId}`);
     if (principal.pool === 'staff') {
       if (principal.groups.some((g) => FLEET_GROUPS.includes(g))) await socket.join('fleet');
+      if (principal.groups.some((g) => DEPOT_GROUPS.includes(g))) {
+        const depots = await this.prisma.depot.findMany({ select: { id: true } });
+        if (depots.length) await socket.join(depots.map((d) => `depot:${d.id}`));
+      }
       return;
     }
     await socket.join(`user:${principal.customerId}`);
+    // Entrega no galpão (`handover.*`): só eventos da própria entrega, sem posição (LGPD).
+    await socket.join(`customer:${principal.customerId}`);
     const rental = await this.prisma.rental.findFirst({ where: { customerId: principal.customerId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
     if (rental) await socket.join(`rental:${rental.id}`);
   }
@@ -160,6 +168,21 @@ export class RealtimeGateway implements OnGatewayInit {
     const payload: Record<string, unknown> = { rentalId, zoneType: ev.zoneType, transition: ev.transition, message: zoneMessage(ev) };
     if (ev.speedLimitKmh !== undefined) payload.speedLimitKmh = ev.speedLimitKmh;
     this.server.to(`rental:${rentalId}`).emit('zone.notice', payload);
+  }
+
+  @OnEvent(EV.HANDOVER_PENDING)
+  onHandoverPending(ev: HandoverPendingEvent): void {
+    const payload = { handoverId: ev.handoverId, reservationId: ev.reservationId };
+    this.server?.to(`customer:${ev.customerId}`).emit('handover.pending', payload);
+    this.server?.to(`depot:${ev.depotId}`).emit('handover.pending', payload);
+  }
+
+  @OnEvent(EV.HANDOVER_UPDATED)
+  onHandoverUpdated(ev: HandoverUpdatedEvent): void {
+    const payload: Record<string, unknown> = { handoverId: ev.handoverId, status: ev.status };
+    if (ev.lastError) payload.lastError = ev.lastError;
+    if (ev.customerId) this.server?.to(`customer:${ev.customerId}`).emit('handover.updated', payload);
+    this.server?.to(`depot:${ev.depotId}`).emit('handover.updated', payload);
   }
 
   @OnEvent(EV.IOT_DEVICE_EVENT, { async: true, promisify: true })

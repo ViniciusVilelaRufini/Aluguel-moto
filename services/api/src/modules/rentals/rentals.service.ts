@@ -17,6 +17,7 @@ import { AlertsService } from '../alerts/alerts.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
 import type { PriceBreakdown } from '../pricing/pricing.service';
+import { isDepotLocked } from './rental-start.service';
 import type { ListRentalsQuery, LocationShareDto, RatingDto, SwapVehicleDto, WellbeingDto } from './rentals.dto';
 import { toRental, toRentalEvent } from './rentals.mapper';
 import { receiptLinks } from '../payments/receipts/receipt-links';
@@ -115,14 +116,15 @@ export class RentalsService {
     if (r.status !== 'active' && r.status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
     const target = await this.prisma.vehicle.findUnique({ where: { id: dto.newVehicleId } });
     if (!target) throw notFound('Moto não encontrada.');
-    if (target.id === r.vehicleId || target.status !== 'free') throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
+    // Retirada em galpão: moto do galpão (ou esperando recolhimento) só sai pela entrega, nunca pela troca.
+    if (target.id === r.vehicleId || target.status !== 'free' || isDepotLocked(target)) throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
     const live = await this.iot.getLiveState(r.vehicle.thingName).catch(() => null);
     const here = live ? { lat: live.lat, lng: live.lng } : { lat: r.vehicle.lat, lng: r.vehicle.lng };
     if (distanceM(here, target) > SWAP_MAX_DISTANCE_M) {
       throw unprocessable('validation-error', `A nova moto precisa estar a até ${SWAP_MAX_DISTANCE_M} m.`);
     }
     await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.vehicle.updateMany({ where: { id: target.id, status: 'free' }, data: { status: r.status === 'paused' ? 'paused' : 'rented' } });
+      const claimed = await tx.vehicle.updateMany({ where: { id: target.id, status: 'free', depotId: null }, data: { status: r.status === 'paused' ? 'paused' : 'rented' } });
       if (claimed.count === 0) throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
       await tx.vehicle.update({ where: { id: r.vehicleId }, data: { status: 'maintenance' } });
       await tx.rental.update({ where: { id }, data: { vehicleId: target.id, speedLimitKmh: target.speedLimitKmh } });

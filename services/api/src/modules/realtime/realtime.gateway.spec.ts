@@ -47,4 +47,18 @@ describe('RealtimeGateway', () => {
     expect(zoneMessage({ zoneType: 'reduced_speed', transition: 'ENTER', speedLimitKmh: 6 })).toBe('Você entrou numa área de pedestres. Velocidade máxima: 6 km/h.');
     expect(zoneMessage({ zoneType: 'operation', transition: 'EXIT' })).toMatch(/5 minutos/);
   });
+  it('Task 6: handover.pending e handover.updated vão para customer:{id} e depot:{id}, sem dados pessoais', () => {
+    const { gw, emit, to } = setup();
+    gw.onHandoverPending({ handoverId: 'h1', reservationId: 'r1', customerId: 'c1', depotId: 'd1' });
+    expect(to).toHaveBeenCalledWith('customer:c1');
+    expect(to).toHaveBeenCalledWith('depot:d1');
+    expect(emit).toHaveBeenCalledWith('handover.pending', { handoverId: 'h1', reservationId: 'r1' });
+    emit.mockClear();
+    gw.onHandoverUpdated({ handoverId: 'h1', status: 'pending_customer', lastError: 'payment-declined', customerId: 'c1', depotId: 'd1' });
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenCalledWith('handover.updated', { handoverId: 'h1', status: 'pending_customer', lastError: 'payment-declined' });
+    emit.mockClear();
+    gw.onHandoverUpdated({ handoverId: 'h1', status: 'accepted', customerId: 'c1', depotId: 'd1' });
+    expect(emit).toHaveBeenCalledWith('handover.updated', { handoverId: 'h1', status: 'accepted' });
+  });
 });
