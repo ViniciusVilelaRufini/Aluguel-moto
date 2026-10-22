@@ -922,8 +922,6 @@ class _DashedBorder extends CustomPainter {
 /// Topo do cartao da moto no mapa (design `VehicleSummary`): midia no tile
 /// ceu, categoria laranja, nome em titulo, [BatteryPill] e os selos de
 /// promocao (verde) e preco (azul). Sem [image], o tile mostra o icone de moto.
-/// Com [heroTag], a midia vira o elemento compartilhado da transicao
-/// mapa -> plano (evolucao E-15); o `HeroMode` de quem usa desliga em reduced motion.
 ///
 /// O nome evita colidir com o modelo `VehicleSummary` da API.
 class VehicleSummaryCard extends StatelessWidget {
@@ -936,7 +934,6 @@ class VehicleSummaryCard extends StatelessWidget {
     this.promo,
     this.price,
     this.image,
-    this.heroTag,
     this.mediaKey,
   });
 
@@ -953,7 +950,6 @@ class VehicleSummaryCard extends StatelessWidget {
   /// Selo azul (ex.: "R$ 0,79/min + taxa").
   final String? price;
   final Widget? image;
-  final Object? heroTag;
 
   /// Chave do tile de midia (usada para medir o destino de animacoes).
   final Key? mediaKey;
@@ -961,8 +957,7 @@ class VehicleSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    Widget media = VehicleThumb(key: mediaKey, size: 132, image: image, semanticLabel: name);
-    if (heroTag != null) media = Hero(tag: heroTag!, child: media);
+    final media = VehicleThumb(key: mediaKey, size: 132, image: image, semanticLabel: name);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [

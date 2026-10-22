@@ -6,6 +6,7 @@ import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
 import 'motion.dart';
+import 'page_transitions.dart';
 
 /// Corpo de bottom sheet: raio 28 no topo, grabber e sombra de sheet.
 /// Use [VoltiBottomSheet.show] para abrir como modal.
@@ -31,9 +32,12 @@ class VoltiBottomSheet extends StatelessWidget {
       backgroundColor: Colors.transparent,
       elevation: 0,
       barrierColor: VoltiColors.surfaceScrim,
+      // Mesma mola da troca de tela (`--dur-screen`/`--ease-screen`, como o
+      // BottomSheet do kit); o scrim acompanha a animacao da rota. Reduced
+      // motion ou leitor de tela: instantaneo.
       sheetAnimationStyle: AnimationStyle(
-        duration: VoltiMotion.scaled(context, VoltiMotion.durScreen),
-        reverseDuration: VoltiMotion.scaled(context, VoltiMotion.durScreen),
+        duration: VoltiPageTransitions.durationOf(context),
+        reverseDuration: VoltiPageTransitions.durationOf(context),
         curve: VoltiMotion.easeScreen,
         reverseCurve: VoltiMotion.easeScreen.flipped,
       ),
@@ -285,12 +289,17 @@ class VoltiToast extends StatelessWidget {
 }
 
 /// Barra de progresso segmentada para fluxos de varias etapas.
+///
+/// Com [animateFrom] (etapa anterior), o segmento que muda enche (ou esvazia)
+/// da esquerda para a direita em `--dur-screen` com `--ease-screen` ao aparecer.
+/// Reduced motion: estado final direto.
 class ProgressSteps extends StatelessWidget {
   const ProgressSteps({
     super.key,
     this.total = 4,
     this.current = 0,
     this.label,
+    this.animateFrom,
   });
 
   final int total;
@@ -299,32 +308,36 @@ class ProgressSteps extends StatelessWidget {
   final int current;
   final String? label;
 
+  /// Etapa de onde a barra parte ao aparecer (ex.: o passo anterior do
+  /// cadastro). `null` mostra [current] direto.
+  final int? animateFrom;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final animate = animateFrom != null && animateFrom != current && !VoltiMotion.reduced(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Row(
-          children: [
-            for (var i = 0; i < total; i++) ...[
-              if (i > 0) const SizedBox(width: 6),
-              Expanded(
-                child: AnimatedContainer(
-                  key: Key('progress-step-$i'),
-                  duration: VoltiMotion.durBase,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: i <= current
-                        ? VoltiColors.brand
-                        : scheme.outlineVariant,
-                    borderRadius: BorderRadius.circular(2),
+        TweenAnimationBuilder<double>(
+          tween: Tween(begin: (animate ? animateFrom! : current).toDouble(), end: current.toDouble()),
+          duration: animate ? VoltiMotion.durScreen : Duration.zero,
+          curve: VoltiMotion.easeScreen,
+          builder: (context, v, _) => Row(
+            children: [
+              for (var i = 0; i < total; i++) ...[
+                if (i > 0) const SizedBox(width: 6),
+                Expanded(
+                  child: _StepSegment(
+                    segmentKey: Key('progress-step-$i'),
+                    fill: (v + 1 - i).clamp(0.0, 1.0),
+                    track: scheme.outlineVariant,
                   ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
         if (label != null) ...[
           const SizedBox(height: 8),
@@ -336,6 +349,41 @@ class ProgressSteps extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Segmento da [ProgressSteps]: trilho e preenchimento parcial da marca.
+class _StepSegment extends StatelessWidget {
+  const _StepSegment({required this.segmentKey, required this.fill, required this.track});
+  final Key segmentKey;
+  final double fill;
+  final Color track;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      key: segmentKey,
+      duration: VoltiMotion.durBase,
+      height: 4,
+      decoration: BoxDecoration(
+        color: fill >= 1 ? VoltiColors.brand : track,
+        borderRadius: BorderRadius.circular(2),
+      ),
+      alignment: Alignment.centerLeft,
+      child: fill > 0 && fill < 1
+          ? FractionallySizedBox(
+              key: const Key('progress-step-fill'),
+              widthFactor: fill,
+              heightFactor: 1,
+              child: const DecoratedBox(
+                decoration: BoxDecoration(
+                  color: VoltiColors.brand,
+                  borderRadius: BorderRadius.all(Radius.circular(2)),
+                ),
+              ),
+            )
+          : null,
     );
   }
 }

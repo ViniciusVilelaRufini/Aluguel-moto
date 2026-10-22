@@ -41,7 +41,14 @@ int initialOnboardingStep({required bool termsAccepted, required KycStatus kyc})
 
 class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int? _step;
+  // Passo anterior (para a direcao do deslize e o enchimento da barra).
+  int? _from;
   String _name = '', _cpf = '', _birth = '';
+
+  void _go(int step) => setState(() {
+        _from = _step;
+        _step = step;
+      });
 
   void _finish() {
     VoltiToast.show(context, context.l.onboardingSentToast);
@@ -53,38 +60,45 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
     final session = ref.watch(sessionProvider).value;
     if (session == null) return const Scaffold(body: LoadingState());
     _step ??= initialOnboardingStep(termsAccepted: session.termsAccepted, kyc: session.kyc);
-    return switch (_step!) {
-      onboardingDataStep => ConsentStep(
-          initialName: session.customer?.name ?? '',
-          initialTerms: session.termsAccepted,
-          // LGPD: consentimento so por acao do cliente. A caixa vem desmarcada (o design
-          // a mostra marcada; ver docs/decisoes.md) e reflete o que ja foi gravado.
-          initialLocation: session.locationConsent,
-          initialMarketing: session.consents?.marketing ?? false,
-          onBack: () => ref.read(sessionProvider.notifier).signOut(),
-          onDone: (name, cpf, birth) {
-            setState(() {
+    final step = _step!;
+    // Barra dos passos do cadastro (indice da moldura = passo + 1; o codigo e o
+    // 0). Ao entrar nos dados vindo do codigo, a barra enche do passo 1 ao 2.
+    final from = _from ?? (step == onboardingDataStep ? -1 : null);
+    return OnboardingStepSwitcher(
+      step: step,
+      framed: const {onboardingDataStep, onboardingDocsStep, onboardingPaymentStep},
+      progressFrom: from == null || from == onboardingStatusStep ? null : from + 1,
+      child: switch (step) {
+        onboardingDataStep => ConsentStep(
+            initialName: session.customer?.name ?? '',
+            initialTerms: session.termsAccepted,
+            // LGPD: consentimento so por acao do cliente. A caixa vem desmarcada (o design
+            // a mostra marcada; ver docs/decisoes.md) e reflete o que ja foi gravado.
+            initialLocation: session.locationConsent,
+            initialMarketing: session.consents?.marketing ?? false,
+            onBack: () => ref.read(sessionProvider.notifier).signOut(),
+            onDone: (name, cpf, birth) {
               _name = name;
               _cpf = cpf;
               _birth = birth;
-              _step = onboardingDocsStep;
-            });
-          },
-        ),
-      onboardingDocsStep => DocumentsStep(
-          name: _name,
-          cpf: _cpf,
-          birth: _birth,
-          alreadySubmitted: session.kyc == KycStatus.pending || session.kyc == KycStatus.approved,
-          onBack: () => setState(() => _step = onboardingDataStep),
-          onSubmitted: () => setState(() => _step = onboardingPaymentStep),
-        ),
-      onboardingPaymentStep => PaymentStep(
-          onBack: () => setState(() => _step = onboardingDocsStep),
-          onDone: _finish,
-        ),
-      _ => VerificationStatusScreen(fromOnboarding: true, onResend: () => setState(() => _step = onboardingDataStep)),
-    };
+              _go(onboardingDocsStep);
+            },
+          ),
+        onboardingDocsStep => DocumentsStep(
+            name: _name,
+            cpf: _cpf,
+            birth: _birth,
+            alreadySubmitted: session.kyc == KycStatus.pending || session.kyc == KycStatus.approved,
+            onBack: () => _go(onboardingDataStep),
+            onSubmitted: () => _go(onboardingPaymentStep),
+          ),
+        onboardingPaymentStep => PaymentStep(
+            onBack: () => _go(onboardingDocsStep),
+            onDone: _finish,
+          ),
+        _ => VerificationStatusScreen(fromOnboarding: true, onResend: () => _go(onboardingDataStep)),
+      },
+    );
   }
 }
 
