@@ -252,7 +252,8 @@ describe('Devolução em ponto verde (retirada em galpão)', () => {
     const { service, prisma } = setup({ depotId: null });
     prisma.handover.findFirst.mockResolvedValue({ id: 'h1' } as any);
     await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
-    expect((prisma.handover.findFirst.mock.calls[0][0] as any).where).toMatchObject({ rentalId: RENTAL_ID, type: 'pickup', status: 'accepted' });
+    // Só a própria moto da entrega: depois de uma troca, a moto de rua do mesmo aluguel volta a free.
+    expect((prisma.handover.findFirst.mock.calls[0][0] as any).where).toMatchObject({ rentalId: RENTAL_ID, vehicleId: VEHICLE_ID, type: 'pickup', status: 'accepted' });
     expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
     expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
   });
@@ -327,6 +328,31 @@ describe('Devolução em ponto verde (retirada em galpão)', () => {
     const vehicles = new VehiclesService(prisma as any, {} as any, {} as any, new EventEmitter2(), {} as any, {} as any, {} as any, {} as any);
     await vehicles.onConnectivity({ vehicleId: VEHICLE_ID, online: true, ts: new Date().toISOString() } as any);
     expect(vehicle.status).toBe('awaiting_pickup');
+  });
+
+  it('fix 1 (Task 6): chegada no galpão põe status final e depotId numa única transição condicional — nunca free sem depotId', async () => {
+    const { service, prisma, commands, events } = setup({ depotId: null });
+    const emitted: string[] = [];
+    events.on(EV.VEHICLE_STATUS_CHANGED, (e: { status: string }) => emitted.push(e.status));
+    const r = await service.endAtDepot(admin, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'maintenance' });
+    expect(r.status).toBe('ended');
+    expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'lock', context: expect.objectContaining({ purpose: 'rental_depot_return' }) }));
+    const calls = prisma.vehicle.updateMany.mock.calls.map((c: any) => c[0]);
+    expect(calls).toEqual([{ where: { id: VEHICLE_ID, status: { in: ['rented', 'paused'] } }, data: { status: 'maintenance', depotId: DEPOT_ID } }]);
+    // Nenhum estado intermediário alugável na rua (free sem depotId) e um único evento com o status final.
+    expect(calls.some((c: any) => c.data.status === 'free' && !c.data.depotId)).toBe(false);
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expect(emitted).toEqual(['maintenance']);
+    expect(prisma.fieldTask.create).not.toHaveBeenCalled();
+  });
+
+  it('fix 1 (Task 6): chegada com a moto offline (sem transição) não emite status; quem chama acerta o statusBeforeOffline', async () => {
+    const { service, prisma, events } = setup({ depotId: null });
+    prisma.vehicle.updateMany.mockResolvedValue({ count: 0 });
+    const emitted: string[] = [];
+    events.on(EV.VEHICLE_STATUS_CHANGED, (e: { status: string }) => emitted.push(e.status));
+    await service.endAtDepot(admin, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'free' });
+    expect(emitted).toEqual([]);
   });
 
   it('finalize com returnTo: depot (devolução no galpão, Task 6) não cria recolhimento', async () => {

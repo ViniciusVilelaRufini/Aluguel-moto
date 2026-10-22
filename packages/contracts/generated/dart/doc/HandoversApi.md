@@ -10,6 +10,7 @@ All URIs are relative to *http://localhost:3000*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**acceptHandover**](HandoversApi.md#accepthandover) | **POST** /handovers/{id}/accept | Aceitar a moto e destravar
+[**cancelHandover**](HandoversApi.md#cancelhandover) | **POST** /handovers/{id}/cancel | Cancelar a entrega de saída (operação)
 [**createHandover**](HandoversApi.md#createhandover) | **POST** /handovers | Registrar entrega (saída ou chegada no galpão)
 [**createHandoverPhotoUpload**](HandoversApi.md#createhandoverphotoupload) | **POST** /handovers/uploads | URL de upload da foto da entrega
 [**disputeHandover**](HandoversApi.md#disputehandover) | **POST** /handovers/{id}/dispute | Apontar problema na moto
@@ -58,6 +59,51 @@ Name | Type | Description  | Notes
 ### HTTP request headers
 
  - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **cancelHandover**
+> Handover cancelHandover(id, handoverCancel)
+
+Cancelar a entrega de saída (operação)
+
+Para a saída `pickup` com status `pending_customer` ou `disputed` (outro status ou `return_depot` → `422` `handover-not-pending`; já aceita ou com aceite em andamento → `409`). Na mesma transação: a entrega vira `canceled` (AuditLog `handover.cancel`, evento `handover.updated`) e a reserva volta a `active` se ainda estiver no prazo (`expiresAt` no futuro; o `pickupCode` volta em `GET /reservations/current` e o operador pode registrar uma nova saída); fora do prazo, a reserva vira `expired`, a caução é liberada e a moto volta a `free` no galpão. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getHandoversApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final HandoverCancel handoverCancel = ; // HandoverCancel | 
+
+try {
+    final response = api.cancelHandover(id, handoverCancel);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling HandoversApi->cancelHandover: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **handoverCancel** | [**HandoverCancel**](HandoverCancel.md)|  | 
+
+### Return type
+
+[**Handover**](Handover.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
  - **Accept**: application/json, application/problem+json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

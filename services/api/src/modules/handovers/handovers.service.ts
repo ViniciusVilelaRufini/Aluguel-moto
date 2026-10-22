@@ -2,20 +2,22 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Handover, Prisma, Vehicle } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
-import { EV, HandoverPendingEvent, HandoverUpdatedEvent, VehicleStatusChangedEvent } from '../../common/events';
-import { IDEMPOTENCY_STORE, type IdempotencyStore } from '../../common/idempotency/idempotency.store';
+import { DepositReleaseRequestedEvent, EV, HandoverPendingEvent, HandoverUpdatedEvent, ReservationEndedEvent, VehicleStatusChangedEvent } from '../../common/events';
+import { IDEMPOTENCY_STALE_MS, IDEMPOTENCY_STORE, type IdempotencyStore } from '../../common/idempotency/idempotency.store';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { isUniqueViolation } from '../payments/payment-state.service';
 import { RentalEndService } from '../rentals/rental-end.service';
 import { RentalStartService } from '../rentals/rental-start.service';
 import { toRental } from '../rentals/rentals.mapper';
 import { PICKUP_CODE_SECRET, verifyPickupCode } from '../reservations/pickup-code';
+import { ReservationsService } from '../reservations/reservations.service';
 import { SupportService } from '../support/support.service';
 import type { HandoverCreateDto, ListHandoversQuery } from './handovers.dto';
 import { type ChecklistItem, firstName, toHandover } from './handovers.mapper';
@@ -28,6 +30,9 @@ const ACCEPT_LOCK_SCOPE = 'handover-accept';
 type HandoverRow = Handover & { vehicle?: Pick<Vehicle, 'code'> | null };
 
 const handoverNotFound = () => notFound('Entrega não encontrada.');
+const alreadyAccepted = () => conflict('conflict', 'Esta entrega já foi aceita pelo cliente; encerre pelo aluguel.');
+/** Recusas reais de pagamento vindas do start() (caução recusada pelo gateway). */
+const PAYMENT_REFUSALS = new Set(['payment-failed', 'payment-declined']);
 const notPending = () => new ProblemException(422, 'handover-not-pending', 'Esta entrega não está mais aguardando o seu aceite.', undefined, 'Entrega não está pendente');
 
 export interface CreateResult {
@@ -55,7 +60,14 @@ export class HandoversService {
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     @Inject(PICKUP_CODE_SECRET) private readonly pickupSecret: string,
     @Inject(IDEMPOTENCY_STORE) private readonly locks: IdempotencyStore,
-  ) {}
+    private readonly audit: AuditService,
+    private readonly reservations: ReservationsService,
+  ) {
+    // A trava do aceite vence em IDEMPOTENCY_STALE_MS; a espera do desbloqueio dentro do start() precisa caber nela.
+    if (typeof starter.maxUnlockWaitMs === 'function' && starter.maxUnlockWaitMs() >= IDEMPOTENCY_STALE_MS) {
+      this.logger.error({ msg: 'handover_accept_lock_shorter_than_unlock_wait', unlockWaitMs: starter.maxUnlockWaitMs(), lockStaleMs: IDEMPOTENCY_STALE_MS });
+    }
+  }
 
   uploadUrl(contentType: string) {
     return presignedUpload(this.storage, this.cfg.buckets.returnPhotos, 'handovers', contentType);
@@ -156,7 +168,10 @@ export class HandoversService {
       const now = await this.prisma.handover.findUnique({ where: { id } });
       if (now?.status === 'accepted' && now.rentalId) return this.rentalOf(now.rentalId);
       if (err instanceof ProblemException && err.slug !== 'handover-not-pending') {
-        const declined = err.getStatus() === 402;
+        // Moto já `rented` por um start() em andamento desta mesma entrega (mesma caução): não é falha do aceite.
+        if (await this.startInFlight(h.vehicleId, deposit.id)) throw err;
+        // Só recusa de pagamento de verdade vira `payment-declined`; o resto mantém o slug (e o status) do start().
+        const declined = PAYMENT_REFUSALS.has(err.slug);
         const lastError = declined ? 'payment-declined' : err.slug;
         await this.prisma.handover.updateMany({ where: { id, status: 'pending_customer' }, data: { lastError } });
         this.emitUpdated({ handoverId: id, status: 'pending_customer', lastError, customerId: r.customerId, depotId: h.depotId });
@@ -181,10 +196,12 @@ export class HandoversService {
       data: { status: 'disputed', disputeReason: reason.trim(), respondedAt: new Date() },
     });
     if (moved.count !== 1) throw notPending();
-    try {
-      await this.support.createConversation(customer, { subject: `Problema na entrega da moto ${h.vehicle?.code ?? ''}`.trim(), message: reason.trim() });
-    } catch (err) {
-      this.logger.error({ msg: 'handover_dispute_ticket_failed', handoverId: id, error: (err as Error).message });
+    const subject = `Problema na entrega da moto ${h.vehicle?.code ?? ''}`.trim();
+    if (!(await this.openDisputeTicket(customer, id, subject, reason.trim()))) {
+      // Sem conversa: a disputa fica registrada e a falha marcada na auditoria (o suporte vê pela fila `status=disputed`).
+      await this.audit
+        .record({ actor: customer, action: 'handover.dispute_ticket_failed', entityType: 'Handover', entityId: id, metadata: { reservationId: h.reservation.id } })
+        .catch((err) => this.logger.error({ msg: 'handover_dispute_audit_failed', handoverId: id, error: errorCode(err) }));
     }
     this.emitUpdated({ handoverId: id, status: 'disputed', customerId: h.reservation.customerId, depotId: h.depotId });
     this.logger.log({ msg: 'handover_disputed', handoverId: id });
@@ -248,18 +265,20 @@ export class HandoversService {
 
   /** Encerra o aluguel (idempotente) e põe a moto no galpão; numa repetição só refaz o que faltou. */
   private async finishReturn(operator: Principal, h: HandoverRow) {
+    const target = targetStatusOf(h);
     const rental = await this.prisma.rental.findUnique({ where: { id: h.rentalId! }, select: { status: true } });
-    const wasOpen = !!rental && OPEN_RENTAL_STATUSES.includes(rental.status);
-    if (wasOpen) await this.ender.endAtDepot(operator, h.rentalId!);
-    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: h.vehicleId }, select: { depotId: true } });
-    if (wasOpen || vehicle?.depotId !== h.depotId) await this.placeAtDepot(h);
+    // O fechamento grava status final + depotId numa transição só (sem janela `free` sem galpão).
+    if (rental && OPEN_RENTAL_STATUSES.includes(rental.status)) await this.ender.endAtDepot(operator, h.rentalId!, { depotId: h.depotId, targetStatus: target });
+    // Recolhimento aberto da moto deixa de valer (ela está no galpão).
+    await this.prisma.fieldTask.updateMany({ where: { vehicleId: h.vehicleId, type: 'collect', status: { notIn: ['done', 'canceled'] } }, data: { status: 'canceled' } });
+    // Só repetição ou moto offline (sem transição no fechamento) precisam da colocação à parte.
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: h.vehicleId }, select: { depotId: true, status: true } });
+    if (vehicle?.depotId !== h.depotId || vehicle.status === 'offline' || vehicle.status === 'awaiting_pickup') await this.placeAtDepot(h, target);
     return this.view(h);
   }
 
-  /** Moto no galpão: `free` (ou `maintenance` com item problemático) + `depotId`; recolhimento aberto deixa de valer. */
-  private async placeAtDepot(h: HandoverRow): Promise<void> {
-    const problem = ((h.checklist ?? []) as unknown as ChecklistItem[]).some((i) => i.ok === false);
-    const target = problem ? 'maintenance' : 'free';
+  /** Repetição/offline: `free` (ou `maintenance` com item problemático) + `depotId`, sem passar por `free` sem galpão. */
+  private async placeAtDepot(h: HandoverRow, target: 'free' | 'maintenance'): Promise<void> {
     const busy = await this.prisma.rental.findFirst({ where: { vehicleId: h.vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
     if (busy) return;
     const moved = await this.prisma.$transaction(async (tx) => {
@@ -271,11 +290,96 @@ export class HandoversService {
         // Offline: volta ao status certo quando reconectar.
         await tx.vehicle.updateMany({ where: { id: h.vehicleId, status: 'offline' }, data: { depotId: h.depotId, statusBeforeOffline: target } });
       }
-      await tx.fieldTask.updateMany({ where: { vehicleId: h.vehicleId, type: 'collect', status: { notIn: ['done', 'canceled'] } }, data: { status: 'canceled' } });
       return placed.count > 0;
     });
     if (moved) this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: h.vehicleId, status: target, ts: new Date().toISOString() } satisfies VehicleStatusChangedEvent);
     this.logger.log({ msg: 'handover_vehicle_at_depot', handoverId: h.id, vehicleId: h.vehicleId, depotId: h.depotId, status: target });
+  }
+
+  // ───────────────────────── cancelamento (operação) ─────────────────────────
+
+  /**
+   * `POST /handovers/{id}/cancel`: saída `pending_customer` ou `disputed` → `canceled` (AuditLog, `handover.updated`).
+   * Na mesma transação a reserva volta a `active` se ainda estiver no prazo (o `pickupCode` reaparece para uma nova saída);
+   * vencida, vira `expired`, a moto volta a `free` no galpão e a caução é liberada. Já aceita ou com aceite em andamento → 409.
+   */
+  async cancel(actor: Principal, id: string, reason: string) {
+    const h = await this.prisma.handover.findUnique({ where: { id }, include: { reservation: true } });
+    if (!h) throw handoverNotFound();
+    if (h.status === 'accepted') throw alreadyAccepted();
+    if (h.type !== 'pickup' || !h.reservation || (h.status !== 'pending_customer' && h.status !== 'disputed')) throw notPending();
+    const r = h.reservation;
+
+    const lock = await this.locks.begin(ACCEPT_LOCK_SCOPE, id, 'accept');
+    if (lock.state === 'in_progress') throw conflict('conflict', 'O cliente está aceitando esta entrega agora. Tente de novo em instantes.');
+    try {
+      const now = new Date();
+      const outcome = await this.prisma.$transaction(async (tx) => {
+        const moved = await tx.handover.updateMany({ where: { id, status: { in: ['pending_customer', 'disputed'] } }, data: { status: 'canceled' } });
+        if (moved.count !== 1) {
+          const cur = await tx.handover.findUnique({ where: { id }, select: { status: true } });
+          throw cur?.status === 'accepted' ? alreadyAccepted() : notPending();
+        }
+        // Outra saída aberta para a mesma reserva (refeita depois da disputa): a reserva segue com ela.
+        const other = await tx.handover.findFirst({
+          where: { reservationId: r.id, type: 'pickup', status: { in: ['pending_customer', 'accepted'] }, id: { not: id } },
+          select: { id: true },
+        });
+        let result: 'active' | 'expired' | 'kept' = 'kept';
+        if (!other && r.expiresAt.getTime() > now.getTime()) {
+          const back = await tx.reservation.updateMany({ where: { id: r.id, status: 'handover' }, data: { status: 'active' } });
+          if (back.count) result = 'active';
+        } else if (!other) {
+          const ended = await tx.reservation.updateMany({ where: { id: r.id, status: 'handover' }, data: { status: 'expired', endedAt: now } });
+          if (ended.count) {
+            await tx.vehicle.updateMany({ where: { id: r.vehicleId, status: 'reserved' }, data: { status: 'free' } });
+            result = 'expired';
+          }
+        }
+        await this.audit.record(
+          { actor, action: 'handover.cancel', entityType: 'Handover', entityId: id, reason: reason.trim(), metadata: { reservationId: r.id, reservation: result } },
+          tx,
+        );
+        return result;
+      });
+
+      if (outcome === 'active') await this.reservations.trackExpiry(r.id, r.customerId, r.expiresAt);
+      if (outcome === 'expired') {
+        this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: r.vehicleId, status: 'free', ts: now.toISOString() } satisfies VehicleStatusChangedEvent);
+        this.events.emit(EV.RESERVATION_ENDED, {
+          reservationId: r.id, customerId: r.customerId, vehicleId: r.vehicleId, depositId: r.depositId ?? undefined, reason: 'expired',
+        } satisfies ReservationEndedEvent);
+        if (r.depositId) {
+          this.events.emit(EV.DEPOSIT_RELEASE_REQUESTED, { depositId: r.depositId, customerId: r.customerId, reason: 'reservation_expired' } satisfies DepositReleaseRequestedEvent);
+        }
+      }
+      this.emitUpdated({ handoverId: id, status: 'canceled', customerId: r.customerId, depotId: h.depotId });
+      this.logger.log({ msg: 'handover_canceled', handoverId: id, reservationId: r.id, reservation: outcome });
+    } finally {
+      await this.locks.abort(ACCEPT_LOCK_SCOPE, id).catch(() => undefined);
+    }
+    const updated = await this.prisma.handover.findUniqueOrThrow({ where: { id }, include: { vehicle: { select: { code: true } } } });
+    return this.view(updated);
+  }
+
+  /** Conversa de suporte da disputa: uma nova tentativa; o log leva só o nome/código do erro (sem a mensagem). */
+  private async openDisputeTicket(customer: Principal, handoverId: string, subject: string, message: string): Promise<boolean> {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        await this.support.createConversation(customer, { subject, message });
+        return true;
+      } catch (err) {
+        this.logger.error({ msg: 'handover_dispute_ticket_failed', handoverId, attempt, error: errorCode(err) });
+      }
+    }
+    return false;
+  }
+
+  /** start() desta entrega ainda no meio (moto reivindicada com a caução da reserva, marcador `RentalStart` presente). */
+  private async startInFlight(vehicleId: string, depositId: string): Promise<boolean> {
+    const v = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { status: true } });
+    if (v?.status !== 'rented') return false;
+    return !!(await this.prisma.rentalStart.findFirst({ where: { vehicleId, depositId }, select: { rentalId: true } }));
   }
 
   // ───────────────────────── leitura ─────────────────────────
@@ -332,6 +436,18 @@ export class HandoversService {
   private emitUpdated(ev: HandoverUpdatedEvent): void {
     this.events.emit(EV.HANDOVER_UPDATED, ev);
   }
+}
+
+/** `free`, ou `maintenance` se algum item do checklist veio `ok: false`. */
+function targetStatusOf(h: Pick<Handover, 'checklist'>): 'free' | 'maintenance' {
+  return ((h.checklist ?? []) as unknown as ChecklistItem[]).some((i) => i.ok === false) ? 'maintenance' : 'free';
+}
+
+/** Só o código/nome do erro para os logs (a mensagem pode carregar dado pessoal). */
+function errorCode(err: unknown): string {
+  const e = err as { code?: unknown; name?: unknown } | null;
+  if (e && typeof e.code === 'string') return e.code;
+  return e && typeof e.name === 'string' ? e.name : 'unknown';
 }
 
 function checklistJson(items: HandoverCreateDto['checklist']): Prisma.InputJsonValue {

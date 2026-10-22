@@ -5,7 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 export const IDEMPOTENCY_STORE = Symbol('IDEMPOTENCY_STORE');
 export const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 /** Registro "em andamento" mais velho que isto é considerado abandonado (processo caiu). */
-const STALE_MS = 60_000;
+export const IDEMPOTENCY_STALE_MS = 60_000;
+const STALE_MS = IDEMPOTENCY_STALE_MS;
 
 export type BeginResult =
   | { state: 'new' }

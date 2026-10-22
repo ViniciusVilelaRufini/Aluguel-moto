@@ -98,7 +98,8 @@ describe('Entrega no galpão (e2e)', () => {
     expect(ho).toMatchObject({ status: 'accepted', rentalId: accepted.body.id, lastError: null });
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: c.reservationId } })).status).toBe('converted');
     const bike = await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } });
-    expect(bike).toMatchObject({ status: 'rented', depotId: null });
+    // A moto guarda o galpão de origem durante o aluguel (rented + bypass da entrega).
+    expect(bike).toMatchObject({ status: 'rented', depotId });
     expect(await prisma.vehicleCommand.count({ where: { vehicleId: c.vehicleId, type: 'unlock' } })).toBe(1);
 
     // Aceite fora de pending: a entrega já aceita converge (mesmo aluguel); disputa agora → 422.
@@ -170,6 +171,54 @@ describe('Entrega no galpão (e2e)', () => {
     // Limpeza: não deixa a moto presa.
     await prisma.handover.update({ where: { id: redo.body.id }, data: { status: 'canceled' } });
     await prisma.reservation.update({ where: { id: c.reservationId }, data: { status: 'canceled' } });
+  });
+
+  it('fix 1: disputa → cancelamento pela operação → reserva active com pickupCode → nova saída → aceite', async () => {
+    const c = await reserved('ho-cancel');
+    const created = await pickup(c.pickupCode).expect(201);
+    await http().post(`/handovers/${created.body.id}/dispute`).set(bearer(c.token)).send({ reason: 'Pneu dianteiro murcho.' }).expect(200);
+
+    // Cliente não cancela; corpo sem motivo → 400.
+    await http().post(`/handovers/${created.body.id}/cancel`).set(bearer(c.token)).send({ reason: 'Quero cancelar' }).expect(403);
+    await http().post(`/handovers/${created.body.id}/cancel`).set(bearer(campo)).send({}).expect(400);
+
+    const canceled = await http().post(`/handovers/${created.body.id}/cancel`).set(bearer(campo)).send({ reason: 'Pneu trocado; nova saída.' }).expect(200);
+    expect(canceled).toSatisfyApiSpec();
+    expect(canceled.body.status).toBe('canceled');
+    expect(await prisma.auditLog.count({ where: { action: 'handover.cancel', entityId: created.body.id } })).toBe(1);
+    expect((await prisma.reservation.findUniqueOrThrow({ where: { id: c.reservationId } })).status).toBe('active');
+    expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).status).toBe('reserved');
+    expect((await prisma.deposit.findUniqueOrThrow({ where: { id: c.depositId } })).status).toBe('held');
+
+    const cur = await http().get('/reservations/current').set(bearer(c.token)).expect(200);
+    expect(cur.body.reservation).toMatchObject({ id: c.reservationId, status: 'active' });
+    expect(cur.body.reservation.pickupCode).toBeTruthy();
+
+    // Cancelar de novo → 422.
+    expect((await http().post(`/handovers/${created.body.id}/cancel`).set(bearer(campo)).send({ reason: 'De novo' }).expect(422)).body.code).toBe('handover-not-pending');
+
+    const redo = await pickup(cur.body.reservation.pickupCode).expect(201);
+    const accepted = await http().post(`/handovers/${redo.body.id}/accept`).set(bearer(c.token)).set('Idempotency-Key', randomUUID()).expect(201);
+    expect(accepted.body).toMatchObject({ vehicleId: c.vehicleId, status: 'active' });
+    // Já aceita → cancelar responde 409.
+    await http().post(`/handovers/${redo.body.id}/cancel`).set(bearer(campo)).send({ reason: 'Tarde demais' }).expect(409);
+    await http().post('/handovers').set(bearer(campo)).send({ type: 'return_depot', rentalId: accepted.body.id, depotId, checklist, photoKeys: [], batteryPct: 70 }).expect(201);
+  });
+
+  it('fix 1: cancelamento depois do prazo → reserva expired, caução liberada e moto free no galpão', async () => {
+    const c = await reserved('ho-cancel-late');
+    const created = await pickup(c.pickupCode).expect(201);
+    await prisma.reservation.update({ where: { id: c.reservationId }, data: { expiresAt: new Date(Date.now() - 60_000) } });
+    await http().post(`/handovers/${created.body.id}/cancel`).set(bearer(campo)).send({ reason: 'Cliente não respondeu.' }).expect(200);
+    expect((await prisma.reservation.findUniqueOrThrow({ where: { id: c.reservationId } })).status).toBe('expired');
+    expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).toMatchObject({ status: 'free', depotId });
+    let dep = await prisma.deposit.findUniqueOrThrow({ where: { id: c.depositId } });
+    for (let i = 0; i < 100 && dep.status !== 'released'; i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      dep = await prisma.deposit.findUniqueOrThrow({ where: { id: c.depositId } });
+    }
+    expect(dep.status).toBe('released');
+    expect((await http().get('/reservations/current').set(bearer(c.token)).expect(200)).body).toEqual({});
   });
 
   it('caução da reserva não retida → 422 deposit-not-held, entrega pendente e moto não destrava', async () => {

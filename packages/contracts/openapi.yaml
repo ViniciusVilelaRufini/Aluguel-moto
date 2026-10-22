@@ -1383,6 +1383,40 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '422': { $ref: '#/components/responses/Unprocessable' }
 
+  /handovers/{id}/cancel:
+    post:
+      tags: [handovers]
+      operationId: cancelHandover
+      summary: Cancelar a entrega de saída (operação)
+      description: |
+        Para a saída `pickup` com status `pending_customer` ou `disputed` (outro status ou `return_depot` → `422`
+        `handover-not-pending`; já aceita ou com aceite em andamento → `409`). Na mesma transação: a entrega vira
+        `canceled` (AuditLog `handover.cancel`, evento `handover.updated`) e a reserva volta a `active` se ainda estiver no
+        prazo (`expiresAt` no futuro; o `pickupCode` volta em `GET /reservations/current` e o operador pode registrar uma
+        nova saída); fora do prazo, a reserva vira `expired`, a caução é liberada e a moto volta a `free` no galpão.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/HandoverCancel' }
+      responses:
+        '200':
+          description: Entrega cancelada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Handover' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   # ───────────────────────────── zones ─────────────────────────────
   /zones:
     get:
@@ -7230,6 +7264,11 @@ components:
       required: [reason]
       properties:
         reason: { type: string, minLength: 3, maxLength: 500, examples: [Retrovisor esquerdo quebrado.] }
+    HandoverCancel:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500, examples: [Cliente apontou retrovisor quebrado; moto trocada.] }
     HandoverCreate:
       type: object
       required: [type, checklist, photoKeys, batteryPct]

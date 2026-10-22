@@ -30,10 +30,17 @@ type RentalWithVehicle = Rental & { vehicle: Vehicle };
  * no galpão). Na rua, moto do galpão vai para `awaiting_pickup` com uma tarefa `collect`; moto de rua volta a `free`.
  */
 export type ReturnTo = 'street' | 'depot';
+/** Chegada no galpão: onde e em que status a moto termina (gravados juntos na transição de fechamento). */
+export interface DepotPlacement {
+  depotId: string;
+  targetStatus: 'free' | 'maintenance';
+}
 export interface FinalizeOptions {
   fees?: FeeCharge[];
   actor?: Principal;
   returnTo?: ReturnTo;
+  /** Com `returnTo: 'depot'`: status final e `depotId` numa única transição (nunca `free` sem galpão no meio). */
+  depot?: DepotPlacement;
 }
 
 /**
@@ -150,12 +157,12 @@ export class RentalEndService {
    * encerramento forçado; o operador está com a moto) e fecha pelo caminho normal com `returnTo: 'depot'` (sem tarefa
    * `collect`). Quem chama põe a moto no galpão. Aluguel já encerrado → devolve como está (repetição idempotente).
    */
-  async endAtDepot(actor: Principal, rentalId: string) {
+  async endAtDepot(actor: Principal, rentalId: string, depot: DepotPlacement) {
     const rental = await this.load(rentalId);
     if (rental.status === 'ended' || rental.status === 'force_ended') return toRental(rental);
     if (!['active', 'paused', 'ending'].includes(rental.status)) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
     await this.requestLock(rentalId, rental.vehicleId, 'rental_depot_return');
-    return this.finalize(rentalId, 'ended', { actor, returnTo: 'depot' });
+    return this.finalize(rentalId, 'ended', { actor, returnTo: 'depot', depot });
   }
 
   /** Pede o travamento (bloqueio seguro). `true` se o rastreador confirmou na hora. */
@@ -219,7 +226,15 @@ export class RentalEndService {
     const awaitingPickup = opts.returnTo !== 'depot' && (await this.isDepotVehicle(rental));
     let vehicleStatus: VehicleStatusChangedEvent['status'] | null = 'free';
     if (awaitingPickup) vehicleStatus = await this.leaveForPickup(rental);
-    else await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: 'free' } });
+    else if (opts.returnTo === 'depot' && opts.depot) {
+      // Chegada no galpão: status final + depotId juntos (sem janela `free` sem galpão, alugável na rua). Sem transição
+      // (moto offline, por exemplo) não emite nada: quem chama grava o `statusBeforeOffline`.
+      const placed = await this.prisma.vehicle.updateMany({
+        where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } },
+        data: { status: opts.depot.targetStatus, depotId: opts.depot.depotId },
+      });
+      vehicleStatus = placed.count ? opts.depot.targetStatus : null;
+    } else await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: 'free' } });
     await this.prisma.rentalEvent.create({
       data: {
         rentalId,
@@ -248,7 +263,11 @@ export class RentalEndService {
   /** Moto do galpão: tem `depotId` ou saiu por uma entrega de galpão aceita para este aluguel. Só sai de novo pela entrega. */
   private async isDepotVehicle(rental: RentalWithVehicle): Promise<boolean> {
     if (rental.vehicle.depotId) return true;
-    const pickup = await this.prisma.handover.findFirst({ where: { rentalId: rental.id, type: 'pickup', status: 'accepted' }, select: { id: true } });
+    // Fallback: a própria moto da entrega aceita deste aluguel (depois de uma troca, a moto de rua volta a `free`).
+    const pickup = await this.prisma.handover.findFirst({
+      where: { rentalId: rental.id, vehicleId: rental.vehicleId, type: 'pickup', status: 'accepted' },
+      select: { id: true },
+    });
     return !!pickup;
   }
 

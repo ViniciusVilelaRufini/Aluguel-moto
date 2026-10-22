@@ -60,6 +60,10 @@ export class HandoverDisputeDto {
   @IsString() @MinLength(3) @MaxLength(500) reason: string;
 }
 
+export class HandoverCancelDto {
+  @IsString() @MinLength(3) @MaxLength(500) reason: string;
+}
+
 export class ListHandoversQuery extends PageQuery {
   @IsOptional() @IsIn(HANDOVER_STATUSES) status?: HandoverStatusValue;
   @IsOptional() @IsUUID() depotId?: string;

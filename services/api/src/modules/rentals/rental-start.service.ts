@@ -64,6 +64,14 @@ export class RentalStartService {
   }
 
   /**
+   * Espera máxima do desbloqueio, exposta para a trava do aceite da entrega (`HandoversService`): ela precisa ficar abaixo
+   * de `IDEMPOTENCY_STALE_MS` (60 s), senão a trava "vence" no meio do aceite (padrão: 30 s + 5 s = 35 s).
+   */
+  maxUnlockWaitMs(): number {
+    return this.unlockWaitMs();
+  }
+
+  /**
    * Fix round 1: compensa inícios de aluguel que ficaram no meio (processo morreu durante a espera do desbloqueio).
    * Marcador mais velho que a espera máxima + 1 min: quem apaga o marcador (uma instância só) devolve a moto ao status
    * anterior, manda o lock de sistema, cancela a apólice e libera a caução. Idempotente.
@@ -301,8 +309,6 @@ export class RentalStartService {
           data: { status: 'accepted', rentalId, lastError: null, respondedAt: new Date() },
         });
         if (accepted.count !== 1) throw new ProblemException(422, 'handover-not-pending', 'Esta entrega não está mais aguardando o seu aceite.');
-        // A moto saiu do galpão (o fim no ponto verde a reconhece pela entrega aceita deste aluguel).
-        await tx.vehicle.update({ where: { id: vehicle.id }, data: { depotId: null } });
       }
       const created = await tx.rental.create({
         data: {

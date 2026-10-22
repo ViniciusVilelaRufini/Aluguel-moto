@@ -110,6 +110,7 @@ import 'package:volti_api/src/model/geo_zone.dart';
 import 'package:volti_api/src/model/geo_zone_input.dart';
 import 'package:volti_api/src/model/geo_zone_list.dart';
 import 'package:volti_api/src/model/handover.dart';
+import 'package:volti_api/src/model/handover_cancel.dart';
 import 'package:volti_api/src/model/handover_checklist_item.dart';
 import 'package:volti_api/src/model/handover_create.dart';
 import 'package:volti_api/src/model/handover_dispute.dart';
@@ -382,6 +383,7 @@ part 'serializers.g.dart';
   GeoZoneInput,
   GeoZoneList,
   Handover,
+  HandoverCancel,
   HandoverChecklistItem,
   HandoverCreate,
   HandoverDispute,

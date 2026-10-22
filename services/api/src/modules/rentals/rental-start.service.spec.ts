@@ -1,6 +1,7 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import request from 'supertest';
 import { EV } from '../../common/events';
+import { IDEMPOTENCY_STALE_MS } from '../../common/idempotency/idempotency.store';
 import { createHarness, CUSTOMER_ID, customerToken, Harness } from '../../../test/helpers/http-harness';
 import { INSURANCE } from '../../ports/insurance.port';
 import { IOT_GATEWAY } from '../../ports/iot-gateway.port';
@@ -417,7 +418,8 @@ describe('Início do aluguel (POST /rentals)', () => {
         where: { id: HO_ID, status: 'pending_customer' },
         data: expect.objectContaining({ status: 'accepted', rentalId: expect.any(String), lastError: null }),
       });
-      expect(h.prisma.vehicle.update).toHaveBeenCalledWith({ where: { id: VEHICLE_ID }, data: { depotId: null } });
+      // A moto guarda o galpão de origem (rented + bypass fromHandover; o fim no ponto verde a reconhece pelo depotId).
+      expect(h.prisma.vehicle.update).not.toHaveBeenCalled();
       expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'unlock' }));
       expect(billing.holdDeposit).not.toHaveBeenCalled();
       expect(released).not.toHaveBeenCalled();
@@ -463,6 +465,11 @@ describe('Início do aluguel (POST /rentals)', () => {
       expect(commands.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'lock' }));
       expect(h.prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
       expect(released).not.toHaveBeenCalled();
+    });
+
+    it('fix 1: a espera máxima do desbloqueio fica abaixo do prazo de abandono da trava do aceite (60 s)', () => {
+      expect(svc().maxUnlockWaitMs()).toBe(35_000);
+      expect(svc().maxUnlockWaitMs()).toBeLessThan(IDEMPOTENCY_STALE_MS);
     });
 
     it('sem fromHandover a mesma moto continua bloqueada (POST /rentals)', async () => {

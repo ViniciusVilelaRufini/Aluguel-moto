@@ -135,6 +135,7 @@ export 'package:volti_api/src/model/geo_zone.dart';
 export 'package:volti_api/src/model/geo_zone_input.dart';
 export 'package:volti_api/src/model/geo_zone_list.dart';
 export 'package:volti_api/src/model/handover.dart';
+export 'package:volti_api/src/model/handover_cancel.dart';
 export 'package:volti_api/src/model/handover_checklist_item.dart';
 export 'package:volti_api/src/model/handover_create.dart';
 export 'package:volti_api/src/model/handover_dispute.dart';

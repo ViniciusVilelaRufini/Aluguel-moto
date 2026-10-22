@@ -46,14 +46,17 @@ function setup() {
   const events = { emit: jest.fn() };
   const storage = { presignGet: jest.fn(async ({ key }: any) => ({ url: `https://s3/${key}?sig`, expiresAt: '' })), presignPut: jest.fn() };
   const cfg = { buckets: { returnPhotos: 'fotos-devolucao' } };
-  const svc = new HandoversService(prisma as any, starter as any, ender as any, support as any, events as any, storage as any, cfg as any, SECRET, new MemoryIdempotencyStore());
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  const reservations = { trackExpiry: jest.fn().mockResolvedValue(undefined) };
+  const locks = new MemoryIdempotencyStore();
+  const svc = new HandoversService(prisma as any, starter as any, ender as any, support as any, events as any, storage as any, cfg as any, SECRET, locks, audit as any, reservations as any);
   prisma.staffUser.findMany.mockResolvedValue([{ id: STAFF_ID, name: 'Rafael Souza Lima' }] as any);
   prisma.handover.findUnique.mockResolvedValue({ ...handover, reservation } as any);
   prisma.deposit.findUnique.mockResolvedValue({ id: DEPOSIT_ID, customerId: CUSTOMER_ID, method: 'card', status: 'held' } as any);
   prisma.depositRelease.findUnique.mockResolvedValue(null);
   prisma.rental.findUnique.mockResolvedValue(rentalRow as any);
   starter.start.mockResolvedValue({ status: 201, body: { outcome: 'started', rental: { id: RENTAL_ID, status: 'active' }, deposit: {} } });
-  return { prisma, starter, ender, support, events, storage, svc };
+  return { prisma, starter, ender, support, events, storage, svc, audit, reservations, locks };
 }
 
 const pickupBody = (code: string, over: Record<string, unknown> = {}) =>
@@ -157,6 +160,31 @@ describe('HandoversService — aceite', () => {
     await expect(svc.accept(customer, HO_ID)).resolves.toMatchObject({ id: RENTAL_ID });
   });
 
+  it('fix 1: 402 que não é recusa de pagamento (deposit-not-held) mantém o slug e o status', async () => {
+    const { prisma, starter, svc } = setup();
+    starter.start.mockRejectedValue(new ProblemException(402, 'deposit-not-held', 'em liberação'));
+    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ slug: 'deposit-not-held', status: 402 });
+    expect(prisma.handover.updateMany).toHaveBeenCalledWith({ where: { id: HO_ID, status: 'pending_customer' }, data: { lastError: 'deposit-not-held' } });
+  });
+
+  it('fix 1: moto já rented por um start() em andamento desta mesma entrega → sem lastError e sem evento', async () => {
+    const { prisma, starter, events, svc } = setup();
+    starter.start.mockRejectedValue(conflict('vehicle-unavailable', 'x'));
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'rented' } as any);
+    prisma.rentalStart.findFirst.mockResolvedValue({ rentalId: 'r-em-andamento' } as any);
+    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ slug: 'vehicle-unavailable' });
+    expect(prisma.rentalStart.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID, depositId: DEPOSIT_ID } }));
+    expect(prisma.handover.updateMany).not.toHaveBeenCalled();
+    expect(events.emit).not.toHaveBeenCalledWith(EV.HANDOVER_UPDATED, expect.anything());
+  });
+
+  it('fix 1: aceite enquanto o operador cancela (trava da entrega) → 409', async () => {
+    const { starter, locks, svc } = setup();
+    await locks.begin('handover-accept', HO_ID, 'accept');
+    await expect(svc.accept(customer, HO_ID)).rejects.toMatchObject({ status: 409 });
+    expect(starter.start).not.toHaveBeenCalled();
+  });
+
   it('moto offline no aceite → mesmo erro do start() (409) e lastError vehicle-offline', async () => {
     const { prisma, starter, svc } = setup();
     starter.start.mockRejectedValue(conflict('vehicle-offline', 'offline'));
@@ -209,6 +237,35 @@ describe('HandoversService — disputa', () => {
     expect(out).toMatchObject({ status: 'disputed', disputeReason: 'Retrovisor quebrado' });
   });
 
+  it('fix 1: conversa de suporte falha uma vez → tenta de novo e abre; sem marca de auditoria', async () => {
+    const { prisma, support, audit, svc } = setup();
+    prisma.handover.updateMany.mockResolvedValue({ count: 1 });
+    prisma.handover.findUniqueOrThrow.mockResolvedValue({ ...handover, status: 'disputed' } as any);
+    support.createConversation.mockRejectedValueOnce(new Error('falhou')).mockResolvedValueOnce({ id: 'conv' });
+    await svc.dispute(customer, HO_ID, 'Retrovisor quebrado');
+    expect(support.createConversation).toHaveBeenCalledTimes(2);
+    expect(audit.record).not.toHaveBeenCalled();
+  });
+
+  it('fix 1: conversa de suporte falha duas vezes → disputa registrada, auditoria marca a falha e o log não leva a mensagem do erro', async () => {
+    const { Logger } = await import('@nestjs/common');
+    const logged = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { prisma, support, audit, events, svc } = setup();
+    prisma.handover.updateMany.mockResolvedValue({ count: 1 });
+    prisma.handover.findUniqueOrThrow.mockResolvedValue({ ...handover, status: 'disputed' } as any);
+    const boom = Object.assign(new Error('cliente Fulano CPF 123 sem conversa'), { code: 'P2003' });
+    support.createConversation.mockRejectedValue(boom);
+    const out = await svc.dispute(customer, HO_ID, 'Retrovisor quebrado');
+    expect(out.status).toBe('disputed');
+    expect(support.createConversation).toHaveBeenCalledTimes(2);
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'handover.dispute_ticket_failed', entityType: 'Handover', entityId: HO_ID }));
+    expect(events.emit).toHaveBeenCalledWith(EV.HANDOVER_UPDATED, expect.objectContaining({ status: 'disputed' }));
+    const text = JSON.stringify(logged.mock.calls);
+    expect(text).toContain('P2003');
+    expect(text).not.toContain('Fulano');
+    logged.mockRestore();
+  });
+
   it('fora de pending_customer → 422 handover-not-pending', async () => {
     const { prisma, support, svc } = setup();
     prisma.handover.findUnique.mockResolvedValue({ ...handover, status: 'accepted', reservation } as any);
@@ -233,23 +290,31 @@ describe('HandoversService — chegada (return_depot)', () => {
     return s;
   }
 
-  it('item com ok:false → encerra pelo fechamento no galpão e a moto vai para maintenance com o depotId', async () => {
-    const { prisma, ender, events, svc } = forReturn([{ code: 'freios', ok: false }]);
+  it('item com ok:false → endAtDepot com depotId e maintenance (transição única no fechamento); sem colocação extra', async () => {
+    const { prisma, ender, svc } = forReturn([{ code: 'freios', ok: false }]);
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'maintenance', depotId: DEPOT_ID } as any);
     const out = await svc.createReturn(operator, returnBody({ checklist: [{ code: 'freios', ok: false, note: 'Freio traseiro fraco' }] }));
     expect(out.status).toBe(201);
     expect(prisma.handover.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'return_depot', status: 'accepted', rentalId: RENTAL_ID, depotId: DEPOT_ID }) }));
-    expect(ender.endAtDepot).toHaveBeenCalledWith(operator, RENTAL_ID);
-    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({
-      where: { id: VEHICLE_ID, status: { in: ['free', 'awaiting_pickup', 'maintenance'] } },
-      data: { status: 'maintenance', depotId: DEPOT_ID },
-    });
-    expect(events.emit).toHaveBeenCalledWith(EV.VEHICLE_STATUS_CHANGED, expect.objectContaining({ vehicleId: VEHICLE_ID, status: 'maintenance' }));
+    expect(ender.endAtDepot).toHaveBeenCalledWith(operator, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'maintenance' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(prisma.fieldTask.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vehicleId: VEHICLE_ID, type: 'collect' }), data: { status: 'canceled' } }));
   });
 
-  it('checklist ok → moto free com o depotId', async () => {
-    const { prisma, svc } = forReturn([{ code: 'freios', ok: true }]);
+  it('checklist ok → endAtDepot com free', async () => {
+    const { prisma, ender, svc } = forReturn([{ code: 'freios', ok: true }]);
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'free', depotId: DEPOT_ID } as any);
     await svc.createReturn(operator, returnBody());
-    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'free', depotId: DEPOT_ID } }));
+    expect(ender.endAtDepot).toHaveBeenCalledWith(operator, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'free' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('moto offline na chegada → a colocação grava depotId e statusBeforeOffline', async () => {
+    const { prisma, svc } = forReturn([{ code: 'freios', ok: false }]);
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'offline', depotId: null } as any);
+    prisma.vehicle.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+    await svc.createReturn(operator, returnBody());
+    expect(prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'offline' }, data: { depotId: DEPOT_ID, statusBeforeOffline: 'maintenance' } });
   });
 
   it('repetição (fila offline): chegada não cancelada já existe → 200 com a mesma entrega, sem criar outra', async () => {
@@ -271,5 +336,73 @@ describe('HandoversService — chegada (return_depot)', () => {
     await expect(svc.createReturn(operator, returnBody())).rejects.toMatchObject({ slug: 'rental-not-active' });
     prisma.depot.findUnique.mockResolvedValue(null);
     await expect(svc.createReturn(operator, returnBody())).rejects.toMatchObject({ status: 404 });
+  });
+});
+
+describe('HandoversService — cancelamento (operação)', () => {
+  const ago = new Date(Date.now() - 60_000);
+  const ahead = new Date(Date.now() + 3600_000);
+  function forCancel(over: Record<string, unknown> = {}, resOver: Record<string, unknown> = {}) {
+    const s = setup();
+    s.prisma.handover.findUnique.mockResolvedValue({ ...handover, status: 'disputed', reservation: { ...reservation, ...resOver }, ...over } as any);
+    s.prisma.handover.updateMany.mockResolvedValue({ count: 1 });
+    s.prisma.handover.findFirst.mockResolvedValue(null);
+    s.prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    s.prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
+    s.prisma.handover.findUniqueOrThrow.mockResolvedValue({ ...handover, status: 'canceled' } as any);
+    return s;
+  }
+
+  it('disputada e reserva no prazo → canceled, reserva volta a active (TTL regravado), auditoria e handover.updated', async () => {
+    const { prisma, audit, reservations, events, svc } = forCancel({}, { expiresAt: ahead });
+    const out = await svc.cancel(operator, HO_ID, 'Moto trocada');
+    expect(out.status).toBe('canceled');
+    expect(prisma.handover.updateMany).toHaveBeenCalledWith({ where: { id: HO_ID, status: { in: ['pending_customer', 'disputed'] } }, data: { status: 'canceled' } });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'handover' }, data: { status: 'active' } });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(reservations.trackExpiry).toHaveBeenCalledWith(RES_ID, CUSTOMER_ID, ahead);
+    expect(audit.record).toHaveBeenCalledWith(expect.objectContaining({ action: 'handover.cancel', entityId: HO_ID, reason: 'Moto trocada', metadata: { reservationId: RES_ID, reservation: 'active' } }), prisma);
+    expect(events.emit).toHaveBeenCalledWith(EV.HANDOVER_UPDATED, { handoverId: HO_ID, status: 'canceled', customerId: CUSTOMER_ID, depotId: DEPOT_ID });
+    expect(events.emit).not.toHaveBeenCalledWith(EV.DEPOSIT_RELEASE_REQUESTED, expect.anything());
+  });
+
+  it('reserva vencida → expired, caução liberada e moto reserved → free no galpão', async () => {
+    const { prisma, reservations, events, svc } = forCancel({ status: 'pending_customer' }, { expiresAt: ago });
+    await svc.cancel(operator, HO_ID, 'Cliente desistiu');
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'handover' }, data: { status: 'expired', endedAt: expect.any(Date) } });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'reserved' }, data: { status: 'free' } });
+    expect(reservations.trackExpiry).not.toHaveBeenCalled();
+    expect(events.emit).toHaveBeenCalledWith(EV.DEPOSIT_RELEASE_REQUESTED, { depositId: DEPOSIT_ID, customerId: CUSTOMER_ID, reason: 'reservation_expired' });
+    expect(events.emit).toHaveBeenCalledWith(EV.VEHICLE_STATUS_CHANGED, expect.objectContaining({ vehicleId: VEHICLE_ID, status: 'free' }));
+  });
+
+  it('disputada com outra saída já aberta para a reserva → só a entrega é cancelada', async () => {
+    const { prisma, svc } = forCancel({}, { expiresAt: ahead });
+    prisma.handover.findFirst.mockResolvedValue({ id: 'outra' } as any);
+    await svc.cancel(operator, HO_ID, 'Duplicada');
+    expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('já aceita → 409; aceite em andamento → 409; return_depot ou cancelada → 422 handover-not-pending', async () => {
+    const accepted = forCancel({ status: 'accepted', rentalId: RENTAL_ID });
+    await expect(accepted.svc.cancel(operator, HO_ID, 'motivo')).rejects.toMatchObject({ status: 409 });
+    const busy = forCancel();
+    await busy.locks.begin('handover-accept', HO_ID, 'accept');
+    await expect(busy.svc.cancel(operator, HO_ID, 'motivo')).rejects.toMatchObject({ status: 409 });
+    expect(busy.prisma.handover.updateMany).not.toHaveBeenCalled();
+    for (const over of [{ type: 'return_depot' }, { status: 'canceled' }]) {
+      const c = forCancel(over);
+      await expect(c.svc.cancel(operator, HO_ID, 'motivo')).rejects.toMatchObject({ slug: 'handover-not-pending' });
+    }
+  });
+
+  it('corrida: aceita entre a leitura e a transição → 409, reserva intocada', async () => {
+    const { prisma, svc } = forCancel({ status: 'pending_customer' });
+    prisma.handover.updateMany.mockResolvedValue({ count: 0 });
+    prisma.handover.findUnique
+      .mockResolvedValueOnce({ ...handover, status: 'pending_customer', reservation } as any)
+      .mockResolvedValueOnce({ ...handover, status: 'accepted' } as any);
+    await expect(svc.cancel(operator, HO_ID, 'motivo')).rejects.toMatchObject({ status: 409 });
+    expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
   });
 });

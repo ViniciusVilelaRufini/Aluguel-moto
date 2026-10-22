@@ -3,7 +3,7 @@ import type { Response } from 'express';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, StaffOnly } from '../auth/principal';
 import { UploadRequestDto } from '../rentals/rentals.dto';
-import { HandoverCreateDto, HandoverDisputeDto, ListHandoversQuery } from './handovers.dto';
+import { HandoverCancelDto, HandoverCreateDto, HandoverDisputeDto, ListHandoversQuery } from './handovers.dto';
 import { HandoversService } from './handovers.service';
 
 /** Entrega formal no galpão (saída com aceite do cliente e chegada). Rotas literais antes de `/:id`. */
@@ -51,5 +51,13 @@ export class HandoversController {
   @CustomerOnly()
   dispute(@Param('id', ParseUUIDPipe) id: string, @Body() dto: HandoverDisputeDto, @CurrentUser() user: Principal) {
     return this.handovers.dispute(user, id, dto.reason);
+  }
+
+  /** cancelHandover — operação cancela a saída pendente ou disputada (reserva volta a active no prazo; senão expira). */
+  @Post(':id/cancel')
+  @HttpCode(200)
+  @StaffOnly('admin', 'operacao', 'campo')
+  cancel(@Param('id', ParseUUIDPipe) id: string, @Body() dto: HandoverCancelDto, @CurrentUser() user: Principal) {
+    return this.handovers.cancel(user, id, dto.reason);
   }
 }

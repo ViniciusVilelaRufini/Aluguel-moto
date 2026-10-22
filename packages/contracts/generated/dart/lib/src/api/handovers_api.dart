@@ -10,6 +10,7 @@ import 'package:dio/dio.dart';
 
 import 'package:volti_api/src/api_util.dart';
 import 'package:volti_api/src/model/handover.dart';
+import 'package:volti_api/src/model/handover_cancel.dart';
 import 'package:volti_api/src/model/handover_create.dart';
 import 'package:volti_api/src/model/handover_dispute.dart';
 import 'package:volti_api/src/model/handover_page.dart';
@@ -104,6 +105,112 @@ class HandoversApi {
     }
 
     return Response<Rental>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Cancelar a entrega de saída (operação)
+  /// Para a saída &#x60;pickup&#x60; com status &#x60;pending_customer&#x60; ou &#x60;disputed&#x60; (outro status ou &#x60;return_depot&#x60; → &#x60;422&#x60; &#x60;handover-not-pending&#x60;; já aceita ou com aceite em andamento → &#x60;409&#x60;). Na mesma transação: a entrega vira &#x60;canceled&#x60; (AuditLog &#x60;handover.cancel&#x60;, evento &#x60;handover.updated&#x60;) e a reserva volta a &#x60;active&#x60; se ainda estiver no prazo (&#x60;expiresAt&#x60; no futuro; o &#x60;pickupCode&#x60; volta em &#x60;GET /reservations/current&#x60; e o operador pode registrar uma nova saída); fora do prazo, a reserva vira &#x60;expired&#x60;, a caução é liberada e a moto volta a &#x60;free&#x60; no galpão.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [handoverCancel]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Handover] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Handover>> cancelHandover({
+    required String id,
+    required HandoverCancel handoverCancel,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/handovers/{id}/cancel'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(HandoverCancel);
+      _bodyData = _serializers.serialize(handoverCancel, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Handover? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Handover),
+            ) as Handover;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Handover>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

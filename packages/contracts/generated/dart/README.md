@@ -176,6 +176,7 @@ Class | Method | HTTP request | Description
 [*FieldTasksApi*](doc/FieldTasksApi.md) | [**submitInspection**](doc/FieldTasksApi.md#submitinspection) | **POST** /field-tasks/{id}/inspection | Registrar checklist de inspeção
 [*FieldTasksApi*](doc/FieldTasksApi.md) | [**updateFieldTask**](doc/FieldTasksApi.md#updatefieldtask) | **PATCH** /field-tasks/{id} | Atualizar ou atribuir tarefa
 [*HandoversApi*](doc/HandoversApi.md) | [**acceptHandover**](doc/HandoversApi.md#accepthandover) | **POST** /handovers/{id}/accept | Aceitar a moto e destravar
+[*HandoversApi*](doc/HandoversApi.md) | [**cancelHandover**](doc/HandoversApi.md#cancelhandover) | **POST** /handovers/{id}/cancel | Cancelar a entrega de saída (operação)
 [*HandoversApi*](doc/HandoversApi.md) | [**createHandover**](doc/HandoversApi.md#createhandover) | **POST** /handovers | Registrar entrega (saída ou chegada no galpão)
 [*HandoversApi*](doc/HandoversApi.md) | [**createHandoverPhotoUpload**](doc/HandoversApi.md#createhandoverphotoupload) | **POST** /handovers/uploads | URL de upload da foto da entrega
 [*HandoversApi*](doc/HandoversApi.md) | [**disputeHandover**](doc/HandoversApi.md#disputehandover) | **POST** /handovers/{id}/dispute | Apontar problema na moto
@@ -409,6 +410,7 @@ Class | Method | HTTP request | Description
  - [GeoZoneInput](doc/GeoZoneInput.md)
  - [GeoZoneList](doc/GeoZoneList.md)
  - [Handover](doc/Handover.md)
+ - [HandoverCancel](doc/HandoverCancel.md)
  - [HandoverChecklistItem](doc/HandoverChecklistItem.md)
  - [HandoverCreate](doc/HandoverCreate.md)
  - [HandoverDispute](doc/HandoverDispute.md)

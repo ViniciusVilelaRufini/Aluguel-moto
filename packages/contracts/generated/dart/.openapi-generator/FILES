@@ -105,6 +105,7 @@ doc/GeoZone.md
 doc/GeoZoneInput.md
 doc/GeoZoneList.md
 doc/Handover.md
+doc/HandoverCancel.md
 doc/HandoverChecklistItem.md
 doc/HandoverCreate.md
 doc/HandoverDispute.md
@@ -429,6 +430,7 @@ lib/src/model/geo_zone.dart
 lib/src/model/geo_zone_input.dart
 lib/src/model/geo_zone_list.dart
 lib/src/model/handover.dart
+lib/src/model/handover_cancel.dart
 lib/src/model/handover_checklist_item.dart
 lib/src/model/handover_create.dart
 lib/src/model/handover_dispute.dart
