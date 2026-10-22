@@ -159,7 +159,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (mounted) _moveMap(p ?? fallback);
   }
 
-  /// Leitor do QR (troca nova) ou a tela da troca em andamento.
+  /// Leitor do QR (troca nova) ou a tela da troca em andamento; na volta,
+  /// rele o aluguel.
   Future<void> _openSwapFlow(StationSwap? open, {String? stationId}) async {
     if (_swapNavigating) return;
     _swapNavigating = true;
@@ -172,9 +173,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     } finally {
       _swapNavigating = false;
     }
-    // Sem recarga aqui: a tela da troca ja invalida o aluguel quando a troca
-    // termina (invalidar na volta, com a home ainda coberta pela transicao,
-    // reconstruia providers no meio do build).
+    // Rele o aluguel (troca encerrada, bateria nova) so depois do frame:
+    // invalidar no meio da volta reconstruia providers durante o build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.invalidate(currentRentalStateProvider);
+    });
   }
 
   /// Um toque so nas entradas da troca (sem empilhar duas telas).

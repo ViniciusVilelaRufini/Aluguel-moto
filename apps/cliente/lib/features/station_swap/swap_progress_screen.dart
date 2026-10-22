@@ -158,6 +158,9 @@ class _SwapProgressScreenState extends ConsumerState<SwapProgressScreen> {
     if (!mounted || e is! StationSwapUpdated || e.swapId != widget.swapId) return;
     final current = _swap;
     if (current != null) _set(applySwapEvent(current, swapId: e.swapId, status: swapStatusFromWire(e.status)));
+    // GETs ja em voo foram pedidos antes deste evento: ficam velhos (como no
+    // cancelamento, reserva um numero de sequencia que nenhum GET usa).
+    _appliedSeq = ++_fetchSeq;
     // Vaga, prazo e motivo da etapa nova.
     _fetch();
   }

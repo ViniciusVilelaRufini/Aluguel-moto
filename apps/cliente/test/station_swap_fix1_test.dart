@@ -240,6 +240,31 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    testWidgets('m-A: evento canceled descarta GET ja em voo (awaiting_return atrasado)', (t) async {
+      final b = SwapBackend()..server = swapFx(status: StationSwapStatus.awaitingReturn, slot: 1);
+      await pump(t, b);
+      // GET em voo com o snapshot awaiting_return (sem updatedAt: so a sequencia protege).
+      final gate = b.getGate = Completer<void>();
+      rt.conn.add(false);
+      await t.pump();
+      await t.pump(kSwapPollWhileOffline);
+      expect(b.getGate, isNull);
+      // Evento: cancelada; o GET disparado por ele ja ve canceled.
+      b.server = swapFx(status: StationSwapStatus.canceled, reason: StationSwapEndReason.returnTimeout);
+      rt.emit(const StationSwapUpdated(swapId: 'sw1', status: 'canceled'));
+      // O GET disparado pelo evento tambem demora: o atrasado chega antes dele.
+      final gate2 = b.getGate = Completer<void>();
+      await settle(t);
+      expect(stepTitle(t), l.swapCanceledTitle);
+      gate.complete();
+      await settle(t);
+      expect(stepTitle(t), l.swapCanceledTitle);
+      gate2.complete();
+      await settle(t);
+      expect(stepTitle(t), l.swapCanceledTitle);
+      await t.pumpWidget(const SizedBox());
+    });
+
     testWidgets('I-2: segundo plano para o GET periodico; ao voltar, GET na hora e o periodico volta', (t) async {
       final b = SwapBackend()..server = swapFx(status: StationSwapStatus.awaitingReturn, slot: 1);
       await pump(t, b);

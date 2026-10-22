@@ -218,6 +218,8 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
 
   /// Abre a troca na estacao em andamento (o aluguel so encerra depois dela).
   Future<void> _continueSwap() async {
+    if (_navigating) return;
+    _navigating = true;
     try {
       final swap = (await ref.read(backendProvider).currentRentalState()).stationSwap;
       if (!mounted) return;
@@ -232,8 +234,13 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       }
     } catch (e) {
       if (mounted) setState(() => _error = failureText(context.l, e));
+    } finally {
+      _navigating = false;
     }
   }
+
+  /// Um toque so em "Continuar troca" (sem empilhar duas telas da troca).
+  bool _navigating = false;
 
   void _startPolling() {
     _poll?.cancel();

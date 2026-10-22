@@ -155,7 +155,7 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
       if (mounted) VoltiToast.show(context, swapErrorMessage(l, e), tone: VoltiToastTone.danger);
     } finally {
       _handling = false;
-      _lastClosedAt = ref.read(clockProvider)();
+      if (mounted) _lastClosedAt = ref.read(clockProvider)();
     }
   }
 
