@@ -65,15 +65,18 @@ class LoadingState extends StatelessWidget {
 
 /// Renderiza `AsyncValue` com carregamento, erro e "Tentar de novo".
 class AsyncView<T> extends StatelessWidget {
-  const AsyncView({super.key, required this.value, required this.data, required this.onRetry});
+  const AsyncView({super.key, required this.value, required this.data, required this.onRetry, this.loading});
   final AsyncValue<T> value;
   final Widget Function(T) data;
   final VoidCallback onRetry;
 
+  /// Carregamento no formato do conteudo (ex.: `VoltiSkeleton.list`). Padrao: spinner.
+  final WidgetBuilder? loading;
+
   @override
   Widget build(BuildContext context) => value.when(
         data: data,
-        loading: () => const LoadingState(),
+        loading: () => loading?.call(context) ?? const LoadingState(),
         error: (e, _) => ErrorState(error: e, onRetry: onRetry),
         skipLoadingOnReload: true,
         skipLoadingOnRefresh: true,
@@ -193,7 +196,9 @@ class NoticeBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bg = danger ? VoltiColors.dangerSoft : VoltiColors.warningSoft;
+    // Icone no tom da marca; texto no tom forte (>= 4,5:1 sobre o fundo suave).
     final fg = danger ? VoltiColors.dangerInk : VoltiColors.warningInk;
+    final ink = danger ? VoltiColors.dangerInkStrong : VoltiColors.warningInkStrong;
     return Semantics(
       liveRegion: true,
       container: true,
@@ -209,8 +214,8 @@ class NoticeBanner extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (title != null) Text(title!, style: VoltiTypography.bodyStrong.copyWith(color: fg)),
-                  Text(message, style: VoltiTypography.caption.copyWith(color: fg)),
+                  if (title != null) Text(title!, style: VoltiTypography.bodyStrong.copyWith(color: ink)),
+                  Text(message, style: VoltiTypography.caption.copyWith(color: ink)),
                 ],
               ),
             ),

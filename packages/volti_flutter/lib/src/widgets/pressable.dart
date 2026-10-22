@@ -61,7 +61,9 @@ class _VoltiPressableState extends State<VoltiPressable> {
           scale: _down ? widget.scale : 1,
           duration: VoltiMotion.scaled(context, VoltiMotion.durSpring),
           curve: VoltiMotion.easeSpring,
-          child: widget.child,
+          // Com [semanticLabel] o rotulo ja descreve tudo: sem isso o texto
+          // interno era lido de novo ("Entrar Entrar").
+          child: widget.semanticLabel != null ? ExcludeSemantics(child: widget.child) : widget.child,
         ),
       ),
     );

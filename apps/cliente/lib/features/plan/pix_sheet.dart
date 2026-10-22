@@ -31,7 +31,9 @@ class PixDepositSheet extends ConsumerStatefulWidget {
 
 class _PixDepositSheetState extends ConsumerState<PixDepositSheet> {
   Timer? _timer;
+  Timer? _close;
   String? _failed;
+  bool _paid = false;
 
   @override
   void initState() {
@@ -42,16 +44,25 @@ class _PixDepositSheetState extends ConsumerState<PixDepositSheet> {
   @override
   void dispose() {
     _timer?.cancel();
+    _close?.cancel();
     super.dispose();
   }
 
   Future<void> _poll() async {
+    if (_paid) return;
     try {
       final d = await ref.read(backendProvider).deposit(widget.deposit.id);
-      if (!mounted) return;
+      if (!mounted || _paid) return;
       if (d.status == DepositStatus.held) {
         _timer?.cancel();
-        Navigator.of(context).pop(true);
+        VoltiHaptics.success();
+        // Mostra o check por um instante antes de seguir (sem espera com reduced motion).
+        setState(() => _paid = true);
+        final wait = VoltiMotion.reduced(context) ? Duration.zero : const Duration(milliseconds: 1100);
+        _close?.cancel();
+        _close = Timer(wait, () {
+          if (mounted) Navigator.of(context).pop(true);
+        });
       } else if (d.status == DepositStatus.failed || d.status == DepositStatus.released) {
         _timer?.cancel();
         setState(() => _failed = context.l.pixFailed);
@@ -74,6 +85,16 @@ class _PixDepositSheetState extends ConsumerState<PixDepositSheet> {
         qr = null;
       }
     }
+    if (_paid) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.s24),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          const VoltiSuccessCheck(delay: Duration.zero),
+          const SizedBox(height: VoltiSpacing.s16),
+          Semantics(liveRegion: true, child: Text(l.pixPaid, style: VoltiTypography.title)),
+        ]),
+      );
+    }
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -93,6 +114,7 @@ class _PixDepositSheetState extends ConsumerState<PixDepositSheet> {
               fullWidth: true,
               onPressed: () async {
                 await Clipboard.setData(ClipboardData(text: pix.copyPaste));
+                VoltiHaptics.tap();
                 if (context.mounted) VoltiToast.show(context, l.pixCopied);
               },
             ),

@@ -38,10 +38,17 @@ class VoltiChip extends StatelessWidget {
         onTap: onTap,
         scale: VoltiMotion.chipPressScale,
         semanticLabel: label,
-        child: AnimatedContainer(
+        // Alvo de toque >= 44 px (E-13): 4 px invisiveis acima e abaixo do
+        // visual de 36 px; a semantica cobre a area inteira.
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: (VoltiSpacing.hitMin - 36) / 2),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: VoltiSpacing.hitMin),
+            child: AnimatedContainer(
           duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
-          height: 36,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          // Altura minima 36 (design) que cresce com a escala de texto.
+          constraints: const BoxConstraints(minHeight: 36),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: selected ? VoltiColors.brandSoft : scheme.surface,
             borderRadius: VoltiRadii.rPill,
@@ -52,18 +59,23 @@ class VoltiChip extends StatelessWidget {
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             if (icon != null) ...[Icon(icon, size: 16, color: fg), const SizedBox(width: 6)],
-            Text(
-              label,
-              maxLines: 1,
-              style: TextStyle(
-                fontFamily: VoltiTypography.fontSans,
-                fontWeight: VoltiTypography.fwMedium,
-                fontSize: 13,
-                height: 1,
-                color: fg,
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: VoltiTypography.fontSans,
+                  fontWeight: VoltiTypography.fwMedium,
+                  fontSize: 13,
+                  height: 1,
+                  color: fg,
+                ),
               ),
             ),
           ]),
+        ),
+          ),
         ),
       ),
     );

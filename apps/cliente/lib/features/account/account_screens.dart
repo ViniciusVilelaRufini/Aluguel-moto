@@ -88,11 +88,22 @@ class HistoryScreen extends ConsumerWidget {
       body: AsyncView<List<Rental>>(
         value: ref.watch(historyProvider),
         onRetry: () => ref.invalidate(historyProvider),
+        loading: (_) => _listSkeleton(l.loading),
         data: (list) => list.isEmpty
-            ? Center(child: Text(l.historyEmpty, style: VoltiTypography.body))
-            : ListView(
+            ? VoltiEmptyState(
+                icon: LucideIcons.history,
+                title: l.historyEmptyTitle,
+                message: l.historyEmpty,
+                actionLabel: l.goToMap,
+                actionIcon: LucideIcons.map,
+                onAction: () => context.go('/home'),
+              )
+            : VoltiRefresh(
+                onRefresh: () => ref.refresh(historyProvider.future),
+                child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-                children: [
+                children: VoltiStagger.wrap([
                   for (final r in list)
                     ListRow(
                       title: l.historyItem(r.vehicleCode, _date(r.startedAt)),
@@ -123,7 +134,8 @@ class HistoryScreen extends ConsumerWidget {
                         ]),
                       ),
                     ),
-                ],
+                ]),
+              ),
               ),
       ),
     );
@@ -131,6 +143,12 @@ class HistoryScreen extends ConsumerWidget {
 
   static String _date(DateTime d) => formatDateTimeSp(d);
 }
+
+/// Esqueleto padrao das listas da conta (formato de `ListRow`).
+Widget _listSkeleton(String label) => Padding(
+      padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
+      child: VoltiSkeleton.list(label: label),
+    );
 
 // ---------------------------------------------------------------------------
 // Carteira de creditos
@@ -146,18 +164,27 @@ class WalletScreen extends ConsumerWidget {
     final l = context.l;
     return VoltiScaffold(
       title: l.wallet,
-      body: ListView(
+      body: VoltiRefresh(
+        onRefresh: () async {
+          ref.invalidate(packagesProvider);
+          ref.invalidate(walletProvider);
+          await ref.read(walletProvider.future);
+        },
+        child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
         children: [
           AsyncView<Wallet>(
             value: ref.watch(walletProvider),
             onRetry: () => ref.invalidate(walletProvider),
+            loading: (_) => VoltiSkeleton.card(height: 96, label: l.loading),
             data: (w) => Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(VoltiSpacing.s16),
               decoration: BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rLg),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text(l.walletBalanceTitle, style: VoltiTypography.caption.copyWith(color: Colors.white70)),
-                Text(money(w.balanceCents), style: VoltiTypography.title.copyWith(color: Colors.white)),
+                VoltiCountUp(value: w.balanceCents, format: money, style: VoltiTypography.title.copyWith(color: Colors.white)),
                 Text(l.minutesBalance(w.minutesBalance), style: VoltiTypography.caption.copyWith(color: Colors.white70)),
               ]),
             ),
@@ -166,7 +193,13 @@ class WalletScreen extends ConsumerWidget {
           AsyncView<List<MinutePackage>>(
             value: ref.watch(packagesProvider),
             onRetry: () => ref.invalidate(packagesProvider),
-            data: (list) => Column(children: [
+            loading: (_) => VoltiSkeleton.list(rows: 3, label: l.loading),
+            data: (list) => list.where((p) => p.active).isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.s12),
+                    child: Text(l.packagesEmpty, style: VoltiTypography.body),
+                  )
+                : Column(children: [
               for (final p in list.where((p) => p.active))
                 ListRow(
                   title: p.name,
@@ -204,6 +237,7 @@ class WalletScreen extends ConsumerWidget {
           ),
         ],
       ),
+      ),
     );
   }
 }
@@ -234,16 +268,43 @@ class SubscriptionsScreen extends ConsumerWidget {
       body: AsyncView<List<Subscription>>(
         value: ref.watch(subscriptionsProvider),
         onRetry: () => ref.invalidate(subscriptionsProvider),
-        data: (list) => ListView(
+        loading: (_) => _listSkeleton(l.loading),
+        data: (list) => VoltiRefresh(
+          onRefresh: () => ref.refresh(subscriptionsProvider.future),
+          child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
           children: [
+            if (list.isEmpty) Text(l.subscriptionsEmpty, style: VoltiTypography.body),
             for (final s in list)
               ListRow(
                 title: s.planCode == SubscriptionPlanCode.weekly ? l.planWeekly : l.planMonthly,
                 icon: LucideIcons.calendarClock,
                 subtitle: s.cancelAtPeriodEnd == true ? l.subscriptionEnding : l.subscriptionRenews(HistoryScreen._date(s.currentPeriodEnd)),
                 value: money(s.priceCents),
-                onTap: s.cancelAtPeriodEnd == true ? null : () => run(() => ref.read(backendProvider).cancelSubscription(s.id)),
+                onTap: s.cancelAtPeriodEnd == true
+                    ? null
+                    : () async {
+                        // Acao destrutiva: confirma antes (antes cancelava com um toque).
+                        final ok = await VoltiDialog.show<bool>(
+                          context,
+                          title: l.cancelRenewalTitle,
+                          message: Text(l.cancelRenewalText(HistoryScreen._date(s.currentPeriodEnd))),
+                          actions: [
+                            VoltiButton(
+                                label: l.cancelRenewalConfirm,
+                                variant: VoltiButtonVariant.danger,
+                                fullWidth: true,
+                                onPressed: () => Navigator.of(context).pop(true)),
+                            VoltiButton(
+                                label: l.keepPlan,
+                                variant: VoltiButtonVariant.ghost,
+                                fullWidth: true,
+                                onPressed: () => Navigator.of(context).pop(false)),
+                          ],
+                        );
+                        if (ok == true) await run(() => ref.read(backendProvider).cancelSubscription(s.id));
+                      },
               ),
             if (list.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 4), child: Text(l.tapToCancel, style: VoltiTypography.caption)),
             SectionTitle(l.subscribe),
@@ -261,6 +322,7 @@ class SubscriptionsScreen extends ConsumerWidget {
               onPressed: () => run(() => ref.read(backendProvider).subscribe(SubscriptionPlanCode.monthly)),
             ),
           ],
+        ),
         ),
       ),
     );
@@ -318,9 +380,15 @@ class SupportScreen extends ConsumerWidget {
       body: AsyncView<List<SupportConversation>>(
         value: ref.watch(conversationsProvider),
         onRetry: () => ref.invalidate(conversationsProvider),
+        loading: (_) => _listSkeleton(l.loading),
         data: (list) => list.isEmpty
-            ? Center(child: Text(l.supportEmpty, style: VoltiTypography.body))
-            : ListView(padding: const EdgeInsets.all(VoltiSpacing.screenGutter), children: [
+            ? VoltiEmptyState(icon: LucideIcons.messageCircle, title: l.supportEmpty, message: l.supportEmptyText)
+            : VoltiRefresh(
+                onRefresh: () => ref.refresh(conversationsProvider.future),
+                child: ListView(
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
+                    children: VoltiStagger.wrap([
                 for (final c in list)
                   ListRow(
                     title: c.subject,
@@ -328,7 +396,8 @@ class SupportScreen extends ConsumerWidget {
                     subtitle: c.unreadCount != null && c.unreadCount! > 0 ? l.unreadMessages(c.unreadCount!) : null,
                     onTap: () => context.push('/account/support/${c.id}'),
                   ),
-              ]),
+              ])),
+              ),
       ),
     );
   }

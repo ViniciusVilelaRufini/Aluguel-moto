@@ -859,13 +859,13 @@ abstract class AppLocalizations {
   /// No description provided for @noReservation.
   ///
   /// In pt, this message translates to:
-  /// **'Você não tem uma reserva ativa.'**
+  /// **'Nenhuma reserva ativa'**
   String get noReservation;
 
   /// No description provided for @noVehiclesNearby.
   ///
   /// In pt, this message translates to:
-  /// **'Nenhuma moto por perto agora.'**
+  /// **'Nenhuma moto por perto agora'**
   String get noVehiclesNearby;
 
   /// No description provided for @notNow.
@@ -949,7 +949,7 @@ abstract class AppLocalizations {
   /// No description provided for @pixWaiting.
   ///
   /// In pt, this message translates to:
-  /// **'Aguardando o pagamento...'**
+  /// **'Aguardando o pagamento…'**
   String get pixWaiting;
 
   /// No description provided for @planMonthly.
@@ -1225,7 +1225,7 @@ abstract class AppLocalizations {
   /// No description provided for @sending.
   ///
   /// In pt, this message translates to:
-  /// **'Enviando...'**
+  /// **'Enviando…'**
   String get sending;
 
   /// No description provided for @shareTrip.
@@ -1303,7 +1303,7 @@ abstract class AppLocalizations {
   /// No description provided for @supportEmpty.
   ///
   /// In pt, this message translates to:
-  /// **'Nenhuma conversa ainda.'**
+  /// **'Nenhuma conversa ainda'**
   String get supportEmpty;
 
   /// No description provided for @swapDone.
@@ -1525,7 +1525,7 @@ abstract class AppLocalizations {
   /// No description provided for @starsLabel.
   ///
   /// In pt, this message translates to:
-  /// **'{n} estrelas'**
+  /// **'{n, plural, =1{1 estrela} other{{n} estrelas}}'**
   String starsLabel(int n);
 
   /// No description provided for @stepOf.
@@ -1549,7 +1549,7 @@ abstract class AppLocalizations {
   /// No description provided for @unreadMessages.
   ///
   /// In pt, this message translates to:
-  /// **'{n} mensagens novas'**
+  /// **'{n, plural, =1{1 mensagem nova} other{{n} mensagens novas}}'**
   String unreadMessages(int n);
 
   /// No description provided for @vehicleCode.
@@ -1629,6 +1629,126 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'É preciso ter 18 anos ou mais.'**
   String get birthUnderage;
+
+  /// No description provided for @historyEmptyTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma corrida ainda'**
+  String get historyEmptyTitle;
+
+  /// No description provided for @supportEmptyText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Quando precisar, abra uma conversa. A equipe responde por aqui mesmo.'**
+  String get supportEmptyText;
+
+  /// No description provided for @noVehiclesNearbyText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Afaste o mapa ou tente de novo em alguns minutos.'**
+  String get noVehiclesNearbyText;
+
+  /// No description provided for @noReservationText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha uma moto no mapa e reserve por 15 minutos sem custo.'**
+  String get noReservationText;
+
+  /// No description provided for @sosHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ligar para o suporte ou compartilhar sua localização'**
+  String get sosHint;
+
+  /// No description provided for @cancelRenewalTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar a renovação?'**
+  String get cancelRenewalTitle;
+
+  /// No description provided for @cancelRenewalConfirm.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar renovação'**
+  String get cancelRenewalConfirm;
+
+  /// No description provided for @keepPlan.
+  ///
+  /// In pt, this message translates to:
+  /// **'Manter plano'**
+  String get keepPlan;
+
+  /// No description provided for @unitMinute.
+  ///
+  /// In pt, this message translates to:
+  /// **'minuto'**
+  String get unitMinute;
+
+  /// No description provided for @unitHour.
+  ///
+  /// In pt, this message translates to:
+  /// **'hora'**
+  String get unitHour;
+
+  /// No description provided for @unitDay.
+  ///
+  /// In pt, this message translates to:
+  /// **'dia'**
+  String get unitDay;
+
+  /// No description provided for @unitWeek.
+  ///
+  /// In pt, this message translates to:
+  /// **'semana'**
+  String get unitWeek;
+
+  /// No description provided for @unitMonth.
+  ///
+  /// In pt, this message translates to:
+  /// **'mês'**
+  String get unitMonth;
+
+  /// No description provided for @pixPaid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix confirmado'**
+  String get pixPaid;
+
+  /// No description provided for @realtimeOfflineText.
+  ///
+  /// In pt, this message translates to:
+  /// **'O tempo e o custo seguem contando. Estamos reconectando.'**
+  String get realtimeOfflineText;
+
+  /// No description provided for @lockConfirmed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto travada'**
+  String get lockConfirmed;
+
+  /// No description provided for @dragToClose.
+  ///
+  /// In pt, this message translates to:
+  /// **'Arraste para baixo para fechar'**
+  String get dragToClose;
+
+  /// No description provided for @packagesEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhum pacote disponível agora.'**
+  String get packagesEmpty;
+
+  /// No description provided for @subscriptionsEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você ainda não tem plano semanal ou mensal.'**
+  String get subscriptionsEmpty;
+
+  /// No description provided for @cancelRenewalText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seu plano continua valendo até {date}. Depois disso, não renova.'**
+  String cancelRenewalText(String date);
 }
 
 class _AppLocalizationsDelegate

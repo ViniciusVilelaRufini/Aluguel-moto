@@ -415,10 +415,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Você paga pelo tempo de uso. Não cobramos nem mostramos km rodados.';
 
   @override
-  String get noReservation => 'Você não tem uma reserva ativa.';
+  String get noReservation => 'Nenhuma reserva ativa';
 
   @override
-  String get noVehiclesNearby => 'Nenhuma moto por perto agora.';
+  String get noVehiclesNearby => 'Nenhuma moto por perto agora';
 
   @override
   String get notNow => 'Agora não';
@@ -460,7 +460,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pixTitle => 'Pague com Pix';
 
   @override
-  String get pixWaiting => 'Aguardando o pagamento...';
+  String get pixWaiting => 'Aguardando o pagamento…';
 
   @override
   String get planMonthly => 'Plano mensal';
@@ -603,7 +603,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get sendRating => 'Enviar avaliação';
 
   @override
-  String get sending => 'Enviando...';
+  String get sending => 'Enviando…';
 
   @override
   String get shareTrip => 'Compartilhar trajeto';
@@ -643,7 +643,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get support => 'Suporte';
 
   @override
-  String get supportEmpty => 'Nenhuma conversa ainda.';
+  String get supportEmpty => 'Nenhuma conversa ainda';
 
   @override
   String get swapDone => 'Moto trocada';
@@ -779,7 +779,13 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String starsLabel(int n) {
-    return '$n estrelas';
+    String _temp0 = intl.Intl.pluralLogic(
+      n,
+      locale: localeName,
+      other: '$n estrelas',
+      one: '1 estrela',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -799,7 +805,13 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String unreadMessages(int n) {
-    return '$n mensagens novas';
+    String _temp0 = intl.Intl.pluralLogic(
+      n,
+      locale: localeName,
+      other: '$n mensagens novas',
+      one: '1 mensagem nova',
+    );
+    return '$_temp0';
   }
 
   @override
@@ -850,4 +862,71 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get birthUnderage => 'É preciso ter 18 anos ou mais.';
+
+  @override
+  String get historyEmptyTitle => 'Nenhuma corrida ainda';
+
+  @override
+  String get supportEmptyText =>
+      'Quando precisar, abra uma conversa. A equipe responde por aqui mesmo.';
+
+  @override
+  String get noVehiclesNearbyText =>
+      'Afaste o mapa ou tente de novo em alguns minutos.';
+
+  @override
+  String get noReservationText =>
+      'Escolha uma moto no mapa e reserve por 15 minutos sem custo.';
+
+  @override
+  String get sosHint => 'Ligar para o suporte ou compartilhar sua localização';
+
+  @override
+  String get cancelRenewalTitle => 'Cancelar a renovação?';
+
+  @override
+  String get cancelRenewalConfirm => 'Cancelar renovação';
+
+  @override
+  String get keepPlan => 'Manter plano';
+
+  @override
+  String get unitMinute => 'minuto';
+
+  @override
+  String get unitHour => 'hora';
+
+  @override
+  String get unitDay => 'dia';
+
+  @override
+  String get unitWeek => 'semana';
+
+  @override
+  String get unitMonth => 'mês';
+
+  @override
+  String get pixPaid => 'Pix confirmado';
+
+  @override
+  String get realtimeOfflineText =>
+      'O tempo e o custo seguem contando. Estamos reconectando.';
+
+  @override
+  String get lockConfirmed => 'Moto travada';
+
+  @override
+  String get dragToClose => 'Arraste para baixo para fechar';
+
+  @override
+  String get packagesEmpty => 'Nenhum pacote disponível agora.';
+
+  @override
+  String get subscriptionsEmpty =>
+      'Você ainda não tem plano semanal ou mensal.';
+
+  @override
+  String cancelRenewalText(String date) {
+    return 'Seu plano continua valendo até $date. Depois disso, não renova.';
+  }
 }

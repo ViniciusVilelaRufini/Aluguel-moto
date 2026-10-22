@@ -549,10 +549,15 @@ class ReservationBanner extends StatelessWidget {
     this.label = 'Tempo de reserva restante',
     this.swipeLabel = 'Deslize para cancelar',
     this.onCancel,
+    this.totalSeconds,
   });
 
   /// Segundos restantes.
   final int seconds;
+
+  /// Duracao total da reserva. Quando informada, mostra uma barra que esvazia
+  /// suavemente (evolucao E-09). Sem ela o banner fica como antes.
+  final int? totalSeconds;
   final String label;
   final String swipeLabel;
   final VoidCallback? onCancel;
@@ -603,9 +608,54 @@ class ReservationBanner extends StatelessWidget {
             ),
             style: const TextStyle(color: Colors.white),
           ),
+          if (totalSeconds != null && totalSeconds! > 0) ...[
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              child: _ReservationProgress(
+                fraction: (seconds / totalSeconds!).clamp(0.0, 1.0),
+              ),
+            ),
+          ],
           const SizedBox(height: 10),
           SwipeAction(label: swipeLabel, onComplete: onCancel),
         ],
+      ),
+    );
+  }
+}
+
+/// Barra fina que esvazia entre os ticks de 1 s com interpolacao linear
+/// (sem degraus). Reduced motion: salta.
+class _ReservationProgress extends StatelessWidget {
+  const _ReservationProgress({required this.fraction});
+  final double fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExcludeSemantics(
+      child: ClipRRect(
+        borderRadius: VoltiRadii.rPill,
+        child: SizedBox(
+          height: 4,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(end: fraction),
+            duration: VoltiMotion.scaled(context, const Duration(seconds: 1)),
+            builder: (context, v, _) => Stack(
+              children: [
+                Positioned.fill(
+                  child: ColoredBox(color: Colors.white.withValues(alpha: .28)),
+                ),
+                FractionallySizedBox(
+                  key: const Key('reservation-progress'),
+                  widthFactor: v,
+                  heightFactor: 1,
+                  child: const ColoredBox(color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

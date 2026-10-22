@@ -15,6 +15,7 @@ import '../../core/geo.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
+import '../ride/ride_screen.dart' show mapEnabledProvider;
 import 'providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -73,6 +74,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() => _busy = true);
     try {
       await ref.read(backendProvider).reserve(v.id);
+      VoltiHaptics.success();
       ref.invalidate(currentReservationProvider);
       if (mounted) context.push('/reserved');
     } catch (e) {
@@ -118,7 +120,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       body: Stack(
         children: [
           Positioned.fill(
-            child: VoltiMap(
+            child: !ref.watch(mapEnabledProvider)
+                ? const ColoredBox(color: VoltiColors.mapLand)
+                : VoltiMap(
               controller: _map,
               center: center,
               layers: [
@@ -154,7 +158,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             animateIn: !_dropped.contains(v.id),
                             delay: firstLoad ? Duration(milliseconds: 260 + (i < 12 ? i : 12) * 70) : Duration.zero,
                             selected: v.id == _selectedId,
-                            onTap: () => setState(() => _selectedId = v.id)),
+                            onTap: () {
+                              if (_selectedId != v.id) VoltiHaptics.selection();
+                              setState(() => _selectedId = v.id);
+                            }),
                       ),
                     ),
                 ]),
@@ -211,7 +218,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   if (session != null && session.kyc != KycStatus.approved)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: GestureDetector(
+                      child: VoltiPressable(
+                        semanticLabel: '${l.kycPendingTitle}. ${l.kycHomeNotice}',
                         onTap: () => context.push('/account/verification'),
                         child: NoticeBanner(
                           icon: LucideIcons.shieldCheck,
@@ -261,7 +269,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         duration: VoltiMotion.durScreen,
                         curve: VoltiMotion.easeScreen,
                         fromOffset: const Offset(0, 120),
-                        child: _VehicleSheet(
+                        // Arrastar para baixo fecha, com mola se soltar antes.
+                        child: VoltiDragToDismiss(
+                          key: const Key('vehicle-sheet-drag'),
+                          dismissLabel: l.close,
+                          onDismiss: () => setState(() => _selectedId = null),
+                          child: _VehicleSheet(
                         vehicle: selected,
                         busy: _busy,
                         hasReservation: reservation != null,
@@ -269,15 +282,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         onRing: reservation?.vehicleId == selected.id ? () => _ring(selected!) : null,
                         onClose: () => setState(() => _selectedId = null),
                       ),
+                        ),
                       )
                     else if (nearby.isLoading)
-                      const Center(child: LinearProgressIndicator())
+                      Container(
+                        key: const Key('nearby-skeleton'),
+                        padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.s16, vertical: VoltiSpacing.s8),
+                        decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
+                        child: VoltiSkeleton.list(rows: 1, trailing: false, label: l.loading),
+                      )
                     else if (vehicles.isEmpty)
                       Container(
                         padding: const EdgeInsets.all(VoltiSpacing.s16),
                         decoration: BoxDecoration(
                             color: Theme.of(context).colorScheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
-                        child: Text(l.noVehiclesNearby, style: VoltiTypography.body),
+                        child: VoltiEmptyState(
+                          compact: true,
+                          icon: LucideIcons.bike,
+                          title: l.noVehiclesNearby,
+                          message: l.noVehiclesNearbyText,
+                          actionLabel: l.retry,
+                          actionIcon: LucideIcons.refreshCw,
+                          onAction: () => ref.invalidate(nearbyProvider),
+                        ),
                       ),
                     const SizedBox(height: VoltiSpacing.s12),
                     VoltiFadeUp(
@@ -331,7 +359,11 @@ class _ActiveBanner extends StatelessWidget {
         Icon(icon, color: Colors.white, size: 20),
         const SizedBox(width: 10),
         Expanded(child: Text(text, style: VoltiTypography.bodyStrong.copyWith(color: Colors.white))),
-        TextButton(onPressed: onTap, child: Text(action, style: const TextStyle(color: VoltiColors.green400))),
+        TextButton(
+          onPressed: onTap,
+          style: TextButton.styleFrom(minimumSize: const Size(48, VoltiSpacing.hitMin)),
+          child: Text(action, style: const TextStyle(color: VoltiColors.green400, fontWeight: FontWeight.w600)),
+        ),
       ]),
     );
   }
@@ -366,6 +398,18 @@ class _VehicleSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Grabber: sinaliza que o cartao arrasta para baixo.
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outlineVariant,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
           Row(children: [
             Expanded(
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

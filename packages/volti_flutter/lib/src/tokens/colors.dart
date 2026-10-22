@@ -93,6 +93,12 @@ abstract final class VoltiColors {
   static const warning = orange500;
   static const warningSoft = orange50;
   static const warningInk = orange600;
+
+  /// Texto sobre `warningSoft`/`dangerSoft` com contraste >= 4,5:1 (evolucao
+  /// E-11): `warningInk` (3,9:1) e `dangerInk` (3,5:1) ficam para icones e
+  /// texto grande; texto de corpo/legenda em banners usa estes.
+  static const warningInkStrong = Color(0xFF9A4A0F);
+  static const dangerInkStrong = Color(0xFFB0352B);
   static const info = blue500;
   static const infoSoft = blue50;
   static const infoInk = blue600;

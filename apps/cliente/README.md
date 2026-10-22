@@ -27,6 +27,10 @@ O Prism exige um header `Authorization: Bearer ...`; o login de dev (`POST /dev/
 
 Transições de tela em `core/router.dart` (`voltiPage`): push lateral de 440 ms; `/scan` abre como modal de baixo e a tela de trás recua. Listas e seções entram em cascata (`VoltiStagger.wrap`), pins caem em sequência, pin selecionado e posição do usuário pulsam, rotas se desenham (`DrawnPolyline`), recibo mostra `VoltiSuccessCheck`. Tudo respeita reduced motion (`MediaQuery.disableAnimationsOf`). Animações infinitas (pulso, brilho, ponto ao vivo) impedem `pumpAndSettle`: use `pump(duration)` nos testes dessas telas.
 
+## Design pass (UI/UX)
+
+Auditoria em `docs/design/auditoria-app.md` e evoluções em `docs/design/evolucoes-app.md`. Resumo: HUD da corrida com `VoltiSpeedGauge`, números que rolam (`VoltiTicker`) e faixas animadas (`VoltiStatusBanner`); esqueletos (`AsyncView(loading:)` + `VoltiSkeleton`); estados vazios (`VoltiEmptyState`); puxar para atualizar; cartão da moto arrasta para fechar; háptica semântica (`VoltiHaptics`); coreografia de sucesso no Pix, devolução e recibo; confirmação ao cancelar a renovação. O mapa da home também respeita `mapEnabledProvider` (testes sem tiles). Testes do design pass em `test/design_pass_test.dart` (reduced motion, semântica, texto a 200%).
+
 ## Pontos de integração
 
 ### Push (Firebase Cloud Messaging)
