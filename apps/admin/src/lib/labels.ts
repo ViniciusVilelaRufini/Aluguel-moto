@@ -66,4 +66,24 @@ export const TASK_PRIORITY: Record<S<'TaskPriority'>, [string, Tone]> = {
   low: ['Baixa', 'neutral'], medium: ['Média', 'warning'], high: ['Alta', 'danger'], urgent: ['Urgente', 'danger'],
 };
 
+/** Tipo de alerta: texto e ícone (Lucide). */
+export const ALERT_TYPE: Record<S<'AlertType'>, [string, string]> = {
+  out_of_operation_area: ['Moto fora da área de operação', 'MapPin'],
+  forbidden_zone_entered: ['Entrou em zona proibida', 'Ban'],
+  fall_detected: ['Queda detectada', 'Activity'],
+  tamper: ['Violação do rastreador', 'ShieldAlert'],
+  battery_critical: ['Bateria crítica', 'BatteryWarning'],
+  movement_without_rental: ['Moto em movimento sem aluguel', 'ShieldAlert'],
+  vehicle_offline: ['Rastreador desconectado', 'WifiOff'],
+  command_failed: ['Comando falhou', 'TriangleAlert'],
+  customer_not_ok: ['Cliente não respondeu ao "você está bem?"', 'Activity'],
+  incident_reported: ['Ocorrência registrada', 'FileText'],
+  speed_limiter_noncompliant: ['Limitador de velocidade acima de 32 km/h', 'Gauge'],
+};
+
+export const CONVERSATION_STATUS: Record<'open' | 'closed', [string, Tone]> = { open: ['Aberta', 'info'], closed: ['Fechada', 'neutral'] };
+export const MAINTENANCE_STATUS: Record<S<'MaintenanceTask'>['status'], [string, Tone]> = {
+  scheduled: ['Agendada', 'warning'], in_progress: ['Em andamento', 'info'], done: ['Concluída', 'success'], canceled: ['Cancelada', 'neutral'],
+};
+
 export const GROUP_LABEL: Record<S<'StaffGroup'>, string> = { admin: 'Administrador', operacao: 'Operação', financeiro: 'Financeiro', suporte: 'Suporte', campo: 'Campo' };

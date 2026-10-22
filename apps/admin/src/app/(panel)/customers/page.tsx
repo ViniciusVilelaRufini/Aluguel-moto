@@ -7,10 +7,10 @@ import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, canSeeFullCpf } from '@/lib/permissions';
 import { displayCpf } from '@/lib/cpf';
-import { CUSTOMER_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
+import { CLAIM_STATUS, CONVERSATION_STATUS, CUSTOMER_STATUS, DISPUTE_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
 import { formatBRL, formatDate, formatDateTime } from '@/lib/format';
 import type { S } from '@/lib/types';
-import { DataTable, ErrorNote, Field, Initials, KV, Modal, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, TextInput, usePagedQuery, useToast } from '@/components/ui';
+import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { SupportPanel } from '@/components/SupportPanel';
 import { Badge } from '@/ds/Badge';
@@ -47,9 +47,11 @@ export default function CustomersPage() {
           <SegmentedControl options={[{ value: 'customers', label: 'Clientes' }, { value: 'rentals', label: 'Aluguéis' }, { value: 'support', label: 'Suporte' }]} value={tab} onChange={changeTab} style={{ width: 340 }} />
         </PageHeader>
       </div>
+      <div key={tab} className="section-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
       {tab === 'customers' && <CustomersTab selected={customer} onSelect={setCustomer} onRentals={(id) => { setRental(id); changeTab('rentals'); }} />}
       {tab === 'rentals' && <div style={{ flex: 1, display: 'flex', padding: '14px 0 0 28px', minHeight: 0 }}><RentalsPanel selectedId={rental} onSelect={(id) => { setRental(id); router.replace(id ? `/customers?tab=rentals&rental=${id}` : '/customers?tab=rentals', { scroll: false }); }} /></div>}
       {tab === 'support' && <Page style={{ paddingTop: 14 }}><SupportPanel /></Page>}
+      </div>
       {restrictions && <RestrictionModal onClose={() => setRestrictions(false)} />}
     </div>
   );
@@ -82,13 +84,17 @@ function CustomersTab({ selected, onSelect, onRentals }: { selected: string | nu
         </div>
         <ErrorNote error={error} />
         <DataTable<S<'Customer'>>
-          testId="customers-table"
+          testId="customers-table" sticky
           rows={rows}
           loading={loading}
           pager={pager}
           selectedKey={selected}
           onRowClick={(r) => onSelect(r.id)}
-          empty="Nenhum cliente encontrado."
+          label="Clientes"
+          empty={debounced ? `Nenhum cliente para "${debounced}"` : 'Nenhum cliente nesta lista'}
+          emptyIcon={debounced ? 'Search' : 'Users'}
+          emptyHint={debounced ? 'Confira a grafia ou busque por CPF, e-mail ou telefone.' : undefined}
+          emptyAction={debounced || filter !== 'all' ? <Button size="sm" variant="ghost" icon="X" onClick={() => { setQ(''); setFilter('all'); }}>Limpar busca e filtros</Button> : undefined}
           columns={[
             { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={r.name ?? r.email} /><span style={{ fontWeight: 600 }}>{r.name ?? r.email}</span></div> },
             { key: 'cpf', label: 'CPF', mono: true, render: (r) => displayCpf(r.cpf, full) },
@@ -137,6 +143,7 @@ function CustomerSheet({ id, onClose, onRentals }: { id: string; onClose: () => 
       )
     }>
       <ErrorNote error={q.error} />
+      {q.isLoading && <PanelSkeleton />}
       {c && (
         <>
           <SegmentedControl options={[{ value: 'kyc', label: 'Verificação' }, { value: 'support', label: 'Atendimento' }, { value: 'history', label: 'Histórico' }]} value={tab} onChange={setTab} />
@@ -225,13 +232,14 @@ function CustomerTickets({ customerId }: { customerId: string }) {
   const cl = useQuery({ queryKey: ['c-claims', customerId], queryFn: () => unwrap(api.GET('/support/claims', { params: { query: { customerId, limit: 5 } } })) });
   const cv = useQuery({ queryKey: ['c-convs', customerId], queryFn: () => unwrap(api.GET('/support/conversations', { params: { query: { customerId, limit: 5 } } })) });
   const rows: { id: string; t: string; d: string; tone: 'warning' | 'info' | 'success' | 'neutral' | 'danger'; s: string }[] = [
-    ...(d.data?.items ?? []).map((x) => ({ id: x.id, t: 'Contestação', d: x.reason, tone: DISPUTE_TONE(x.status), s: x.status })),
-    ...(cl.data?.items ?? []).map((x) => ({ id: x.id, t: 'Sinistro', d: x.description, tone: 'info' as const, s: x.status })),
-    ...(cv.data?.items ?? []).map((x) => ({ id: x.id, t: 'Chat', d: x.subject, tone: 'info' as const, s: x.status })),
+    ...(d.data?.items ?? []).map((x) => ({ id: x.id, t: 'Contestação', d: x.reason, tone: DISPUTE_STATUS[x.status][1], s: DISPUTE_STATUS[x.status][0] })),
+    ...(cl.data?.items ?? []).map((x) => ({ id: x.id, t: 'Sinistro', d: x.description, tone: CLAIM_STATUS[x.status][1], s: CLAIM_STATUS[x.status][0] })),
+    ...(cv.data?.items ?? []).map((x) => ({ id: x.id, t: 'Conversa', d: x.subject, tone: CONVERSATION_STATUS[x.status as 'open' | 'closed']?.[1] ?? 'neutral', s: CONVERSATION_STATUS[x.status as 'open' | 'closed']?.[0] ?? x.status })),
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {rows.length === 0 && <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Nenhum atendimento deste cliente.</div>}
+      {(d.isLoading || cl.isLoading || cv.isLoading) && rows.length === 0 && [0, 1].map((i) => <Skeleton key={i} h={52} r={14} />)}
+      {!(d.isLoading || cl.isLoading || cv.isLoading) && rows.length === 0 && <Empty compact icon="MessageCircle">Nenhum atendimento deste cliente</Empty>}
       {rows.map((r) => (
         <div key={r.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -244,7 +252,6 @@ function CustomerTickets({ customerId }: { customerId: string }) {
     </div>
   );
 }
-const DISPUTE_TONE = (s: S<'DisputeStatus'>) => (s === 'open' ? 'warning' : s === 'accepted' ? 'success' : 'neutral') as 'warning' | 'success' | 'neutral';
 
 function CustomerHistory({ customerId, onRentals }: { customerId: string; onRentals: (id: string) => void }) {
   const r = useQuery({ queryKey: ['c-rentals', customerId], queryFn: () => unwrap(api.GET('/rentals', { params: { query: { customerId, limit: 10 } } })) });

@@ -10,7 +10,7 @@ import { can } from '@/lib/permissions';
 import { validateZone, type ZoneErrors } from '@/lib/zone-validation';
 import { MAX_REDUCED_SPEED_KMH, type S, type ZoneType } from '@/lib/types';
 import { MapView } from '@/components/MapView';
-import { ErrorNote, Field, Modal, Select, SidePanel, SectionTitle, TextInput, useToast } from '@/components/ui';
+import { Empty, ErrorNote, Field, Modal, Select, SidePanel, SectionTitle, Skeleton, TextInput, useToast } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
@@ -179,7 +179,7 @@ export default function ZonesPage() {
         <MapView onReady={onReady} onDestroy={() => { mapRef.current = null; drawRef.current = null; setMapReady(false); }} />
         <div style={{ position: 'absolute', top: 16, left: 16, display: 'flex', gap: 8 }}>
           {canEdit && <Button size="sm" variant="dark" icon="PenTool" testId="draw-zone" disabled={!mapReady} onClick={startNew}>Desenhar área</Button>}
-          <Button size="sm" variant="secondary" icon="Layers" style={{ background: '#fff' }} onClick={() => setLayers(!layers)}>{layers ? 'Ocultar camadas' : 'Mostrar camadas'}</Button>
+          <Button size="sm" variant="secondary" icon="Layers" style={{ background: '#fff', color: 'var(--text-primary)', borderColor: 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => setLayers(!layers)}>{layers ? 'Ocultar camadas' : 'Mostrar camadas'}</Button>
         </div>
       </div>
       <SidePanel width={360} testId="zones-panel">
@@ -212,17 +212,20 @@ export default function ZonesPage() {
         )}
 
         <Card variant="sunken" padding={4}>
-          {zones.length === 0 && <div style={{ padding: 12, fontSize: 14, color: 'var(--text-secondary)' }}>{zonesQ.isLoading ? 'Carregando...' : 'Nenhuma cerca cadastrada.'}</div>}
+          {zonesQ.isLoading && <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 12 }}>{[0, 1, 2].map((i) => <Skeleton key={i} h={30} />)}</div>}
+          {!zonesQ.isLoading && zones.length === 0 && (
+            <Empty compact icon="Hexagon" action={canEdit ? <Button size="sm" variant="ghost" icon="PenTool" disabled={!mapReady} onClick={startNew}>Desenhar área</Button> : undefined}>Nenhuma cerca cadastrada</Empty>
+          )}
           {zones.map((z) => (
-            <div key={z.id} data-testid="zone-item" onClick={() => canEdit && !draft && pick(z.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', cursor: canEdit && !draft ? 'pointer' : 'default', borderRadius: 10, background: draft?.id === z.id ? 'var(--brand-soft)' : undefined }}>
+            <button type="button" key={z.id} data-testid="zone-item" className="zone-item" data-on={draft?.id === z.id || undefined} disabled={!canEdit || !!draft}
+              aria-label={`${z.name}, ${ZONE_LABEL[z.type]}${canEdit ? '. Editar' : ''}`} onClick={() => pick(z.id)}>
               <span style={{ width: 12, height: 12, borderRadius: 4, background: ZONE_COLOR[z.type], flexShrink: 0 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500 }}>{z.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{ZONE_LABEL[z.type]}{z.speedLimitKmh !== undefined ? ` · ${z.speedLimitKmh} km/h` : ''}</div>
               </div>
-              <Icon name="ChevronRight" size={16} color="var(--text-tertiary)" />
-            </div>
+              {canEdit && <Icon name="ChevronRight" size={16} color="var(--text-tertiary)" />}
+            </button>
           ))}
         </Card>
 

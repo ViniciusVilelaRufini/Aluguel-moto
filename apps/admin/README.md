@@ -36,11 +36,24 @@ O token fica só em `sessionStorage`.
 
 ```bash
 pnpm --filter admin lint        # next lint + tsc
-pnpm --filter admin test        # Vitest: status->cor, menu por grupo, máscara de CPF, validação de cerca
+pnpm --filter admin test        # Vitest: status->cor, menu por grupo, máscara de CPF, validação de cerca,
+                                # motion (reduced-motion, tween), interpolação de pins, ticker, toasts,
+                                # linha do tempo do comando, paleta (Ctrl+K) e foco preso em diálogo
 pnpm --filter admin test:e2e    # Playwright contra a API real (sobe `next dev` em :3100)
 ```
 
 E2E: configure `E2E_API_URL` (padrão `http://localhost:3004`) para uma API com `AUTH_MODE=dev`, `IOT_MODE=stub`, banco migrado e com seed. Os testes criam a própria massa pela API (cliente com CPF e KYC aprovado; aluguel de uma moto livre do simulador). O cenário de bloquear moto em movimento precisa do simulador de rastreadores (`VLT-0001…0050`) e só roda com `SIM=1`. O cenário de moto offline simula a resposta `pending` + `offline` na rede, porque o stub de IoT confirma tudo na hora.
+
+Passada visual (`e2e/visual.spec.ts`): abre todas as seções e abas em desktop (1440) e tablet (900). Com `SHOTS_DIR` salva capturas para revisão:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 pnpm --filter admin build && npx serve apps/admin/out -l 3110
+E2E_PORT=3110 E2E_API_URL=http://localhost:3001 E2E_CHROME="C:/Program Files/Google/Chrome/Application/chrome.exe"   SHOTS_DIR=../../docs/design/screenshots/depois pnpm --filter admin test:e2e
+```
+
+## Design e movimento
+
+Auditoria e evoluções em `docs/design/auditoria-admin.md` e `docs/design/evolucoes-admin.md`. Movimento com os presets `vt-*` do DS (`globals.css`); animações em JS passam por `lib/motion.ts` (`useReducedMotion`, `tween`), que zera a duração com `prefers-reduced-motion`. Atalhos: Ctrl+K, Cmd+K ou `/` abrem a busca; Esc fecha diálogo, busca e ficha da moto.
 
 ## Notas
 

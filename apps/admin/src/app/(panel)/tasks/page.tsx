@@ -8,7 +8,7 @@ import { can } from '@/lib/permissions';
 import { TASK_PRIORITY, TASK_TYPE } from '@/lib/labels';
 import { formatDate } from '@/lib/format';
 import type { S } from '@/lib/types';
-import { DataTable, ErrorNote, Field, Modal, Page, PageHeader, Pill, Select, TextArea, TextInput, usePagedQuery, useToast } from '@/components/ui';
+import { DataTable, Empty, ErrorNote, Field, Modal, Page, PageHeader, Pill, Select, Skeleton, TabPanel, TextArea, TextInput, usePagedQuery, useToast } from '@/components/ui';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
@@ -36,7 +36,7 @@ export default function TasksPage() {
           ? <Button size="sm" icon="Plus" testId="new-task" onClick={() => setNewTask(true)}>Nova tarefa</Button>
           : <Button size="sm" icon="Plus" onClick={() => setNewMaint(true)}>Agendar manutenção</Button>)}
       </PageHeader>
-      {view === 'tasks' ? <Kanban canEdit={canCreate} /> : <Maintenance />}
+      <TabPanel k={view}>{view === 'tasks' ? <Kanban canEdit={canCreate} onCreate={() => setNewTask(true)} /> : <Maintenance />}</TabPanel>
       {newTask && <NewTaskModal onClose={() => setNewTask(false)} />}
       {newMaint && <NewMaintenanceModal onClose={() => setNewMaint(false)} />}
     </Page>
@@ -47,7 +47,7 @@ function useFieldStaff() {
   return useQuery({ queryKey: ['staff', 'campo'], queryFn: () => unwrap(api.GET('/staff', { params: { query: { group: 'campo', active: true, limit: 100 } } })) });
 }
 
-function Kanban({ canEdit }: { canEdit: boolean }) {
+function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void }) {
   const q = useQuery({ queryKey: ['field-tasks'], queryFn: () => unwrap(api.GET('/field-tasks', { params: { query: { limit: 100 } } })), refetchInterval: 20_000 });
   const [assign, setAssign] = useState<Task | null>(null);
   const items = q.data?.items ?? [];
@@ -59,12 +59,12 @@ function Kanban({ canEdit }: { canEdit: boolean }) {
           const col = items.filter((t) => c.statuses.includes(t.status));
           return (
             <div key={c.key} style={{ background: 'var(--surface-sunken)', borderRadius: 'var(--radius-lg)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px' }}>
                 <span style={{ fontSize: 14, fontWeight: 600 }}>{c.label}</span>
                 <span style={{ font: '700 12px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{col.length}</span>
               </div>
               {col.map((t) => (
-                <Card key={t.id} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <Card key={t.id} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 10, animation: 'vt-fade-up 320ms var(--ease-out) backwards' }}>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                     <span style={{ width: 32, height: 32, borderRadius: 10, background: 'var(--surface-sunken)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={TASK_TYPE[t.type][1]} size={16} /></span>
                     <div style={{ flex: 1 }}>
@@ -82,7 +82,13 @@ function Kanban({ canEdit }: { canEdit: boolean }) {
                   </div>
                 </Card>
               ))}
-              {col.length === 0 && <div style={{ fontSize: 12, color: 'var(--text-secondary)', padding: 6 }}>Nenhuma tarefa.</div>}
+              {q.isLoading && [0, 1].map((i) => <Skeleton key={i} h={96} r={20} />)}
+              {!q.isLoading && col.length === 0 && (
+                <Empty compact icon={c.key === 'done' ? 'CircleCheck' : 'ClipboardList'}
+                  action={c.key === 'pending' && canEdit ? <Button size="sm" variant="ghost" icon="Plus" onClick={onCreate}>Nova tarefa</Button> : undefined}>
+                  {c.key === 'pending' ? 'Nenhuma tarefa pendente' : c.key === 'doing' ? 'Nada em andamento' : 'Nenhuma tarefa concluída'}
+                </Empty>
+              )}
             </div>
           );
         })}
@@ -150,7 +156,7 @@ function Maintenance() {
   return (
     <>
       <ErrorNote error={error} />
-      <DataTable<S<'MaintenanceTask'>> rows={rows} loading={loading} pager={pager} empty="Nenhuma manutenção."
+      <DataTable<S<'MaintenanceTask'>> rows={rows} loading={loading} pager={pager} empty="Nenhuma manutenção agendada" emptyIcon="Wrench"
         columns={[
           { key: 'vehicleCode', label: 'Moto', mono: true, render: (r) => r.vehicleCode ?? '—' },
           { key: 'title', label: 'Serviço' },

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
@@ -16,7 +16,10 @@ import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { FleetStatus } from '@/ds/FleetStatus';
 import { Alert } from '@/ds/Alert';
-import { Field, KV, Modal, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
+import { CommandTimeline } from './CommandTimeline';
+import { commandOutcome } from '@/lib/command-steps';
+import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
+import { Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
 
 interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason }
 
@@ -40,6 +43,15 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   const [history, setHistory] = useState(false);
 
   useEffect(() => { setActive(null); }, [vehicleId]);
+
+  // Avisa quando o comando termina (confirmado pela moto ou falhou), mesmo que o operador esteja olhando o mapa.
+  const announced = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active) return;
+    const out = commandOutcome(COMMAND_LABEL[active.type], active.status);
+    const key = `${active.id}:${active.status}`;
+    if (out && announced.current !== key) { announced.current = key; toast(out.msg, out.tone); }
+  }, [active, toast]);
 
   const detail = useQuery({ queryKey: ['vehicle', vehicleId], queryFn: () => unwrap(api.GET('/vehicles/{id}', { params: { path: { id: vehicleId } } })) });
   const live = vehicles.find((v) => v.id === vehicleId);
@@ -70,7 +82,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
     return () => clearInterval(t);
   }, [pendingId, qc, vehicleId]);
 
-  if (!v) return <SidePanel width={360} onClose={onClose}><div style={{ color: 'var(--text-secondary)' }}>Carregando moto...</div></SidePanel>;
+  if (!v) return <SidePanel width={360} onClose={onClose}><PanelSkeleton rows={7} /></SidePanel>;
 
   const moving = (v.speedKmh ?? 0) >= 3;
   const send = async (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => {
@@ -101,7 +113,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       </div>
       <div>
         <KV k="Último sinal" v={v.lastSeenAt ? timeAgo(v.lastSeenAt) : '—'} />
-        <KV k="GPS / 4G" v={v.online === false ? 'Sem sinal' : `Sinal ${v.signal ?? '—'}/5`} />
+        <KV k="GPS / 4G" v={v.online === false ? 'Sem sinal' : v.signal != null ? `Sinal ${v.signal}/5` : '—'} />
         <KV k="Aluguel" v={v.currentRentalId ? (rentalHref(groups, v.currentRentalId) ? <Link href={rentalHref(groups, v.currentRentalId)!} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Ver aluguel atual</Link> : 'Em andamento') : '—'} />
         <KV k="Posição" v={`${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`} mono />
         <KV k="Travada" v={v.locked === undefined ? '—' : v.locked ? 'Sim' : 'Não'} />
@@ -116,14 +128,17 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
             <Button size="sm" variant="danger" icon="Lock" testId="cmd-lock" onClick={() => setDialog('lock')}>Bloquear</Button>
             <Button size="sm" variant="secondary" icon="LockOpen" testId="cmd-unlock" onClick={() => setDialog('unlock')}>Desbloquear</Button>
             <Button size="sm" variant="secondary" icon="Megaphone" testId="cmd-horn" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('horn')}>Buzina</Button>
-            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Limitar vel.</Button>
+            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Velocidade</Button>
           </div>
           <Button size="sm" variant="dark" icon="ShieldAlert" fullWidth style={{ marginTop: 8 }} testId="cmd-stolen" onClick={() => setDialog('stolen_mode')}>Modo roubada</Button>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>Sem sinal, o comando fica pendente e é aplicado ao reconectar.</div>
           {active && (
-            <div data-testid="command-state" data-status={active.status} data-reason={active.reason ?? ''} style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{COMMAND_LABEL[active.type]}:</span>
-              <Pill tone={commandStateTone(active.status, active.reason)}>{commandStateLabel(active.status, active.reason)}</Pill>
+            <div key={active.id} className="section-in" style={{ marginTop: 12, padding: '12px 12px 10px', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div data-testid="command-state" data-status={active.status} data-reason={active.reason ?? ''} role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{COMMAND_LABEL[active.type]}:</span>
+                <Pill tone={commandStateTone(active.status, active.reason)}>{commandStateLabel(active.status, active.reason)}</Pill>
+              </div>
+              <CommandTimeline status={active.status} reason={active.reason} />
             </div>
           )}
         </div>
@@ -226,18 +241,18 @@ function HistoryModal({ vehicleId, code, groups, onClose }: { vehicleId: string;
     <Modal open title={`Histórico de ${code}`} onClose={onClose} width={560}
       actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
       <SectionTitle>Aluguéis</SectionTitle>
-      <DataTable dense loading={rentals.isLoading} rows={rentals.data?.items ?? []} empty="Nenhum aluguel."
+      <DataTable dense loading={rentals.isLoading} rows={rentals.data?.items ?? []} empty="Nenhum aluguel desta moto" emptyIcon="Bike"
         columns={[
           { key: 'startedAt', label: 'Início', render: (r) => formatDateTime(r.startedAt) },
-          { key: 'status', label: 'Situação' },
+          { key: 'status', label: 'Situação', render: (r) => <Pill tone={RENTAL_STATUS[r.status][1]}>{RENTAL_STATUS[r.status][0]}</Pill> },
           { key: 'id', label: '', align: 'right', render: (r) => { const h = rentalHref(groups, r.id); return h ? <Link href={h} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Abrir</Link> : null; } },
         ]} />
       <SectionTitle>Manutenção</SectionTitle>
-      <DataTable dense loading={maint.isLoading} rows={maint.data?.items ?? []} empty="Nenhuma manutenção."
+      <DataTable dense loading={maint.isLoading} rows={maint.data?.items ?? []} empty="Nenhuma manutenção registrada" emptyIcon="Wrench"
         columns={[
           { key: 'title', label: 'Serviço' },
           { key: 'kind', label: 'Tipo', render: (r) => (r.kind === 'preventive' ? 'Preventiva' : 'Corretiva') },
-          { key: 'status', label: 'Situação' },
+          { key: 'status', label: 'Situação', render: (r) => <Pill tone={MAINTENANCE_STATUS[r.status][1]}>{MAINTENANCE_STATUS[r.status][0]}</Pill> },
         ]} />
     </Modal>
   );

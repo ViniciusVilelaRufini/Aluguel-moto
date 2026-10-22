@@ -6,9 +6,9 @@ import { useQuery } from '@tanstack/react-query';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/labels';
 import { dayStartIso, formatBRL, localDay } from '@/lib/format';
-import { ErrorNote, Page, PageHeader, Pill, DataTable, useToast } from '@/components/ui';
+import { Empty, ErrorNote, Page, PageHeader, Pill, DataTable, Skeleton, TabPanel, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
-import { StatTile } from '@/ds/StatTile';
+import { StatTile, StatTileSkeleton } from '@/ds/StatTile';
 import { Card } from '@/ds/Card';
 import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
@@ -61,29 +61,32 @@ export default function FinancePage() {
       </PageHeader>
 
       {tab === 'rentals' ? (
-        <RentalsPanel selectedId={rental} onSelect={setRental} />
+        <TabPanel k="rentals" style={{ flex: 1, minHeight: 0 }}><RentalsPanel selectedId={rental} onSelect={setRental} /></TabPanel>
       ) : (
-        <>
+        <TabPanel k="overview">
           <ErrorNote error={fin.error ?? rev.error} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
-            <StatTile icon="Wallet" label="Receita" value={f ? formatBRL(f.totalRevenueCents) : '—'} />
-            <StatTile icon="Gauge" label="Taxa de ocupação" value={occAvg === null ? '—' : `${Math.round(occAvg)}%`} />
-            <StatTile icon="Bike" label="Receita/moto/dia" value={perVehicleDay === null ? '—' : formatBRL(perVehicleDay)} />
-            <StatTile icon="CircleAlert" label="Inadimplência" value={f ? `${f.delinquentCustomers} (${formatBRL(f.delinquentAmountCents)})` : '—'} trend="down" />
+            {fin.isLoading ? [0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />) : <>
+              <StatTile icon="Wallet" label="Receita" numeric={f ? f.totalRevenueCents : null} format={formatBRL} />
+              <StatTile icon="Gauge" label="Taxa de ocupação" numeric={occAvg === null ? null : Math.round(occAvg)} format={(n) => `${n}%`} />
+              <StatTile icon="Bike" label="Receita/moto/dia" numeric={perVehicleDay} format={formatBRL} />
+              <StatTile icon="CircleAlert" label="Inadimplência" numeric={f ? f.delinquentAmountCents : null} format={formatBRL} goodWhen="down"
+                caption={f ? `${f.delinquentCustomers} ${f.delinquentCustomers === 1 ? 'cliente' : 'clientes'}` : undefined} />
+            </>}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 12 }}>
             <Card padding={20}>
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Receita líquida {period === '30d' ? 'por semana' : 'por dia'}</div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 180 }}>
                 {barList.map(([d, v], i) => (
-                  <div key={d} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end', minWidth: 0 }}>
+                  <div key={d} style={{ flex: 1, maxWidth: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end', minWidth: 0, margin: '0 auto' }}>
                     <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{(v / 100000).toFixed(1).replace('.', ',')}</span>
-                    <div style={{ width: '100%', height: `${(v / max) * 130}px`, minHeight: 2, borderRadius: 8, background: v === max ? 'var(--brand)' : 'var(--green-200)' }} />
+                    <div title={formatBRL(v)} style={{ width: '100%', height: `${(v / max) * 130}px`, minHeight: 2, borderRadius: 8, background: v === max ? 'var(--brand)' : 'var(--green-200)', transformOrigin: 'bottom', animation: `vt-bar-grow 520ms var(--ease-out) ${i * 40}ms backwards` }} />
                     <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{period === '30d' ? DAYMONTH.format(new Date(d)) : WEEKDAY.format(new Date(d)).replace('.', '')}</span>
-                    <span hidden>{i}</span>
                   </div>
                 ))}
-                {barList.length === 0 && <div style={{ fontSize: 14, color: 'var(--text-secondary)', margin: 'auto' }}>Sem receita no período.</div>}
+                {rev.isLoading && [40, 70, 55, 90, 65, 80, 50].map((h, i) => <Skeleton key={i} h={h + '%'} r={8} style={{ flex: 1, alignSelf: 'flex-end' }} />)}
+                {!rev.isLoading && barList.length === 0 && <div style={{ margin: 'auto' }}><Empty compact icon="ChartColumn">Sem receita no período</Empty></div>}
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8 }}>Valores em R$ mil.</div>
             </Card>
@@ -113,7 +116,7 @@ export default function FinancePage() {
             <Button size="sm" variant="secondary" icon="Download" testId="export-revenue" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/revenue', 'receita.csv')}>Exportar receita (CSV)</Button>
             <Button size="sm" variant="secondary" icon="Download" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/finance', 'financeiro.csv')}>Exportar resumo financeiro (CSV)</Button>
           </div>
-        </>
+        </TabPanel>
       )}
     </Page>
   );

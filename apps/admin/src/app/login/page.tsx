@@ -54,7 +54,8 @@ export default function LoginPage() {
         <div style={{ fontSize: 15, color: 'rgba(255,255,255,.6)', marginTop: 12, maxWidth: 380 }}>Frota, clientes e finanças em tempo real. Acesso restrito à equipe.</div>
       </div>
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-app)', padding: 24 }}>
-        <div style={{ width: 380, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <form key={step} className="section-in" onSubmit={(e) => { e.preventDefault(); if (AUTH_MODE === 'cognito') return; if (step === 0) setStep(1); else if (!busy) enter(); }}
+          style={{ width: 380, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {AUTH_MODE === 'cognito' ? (
             <>
               <div style={title}>Entrar</div>
@@ -63,25 +64,25 @@ export default function LoginPage() {
             </>
           ) : step === 0 ? (
             <>
-              <div style={title}>Entrar</div>
+              <h1 style={{ ...title, margin: 0 }}>Entrar</h1>
               <Input label="E-mail" value={DEV_USERS[group].email} onChange={() => {}} icon="Mail" />
               <Field label="Perfil de acesso (modo de desenvolvimento)">
                 <Select testId="group-select" value={group} onChange={setGroup} options={GROUP_OPTIONS} />
               </Field>
-              <Button size="lg" fullWidth testId="login-continue" onClick={() => setStep(1)}>Continuar</Button>
+              <Button size="lg" fullWidth type="submit" testId="login-continue">Continuar</Button>
             </>
           ) : (
             <>
-              <div style={title}>Verificação em dois fatores</div>
+              <h1 style={{ ...title, margin: 0 }}>Verificação em dois fatores</h1>
               <div style={{ fontSize: 15, color: 'var(--text-secondary)' }}>Digite o código do seu app autenticador.</div>
-              <OtpInput value={code} onChange={setCode} />
+              <OtpInput value={code} onChange={setCode} autoFocus label="Código de 6 dígitos" />
               <Alert tone="info" icon="ShieldCheck">Modo de desenvolvimento: o código não é verificado. Em produção o 2FA é obrigatório para todos os perfis.</Alert>
               <ErrorNote error={error ? new Error(error) : null} />
-              <Button size="lg" fullWidth disabled={busy} testId="login-submit" onClick={enter}>Entrar no painel</Button>
+              <Button size="lg" fullWidth type="submit" disabled={busy} testId="login-submit">{busy ? 'Entrando...' : 'Entrar no painel'}</Button>
               <Button variant="ghost" fullWidth onClick={() => { setCode(''); setStep(0); }}>Voltar</Button>
             </>
           )}
-        </div>
+        </form>
       </div>
     </div>
   );

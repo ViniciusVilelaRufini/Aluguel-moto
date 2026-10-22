@@ -41,6 +41,31 @@
 --radius-xs:6px;--radius-sm:10px;--radius-md:14px;--radius-lg:20px;--radius-xl:28px;--radius-pill:999px;
 --font-sans:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,sans-serif;
 --font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+
+/* Tipografia (design-system/tokens/typography.css). Sem estes tokens, todo `font: var(--type-*)` e
+   `font: var(--fw-*) ...` era inválido e caía no 14px/500 herdado. */
+--fw-regular:400;--fw-medium:500;--fw-semibold:600;--fw-bold:700;--fw-black:800;
+--lh-tight:1.15;--lh-snug:1.3;--lh-body:1.45;
+--ls-tight:-0.02em;--ls-normal:0;--ls-caps:0.06em;
+--type-display:800 34px/1.1 var(--font-sans);
+--type-title:700 22px/1.2 var(--font-sans);
+--type-heading:700 18px/1.25 var(--font-sans);
+--type-body-strong:600 15px/1.4 var(--font-sans);
+--type-body:500 15px/1.45 var(--font-sans);
+--type-label:600 14px/1.3 var(--font-sans);
+--type-caption:500 12px/1.35 var(--font-sans);
+--type-overline:700 11px/1.3 var(--font-sans);
+--type-timer:700 28px/1 var(--font-mono);
+
+/* Motion e efeitos (design-system/tokens/effects.css) */
+--ease-in-out:cubic-bezier(.65,0,.35,1);--ease-screen:cubic-bezier(.32,.72,0,1);
+--dur-slow:320ms;--dur-screen:440ms;--dur-spring:280ms;
+/* Evolução (docs/design/evolucoes-admin.md): mola curta do painel lateral, overshoot ~3% */
+--ease-panel:cubic-bezier(.22,1.18,.36,1);
+--shadow-sheet:0 -8px 32px rgba(21,24,26,.12);
+--glass-bg:rgba(255,255,255,.82);--blur-glass:saturate(180%) blur(16px);
+--sky-200:#C3E6F5;--lavender-200:#C9CFF8;
+--map-land:#F2F3F0;--map-road:#FFFFFF;--map-water:#AAD3F2;--map-park:#B6E3B0;
 }
 
 html,body{height:100%}
@@ -51,6 +76,9 @@ a:hover{color:var(--brand-press)}
 
 .maplibregl-ctrl-attrib{font-size:10px}
 
+/* Página: filhos não encolhem (tabelas com overflow:hidden eram cortadas no fim da página). */
+.page > * { flex-shrink: 0; }
+
 /* Tablet: SideNav vira trilho de ícones */
 @media (max-width: 1023px) {
   .shell-nav { width: 68px !important; padding: 16px 8px !important; }
@@ -58,8 +86,12 @@ a:hover{color:var(--brand-press)}
   .shell-nav > div:first-child::first-letter { font-size: 22px; }
   .shell-nav button > span:nth-of-type(1) { display: none; }
   .shell-nav button { justify-content: center; padding: 0 !important; position: relative; }
+  .shell-nav .nav-badge { position: absolute; top: 2px; right: 2px; min-width: 16px !important; height: 16px !important; line-height: 16px !important; padding: 0 4px !important; font-size: 10px !important; }
   .shell-nav .nav-footer-text, .shell-nav .nav-footer-name { display: none; }
+  .shell-nav .nav-footer { flex-direction: column; gap: 6px !important; padding: 8px 0 !important; }
   .shell-search { display: none !important; }
+  .shell-search-icon { display: inline-flex !important; }
+  .live-text { display: none; }
   .side-panel { width: 320px !important; }
 }
 @media (max-width: 820px) {
@@ -67,4 +99,130 @@ a:hover{color:var(--brand-press)}
   .side-panel { width: 100% !important; max-height: 50vh; border-left: 0 !important; border-top: 1px solid var(--border-subtle); }
 }
 .table-scroll { overflow-x: auto; }
+@media (min-width: 1024px) { .table-sticky { overflow: visible; } }
+
+/* Tabela: cantos recortados sem criar contêiner de rolagem (o cabeçalho fica fixo ao rolar a página) */
+.dt { overflow: clip; }
+.table-sticky thead th { position: sticky; top: 0; z-index: 1; }
+.dt-row { transition: background var(--dur-base) var(--ease-out); }
+.dt-click { cursor: pointer; }
+.dt-click:hover { background: var(--ink-50); }
+.dt-row[data-selected] { background: var(--brand-soft); }
+.dt-row[data-selected]:hover { background: var(--green-100); }
+.dt-click:focus-visible { outline: 2px solid var(--border-focus); outline-offset: -2px; }
+.row-new > td { animation: vt-row-new 2.4s var(--ease-out) backwards; }
+
+/* Indicadores ao vivo: brilho curto quando o número muda */
+.stat-flash { animation: vt-flash 1.2s var(--ease-out); }
+.stat-delta { animation: vt-pop-in var(--dur-spring) var(--ease-spring) backwards; }
+
+/* Mapa da frota */
+.map-pulse { width: 24px; height: 24px; border-radius: 50%; pointer-events: none; }
+.map-pulse::before, .map-pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--ink-900); opacity: .5; animation: vt-pulse-ring 1.8s var(--ease-out) infinite; }
+.map-pulse::after { animation-delay: .9s; }
+@media (prefers-reduced-motion: reduce) { .map-pulse::before, .map-pulse::after { animation: none; opacity: 0; } }
+.vt-popup .maplibregl-popup-content { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-inverse); color: #fff; box-shadow: var(--shadow-2); animation: vt-pop-in var(--dur-base) var(--ease-out) backwards; }
+.vt-popup .maplibregl-popup-tip { border-top-color: var(--surface-inverse) !important; border-bottom-color: var(--surface-inverse) !important; }
+.vt-tip { display: flex; flex-direction: column; gap: 2px; font: var(--type-caption); }
+.vt-tip strong { font: 700 13px/1.2 var(--font-mono); }
+.fleet-chip:hover { border-color: var(--ink-400) !important; }
+.fleet-chip:active { transform: scale(var(--press-scale)); }
+.chip-clear { height: 30px; padding: 0 12px; border-radius: 999px; border: 0; background: transparent; color: var(--text-primary); font: var(--fw-semibold) 12px/1 var(--font-sans); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; animation: vt-pop-in var(--dur-base) var(--ease-out) backwards; }
+.replay-bar { animation: vt-fade-up var(--dur-slow) var(--ease-screen) backwards; }
+.speed-chip { height: 30px; min-width: 44px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--surface-card); font: 700 12px/1 var(--font-mono); color: var(--text-primary); cursor: pointer; }
+.replay-range { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 3px; background: linear-gradient(to right, var(--blue-500) var(--progress, 0%), var(--ink-200) var(--progress, 0%)); cursor: pointer; }
+.replay-range::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #fff; border: 4px solid var(--blue-500); box-shadow: var(--shadow-1); transition: transform var(--dur-fast) var(--ease-out); }
+.replay-range::-webkit-slider-thumb:hover { transform: scale(1.15); }
+.replay-range::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: #fff; border: 4px solid var(--blue-500); }
+
+/* Header: busca (paleta), indicador ao vivo */
+.palette-trigger { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 14px; border-radius: 999px; border: 0; background: var(--surface-sunken); width: 300px; color: var(--text-tertiary); font: var(--fw-medium) 14px/1 var(--font-sans); cursor: pointer; transition: background var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
+.palette-trigger:hover { background: var(--ink-200); }
+.palette-trigger > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.shell-search-icon { display: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--surface-sunken); color: var(--text-primary); align-items: center; justify-content: center; cursor: pointer; }
+.kbd { display: inline-flex; align-items: center; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--surface-card); border: 1px solid var(--border-subtle); box-shadow: 0 1px 0 var(--ink-200); font: 600 11px/1 var(--font-mono); color: var(--text-secondary); white-space: nowrap; }
+.palette-option { transition: background var(--dur-fast) var(--ease-out); }
+.palette-option[data-on] { background: var(--surface-sunken); }
+.live-pill { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px 0 8px; border-radius: var(--radius-xs); font: var(--fw-semibold) 12px/1 var(--font-sans); white-space: nowrap; }
+.live-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--success); }
+.live-dot::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--success); animation: vt-pulse-ring 1.8s var(--ease-out) infinite; }
+.live-dot-off { background: var(--warning); }
+.live-dot-off::after { background: var(--warning); animation: vt-live 1.2s var(--ease-in-out) infinite; }
+@media (prefers-reduced-motion: reduce) { .live-dot::after { animation: none; opacity: 0; } }
+
+/* Campos: foco visível (os estilos inline zeram o outline) */
+.field { transition: border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out); }
+.field:hover { border-color: var(--ink-200) !important; }
+.field:focus { border-color: var(--border-focus) !important; background: var(--surface-card) !important; }
+.field-mini { transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
+.field-mini:focus { outline: none; border-color: var(--border-focus) !important; box-shadow: 0 0 0 3px var(--green-50); background: var(--surface-card) !important; }
+
+/* Lista de cercas */
+.zone-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; text-align: left; font: inherit; color: inherit; transition: background var(--dur-base) var(--ease-out); }
+.zone-item:not(:disabled) { cursor: pointer; }
+.zone-item:not(:disabled):hover { background: var(--surface-card); }
+.zone-item[data-on] { background: var(--brand-soft); }
+.zone-item:disabled { cursor: default; }
+
+/* Alvos de foco programático (paleta): sem anel, o foco só posiciona o leitor de tela/teclado */
+#main-content h1[tabindex="-1"]:focus, .side-panel[tabindex="-1"]:focus { outline: none; }
+
+/* Carregamento */
+.skeleton { background: linear-gradient(90deg, var(--ink-100) 25%, var(--ink-50) 50%, var(--ink-100) 75%); background-size: 200% 100%; animation: vt-shimmer 1.4s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+
+/* Entradas: seção, aba e painel lateral */
+.section-in { animation: vt-section-in 280ms var(--ease-out) backwards; }
+.panel-in { animation: vt-panel-in 420ms var(--ease-panel) backwards; }
+
+/* Menu lateral: hover e item ativo */
+.nav-item { background: transparent; color: rgba(255,255,255,.62); transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out); }
+.nav-item:hover { background: rgba(255,255,255,.05); color: #fff; }
+.nav-item[data-on] { background: rgba(255,255,255,.08); color: #fff; }
+.nav-logout:hover { color: #fff !important; background: rgba(255,255,255,.08) !important; }
+.nav-item:focus-visible { outline: 2px solid var(--green-400); outline-offset: -2px; }
+.nav-badge { animation: vt-pop-in var(--dur-spring) var(--ease-spring) both; }
 @media (max-width: 900px) { .login-brand { display: none !important; } }
+
+/* ---------- Motion (design-system/tokens/motion.css, presets vt-*) ---------- */
+/* Volti motion presets — keyframes used by components and UI kits. Keyframes define only "from" where possible so elements settle into their own inline transform. */
+@keyframes vt-fade-up{from{opacity:0;transform:translateY(14px)}}
+@keyframes vt-fade-down{from{opacity:0;transform:translateY(-12px)}}
+@keyframes vt-fade-in{from{opacity:0}}
+@keyframes vt-pop-in{from{opacity:0;transform:scale(.9)}}
+@keyframes vt-toast-in{from{opacity:0;transform:translateY(18px) scale(.95)}}
+@keyframes vt-marker-in{0%{opacity:0;transform:translateY(-18px) scale(.5)}60%{opacity:1;transform:translateY(2px) scale(1.08)}100%{transform:none}}
+@keyframes vt-check-pop{0%{transform:scale(0)}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+@keyframes vt-pulse-ring{0%{transform:scale(1);opacity:.5}100%{transform:scale(2.6);opacity:0}}
+@keyframes vt-ripple{from{transform:scale(0);opacity:1}to{transform:scale(1);opacity:0}}
+@keyframes vt-shine{0%{transform:translateX(-120%) skewX(-20deg)}55%,100%{transform:translateX(360%) skewX(-20deg)}}
+@keyframes vt-spin{to{transform:rotate(360deg)}}
+@keyframes vt-live{50%{opacity:.25}}
+@keyframes vt-breathe{50%{transform:scale(1.035)}}
+@keyframes vt-scan-line{0%,100%{top:10%}50%{top:88%}}
+@keyframes vt-draw{to{stroke-dashoffset:0}}
+@keyframes vt-screen-in-right{from{transform:translateX(100%)}}
+@keyframes vt-screen-out-left{to{transform:translateX(-30%);filter:brightness(.8)}}
+@keyframes vt-screen-in-left{from{transform:translateX(-30%);filter:brightness(.8)}}
+@keyframes vt-screen-out-right{to{transform:translateX(100%)}}
+@keyframes vt-screen-in-up{from{transform:translateY(100%)}}
+@keyframes vt-screen-recede{to{transform:scale(.93);filter:brightness(.65);border-radius:28px}}
+@keyframes vt-screen-emerge{from{transform:scale(.93);filter:brightness(.65);border-radius:28px}}
+@keyframes vt-screen-out-down{to{transform:translateY(100%)}}
+.vt-stagger>*{animation:vt-fade-up 480ms var(--ease-out) both}
+.vt-stagger>:nth-child(1){animation-delay:140ms}.vt-stagger>:nth-child(2){animation-delay:185ms}.vt-stagger>:nth-child(3){animation-delay:230ms}.vt-stagger>:nth-child(4){animation-delay:275ms}.vt-stagger>:nth-child(5){animation-delay:320ms}.vt-stagger>:nth-child(6){animation-delay:365ms}.vt-stagger>:nth-child(7){animation-delay:410ms}.vt-stagger>:nth-child(8){animation-delay:455ms}.vt-stagger>:nth-child(9){animation-delay:500ms}.vt-stagger>:nth-child(n+10){animation-delay:545ms}
+.vt-drop{animation:vt-fade-down 480ms var(--ease-out) 80ms both}
+/* Extras do painel (documentados em docs/design/evolucoes-admin.md) */
+@keyframes vt-panel-in{from{opacity:0;transform:translateX(28px)}}
+@keyframes vt-section-in{from{opacity:0;transform:translateY(8px)}}
+@keyframes vt-scrim-in{from{opacity:0}}
+@keyframes vt-dialog-in{from{opacity:0;transform:translateY(10px) scale(.97)}}
+@keyframes vt-toast-out{to{opacity:0;transform:translateY(12px) scale(.96)}}
+@keyframes vt-bar-grow{from{transform:scaleY(0)}}
+@keyframes vt-shimmer{from{background-position:-200% 0}to{background-position:200% 0}}
+@keyframes vt-flash{0%{background:var(--green-50)}100%{background:transparent}}
+@keyframes vt-row-new{0%{background:var(--coral-50)}100%{background:transparent}}
+
+/* Respeita prefers-reduced-motion em tudo (também lido em JS por lib/motion.ts). */
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-delay:0ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}

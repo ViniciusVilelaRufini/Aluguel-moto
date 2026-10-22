@@ -40,7 +40,7 @@ export function RentalsPanel({ customerId, selectedId, onSelect }: { customerId?
         </div>
         <ErrorNote error={error} />
         <DataTable<Rental>
-          testId="rentals-table"
+          testId="rentals-table" sticky
           rows={rows}
           loading={loading}
           pager={pager}
