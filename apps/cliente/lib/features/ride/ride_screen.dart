@@ -16,6 +16,8 @@ import '../../core/launcher.dart';
 import '../../core/services.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
+import '../handover/handover_watch.dart';
+import 'battery_sheet.dart';
 import 'ride_data.dart';
 
 const kSupportPhone = String.fromEnvironment('SUPPORT_PHONE', defaultValue: '+551100000000');
@@ -24,7 +26,9 @@ const kSupportPhone = String.fromEnvironment('SUPPORT_PHONE', defaultValue: '+55
 final mapEnabledProvider = Provider<bool>((ref) => true);
 
 /// Aluguel em andamento: tempo, custo, bateria e velocidade ao vivo (WebSocket),
-/// avisos de zona, pausa, SOS, "Voce esta bem?", reportar problema e trocar de moto.
+/// avisos de zona, pausa, SOS, "Voce esta bem?", reportar problema e **Trocar
+/// bateria** (galpao e estacoes). Chegada no galpao (`handover.updated` de uma
+/// entrega `return_depot` deste aluguel) abre o recibo.
 class RideScreen extends ConsumerStatefulWidget {
   const RideScreen({super.key});
   @override
@@ -205,6 +209,19 @@ class _RideScreenState extends ConsumerState<RideScreen> {
         });
       case DeviceEventReceived():
         if (e.type == 'queda') _showWellbeing();
+      case HandoverUpdated():
+        _onHandoverUpdated(e.handoverId);
+      case HandoverPending():
+        break;
+    }
+  }
+
+  /// O operador registrou a chegada no galpao: o aluguel acabou, abre o recibo.
+  Future<void> _onHandoverUpdated(String handoverId) async {
+    final r = _rental;
+    if (r == null) return;
+    if (await isDepotReturnOf(ref.read(backendProvider), handoverId, r.id) && mounted) {
+      context.go('/summary/${r.id}');
     }
   }
 
@@ -599,6 +616,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                   ),
                   const SizedBox(height: 12),
                   Wrap(spacing: 8, runSpacing: 8, children: [
+                    VoltiChip(icon: LucideIcons.batteryCharging, label: l.swapBattery, onTap: () => BatterySwapSheet.show(context, r.id)),
                     VoltiChip(icon: LucideIcons.circleAlert, label: l.reportProblem, onTap: _report),
                     VoltiChip(icon: LucideIcons.share2, label: l.shareTrip, onTap: _shareLocation),
                   ]),

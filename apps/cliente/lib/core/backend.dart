@@ -54,6 +54,14 @@ abstract class Backend {
   Future<Reservation> createDepotReservation(ReservationCreate request, {String? idempotencyKey});
   Future<void> cancelReservation(String id);
 
+  // entrega no galpao ("Confira sua moto")
+  Future<Handover> handover(String id);
+  /// Aceite: o aluguel comeca e a moto destrava. [idempotencyKey]: uma por entrega,
+  /// reutilizada no toque duplo e nas novas tentativas.
+  Future<Rental> acceptHandover(String id, String idempotencyKey);
+  /// Problema apontado: a entrega fica `disputed` e o suporte abre uma conversa.
+  Future<Handover> disputeHandover(String id, String reason);
+
   // contratacao
   Future<List<PricingPlan>> plans();
   Future<List<InsuranceCoverageOption>> coverages();
@@ -235,6 +243,24 @@ class ApiBackend implements Backend {
   Future<void> cancelReservation(String id) => _run(() async {
         await _api.getReservationsApi().cancelReservation(id: id);
       });
+
+  @override
+  Future<Handover> handover(String id) => _run(() async => (await _api.getHandoversApi().getHandover(id: id)).data!);
+
+  @override
+  Future<Rental> acceptHandover(String id, String idempotencyKey) => _run(() async => (await _api.getHandoversApi().acceptHandover(
+        id: id,
+        idempotencyKey: idempotencyKey,
+        validateStatus: (s) => s != null && s >= 200 && s < 300,
+      ))
+          .data!);
+
+  @override
+  Future<Handover> disputeHandover(String id, String reason) => _run(() async => (await _api.getHandoversApi().disputeHandover(
+        id: id,
+        handoverDispute: HandoverDispute((b) => b..reason = reason),
+      ))
+          .data!);
 
   @override
   Future<List<PricingPlan>> plans() =>

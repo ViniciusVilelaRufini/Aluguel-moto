@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../features/account/account_screens.dart';
+import '../features/handover/handover_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/onboarding/login_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
@@ -82,6 +83,8 @@ List<RouteBase> appRoutes() => [
       GoRoute(path: '/insurance', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, InsuranceScreen(selection: state.extra! as DepotSelection))),
       GoRoute(path: '/pickup', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, PickupScreen(selection: state.extra! as DepotSelection))),
       GoRoute(path: '/reservation/:id', pageBuilder: (c, state) => voltiPage(c, state, DepotReservationScreen(reservationId: state.pathParameters['id']!))),
+      // "Confira sua moto": aberta pelo evento `handover.pending` ou pela reserva em `handover`.
+      GoRoute(path: '/handover/:id', pageBuilder: (c, state) => voltiPage(c, state, HandoverScreen(handoverId: state.pathParameters['id']!))),
       GoRoute(path: '/ride', pageBuilder: (c, state) => voltiPage(c, state, const RideScreen())),
       GoRoute(path: '/return/:id', pageBuilder: (c, state) => voltiPage(c, state, ReturnScreen(rentalId: state.pathParameters['id']!))),
       GoRoute(path: '/summary/:id', pageBuilder: (c, state) => voltiPage(c, state, SummaryScreen(rentalId: state.pathParameters['id']!))),

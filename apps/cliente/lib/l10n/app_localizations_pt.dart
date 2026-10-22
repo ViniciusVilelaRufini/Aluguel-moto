@@ -2279,4 +2279,185 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get reservationNoCode =>
       'Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.';
+
+  @override
+  String get handoverTitle => 'Confira sua moto';
+
+  @override
+  String handoverIntro(String operator, String code) {
+    return '$operator separou a $code para você. Confira as fotos e o checklist antes de aceitar.';
+  }
+
+  @override
+  String handoverIntroNoOperator(String code) {
+    return 'A $code está pronta. Confira as fotos e o checklist antes de aceitar.';
+  }
+
+  @override
+  String get handoverPhotos => 'Fotos da saída';
+
+  @override
+  String handoverPhotoLabel(int n, int total) {
+    return 'Foto $n de $total da moto';
+  }
+
+  @override
+  String get handoverNoPhotos => 'Esta entrega veio sem fotos.';
+
+  @override
+  String handoverBatterySerial(String serial) {
+    return 'Bateria nº $serial';
+  }
+
+  @override
+  String get handoverChecklist => 'Checklist de saída';
+
+  @override
+  String get handoverItemOk => 'Ok';
+
+  @override
+  String get handoverItemProblem => 'Com problema';
+
+  @override
+  String handoverItemSemantics(String item, String state) {
+    return '$item: $state';
+  }
+
+  @override
+  String get handoverItemFreios => 'Freios';
+
+  @override
+  String get handoverItemLuzes => 'Luzes';
+
+  @override
+  String get handoverItemPneus => 'Pneus';
+
+  @override
+  String get handoverItemBuzina => 'Buzina';
+
+  @override
+  String get handoverItemPainel => 'Painel';
+
+  @override
+  String get handoverItemCarenagem => 'Carenagem';
+
+  @override
+  String get handoverStartsNow =>
+      'Ao aceitar, o aluguel começa agora e a moto destrava. O plano é acertado no fim do aluguel, com a caução como garantia.';
+
+  @override
+  String get handoverAccept => 'Aceitar e destravar';
+
+  @override
+  String get handoverReport => 'Apontar problema';
+
+  @override
+  String get handoverPaymentDeclined =>
+      'O pagamento não foi aprovado. Tente de novo ou fale com o operador.';
+
+  @override
+  String get handoverDepositNotHeld =>
+      'A caução da reserva não está retida. Fale com o suporte.';
+
+  @override
+  String get handoverAcceptFailed =>
+      'Não foi possível aceitar agora. Tente de novo ou fale com o operador.';
+
+  @override
+  String get handoverNotFound => 'Essa entrega não foi encontrada.';
+
+  @override
+  String get handoverDisputeTitle => 'Apontar problema';
+
+  @override
+  String get handoverDisputeText =>
+      'Conte o que está errado. O suporte recebe junto com as fotos da saída.';
+
+  @override
+  String get handoverDisputeLabel => 'O que está errado com a moto?';
+
+  @override
+  String get handoverDisputeHint => 'Ex.: retrovisor quebrado';
+
+  @override
+  String get handoverDisputeSend => 'Enviar ao suporte';
+
+  @override
+  String get handoverDisputedTitle => 'Problema apontado';
+
+  @override
+  String get handoverDisputedText => 'O suporte vai falar com você.';
+
+  @override
+  String handoverDisputedReason(String reason) {
+    return 'Você disse: $reason';
+  }
+
+  @override
+  String get handoverAcceptedTitle => 'Moto liberada';
+
+  @override
+  String get handoverAcceptedText => 'Seu aluguel já começou.';
+
+  @override
+  String get handoverGoToRide => 'Ir para a corrida';
+
+  @override
+  String get handoverCanceledTitle => 'Entrega cancelada';
+
+  @override
+  String get handoverCanceledText => 'Fale com o operador no galpão.';
+
+  @override
+  String get reservationSeeHandover => 'Conferir moto';
+
+  @override
+  String get swapBattery => 'Trocar bateria';
+
+  @override
+  String get swapBatteryText =>
+      'Troque no galpão, com o operador, ou numa estação. Toque para abrir a rota.';
+
+  @override
+  String get swapAtDepot => 'Troca com o operador';
+
+  @override
+  String swapAvailable(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count baterias disponíveis',
+      one: '1 bateria disponível',
+      zero: 'sem baterias disponíveis',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get swapStationsEmpty => 'Nenhuma estação de bateria encontrada.';
+
+  @override
+  String get swapDirectionsHint => 'Abre a rota no app de mapas';
+
+  @override
+  String get returnModePoint => 'Ponto verde';
+
+  @override
+  String get returnModeDepot => 'Galpão';
+
+  @override
+  String get returnModeLabel => 'Onde devolver';
+
+  @override
+  String get returnDepotTitle => 'Devolver no galpão';
+
+  @override
+  String get returnDepotText =>
+      'Leve a moto ao galpão e entregue ao operador. Ele faz o checklist de chegada e encerra o aluguel; o recibo abre aqui.';
+
+  @override
+  String get returnDepotWaiting => 'Aguardando o operador registrar a chegada…';
+
+  @override
+  String get returnDepotMissing => 'Não encontramos o galpão. Tente de novo.';
 }
