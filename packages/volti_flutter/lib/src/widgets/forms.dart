@@ -41,6 +41,28 @@ class OptionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final tagBg = selected ? Colors.white : scheme.surfaceContainerHighest;
+    // Texto grande (> ~130%): o preco desce para baixo do titulo em vez de
+    // disputar a largura da linha.
+    final stacked = MediaQuery.textScalerOf(context).scale(10) > 13;
+    Widget priceBlock(CrossAxisAlignment align) => Column(
+          crossAxisAlignment: align,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              price!,
+              style: VoltiTypography.bodyStrong.copyWith(
+                color: scheme.onSurface,
+              ),
+            ),
+            if (priceNote != null)
+              Text(
+                priceNote!,
+                style: VoltiTypography.caption.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+          ],
+        );
     final card = AnimatedContainer(
       duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
       padding: const EdgeInsets.all(16),
@@ -84,7 +106,7 @@ class OptionCard extends StatelessWidget {
                 : null,
           ),
           const SizedBox(width: 12),
-          if (icon != null) ...[
+          if (icon != null && !stacked) ...[
             Container(
               width: 36,
               height: 36,
@@ -142,29 +164,24 @@ class OptionCard extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (price != null && stacked) ...[
+                  const SizedBox(height: 6),
+                  priceBlock(CrossAxisAlignment.start),
+                ],
                 ?child,
               ],
             ),
           ),
-          if (price != null) ...[
+          if (price != null && !stacked) ...[
             const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  price!,
-                  style: VoltiTypography.bodyStrong.copyWith(
-                    color: scheme.onSurface,
-                  ),
-                ),
-                if (priceNote != null)
-                  Text(
-                    priceNote!,
-                    style: VoltiTypography.caption.copyWith(
-                      color: scheme.onSurfaceVariant,
-                    ),
-                  ),
-              ],
+            // Nunca empurra o titulo para fora: encolhe se faltar largura.
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 120),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topRight,
+                child: priceBlock(CrossAxisAlignment.end),
+              ),
             ),
           ],
         ],

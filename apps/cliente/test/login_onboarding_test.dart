@@ -359,7 +359,7 @@ void main() {
         sessionProvider.overrideWith(() => FakeSession(session(location: backend.location!))),
       ]));
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(VoltiButton, 'Pagar caução e destravar'));
+      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
       await t.pumpAndSettle();
       expect(find.text('Permitir localização?'), findsOneWidget);
       expect(plan.startCalls, 0);

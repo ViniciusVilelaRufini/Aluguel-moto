@@ -66,6 +66,13 @@ abstract final class VoltiColors {
   static const brandSoft = green50;
   static const onBrand = white;
 
+  /// Fundo de botoes preenchidos com texto branco (decisao E-12). O verde da
+  /// marca (#34C25C) com texto branco fica em 2,3:1; este tom mais escuro passa
+  /// de 5:1 (AA para texto normal). A marca continua [brand] em todo o resto
+  /// (pins, chips, selecao, icones, contornos).
+  static const brandAction = Color(0xFF1C7F38);
+  static const onBrandAction = white;
+
   static const surfaceApp = ink50;
   static const surfaceCard = white;
   static const surfaceSunken = ink100;
@@ -119,6 +126,13 @@ abstract final class VoltiColors {
 
   /// Vidro branco 82% dos cards flutuantes sobre o mapa.
   static const glassBg = Color(0xD1FFFFFF);
+
+  /// Razao de contraste WCAG 2.x entre [a] e [b] (1 a 21).
+  static double contrast(Color a, Color b) {
+    final la = a.computeLuminance(), lb = b.computeLuminance();
+    final hi = la > lb ? la : lb, lo = la > lb ? lb : la;
+    return (hi + .05) / (lo + .05);
+  }
 
   /// Cor da bateria: > 50 verde, 21-50 amarelo, <= 20 coral.
   static Color batteryColor(int pct) =>

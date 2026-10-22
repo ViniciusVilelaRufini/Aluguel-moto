@@ -6,6 +6,7 @@ import '../tokens/colors.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
+import 'badge.dart';
 import 'motion.dart';
 import 'pressable.dart';
 
@@ -884,4 +885,128 @@ class _DashedBorder extends CustomPainter {
   @override
   bool shouldRepaint(_DashedBorder old) =>
       old.color != color || old.radius != radius;
+}
+
+/// Topo do cartao da moto no mapa (design `VehicleSummary`): midia no tile
+/// ceu, categoria laranja, nome em titulo, [BatteryPill] e os selos de
+/// promocao (verde) e preco (azul). Sem [image], o tile mostra o icone de moto.
+/// Com [heroTag], a midia vira o elemento compartilhado da transicao
+/// mapa -> plano (evolucao E-15); o `HeroMode` de quem usa desliga em reduced motion.
+///
+/// O nome evita colidir com o modelo `VehicleSummary` da API.
+class VehicleSummaryCard extends StatelessWidget {
+  const VehicleSummaryCard({
+    super.key,
+    required this.name,
+    required this.batteryPct,
+    this.category,
+    this.rangeKm,
+    this.promo,
+    this.price,
+    this.image,
+    this.heroTag,
+    this.mediaKey,
+  });
+
+  final String name;
+  final int batteryPct;
+
+  /// Linha laranja acima do nome (ex.: "Moto elétrica").
+  final String? category;
+  final int? rangeKm;
+
+  /// Selo verde (ex.: "Grátis na 1ª corrida").
+  final String? promo;
+
+  /// Selo azul (ex.: "R$ 0,79/min + taxa").
+  final String? price;
+  final Widget? image;
+  final Object? heroTag;
+
+  /// Chave do tile de midia (usada para medir o destino de animacoes).
+  final Key? mediaKey;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget media = VehicleThumb(key: mediaKey, size: 132, image: image, semanticLabel: name);
+    if (heroTag != null) media = Hero(tag: heroTag!, child: media);
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        KeyedSubtree(key: const Key('vehicle-summary-media'), child: media),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (category != null) ...[
+                Text(
+                  category!,
+                  // Laranja do design em tinta forte (>= 4,5:1 sobre o cartao claro).
+                  style: TextStyle(
+                    fontFamily: VoltiTypography.fontSans,
+                    fontWeight: VoltiTypography.fwSemibold,
+                    fontSize: 13,
+                    height: 1.2,
+                    color: scheme.brightness == Brightness.dark ? VoltiColors.warning : VoltiColors.warningInkStrong,
+                  ),
+                ),
+                const SizedBox(height: 6),
+              ],
+              Text(name, style: VoltiTypography.title.copyWith(color: scheme.onSurface)),
+              const SizedBox(height: 8),
+              // A pilula tem largura fixa: em texto grande ela encolhe em vez de estourar.
+              FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: BatteryPill(batteryPct, rangeKm: rangeKm)),
+              if (promo != null || price != null) const SizedBox(height: 10),
+              // Selos do VDS; encolhem em texto grande em vez de estourar (altura fixa de 26 px).
+              if (promo != null)
+                FittedBox(
+                  key: const Key('vehicle-summary-promo'),
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: VoltiBadge(promo!, tone: VoltiBadgeTone.success),
+                ),
+              if (promo != null && price != null) const SizedBox(height: 6),
+              if (price != null)
+                FittedBox(
+                  key: const Key('vehicle-summary-price'),
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: VoltiBadge(price!, tone: VoltiBadgeTone.info),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Tile ceu com a foto da moto (ou o icone, enquanto nao ha foto).
+class VehicleThumb extends StatelessWidget {
+  const VehicleThumb({super.key, this.size = 56, this.image, this.semanticLabel});
+  final double size;
+  final Widget? image;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      image: true,
+      label: semanticLabel,
+      child: Container(
+        width: size,
+        height: size,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: VoltiColors.surfaceMedia,
+          borderRadius: BorderRadius.circular(size >= 96 ? VoltiRadii.lg : VoltiRadii.md),
+        ),
+        alignment: Alignment.center,
+        child: image ?? Icon(LucideIcons.bike, size: size * .42, color: VoltiColors.blue600),
+      ),
+    );
+  }
 }

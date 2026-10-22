@@ -25,6 +25,7 @@ dependencies:
   firebase_messaging: ^16.0.0
   flutter_secure_storage: ^9.2.4
   url_launcher: ^6.3.0
+  connectivity_plus: ^7.0.0
   share_plus: ^11.0.0
   lucide_icons_flutter: ^3.0.0
   volti_flutter:

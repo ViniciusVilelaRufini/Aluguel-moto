@@ -190,7 +190,7 @@ void main() {
       await t.pump(const Duration(milliseconds: 50));
       b.resolve(0); // cotacao inicial (basico)
       await t.pump(const Duration(seconds: 1));
-      VoltiButton pay() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Pagar caução e destravar'));
+      VoltiButton pay() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
       expect(pay().onPressed, isNotNull);
 
       await t.tap(find.byKey(const Key('coverage-full'))); // pedido 1: completo

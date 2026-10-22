@@ -12,7 +12,7 @@ enum VoltiButtonVariant { primary, secondary, ghost, dark, danger }
 
 enum VoltiButtonSize { sm, md, lg }
 
-/// Botao pill. Primario = verde com glow.
+/// Botao pill. Primario = verde de acao ([VoltiColors.brandAction]) com glow.
 class VoltiButton extends StatelessWidget {
   const VoltiButton({
     super.key,
@@ -55,16 +55,18 @@ class VoltiButton extends StatelessWidget {
     final (h, px, fs, ic) = _dims(size);
     final scheme = Theme.of(context).colorScheme;
     final (bg, fg, bd, sh) = switch (variant) {
+      // Fundo no tom de acao (E-12): texto branco >= 4,5:1.
       VoltiButtonVariant.primary => (
-        VoltiColors.brand,
-        VoltiColors.onBrand,
+        VoltiColors.brandAction,
+        VoltiColors.onBrandAction,
         Colors.transparent,
         VoltiShadows.shadowBrand,
       ),
+      // Extensao do E-12: texto e contorno no tom de acao (>= 4,5:1 sobre branco).
       VoltiButtonVariant.secondary => (
         scheme.surface,
-        VoltiColors.brand,
-        VoltiColors.brand,
+        VoltiColors.brandAction,
+        VoltiColors.brandAction,
         const <BoxShadow>[],
       ),
       VoltiButtonVariant.ghost => (
@@ -244,8 +246,8 @@ class VoltiIconButton extends StatelessWidget {
         const <BoxShadow>[],
       ),
       VoltiIconButtonVariant.brand => (
-        VoltiColors.brand,
-        VoltiColors.onBrand,
+        VoltiColors.brandAction,
+        VoltiColors.onBrandAction,
         VoltiShadows.shadowBrand,
       ),
       VoltiIconButtonVariant.dark => (

@@ -9,6 +9,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
+import '../../core/flash.dart';
 import '../../core/launcher.dart';
 import '../../core/widgets.dart';
 import '../ride/ride_screen.dart';
@@ -233,7 +234,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                 const SizedBox(height: VoltiSpacing.s16),
                 VoltiButton(label: l.disputeCharge, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: _dispute),
                 const SizedBox(height: VoltiSpacing.s8),
-                VoltiButton(label: l.finishSummary, size: VoltiButtonSize.lg, fullWidth: true, onPressed: () => context.go('/home')),
+                VoltiButton(label: l.finishSummary, size: VoltiButtonSize.lg, fullWidth: true, onPressed: () {
+                  // O mapa mostra o agradecimento (design: toast no mapa, H8).
+                  ref.read(flashProvider.notifier).show(l.thanksForRiding);
+                  context.go('/home');
+                }),
               ]),
             );
           },

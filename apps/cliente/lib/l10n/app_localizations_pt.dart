@@ -439,7 +439,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pausedBadge => 'Pausada';
 
   @override
-  String get payAndUnlock => 'Pagar caução e destravar';
+  String get payAndUnlock => 'Confirmar e destravar';
 
   @override
   String get payCard => 'Cartão de crédito';
@@ -466,7 +466,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get planMonthly => 'Plano mensal';
 
   @override
-  String get planTitle => 'Escolha como andar';
+  String get planTitle => 'Escolha seu plano';
 
   @override
   String get planWeekly => 'Plano semanal';
@@ -677,7 +677,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get typeMessage => 'Digite sua mensagem';
 
   @override
-  String get typeNumber => 'Digitar o número da moto';
+  String get typeNumber => 'Digitar número da moto';
 
   @override
   String get useCamera => 'Usar a câmera';
@@ -1903,4 +1903,122 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get onboardingSentToast =>
       'Cadastro enviado. Verificação em até 2 min.';
+
+  @override
+  String get vehicleCategoryDefault => 'Moto elétrica';
+
+  @override
+  String pricePerMinutePlusFee(String price) {
+    return '$price/min + taxa';
+  }
+
+  @override
+  String get promoFirstRideBadge => 'Grátis na 1ª corrida';
+
+  @override
+  String get hornAndFlash => 'Buzinar e piscar';
+
+  @override
+  String get hornNeedsReservation => 'Reserve a moto para buzinar e piscar.';
+
+  @override
+  String get navigate => 'Navegar';
+
+  @override
+  String get navigateFailed => 'Não foi possível abrir o app de mapas.';
+
+  @override
+  String get promoCoupon => 'Cupom promocional';
+
+  @override
+  String get couponSaved => 'Cupom guardado. Ele entra na cotação do plano.';
+
+  @override
+  String get couponRemove => 'Remover cupom';
+
+  @override
+  String get couponSave => 'Guardar cupom';
+
+  @override
+  String get scanQr => 'Escanear QR';
+
+  @override
+  String get reserve => 'Reservar';
+
+  @override
+  String get reportVehicleSentText =>
+      'Recebemos o seu relato. Obrigado por avisar.';
+
+  @override
+  String get reservationCanceled => 'Reserva cancelada';
+
+  @override
+  String get offlineTitle => 'Sem conexão';
+
+  @override
+  String get offlineText => 'Tentando reconectar. Algumas ações podem falhar.';
+
+  @override
+  String get backOnline => 'Conexão restabelecida';
+
+  @override
+  String get torch => 'Lanterna';
+
+  @override
+  String get scanAimTitle => 'Aponte para o QR no guidão';
+
+  @override
+  String get scanAimText => 'Ou digite o número da moto.';
+
+  @override
+  String vehicleFound(String code) {
+    return 'Moto $code encontrada';
+  }
+
+  @override
+  String lookingFor(String code) {
+    return 'Procurando $code';
+  }
+
+  @override
+  String planSubtitle(String code, String model, int pct) {
+    return '$code · $model · $pct%';
+  }
+
+  @override
+  String perUnitShort(String unit) {
+    return '/$unit';
+  }
+
+  @override
+  String get unitMinuteShort => 'min';
+
+  @override
+  String get unitHourShort => 'hora';
+
+  @override
+  String get unitDayShort => 'dia';
+
+  @override
+  String get unitWeekShort => 'semana';
+
+  @override
+  String get unitMonthShort => 'mês';
+
+  @override
+  String get perRental => '/aluguel';
+
+  @override
+  String get couponOrCredit => 'Cupom ou crédito';
+
+  @override
+  String get walletCredits => 'Créditos da carteira';
+
+  @override
+  String walkRouteSemantics(int minutes, String distance) {
+    return 'Rota a pé até a moto: $minutes min, $distance';
+  }
+
+  @override
+  String get thanksForRiding => 'Obrigado por andar de Volti';
 }

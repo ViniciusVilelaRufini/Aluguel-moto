@@ -68,7 +68,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/reserved', pageBuilder: (c, state) => voltiPage(c, state, const ReservedScreen())),
       GoRoute(
         path: '/scan',
-        pageBuilder: (c, state) => voltiPage(c, state, ScanScreen(swapRentalId: state.uri.queryParameters['swap']), modal: true),
+        pageBuilder: (c, state) => voltiPage(c, state, ScanScreen(swapRentalId: state.uri.queryParameters['swap'], expectedCode: state.uri.queryParameters['v']), modal: true),
       ),
       GoRoute(path: '/plan', pageBuilder: (c, state) => voltiPage(c, state, PlanScreen(vehicle: state.extra! as Vehicle))),
       GoRoute(path: '/ride', pageBuilder: (c, state) => voltiPage(c, state, const RideScreen())),

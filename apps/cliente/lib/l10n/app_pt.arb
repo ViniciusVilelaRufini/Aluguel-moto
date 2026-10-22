@@ -135,7 +135,7 @@
   "outsideReturnTitle": "Fora do ponto de devolução",
   "pause": "Pausar",
   "pausedBadge": "Pausada",
-  "payAndUnlock": "Pagar caução e destravar",
+  "payAndUnlock": "Confirmar e destravar",
   "payCard": "Cartão de crédito",
   "payPix": "Pix",
   "payPixHint": "Caução por depósito Pix",
@@ -144,7 +144,7 @@
   "pixTitle": "Pague com Pix",
   "pixWaiting": "Aguardando o pagamento…",
   "planMonthly": "Plano mensal",
-  "planTitle": "Escolha como andar",
+  "planTitle": "Escolha seu plano",
   "planWeekly": "Plano semanal",
   "privacy": "Privacidade e dados",
   "privacyIntro": "Você controla seus dados. Pode exportar uma cópia ou excluir sua conta quando quiser.",
@@ -212,7 +212,7 @@
   "trackingNotificationText": "Sua localização é usada só enquanto a corrida está ativa.",
   "trackingNotificationTitle": "Corrida em andamento",
   "typeMessage": "Digite sua mensagem",
-  "typeNumber": "Digitar o número da moto",
+  "typeNumber": "Digitar número da moto",
   "useCamera": "Usar a câmera",
   "useWallet": "Usar créditos da carteira",
   "vehicleNumber": "Número da moto",
@@ -1066,5 +1066,91 @@
   "payCardMissing": "Adicione um cartão para a caução",
   "payPixExplain": "Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.",
   "payFinish": "Concluir cadastro",
-  "onboardingSentToast": "Cadastro enviado. Verificação em até 2 min."
+  "onboardingSentToast": "Cadastro enviado. Verificação em até 2 min.",
+  "vehicleCategoryDefault": "Moto elétrica",
+  "pricePerMinutePlusFee": "{price}/min + taxa",
+  "@pricePerMinutePlusFee": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "promoFirstRideBadge": "Grátis na 1ª corrida",
+  "hornAndFlash": "Buzinar e piscar",
+  "hornNeedsReservation": "Reserve a moto para buzinar e piscar.",
+  "navigate": "Navegar",
+  "navigateFailed": "Não foi possível abrir o app de mapas.",
+  "promoCoupon": "Cupom promocional",
+  "couponSaved": "Cupom guardado. Ele entra na cotação do plano.",
+  "couponRemove": "Remover cupom",
+  "couponSave": "Guardar cupom",
+  "scanQr": "Escanear QR",
+  "reserve": "Reservar",
+  "reportVehicleSentText": "Recebemos o seu relato. Obrigado por avisar.",
+  "reservationCanceled": "Reserva cancelada",
+  "offlineTitle": "Sem conexão",
+  "offlineText": "Tentando reconectar. Algumas ações podem falhar.",
+  "backOnline": "Conexão restabelecida",
+  "torch": "Lanterna",
+  "scanAimTitle": "Aponte para o QR no guidão",
+  "scanAimText": "Ou digite o número da moto.",
+  "vehicleFound": "Moto {code} encontrada",
+  "@vehicleFound": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "lookingFor": "Procurando {code}",
+  "@lookingFor": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "planSubtitle": "{code} · {model} · {pct}%",
+  "@planSubtitle": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      },
+      "model": {
+        "type": "String"
+      },
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "perUnitShort": "/{unit}",
+  "@perUnitShort": {
+    "placeholders": {
+      "unit": {
+        "type": "String"
+      }
+    }
+  },
+  "unitMinuteShort": "min",
+  "unitHourShort": "hora",
+  "unitDayShort": "dia",
+  "unitWeekShort": "semana",
+  "unitMonthShort": "mês",
+  "perRental": "/aluguel",
+  "couponOrCredit": "Cupom ou crédito",
+  "walletCredits": "Créditos da carteira",
+  "walkRouteSemantics": "Rota a pé até a moto: {minutes} min, {distance}",
+  "@walkRouteSemantics": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      },
+      "distance": {
+        "type": "String"
+      }
+    }
+  },
+  "thanksForRiding": "Obrigado por andar de Volti"
 }
