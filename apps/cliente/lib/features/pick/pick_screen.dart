@@ -125,6 +125,7 @@ class _PickScreenState extends ConsumerState<PickScreen> {
                 key: Key('pick-card-${v.id}'),
                 vehicle: v,
                 photoUrl: models[v.vehicleModelId]?.photoUrl,
+                description: models[v.vehicleModelId]?.description,
                 priceCents: v.pricePerMinuteCents ?? models[v.vehicleModelId]?.pricePerMinuteCents ?? fallbackPrice,
                 selected: v.id == selected?.id,
                 onTap: () {
@@ -277,9 +278,12 @@ class _Footer extends StatelessWidget {
 /// Cartao da lista: foto do modelo (ou icone), modelo + codigo, categoria,
 /// bateria/autonomia, preco por modelo e radio. Sem distancia (a moto esta no galpao).
 class _PickCard extends StatefulWidget {
-  const _PickCard({super.key, required this.vehicle, required this.photoUrl, required this.priceCents, required this.selected, required this.onTap});
+  const _PickCard({super.key, required this.vehicle, required this.photoUrl, this.description, required this.priceCents, required this.selected, required this.onTap});
   final Vehicle vehicle;
   final String? photoUrl;
+
+  /// Descricao curta do modelo no catalogo (ex.: "1000 W · 32 km/h · cesto e garupa · sem CNH").
+  final String? description;
   final int? priceCents;
   final bool selected;
   final VoidCallback onTap;
@@ -311,9 +315,12 @@ class _PickCardState extends State<_PickCard> {
     final category = _category(l);
     final range = v.estimatedRangeKm.round();
     final price = widget.priceCents == null ? null : perMinuteLabel(widget.priceCents!);
+    final description = widget.description?.trim();
+    final hasDescription = description != null && description.isNotEmpty;
     final semantics = [
       '${v.model} ${v.code}',
       ?category,
+      if (hasDescription) description,
       l.batterySemantics(v.batteryPct),
       l.rangeSemantics(range),
       if (widget.priceCents != null) l.priceSemantics(money(widget.priceCents!)),
@@ -358,7 +365,15 @@ class _PickCardState extends State<_PickCard> {
                       size: 88,
                       image: url == null || url.isEmpty
                           ? null
-                          : Image.network(url, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600)),
+                          // Foto de produto sobre fundo branco: inteira (contain) num quadro branco, sem
+                          // faixas cinza quando a proporcao nao e quadrada.
+                          : ColoredBox(
+                              key: const Key('pick-photo-bg'),
+                              color: Colors.white,
+                              child: SizedBox.expand(
+                                child: Image.network(url, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600)),
+                              ),
+                            ),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -388,6 +403,15 @@ class _PickCardState extends State<_PickCard> {
                               // Laranja escuro: contraste AA sobre branco e sobre o verde suave.
                               color: VoltiColors.warningInkStrong,
                             ),
+                          ),
+                        ],
+                        if (hasDescription) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            description,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
                           ),
                         ],
                         const SizedBox(height: 6),
