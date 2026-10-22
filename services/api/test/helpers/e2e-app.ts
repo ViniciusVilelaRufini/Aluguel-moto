@@ -64,10 +64,15 @@ export async function approvedCustomer(app: INestApplication, prisma: PrismaClie
   return { token, customerId: me.body.id };
 }
 
-/** Moto livre posicionada numa zona de devolução (seed: VLT-0001…0006). */
+/**
+ * QA-22: moto livre numa zona de devolução, criada pelo próprio teste (código e thing únicos). Não depende das motos do
+ * seed, que o simulador de rastreadores (`moto-0001…`) aluga, destrava e move; e o simulador ignora a thing `e2e-*`.
+ * Posição fixa no centro da zona de devolução "MASP (Av. Paulista)" do seed (`RETURN_ZONES`).
+ */
 export async function freeVehicleInReturnZone(prisma: PrismaClient): Promise<{ id: string; code: string }> {
-  const codes = ['VLT-0001', 'VLT-0002', 'VLT-0003', 'VLT-0004', 'VLT-0005', 'VLT-0006'];
-  const v = await prisma.vehicle.findFirst({ where: { code: { in: codes }, status: 'free' }, select: { id: true, code: true } });
-  if (!v) throw new Error('Nenhuma moto livre em zona de devolução — rode o seed (pnpm --filter api prisma db seed).');
-  return v;
+  const tag = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`.toUpperCase();
+  return prisma.vehicle.create({
+    data: { code: `E2E-${tag}`, thingName: `e2e-thing-${tag.toLowerCase()}`, model: 'Volti S1', lat: -23.5614, lng: -46.6559, batteryPct: 95, status: 'free', locked: true },
+    select: { id: true, code: true },
+  });
 }

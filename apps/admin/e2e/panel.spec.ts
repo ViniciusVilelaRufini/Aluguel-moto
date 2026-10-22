@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { login } from './helpers';
+import { createCustomer, login } from './helpers';
 
 const nav = (page: import('@playwright/test').Page, name: string) => page.getByRole('button', { name });
 
@@ -33,11 +33,16 @@ test.describe('painel', () => {
     await expect(page).toHaveURL(/\/finance/);
   });
 
-  test('suporte vê o CPF mascarado na lista de clientes', async ({ page }) => {
+  test('suporte vê o CPF mascarado na lista de clientes', async ({ page, request }) => {
+    const customer = await createCustomer(request); // cliente com CPF criado pelo teste
     await login(page, 'suporte');
     await page.goto('/customers');
-    await expect(page.getByTestId('customers-table').getByTestId('row').first()).toBeVisible();
-    await expect(page.getByTestId('customers-table')).toContainText(/\*\*\*\.\d{3}\.\d{3}-\*\*/);
+    await page.getByTestId('customer-search').fill(customer.name);
+    const row = page.getByTestId('customers-table').getByTestId('row').filter({ hasText: customer.name });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText(/\*\*\*\.\d{3}\.\d{3}-\*\*/);
+    await expect(row).toContainText(customer.cpf.slice(3, 6));
+    await expect(row).not.toContainText(`${customer.cpf.slice(0, 3)}.${customer.cpf.slice(3, 6)}.${customer.cpf.slice(6, 9)}-${customer.cpf.slice(9)}`);
   });
 
   test('alertas, aluguéis e auditoria carregam com paginação', async ({ page }) => {

@@ -14,7 +14,7 @@ import { LocalShadowStore } from '../../src/modules/iot/local-shadow';
  * Quando corrigido, troque `it.skip` por `it`.
  */
 class SlowRedis extends MemoryRedisStore {
-  async get(key: string): Promise<string | null> {
+  override async get(key: string): Promise<string | null> {
     const v = await super.get(key);
     await new Promise((r) => setTimeout(r, 15));
     return v;
