@@ -299,6 +299,36 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
     expect((await http().get('/rentals/current').set(bearer(a.token)).expect(200)).body).not.toHaveProperty('currentStationSwap');
   });
 
+  it('fix 2 (M-2/M-4): encerramento forçado cancela a troca sem devolução (rental_force_ended) e avisa a estação; devolução depois só entra no estoque', async () => {
+    station.setAuto(false);
+    const a = await rideOn('minute');
+    const thing = stationThingName(st.id);
+    const s1 = (await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send(swapBody(a.rentalId)).expect(201)).body;
+    await station.emit(thing, { type: 'slot_opened', swapId: s1.id, slotNumber: 4, ts: new Date().toISOString() });
+    await http().post(`/rentals/${a.rentalId}/force-end`).set(bearer(admin)).send({ reason: 'Cliente sem bateria no celular' }).expect(200);
+    const row = await prisma.stationSwap.findUniqueOrThrow({ where: { id: s1.id } });
+    expect(row).toMatchObject({ status: 'canceled', endReason: 'rental_force_ended' });
+    expect(station.sent.find((x) => x.command.swapId === s1.id && x.command.action === 'abort_swap')?.command).toMatchObject({ slotNumber: 4 });
+    await station.emit(thing, { type: 'battery_returned', swapId: s1.id, serial: a.batterySerial, pct: 21, ts: new Date().toISOString() });
+    expect(await prisma.stationSwap.findUniqueOrThrow({ where: { id: s1.id } })).toMatchObject({ status: 'canceled', returnedSerial: a.batterySerial });
+    expect(await prisma.battery.findUnique({ where: { serial: a.batterySerial } })).toMatchObject({ status: 'charging', stationId: st.id });
+    expect(station.sent.filter((x) => x.command.swapId === s1.id && x.command.action === 'release_battery')).toEqual([]);
+  });
+
+  it('fix 2 (I-1): cancelou, o aluguel foi encerrado e a bateria chegou depois → failed/return_after_close, sem liberar', async () => {
+    station.setAuto(false);
+    const a = await rideOn('minute');
+    const thing = stationThingName(st.id);
+    const s1 = (await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send(swapBody(a.rentalId)).expect(201)).body;
+    await http().post(`/swap-stations/${st.id}/swaps/${s1.id}/cancel`).set(bearer(a.token)).expect(200);
+    await http().post(`/rentals/${a.rentalId}/force-end`).set(bearer(admin)).send({ reason: 'Fim do teste de devolução atrasada' }).expect(200);
+    await station.emit(thing, { type: 'battery_returned', swapId: s1.id, serial: a.batterySerial, pct: 19, ts: new Date().toISOString() });
+    expect(await prisma.stationSwap.findUniqueOrThrow({ where: { id: s1.id } })).toMatchObject({ status: 'failed', endReason: 'return_after_close', returnedSerial: a.batterySerial });
+    expect(station.sent.filter((x) => x.command.swapId === s1.id && x.command.action === 'release_battery')).toEqual([]);
+    const got = await http().get(`/swap-stations/${st.id}/swaps/${s1.id}`).set(bearer(a.token)).expect(200);
+    expect(got).toSatisfyApiSpec();
+  });
+
   it('fix 1 (I6): GET /swap-stations/{id}/qr só para admin, com o conteúdo do QR', async () => {
     const res = await http().get(`/swap-stations/${st.id}/qr`).set(bearer(admin)).expect(200);
     expect(res).toSatisfyApiSpec();
