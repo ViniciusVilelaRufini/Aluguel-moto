@@ -38,6 +38,14 @@ class _$Customer extends Customer {
   @override
   final String? emergencyContactPhone;
   @override
+  final PixKeyType? pixRefundKeyType;
+  @override
+  final String? pixRefundKey;
+  @override
+  final SubscriptionPlanCode? activePlanCode;
+  @override
+  final String? activeSubscriptionId;
+  @override
   final CustomerStats? stats;
   @override
   final DateTime createdAt;
@@ -61,6 +69,10 @@ class _$Customer extends Customer {
       this.locationConsent,
       this.emergencyContactName,
       this.emergencyContactPhone,
+      this.pixRefundKeyType,
+      this.pixRefundKey,
+      this.activePlanCode,
+      this.activeSubscriptionId,
       this.stats,
       required this.createdAt})
       : super._();
@@ -90,6 +102,10 @@ class _$Customer extends Customer {
         locationConsent == other.locationConsent &&
         emergencyContactName == other.emergencyContactName &&
         emergencyContactPhone == other.emergencyContactPhone &&
+        pixRefundKeyType == other.pixRefundKeyType &&
+        pixRefundKey == other.pixRefundKey &&
+        activePlanCode == other.activePlanCode &&
+        activeSubscriptionId == other.activeSubscriptionId &&
         stats == other.stats &&
         createdAt == other.createdAt;
   }
@@ -112,6 +128,10 @@ class _$Customer extends Customer {
     _$hash = $jc(_$hash, locationConsent.hashCode);
     _$hash = $jc(_$hash, emergencyContactName.hashCode);
     _$hash = $jc(_$hash, emergencyContactPhone.hashCode);
+    _$hash = $jc(_$hash, pixRefundKeyType.hashCode);
+    _$hash = $jc(_$hash, pixRefundKey.hashCode);
+    _$hash = $jc(_$hash, activePlanCode.hashCode);
+    _$hash = $jc(_$hash, activeSubscriptionId.hashCode);
     _$hash = $jc(_$hash, stats.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jf(_$hash);
@@ -136,6 +156,10 @@ class _$Customer extends Customer {
           ..add('locationConsent', locationConsent)
           ..add('emergencyContactName', emergencyContactName)
           ..add('emergencyContactPhone', emergencyContactPhone)
+          ..add('pixRefundKeyType', pixRefundKeyType)
+          ..add('pixRefundKey', pixRefundKey)
+          ..add('activePlanCode', activePlanCode)
+          ..add('activeSubscriptionId', activeSubscriptionId)
           ..add('stats', stats)
           ..add('createdAt', createdAt))
         .toString();
@@ -209,6 +233,25 @@ class CustomerBuilder implements Builder<Customer, CustomerBuilder> {
   set emergencyContactPhone(String? emergencyContactPhone) =>
       _$this._emergencyContactPhone = emergencyContactPhone;
 
+  PixKeyType? _pixRefundKeyType;
+  PixKeyType? get pixRefundKeyType => _$this._pixRefundKeyType;
+  set pixRefundKeyType(PixKeyType? pixRefundKeyType) =>
+      _$this._pixRefundKeyType = pixRefundKeyType;
+
+  String? _pixRefundKey;
+  String? get pixRefundKey => _$this._pixRefundKey;
+  set pixRefundKey(String? pixRefundKey) => _$this._pixRefundKey = pixRefundKey;
+
+  SubscriptionPlanCode? _activePlanCode;
+  SubscriptionPlanCode? get activePlanCode => _$this._activePlanCode;
+  set activePlanCode(SubscriptionPlanCode? activePlanCode) =>
+      _$this._activePlanCode = activePlanCode;
+
+  String? _activeSubscriptionId;
+  String? get activeSubscriptionId => _$this._activeSubscriptionId;
+  set activeSubscriptionId(String? activeSubscriptionId) =>
+      _$this._activeSubscriptionId = activeSubscriptionId;
+
   CustomerStatsBuilder? _stats;
   CustomerStatsBuilder get stats => _$this._stats ??= CustomerStatsBuilder();
   set stats(CustomerStatsBuilder? stats) => _$this._stats = stats;
@@ -239,6 +282,10 @@ class CustomerBuilder implements Builder<Customer, CustomerBuilder> {
       _locationConsent = $v.locationConsent;
       _emergencyContactName = $v.emergencyContactName;
       _emergencyContactPhone = $v.emergencyContactPhone;
+      _pixRefundKeyType = $v.pixRefundKeyType;
+      _pixRefundKey = $v.pixRefundKey;
+      _activePlanCode = $v.activePlanCode;
+      _activeSubscriptionId = $v.activeSubscriptionId;
       _stats = $v.stats?.toBuilder();
       _createdAt = $v.createdAt;
       _$v = null;
@@ -284,6 +331,10 @@ class CustomerBuilder implements Builder<Customer, CustomerBuilder> {
             locationConsent: locationConsent,
             emergencyContactName: emergencyContactName,
             emergencyContactPhone: emergencyContactPhone,
+            pixRefundKeyType: pixRefundKeyType,
+            pixRefundKey: pixRefundKey,
+            activePlanCode: activePlanCode,
+            activeSubscriptionId: activeSubscriptionId,
             stats: _stats?.build(),
             createdAt: BuiltValueNullFieldError.checkNotNull(
                 createdAt, r'Customer', 'createdAt'),

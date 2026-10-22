@@ -144,6 +144,8 @@ void (empty response body)
 
 Atualizar o próprio perfil (cliente)
 
+Inclui a chave Pix para estornos (`pixRefundKeyType` + `pixRefundKey`; inválida → `422` `pix-key-invalid`).
+
 ### Example
 ```dart
 import 'package:volti_api/api.dart';

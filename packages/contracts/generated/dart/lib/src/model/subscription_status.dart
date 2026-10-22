@@ -9,6 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'subscription_status.g.dart';
 
+/// `paused`: pausada pelo cliente (`POST /payments/subscriptions/{id}/pause`); aluguéis no plano não são cobertos.
 class SubscriptionStatus extends EnumClass {
   @BuiltValueEnumConst(wireName: r'active')
   static const SubscriptionStatus active = _$active;
@@ -18,6 +19,8 @@ class SubscriptionStatus extends EnumClass {
   static const SubscriptionStatus canceled = _$canceled;
   @BuiltValueEnumConst(wireName: r'expired')
   static const SubscriptionStatus expired = _$expired;
+  @BuiltValueEnumConst(wireName: r'paused')
+  static const SubscriptionStatus paused = _$paused;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const SubscriptionStatus unknownDefaultOpenApi =
       _$unknownDefaultOpenApi;

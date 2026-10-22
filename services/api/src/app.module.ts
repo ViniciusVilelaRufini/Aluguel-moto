@@ -33,6 +33,10 @@ import { SupportModule } from './modules/support/support.module';
 import { VehiclesModule } from './modules/vehicles/vehicles.module';
 import { WalletModule } from './modules/wallet/wallet.module';
 import { ZonesModule } from './modules/zones/zones.module';
+import { BatteriesModule } from './modules/batteries/batteries.module';
+import { CatalogModule } from './modules/catalog/catalog.module';
+import { MaintenanceV2Module } from './modules/maintenance/maintenance-v2.module';
+import { ReferralsModule } from './modules/referrals/referrals.module';
 
 /**
  * Módulo raiz. Arquivo compartilhado (spec §6): Tasks 4 e 5 só acrescentam imports.
@@ -69,6 +73,11 @@ import { ZonesModule } from './modules/zones/zones.module';
     SupportModule,
     FieldTasksModule,
     ReportsModule,
+    // Contrato v2 (docs/decisoes.md, 2026-10-22).
+    CatalogModule,
+    BatteriesModule,
+    ReferralsModule,
+    MaintenanceV2Module,
   ],
   controllers: [HealthController, KycController, CustomersController, StaffController, AuditController, LgpdController],
   providers: [

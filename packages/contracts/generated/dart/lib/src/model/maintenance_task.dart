@@ -4,6 +4,7 @@
 
 // ignore_for_file: unused_element
 import 'package:volti_api/src/model/maintenance_kind.dart';
+import 'package:volti_api/src/model/maintenance_source.dart';
 import 'package:volti_api/src/model/maintenance_status.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
@@ -24,6 +25,9 @@ part 'maintenance_task.g.dart';
 /// * [completedAt]
 /// * [notes]
 /// * [createdById]
+/// * [source_]
+/// * [customerId] - Cliente que agendou (`source = customer`).
+/// * [customerName]
 /// * [createdAt]
 /// * [updatedAt]
 @BuiltValue()
@@ -63,6 +67,17 @@ abstract class MaintenanceTask
 
   @BuiltValueField(wireName: r'createdById')
   String? get createdById;
+
+  @BuiltValueField(wireName: r'source')
+  MaintenanceSource? get source_;
+  // enum source_Enum {  staff,  customer,  system,  };
+
+  /// Cliente que agendou (`source = customer`).
+  @BuiltValueField(wireName: r'customerId')
+  String? get customerId;
+
+  @BuiltValueField(wireName: r'customerName')
+  String? get customerName;
 
   @BuiltValueField(wireName: r'createdAt')
   DateTime get createdAt;
@@ -160,6 +175,27 @@ class _$MaintenanceTaskSerializer
       yield r'createdById';
       yield serializers.serialize(
         object.createdById,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.source_ != null) {
+      yield r'source';
+      yield serializers.serialize(
+        object.source_,
+        specifiedType: const FullType(MaintenanceSource),
+      );
+    }
+    if (object.customerId != null) {
+      yield r'customerId';
+      yield serializers.serialize(
+        object.customerId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.customerName != null) {
+      yield r'customerName';
+      yield serializers.serialize(
+        object.customerName,
         specifiedType: const FullType(String),
       );
     }
@@ -280,6 +316,30 @@ class _$MaintenanceTaskSerializer
           ) as String?;
           if (valueDes == null) continue;
           result.createdById = valueDes;
+          break;
+        case r'source':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(MaintenanceSource),
+          ) as MaintenanceSource?;
+          if (valueDes == null) continue;
+          result.source_ = valueDes;
+          break;
+        case r'customerId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.customerId = valueDes;
+          break;
+        case r'customerName':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.customerName = valueDes;
           break;
         case r'createdAt':
           final valueDes = serializers.deserialize(

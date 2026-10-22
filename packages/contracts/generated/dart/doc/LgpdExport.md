@@ -18,6 +18,11 @@ Name | Type | Description | Notes
 **incidents** | [**BuiltList&lt;Incident&gt;**](Incident.md) |  | 
 **disputes** | [**BuiltList&lt;Dispute&gt;**](Dispute.md) |  | 
 **claims** | [**BuiltList&lt;Claim&gt;**](Claim.md) |  | 
+**subscriptions** | [**BuiltList&lt;Subscription&gt;**](Subscription.md) |  | [optional] 
+**coupons** | [**BuiltList&lt;CustomerCoupon&gt;**](CustomerCoupon.md) |  | [optional] 
+**referrals** | [**BuiltList&lt;ReferralReward&gt;**](ReferralReward.md) | Indicações feitas pelo titular (só o primeiro nome do amigo). | [optional] 
+**referralCode** | **String** |  | [optional] 
+**maintenanceRequests** | [**BuiltList&lt;CustomerMaintenanceRequest&gt;**](CustomerMaintenanceRequest.md) |  | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

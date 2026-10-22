@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { assertNotFixedForOther } from '../../common/fixed-vehicle';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Coupon, Deposit, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -170,8 +171,15 @@ export class RentalStartService {
     const plan = await this.pricing.activePlan(dto.planCode);
     const coupon: Coupon | null = dto.couponCode ? await this.pricing.requireCoupon(dto.couponCode, dto.planCode, customerId) : null;
 
-    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: dto.vehicleId } });
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: dto.vehicleId }, include: { vehicleModel: { select: { pricePerMinuteCents: true, unlockFeeCents: true } } } });
     if (!vehicle) throw notFound('Moto não encontrada.');
+    // Contrato v2: moto fixa de assinatura aberta só pode ser alugada pelo assinante.
+    try {
+      await assertNotFixedForOther(this.prisma, vehicle.id, customerId);
+    } catch (err) {
+      await this.requestDepositRelease(dto.depositId, customerId);
+      throw err;
+    }
     const reservation = await this.prisma.reservation.findFirst({
       where: { vehicleId: vehicle.id, status: 'active', expiresAt: { gt: new Date() } },
     });
@@ -236,7 +244,7 @@ export class RentalStartService {
       : null;
     const policy = await this.insurance.issueForRental({ rentalId, customerId, coverage: dto.coverage });
     policyId = policy.policyId;
-    const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription);
+    const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription, vehicle.vehicleModel);
 
     // QA-21: reivindica a moto, desbloqueia e só cria o aluguel (relógio e cobrança) com o desbloqueio confirmado.
     // Fix round 1: a reivindicação grava junto o marcador `RentalStart`; se o processo morrer durante a espera do
@@ -278,7 +286,7 @@ export class RentalStartService {
       });
       await tx.rentalEvent.create({ data: { rentalId, type: 'started', actorType: 'customer', actorId: customerId } });
       if (coupon) {
-        await tx.couponRedemption.create({ data: { couponId: coupon.id, customerId, rentalId } });
+        await tx.couponRedemption.create({ data: { couponId: coupon.id, customerId, rentalId, cpfHash: await this.pricing.cpfHashFor(customerId) } });
         await tx.coupon.update({ where: { id: coupon.id }, data: { redemptions: { increment: 1 } } });
       }
       if (!deposit.rentalId) await tx.deposit.update({ where: { id: deposit.id }, data: { rentalId } });

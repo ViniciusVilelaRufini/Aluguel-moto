@@ -3,6 +3,7 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:volti_api/src/model/pix_key_type.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -15,6 +16,8 @@ part 'me_update.g.dart';
 /// * [phone] - E.164, ex. `+5511987654321`.
 /// * [emergencyContactName]
 /// * [emergencyContactPhone]
+/// * [pixRefundKeyType]
+/// * [pixRefundKey] - Chave Pix para estornos. Envie junto com `pixRefundKeyType`; validada pelo tipo (`422` `pix-key-invalid`): CPF com dígitos verificadores e igual ao CPF da conta, e-mail, celular E.164 `+55` ou chave aleatória (UUID). É normalizada (CPF só dígitos, e-mail minúsculo). String vazia remove a chave. Grava AuditLog.
 @BuiltValue()
 abstract class MeUpdate implements Built<MeUpdate, MeUpdateBuilder> {
   @BuiltValueField(wireName: r'name')
@@ -29,6 +32,14 @@ abstract class MeUpdate implements Built<MeUpdate, MeUpdateBuilder> {
 
   @BuiltValueField(wireName: r'emergencyContactPhone')
   String? get emergencyContactPhone;
+
+  @BuiltValueField(wireName: r'pixRefundKeyType')
+  PixKeyType? get pixRefundKeyType;
+  // enum pixRefundKeyTypeEnum {  cpf,  email,  phone,  random,  };
+
+  /// Chave Pix para estornos. Envie junto com `pixRefundKeyType`; validada pelo tipo (`422` `pix-key-invalid`): CPF com dígitos verificadores e igual ao CPF da conta, e-mail, celular E.164 `+55` ou chave aleatória (UUID). É normalizada (CPF só dígitos, e-mail minúsculo). String vazia remove a chave. Grava AuditLog.
+  @BuiltValueField(wireName: r'pixRefundKey')
+  String? get pixRefundKey;
 
   MeUpdate._();
 
@@ -78,6 +89,20 @@ class _$MeUpdateSerializer implements PrimitiveSerializer<MeUpdate> {
       yield r'emergencyContactPhone';
       yield serializers.serialize(
         object.emergencyContactPhone,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.pixRefundKeyType != null) {
+      yield r'pixRefundKeyType';
+      yield serializers.serialize(
+        object.pixRefundKeyType,
+        specifiedType: const FullType(PixKeyType),
+      );
+    }
+    if (object.pixRefundKey != null) {
+      yield r'pixRefundKey';
+      yield serializers.serialize(
+        object.pixRefundKey,
         specifiedType: const FullType(String),
       );
     }
@@ -137,6 +162,22 @@ class _$MeUpdateSerializer implements PrimitiveSerializer<MeUpdate> {
           ) as String?;
           if (valueDes == null) continue;
           result.emergencyContactPhone = valueDes;
+          break;
+        case r'pixRefundKeyType':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(PixKeyType),
+          ) as PixKeyType?;
+          if (valueDes == null) continue;
+          result.pixRefundKeyType = valueDes;
+          break;
+        case r'pixRefundKey':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.pixRefundKey = valueDes;
           break;
         default:
           unhandled.add(key);

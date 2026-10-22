@@ -27,6 +27,16 @@ class _$LgpdExport extends LgpdExport {
   final BuiltList<Dispute> disputes;
   @override
   final BuiltList<Claim> claims;
+  @override
+  final BuiltList<Subscription>? subscriptions;
+  @override
+  final BuiltList<CustomerCoupon>? coupons;
+  @override
+  final BuiltList<ReferralReward>? referrals;
+  @override
+  final String? referralCode;
+  @override
+  final BuiltList<CustomerMaintenanceRequest>? maintenanceRequests;
 
   factory _$LgpdExport([void Function(LgpdExportBuilder)? updates]) =>
       (LgpdExportBuilder()..update(updates))._build();
@@ -41,7 +51,12 @@ class _$LgpdExport extends LgpdExport {
       required this.walletEntries,
       required this.incidents,
       required this.disputes,
-      required this.claims})
+      required this.claims,
+      this.subscriptions,
+      this.coupons,
+      this.referrals,
+      this.referralCode,
+      this.maintenanceRequests})
       : super._();
   @override
   LgpdExport rebuild(void Function(LgpdExportBuilder) updates) =>
@@ -63,7 +78,12 @@ class _$LgpdExport extends LgpdExport {
         walletEntries == other.walletEntries &&
         incidents == other.incidents &&
         disputes == other.disputes &&
-        claims == other.claims;
+        claims == other.claims &&
+        subscriptions == other.subscriptions &&
+        coupons == other.coupons &&
+        referrals == other.referrals &&
+        referralCode == other.referralCode &&
+        maintenanceRequests == other.maintenanceRequests;
   }
 
   @override
@@ -79,6 +99,11 @@ class _$LgpdExport extends LgpdExport {
     _$hash = $jc(_$hash, incidents.hashCode);
     _$hash = $jc(_$hash, disputes.hashCode);
     _$hash = $jc(_$hash, claims.hashCode);
+    _$hash = $jc(_$hash, subscriptions.hashCode);
+    _$hash = $jc(_$hash, coupons.hashCode);
+    _$hash = $jc(_$hash, referrals.hashCode);
+    _$hash = $jc(_$hash, referralCode.hashCode);
+    _$hash = $jc(_$hash, maintenanceRequests.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -95,7 +120,12 @@ class _$LgpdExport extends LgpdExport {
           ..add('walletEntries', walletEntries)
           ..add('incidents', incidents)
           ..add('disputes', disputes)
-          ..add('claims', claims))
+          ..add('claims', claims)
+          ..add('subscriptions', subscriptions)
+          ..add('coupons', coupons)
+          ..add('referrals', referrals)
+          ..add('referralCode', referralCode)
+          ..add('maintenanceRequests', maintenanceRequests))
         .toString();
   }
 }
@@ -149,6 +179,35 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
   ListBuilder<Claim> get claims => _$this._claims ??= ListBuilder<Claim>();
   set claims(ListBuilder<Claim>? claims) => _$this._claims = claims;
 
+  ListBuilder<Subscription>? _subscriptions;
+  ListBuilder<Subscription> get subscriptions =>
+      _$this._subscriptions ??= ListBuilder<Subscription>();
+  set subscriptions(ListBuilder<Subscription>? subscriptions) =>
+      _$this._subscriptions = subscriptions;
+
+  ListBuilder<CustomerCoupon>? _coupons;
+  ListBuilder<CustomerCoupon> get coupons =>
+      _$this._coupons ??= ListBuilder<CustomerCoupon>();
+  set coupons(ListBuilder<CustomerCoupon>? coupons) =>
+      _$this._coupons = coupons;
+
+  ListBuilder<ReferralReward>? _referrals;
+  ListBuilder<ReferralReward> get referrals =>
+      _$this._referrals ??= ListBuilder<ReferralReward>();
+  set referrals(ListBuilder<ReferralReward>? referrals) =>
+      _$this._referrals = referrals;
+
+  String? _referralCode;
+  String? get referralCode => _$this._referralCode;
+  set referralCode(String? referralCode) => _$this._referralCode = referralCode;
+
+  ListBuilder<CustomerMaintenanceRequest>? _maintenanceRequests;
+  ListBuilder<CustomerMaintenanceRequest> get maintenanceRequests =>
+      _$this._maintenanceRequests ??= ListBuilder<CustomerMaintenanceRequest>();
+  set maintenanceRequests(
+          ListBuilder<CustomerMaintenanceRequest>? maintenanceRequests) =>
+      _$this._maintenanceRequests = maintenanceRequests;
+
   LgpdExportBuilder() {
     LgpdExport._defaults(this);
   }
@@ -166,6 +225,11 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
       _incidents = $v.incidents.toBuilder();
       _disputes = $v.disputes.toBuilder();
       _claims = $v.claims.toBuilder();
+      _subscriptions = $v.subscriptions?.toBuilder();
+      _coupons = $v.coupons?.toBuilder();
+      _referrals = $v.referrals?.toBuilder();
+      _referralCode = $v.referralCode;
+      _maintenanceRequests = $v.maintenanceRequests?.toBuilder();
       _$v = null;
     }
     return this;
@@ -200,6 +264,11 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
             incidents: incidents.build(),
             disputes: disputes.build(),
             claims: claims.build(),
+            subscriptions: _subscriptions?.build(),
+            coupons: _coupons?.build(),
+            referrals: _referrals?.build(),
+            referralCode: referralCode,
+            maintenanceRequests: _maintenanceRequests?.build(),
           );
     } catch (_) {
       late String _$failedField;
@@ -222,6 +291,15 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
         disputes.build();
         _$failedField = 'claims';
         claims.build();
+        _$failedField = 'subscriptions';
+        _subscriptions?.build();
+        _$failedField = 'coupons';
+        _coupons?.build();
+        _$failedField = 'referrals';
+        _referrals?.build();
+
+        _$failedField = 'maintenanceRequests';
+        _maintenanceRequests?.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'LgpdExport', _$failedField, e.toString());

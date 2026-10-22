@@ -26,6 +26,16 @@ class _$FieldTask extends FieldTask {
   @override
   final int? vehicleBatteryPct;
   @override
+  final VehicleStatus? vehicleStatus;
+  @override
+  final String? vehicleAddress;
+  @override
+  final String? vehicleBatterySerial;
+  @override
+  final int? vehicleBatteryCycleCount;
+  @override
+  final String? targetAddress;
+  @override
   final double? targetLat;
   @override
   final double? targetLng;
@@ -65,6 +75,11 @@ class _$FieldTask extends FieldTask {
       this.vehicleLat,
       this.vehicleLng,
       this.vehicleBatteryPct,
+      this.vehicleStatus,
+      this.vehicleAddress,
+      this.vehicleBatterySerial,
+      this.vehicleBatteryCycleCount,
+      this.targetAddress,
       this.targetLat,
       this.targetLng,
       this.assigneeId,
@@ -99,6 +114,11 @@ class _$FieldTask extends FieldTask {
         vehicleLat == other.vehicleLat &&
         vehicleLng == other.vehicleLng &&
         vehicleBatteryPct == other.vehicleBatteryPct &&
+        vehicleStatus == other.vehicleStatus &&
+        vehicleAddress == other.vehicleAddress &&
+        vehicleBatterySerial == other.vehicleBatterySerial &&
+        vehicleBatteryCycleCount == other.vehicleBatteryCycleCount &&
+        targetAddress == other.targetAddress &&
         targetLat == other.targetLat &&
         targetLng == other.targetLng &&
         assigneeId == other.assigneeId &&
@@ -126,6 +146,11 @@ class _$FieldTask extends FieldTask {
     _$hash = $jc(_$hash, vehicleLat.hashCode);
     _$hash = $jc(_$hash, vehicleLng.hashCode);
     _$hash = $jc(_$hash, vehicleBatteryPct.hashCode);
+    _$hash = $jc(_$hash, vehicleStatus.hashCode);
+    _$hash = $jc(_$hash, vehicleAddress.hashCode);
+    _$hash = $jc(_$hash, vehicleBatterySerial.hashCode);
+    _$hash = $jc(_$hash, vehicleBatteryCycleCount.hashCode);
+    _$hash = $jc(_$hash, targetAddress.hashCode);
     _$hash = $jc(_$hash, targetLat.hashCode);
     _$hash = $jc(_$hash, targetLng.hashCode);
     _$hash = $jc(_$hash, assigneeId.hashCode);
@@ -155,6 +180,11 @@ class _$FieldTask extends FieldTask {
           ..add('vehicleLat', vehicleLat)
           ..add('vehicleLng', vehicleLng)
           ..add('vehicleBatteryPct', vehicleBatteryPct)
+          ..add('vehicleStatus', vehicleStatus)
+          ..add('vehicleAddress', vehicleAddress)
+          ..add('vehicleBatterySerial', vehicleBatterySerial)
+          ..add('vehicleBatteryCycleCount', vehicleBatteryCycleCount)
+          ..add('targetAddress', targetAddress)
           ..add('targetLat', targetLat)
           ..add('targetLng', targetLng)
           ..add('assigneeId', assigneeId)
@@ -211,6 +241,31 @@ class FieldTaskBuilder implements Builder<FieldTask, FieldTaskBuilder> {
   int? get vehicleBatteryPct => _$this._vehicleBatteryPct;
   set vehicleBatteryPct(int? vehicleBatteryPct) =>
       _$this._vehicleBatteryPct = vehicleBatteryPct;
+
+  VehicleStatus? _vehicleStatus;
+  VehicleStatus? get vehicleStatus => _$this._vehicleStatus;
+  set vehicleStatus(VehicleStatus? vehicleStatus) =>
+      _$this._vehicleStatus = vehicleStatus;
+
+  String? _vehicleAddress;
+  String? get vehicleAddress => _$this._vehicleAddress;
+  set vehicleAddress(String? vehicleAddress) =>
+      _$this._vehicleAddress = vehicleAddress;
+
+  String? _vehicleBatterySerial;
+  String? get vehicleBatterySerial => _$this._vehicleBatterySerial;
+  set vehicleBatterySerial(String? vehicleBatterySerial) =>
+      _$this._vehicleBatterySerial = vehicleBatterySerial;
+
+  int? _vehicleBatteryCycleCount;
+  int? get vehicleBatteryCycleCount => _$this._vehicleBatteryCycleCount;
+  set vehicleBatteryCycleCount(int? vehicleBatteryCycleCount) =>
+      _$this._vehicleBatteryCycleCount = vehicleBatteryCycleCount;
+
+  String? _targetAddress;
+  String? get targetAddress => _$this._targetAddress;
+  set targetAddress(String? targetAddress) =>
+      _$this._targetAddress = targetAddress;
 
   double? _targetLat;
   double? get targetLat => _$this._targetLat;
@@ -282,6 +337,11 @@ class FieldTaskBuilder implements Builder<FieldTask, FieldTaskBuilder> {
       _vehicleLat = $v.vehicleLat;
       _vehicleLng = $v.vehicleLng;
       _vehicleBatteryPct = $v.vehicleBatteryPct;
+      _vehicleStatus = $v.vehicleStatus;
+      _vehicleAddress = $v.vehicleAddress;
+      _vehicleBatterySerial = $v.vehicleBatterySerial;
+      _vehicleBatteryCycleCount = $v.vehicleBatteryCycleCount;
+      _targetAddress = $v.targetAddress;
       _targetLat = $v.targetLat;
       _targetLng = $v.targetLng;
       _assigneeId = $v.assigneeId;
@@ -330,6 +390,11 @@ class FieldTaskBuilder implements Builder<FieldTask, FieldTaskBuilder> {
           vehicleLat: vehicleLat,
           vehicleLng: vehicleLng,
           vehicleBatteryPct: vehicleBatteryPct,
+          vehicleStatus: vehicleStatus,
+          vehicleAddress: vehicleAddress,
+          vehicleBatterySerial: vehicleBatterySerial,
+          vehicleBatteryCycleCount: vehicleBatteryCycleCount,
+          targetAddress: targetAddress,
           targetLat: targetLat,
           targetLng: targetLng,
           assigneeId: assigneeId,

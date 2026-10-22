@@ -34,6 +34,7 @@ import 'package:volti_api/src/model/support_conversation_update.dart';
 import 'package:volti_api/src/model/support_message.dart';
 import 'package:volti_api/src/model/support_message_create.dart';
 import 'package:volti_api/src/model/support_message_page.dart';
+import 'package:volti_api/src/model/support_read_request.dart';
 import 'package:volti_api/src/model/upload_request.dart';
 
 class SupportApi {
@@ -1368,6 +1369,119 @@ class SupportApi {
     }
 
     return Response<SupportMessagePage>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Marcar mensagens como lidas
+  /// Marca como lidas (&#x60;readAt&#x60;) as mensagens do outro lado (para o cliente: do atendente/sistema; para o staff: do cliente) até &#x60;upToMessageId&#x60; (inclusive) ou todas, se ausente. Estado de cada mensagem: &#x60;sent&#x60; (gravada), &#x60;delivered&#x60; (o outro lado buscou a conversa em &#x60;GET .../messages&#x60;) e &#x60;read&#x60;. Idempotente. Responde a conversa com &#x60;unreadCount&#x60; atualizado.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [supportReadRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [SupportConversation] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<SupportConversation>> markSupportConversationRead({
+    required String id,
+    SupportReadRequest? supportReadRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/support/conversations/{id}/read'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(SupportReadRequest);
+      _bodyData = supportReadRequest == null
+          ? null
+          : _serializers.serialize(supportReadRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    SupportConversation? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(SupportConversation),
+            ) as SupportConversation;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<SupportConversation>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

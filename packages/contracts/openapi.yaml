@@ -39,7 +39,10 @@ info:
     `coupon-invalid`, `deposit-not-held`, `payment-failed`, `card-not-found`, `zone-invalid-geometry`,
     `zone-speed-limit-required`, `zone-speed-limit-invalid`, `location-consent-required`,
     `speed-limiter-noncompliant`, `battery-serials-must-differ`, `account-deletion-blocked`,
-    `webhook-signature-invalid`.
+    `webhook-signature-invalid`, `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`,
+    `subscription-pause-limit-reached`, `subscription-required`, `subscription-vehicle-required`,
+    `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`, `gateway-unavailable`,
+    `subscription-vehicle-cooldown`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -109,6 +112,14 @@ tags:
     description: Consentimentos, exportação e exclusão de dados pessoais.
   - name: webhooks
     description: Webhooks de provedores externos.
+  - name: catalog
+    description: Catálogo de modelos de moto (nome, categoria, foto e preço por minuto).
+  - name: stations
+    description: Estações de troca de bateria.
+  - name: referrals
+    description: Programa de indicação de amigos.
+  - name: batteries
+    description: Baterias (série, carga, ciclos) e estoque na van do operador.
 
 paths:
   # ───────────────────────────── health ─────────────────────────────
@@ -177,6 +188,7 @@ paths:
       tags: [auth]
       operationId: updateMe
       summary: Atualizar o próprio perfil (cliente)
+      description: 'Inclui a chave Pix para estornos (`pixRefundKeyType` + `pixRefundKey`; inválida → `422` `pix-key-invalid`).'
       security:
         - customerAuth: []
       requestBody:
@@ -192,6 +204,7 @@ paths:
               schema: { $ref: '#/components/schemas/Me' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /me/devices:
     post:
       tags: [auth]
@@ -212,6 +225,222 @@ paths:
           description: Dispositivo registrado.
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ── conta do cliente: cupons, indicação e manutenção (contrato v2, docs/decisoes.md 2026-10-22) ──
+  /me/coupons:
+    get:
+      tags: [pricing]
+      operationId: listMyCoupons
+      summary: Cupons salvos na conta
+      description: |
+        Cupons que o cliente adicionou à conta (`POST /me/coupons`) ou ganhou por indicação. `status` é calculado na
+        leitura: `used` quando o limite por cliente foi atingido, `expired` quando passou de `validUntil` ou o cupom foi
+        desativado. Para usar, o app envia `couponCode` em `POST /pricing/quote` e `POST /rentals`.
+      security:
+        - customerAuth: []
+      responses:
+        '200':
+          description: Cupons da conta (disponíveis primeiro).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerCouponList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [pricing]
+      operationId: addMyCoupon
+      summary: Adicionar cupom à conta
+      description: |
+        Valida o código (mesmas regras do aluguel: ativo, vigência, limite total e por cliente) e o salva na conta.
+        Código inválido → `422` `coupon-invalid` (`detail` com o motivo em pt-BR); já salvo → `409` `conflict`.
+        Códigos de indicação não são cupons: use `POST /me/referral/redeem`.
+      security:
+        - customerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CouponCodeRequest' }
+      responses:
+        '201':
+          description: Cupom salvo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerCoupon' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /me/coupons/validate:
+    post:
+      tags: [pricing]
+      operationId: validateMyCoupon
+      summary: Validar cupom sem salvar
+      description: 'Sempre `200`; `valid = false` traz `message` com o motivo. `planCode` opcional restringe a validação a um plano.'
+      security:
+        - customerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CouponCodeRequest' }
+      responses:
+        '200':
+          description: Resultado da validação.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CouponValidation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /me/referral:
+    get:
+      tags: [referrals]
+      operationId: getMyReferral
+      summary: Programa de indicação do cliente
+      description: |
+        Código de indicação do cliente (gerado no primeiro acesso, único), link de convite, valores das recompensas e
+        totais. Regras: quem usa o código ganha `refereeRewardCents` na carteira na hora; quem indicou ganha
+        `referrerRewardCents` quando o indicado termina a primeira corrida.
+      security:
+        - customerAuth: []
+      responses:
+        '200':
+          description: Resumo da indicação.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferralSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /me/referral/rewards:
+    get:
+      tags: [referrals]
+      operationId: listMyReferralRewards
+      summary: Recompensas de indicação
+      description: Uma linha por amigo indicado (mais recentes primeiro). `granted` tem o lançamento `bonus` correspondente no extrato da carteira.
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Página de recompensas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferralRewardPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /me/referral/redeem:
+    post:
+      tags: [referrals]
+      operationId: redeemReferralCode
+      summary: Usar código de indicação de um amigo
+      description: |
+        Só antes da primeira corrida e uma vez por conta. Código inexistente → `422` `referral-code-invalid`; próprio
+        código, já indicado, conta com corrida ou conta sem KYC aprovado → `422` `referral-not-eligible`. Credita
+        `rewardCents` na carteira (lançamento `bonus`).
+      security:
+        - customerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReferralRedeemRequest' }
+      responses:
+        '201':
+          description: Indicação registrada e bônus creditado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReferralRedemption' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /me/maintenance-slots:
+    get:
+      tags: [maintenance]
+      operationId: listMyMaintenanceSlots
+      summary: Horários livres para manutenção (plano semanal/mensal)
+      description: |
+        Janelas de 1 h, segunda a sábado, 08:00–18:00 (America/Sao_Paulo), a partir da próxima hora cheia com 2 h de
+        antecedência e até `days` dias. Cada janela tem capacidade fixa; janelas lotadas vêm com `available: false`.
+        Exige assinatura semanal/mensal ativa (`403` `subscription-required`).
+      security:
+        - customerAuth: []
+      parameters:
+        - name: days
+          in: query
+          description: Quantos dias à frente listar.
+          schema: { type: integer, minimum: 1, maximum: 14, default: 7 }
+      responses:
+        '200':
+          description: Janelas.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MaintenanceSlotList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /me/maintenance-requests:
+    get:
+      tags: [maintenance]
+      operationId: listMyMaintenanceRequests
+      summary: Manutenções agendadas pelo cliente
+      security:
+        - customerAuth: []
+      responses:
+        '200':
+          description: Pedidos (mais recentes primeiro).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerMaintenanceRequestList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [maintenance]
+      operationId: createMyMaintenanceRequest
+      summary: Agendar manutenção da moto fixa do plano
+      description: |
+        Cria uma manutenção preventiva (`MaintenanceTask` com `source: customer`) para a moto fixa da assinatura ativa,
+        visível na Operação do painel. Regras: assinatura ativa (`403` `subscription-required`), moto fixa definida
+        (`422` `subscription-vehicle-required`), `slotStartsAt` igual ao início de uma janela livre de
+        `GET /me/maintenance-slots` (`409` `maintenance-slot-unavailable`) e um pedido em aberto por vez (`409` `conflict`).
+      security:
+        - customerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CustomerMaintenanceRequestCreate' }
+      responses:
+        '201':
+          description: Manutenção agendada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerMaintenanceRequest' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /me/maintenance-requests/{id}:
+    delete:
+      tags: [maintenance]
+      operationId: cancelMyMaintenanceRequest
+      summary: Cancelar manutenção agendada
+      description: Só enquanto `scheduled` (senão `409`). A manutenção vira `canceled`.
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Pedido cancelado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CustomerMaintenanceRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────────── kyc ─────────────────────────────
   /kyc/uploads:
@@ -439,6 +668,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
   /vehicles/{id}:
     get:
@@ -628,6 +858,136 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  # ───────────────────────────── catálogo de modelos e estações ─────────────────────────────
+  /vehicle-models:
+    get:
+      tags: [catalog]
+      operationId: listVehicleModels
+      summary: Catálogo de modelos ("Escolha sua moto")
+      description: |
+        Modelos ativos em `sortOrder` (staff com `includeInactive=true` vê todos). `pricePerMinuteCents` substitui o
+        preço por minuto do plano `minute` para motos do modelo (o desbloqueio e a pausa continuam os do plano, salvo
+        `unlockFeeCents`). `photoUrl` é um link assinado (S3/MinIO) válido por 24 h.
+      security:
+        - customerAuth: []
+        - staffAuth: []
+      x-required-groups: [admin, operacao, financeiro, suporte, campo]
+      parameters:
+        - name: includeInactive
+          in: query
+          description: Só staff.
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Modelos.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleModelList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [catalog]
+      operationId: createVehicleModel
+      summary: Cadastrar modelo
+      security:
+        - staffAuth: []
+      x-required-groups: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VehicleModelInput' }
+      responses:
+        '201':
+          description: Modelo criado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleModel' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /vehicle-models/uploads:
+    post:
+      tags: [catalog]
+      operationId: createVehicleModelPhotoUpload
+      summary: URL de upload da foto do modelo
+      description: Upload direto ao bucket de catálogo (`catalog/<uuid>.<ext>`); depois envie `photoObjectKey` em `PATCH /vehicle-models/{id}`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UploadRequest' }
+      responses:
+        '201':
+          description: URL pré-assinada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PresignedUpload' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /vehicle-models/{id}:
+    patch:
+      tags: [catalog]
+      operationId: updateVehicleModel
+      summary: Editar modelo (preço, foto, intervalo de revisão)
+      description: Grava AuditLog (`vehicle_model.update`). Mudança de preço vale para aluguéis iniciados depois (o aluguel guarda o preço do início).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VehicleModelUpdate' }
+      responses:
+        '200':
+          description: Modelo atualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleModel' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /swap-stations:
+    get:
+      tags: [stations]
+      operationId: listSwapStations
+      summary: Estações de troca de bateria (mapa)
+      description: |
+        Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com `lat`/`lng`, filtra pelo
+        raio e ordena por distância (`distanceM`); sem eles, todas em ordem alfabética.
+      security:
+        - customerAuth: []
+        - staffAuth: []
+      x-required-groups: [admin, operacao, suporte, campo]
+      parameters:
+        - name: lat
+          in: query
+          schema: { type: number, format: double, minimum: -90, maximum: 90 }
+        - name: lng
+          in: query
+          schema: { type: number, format: double, minimum: -180, maximum: 180 }
+        - name: radiusM
+          in: query
+          description: Raio em metros (só com `lat`/`lng`).
+          schema: { type: integer, minimum: 100, maximum: 50000, default: 10000 }
+      responses:
+        '200':
+          description: Estações.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SwapStationList' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 
   # ───────────────────────────── zones ─────────────────────────────
   /zones:
@@ -1698,8 +2058,26 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '402': { $ref: '#/components/responses/PaymentRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+
   /payments/subscriptions/{id}:
+    get:
+      tags: [payments]
+      operationId: getSubscription
+      summary: Detalhe da assinatura (próxima cobrança, pausa, moto fixa)
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Assinatura.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
     delete:
       tags: [payments]
       operationId: cancelSubscription
@@ -1718,6 +2096,94 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /payments/subscriptions/{id}/pause:
+    post:
+      tags: [payments]
+      operationId: pauseSubscription
+      summary: Pausar assinatura
+      description: |
+        Suspende o plano por `days` dias; o período e a próxima cobrança andam o tempo efetivamente pausado.
+        Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança
+        (`422` `subscription-pause-limit-reached`). Só assinatura `active` sem cancelamento agendado
+        (`409` `subscription-not-pausable`) e sem aluguel em andamento no plano (`409` `rental-already-active`).
+        Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`. O gateway de pagamento é a
+        fonte da verdade das datas: se ele não confirmar a pausa, nada muda e a resposta é `503` `gateway-unavailable`.
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionPauseRequest' }
+      responses:
+        '200':
+          description: Assinatura pausada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /payments/subscriptions/{id}/resume:
+    post:
+      tags: [payments]
+      operationId: resumeSubscription
+      summary: Retomar assinatura pausada
+      description: Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado e a nova data da cobrança é enviada ao gateway; sem confirmação do gateway → `503` `gateway-unavailable` (continua pausada).
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Assinatura ativa.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '503': { $ref: '#/components/responses/ServiceUnavailable' }
+  /payments/subscriptions/{id}/vehicle:
+    put:
+      tags: [payments]
+      operationId: assignSubscriptionVehicle
+      summary: Definir a moto fixa do plano
+      description: |
+        A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver `active` ou `paused` e some do
+        `GET /vehicles/nearby` dos demais clientes. Cliente: só a própria assinatura e uma moto `free` sem outro
+        assinante (`409` `vehicle-unavailable`); o cliente troca a moto fixa no máximo uma vez a cada 24 h
+        (`422` `subscription-vehicle-cooldown`). Staff (`admin`, `operacao`): qualquer assinatura e moto, sem espera; grava AuditLog.
+        A exclusividade vale só com o período vigente (`currentPeriodEnd` no futuro).
+      security:
+        - customerAuth: []
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionVehicleAssignment' }
+      responses:
+        '200':
+          description: Moto fixa definida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Subscription' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+
   /payments:
     get:
       tags: [payments]
@@ -1899,6 +2365,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '402': { $ref: '#/components/responses/PaymentRequired' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /wallet/top-ups/{id}:
     get:
       tags: [wallet]
@@ -2605,6 +3072,37 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /support/conversations/{id}/read:
+    post:
+      tags: [support]
+      operationId: markSupportConversationRead
+      summary: Marcar mensagens como lidas
+      description: |
+        Marca como lidas (`readAt`) as mensagens do outro lado (para o cliente: do atendente/sistema; para o staff: do
+        cliente) até `upToMessageId` (inclusive) ou todas, se ausente. Estado de cada mensagem: `sent` (gravada),
+        `delivered` (o outro lado buscou a conversa em `GET .../messages`) e `read`. Idempotente. Responde a conversa
+        com `unreadCount` atualizado.
+      security:
+        - customerAuth: []
+        - staffAuth: []
+      x-required-groups: [admin, suporte]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SupportReadRequest' }
+      responses:
+        '200':
+          description: Conversa com `unreadCount` atualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SupportConversation' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   # ───────────────────────────── field-tasks ─────────────────────────────
   /field-tasks:
@@ -2873,6 +3371,40 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────────── maintenance ─────────────────────────────
+  /maintenance/vehicles:
+    get:
+      tags: [maintenance]
+      operationId: listVehicleServiceStatus
+      summary: Manutenção preventiva por km/horas (tabela "Manutenção")
+      description: |
+        Uma linha por moto com odômetro, horas de uso, km/horas desde a última revisão, próxima revisão e situação
+        (`overdue` → `due_soon` → `ok`, depois por código). Intervalos do modelo (`VehicleModel.serviceIntervalKm`/
+        `serviceIntervalHours`; padrão 1000 km / 100 h). `due_soon` quando faltam 10% ou menos de qualquer intervalo.
+        Revisão registrada = manutenção `preventive` concluída (`PATCH /maintenance/tasks/{id}` com `status: done`).
+        "Agendar" usa `POST /maintenance/tasks` com o `vehicleId` da linha; a linha mostra a manutenção em aberto.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/VehicleServiceStatus' }
+        - name: q
+          in: query
+          description: Busca por código da moto.
+          schema: { type: string, maxLength: 64 }
+      responses:
+        '200':
+          description: Página de motos com a situação da revisão.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VehicleServicePage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /maintenance/tasks:
     get:
       tags: [maintenance]
@@ -2962,6 +3494,111 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/MaintenanceTask' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  # ───────────────────────────── batteries ─────────────────────────────
+  /batteries:
+    get:
+      tags: [batteries]
+      operationId: listBatteries
+      summary: Baterias (série, carga, ciclos, onde estão)
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+        - name: status
+          in: query
+          schema: { $ref: '#/components/schemas/BatteryStatus' }
+        - name: holderId
+          in: query
+          description: Operador que leva a bateria na van (`me` = o próprio usuário).
+          schema: { type: string, pattern: '^(me|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$' }
+        - name: q
+          in: query
+          description: Busca por número de série.
+          schema: { type: string, maxLength: 64 }
+      responses:
+        '200':
+          description: Página de baterias.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatteryPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /batteries/van-stock:
+    get:
+      tags: [batteries]
+      operationId: getVanStock
+      summary: Estoque de baterias na van do operador
+      description: |
+        Baterias com `status: in_van` do operador (padrão: o próprio usuário; `admin`/`operacao` podem passar
+        `operatorId`). Carregada = `chargePct >= 90`. A troca de bateria tira a instalada do estoque e põe a retirada.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - name: operatorId
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Estoque.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VanStock' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /batteries/van-stock/load:
+    post:
+      tags: [batteries]
+      operationId: loadVanBatteries
+      summary: Carregar baterias na van
+      description: Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada numa moto → `409`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatteryTransferRequest' }
+      responses:
+        '200':
+          description: Estoque atualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VanStock' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /batteries/van-stock/unload:
+    post:
+      tags: [batteries]
+      operationId: unloadVanBatteries
+      summary: Descarregar baterias da van
+      description: Tira da van do usuário (para `charging`, ou `in_station` com `stationId`). Bateria fora da van do usuário → `409`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatteryTransferRequest' }
+      responses:
+        '200':
+          description: Estoque atualizado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VanStock' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
@@ -3601,6 +4238,15 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
+    ServiceUnavailable:
+      description: 'Gateway de pagamento indisponível (`gateway-unavailable`); nada foi alterado, tente de novo.'
+      headers:
+        Retry-After:
+          description: Segundos sugeridos até tentar de novo.
+          schema: { type: integer }
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
     TooManyRequests:
       description: Limite de requisições excedido.
       headers:
@@ -3719,7 +4365,8 @@ components:
       description: Subconjunto recorrente de `PlanCode`.
     SubscriptionStatus:
       type: string
-      enum: [active, past_due, canceled, expired]
+      enum: [active, past_due, canceled, expired, paused]
+      description: '`paused`: pausada pelo cliente (`POST /payments/subscriptions/{id}/pause`); aluguéis no plano não são cobertos.'
     WalletEntryType:
       type: string
       enum: [top_up, minute_package, rental_charge, refund, adjustment, bonus]
@@ -3914,6 +4561,14 @@ components:
         phone: { type: string, pattern: '^\+[1-9]\d{7,14}$', description: 'E.164, ex. `+5511987654321`.' }
         emergencyContactName: { type: string, maxLength: 120 }
         emergencyContactPhone: { type: string, pattern: '^\+[1-9]\d{7,14}$' }
+        pixRefundKeyType: { $ref: '#/components/schemas/PixKeyType' }
+        pixRefundKey:
+          type: string
+          maxLength: 77
+          description: |
+            Chave Pix para estornos. Envie junto com `pixRefundKeyType`; validada pelo tipo (`422` `pix-key-invalid`):
+            CPF com dígitos verificadores e igual ao CPF da conta, e-mail, celular E.164 `+55` ou chave aleatória (UUID).
+            É normalizada (CPF só dígitos, e-mail minúsculo). String vazia remove a chave. Grava AuditLog.
     DeviceRegistration:
       type: object
       required: [fcmToken, platform]
@@ -3984,6 +4639,9 @@ components:
         batteryPct: { type: integer, minimum: 0, maximum: 100 }
         estimatedRangeKm: { type: number, format: double, minimum: 0, description: Autonomia estimada com a carga atual. }
         distanceM: { type: integer, minimum: 0, description: Distância até o ponto da busca (só em `nearby`). }
+        vehicleModelId: { type: string, format: uuid, description: "Modelo no catálogo (`GET /vehicle-models`, com a foto)." }
+        categoryLabel: { type: string, examples: [Urbana] }
+        pricePerMinuteCents: { type: integer, minimum: 0, examples: [79], description: Preço por minuto do modelo no plano `minute`. }
     NearbyVehicles:
       type: object
       required: [items]
@@ -4018,6 +4676,21 @@ components:
         firmwareVersion: { type: string, description: staff. }
         lastSeenAt: { type: string, format: date-time, description: staff. Último sinal. }
         currentRentalId: { type: string, format: uuid, description: staff. }
+        vehicleModelId: { type: string, format: uuid }
+        categoryLabel: { type: string, examples: [Urbana] }
+        pricePerMinuteCents: { type: integer, minimum: 0, examples: [79] }
+        address: { type: string, description: Endereço aproximado da posição atual (geocodificação reversa em cache)., examples: ['R. Teodoro Sampaio, 1020 · Pinheiros, São Paulo'] }
+        addressUpdatedAt: { type: string, format: date-time }
+        odometerKm: { type: number, format: double, minimum: 0, description: staff. }
+        usageHours: { type: number, format: double, minimum: 0, description: staff. Horas com ignição ligada. }
+        service: { $ref: '#/components/schemas/VehicleServiceInfo' }
+        battery: { $ref: '#/components/schemas/Battery' }
+        assignedSubscriptionId: { type: string, format: uuid, description: staff. Moto fixa de uma assinatura semanal/mensal. }
+        locationHidden:
+          type: boolean
+          description: |
+            Cliente consultando moto em uso por outra pessoa (alugada, pausada ou reservada por outro cliente): a posição
+            é ocultada (LGPD) — `lat`/`lng` vêm `0` e `address` ausente. Nunca vem para staff.
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     VehiclePage:
@@ -4037,12 +4710,16 @@ components:
         thingName: { type: string, pattern: '^[a-zA-Z0-9:_-]{1,128}$', examples: [moto-0061] }
         qrCode: { type: string, maxLength: 200 }
         batterySerial: { type: string, maxLength: 64 }
+        vehicleModelId: { type: string, format: uuid, description: Define também `model` (nome do modelo). }
     VehicleUpdate:
       type: object
       properties:
         model: { type: string, minLength: 1, maxLength: 60 }
         thingName: { type: string, pattern: '^[a-zA-Z0-9:_-]{1,128}$' }
         qrCode: { type: string, maxLength: 200 }
+        vehicleModelId: { type: string, format: uuid, description: Define também `model` (nome do modelo). }
+        odometerKm: { type: number, format: double, minimum: 0, maximum: 1000000, description: Correção manual do odômetro (AuditLog). }
+        usageHours: { type: number, format: double, minimum: 0, maximum: 100000, description: Correção manual das horas de uso (AuditLog). }
     VehicleStatusChange:
       type: object
       required: [status, reason]
@@ -4460,6 +5137,7 @@ components:
           minimum: 1
           maximum: 44640
           description: Duração prevista para estimar o valor (padrão 30 no plano `minute`, 1 unidade nos demais).
+        vehicleId: { type: string, format: uuid, description: Usa o preço por minuto do modelo da moto (plano `minute`). }
     Quote:
       type: object
       required: [planCode, coverage, breakdown, depositCents, couponApplied]
@@ -4619,6 +5297,18 @@ components:
         currentPeriodEnd: { type: string, format: date-time }
         cancelAtPeriodEnd: { type: boolean }
         canceledAt: { type: string, format: date-time }
+        nextChargeAt: { type: string, format: date-time, description: Próxima cobrança recorrente (ausente se cancelada ou pausada). }
+        nextChargeCents: { type: integer, minimum: 0 }
+        cardBrand: { type: string, description: Bandeira do cartão da recorrência. }
+        cardLast4: { type: string, pattern: '^\d{4}$' }
+        lastPaymentStatus: { $ref: '#/components/schemas/PaymentStatus' }
+        lastPaymentAt: { type: string, format: date-time }
+        pausedAt: { type: string, format: date-time }
+        pauseEndsAt: { type: string, format: date-time, description: Retomada automática. }
+        maxPauseDays: { type: integer, minimum: 0, description: "Dias por pausa (3 no semanal, 7 no mensal)." }
+        pausesRemainingInPeriod: { type: integer, minimum: 0 }
+        assignedVehicleId: { type: string, format: uuid, description: Moto fixa do plano. }
+        assignedVehicle: { $ref: '#/components/schemas/VehicleSummary' }
         createdAt: { type: string, format: date-time }
     SubscriptionCreate:
       type: object
@@ -4626,6 +5316,7 @@ components:
       properties:
         planCode: { $ref: '#/components/schemas/SubscriptionPlanCode' }
         cardId: { type: string, format: uuid, description: Padrão do cliente se ausente. }
+        vehicleId: { type: string, format: uuid, description: "Moto fixa (opcional; mesmas regras de `PUT /payments/subscriptions/{id}/vehicle`)." }
     SubscriptionList:
       type: object
       required: [items]
@@ -4666,6 +5357,12 @@ components:
         balanceCents: { type: integer, description: Soma dos lançamentos em reais. }
         minutesBalance: { type: integer, minimum: 0, description: Minutos de pacotes ainda disponíveis. }
         updatedAt: { type: string, format: date-time }
+        topUpMinCents: { type: integer, minimum: 1000, examples: [1000], description: Menor recarga de valor livre aceita agora. }
+        topUpMaxCents: { type: integer, maximum: 100000, examples: [100000], description: Maior recarga de valor livre aceita agora. }
+        suggestedTopUpAmountsCents:
+          type: array
+          description: Valores sugeridos para os atalhos da tela de recarga (centavos).
+          items: { type: integer }
     MinutePackage:
       type: object
       required: [id, name, minutes, priceCents, active]
@@ -4686,7 +5383,7 @@ components:
       type: object
       required: [method]
       properties:
-        amountCents: { type: integer, minimum: 1000, maximum: 100000, description: Crédito em reais (R$ 10 a R$ 1.000). }
+        amountCents: { type: integer, minimum: 1000, maximum: 100000, description: 'Crédito em reais (R$ 10 a R$ 1.000). Fora de `Wallet.topUpMinCents..topUpMaxCents` → `422` `top-up-amount-out-of-range`.' }
         packageId: { type: string, format: uuid }
         method: { $ref: '#/components/schemas/TopUpMethod' }
         cardId: { type: string, format: uuid }
@@ -5020,6 +5717,9 @@ components:
         attachmentObjectKeys:
           type: array
           items: { type: string }
+        status: { $ref: '#/components/schemas/SupportMessageStatus' }
+        deliveredAt: { type: string, format: date-time, description: O outro lado buscou a mensagem. }
+        readAt: { type: string, format: date-time, description: O outro lado marcou como lida. }
         createdAt: { type: string, format: date-time }
     SupportMessageCreate:
       type: object
@@ -5053,6 +5753,11 @@ components:
         vehicleLat: { type: number, format: double, description: Última posição conhecida da moto. }
         vehicleLng: { type: number, format: double }
         vehicleBatteryPct: { type: integer, minimum: 0, maximum: 100 }
+        vehicleStatus: { $ref: '#/components/schemas/VehicleStatus' }
+        vehicleAddress: { type: string, description: Endereço aproximado da moto., examples: ['R. Fradique Coutinho, 410 · Pinheiros, São Paulo'] }
+        vehicleBatterySerial: { type: string, description: Bateria instalada (retirada numa troca)., examples: [BT-190577] }
+        vehicleBatteryCycleCount: { type: integer, minimum: 0 }
+        targetAddress: { type: string, description: Endereço aproximado do destino. }
         targetLat: { type: number, format: double, description: Destino (reposicionar). }
         targetLng: { type: number, format: double }
         assigneeId: { type: string, format: uuid }
@@ -5181,6 +5886,9 @@ components:
         removedBatterySerial: { type: string }
         installedBatterySerial: { type: string }
         installedBatteryPct: { type: integer, minimum: 0, maximum: 100 }
+        removedBatteryPct: { type: integer, minimum: 0, maximum: 100, description: Carga da bateria retirada (última leitura da moto). }
+        removedBatteryCycleCount: { type: integer, minimum: 0 }
+        installedBatteryCycleCount: { type: integer, minimum: 0 }
         recordedAt: { type: string, format: date-time }
         createdAt: { type: string, format: date-time }
 
@@ -5200,6 +5908,9 @@ components:
         completedAt: { type: string, format: date-time }
         notes: { type: string }
         createdById: { type: string, format: uuid }
+        source: { $ref: '#/components/schemas/MaintenanceSource' }
+        customerId: { type: string, format: uuid, description: Cliente que agendou (`source = customer`). }
+        customerName: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
     MaintenanceTaskCreate:
@@ -5384,6 +6095,12 @@ components:
         locationConsent: { type: boolean }
         emergencyContactName: { type: string }
         emergencyContactPhone: { type: string }
+        pixRefundKeyType: { $ref: '#/components/schemas/PixKeyType' }
+        pixRefundKey:
+          type: string
+          description: Chave Pix para estornos. Completa para o próprio cliente, `admin` e `financeiro`; mascarada para os demais.
+        activePlanCode: { $ref: '#/components/schemas/SubscriptionPlanCode' }
+        activeSubscriptionId: { type: string, format: uuid, description: Assinatura semanal/mensal ativa ou pausada. }
         stats: { $ref: '#/components/schemas/CustomerStats' }
         createdAt: { type: string, format: date-time }
     CustomerPage:
@@ -5544,6 +6261,20 @@ components:
         claims:
           type: array
           items: { $ref: '#/components/schemas/Claim' }
+        subscriptions:
+          type: array
+          items: { $ref: '#/components/schemas/Subscription' }
+        coupons:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerCoupon' }
+        referrals:
+          type: array
+          description: Indicações feitas pelo titular (só o primeiro nome do amigo).
+          items: { $ref: '#/components/schemas/ReferralReward' }
+        referralCode: { type: string }
+        maintenanceRequests:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerMaintenanceRequest' }
     AccountDeletion:
       type: object
       required: [status, requestedAt]
@@ -5551,3 +6282,352 @@ components:
         status: { $ref: '#/components/schemas/AccountDeletionStatus' }
         requestedAt: { type: string, format: date-time }
         completedAt: { type: string, format: date-time }
+
+    # ───────────── contrato v2 (docs/decisoes.md, 2026-10-22) ─────────────
+    PixKeyType:
+      type: string
+      enum: [cpf, email, phone, random]
+      description: '`cpf` 11 dígitos (o CPF do próprio cliente); `email`; `phone` E.164 brasileiro (`+55…`); `random` chave aleatória (UUID).'
+    CustomerCouponStatus:
+      type: string
+      enum: [available, used, expired]
+    CustomerCouponSource:
+      type: string
+      enum: [manual, referral]
+    ReferralRewardStatus:
+      type: string
+      enum: [pending, granted, canceled]
+      description: '`pending` até o indicado terminar a primeira corrida; `granted` com o bônus lançado na carteira.'
+    SupportMessageStatus:
+      type: string
+      enum: [sent, delivered, read]
+    VehicleServiceStatus:
+      type: string
+      enum: [ok, due_soon, overdue]
+      description: Situação da revisão preventiva (Em dia / Próxima / Vencida).
+    BatteryStatus:
+      type: string
+      enum: [in_vehicle, in_van, charging, in_station, retired]
+    MaintenanceSource:
+      type: string
+      enum: [staff, customer, system]
+      description: Quem abriu a manutenção (painel, cliente do plano semanal/mensal ou regra automática).
+
+    # catálogo
+    VehicleModel:
+      type: object
+      required: [id, name, slug, categoryLabel, pricePerMinuteCents, serviceIntervalKm, serviceIntervalHours, active, sortOrder, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, examples: [Volti Flash] }
+        slug: { type: string, examples: [flash] }
+        categoryLabel: { type: string, description: Rótulo da categoria (pt-BR)., examples: [Urbana] }
+        description: { type: string }
+        photoUrl: { type: string, format: uri, description: Link assinado da foto (24 h). Ausente sem foto. }
+        photoObjectKey: { type: string, description: staff. Chave do objeto no bucket de catálogo. }
+        pricePerMinuteCents: { type: integer, minimum: 0, examples: [79], description: Preço por minuto do plano `minute` para este modelo. }
+        unlockFeeCents: { type: integer, minimum: 0, description: Desbloqueio específico do modelo (ausente = o do plano). }
+        serviceIntervalKm: { type: integer, minimum: 1, examples: [1000] }
+        serviceIntervalHours: { type: integer, minimum: 1, examples: [100] }
+        active: { type: boolean }
+        sortOrder: { type: integer, minimum: 0 }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    VehicleModelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VehicleModel' }
+    VehicleModelInput:
+      type: object
+      required: [name, slug, categoryLabel, pricePerMinuteCents]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 60 }
+        slug: { type: string, pattern: '^[a-z0-9-]{2,40}$' }
+        categoryLabel: { type: string, minLength: 2, maxLength: 60 }
+        description: { type: string, maxLength: 500 }
+        photoObjectKey: { type: string, maxLength: 300, pattern: '^catalog/[A-Za-z0-9._-]+$', description: 'Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`).' }
+        pricePerMinuteCents: { type: integer, minimum: 0, maximum: 10000 }
+        unlockFeeCents: { type: integer, minimum: 0, maximum: 10000 }
+        serviceIntervalKm: { type: integer, minimum: 1, maximum: 100000, default: 1000 }
+        serviceIntervalHours: { type: integer, minimum: 1, maximum: 10000, default: 100 }
+        active: { type: boolean, default: true }
+        sortOrder: { type: integer, minimum: 0, maximum: 1000, default: 0 }
+    VehicleModelUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 60 }
+        categoryLabel: { type: string, minLength: 2, maxLength: 60 }
+        description: { type: string, maxLength: 500 }
+        photoObjectKey: { type: string, maxLength: 300, pattern: '^catalog/[A-Za-z0-9._-]+$', description: 'Chave devolvida por `POST /vehicle-models/uploads` (prefixo `catalog/`).' }
+        pricePerMinuteCents: { type: integer, minimum: 0, maximum: 10000 }
+        unlockFeeCents: { type: integer, minimum: 0, maximum: 10000 }
+        inheritPlanUnlockFee: { type: boolean, description: '`true` remove o desbloqueio próprio do modelo (volta ao do plano). A API também aceita `unlockFeeCents: null`.' }
+        serviceIntervalKm: { type: integer, minimum: 1, maximum: 100000 }
+        serviceIntervalHours: { type: integer, minimum: 1, maximum: 10000 }
+        active: { type: boolean }
+        sortOrder: { type: integer, minimum: 0, maximum: 1000 }
+
+    # estações
+    SwapStation:
+      type: object
+      required: [id, name, address, lat, lng, availableBatteries, totalSlots, openingHours]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, examples: [Estação Largo da Batata] }
+        address: { type: string, examples: ['R. Teodoro Sampaio, 2000 · Pinheiros, São Paulo'] }
+        lat: { type: number, format: double }
+        lng: { type: number, format: double }
+        availableBatteries: { type: integer, minimum: 0, description: Baterias carregadas prontas para troca. }
+        totalSlots: { type: integer, minimum: 0 }
+        openingHours: { type: string, examples: ['Seg a sáb, 7h às 22h'] }
+        open24h: { type: boolean }
+        distanceM: { type: integer, minimum: 0, description: Só com `lat`/`lng` na busca. }
+    SwapStationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SwapStation' }
+
+    # assinatura
+    SubscriptionPauseRequest:
+      type: object
+      required: [days]
+      properties:
+        days: { type: integer, minimum: 1, maximum: 7, description: 'Máximo: 3 no semanal, 7 no mensal.' }
+    SubscriptionVehicleAssignment:
+      type: object
+      required: [vehicleId]
+      properties:
+        vehicleId: { type: string, format: uuid }
+
+    # cupons e indicação
+    CouponCodeRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, minLength: 3, maxLength: 32, description: Sem diferenciar maiúsculas. }
+        planCode: { $ref: '#/components/schemas/PlanCode' }
+    CouponValidation:
+      type: object
+      required: [code, valid]
+      properties:
+        code: { type: string }
+        valid: { type: boolean }
+        message: { type: string, description: Motivo da recusa (pt-BR) ou "Cupom válido.". }
+        description: { type: string }
+        discountType: { $ref: '#/components/schemas/DiscountType' }
+        percentOff: { type: integer, minimum: 1, maximum: 100 }
+        amountOffCents: { type: integer, minimum: 1 }
+        planCodes:
+          type: array
+          items: { $ref: '#/components/schemas/PlanCode' }
+        validUntil: { type: string, format: date-time }
+    CustomerCoupon:
+      type: object
+      required: [id, code, discountType, status, source, addedAt]
+      properties:
+        id: { type: string, format: uuid }
+        code: { type: string, examples: [BEMVINDO20] }
+        description: { type: string }
+        discountType: { $ref: '#/components/schemas/DiscountType' }
+        percentOff: { type: integer, minimum: 1, maximum: 100 }
+        amountOffCents: { type: integer, minimum: 1 }
+        planCodes:
+          type: array
+          description: Planos elegíveis (vazio = todos).
+          items: { $ref: '#/components/schemas/PlanCode' }
+        validUntil: { type: string, format: date-time }
+        usesRemaining: { type: integer, minimum: 0, description: Usos que ainda restam para o cliente (ausente = sem limite). }
+        status: { $ref: '#/components/schemas/CustomerCouponStatus' }
+        source: { $ref: '#/components/schemas/CustomerCouponSource' }
+        addedAt: { type: string, format: date-time }
+    CustomerCouponList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerCoupon' }
+    ReferralSummary:
+      type: object
+      required: [code, inviteUrl, shareMessage, referrerRewardCents, refereeRewardCents, invitedCount, qualifiedCount, totalEarnedCents]
+      properties:
+        code: { type: string, examples: [MARIA7K2Q] }
+        inviteUrl: { type: string, format: uri, examples: ['https://volti.com.br/convite/MARIA7K2Q'] }
+        shareMessage: { type: string, description: Texto pronto para compartilhar (pt-BR). }
+        referrerRewardCents: { type: integer, minimum: 0, examples: [1000], description: O que o cliente ganha por amigo que termina a primeira corrida. }
+        refereeRewardCents: { type: integer, minimum: 0, examples: [1000], description: O que o amigo ganha ao usar o código. }
+        invitedCount: { type: integer, minimum: 0 }
+        qualifiedCount: { type: integer, minimum: 0, description: Amigos que já terminaram a primeira corrida. }
+        totalEarnedCents: { type: integer, minimum: 0 }
+        referredBy: { type: string, description: Primeiro nome de quem indicou o cliente (se houver). }
+    ReferralReward:
+      type: object
+      required: [id, refereeName, status, amountCents, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        refereeName: { type: string, description: Primeiro nome do amigo (LGPD)., examples: [Ana] }
+        status: { $ref: '#/components/schemas/ReferralRewardStatus' }
+        amountCents: { type: integer, minimum: 0 }
+        walletEntryId: { type: string, format: uuid, description: Lançamento `bonus` (quando `granted`). }
+        createdAt: { type: string, format: date-time }
+        grantedAt: { type: string, format: date-time }
+    ReferralRewardPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/ReferralReward' }
+        nextCursor: { type: string }
+    ReferralRedeemRequest:
+      type: object
+      required: [code]
+      properties:
+        code: { type: string, minLength: 4, maxLength: 16 }
+    ReferralRedemption:
+      type: object
+      required: [code, rewardCents]
+      properties:
+        code: { type: string }
+        referrerName: { type: string, description: Primeiro nome de quem indicou. }
+        rewardCents: { type: integer, minimum: 0 }
+        walletEntry:
+          $ref: "#/components/schemas/WalletEntry"
+          description: Lançamento `bonus` do indicado (ausente se o bônus configurado for zero).
+
+    # manutenção pelo cliente
+    MaintenanceSlot:
+      type: object
+      required: [startsAt, endsAt, available]
+      properties:
+        startsAt: { type: string, format: date-time }
+        endsAt: { type: string, format: date-time }
+        available: { type: boolean }
+    MaintenanceSlotList:
+      type: object
+      required: [items, location]
+      properties:
+        location: { type: string, description: Onde a manutenção acontece (pt-BR)., examples: ['Oficina Volti · R. Fradique Coutinho, 1000 · Pinheiros'] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MaintenanceSlot' }
+    CustomerMaintenanceRequestCreate:
+      type: object
+      required: [slotStartsAt, description]
+      properties:
+        slotStartsAt: { type: string, format: date-time, description: '`startsAt` de uma janela livre.' }
+        description: { type: string, minLength: 3, maxLength: 1000, examples: [Freio traseiro fazendo barulho] }
+    CustomerMaintenanceRequest:
+      type: object
+      required: [id, vehicleId, vehicleCode, status, scheduledFor, description, createdAt]
+      properties:
+        id: { type: string, format: uuid, description: Id da `MaintenanceTask`. }
+        vehicleId: { type: string, format: uuid }
+        vehicleCode: { type: string }
+        status: { $ref: '#/components/schemas/MaintenanceStatus' }
+        scheduledFor: { type: string, format: date-time }
+        location: { type: string }
+        description: { type: string }
+        createdAt: { type: string, format: date-time }
+    CustomerMaintenanceRequestList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/CustomerMaintenanceRequest' }
+
+    # suporte
+    SupportReadRequest:
+      type: object
+      properties:
+        upToMessageId: { type: string, format: uuid, description: Última mensagem lida (inclusive). Ausente = todas. }
+
+    # manutenção preventiva
+    VehicleServiceInfo:
+      type: object
+      required: [odometerKm, usageHours, kmSinceService, hoursSinceService, serviceIntervalKm, serviceIntervalHours, nextServiceAtKm, nextServiceAtHours, kmUntilService, hoursUntilService, status]
+      properties:
+        odometerKm: { type: number, format: double, minimum: 0 }
+        usageHours: { type: number, format: double, minimum: 0 }
+        kmSinceService: { type: number, format: double, minimum: 0, examples: [812.4] }
+        hoursSinceService: { type: number, format: double, minimum: 0 }
+        serviceIntervalKm: { type: integer, minimum: 1 }
+        serviceIntervalHours: { type: integer, minimum: 1 }
+        nextServiceAtKm: { type: number, format: double, minimum: 0, description: Odômetro da próxima revisão. }
+        nextServiceAtHours: { type: number, format: double, minimum: 0 }
+        kmUntilService: { type: number, format: double, description: Negativo quando vencida. }
+        hoursUntilService: { type: number, format: double, description: Negativo quando vencida. }
+        status: { $ref: '#/components/schemas/VehicleServiceStatus' }
+        lastServiceAt: { type: string, format: date-time }
+    VehicleServiceRow:
+      type: object
+      required: [vehicleId, vehicleCode, model, vehicleStatus, service]
+      properties:
+        vehicleId: { type: string, format: uuid }
+        vehicleCode: { type: string }
+        model: { type: string }
+        vehicleStatus: { $ref: '#/components/schemas/VehicleStatus' }
+        service: { $ref: '#/components/schemas/VehicleServiceInfo' }
+        openMaintenanceTaskId: { type: string, format: uuid, description: Manutenção preventiva em aberto (agendada ou em andamento). }
+        scheduledFor: { type: string, format: date-time, description: Data da manutenção em aberto. }
+    VehicleServicePage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/VehicleServiceRow' }
+        nextCursor: { type: string }
+
+    # baterias
+    Battery:
+      type: object
+      required: [id, serial, chargePct, cycleCount, status, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        serial: { type: string, examples: [BT-190577] }
+        chargePct: { type: integer, minimum: 0, maximum: 100 }
+        cycleCount: { type: integer, minimum: 0, description: Ciclos de carga (+1 a cada instalação numa moto). }
+        status: { $ref: '#/components/schemas/BatteryStatus' }
+        vehicleId: { type: string, format: uuid }
+        vehicleCode: { type: string }
+        holderId: { type: string, format: uuid, description: Operador com a bateria na van. }
+        stationId: { type: string, format: uuid }
+        updatedAt: { type: string, format: date-time }
+    BatteryPage:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Battery' }
+        nextCursor: { type: string }
+    VanStock:
+      type: object
+      required: [operatorId, total, chargedCount, depletedCount, items]
+      properties:
+        operatorId: { type: string, format: uuid }
+        total: { type: integer, minimum: 0 }
+        chargedCount: { type: integer, minimum: 0, description: '`chargePct >= 90`.' }
+        depletedCount: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Battery' }
+    BatteryTransferRequest:
+      type: object
+      required: [serials]
+      properties:
+        serials:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { type: string, minLength: 3, maxLength: 64 }
+        stationId: { type: string, format: uuid, description: Só em `unload`; ausente = `charging`. }
+        chargePct: { type: integer, minimum: 0, maximum: 100, description: Só em `load`; carga informada (padrão 100). }

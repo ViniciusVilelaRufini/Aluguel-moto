@@ -15,6 +15,8 @@ class _$QuoteRequest extends QuoteRequest {
   final String? couponCode;
   @override
   final int? estimatedMinutes;
+  @override
+  final String? vehicleId;
 
   factory _$QuoteRequest([void Function(QuoteRequestBuilder)? updates]) =>
       (QuoteRequestBuilder()..update(updates))._build();
@@ -23,7 +25,8 @@ class _$QuoteRequest extends QuoteRequest {
       {required this.planCode,
       required this.coverage,
       this.couponCode,
-      this.estimatedMinutes})
+      this.estimatedMinutes,
+      this.vehicleId})
       : super._();
   @override
   QuoteRequest rebuild(void Function(QuoteRequestBuilder) updates) =>
@@ -39,7 +42,8 @@ class _$QuoteRequest extends QuoteRequest {
         planCode == other.planCode &&
         coverage == other.coverage &&
         couponCode == other.couponCode &&
-        estimatedMinutes == other.estimatedMinutes;
+        estimatedMinutes == other.estimatedMinutes &&
+        vehicleId == other.vehicleId;
   }
 
   @override
@@ -49,6 +53,7 @@ class _$QuoteRequest extends QuoteRequest {
     _$hash = $jc(_$hash, coverage.hashCode);
     _$hash = $jc(_$hash, couponCode.hashCode);
     _$hash = $jc(_$hash, estimatedMinutes.hashCode);
+    _$hash = $jc(_$hash, vehicleId.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -59,7 +64,8 @@ class _$QuoteRequest extends QuoteRequest {
           ..add('planCode', planCode)
           ..add('coverage', coverage)
           ..add('couponCode', couponCode)
-          ..add('estimatedMinutes', estimatedMinutes))
+          ..add('estimatedMinutes', estimatedMinutes)
+          ..add('vehicleId', vehicleId))
         .toString();
   }
 }
@@ -85,6 +91,10 @@ class QuoteRequestBuilder
   set estimatedMinutes(int? estimatedMinutes) =>
       _$this._estimatedMinutes = estimatedMinutes;
 
+  String? _vehicleId;
+  String? get vehicleId => _$this._vehicleId;
+  set vehicleId(String? vehicleId) => _$this._vehicleId = vehicleId;
+
   QuoteRequestBuilder() {
     QuoteRequest._defaults(this);
   }
@@ -96,6 +106,7 @@ class QuoteRequestBuilder
       _coverage = $v.coverage;
       _couponCode = $v.couponCode;
       _estimatedMinutes = $v.estimatedMinutes;
+      _vehicleId = $v.vehicleId;
       _$v = null;
     }
     return this;
@@ -123,6 +134,7 @@ class QuoteRequestBuilder
               coverage, r'QuoteRequest', 'coverage'),
           couponCode: couponCode,
           estimatedMinutes: estimatedMinutes,
+          vehicleId: vehicleId,
         );
     replace(_$result);
     return _$result;

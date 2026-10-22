@@ -18,6 +18,9 @@ export const HAND_WRITTEN_INDEXES = [
   'Rental_one_open_per_vehicle',
   'PricingPlan_one_active_per_code',
   'Subscription_one_active_per_customer',
+  // Contrato v2: uma assinatura aberta (ativa ou pausada) por cliente e uma por moto fixa.
+  'Subscription_one_open_per_customer',
+  'Subscription_one_open_per_vehicle',
   'Dispute_one_open_per_rental',
 ];
 export const HAND_WRITTEN_CHECKS = ['Vehicle_speed_limit_range', 'Zone_speed_limit_range', 'Rental_speed_limit_range'];

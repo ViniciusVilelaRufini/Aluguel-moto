@@ -12,6 +12,8 @@ import 'package:volti_api/src/auth/oauth.dart';
 import 'package:volti_api/src/api/alerts_api.dart';
 import 'package:volti_api/src/api/audit_api.dart';
 import 'package:volti_api/src/api/auth_api.dart';
+import 'package:volti_api/src/api/batteries_api.dart';
+import 'package:volti_api/src/api/catalog_api.dart';
 import 'package:volti_api/src/api/commands_api.dart';
 import 'package:volti_api/src/api/customers_api.dart';
 import 'package:volti_api/src/api/field_tasks_api.dart';
@@ -22,10 +24,12 @@ import 'package:volti_api/src/api/lgpd_api.dart';
 import 'package:volti_api/src/api/maintenance_api.dart';
 import 'package:volti_api/src/api/payments_api.dart';
 import 'package:volti_api/src/api/pricing_api.dart';
+import 'package:volti_api/src/api/referrals_api.dart';
 import 'package:volti_api/src/api/rentals_api.dart';
 import 'package:volti_api/src/api/reports_api.dart';
 import 'package:volti_api/src/api/reservations_api.dart';
 import 'package:volti_api/src/api/staff_api.dart';
+import 'package:volti_api/src/api/stations_api.dart';
 import 'package:volti_api/src/api/support_api.dart';
 import 'package:volti_api/src/api/vehicles_api.dart';
 import 'package:volti_api/src/api/wallet_api.dart';
@@ -170,6 +174,18 @@ class VoltiApi {
     return AuthApi(dio, serializers);
   }
 
+  /// Get BatteriesApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  BatteriesApi getBatteriesApi() {
+    return BatteriesApi(dio, serializers);
+  }
+
+  /// Get CatalogApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  CatalogApi getCatalogApi() {
+    return CatalogApi(dio, serializers);
+  }
+
   /// Get CommandsApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   CommandsApi getCommandsApi() {
@@ -230,6 +246,12 @@ class VoltiApi {
     return PricingApi(dio, serializers);
   }
 
+  /// Get ReferralsApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  ReferralsApi getReferralsApi() {
+    return ReferralsApi(dio, serializers);
+  }
+
   /// Get RentalsApi instance, base route and serializer can be overridden by a given but be careful,
   /// by doing that all interceptors will not be executed
   RentalsApi getRentalsApi() {
@@ -252,6 +274,12 @@ class VoltiApi {
   /// by doing that all interceptors will not be executed
   StaffApi getStaffApi() {
     return StaffApi(dio, serializers);
+  }
+
+  /// Get StationsApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  StationsApi getStationsApi() {
+    return StationsApi(dio, serializers);
   }
 
   /// Get SupportApi instance, base route and serializer can be overridden by a given but be careful,

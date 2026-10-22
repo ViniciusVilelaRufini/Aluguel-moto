@@ -20,8 +20,12 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(AuditLog.serializer)
       ..add(AuditLogPage.serializer)
       ..add(AuthPool.serializer)
+      ..add(Battery.serializer)
+      ..add(BatteryPage.serializer)
+      ..add(BatteryStatus.serializer)
       ..add(BatterySwap.serializer)
       ..add(BatterySwapRequest.serializer)
+      ..add(BatteryTransferRequest.serializer)
       ..add(ChecklistItem.serializer)
       ..add(Claim.serializer)
       ..add(ClaimCreate.serializer)
@@ -36,13 +40,22 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(ConsentsUpdate.serializer)
       ..add(ConversationStatus.serializer)
       ..add(Coupon.serializer)
+      ..add(CouponCodeRequest.serializer)
       ..add(CouponInput.serializer)
       ..add(CouponPage.serializer)
+      ..add(CouponValidation.serializer)
       ..add(CoverageItem.serializer)
       ..add(CurrentRental.serializer)
       ..add(CurrentReservation.serializer)
       ..add(Customer.serializer)
       ..add(CustomerBlockRequest.serializer)
+      ..add(CustomerCoupon.serializer)
+      ..add(CustomerCouponList.serializer)
+      ..add(CustomerCouponSource.serializer)
+      ..add(CustomerCouponStatus.serializer)
+      ..add(CustomerMaintenanceRequest.serializer)
+      ..add(CustomerMaintenanceRequestCreate.serializer)
+      ..add(CustomerMaintenanceRequestList.serializer)
       ..add(CustomerPage.serializer)
       ..add(CustomerStats.serializer)
       ..add(CustomerStatus.serializer)
@@ -111,6 +124,9 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(LocationShare.serializer)
       ..add(LocationShareRequest.serializer)
       ..add(MaintenanceKind.serializer)
+      ..add(MaintenanceSlot.serializer)
+      ..add(MaintenanceSlotList.serializer)
+      ..add(MaintenanceSource.serializer)
       ..add(MaintenanceStatus.serializer)
       ..add(MaintenanceTask.serializer)
       ..add(MaintenanceTaskCreate.serializer)
@@ -135,6 +151,7 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(PaymentPage.serializer)
       ..add(PaymentStatus.serializer)
       ..add(PixCharge.serializer)
+      ..add(PixKeyType.serializer)
       ..add(PlanCode.serializer)
       ..add(PlanRevenue.serializer)
       ..add(PlanUnit.serializer)
@@ -152,6 +169,12 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(RatingRequest.serializer)
       ..add(ReasonRequest.serializer)
       ..add(Receipt.serializer)
+      ..add(ReferralRedeemRequest.serializer)
+      ..add(ReferralRedemption.serializer)
+      ..add(ReferralReward.serializer)
+      ..add(ReferralRewardPage.serializer)
+      ..add(ReferralRewardStatus.serializer)
+      ..add(ReferralSummary.serializer)
       ..add(RefundRequest.serializer)
       ..add(Rental.serializer)
       ..add(RentalEvent.serializer)
@@ -184,8 +207,10 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(Subscription.serializer)
       ..add(SubscriptionCreate.serializer)
       ..add(SubscriptionList.serializer)
+      ..add(SubscriptionPauseRequest.serializer)
       ..add(SubscriptionPlanCode.serializer)
       ..add(SubscriptionStatus.serializer)
+      ..add(SubscriptionVehicleAssignment.serializer)
       ..add(SupportConversation.serializer)
       ..add(SupportConversationCreate.serializer)
       ..add(SupportConversationPage.serializer)
@@ -193,6 +218,10 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(SupportMessage.serializer)
       ..add(SupportMessageCreate.serializer)
       ..add(SupportMessagePage.serializer)
+      ..add(SupportMessageStatus.serializer)
+      ..add(SupportReadRequest.serializer)
+      ..add(SwapStation.serializer)
+      ..add(SwapStationList.serializer)
       ..add(SwapVehicleRequest.serializer)
       ..add(TaskPriority.serializer)
       ..add(TopUp.serializer)
@@ -204,13 +233,22 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(UploadContentType.serializer)
       ..add(UploadRequest.serializer)
       ..add(ValidationIssue.serializer)
+      ..add(VanStock.serializer)
       ..add(Vehicle.serializer)
       ..add(VehicleCommand.serializer)
       ..add(VehicleCommandPage.serializer)
       ..add(VehicleCreate.serializer)
+      ..add(VehicleModel.serializer)
+      ..add(VehicleModelInput.serializer)
+      ..add(VehicleModelList.serializer)
+      ..add(VehicleModelUpdate.serializer)
       ..add(VehiclePage.serializer)
       ..add(VehicleRevenueReport.serializer)
       ..add(VehicleRevenueRow.serializer)
+      ..add(VehicleServiceInfo.serializer)
+      ..add(VehicleServicePage.serializer)
+      ..add(VehicleServiceRow.serializer)
+      ..add(VehicleServiceStatus.serializer)
       ..add(VehicleStatus.serializer)
       ..add(VehicleStatusChange.serializer)
       ..add(VehicleStatusCounts.serializer)
@@ -230,6 +268,12 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(AuditLog)]),
           () => ListBuilder<AuditLog>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Battery)]),
+          () => ListBuilder<Battery>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Battery)]),
+          () => ListBuilder<Battery>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [
             const FullType(BuiltList, const [
@@ -252,6 +296,13 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Customer)]),
           () => ListBuilder<Customer>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(CustomerCoupon)]),
+          () => ListBuilder<CustomerCoupon>())
+      ..addBuilderFactory(
+          const FullType(
+              BuiltList, const [const FullType(CustomerMaintenanceRequest)]),
+          () => ListBuilder<CustomerMaintenanceRequest>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Deposit)]),
           () => ListBuilder<Deposit>())
@@ -281,6 +332,9 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(InsurancePolicy)]),
           () => ListBuilder<InsurancePolicy>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(MaintenanceSlot)]),
+          () => ListBuilder<MaintenanceSlot>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(MaintenanceTask)]),
           () => ListBuilder<MaintenanceTask>())
       ..addBuilderFactory(
@@ -302,6 +356,12 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(PlanCode)]),
           () => ListBuilder<PlanCode>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(PlanCode)]),
+          () => ListBuilder<PlanCode>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(PlanCode)]),
+          () => ListBuilder<PlanCode>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(PlanRevenue)]),
           () => ListBuilder<PlanRevenue>())
       ..addBuilderFactory(
@@ -310,6 +370,9 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(PricingPlan)]),
           () => ListBuilder<PricingPlan>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(ReferralReward)]),
+          () => ListBuilder<ReferralReward>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Rental)]),
           () => ListBuilder<Rental>())
@@ -334,6 +397,19 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Claim)]),
           () => ListBuilder<Claim>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(Subscription)]),
+          () => ListBuilder<Subscription>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(CustomerCoupon)]),
+          () => ListBuilder<CustomerCoupon>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(ReferralReward)]),
+          () => ListBuilder<ReferralReward>())
+      ..addBuilderFactory(
+          const FullType(
+              BuiltList, const [const FullType(CustomerMaintenanceRequest)]),
+          () => ListBuilder<CustomerMaintenanceRequest>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(RentalEvent)]),
           () => ListBuilder<RentalEvent>())
@@ -386,6 +462,9 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(String)]),
           () => ListBuilder<String>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(String)]),
+          () => ListBuilder<String>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Subscription)]),
           () => ListBuilder<Subscription>())
       ..addBuilderFactory(
@@ -395,6 +474,9 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(SupportMessage)]),
           () => ListBuilder<SupportMessage>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(SwapStation)]),
+          () => ListBuilder<SwapStation>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(TrackPoint)]),
           () => ListBuilder<TrackPoint>())
@@ -411,14 +493,23 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(VehicleCommand)]),
           () => ListBuilder<VehicleCommand>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(VehicleModel)]),
+          () => ListBuilder<VehicleModel>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(VehicleRevenueRow)]),
           () => ListBuilder<VehicleRevenueRow>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(VehicleServiceRow)]),
+          () => ListBuilder<VehicleServiceRow>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(VehicleSummary)]),
           () => ListBuilder<VehicleSummary>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(WalletEntry)]),
           () => ListBuilder<WalletEntry>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(int)]),
+          () => ListBuilder<int>())
       ..addBuilderFactory(
           const FullType(BuiltMap,
               const [const FullType(String), const FullType(HealthState)]),

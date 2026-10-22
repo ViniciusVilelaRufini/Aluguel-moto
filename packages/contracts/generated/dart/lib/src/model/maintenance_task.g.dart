@@ -30,6 +30,12 @@ class _$MaintenanceTask extends MaintenanceTask {
   @override
   final String? createdById;
   @override
+  final MaintenanceSource? source_;
+  @override
+  final String? customerId;
+  @override
+  final String? customerName;
+  @override
   final DateTime createdAt;
   @override
   final DateTime updatedAt;
@@ -49,6 +55,9 @@ class _$MaintenanceTask extends MaintenanceTask {
       this.completedAt,
       this.notes,
       this.createdById,
+      this.source_,
+      this.customerId,
+      this.customerName,
       required this.createdAt,
       required this.updatedAt})
       : super._();
@@ -74,6 +83,9 @@ class _$MaintenanceTask extends MaintenanceTask {
         completedAt == other.completedAt &&
         notes == other.notes &&
         createdById == other.createdById &&
+        source_ == other.source_ &&
+        customerId == other.customerId &&
+        customerName == other.customerName &&
         createdAt == other.createdAt &&
         updatedAt == other.updatedAt;
   }
@@ -92,6 +104,9 @@ class _$MaintenanceTask extends MaintenanceTask {
     _$hash = $jc(_$hash, completedAt.hashCode);
     _$hash = $jc(_$hash, notes.hashCode);
     _$hash = $jc(_$hash, createdById.hashCode);
+    _$hash = $jc(_$hash, source_.hashCode);
+    _$hash = $jc(_$hash, customerId.hashCode);
+    _$hash = $jc(_$hash, customerName.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jc(_$hash, updatedAt.hashCode);
     _$hash = $jf(_$hash);
@@ -112,6 +127,9 @@ class _$MaintenanceTask extends MaintenanceTask {
           ..add('completedAt', completedAt)
           ..add('notes', notes)
           ..add('createdById', createdById)
+          ..add('source_', source_)
+          ..add('customerId', customerId)
+          ..add('customerName', customerName)
           ..add('createdAt', createdAt)
           ..add('updatedAt', updatedAt))
         .toString();
@@ -167,6 +185,18 @@ class MaintenanceTaskBuilder
   String? get createdById => _$this._createdById;
   set createdById(String? createdById) => _$this._createdById = createdById;
 
+  MaintenanceSource? _source_;
+  MaintenanceSource? get source_ => _$this._source_;
+  set source_(MaintenanceSource? source_) => _$this._source_ = source_;
+
+  String? _customerId;
+  String? get customerId => _$this._customerId;
+  set customerId(String? customerId) => _$this._customerId = customerId;
+
+  String? _customerName;
+  String? get customerName => _$this._customerName;
+  set customerName(String? customerName) => _$this._customerName = customerName;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -193,6 +223,9 @@ class MaintenanceTaskBuilder
       _completedAt = $v.completedAt;
       _notes = $v.notes;
       _createdById = $v.createdById;
+      _source_ = $v.source_;
+      _customerId = $v.customerId;
+      _customerName = $v.customerName;
       _createdAt = $v.createdAt;
       _updatedAt = $v.updatedAt;
       _$v = null;
@@ -232,6 +265,9 @@ class MaintenanceTaskBuilder
           completedAt: completedAt,
           notes: notes,
           createdById: createdById,
+          source_: source_,
+          customerId: customerId,
+          customerName: customerName,
           createdAt: BuiltValueNullFieldError.checkNotNull(
               createdAt, r'MaintenanceTask', 'createdAt'),
           updatedAt: BuiltValueNullFieldError.checkNotNull(

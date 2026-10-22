@@ -105,6 +105,24 @@ describe('Contrato: respostas reais × openapi.yaml', () => {
     expect(await http().get(`/rentals/${randomUUID()}`).set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();
   });
 
+  it('12. contrato v2: catálogo, estações, carteira, cupons, indicação, manutenção e baterias', async () => {
+    for (const path of ['/vehicle-models', '/swap-stations?lat=-23.5614&lng=-46.6559', '/wallet', '/me/coupons', '/me/referral', '/me/referral/rewards', '/me/maintenance-requests', '/payments/subscriptions']) {
+      const res = await http().get(path).set('Authorization', `Bearer ${customer}`);
+      expect(res.status).toBe(200);
+      expect(res).toSatisfyApiSpec();
+    }
+    for (const path of ['/maintenance/vehicles?limit=5', '/batteries?limit=5', '/batteries/van-stock', '/vehicle-models?includeInactive=true']) {
+      const res = await http().get(path).set('Authorization', `Bearer ${admin}`);
+      expect(res.status).toBe(200);
+      expect(res).toSatisfyApiSpec();
+    }
+    const v = await http().get('/vehicles/by-code/0001').set('Authorization', `Bearer ${admin}`);
+    expect(v.body.service).toBeDefined();
+    expect(v).toSatisfyApiSpec();
+    expect(await http().get('/me/maintenance-slots').set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec(); // 403 subscription-required
+    expect(await http().post('/me/coupons/validate').set('Authorization', `Bearer ${customer}`).send({ code: 'VOLTI20', planCode: 'minute' })).toSatisfyApiSpec();
+  });
+
   it('11. LGPD: consentimentos e exportação', async () => {
     expect(await http().get('/lgpd/consents').set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();
     expect(await http().get('/lgpd/export').set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();

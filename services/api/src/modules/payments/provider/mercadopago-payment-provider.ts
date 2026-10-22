@@ -345,11 +345,31 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
     }
   }
 
+  /**
+   * Cancela o preapproval. Idempotente (fix round 2: o cancelamento é refeito por job até confirmar): um 4xx num preapproval
+   * que já está `cancelled` conta como sucesso; qualquer outro erro propaga.
+   */
   async cancelSubscription(input: { providerSubscriptionId: string }): Promise<void> {
+    const path = `/preapproval/${encodeURIComponent(input.providerSubscriptionId)}`;
     try {
-      await this.request('PUT', `/preapproval/${encodeURIComponent(input.providerSubscriptionId)}`, { status: 'cancelled' });
+      await this.request('PUT', path, { status: 'cancelled' });
     } catch (err) {
+      if (err instanceof HttpError && err.status >= 400 && err.status < 500) {
+        const current = await this.request<{ status?: string }>('GET', path).catch(() => null);
+        if (current?.status === 'cancelled') return;
+      }
       this.rethrow(err, 'cancelSubscription');
+    }
+  }
+
+  async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean; nextChargeAt?: Date }): Promise<void> {
+    try {
+      const body: Record<string, unknown> = { status: input.paused ? 'paused' : 'authorized' };
+      // Retomada: a próxima cobrança passa para o fim do período estendido pela pausa.
+      if (!input.paused && input.nextChargeAt) body.auto_recurring = { start_date: input.nextChargeAt.toISOString() };
+      await this.request('PUT', `/preapproval/${encodeURIComponent(input.providerSubscriptionId)}`, body);
+    } catch (err) {
+      this.rethrow(err, 'setSubscriptionPaused');
     }
   }
 

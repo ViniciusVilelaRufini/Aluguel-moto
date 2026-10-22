@@ -12,14 +12,14 @@ part 'top_up_request.g.dart';
 /// TopUpRequest
 ///
 /// Properties:
-/// * [amountCents] - Crédito em reais (R$ 10 a R$ 1.000).
+/// * [amountCents] - Crédito em reais (R$ 10 a R$ 1.000). Fora de `Wallet.topUpMinCents..topUpMaxCents` → `422` `top-up-amount-out-of-range`.
 /// * [packageId]
 /// * [method]
 /// * [cardId]
 @BuiltValue()
 abstract class TopUpRequest
     implements Built<TopUpRequest, TopUpRequestBuilder> {
-  /// Crédito em reais (R$ 10 a R$ 1.000).
+  /// Crédito em reais (R$ 10 a R$ 1.000). Fora de `Wallet.topUpMinCents..topUpMaxCents` → `422` `top-up-amount-out-of-range`.
   @BuiltValueField(wireName: r'amountCents')
   int? get amountCents;
 

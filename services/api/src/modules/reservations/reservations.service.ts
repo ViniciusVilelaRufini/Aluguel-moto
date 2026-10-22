@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { assertNotFixedForOther } from '../../common/fixed-vehicle';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import type { Prisma, Reservation, Vehicle } from '@prisma/client';
@@ -62,6 +63,8 @@ export class ReservationsService implements OnModuleInit {
 
     const vehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId } });
     if (!vehicle) throw notFound('Moto não encontrada.');
+    // Contrato v2 (I3): moto fixa de outro plano com período vigente.
+    await assertNotFixedForOther(this.prisma, vehicleId, customerId);
 
     const expiresAt = new Date(Date.now() + this.ttlMs);
     const reservation = await this.prisma.$transaction(async (tx) => {
@@ -88,6 +91,7 @@ export class ReservationsService implements OnModuleInit {
       });
     } else {
       if (existing) throw conflict('reservation-already-active', 'Você já tem uma reserva ativa em outra moto.');
+      await assertNotFixedForOther(this.prisma, vehicleId, customerId);
       reservation = await this.prisma.$transaction(async (tx) => {
         const claimed = await tx.vehicle.updateMany({ where: { id: vehicleId, status: 'free' }, data: { status: 'reserved' } });
         if (claimed.count === 0) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');

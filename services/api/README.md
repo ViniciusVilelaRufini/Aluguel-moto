@@ -1,6 +1,6 @@
 # API Volti (`services/api`)
 
-NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as 140 operações de `packages/contracts/openapi.yaml` e o WebSocket de `packages/contracts/realtime.md` (Socket.IO, namespace `/realtime`).
+NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as 165 operações de `packages/contracts/openapi.yaml` e o WebSocket de `packages/contracts/realtime.md` (Socket.IO, namespace `/realtime`).
 
 ## Como rodar localmente
 
@@ -10,7 +10,7 @@ cp .env.example services/api/.env       # o Prisma CLI lê o .env da pasta do pa
 pnpm install
 pnpm dev:deps                           # postgres, redis, mosquitto, minio (a API cria os buckets ao subir)
 pnpm --filter api prisma migrate deploy # aplica prisma/migrations
-pnpm --filter api prisma db seed        # São Paulo: 60 motos, zonas, preços, usuários dev
+pnpm --filter api prisma db seed        # São Paulo: 60 motos (Flash/Urban/Cargo), zonas, preços, estações, baterias, usuários dev
 pnpm --filter api dev                   # prisma generate + tsc e sobe em http://localhost:3000
 ```
 
@@ -29,20 +29,20 @@ curl -X POST localhost:3000/dev/token -H 'content-type: application/json' \
   -d '{"sub":"dev-admin","email":"admin@volti.dev","groups":["admin"],"pool":"staff"}'
 ```
 
-Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`, `dev-campo` (staff) e `dev-cliente-aprovado` / `dev-cliente-pendente` (clientes). As motos `VLT-0001`…`VLT-0006` ficam dentro das zonas de devolução.
+Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`, `dev-campo` (staff) e `dev-cliente-aprovado` / `dev-cliente-pendente` (clientes). As motos `VLT-0001`…`VLT-0006` ficam dentro das zonas de devolução. O seed do contrato v2 (`prisma/seed-v2.ts`) acrescenta o catálogo Volti Flash (79/min), Urban (89/min) e Cargo (99/min) com foto placeholder no bucket `catalogo` do MinIO, 5 estações de troca, odômetro/horas e revisões variadas (em dia, próxima, vencida), uma bateria por moto, 6 baterias na van do `dev-campo`, o cupom `BEMVINDO10` e, para o `dev-cliente-aprovado`, chave Pix (e-mail) e código de indicação `APROVADO7K`.
 
 ## Testes
 
 | Comando | O que roda | Precisa de |
 |---|---|---|
 | `pnpm --filter api test` | unitários (preço, início/encerramento, reservas, comandos, auth, LGPD, inspeção, IoT/bloqueio seguro/cercas, pagamentos/carteira/seguro com Prisma em memória e Mercado Pago via nock) + conformidade com o contrato (rotas, grupos, schemas) | nada |
-| `pnpm --filter api test:e2e` | `test/iot/iot-safe-lock.e2e-spec.ts`: lock pela API com moto simulada andando (Mosquitto) e cerca PostGIS; `test/rental-flow.e2e-spec.ts`: dev token → cartão → reserva → aluguel → pausa → retoma → foto (PUT real no MinIO) → encerra, TTL da reserva, auth, TrackPoint; `test/reports.e2e-spec.ts`: relatórios no fuso de São Paulo; `test/payments.e2e-spec.ts`: caução/captura/recibo/NFS-e/repasse, Pix por webhook assinado (dedup), inadimplência → 403, carteira (`PAYMENT_PROVIDER=fake`). O setup lê o `.env` do pacote (`DATABASE_URL`/`REDIS_URL` por worktree) | compose + migrate + seed |
-| `pnpm --filter api test:contract` | sobe a API e valida respostas reais de 11 grupos de endpoints com `jest-openapi` | compose + migrate + seed |
+| `pnpm --filter api test:e2e` | `test/iot/iot-safe-lock.e2e-spec.ts`: lock pela API com moto simulada andando (Mosquitto) e cerca PostGIS; `test/rental-flow.e2e-spec.ts`: dev token → cartão → reserva → aluguel → pausa → retoma → foto (PUT real no MinIO) → encerra, TTL da reserva, auth, TrackPoint; `test/reports.e2e-spec.ts`: relatórios no fuso de São Paulo; `test/payments.e2e-spec.ts`: caução/captura/recibo/NFS-e/repasse, Pix por webhook assinado (dedup), inadimplência → 403, carteira (`PAYMENT_PROVIDER=fake`); `test/contrato-v2.e2e-spec.ts`: chave Pix, limites da recarga, pausa/moto fixa do plano, cupons, indicação, estações, manutenção pelo cliente, estados do chat, revisão por km/horas, baterias/van e catálogo (respostas validadas contra o contrato). O setup lê o `.env` do pacote (`DATABASE_URL`/`REDIS_URL` por worktree) | compose + migrate + seed |
+| `pnpm --filter api test:contract` | sobe a API e valida respostas reais de 12 grupos de endpoints com `jest-openapi` (o 12º cobre o contrato v2) | compose + migrate + seed |
 | `pnpm --filter api lint` | ESLint + `tsc --noEmit` | nada |
 
 ## Estrutura
 
-- `src/ports/` — interfaces fixas: `IotGateway`, `RentalBillingPort`, `InsurancePort` (plano mestre), `ObjectStorage`, `QueueBus`, `KycProvider`, `PushNotifier`, `AuthVerifier`, `StaffDirectory` e `CustomerIdentityDirectory` (Cognito; local = no-op).
+- `src/ports/` — interfaces fixas: `IotGateway`, `RentalBillingPort`, `InsurancePort` (plano mestre), `ObjectStorage`, `QueueBus`, `KycProvider`, `PushNotifier`, `AuthVerifier`, `StaffDirectory` e `CustomerIdentityDirectory` (Cognito; local = no-op), `ReverseGeocoder` (contrato v2: endereço da moto).
 - `src/adapters/` — implementações local/aws escolhidas por variável (`AUTH_MODE`, `STORAGE_MODE`, `QUEUE_MODE`, `KYC_PROVIDER`, `PUSH_MODE`). Valor desconhecido em qualquer `*_MODE` recusa subir.
 - `src/modules/iot` — **Task 4** (ver "IoT" abaixo).
 - `src/modules/payments`, `insurance`, `wallet` — **Task 5** (`docs/pagamentos.md`): `RentalBillingService` (caução por pré-autorização ou Pix, liquidação com captura parcial, inadimplência) sobre `PaymentProvider` (`PAYMENT_PROVIDER=fake|mercadopago`), webhooks do Mercado Pago validados, enfileirados e deduplicados (`ProcessedWebhook`), carteira em ledger somente inserção, `InsuranceService` com `MockInsuranceProvider` e repasse, recibo em PDF no bucket de relatórios e NFS-e (`MockInvoiceIssuer`). No fake, o cartão precisa ser cadastrado antes de alugar (`POST /payments/cards` com `cardToken: tok_visa_4242`); o Pix se confirma sozinho após `FAKE_PIX_AUTOCONFIRM_SECONDS`.
@@ -72,6 +72,37 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 - Provisionar rastreador: `pnpm --filter api exec tsx scripts/provision-tracker.ts --vehicle VLT-0061 --thing moto-0061 --imei 860000000000061 --mode aws|local`.
 - Simulador: `services/iot-sim` (`docker compose --profile sim up -d iot-sim`).
 - Teste de integração: `pnpm --filter api test:e2e -- test/iot` (Mosquitto + Postgres/Redis do compose; sobe o simulador sozinho).
+
+## Contrato v2 (`docs/decisoes.md`, 2026-10-22)
+
+| Área | Onde | Regras principais |
+|---|---|---|
+| Chave Pix de estorno | `PATCH/GET /me` (`auth/me.controller.ts`, `common/pix-key.ts`) | validada e normalizada por tipo (CPF = o da conta); completa para titular, `admin` e `financeiro`; AuditLog sem o valor |
+| Recarga de valor livre | `GET /wallet`, `POST /wallet/top-ups` (`wallet/top-up-limits.ts`) | limites `WALLET_TOP_UP_MIN_CENTS`/`_MAX_CENTS` dentro de R$ 10–1.000 → `422 top-up-amount-out-of-range` |
+| Plano semanal/mensal | `payments/subscriptions.service.ts`, `subscription-rules.ts` | próxima cobrança; pausa 3 dias (semanal) / 7 (mensal), 1 por período, retomada manual ou automática (job de 1 min) estendendo o período; moto fixa exclusiva do assinante (some do `nearby` dos outros, `409` no aluguel) |
+| Cupons e indicação | `referrals/` | cupons salvos com situação calculada; código `NOME+4`, bônus do indicado na hora e de quem indicou na primeira corrida `ended` (lançamentos `bonus`) |
+| Estações e manutenção do cliente | `catalog/`, `maintenance/maintenance-v2.service.ts` | janelas de 1 h seg–sáb 8–18 h (SP), capacidade `MAINTENANCE_SLOT_CAPACITY`; exige plano e moto fixa |
+| Chat | `support/support.service.ts` | `sent` → `delivered` (o outro lado buscou) → `read` (`POST .../read`); `unreadCount` real |
+| Endereço da moto | `vehicles/vehicle-address.service.ts`, `adapters/geocoding/` | gravado na moto e recalculado quando ela anda > 50 m; cache Redis por célula de ~11 m |
+| Revisão por km/horas | `maintenance/service-due.ts`, `usage-accumulator.ts`, `usage-tracker.service.ts` | odômetro/horas somados da telemetria (descarta saltos > 45 km/h, ruído < 5 m e lacunas > 10 min); `due_soon` a 90% do intervalo; preventiva concluída = revisão |
+| Baterias | `batteries/`, troca em `field-tasks.service.ts` | retirada vai para a van do operador com a última carga; instalada +1 ciclo; carregar/descarregar a van |
+| Catálogo | `catalog/`, `PricingService.snapshotFrom` | preço por minuto do modelo vale no plano `minute` (aluguel e cotação com `vehicleId`); foto em bucket `catalogo` com link assinado de 24 h |
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `GEOCODER_MODE` | `local` | `local`: ruas de São Paulo em memória; `aws`: Amazon Location `SearchPlaceIndexForPosition` no índice `LOCATION_PLACE_INDEX` |
+| `WALLET_TOP_UP_MIN_CENTS` / `_MAX_CENTS` / `_SUGGESTED_CENTS` | 1000 / 100000 / `2000,5000,10000` | limites e atalhos da recarga |
+| `REFERRAL_REFERRER_REWARD_CENTS` / `REFERRAL_REFEREE_REWARD_CENTS` / `REFERRAL_INVITE_BASE_URL` | 1000 / 1000 / `https://volti.com.br/convite` | indicação |
+| `MAINTENANCE_SLOT_CAPACITY` / `MAINTENANCE_LOCATION` | 2 / Oficina Volti (Pinheiros) | agendamento pelo cliente |
+| `SERVICE_INTERVAL_KM` / `SERVICE_INTERVAL_HOURS` | 1000 / 100 | intervalo de revisão de moto sem modelo |
+| `S3_BUCKET_CATALOG` | `catalogo` | fotos do catálogo (criado na subida em `STORAGE_MODE=local`) |
+| `FRAUD_HASH_SECRET` | segredo local em dev | HMAC do CPF (indicação/cupom), retido após a exclusão LGPD; **obrigatório em produção** |
+| `SUBSCRIPTION_RENEWAL_GRACE_HOURS` / `SUBSCRIPTION_VEHICLE_SWAP_COOLDOWN_HOURS` | 72 / 24 | carência antes de `expired`; espera entre trocas da moto fixa pelo cliente |
+| `REFERRAL_MIN_RENTAL_CENTS` | 500 | corrida paga mínima para o bônus de quem indicou |
+
+Fix round 1 (`docs/decisoes.md`): pausa/retomada só com confirmação do gateway (`503 gateway-unavailable`), ciclo de vida das assinaturas (`canceled`/`expired` pelo job), regra única da moto fixa com período vigente (`common/fixed-vehicle.ts`), posição oculta de motos em uso por outros clientes (`locationHidden`), HMAC do CPF contra fraude. `test/migration-v2.e2e-spec.ts` aplica as migrações v2 sobre um banco com as anteriores e dados legados (assinaturas duplicadas).
+
+Fix round 2: assinatura `canceled`/`expired` nunca reabre. A cobrança tardia é estornada pelo gateway (`PaymentRefund`, chave `subscription-late-refund:<paymentId>`). O cancelamento no gateway de assinatura expirada ou de conta excluída fica pendente (`gatewayCancelPendingAt`) e é refeito pelo job `subscriptions-gateway-cancel-retry` (5 min). O odômetro usa compare-and-set atômico no Redis (`RedisStore.hcas`, testado contra o Redis real em `test/usage-tracker-redis.e2e-spec.ts`).
 
 ## Segurança e LGPD (correções do QA, `docs/relatorio-qa.md`)
 

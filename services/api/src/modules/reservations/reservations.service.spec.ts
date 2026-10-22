@@ -64,6 +64,24 @@ describe('ReservationsService', () => {
     await expect(service.create(CUSTOMER_ID, VEHICLE_ID)).rejects.toMatchObject({ slug: 'vehicle-unavailable', status: 409 });
   });
 
+  it('fix round 2 (I3): fluxo Pix — moto fixa de outro plano vigente → 409 vehicle-unavailable sem reservar; a própria moto fixa reserva', async () => {
+    const { service, prisma, redis } = setup();
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-x', customerId: 'outro-cliente' } as any);
+    const until = new Date(Date.now() + 10 * 60_000);
+    await expect(service.reserveForPix(CUSTOMER_ID, VEHICLE_ID, 'dep-1', until)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(prisma.reservation.create).not.toHaveBeenCalled();
+    const where = (prisma.subscription.findFirst.mock.calls[0][0] as any).where;
+    expect(where).toMatchObject({ assignedVehicleId: VEHICLE_ID, status: { in: ['active', 'paused'] }, currentPeriodEnd: { gt: expect.any(Date) } });
+    // Reserva comum também barra.
+    await expect(service.create(CUSTOMER_ID, VEHICLE_ID)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-meu', customerId: CUSTOMER_ID } as any);
+    const r = await service.reserveForPix(CUSTOMER_ID, VEHICLE_ID, 'dep-1', until);
+    expect(r).toMatchObject({ vehicleId: VEHICLE_ID, depositId: 'dep-1', expiresAt: until });
+    expect(await redis.exists(`reservation:${RES_ID}`)).toBe(true);
+  });
+
   it('KYC não aprovado → 403 kyc-not-approved', async () => {
     const { service, prisma } = setup();
     prisma.customer.findUnique.mockResolvedValue({ ...approvedCustomer, kycStatus: 'pending' } as any);

@@ -23,6 +23,10 @@ Name | Type | Description | Notes
 **locationConsent** | **bool** |  | [optional] 
 **emergencyContactName** | **String** |  | [optional] 
 **emergencyContactPhone** | **String** |  | [optional] 
+**pixRefundKeyType** | [**PixKeyType**](PixKeyType.md) |  | [optional] 
+**pixRefundKey** | **String** | Chave Pix para estornos. Completa para o próprio cliente, `admin` e `financeiro`; mascarada para os demais. | [optional] 
+**activePlanCode** | [**SubscriptionPlanCode**](SubscriptionPlanCode.md) |  | [optional] 
+**activeSubscriptionId** | **String** | Assinatura semanal/mensal ativa ou pausada. | [optional] 
 **stats** | [**CustomerStats**](CustomerStats.md) |  | [optional] 
 **createdAt** | [**DateTime**](DateTime.md) |  | 
 

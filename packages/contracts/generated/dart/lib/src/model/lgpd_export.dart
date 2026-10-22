@@ -3,13 +3,17 @@
 //
 
 // ignore_for_file: unused_element
+import 'package:volti_api/src/model/customer_maintenance_request.dart';
+import 'package:volti_api/src/model/consents.dart';
+import 'package:volti_api/src/model/rental.dart';
+import 'package:volti_api/src/model/customer_coupon.dart';
 import 'package:volti_api/src/model/payment.dart';
+import 'package:volti_api/src/model/subscription.dart';
 import 'package:volti_api/src/model/dispute.dart';
 import 'package:built_collection/built_collection.dart';
 import 'package:volti_api/src/model/customer.dart';
-import 'package:volti_api/src/model/consents.dart';
-import 'package:volti_api/src/model/rental.dart';
 import 'package:volti_api/src/model/incident.dart';
+import 'package:volti_api/src/model/referral_reward.dart';
 import 'package:volti_api/src/model/track.dart';
 import 'package:volti_api/src/model/claim.dart';
 import 'package:volti_api/src/model/wallet_entry.dart';
@@ -31,6 +35,11 @@ part 'lgpd_export.g.dart';
 /// * [incidents]
 /// * [disputes]
 /// * [claims]
+/// * [subscriptions]
+/// * [coupons]
+/// * [referrals] - Indicações feitas pelo titular (só o primeiro nome do amigo).
+/// * [referralCode]
+/// * [maintenanceRequests]
 @BuiltValue()
 abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
   @BuiltValueField(wireName: r'generatedAt')
@@ -62,6 +71,22 @@ abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
 
   @BuiltValueField(wireName: r'claims')
   BuiltList<Claim> get claims;
+
+  @BuiltValueField(wireName: r'subscriptions')
+  BuiltList<Subscription>? get subscriptions;
+
+  @BuiltValueField(wireName: r'coupons')
+  BuiltList<CustomerCoupon>? get coupons;
+
+  /// Indicações feitas pelo titular (só o primeiro nome do amigo).
+  @BuiltValueField(wireName: r'referrals')
+  BuiltList<ReferralReward>? get referrals;
+
+  @BuiltValueField(wireName: r'referralCode')
+  String? get referralCode;
+
+  @BuiltValueField(wireName: r'maintenanceRequests')
+  BuiltList<CustomerMaintenanceRequest>? get maintenanceRequests;
 
   LgpdExport._();
 
@@ -136,6 +161,42 @@ class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
       object.claims,
       specifiedType: const FullType(BuiltList, [FullType(Claim)]),
     );
+    if (object.subscriptions != null) {
+      yield r'subscriptions';
+      yield serializers.serialize(
+        object.subscriptions,
+        specifiedType: const FullType(BuiltList, [FullType(Subscription)]),
+      );
+    }
+    if (object.coupons != null) {
+      yield r'coupons';
+      yield serializers.serialize(
+        object.coupons,
+        specifiedType: const FullType(BuiltList, [FullType(CustomerCoupon)]),
+      );
+    }
+    if (object.referrals != null) {
+      yield r'referrals';
+      yield serializers.serialize(
+        object.referrals,
+        specifiedType: const FullType(BuiltList, [FullType(ReferralReward)]),
+      );
+    }
+    if (object.referralCode != null) {
+      yield r'referralCode';
+      yield serializers.serialize(
+        object.referralCode,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.maintenanceRequests != null) {
+      yield r'maintenanceRequests';
+      yield serializers.serialize(
+        object.maintenanceRequests,
+        specifiedType:
+            const FullType(BuiltList, [FullType(CustomerMaintenanceRequest)]),
+      );
+    }
   }
 
   @override
@@ -230,6 +291,50 @@ class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
             specifiedType: const FullType(BuiltList, [FullType(Claim)]),
           ) as BuiltList<Claim>;
           result.claims.replace(valueDes);
+          break;
+        case r'subscriptions':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(Subscription)]),
+          ) as BuiltList<Subscription>?;
+          if (valueDes == null) continue;
+          result.subscriptions.replace(valueDes);
+          break;
+        case r'coupons':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(CustomerCoupon)]),
+          ) as BuiltList<CustomerCoupon>?;
+          if (valueDes == null) continue;
+          result.coupons.replace(valueDes);
+          break;
+        case r'referrals':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(ReferralReward)]),
+          ) as BuiltList<ReferralReward>?;
+          if (valueDes == null) continue;
+          result.referrals.replace(valueDes);
+          break;
+        case r'referralCode':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.referralCode = valueDes;
+          break;
+        case r'maintenanceRequests':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(
+                BuiltList, [FullType(CustomerMaintenanceRequest)]),
+          ) as BuiltList<CustomerMaintenanceRequest>?;
+          if (valueDes == null) continue;
+          result.maintenanceRequests.replace(valueDes);
           break;
         default:
           unhandled.add(key);

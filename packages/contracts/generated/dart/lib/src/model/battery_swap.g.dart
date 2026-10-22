@@ -22,6 +22,12 @@ class _$BatterySwap extends BatterySwap {
   @override
   final int? installedBatteryPct;
   @override
+  final int? removedBatteryPct;
+  @override
+  final int? removedBatteryCycleCount;
+  @override
+  final int? installedBatteryCycleCount;
+  @override
   final DateTime recordedAt;
   @override
   final DateTime createdAt;
@@ -37,6 +43,9 @@ class _$BatterySwap extends BatterySwap {
       required this.removedBatterySerial,
       required this.installedBatterySerial,
       this.installedBatteryPct,
+      this.removedBatteryPct,
+      this.removedBatteryCycleCount,
+      this.installedBatteryCycleCount,
       required this.recordedAt,
       required this.createdAt})
       : super._();
@@ -58,6 +67,9 @@ class _$BatterySwap extends BatterySwap {
         removedBatterySerial == other.removedBatterySerial &&
         installedBatterySerial == other.installedBatterySerial &&
         installedBatteryPct == other.installedBatteryPct &&
+        removedBatteryPct == other.removedBatteryPct &&
+        removedBatteryCycleCount == other.removedBatteryCycleCount &&
+        installedBatteryCycleCount == other.installedBatteryCycleCount &&
         recordedAt == other.recordedAt &&
         createdAt == other.createdAt;
   }
@@ -72,6 +84,9 @@ class _$BatterySwap extends BatterySwap {
     _$hash = $jc(_$hash, removedBatterySerial.hashCode);
     _$hash = $jc(_$hash, installedBatterySerial.hashCode);
     _$hash = $jc(_$hash, installedBatteryPct.hashCode);
+    _$hash = $jc(_$hash, removedBatteryPct.hashCode);
+    _$hash = $jc(_$hash, removedBatteryCycleCount.hashCode);
+    _$hash = $jc(_$hash, installedBatteryCycleCount.hashCode);
     _$hash = $jc(_$hash, recordedAt.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jf(_$hash);
@@ -88,6 +103,9 @@ class _$BatterySwap extends BatterySwap {
           ..add('removedBatterySerial', removedBatterySerial)
           ..add('installedBatterySerial', installedBatterySerial)
           ..add('installedBatteryPct', installedBatteryPct)
+          ..add('removedBatteryPct', removedBatteryPct)
+          ..add('removedBatteryCycleCount', removedBatteryCycleCount)
+          ..add('installedBatteryCycleCount', installedBatteryCycleCount)
           ..add('recordedAt', recordedAt)
           ..add('createdAt', createdAt))
         .toString();
@@ -128,6 +146,21 @@ class BatterySwapBuilder implements Builder<BatterySwap, BatterySwapBuilder> {
   set installedBatteryPct(int? installedBatteryPct) =>
       _$this._installedBatteryPct = installedBatteryPct;
 
+  int? _removedBatteryPct;
+  int? get removedBatteryPct => _$this._removedBatteryPct;
+  set removedBatteryPct(int? removedBatteryPct) =>
+      _$this._removedBatteryPct = removedBatteryPct;
+
+  int? _removedBatteryCycleCount;
+  int? get removedBatteryCycleCount => _$this._removedBatteryCycleCount;
+  set removedBatteryCycleCount(int? removedBatteryCycleCount) =>
+      _$this._removedBatteryCycleCount = removedBatteryCycleCount;
+
+  int? _installedBatteryCycleCount;
+  int? get installedBatteryCycleCount => _$this._installedBatteryCycleCount;
+  set installedBatteryCycleCount(int? installedBatteryCycleCount) =>
+      _$this._installedBatteryCycleCount = installedBatteryCycleCount;
+
   DateTime? _recordedAt;
   DateTime? get recordedAt => _$this._recordedAt;
   set recordedAt(DateTime? recordedAt) => _$this._recordedAt = recordedAt;
@@ -150,6 +183,9 @@ class BatterySwapBuilder implements Builder<BatterySwap, BatterySwapBuilder> {
       _removedBatterySerial = $v.removedBatterySerial;
       _installedBatterySerial = $v.installedBatterySerial;
       _installedBatteryPct = $v.installedBatteryPct;
+      _removedBatteryPct = $v.removedBatteryPct;
+      _removedBatteryCycleCount = $v.removedBatteryCycleCount;
+      _installedBatteryCycleCount = $v.installedBatteryCycleCount;
       _recordedAt = $v.recordedAt;
       _createdAt = $v.createdAt;
       _$v = null;
@@ -185,6 +221,9 @@ class BatterySwapBuilder implements Builder<BatterySwap, BatterySwapBuilder> {
           installedBatterySerial: BuiltValueNullFieldError.checkNotNull(
               installedBatterySerial, r'BatterySwap', 'installedBatterySerial'),
           installedBatteryPct: installedBatteryPct,
+          removedBatteryPct: removedBatteryPct,
+          removedBatteryCycleCount: removedBatteryCycleCount,
+          installedBatteryCycleCount: installedBatteryCycleCount,
           recordedAt: BuiltValueNullFieldError.checkNotNull(
               recordedAt, r'BatterySwap', 'recordedAt'),
           createdAt: BuiltValueNullFieldError.checkNotNull(
