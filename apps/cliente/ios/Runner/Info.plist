@@ -3,7 +3,7 @@
 <plist version="1.0">
 	<dict>
 		<key>NSCameraUsageDescription</key>
-		<string>A câmera lê o QR code da moto e tira a foto do documento, a selfie e a foto da devolução.</string>
+		<string>A câmera lê o QR code da moto e da estação de troca de bateria e tira a foto do documento, a selfie e a foto da devolução.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
 		<string>Usamos sua localização para mostrar motos por perto e durante o aluguel.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
