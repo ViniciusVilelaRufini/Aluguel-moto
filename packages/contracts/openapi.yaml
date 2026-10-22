@@ -187,6 +187,7 @@ paths:
       tags: [auth]
       operationId: updateMe
       summary: Atualizar o próprio perfil (cliente)
+      description: 'Inclui a chave Pix para estornos (`pixRefundKeyType` + `pixRefundKey`; inválida → `422` `pix-key-invalid`).'
       security:
         - customerAuth: []
       requestBody:
@@ -202,6 +203,7 @@ paths:
               schema: { $ref: '#/components/schemas/Me' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /me/devices:
     post:
       tags: [auth]
@@ -662,6 +664,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
   /vehicles/{id}:
     get:
@@ -2051,6 +2054,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '402': { $ref: '#/components/responses/PaymentRequired' }
         '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
 
   /payments/subscriptions/{id}:
@@ -2351,6 +2355,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '402': { $ref: '#/components/responses/PaymentRequired' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /wallet/top-ups/{id}:
     get:
       tags: [wallet]
@@ -6448,12 +6453,14 @@ components:
         code: { type: string, minLength: 4, maxLength: 16 }
     ReferralRedemption:
       type: object
-      required: [code, rewardCents, walletEntry]
+      required: [code, rewardCents]
       properties:
         code: { type: string }
         referrerName: { type: string, description: Primeiro nome de quem indicou. }
         rewardCents: { type: integer, minimum: 0 }
-        walletEntry: { $ref: '#/components/schemas/WalletEntry' }
+        walletEntry:
+          $ref: "#/components/schemas/WalletEntry"
+          description: Lançamento `bonus` do indicado (ausente se o bônus configurado for zero).
 
     # manutenção pelo cliente
     MaintenanceSlot:

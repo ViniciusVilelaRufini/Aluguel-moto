@@ -15,7 +15,7 @@ part 'referral_redemption.g.dart';
 /// * [code]
 /// * [referrerName] - Primeiro nome de quem indicou.
 /// * [rewardCents]
-/// * [walletEntry]
+/// * [walletEntry] - Lançamento `bonus` do indicado (ausente se o bônus configurado for zero).
 @BuiltValue()
 abstract class ReferralRedemption
     implements Built<ReferralRedemption, ReferralRedemptionBuilder> {
@@ -29,8 +29,9 @@ abstract class ReferralRedemption
   @BuiltValueField(wireName: r'rewardCents')
   int get rewardCents;
 
+  /// Lançamento `bonus` do indicado (ausente se o bônus configurado for zero).
   @BuiltValueField(wireName: r'walletEntry')
-  WalletEntry get walletEntry;
+  WalletEntry? get walletEntry;
 
   ReferralRedemption._();
 
@@ -75,11 +76,13 @@ class _$ReferralRedemptionSerializer
       object.rewardCents,
       specifiedType: const FullType(int),
     );
-    yield r'walletEntry';
-    yield serializers.serialize(
-      object.walletEntry,
-      specifiedType: const FullType(WalletEntry),
-    );
+    if (object.walletEntry != null) {
+      yield r'walletEntry';
+      yield serializers.serialize(
+        object.walletEntry,
+        specifiedType: const FullType(WalletEntry),
+      );
+    }
   }
 
   @override
@@ -130,8 +133,9 @@ class _$ReferralRedemptionSerializer
         case r'walletEntry':
           final valueDes = serializers.deserialize(
             value,
-            specifiedType: const FullType(WalletEntry),
-          ) as WalletEntry;
+            specifiedType: const FullType.nullable(WalletEntry),
+          ) as WalletEntry?;
+          if (valueDes == null) continue;
           result.walletEntry.replace(valueDes);
           break;
         default:

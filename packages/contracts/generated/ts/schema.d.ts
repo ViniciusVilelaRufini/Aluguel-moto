@@ -63,7 +63,10 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        /** Atualizar o próprio perfil (cliente) */
+        /**
+         * Atualizar o próprio perfil (cliente)
+         * @description Inclui a chave Pix para estornos (`pixRefundKeyType` + `pixRefundKey`; inválida → `422` `pix-key-invalid`).
+         */
         patch: operations["updateMe"];
         trace?: never;
     };
@@ -4874,7 +4877,8 @@ export interface components {
             /** @description Primeiro nome de quem indicou. */
             referrerName?: string;
             rewardCents: number;
-            walletEntry: components["schemas"]["WalletEntry"];
+            /** @description Lançamento `bonus` do indicado (ausente se o bônus configurado for zero). */
+            walletEntry?: components["schemas"]["WalletEntry"];
         };
         MaintenanceSlot: {
             /** Format: date-time */
@@ -5248,6 +5252,7 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     registerDevice: {
@@ -5773,6 +5778,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
     };
@@ -7409,6 +7415,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             402: components["responses"]["PaymentRequired"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
     };
@@ -7746,6 +7753,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             402: components["responses"]["PaymentRequired"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getWalletTopUp: {

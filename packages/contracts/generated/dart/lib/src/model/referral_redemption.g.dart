@@ -14,7 +14,7 @@ class _$ReferralRedemption extends ReferralRedemption {
   @override
   final int rewardCents;
   @override
-  final WalletEntry walletEntry;
+  final WalletEntry? walletEntry;
 
   factory _$ReferralRedemption(
           [void Function(ReferralRedemptionBuilder)? updates]) =>
@@ -24,7 +24,7 @@ class _$ReferralRedemption extends ReferralRedemption {
       {required this.code,
       this.referrerName,
       required this.rewardCents,
-      required this.walletEntry})
+      this.walletEntry})
       : super._();
   @override
   ReferralRedemption rebuild(
@@ -99,7 +99,7 @@ class ReferralRedemptionBuilder
       _code = $v.code;
       _referrerName = $v.referrerName;
       _rewardCents = $v.rewardCents;
-      _walletEntry = $v.walletEntry.toBuilder();
+      _walletEntry = $v.walletEntry?.toBuilder();
       _$v = null;
     }
     return this;
@@ -128,13 +128,13 @@ class ReferralRedemptionBuilder
             referrerName: referrerName,
             rewardCents: BuiltValueNullFieldError.checkNotNull(
                 rewardCents, r'ReferralRedemption', 'rewardCents'),
-            walletEntry: walletEntry.build(),
+            walletEntry: _walletEntry?.build(),
           );
     } catch (_) {
       late String _$failedField;
       try {
         _$failedField = 'walletEntry';
-        walletEntry.build();
+        _walletEntry?.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'ReferralRedemption', _$failedField, e.toString());

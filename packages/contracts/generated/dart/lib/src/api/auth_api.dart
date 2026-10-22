@@ -281,7 +281,7 @@ class AuthApi {
   }
 
   /// Atualizar o próprio perfil (cliente)
-  ///
+  /// Inclui a chave Pix para estornos (&#x60;pixRefundKeyType&#x60; + &#x60;pixRefundKey&#x60;; inválida → &#x60;422&#x60; &#x60;pix-key-invalid&#x60;).
   ///
   /// Parameters:
   /// * [meUpdate]
