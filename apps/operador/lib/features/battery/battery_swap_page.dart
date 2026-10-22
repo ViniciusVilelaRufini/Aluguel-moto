@@ -2,14 +2,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:volti_api/volti_api.dart' hide VehicleStatus;
 import 'package:volti_flutter/volti_flutter.dart';
+import 'package:volti_operador/data/fleet.dart';
 import 'package:volti_operador/data/models.dart';
 import 'package:volti_operador/data/sync.dart';
+import 'package:volti_operador/data/tasks_provider.dart';
+import 'package:volti_operador/features/tasks/task_ui.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
 import 'package:volti_operador/ui/widgets.dart';
 
 /// Troca de bateria: serie da retirada e da instalada (QR/codigo de barras ou digitada).
-/// As duas precisam ser diferentes.
+/// As duas precisam ser diferentes. A retirada vem pre-preenchida com a bateria
+/// atual da moto (`FieldTask.vehicleBatterySerial`) e as baterias carregadas da
+/// van aparecem como sugestao para a instalada (contrato v2).
 class BatterySwapPage extends ConsumerStatefulWidget {
   const BatterySwapPage({super.key, required this.taskId, this.onDone, this.scan});
 
@@ -28,6 +34,25 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
   final _installed = TextEditingController();
   bool _submitting = false;
   SubmitOutcome? _outcome;
+  bool _prefilled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Pre-preenche a retirada uma vez, quando a tarefa estiver carregada.
+    ref.listenManual<String?>(
+      tasksProvider.select((a) => a.value?.byId(widget.taskId)?.vehicleBatterySerial),
+      (_, serial) {
+        if (_prefilled || serial == null || serial.trim().isEmpty) return;
+        _prefilled = true;
+        if (_removed.text.isEmpty) {
+          _removed.text = serial.trim();
+          if (mounted) setState(() {});
+        }
+      },
+      fireImmediately: true,
+    );
+  }
 
   @override
   void dispose() {
@@ -83,7 +108,8 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
                         key: const Key('swap-sent'),
                         tone: NoticeTone.success,
                         icon: LucideIcons.circleCheck,
-                        title: t.swapSent)
+                        title: t.swapSent,
+                        body: _swapSummary(t, o.result))
                   else
                     Notice(
                         key: const Key('swap-queued'),
@@ -106,8 +132,22 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
     );
   }
 
+  /// "Instalada: BT-208431 · 98% · 38 ciclos" com o que a API devolveu.
+  String? _swapSummary(AppLocalizations t, Object? result) {
+    if (result is! BatterySwap) return null;
+    return t.installedBatteryLine(batteryDetails(t, result.installedBatterySerial,
+        pct: result.installedBatteryPct, cycles: result.installedBatteryCycleCount));
+  }
+
   Widget _form(AppLocalizations t, String? error) {
     final showDiffer = _bothValid && !_differ;
+    final task = ref.watch(tasksProvider).value?.byId(widget.taskId);
+    final removedLine = task == null ? null : removedBatteryLine(t, task);
+    // Sugestoes: baterias carregadas (>= 90%) na van, mais cheias primeiro.
+    final charged = (ref.watch(vanStockProvider).value?.items.toList() ?? const <Battery>[])
+        .where((b) => b.chargePct >= 90)
+        .toList()
+      ..sort((a, b) => b.chargePct.compareTo(a.chargePct));
     return Column(
       children: [
         Expanded(
@@ -115,19 +155,59 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             children: [
               const ConnectivityBanner(padding: EdgeInsets.only(bottom: VoltiSpacing.s10)),
-              // Design: serie da bateria nova primeiro. A retirada ainda e digitada/lida:
-              // serie, % e ciclos da bateria atual dependem de contrato.
+              // Design: serie da bateria nova primeiro, com as carregadas da van.
               _serialField(
                   key: 'installed-serial',
                   label: t.serialNewLabel,
                   controller: _installed,
-                  t: t),
+                  t: t,
+                  footer: charged.isEmpty
+                      ? null
+                      : Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: VoltiSpacing.s10),
+                            Text(t.vanSuggestions,
+                                style: VoltiTypography.caption
+                                    .copyWith(color: VoltiColors.textSecondary)),
+                            const SizedBox(height: VoltiSpacing.s6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                for (final b in charged.take(6))
+                                  Semantics(
+                                    button: true,
+                                    selected: _installed.text.trim().toUpperCase() ==
+                                        b.serial.toUpperCase(),
+                                    label: t.vanPickSemantics(b.serial),
+                                    excludeSemantics: true,
+                                    child: ActionChip(
+                                      key: Key('van-pick-${b.serial}'),
+                                      label: Text(batteryDetails(t, b.serial,
+                                          pct: b.chargePct, cycles: b.cycleCount)),
+                                      onPressed: () =>
+                                          setState(() => _installed.text = b.serial),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ],
+                        )),
               const SizedBox(height: VoltiSpacing.s12),
               _serialField(
                   key: 'removed-serial',
                   label: t.serialRemovedLabel,
                   controller: _removed,
-                  t: t),
+                  t: t,
+                  footer: removedLine == null
+                      ? null
+                      : Padding(
+                          padding: const EdgeInsets.only(top: VoltiSpacing.s6),
+                          child: Text(removedLine,
+                              style: VoltiTypography.caption
+                                  .copyWith(color: VoltiColors.textSecondary)),
+                        )),
               if (showDiffer) ...[
                 const SizedBox(height: VoltiSpacing.s12),
                 Notice(
@@ -172,6 +252,7 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
     required String label,
     required TextEditingController controller,
     required AppLocalizations t,
+    Widget? footer,
   }) {
     final tooShort = controller.text.isNotEmpty && !BatterySwapDraft.validSerial(controller.text);
     // Input do VDS: rotulo acima, campo sunken de 52 px com icone de leitura.
@@ -203,6 +284,7 @@ class _BatterySwapPageState extends ConsumerState<BatterySwapPage> {
             ),
             onChanged: (_) => setState(() {}),
           ),
+          ?footer,
         ],
       ),
     );

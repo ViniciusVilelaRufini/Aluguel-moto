@@ -536,4 +536,208 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get rejectedHint =>
       'Corrija e reenvie em \"Pendências de envio\" para concluir a tarefa.';
+
+  @override
+  String get statVan => 'Baterias na van';
+
+  @override
+  String get statUnavailable => 'indisponível';
+
+  @override
+  String targetAddressLine(String address) {
+    return 'Para: $address';
+  }
+
+  @override
+  String cyclesCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count ciclos',
+      one: '1 ciclo',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String removedBatteryLine(String details) {
+    return 'Retirada: $details';
+  }
+
+  @override
+  String installedBatteryLine(String details) {
+    return 'Instalada: $details';
+  }
+
+  @override
+  String get vanTitle => 'Baterias na van';
+
+  @override
+  String get vanCharged => 'Carregadas';
+
+  @override
+  String get vanDepleted => 'Descarregadas';
+
+  @override
+  String get vanTotal => 'Total';
+
+  @override
+  String get vanEmpty => 'Nenhuma bateria na van.';
+
+  @override
+  String get vanError => 'Não foi possível carregar o estoque da van.';
+
+  @override
+  String get vanOnlineHint => 'Carregar e descarregar a van exige conexão.';
+
+  @override
+  String get vanLoad => 'Carregar baterias';
+
+  @override
+  String get vanLoadTitle => 'Carregar na van';
+
+  @override
+  String get vanLoadSerial => 'Nº de série da bateria';
+
+  @override
+  String get vanLoadAdd => 'Adicionar';
+
+  @override
+  String vanLoadRemove(String serial) {
+    return 'Tirar $serial da lista';
+  }
+
+  @override
+  String vanLoadConfirm(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count baterias',
+      one: '1 bateria',
+    );
+    return 'Carregar $_temp0';
+  }
+
+  @override
+  String get vanLoadDuplicate => 'Essa série já está na lista.';
+
+  @override
+  String get vanLoaded => 'Baterias carregadas na van.';
+
+  @override
+  String get vanUnload => 'Descarregar para recarga';
+
+  @override
+  String vanUnloadSemantics(String serial) {
+    return 'Descarregar $serial para recarga';
+  }
+
+  @override
+  String get vanUnloaded => 'Bateria descarregada para recarga.';
+
+  @override
+  String vanBatterySemantics(String serial, int pct, String cycles) {
+    return 'Bateria $serial, $pct por cento, $cycles';
+  }
+
+  @override
+  String get vanSuggestions => 'Carregadas na van';
+
+  @override
+  String vanPickSemantics(String serial) {
+    return 'Usar a bateria $serial';
+  }
+
+  @override
+  String get fleetServiceTitle => 'Revisões da frota';
+
+  @override
+  String get filterAll => 'Todas';
+
+  @override
+  String get filterOverdue => 'Vencidas';
+
+  @override
+  String get filterDueSoon => 'Próximas';
+
+  @override
+  String get serviceOk => 'Em dia';
+
+  @override
+  String get serviceDueSoon => 'Próxima';
+
+  @override
+  String get serviceOverdue => 'Vencida';
+
+  @override
+  String serviceStatusSemantics(String status) {
+    return 'Revisão: $status';
+  }
+
+  @override
+  String serviceKmSince(String km) {
+    return '$km desde a revisão';
+  }
+
+  @override
+  String serviceKmUntil(String km) {
+    return 'faltam $km';
+  }
+
+  @override
+  String serviceKmOver(String km) {
+    return '$km além do previsto';
+  }
+
+  @override
+  String serviceHours(String hours, String interval) {
+    return '$hours h de uso desde a revisão (a cada $interval h)';
+  }
+
+  @override
+  String serviceScheduled(String date) {
+    return 'Revisão agendada para $date';
+  }
+
+  @override
+  String get serviceEmpty => 'Nenhuma moto nesta situação.';
+
+  @override
+  String get serviceError => 'Não foi possível carregar as revisões.';
+
+  @override
+  String get vehicleCardTitle => 'Moto';
+
+  @override
+  String modelPhotoSemantics(String name) {
+    return 'Foto do modelo $name';
+  }
+
+  @override
+  String get maintenanceCardTitle => 'Manutenção';
+
+  @override
+  String maintenanceSourceCustomer(String name) {
+    return 'Agendada pelo cliente $name';
+  }
+
+  @override
+  String get maintenanceSourceCustomerNoName => 'Agendada pelo cliente';
+
+  @override
+  String get maintenanceSourceSystem => 'Aberta pela inspeção';
+
+  @override
+  String get maintenanceSourceStaff => 'Aberta pela operação';
+
+  @override
+  String get maintenanceKindPreventive => 'Preventiva';
+
+  @override
+  String get maintenanceKindCorrective => 'Corretiva';
+
+  @override
+  String maintenanceScheduledFor(String date) {
+    return 'Agendada para $date';
+  }
 }

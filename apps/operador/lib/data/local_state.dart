@@ -31,13 +31,20 @@ final inspectionDraftsProvider =
     NotifierProvider<InspectionDraftsController, Map<String, InspectionDraft>>(
         InspectionDraftsController.new);
 
-/// Status da moto conhecido nesta sessao (o operador mudou pelo app). O
-/// `FieldTask` ainda nao traz o status da moto (proposta em docs/decisoes.md).
+/// Status da moto mudado nesta sessao pelo operador. Vale ate a proxima lista
+/// da API, que traz `FieldTask.vehicleStatus` (contrato v2).
 class KnownVehicleStatusController extends Notifier<Map<String, VehicleStatus>> {
   @override
   Map<String, VehicleStatus> build() => const {};
 
   void set(String vehicleId, VehicleStatus status) => state = {...state, vehicleId: status};
+
+  /// O servidor mandou o status destas motos: o local deixa de valer.
+  void forget(Iterable<String> vehicleIds) {
+    final ids = vehicleIds.toSet();
+    if (!state.keys.any(ids.contains)) return;
+    state = {...state}..removeWhere((k, _) => ids.contains(k));
+  }
 }
 
 final knownVehicleStatusProvider =

@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart' hide VehicleStatus;
 import 'package:volti_flutter/volti_flutter.dart';
+import 'package:volti_operador/data/fleet.dart';
 import 'package:volti_operador/data/location.dart';
 import 'package:volti_operador/data/sync.dart';
 import 'package:volti_operador/data/tasks_provider.dart';
@@ -47,6 +48,7 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
     final tasks = ref.watch(tasksProvider);
     final sync = ref.watch(syncControllerProvider);
     final name = ref.watch(operatorNameProvider);
+    final van = ref.watch(vanStockProvider);
     final user = watchLocationWhenVisible(ref, context)?.position;
     final all = tasks.value?.tasks ?? const <FieldTask>[];
     // Concluidas = do dia (a API devolve todo o historico; filtro por data e proposta).
@@ -100,8 +102,15 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
                     const SizedBox(width: VoltiSpacing.s8),
                     _stat(t.statDone, '$doneCount'),
                     const SizedBox(width: VoltiSpacing.s8),
-                    // "Baterias na van" depende de contrato; mostra a fila offline.
-                    _stat(t.statQueue, '${sync.pending.length}'),
+                    // Baterias carregadas na van (contrato v2); a fila offline
+                    // segue no menu da conta (ponto no icone e "Pendencias de envio").
+                    _stat(
+                      t.statVan,
+                      van.value == null ? '—' : '${van.value!.chargedCount}',
+                      semanticValue: van.value == null ? t.statUnavailable : null,
+                      key: const Key('stat-van'),
+                      onTap: () => context.push('/van'),
+                    ),
                   ],
                 ),
               ],
@@ -197,10 +206,13 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
     );
   }
 
-  Widget _stat(String label, String value) => Expanded(
-        child: Semantics(
+  Widget _stat(String label, String value,
+      {String? semanticValue, Key? key, VoidCallback? onTap}) {
+    final tile = Semantics(
+          key: key,
           container: true,
-          label: '$label: $value',
+          button: onTap != null,
+          label: '$label: ${semanticValue ?? value}',
           excludeSemantics: true,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
@@ -220,14 +232,17 @@ class _TaskListPageState extends ConsumerState<TaskListPage> {
                         color: VoltiColors.white)),
                 const SizedBox(height: 4),
                 Text(label,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: VoltiTypography.caption.copyWith(color: const Color(0x99FFFFFF))),
               ],
             ),
           ),
-        ),
-      );
+        );
+    return Expanded(
+      child: onTap == null ? tile : VoltiPressable(onTap: onTap, scale: .98, child: tile),
+    );
+  }
 }
 
 /// Menu da conta: pendencias de envio e sair (no lugar dos botoes soltos no header).
@@ -258,6 +273,28 @@ class _AccountSheet extends ConsumerWidget {
             onTap: () {
               Navigator.of(context).pop();
               context.push('/sync');
+            },
+          ),
+          ListRow(
+            key: const Key('menu-van'),
+            icon: LucideIcons.batteryCharging,
+            iconTone: ListRowTone.brand,
+            title: t.vanTitle,
+            trailing: ListRowTrailing.chevron,
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/van');
+            },
+          ),
+          ListRow(
+            key: const Key('menu-fleet-service'),
+            icon: LucideIcons.wrench,
+            iconTone: ListRowTone.danger,
+            title: t.fleetServiceTitle,
+            trailing: ListRowTrailing.chevron,
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/maintenance');
             },
           ),
           ListRow(
@@ -403,8 +440,8 @@ class TaskCard extends StatelessWidget {
             icon: icon,
             iconTone: tone,
             title: '${typeLabel(t, task.type)} · ${task.vehicleCode}',
-            // Endereco da moto depende de contrato: usa as observacoes da tarefa.
-            subtitle: task.notes,
+            // Endereco da moto (ou "Para: destino"); sem endereco, as observacoes.
+            subtitle: taskSubtitle(t, task),
             trailing: ListRowTrailing.chevron,
             onTap: onTap,
           ),
@@ -482,9 +519,7 @@ class _TaskMapState extends State<TaskMap> {
                     button: true,
                     label: '${typeLabel(t, e.type)} · ${e.vehicleCode}',
                     child: VehicleMarker(
-                      e.type == FieldTaskType.maintenance
-                          ? VehicleStatus.maintenance
-                          : VehicleStatus.free,
+                      markerStatus(e),
                       e.vehicleBatteryPct ?? 0,
                       selected: e.id == _selected,
                       onTap: () => setState(() => _selected = e.id),

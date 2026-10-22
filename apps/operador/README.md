@@ -49,10 +49,21 @@ Comportamento:
 - Concluir tarefa (regra do design): só com a moto destravada em modo serviço, o checklist completo (5/5) e a foto da moto após o serviço; nas tarefas de bateria, também a troca registrada. Enquanto faltar algo, o botão fica desabilitado e o motivo aparece acima dele. Se o checklist estiver completo mas ainda não enviado, "Concluir" envia o checklist antes da conclusão (mesma fila offline).
 - Localização (geolocator): só com o app em uso (permissão "durante o uso", sem segundo plano; o GPS para quando o app sai da tela e quando nenhuma tela visível usa distância ou mapa). Antes de pedir a permissão o app explica para que serve. Com GPS, a lista mostra a distância até cada moto ("350 m", "1,2 km") e os mapas mostram o seu ponto.
 
+## Contrato v2 (operação)
+
+- **Endereço:** o cartão da tarefa mostra `FieldTask.vehicleAddress` (no reposicionamento, "Para: `targetAddress`"); sem endereço, as observações. O detalhe mostra endereço e observações; o aviso de destino traz o endereço e a distância.
+- **Status da moto:** `FieldTask.vehicleStatus` alimenta o `FleetStatusBadge`, os marcadores e a reconciliação do modo serviço (moto alugada/reservada/bloqueada solta o modo serviço). O status mudado pelo operador vale até a próxima lista da API.
+- **Bateria:** o detalhe e a troca mostram "Retirada: BT-190577 · 12% · 412 ciclos" (`vehicleBatterySerial`, `vehicleBatteryPct`, `vehicleBatteryCycleCount`); a série retirada vem pré-preenchida (editável) e as baterias carregadas (≥ 90%) da van aparecem como sugestão para a instalada. A troca continua na fila offline; quando sincroniza, o estoque da van é relido e a confirmação mostra a série, a carga e os ciclos da instalada.
+- **Van** (`/van`, stat "Baterias na van" do header = `VanStock.chargedCount`, "—" sem rede): lista série, carga e ciclos; "Carregar baterias" (séries lidas ou digitadas, até 50, sem repetir) e "Descarregar para recarga". Exige rede (como destravar): nada disso entra na fila offline. A contagem da fila offline continua no menu da conta (ponto no ícone e "Pendências de envio").
+- **Revisões da frota** (`/maintenance`, menu da conta): `GET /maintenance/vehicles` com filtro Todas/Vencidas/Próximas; cada moto mostra Em dia/Próxima/Vencida, km desde a revisão e quanto falta (ou o excesso), horas de uso e a revisão agendada. Somente leitura (agendar é do painel; `POST /maintenance/tasks` não é do grupo `campo`).
+- **Ficha da moto no detalhe:** `GET /vehicles/{id}` + `GET /vehicle-models` → foto, nome, categoria e preço por minuto do modelo, e o indicador da revisão. Sem rede, o cartão some.
+- **Manutenção da tarefa:** com `maintenanceTaskId`, `GET /maintenance/tasks/{id}` → título, tipo, origem e data. Cliente só pelo primeiro nome (a API já manda só ele ao `campo`; o app corta de novo por garantia).
+- **Chat:** o app de campo não tem chat (o suporte é dos grupos `admin`/`suporte`), então `SupportMessage.status` não se aplica aqui.
+
 ## Testes
 
 ```
 flutter analyze && flutter test && flutter build apk --debug
 ```
 
-Widget tests: checklist (bloqueios, leitura > 32, confirmação de manutenção, offline com repositório fake, miniaturas com remover), troca de bateria (séries diferentes), regra de conclusão e modo serviço persistido, badge de distância, controle segmentado, fila Hive e ordenação da lista. Testes de unidade: login Cognito, formatação (distância, prazo, prioridade) e regra de conclusão.
+Widget tests (`test/contract_v2_test.dart` cobre o contrato v2: endereço, status, bateria retirada, sugestões da van, van com carregar/descarregar e offline, revisões com filtro, cartões da moto e da manutenção, primeiro nome e texto a 200%): checklist (bloqueios, leitura > 32, confirmação de manutenção, offline com repositório fake, miniaturas com remover), troca de bateria (séries diferentes), regra de conclusão e modo serviço persistido, badge de distância, controle segmentado, fila Hive e ordenação da lista. Testes de unidade: login Cognito, formatação (distância, prazo, prioridade) e regra de conclusão.

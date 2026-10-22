@@ -106,3 +106,99 @@ Future<bool> openRoute(double lat, double lng) => launchUrl(
       Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$lat,$lng&travelmode=driving'),
       mode: LaunchMode.externalApplication,
     );
+
+// ---- contrato v2 ----
+
+String _group(int n) {
+  final s = n.abs().toString();
+  final b = StringBuffer(n < 0 ? '-' : '');
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) b.write('.');
+    b.write(s[i]);
+  }
+  return b.toString();
+}
+
+/// "812 km", "1.000 km" (arredondado, separador de milhar pt-BR).
+String formatKm(double km) => '${_group(km.round())} km';
+
+/// "R$ 0,59/min" (dinheiro em centavos).
+String formatCentsPerMinute(int cents) {
+  final reais = _group(cents ~/ 100);
+  final c = (cents % 100).toString().padLeft(2, '0');
+  return 'R\$ $reais,$c/min';
+}
+
+/// "23/10 10:00" no fuso do aparelho.
+String formatDayTime(DateTime d) {
+  final l = d.toLocal();
+  String two(int v) => v.toString().padLeft(2, '0');
+  return '${two(l.day)}/${two(l.month)} ${two(l.hour)}:${two(l.minute)}';
+}
+
+/// So o primeiro nome (a API ja manda so ele para o grupo `campo`; aqui por garantia).
+String? firstName(String? name) {
+  final n = name?.trim() ?? '';
+  if (n.isEmpty) return null;
+  return n.split(RegExp(r'\s+')).first;
+}
+
+/// "BT-190577 · 12% · 412 ciclos" (partes ausentes ficam de fora).
+String batteryDetails(AppLocalizations t, String serial, {int? pct, int? cycles}) => [
+      serial,
+      if (pct != null) '$pct%',
+      if (cycles != null) t.cyclesCount(cycles),
+    ].join(' · ');
+
+/// "Retirada: BT-190577 · 12% · 412 ciclos" (design TaskDetail), ou `null` sem serie.
+String? removedBatteryLine(AppLocalizations t, FieldTask task) {
+  final serial = task.vehicleBatterySerial;
+  if (serial == null || serial.trim().isEmpty) return null;
+  return t.removedBatteryLine(batteryDetails(t, serial,
+      pct: task.vehicleBatteryPct, cycles: task.vehicleBatteryCycleCount));
+}
+
+/// Subtitulo do cartao: "Para: destino" no reposicionamento; senao o endereco
+/// da moto; sem endereco, as observacoes da tarefa.
+String? taskSubtitle(AppLocalizations t, FieldTask task) {
+  final target = task.targetAddress;
+  if (task.type == FieldTaskType.reposition && target != null && target.trim().isNotEmpty) {
+    return t.targetAddressLine(target);
+  }
+  final addr = task.vehicleAddress;
+  if (addr != null && addr.trim().isNotEmpty) return addr;
+  final notes = task.notes;
+  return notes == null || notes.trim().isEmpty ? null : notes;
+}
+
+/// Status da moto para marcador/badge: o do servidor; sem ele (ou desconhecido),
+/// manutencao nas tarefas de manutencao e livre nas demais.
+VehicleStatus markerStatus(FieldTask task) {
+  final s = task.vehicleStatus;
+  if (s != null && s != VehicleStatus.unknownDefaultOpenApi) return s;
+  return task.type == FieldTaskType.maintenance ? VehicleStatus.maintenance : VehicleStatus.free;
+}
+
+String serviceStatusLabel(AppLocalizations t, VehicleServiceStatus s) => switch (s) {
+      VehicleServiceStatus.overdue => t.serviceOverdue,
+      VehicleServiceStatus.dueSoon => t.serviceDueSoon,
+      _ => t.serviceOk,
+    };
+
+VoltiBadgeTone serviceStatusTone(VehicleServiceStatus s) => switch (s) {
+      VehicleServiceStatus.overdue => VoltiBadgeTone.danger,
+      VehicleServiceStatus.dueSoon => VoltiBadgeTone.warning,
+      _ => VoltiBadgeTone.success,
+    };
+
+/// "812 km desde a revisão · faltam 188 km" (ou "· 120 km além do previsto").
+String serviceKmLine(AppLocalizations t, VehicleServiceInfo s) {
+  final since = t.serviceKmSince(formatKm(s.kmSinceService));
+  final rest = s.kmUntilService < 0
+      ? t.serviceKmOver(formatKm(-s.kmUntilService))
+      : t.serviceKmUntil(formatKm(s.kmUntilService));
+  return '$since · $rest';
+}
+
+String serviceHoursLine(AppLocalizations t, VehicleServiceInfo s) =>
+    t.serviceHours(_group(s.hoursSinceService.round()), _group(s.serviceIntervalHours));
