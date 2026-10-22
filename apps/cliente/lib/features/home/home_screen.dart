@@ -23,6 +23,7 @@ import '../pickup/depot_hours.dart';
 import '../pickup/depot_labels.dart';
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 import 'depot_providers.dart';
+import 'home_reservation_card.dart';
 import 'location_header.dart';
 import 'providers.dart';
 import 'stations/station_logic.dart';
@@ -175,6 +176,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final split = splitDepotStations(depots.value ?? const <Depot>[], _stationsMode ? stations : const <SwapStation>[]);
     final reservation = ref.watch(currentReservationProvider).value;
     final rental = ref.watch(currentRentalProvider).value;
+    // Reserva em aberto: o cartao "Sua reserva" ocupa o lugar do cartao do galpao
+    // (sem "Escolher moto" nem seletor: so uma reserva por vez) e o passe some.
+    final pending = rental == null && isPendingReservation(reservation) ? reservation : null;
     final session = ref.watch(sessionProvider).value;
     final now = ref.watch(clockProvider)();
     // Flash que chega com o mapa ja aberto (ex.: voltou por pop).
@@ -305,16 +309,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   const SizedBox(height: VoltiSpacing.s10),
                                   if (rental != null)
                                     _ActiveBanner(icon: LucideIcons.bike, text: l.rentalInProgress, action: l.backToRide, onTap: () => context.push('/ride'))
-                                  else if (reservation != null) ...[
+                                  else if (reservation != null)
                                     // Entrega no galpao: abre "Confira sua moto" (evento ou app aberto depois).
                                     HandoverWatcher(reservation: reservation),
-                                    _ActiveBanner(
-                                      icon: LucideIcons.clock,
-                                      text: l.reservationActive,
-                                      action: l.seeReservation,
-                                      onTap: () => context.push('/reservation/${reservation.id}'),
-                                    ),
-                                  ],
                                   if (session != null && session.kyc != KycStatus.approved)
                                     Padding(
                                       padding: const EdgeInsets.only(top: 8),
@@ -327,28 +324,30 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 ],
                               ),
                             ),
-                            // Promocoes (PassCard) numa faixa que rola na horizontal.
-                            SingleChildScrollView(
-                              key: const Key('home-promos'),
-                              scrollDirection: Axis.horizontal,
-                              clipBehavior: Clip.none,
-                              padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
-                              child: Row(
-                                children: VoltiStagger.wrap([
-                                  PassCard(
-                                    title: l.promoPassTitle,
-                                    subtitle: l.promoPassText,
-                                    icon: LucideIcons.ticket,
-                                    tone: PassCardTone.sun,
-                                    onTap: () => context.push('/account/subscriptions'),
-                                  ),
-                                  if (promoFirstRide) ...[
-                                    const SizedBox(width: VoltiSpacing.s10),
-                                    PassCard(title: l.promoFirstRideTitle, subtitle: l.promoFirstRideText, icon: LucideIcons.gift, tone: PassCardTone.coral),
-                                  ],
-                                ]),
+                            // Promocoes (PassCard) numa faixa que rola na horizontal. Somem com
+                            // reserva em aberto e no modo estacoes (cobriam um marcador).
+                            if (pending == null && !_stationsMode)
+                              SingleChildScrollView(
+                                key: const Key('home-promos'),
+                                scrollDirection: Axis.horizontal,
+                                clipBehavior: Clip.none,
+                                padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
+                                child: Row(
+                                  children: VoltiStagger.wrap([
+                                    PassCard(
+                                      title: l.promoPassTitle,
+                                      subtitle: l.promoPassText,
+                                      icon: LucideIcons.ticket,
+                                      tone: PassCardTone.sun,
+                                      onTap: () => context.push('/account/subscriptions'),
+                                    ),
+                                    if (promoFirstRide) ...[
+                                      const SizedBox(width: VoltiSpacing.s10),
+                                      PassCard(title: l.promoFirstRideTitle, subtitle: l.promoFirstRideText, icon: LucideIcons.gift, tone: PassCardTone.coral),
+                                    ],
+                                  ]),
+                                ),
                               ),
-                            ),
                           ],
                         ),
                       ),
@@ -410,45 +409,66 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             Flexible(
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
-                                child: VoltiEnter(
-                                  key: const Key('depot-card-enter'),
-                                  duration: VoltiMotion.durScreen,
-                                  curve: VoltiMotion.easeScreen,
-                                  fromOffset: const Offset(0, 80),
-                                  child: Container(
-                                    key: const Key('depot-card'),
-                                    width: double.infinity,
-                                    padding: const EdgeInsets.all(VoltiSpacing.s16),
-                                    decoration: BoxDecoration(color: surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
-                                    child: switch (depots) {
-                                      AsyncValue(:final error?, hasValue: false) => ErrorState(error: error, onRetry: () => ref.invalidate(depotsProvider)),
-                                      AsyncValue(hasValue: false) => VoltiSkeleton.list(
-                                        key: const Key('depot-skeleton'),
-                                        rows: 2,
-                                        trailing: false,
-                                        label: l.loading,
-                                      ),
-                                      // Rola por dentro com texto grande (a coluna de botoes do mapa ocupa espaco).
-                                      _ when current == null => SingleChildScrollView(
-                                        child: VoltiEmptyState(
-                                          compact: true,
-                                          icon: LucideIcons.warehouse,
-                                          title: l.depotsEmpty,
-                                          message: l.depotsEmptyText,
-                                          actionLabel: l.retry,
-                                          actionIcon: LucideIcons.refreshCw,
-                                          onAction: () => ref.invalidate(depotsProvider),
-                                        ),
-                                      ),
-                                      _ => _DepotCardBody(
-                                        depots: depots.value!,
-                                        current: current,
-                                        now: now,
-                                        onSelect: _selectDepot,
-                                        onPick: () => context.push('/pick'),
-                                      ),
-                                    },
+                                // Galpao <-> "Sua reserva": desliza e funde com os tokens de tela;
+                                // reduced motion troca na hora.
+                                child: AnimatedSwitcher(
+                                  key: const Key('home-bottom-switcher'),
+                                  duration: VoltiMotion.scaled(context, VoltiMotion.durScreen),
+                                  switchInCurve: VoltiMotion.easeScreen,
+                                  switchOutCurve: VoltiMotion.easeScreen.flipped,
+                                  layoutBuilder: (current, previous) => Stack(alignment: Alignment.bottomCenter, children: [...previous, ?current]),
+                                  transitionBuilder: (child, anim) => FadeTransition(
+                                    opacity: anim,
+                                    child: SlideTransition(
+                                      position: Tween(begin: const Offset(0, .12), end: Offset.zero).animate(anim),
+                                      child: child,
+                                    ),
                                   ),
+                                  child: pending != null
+                                      ? HomeReservationCard(key: ValueKey('home-reservation-${pending.id}'), reservation: pending)
+                                      : VoltiEnter(
+                                          key: const Key('depot-card-enter'),
+                                          duration: VoltiMotion.durScreen,
+                                          curve: VoltiMotion.easeScreen,
+                                          fromOffset: const Offset(0, 80),
+                                          child: Container(
+                                            key: const Key('depot-card'),
+                                            width: double.infinity,
+                                            padding: const EdgeInsets.all(VoltiSpacing.s16),
+                                            decoration: BoxDecoration(color: surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
+                                            child: switch (depots) {
+                                              AsyncValue(:final error?, hasValue: false) => ErrorState(
+                                                error: error,
+                                                onRetry: () => ref.invalidate(depotsProvider),
+                                              ),
+                                              AsyncValue(hasValue: false) => VoltiSkeleton.list(
+                                                key: const Key('depot-skeleton'),
+                                                rows: 2,
+                                                trailing: false,
+                                                label: l.loading,
+                                              ),
+                                              // Rola por dentro com texto grande (a coluna de botoes do mapa ocupa espaco).
+                                              _ when current == null => SingleChildScrollView(
+                                                child: VoltiEmptyState(
+                                                  compact: true,
+                                                  icon: LucideIcons.warehouse,
+                                                  title: l.depotsEmpty,
+                                                  message: l.depotsEmptyText,
+                                                  actionLabel: l.retry,
+                                                  actionIcon: LucideIcons.refreshCw,
+                                                  onAction: () => ref.invalidate(depotsProvider),
+                                                ),
+                                              ),
+                                              _ => _DepotCardBody(
+                                                depots: depots.value!,
+                                                current: current,
+                                                now: now,
+                                                onSelect: _selectDepot,
+                                                onPick: () => context.push('/pick'),
+                                              ),
+                                            },
+                                          ),
+                                        ),
                                 ),
                               ),
                             ),

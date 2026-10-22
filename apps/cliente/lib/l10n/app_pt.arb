@@ -182,7 +182,6 @@
   "scanHint": "Aponte para o QR no guidão ou digite o número da moto.",
   "scanTitle": "Escanear para andar",
   "scanToRide": "Escanear para andar",
-  "seeReservation": "Ver reserva",
   "selfiePhoto": "Selfie com prova de vida",
   "selfiePhotoHint": "Olhe para a câmera em local iluminado",
   "send": "Enviar",
@@ -1547,5 +1546,69 @@
       }
     }
   },
-  "stationsCloseSemantics": "Fechar pontos de troca"
+  "stationsCloseSemantics": "Fechar pontos de troca",
+  "homeReservationTitle": "Sua reserva",
+  "homeReservationScheduled": "Retirada agendada · {day} às {time}",
+  "@homeReservationScheduled": {
+    "placeholders": {
+      "day": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "homeReservationHandover": "Sua moto está sendo entregue",
+  "homeReservationExpired": "O prazo de retirada acabou",
+  "homeReservationShowQr": "Ver QR da reserva",
+  "homeReservationRemaining": "{minutes, plural, =0{Falta menos de 1 minuto} =1{Falta 1 minuto} other{Faltam {minutes} minutos}}",
+  "@homeReservationRemaining": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "homeReservationA11yNow": "Reserva da {vehicle}, retire até {time}",
+  "@homeReservationA11yNow": {
+    "placeholders": {
+      "vehicle": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "homeReservationA11yScheduled": "Reserva da {vehicle}, retirada agendada {day} às {time}",
+  "@homeReservationA11yScheduled": {
+    "placeholders": {
+      "vehicle": {
+        "type": "String"
+      },
+      "day": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "homeReservationA11yHandover": "Reserva da {vehicle}, sua moto está sendo entregue",
+  "@homeReservationA11yHandover": {
+    "placeholders": {
+      "vehicle": {
+        "type": "String"
+      }
+    }
+  },
+  "homeReservationA11yExpired": "Reserva da {vehicle}, o prazo de retirada acabou",
+  "@homeReservationA11yExpired": {
+    "placeholders": {
+      "vehicle": {
+        "type": "String"
+      }
+    }
+  }
 }

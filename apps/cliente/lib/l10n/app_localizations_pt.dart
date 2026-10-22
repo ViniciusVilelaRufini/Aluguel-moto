@@ -585,9 +585,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get scanToRide => 'Escanear para andar';
 
   @override
-  String get seeReservation => 'Ver reserva';
-
-  @override
   String get selfiePhoto => 'Selfie com prova de vida';
 
   @override
@@ -2596,4 +2593,53 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get stationsCloseSemantics => 'Fechar pontos de troca';
+
+  @override
+  String get homeReservationTitle => 'Sua reserva';
+
+  @override
+  String homeReservationScheduled(String day, String time) {
+    return 'Retirada agendada · $day às $time';
+  }
+
+  @override
+  String get homeReservationHandover => 'Sua moto está sendo entregue';
+
+  @override
+  String get homeReservationExpired => 'O prazo de retirada acabou';
+
+  @override
+  String get homeReservationShowQr => 'Ver QR da reserva';
+
+  @override
+  String homeReservationRemaining(int minutes) {
+    String _temp0 = intl.Intl.pluralLogic(
+      minutes,
+      locale: localeName,
+      other: 'Faltam $minutes minutos',
+      one: 'Falta 1 minuto',
+      zero: 'Falta menos de 1 minuto',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String homeReservationA11yNow(String vehicle, String time) {
+    return 'Reserva da $vehicle, retire até $time';
+  }
+
+  @override
+  String homeReservationA11yScheduled(String vehicle, String day, String time) {
+    return 'Reserva da $vehicle, retirada agendada $day às $time';
+  }
+
+  @override
+  String homeReservationA11yHandover(String vehicle) {
+    return 'Reserva da $vehicle, sua moto está sendo entregue';
+  }
+
+  @override
+  String homeReservationA11yExpired(String vehicle) {
+    return 'Reserva da $vehicle, o prazo de retirada acabou';
+  }
 }
