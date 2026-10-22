@@ -128,6 +128,27 @@ describe('LgpdService', () => {
     await expect(service.deleteAccount(ME)).rejects.toMatchObject({ slug: 'account-deletion-blocked' });
   });
 
+  it('QA-12: exclusão anula a posição de início dos aluguéis do titular', async () => {
+    const { service, prisma } = setup();
+    prisma.rental.findMany.mockResolvedValue([{ id: 'r1' }] as any);
+    await service.deleteAccount(ME);
+    expect(prisma.rental.updateMany).toHaveBeenCalledWith({ where: { customerId: ME }, data: { startLat: null, startLng: null } });
+  });
+
+  it('QA-12: job diário anula a posição de início dos aluguéis com mais de TRACK_RETENTION_DAYS', async () => {
+    const { service, prisma } = setup();
+    prisma.trackPoint.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.rental.updateMany.mockResolvedValue({ count: 3 });
+    const before = Date.now();
+    await service.purgeExpiredStartLocations();
+    const args = prisma.rental.updateMany.mock.calls[0][0] as any;
+    expect(args.data).toEqual({ startLat: null, startLng: null });
+    expect(args.where.startLat).toEqual({ not: null });
+    const cutoff = args.where.startedAt.lt.getTime();
+    expect(before - cutoff).toBeGreaterThanOrEqual(90 * 86_400_000 - 1000);
+    expect(before - cutoff).toBeLessThanOrEqual(90 * 86_400_000 + 1000);
+  });
+
   it('job de expiração apaga TrackPoint com expiresAt < now', async () => {
     const { service, prisma } = setup();
     prisma.trackPoint.deleteMany.mockResolvedValue({ count: 7 });

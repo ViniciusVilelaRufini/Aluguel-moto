@@ -127,6 +127,8 @@ export class LgpdService {
 
     await this.prisma.$transaction(async (tx) => {
       if (rentalIds.length) await tx.trackPoint.deleteMany({ where: { rentalId: { in: rentalIds } } });
+      // QA-12: a posição de início é localização ligada ao titular.
+      await tx.rental.updateMany({ where: { customerId }, data: { startLat: null, startLng: null } });
       await tx.device.deleteMany({ where: { ownerId: customerId } });
       await tx.customer.update({
         where: { id: customerId },
@@ -179,11 +181,19 @@ export class LgpdService {
     return res.count;
   }
 
+  /** QA-12: posição de início dos aluguéis segue a retenção dos trajetos (TRACK_RETENTION_DAYS). */
+  async purgeExpiredStartLocations(): Promise<number> {
+    const cutoff = new Date(Date.now() - this.cfg.trackRetentionDays * 86_400_000);
+    const res = await this.prisma.rental.updateMany({ where: { startedAt: { lt: cutoff }, startLat: { not: null } }, data: { startLat: null, startLng: null } });
+    return res.count;
+  }
+
   /** Job diário (03:30 em São Paulo). */
   @Cron('30 3 * * *', { name: 'purge-expired-tracks', timeZone: 'America/Sao_Paulo' })
   async purgeJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     const count = await this.purgeExpiredTracks();
-    this.logger.log({ msg: 'expired_tracks_purged', count });
+    const startLocations = await this.purgeExpiredStartLocations();
+    this.logger.log({ msg: 'expired_tracks_purged', count, startLocations });
   }
 }

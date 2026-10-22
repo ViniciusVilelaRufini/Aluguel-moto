@@ -17,7 +17,7 @@ const DEPOSIT_ID = '66666666-6666-4666-8666-666666666666';
 const POLICY_ID = '77777777-7777-4777-8777-777777777777';
 
 const customer = { id: CUSTOMER_ID, kycStatus: 'approved', status: 'active', delinquent: false, locationConsent: true };
-const vehicle = { id: VEHICLE_ID, code: 'VLT-0001', model: 'Volti S1', thingName: 'moto-0001', status: 'free', lat: -23.56, lng: -46.69, batteryPct: 90, speedLimitKmh: 32 };
+const vehicle = { id: VEHICLE_ID, code: 'VLT-0001', model: 'Volti S1', thingName: 'moto-0001', status: 'free', lat: -23.560412, lng: -46.689871, batteryPct: 90, speedLimitKmh: 32 };
 const plan = { id: 'p', code: 'minute', name: 'Por minuto', unit: 'minute', unlockFeeCents: 300, unitPriceCents: 79, pausePerMinuteCents: 20, recurring: false, active: true };
 const body = { vehicleId: VEHICLE_ID, planCode: 'minute', coverage: 'basic', depositMethod: 'card' };
 
@@ -156,6 +156,9 @@ describe('Início do aluguel (POST /rentals)', () => {
     expect(insurance.issueForRental).toHaveBeenCalledWith(expect.objectContaining({ customerId: CUSTOMER_ID, coverage: 'basic' }));
     const data = h.prisma.rental.create.mock.calls[0][0].data as any;
     expect(data.priceSnapshot).toMatchObject({ unlockFeeCents: 300, unitPriceCents: 79, insurancePremiumCents: 200 });
+    // QA-12: posição de início arredondada (3 casas ≈ 100 m), o suficiente para o mapa de calor.
+    expect(data.startLat).toBe(-23.56);
+    expect(data.startLng).toBe(-46.69);
     expect(h.prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['free', 'reserved'] } }, data: { status: 'rented' } });
   });
 

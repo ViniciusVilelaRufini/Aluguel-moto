@@ -118,8 +118,9 @@ export class RentalStartService {
           couponCode: coupon?.code ?? null,
           depositId: deposit.id,
           insurancePolicyId: policy.policyId,
-          startLat: vehicle.lat,
-          startLng: vehicle.lng,
+          // QA-12: arredondada (≈ 100 m; o mapa de calor usa 3 casas), anulada após TRACK_RETENTION_DAYS e na exclusão.
+          startLat: roundCoord(vehicle.lat),
+          startLng: roundCoord(vehicle.lng),
           speedLimitKmh: vehicle.speedLimitKmh,
         },
       });
@@ -172,4 +173,9 @@ export class RentalStartService {
     const ev: DepositReleaseRequestedEvent = { depositId, customerId, reason: 'rental_not_started' };
     this.events.emit(EV.DEPOSIT_RELEASE_REQUESTED, ev);
   }
+}
+
+/** Coordenada com 3 casas (≈ 100 m). */
+function roundCoord(v: number): number {
+  return Math.round(v * 1000) / 1000;
 }
