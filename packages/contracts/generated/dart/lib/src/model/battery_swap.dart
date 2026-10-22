@@ -18,6 +18,9 @@ part 'battery_swap.g.dart';
 /// * [removedBatterySerial]
 /// * [installedBatterySerial]
 /// * [installedBatteryPct]
+/// * [removedBatteryPct] - Carga da bateria retirada (última leitura da moto).
+/// * [removedBatteryCycleCount]
+/// * [installedBatteryCycleCount]
 /// * [recordedAt]
 /// * [createdAt]
 @BuiltValue()
@@ -42,6 +45,16 @@ abstract class BatterySwap implements Built<BatterySwap, BatterySwapBuilder> {
 
   @BuiltValueField(wireName: r'installedBatteryPct')
   int? get installedBatteryPct;
+
+  /// Carga da bateria retirada (última leitura da moto).
+  @BuiltValueField(wireName: r'removedBatteryPct')
+  int? get removedBatteryPct;
+
+  @BuiltValueField(wireName: r'removedBatteryCycleCount')
+  int? get removedBatteryCycleCount;
+
+  @BuiltValueField(wireName: r'installedBatteryCycleCount')
+  int? get installedBatteryCycleCount;
 
   @BuiltValueField(wireName: r'recordedAt')
   DateTime get recordedAt;
@@ -106,6 +119,27 @@ class _$BatterySwapSerializer implements PrimitiveSerializer<BatterySwap> {
       yield r'installedBatteryPct';
       yield serializers.serialize(
         object.installedBatteryPct,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.removedBatteryPct != null) {
+      yield r'removedBatteryPct';
+      yield serializers.serialize(
+        object.removedBatteryPct,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.removedBatteryCycleCount != null) {
+      yield r'removedBatteryCycleCount';
+      yield serializers.serialize(
+        object.removedBatteryCycleCount,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.installedBatteryCycleCount != null) {
+      yield r'installedBatteryCycleCount';
+      yield serializers.serialize(
+        object.installedBatteryCycleCount,
         specifiedType: const FullType(int),
       );
     }
@@ -193,6 +227,30 @@ class _$BatterySwapSerializer implements PrimitiveSerializer<BatterySwap> {
           ) as int?;
           if (valueDes == null) continue;
           result.installedBatteryPct = valueDes;
+          break;
+        case r'removedBatteryPct':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.removedBatteryPct = valueDes;
+          break;
+        case r'removedBatteryCycleCount':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.removedBatteryCycleCount = valueDes;
+          break;
+        case r'installedBatteryCycleCount':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.installedBatteryCycleCount = valueDes;
           break;
         case r'recordedAt':
           final valueDes = serializers.deserialize(

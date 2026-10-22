@@ -19,6 +19,9 @@ Name | Type | Description | Notes
 **completedAt** | [**DateTime**](DateTime.md) |  | [optional] 
 **notes** | **String** |  | [optional] 
 **createdById** | **String** |  | [optional] 
+**source_** | [**MaintenanceSource**](MaintenanceSource.md) |  | [optional] 
+**customerId** | **String** | Cliente que agendou (`source = customer`). | [optional] 
+**customerName** | **String** |  | [optional] 
 **createdAt** | [**DateTime**](DateTime.md) |  | 
 **updatedAt** | [**DateTime**](DateTime.md) |  | 
 

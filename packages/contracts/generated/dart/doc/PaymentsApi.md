@@ -10,16 +10,20 @@ All URIs are relative to *http://localhost:3000*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**addPaymentCard**](PaymentsApi.md#addpaymentcard) | **POST** /payments/cards | Cadastrar cartão (token do gateway)
+[**assignSubscriptionVehicle**](PaymentsApi.md#assignsubscriptionvehicle) | **PUT** /payments/subscriptions/{id}/vehicle | Definir a moto fixa do plano
 [**cancelSubscription**](PaymentsApi.md#cancelsubscription) | **DELETE** /payments/subscriptions/{id} | Cancelar assinatura
 [**createSubscription**](PaymentsApi.md#createsubscription) | **POST** /payments/subscriptions | Assinar plano semanal ou mensal
 [**deletePaymentCard**](PaymentsApi.md#deletepaymentcard) | **DELETE** /payments/cards/{id} | Remover cartão
 [**getDeposit**](PaymentsApi.md#getdeposit) | **GET** /payments/deposits/{id} | Estado da caução
 [**getPayment**](PaymentsApi.md#getpayment) | **GET** /payments/{id} | Detalhe do pagamento
+[**getSubscription**](PaymentsApi.md#getsubscription) | **GET** /payments/subscriptions/{id} | Detalhe da assinatura (próxima cobrança, pausa, moto fixa)
 [**listDeposits**](PaymentsApi.md#listdeposits) | **GET** /payments/deposits | Listar cauções
 [**listPaymentCards**](PaymentsApi.md#listpaymentcards) | **GET** /payments/cards | Cartões do cliente
 [**listPayments**](PaymentsApi.md#listpayments) | **GET** /payments | Listar pagamentos
 [**listSubscriptions**](PaymentsApi.md#listsubscriptions) | **GET** /payments/subscriptions | Assinaturas do cliente (planos semanal e mensal)
+[**pauseSubscription**](PaymentsApi.md#pausesubscription) | **POST** /payments/subscriptions/{id}/pause | Pausar assinatura
 [**refundPayment**](PaymentsApi.md#refundpayment) | **POST** /payments/{id}/refund | Estornar pagamento
+[**resumeSubscription**](PaymentsApi.md#resumesubscription) | **POST** /payments/subscriptions/{id}/resume | Retomar assinatura pausada
 
 
 # **addPaymentCard**
@@ -59,6 +63,51 @@ Name | Type | Description  | Notes
 ### Authorization
 
 [customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **assignSubscriptionVehicle**
+> Subscription assignSubscriptionVehicle(id, subscriptionVehicleAssignment)
+
+Definir a moto fixa do plano
+
+A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver `active` ou `paused` e some do `GET /vehicles/nearby` dos demais clientes. Cliente: só a própria assinatura e uma moto `free` sem outro assinante (`409` `vehicle-unavailable`). Staff (`admin`, `operacao`): qualquer assinatura e moto; grava AuditLog. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPaymentsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final SubscriptionVehicleAssignment subscriptionVehicleAssignment = ; // SubscriptionVehicleAssignment | 
+
+try {
+    final response = api.assignSubscriptionVehicle(id, subscriptionVehicleAssignment);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PaymentsApi->assignSubscriptionVehicle: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **subscriptionVehicleAssignment** | [**SubscriptionVehicleAssignment**](SubscriptionVehicleAssignment.md)|  | 
+
+### Return type
+
+[**Subscription**](Subscription.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth), [customerAuth](../README.md#customerAuth)
 
 ### HTTP request headers
 
@@ -281,6 +330,47 @@ Name | Type | Description  | Notes
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
+# **getSubscription**
+> Subscription getSubscription(id)
+
+Detalhe da assinatura (próxima cobrança, pausa, moto fixa)
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPaymentsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+
+try {
+    final response = api.getSubscription(id);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PaymentsApi->getSubscription: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+
+### Return type
+
+[**Subscription**](Subscription.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
 # **listDeposits**
 > DepositPage listDeposits(cursor, limit, status, customerId)
 
@@ -459,6 +549,51 @@ This endpoint does not need any parameter.
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
+# **pauseSubscription**
+> Subscription pauseSubscription(id, subscriptionPauseRequest)
+
+Pausar assinatura
+
+Suspende o plano por `days` dias; o período e a próxima cobrança andam o tempo efetivamente pausado. Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança (`422` `subscription-pause-limit-reached`). Só assinatura `active` sem cancelamento agendado (`409` `subscription-not-pausable`) e sem aluguel em andamento no plano (`409` `rental-already-active`). Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPaymentsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final SubscriptionPauseRequest subscriptionPauseRequest = ; // SubscriptionPauseRequest | 
+
+try {
+    final response = api.pauseSubscription(id, subscriptionPauseRequest);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PaymentsApi->pauseSubscription: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **subscriptionPauseRequest** | [**SubscriptionPauseRequest**](SubscriptionPauseRequest.md)|  | 
+
+### Return type
+
+[**Subscription**](Subscription.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
 # **refundPayment**
 > Payment refundPayment(id, idempotencyKey, refundRequest)
 
@@ -502,6 +637,49 @@ Name | Type | Description  | Notes
 ### HTTP request headers
 
  - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **resumeSubscription**
+> Subscription resumeSubscription(id)
+
+Retomar assinatura pausada
+
+Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado.
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPaymentsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+
+try {
+    final response = api.resumeSubscription(id);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PaymentsApi->resumeSubscription: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+
+### Return type
+
+[**Subscription**](Subscription.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
  - **Accept**: application/json, application/problem+json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

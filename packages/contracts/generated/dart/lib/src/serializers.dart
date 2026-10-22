@@ -27,8 +27,12 @@ import 'package:volti_api/src/model/alert_type.dart';
 import 'package:volti_api/src/model/audit_log.dart';
 import 'package:volti_api/src/model/audit_log_page.dart';
 import 'package:volti_api/src/model/auth_pool.dart';
+import 'package:volti_api/src/model/battery.dart';
+import 'package:volti_api/src/model/battery_page.dart';
+import 'package:volti_api/src/model/battery_status.dart';
 import 'package:volti_api/src/model/battery_swap.dart';
 import 'package:volti_api/src/model/battery_swap_request.dart';
+import 'package:volti_api/src/model/battery_transfer_request.dart';
 import 'package:volti_api/src/model/checklist_item.dart';
 import 'package:volti_api/src/model/claim.dart';
 import 'package:volti_api/src/model/claim_create.dart';
@@ -43,13 +47,22 @@ import 'package:volti_api/src/model/consents.dart';
 import 'package:volti_api/src/model/consents_update.dart';
 import 'package:volti_api/src/model/conversation_status.dart';
 import 'package:volti_api/src/model/coupon.dart';
+import 'package:volti_api/src/model/coupon_code_request.dart';
 import 'package:volti_api/src/model/coupon_input.dart';
 import 'package:volti_api/src/model/coupon_page.dart';
+import 'package:volti_api/src/model/coupon_validation.dart';
 import 'package:volti_api/src/model/coverage_item.dart';
 import 'package:volti_api/src/model/current_rental.dart';
 import 'package:volti_api/src/model/current_reservation.dart';
 import 'package:volti_api/src/model/customer.dart';
 import 'package:volti_api/src/model/customer_block_request.dart';
+import 'package:volti_api/src/model/customer_coupon.dart';
+import 'package:volti_api/src/model/customer_coupon_list.dart';
+import 'package:volti_api/src/model/customer_coupon_source.dart';
+import 'package:volti_api/src/model/customer_coupon_status.dart';
+import 'package:volti_api/src/model/customer_maintenance_request.dart';
+import 'package:volti_api/src/model/customer_maintenance_request_create.dart';
+import 'package:volti_api/src/model/customer_maintenance_request_list.dart';
 import 'package:volti_api/src/model/customer_page.dart';
 import 'package:volti_api/src/model/customer_stats.dart';
 import 'package:volti_api/src/model/customer_status.dart';
@@ -117,6 +130,9 @@ import 'package:volti_api/src/model/lgpd_export.dart';
 import 'package:volti_api/src/model/location_share.dart';
 import 'package:volti_api/src/model/location_share_request.dart';
 import 'package:volti_api/src/model/maintenance_kind.dart';
+import 'package:volti_api/src/model/maintenance_slot.dart';
+import 'package:volti_api/src/model/maintenance_slot_list.dart';
+import 'package:volti_api/src/model/maintenance_source.dart';
 import 'package:volti_api/src/model/maintenance_status.dart';
 import 'package:volti_api/src/model/maintenance_task.dart';
 import 'package:volti_api/src/model/maintenance_task_create.dart';
@@ -141,6 +157,7 @@ import 'package:volti_api/src/model/payment_method.dart';
 import 'package:volti_api/src/model/payment_page.dart';
 import 'package:volti_api/src/model/payment_status.dart';
 import 'package:volti_api/src/model/pix_charge.dart';
+import 'package:volti_api/src/model/pix_key_type.dart';
 import 'package:volti_api/src/model/plan_code.dart';
 import 'package:volti_api/src/model/plan_revenue.dart';
 import 'package:volti_api/src/model/plan_unit.dart';
@@ -157,6 +174,12 @@ import 'package:volti_api/src/model/quote_request.dart';
 import 'package:volti_api/src/model/rating_request.dart';
 import 'package:volti_api/src/model/reason_request.dart';
 import 'package:volti_api/src/model/receipt.dart';
+import 'package:volti_api/src/model/referral_redeem_request.dart';
+import 'package:volti_api/src/model/referral_redemption.dart';
+import 'package:volti_api/src/model/referral_reward.dart';
+import 'package:volti_api/src/model/referral_reward_page.dart';
+import 'package:volti_api/src/model/referral_reward_status.dart';
+import 'package:volti_api/src/model/referral_summary.dart';
 import 'package:volti_api/src/model/refund_request.dart';
 import 'package:volti_api/src/model/rental.dart';
 import 'package:volti_api/src/model/rental_event.dart';
@@ -189,8 +212,10 @@ import 'package:volti_api/src/model/start_rental_request.dart';
 import 'package:volti_api/src/model/subscription.dart';
 import 'package:volti_api/src/model/subscription_create.dart';
 import 'package:volti_api/src/model/subscription_list.dart';
+import 'package:volti_api/src/model/subscription_pause_request.dart';
 import 'package:volti_api/src/model/subscription_plan_code.dart';
 import 'package:volti_api/src/model/subscription_status.dart';
+import 'package:volti_api/src/model/subscription_vehicle_assignment.dart';
 import 'package:volti_api/src/model/support_conversation.dart';
 import 'package:volti_api/src/model/support_conversation_create.dart';
 import 'package:volti_api/src/model/support_conversation_page.dart';
@@ -198,6 +223,10 @@ import 'package:volti_api/src/model/support_conversation_update.dart';
 import 'package:volti_api/src/model/support_message.dart';
 import 'package:volti_api/src/model/support_message_create.dart';
 import 'package:volti_api/src/model/support_message_page.dart';
+import 'package:volti_api/src/model/support_message_status.dart';
+import 'package:volti_api/src/model/support_read_request.dart';
+import 'package:volti_api/src/model/swap_station.dart';
+import 'package:volti_api/src/model/swap_station_list.dart';
 import 'package:volti_api/src/model/swap_vehicle_request.dart';
 import 'package:volti_api/src/model/task_priority.dart';
 import 'package:volti_api/src/model/top_up.dart';
@@ -209,13 +238,22 @@ import 'package:volti_api/src/model/track_point.dart';
 import 'package:volti_api/src/model/upload_content_type.dart';
 import 'package:volti_api/src/model/upload_request.dart';
 import 'package:volti_api/src/model/validation_issue.dart';
+import 'package:volti_api/src/model/van_stock.dart';
 import 'package:volti_api/src/model/vehicle.dart';
 import 'package:volti_api/src/model/vehicle_command.dart';
 import 'package:volti_api/src/model/vehicle_command_page.dart';
 import 'package:volti_api/src/model/vehicle_create.dart';
+import 'package:volti_api/src/model/vehicle_model.dart';
+import 'package:volti_api/src/model/vehicle_model_input.dart';
+import 'package:volti_api/src/model/vehicle_model_list.dart';
+import 'package:volti_api/src/model/vehicle_model_update.dart';
 import 'package:volti_api/src/model/vehicle_page.dart';
 import 'package:volti_api/src/model/vehicle_revenue_report.dart';
 import 'package:volti_api/src/model/vehicle_revenue_row.dart';
+import 'package:volti_api/src/model/vehicle_service_info.dart';
+import 'package:volti_api/src/model/vehicle_service_page.dart';
+import 'package:volti_api/src/model/vehicle_service_row.dart';
+import 'package:volti_api/src/model/vehicle_service_status.dart';
 import 'package:volti_api/src/model/vehicle_status.dart';
 import 'package:volti_api/src/model/vehicle_status_change.dart';
 import 'package:volti_api/src/model/vehicle_status_counts.dart';
@@ -246,8 +284,12 @@ part 'serializers.g.dart';
   AuditLog,
   AuditLogPage,
   AuthPool,
+  Battery,
+  BatteryPage,
+  BatteryStatus,
   BatterySwap,
   BatterySwapRequest,
+  BatteryTransferRequest,
   ChecklistItem,
   Claim,
   ClaimCreate,
@@ -262,13 +304,22 @@ part 'serializers.g.dart';
   ConsentsUpdate,
   ConversationStatus,
   Coupon,
+  CouponCodeRequest,
   CouponInput,
   CouponPage,
+  CouponValidation,
   CoverageItem,
   CurrentRental,
   CurrentReservation,
   Customer,
   CustomerBlockRequest,
+  CustomerCoupon,
+  CustomerCouponList,
+  CustomerCouponSource,
+  CustomerCouponStatus,
+  CustomerMaintenanceRequest,
+  CustomerMaintenanceRequestCreate,
+  CustomerMaintenanceRequestList,
   CustomerPage,
   CustomerStats,
   CustomerStatus,
@@ -336,6 +387,9 @@ part 'serializers.g.dart';
   LocationShare,
   LocationShareRequest,
   MaintenanceKind,
+  MaintenanceSlot,
+  MaintenanceSlotList,
+  MaintenanceSource,
   MaintenanceStatus,
   MaintenanceTask,
   MaintenanceTaskCreate,
@@ -360,6 +414,7 @@ part 'serializers.g.dart';
   PaymentPage,
   PaymentStatus,
   PixCharge,
+  PixKeyType,
   PlanCode,
   PlanRevenue,
   PlanUnit,
@@ -376,6 +431,12 @@ part 'serializers.g.dart';
   RatingRequest,
   ReasonRequest,
   Receipt,
+  ReferralRedeemRequest,
+  ReferralRedemption,
+  ReferralReward,
+  ReferralRewardPage,
+  ReferralRewardStatus,
+  ReferralSummary,
   RefundRequest,
   Rental,
   RentalEvent,
@@ -408,8 +469,10 @@ part 'serializers.g.dart';
   Subscription,
   SubscriptionCreate,
   SubscriptionList,
+  SubscriptionPauseRequest,
   SubscriptionPlanCode,
   SubscriptionStatus,
+  SubscriptionVehicleAssignment,
   SupportConversation,
   SupportConversationCreate,
   SupportConversationPage,
@@ -417,6 +480,10 @@ part 'serializers.g.dart';
   SupportMessage,
   SupportMessageCreate,
   SupportMessagePage,
+  SupportMessageStatus,
+  SupportReadRequest,
+  SwapStation,
+  SwapStationList,
   SwapVehicleRequest,
   TaskPriority,
   TopUp,
@@ -428,13 +495,22 @@ part 'serializers.g.dart';
   UploadContentType,
   UploadRequest,
   ValidationIssue,
+  VanStock,
   Vehicle,
   VehicleCommand,
   VehicleCommandPage,
   VehicleCreate,
+  VehicleModel,
+  VehicleModelInput,
+  VehicleModelList,
+  VehicleModelUpdate,
   VehiclePage,
   VehicleRevenueReport,
   VehicleRevenueRow,
+  VehicleServiceInfo,
+  VehicleServicePage,
+  VehicleServiceRow,
+  VehicleServiceStatus,
   VehicleStatus,
   VehicleStatusChange,
   VehicleStatusCounts,
@@ -451,14 +527,6 @@ part 'serializers.g.dart';
 ])
 Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(FieldTask)]),
-        () => ListBuilder<FieldTask>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltMap, [FullType(String), FullType(String)]),
-        () => MapBuilder<String, String>(),
-      )
-      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(StaffUser)]),
         () => ListBuilder<StaffUser>(),
       )
@@ -467,32 +535,16 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<Fee>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(RestrictionEntry)]),
-        () => ListBuilder<RestrictionEntry>(),
+        const FullType(BuiltList, [FullType(CustomerCoupon)]),
+        () => ListBuilder<CustomerCoupon>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(MinutePackage)]),
         () => ListBuilder<MinutePackage>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(Subscription)]),
-        () => ListBuilder<Subscription>(),
-      )
-      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(OccupancyRow)]),
         () => ListBuilder<OccupancyRow>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(PlanRevenue)]),
-        () => ListBuilder<PlanRevenue>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(Deposit)]),
-        () => ListBuilder<Deposit>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(PricingPlan)]),
-        () => ListBuilder<PricingPlan>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Incident)]),
@@ -507,10 +559,6 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<InsurancePolicy>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(SupportConversation)]),
-        () => ListBuilder<SupportConversation>(),
-      )
-      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Track)]),
         () => ListBuilder<Track>(),
       )
@@ -519,36 +567,16 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<Alert>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(VehicleSummary)]),
-        () => ListBuilder<VehicleSummary>(),
-      )
-      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(VehicleCommand)]),
         () => ListBuilder<VehicleCommand>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(WalletEntry)]),
-        () => ListBuilder<WalletEntry>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(double)]),
         () => ListBuilder<double>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(PlanCode)]),
-        () => ListBuilder<PlanCode>(),
-      )
-      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(RevenueRow)]),
         () => ListBuilder<RevenueRow>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(GeoZone)]),
-        () => ListBuilder<GeoZone>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(PriceLine)]),
-        () => ListBuilder<PriceLine>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(PaymentCard)]),
@@ -563,12 +591,104 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<CoverageItem>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(VehicleRevenueRow)]),
-        () => ListBuilder<VehicleRevenueRow>(),
-      )
-      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(AuditLog)]),
         () => ListBuilder<AuditLog>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(MaintenanceSlot)]),
+        () => ListBuilder<MaintenanceSlot>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(Payment)]),
+        () => ListBuilder<Payment>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(StaffGroup)]),
+        () => ListBuilder<StaffGroup>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(MaintenanceTask)]),
+        () => ListBuilder<MaintenanceTask>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(VehicleServiceRow)]),
+        () => ListBuilder<VehicleServiceRow>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(Vehicle)]),
+        () => ListBuilder<Vehicle>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [
+          FullType(BuiltList, [
+            FullType(BuiltList, [FullType(double)])
+          ])
+        ]),
+        () => ListBuilder<BuiltList<BuiltList<double>>>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(FieldTask)]),
+        () => ListBuilder<FieldTask>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltMap, [FullType(String), FullType(String)]),
+        () => MapBuilder<String, String>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(RestrictionEntry)]),
+        () => ListBuilder<RestrictionEntry>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(SwapStation)]),
+        () => ListBuilder<SwapStation>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(Subscription)]),
+        () => ListBuilder<Subscription>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(PlanRevenue)]),
+        () => ListBuilder<PlanRevenue>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(Deposit)]),
+        () => ListBuilder<Deposit>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(PricingPlan)]),
+        () => ListBuilder<PricingPlan>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(SupportConversation)]),
+        () => ListBuilder<SupportConversation>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(VehicleSummary)]),
+        () => ListBuilder<VehicleSummary>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(VehicleModel)]),
+        () => ListBuilder<VehicleModel>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(WalletEntry)]),
+        () => ListBuilder<WalletEntry>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(PlanCode)]),
+        () => ListBuilder<PlanCode>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(GeoZone)]),
+        () => ListBuilder<GeoZone>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(PriceLine)]),
+        () => ListBuilder<PriceLine>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(VehicleRevenueRow)]),
+        () => ListBuilder<VehicleRevenueRow>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Dispute)]),
@@ -587,34 +707,38 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<InsuranceCoverageOption>(),
       )
       ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(CustomerMaintenanceRequest)]),
+        () => ListBuilder<CustomerMaintenanceRequest>(),
+      )
+      ..addBuilderFactory(
         const FullType(BuiltList, [
           FullType(BuiltList, [FullType(double)])
         ]),
         () => ListBuilder<BuiltList<double>>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(Payment)]),
-        () => ListBuilder<Payment>(),
-      )
-      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Customer)]),
         () => ListBuilder<Customer>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(StaffGroup)]),
-        () => ListBuilder<StaffGroup>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Rental)]),
         () => ListBuilder<Rental>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(MaintenanceTask)]),
-        () => ListBuilder<MaintenanceTask>(),
+        const FullType(BuiltList, [FullType(Battery)]),
+        () => ListBuilder<Battery>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(ValidationIssue)]),
         () => ListBuilder<ValidationIssue>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(ReferralReward)]),
+        () => ListBuilder<ReferralReward>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(int)]),
+        () => ListBuilder<int>(),
       )
       ..addBuilderFactory(
         const FullType(
@@ -630,24 +754,12 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<Coupon>(),
       )
       ..addBuilderFactory(
-        const FullType(BuiltList, [FullType(Vehicle)]),
-        () => ListBuilder<Vehicle>(),
-      )
-      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(RentalEvent)]),
         () => ListBuilder<RentalEvent>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(String)]),
         () => ListBuilder<String>(),
-      )
-      ..addBuilderFactory(
-        const FullType(BuiltList, [
-          FullType(BuiltList, [
-            FullType(BuiltList, [FullType(double)])
-          ])
-        ]),
-        () => ListBuilder<BuiltList<BuiltList<double>>>(),
       )
       ..add(const OneOfSerializer())
       ..add(const AnyOfSerializer())

@@ -87,6 +87,184 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/coupons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cupons salvos na conta
+         * @description Cupons que o cliente adicionou à conta (`POST /me/coupons`) ou ganhou por indicação. `status` é calculado na
+         *     leitura: `used` quando o limite por cliente foi atingido, `expired` quando passou de `validUntil` ou o cupom foi
+         *     desativado. Para usar, o app envia `couponCode` em `POST /pricing/quote` e `POST /rentals`.
+         */
+        get: operations["listMyCoupons"];
+        put?: never;
+        /**
+         * Adicionar cupom à conta
+         * @description Valida o código (mesmas regras do aluguel: ativo, vigência, limite total e por cliente) e o salva na conta.
+         *     Código inválido → `422` `coupon-invalid` (`detail` com o motivo em pt-BR); já salvo → `409` `conflict`.
+         *     Códigos de indicação não são cupons: use `POST /me/referral/redeem`.
+         */
+        post: operations["addMyCoupon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/coupons/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Validar cupom sem salvar
+         * @description Sempre `200`; `valid = false` traz `message` com o motivo. `planCode` opcional restringe a validação a um plano.
+         */
+        post: operations["validateMyCoupon"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/referral": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Programa de indicação do cliente
+         * @description Código de indicação do cliente (gerado no primeiro acesso, único), link de convite, valores das recompensas e
+         *     totais. Regras: quem usa o código ganha `refereeRewardCents` na carteira na hora; quem indicou ganha
+         *     `referrerRewardCents` quando o indicado termina a primeira corrida.
+         */
+        get: operations["getMyReferral"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/referral/rewards": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Recompensas de indicação
+         * @description Uma linha por amigo indicado (mais recentes primeiro). `granted` tem o lançamento `bonus` correspondente no extrato da carteira.
+         */
+        get: operations["listMyReferralRewards"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/referral/redeem": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Usar código de indicação de um amigo
+         * @description Só antes da primeira corrida e uma vez por conta. Código inexistente → `422` `referral-code-invalid`; próprio
+         *     código, já indicado, conta com corrida ou conta sem KYC aprovado → `422` `referral-not-eligible`. Credita
+         *     `rewardCents` na carteira (lançamento `bonus`).
+         */
+        post: operations["redeemReferralCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/maintenance-slots": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Horários livres para manutenção (plano semanal/mensal)
+         * @description Janelas de 1 h, segunda a sábado, 08:00–18:00 (America/Sao_Paulo), a partir da próxima hora cheia com 2 h de
+         *     antecedência e até `days` dias. Cada janela tem capacidade fixa; janelas lotadas vêm com `available: false`.
+         *     Exige assinatura semanal/mensal ativa (`403` `subscription-required`).
+         */
+        get: operations["listMyMaintenanceSlots"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/maintenance-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Manutenções agendadas pelo cliente */
+        get: operations["listMyMaintenanceRequests"];
+        put?: never;
+        /**
+         * Agendar manutenção da moto fixa do plano
+         * @description Cria uma manutenção preventiva (`MaintenanceTask` com `source: customer`) para a moto fixa da assinatura ativa,
+         *     visível na Operação do painel. Regras: assinatura ativa (`403` `subscription-required`), moto fixa definida
+         *     (`422` `subscription-vehicle-required`), `slotStartsAt` igual ao início de uma janela livre de
+         *     `GET /me/maintenance-slots` (`409` `maintenance-slot-unavailable`) e um pedido em aberto por vez (`409` `conflict`).
+         */
+        post: operations["createMyMaintenanceRequest"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/maintenance-requests/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancelar manutenção agendada
+         * @description Só enquanto `scheduled` (senão `409`). A manutenção vira `canceled`.
+         */
+        delete: operations["cancelMyMaintenanceRequest"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kyc/uploads": {
         parameters: {
             query?: never;
@@ -340,6 +518,90 @@ export interface paths {
         };
         /** Estado do comando */
         get: operations["getCommand"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vehicle-models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Catálogo de modelos ("Escolha sua moto")
+         * @description Modelos ativos em `sortOrder` (staff com `includeInactive=true` vê todos). `pricePerMinuteCents` substitui o
+         *     preço por minuto do plano `minute` para motos do modelo (o desbloqueio e a pausa continuam os do plano, salvo
+         *     `unlockFeeCents`). `photoUrl` é um link assinado (S3/MinIO) válido por 24 h.
+         */
+        get: operations["listVehicleModels"];
+        put?: never;
+        /** Cadastrar modelo */
+        post: operations["createVehicleModel"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vehicle-models/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * URL de upload da foto do modelo
+         * @description Upload direto ao bucket de catálogo (`catalog/<uuid>.<ext>`); depois envie `photoObjectKey` em `PATCH /vehicle-models/{id}`.
+         */
+        post: operations["createVehicleModelPhotoUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vehicle-models/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Editar modelo (preço, foto, intervalo de revisão)
+         * @description Grava AuditLog (`vehicle_model.update`). Mudança de preço vale para aluguéis iniciados depois (o aluguel guarda o preço do início).
+         */
+        patch: operations["updateVehicleModel"];
+        trace?: never;
+    };
+    "/swap-stations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Estações de troca de bateria (mapa)
+         * @description Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com `lat`/`lng`, filtra pelo
+         *     raio e ordena por distância (`distanceM`); sem eles, todas em ordem alfabética.
+         */
+        get: operations["listSwapStations"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1054,7 +1316,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Detalhe da assinatura (próxima cobrança, pausa, moto fixa) */
+        get: operations["getSubscription"];
         put?: never;
         post?: never;
         /**
@@ -1062,6 +1325,72 @@ export interface paths {
          * @description Cancela a renovação; o período atual continua válido até `currentPeriodEnd`.
          */
         delete: operations["cancelSubscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/subscriptions/{id}/pause": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pausar assinatura
+         * @description Suspende o plano por `days` dias; o período e a próxima cobrança andam o tempo efetivamente pausado.
+         *     Limites: até 3 dias por pausa no semanal e 7 no mensal, uma pausa por período de cobrança
+         *     (`422` `subscription-pause-limit-reached`). Só assinatura `active` sem cancelamento agendado
+         *     (`409` `subscription-not-pausable`) e sem aluguel em andamento no plano (`409` `rental-already-active`).
+         *     Durante a pausa, aluguéis no plano não são cobertos. Retoma sozinha em `pauseEndsAt`.
+         */
+        post: operations["pauseSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/subscriptions/{id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Retomar assinatura pausada
+         * @description Antecipa o fim da pausa. Só `paused` (senão `409` `subscription-not-pausable`). `currentPeriodEnd` e `nextChargeAt` andam o tempo pausado.
+         */
+        post: operations["resumeSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/subscriptions/{id}/vehicle": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Definir a moto fixa do plano
+         * @description A moto fixa só pode ser alugada pelo assinante enquanto a assinatura estiver `active` ou `paused` e some do
+         *     `GET /vehicles/nearby` dos demais clientes. Cliente: só a própria assinatura e uma moto `free` sem outro
+         *     assinante (`409` `vehicle-unavailable`). Staff (`admin`, `operacao`): qualquer assinatura e moto; grava AuditLog.
+         */
+        put: operations["assignSubscriptionVehicle"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1628,6 +1957,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/support/conversations/{id}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Marcar mensagens como lidas
+         * @description Marca como lidas (`readAt`) as mensagens do outro lado (para o cliente: do atendente/sistema; para o staff: do
+         *     cliente) até `upToMessageId` (inclusive) ou todas, se ausente. Estado de cada mensagem: `sent` (gravada),
+         *     `delivered` (o outro lado buscou a conversa em `GET .../messages`) e `read`. Idempotente. Responde a conversa
+         *     com `unreadCount` atualizado.
+         */
+        post: operations["markSupportConversationRead"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/field-tasks": {
         parameters: {
             query?: never;
@@ -1790,6 +2142,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/maintenance/vehicles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Manutenção preventiva por km/horas (tabela "Manutenção")
+         * @description Uma linha por moto com odômetro, horas de uso, km/horas desde a última revisão, próxima revisão e situação
+         *     (`overdue` → `due_soon` → `ok`, depois por código). Intervalos do modelo (`VehicleModel.serviceIntervalKm`/
+         *     `serviceIntervalHours`; padrão 1000 km / 100 h). `due_soon` quando faltam 10% ou menos de qualquer intervalo.
+         *     Revisão registrada = manutenção `preventive` concluída (`PATCH /maintenance/tasks/{id}` com `status: done`).
+         *     "Agendar" usa `POST /maintenance/tasks` com o `vehicleId` da linha; a linha mostra a manutenção em aberto.
+         */
+        get: operations["listVehicleServiceStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/maintenance/tasks": {
         parameters: {
             query?: never;
@@ -1824,6 +2200,84 @@ export interface paths {
         head?: never;
         /** Atualizar manutenção */
         patch: operations["updateMaintenanceTask"];
+        trace?: never;
+    };
+    "/batteries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Baterias (série, carga, ciclos, onde estão) */
+        get: operations["listBatteries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/batteries/van-stock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Estoque de baterias na van do operador
+         * @description Baterias com `status: in_van` do operador (padrão: o próprio usuário; `admin`/`operacao` podem passar
+         *     `operatorId`). Carregada = `chargePct >= 90`. A troca de bateria tira a instalada do estoque e põe a retirada.
+         */
+        get: operations["getVanStock"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/batteries/van-stock/load": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Carregar baterias na van
+         * @description Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada numa moto → `409`.
+         */
+        post: operations["loadVanBatteries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/batteries/van-stock/unload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Descarregar baterias da van
+         * @description Tira da van do usuário (para `charging`, ou `in_station` com `stationId`). Bateria fora da van do usuário → `409`.
+         */
+        post: operations["unloadVanBatteries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/reports/dashboard": {
@@ -2269,8 +2723,11 @@ export interface components {
          * @enum {string}
          */
         SubscriptionPlanCode: "weekly" | "monthly";
-        /** @enum {string} */
-        SubscriptionStatus: "active" | "past_due" | "canceled" | "expired";
+        /**
+         * @description `paused`: pausada pelo cliente (`POST /payments/subscriptions/{id}/pause`); aluguéis no plano não são cobertos.
+         * @enum {string}
+         */
+        SubscriptionStatus: "active" | "past_due" | "canceled" | "expired" | "paused";
         /** @enum {string} */
         WalletEntryType: "top_up" | "minute_package" | "rental_charge" | "refund" | "adjustment" | "bonus";
         /** @enum {string} */
@@ -2429,6 +2886,13 @@ export interface components {
             phone?: string;
             emergencyContactName?: string;
             emergencyContactPhone?: string;
+            pixRefundKeyType?: components["schemas"]["PixKeyType"];
+            /**
+             * @description Chave Pix para estornos. Envie junto com `pixRefundKeyType`; validada pelo tipo (`422` `pix-key-invalid`):
+             *     CPF com dígitos verificadores e igual ao CPF da conta, e-mail, celular E.164 `+55` ou chave aleatória (UUID).
+             *     É normalizada (CPF só dígitos, e-mail minúsculo). String vazia remove a chave. Grava AuditLog.
+             */
+            pixRefundKey?: string;
         };
         DeviceRegistration: {
             fcmToken: string;
@@ -2496,6 +2960,18 @@ export interface components {
             estimatedRangeKm: number;
             /** @description Distância até o ponto da busca (só em `nearby`). */
             distanceM?: number;
+            /**
+             * Format: uuid
+             * @description Modelo no catálogo (`GET /vehicle-models`, com a foto).
+             */
+            vehicleModelId?: string;
+            /** @example Urbana */
+            categoryLabel?: string;
+            /**
+             * @description Preço por minuto do modelo no plano `minute`.
+             * @example 79
+             */
+            pricePerMinuteCents?: number;
         };
         NearbyVehicles: {
             items: components["schemas"]["VehicleSummary"][];
@@ -2562,6 +3038,36 @@ export interface components {
              * @description staff.
              */
             currentRentalId?: string;
+            /** Format: uuid */
+            vehicleModelId?: string;
+            /** @example Urbana */
+            categoryLabel?: string;
+            /** @example 79 */
+            pricePerMinuteCents?: number;
+            /**
+             * @description Endereço aproximado da posição atual (geocodificação reversa em cache).
+             * @example R. Teodoro Sampaio, 1020 · Pinheiros, São Paulo
+             */
+            address?: string;
+            /** Format: date-time */
+            addressUpdatedAt?: string;
+            /**
+             * Format: double
+             * @description staff.
+             */
+            odometerKm?: number;
+            /**
+             * Format: double
+             * @description staff. Horas com ignição ligada.
+             */
+            usageHours?: number;
+            service?: components["schemas"]["VehicleServiceInfo"];
+            battery?: components["schemas"]["Battery"];
+            /**
+             * Format: uuid
+             * @description staff. Moto fixa de uma assinatura semanal/mensal.
+             */
+            assignedSubscriptionId?: string;
             /** Format: date-time */
             createdAt?: string;
             /** Format: date-time */
@@ -2579,11 +3085,31 @@ export interface components {
             thingName: string;
             qrCode?: string;
             batterySerial?: string;
+            /**
+             * Format: uuid
+             * @description Define também `model` (nome do modelo).
+             */
+            vehicleModelId?: string;
         };
         VehicleUpdate: {
             model?: string;
             thingName?: string;
             qrCode?: string;
+            /**
+             * Format: uuid
+             * @description Define também `model` (nome do modelo).
+             */
+            vehicleModelId?: string;
+            /**
+             * Format: double
+             * @description Correção manual do odômetro (AuditLog).
+             */
+            odometerKm?: number;
+            /**
+             * Format: double
+             * @description Correção manual das horas de uso (AuditLog).
+             */
+            usageHours?: number;
         };
         VehicleStatusChange: {
             status: components["schemas"]["ServiceVehicleStatus"];
@@ -2982,6 +3508,11 @@ export interface components {
             couponCode?: string;
             /** @description Duração prevista para estimar o valor (padrão 30 no plano `minute`, 1 unidade nos demais). */
             estimatedMinutes?: number;
+            /**
+             * Format: uuid
+             * @description Usa o preço por minuto do modelo da moto (plano `minute`).
+             */
+            vehicleId?: string;
         };
         Quote: {
             planCode: components["schemas"]["PlanCode"];
@@ -3141,6 +3672,34 @@ export interface components {
             cancelAtPeriodEnd?: boolean;
             /** Format: date-time */
             canceledAt?: string;
+            /**
+             * Format: date-time
+             * @description Próxima cobrança recorrente (ausente se cancelada ou pausada).
+             */
+            nextChargeAt?: string;
+            nextChargeCents?: number;
+            /** @description Bandeira do cartão da recorrência. */
+            cardBrand?: string;
+            cardLast4?: string;
+            lastPaymentStatus?: components["schemas"]["PaymentStatus"];
+            /** Format: date-time */
+            lastPaymentAt?: string;
+            /** Format: date-time */
+            pausedAt?: string;
+            /**
+             * Format: date-time
+             * @description Retomada automática.
+             */
+            pauseEndsAt?: string;
+            /** @description Dias por pausa (3 no semanal, 7 no mensal). */
+            maxPauseDays?: number;
+            pausesRemainingInPeriod?: number;
+            /**
+             * Format: uuid
+             * @description Moto fixa do plano.
+             */
+            assignedVehicleId?: string;
+            assignedVehicle?: components["schemas"]["VehicleSummary"];
             /** Format: date-time */
             createdAt: string;
         };
@@ -3151,6 +3710,11 @@ export interface components {
              * @description Padrão do cliente se ausente.
              */
             cardId?: string;
+            /**
+             * Format: uuid
+             * @description Moto fixa (opcional; mesmas regras de `PUT /payments/subscriptions/{id}/vehicle`).
+             */
+            vehicleId?: string;
         };
         SubscriptionList: {
             items: components["schemas"]["Subscription"][];
@@ -3186,6 +3750,18 @@ export interface components {
             minutesBalance: number;
             /** Format: date-time */
             updatedAt: string;
+            /**
+             * @description Menor recarga de valor livre aceita agora.
+             * @example 1000
+             */
+            topUpMinCents?: number;
+            /**
+             * @description Maior recarga de valor livre aceita agora.
+             * @example 100000
+             */
+            topUpMaxCents?: number;
+            /** @description Valores sugeridos para os atalhos da tela de recarga (centavos). */
+            suggestedTopUpAmountsCents?: number[];
         };
         MinutePackage: {
             /** Format: uuid */
@@ -3200,7 +3776,7 @@ export interface components {
             items: components["schemas"]["MinutePackage"][];
         };
         TopUpRequest: {
-            /** @description Crédito em reais (R$ 10 a R$ 1.000). */
+            /** @description Crédito em reais (R$ 10 a R$ 1.000). Fora de `Wallet.topUpMinCents..topUpMaxCents` → `422` `top-up-amount-out-of-range`. */
             amountCents?: number;
             /** Format: uuid */
             packageId?: string;
@@ -3526,6 +4102,17 @@ export interface components {
             authorName?: string;
             body: string;
             attachmentObjectKeys?: string[];
+            status?: components["schemas"]["SupportMessageStatus"];
+            /**
+             * Format: date-time
+             * @description O outro lado buscou a mensagem.
+             */
+            deliveredAt?: string;
+            /**
+             * Format: date-time
+             * @description O outro lado marcou como lida.
+             */
+            readAt?: string;
             /** Format: date-time */
             createdAt: string;
         };
@@ -3554,6 +4141,20 @@ export interface components {
             /** Format: double */
             vehicleLng?: number;
             vehicleBatteryPct?: number;
+            vehicleStatus?: components["schemas"]["VehicleStatus"];
+            /**
+             * @description Endereço aproximado da moto.
+             * @example R. Fradique Coutinho, 410 · Pinheiros, São Paulo
+             */
+            vehicleAddress?: string;
+            /**
+             * @description Bateria instalada (retirada numa troca).
+             * @example BT-190577
+             */
+            vehicleBatterySerial?: string;
+            vehicleBatteryCycleCount?: number;
+            /** @description Endereço aproximado do destino. */
+            targetAddress?: string;
             /**
              * Format: double
              * @description Destino (reposicionar).
@@ -3699,6 +4300,10 @@ export interface components {
             removedBatterySerial: string;
             installedBatterySerial: string;
             installedBatteryPct?: number;
+            /** @description Carga da bateria retirada (última leitura da moto). */
+            removedBatteryPct?: number;
+            removedBatteryCycleCount?: number;
+            installedBatteryCycleCount?: number;
             /** Format: date-time */
             recordedAt: string;
             /** Format: date-time */
@@ -3722,6 +4327,13 @@ export interface components {
             notes?: string;
             /** Format: uuid */
             createdById?: string;
+            source?: components["schemas"]["MaintenanceSource"];
+            /**
+             * Format: uuid
+             * @description Cliente que agendou (`source = customer`).
+             */
+            customerId?: string;
+            customerName?: string;
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
@@ -3899,6 +4511,15 @@ export interface components {
             locationConsent?: boolean;
             emergencyContactName?: string;
             emergencyContactPhone?: string;
+            pixRefundKeyType?: components["schemas"]["PixKeyType"];
+            /** @description Chave Pix para estornos. Completa para o próprio cliente, `admin` e `financeiro`; mascarada para os demais. */
+            pixRefundKey?: string;
+            activePlanCode?: components["schemas"]["SubscriptionPlanCode"];
+            /**
+             * Format: uuid
+             * @description Assinatura semanal/mensal ativa ou pausada.
+             */
+            activeSubscriptionId?: string;
             stats?: components["schemas"]["CustomerStats"];
             /** Format: date-time */
             createdAt: string;
@@ -4023,6 +4644,390 @@ export interface components {
             requestedAt: string;
             /** Format: date-time */
             completedAt?: string;
+        };
+        /**
+         * @description `cpf` 11 dígitos (o CPF do próprio cliente); `email`; `phone` E.164 brasileiro (`+55…`); `random` chave aleatória (UUID).
+         * @enum {string}
+         */
+        PixKeyType: "cpf" | "email" | "phone" | "random";
+        /** @enum {string} */
+        CustomerCouponStatus: "available" | "used" | "expired";
+        /** @enum {string} */
+        CustomerCouponSource: "manual" | "referral";
+        /**
+         * @description `pending` até o indicado terminar a primeira corrida; `granted` com o bônus lançado na carteira.
+         * @enum {string}
+         */
+        ReferralRewardStatus: "pending" | "granted" | "canceled";
+        /** @enum {string} */
+        SupportMessageStatus: "sent" | "delivered" | "read";
+        /**
+         * @description Situação da revisão preventiva (Em dia / Próxima / Vencida).
+         * @enum {string}
+         */
+        VehicleServiceStatus: "ok" | "due_soon" | "overdue";
+        /** @enum {string} */
+        BatteryStatus: "in_vehicle" | "in_van" | "charging" | "in_station" | "retired";
+        /**
+         * @description Quem abriu a manutenção (painel, cliente do plano semanal/mensal ou regra automática).
+         * @enum {string}
+         */
+        MaintenanceSource: "staff" | "customer" | "system";
+        VehicleModel: {
+            /** Format: uuid */
+            id: string;
+            /** @example Volti Flash */
+            name: string;
+            /** @example flash */
+            slug: string;
+            /**
+             * @description Rótulo da categoria (pt-BR).
+             * @example Urbana
+             */
+            categoryLabel: string;
+            description?: string;
+            /**
+             * Format: uri
+             * @description Link assinado da foto (24 h). Ausente sem foto.
+             */
+            photoUrl?: string;
+            /** @description staff. Chave do objeto no bucket de catálogo. */
+            photoObjectKey?: string;
+            /**
+             * @description Preço por minuto do plano `minute` para este modelo.
+             * @example 79
+             */
+            pricePerMinuteCents: number;
+            /** @description Desbloqueio específico do modelo (ausente = o do plano). */
+            unlockFeeCents?: number;
+            /** @example 1000 */
+            serviceIntervalKm: number;
+            /** @example 100 */
+            serviceIntervalHours: number;
+            active: boolean;
+            sortOrder: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        VehicleModelList: {
+            items: components["schemas"]["VehicleModel"][];
+        };
+        VehicleModelInput: {
+            name: string;
+            slug: string;
+            categoryLabel: string;
+            description?: string;
+            photoObjectKey?: string;
+            pricePerMinuteCents: number;
+            unlockFeeCents?: number;
+            /** @default 1000 */
+            serviceIntervalKm?: number;
+            /** @default 100 */
+            serviceIntervalHours?: number;
+            /** @default true */
+            active?: boolean;
+            /** @default 0 */
+            sortOrder?: number;
+        };
+        VehicleModelUpdate: {
+            name?: string;
+            categoryLabel?: string;
+            description?: string;
+            photoObjectKey?: string;
+            pricePerMinuteCents?: number;
+            unlockFeeCents?: number;
+            serviceIntervalKm?: number;
+            serviceIntervalHours?: number;
+            active?: boolean;
+            sortOrder?: number;
+        };
+        SwapStation: {
+            /** Format: uuid */
+            id: string;
+            /** @example Estação Largo da Batata */
+            name: string;
+            /** @example R. Teodoro Sampaio, 2000 · Pinheiros, São Paulo */
+            address: string;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+            /** @description Baterias carregadas prontas para troca. */
+            availableBatteries: number;
+            totalSlots: number;
+            /** @example Seg a sáb, 7h às 22h */
+            openingHours: string;
+            open24h?: boolean;
+            /** @description Só com `lat`/`lng` na busca. */
+            distanceM?: number;
+        };
+        SwapStationList: {
+            items: components["schemas"]["SwapStation"][];
+        };
+        SubscriptionPauseRequest: {
+            /** @description Máximo: 3 no semanal, 7 no mensal. */
+            days: number;
+        };
+        SubscriptionVehicleAssignment: {
+            /** Format: uuid */
+            vehicleId: string;
+        };
+        CouponCodeRequest: {
+            /** @description Sem diferenciar maiúsculas. */
+            code: string;
+            planCode?: components["schemas"]["PlanCode"];
+        };
+        CouponValidation: {
+            code: string;
+            valid: boolean;
+            /** @description Motivo da recusa (pt-BR) ou "Cupom válido.". */
+            message?: string;
+            description?: string;
+            discountType?: components["schemas"]["DiscountType"];
+            percentOff?: number;
+            amountOffCents?: number;
+            planCodes?: components["schemas"]["PlanCode"][];
+            /** Format: date-time */
+            validUntil?: string;
+        };
+        CustomerCoupon: {
+            /** Format: uuid */
+            id: string;
+            /** @example BEMVINDO20 */
+            code: string;
+            description?: string;
+            discountType: components["schemas"]["DiscountType"];
+            percentOff?: number;
+            amountOffCents?: number;
+            /** @description Planos elegíveis (vazio = todos). */
+            planCodes?: components["schemas"]["PlanCode"][];
+            /** Format: date-time */
+            validUntil?: string;
+            /** @description Usos que ainda restam para o cliente (ausente = sem limite). */
+            usesRemaining?: number;
+            status: components["schemas"]["CustomerCouponStatus"];
+            source: components["schemas"]["CustomerCouponSource"];
+            /** Format: date-time */
+            addedAt: string;
+        };
+        CustomerCouponList: {
+            items: components["schemas"]["CustomerCoupon"][];
+        };
+        ReferralSummary: {
+            /** @example MARIA7K2Q */
+            code: string;
+            /**
+             * Format: uri
+             * @example https://volti.com.br/convite/MARIA7K2Q
+             */
+            inviteUrl: string;
+            /** @description Texto pronto para compartilhar (pt-BR). */
+            shareMessage: string;
+            /**
+             * @description O que o cliente ganha por amigo que termina a primeira corrida.
+             * @example 1000
+             */
+            referrerRewardCents: number;
+            /**
+             * @description O que o amigo ganha ao usar o código.
+             * @example 1000
+             */
+            refereeRewardCents: number;
+            invitedCount: number;
+            /** @description Amigos que já terminaram a primeira corrida. */
+            qualifiedCount: number;
+            totalEarnedCents: number;
+            /** @description Primeiro nome de quem indicou o cliente (se houver). */
+            referredBy?: string;
+        };
+        ReferralReward: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * @description Primeiro nome do amigo (LGPD).
+             * @example Ana
+             */
+            refereeName: string;
+            status: components["schemas"]["ReferralRewardStatus"];
+            amountCents: number;
+            /**
+             * Format: uuid
+             * @description Lançamento `bonus` (quando `granted`).
+             */
+            walletEntryId?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            grantedAt?: string;
+        };
+        ReferralRewardPage: {
+            items: components["schemas"]["ReferralReward"][];
+            nextCursor?: string;
+        };
+        ReferralRedeemRequest: {
+            code: string;
+        };
+        ReferralRedemption: {
+            code: string;
+            /** @description Primeiro nome de quem indicou. */
+            referrerName?: string;
+            rewardCents: number;
+            walletEntry: components["schemas"]["WalletEntry"];
+        };
+        MaintenanceSlot: {
+            /** Format: date-time */
+            startsAt: string;
+            /** Format: date-time */
+            endsAt: string;
+            available: boolean;
+        };
+        MaintenanceSlotList: {
+            /**
+             * @description Onde a manutenção acontece (pt-BR).
+             * @example Oficina Volti · R. Fradique Coutinho, 1000 · Pinheiros
+             */
+            location: string;
+            items: components["schemas"]["MaintenanceSlot"][];
+        };
+        CustomerMaintenanceRequestCreate: {
+            /**
+             * Format: date-time
+             * @description `startsAt` de uma janela livre.
+             */
+            slotStartsAt: string;
+            /** @example Freio traseiro fazendo barulho */
+            description: string;
+        };
+        CustomerMaintenanceRequest: {
+            /**
+             * Format: uuid
+             * @description Id da `MaintenanceTask`.
+             */
+            id: string;
+            /** Format: uuid */
+            vehicleId: string;
+            vehicleCode: string;
+            status: components["schemas"]["MaintenanceStatus"];
+            /** Format: date-time */
+            scheduledFor: string;
+            location?: string;
+            description: string;
+            /** Format: date-time */
+            createdAt: string;
+        };
+        CustomerMaintenanceRequestList: {
+            items: components["schemas"]["CustomerMaintenanceRequest"][];
+        };
+        SupportReadRequest: {
+            /**
+             * Format: uuid
+             * @description Última mensagem lida (inclusive). Ausente = todas.
+             */
+            upToMessageId?: string;
+        };
+        VehicleServiceInfo: {
+            /** Format: double */
+            odometerKm: number;
+            /** Format: double */
+            usageHours: number;
+            /**
+             * Format: double
+             * @example 812.4
+             */
+            kmSinceService: number;
+            /** Format: double */
+            hoursSinceService: number;
+            serviceIntervalKm: number;
+            serviceIntervalHours: number;
+            /**
+             * Format: double
+             * @description Odômetro da próxima revisão.
+             */
+            nextServiceAtKm: number;
+            /** Format: double */
+            nextServiceAtHours: number;
+            /**
+             * Format: double
+             * @description Negativo quando vencida.
+             */
+            kmUntilService: number;
+            /**
+             * Format: double
+             * @description Negativo quando vencida.
+             */
+            hoursUntilService: number;
+            status: components["schemas"]["VehicleServiceStatus"];
+            /** Format: date-time */
+            lastServiceAt?: string;
+        };
+        VehicleServiceRow: {
+            /** Format: uuid */
+            vehicleId: string;
+            vehicleCode: string;
+            model: string;
+            vehicleStatus: components["schemas"]["VehicleStatus"];
+            service: components["schemas"]["VehicleServiceInfo"];
+            /**
+             * Format: uuid
+             * @description Manutenção preventiva em aberto (agendada ou em andamento).
+             */
+            openMaintenanceTaskId?: string;
+            /**
+             * Format: date-time
+             * @description Data da manutenção em aberto.
+             */
+            scheduledFor?: string;
+        };
+        VehicleServicePage: {
+            items: components["schemas"]["VehicleServiceRow"][];
+            nextCursor?: string;
+        };
+        Battery: {
+            /** Format: uuid */
+            id: string;
+            /** @example BT-190577 */
+            serial: string;
+            chargePct: number;
+            /** @description Ciclos de carga (+1 a cada instalação numa moto). */
+            cycleCount: number;
+            status: components["schemas"]["BatteryStatus"];
+            /** Format: uuid */
+            vehicleId?: string;
+            vehicleCode?: string;
+            /**
+             * Format: uuid
+             * @description Operador com a bateria na van.
+             */
+            holderId?: string;
+            /** Format: uuid */
+            stationId?: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        BatteryPage: {
+            items: components["schemas"]["Battery"][];
+            nextCursor?: string;
+        };
+        VanStock: {
+            /** Format: uuid */
+            operatorId: string;
+            total: number;
+            /** @description `chargePct >= 90`. */
+            chargedCount: number;
+            depletedCount: number;
+            items: components["schemas"]["Battery"][];
+        };
+        BatteryTransferRequest: {
+            serials: string[];
+            /**
+             * Format: uuid
+             * @description Só em `unload`; ausente = `charging`.
+             */
+            stationId?: string;
+            /** @description Só em `load`; carga informada (padrão 100). */
+            chargePct?: number;
         };
     };
     responses: {
@@ -4267,6 +5272,257 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    listMyCoupons: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cupons da conta (disponíveis primeiro). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerCouponList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    addMyCoupon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CouponCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Cupom salvo. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerCoupon"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    validateMyCoupon: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CouponCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Resultado da validação. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CouponValidation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    getMyReferral: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Resumo da indicação. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferralSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    listMyReferralRewards: {
+        parameters: {
+            query?: {
+                /** @description Cursor opaco devolvido em `nextCursor` da página anterior. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Itens por página. */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de recompensas. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferralRewardPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    redeemReferralCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReferralRedeemRequest"];
+            };
+        };
+        responses: {
+            /** @description Indicação registrada e bônus creditado. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferralRedemption"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    listMyMaintenanceSlots: {
+        parameters: {
+            query?: {
+                /** @description Quantos dias à frente listar. */
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Janelas. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceSlotList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    listMyMaintenanceRequests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pedidos (mais recentes primeiro). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerMaintenanceRequestList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createMyMaintenanceRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomerMaintenanceRequestCreate"];
+            };
+        };
+        responses: {
+            /** @description Manutenção agendada. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerMaintenanceRequest"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    cancelMyMaintenanceRequest: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pedido cancelado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerMaintenanceRequest"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     createKycUploads: {
@@ -4747,6 +6003,143 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listVehicleModels: {
+        parameters: {
+            query?: {
+                /** @description Só staff. */
+                includeInactive?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Modelos. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VehicleModelList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    createVehicleModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VehicleModelInput"];
+            };
+        };
+        responses: {
+            /** @description Modelo criado. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VehicleModel"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createVehicleModelPhotoUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UploadRequest"];
+            };
+        };
+        responses: {
+            /** @description URL pré-assinada. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignedUpload"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateVehicleModel: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VehicleModelUpdate"];
+            };
+        };
+        responses: {
+            /** @description Modelo atualizado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VehicleModel"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listSwapStations: {
+        parameters: {
+            query?: {
+                lat?: number;
+                lng?: number;
+                /** @description Raio em metros (só com `lat`/`lng`). */
+                radiusM?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Estações. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapStationList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
         };
     };
     listZones: {
@@ -6019,6 +7412,30 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    getSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assinatura. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Subscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     cancelSubscription: {
         parameters: {
             query?: never;
@@ -6040,6 +7457,93 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    pauseSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionPauseRequest"];
+            };
+        };
+        responses: {
+            /** @description Assinatura pausada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Subscription"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    resumeSubscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Assinatura ativa. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Subscription"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    assignSubscriptionVehicle: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SubscriptionVehicleAssignment"];
+            };
+        };
+        responses: {
+            /** @description Moto fixa definida. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Subscription"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
         };
@@ -7072,6 +8576,36 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    markSupportConversationRead: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SupportReadRequest"];
+            };
+        };
+        responses: {
+            /** @description Conversa com `unreadCount` atualizado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SupportConversation"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listFieldTasks: {
         parameters: {
             query?: {
@@ -7378,6 +8912,37 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    listVehicleServiceStatus: {
+        parameters: {
+            query?: {
+                /** @description Cursor opaco devolvido em `nextCursor` da página anterior. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Itens por página. */
+                limit?: components["parameters"]["Limit"];
+                status?: components["schemas"]["VehicleServiceStatus"];
+                /** @description Busca por código da moto. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de motos com a situação da revisão. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VehicleServicePage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     listMaintenanceTasks: {
         parameters: {
             query?: {
@@ -7483,6 +9048,121 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MaintenanceTask"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listBatteries: {
+        parameters: {
+            query?: {
+                /** @description Cursor opaco devolvido em `nextCursor` da página anterior. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Itens por página. */
+                limit?: components["parameters"]["Limit"];
+                status?: components["schemas"]["BatteryStatus"];
+                /** @description Operador que leva a bateria na van (`me` = o próprio usuário). */
+                holderId?: string;
+                /** @description Busca por número de série. */
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de baterias. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatteryPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    getVanStock: {
+        parameters: {
+            query?: {
+                operatorId?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Estoque. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VanStock"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    loadVanBatteries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatteryTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Estoque atualizado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VanStock"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    unloadVanBatteries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatteryTransferRequest"];
+            };
+        };
+        responses: {
+            /** @description Estoque atualizado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VanStock"];
                 };
             };
             400: components["responses"]["BadRequest"];

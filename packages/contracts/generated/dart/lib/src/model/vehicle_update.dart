@@ -14,6 +14,9 @@ part 'vehicle_update.g.dart';
 /// * [model]
 /// * [thingName]
 /// * [qrCode]
+/// * [vehicleModelId] - Define também `model` (nome do modelo).
+/// * [odometerKm] - Correção manual do odômetro (AuditLog).
+/// * [usageHours] - Correção manual das horas de uso (AuditLog).
 @BuiltValue()
 abstract class VehicleUpdate
     implements Built<VehicleUpdate, VehicleUpdateBuilder> {
@@ -25,6 +28,18 @@ abstract class VehicleUpdate
 
   @BuiltValueField(wireName: r'qrCode')
   String? get qrCode;
+
+  /// Define também `model` (nome do modelo).
+  @BuiltValueField(wireName: r'vehicleModelId')
+  String? get vehicleModelId;
+
+  /// Correção manual do odômetro (AuditLog).
+  @BuiltValueField(wireName: r'odometerKm')
+  double? get odometerKm;
+
+  /// Correção manual das horas de uso (AuditLog).
+  @BuiltValueField(wireName: r'usageHours')
+  double? get usageHours;
 
   VehicleUpdate._();
 
@@ -70,6 +85,27 @@ class _$VehicleUpdateSerializer implements PrimitiveSerializer<VehicleUpdate> {
       yield serializers.serialize(
         object.qrCode,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.vehicleModelId != null) {
+      yield r'vehicleModelId';
+      yield serializers.serialize(
+        object.vehicleModelId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.odometerKm != null) {
+      yield r'odometerKm';
+      yield serializers.serialize(
+        object.odometerKm,
+        specifiedType: const FullType(double),
+      );
+    }
+    if (object.usageHours != null) {
+      yield r'usageHours';
+      yield serializers.serialize(
+        object.usageHours,
+        specifiedType: const FullType(double),
       );
     }
   }
@@ -120,6 +156,30 @@ class _$VehicleUpdateSerializer implements PrimitiveSerializer<VehicleUpdate> {
           ) as String?;
           if (valueDes == null) continue;
           result.qrCode = valueDes;
+          break;
+        case r'vehicleModelId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.vehicleModelId = valueDes;
+          break;
+        case r'odometerKm':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(double),
+          ) as double?;
+          if (valueDes == null) continue;
+          result.odometerKm = valueDes;
+          break;
+        case r'usageHours':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(double),
+          ) as double?;
+          if (valueDes == null) continue;
+          result.usageHours = valueDes;
           break;
         default:
           unhandled.add(key);

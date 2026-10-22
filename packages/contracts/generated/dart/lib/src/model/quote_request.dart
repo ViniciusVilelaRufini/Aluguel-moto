@@ -17,6 +17,7 @@ part 'quote_request.g.dart';
 /// * [coverage]
 /// * [couponCode]
 /// * [estimatedMinutes] - Duração prevista para estimar o valor (padrão 30 no plano `minute`, 1 unidade nos demais).
+/// * [vehicleId] - Usa o preço por minuto do modelo da moto (plano `minute`).
 @BuiltValue()
 abstract class QuoteRequest
     implements Built<QuoteRequest, QuoteRequestBuilder> {
@@ -34,6 +35,10 @@ abstract class QuoteRequest
   /// Duração prevista para estimar o valor (padrão 30 no plano `minute`, 1 unidade nos demais).
   @BuiltValueField(wireName: r'estimatedMinutes')
   int? get estimatedMinutes;
+
+  /// Usa o preço por minuto do modelo da moto (plano `minute`).
+  @BuiltValueField(wireName: r'vehicleId')
+  String? get vehicleId;
 
   QuoteRequest._();
 
@@ -80,6 +85,13 @@ class _$QuoteRequestSerializer implements PrimitiveSerializer<QuoteRequest> {
       yield serializers.serialize(
         object.estimatedMinutes,
         specifiedType: const FullType(int),
+      );
+    }
+    if (object.vehicleId != null) {
+      yield r'vehicleId';
+      yield serializers.serialize(
+        object.vehicleId,
+        specifiedType: const FullType(String),
       );
     }
   }
@@ -136,6 +148,14 @@ class _$QuoteRequestSerializer implements PrimitiveSerializer<QuoteRequest> {
           ) as int?;
           if (valueDes == null) continue;
           result.estimatedMinutes = valueDes;
+          break;
+        case r'vehicleId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.vehicleId = valueDes;
           break;
         default:
           unhandled.add(key);

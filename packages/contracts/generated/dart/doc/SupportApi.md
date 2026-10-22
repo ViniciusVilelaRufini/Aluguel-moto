@@ -22,6 +22,7 @@ Method | HTTP request | Description
 [**listIncidents**](SupportApi.md#listincidents) | **GET** /support/incidents | Listar incidentes
 [**listSupportConversations**](SupportApi.md#listsupportconversations) | **GET** /support/conversations | Conversas do chat de suporte
 [**listSupportMessages**](SupportApi.md#listsupportmessages) | **GET** /support/conversations/{id}/messages | Mensagens da conversa
+[**markSupportConversationRead**](SupportApi.md#marksupportconversationread) | **POST** /support/conversations/{id}/read | Marcar mensagens como lidas
 [**resolveDispute**](SupportApi.md#resolvedispute) | **POST** /support/disputes/{id}/resolve | Decidir contestação
 [**sendSupportMessage**](SupportApi.md#sendsupportmessage) | **POST** /support/conversations/{id}/messages | Enviar mensagem
 [**updateClaim**](SupportApi.md#updateclaim) | **PATCH** /support/claims/{id} | Atualizar status do sinistro
@@ -606,6 +607,51 @@ Name | Type | Description  | Notes
 ### HTTP request headers
 
  - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **markSupportConversationRead**
+> SupportConversation markSupportConversationRead(id, supportReadRequest)
+
+Marcar mensagens como lidas
+
+Marca como lidas (`readAt`) as mensagens do outro lado (para o cliente: do atendente/sistema; para o staff: do cliente) até `upToMessageId` (inclusive) ou todas, se ausente. Estado de cada mensagem: `sent` (gravada), `delivered` (o outro lado buscou a conversa em `GET .../messages`) e `read`. Idempotente. Responde a conversa com `unreadCount` atualizado. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getSupportApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final SupportReadRequest supportReadRequest = ; // SupportReadRequest | 
+
+try {
+    final response = api.markSupportConversationRead(id, supportReadRequest);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling SupportApi->markSupportConversationRead: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **supportReadRequest** | [**SupportReadRequest**](SupportReadRequest.md)|  | [optional] 
+
+### Return type
+
+[**SupportConversation**](SupportConversation.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth), [customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
  - **Accept**: application/json, application/problem+json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

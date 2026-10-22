@@ -34,7 +34,9 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `coupon-invalid`, `deposit-not-held`, `payment-failed`, `card-not-found`, `zone-invalid-geometry`,
 `zone-speed-limit-required`, `zone-speed-limit-invalid`, `location-consent-required`,
 `speed-limiter-noncompliant`, `battery-serials-must-differ`, `account-deletion-blocked`,
-`webhook-signature-invalid`.
+`webhook-signature-invalid`, `pix-key-invalid`, `top-up-amount-out-of-range`, `subscription-not-pausable`,
+`subscription-pause-limit-reached`, `subscription-required`, `subscription-vehicle-required`,
+`maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -127,6 +129,14 @@ Class | Method | HTTP request | Description
 [*AuthApi*](doc/AuthApi.md) | [**getMe**](doc/AuthApi.md#getme) | **GET** /me | Usuário autenticado
 [*AuthApi*](doc/AuthApi.md) | [**registerDevice**](doc/AuthApi.md#registerdevice) | **POST** /me/devices | Registrar dispositivo para push (FCM)
 [*AuthApi*](doc/AuthApi.md) | [**updateMe**](doc/AuthApi.md#updateme) | **PATCH** /me | Atualizar o próprio perfil (cliente)
+[*BatteriesApi*](doc/BatteriesApi.md) | [**getVanStock**](doc/BatteriesApi.md#getvanstock) | **GET** /batteries/van-stock | Estoque de baterias na van do operador
+[*BatteriesApi*](doc/BatteriesApi.md) | [**listBatteries**](doc/BatteriesApi.md#listbatteries) | **GET** /batteries | Baterias (série, carga, ciclos, onde estão)
+[*BatteriesApi*](doc/BatteriesApi.md) | [**loadVanBatteries**](doc/BatteriesApi.md#loadvanbatteries) | **POST** /batteries/van-stock/load | Carregar baterias na van
+[*BatteriesApi*](doc/BatteriesApi.md) | [**unloadVanBatteries**](doc/BatteriesApi.md#unloadvanbatteries) | **POST** /batteries/van-stock/unload | Descarregar baterias da van
+[*CatalogApi*](doc/CatalogApi.md) | [**createVehicleModel**](doc/CatalogApi.md#createvehiclemodel) | **POST** /vehicle-models | Cadastrar modelo
+[*CatalogApi*](doc/CatalogApi.md) | [**createVehicleModelPhotoUpload**](doc/CatalogApi.md#createvehiclemodelphotoupload) | **POST** /vehicle-models/uploads | URL de upload da foto do modelo
+[*CatalogApi*](doc/CatalogApi.md) | [**listVehicleModels**](doc/CatalogApi.md#listvehiclemodels) | **GET** /vehicle-models | Catálogo de modelos (\&quot;Escolha sua moto\&quot;)
+[*CatalogApi*](doc/CatalogApi.md) | [**updateVehicleModel**](doc/CatalogApi.md#updatevehiclemodel) | **PATCH** /vehicle-models/{id} | Editar modelo (preço, foto, intervalo de revisão)
 [*CommandsApi*](doc/CommandsApi.md) | [**getCommand**](doc/CommandsApi.md#getcommand) | **GET** /commands/{id} | Estado do comando
 [*CommandsApi*](doc/CommandsApi.md) | [**listVehicleCommands**](doc/CommandsApi.md#listvehiclecommands) | **GET** /vehicles/{id}/commands | Histórico de comandos da moto
 [*CommandsApi*](doc/CommandsApi.md) | [**sendVehicleCommand**](doc/CommandsApi.md#sendvehiclecommand) | **POST** /vehicles/{id}/commands | Enviar comando à moto
@@ -160,21 +170,31 @@ Class | Method | HTTP request | Description
 [*LgpdApi*](doc/LgpdApi.md) | [**exportMyData**](doc/LgpdApi.md#exportmydata) | **GET** /lgpd/export | Exportar meus dados
 [*LgpdApi*](doc/LgpdApi.md) | [**getConsents**](doc/LgpdApi.md#getconsents) | **GET** /lgpd/consents | Consentimentos do cliente
 [*LgpdApi*](doc/LgpdApi.md) | [**updateConsents**](doc/LgpdApi.md#updateconsents) | **PUT** /lgpd/consents | Registrar consentimentos (termos e localização)
+[*MaintenanceApi*](doc/MaintenanceApi.md) | [**cancelMyMaintenanceRequest**](doc/MaintenanceApi.md#cancelmymaintenancerequest) | **DELETE** /me/maintenance-requests/{id} | Cancelar manutenção agendada
 [*MaintenanceApi*](doc/MaintenanceApi.md) | [**createMaintenanceTask**](doc/MaintenanceApi.md#createmaintenancetask) | **POST** /maintenance/tasks | Agendar manutenção
+[*MaintenanceApi*](doc/MaintenanceApi.md) | [**createMyMaintenanceRequest**](doc/MaintenanceApi.md#createmymaintenancerequest) | **POST** /me/maintenance-requests | Agendar manutenção da moto fixa do plano
 [*MaintenanceApi*](doc/MaintenanceApi.md) | [**getMaintenanceTask**](doc/MaintenanceApi.md#getmaintenancetask) | **GET** /maintenance/tasks/{id} | Detalhe da manutenção
 [*MaintenanceApi*](doc/MaintenanceApi.md) | [**listMaintenanceTasks**](doc/MaintenanceApi.md#listmaintenancetasks) | **GET** /maintenance/tasks | Listar manutenções
+[*MaintenanceApi*](doc/MaintenanceApi.md) | [**listMyMaintenanceRequests**](doc/MaintenanceApi.md#listmymaintenancerequests) | **GET** /me/maintenance-requests | Manutenções agendadas pelo cliente
+[*MaintenanceApi*](doc/MaintenanceApi.md) | [**listMyMaintenanceSlots**](doc/MaintenanceApi.md#listmymaintenanceslots) | **GET** /me/maintenance-slots | Horários livres para manutenção (plano semanal/mensal)
+[*MaintenanceApi*](doc/MaintenanceApi.md) | [**listVehicleServiceStatus**](doc/MaintenanceApi.md#listvehicleservicestatus) | **GET** /maintenance/vehicles | Manutenção preventiva por km/horas (tabela \&quot;Manutenção\&quot;)
 [*MaintenanceApi*](doc/MaintenanceApi.md) | [**updateMaintenanceTask**](doc/MaintenanceApi.md#updatemaintenancetask) | **PATCH** /maintenance/tasks/{id} | Atualizar manutenção
 [*PaymentsApi*](doc/PaymentsApi.md) | [**addPaymentCard**](doc/PaymentsApi.md#addpaymentcard) | **POST** /payments/cards | Cadastrar cartão (token do gateway)
+[*PaymentsApi*](doc/PaymentsApi.md) | [**assignSubscriptionVehicle**](doc/PaymentsApi.md#assignsubscriptionvehicle) | **PUT** /payments/subscriptions/{id}/vehicle | Definir a moto fixa do plano
 [*PaymentsApi*](doc/PaymentsApi.md) | [**cancelSubscription**](doc/PaymentsApi.md#cancelsubscription) | **DELETE** /payments/subscriptions/{id} | Cancelar assinatura
 [*PaymentsApi*](doc/PaymentsApi.md) | [**createSubscription**](doc/PaymentsApi.md#createsubscription) | **POST** /payments/subscriptions | Assinar plano semanal ou mensal
 [*PaymentsApi*](doc/PaymentsApi.md) | [**deletePaymentCard**](doc/PaymentsApi.md#deletepaymentcard) | **DELETE** /payments/cards/{id} | Remover cartão
 [*PaymentsApi*](doc/PaymentsApi.md) | [**getDeposit**](doc/PaymentsApi.md#getdeposit) | **GET** /payments/deposits/{id} | Estado da caução
 [*PaymentsApi*](doc/PaymentsApi.md) | [**getPayment**](doc/PaymentsApi.md#getpayment) | **GET** /payments/{id} | Detalhe do pagamento
+[*PaymentsApi*](doc/PaymentsApi.md) | [**getSubscription**](doc/PaymentsApi.md#getsubscription) | **GET** /payments/subscriptions/{id} | Detalhe da assinatura (próxima cobrança, pausa, moto fixa)
 [*PaymentsApi*](doc/PaymentsApi.md) | [**listDeposits**](doc/PaymentsApi.md#listdeposits) | **GET** /payments/deposits | Listar cauções
 [*PaymentsApi*](doc/PaymentsApi.md) | [**listPaymentCards**](doc/PaymentsApi.md#listpaymentcards) | **GET** /payments/cards | Cartões do cliente
 [*PaymentsApi*](doc/PaymentsApi.md) | [**listPayments**](doc/PaymentsApi.md#listpayments) | **GET** /payments | Listar pagamentos
 [*PaymentsApi*](doc/PaymentsApi.md) | [**listSubscriptions**](doc/PaymentsApi.md#listsubscriptions) | **GET** /payments/subscriptions | Assinaturas do cliente (planos semanal e mensal)
+[*PaymentsApi*](doc/PaymentsApi.md) | [**pauseSubscription**](doc/PaymentsApi.md#pausesubscription) | **POST** /payments/subscriptions/{id}/pause | Pausar assinatura
 [*PaymentsApi*](doc/PaymentsApi.md) | [**refundPayment**](doc/PaymentsApi.md#refundpayment) | **POST** /payments/{id}/refund | Estornar pagamento
+[*PaymentsApi*](doc/PaymentsApi.md) | [**resumeSubscription**](doc/PaymentsApi.md#resumesubscription) | **POST** /payments/subscriptions/{id}/resume | Retomar assinatura pausada
+[*PricingApi*](doc/PricingApi.md) | [**addMyCoupon**](doc/PricingApi.md#addmycoupon) | **POST** /me/coupons | Adicionar cupom à conta
 [*PricingApi*](doc/PricingApi.md) | [**createCoupon**](doc/PricingApi.md#createcoupon) | **POST** /pricing/coupons | Criar cupom
 [*PricingApi*](doc/PricingApi.md) | [**createFee**](doc/PricingApi.md#createfee) | **POST** /pricing/fees | Criar taxa
 [*PricingApi*](doc/PricingApi.md) | [**createPricingPlan**](doc/PricingApi.md#createpricingplan) | **POST** /pricing/plans | Criar plano
@@ -185,11 +205,16 @@ Class | Method | HTTP request | Description
 [*PricingApi*](doc/PricingApi.md) | [**getPricingPlan**](doc/PricingApi.md#getpricingplan) | **GET** /pricing/plans/{id} | Detalhe do plano
 [*PricingApi*](doc/PricingApi.md) | [**listCoupons**](doc/PricingApi.md#listcoupons) | **GET** /pricing/coupons | Listar cupons
 [*PricingApi*](doc/PricingApi.md) | [**listFees**](doc/PricingApi.md#listfees) | **GET** /pricing/fees | Listar taxas
+[*PricingApi*](doc/PricingApi.md) | [**listMyCoupons**](doc/PricingApi.md#listmycoupons) | **GET** /me/coupons | Cupons salvos na conta
 [*PricingApi*](doc/PricingApi.md) | [**listPricingPlans**](doc/PricingApi.md#listpricingplans) | **GET** /pricing/plans | Planos disponíveis
 [*PricingApi*](doc/PricingApi.md) | [**quotePrice**](doc/PricingApi.md#quoteprice) | **POST** /pricing/quote | Cotar aluguel
 [*PricingApi*](doc/PricingApi.md) | [**updateCoupon**](doc/PricingApi.md#updatecoupon) | **PUT** /pricing/coupons/{id} | Atualizar cupom
 [*PricingApi*](doc/PricingApi.md) | [**updateFee**](doc/PricingApi.md#updatefee) | **PUT** /pricing/fees/{id} | Atualizar taxa
 [*PricingApi*](doc/PricingApi.md) | [**updatePricingPlan**](doc/PricingApi.md#updatepricingplan) | **PUT** /pricing/plans/{id} | Atualizar plano
+[*PricingApi*](doc/PricingApi.md) | [**validateMyCoupon**](doc/PricingApi.md#validatemycoupon) | **POST** /me/coupons/validate | Validar cupom sem salvar
+[*ReferralsApi*](doc/ReferralsApi.md) | [**getMyReferral**](doc/ReferralsApi.md#getmyreferral) | **GET** /me/referral | Programa de indicação do cliente
+[*ReferralsApi*](doc/ReferralsApi.md) | [**listMyReferralRewards**](doc/ReferralsApi.md#listmyreferralrewards) | **GET** /me/referral/rewards | Recompensas de indicação
+[*ReferralsApi*](doc/ReferralsApi.md) | [**redeemReferralCode**](doc/ReferralsApi.md#redeemreferralcode) | **POST** /me/referral/redeem | Usar código de indicação de um amigo
 [*RentalsApi*](doc/RentalsApi.md) | [**createReturnPhotoUpload**](doc/RentalsApi.md#createreturnphotoupload) | **POST** /rentals/{id}/return-photo | URL pré-assinada para a foto de devolução
 [*RentalsApi*](doc/RentalsApi.md) | [**endRental**](doc/RentalsApi.md#endrental) | **POST** /rentals/{id}/end | Encerrar aluguel
 [*RentalsApi*](doc/RentalsApi.md) | [**forceEndRental**](doc/RentalsApi.md#forceendrental) | **POST** /rentals/{id}/force-end | Encerramento forçado (staff)
@@ -219,6 +244,7 @@ Class | Method | HTTP request | Description
 [*StaffApi*](doc/StaffApi.md) | [**getStaffUser**](doc/StaffApi.md#getstaffuser) | **GET** /staff/{id} | Detalhe do usuário interno
 [*StaffApi*](doc/StaffApi.md) | [**listStaffUsers**](doc/StaffApi.md#liststaffusers) | **GET** /staff | Usuários internos
 [*StaffApi*](doc/StaffApi.md) | [**updateStaffUser**](doc/StaffApi.md#updatestaffuser) | **PATCH** /staff/{id} | Alterar grupos ou desativar usuário interno
+[*StationsApi*](doc/StationsApi.md) | [**listSwapStations**](doc/StationsApi.md#listswapstations) | **GET** /swap-stations | Estações de troca de bateria (mapa)
 [*SupportApi*](doc/SupportApi.md) | [**createClaim**](doc/SupportApi.md#createclaim) | **POST** /support/claims | Abrir sinistro
 [*SupportApi*](doc/SupportApi.md) | [**createDispute**](doc/SupportApi.md#createdispute) | **POST** /support/disputes | Contestar cobrança
 [*SupportApi*](doc/SupportApi.md) | [**createIncident**](doc/SupportApi.md#createincident) | **POST** /support/incidents | Reportar problema
@@ -232,6 +258,7 @@ Class | Method | HTTP request | Description
 [*SupportApi*](doc/SupportApi.md) | [**listIncidents**](doc/SupportApi.md#listincidents) | **GET** /support/incidents | Listar incidentes
 [*SupportApi*](doc/SupportApi.md) | [**listSupportConversations**](doc/SupportApi.md#listsupportconversations) | **GET** /support/conversations | Conversas do chat de suporte
 [*SupportApi*](doc/SupportApi.md) | [**listSupportMessages**](doc/SupportApi.md#listsupportmessages) | **GET** /support/conversations/{id}/messages | Mensagens da conversa
+[*SupportApi*](doc/SupportApi.md) | [**markSupportConversationRead**](doc/SupportApi.md#marksupportconversationread) | **POST** /support/conversations/{id}/read | Marcar mensagens como lidas
 [*SupportApi*](doc/SupportApi.md) | [**resolveDispute**](doc/SupportApi.md#resolvedispute) | **POST** /support/disputes/{id}/resolve | Decidir contestação
 [*SupportApi*](doc/SupportApi.md) | [**sendSupportMessage**](doc/SupportApi.md#sendsupportmessage) | **POST** /support/conversations/{id}/messages | Enviar mensagem
 [*SupportApi*](doc/SupportApi.md) | [**updateClaim**](doc/SupportApi.md#updateclaim) | **PATCH** /support/claims/{id} | Atualizar status do sinistro
@@ -275,8 +302,12 @@ Class | Method | HTTP request | Description
  - [AuditLog](doc/AuditLog.md)
  - [AuditLogPage](doc/AuditLogPage.md)
  - [AuthPool](doc/AuthPool.md)
+ - [Battery](doc/Battery.md)
+ - [BatteryPage](doc/BatteryPage.md)
+ - [BatteryStatus](doc/BatteryStatus.md)
  - [BatterySwap](doc/BatterySwap.md)
  - [BatterySwapRequest](doc/BatterySwapRequest.md)
+ - [BatteryTransferRequest](doc/BatteryTransferRequest.md)
  - [ChecklistItem](doc/ChecklistItem.md)
  - [Claim](doc/Claim.md)
  - [ClaimCreate](doc/ClaimCreate.md)
@@ -291,13 +322,22 @@ Class | Method | HTTP request | Description
  - [ConsentsUpdate](doc/ConsentsUpdate.md)
  - [ConversationStatus](doc/ConversationStatus.md)
  - [Coupon](doc/Coupon.md)
+ - [CouponCodeRequest](doc/CouponCodeRequest.md)
  - [CouponInput](doc/CouponInput.md)
  - [CouponPage](doc/CouponPage.md)
+ - [CouponValidation](doc/CouponValidation.md)
  - [CoverageItem](doc/CoverageItem.md)
  - [CurrentRental](doc/CurrentRental.md)
  - [CurrentReservation](doc/CurrentReservation.md)
  - [Customer](doc/Customer.md)
  - [CustomerBlockRequest](doc/CustomerBlockRequest.md)
+ - [CustomerCoupon](doc/CustomerCoupon.md)
+ - [CustomerCouponList](doc/CustomerCouponList.md)
+ - [CustomerCouponSource](doc/CustomerCouponSource.md)
+ - [CustomerCouponStatus](doc/CustomerCouponStatus.md)
+ - [CustomerMaintenanceRequest](doc/CustomerMaintenanceRequest.md)
+ - [CustomerMaintenanceRequestCreate](doc/CustomerMaintenanceRequestCreate.md)
+ - [CustomerMaintenanceRequestList](doc/CustomerMaintenanceRequestList.md)
  - [CustomerPage](doc/CustomerPage.md)
  - [CustomerStats](doc/CustomerStats.md)
  - [CustomerStatus](doc/CustomerStatus.md)
@@ -365,6 +405,9 @@ Class | Method | HTTP request | Description
  - [LocationShare](doc/LocationShare.md)
  - [LocationShareRequest](doc/LocationShareRequest.md)
  - [MaintenanceKind](doc/MaintenanceKind.md)
+ - [MaintenanceSlot](doc/MaintenanceSlot.md)
+ - [MaintenanceSlotList](doc/MaintenanceSlotList.md)
+ - [MaintenanceSource](doc/MaintenanceSource.md)
  - [MaintenanceStatus](doc/MaintenanceStatus.md)
  - [MaintenanceTask](doc/MaintenanceTask.md)
  - [MaintenanceTaskCreate](doc/MaintenanceTaskCreate.md)
@@ -389,6 +432,7 @@ Class | Method | HTTP request | Description
  - [PaymentPage](doc/PaymentPage.md)
  - [PaymentStatus](doc/PaymentStatus.md)
  - [PixCharge](doc/PixCharge.md)
+ - [PixKeyType](doc/PixKeyType.md)
  - [PlanCode](doc/PlanCode.md)
  - [PlanRevenue](doc/PlanRevenue.md)
  - [PlanUnit](doc/PlanUnit.md)
@@ -405,6 +449,12 @@ Class | Method | HTTP request | Description
  - [RatingRequest](doc/RatingRequest.md)
  - [ReasonRequest](doc/ReasonRequest.md)
  - [Receipt](doc/Receipt.md)
+ - [ReferralRedeemRequest](doc/ReferralRedeemRequest.md)
+ - [ReferralRedemption](doc/ReferralRedemption.md)
+ - [ReferralReward](doc/ReferralReward.md)
+ - [ReferralRewardPage](doc/ReferralRewardPage.md)
+ - [ReferralRewardStatus](doc/ReferralRewardStatus.md)
+ - [ReferralSummary](doc/ReferralSummary.md)
  - [RefundRequest](doc/RefundRequest.md)
  - [Rental](doc/Rental.md)
  - [RentalEvent](doc/RentalEvent.md)
@@ -437,8 +487,10 @@ Class | Method | HTTP request | Description
  - [Subscription](doc/Subscription.md)
  - [SubscriptionCreate](doc/SubscriptionCreate.md)
  - [SubscriptionList](doc/SubscriptionList.md)
+ - [SubscriptionPauseRequest](doc/SubscriptionPauseRequest.md)
  - [SubscriptionPlanCode](doc/SubscriptionPlanCode.md)
  - [SubscriptionStatus](doc/SubscriptionStatus.md)
+ - [SubscriptionVehicleAssignment](doc/SubscriptionVehicleAssignment.md)
  - [SupportConversation](doc/SupportConversation.md)
  - [SupportConversationCreate](doc/SupportConversationCreate.md)
  - [SupportConversationPage](doc/SupportConversationPage.md)
@@ -446,6 +498,10 @@ Class | Method | HTTP request | Description
  - [SupportMessage](doc/SupportMessage.md)
  - [SupportMessageCreate](doc/SupportMessageCreate.md)
  - [SupportMessagePage](doc/SupportMessagePage.md)
+ - [SupportMessageStatus](doc/SupportMessageStatus.md)
+ - [SupportReadRequest](doc/SupportReadRequest.md)
+ - [SwapStation](doc/SwapStation.md)
+ - [SwapStationList](doc/SwapStationList.md)
  - [SwapVehicleRequest](doc/SwapVehicleRequest.md)
  - [TaskPriority](doc/TaskPriority.md)
  - [TopUp](doc/TopUp.md)
@@ -457,13 +513,22 @@ Class | Method | HTTP request | Description
  - [UploadContentType](doc/UploadContentType.md)
  - [UploadRequest](doc/UploadRequest.md)
  - [ValidationIssue](doc/ValidationIssue.md)
+ - [VanStock](doc/VanStock.md)
  - [Vehicle](doc/Vehicle.md)
  - [VehicleCommand](doc/VehicleCommand.md)
  - [VehicleCommandPage](doc/VehicleCommandPage.md)
  - [VehicleCreate](doc/VehicleCreate.md)
+ - [VehicleModel](doc/VehicleModel.md)
+ - [VehicleModelInput](doc/VehicleModelInput.md)
+ - [VehicleModelList](doc/VehicleModelList.md)
+ - [VehicleModelUpdate](doc/VehicleModelUpdate.md)
  - [VehiclePage](doc/VehiclePage.md)
  - [VehicleRevenueReport](doc/VehicleRevenueReport.md)
  - [VehicleRevenueRow](doc/VehicleRevenueRow.md)
+ - [VehicleServiceInfo](doc/VehicleServiceInfo.md)
+ - [VehicleServicePage](doc/VehicleServicePage.md)
+ - [VehicleServiceRow](doc/VehicleServiceRow.md)
+ - [VehicleServiceStatus](doc/VehicleServiceStatus.md)
  - [VehicleStatus](doc/VehicleStatus.md)
  - [VehicleStatusChange](doc/VehicleStatusChange.md)
  - [VehicleStatusCounts](doc/VehicleStatusCounts.md)

@@ -13,6 +13,7 @@ Name | Type | Description | Notes
 **thingName** | **String** |  | 
 **qrCode** | **String** |  | [optional] 
 **batterySerial** | **String** |  | [optional] 
+**vehicleModelId** | **String** | Define também `model` (nome do modelo). | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

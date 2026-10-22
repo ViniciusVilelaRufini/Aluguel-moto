@@ -52,6 +52,26 @@ class _$Vehicle extends Vehicle {
   @override
   final String? currentRentalId;
   @override
+  final String? vehicleModelId;
+  @override
+  final String? categoryLabel;
+  @override
+  final int? pricePerMinuteCents;
+  @override
+  final String? address;
+  @override
+  final DateTime? addressUpdatedAt;
+  @override
+  final double? odometerKm;
+  @override
+  final double? usageHours;
+  @override
+  final VehicleServiceInfo? service;
+  @override
+  final Battery? battery;
+  @override
+  final String? assignedSubscriptionId;
+  @override
   final DateTime? createdAt;
   @override
   final DateTime? updatedAt;
@@ -82,6 +102,16 @@ class _$Vehicle extends Vehicle {
       this.firmwareVersion,
       this.lastSeenAt,
       this.currentRentalId,
+      this.vehicleModelId,
+      this.categoryLabel,
+      this.pricePerMinuteCents,
+      this.address,
+      this.addressUpdatedAt,
+      this.odometerKm,
+      this.usageHours,
+      this.service,
+      this.battery,
+      this.assignedSubscriptionId,
       this.createdAt,
       this.updatedAt})
       : super._();
@@ -118,6 +148,16 @@ class _$Vehicle extends Vehicle {
         firmwareVersion == other.firmwareVersion &&
         lastSeenAt == other.lastSeenAt &&
         currentRentalId == other.currentRentalId &&
+        vehicleModelId == other.vehicleModelId &&
+        categoryLabel == other.categoryLabel &&
+        pricePerMinuteCents == other.pricePerMinuteCents &&
+        address == other.address &&
+        addressUpdatedAt == other.addressUpdatedAt &&
+        odometerKm == other.odometerKm &&
+        usageHours == other.usageHours &&
+        service == other.service &&
+        battery == other.battery &&
+        assignedSubscriptionId == other.assignedSubscriptionId &&
         createdAt == other.createdAt &&
         updatedAt == other.updatedAt;
   }
@@ -147,6 +187,16 @@ class _$Vehicle extends Vehicle {
     _$hash = $jc(_$hash, firmwareVersion.hashCode);
     _$hash = $jc(_$hash, lastSeenAt.hashCode);
     _$hash = $jc(_$hash, currentRentalId.hashCode);
+    _$hash = $jc(_$hash, vehicleModelId.hashCode);
+    _$hash = $jc(_$hash, categoryLabel.hashCode);
+    _$hash = $jc(_$hash, pricePerMinuteCents.hashCode);
+    _$hash = $jc(_$hash, address.hashCode);
+    _$hash = $jc(_$hash, addressUpdatedAt.hashCode);
+    _$hash = $jc(_$hash, odometerKm.hashCode);
+    _$hash = $jc(_$hash, usageHours.hashCode);
+    _$hash = $jc(_$hash, service.hashCode);
+    _$hash = $jc(_$hash, battery.hashCode);
+    _$hash = $jc(_$hash, assignedSubscriptionId.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jc(_$hash, updatedAt.hashCode);
     _$hash = $jf(_$hash);
@@ -178,6 +228,16 @@ class _$Vehicle extends Vehicle {
           ..add('firmwareVersion', firmwareVersion)
           ..add('lastSeenAt', lastSeenAt)
           ..add('currentRentalId', currentRentalId)
+          ..add('vehicleModelId', vehicleModelId)
+          ..add('categoryLabel', categoryLabel)
+          ..add('pricePerMinuteCents', pricePerMinuteCents)
+          ..add('address', address)
+          ..add('addressUpdatedAt', addressUpdatedAt)
+          ..add('odometerKm', odometerKm)
+          ..add('usageHours', usageHours)
+          ..add('service', service)
+          ..add('battery', battery)
+          ..add('assignedSubscriptionId', assignedSubscriptionId)
           ..add('createdAt', createdAt)
           ..add('updatedAt', updatedAt))
         .toString();
@@ -280,6 +340,52 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
   set currentRentalId(String? currentRentalId) =>
       _$this._currentRentalId = currentRentalId;
 
+  String? _vehicleModelId;
+  String? get vehicleModelId => _$this._vehicleModelId;
+  set vehicleModelId(String? vehicleModelId) =>
+      _$this._vehicleModelId = vehicleModelId;
+
+  String? _categoryLabel;
+  String? get categoryLabel => _$this._categoryLabel;
+  set categoryLabel(String? categoryLabel) =>
+      _$this._categoryLabel = categoryLabel;
+
+  int? _pricePerMinuteCents;
+  int? get pricePerMinuteCents => _$this._pricePerMinuteCents;
+  set pricePerMinuteCents(int? pricePerMinuteCents) =>
+      _$this._pricePerMinuteCents = pricePerMinuteCents;
+
+  String? _address;
+  String? get address => _$this._address;
+  set address(String? address) => _$this._address = address;
+
+  DateTime? _addressUpdatedAt;
+  DateTime? get addressUpdatedAt => _$this._addressUpdatedAt;
+  set addressUpdatedAt(DateTime? addressUpdatedAt) =>
+      _$this._addressUpdatedAt = addressUpdatedAt;
+
+  double? _odometerKm;
+  double? get odometerKm => _$this._odometerKm;
+  set odometerKm(double? odometerKm) => _$this._odometerKm = odometerKm;
+
+  double? _usageHours;
+  double? get usageHours => _$this._usageHours;
+  set usageHours(double? usageHours) => _$this._usageHours = usageHours;
+
+  VehicleServiceInfoBuilder? _service;
+  VehicleServiceInfoBuilder get service =>
+      _$this._service ??= VehicleServiceInfoBuilder();
+  set service(VehicleServiceInfoBuilder? service) => _$this._service = service;
+
+  BatteryBuilder? _battery;
+  BatteryBuilder get battery => _$this._battery ??= BatteryBuilder();
+  set battery(BatteryBuilder? battery) => _$this._battery = battery;
+
+  String? _assignedSubscriptionId;
+  String? get assignedSubscriptionId => _$this._assignedSubscriptionId;
+  set assignedSubscriptionId(String? assignedSubscriptionId) =>
+      _$this._assignedSubscriptionId = assignedSubscriptionId;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -317,6 +423,16 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
       _firmwareVersion = $v.firmwareVersion;
       _lastSeenAt = $v.lastSeenAt;
       _currentRentalId = $v.currentRentalId;
+      _vehicleModelId = $v.vehicleModelId;
+      _categoryLabel = $v.categoryLabel;
+      _pricePerMinuteCents = $v.pricePerMinuteCents;
+      _address = $v.address;
+      _addressUpdatedAt = $v.addressUpdatedAt;
+      _odometerKm = $v.odometerKm;
+      _usageHours = $v.usageHours;
+      _service = $v.service?.toBuilder();
+      _battery = $v.battery?.toBuilder();
+      _assignedSubscriptionId = $v.assignedSubscriptionId;
       _createdAt = $v.createdAt;
       _updatedAt = $v.updatedAt;
       _$v = null;
@@ -338,38 +454,64 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
   Vehicle build() => _build();
 
   _$Vehicle _build() {
-    final _$result = _$v ??
-        _$Vehicle._(
-          id: BuiltValueNullFieldError.checkNotNull(id, r'Vehicle', 'id'),
-          code: BuiltValueNullFieldError.checkNotNull(code, r'Vehicle', 'code'),
-          qrCode: qrCode,
-          model:
-              BuiltValueNullFieldError.checkNotNull(model, r'Vehicle', 'model'),
-          status: BuiltValueNullFieldError.checkNotNull(
-              status, r'Vehicle', 'status'),
-          lat: BuiltValueNullFieldError.checkNotNull(lat, r'Vehicle', 'lat'),
-          lng: BuiltValueNullFieldError.checkNotNull(lng, r'Vehicle', 'lng'),
-          batteryPct: BuiltValueNullFieldError.checkNotNull(
-              batteryPct, r'Vehicle', 'batteryPct'),
-          estimatedRangeKm: BuiltValueNullFieldError.checkNotNull(
-              estimatedRangeKm, r'Vehicle', 'estimatedRangeKm'),
-          speedLimitKmh: BuiltValueNullFieldError.checkNotNull(
-              speedLimitKmh, r'Vehicle', 'speedLimitKmh'),
-          thingName: thingName,
-          trackerId: trackerId,
-          batterySerial: batterySerial,
-          online: online,
-          locked: locked,
-          ignition: ignition,
-          speedKmh: speedKmh,
-          signal: signal,
-          stolenMode: stolenMode,
-          firmwareVersion: firmwareVersion,
-          lastSeenAt: lastSeenAt,
-          currentRentalId: currentRentalId,
-          createdAt: createdAt,
-          updatedAt: updatedAt,
-        );
+    _$Vehicle _$result;
+    try {
+      _$result = _$v ??
+          _$Vehicle._(
+            id: BuiltValueNullFieldError.checkNotNull(id, r'Vehicle', 'id'),
+            code:
+                BuiltValueNullFieldError.checkNotNull(code, r'Vehicle', 'code'),
+            qrCode: qrCode,
+            model: BuiltValueNullFieldError.checkNotNull(
+                model, r'Vehicle', 'model'),
+            status: BuiltValueNullFieldError.checkNotNull(
+                status, r'Vehicle', 'status'),
+            lat: BuiltValueNullFieldError.checkNotNull(lat, r'Vehicle', 'lat'),
+            lng: BuiltValueNullFieldError.checkNotNull(lng, r'Vehicle', 'lng'),
+            batteryPct: BuiltValueNullFieldError.checkNotNull(
+                batteryPct, r'Vehicle', 'batteryPct'),
+            estimatedRangeKm: BuiltValueNullFieldError.checkNotNull(
+                estimatedRangeKm, r'Vehicle', 'estimatedRangeKm'),
+            speedLimitKmh: BuiltValueNullFieldError.checkNotNull(
+                speedLimitKmh, r'Vehicle', 'speedLimitKmh'),
+            thingName: thingName,
+            trackerId: trackerId,
+            batterySerial: batterySerial,
+            online: online,
+            locked: locked,
+            ignition: ignition,
+            speedKmh: speedKmh,
+            signal: signal,
+            stolenMode: stolenMode,
+            firmwareVersion: firmwareVersion,
+            lastSeenAt: lastSeenAt,
+            currentRentalId: currentRentalId,
+            vehicleModelId: vehicleModelId,
+            categoryLabel: categoryLabel,
+            pricePerMinuteCents: pricePerMinuteCents,
+            address: address,
+            addressUpdatedAt: addressUpdatedAt,
+            odometerKm: odometerKm,
+            usageHours: usageHours,
+            service: _service?.build(),
+            battery: _battery?.build(),
+            assignedSubscriptionId: assignedSubscriptionId,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+          );
+    } catch (_) {
+      late String _$failedField;
+      try {
+        _$failedField = 'service';
+        _service?.build();
+        _$failedField = 'battery';
+        _battery?.build();
+      } catch (e) {
+        throw BuiltValueNestedFieldError(
+            r'Vehicle', _$failedField, e.toString());
+      }
+      rethrow;
+    }
     replace(_$result);
     return _$result;
   }

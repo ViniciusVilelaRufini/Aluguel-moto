@@ -7,6 +7,8 @@ import 'package:volti_api/src/model/customer_status.dart';
 import 'package:volti_api/src/model/kyc_status.dart';
 import 'package:volti_api/src/model/date.dart';
 import 'package:volti_api/src/model/customer_stats.dart';
+import 'package:volti_api/src/model/subscription_plan_code.dart';
+import 'package:volti_api/src/model/pix_key_type.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -30,6 +32,10 @@ part 'customer.g.dart';
 /// * [locationConsent]
 /// * [emergencyContactName]
 /// * [emergencyContactPhone]
+/// * [pixRefundKeyType]
+/// * [pixRefundKey] - Chave Pix para estornos. Completa para o próprio cliente, `admin` e `financeiro`; mascarada para os demais.
+/// * [activePlanCode]
+/// * [activeSubscriptionId] - Assinatura semanal/mensal ativa ou pausada.
 /// * [stats]
 /// * [createdAt]
 @BuiltValue()
@@ -84,6 +90,22 @@ abstract class Customer implements Built<Customer, CustomerBuilder> {
 
   @BuiltValueField(wireName: r'emergencyContactPhone')
   String? get emergencyContactPhone;
+
+  @BuiltValueField(wireName: r'pixRefundKeyType')
+  PixKeyType? get pixRefundKeyType;
+  // enum pixRefundKeyTypeEnum {  cpf,  email,  phone,  random,  };
+
+  /// Chave Pix para estornos. Completa para o próprio cliente, `admin` e `financeiro`; mascarada para os demais.
+  @BuiltValueField(wireName: r'pixRefundKey')
+  String? get pixRefundKey;
+
+  @BuiltValueField(wireName: r'activePlanCode')
+  SubscriptionPlanCode? get activePlanCode;
+  // enum activePlanCodeEnum {  weekly,  monthly,  };
+
+  /// Assinatura semanal/mensal ativa ou pausada.
+  @BuiltValueField(wireName: r'activeSubscriptionId')
+  String? get activeSubscriptionId;
 
   @BuiltValueField(wireName: r'stats')
   CustomerStats? get stats;
@@ -204,6 +226,34 @@ class _$CustomerSerializer implements PrimitiveSerializer<Customer> {
       yield r'emergencyContactPhone';
       yield serializers.serialize(
         object.emergencyContactPhone,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.pixRefundKeyType != null) {
+      yield r'pixRefundKeyType';
+      yield serializers.serialize(
+        object.pixRefundKeyType,
+        specifiedType: const FullType(PixKeyType),
+      );
+    }
+    if (object.pixRefundKey != null) {
+      yield r'pixRefundKey';
+      yield serializers.serialize(
+        object.pixRefundKey,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.activePlanCode != null) {
+      yield r'activePlanCode';
+      yield serializers.serialize(
+        object.activePlanCode,
+        specifiedType: const FullType(SubscriptionPlanCode),
+      );
+    }
+    if (object.activeSubscriptionId != null) {
+      yield r'activeSubscriptionId';
+      yield serializers.serialize(
+        object.activeSubscriptionId,
         specifiedType: const FullType(String),
       );
     }
@@ -357,6 +407,38 @@ class _$CustomerSerializer implements PrimitiveSerializer<Customer> {
           ) as String?;
           if (valueDes == null) continue;
           result.emergencyContactPhone = valueDes;
+          break;
+        case r'pixRefundKeyType':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(PixKeyType),
+          ) as PixKeyType?;
+          if (valueDes == null) continue;
+          result.pixRefundKeyType = valueDes;
+          break;
+        case r'pixRefundKey':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.pixRefundKey = valueDes;
+          break;
+        case r'activePlanCode':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(SubscriptionPlanCode),
+          ) as SubscriptionPlanCode?;
+          if (valueDes == null) continue;
+          result.activePlanCode = valueDes;
+          break;
+        case r'activeSubscriptionId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.activeSubscriptionId = valueDes;
           break;
         case r'stats':
           final valueDes = serializers.deserialize(

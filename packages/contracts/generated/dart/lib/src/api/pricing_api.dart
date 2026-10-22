@@ -10,8 +10,12 @@ import 'package:dio/dio.dart';
 
 import 'package:volti_api/src/api_util.dart';
 import 'package:volti_api/src/model/coupon.dart';
+import 'package:volti_api/src/model/coupon_code_request.dart';
 import 'package:volti_api/src/model/coupon_input.dart';
 import 'package:volti_api/src/model/coupon_page.dart';
+import 'package:volti_api/src/model/coupon_validation.dart';
+import 'package:volti_api/src/model/customer_coupon.dart';
+import 'package:volti_api/src/model/customer_coupon_list.dart';
 import 'package:volti_api/src/model/fee.dart';
 import 'package:volti_api/src/model/fee_input.dart';
 import 'package:volti_api/src/model/fee_list.dart';
@@ -28,6 +32,108 @@ class PricingApi {
   final Serializers _serializers;
 
   const PricingApi(this._dio, this._serializers);
+
+  /// Adicionar cupom à conta
+  /// Valida o código (mesmas regras do aluguel: ativo, vigência, limite total e por cliente) e o salva na conta. Código inválido → &#x60;422&#x60; &#x60;coupon-invalid&#x60; (&#x60;detail&#x60; com o motivo em pt-BR); já salvo → &#x60;409&#x60; &#x60;conflict&#x60;. Códigos de indicação não são cupons: use &#x60;POST /me/referral/redeem&#x60;.
+  ///
+  /// Parameters:
+  /// * [couponCodeRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [CustomerCoupon] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<CustomerCoupon>> addMyCoupon({
+    required CouponCodeRequest couponCodeRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/me/coupons';
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(CouponCodeRequest);
+      _bodyData =
+          _serializers.serialize(couponCodeRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    CustomerCoupon? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(CustomerCoupon),
+            ) as CustomerCoupon;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<CustomerCoupon>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
 
   /// Criar cupom
   /// Grava AuditLog.
@@ -854,6 +960,86 @@ class PricingApi {
     );
   }
 
+  /// Cupons salvos na conta
+  /// Cupons que o cliente adicionou à conta (&#x60;POST /me/coupons&#x60;) ou ganhou por indicação. &#x60;status&#x60; é calculado na leitura: &#x60;used&#x60; quando o limite por cliente foi atingido, &#x60;expired&#x60; quando passou de &#x60;validUntil&#x60; ou o cupom foi desativado. Para usar, o app envia &#x60;couponCode&#x60; em &#x60;POST /pricing/quote&#x60; e &#x60;POST /rentals&#x60;.
+  ///
+  /// Parameters:
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [CustomerCouponList] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<CustomerCouponList>> listMyCoupons({
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/me/coupons';
+    final _options = Options(
+      method: r'GET',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    CustomerCouponList? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(CustomerCouponList),
+            ) as CustomerCouponList;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<CustomerCouponList>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// Planos disponíveis
   /// Clientes recebem só os planos ativos; staff pode pedir os inativos.
   ///
@@ -1362,6 +1548,108 @@ class PricingApi {
     }
 
     return Response<PricingPlan>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Validar cupom sem salvar
+  /// Sempre &#x60;200&#x60;; &#x60;valid &#x3D; false&#x60; traz &#x60;message&#x60; com o motivo. &#x60;planCode&#x60; opcional restringe a validação a um plano.
+  ///
+  /// Parameters:
+  /// * [couponCodeRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [CouponValidation] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<CouponValidation>> validateMyCoupon({
+    required CouponCodeRequest couponCodeRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/me/coupons/validate';
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(CouponCodeRequest);
+      _bodyData =
+          _serializers.serialize(couponCodeRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    CouponValidation? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(CouponValidation),
+            ) as CouponValidation;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<CouponValidation>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,
