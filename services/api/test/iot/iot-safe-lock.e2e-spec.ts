@@ -175,4 +175,44 @@ describe('IoT (integração com Mosquitto)', () => {
     const audit = await prisma.auditLog.findFirst({ where: { entityId: vehicle.id, action: 'vehicle.zone_speed_limit', createdAt: { gte: since } } });
     expect(audit).not.toBeNull();
   }, 30_000);
+
+  it('QA-03: editar o limite de uma cerca com a moto parada dentro reaplica o limite novo sem posição nova', async () => {
+    const vehicle = await prisma.vehicle.findUniqueOrThrow({ where: { code: ZONE_CODE } });
+    const c = { lat: -23.545, lng: -46.665 };
+    const d = 0.0008;
+    const geometry = { type: 'Polygon', coordinates: [[[c.lng - d, c.lat - d], [c.lng + d, c.lat - d], [c.lng + d, c.lat + d], [c.lng - d, c.lat + d], [c.lng - d, c.lat - d]]] };
+    const zone = (await request(app.getHttpServer()).post('/zones').set('Authorization', `Bearer ${admin}`)
+      .send({ name: `QA-03 ${Date.now()}`, type: 'reduced_speed', speedLimitKmh: 20, geometry }).expect(201)).body;
+    const lastLimit = (since: Date) =>
+      prisma.vehicleCommand.findFirst({ where: { vehicleId: vehicle.id, type: 'speed_limit', createdAt: { gte: since } }, orderBy: { createdAt: 'desc' } });
+    try {
+      const t0 = new Date();
+      await observer.publishAsync(
+        `motos/${ZONE_THING}/telemetria`,
+        JSON.stringify({ lat: c.lat, lng: c.lng, velocidade_kmh: 0, bateria_pct: 80, travada: false, ignicao: false, sinal: 4, timestamp: new Date().toISOString() }),
+      );
+      const first = await until(async () => {
+        const cmd = await lastLimit(t0);
+        return cmd && (cmd.payload as any).speedLimitKmh === 20 ? cmd : undefined;
+      }, 15_000, 'limite 20 da cerca');
+      expect((first.payload as any).purpose).toBe('zone_speed_limit');
+
+      const t1 = new Date();
+      await request(app.getHttpServer()).put(`/zones/${zone.id}`).set('Authorization', `Bearer ${admin}`)
+        .send({ name: zone.name, type: 'reduced_speed', speedLimitKmh: 6, geometry, active: true }).expect(200);
+      const second = await until(async () => {
+        const cmd = await lastLimit(t1);
+        return cmd && (cmd.payload as any).speedLimitKmh === 6 ? cmd : undefined;
+      }, 15_000, 'limite 6 reaplicado depois de editar a cerca');
+      expect(second.requestedByType).toBe('system');
+    } finally {
+      const t2 = new Date();
+      await request(app.getHttpServer()).delete(`/zones/${zone.id}`).set('Authorization', `Bearer ${admin}`).expect(204);
+      // Zona excluída: a moto volta ao limite das zonas restantes (32).
+      await until(async () => {
+        const cmd = await lastLimit(t2);
+        return cmd && (cmd.payload as any).speedLimitKmh === 32 ? cmd : undefined;
+      }, 15_000, 'limite 32 depois de excluir a cerca');
+    }
+  }, 60_000);
 });

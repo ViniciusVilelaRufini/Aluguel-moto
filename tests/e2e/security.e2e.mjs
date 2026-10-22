@@ -137,7 +137,7 @@ test('QA-01 Legal: comando manual não sobe o limite acima do da zona em que a m
   }
 });
 
-test('QA-03 Legal: editar o limite de uma cerca reaplica às motos que já estão dentro', { todo: 'QA-03', timeout: 60_000 }, async () => {
+test('QA-03 Legal: editar o limite de uma cerca reaplica às motos que já estão dentro', { timeout: 60_000 }, async () => {
   const c = { lat: -23.5450, lng: -46.6650 };
   const d = 0.0008;
   const geometry = { type: 'Polygon', coordinates: [[[c.lng - d, c.lat - d], [c.lng + d, c.lat - d], [c.lng + d, c.lat + d], [c.lng - d, c.lat + d], [c.lng - d, c.lat - d]]] };

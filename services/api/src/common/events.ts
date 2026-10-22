@@ -106,6 +106,10 @@ export interface RentalChangedEvent {
 export interface ZoneChangedEvent {
   zoneId: string;
   action: 'created' | 'updated' | 'deleted';
+  /** Estado da zona depois da mudança (QA-03: o motor de cercas reavalia as motos dentro com o limite novo). */
+  type?: ZoneType;
+  speedLimitKmh?: number | null;
+  active?: boolean;
 }
 
 /** Reserva encerrada sem virar aluguel: a Task 5 libera a caução Pix associada (decisão #16). */

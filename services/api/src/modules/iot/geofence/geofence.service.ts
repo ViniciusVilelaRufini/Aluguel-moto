@@ -40,6 +40,19 @@ interface VehicleZones {
   appliedLimit?: number;
 }
 
+/** Última posição conhecida de uma moto (QA-03: reavaliar as motos dentro de uma zona alterada). */
+export interface VehiclePosition {
+  vehicleId: string;
+  thingName: string;
+  lat: number;
+  lng: number;
+}
+
+/** Motos cuja posição conhecida está dentro da geometria atual da zona (local: PostGIS sobre `Vehicle`). */
+export interface ZoneVehiclePositions {
+  vehiclesInZone(zoneId: string): Promise<VehiclePosition[]>;
+}
+
 /**
  * Transições de cerca (ENTER/EXIT) a partir das posições, com as regras do produto:
  * - `reduced_speed`: ENTER → limite da zona; EXIT → menor limite das zonas que ainda contêm a moto, senão 32;
@@ -53,6 +66,8 @@ export class GeofenceService {
   private readonly logger = new Logger('GeofenceService');
   private readonly byVehicle = new Map<string, VehicleZones>();
   private readonly limitByThing = new Map<string, number>();
+  /** Última posição vista por este processo (só memória; depois de um reinício vale a posição gravada no Postgres). */
+  private readonly lastPosition = new Map<string, VehiclePosition>();
   private readonly outOfArea = new Map<string, { handle: TimerHandle; rentalId: string }>();
   /** Motos cujo prazo persistido já foi conferido neste processo (evita um GET/DEL no Redis a cada posição). */
   private readonly outOfAreaChecked = new Set<string>();
@@ -65,6 +80,7 @@ export class GeofenceService {
     private readonly clock: Clock,
     private readonly redis: RedisStore,
     private readonly opts: { outOfAreaLockMinutes: number },
+    private readonly positions?: ZoneVehiclePositions,
   ) {}
 
   /** Limite em vigor pelas zonas (resolver do `unlock`). */
@@ -72,8 +88,34 @@ export class GeofenceService {
     return this.limitByThing.get(thingName) ?? MAX_SPEED_KMH;
   }
 
+  /**
+   * `zone.changed` → ressincroniza o motor e reavalia na hora as motos afetadas (QA-03): as que este processo viu dentro da
+   * zona e as que, pela posição conhecida, estão dentro da geometria nova. Assim uma ciclovia que vira 6 km/h, ou uma cerca
+   * que passa a cobrir uma moto parada, aplica o limite sem esperar a próxima posição. O limite enviado é sempre o efetivo
+   * (menor das zonas que contêm a moto, nunca acima de 32).
+   */
   async onZoneChanged(ev: ZoneChangedEvent): Promise<void> {
     await this.engine.sync(ev);
+    const candidates = new Map<string, VehiclePosition>();
+    for (const [vehicleId, st] of this.byVehicle) {
+      const last = this.lastPosition.get(vehicleId);
+      if (last && st.zones.some((z) => z.id === ev.zoneId)) candidates.set(vehicleId, last);
+    }
+    if (this.positions) {
+      const inside = await this.positions.vehiclesInZone(ev.zoneId).catch((err) => {
+        this.logger.warn({ msg: 'zone_vehicles_lookup_failed', zoneId: ev.zoneId, error: (err as Error).message });
+        return [] as VehiclePosition[];
+      });
+      // A posição vista ao vivo por este processo é mais nova que a gravada no Postgres (a cada 30 s).
+      for (const v of inside) if (!candidates.has(v.vehicleId)) candidates.set(v.vehicleId, this.lastPosition.get(v.vehicleId) ?? v);
+    }
+    const ts = new Date(this.clock.now()).toISOString();
+    for (const c of candidates.values()) {
+      await this.evaluate({ ...c, ts }, false).catch((err) =>
+        this.logger.error({ msg: 'zone_change_reevaluate_failed', vehicleId: c.vehicleId, zoneId: ev.zoneId, error: (err as Error).message }),
+      );
+    }
+    if (candidates.size) this.logger.log({ msg: 'zone_change_reevaluated', zoneId: ev.zoneId, vehicles: candidates.size });
   }
 
   private key(vehicleId: string): string {
@@ -100,9 +142,17 @@ export class GeofenceService {
   }
 
   async onPosition(p: PositionInput): Promise<void> {
-    await this.engine.updatePosition(p.thingName, p.lat, p.lng, p.ts).catch((err) =>
-      this.logger.warn({ msg: 'geofence_tracker_update_failed', vehicleId: p.vehicleId, error: (err as Error).message }),
-    );
+    await this.evaluate(p, true);
+  }
+
+  /** `fromDevice`: posição nova do rastreador (vai ao tracker); `false` = reavaliação da última posição conhecida. */
+  private async evaluate(p: PositionInput, fromDevice: boolean): Promise<void> {
+    if (fromDevice) {
+      await this.engine.updatePosition(p.thingName, p.lat, p.lng, p.ts).catch((err) =>
+        this.logger.warn({ msg: 'geofence_tracker_update_failed', vehicleId: p.vehicleId, error: (err as Error).message }),
+      );
+    }
+    this.lastPosition.set(p.vehicleId, { vehicleId: p.vehicleId, thingName: p.thingName, lat: p.lat, lng: p.lng });
     const zones = await this.engine.containing(p.lat, p.lng);
     const prev = await this.load(p.vehicleId);
     const prevZones = prev?.zones ?? [];
@@ -121,7 +171,12 @@ export class GeofenceService {
 
     const state: VehicleZones = { zones, appliedLimit: prev?.appliedLimit };
     const zonesChanged = prevIds.size !== nowIds.size || [...nowIds].some((id) => !prevIds.has(id));
-    if (!exits.length && !enters.length) {
+    // Regra de velocidade: o conjunto de zonas de velocidade reduzida mudou, ou o limite efetivo mudou com as mesmas zonas
+    // (QA-03: cerca editada de 20 para 6 com a moto dentro). Sem limite aplicado registrado, vale 32 (nada a corrigir).
+    const reducedChanged = [...exits, ...enters].some((z) => z.type === 'reduced_speed');
+    const applied = reducedChanged ? state.appliedLimit : (state.appliedLimit ?? MAX_SPEED_KMH);
+    const limitChanged = applied !== limit;
+    if (!exits.length && !enters.length && !limitChanged) {
       if (!prev || zonesChanged) await this.save(p.vehicleId, state);
       await this.evaluateOutOfArea(p.vehicleId, opNow);
       return;
@@ -131,9 +186,7 @@ export class GeofenceService {
     for (const z of exits) this.emit(p, z, 'EXIT', rentalId);
     for (const z of enters) this.emit(p, z, 'ENTER', rentalId);
 
-    // Regra de velocidade: só quando o conjunto de zonas de velocidade reduzida mudou.
-    const reducedChanged = [...exits, ...enters].some((z) => z.type === 'reduced_speed');
-    if (reducedChanged && state.appliedLimit !== limit) {
+    if (limitChanged) {
       state.appliedLimit = limit;
       await this.commander
         .setSpeedLimit(p.vehicleId, limit, { rentalId, purpose: 'zone_speed_limit' })

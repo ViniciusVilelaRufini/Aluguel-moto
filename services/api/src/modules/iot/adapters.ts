@@ -4,7 +4,7 @@ import type { PrismaClient } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { CommandsService } from '../commands/commands.service';
 import type { Clock } from './clock';
-import type { CommandContext, GeofenceCommander, RentalLookup } from './geofence/geofence.service';
+import type { CommandContext, GeofenceCommander, RentalLookup, VehiclePosition, ZoneVehiclePositions } from './geofence/geofence.service';
 
 const GEOFENCE_ACTOR = { system: true as const, name: 'geofence' };
 
@@ -46,6 +46,21 @@ export class CommandsGeofenceCommander implements GeofenceCommander {
       context: { rentalId: ctx.rentalId, purpose: ctx.purpose },
       auditAction: 'vehicle.out_of_area_lock',
     });
+  }
+}
+
+/**
+ * QA-03: motos cuja posição gravada (`Vehicle.lat/lng`, atualizada a cada 30 s; parada = exata) está dentro da geometria
+ * atual da zona, ativa ou não (zona desativada/excluída: as motos dentro voltam ao limite das zonas restantes).
+ */
+export class PrismaZoneVehiclePositions implements ZoneVehiclePositions {
+  constructor(private readonly prisma: Pick<PrismaClient, '$queryRaw'>) {}
+
+  async vehiclesInZone(zoneId: string): Promise<VehiclePosition[]> {
+    return this.prisma.$queryRaw<VehiclePosition[]>`
+      SELECT v."id"::text AS "vehicleId", v."thingName", v."lat", v."lng"
+      FROM "Vehicle" v JOIN "Zone" z ON z."id" = ${zoneId}::uuid
+      WHERE z."geom" IS NOT NULL AND ST_Contains(z."geom", ST_SetSRID(ST_MakePoint(v."lng", v."lat"), 4326))`;
   }
 }
 

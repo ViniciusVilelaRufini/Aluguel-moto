@@ -113,7 +113,7 @@ export class ZonesService {
       await this.audit.record({ actor, action: 'zone.create', entityType: 'Zone', entityId: z.id, metadata: { type: z.type, speedLimitKmh: z.speedLimitKmh } }, tx as any);
       return z;
     });
-    this.emit(zone.id, 'created');
+    this.emit(zone, 'created');
     return toGeoZone(zone);
   }
 
@@ -138,7 +138,7 @@ export class ZonesService {
       await this.audit.record({ actor, action: 'zone.update', entityType: 'Zone', entityId: id, metadata: { type: z.type, speedLimitKmh: z.speedLimitKmh } }, tx as any);
       return z;
     });
-    this.emit(id, 'updated');
+    this.emit(zone, 'updated');
     return toGeoZone(zone);
   }
 
@@ -146,14 +146,16 @@ export class ZonesService {
   async remove(id: string, actor: Principal): Promise<void> {
     const existing = await this.prisma.zone.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) throw notFound('Zona não encontrada.');
-    await this.prisma.$transaction(async (tx) => {
-      await tx.zone.update({ where: { id }, data: { deletedAt: new Date(), active: false } });
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      const z = await tx.zone.update({ where: { id }, data: { deletedAt: new Date(), active: false } });
       await this.audit.record({ actor, action: 'zone.delete', entityType: 'Zone', entityId: id }, tx as any);
+      return z;
     });
-    this.emit(id, 'deleted');
+    this.emit(deleted, 'deleted');
   }
 
-  private emit(zoneId: string, action: ZoneChangedEvent['action']): void {
-    this.events.emit(EV.ZONE_CHANGED, { zoneId, action } satisfies ZoneChangedEvent);
+  /** Leva o limite novo junto: o motor de cercas reavalia as motos que já estão dentro (QA-03). */
+  private emit(z: Pick<Zone, 'id' | 'type' | 'speedLimitKmh' | 'active'>, action: ZoneChangedEvent['action']): void {
+    this.events.emit(EV.ZONE_CHANGED, { zoneId: z.id, action, type: z.type, speedLimitKmh: z.speedLimitKmh, active: z.active } satisfies ZoneChangedEvent);
   }
 }

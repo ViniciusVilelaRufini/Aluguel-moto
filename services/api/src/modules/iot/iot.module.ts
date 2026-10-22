@@ -10,7 +10,7 @@ import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REDIS_STORE, type RedisStore } from '../../redis/redis-store';
-import { CommandsGeofenceCommander, PrismaRentalLookup } from './adapters';
+import { CommandsGeofenceCommander, PrismaRentalLookup, PrismaZoneVehiclePositions } from './adapters';
 import { AwsIotTransport } from './aws-iot.transport';
 import { BaseIotGateway } from './base-iot-gateway';
 import { IOT_CLOCK, SystemClock, type Clock } from './clock';
@@ -73,9 +73,9 @@ import { TelemetryService } from './telemetry.service';
     { provide: GEOFENCE_COMMANDER, inject: [ModuleRef], useFactory: (moduleRef: ModuleRef) => new CommandsGeofenceCommander(moduleRef) },
     {
       provide: GeofenceService,
-      inject: [GEOFENCE_ENGINE, GEOFENCE_COMMANDER, RENTAL_LOOKUP, EventEmitter2, IOT_CLOCK, REDIS_STORE, IOT_CONFIG],
-      useFactory: (engine: GeofenceEngine, commander: GeofenceCommander, rentals: RentalLookup, events: EventEmitter2, clock: Clock, redis: RedisStore, cfg: IotConfig) =>
-        new GeofenceService(engine, commander, rentals, events, clock, redis, { outOfAreaLockMinutes: cfg.outOfAreaLockMinutes }),
+      inject: [GEOFENCE_ENGINE, GEOFENCE_COMMANDER, RENTAL_LOOKUP, EventEmitter2, IOT_CLOCK, REDIS_STORE, IOT_CONFIG, PrismaService],
+      useFactory: (engine: GeofenceEngine, commander: GeofenceCommander, rentals: RentalLookup, events: EventEmitter2, clock: Clock, redis: RedisStore, cfg: IotConfig, prisma: PrismaService) =>
+        new GeofenceService(engine, commander, rentals, events, clock, redis, { outOfAreaLockMinutes: cfg.outOfAreaLockMinutes }, new PrismaZoneVehiclePositions(prisma)),
     },
     {
       provide: TelemetryService,
