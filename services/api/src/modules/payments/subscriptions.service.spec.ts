@@ -203,6 +203,33 @@ describe('SubscriptionsService — ciclo de vida (C1) e moto fixa (I2/M9)', () =
   });
 });
 
+describe('SubscriptionsService.create valida a moto antes de cobrar (fix round 2, I2)', () => {
+  function forCreate(vehicles: Row[], others: Row[] = []) {
+    const t = setup({ id: 's0', customerId: 'c0', status: 'canceled' }, { vehicles, others });
+    t.prisma.customer = { findUnique: jest.fn(async () => ({ id: 'c1', email: 'a@example.com', kycStatus: 'approved', status: 'active', delinquent: false })) };
+    t.prisma.pricingPlan = { findFirst: jest.fn(async () => ({ code: 'weekly', unitPriceCents: 24900 })) };
+    t.provider.createSubscription = jest.fn();
+    t.customers.card = jest.fn(async () => ({ id: 'card-1', providerCardId: 'pc-1', last4: '4242' }));
+    t.customers.ensureCustomer = jest.fn(async () => 'cus-1');
+    const state = (t.svc as any).state;
+    state.create = jest.fn();
+    return { ...t, state };
+  }
+
+  it.each([
+    ['fixa de outro assinante vigente', [{ id: 'v9', status: 'free', code: 'VLT-0009' }], [{ id: 's9', customerId: 'c9', status: 'active', assignedVehicleId: 'v9', currentPeriodEnd: new Date(Date.now() + DAY), cancelAtPeriodEnd: false }], 409],
+    ['em uso', [{ id: 'v9', status: 'in_use', code: 'VLT-0009' }], [], 409],
+    ['inexistente', [], [], 404],
+  ])('moto %s → erro sem chamar o gateway nem criar pagamento/assinatura', async (_label, vehicles, others, status) => {
+    const { svc, prisma, provider, state } = forCreate(vehicles as Row[], others as Row[]);
+    const rowsBefore = prisma.subscription.rows.length;
+    expect((await problem(svc.create('c1', { planCode: 'weekly', vehicleId: 'v9' }))).status).toBe(status);
+    expect(provider.createSubscription).not.toHaveBeenCalled();
+    expect(state.create).not.toHaveBeenCalled();
+    expect(prisma.subscription.rows).toHaveLength(rowsBefore);
+  });
+});
+
 describe('SubscriptionsService — assinatura fechada não reabre (fix round 2, achado 1)', () => {
   const renewal = (over: Row = {}): Row => ({
     id: 'p2', customerId: 'c1', subscriptionId: 's1', kind: 'subscription', method: 'card', status: 'paid', amountCents: 24900, refundedCents: 0,
