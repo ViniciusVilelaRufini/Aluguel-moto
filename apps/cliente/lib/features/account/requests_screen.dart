@@ -225,7 +225,7 @@ class _RequestRow extends StatelessWidget {
         padding: const EdgeInsets.only(bottom: VoltiSpacing.s4),
         child: Row(children: [
           Expanded(child: ListRow(title: title, subtitle: subtitle, icon: icon, trailing: ListRowTrailing.none)),
-          VoltiBadge(label: status, tone: tone, size: VoltiBadgeSize.sm),
+          VoltiBadge(status, tone: tone, size: VoltiBadgeSize.sm),
           const SizedBox(width: VoltiSpacing.s8),
         ]),
       );

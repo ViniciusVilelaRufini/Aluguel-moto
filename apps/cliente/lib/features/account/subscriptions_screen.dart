@@ -93,7 +93,7 @@ class _ActivePlanCard extends ConsumerWidget {
           Row(children: [
             Expanded(child: Text(subscriptionName(context, sub.planCode), style: VoltiTypography.title)),
             VoltiBadge(
-              label: switch ((sub.status, ending)) {
+              switch ((sub.status, ending)) {
                 (SubscriptionStatus.pastDue, _) => l.subscriptionPastDue,
                 (_, true) => l.subscriptionEndingBadge,
                 _ => l.subscriptionActive,

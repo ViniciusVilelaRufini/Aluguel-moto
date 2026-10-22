@@ -14,7 +14,7 @@ Widget _wrap(Widget child, {ThemeData? theme, double scale = 1}) => MaterialApp(
 void main() {
   group('VoltiBadge', () {
     testWidgets('tom success por padrao, com icone e texto', (t) async {
-      await t.pumpWidget(_wrap(const VoltiBadge(label: 'Verificada', icon: LucideIcons.shieldCheck)));
+      await t.pumpWidget(_wrap(const VoltiBadge('Verificada', icon: LucideIcons.shieldCheck)));
       expect(find.text('Verificada'), findsOneWidget);
       expect(find.byIcon(LucideIcons.shieldCheck), findsOneWidget);
       final box = t.widget<Container>(find.byKey(const Key('volti-badge'))).decoration! as BoxDecoration;
@@ -23,15 +23,15 @@ void main() {
 
     testWidgets('tamanho sm tem 20 px e md 26 px', (t) async {
       await t.pumpWidget(_wrap(const Column(mainAxisSize: MainAxisSize.min, children: [
-        VoltiBadge(label: 'sm', size: VoltiBadgeSize.sm, tone: VoltiBadgeTone.neutral),
-        VoltiBadge(label: 'md', tone: VoltiBadgeTone.danger),
+        VoltiBadge('sm', size: VoltiBadgeSize.sm, tone: VoltiBadgeTone.neutral),
+        VoltiBadge('md', tone: VoltiBadgeTone.danger),
       ])));
       expect(t.getSize(find.byKey(const Key('volti-badge')).first).height, 20);
       expect(t.getSize(find.byKey(const Key('volti-badge')).last).height, 26);
     });
 
     testWidgets('cresce com o texto a 200% sem estourar', (t) async {
-      await t.pumpWidget(_wrap(const VoltiBadge(label: '18+'), scale: 2));
+      await t.pumpWidget(_wrap(const VoltiBadge('18+'), scale: 2));
       expect(t.takeException(), isNull);
     });
   });

@@ -225,8 +225,8 @@ class _Profile extends StatelessWidget {
                 Text(customer!.email, style: VoltiTypography.caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
               const SizedBox(height: 4),
               Wrap(spacing: 6, runSpacing: 4, children: [
-                VoltiBadge(label: kycLabel, tone: kycTone, icon: kycIcon, size: VoltiBadgeSize.sm),
-                if (_adult) VoltiBadge(label: l.adultBadge, tone: VoltiBadgeTone.neutral, size: VoltiBadgeSize.sm),
+                VoltiBadge(kycLabel, tone: kycTone, icon: kycIcon, size: VoltiBadgeSize.sm),
+                if (_adult) VoltiBadge(l.adultBadge, tone: VoltiBadgeTone.neutral, size: VoltiBadgeSize.sm),
               ]),
             ]),
           ),
