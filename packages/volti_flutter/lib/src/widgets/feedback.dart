@@ -45,6 +45,9 @@ class VoltiBottomSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
+      // Largura total como no design: sem isso o sheet encolhe ate o conteudo
+      // (ex.: "Pix confirmado") e fica centralizado com sobras dos lados.
+      width: double.infinity,
       padding: padding,
       decoration: BoxDecoration(
         color: scheme.surface,

@@ -488,61 +488,88 @@ class _SwipeActionState extends State<SwipeAction> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final c = widget.danger ? VoltiColors.danger : VoltiColors.brand;
+    // Design: trilho branco de largura total, botao redondo a esquerda e o
+    // texto centralizado; o texto fica fora da faixa do botao (margem do
+    // tamanho dele dos dois lados) e quebra linha com texto grande.
+    const side = _k + _pad * 2;
     return LayoutBuilder(
       builder: (context, box) {
-        final max =
-            (box.maxWidth.isFinite ? box.maxWidth : 280) - _k - _pad * 2;
-        return Container(
-          height: _h,
-          decoration: BoxDecoration(
-            color: scheme.surface,
-            borderRadius: VoltiRadii.rPill,
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Opacity(
-                opacity: (1 - _x / (max * 1.2)).clamp(0.0, 1.0),
-                child: Text(
-                  widget.label,
-                  style: TextStyle(
-                    fontFamily: VoltiTypography.fontSans,
-                    fontWeight: VoltiTypography.fwBold,
-                    fontSize: 16,
-                    height: 1,
-                    color: scheme.onSurface,
-                  ),
-                ),
+        final width = box.maxWidth.isFinite ? box.maxWidth : 280.0;
+        final max = width - _k - _pad * 2;
+        return Semantics(
+          container: true,
+          button: true,
+          label: widget.label,
+          onTap: widget.onComplete,
+          child: ExcludeSemantics(
+            child: Container(
+              width: width,
+              constraints: const BoxConstraints(minHeight: _h),
+              decoration: BoxDecoration(
+                color: scheme.surface,
+                borderRadius: VoltiRadii.rPill,
               ),
-              AnimatedPositioned(
-                duration: _dragging ? Duration.zero : VoltiMotion.durSlow,
-                curve: VoltiMotion.easeSpring,
-                left: _pad + _x,
-                top: _pad,
-                child: GestureDetector(
-                  key: const Key('swipe-knob'),
-                  onHorizontalDragStart: (_) =>
-                      setState(() => _dragging = true),
-                  onHorizontalDragUpdate: (d) =>
-                      setState(() => _x = (_x + d.delta.dx).clamp(0.0, max)),
-                  onHorizontalDragEnd: (_) => _end(max),
-                  onHorizontalDragCancel: () => setState(() {
-                    _dragging = false;
-                    _x = 0;
-                  }),
-                  child: Container(
-                    width: _k,
-                    height: _k,
-                    decoration: BoxDecoration(color: c, shape: BoxShape.circle),
-                    child: const Icon(
-                      LucideIcons.chevronsRight,
-                      size: 20,
-                      color: Colors.white,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: side,
+                      vertical: 8,
+                    ),
+                    child: Opacity(
+                      opacity: (1 - _x / (max * 1.2)).clamp(0.0, 1.0),
+                      child: Text(
+                        widget.label,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontFamily: VoltiTypography.fontSans,
+                          fontWeight: VoltiTypography.fwBold,
+                          fontSize: 16,
+                          height: 1.15,
+                          color: scheme.onSurface,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                  AnimatedPositioned(
+                    duration: _dragging ? Duration.zero : VoltiMotion.durSlow,
+                    curve: VoltiMotion.easeSpring,
+                    left: _pad + _x,
+                    top: 0,
+                    bottom: 0,
+                    child: Center(
+                      child: GestureDetector(
+                        key: const Key('swipe-knob'),
+                        onHorizontalDragStart: (_) =>
+                            setState(() => _dragging = true),
+                        onHorizontalDragUpdate: (d) => setState(
+                          () => _x = (_x + d.delta.dx).clamp(0.0, max),
+                        ),
+                        onHorizontalDragEnd: (_) => _end(max),
+                        onHorizontalDragCancel: () => setState(() {
+                          _dragging = false;
+                          _x = 0;
+                        }),
+                        child: Container(
+                          width: _k,
+                          height: _k,
+                          decoration: BoxDecoration(
+                            color: c,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            LucideIcons.chevronsRight,
+                            size: 20,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         );
       },
