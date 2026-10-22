@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { NextFunction, Request, Response } from 'express';
 import { ProblemException, ValidationIssue } from './common/problem';
 import { ProblemFilter } from './common/problem.filter';
+import { corsOptions } from './common/cors';
 
 function flatten(errors: ValidationError[], parent = ''): ValidationIssue[] {
   const out: ValidationIssue[] = [];
@@ -43,7 +44,7 @@ export function configureApp(app: INestApplication): INestApplication {
   });
   app.useGlobalPipes(validationPipe());
   app.useGlobalFilters(new ProblemFilter());
-  app.enableCors({ origin: true, credentials: true, exposedHeaders: ['X-Request-Id', 'Retry-After', 'Idempotent-Replayed'] });
+  app.enableCors(corsOptions());
   const http = app.getHttpAdapter().getInstance();
   http.set?.('trust proxy', 1);
   http.disable?.('x-powered-by');

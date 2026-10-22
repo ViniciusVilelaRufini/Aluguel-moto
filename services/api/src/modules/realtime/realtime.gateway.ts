@@ -1,3 +1,4 @@
+import { corsOptions } from '../../common/cors';
 import { Inject, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
@@ -40,7 +41,7 @@ export function zoneMessage(ev: Pick<GeofenceTransitionEvent, 'zoneType' | 'tran
 }
 
 /** Socket.IO `/realtime` (packages/contracts/realtime.md): salas `fleet` e `rental:{id}`; servidor → cliente apenas. */
-@WebSocketGateway({ namespace: '/realtime', cors: { origin: true, credentials: true } })
+@WebSocketGateway({ namespace: '/realtime', cors: corsOptions() })
 export class RealtimeGateway implements OnGatewayInit {
   private readonly logger = new Logger('RealtimeGateway');
   private readonly vehicles = new Map<string, VehicleCache>();

@@ -85,7 +85,7 @@ test('API8 webhook do Mercado Pago sem assinatura ou com assinatura inválida �
   assert.equal(bad.status, 401);
 });
 
-test('API8 CORS não reflete origem arbitrária com credenciais', { todo: 'QA-10 (origin: true + credentials: true)' }, async () => {
+test('API8 CORS não reflete origem arbitrária com credenciais', async () => {
   const r = await fetch(`${API}/vehicles`, { method: 'OPTIONS', headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'GET', 'Access-Control-Request-Headers': 'authorization' } });
   assert.notEqual(r.headers.get('access-control-allow-origin'), 'https://evil.example');
 });
