@@ -2,8 +2,8 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import { API, apiToken, createCustomer, login } from './helpers';
 
 /**
- * Retirada em galpão no painel (spec 2026-10-22 §6). Cadastro, mapa e agenda rodam contra a API real
- * (Tasks 4 e 5). Entregas e disputas dependem da Task 6 (handovers) e ficam em `test.skip` até o merge.
+ * Retirada em galpão no painel (spec 2026-10-22 §6). Cadastro, mapa, agenda e entregas rodam contra a API real
+ * (Tasks 4, 5 e 6): a entrega é criada pelo fluxo real (reserva → foto enviada pela URL pré-assinada → saída do operador).
  *
  * Higiene: todo galpão nasce longe de São Paulo (Maceió), fora das cercas e motos dos outros testes, e é
  * desativado no `afterEach`.
@@ -30,6 +30,10 @@ async function createDepotApi(request: APIRequestContext, name: string, openingH
 
 /** Moto nova levada ao galpão pelo fluxo real: cadastro (fica em manutenção) e recolhimento concluído no galpão. */
 async function vehicleInDepot(request: APIRequestContext, depotId: string): Promise<string> {
+  return (await vehicleInDepotWithCode(request, depotId)).id;
+}
+
+async function vehicleInDepotWithCode(request: APIRequestContext, depotId: string): Promise<{ id: string; code: string }> {
   const headers = await adminHeaders(request);
   const code = `VLT-9${String(Date.now()).slice(-6)}`;
   const v = await request.post(`${API}/vehicles`, { headers, data: { code, model: 'E2E Galpão', thingName: `e2e-${code.toLowerCase()}` } });
@@ -42,11 +46,11 @@ async function vehicleInDepot(request: APIRequestContext, depotId: string): Prom
   expect(started.ok(), await started.text()).toBeTruthy();
   const done = await request.post(`${API}/field-tasks/${taskId}/complete`, { headers, data: { depotId } });
   expect(done.ok(), await done.text()).toBeTruthy();
-  return vehicleId;
+  return { id: vehicleId, code };
 }
 
 /** Reserva "retirar agora" pela API (cliente com KYC aprovado, cartão fake, Idempotency-Key). */
-async function reserveNow(request: APIRequestContext, depotId: string, vehicleId: string, name: string): Promise<{ id: string; cancel: () => Promise<void> }> {
+async function reserveNow(request: APIRequestContext, depotId: string, vehicleId: string, name: string): Promise<{ id: string; pickupCode: string; token: string; cancel: () => Promise<void> }> {
   const customer = await createCustomer(request);
   const headers = { Authorization: `Bearer ${customer.token}` };
   expect((await request.patch(`${API}/me`, { headers, data: { name } })).ok()).toBeTruthy();
@@ -57,8 +61,8 @@ async function reserveNow(request: APIRequestContext, depotId: string, vehicleId
     data: { vehicleId, depotId, pickupMode: 'now', planCode: 'day', coverage: 'basic', depositMethod: 'card' },
   });
   expect(res.status(), await res.text()).toBe(201);
-  const id = ((await res.json()) as { id: string }).id;
-  return { id, cancel: async () => { await request.delete(`${API}/reservations/${id}`, { headers }); } };
+  const { id, pickupCode } = (await res.json()) as { id: string; pickupCode: string };
+  return { id, pickupCode, token: customer.token, cancel: async () => { await request.delete(`${API}/reservations/${id}`, { headers }); } };
 }
 
 test.afterEach(async ({ request }) => {
@@ -226,15 +230,78 @@ test.describe('agenda de retiradas', () => {
   });
 });
 
+/** PNG 2×2 vermelho (foto da entrega enviada ao MinIO pela URL pré-assinada). */
+const PHOTO_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEUlEQVR4nGP4z8DwnwGMgRQAH+4D/dJQfRoAAAAASUVORK5CYII=', 'base64');
+
+async function campoHeaders(request: APIRequestContext) {
+  const res = await request.post(`${API}/dev/token`, { data: { sub: 'dev-campo', email: 'campo@volti.dev', groups: ['campo'], pool: 'staff' } });
+  expect(res.ok()).toBeTruthy();
+  return { Authorization: `Bearer ${(await res.json()).accessToken as string}` };
+}
+
 test.describe('entregas e disputas', () => {
-  // TODO(galpão Task 6): habilitar depois do merge de handovers em feat/galpao (POST /handovers + dispute pela API).
-  test.skip('suporte vê a entrega com fotos e a disputa com "Abrir no suporte"', async ({ page }) => {
-    await login(page, 'suporte');
-    await page.goto('/entregas');
-    await expect(page.getByRole('button', { name: 'Disputas' })).toHaveAttribute('aria-pressed', 'true');
-    await page.getByTestId('handovers-table').getByTestId('row').first().click();
-    await expect(page.getByTestId('handover-photos').locator('img').first()).toBeVisible();
-    await expect(page.getByTestId('dispute-reason')).toBeVisible();
-    await expect(page.getByTestId('open-support')).toHaveAttribute('href', '/customers?tab=support');
+  test('saída real (reserva → foto → operador) aparece em Entregas com foto e status; disputa vai para a fila do suporte', async ({ page, request }) => {
+    const depot = await createDepotApi(request, `E2E Entregas ${Date.now()}`, ALL_WEEK);
+    const vehicle = await vehicleInDepotWithCode(request, depot.id);
+    const reservation = await reserveNow(request, depot.id, vehicle.id, `Bia${Date.now().toString(36).replace(/\d/g, '')} Entrega`);
+    const campo = await campoHeaders(request);
+    let handoverId: string | undefined;
+    try {
+      // Foto enviada pela URL pré-assinada do contrato (POST /handovers/uploads → PUT).
+      const up = await request.post(`${API}/handovers/uploads`, { headers: campo, data: { contentType: 'image/png' } });
+      expect(up.status(), await up.text()).toBe(201);
+      const upload = (await up.json()) as { objectKey: string; uploadUrl: string; headers: Record<string, string> };
+      const put = await request.put(upload.uploadUrl, { headers: upload.headers, data: PHOTO_PNG });
+      expect(put.ok(), `PUT foto -> ${put.status()}`).toBeTruthy();
+
+      const created = await request.post(`${API}/handovers`, {
+        headers: campo,
+        data: {
+          type: 'pickup', depotId: depot.id, pickupCode: reservation.pickupCode, batteryPct: 88, photoKeys: [upload.objectKey],
+          checklist: [{ code: 'freios', ok: true }, { code: 'retrovisor', ok: false, note: 'Riscado do lado esquerdo' }],
+        },
+      });
+      expect(created.status(), await created.text()).toBe(201);
+      handoverId = ((await created.json()) as { id: string }).id;
+
+      await login(page, 'admin');
+      await page.goto('/entregas');
+      await page.getByTestId('handovers-depot').selectOption({ label: depot.name });
+      const row = page.getByTestId('handovers-table').getByTestId('row');
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText('Saída');
+      await expect(row).toContainText(vehicle.code);
+      await expect(row).toContainText('88%');
+      await expect(row).toContainText('1/2');
+      await expect(row).toContainText('Aguardando o cliente');
+      await row.click();
+      const photo = page.getByTestId('handover-photos').locator('img').first();
+      await expect(photo).toBeVisible();
+      await expect.poll(() => photo.evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true);
+      await expect(page.getByTestId('handover-checklist')).toContainText('Riscado do lado esquerdo');
+      await expect(page.getByTestId('handover-detail')).toContainText('Aguardando o cliente');
+
+      // O cliente aponta um problema: a entrega vai para a fila de disputas do suporte.
+      const dispute = await request.post(`${API}/handovers/${handoverId}/dispute`, {
+        headers: { Authorization: `Bearer ${reservation.token}` }, data: { reason: 'Retrovisor esquerdo riscado.' },
+      });
+      expect(dispute.status(), await dispute.text()).toBe(200);
+
+      await login(page, 'suporte');
+      await page.goto('/entregas');
+      await expect(page.getByRole('button', { name: 'Disputas' })).toHaveAttribute('aria-pressed', 'true');
+      await page.getByTestId('handovers-depot').selectOption({ label: depot.name });
+      await expect(row).toHaveCount(1);
+      await expect(row).toContainText('Problema apontado');
+      await row.click();
+      await expect(page.getByTestId('handover-photos').locator('img').first()).toBeVisible();
+      await expect(page.getByTestId('dispute-reason')).toHaveText('Retrovisor esquerdo riscado.');
+      // O export estático usa barra final (`trailingSlash`): `/customers/?tab=support`.
+      await expect(page.getByTestId('open-support')).toHaveAttribute('href', /^\/customers\/?\?tab=support$/);
+    } finally {
+      // Limpeza pelo fluxo real: a operação cancela a saída (reserva volta a active) e o cliente cancela a reserva.
+      if (handoverId) await request.post(`${API}/handovers/${handoverId}/cancel`, { headers: campo, data: { reason: 'Limpeza do teste e2e.' } });
+      await reservation.cancel();
+    }
   });
 });

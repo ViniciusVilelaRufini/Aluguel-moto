@@ -72,7 +72,7 @@ E2E_PORT=3110 E2E_API_URL=http://localhost:3001 E2E_CHROME="C:/Program Files/Goo
 
 ### E2E do galpão (`e2e/galpao.spec.ts`)
 
-Cadastro, permissões, mapa e agenda rodam contra a API real (galpões e reserva de galpão). A reserva da agenda é criada pela API: galpão aberto todos os dias, moto nova levada ao galpão por um recolhimento (`collect`) concluído com `depotId`, cliente com KYC aprovado, cartão fake e `POST /reservations` com `depotId` e `Idempotency-Key`; o teste cancela a reserva no fim. Todo galpão do teste nasce em Maceió (longe das cercas de São Paulo) e é desativado no `afterEach`. Entregas e disputas ficam em `test.skip` até a Task 6 (handovers).
+Cadastro, permissões, mapa e agenda rodam contra a API real (galpões e reserva de galpão). A reserva da agenda é criada pela API: galpão aberto todos os dias, moto nova levada ao galpão por um recolhimento (`collect`) concluído com `depotId`, cliente com KYC aprovado, cartão fake e `POST /reservations` com `depotId` e `Idempotency-Key`; o teste cancela a reserva no fim. Todo galpão do teste nasce em Maceió (longe das cercas de São Paulo) e é desativado no `afterEach`. Entregas e disputas também rodam contra a API real: reserva "retirar agora", foto enviada pela URL pré-assinada (`POST /handovers/uploads` + `PUT` no MinIO), saída do operador (`campo`) com o `pickupCode`; o admin vê a entrega em `/entregas` com foto, checklist e status, o cliente aponta um problema e o suporte a vê em Disputas com "Abrir no suporte". No fim, a operação cancela a saída e o cliente cancela a reserva. Precisa do MinIO no ar.
 
 ```bash
 # API do worktree numa porta livre (services/api/.env com DATABASE_URL próprio, migrate + seed)
