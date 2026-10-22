@@ -433,5 +433,105 @@
         "type": "String"
       }
     }
-  }
+  },
+  "pickTitle": "Escolha sua moto",
+  "pickAvailable": "{count, plural, =0{Nenhuma disponível perto de você} =1{1 disponível perto de você} other{{count} disponíveis perto de você}}",
+  "@pickAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pickSeeMap": "Ver no mapa",
+  "pickAllModels": "Todas",
+  "pickModelFilters": "Filtrar por modelo",
+  "categoryUrban": "Urbana",
+  "categoryDoubleSeat": "Assento duplo",
+  "categoryCargo": "Com baú · entregas",
+  "firstRideFreeBadge": "1ª grátis",
+  "pickHoldNote": "A moto fica reservada por {minutes} min, sem custo.",
+  "@pickHoldNote": {
+    "placeholders": {
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "reserveModelCode": "Reservar {model} · {code}",
+  "@reserveModelCode": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "selectABike": "Selecione uma moto",
+  "walkSemantics": "{distance} a pé, {minutes} minutos",
+  "@walkSemantics": {
+    "placeholders": {
+      "distance": {
+        "type": "String"
+      },
+      "minutes": {
+        "type": "int"
+      }
+    }
+  },
+  "rangeSemantics": "autonomia de cerca de {km} quilômetros",
+  "@rangeSemantics": {
+    "placeholders": {
+      "km": {
+        "type": "int"
+      }
+    }
+  },
+  "priceSemantics": "{price} por minuto",
+  "@priceSemantics": {
+    "placeholders": {
+      "price": {
+        "type": "String"
+      }
+    }
+  },
+  "selectedSemantics": "selecionada",
+  "blockKycPending": "Você pode reservar depois da aprovação dos seus documentos.",
+  "blockKycRejected": "Sua verificação foi recusada. Envie novos documentos em Conta.",
+  "blockDelinquent": "Há um pagamento pendente. Regularize para reservar.",
+  "blockActiveReservation": "Você já tem uma reserva ativa.",
+  "blockActiveRental": "Você está com uma corrida em andamento.",
+  "pickEmptyModel": "Nenhuma moto deste modelo por perto",
+  "pickEmptyModelText": "Escolha outro modelo ou veja todas.",
+  "chooseBike": "Escolher moto",
+  "filterAll": "Todas",
+  "filterRange10": "Autonomia 10+ km",
+  "filterPickupPoints": "Pontos de retirada",
+  "promoPassTitle": "Desbloqueie seu passe",
+  "promoPassText": "Ande mais, pague menos",
+  "promoFirstRideTitle": "1ª corrida grátis",
+  "promoFirstRideText": "Até 15 minutos",
+  "yourLocationAt": "Sua localização · {place}",
+  "@yourLocationAt": {
+    "placeholders": {
+      "place": {
+        "type": "String"
+      }
+    }
+  },
+  "nearYou": "Perto de você",
+  "notifications": "Notificações",
+  "notificationsUnread": "Notificações, há mensagens novas",
+  "batterySemantics": "bateria {pct} por cento",
+  "@batterySemantics": {
+    "placeholders": {
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "pickVehicleTaken": "Essa moto acabou de ser reservada. Escolha outra.",
+  "pickupZonesError": "Não conseguimos carregar os pontos de retirada."
 }

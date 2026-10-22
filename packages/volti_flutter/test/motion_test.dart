@@ -82,6 +82,16 @@ void main() {
       expect(_opacityOf(t, find.byKey(const Key('vehicle-marker-body'))), 1);
     });
 
+    testWidgets('estilo do cliente: corpo escuro e verde quando selecionado; padrao segue o status', (t) async {
+      Color body() => (t.widget<AnimatedContainer>(find.byKey(const Key('vehicle-marker-body'))).decoration! as BoxDecoration).color!;
+      await t.pumpWidget(_wrap(const VehicleMarker(VehicleStatus.free, 80, customerStyle: true), reduced: true));
+      expect(body(), VoltiColors.surfaceInverse);
+      await t.pumpWidget(_wrap(const VehicleMarker(VehicleStatus.free, 80, customerStyle: true, selected: true), reduced: true));
+      expect(body(), VoltiColors.brand);
+      await t.pumpWidget(_wrap(const VehicleMarker(VehicleStatus.rented, 80), reduced: true));
+      expect(body(), VoltiColors.statusRented);
+    });
+
     testWidgets('VoltiUserDot pulsa', (t) async {
       await t.pumpWidget(_wrap(const VoltiUserDot()));
       await t.pump(const Duration(seconds: 1));

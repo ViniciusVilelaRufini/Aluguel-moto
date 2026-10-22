@@ -1767,6 +1767,234 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Seu plano continua valendo até {date}. Depois disso, não renova.'**
   String cancelRenewalText(String date);
+
+  /// No description provided for @pickTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha sua moto'**
+  String get pickTitle;
+
+  /// No description provided for @pickAvailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =0{Nenhuma disponível perto de você} =1{1 disponível perto de você} other{{count} disponíveis perto de você}}'**
+  String pickAvailable(int count);
+
+  /// No description provided for @pickSeeMap.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ver no mapa'**
+  String get pickSeeMap;
+
+  /// No description provided for @pickAllModels.
+  ///
+  /// In pt, this message translates to:
+  /// **'Todas'**
+  String get pickAllModels;
+
+  /// No description provided for @pickModelFilters.
+  ///
+  /// In pt, this message translates to:
+  /// **'Filtrar por modelo'**
+  String get pickModelFilters;
+
+  /// No description provided for @categoryUrban.
+  ///
+  /// In pt, this message translates to:
+  /// **'Urbana'**
+  String get categoryUrban;
+
+  /// No description provided for @categoryDoubleSeat.
+  ///
+  /// In pt, this message translates to:
+  /// **'Assento duplo'**
+  String get categoryDoubleSeat;
+
+  /// No description provided for @categoryCargo.
+  ///
+  /// In pt, this message translates to:
+  /// **'Com baú · entregas'**
+  String get categoryCargo;
+
+  /// No description provided for @firstRideFreeBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'1ª grátis'**
+  String get firstRideFreeBadge;
+
+  /// No description provided for @pickHoldNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto fica reservada por {minutes} min, sem custo.'**
+  String pickHoldNote(int minutes);
+
+  /// No description provided for @reserveModelCode.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reservar {model} · {code}'**
+  String reserveModelCode(String model, String code);
+
+  /// No description provided for @selectABike.
+  ///
+  /// In pt, this message translates to:
+  /// **'Selecione uma moto'**
+  String get selectABike;
+
+  /// No description provided for @walkSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{distance} a pé, {minutes} minutos'**
+  String walkSemantics(String distance, int minutes);
+
+  /// No description provided for @rangeSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'autonomia de cerca de {km} quilômetros'**
+  String rangeSemantics(int km);
+
+  /// No description provided for @priceSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{price} por minuto'**
+  String priceSemantics(String price);
+
+  /// No description provided for @selectedSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'selecionada'**
+  String get selectedSemantics;
+
+  /// No description provided for @blockKycPending.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você pode reservar depois da aprovação dos seus documentos.'**
+  String get blockKycPending;
+
+  /// No description provided for @blockKycRejected.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua verificação foi recusada. Envie novos documentos em Conta.'**
+  String get blockKycRejected;
+
+  /// No description provided for @blockDelinquent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Há um pagamento pendente. Regularize para reservar.'**
+  String get blockDelinquent;
+
+  /// No description provided for @blockActiveReservation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você já tem uma reserva ativa.'**
+  String get blockActiveReservation;
+
+  /// No description provided for @blockActiveRental.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você está com uma corrida em andamento.'**
+  String get blockActiveRental;
+
+  /// No description provided for @pickEmptyModel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma moto deste modelo por perto'**
+  String get pickEmptyModel;
+
+  /// No description provided for @pickEmptyModelText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha outro modelo ou veja todas.'**
+  String get pickEmptyModelText;
+
+  /// No description provided for @chooseBike.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolher moto'**
+  String get chooseBike;
+
+  /// No description provided for @filterAll.
+  ///
+  /// In pt, this message translates to:
+  /// **'Todas'**
+  String get filterAll;
+
+  /// No description provided for @filterRange10.
+  ///
+  /// In pt, this message translates to:
+  /// **'Autonomia 10+ km'**
+  String get filterRange10;
+
+  /// No description provided for @filterPickupPoints.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pontos de retirada'**
+  String get filterPickupPoints;
+
+  /// No description provided for @promoPassTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Desbloqueie seu passe'**
+  String get promoPassTitle;
+
+  /// No description provided for @promoPassText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ande mais, pague menos'**
+  String get promoPassText;
+
+  /// No description provided for @promoFirstRideTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'1ª corrida grátis'**
+  String get promoFirstRideTitle;
+
+  /// No description provided for @promoFirstRideText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Até 15 minutos'**
+  String get promoFirstRideText;
+
+  /// No description provided for @yourLocationAt.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua localização · {place}'**
+  String yourLocationAt(String place);
+
+  /// No description provided for @nearYou.
+  ///
+  /// In pt, this message translates to:
+  /// **'Perto de você'**
+  String get nearYou;
+
+  /// No description provided for @notifications.
+  ///
+  /// In pt, this message translates to:
+  /// **'Notificações'**
+  String get notifications;
+
+  /// No description provided for @notificationsUnread.
+  ///
+  /// In pt, this message translates to:
+  /// **'Notificações, há mensagens novas'**
+  String get notificationsUnread;
+
+  /// No description provided for @batterySemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'bateria {pct} por cento'**
+  String batterySemantics(int pct);
+
+  /// No description provided for @pickVehicleTaken.
+  ///
+  /// In pt, this message translates to:
+  /// **'Essa moto acabou de ser reservada. Escolha outra.'**
+  String get pickVehicleTaken;
+
+  /// No description provided for @pickupZonesError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos carregar os pontos de retirada.'**
+  String get pickupZonesError;
 }
 
 class _AppLocalizationsDelegate

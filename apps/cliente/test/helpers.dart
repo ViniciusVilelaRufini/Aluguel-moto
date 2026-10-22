@@ -6,6 +6,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
@@ -135,6 +136,24 @@ Widget testApp(Widget child, {List<Override> overrides = const []}) => ProviderS
           GlobalCupertinoLocalizations.delegate,
         ],
         home: child,
+      ),
+    );
+
+/// Como [testApp], mas com rotas (telas que navegam com go_router).
+Widget testRouterApp(GoRouter router, {List<Override> overrides = const []}) => ProviderScope(
+      retry: (_, _) => null,
+      overrides: [mapEnabledProvider.overrideWithValue(false), ...overrides],
+      child: MaterialApp.router(
+        theme: VoltiTheme.light(),
+        locale: const Locale('pt', 'BR'),
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        routerConfig: router,
       ),
     );
 

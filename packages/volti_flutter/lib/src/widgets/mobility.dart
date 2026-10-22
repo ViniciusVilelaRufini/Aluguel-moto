@@ -82,7 +82,13 @@ class VehicleMarker extends StatefulWidget {
     this.delay = Duration.zero,
     this.animateIn = true,
     this.onTap,
+    this.customerStyle = false,
   });
+
+  /// Pin do app do cliente (design `VehicleMarker`): corpo escuro
+  /// (`--surface-inverse`) e, selecionado, verde da marca. `false` mantem a
+  /// cor por status (operador e painel).
+  final bool customerStyle;
 
   final VehicleStatus status;
   final int batteryPct;
@@ -168,7 +174,9 @@ class _VehicleMarkerState extends State<VehicleMarker>
   Widget build(BuildContext context) {
     final selected = widget.selected;
     final size = selected ? 44.0 : 34.0;
-    final color = VoltiColors.statusColor(widget.status);
+    final color = widget.customerStyle
+        ? (selected ? VoltiColors.brand : VoltiColors.surfaceInverse)
+        : VoltiColors.statusColor(widget.status);
     return VoltiPressable(
       onTap: widget.onTap,
       semanticLabel: 'Moto, bateria ${widget.batteryPct}%',
