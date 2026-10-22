@@ -207,21 +207,29 @@ class _VoltiMapState extends State<VoltiMap> {
   late final TileProvider? _reference = kMapReferenceUrl.isEmpty ? null : newTileProvider();
   final _reset = StreamController<void>.broadcast();
   Timer? _retry;
+  Timer? _settle;
   int _retries = 0;
 
   void _onError() {
     widget.onTileError?.call();
+    // Erro depois de uma nova tentativa: o ciclo nao terminou limpo.
+    _settle?.cancel();
     // Tiles com erro na tela: recarrega depois de um tempo (nova tentativa).
     if (_retries >= VoltiMap.maxRetries || (_retry?.isActive ?? false)) return;
     _retry = Timer(Duration(milliseconds: 1500 * (_retries + 1)), () {
       _retries++;
       if (mounted && !_reset.isClosed) _reset.add(null);
+      // A contagem so zera se o ciclo passar sem nenhum erro (um tile que falha
+      // sempre nao reinicia as tentativas a cada recarga).
+      _settle?.cancel();
+      _settle = Timer(const Duration(seconds: 10), () => _retries = 0);
     });
   }
 
   @override
   void dispose() {
     _retry?.cancel();
+    _settle?.cancel();
     _reset.close();
     super.dispose();
   }
@@ -247,7 +255,6 @@ class _VoltiMapState extends State<VoltiMap> {
           onError: _onError,
           reset: _reset.stream,
           tileBuilder: (context, tile, image) {
-            if (image.readyToDisplay && !image.loadError) _retries = 0;
             if (kMapDebug) debugPrint('VOLTI_DBG tile ${image.coordinates.z}/${image.coordinates.x}/${image.coordinates.y} ready=${image.readyToDisplay} err=${image.loadError}');
             if (image.readyToDisplay && widget.onTileLoaded != null) widget.onTileLoaded!();
             return ColorFiltered(colorFilter: VoltiMap.colorFilter, child: tile);

@@ -11,7 +11,7 @@ import 'motion.dart';
 import 'pressable.dart';
 
 /// Pilula escura com bateria e autonomia. O anel segue o nivel:
-/// > 50 verde, 21-50 amarelo, <= 20 coral.
+/// >= 50 verde, 20-49 ambar, < 20 coral.
 class BatteryPill extends StatelessWidget {
   const BatteryPill(this.pct, {super.key, this.rangeKm, this.light = false});
 
