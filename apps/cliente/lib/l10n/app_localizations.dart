@@ -859,13 +859,13 @@ abstract class AppLocalizations {
   /// No description provided for @noReservation.
   ///
   /// In pt, this message translates to:
-  /// **'Você não tem uma reserva ativa.'**
+  /// **'Nenhuma reserva ativa'**
   String get noReservation;
 
   /// No description provided for @noVehiclesNearby.
   ///
   /// In pt, this message translates to:
-  /// **'Nenhuma moto por perto agora.'**
+  /// **'Nenhuma moto por perto agora'**
   String get noVehiclesNearby;
 
   /// No description provided for @notNow.

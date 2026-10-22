@@ -23,6 +23,7 @@ class ReservedScreen extends ConsumerStatefulWidget {
 
 class _ReservedScreenState extends ConsumerState<ReservedScreen> {
   Timer? _tick;
+  bool _warnedLastMinute = false;
 
   @override
   void initState() {
@@ -71,20 +72,24 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
         onRetry: () => ref.invalidate(currentReservationProvider),
         data: (r) {
           if (r == null) {
-            return Center(
-              child: Padding(
-                padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-                child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Text(l.noReservation, style: VoltiTypography.body, textAlign: TextAlign.center),
-                  const SizedBox(height: VoltiSpacing.s16),
-                  VoltiButton(label: l.goToMap, onPressed: () => context.go('/home')),
-                ]),
-              ),
+            return VoltiEmptyState(
+              icon: LucideIcons.clock,
+              title: l.noReservation,
+              message: l.noReservationText,
+              actionLabel: l.goToMap,
+              actionIcon: LucideIcons.map,
+              onAction: () => context.go('/home'),
             );
           }
           final remaining = r.expiresAt.difference(DateTime.now().toUtc()).inSeconds;
+          final total = r.expiresAt.difference(r.createdAt).inSeconds;
           final v = r.vehicle;
           final expired = remaining <= 0;
+          // Ultimo minuto: um aviso tatil, uma vez.
+          if (!expired && remaining <= 60 && !_warnedLastMinute) {
+            _warnedLastMinute = true;
+            VoltiHaptics.warning();
+          }
           return ListView(
             padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
             children: VoltiStagger.wrap([
@@ -98,6 +103,7 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
                     seconds: remaining,
                     label: l.reservationTimeLeft,
                     swipeLabel: l.swipeToCancel,
+                    totalSeconds: total > 0 ? total : null,
                     onCancel: () => _cancel(r),
                   ),
                 ),

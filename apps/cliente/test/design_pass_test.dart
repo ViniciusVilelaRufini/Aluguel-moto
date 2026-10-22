@@ -6,7 +6,10 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_flutter/volti_flutter.dart';
+import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/account/account_screens.dart';
+import 'package:volti_cliente/features/home/home_screen.dart';
+import 'package:volti_cliente/features/reservation/reserved_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 
 import 'helpers.dart';
@@ -55,7 +58,78 @@ class SlowHistory extends FakeBackend {
   Future<List<Rental>> rentals() => done.future;
 }
 
+class HomeBackend extends FakeBackend {
+  HomeBackend(this.vehicles);
+  final Completer<List<VehicleSummary>> vehicles;
+  @override
+  Future<List<VehicleSummary>> nearby(double lat, double lng, {double? minRangeKm}) => vehicles.future;
+  @override
+  Future<List<GeoZone>> zones() async => [];
+  @override
+  Future<Reservation?> currentReservation() async => null;
+  @override
+  Future<Rental?> currentRental() async => null;
+}
+
+Future<void> pumpHome(WidgetTester t, HomeBackend backend, {KycStatus kyc = KycStatus.approved}) async {
+  await t.pumpWidget(testApp(const HomeScreen(), overrides: [
+    backendProvider.overrideWithValue(backend),
+    pushServiceProvider.overrideWithValue(NoopPushService()),
+    locationServiceProvider.overrideWithValue(FakeLocation()),
+    sessionProvider.overrideWith(() => FakeSession(session(kyc: kyc))),
+  ]));
+}
+
 void main() {
+  group('mapa', () {
+    testWidgets('esqueleto enquanto carrega e estado vazio com tentar de novo, 200% sem estouro', (t) async {
+      phone(t, scale: 2);
+      final backend = HomeBackend(Completer());
+      await pumpHome(t, backend);
+      await t.pump(const Duration(milliseconds: 50));
+      expect(find.byKey(const Key('nearby-skeleton')), findsOneWidget);
+      backend.vehicles.complete([]);
+      await t.pump();
+      await t.pump(const Duration(seconds: 1));
+      expect(find.byKey(const Key('nearby-skeleton')), findsNothing);
+      expect(find.text('Nenhuma moto por perto agora'), findsOneWidget);
+      expect(find.text('Tentar de novo'), findsOneWidget);
+      expect(t.takeException(), isNull);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('aviso de KYC e um botao para leitores de tela', (t) async {
+      phone(t);
+      final h = t.ensureSemantics();
+      final backend = HomeBackend(Completer()..complete([]));
+      await pumpHome(t, backend, kyc: KycStatus.pending);
+      await t.pump();
+      await t.pump(const Duration(seconds: 1));
+      expect(
+        find.bySemanticsLabel(RegExp('^Verificação em análise')),
+        findsOneWidget,
+      );
+      h.dispose();
+      await t.pumpWidget(const SizedBox());
+    });
+  });
+
+  group('reserva', () {
+    testWidgets('sem reserva mostra estado vazio com ir para o mapa', (t) async {
+      phone(t);
+      await t.pumpWidget(testApp(const ReservedScreen(), overrides: [
+        backendProvider.overrideWithValue(HomeBackend(Completer())),
+        locationServiceProvider.overrideWithValue(FakeLocation()),
+        sessionProvider.overrideWith(() => FakeSession(session())),
+      ]));
+      await t.pump();
+      await t.pump(const Duration(seconds: 1));
+      expect(find.text('Nenhuma reserva ativa'), findsOneWidget);
+      expect(find.text('Ir para o mapa'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
+  });
+
   group('conta', () {
     testWidgets('cancelar a renovacao pede confirmacao', (t) async {
       phone(t);

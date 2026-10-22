@@ -415,10 +415,10 @@ class AppLocalizationsPt extends AppLocalizations {
       'Você paga pelo tempo de uso. Não cobramos nem mostramos km rodados.';
 
   @override
-  String get noReservation => 'Você não tem uma reserva ativa.';
+  String get noReservation => 'Nenhuma reserva ativa';
 
   @override
-  String get noVehiclesNearby => 'Nenhuma moto por perto agora.';
+  String get noVehiclesNearby => 'Nenhuma moto por perto agora';
 
   @override
   String get notNow => 'Agora não';
