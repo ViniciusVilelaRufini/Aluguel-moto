@@ -84,7 +84,7 @@ function CustomersTab({ selected, onSelect, onRentals }: { selected: string | nu
         </div>
         <ErrorNote error={error} />
         <DataTable<S<'Customer'>>
-          testId="customers-table"
+          testId="customers-table" sticky
           rows={rows}
           loading={loading}
           pager={pager}

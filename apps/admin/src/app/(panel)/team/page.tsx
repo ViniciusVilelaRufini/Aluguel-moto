@@ -119,7 +119,7 @@ function Audit() {
         <div style={{ width: 170 }}><Field label="Até"><TextInput type="date" value={to} onChange={setTo} /></Field></div>
       </div>
       <ErrorNote error={error} />
-      <DataTable<S<'AuditLog'>> testId="audit-table" rows={rows} loading={loading} pager={pager} empty="Nenhum registro com esses filtros" emptyIcon="ScrollText"
+      <DataTable<S<'AuditLog'>> testId="audit-table" sticky rows={rows} loading={loading} pager={pager} empty="Nenhum registro com esses filtros" emptyIcon="ScrollText"
         columns={[
           { key: 'createdAt', label: 'Quando', render: (r) => formatDateTime(r.createdAt) },
           { key: 'actorName', label: 'Quem', render: (r) => r.actorName ?? (r.actorType === 'system' ? 'Sistema' : '—') },

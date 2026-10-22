@@ -54,7 +54,7 @@ export function TabPanel({ k, children, style }: { k: string; children: ReactNod
 export function KV({ k, v, mono }: { k: string; v: ReactNode; mono?: boolean }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--ink-100)', fontSize: 14, fontWeight: 500 }}>
-      <span style={{ color: 'var(--text-secondary)' }}>{k}</span>
+      <span style={{ color: 'var(--text-secondary)', flexShrink: 0, whiteSpace: 'nowrap' }}>{k}</span>
       <span style={{ fontFamily: mono ? 'var(--font-mono)' : undefined, textAlign: 'right', minWidth: 0, overflowWrap: 'anywhere' }}>{v}</span>
     </div>
   );
@@ -69,7 +69,7 @@ export function Empty({ children, icon, hint, action, compact }: { children: Rea
   return (
     <div className="section-in" style={{ padding: compact ? 16 : '36px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
       {icon && (
-        <span style={{ width: compact ? 36 : 48, height: compact ? 36 : 48, borderRadius: '50%', background: 'var(--surface-sunken)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
+        <span style={{ width: compact ? 36 : 48, height: compact ? 36 : 48, borderRadius: '50%', background: 'var(--surface-card)', boxShadow: 'var(--shadow-1)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 4 }}>
           <Icon name={icon} size={compact ? 18 : 22} />
         </span>
       )}
@@ -139,25 +139,25 @@ export function Field({ label, error, hint, children }: { label: string; error?:
 }
 
 export function TextArea({ value, onChange, placeholder, rows = 3, testId }: { value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; testId?: string }) {
-  return <textarea data-testid={testId} rows={rows} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{ ...fieldBox, padding: '12px 16px', resize: 'vertical' }} />;
+  return <textarea className="field" data-testid={testId} rows={rows} value={value} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{ ...fieldBox, padding: '12px 16px', resize: 'vertical' }} />;
 }
 
 export function Select<T extends string>({ value, onChange, options, testId }: { value: T; onChange: (v: T) => void; options: { value: T; label: string }[]; testId?: string }) {
   return (
-    <select data-testid={testId} value={value} onChange={(e) => onChange(e.target.value as T)} style={{ ...fieldBox, height: 48 }}>
+    <select className="field" data-testid={testId} value={value} onChange={(e) => onChange(e.target.value as T)} style={{ ...fieldBox, height: 48 }}>
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
 }
 
 export function TextInput({ value, onChange, type = 'text', placeholder, testId, min, max, step }: { value: string | number; onChange: (v: string) => void; type?: string; placeholder?: string; testId?: string; min?: number; max?: number; step?: number }) {
-  return <input data-testid={testId} type={type} value={value} min={min} max={max} step={step} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{ ...fieldBox, height: 48 }} />;
+  return <input className="field" data-testid={testId} type={type} value={value} min={min} max={max} step={step} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{ ...fieldBox, height: 48 }} />;
 }
 
 /** Campo numérico compacto para tabelas de preço (estilo `PricingView`). */
 export function MiniInput({ value, onChange, width = 110, align = 'right', label }: { value: string; onChange: (v: string) => void; width?: number; align?: 'left' | 'right'; label?: string }) {
   return (
-    <input aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}
+    <input className="field-mini" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}
       style={{ width, height: 34, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', background: 'var(--ink-50)', font: '500 13px/1 var(--font-mono)', textAlign: align, color: 'var(--text-primary)' }} />
   );
 }
@@ -313,13 +313,15 @@ export interface Pager {
 }
 
 export function DataTable<T extends object>({
-  columns, rows, rowKey = 'id', selectedKey, onRowClick, dense, loading, empty = 'Nada por aqui ainda.', emptyIcon = 'Search', emptyHint, emptyAction, pager, testId, rowClassName, label,
+  columns, rows, rowKey = 'id', selectedKey, onRowClick, dense, loading, empty = 'Nada por aqui ainda.', emptyIcon = 'Search', emptyHint, emptyAction, pager, testId, rowClassName, label, sticky,
 }: {
   columns: Column<T>[]; rows: T[]; rowKey?: string; selectedKey?: string | null; onRowClick?: (r: T) => void;
   dense?: boolean; loading?: boolean; empty?: ReactNode; emptyIcon?: string; emptyHint?: ReactNode; emptyAction?: ReactNode; pager?: Pager; testId?: string;
   /** Classe extra por linha (ex.: destaque de linha recém-chegada). */
   rowClassName?: (r: T) => string | undefined;
   label?: string;
+  /** Cabeçalho fixo ao rolar a página (listas de página inteira cujas colunas cabem na largura). */
+  sticky?: boolean;
 }) {
   const pad = dense ? '8px 12px' : '12px 16px';
   const get = (r: T, k: string) => (r as Record<string, unknown>)[k];
@@ -327,7 +329,7 @@ export function DataTable<T extends object>({
   const refetching = !!pager?.loading && rows.length > 0;
   return (
     <div data-testid={testId} className="dt" style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--border-subtle)' }}>
-      <div className="table-scroll">
+      <div className={sticky ? 'table-scroll table-sticky' : 'table-scroll'}>
         <table aria-label={label} aria-busy={skeleton || refetching || undefined} style={{ width: '100%', borderCollapse: 'separate', borderSpacing: 0, fontSize: 14, fontWeight: 500 }}>
           <thead>
             <tr>

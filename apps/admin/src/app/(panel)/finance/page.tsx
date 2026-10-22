@@ -79,11 +79,10 @@ export default function FinancePage() {
               <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 16 }}>Receita líquida {period === '30d' ? 'por semana' : 'por dia'}</div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 180 }}>
                 {barList.map(([d, v], i) => (
-                  <div key={d} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end', minWidth: 0 }}>
+                  <div key={d} style={{ flex: 1, maxWidth: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end', minWidth: 0, margin: '0 auto' }}>
                     <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{(v / 100000).toFixed(1).replace('.', ',')}</span>
-                    <div style={{ width: '100%', height: `${(v / max) * 130}px`, minHeight: 2, borderRadius: 8, background: v === max ? 'var(--brand)' : 'var(--green-200)' }} />
+                    <div title={formatBRL(v)} style={{ width: '100%', height: `${(v / max) * 130}px`, minHeight: 2, borderRadius: 8, background: v === max ? 'var(--brand)' : 'var(--green-200)', transformOrigin: 'bottom', animation: `vt-bar-grow 520ms var(--ease-out) ${i * 40}ms backwards` }} />
                     <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{period === '30d' ? DAYMONTH.format(new Date(d)) : WEEKDAY.format(new Date(d)).replace('.', '')}</span>
-                    <span hidden>{i}</span>
                   </div>
                 ))}
                 {rev.isLoading && [40, 70, 55, 90, 65, 80, 50].map((h, i) => <Skeleton key={i} h={h + '%'} r={8} style={{ flex: 1, alignSelf: 'flex-end' }} />)}

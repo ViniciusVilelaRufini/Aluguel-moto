@@ -59,7 +59,7 @@ function Kanban({ canEdit, onCreate }: { canEdit: boolean; onCreate: () => void 
           const col = items.filter((t) => c.statuses.includes(t.status));
           return (
             <div key={c.key} style={{ background: 'var(--surface-sunken)', borderRadius: 'var(--radius-lg)', padding: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 6px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 6px' }}>
                 <span style={{ fontSize: 14, fontWeight: 600 }}>{c.label}</span>
                 <span style={{ font: '700 12px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{col.length}</span>
               </div>

@@ -66,13 +66,13 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
         value={current?.href}
         onChange={(href: string) => router.push(href)}
         footer={
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, background: 'rgba(255,255,255,.06)' }}>
+          <div className="nav-footer" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, borderRadius: 12, background: 'rgba(255,255,255,.06)' }}>
             <Initials name={name} />
             <div className="nav-footer-name" style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 14, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
               <div style={{ fontSize: 12, color: 'rgba(255,255,255,.55)' }}>{groupLabel} · 2FA</div>
             </div>
-            <button onClick={logout} aria-label="Sair" data-testid="logout" style={{ border: 0, background: 'transparent', color: 'rgba(255,255,255,.6)', cursor: 'pointer', padding: 6 }}>
+            <button onClick={logout} aria-label="Sair" title="Sair" data-testid="logout" className="nav-logout" style={{ border: 0, background: 'transparent', color: 'rgba(255,255,255,.6)', cursor: 'pointer', padding: 6, borderRadius: 8 }}>
               <Icon name="LogOut" size={16} />
             </button>
           </div>

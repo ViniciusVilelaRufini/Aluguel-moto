@@ -88,6 +88,7 @@ a:hover{color:var(--brand-press)}
   .shell-nav button { justify-content: center; padding: 0 !important; position: relative; }
   .shell-nav .nav-badge { position: absolute; top: 2px; right: 2px; min-width: 16px !important; height: 16px !important; line-height: 16px !important; padding: 0 4px !important; font-size: 10px !important; }
   .shell-nav .nav-footer-text, .shell-nav .nav-footer-name { display: none; }
+  .shell-nav .nav-footer { flex-direction: column; gap: 6px !important; padding: 8px 0 !important; }
   .shell-search { display: none !important; }
   .shell-search-icon { display: inline-flex !important; }
   .live-text { display: none; }
@@ -98,11 +99,11 @@ a:hover{color:var(--brand-press)}
   .side-panel { width: 100% !important; max-height: 50vh; border-left: 0 !important; border-top: 1px solid var(--border-subtle); }
 }
 .table-scroll { overflow-x: auto; }
-@media (min-width: 1024px) { .table-scroll { overflow: visible; } }
+@media (min-width: 1024px) { .table-sticky { overflow: visible; } }
 
 /* Tabela: cantos recortados sem criar contêiner de rolagem (o cabeçalho fica fixo ao rolar a página) */
 .dt { overflow: clip; }
-.dt thead th { position: sticky; top: 0; z-index: 1; }
+.table-sticky thead th { position: sticky; top: 0; z-index: 1; }
 .dt-row { transition: background var(--dur-base) var(--ease-out); }
 .dt-click { cursor: pointer; }
 .dt-click:hover { background: var(--ink-50); }
@@ -117,7 +118,7 @@ a:hover{color:var(--brand-press)}
 
 /* Mapa da frota */
 .map-pulse { width: 24px; height: 24px; border-radius: 50%; pointer-events: none; }
-.map-pulse::before, .map-pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--ink-900); opacity: .5; animation: vt-pulse-ring 1.8s var(--ease-out) infinite; }
+.map-pulse::before, .map-pulse::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--ink-900); opacity: .5; animation: vt-pulse-ring 1.8s var(--ease-out) infinite; }
 .map-pulse::after { animation-delay: .9s; }
 @media (prefers-reduced-motion: reduce) { .map-pulse::before, .map-pulse::after { animation: none; opacity: 0; } }
 .vt-popup .maplibregl-popup-content { padding: 8px 10px; border-radius: var(--radius-sm); background: var(--surface-inverse); color: #fff; box-shadow: var(--shadow-2); animation: vt-pop-in var(--dur-base) var(--ease-out) backwards; }
@@ -137,6 +138,7 @@ a:hover{color:var(--brand-press)}
 /* Header: busca (paleta), indicador ao vivo */
 .palette-trigger { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 14px; border-radius: 999px; border: 0; background: var(--surface-sunken); width: 300px; color: var(--text-tertiary); font: var(--fw-medium) 14px/1 var(--font-sans); cursor: pointer; transition: background var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
 .palette-trigger:hover { background: var(--ink-200); }
+.palette-trigger > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .shell-search-icon { display: none; width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--surface-sunken); color: var(--text-primary); align-items: center; justify-content: center; cursor: pointer; }
 .kbd { display: inline-flex; align-items: center; height: 22px; padding: 0 6px; border-radius: 6px; background: var(--surface-card); border: 1px solid var(--border-subtle); box-shadow: 0 1px 0 var(--ink-200); font: 600 11px/1 var(--font-mono); color: var(--text-secondary); white-space: nowrap; }
 .palette-option { transition: background var(--dur-fast) var(--ease-out); }
@@ -147,6 +149,20 @@ a:hover{color:var(--brand-press)}
 .live-dot-off { background: var(--warning); }
 .live-dot-off::after { background: var(--warning); animation: vt-live 1.2s var(--ease-in-out) infinite; }
 @media (prefers-reduced-motion: reduce) { .live-dot::after { animation: none; opacity: 0; } }
+
+/* Campos: foco visível (os estilos inline zeram o outline) */
+.field { transition: border-color var(--dur-base) var(--ease-out), background var(--dur-base) var(--ease-out); }
+.field:hover { border-color: var(--ink-200) !important; }
+.field:focus { border-color: var(--border-focus) !important; background: var(--surface-card) !important; }
+.field-mini { transition: border-color var(--dur-base) var(--ease-out), box-shadow var(--dur-base) var(--ease-out); }
+.field-mini:focus { outline: none; border-color: var(--border-focus) !important; box-shadow: 0 0 0 3px var(--green-50); background: var(--surface-card) !important; }
+
+/* Lista de cercas */
+.zone-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; text-align: left; font: inherit; color: inherit; transition: background var(--dur-base) var(--ease-out); }
+.zone-item:not(:disabled) { cursor: pointer; }
+.zone-item:not(:disabled):hover { background: var(--surface-card); }
+.zone-item[data-on] { background: var(--brand-soft); }
+.zone-item:disabled { cursor: default; }
 
 /* Carregamento */
 .skeleton { background: linear-gradient(90deg, var(--ink-100) 25%, var(--ink-50) 50%, var(--ink-100) 75%); background-size: 200% 100%; animation: vt-shimmer 1.4s linear infinite; }
@@ -161,6 +177,7 @@ a:hover{color:var(--brand-press)}
 .nav-item { background: transparent; color: rgba(255,255,255,.62); transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out); }
 .nav-item:hover { background: rgba(255,255,255,.05); color: #fff; }
 .nav-item[data-on] { background: rgba(255,255,255,.08); color: #fff; }
+.nav-logout:hover { color: #fff !important; background: rgba(255,255,255,.08) !important; }
 .nav-item:focus-visible { outline: 2px solid var(--green-400); outline-offset: -2px; }
 .nav-badge { animation: vt-pop-in var(--dur-spring) var(--ease-spring) both; }
 @media (max-width: 900px) { .login-brand { display: none !important; } }
@@ -199,6 +216,7 @@ a:hover{color:var(--brand-press)}
 @keyframes vt-scrim-in{from{opacity:0}}
 @keyframes vt-dialog-in{from{opacity:0;transform:translateY(10px) scale(.97)}}
 @keyframes vt-toast-out{to{opacity:0;transform:translateY(12px) scale(.96)}}
+@keyframes vt-bar-grow{from{transform:scaleY(0)}}
 @keyframes vt-shimmer{from{background-position:-200% 0}to{background-position:200% 0}}
 @keyframes vt-flash{0%{background:var(--green-50)}100%{background:transparent}}
 @keyframes vt-row-new{0%{background:var(--coral-50)}100%{background:transparent}}

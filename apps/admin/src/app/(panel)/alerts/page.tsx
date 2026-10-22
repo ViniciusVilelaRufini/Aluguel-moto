@@ -59,7 +59,7 @@ export default function AlertsPage() {
       )}
       <ErrorNote error={error ?? assign.error} />
       <DataTable
-        testId="alerts-table"
+        testId="alerts-table" sticky
         rows={sorted}
         loading={loading}
         pager={pager}
