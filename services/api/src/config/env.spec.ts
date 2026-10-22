@@ -13,6 +13,12 @@ describe('assertSafeConfig', () => {
     expect(() => assertSafeConfig({ ...base(), mercadoPagoWebhookSecret: ' change_me ' })).toThrow(/MERCADOPAGO_WEBHOOK_SECRET/);
   });
 
+  it('fix round 1: PAYMENT_PROVIDER=mercadopago sem segredo do webhook em produção → recusa subir', () => {
+    expect(() => assertSafeConfig({ ...base(), paymentProvider: 'mercadopago', mercadoPagoWebhookSecret: undefined })).toThrow(/MERCADOPAGO_WEBHOOK_SECRET/);
+    expect(() => assertSafeConfig({ ...base(), paymentProvider: 'mercadopago', mercadoPagoWebhookSecret: '   ' })).toThrow(/MERCADOPAGO_WEBHOOK_SECRET/);
+    expect(() => assertSafeConfig({ ...base(), paymentProvider: 'fake', mercadoPagoWebhookSecret: undefined })).not.toThrow();
+  });
+
   it('configuração de produção válida passa; fora de produção dev é permitido', () => {
     expect(() => assertSafeConfig(base())).not.toThrow();
     expect(() => assertSafeConfig({ ...base(), nodeEnv: 'development', authMode: 'dev', mercadoPagoWebhookSecret: 'CHANGE_ME' })).not.toThrow();

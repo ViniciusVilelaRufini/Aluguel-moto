@@ -19,6 +19,7 @@ export interface AppConfig {
   jobsEnabled: boolean;
   publicShareBaseUrl: string;
   mercadoPagoWebhookSecret?: string;
+  paymentProvider?: string;
   stubPixAutoConfirmSeconds: number;
   version: string;
 }
@@ -86,6 +87,7 @@ export function loadConfig(): AppConfig {
     jobsEnabled: str('JOBS_ENABLED', 'true') !== 'false',
     publicShareBaseUrl: str('PUBLIC_SHARE_BASE_URL', 'http://localhost:3000/share')!,
     mercadoPagoWebhookSecret: str('MERCADOPAGO_WEBHOOK_SECRET'),
+    paymentProvider: str('PAYMENT_PROVIDER'),
     stubPixAutoConfirmSeconds: num('STUB_PIX_AUTOCONFIRM_SECONDS', 10),
     version: str('APP_VERSION', '0.1.0')!,
   };
@@ -100,12 +102,15 @@ export const APP_CONFIG = Symbol('APP_CONFIG');
  * leem o ambiente). QA-15: `AUTH_MODE=dev` (emissor local `POST /dev/token`) nunca em produção. QA-19: o segredo do webhook
  * do Mercado Pago com o placeholder da infra (`CHANGE_ME`) deixaria qualquer um assinar webhooks.
  */
-export function assertSafeConfig(cfg: Pick<AppConfig, 'nodeEnv' | 'authMode' | 'mercadoPagoWebhookSecret'>): void {
+export function assertSafeConfig(cfg: Pick<AppConfig, 'nodeEnv' | 'authMode' | 'mercadoPagoWebhookSecret' | 'paymentProvider'>): void {
   if (cfg.nodeEnv !== 'production') return;
   if (cfg.authMode !== 'cognito') {
     throw new Error(`AUTH_MODE=${cfg.authMode} não é permitido com NODE_ENV=production (use AUTH_MODE=cognito).`);
   }
   if (cfg.mercadoPagoWebhookSecret && cfg.mercadoPagoWebhookSecret.trim().toUpperCase() === 'CHANGE_ME') {
     throw new Error('MERCADOPAGO_WEBHOOK_SECRET ainda com o placeholder CHANGE_ME: defina o segredo real no Secrets Manager.');
+  }
+  if (cfg.paymentProvider === 'mercadopago' && !cfg.mercadoPagoWebhookSecret?.trim()) {
+    throw new Error('MERCADOPAGO_WEBHOOK_SECRET vazio com PAYMENT_PROVIDER=mercadopago: os webhooks não poderiam ser validados.');
   }
 }
