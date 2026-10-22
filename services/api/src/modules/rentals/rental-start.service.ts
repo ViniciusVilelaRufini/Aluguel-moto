@@ -3,9 +3,10 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Coupon, Deposit, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
-import { DepositReleaseRequestedEvent, EV, RentalChangedEvent, VehicleStatusChangedEvent } from '../../common/events';
+import { CommandChangedEvent, DepositReleaseRequestedEvent, EV, RentalChangedEvent, VehicleStatusChangedEvent } from '../../common/events';
 import { conflict, notFound, ProblemException } from '../../common/problem';
 import { INSURANCE, type InsurancePort } from '../../ports/insurance.port';
+import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
 import { RENTAL_BILLING, type RentalBillingPort } from '../../ports/rental-billing.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Principal } from '../auth/principal';
@@ -23,8 +24,10 @@ export interface StartResult {
 
 /**
  * `POST /rentals`: KYC aprovado → sem bloqueio → sem inadimplência → consentimento de localização → moto `free`
- * (ou reservada pelo próprio cliente) → caução (cartão: retida; Pix: 202 + reserva até o prazo do Pix) → apólice → aluguel `active`
- * e desbloqueio pedido ao módulo IoT. A idempotência por `Idempotency-Key` fica no interceptor.
+ * (ou reservada pelo próprio cliente) e online → caução (cartão: retida; Pix: 202 + reserva até o prazo do Pix) → apólice → moto
+ * reivindicada → desbloqueio **confirmado** pelo módulo IoT → aluguel `active` (QA-21: o relógio e a cobrança só começam aí;
+ * moto offline ou desbloqueio não confirmado → `409 vehicle-offline`, caução liberada, apólice cancelada, nada cobrado).
+ * A idempotência por `Idempotency-Key` fica no interceptor.
  */
 @Injectable()
 export class RentalStartService {
@@ -38,7 +41,71 @@ export class RentalStartService {
     @Inject(RENTAL_BILLING) private readonly billing: RentalBillingPort,
     @Inject(INSURANCE) private readonly insurance: InsurancePort,
     private readonly events: EventEmitter2,
+    @Inject(IOT_GATEWAY) private readonly iot: IotGateway,
   ) {}
+
+  /** Estado ao vivo do rastreador diz offline (sem estado conhecido = indefinido; o desbloqueio decide). */
+  private async liveOffline(thingName: string): Promise<boolean> {
+    const live = await this.iot.getLiveState(thingName).catch(() => null);
+    return !!live && live.online === false;
+  }
+
+  /**
+   * QA-21: pede o desbloqueio e espera o desfecho. `in_progress` (moto online, aguardando o reported) espera o
+   * `command.changed` final até o prazo do comando (`IOT_COMMAND_TIMEOUT_MS`) + folga; `pending` (offline) e erro = não confirmado.
+   */
+  private async unlockAndWait(vehicleId: string, user: Principal, rentalId: string): Promise<{ status: string }> {
+    let cmd: { id: string; status: string };
+    try {
+      cmd = await this.commands.dispatch({
+        vehicleId,
+        type: 'unlock',
+        reason: 'Início do aluguel',
+        actor: user,
+        context: { rentalId, purpose: 'rental_start' },
+        auditAction: 'rental.unlock',
+      });
+    } catch (err) {
+      this.logger.error({ msg: 'rental_unlock_failed', rentalId, error: (err as Error).message });
+      return { status: 'failed' };
+    }
+    if (cmd.status !== 'in_progress') return cmd;
+    const timeoutMs = Number(process.env.IOT_COMMAND_TIMEOUT_MS || 30_000) + 5_000;
+    const final = new Promise<string>((resolve) => {
+      const timer = setTimeout(() => done('failed'), timeoutMs);
+      const onChange = (ev: CommandChangedEvent) => {
+        if (ev.commandId === cmd.id && (ev.status === 'confirmed' || ev.status === 'failed')) done(ev.status);
+      };
+      const done = (s: string) => {
+        clearTimeout(timer);
+        this.events.off(EV.COMMAND_CHANGED, onChange);
+        resolve(s);
+      };
+      this.events.on(EV.COMMAND_CHANGED, onChange);
+      // Desfecho que chegou entre a resposta do dispatch e a inscrição acima.
+      void this.prisma.vehicleCommand.findUnique({ where: { id: cmd.id }, select: { status: true } }).then(
+        (c) => c && (c.status === 'confirmed' || c.status === 'failed') && done(c.status),
+        () => undefined,
+      );
+    });
+    return { status: await final };
+  }
+
+  /** Desbloqueio pedido para um aluguel que não começou: bloqueio de sistema (substitui o desbloqueio pendente). */
+  private async relock(vehicleId: string, rentalId: string): Promise<void> {
+    try {
+      await this.commands.dispatch({
+        vehicleId,
+        type: 'lock',
+        reason: 'Aluguel não iniciado: desbloqueio não confirmado',
+        actor: { system: true, name: 'rental-start' },
+        context: { rentalId, purpose: 'rental_start_rollback' },
+        auditAction: 'rental.unlock_rollback',
+      });
+    } catch (err) {
+      this.logger.error({ msg: 'rental_start_relock_failed', vehicleId, rentalId, error: (err as Error).message });
+    }
+  }
 
   async start(user: Principal, dto: StartRentalDto, idempotencyKey: string): Promise<StartResult> {
     const customerId = user.customerId!;
@@ -60,6 +127,11 @@ export class RentalStartService {
       where: { vehicleId: vehicle.id, status: 'active', expiresAt: { gt: new Date() } },
     });
     const ownReservation = reservation && reservation.customerId === customerId ? reservation : null;
+    // QA-21: moto offline não começa aluguel (o desbloqueio ficaria pendente e o relógio correria com a moto travada).
+    if (vehicle.status === 'offline' || vehicle.online === false || (await this.liveOffline(vehicle.thingName))) {
+      this.requestDepositRelease(dto.depositId, customerId);
+      throw conflict('vehicle-offline', 'A moto está sem conexão agora. Escolha outra moto; nada foi cobrado.');
+    }
     const available = (vehicle.status === 'free' && !reservation) || (vehicle.status === 'reserved' && !!ownReservation);
     if (!available) {
       this.requestDepositRelease(dto.depositId, customerId);
@@ -72,6 +144,8 @@ export class RentalStartService {
     let heldDepositId: string | undefined;
     let policyId: string | undefined;
     let rental;
+    let claimedFrom: 'free' | 'reserved' | undefined;
+    let unlock: { status: string } | undefined;
     try {
     if (dto.depositId) {
       const d = await this.prisma.deposit.findUnique({ where: { id: dto.depositId } });
@@ -103,9 +177,14 @@ export class RentalStartService {
     policyId = policy.policyId;
     const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription);
 
+    // QA-21: reivindica a moto, desbloqueia e só cria o aluguel (relógio e cobrança) com o desbloqueio confirmado.
+    const claimed = await this.prisma.vehicle.updateMany({ where: { id: vehicle.id, status: { in: ['free', 'reserved'] } }, data: { status: 'rented' } });
+    if (claimed.count === 0) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
+    claimedFrom = vehicle.status === 'reserved' ? 'reserved' : 'free';
+    unlock = await this.unlockAndWait(vehicle.id, user, rentalId);
+    if (unlock.status !== 'confirmed') throw conflict('vehicle-offline', 'A moto não respondeu ao desbloqueio. Nada foi cobrado e a caução foi liberada.');
+
     rental = await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.vehicle.updateMany({ where: { id: vehicle.id, status: { in: ['free', 'reserved'] } }, data: { status: 'rented' } });
-      if (claimed.count === 0) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
       if (ownReservation) await this.reservations.convert(tx, ownReservation.id);
       const created = await tx.rental.create({
         data: {
@@ -133,6 +212,14 @@ export class RentalStartService {
       return created;
     });
     } catch (err) {
+      // QA-21: moto reivindicada e aluguel não criado → volta ao estado anterior; desbloqueio pedido (pendente ou já
+      // aplicado) → bloqueio de sistema, que substitui o desbloqueio pendente e trava com segurança ao reconectar.
+      if (claimedFrom && !rental) {
+        await this.prisma.vehicle
+          .updateMany({ where: { id: vehicle.id, status: 'rented' }, data: { status: claimedFrom } })
+          .catch((e) => this.logger.error({ msg: 'vehicle_release_failed', vehicleId: vehicle.id, error: (e as Error).message }));
+        if (unlock) await this.relock(vehicle.id, rentalId);
+      }
       // Compensação (decisão #16): caução retida e apólice emitida não podem ficar órfãs.
       if (policyId) {
         try {
@@ -143,20 +230,6 @@ export class RentalStartService {
       }
       if (heldDepositId) this.requestDepositRelease(heldDepositId, customerId);
       throw err;
-    }
-
-    // Desbloqueio pelo módulo IoT (não desfaz o aluguel se a moto estiver offline: o comando fica pendente).
-    try {
-      await this.commands.dispatch({
-        vehicleId: vehicle.id,
-        type: 'unlock',
-        reason: 'Início do aluguel',
-        actor: user,
-        context: { rentalId, purpose: 'rental_start' },
-        auditAction: 'rental.unlock',
-      });
-    } catch (err) {
-      this.logger.error({ msg: 'rental_unlock_failed', rentalId, error: (err as Error).message });
     }
 
     const mapped = toRental({ ...rental, vehicle });

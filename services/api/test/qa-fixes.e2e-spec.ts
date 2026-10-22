@@ -1,7 +1,7 @@
 import { INestApplication } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import request from 'supertest';
-import { bootE2eApp, devToken } from './helpers/e2e-app';
+import { approvedCustomer, bootE2eApp, devToken, freeVehicleInReturnZone } from './helpers/e2e-app';
 
 /** Regressões dos achados do relatório de QA (docs/relatorio-qa.md) contra a API completa (Postgres/Redis do compose). */
 describe('Correções do QA (e2e)', () => {
@@ -32,6 +32,23 @@ describe('Correções do QA (e2e)', () => {
     // mesmo token (ainda com operacao): negado, e o banco não volta para operacao
     await http().get(`/vehicles/${vehicle.id}/commands`).set('Authorization', `Bearer ${token}`).expect(403);
     expect((await prisma.staffUser.findUniqueOrThrow({ where: { id: created.body.id } })).groups).toEqual(['campo']);
+  });
+
+  it('QA-21: moto offline → 409 vehicle-offline, sem aluguel nem caução retida', async () => {
+    const { token, customerId } = await approvedCustomer(app, prisma, 'qa21');
+    const v = await freeVehicleInReturnZone(prisma);
+    await prisma.vehicle.update({ where: { id: v.id }, data: { online: false } });
+    try {
+      const res = await http().post('/rentals').set('Authorization', `Bearer ${token}`).set('Idempotency-Key', `qa21-${Date.now()}`)
+        .send({ vehicleId: v.id, planCode: 'minute', coverage: 'basic', depositMethod: 'card' });
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-offline');
+      expect(await prisma.rental.count({ where: { customerId } })).toBe(0);
+      expect(await prisma.deposit.count({ where: { customerId, status: 'held' } })).toBe(0);
+      expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('free');
+    } finally {
+      await prisma.vehicle.update({ where: { id: v.id }, data: { online: true } });
+    }
   });
 
   it('QA-07: depois da exclusão LGPD o mesmo token é recusado e não recria a conta', async () => {

@@ -3,6 +3,7 @@ import request from 'supertest';
 import { EV } from '../../common/events';
 import { createHarness, CUSTOMER_ID, customerToken, Harness } from '../../../test/helpers/http-harness';
 import { INSURANCE } from '../../ports/insurance.port';
+import { IOT_GATEWAY } from '../../ports/iot-gateway.port';
 import { RENTAL_BILLING } from '../../ports/rental-billing.port';
 import { CommandsService } from '../commands/commands.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -27,6 +28,7 @@ describe('Início do aluguel (POST /rentals)', () => {
   const insurance = { quote: jest.fn(), issueForRental: jest.fn(), cancel: jest.fn() };
   const reservations = { reserveForPix: jest.fn(), convert: jest.fn() };
   const commands = { dispatch: jest.fn() };
+  const iot = { getLiveState: jest.fn() };
 
   beforeAll(async () => {
     h = await createHarness({
@@ -40,6 +42,7 @@ describe('Início do aluguel (POST /rentals)', () => {
         { provide: CommandsService, useValue: commands },
         { provide: RENTAL_BILLING, useValue: billing },
         { provide: INSURANCE, useValue: insurance },
+        { provide: IOT_GATEWAY, useValue: iot },
       ],
     });
   });
@@ -68,7 +71,8 @@ describe('Início do aluguel (POST /rentals)', () => {
     billing.isDelinquent.mockResolvedValue(false);
     billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'held' });
     insurance.issueForRental.mockResolvedValue({ policyId: POLICY_ID, premiumCents: 200 });
-    commands.dispatch.mockResolvedValue({ status: 'confirmed' });
+    commands.dispatch.mockResolvedValue({ id: 'cmd-1', status: 'confirmed' });
+    iot.getLiveState.mockResolvedValue(null);
   });
 
   const post = async (key: string | null, b: object = body) => {
@@ -181,6 +185,76 @@ describe('Início do aluguel (POST /rentals)', () => {
     const res = await post('chave-fail-0001');
     expect(res.status).toBe(402);
     expect(res.body.type).toBe('https://api.volti.com.br/problems/payment-failed');
+  });
+
+  describe('QA-21: não começa (nem cobra) com a moto offline ou sem desbloqueio confirmado', () => {
+    let released: jest.Mock;
+    beforeEach(() => {
+      released = jest.fn();
+      h.app.get(EventEmitter2).removeAllListeners(EV.DEPOSIT_RELEASE_REQUESTED);
+      h.app.get(EventEmitter2).on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+    });
+
+    it('moto marcada offline → 409 vehicle-offline antes de reter caução; depositId informado é liberado', async () => {
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'offline', online: false } as any);
+      const res = await post('chave-off-0001', { ...body, depositMethod: 'pix', depositId: DEPOSIT_ID });
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-offline');
+      expect(billing.holdDeposit).not.toHaveBeenCalled();
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: DEPOSIT_ID }));
+    });
+
+    it('rastreador sem notícia (estado ao vivo offline) → 409 vehicle-offline sem caução nem apólice', async () => {
+      iot.getLiveState.mockResolvedValue({ thingName: 'moto-0001', online: false });
+      const res = await post('chave-off-0002');
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-offline');
+      expect(billing.holdDeposit).not.toHaveBeenCalled();
+      expect(insurance.issueForRental).not.toHaveBeenCalled();
+    });
+
+    it('desbloqueio pendente (moto caiu) → 409, nenhum aluguel criado, caução liberada, apólice cancelada, moto devolvida e bloqueio de sistema', async () => {
+      commands.dispatch.mockImplementation(async (i: any) => (i.type === 'unlock' ? { id: 'cmd-u', status: 'pending', statusReason: 'offline' } : { id: 'cmd-l', status: 'pending' }));
+      const res = await post('chave-off-0003');
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-offline');
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(insurance.cancel).toHaveBeenCalledWith(POLICY_ID);
+      expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: DEPOSIT_ID, reason: 'rental_not_started' }));
+      expect(h.prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'free' } });
+      expect(commands.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'lock', actor: expect.objectContaining({ system: true }) }));
+    });
+
+    it('desbloqueio em andamento → espera a confirmação; só então cria o aluguel (o relógio começa no desbloqueio)', async () => {
+      const order: string[] = [];
+      commands.dispatch.mockImplementation(async () => {
+        order.push('unlock');
+        setTimeout(() => h.app.get(EventEmitter2).emit(EV.COMMAND_CHANGED, { commandId: 'cmd-2', vehicleId: VEHICLE_ID, type: 'unlock', status: 'confirmed' }), 20);
+        return { id: 'cmd-2', status: 'in_progress' };
+      });
+      h.prisma.vehicleCommand.findUnique.mockResolvedValue({ id: 'cmd-2', status: 'in_progress' } as any);
+      h.prisma.rental.create.mockImplementationOnce((async (args: any) => {
+        order.push('create');
+        return { startedAt: new Date(), pausedSecondsAcc: 0, costCents: 0, createdAt: new Date(), updatedAt: new Date(), ...args.data, status: 'active' };
+      }) as any);
+      const res = await post('chave-prog-0001');
+      expect(res.status).toBe(201);
+      expect(order).toEqual(['unlock', 'create']);
+    });
+
+    it('desbloqueio em andamento que falha → 409 vehicle-offline e nada cobrado', async () => {
+      commands.dispatch.mockImplementation(async (i: any) => {
+        if (i.type === 'unlock') setTimeout(() => h.app.get(EventEmitter2).emit(EV.COMMAND_CHANGED, { commandId: 'cmd-3', vehicleId: VEHICLE_ID, type: 'unlock', status: 'failed', reason: 'timeout' }), 20);
+        return { id: i.type === 'unlock' ? 'cmd-3' : 'cmd-x', status: i.type === 'unlock' ? 'in_progress' : 'confirmed' };
+      });
+      h.prisma.vehicleCommand.findUnique.mockResolvedValue({ id: 'cmd-3', status: 'in_progress' } as any);
+      const res = await post('chave-prog-0002');
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-offline');
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(released).toHaveBeenCalled();
+    });
   });
 
   describe('sem vazamento de caução/apólice quando o início falha (decisão #16)', () => {
