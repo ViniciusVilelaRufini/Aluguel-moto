@@ -18,8 +18,8 @@ import '../ride/ride_screen.dart' show mapEnabledProvider;
 import 'welcome_hero.dart';
 
 /// Boas-vindas (referencia `login-referencia.png`): hero animado em cima
-/// ([WelcomeHero]: mapa real de Pinheiros, motos andando, chips e a moto em
-/// destaque) e a folha branca embaixo com os selos,
+/// ([WelcomeHero]: logo, carrossel das afirmacoes, mapa real de Pinheiros, motos
+/// andando e a moto em destaque) e a folha branca embaixo com os selos,
 /// "Pegue uma moto e vá.", **Continuar com celular**, "ou entre com" (Apple,
 /// Google, E-mail) e os termos. No modo dev, celular usa o codigo fixo, e-mail
 /// abre o login de dev e Google/Apple so mostram um aviso.
@@ -37,6 +37,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
 
   /// Os tiles falharam e o hero mostra a ilustracao: sem atribuicao de mapa.
   bool _mapFailed = false;
+
+  /// Quantas afirmacoes o hero mostra (as primeiras); as outras vao para a folha.
+  /// Com o carrossel, todas; com reduced motion, as que cabem inteiras.
+  int? _heroShown;
   late final TapGestureRecognizer _termsTap = TapGestureRecognizer()..onTap = () => _openLegal(ref.read(legalLinksProvider).terms);
   late final TapGestureRecognizer _privacyTap = TapGestureRecognizer()..onTap = () => _openLegal(ref.read(legalLinksProvider).privacy);
 
@@ -89,9 +93,19 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     final scheme = Theme.of(context).colorScheme;
     final isDev = ref.watch(authRepositoryProvider).mode == AuthMode.dev;
     final mapOn = ref.watch(mapEnabledProvider);
-    // Texto maior que o padrao: o cartao dos planos desce para a folha e escala
-    // com o texto (no hero os chips nao escalam: sao parte da ilustracao).
+    // Texto maior que o padrao: as afirmacoes descem para a folha e escalam com o
+    // texto (no hero os cartoes nao escalam: sao parte da ilustracao).
     final bigText = MediaQuery.textScalerOf(context).scale(10) / 10 > 1.0;
+    final heroTexts = WelcomeHeroTexts(
+      pickupTitle: l.welcomeHeroPickupTitle,
+      pickupText: l.welcomeHeroPickupText,
+      plansTitle: l.welcomeHeroPlansTitle,
+      plansText: l.welcomeHeroPlansText,
+      insuranceTitle: l.welcomeHeroInsuranceTitle,
+      insuranceText: l.welcomeHeroInsuranceText,
+    );
+    final statements = heroTexts.statements;
+    final sheetFrom = bigText ? 0 : math.min(_heroShown ?? statements.length, statements.length);
     final busy = _busy != null;
     final padding = MediaQuery.paddingOf(context);
 
@@ -103,16 +117,15 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (bigText) ...[
-            // Texto grande: as tres afirmacoes do servico saem do hero e escalam aqui.
+          if (sheetFrom < statements.length) ...[
+            // Texto grande: as tres afirmacoes saem do hero e escalam aqui (estaticas,
+            // quebrando linha). Reduced motion: as que nao couberam no hero.
             Wrap(
               key: const Key('welcome-sheet-statements'),
               spacing: 8,
               runSpacing: 8,
               children: [
-                HeroPickupChip(text: l.welcomeHeroPickup),
-                HeroPlansCard(title: l.welcomeHeroPlansTitle, text: l.welcomeHeroPlansText),
-                HeroPerksPill(insurance: l.welcomeHeroInsurance, swap: l.welcomeHeroBatterySwap),
+                for (var i = sheetFrom; i < statements.length; i++) HeroStatementCard(index: i, data: statements[i]),
               ],
             ),
             const SizedBox(height: VoltiSpacing.s14),
@@ -248,14 +261,11 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   topInset: padding.top,
                   mapOn: mapOn,
                   showStatements: !bigText,
-                  texts: WelcomeHeroTexts(
-                    pickup: l.welcomeHeroPickup,
-                    plansTitle: l.welcomeHeroPlansTitle,
-                    plansText: l.welcomeHeroPlansText,
-                    insurance: l.welcomeHeroInsurance,
-                    batterySwap: l.welcomeHeroBatterySwap,
-                  ),
+                  texts: heroTexts,
                   onMapFallback: () => setState(() => _mapFailed = true),
+                  onStatementsShown: (n) {
+                    if (mounted && n != _heroShown) setState(() => _heroShown = n);
+                  },
                   layoutReady: _sheetHeight != null,
                 ),
               ),
