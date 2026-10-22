@@ -66,8 +66,8 @@ const _glass = Color(0x1FFFFFFF); // rgba(255,255,255,.12)
 
 /// Leitor de QR (design `ScanScreen`): tela escura, X e lanterna em vidro,
 /// visor de 250 px com cantos verdes, titulo e subtitulo e "Digitar numero da
-/// moto". Com [swapRentalId], troca a moto do aluguel. [expectedCode] (moto
-/// vinda do mapa ou da reserva) aparece acima do visor e liga o Hero da moto.
+/// moto". Com [swapRentalId], troca a moto do aluguel; sem ele (link antigo) o
+/// router ja manda para o inicio. [expectedCode] aparece acima do visor e liga o Hero da moto.
 class ScanScreen extends ConsumerStatefulWidget {
   const ScanScreen({super.key, this.swapRentalId, this.expectedCode});
   final String? swapRentalId;
@@ -102,20 +102,6 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
     }
   }
 
-  Future<void> _stopCamera() async {
-    try {
-      await _camera.stop();
-    } catch (_) {}
-    if (mounted) setState(() => _torch = false);
-  }
-
-  Future<void> _startCamera() async {
-    if (_manual) return;
-    try {
-      await _camera.start();
-    } catch (_) {}
-  }
-
   Future<void> _resolve(String raw) async {
     if (_busy || raw.trim().isEmpty) return;
     final l = context.l;
@@ -136,15 +122,8 @@ class _ScanScreenState extends ConsumerState<ScanScreen> {
         }
         return;
       }
-      if (!mounted) return;
-      // A camera para (e a lanterna apaga) antes de abrir o plano: nada de leituras
-      // por baixo empilhando outros /plan. Ao voltar, limpa o "encontrada" e le de novo.
-      await _stopCamera();
-      if (!mounted) return;
-      await context.push('/plan', extra: vehicle);
-      if (!mounted) return;
-      setState(() => _foundCode = null);
-      await _startCamera();
+      // Sem troca de moto o leitor nao aluga mais (retirada no galpao): volta ao inicio.
+      if (mounted) context.go('/home');
     } catch (e) {
       VoltiHaptics.warning();
       if (mounted) {

@@ -20,22 +20,30 @@ O Prism exige um header `Authorization: Bearer ...`; o login de dev (`POST /dev/
 ## Estrutura
 
 - `lib/core`: `Backend` (única fronteira com a API; os testes usam um fake), sessão, rotas (go_router), tempo real (Socket.IO), localização, push, tokenização de cartão, widgets comuns (`AsyncView`, `ErrorState`, `VoltiMap`).
-- `lib/features/<tela>`: onboarding, home (mapa), pick ("Escolha sua moto", lista com filtro por modelo e reserva), reservation, scan, plan (+ Pix), ride, return_flow, summary, account.
+- `lib/features/<tela>`: onboarding, home (mapa com o galpão), pick ("Escolha sua moto" do galpão), plan (plano, seguro e Pix), pickup (retirada agora/agendada e regras de horário), reservation (reserva com QR), scan (só troca de moto da corrida), ride, return_flow, summary, account.
 - `lib/l10n/app_pt.arb`: todos os textos (pt-BR).
 
 ## Motion (design v2)
 
-Transições de tela em `core/router.dart` (`voltiPage`): push lateral de 440 ms; `/scan` abre como modal de baixo e a tela de trás recua. Listas e seções entram em cascata (`VoltiStagger.wrap`), pins caem em sequência, pin selecionado e posição do usuário pulsam, rotas se desenham (`DrawnPolyline`), recibo mostra `VoltiSuccessCheck`. Tudo respeita reduced motion (`MediaQuery.disableAnimationsOf`). Animações infinitas (pulso, brilho, ponto ao vivo) impedem `pumpAndSettle`: use `pump(duration)` nos testes dessas telas.
+Transições de tela em `core/router.dart` (`voltiPage`): push lateral de 440 ms; `/scan` abre como modal de baixo e a tela de trás recua. Listas e seções entram em cascata (`VoltiStagger.wrap`), a miniatura da moto voa da lista para o cabeçalho do plano (Hero, desligado em reduced motion), posição do usuário pulsa, rotas se desenham (`DrawnPolyline`), recibo mostra `VoltiSuccessCheck`. Tudo respeita reduced motion (`MediaQuery.disableAnimationsOf`). Animações infinitas (pulso, brilho, ponto ao vivo) impedem `pumpAndSettle`: use `pump(duration)` nos testes dessas telas.
 
 ## Design pass (UI/UX)
 
 Auditoria em `docs/design/auditoria-app.md` e evoluções em `docs/design/evolucoes-app.md`. Resumo: HUD da corrida com `VoltiSpeedGauge`, números que rolam (`VoltiTicker`) e faixas animadas (`VoltiStatusBanner`); esqueletos (`AsyncView(loading:)` + `VoltiSkeleton`); estados vazios (`VoltiEmptyState`); puxar para atualizar; cartão da moto arrasta para fechar; háptica semântica (`VoltiHaptics`); coreografia de sucesso no Pix, devolução e recibo; confirmação ao cancelar a renovação. O mapa da home também respeita `mapEnabledProvider` (testes sem tiles). Testes do design pass em `test/design_pass_test.dart` (reduced motion, semântica, texto a 200%).
 
-## Mapa e "Escolha sua moto"
+## Retirada em galpão (spec 2026-10-22, Task 9)
 
-Home como no design (`HomeScreen.jsx`): avatar com iniciais, pílula "Sua localização · <ponto de retirada em que o cliente está ou "Perto de você">", sino (bolinha = mensagem do suporte não lida, abre o suporte), cartões de promoção, filtros "Todas" / "Autonomia 10+ km" / "Pontos de retirada" (motos dentro de zonas `return` ativas), pins escuros (`VehicleMarker(customerStyle: true)`), botão "Escolher moto" e "Escanear para andar".
+O cliente não acha moto na rua: escolhe no app e retira no galpão.
 
-`/pick` (`PickScreen.jsx`): motos de `GET /vehicles/nearby` ordenadas pela distância a pé (haversine a partir do GPS, ~80 m/min; sem GPS não mostra distância), chips de modelo derivados dos dados, categoria por um mapa local de modelos, preço do plano `minute`, seleção em radio e "Reservar <modelo> · <código>" (`POST /reservations`, depois `/reserved`). KYC não aprovado, inadimplência, reserva ou corrida ativa desligam o botão com o motivo. Um 409 ao reservar (`vehicle-unavailable` ou `reservation-already-active`) recarrega a lista e a reserva, tira a moto da seleção e mostra o aviso (com link para a reserva ativa). Mapa e lista recarregam as motos a cada 20 s com a tela no topo e ao voltar do segundo plano (`NearbyAutoRefresh`). Lógica pura em `features/pick/pick_logic.dart`; o que falta no contrato está em `docs/decisoes.md` (2026-10-21, app "Escolha sua moto").
+- **Home** (`/home`): mapa com o galpão em destaque, pontos verdes de devolução (zonas `return`) e estações de bateria (`GET /swap-stations`); sem motos na rua e sem "Escanear para andar". Cartão fixo "Galpão Volti · <bairro> · N motos disponíveis" (`Depot.district`, `availableVehicleCount`), "Aberto até 20h" / "Fechado · abre seg. às 7h", endereço e **Escolher moto**. Com vários galpões o cartão vira seletor (chips, mais perto primeiro por `distanceM`). `currentDepotProvider` = galpão escolhido ou, sem escolha, o mais perto.
+- **Escolher moto** (`/pick`): `GET /depots/{id}/vehicles`; foto (`VehicleModel.photoUrl`), categoria (`categoryLabel`), código, bateria/autonomia e preço por modelo (`pricePerMinuteCents`); sem distância. Filtro por modelo; **Continuar com <modelo> · <código>** não reserva, só segue.
+- **Plano** (`/plan`, extra `DepotSelection`): diário, semanal e mensal em destaque; "Outras opções" (minuto, hora) recolhidas; semanal/mensal avisam que renovam.
+- **Seguro** (`/insurance`): básico obrigatório, pré-marcado e não removível; completo opcional com o que cobre.
+- **Retirada** (`/pickup`): "Retirar agora (até HH:MM)" ou "Agendar" (dias até `maxScheduleDays`, domingo/dia sem horário aparece "Fechado", horários de 30 em 30 min). Resumo (plano, seguro, caução pela cotação), cupom, caução cartão ou Pix (Pix pré-selecionado sem cartão), consentimento de localização (decisão #8) e **Confirmar reserva** (`POST /reservations` com `depotId`, `pickupMode`, `pickupAt`, `planCode`, `coverage`, `depositMethod`, `cardId`, Idempotency-Key). Caução Pix abre a folha Pix existente. 409 `vehicle-unavailable` → "Essa moto acabou de ser reservada" e volta à lista.
+- **Reserva confirmada** (`/reservation/:id`): QR do `pickupCode` (`qr_flutter`), moto, prazo ("Retire até 12:00") ou horário agendado com tolerância, endereço com **Como chegar** (só abre o app de mapas no toque, `openDirections`), **Cancelar reserva** com confirmação. Com status `handover` o cancelar some e aparece "Sua moto já está sendo entregue. Use Apontar problema."; um 409 `reservation-in-handover` mostra o mesmo aviso.
+- `/scan` sem `?swap=` e `/reserved` (links antigos) redirecionam para `/home`. `/plan`, `/insurance` e `/pickup` sem `extra` também voltam à home.
+
+Aberto/fechado e horários saem de `Depot.openingHours`, `timezone`, `maxScheduleDays` e `pickupNowWindowMinutes` em `features/pickup/depot_hours.dart`, espelho de `services/api/src/modules/depots/depot-rules.ts` (fechamento exclusivo; último horário = fechamento − 30 min; "agora" vence no menor entre agora + janela e o fechamento de hoje; horários passados e além de `maxScheduleDays` saem). O servidor valida de novo. Fusos do Brasil com deslocamento fixo (sem horário de verão).
 
 ## Pontos de integração
 
@@ -89,4 +97,4 @@ Android: serviço em primeiro plano do tipo `location` e permissões no manifest
 ```bash
 flutter analyze && flutter test
 ```
-Cobrem login (dev × cognito), código por SMS com reenvio e limite de 60 s, passo de pagamento, CPF inválido, a lista "Escolha sua moto" (`test/pick_screen_test.dart`, `test/pick_logic_test.dart`), a paridade da home (`test/home_parity_test.dart`), onboarding sem consentimento, plano com seguro básico fixo, bloqueio do início sem consentimento, `zone.notice`, `device.event` de queda, encerrar sem foto e erro de rede com "Tentar de novo".
+Cobrem login (dev × cognito), código por SMS com reenvio e limite de 60 s, passo de pagamento, CPF inválido, o fluxo do galpão (`test/galpao_flow_test.dart`: home, seletor de galpões, lista, plano, seguro, retirada, reserva com QR, 409, handover, 200% em 360×740 e reduced motion), as regras de horário (`test/depot_hours_test.dart`), `test/pick_logic_test.dart`, a home (`test/home_parity_test.dart`), onboarding sem consentimento, seguro básico fixo, reserva bloqueada sem consentimento de localização, `zone.notice`, `device.event` de queda, encerrar sem foto e erro de rede com "Tentar de novo".

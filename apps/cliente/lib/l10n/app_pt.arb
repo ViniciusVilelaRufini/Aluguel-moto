@@ -1152,5 +1152,201 @@
       }
     }
   },
-  "thanksForRiding": "Obrigado por andar de Volti"
+  "thanksForRiding": "Obrigado por andar de Volti",
+  "depotCardTitle": "Galpão Volti · {district}",
+  "@depotCardTitle": {
+    "placeholders": {
+      "district": {
+        "type": "String"
+      }
+    }
+  },
+  "depotAvailable": "{count, plural, =0{nenhuma moto disponível} =1{1 moto disponível} other{{count} motos disponíveis}}",
+  "@depotAvailable": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "depotOpenUntil": "Aberto até {time}",
+  "@depotOpenUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "depotClosedOpens": "Fechado · abre {day} às {time}",
+  "@depotClosedOpens": {
+    "placeholders": {
+      "day": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "depotClosed": "Fechado",
+  "dayToday": "Hoje",
+  "dayTomorrow": "Amanhã",
+  "dayTodayLower": "hoje",
+  "dayTomorrowLower": "amanhã",
+  "weekdayShort": "{weekday, select, 0{dom.} 1{seg.} 2{ter.} 3{qua.} 4{qui.} 5{sex.} 6{sáb.} other{}}",
+  "@weekdayShort": {
+    "placeholders": {
+      "weekday": {
+        "type": "String"
+      }
+    }
+  },
+  "dayChip": "{weekday} {date}",
+  "@dayChip": {
+    "placeholders": {
+      "weekday": {
+        "type": "String"
+      },
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "dayChipClosed": "{label} · Fechado",
+  "@dayChipClosed": {
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "depotPicker": "Escolha o galpão",
+  "depotOptionSemantics": "{name}, {distance}",
+  "@depotOptionSemantics": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "distance": {
+        "type": "String"
+      }
+    }
+  },
+  "depotPinSemantics": "Galpão {name}",
+  "@depotPinSemantics": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "swapStationSemantics": "Estação de troca de bateria {name}",
+  "@swapStationSemantics": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "depotsEmpty": "Nenhum galpão disponível",
+  "depotsEmptyText": "Tente de novo em instantes.",
+  "pickContinue": "Continuar com {model} · {code}",
+  "@pickContinue": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "pickDepotCount": "{count, plural, =0{Nenhuma moto no galpão} =1{1 moto no galpão} other{{count} motos no galpão}}",
+  "@pickDepotCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "pickDepotEmpty": "Nenhuma moto no galpão agora",
+  "pickDepotEmptyText": "Volte mais tarde ou escolha outro galpão.",
+  "planOtherOptions": "Outras opções",
+  "planRenews": "Renova automaticamente, cancele quando quiser",
+  "planChargedAtPickup": "O plano é cobrado na retirada, quando você aceitar a moto.",
+  "vehicleModelCode": "{model} · {code}",
+  "@vehicleModelCode": {
+    "placeholders": {
+      "model": {
+        "type": "String"
+      },
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "insuranceTitle": "Seguro",
+  "insuranceSubtitle": "O básico já vem incluído. O completo é opcional.",
+  "pickupTitle": "Retirada",
+  "pickupNow": "Retirar agora",
+  "pickupNowUntil": "Até {time}",
+  "@pickupNowUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "pickupNowClosed": "O galpão está fechado agora",
+  "pickupSchedule": "Agendar",
+  "pickupScheduleHint": "Escolha dia e hora no funcionamento do galpão",
+  "pickupDay": "Dia",
+  "pickupTime": "Horário",
+  "pickupNoSlots": "Sem horários neste dia",
+  "pickupChooseTime": "Escolha um horário",
+  "pickupPlan": "Plano",
+  "pickupDepositNote": "Confirmar bloqueia só a caução. O plano é cobrado quando você aceitar a moto no galpão.",
+  "confirmReservation": "Confirmar reserva",
+  "vehicleJustTaken": "Essa moto acabou de ser reservada",
+  "depotReservationTitle": "Reserva confirmada",
+  "reservationQrHint": "Mostre este código no galpão",
+  "reservationQrLabel": "QR da reserva",
+  "reservationPickupUntil": "Retire até {time}",
+  "@reservationPickupUntil": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "reservationScheduledAt": "Retirada {day} às {time}",
+  "@reservationScheduledAt": {
+    "placeholders": {
+      "day": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "reservationGrace": "Tolerância até {time}",
+  "@reservationGrace": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "howToGetThere": "Como chegar",
+  "cancelReservation": "Cancelar reserva",
+  "cancelReservationTitle": "Cancelar reserva?",
+  "cancelReservationText": "O cancelamento é grátis e a caução é liberada.",
+  "keepReservation": "Manter reserva",
+  "reservationInHandover": "Sua moto já está sendo entregue. Use Apontar problema.",
+  "reservationPixPending": "Pague a caução por Pix para garantir a moto.",
+  "payPixDeposit": "Pagar caução Pix",
+  "reservationNotFound": "Reserva não encontrada",
+  "reservationNotFoundText": "Ela pode ter sido cancelada ou expirado.",
+  "goHome": "Ir para o início"
 }

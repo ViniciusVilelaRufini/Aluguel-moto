@@ -12,7 +12,7 @@ import 'package:volti_cliente/core/geo.dart';
 import 'package:volti_cliente/features/home/home_screen.dart';
 import 'package:volti_cliente/features/plan/plan_screen.dart';
 import 'package:volti_cliente/features/summary/summary_screen.dart';
-import 'package:volti_cliente/features/reservation/reserved_screen.dart';
+import 'package:volti_cliente/features/reservation/depot_reservation_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_cliente/l10n/app_localizations.dart';
 
@@ -65,10 +65,12 @@ class SlowHistory extends FakeBackend {
 }
 
 class HomeBackend extends FakeBackend {
-  HomeBackend(this.vehicles);
-  final Completer<List<VehicleSummary>> vehicles;
+  HomeBackend(this.depotList);
+  final Completer<List<Depot>> depotList;
   @override
-  Future<List<VehicleSummary>> nearby(double lat, double lng, {double? minRangeKm}) => vehicles.future;
+  Future<List<Depot>> depots({double? lat, double? lng}) => depotList.future;
+  @override
+  Future<List<SwapStation>> swapStations({double? lat, double? lng}) async => [];
   @override
   Future<List<GeoZone>> zones() async => [];
   @override
@@ -110,110 +112,7 @@ class ReceiptBackend extends FakeBackend {
       ..totalCents = 2075).toBuilder());
 }
 
-/// Cotacoes que so respondem quando o teste manda (para simular fora de ordem).
-class RaceQuoteBackend extends FakeBackend {
-  final pending = <(InsuranceCoverage, Completer<Quote>)>[];
-  @override
-  Future<List<PricingPlan>> plans() async => [
-        PricingPlan((b) => b
-          ..id = 'p1'
-          ..code = PlanCode.minute
-          ..name = 'Por minuto'
-          ..unit = PlanUnit.minute
-          ..unlockFeeCents = 100
-          ..unitPriceCents = 79
-          ..pausePerMinuteCents = 20
-          ..recurring = false
-          ..active = true
-          ..createdAt = DateTime.utc(2026)
-          ..updatedAt = DateTime.utc(2026)),
-      ];
-  @override
-  Future<List<InsuranceCoverageOption>> coverages() async => [
-        for (final (c, n, p) in [(InsuranceCoverage.basic, 'Básico', 0), (InsuranceCoverage.full, 'Completo', 300)])
-          InsuranceCoverageOption((b) => b
-            ..coverage = c
-            ..name = n
-            ..description = n
-            ..premiumCents = p
-            ..mandatory = c == InsuranceCoverage.basic
-            ..active = true),
-      ];
-  @override
-  Future<List<PaymentCard>> cards() async => [
-        PaymentCard((b) => b
-          ..id = 'card1'
-          ..brand = 'visa'
-          ..last4 = '4242'
-          ..expMonth = 12
-          ..expYear = 2030
-          ..isDefault = true
-          ..createdAt = DateTime.utc(2026)),
-      ];
-  @override
-  Future<Wallet> wallet() async => Wallet((b) => b
-    ..balanceCents = 0
-    ..minutesBalance = 0
-    ..updatedAt = DateTime.utc(2026));
-  @override
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon}) {
-    final c = Completer<Quote>();
-    pending.add((coverage, c));
-    return c.future;
-  }
-
-  static Quote quoteFor(InsuranceCoverage c) => Quote((b) => b
-    ..planCode = PlanCode.minute
-    ..coverage = c
-    ..depositCents = 5000
-    ..couponApplied = false
-    ..breakdown = PriceBreakdown((p) => p
-      ..subtotalCents = 100
-      ..discountCents = 0
-      ..insuranceCents = c == InsuranceCoverage.full ? 300 : 0
-      ..feesCents = 0
-      ..totalCents = c == InsuranceCoverage.full ? 400 : 100).toBuilder());
-
-  void resolve(int i) => pending[i].$2.complete(quoteFor(pending[i].$1));
-}
-
 void main() {
-  group('plano (cotacao)', () {
-    testWidgets('respostas fora de ordem: vale a ultima e o pagamento espera por ela', (t) async {
-      tallScreen(t);
-      final b = RaceQuoteBackend();
-      await t.pumpWidget(testApp(PlanScreen(vehicle: sampleVehicle()), overrides: [
-        backendProvider.overrideWithValue(b),
-        sessionProvider.overrideWith(() => FakeSession(session())),
-      ]));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 50));
-      b.resolve(0); // cotacao inicial (basico)
-      await t.pump(const Duration(seconds: 1));
-      VoltiButton pay() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
-      expect(pay().onPressed, isNotNull);
-
-      await t.tap(find.byKey(const Key('coverage-full'))); // pedido 1: completo
-      await t.pump();
-      await t.tap(find.byKey(const Key('coverage-full'))); // pedido 2: volta ao basico
-      await t.pump();
-      expect(b.pending, hasLength(3));
-      expect(pay().onPressed, isNull, reason: 'recotando');
-
-      b.resolve(1); // resposta velha (completo) chega primeiro: descartada
-      await t.pump(const Duration(milliseconds: 500));
-      expect(pay().onPressed, isNull, reason: 'ainda falta a cotacao mais recente');
-      expect(find.text(money(400)), findsNothing);
-
-      b.resolve(2); // a mais recente (basico)
-      await t.pump(const Duration(seconds: 1));
-      expect(pay().onPressed, isNotNull);
-      expect(find.bySemanticsLabel(money(100)), findsWidgets);
-      expect(find.bySemanticsLabel(money(400)), findsNothing);
-      await t.pumpWidget(const SizedBox());
-    });
-  });
-
   group('recibo', () {
     testWidgets('total conta ate o valor depois do check', (t) async {
       tallScreen(t);
@@ -268,12 +167,12 @@ void main() {
       final backend = HomeBackend(Completer());
       await pumpHome(t, backend);
       await t.pump(const Duration(milliseconds: 50));
-      expect(find.byKey(const Key('nearby-skeleton')), findsOneWidget);
-      backend.vehicles.complete([]);
+      expect(find.byKey(const Key('depot-skeleton')), findsOneWidget);
+      backend.depotList.complete([]);
       await t.pump();
       await t.pump(const Duration(seconds: 1));
-      expect(find.byKey(const Key('nearby-skeleton')), findsNothing);
-      expect(find.text('Nenhuma moto por perto agora'), findsOneWidget);
+      expect(find.byKey(const Key('depot-skeleton')), findsNothing);
+      expect(find.text('Nenhum galpão disponível'), findsOneWidget);
       expect(find.text('Tentar de novo'), findsOneWidget);
       expect(t.takeException(), isNull);
       await t.pumpWidget(const SizedBox());
@@ -296,17 +195,17 @@ void main() {
   });
 
   group('reserva', () {
-    testWidgets('sem reserva mostra estado vazio com ir para o mapa', (t) async {
+    testWidgets('sem reserva mostra estado vazio com ir para o inicio', (t) async {
       phone(t);
-      await t.pumpWidget(testApp(const ReservedScreen(), overrides: [
+      await t.pumpWidget(testApp(const DepotReservationScreen(reservationId: 'res1'), overrides: [
         backendProvider.overrideWithValue(HomeBackend(Completer())),
         locationServiceProvider.overrideWithValue(FakeLocation()),
         sessionProvider.overrideWith(() => FakeSession(session())),
       ]));
       await t.pump();
       await t.pump(const Duration(seconds: 1));
-      expect(find.text('Nenhuma reserva ativa'), findsOneWidget);
-      expect(find.text('Ir para o mapa'), findsOneWidget);
+      expect(find.text('Reserva não encontrada'), findsOneWidget);
+      expect(find.text('Ir para o início'), findsOneWidget);
       await t.pumpWidget(const SizedBox());
     });
   });

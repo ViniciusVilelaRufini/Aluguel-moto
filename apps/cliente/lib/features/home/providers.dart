@@ -5,7 +5,6 @@ import 'package:volti_api/volti_api.dart';
 import '../../core/backend.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
-import '../pick/pick_logic.dart';
 
 /// Centro de Sao Paulo quando a localizacao nao esta disponivel.
 const fallbackCenter = LatLng(-23.5614, -46.6559);
@@ -16,22 +15,6 @@ final userLocationProvider = FutureProvider<LatLng?>((ref) async {
   final consent = ref.watch(sessionProvider.select((s) => s.value?.locationConsent ?? false));
   if (!consent) return null;
   return ref.watch(locationServiceProvider).currentPosition();
-});
-
-/// Filtro do mapa (chips "Todas", "Autonomia 10+ km", "Pontos de retirada").
-final homeFilterProvider = NotifierProvider<HomeFilterNotifier, HomeFilter>(HomeFilterNotifier.new);
-
-class HomeFilterNotifier extends Notifier<HomeFilter> {
-  @override
-  HomeFilter build() => HomeFilter.all;
-  void set(HomeFilter v) => state = v;
-}
-
-/// Motos livres perto do cliente (ou do centro padrao), sem filtro: o mapa aplica
-/// [homeFilterProvider] e a lista "Escolha sua moto" filtra por modelo.
-final nearbyProvider = FutureProvider.autoDispose<List<VehicleSummary>>((ref) async {
-  final loc = await ref.watch(userLocationProvider.future) ?? fallbackCenter;
-  return ref.watch(backendProvider).nearby(loc.latitude, loc.longitude);
 });
 
 /// Preco por minuto do plano avulso (`PricingPlan` `minute`), em centavos. `null` se o

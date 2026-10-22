@@ -5,18 +5,21 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
-import '../../core/backend.dart';
-import '../../core/errors.dart';
 import '../../core/geo.dart';
 import '../../core/session.dart';
+import '../../core/shared_vehicle.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
-import '../home/nearby_refresh.dart';
+import '../home/depot_providers.dart';
 import '../home/providers.dart';
+import '../pickup/depot_labels.dart';
+import 'depot_selection.dart';
 import 'pick_logic.dart';
 
-/// "Escolha sua moto" (PickScreen do design): lista das motos livres por perto,
-/// filtro por modelo, selecao em radio e reserva de [kReservationMinutes] min.
+/// "Escolha sua moto" do galpao (spec 2026-10-22 §3.2): motos livres do galpao
+/// ativo (`GET /depots/{id}/vehicles`) com foto e categoria do modelo, codigo,
+/// bateria/autonomia e preco por modelo; sem distancia a pe. Filtro por modelo e
+/// **Continuar com (modelo) · (codigo)** (nao reserva ainda: segue para o plano).
 class PickScreen extends ConsumerStatefulWidget {
   const PickScreen({super.key});
   @override
@@ -26,10 +29,6 @@ class PickScreen extends ConsumerStatefulWidget {
 class _PickScreenState extends ConsumerState<PickScreen> {
   String? _model;
   String? _selectedId;
-  bool _busy = false;
-
-  /// Motos recusadas com 409 nesta tela: saem da lista ate a proxima busca confirmar.
-  final _taken = <String>{};
 
   void _back() {
     final router = GoRouter.maybeOf(context);
@@ -42,90 +41,43 @@ class _PickScreenState extends ConsumerState<PickScreen> {
     }
   }
 
-  Future<void> _reserve(VehicleSummary v) async {
-    final l = context.l;
-    setState(() => _busy = true);
+  Future<void> _refresh(String depotId) async {
+    ref.invalidate(depotVehiclesProvider(depotId));
     try {
-      await ref.read(backendProvider).reserve(v.id);
-      VoltiHaptics.success();
-      ref.invalidate(currentReservationProvider);
-      ref.invalidate(nearbyProvider);
-      if (mounted) context.pushReplacement('/reserved');
-    } catch (e) {
-      final f = toFailure(e);
-      if (f.status == 409) {
-        // Moto reservada por outra pessoa ou reserva ja ativa: atualiza a lista e a reserva.
-        ref.invalidate(nearbyProvider);
-        ref.invalidate(currentReservationProvider);
-        if (mounted) {
-          setState(() {
-            _selectedId = null;
-            if (f.slug != 'reservation-already-active') _taken.add(v.id);
-          });
-          if (f.slug == 'reservation-already-active') {
-            VoltiToast.show(context, l.blockActiveReservation, tone: VoltiToastTone.warning, actionLabel: l.seeReservation, onAction: () => context.push('/reserved'));
-          } else if (f.slug == 'vehicle-unavailable') {
-            VoltiToast.show(context, l.pickVehicleTaken, tone: VoltiToastTone.warning);
-          } else {
-            VoltiToast.show(context, f.message(l), tone: VoltiToastTone.danger);
-          }
-        }
-      } else if (mounted) {
-        VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  void _retry() => ref.invalidate(nearbyProvider);
-
-  Future<void> _refresh() async {
-    ref.invalidate(nearbyProvider);
-    try {
-      await ref.read(nearbyProvider.future);
+      await ref.read(depotVehiclesProvider(depotId).future);
     } catch (_) {}
   }
 
   /// Estado vazio que tambem aceita puxar para atualizar.
-  Widget _pullable(Widget child) => VoltiRefresh(
-    semanticsLabel: context.l.loading,
-    onRefresh: _refresh,
-    child: LayoutBuilder(
-      builder: (context, c) => SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        child: ConstrainedBox(
-          constraints: BoxConstraints(minHeight: c.maxHeight),
-          child: Center(child: child),
+  Widget _pullable(String depotId, Widget child) => VoltiRefresh(
+        semanticsLabel: context.l.loading,
+        onRefresh: () => _refresh(depotId),
+        child: LayoutBuilder(
+          builder: (context, c) => SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: ConstrainedBox(constraints: BoxConstraints(minHeight: c.maxHeight), child: Center(child: child)),
+          ),
         ),
-      ),
-    ),
-  );
+      );
 
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-    final nearby = ref.watch(nearbyProvider);
-    // Busca nova chegou: ela ja reflete as motos reservadas, entao a lista local de recusadas zera.
-    ref.listen(nearbyProvider, (_, next) {
-      if (next is AsyncData && !next.isLoading && _taken.isNotEmpty) setState(_taken.clear);
-    });
-    final user = ref.watch(userLocationProvider).value;
-    final price = ref.watch(minutePriceProvider).value;
+    final depotAsync = ref.watch(currentDepotProvider);
+    final depot = depotAsync.value;
+    final vehiclesAsync = depot == null ? const AsyncLoading<List<Vehicle>>() : ref.watch(depotVehiclesProvider(depot.id));
+    final models = ref.watch(vehicleModelsProvider).value ?? const <String, VehicleModel>{};
+    final fallbackPrice = ref.watch(minutePriceProvider).value;
     final session = ref.watch(sessionProvider).value;
     final hasReservation = ref.watch(currentReservationProvider).value != null;
     final hasRental = ref.watch(currentRentalProvider).value != null;
-    final promo = firstRideFree(session?.customer, promoActive: kFirstRidePromo);
 
-    final all = sortByWalk([
-      for (final v in nearby.value ?? const <VehicleSummary>[])
-        if (!_taken.contains(v.id)) v,
-    ], user);
-    final models = modelsIn(all);
-    final model = models.contains(_model) ? _model : null;
+    final all = vehiclesAsync.value ?? const <Vehicle>[];
+    final modelNames = modelsIn(all);
+    final model = modelNames.contains(_model) ? _model : null;
     final visible = filterByModel(all, model);
-    // Radio sempre com uma escolha: a tocada, se ainda visivel; senao a mais proxima.
-    VehicleSummary? selected;
+    // Radio sempre com uma escolha: a tocada, se ainda visivel; senao a primeira.
+    Vehicle? selected;
     for (final v in visible) {
       if (v.id == _selectedId) selected = v;
     }
@@ -133,9 +85,13 @@ class _PickScreenState extends ConsumerState<PickScreen> {
     final block = reserveBlock(session: session, selected: selected != null, hasReservation: hasReservation, hasRental: hasRental);
 
     Widget body;
-    if (nearby.hasError && !nearby.hasValue) {
-      body = ErrorState(error: nearby.error!, onRetry: _retry);
-    } else if (!nearby.hasValue) {
+    if (depotAsync.hasError && !depotAsync.hasValue) {
+      body = ErrorState(error: depotAsync.error!, onRetry: () => ref.invalidate(depotsProvider));
+    } else if (depotAsync.hasValue && depot == null) {
+      body = VoltiEmptyState(icon: LucideIcons.warehouse, title: l.depotsEmpty, message: l.depotsEmptyText, actionLabel: l.retry, actionIcon: LucideIcons.refreshCw, onAction: () => ref.invalidate(depotsProvider));
+    } else if (vehiclesAsync.hasError && !vehiclesAsync.hasValue) {
+      body = ErrorState(error: vehiclesAsync.error!, onRetry: () => ref.invalidate(depotVehiclesProvider(depot!.id)));
+    } else if (!vehiclesAsync.hasValue) {
       body = SingleChildScrollView(
         key: const Key('pick-skeleton'),
         physics: const NeverScrollableScrollPhysics(),
@@ -143,13 +99,19 @@ class _PickScreenState extends ConsumerState<PickScreen> {
         child: VoltiSkeleton.card(height: 116, count: 4, label: l.loading),
       );
     } else if (all.isEmpty) {
-      body = _pullable(VoltiEmptyState(icon: LucideIcons.bike, title: l.noVehiclesNearby, message: l.noVehiclesNearbyText, actionLabel: l.retry, actionIcon: LucideIcons.refreshCw, onAction: _retry));
+      body = _pullable(
+        depot!.id,
+        VoltiEmptyState(icon: LucideIcons.bike, title: l.pickDepotEmpty, message: l.pickDepotEmptyText, actionLabel: l.retry, actionIcon: LucideIcons.refreshCw, onAction: () => ref.invalidate(depotVehiclesProvider(depot.id))),
+      );
     } else if (visible.isEmpty) {
-      body = _pullable(VoltiEmptyState(icon: LucideIcons.bike, title: l.pickEmptyModel, message: l.pickEmptyModelText, actionLabel: l.pickAllModels, onAction: () => setState(() => _model = null)));
+      body = _pullable(
+        depot!.id,
+        VoltiEmptyState(icon: LucideIcons.bike, title: l.pickEmptyModel, message: l.pickEmptyModelText, actionLabel: l.pickAllModels, onAction: () => setState(() => _model = null)),
+      );
     } else {
       body = VoltiRefresh(
         semanticsLabel: l.loading,
-        onRefresh: _refresh,
+        onRefresh: () => _refresh(depot!.id),
         child: Semantics(
           explicitChildNodes: true,
           child: ListView.separated(
@@ -162,9 +124,8 @@ class _PickScreenState extends ConsumerState<PickScreen> {
               final card = _PickCard(
                 key: Key('pick-card-${v.id}'),
                 vehicle: v,
-                walkMeters: walkMetersTo(v, user),
-                priceCents: price,
-                firstRideFree: promo,
+                photoUrl: models[v.vehicleModelId]?.photoUrl,
+                priceCents: v.pricePerMinuteCents ?? models[v.vehicleModelId]?.pricePerMinuteCents ?? fallbackPrice,
                 selected: v.id == selected?.id,
                 onTap: () {
                   if (v.id != selected?.id) VoltiHaptics.selection();
@@ -179,65 +140,68 @@ class _PickScreenState extends ConsumerState<PickScreen> {
       );
     }
 
-    return NearbyAutoRefresh(
-      child: Scaffold(
-        body: SafeArea(
-          bottom: false,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, 0),
-                child: Row(
-                  children: [
-                    VoltiIconButton(icon: LucideIcons.arrowLeft, label: l.back, onPressed: _back),
-                    const SizedBox(width: VoltiSpacing.s12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Semantics(header: true, child: Text(l.pickTitle, style: VoltiTypography.heading)),
-                          if (nearby.hasValue)
-                            Semantics(
-                              liveRegion: true,
-                              child: Text(l.pickAvailable(visible.length), style: VoltiTypography.caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(width: VoltiSpacing.s12),
-                    VoltiIconButton(icon: LucideIcons.map, label: l.pickSeeMap, onPressed: _back),
-                  ],
-                ),
-              ),
-              if (models.isNotEmpty)
-                Semantics(
-                  label: l.pickModelFilters,
-                  container: true,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 10, VoltiSpacing.screenGutter, 2),
-                    child: Row(
+    return Scaffold(
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, 0),
+              child: Row(
+                children: [
+                  VoltiIconButton(icon: LucideIcons.arrowLeft, label: l.back, onPressed: _back),
+                  const SizedBox(width: VoltiSpacing.s12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        for (final m in [null, ...models]) ...[
-                          VoltiChip(
-                            label: m ?? l.pickAllModels,
-                            selected: model == m,
-                            onTap: () {
-                              if (model != m) VoltiHaptics.selection();
-                              setState(() => _model = m);
-                            },
+                        Semantics(header: true, child: Text(l.pickTitle, style: VoltiTypography.heading)),
+                        if (depot != null)
+                          Semantics(
+                            liveRegion: true,
+                            child: Text(
+                              vehiclesAsync.hasValue ? '${depotTitle(l, depot)} · ${l.pickDepotCount(visible.length)}' : depotTitle(l, depot),
+                              style: VoltiTypography.caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                            ),
                           ),
-                          const SizedBox(width: VoltiSpacing.s8),
-                        ],
                       ],
                     ),
                   ),
+                ],
+              ),
+            ),
+            if (modelNames.length > 1)
+              Semantics(
+                label: l.pickModelFilters,
+                container: true,
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 10, VoltiSpacing.screenGutter, 2),
+                  child: Row(
+                    children: [
+                      for (final m in [null, ...modelNames]) ...[
+                        VoltiChip(
+                          label: m ?? l.pickAllModels,
+                          selected: model == m,
+                          onTap: () {
+                            if (model != m) VoltiHaptics.selection();
+                            setState(() => _model = m);
+                          },
+                        ),
+                        const SizedBox(width: VoltiSpacing.s8),
+                      ],
+                    ],
+                  ),
                 ),
-              Expanded(child: body),
-              _Footer(selected: selected, block: block, busy: _busy, kyc: session?.kyc, onReserve: selected == null ? null : () => _reserve(selected!)),
-            ],
-          ),
+              ),
+            Expanded(child: body),
+            _Footer(
+              selected: selected,
+              block: block,
+              onContinue: selected == null || depot == null ? null : () => context.push('/plan', extra: DepotSelection(depot: depot, vehicle: selected!)),
+            ),
+          ],
         ),
       ),
     );
@@ -245,21 +209,19 @@ class _PickScreenState extends ConsumerState<PickScreen> {
 }
 
 class _Footer extends StatelessWidget {
-  const _Footer({required this.selected, required this.block, required this.busy, required this.kyc, required this.onReserve});
-  final VehicleSummary? selected;
+  const _Footer({required this.selected, required this.block, required this.onContinue});
+  final Vehicle? selected;
   final ReserveBlock block;
-  final bool busy;
-  final KycStatus? kyc;
-  final VoidCallback? onReserve;
+  final VoidCallback? onContinue;
 
   (String?, String)? _reason(AppLocalizations l) => switch (block) {
-    ReserveBlock.none || ReserveBlock.noSelection || ReserveBlock.sessionLoading => null,
-    ReserveBlock.kycPending => (l.kycPendingTitle, l.blockKycPending),
-    ReserveBlock.kycRejected => (l.kycRejectedTitle, l.blockKycRejected),
-    ReserveBlock.delinquent => (null, l.blockDelinquent),
-    ReserveBlock.activeReservation => (null, l.blockActiveReservation),
-    ReserveBlock.activeRental => (null, l.blockActiveRental),
-  };
+        ReserveBlock.none || ReserveBlock.noSelection || ReserveBlock.sessionLoading => null,
+        ReserveBlock.kycPending => (l.kycPendingTitle, l.blockKycPending),
+        ReserveBlock.kycRejected => (l.kycRejectedTitle, l.blockKycRejected),
+        ReserveBlock.delinquent => (null, l.blockDelinquent),
+        ReserveBlock.activeReservation => (null, l.blockActiveReservation),
+        ReserveBlock.activeRental => (null, l.blockActiveRental),
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -289,26 +251,13 @@ class _Footer extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               if (reasonView != null) ...[reasonView, const SizedBox(height: VoltiSpacing.s10)],
-              if (v != null && reason == null) ...[
-                Row(
-                  children: [
-                    Icon(LucideIcons.clock, size: 14, color: scheme.onSurfaceVariant),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(l.pickHoldNote(kReservationMinutes), style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: VoltiSpacing.s10),
-              ],
               VoltiButton(
-                key: const Key('pick-reserve'),
-                label: v == null ? l.selectABike : l.reserveModelCode(v.model, v.code),
-                icon: LucideIcons.bookmark,
+                key: const Key('pick-continue'),
+                label: v == null ? l.selectABike : l.pickContinue(v.model, v.code),
+                icon: LucideIcons.arrowRight,
                 size: VoltiButtonSize.lg,
                 fullWidth: true,
-                loading: busy,
-                onPressed: block == ReserveBlock.none ? onReserve : null,
+                onPressed: block == ReserveBlock.none ? onContinue : null,
               ),
             ],
           ),
@@ -318,14 +267,13 @@ class _Footer extends StatelessWidget {
   }
 }
 
-/// Cartao da lista: foto (placeholder ate termos fotos por modelo), modelo + codigo,
-/// categoria, bateria/autonomia, distancia a pe, preco por minuto e radio.
+/// Cartao da lista: foto do modelo (ou icone), modelo + codigo, categoria,
+/// bateria/autonomia, preco por modelo e radio. Sem distancia (a moto esta no galpao).
 class _PickCard extends StatefulWidget {
-  const _PickCard({super.key, required this.vehicle, required this.walkMeters, required this.priceCents, required this.firstRideFree, required this.selected, required this.onTap});
-  final VehicleSummary vehicle;
-  final int? walkMeters;
+  const _PickCard({super.key, required this.vehicle, required this.photoUrl, required this.priceCents, required this.selected, required this.onTap});
+  final Vehicle vehicle;
+  final String? photoUrl;
   final int? priceCents;
-  final bool firstRideFree;
   final bool selected;
   final VoidCallback onTap;
 
@@ -336,12 +284,16 @@ class _PickCard extends StatefulWidget {
 class _PickCardState extends State<_PickCard> {
   bool _down = false;
 
-  String? _category(AppLocalizations l) => switch (categoryFor(widget.vehicle.model)) {
-    ModelCategory.urban => l.categoryUrban,
-    ModelCategory.doubleSeat => l.categoryDoubleSeat,
-    ModelCategory.cargo => l.categoryCargo,
-    null => null,
-  };
+  String? _category(AppLocalizations l) {
+    final label = widget.vehicle.categoryLabel?.trim();
+    if (label != null && label.isNotEmpty) return label;
+    return switch (categoryFor(widget.vehicle.model)) {
+      ModelCategory.urban => l.categoryUrban,
+      ModelCategory.doubleSeat => l.categoryDoubleSeat,
+      ModelCategory.cargo => l.categoryCargo,
+      null => null,
+    };
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -351,18 +303,16 @@ class _PickCardState extends State<_PickCard> {
     final on = widget.selected;
     final category = _category(l);
     final range = v.estimatedRangeKm.round();
-    final walk = widget.walkMeters;
     final price = widget.priceCents == null ? null : perMinuteLabel(widget.priceCents!);
     final semantics = [
       '${v.model} ${v.code}',
       ?category,
       l.batterySemantics(v.batteryPct),
       l.rangeSemantics(range),
-      if (walk != null) l.walkSemantics(walkingDistanceLabel(walk), walkingMinutes(walk)),
       if (widget.priceCents != null) l.priceSemantics(money(widget.priceCents!)),
-      if (widget.firstRideFree) l.firstRideFreeBadge,
     ].join(', ');
     final dur = VoltiMotion.scaled(context, VoltiMotion.durSpring);
+    final url = widget.photoUrl;
 
     return Semantics(
       container: true,
@@ -394,7 +344,16 @@ class _PickCardState extends State<_PickCard> {
               ),
               child: Row(
                 children: [
-                  _PhotoTile(model: v.model),
+                  // Mesmo elemento compartilhado do cabecalho do plano (E-15); sem voo em reduced motion.
+                  VehicleHero(
+                    code: v.code,
+                    child: VehicleThumb(
+                      size: 88,
+                      image: url == null || url.isEmpty
+                          ? null
+                          : Image.network(url, fit: BoxFit.contain, errorBuilder: (_, _, _) => const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600)),
+                    ),
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
@@ -425,18 +384,10 @@ class _PickCardState extends State<_PickCard> {
                           ),
                         ],
                         const SizedBox(height: 6),
-                        BatteryPill(v.batteryPct, rangeKm: range),
-                        if (walk != null || price != null || widget.firstRideFree) ...[
+                        FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: BatteryPill(v.batteryPct, rangeKm: range)),
+                        if (price != null) ...[
                           const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: [
-                              if (walk != null) _Tag(text: walkLabel(walk), icon: LucideIcons.footprints, bg: VoltiColors.ink100, fg: VoltiColors.ink700),
-                              if (price != null) _Tag(text: price, bg: VoltiColors.infoSoft, fg: VoltiColors.infoInk),
-                              if (widget.firstRideFree) _Tag(text: l.firstRideFreeBadge, bg: VoltiColors.green100, fg: VoltiColors.successInk),
-                            ],
-                          ),
+                          FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: VoltiBadge(price, tone: VoltiBadgeTone.info)),
                         ],
                       ],
                     ),
@@ -448,66 +399,6 @@ class _PickCardState extends State<_PickCard> {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _PhotoTile extends StatelessWidget {
-  const _PhotoTile({required this.model});
-  final String model;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 96,
-      height: 96,
-      decoration: BoxDecoration(color: VoltiColors.surfaceMedia, borderRadius: BorderRadius.circular(16)),
-      padding: const EdgeInsets.all(6),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600),
-          const SizedBox(height: 4),
-          Flexible(
-            child: Text(
-              shortModel(model),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              // Rotulo decorativo: nao cresce com a escala de texto (a semantica do cartao ja diz o modelo).
-              textScaler: TextScaler.noScaling,
-              style: VoltiTypography.caption.copyWith(color: VoltiColors.blue600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Tag extends StatelessWidget {
-  const _Tag({required this.text, required this.bg, required this.fg, this.icon});
-  final String text;
-  final Color bg, fg;
-  final IconData? icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: bg, borderRadius: VoltiRadii.rPill),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[Icon(icon, size: 12, color: fg), const SizedBox(width: 4)],
-          Flexible(
-            child: Text(
-              text,
-              style: TextStyle(fontFamily: VoltiTypography.fontSans, fontWeight: VoltiTypography.fwSemibold, fontSize: 12, height: 1.2, color: fg),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -534,9 +425,7 @@ class _Radio extends StatelessWidget {
               child: SizedBox(
                 width: 12,
                 height: 12,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(color: VoltiColors.brand, shape: BoxShape.circle),
-                ),
+                child: DecoratedBox(decoration: BoxDecoration(color: VoltiColors.brand, shape: BoxShape.circle)),
               ),
             )
           : null,

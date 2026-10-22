@@ -37,7 +37,8 @@ void main() {
     await step('me', b.me);
     await step('consents', b.consents);
     await step('kycStatus', b.kycStatus);
-    await step('nearby', () => b.nearby(-23.56, -46.65));
+    await step('depots', () => b.depots(lat: -23.56, lng: -46.65));
+    await step('depotVehicles', () => b.depotVehicles(id));
     await step('zones', b.zones);
     await step('vehicleByCode', () => b.vehicleByCode('VLT-001'));
     await step('currentReservation', b.currentReservation);

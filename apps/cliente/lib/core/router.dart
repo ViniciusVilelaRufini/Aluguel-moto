@@ -2,16 +2,18 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../features/account/account_screens.dart';
 import '../features/home/home_screen.dart';
 import '../features/onboarding/login_screen.dart';
 import '../features/onboarding/onboarding_screen.dart';
+import '../features/pick/depot_selection.dart';
 import '../features/pick/pick_screen.dart';
+import '../features/pickup/pickup_screen.dart';
+import '../features/plan/insurance_screen.dart';
 import '../features/plan/plan_screen.dart';
-import '../features/reservation/reserved_screen.dart';
+import '../features/reservation/depot_reservation_screen.dart';
 import '../features/return_flow/return_screen.dart';
 import '../features/ride/ride_screen.dart';
 import '../features/scan/scan_screen.dart';
@@ -59,18 +61,32 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (_publicPaths.contains(path)) return '/home';
       return null;
     },
-    routes: [
+    routes: appRoutes(),
+  );
+});
+
+/// Rotas do app (o [routerProvider] acrescenta os redirecionamentos da sessao).
+/// Telas do fluxo do galpao que dependem do `extra` ([DepotSelection]) voltam a
+/// home quando ele falta (link antigo ou app restaurado).
+List<RouteBase> appRoutes() => [
       GoRoute(path: '/welcome', pageBuilder: (c, state) => voltiPage(c, state, const WelcomeScreen())),
       GoRoute(path: '/login', pageBuilder: (c, state) => voltiPage(c, state, const LoginScreen())),
       GoRoute(path: '/onboarding', pageBuilder: (c, state) => voltiPage(c, state, const OnboardingScreen())),
       GoRoute(path: '/home', pageBuilder: (c, state) => voltiPage(c, state, const HomeScreen())),
       GoRoute(path: '/pick', pageBuilder: (c, state) => voltiPage(c, state, const PickScreen())),
-      GoRoute(path: '/reserved', pageBuilder: (c, state) => voltiPage(c, state, const ReservedScreen())),
+      // Reserva de rua (antiga): leva ao inicio, que mostra a reserva atual se houver.
+      GoRoute(path: '/reserved', redirect: (_, _) => '/home'),
+      // O cliente nao escaneia mais para alugar: so a troca de moto da corrida (`?swap=`) usa o leitor;
+      // links antigos de scan voltam ao inicio.
       GoRoute(
         path: '/scan',
-        pageBuilder: (c, state) => voltiPage(c, state, ScanScreen(swapRentalId: state.uri.queryParameters['swap'], expectedCode: state.uri.queryParameters['v']), modal: true),
+        redirect: (_, state) => state.uri.queryParameters['swap'] == null ? '/home' : null,
+        pageBuilder: (c, state) => voltiPage(c, state, ScanScreen(swapRentalId: state.uri.queryParameters['swap']), modal: true),
       ),
-      GoRoute(path: '/plan', pageBuilder: (c, state) => voltiPage(c, state, PlanScreen(vehicle: state.extra! as Vehicle))),
+      GoRoute(path: '/plan', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, PlanScreen(selection: state.extra! as DepotSelection))),
+      GoRoute(path: '/insurance', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, InsuranceScreen(selection: state.extra! as DepotSelection))),
+      GoRoute(path: '/pickup', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, PickupScreen(selection: state.extra! as DepotSelection))),
+      GoRoute(path: '/reservation/:id', pageBuilder: (c, state) => voltiPage(c, state, DepotReservationScreen(reservationId: state.pathParameters['id']!))),
       GoRoute(path: '/ride', pageBuilder: (c, state) => voltiPage(c, state, const RideScreen())),
       GoRoute(path: '/return/:id', pageBuilder: (c, state) => voltiPage(c, state, ReturnScreen(rentalId: state.pathParameters['id']!))),
       GoRoute(path: '/summary/:id', pageBuilder: (c, state) => voltiPage(c, state, SummaryScreen(rentalId: state.pathParameters['id']!))),
@@ -95,6 +111,6 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(path: 'claim/:rentalId', pageBuilder: (c, state) => voltiPage(c, state, ClaimScreen(rentalId: state.pathParameters['rentalId']!))),
         ],
       ),
-    ],
-  );
-});
+    ];
+
+String? _needsSelection(BuildContext _, GoRouterState state) => state.extra is DepotSelection ? null : '/home';
