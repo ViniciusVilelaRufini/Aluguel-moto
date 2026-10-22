@@ -334,3 +334,10 @@ O painel consome o contrato v2 sem mudanças em `packages/contracts`. As lacunas
 5. **Relatório de cupons.** Só existe `Coupon.redemptions`. **Proposta:** `GET /reports/coupons?from&to` (admin, financeiro): resgates por cupom no período e desconto concedido em centavos, com `format=csv`.
 
 Regra de exibição adotada no painel (sem mudança de contrato): em Operação > Manutenção > Agenda e no histórico da moto, `operacao` vê só o primeiro nome do cliente; `admin` e `suporte` veem o nome inteiro (alinhado ao M2 da API para `campo`).
+
+## 2026-10-22 · app do operador no galpão (branch `feat/galpao-t11`, Task 11) · status: informativo
+
+1. **Formato do `pickupCode` (informativo, não é contrato).** A API gera `v1.<reservationId>.<expEpoch>.<assinatura base64url>` (Task 5, `pickup-code.ts`). O app do operador só **recusa** código vazio ou com mais de 256 caracteres (limite do contrato). Quando o código está no formato `v1`, o app usa a reserva e o vencimento só para **avisos que não bloqueiam** ("Código vencido", "Reserva fora da agenda de hoje", "não está aguardando retirada"): o operador pode seguir com "Continuar mesmo assim". Formato desconhecido vai direto para o checklist. Quem decide é a API (`POST /handovers` → `404` para adulterado/vencido). Mudar o formato não quebra o app.
+2. **Fuso da agenda.** `?date=` de `GET /depots/{id}/pickups` e todos os horários da agenda usam `Depot.timezone` (pacote `timezone`), não o fuso do aparelho.
+3. **Reenvio de `return_depot`.** Sem `Idempotency-Key` no `POST /handovers`, a fila trata um `409` como sucesso quando o `rentalId` guardado não está mais aberto na moto (`GET /vehicles/by-code/{code}` → `currentRentalId` diferente). A checagem continua mesmo depois de a Task 6 devolver a entrega existente.
+4. **Saída com resposta perdida.** `409 reservation-in-handover` no `POST /handovers` (`pickup`): o app recarrega a agenda e, havendo `handoverId`, abre o estado da entrega.

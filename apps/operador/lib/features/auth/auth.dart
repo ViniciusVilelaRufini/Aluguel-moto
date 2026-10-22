@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_operador/data/cognito_auth.dart';
+import 'package:volti_operador/data/depot_state.dart';
 import 'package:volti_operador/data/local_state.dart';
 import 'package:volti_operador/data/service_unlock.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
@@ -56,6 +57,7 @@ class SessionController extends Notifier<String?> {
       debugPrint('falha ao limpar o modo servico: $e');
     } finally {
       ref.invalidate(inspectionDraftsProvider);
+      ref.invalidate(pickupDraftsProvider);
       final auth = ref.read(authRepositoryProvider);
       try {
         if (auth is OperatorCognitoAuthRepository) {

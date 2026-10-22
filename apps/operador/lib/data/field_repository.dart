@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import 'handover_models.dart';
 import 'models.dart';
 
 /// Tipo de falha: `network` (tentar de novo depois) ou `rejected` (a API recusou).
@@ -61,6 +62,33 @@ abstract class FieldRepository {
     required String idempotencyKey,
   });
 
+  // ── Galpao: agenda de retiradas e entregas ──
+
+  /// Galpoes ativos (`GET /depots`).
+  Future<List<Depot>> listDepots();
+
+  /// Agenda do dia (`GET /depots/{id}/pickups?date=`), todas as reservas do dia.
+  /// [day] e a data no fuso do galpao (`Depot.timezone`).
+  Future<List<Reservation>> listPickups(String depotId, Date day);
+
+  /// Foto da entrega (`POST /handovers/uploads`, prefixo `handovers/`); devolve a `objectKey`.
+  Future<String> uploadHandoverPhoto(String path);
+
+  /// Saida do galpao (`type: pickup`). Precisa do servidor: o cliente aceita no app.
+  Future<Handover> createPickupHandover(PickupDraft draft, {required List<String> photoKeys});
+
+  /// Chegada de aluguel no galpao (`type: return_depot`, `depotId` obrigatorio).
+  Future<Handover> createReturnHandover({
+    required String rentalId,
+    required String depotId,
+    required ArrivalDraft draft,
+    required List<String> photoKeys,
+  });
+
+  Future<Handover> getHandover(String id);
+
+  /// Moto pelo codigo impresso ou QR (`GET /vehicles/by-code/{code}`).
+  Future<Vehicle> vehicleByCode(String code);
   /// Contrato v2. Ficha da moto (staff): endereco, modelo, revisao e bateria.
   Future<Vehicle> getVehicle(String id);
 
@@ -82,6 +110,31 @@ abstract class FieldRepository {
   /// Descarrega baterias da van para recarga. Exige rede (sem fila offline).
   Future<VanStock> unloadVan(List<String> serials);
 }
+
+/// Corpo do `POST /handovers` de saida.
+HandoverCreate pickupHandoverRequest(PickupDraft draft, List<String> photoKeys) =>
+    HandoverCreate((b) => b
+      ..type = HandoverType.pickup
+      ..pickupCode = draft.pickupCode.trim()
+      ..checklist = ListBuilder<HandoverChecklistItem>(draft.checklist())
+      ..photoKeys = ListBuilder<String>(photoKeys)
+      ..batteryPct = draft.batteryPct
+      ..batterySerial = draft.batterySerial.trim().isEmpty ? null : draft.batterySerial.trim());
+
+/// Corpo do `POST /handovers` de chegada (`depotId` obrigatorio em `return_depot`).
+HandoverCreate returnHandoverRequest({
+  required String rentalId,
+  required String depotId,
+  required ArrivalDraft draft,
+  required List<String> photoKeys,
+}) =>
+    HandoverCreate((b) => b
+      ..type = HandoverType.returnDepot
+      ..rentalId = rentalId
+      ..depotId = depotId
+      ..checklist = ListBuilder<HandoverChecklistItem>(draft.checklist())
+      ..photoKeys = ListBuilder<String>(photoKeys)
+      ..batteryPct = draft.batteryPct);
 
 /// Implementacao sobre o cliente `volti_api`.
 class ApiFieldRepository implements FieldRepository {
@@ -144,23 +197,77 @@ class ApiFieldRepository implements FieldRepository {
     return UploadContentType.imageSlashJpeg;
   }
 
+  /// Envia o arquivo para a URL pre-assinada e devolve a `objectKey`.
+  Future<String> _putFile(PresignedUpload presigned, String path) async {
+    final bytes = await File(path).readAsBytes();
+    await _uploadDio.put<void>(
+      presigned.uploadUrl,
+      data: Stream.fromIterable([bytes]),
+      options: Options(headers: {
+        ...presigned.headers.toMap(),
+        Headers.contentLengthHeader: bytes.length,
+      }),
+    );
+    return presigned.objectKey;
+  }
+
   @override
   Future<String> uploadPhoto(String path) => _guard(() async {
         final presigned = (await _tasks.createFieldTaskUpload(
           uploadRequest: UploadRequest((b) => b..contentType = _contentType(path)),
         ))
             .data!;
-        final bytes = await File(path).readAsBytes();
-        await _uploadDio.put<void>(
-          presigned.uploadUrl,
-          data: Stream.fromIterable([bytes]),
-          options: Options(headers: {
-            ...presigned.headers.toMap(),
-            Headers.contentLengthHeader: bytes.length,
-          }),
-        );
-        return presigned.objectKey;
+        return _putFile(presigned, path);
       });
+
+  @override
+  Future<String> uploadHandoverPhoto(String path) => _guard(() async {
+        final presigned = (await _api.getHandoversApi().createHandoverPhotoUpload(
+          uploadRequest: UploadRequest((b) => b..contentType = _contentType(path)),
+        ))
+            .data!;
+        return _putFile(presigned, path);
+      });
+
+  @override
+  Future<List<Depot>> listDepots() => _guard(() async {
+        final res = await _api.getDepotsApi().listDepots();
+        return res.data!.items.where((d) => d.active).toList();
+      });
+
+  @override
+  Future<List<Reservation>> listPickups(String depotId, Date day) => _guard(() async {
+        final res = await _api.getDepotsApi().listDepotPickups(id: depotId, date: day);
+        return res.data!.items.toList();
+      });
+
+  @override
+  Future<Handover> createPickupHandover(PickupDraft draft, {required List<String> photoKeys}) =>
+      _guard(() async => (await _api
+              .getHandoversApi()
+              .createHandover(handoverCreate: pickupHandoverRequest(draft, photoKeys)))
+          .data!);
+
+  @override
+  Future<Handover> createReturnHandover({
+    required String rentalId,
+    required String depotId,
+    required ArrivalDraft draft,
+    required List<String> photoKeys,
+  }) =>
+      _guard(() async => (await _api.getHandoversApi().createHandover(
+                handoverCreate: returnHandoverRequest(
+                    rentalId: rentalId, depotId: depotId, draft: draft, photoKeys: photoKeys),
+              ))
+          .data!);
+
+  @override
+  Future<Handover> getHandover(String id) =>
+      _guard(() async => (await _api.getHandoversApi().getHandover(id: id)).data!);
+
+  @override
+  Future<Vehicle> vehicleByCode(String code) => _guard(
+      () async => (await _api.getVehiclesApi().getVehicleByCode(code: code.trim())).data!);
 
   ChecklistItem _item(bool? ok, [String? notes]) => ChecklistItem((b) => b
     ..ok = ok ?? false
@@ -232,6 +339,7 @@ class ApiFieldRepository implements FieldRepository {
               'maintenance' => ServiceVehicleStatus.maintenance,
               _ => null,
             }
+            ..depotId = draft.depotId
             ..completedAt = completedAt.toUtc()),
           idempotencyKey: idempotencyKey,
         );

@@ -14,6 +14,7 @@ import 'package:volti_operador/data/models.dart';
 import 'package:volti_operador/data/service_unlock.dart';
 import 'package:volti_operador/data/sync.dart';
 import 'package:volti_operador/data/tasks_provider.dart';
+import 'package:volti_operador/features/arrivals/arrival_checklist_page.dart';
 import 'package:volti_operador/features/fleet/fleet_widgets.dart';
 import 'package:volti_operador/features/tasks/completion.dart';
 import 'package:volti_operador/features/tasks/task_list_page.dart' show TaskBadges;
@@ -26,9 +27,18 @@ import 'package:volti_operador/ui/widgets.dart';
 /// bateria, checklist n/5, foto obrigatoria e "Concluir tarefa" fixo, que so
 /// habilita com modo servico + checklist + foto (e troca, nas de bateria).
 class TaskDetailPage extends ConsumerStatefulWidget {
-  const TaskDetailPage({super.key, required this.taskId, this.onOpenInspection, this.onOpenBattery});
+  const TaskDetailPage(
+      {super.key,
+      required this.taskId,
+      this.onOpenInspection,
+      this.onOpenBattery,
+      this.onOpenArrival});
 
   final String taskId;
+
+  /// Recolhimento (`collect`): checklist de chegada no galpao que devolve a
+  /// conclusao (galpao + status da moto). Padrao: [ArrivalChecklistPage].
+  final Future<CompletionDraft?> Function(FieldTask task)? onOpenArrival;
 
   /// Navegacao para o checklist/troca (padrao: `go_router`). Injetavel nos testes.
   final VoidCallback? onOpenInspection;
@@ -102,12 +112,21 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     });
   }
 
+  Future<CompletionDraft?> _arrival(FieldTask task) => widget.onOpenArrival != null
+      ? widget.onOpenArrival!(task)
+      : Navigator.of(context).push<CompletionDraft>(
+          MaterialPageRoute(builder: (_) => ArrivalChecklistPage(collectTask: task)));
+
   Future<void> _complete(FieldTask task, {required bool inspectionRegistered}) async {
     final t = AppLocalizations.of(context);
-    final draft = await VoltiBottomSheet.show<CompletionDraft>(
-      context,
-      builder: (_) => const _CompleteSheet(),
-    );
+    // Recolhimento termina no galpao: checklist de chegada com o galpao.
+    final pending = task.type == FieldTaskType.collect
+        ? _arrival(task)
+        : VoltiBottomSheet.show<CompletionDraft>(
+            context,
+            builder: (_) => const _CompleteSheet(),
+          );
+    final draft = await pending;
     if (draft == null || !mounted) return;
     setState(() => _busy = true);
     void rejected(String? reason) {

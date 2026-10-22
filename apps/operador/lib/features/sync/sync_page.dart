@@ -20,6 +20,7 @@ class SyncPage extends ConsumerWidget {
       JobKind.inspection => t.jobInspection,
       JobKind.batterySwap => t.jobBatterySwap,
       JobKind.completeTask => t.jobCompleteTask,
+      JobKind.returnHandover => t.jobReturnHandover,
     };
     return Scaffold(
       body: Column(

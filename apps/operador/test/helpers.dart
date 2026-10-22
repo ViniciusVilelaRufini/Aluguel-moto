@@ -9,6 +9,8 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 import 'package:volti_operador/data/device.dart';
 import 'package:volti_operador/data/field_repository.dart';
+import 'package:volti_operador/data/handover_events.dart';
+import 'package:volti_operador/data/handover_models.dart';
 import 'package:volti_operador/data/location.dart';
 import 'package:volti_operador/data/models.dart';
 import 'package:volti_operador/data/offline_queue.dart';
@@ -209,6 +211,190 @@ class FakeFieldRepository implements FieldRepository {
     }
     return m;
   }
+
+  // ── Galpao ──
+  List<Depot> depots = [fakeDepot()];
+  List<Reservation> pickups = [];
+  final pickupQueries = <(String, Date)>[];
+  final handoverUploads = <String>[];
+  final createdHandovers = <HandoverCreate>[];
+  final handovers = <String, Handover>{};
+  final vehiclesByCode = <String, Vehicle>{};
+  int handoverGets = 0;
+
+  /// Recusa do `POST /handovers` (ex.: 404 de codigo adulterado).
+  RepositoryException? rejectHandoverWith;
+
+  @override
+  Future<List<Depot>> listDepots() async {
+    _check();
+    return depots;
+  }
+
+  @override
+  Future<List<Reservation>> listPickups(String depotId, Date day) async {
+    _check();
+    pickupQueries.add((depotId, day));
+    return pickups;
+  }
+
+  @override
+  Future<String> uploadHandoverPhoto(String path) async {
+    _check();
+    handoverUploads.add(path);
+    return 'handovers/${handoverUploads.length}.jpg';
+  }
+
+  Handover _store(HandoverCreate req, {required String vehicleId, String? reservationId}) {
+    _check();
+    if (rejectHandoverWith != null) throw rejectHandoverWith!;
+    createdHandovers.add(req);
+    final id = 'ho-${createdHandovers.length}';
+    final h = Handover((b) => b
+      ..id = id
+      ..type = req.type
+      ..depotId = req.depotId ?? 'depot-1'
+      ..reservationId = reservationId
+      ..rentalId = req.rentalId
+      ..vehicleId = vehicleId
+      ..vehicleCode = 'VLT-0007'
+      ..operatorId = 'op-1'
+      ..checklist.replace(req.checklist)
+      ..photoKeys.replace(req.photoKeys)
+      ..batteryPct = req.batteryPct
+      ..batterySerial = req.batterySerial
+      ..status = req.type == HandoverType.pickup
+          ? HandoverStatus.pendingCustomer
+          : HandoverStatus.accepted
+      ..createdAt = DateTime.utc(2026, 10, 22, 13));
+    handovers[id] = h;
+    return h;
+  }
+
+  @override
+  Future<Handover> createPickupHandover(PickupDraft draft,
+          {required List<String> photoKeys}) async =>
+      _store(pickupHandoverRequest(draft, photoKeys),
+          vehicleId: 'veh-7', reservationId: PickupCode.parse(draft.pickupCode)?.reservationId);
+
+  @override
+  Future<Handover> createReturnHandover({
+    required String rentalId,
+    required String depotId,
+    required ArrivalDraft draft,
+    required List<String> photoKeys,
+  }) async =>
+      _store(
+          returnHandoverRequest(
+              rentalId: rentalId, depotId: depotId, draft: draft, photoKeys: photoKeys),
+          vehicleId: 'veh-7');
+
+  @override
+  Future<Handover> getHandover(String id) async {
+    _check();
+    handoverGets++;
+    final h = handovers[id];
+    if (h == null) throw const RepositoryException(FailureKind.rejected, 'not found', status: 404);
+    return h;
+  }
+
+  @override
+  Future<Vehicle> vehicleByCode(String code) async {
+    _check();
+    final v = vehiclesByCode[code.trim().toUpperCase()];
+    if (v == null) {
+      throw const RepositoryException(FailureKind.rejected, 'Moto não encontrada.',
+          status: 404, slug: 'not-found');
+    }
+    return v;
+  }
+}
+
+const reservationUuid = '6c1f0a52-8f3e-4b8e-9d55-0d6a7f1e2c11';
+
+/// Codigo do QR no formato da API (`v1.<reservationId>.<exp>.<assinatura>`).
+String fakePickupCode({String reservationId = reservationUuid, DateTime? expiresAt}) {
+  final exp = (expiresAt ?? DateTime.now().add(const Duration(hours: 2))).toUtc();
+  return 'v1.$reservationId.${exp.millisecondsSinceEpoch ~/ 1000}.Zm9vYmFy';
+}
+
+Depot fakeDepot(
+        {String id = 'depot-1',
+        String name = 'Galpão Pinheiros',
+        String timezone = 'America/Sao_Paulo'}) =>
+    Depot((b) => b
+  ..id = id
+  ..name = name
+  ..address = 'Rua dos Pinheiros, 100'
+  ..lat = -23.56
+  ..lng = -46.68
+  ..timezone = timezone
+  ..pickupNowWindowMinutes = 120
+  ..maxScheduleDays = 7
+  ..scheduledGraceMinutes = 30
+  ..active = true);
+
+Reservation fakeReservation({
+  String id = reservationUuid,
+  ReservationStatus status = ReservationStatus.active,
+  PickupMode mode = PickupMode.now,
+  DateTime? pickupAt,
+  DateTime? createdAt,
+  String? firstName = 'Ana',
+  String vehicleCode = 'VLT-0007',
+  String? handoverId,
+}) {
+  final created = createdAt ?? DateTime.utc(2026, 10, 22, 12);
+  return Reservation((b) => b
+    ..id = id
+    ..vehicleId = 'veh-$vehicleCode'
+    ..vehicle.replace(VehicleSummary((v) => v
+      ..id = 'veh-$vehicleCode'
+      ..code = vehicleCode
+      ..model = 'Volti S'
+      ..status = VehicleStatus.reserved
+      ..lat = -23.56
+      ..lng = -46.68
+      ..batteryPct = 96
+      ..estimatedRangeKm = 40))
+    ..status = status
+    ..createdAt = created
+    ..expiresAt = (pickupAt ?? created).add(Duration(minutes: mode == PickupMode.now ? 120 : 30))
+    ..depotId = 'depot-1'
+    ..pickupMode = mode
+    ..pickupAt = pickupAt
+    ..customerFirstName = firstName
+    ..handoverId = handoverId);
+}
+
+Vehicle rentedVehicle({String code = 'VLT-0009', String? rentalId = 'rental-1'}) => Vehicle((b) => b
+  ..id = 'veh-$code'
+  ..code = code
+  ..model = 'Volti S'
+  ..status = VehicleStatus.rented
+  ..lat = -23.56
+  ..lng = -46.68
+  ..batteryPct = 40
+  ..estimatedRangeKm = 18
+  ..speedLimitKmh = 32
+  ..currentRentalId = rentalId);
+
+/// `handover.updated` controlado pelo teste.
+class FakeHandoverEvents implements HandoverEvents {
+  final updatesCtrl = StreamController<HandoverUpdate>.broadcast();
+  final connectedCtrl = StreamController<bool>.broadcast();
+
+  @override
+  Stream<HandoverUpdate> get updates => updatesCtrl.stream;
+
+  @override
+  Stream<bool> get connected => connectedCtrl.stream;
+
+  void emit(String handoverId, HandoverStatus status, {String? lastError}) => updatesCtrl
+      .add(HandoverUpdate(handoverId: handoverId, status: status, lastError: lastError));
+
+  @override
+  void dispose() {}
 }
 
 Battery fakeBattery(String serial,
@@ -419,13 +605,29 @@ class Harness {
   final FakeConnectivity connectivity;
   final OfflineQueue queue;
   final FakeLocationService location;
+  final events = FakeHandoverEvents();
+  final photos = FakePhotoPicker();
+
+  /// Sem rede: o repositorio falha e o monitor diz offline.
+  void goOffline() {
+    repo.online = false;
+    connectivity.online = false;
+    connectivity.controller.add(false);
+  }
+
+  void goOnline() {
+    repo.online = true;
+    connectivity.online = true;
+    connectivity.controller.add(true);
+  }
 
   List<Override> get overrides => [
         fieldRepositoryProvider.overrideWithValue(repo),
         connectivityMonitorProvider.overrideWithValue(connectivity),
         offlineQueueProvider.overrideWithValue(queue),
-        photoPickerProvider.overrideWithValue(FakePhotoPicker()),
+        photoPickerProvider.overrideWithValue(photos),
         locationServiceProvider.overrideWithValue(location),
+        handoverEventsProvider.overrideWithValue(events),
       ];
 
   Future<void> pump(WidgetTester tester, Widget child,
