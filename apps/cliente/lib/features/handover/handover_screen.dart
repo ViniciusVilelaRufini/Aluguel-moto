@@ -301,7 +301,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
                     ]),
                   ),
                   const SizedBox(width: VoltiSpacing.s8),
-                  FittedBox(fit: BoxFit.scaleDown, child: BatteryPill(h.batteryPct)),
+                  FittedBox(fit: BoxFit.scaleDown, child: BatteryPill(h.batteryPct, light: true)),
                 ]),
               ),
               VoltiListGroup(

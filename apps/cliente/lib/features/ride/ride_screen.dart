@@ -536,7 +536,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
-                            child: BatteryPill(_battery, rangeKm: _range),
+                            child: BatteryPill(_battery, rangeKm: _range, light: true),
                           ),
                         ]),
                       ),

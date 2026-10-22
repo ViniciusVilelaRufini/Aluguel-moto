@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
@@ -142,7 +145,7 @@ class SectionTitle extends StatelessWidget {
 /// atribuicao fora do mapa (ex.: a home, ao lado do botao de localizar) passa
 /// `showAttribution: false`. [backgroundColor] aparece enquanto os tiles nao
 /// chegam (transparente deixa ver um fundo desenhado por baixo, sem rede).
-class VoltiMap extends StatelessWidget {
+class VoltiMap extends StatefulWidget {
   const VoltiMap({
     super.key,
     required this.center,
@@ -155,6 +158,7 @@ class VoltiMap extends StatelessWidget {
     this.backgroundColor = VoltiColors.mapLand,
     this.embedded = false,
     this.onTileError,
+    this.onTileLoaded,
   });
 
   /// Mapa dentro de um cartao (ex.: trajeto no recibo): a atribuicao nao soma o
@@ -163,6 +167,9 @@ class VoltiMap extends StatelessWidget {
 
   /// Cada tile que falhou (ver [voltiTileLayer]).
   final VoidCallback? onTileError;
+
+  /// Um tile da base apareceu (carregou).
+  final VoidCallback? onTileLoaded;
   final LatLng center;
   final double zoom;
   final MapController? controller;
@@ -180,33 +187,77 @@ class VoltiMap extends StatelessWidget {
     0, 0, 0, 1, 0,
   ]);
 
+  /// Novas tentativas automaticas depois de tiles com erro (rede instavel na
+  /// abertura): ate 3, espacadas.
+  static const maxRetries = 3;
+
+  @override
+  State<VoltiMap> createState() => _VoltiMapState();
+}
+
+class _VoltiMapState extends State<VoltiMap> {
+  // Um provedor (e cliente HTTP) por camada durante a vida do mapa: reconstruir a
+  // tela nao troca o cliente no meio das cargas. O TileLayer o descarta ao sair.
+  late final TileProvider _base = newTileProvider();
+  late final TileProvider? _reference = kMapReferenceUrl.isEmpty ? null : newTileProvider();
+  final _reset = StreamController<void>.broadcast();
+  Timer? _retry;
+  int _retries = 0;
+
+  void _onError() {
+    widget.onTileError?.call();
+    // Tiles com erro na tela: recarrega depois de um tempo (nova tentativa).
+    if (_retries >= VoltiMap.maxRetries || (_retry?.isActive ?? false)) return;
+    _retry = Timer(Duration(milliseconds: 1500 * (_retries + 1)), () {
+      _retries++;
+      if (mounted && !_reset.isClosed) _reset.add(null);
+    });
+  }
+
+  @override
+  void dispose() {
+    _retry?.cancel();
+    _reset.close();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FlutterMap(
-      mapController: controller,
+      mapController: widget.controller,
       options: MapOptions(
-        initialCenter: center,
-        initialZoom: zoom,
+        initialCenter: widget.center,
+        initialZoom: widget.zoom,
         minZoom: 3,
         maxZoom: 19,
-        backgroundColor: backgroundColor,
+        backgroundColor: widget.backgroundColor,
         interactionOptions: InteractionOptions(
-          flags: interactive ? InteractiveFlag.all & ~InteractiveFlag.rotate : InteractiveFlag.none,
+          flags: widget.interactive ? InteractiveFlag.all & ~InteractiveFlag.rotate : InteractiveFlag.none,
         ),
       ),
       children: [
-        voltiTileLayer(context, onError: onTileError, tileBuilder: (context, tile, _) => ColorFiltered(colorFilter: colorFilter, child: tile)),
+        voltiTileLayer(
+          context,
+          provider: _base,
+          onError: _onError,
+          reset: _reset.stream,
+          tileBuilder: (context, tile, image) {
+            if (image.readyToDisplay && widget.onTileLoaded != null) widget.onTileLoaded!();
+            return ColorFiltered(colorFilter: VoltiMap.colorFilter, child: tile);
+          },
+        ),
         // Rotulos das ruas por cima da base (sem filtro de cor).
-        if (kMapReferenceUrl.isNotEmpty) voltiTileLayer(context, template: kMapReferenceUrl, onError: onTileError),
-        ...layers,
-        if (showAttribution)
+        if (_reference != null)
+          voltiTileLayer(context, template: kMapReferenceUrl, provider: _reference, onError: _onError, reset: _reset.stream),
+        ...widget.layers,
+        if (widget.showAttribution)
           SafeArea(
-            top: !embedded,
-            bottom: !embedded,
-            left: !embedded,
-            right: !embedded,
+            top: !widget.embedded,
+            bottom: !widget.embedded,
+            left: !widget.embedded,
+            right: !widget.embedded,
             child: Align(
-              alignment: attributionAlignment,
+              alignment: widget.attributionAlignment,
               child: const Padding(padding: EdgeInsets.all(6), child: MapAttribution()),
             ),
           ),
@@ -253,5 +304,33 @@ class NoticeBanner extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Avisa o tamanho do filho depois do layout (ex.: altura da folha da boas-vindas,
+/// do rodape flutuante da lista).
+class SizeReporter extends SingleChildRenderObjectWidget {
+  const SizeReporter({super.key, required this.onSize, super.child});
+  final ValueChanged<Size> onSize;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => RenderSizeReporter(onSize);
+
+  @override
+  void updateRenderObject(BuildContext context, RenderSizeReporter renderObject) => renderObject.onSize = onSize;
+}
+
+class RenderSizeReporter extends RenderProxyBox {
+  RenderSizeReporter(this.onSize);
+  ValueChanged<Size> onSize;
+  Size? _last;
+
+  @override
+  void performLayout() {
+    super.performLayout();
+    if (size == _last) return;
+    _last = size;
+    final s = size;
+    WidgetsBinding.instance.addPostFrameCallback((_) => onSize(s));
   }
 }

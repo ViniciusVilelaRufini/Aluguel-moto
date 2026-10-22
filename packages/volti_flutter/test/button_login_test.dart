@@ -85,4 +85,20 @@ void main() {
     expect(p.didExceedMaxLines, isFalse);
     expect(t.getSize(find.byType(VoltiButton)).height, greaterThan(56));
   });
+
+  group('BatteryPill clara', () {
+    for (final (pct, color) in [(99, VoltiColors.successInk), (50, VoltiColors.successInk), (49, VoltiColors.warningInk), (20, VoltiColors.warningInk), (19, VoltiColors.dangerInk)]) {
+      testWidgets('$pct%: fundo claro, raio pelo nivel e texto escuro', (t) async {
+        final h = t.ensureSemantics();
+        await t.pumpWidget(_wrap(BatteryPill(pct, rangeKm: 40, light: true)));
+        final box = t.widget<Container>(find.byKey(const Key('battery-pill-light')));
+        expect((box.decoration! as BoxDecoration).color, VoltiColors.surfaceSunken);
+        expect(t.widget<Icon>(find.byKey(const Key('battery-bolt'))).color, color);
+        expect(t.widget<Text>(find.text('$pct%')).style!.color, VoltiColors.ink900);
+        expect(find.text('~40 km'), findsOneWidget);
+        expect(find.bySemanticsLabel(RegExp('^Bateria $pct%')), findsOneWidget);
+        h.dispose();
+      });
+    }
+  });
 }

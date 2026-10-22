@@ -117,6 +117,13 @@ Future<void> checkMapTilesAtStartup({http.Client? client}) async {
 /// Id real do pacote (Android `applicationId`), mandado no User-Agent dos tiles.
 const kMapUserAgentPackage = 'br.com.volti.volti_cliente';
 
+/// So testes: troca o provedor de rede por um que devolve imagens locais.
+@visibleForTesting
+TileProvider Function()? debugTileProviderFactory;
+
+/// Provedor de tiles de rede (ou o de teste).
+TileProvider newTileProvider() => debugTileProviderFactory?.call() ?? NetworkTileProvider();
+
 /// Camada de tiles comum: servidor configuravel, `@2x` em telas densas, retentativa
 /// (o `NetworkTileProvider` ja usa `RetryClient`) e tiles com erro descartados quando
 /// saem da tela, para serem pedidos de novo ao voltar. Em debug, cada falha vira uma
@@ -125,8 +132,20 @@ const kMapUserAgentPackage = 'br.com.volti.volti_cliente';
 /// cliente esta; por isso o log so existe em debug (e o `main` cala o `debugPrint`
 /// em release). [onError] avisa quem desenha o mapa (ex.: a boas-vindas troca pela
 /// ilustracao quando os tiles nao carregam).
-TileLayer voltiTileLayer(BuildContext context, {String template = kMapTileUrl, TileBuilder? tileBuilder, VoidCallback? onError}) {
-  final provider = NetworkTileProvider();
+///
+/// [provider] deve ser estavel entre reconstrucoes (o `VoltiMap` guarda um por
+/// camada): um provedor novo a cada build trocaria o cliente HTTP no meio das
+/// cargas. [reset] recarrega os tiles (nova tentativa dos que falharam).
+TileLayer voltiTileLayer(
+  BuildContext context, {
+  String template = kMapTileUrl,
+  TileProvider? provider,
+  TileBuilder? tileBuilder,
+  VoidCallback? onError,
+  Stream<void>? reset,
+}) {
+  provider ??= newTileProvider();
+  final p = provider;
   late final TileLayer layer;
   layer = TileLayer(
     urlTemplate: template,
@@ -134,14 +153,15 @@ TileLayer voltiTileLayer(BuildContext context, {String template = kMapTileUrl, T
     userAgentPackageName: kMapUserAgentPackage,
     // `@2x` so quando o provedor tem `{r}` (sem ele o flutter_map pediria 4x mais tiles).
     retinaMode: template.contains('{r}') && RetinaMode.isHighDensity(context),
-    tileProvider: provider,
+    tileProvider: p,
+    reset: reset,
     evictErrorTileStrategy: EvictErrorTileStrategy.notVisibleRespectMargin,
     errorTileCallback: (tile, error, _) {
       onError?.call();
       if (!kDebugMode) return;
       String url;
       try {
-        url = provider.getTileUrl(tile.coordinates, layer);
+        url = p.getTileUrl(tile.coordinates, layer);
       } catch (_) {
         url = template;
       }

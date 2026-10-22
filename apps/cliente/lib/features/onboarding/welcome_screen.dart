@@ -3,7 +3,6 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -17,15 +16,6 @@ import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 import 'welcome_hero.dart';
-
-/// Cartao "1ª corrida grátis" na boas-vindas. Segue o define `FIRST_RIDE_PROMO`
-/// (ver `kFirstRidePromo`); em build de debug (emulador) liga por padrao para a
-/// tela bater com a referencia do design. Release e profile seguem o define, que
-/// continua desligado por padrao. `--dart-define=FIRST_RIDE_PROMO=false` desliga
-/// tambem no debug.
-const kWelcomeFirstRidePromo = bool.fromEnvironment('FIRST_RIDE_PROMO', defaultValue: kDebugMode);
-
-final welcomeFirstRidePromoProvider = Provider<bool>((ref) => kWelcomeFirstRidePromo);
 
 /// Boas-vindas (referencia `login-referencia.png`): hero animado em cima
 /// ([WelcomeHero]: mapa real de Pinheiros, motos andando, chips e a moto em
@@ -99,8 +89,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     final scheme = Theme.of(context).colorScheme;
     final isDev = ref.watch(authRepositoryProvider).mode == AuthMode.dev;
     final mapOn = ref.watch(mapEnabledProvider);
-    final promo = ref.watch(welcomeFirstRidePromoProvider);
-    // Texto maior que o padrao: o cartao da promocao desce para a folha e escala
+    // Texto maior que o padrao: o cartao dos planos desce para a folha e escala
     // com o texto (no hero os chips nao escalam: sao parte da ilustracao).
     final bigText = MediaQuery.textScalerOf(context).scale(10) / 10 > 1.0;
     final busy = _busy != null;
@@ -114,10 +103,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (promo && bigText) ...[
-            const Align(
+          if (bigText) ...[
+            Align(
               alignment: Alignment.centerLeft,
-              child: _PromoCard(key: Key('welcome-promo')),
+              child: HeroPlansCard(title: l.welcomeHeroPlansTitle, text: l.welcomeHeroPlansText),
             ),
             const SizedBox(height: VoltiSpacing.s14),
           ],
@@ -251,13 +240,14 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   band: band,
                   topInset: padding.top,
                   mapOn: mapOn,
-                  showPromo: promo && !bigText,
-                  nearbyText: l.welcomeArtNearby(kHeroNearby),
-                  rangeText: l.welcomeArtRange(kHeroRangeKm),
-                  etaText: l.welcomeArtEta(kHeroEtaMin),
-                  distanceText: l.welcomeArtDistance(kHeroDistanceM),
-                  promoTitle: l.promoFirstRideTitle,
-                  promoText: l.welcomePromoText,
+                  showPlans: !bigText,
+                  texts: WelcomeHeroTexts(
+                    pickup: l.welcomeHeroPickup,
+                    plansTitle: l.welcomeHeroPlansTitle,
+                    plansText: l.welcomeHeroPlansText,
+                    insurance: l.welcomeHeroInsurance,
+                    batterySwap: l.welcomeHeroBatterySwap,
+                  ),
                   onMapFallback: () => setState(() => _mapFailed = true),
                 ),
               ),
@@ -272,7 +262,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                       children: [
                         // Faixa do mapa que sempre aparece; com texto grande a folha rola por cima.
                         SizedBox(height: minBand),
-                        _SizeReporter(
+                        SizeReporter(
                           onSize: (size) {
                             if (!mounted) return;
                             if (_sheetHeight == null || (_sheetHeight! - size.height).abs() > .5) setState(() => _sheetHeight = size.height);
@@ -393,71 +383,4 @@ class _AdaptiveButtonRow extends StatelessWidget {
       );
     },
   );
-}
-
-/// Cartao branco "🎁 1ª corrida grátis · até 15 min" (so com a promocao ligada).
-class _PromoCard extends StatelessWidget {
-  const _PromoCard({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.l;
-    return Semantics(
-      container: true,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .7),
-        padding: const EdgeInsets.fromLTRB(10, 10, 16, 10),
-        decoration: const BoxDecoration(color: VoltiColors.white, borderRadius: VoltiRadii.rMd, boxShadow: VoltiShadows.shadow2),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: const BoxDecoration(color: VoltiColors.coral50, borderRadius: VoltiRadii.rSm),
-              child: const Icon(LucideIcons.gift, size: 18, color: VoltiColors.coral600),
-            ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(l.promoFirstRideTitle, style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.ink900)),
-                  Text(l.welcomePromoText, style: VoltiTypography.caption.copyWith(color: VoltiColors.ink500)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Avisa o tamanho do filho depois do layout (altura da folha para o hero).
-class _SizeReporter extends SingleChildRenderObjectWidget {
-  const _SizeReporter({required this.onSize, super.child});
-  final ValueChanged<Size> onSize;
-
-  @override
-  RenderObject createRenderObject(BuildContext context) => _RenderSizeReporter(onSize);
-
-  @override
-  void updateRenderObject(BuildContext context, _RenderSizeReporter renderObject) => renderObject.onSize = onSize;
-}
-
-class _RenderSizeReporter extends RenderProxyBox {
-  _RenderSizeReporter(this.onSize);
-  ValueChanged<Size> onSize;
-  Size? _last;
-
-  @override
-  void performLayout() {
-    super.performLayout();
-    if (size == _last) return;
-    _last = size;
-    final s = size;
-    WidgetsBinding.instance.addPostFrameCallback((_) => onSize(s));
-  }
 }

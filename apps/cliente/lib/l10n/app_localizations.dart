@@ -1429,7 +1429,7 @@ abstract class AppLocalizations {
   /// No description provided for @welcomeSubtitle.
   ///
   /// In pt, this message translates to:
-  /// **'Por minuto, hora, dia ou semana. Liberada pelo app em segundos.'**
+  /// **'Escolha a moto no app e retire no galpão. Por dia, semana ou mês.'**
   String get welcomeSubtitle;
 
   /// No description provided for @wellbeingText.
@@ -4342,36 +4342,6 @@ abstract class AppLocalizations {
   /// **'Não foi possível abrir o link. Tente de novo.'**
   String get welcomeLegalOpenError;
 
-  /// No description provided for @welcomePromoText.
-  ///
-  /// In pt, this message translates to:
-  /// **'até 15 min'**
-  String get welcomePromoText;
-
-  /// No description provided for @welcomeArtNearby.
-  ///
-  /// In pt, this message translates to:
-  /// **'{count} motos perto'**
-  String welcomeArtNearby(int count);
-
-  /// No description provided for @welcomeArtRange.
-  ///
-  /// In pt, this message translates to:
-  /// **'~{km} km'**
-  String welcomeArtRange(int km);
-
-  /// No description provided for @welcomeArtEta.
-  ///
-  /// In pt, this message translates to:
-  /// **'{minutes} min'**
-  String welcomeArtEta(int minutes);
-
-  /// No description provided for @welcomeArtDistance.
-  ///
-  /// In pt, this message translates to:
-  /// **'{meters} m'**
-  String welcomeArtDistance(int meters);
-
   /// Leitor de tela: botao ocupado (loading)
   ///
   /// In pt, this message translates to:
@@ -4383,6 +4353,96 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Concluído'**
   String get buttonDone;
+
+  /// No description provided for @welcomeHeroPickup.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retire no galpão'**
+  String get welcomeHeroPickup;
+
+  /// No description provided for @welcomeHeroPlansTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Planos diário, semanal e mensal'**
+  String get welcomeHeroPlansTitle;
+
+  /// No description provided for @welcomeHeroPlansText.
+  ///
+  /// In pt, this message translates to:
+  /// **'ou por minuto e hora'**
+  String get welcomeHeroPlansText;
+
+  /// No description provided for @welcomeHeroInsurance.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seguro incluso'**
+  String get welcomeHeroInsurance;
+
+  /// No description provided for @welcomeHeroBatterySwap.
+  ///
+  /// In pt, this message translates to:
+  /// **'Troca de bateria'**
+  String get welcomeHeroBatterySwap;
+
+  /// No description provided for @pickDetails.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ver detalhes'**
+  String get pickDetails;
+
+  /// No description provided for @pickCollapse.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recolher'**
+  String get pickCollapse;
+
+  /// No description provided for @pickSpecCategory.
+  ///
+  /// In pt, this message translates to:
+  /// **'Categoria'**
+  String get pickSpecCategory;
+
+  /// No description provided for @pickSpecPower.
+  ///
+  /// In pt, this message translates to:
+  /// **'Potência'**
+  String get pickSpecPower;
+
+  /// No description provided for @pickSpecSpeed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Velocidade máxima'**
+  String get pickSpecSpeed;
+
+  /// No description provided for @pickSpecBattery.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria e autonomia'**
+  String get pickSpecBattery;
+
+  /// No description provided for @pickSpecBatteryValue.
+  ///
+  /// In pt, this message translates to:
+  /// **'{pct}% · ~{km} km'**
+  String pickSpecBatteryValue(int pct, int km);
+
+  /// No description provided for @pickSpecPrice.
+  ///
+  /// In pt, this message translates to:
+  /// **'Preço por minuto'**
+  String get pickSpecPrice;
+
+  /// No description provided for @pickSpecUnlock.
+  ///
+  /// In pt, this message translates to:
+  /// **'Taxa de desbloqueio'**
+  String get pickSpecUnlock;
+
+  /// No description provided for @pickSpecCode.
+  ///
+  /// In pt, this message translates to:
+  /// **'Código'**
+  String get pickSpecCode;
 }
 
 class _AppLocalizationsDelegate

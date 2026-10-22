@@ -222,7 +222,7 @@
   "waitingLockText": "A moto precisa parar para travar com segurança. Isso leva alguns segundos.",
   "wallet": "Carteira",
   "walletBalanceTitle": "Saldo",
-  "welcomeSubtitle": "Por minuto, hora, dia ou semana. Liberada pelo app em segundos.",
+  "welcomeSubtitle": "Escolha a moto no app e retire no galpão. Por dia, semana ou mês.",
   "wellbeingText": "Detectamos uma possível queda. Sem resposta em 60 segundos, acionamos o suporte.",
   "wellbeingTitle": "Você está bem?",
   "yourLocation": "Sua localização",
@@ -1481,41 +1481,37 @@
   "welcomeTermsSuffix": ".",
   "welcomeLegalUnavailable": "Este documento ainda não está publicado neste ambiente.",
   "welcomeLegalOpenError": "Não foi possível abrir o link. Tente de novo.",
-  "welcomePromoText": "até 15 min",
-  "welcomeArtNearby": "{count} motos perto",
-  "@welcomeArtNearby": {
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
+  "buttonBusy": "Carregando…",
+  "@buttonBusy": {
+    "description": "Leitor de tela: botao ocupado (loading)"
   },
-  "welcomeArtRange": "~{km} km",
-  "@welcomeArtRange": {
+  "buttonDone": "Concluído",
+  "@buttonDone": {
+    "description": "Leitor de tela: botao no estado de sucesso"
+  },
+  "welcomeHeroPickup": "Retire no galpão",
+  "welcomeHeroPlansTitle": "Planos diário, semanal e mensal",
+  "welcomeHeroPlansText": "ou por minuto e hora",
+  "welcomeHeroInsurance": "Seguro incluso",
+  "welcomeHeroBatterySwap": "Troca de bateria",
+  "pickDetails": "Ver detalhes",
+  "pickCollapse": "Recolher",
+  "pickSpecCategory": "Categoria",
+  "pickSpecPower": "Potência",
+  "pickSpecSpeed": "Velocidade máxima",
+  "pickSpecBattery": "Bateria e autonomia",
+  "pickSpecBatteryValue": "{pct}% · ~{km} km",
+  "@pickSpecBatteryValue": {
     "placeholders": {
+      "pct": {
+        "type": "int"
+      },
       "km": {
         "type": "int"
       }
     }
   },
-  "welcomeArtEta": "{minutes} min",
-  "@welcomeArtEta": {
-    "placeholders": {
-      "minutes": {
-        "type": "int"
-      }
-    }
-  },
-  "welcomeArtDistance": "{meters} m",
-  "@welcomeArtDistance": {
-    "placeholders": {
-      "meters": {
-        "type": "int"
-      }
-    }
-  },
-  "buttonBusy": "Carregando…",
-  "@buttonBusy": {"description": "Leitor de tela: botao ocupado (loading)"},
-  "buttonDone": "Concluído",
-  "@buttonDone": {"description": "Leitor de tela: botao no estado de sucesso"}
+  "pickSpecPrice": "Preço por minuto",
+  "pickSpecUnlock": "Taxa de desbloqueio",
+  "pickSpecCode": "Código"
 }

@@ -13,7 +13,7 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:4010
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
 ```
 
-Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `dev`; build release sempre usa cognito), `SUPPORT_PHONE` (telefone do botão SOS), no modo cognito `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_REDIRECT_URI` (ver Login), `FIRST_RIDE_PROMO=true` (liga o cartão "1ª corrida grátis" e o selo "1ª grátis" para clientes sem aluguéis; padrão desligado, porque o contrato ainda não diz se a promoção existe; **exceção:** na boas-vindas, build de debug liga o cartão por padrão para o emulador bater com a referência, e `FIRST_RIDE_PROMO=false` desliga), `MAP_TILE_URL` e `MAP_ATTRIBUTION` (tiles dos mapas, ver abaixo), `TERMS_URL` e `PRIVACY_URL` (links dos termos de uso e da política de privacidade no rodapé da boas-vindas; sem eles, o link avisa que o documento não está publicado neste ambiente).
+Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `dev`; build release sempre usa cognito), `SUPPORT_PHONE` (telefone do botão SOS), no modo cognito `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_REDIRECT_URI` (ver Login), `FIRST_RIDE_PROMO=true` (liga o cartão "1ª corrida grátis" da home e o selo "1ª grátis" da lista para clientes sem aluguéis; padrão desligado, porque o contrato ainda não diz se a promoção existe; a boas-vindas não mostra promoção), `MAP_TILE_URL`, `MAP_TILE_REFERENCE_URL` e `MAP_TILE_ATTRIBUTION` (tiles dos mapas, ver abaixo), `TERMS_URL` e `PRIVACY_URL` (links dos termos de uso e da política de privacidade no rodapé da boas-vindas; sem eles, o link avisa que o documento não está publicado neste ambiente).
 
 ## Mapas (tiles)
 
@@ -59,10 +59,15 @@ O hero ocupa a faixa livre acima da folha. A altura da folha é medida e o layou
 - **Galpão** com anel pulsando.
 - **Quatro motos andando** por trechos reais (Rua dos Pinheiros, Teodoro Sampaio, Faria Lima e Fradique Coutinho), com velocidades e defasagens diferentes, aparecendo e sumindo nas pontas. Ficam recortadas 16 px acima da folha.
 - **Moto em destaque** (`assets/images/volti_moto_hero.webp`, fundo transparente), centrada embaixo com até 70% da largura. Sobe e cresce de 0,92 a 1 em cerca de 600 ms, depois flutua 2,5 px num ciclo de 3 s, com uma sombra elíptica que acompanha a flutuação.
-- **Chips** (logo, "108 motos perto", "1ª corrida grátis" com `FIRST_RIDE_PROMO`, bateria e "2 min | 120 m"), que entram em cascata com 80 ms entre eles. A bateria conta de 0 até 92%. Nenhum chip é pintado sobre a moto. Quando a moto não cabe a ~70% da largura com os chips em linhas próprias, o "2 min | 120 m" some. Se ainda faltar espaço, a bateria vai para o lado da promoção, que fica mais estreita. A moto fica com o que sobra.
-- **Área livre do mapa:** o galpão fica entre os chips e a moto ou, em telas baixas, à esquerda da moto. As motos que andam somem onde ficariam atrás da promoção, de um chip ou da moto, e seguem a mesma matriz de deriva do mapa, ficando sobre as ruas.
+- **Chips**, com afirmações verdadeiras do serviço e sem números inventados. Entram em cascata, com 80 ms entre eles:
+  - linha 1: logo e "• Retire no galpão" (ícone do galpão);
+  - linha 2: o cartão "Planos diário, semanal e mensal · ou por minuto e hora" (ícone de calendário) e a pílula escura "Seguro incluso | Troca de bateria". Em telas estreitas (< 392 px), a pílula desce para uma linha própria, com as duas partes lado a lado.
 
-A camada visual do hero é decorativa: fica dentro de `ExcludeSemantics` e `IgnorePointer`. Fora dela, há dois nós de semântica nos retângulos reais do logo ("Volti", cabeçalho) e da promoção. Cada grupo de animação tem um ticker próprio.
+  Nenhum chip é pintado sobre a moto, que fica com o que sobra (até 70% da largura). Não há promoção na boas-vindas: o `FIRST_RIDE_PROMO` vale só para a home e a lista.
+- **Área livre do mapa:** o galpão fica entre os chips e a moto ou, em telas baixas, à esquerda da moto. As motos **saem do galpão** pelas ruas (Rua dos Pinheiros e Fradique Coutinho) e só andam na faixa do mapa, a 16 px das bordas. Somem onde ficariam atrás de um chip ou da moto e seguem a mesma matriz de deriva do mapa, ficando sobre as ruas.
+- **Mapa:** o mapa é maior que o hero (32 px de folga em cada lado) e é criado uma vez só; mudanças de layout movem a câmera pelo `MapController`. O `VoltiMap` guarda um provedor de tiles por camada durante a vida do mapa, e tiles com erro são pedidos de novo até 3 vezes. Enquanto os tiles chegam, o fundo é um cinza liso: a ilustração desenhada só entra quando o mapa falha de vez.
+
+A camada visual do hero é decorativa: fica dentro de `ExcludeSemantics` e `IgnorePointer`. Fora dela, há nós de semântica nos retângulos reais do logo ("Volti", cabeçalho), do "Retire no galpão", do cartão dos planos e da pílula. Cada grupo de animação tem um ticker próprio.
 
 Em situações especiais:
 
@@ -72,7 +77,7 @@ Em situações especiais:
 
 A atribuição do mapa fica na borda de cima da folha.
 
-Com texto acima de 100%, o cartão da promoção desce para a folha e escala com o texto. Com 200%, os botões quebram linha, Apple/Google/E-mail empilham e a folha rola por cima do hero.
+Com texto acima de 100%, o cartão dos planos desce para a folha e escala com o texto. Com 200%, os botões quebram linha, Apple/Google/E-mail empilham e a folha rola por cima do hero.
 
 Testes em `test/cliente_login_test.dart`.
 
@@ -98,6 +103,9 @@ O cliente não acha moto na rua: escolhe no app e retira no galpão.
 
 - **Home** (`/home`): mapa com o galpão em destaque, pontos verdes de devolução (zonas `return`) e estações de bateria (`GET /swap-stations`); sem motos na rua e sem "Escanear para andar". Cartão fixo "Galpão Volti · <bairro> · N motos disponíveis" (`Depot.district`, `availableVehicleCount`), "Aberto até 20h" / "Fechado · abre seg. às 7h", endereço e **Escolher moto**. Com vários galpões o cartão vira seletor (chips, mais perto primeiro por `distanceM`; sem localização — sem consentimento ou sem GPS — a API não manda `distanceM` e fica a ordem da API). `currentDepotProvider` = galpão escolhido ou, sem escolha, o mais perto.
 - **Escolher moto** (`/pick`): `GET /depots/{id}/vehicles`; foto do modelo (`VehicleModel.photoUrl`, inteira — `contain` — num quadro branco, para foto de produto em fundo branco; sem foto, ícone), categoria (`categoryLabel`) e, embaixo, a descrição curta do modelo em até 2 linhas (`VehicleModel.description`, fatos-chave primeiro, ex.: "32 km/h · sem CNH · 1000 W · cesto e garupa"; a foto é decodificada no tamanho da miniatura e o catálogo fica 12 h em memória na sessão para o link assinado — e a foto em cache — não mudar a cada visita), código, bateria/autonomia e preço por modelo (`pricePerMinuteCents`); sem distância. Filtro por modelo na ordem do catálogo (`VehicleModel.sortOrder`; fora do catálogo, alfabética); **Continuar** (com "<modelo> · <código>" na segunda linha do botão, que quebra em vez de cortar o código) não reserva, só segue.
+  - **Pílula de bateria clara** (`BatteryPill(light: true)`): fundo `surfaceContainerHighest`, texto escuro e raio colorido pela carga (verde ≥ 50%, âmbar de 20 a 49%, vermelho < 20%). É usada na lista, na conferência da moto e no HUD da corrida.
+  - **Detalhes:** pressionar e segurar um cartão abre os detalhes no lugar, com altura animada pelos tokens (reduced motion: instantâneo). Aparecem a descrição inteira, a categoria, a potência e a velocidade (lidas da descrição), a bateria e a autonomia, o preço por minuto, a taxa de desbloqueio do plano avulso e o código. Segurar de novo, tocar na seta ou segurar outro cartão fecha; fica um aberto por vez. O toque normal continua só selecionando. Ao abrir há háptica de seleção. O leitor de tela ganha a ação "Ver detalhes"/"Recolher" e ouve o estado aberto/fechado.
+  - **Botão flutuante:** não há rodapé opaco. A lista rola por baixo do botão (16 px nas laterais, mais a área segura), com um véu suave (transparente → superfície a 60%). A lista tem espaço embaixo para o último cartão subir acima do botão, e o aviso de KYC flutua como cartão acima dele.
 - **Plano** (`/plan`, extra `DepotSelection`): diário, semanal e mensal em destaque; "Outras opções" (minuto, hora) recolhidas; semanal/mensal avisam que renovam.
 - **Seguro** (`/insurance`): básico obrigatório, pré-marcado e não removível; completo opcional com o que cobre.
 - **Retirada** (`/pickup`): "Retirar agora (até HH:MM)" ou "Agendar" (dias até `maxScheduleDays`, domingo/dia sem horário aparece "Fechado", horários de 30 em 30 min). Resumo (plano, seguro, caução pela cotação), cupom, caução cartão ou Pix (Pix pré-selecionado sem cartão), consentimento de localização (decisão #8) e **Confirmar reserva** (`POST /reservations` com `depotId`, `pickupMode`, `pickupAt`, `planCode`, `coverage`, `depositMethod`, `cardId`, Idempotency-Key). Caução Pix abre a folha Pix existente. 409 `vehicle-unavailable` → "Essa moto acabou de ser reservada" e volta à lista.

@@ -709,7 +709,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get welcomeSubtitle =>
-      'Por minuto, hora, dia ou semana. Liberada pelo app em segundos.';
+      'Escolha a moto no app e retire no galpão. Por dia, semana ou mês.';
 
   @override
   String get wellbeingText =>
@@ -2502,31 +2502,55 @@ class AppLocalizationsPt extends AppLocalizations {
       'Não foi possível abrir o link. Tente de novo.';
 
   @override
-  String get welcomePromoText => 'até 15 min';
-
-  @override
-  String welcomeArtNearby(int count) {
-    return '$count motos perto';
-  }
-
-  @override
-  String welcomeArtRange(int km) {
-    return '~$km km';
-  }
-
-  @override
-  String welcomeArtEta(int minutes) {
-    return '$minutes min';
-  }
-
-  @override
-  String welcomeArtDistance(int meters) {
-    return '$meters m';
-  }
-
-  @override
   String get buttonBusy => 'Carregando…';
 
   @override
   String get buttonDone => 'Concluído';
+
+  @override
+  String get welcomeHeroPickup => 'Retire no galpão';
+
+  @override
+  String get welcomeHeroPlansTitle => 'Planos diário, semanal e mensal';
+
+  @override
+  String get welcomeHeroPlansText => 'ou por minuto e hora';
+
+  @override
+  String get welcomeHeroInsurance => 'Seguro incluso';
+
+  @override
+  String get welcomeHeroBatterySwap => 'Troca de bateria';
+
+  @override
+  String get pickDetails => 'Ver detalhes';
+
+  @override
+  String get pickCollapse => 'Recolher';
+
+  @override
+  String get pickSpecCategory => 'Categoria';
+
+  @override
+  String get pickSpecPower => 'Potência';
+
+  @override
+  String get pickSpecSpeed => 'Velocidade máxima';
+
+  @override
+  String get pickSpecBattery => 'Bateria e autonomia';
+
+  @override
+  String pickSpecBatteryValue(int pct, int km) {
+    return '$pct% · ~$km km';
+  }
+
+  @override
+  String get pickSpecPrice => 'Preço por minuto';
+
+  @override
+  String get pickSpecUnlock => 'Taxa de desbloqueio';
+
+  @override
+  String get pickSpecCode => 'Código';
 }

@@ -13,7 +13,17 @@ import 'pressable.dart';
 /// Pilula escura com bateria e autonomia. O anel segue o nivel:
 /// > 50 verde, 21-50 amarelo, <= 20 coral.
 class BatteryPill extends StatelessWidget {
-  const BatteryPill(this.pct, {super.key, this.rangeKm});
+  const BatteryPill(this.pct, {super.key, this.rangeKm, this.light = false});
+
+  /// Pilula clara (fundo `surfaceContainerHighest` do tema, texto escuro e raio
+  /// colorido pelo nivel): cartoes de moto no app do cliente. O padrao escuro
+  /// continua para sobre o mapa.
+  final bool light;
+
+  /// Cor do raio na pilula clara (>= 3:1 sobre o fundo claro): verde a partir de
+  /// 50%, ambar de 20% a 49% e vermelho abaixo de 20%.
+  static Color lightBoltColor(int pct) =>
+      pct >= 50 ? VoltiColors.successInk : (pct >= 20 ? VoltiColors.warningInk : VoltiColors.dangerInk);
 
   /// 0-100.
   final int pct;
@@ -26,6 +36,7 @@ class BatteryPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (light) return _buildLight(context);
     final c = colorFor(pct);
     const style = TextStyle(
       fontFamily: VoltiTypography.fontSans,
@@ -61,6 +72,46 @@ class BatteryPill extends StatelessWidget {
             if (rangeKm != null) ...[
               const SizedBox(width: 8),
               Container(width: 1, height: 14, color: const Color(0x59FFFFFF)),
+              const SizedBox(width: 8),
+              Text('~$rangeKm km', style: style),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLight(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final style = TextStyle(
+      fontFamily: VoltiTypography.fontSans,
+      fontWeight: VoltiTypography.fwSemibold,
+      fontSize: 13,
+      height: 1,
+      color: scheme.onSurface,
+    );
+    return Semantics(
+      label: 'Bateria $pct%',
+      child: Container(
+        key: const Key('battery-pill-light'),
+        height: 30,
+        padding: const EdgeInsets.only(left: 8, right: 12),
+        decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: VoltiRadii.rPill),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              LucideIcons.zap,
+              key: const Key('battery-bolt'),
+              size: 14,
+              // Tema escuro: os tons vivos da bateria (contraste sobre o fundo escuro).
+              color: Theme.of(context).brightness == Brightness.dark ? VoltiColors.batteryColor(pct) : lightBoltColor(pct),
+            ),
+            const SizedBox(width: 6),
+            Text('$pct%', style: style),
+            if (rangeKm != null) ...[
+              const SizedBox(width: 8),
+              Container(width: 1, height: 14, color: VoltiColors.borderStrong),
               const SizedBox(width: 8),
               Text('~$rangeKm km', style: style),
             ],

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -87,7 +88,6 @@ Future<void> _loadFonts() async {
 Future<GoRouter> _pumpWelcome(
   WidgetTester t, {
   bool dev = true,
-  bool promo = true,
   bool map = false,
   bool reduceMotion = false,
   LegalLinks links = const LegalLinks(),
@@ -111,7 +111,6 @@ Future<GoRouter> _pumpWelcome(
         ? DevAuthRepository(baseUrl: 'http://x')
         : CognitoCustomerAuthRepository(config: config, client: CognitoIdentityClient(config, FakeTransport()), store: MemoryCognitoTokenStore())),
     sessionProvider.overrideWith(() => session ?? _Session()),
-    welcomeFirstRidePromoProvider.overrideWithValue(promo),
     legalLinksProvider.overrideWithValue(links),
     urlLauncherProvider.overrideWithValue((uri) async {
       _opened.add(uri);
@@ -146,12 +145,14 @@ void main() {
       expect(find.byKey(const Key('welcome-art')), findsOneWidget);
       expect(find.byKey(const Key('welcome-logo')), findsOneWidget);
       // Chips ilustrativos.
-      for (final s in ['108 motos perto', '92%', '~20 km', '2 min', '120 m']) {
+      // So afirmacoes do servico (galpao, planos, seguro, troca de bateria).
+      for (final s in ['Retire no galpão', 'Planos diário, semanal e mensal', 'ou por minuto e hora', 'Seguro incluso', 'Troca de bateria']) {
         expect(find.text(s), findsOneWidget, reason: s);
       }
-      expect(find.byKey(const Key('welcome-promo')), findsOneWidget);
-      expect(find.text('1ª corrida grátis'), findsOneWidget);
-      expect(find.text('até 15 min'), findsOneWidget);
+      // Nada de promocao nem numeros inventados.
+      for (final s in ['1ª corrida grátis', 'até 15 min', '108 motos perto', '92%', '~20 km', '2 min', '120 m']) {
+        expect(find.text(s), findsNothing, reason: s);
+      }
       for (final b in ['Sem CNH', 'Sem placa', '18+']) {
         expect(find.widgetWithText(SuccessBadge, b), findsOneWidget);
       }
@@ -160,7 +161,7 @@ void main() {
       final accent = (title.textSpan! as TextSpan).children!.last as TextSpan;
       expect(accent.text, 'e vá.');
       expect(accent.style!.color, VoltiColors.textLink);
-      expect(find.text('Por minuto, hora, dia ou semana. Liberada pelo app em segundos.'), findsOneWidget);
+      expect(find.text('Escolha a moto no app e retire no galpão. Por dia, semana ou mês.'), findsOneWidget);
       final phone = t.widget<VoltiButton>(find.byKey(const Key('welcome-phone')));
       expect(phone.label, 'Continuar com celular');
       expect(phone.variant, VoltiButtonVariant.primary);
@@ -191,18 +192,6 @@ void main() {
       expect(t.getBottomLeft(find.byKey(const Key('welcome-terms'))).dy, lessThanOrEqualTo(740));
       expect(find.byKey(const Key('welcome-social-row')), findsOneWidget);
       expect(t.takeException(), isNull);
-    });
-
-    testWidgets('promocao desligada: sem o cartao "1ª corrida grátis"', (t) async {
-      screen(t);
-      await _pumpWelcome(t, promo: false);
-      expect(find.byKey(const Key('welcome-promo')), findsNothing);
-      expect(find.text('1ª corrida grátis'), findsNothing);
-    });
-
-    test('promocao da boas-vindas: ligada por padrao so em debug', () {
-      // Os testes rodam em modo debug; release/profile seguem FIRST_RIDE_PROMO (padrao desligado).
-      expect(kWelcomeFirstRidePromo, isTrue);
     });
 
     testWidgets('celular e e-mail navegam para o login certo', (t) async {
@@ -266,17 +255,17 @@ void main() {
       final h = t.ensureSemantics();
       await _pumpWelcome(t);
       // Os numeros ilustrativos sao desenhados, mas nao chegam ao leitor de tela.
-      for (final s in ['108 motos perto', '92%', '~20 km', '2 min', '120 m']) {
-        expect(find.text(s), findsOneWidget);
-        expect(find.bySemanticsLabel(RegExp(RegExp.escape(s))), findsNothing, reason: s);
-      }
+      // Os textos visiveis do hero chegam ao leitor de tela pelos nos nos retangulos reais.
+      expect(t.getRect(find.byKey(const Key('welcome-pickup-semantics'))), t.getRect(find.byKey(const Key('hero-pickup'))));
+      expect(t.getRect(find.byKey(const Key('welcome-perks-semantics'))), t.getRect(find.byKey(const Key('hero-perks'))));
+      expect(find.bySemanticsLabel('Seguro incluso, Troca de bateria'), findsOneWidget);
+      expect(find.bySemanticsLabel('Retire no galpão'), findsOneWidget);
       expect(find.byKey(const Key('welcome-art')).evaluate().single.widget, isA<ExcludeSemantics>());
-      // Logo (cabecalho "Volti") e promocao (oferta real): nos de semantica fora da
-      // camada decorativa, nos retangulos reais.
+      // Logo (cabecalho "Volti") e planos: nos de semantica fora da camada decorativa.
       expect(t.getSemantics(find.byKey(const Key('welcome-logo-semantics'))), isSemantics(label: 'Volti', isHeader: true));
       expect(t.getRect(find.byKey(const Key('welcome-logo-semantics'))), t.getRect(find.byKey(const Key('welcome-logo'))));
-      expect(find.bySemanticsLabel('1ª corrida grátis, até 15 min'), findsOneWidget);
-      expect(t.getRect(find.byKey(const Key('welcome-promo-semantics'))), t.getRect(find.byKey(const Key('welcome-promo'))));
+      expect(find.bySemanticsLabel('Planos diário, semanal e mensal, ou por minuto e hora'), findsOneWidget);
+      expect(t.getRect(find.byKey(const Key('welcome-plans-semantics'))), t.getRect(find.byKey(const Key('welcome-plans'))));
       // A moto em destaque fica fora.
       expect(find.descendant(of: find.byKey(const Key('welcome-art')), matching: find.byType(Image)), findsOneWidget);
       expect(t.getSemantics(find.byKey(const Key('welcome-phone'))),
@@ -300,8 +289,8 @@ void main() {
       await _pumpWelcome(t, dev: false, session: s);
       expect(t.takeException(), isNull);
       expect(find.byKey(const Key('welcome-social-column')), findsOneWidget);
-      // Promocao desce para a folha com texto grande.
-      expect(find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.byKey(const Key('welcome-promo'))), findsOneWidget);
+      // Cartao dos planos desce para a folha com texto grande.
+      expect(find.descendant(of: find.byKey(const Key('welcome-sheet')), matching: find.byKey(const Key('welcome-plans'))), findsOneWidget);
       for (final k in ['welcome-phone', 'welcome-apple', 'welcome-google', 'welcome-email', 'welcome-terms']) {
         await t.ensureVisible(find.byKey(Key(k)));
         await t.pump();
@@ -354,18 +343,19 @@ void main() {
   group('hero animado', () {
     WelcomeHeroState hero(WidgetTester t) => t.state<WelcomeHeroState>(find.byType(WelcomeHero));
 
-    testWidgets('entrada: chips em cascata, bateria conta ate 92% e a moto sobe e cresce', (t) async {
+    testWidgets('entrada: chips em cascata e a moto sobe e cresce', (t) async {
       screen(t);
       await _pumpWelcome(t, settleAll: false);
       await t.pump(const Duration(milliseconds: 16));
-      expect(find.text('92%'), findsNothing, reason: 'a contagem comeca do zero');
+      // Chips ainda entrando (cascata).
+      expect(find.ancestor(of: find.byKey(const Key('hero-perks')), matching: _fading), findsWidgets);
       final bike = find.byKey(const Key('hero-bike'));
       final opacity = t.widget<Opacity>(find.ancestor(of: bike, matching: find.byType(Opacity)).first);
       expect(opacity.opacity, lessThan(1));
       final before = t.widget<Transform>(find.byKey(const Key('hero-bike-image')));
       expect(before.transform.getTranslation().y, greaterThan(10), reason: 'comeca abaixo e sobe');
       await t.pump(const Duration(milliseconds: 1200));
-      expect(find.text('92%'), findsOneWidget);
+      expect(find.ancestor(of: find.byKey(const Key('hero-perks')), matching: _fading), findsNothing);
       expect(t.widget<Opacity>(find.ancestor(of: bike, matching: find.byType(Opacity)).first).opacity, 1);
       expect(hero(t).debugAnimating, isTrue, reason: 'loops seguem (deriva, motos, flutuacao)');
       // As motos andam.
@@ -379,7 +369,7 @@ void main() {
       await _pumpWelcome(t, reduceMotion: true, settleAll: false);
       await t.pump();
       await t.pump();
-      expect(find.text('92%'), findsOneWidget);
+      expect(find.text('Seguro incluso'), findsOneWidget);
       expect(hero(t).debugAnimating, isFalse);
       final p0 = t.getTopLeft(find.byKey(const Key('hero-pin-0')));
       final bike = t.getRect(find.byKey(const Key('hero-bike')));
@@ -424,7 +414,7 @@ void main() {
       expect(find.byKey(const Key('welcome-map-fallback')), findsOneWidget);
       // Os chips e a moto continuam por cima; a atribuicao do mapa some.
       expect(find.byKey(const Key('hero-bike')), findsOneWidget);
-      expect(find.text('108 motos perto'), findsOneWidget);
+      expect(find.text('Retire no galpão'), findsOneWidget);
       expect(find.byKey(const Key('map-attribution')), findsNothing);
     });
 
@@ -462,10 +452,9 @@ void main() {
           await _pumpWelcome(t, map: true, dev: dev);
           await t.pump(const Duration(seconds: 1));
           expect(t.takeException(), isNull);
-          final geo = hero(t).debugGeometry;
           Rect r(String k) => t.getRect(find.byKey(Key(k)));
           final chips = {
-            for (final k in ['welcome-logo', 'hero-nearby', 'welcome-promo', 'hero-battery', if (geo.timeVisible) 'hero-time']) k: r(k),
+            for (final k in ['welcome-logo', 'hero-pickup', 'welcome-plans', 'hero-perks']) k: r(k),
           };
           final keys = chips.keys.toList();
           for (var i = 0; i < keys.length; i++) {
@@ -475,7 +464,7 @@ void main() {
           }
           final bike = r('hero-bike');
           // 360x740 com a nota de dev e o caso mais apertado.
-          expect(bike.width, greaterThan(size.width * (size.height < 760 ? .25 : .4)), reason: 'a moto aparece');
+          expect(bike.width, greaterThan(size.width * (size.height < 760 ? .2 : (size.height < 900 ? .3 : .5))), reason: 'a moto aparece');
           expect(bike.width, lessThanOrEqualTo(size.width * .7 + .5));
           // Nenhum chip sobre a moto (folga de 3 px: ela flutua 2,5 px).
           for (final e in chips.entries) {
@@ -490,11 +479,15 @@ void main() {
             expect(e.value.left, greaterThanOrEqualTo(0));
             expect(e.value.right, lessThanOrEqualTo(size.width));
           }
-          // Galpao na area livre: nem atras da promocao nem da moto.
+          // Galpao na area livre, inteiro na tela: nem atras dos chips nem da moto.
           final depot = r('hero-depot');
-          expect(depot.overlaps(r('welcome-promo')), isFalse, reason: 'galpao x promocao');
+          for (final e in chips.entries) {
+            expect(depot.overlaps(e.value), isFalse, reason: 'galpao x ${e.key}');
+          }
+          expect(depot.left, greaterThanOrEqualTo(16));
+          expect(depot.right, lessThanOrEqualTo(size.width - 16));
           expect(depot.overlaps(bike), isFalse, reason: 'galpao x moto');
-          // Pins visiveis nunca atras da promocao, dos chips ou da moto, ao longo do ciclo.
+          // Pins visiveis nunca atras dos chips ou da moto nem a menos de 16 px das bordas.
           final obstacles = [...chips.values, bike];
           var seen = 0;
           for (var step = 0; step < 8; step++) {
@@ -507,6 +500,8 @@ void main() {
               for (final ob in obstacles) {
                 expect(dot.overlaps(ob), isFalse, reason: 'pin $i passo $step');
               }
+              expect(dot.left, greaterThanOrEqualTo(16 - 2), reason: 'pin $i borda');
+              expect(dot.right, lessThanOrEqualTo(size.width - 16 + 2), reason: 'pin $i borda');
             }
             await t.pump(const Duration(milliseconds: 1700));
           }
@@ -515,15 +510,56 @@ void main() {
       }
     }
 
-    testWidgets('"2 min | 120 m" aparece quando sobra espaco para a moto a 70%', (t) async {
-      screen(t, size: const Size(412, 1100));
-      t.view.padding = const FakeViewPadding(top: 24, bottom: 16);
-      await _pumpWelcome(t, map: true, dev: false);
-      final geo = hero(t).debugGeometry;
-      expect(geo.timeVisible, isTrue);
-      final bike = t.getRect(find.byKey(const Key('hero-bike')));
-      expect(bike.width, closeTo(412 * .7, .5));
-      expect(bike.inflate(3).overlaps(t.getRect(find.byKey(const Key('hero-time')))), isFalse);
+    testWidgets('o mapa cobre o hero inteiro em toda a deriva (360/393/412)', (t) async {
+      for (final size in const [Size(360, 740), Size(393, 852), Size(412, 915)]) {
+        screen(t, size: size);
+        await _pumpWelcome(t, map: true);
+        final heroRect = t.getRect(find.byType(WelcomeHero));
+        for (var step = 0; step < 5; step++) {
+          final m = t.getRect(find.byKey(const Key('welcome-map')));
+          expect(m.left, lessThanOrEqualTo(heroRect.left), reason: '$size passo $step');
+          expect(m.top, lessThanOrEqualTo(heroRect.top), reason: '$size passo $step');
+          expect(m.right, greaterThanOrEqualTo(heroRect.right), reason: '$size passo $step');
+          expect(m.bottom, greaterThanOrEqualTo(heroRect.bottom), reason: '$size passo $step');
+          await t.pump(const Duration(milliseconds: 2500));
+        }
+        await t.pumpWidget(const SizedBox());
+      }
+    });
+
+    testWidgets('tiles carregados cobrem a faixa do hero de ponta a ponta', (t) async {
+      final png = await t.runAsync(() async {
+        final rec = ui.PictureRecorder();
+        Canvas(rec).drawRect(const Rect.fromLTWH(0, 0, 256, 256), Paint()..color = const Color(0xFF9E9E9E));
+        final img = await rec.endRecording().toImage(256, 256);
+        return (await img.toByteData(format: ui.ImageByteFormat.png))!.buffer.asUint8List();
+      });
+      debugTileProviderFactory = () => _MemTiles(png!);
+      addTearDown(() => debugTileProviderFactory = null);
+      screen(t, size: const Size(411, 923));
+      await _pumpWelcome(t, map: true);
+      for (var i = 0; i < 5; i++) {
+        await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+        await t.pump(const Duration(milliseconds: 200));
+      }
+      final tiles = [
+        for (final e in find.descendant(of: find.byKey(const Key('welcome-map')), matching: find.byType(RawImage)).evaluate())
+          if ((e.widget as RawImage).image != null) t.getRect(find.byWidget(e.widget)),
+      ];
+      expect(tiles, isNotEmpty);
+      final box = t.getRect(find.byType(WelcomeHero));
+      for (var x = box.left + 2; x < box.right; x += 40) {
+        for (var y = box.top + 2; y < box.bottom; y += 40) {
+          expect(tiles.any((r) => r.contains(Offset(x, y))), isTrue, reason: 'sem tile em ($x, $y)');
+        }
+      }
+      expect(hero(t).debugTilesFailed, isFalse);
+    });
+
+    test('rotas das motos saem do galpao', () {
+      for (final r in kHeroRoutes) {
+        expect(r.first, kHeroDepot);
+      }
     });
 
     test('ponto ao longo da rota', () {
@@ -801,4 +837,11 @@ void main() {
       });
     }
   });
+}
+
+class _MemTiles extends TileProvider {
+  _MemTiles(this.png);
+  final Uint8List png;
+  @override
+  ImageProvider getImage(TileCoordinates coordinates, TileLayer options) => MemoryImage(png);
 }

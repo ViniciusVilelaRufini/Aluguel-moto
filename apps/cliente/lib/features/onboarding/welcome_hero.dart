@@ -13,32 +13,40 @@ import '../../core/widgets.dart';
 const kHeroDepot = LatLng(-23.5654, -46.6847);
 const kHeroZoom = 15.0;
 
-/// Trechos reais de ruas de Pinheiros por onde as motos do hero andam.
+/// Trechos reais de ruas que **saem do galpao** (as motos do hero "saindo do
+/// galpao"): Rua dos Pinheiros para os dois lados e a travessa da Fradique
+/// Coutinho para os dois lados.
 const kHeroRoutes = <List<LatLng>>[
-  // Rua dos Pinheiros (passa pelo galpao), sentido Largo da Batata.
-  [LatLng(-23.5629, -46.6768), LatLng(-23.5642, -46.6806), LatLng(-23.5654, -46.6847), LatLng(-23.5664, -46.6885)],
-  // Rua Teodoro Sampaio, sentido Largo da Batata.
-  [LatLng(-23.5590, -46.6782), LatLng(-23.5610, -46.6830), LatLng(-23.5630, -46.6872), LatLng(-23.5648, -46.6905)],
-  // Av. Brig. Faria Lima, saindo do Largo da Batata.
-  [LatLng(-23.5668, -46.6935), LatLng(-23.5705, -46.6905), LatLng(-23.5740, -46.6880)],
-  // Rua Fradique Coutinho, cruzando a Rua dos Pinheiros.
-  [LatLng(-23.5600, -46.6890), LatLng(-23.5640, -46.6858), LatLng(-23.5680, -46.6826)],
+  // Rua dos Pinheiros, sentido Av. Rebouças.
+  [kHeroDepot, LatLng(-23.5642, -46.6806), LatLng(-23.5629, -46.6768)],
+  // Rua dos Pinheiros, sentido Largo da Batata.
+  [kHeroDepot, LatLng(-23.5664, -46.6885), LatLng(-23.5668, -46.6925)],
+  // Fradique Coutinho, sentido Vila Madalena.
+  [kHeroDepot, LatLng(-23.5640, -46.6858), LatLng(-23.5600, -46.6890)],
+  // Fradique Coutinho, sentido Faria Lima.
+  [kHeroDepot, LatLng(-23.5680, -46.6826), LatLng(-23.5702, -46.6808)],
 ];
 
 /// Velocidade (voltas por ciclo) e defasagem de cada moto.
 const _bikeSpeed = [1.0, 0.8, 1.25, 0.65];
 const _bikeOffset = [0.0, 0.35, 0.6, 0.15];
 
-/// Numeros da ilustracao (marketing, nao sao dados ao vivo; a camada visual fica
-/// fora da semantica).
-const kHeroNearby = 108, kHeroBattery = 92, kHeroRangeKm = 20, kHeroEtaMin = 2, kHeroDistanceM = 120;
-
-/// Tiles com erro antes de trocar o mapa pela ilustracao.
+/// Tiles com erro (sem nenhum carregado) antes de trocar o mapa pela ilustracao.
 const kHeroTileErrorLimit = 4;
 
+/// Folga do mapa alem da caixa do hero (cada lado): com a deriva, a borda do mapa
+/// nunca aparece.
+const kHeroMapBleed = 32.0;
+
+/// Folga das motos que andam ate as bordas do hero (nunca cortadas).
+const kHeroPinInset = 16.0;
+
+/// Fundo enquanto os tiles chegam: o cinza claro da base (sem a ilustracao por
+/// baixo, para um tile atrasado nao mostrar "costura").
+const kHeroMapLoading = Color(0xFFE8E8E6);
+
 /// Matriz da deriva da camera em [t] (0..1, ja com a curva): escala de 1,05 a 1,09
-/// em torno do centro e translacao de ate 6 x 4 px. Com escala >= 1,05 a borda do
-/// mapa nunca aparece (folga de 2,5% de cada lado > translacao).
+/// em torno do centro e translacao de ate 6 x 4 px.
 Matrix4 heroDriftMatrix(Size size, double t) {
   final scale = 1.05 + .04 * t;
   final c = size.center(Offset.zero);
@@ -48,38 +56,50 @@ Matrix4 heroDriftMatrix(Size size, double t) {
     ..translateByDouble(-c.dx, -c.dy, 0, 1);
 }
 
-/// Hero animado da boas-vindas: mapa real de Pinheiros (deriva lenta da camera),
-/// galpao com anel pulsando, motos andando por ruas reais, chips com entrada em
-/// cascata (bateria conta ate 92%) e a moto em destaque que sobe, cresce e flutua.
+/// Textos do hero (pt-BR do app).
+class WelcomeHeroTexts {
+  const WelcomeHeroTexts({
+    required this.pickup,
+    required this.plansTitle,
+    required this.plansText,
+    required this.insurance,
+    required this.batterySwap,
+  });
+  final String pickup, plansTitle, plansText, insurance, batterySwap;
+}
+
+/// Hero animado da boas-vindas (composicao da `login-referencia.png`):
+/// - linha 1: logo e "Retire no galpão";
+/// - linha 2: cartao "Planos diário, semanal e mensal" e a pilula "Seguro
+///   incluso | Troca de bateria";
+/// - no meio, o mapa real de Pinheiros centrado no galpao (anel pulsando) e
+///   motos saindo dele pelas ruas;
+/// - embaixo, a moto em destaque que sobe, cresce e flutua.
 ///
-/// A camada visual e decorativa (fora da semantica, sem toque); por cima, so dois
-/// nos de semantica nos retangulos reais do logo ("Volti", cabecalho) e da
-/// promocao. Reduced motion: tudo parado no estado final. App em segundo plano ou
-/// rota coberta: os controllers param. Tiles falhando: a ilustracao desenhada fica
-/// no lugar do mapa e [onMapFallback] avisa (a atribuicao some).
-///
-/// O layout e relativo a faixa livre acima da folha ([band]); [overlap] e o trecho
-/// que continua por baixo dos cantos arredondados da folha.
+/// So afirmacoes verdadeiras do servico (retirada no galpao, planos, seguro e
+/// troca de bateria), sem numeros inventados. A camada visual e decorativa; por
+/// cima, nos de semantica nos retangulos reais do logo ("Volti", cabecalho) e dos
+/// textos. Reduced motion: tudo parado. App em segundo plano ou rota coberta: os
+/// controllers param. Sem nenhum tile e com erros: a ilustracao entra e
+/// [onMapFallback] avisa (a atribuicao some).
 class WelcomeHero extends StatefulWidget {
   const WelcomeHero({
     super.key,
     required this.band,
     required this.topInset,
     required this.mapOn,
-    required this.showPromo,
-    required this.nearbyText,
-    required this.rangeText,
-    required this.etaText,
-    required this.distanceText,
-    required this.promoTitle,
-    required this.promoText,
+    required this.showPlans,
+    required this.texts,
     this.onMapFallback,
     this.overlap = 28,
   });
 
   final double band, topInset, overlap;
-  final bool mapOn, showPromo;
-  final String nearbyText, rangeText, etaText, distanceText, promoTitle, promoText;
+  final bool mapOn;
+
+  /// Cartao dos planos no hero (com texto grande ele vai para a folha).
+  final bool showPlans;
+  final WelcomeHeroTexts texts;
   final VoidCallback? onMapFallback;
 
   @override
@@ -87,8 +107,8 @@ class WelcomeHero extends StatefulWidget {
 }
 
 class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin, WidgetsBindingObserver {
-  /// Entrada: chips em cascata, contagem da bateria e a moto (uma vez).
-  late final AnimationController _entrance = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100));
+  /// Entrada: chips em cascata e a moto (uma vez).
+  late final AnimationController _entrance = AnimationController(vsync: this, duration: const Duration(milliseconds: 1000));
 
   /// Flutuacao da moto (3 s).
   late final AnimationController _float = AnimationController(vsync: this, duration: const Duration(seconds: 3));
@@ -97,45 +117,42 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
   late final AnimationController _drift = AnimationController(vsync: this, duration: const Duration(seconds: 10));
 
   /// Motos nas ruas.
-  late final AnimationController _bikes = AnimationController(vsync: this, duration: const Duration(seconds: 16));
+  late final AnimationController _bikes = AnimationController(vsync: this, duration: const Duration(seconds: 12));
 
   /// Anel do galpao.
   late final AnimationController _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1800));
 
   List<AnimationController> get _loops => [_float, _drift, _bikes, _pulse];
 
-  /// Cascata dos chips (80 ms entre eles), contagem da bateria e entrada da moto
-  /// (~600 ms, curva da tela do DS): todas sobre o mesmo ticker da entrada.
+  /// Cascata dos chips (80 ms entre eles) e entrada da moto (~600 ms, curva da
+  /// tela do DS): mesmo ticker da entrada.
   late final List<Animation<double>> _chipsIn = [
-    for (var i = 0; i < 5; i++)
+    for (var i = 0; i < 4; i++)
       CurvedAnimation(
         parent: _entrance,
-        curve: Interval(i * 80 / 1100, (i * 80 + 360) / 1100, curve: VoltiMotion.easeOut),
+        curve: Interval(i * 80 / 1000, (i * 80 + 360) / 1000, curve: VoltiMotion.easeOut),
       ),
   ];
-  late final Animation<double> _count = CurvedAnimation(
-    parent: _entrance,
-    curve: const Interval(.27, 1, curve: Curves.easeOutCubic),
-  );
   late final Animation<double> _bikeIn = CurvedAnimation(
     parent: _entrance,
-    curve: const Interval(.18, .73, curve: VoltiMotion.easeScreen),
+    curve: const Interval(.2, .8, curve: VoltiMotion.easeScreen),
   );
 
-  /// Retangulos do layout (pins e galpao fogem da promocao, dos chips e da moto).
+  /// Retangulos do layout (pins e galpao fogem dos chips e da moto).
   final _geometry = HeroGeometry();
+  final _map = MapController();
+  LatLng? _mapCenter;
 
   AppLifecycleState? _lifecycle = WidgetsBinding.instance.lifecycleState;
   bool _tickerEnabled = true;
   bool _reduced = false;
   int _tileErrors = 0;
+  int _tilesLoaded = 0;
   bool _tilesFailed = false;
 
-  /// Algum controller rodando (testes de pausa).
   @visibleForTesting
   bool get debugAnimating => [_entrance, ..._loops].any((c) => c.isAnimating);
 
-  /// O mapa real deu lugar a ilustracao desenhada.
   @visibleForTesting
   bool get debugTilesFailed => _tilesFailed;
 
@@ -145,7 +162,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
   /// Rota [i] projetada e com a deriva atual aplicada, nas coordenadas do hero.
   @visibleForTesting
   List<Offset> debugRouteOnScreen(int i, Size size) {
-    final cam = _cameraFor(size, _depotTarget(size));
+    final cam = _cameraFor(size);
     final m = heroDriftMatrix(size, Curves.easeInOut.transform(_drift.value));
     return [for (final p in kHeroRoutes[i]) MatrixUtils.transformPoint(m, cam.latLngToScreenOffset(p))];
   }
@@ -154,6 +171,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _geometry.addListener(_recenterMap);
   }
 
   @override
@@ -181,7 +199,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
       _entrance.value = 1;
       _float.value = 0;
       _drift.value = 0;
-      _bikes.value = .37;
+      _bikes.value = .45;
       _pulse.value = 0;
       return;
     }
@@ -198,10 +216,11 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
     if (!_pulse.isAnimating) _pulse.repeat();
   }
 
-  /// Um tile falhou; depois de [kHeroTileErrorLimit] o mapa sai e fica a ilustracao.
+  /// Um tile falhou. Sem nenhum tile carregado e com [kHeroTileErrorLimit] erros
+  /// (o mapa ja tenta de novo sozinho), o mapa sai e fica a ilustracao.
   void reportTileError() {
     _tileErrors++;
-    if (_tilesFailed || _tileErrors < kHeroTileErrorLimit) return;
+    if (_tilesFailed || _tilesLoaded > 0 || _tileErrors < kHeroTileErrorLimit) return;
     Future.microtask(() {
       if (!mounted) return;
       setState(() => _tilesFailed = true);
@@ -209,9 +228,27 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
     });
   }
 
+  void _tileLoaded() => _tilesLoaded++;
+
+  /// A area livre mudou (folha medida, rotacao): move a camera do mapa ja criado
+  /// (o FlutterMap ignora um `initialCenter` novo).
+  void _recenterMap() {
+    final size = _lastSize;
+    if (size == null || _mapCenter == null) return;
+    final c = _cameraFor(size).center;
+    if (c == _mapCenter) return;
+    _mapCenter = c;
+    try {
+      _map.move(c, kHeroZoom);
+    } catch (_) {
+      // mapa ainda nao montado: o centro inicial ja e o novo
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _geometry.removeListener(_recenterMap);
     _geometry.dispose();
     _entrance.dispose();
     for (final c in _loops) {
@@ -234,19 +271,24 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
     );
   }
 
-  /// Onde o galpao aparece: centro da area livre do mapa (entre os chips e a moto).
-  Offset _depotTarget(Size size) => _geometry.zone?.center ?? Offset(size.width * .5, widget.band * .4);
+  Size? _lastSize;
 
-  /// Camera com o galpao em [target].
-  MapCamera _cameraFor(Size size, Offset target) {
+  /// Onde o galpao aparece: centro da area livre do mapa (entre os chips e a moto).
+  Offset _depotTarget(Size size) => _geometry.zone?.center ?? Offset(size.width * .5, widget.band * .45);
+
+  /// Camera (nas coordenadas do hero) com o galpao em [_depotTarget]. O mapa e
+  /// maior que o hero ([kHeroMapBleed]) mas tem o mesmo centro, entao a projecao e
+  /// a mesma.
+  MapCamera _cameraFor(Size size) {
+    final target = _depotTarget(size);
     final cam0 = MapCamera(crs: const Epsg3857(), center: kHeroDepot, zoom: kHeroZoom, rotation: 0, nonRotatedSize: size);
     final mid = size.center(Offset.zero);
     final center = cam0.screenOffsetToLatLng(mid + (mid - target));
     return MapCamera(crs: const Epsg3857(), center: center, zoom: kHeroZoom, rotation: 0, nonRotatedSize: size);
   }
 
-  /// Largura natural do cartao da promocao (o layout decide se precisa estreitar).
-  double _promoNaturalWidth() {
+  /// Largura natural do cartao dos planos (o layout decide se cabe ao lado da pilula).
+  double _plansNaturalWidth() {
     double measure(String text, TextStyle style) {
       final tp = TextPainter(
         text: TextSpan(text: text, style: style),
@@ -258,7 +300,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
       return w;
     }
 
-    final text = math.max(measure(widget.promoTitle, VoltiTypography.bodyStrong), measure(widget.promoText, VoltiTypography.caption));
+    final text = math.max(measure(widget.texts.plansTitle, VoltiTypography.bodyStrong), measure(widget.texts.plansText, VoltiTypography.caption));
     return 10 + 36 + 10 + text + 16 + 1;
   }
 
@@ -266,45 +308,56 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
   Widget build(BuildContext context) {
     final mapVisible = widget.mapOn && !_tilesFailed;
     final height = widget.band + widget.overlap;
+    final texts = widget.texts;
 
     return LayoutBuilder(
       builder: (context, c) {
         final size = Size(c.maxWidth, height);
+        _lastSize = size;
 
-        // Mapa + galpao: um RepaintBoundary estatico movido pela matriz da deriva (os
+        // Mapa + galpao: RepaintBoundary estatico movido pela matriz da deriva (os
         // tiles nao sao reconstruidos a cada quadro).
         final world = ListenableBuilder(
           listenable: _geometry,
           builder: (context, _) {
+            final ready = _geometry.zone != null;
+            if (ready && _mapCenter == null) _mapCenter = _cameraFor(size).center;
             final target = _depotTarget(size);
-            final cam = _cameraFor(size, target);
             return Stack(
-              clipBehavior: Clip.hardEdge,
+              clipBehavior: Clip.none,
               children: [
-                const Positioned.fill(
-                  child: CustomPaint(key: Key('welcome-map-fallback'), painter: HeroFallbackPainter()),
-                ),
-                // So depois do primeiro layout (a area livre define o centro): os tiles
-                // carregam uma vez so.
-                if (mapVisible && _geometry.zone != null)
-                  Positioned.fill(
+                if (!mapVisible)
+                  const Positioned.fill(
+                    child: CustomPaint(key: Key('welcome-map-fallback'), painter: HeroFallbackPainter()),
+                  ),
+                // Criado uma vez, depois do primeiro layout (a area livre define o
+                // centro); maior que o hero para a deriva nunca mostrar a borda.
+                if (mapVisible && ready)
+                  Positioned(
+                    left: -kHeroMapBleed,
+                    top: -kHeroMapBleed,
+                    right: -kHeroMapBleed,
+                    bottom: -kHeroMapBleed,
                     child: VoltiMap(
                       key: const Key('welcome-map'),
-                      center: cam.center,
+                      controller: _map,
+                      center: _mapCenter!,
                       zoom: kHeroZoom,
                       interactive: false,
                       showAttribution: false,
-                      backgroundColor: Colors.transparent,
+                      backgroundColor: kHeroMapLoading,
                       onTileError: reportTileError,
+                      onTileLoaded: _tileLoaded,
                     ),
                   ),
-                Positioned(
-                  left: target.dx - 40,
-                  top: target.dy - 40,
-                  width: 80,
-                  height: 80,
-                  child: _DepotPulse(pulse: _pulse),
-                ),
+                if (ready)
+                  Positioned(
+                    left: target.dx - 40,
+                    top: target.dy - 40,
+                    width: 80,
+                    height: 80,
+                    child: _DepotPulse(pulse: _pulse),
+                  ),
               ],
             );
           },
@@ -315,6 +368,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
           child: Stack(
             clipBehavior: Clip.hardEdge,
             children: [
+              Positioned.fill(child: ColoredBox(color: mapVisible ? kHeroMapLoading : VoltiColors.mapLand)),
               Positioned.fill(
                 child: RepaintBoundary(
                   child: AnimatedBuilder(
@@ -324,8 +378,8 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                   ),
                 ),
               ),
-              // Motos nas ruas: mesma matriz da deriva (ficam sobre as ruas), recortadas
-              // 16 px acima da folha (a atribuicao fica na borda dela).
+              // Motos saindo do galpao: mesma matriz da deriva (ficam sobre as ruas),
+              // recortadas 16 px acima da folha.
               Positioned(
                 key: const Key('hero-pins'),
                 top: 0,
@@ -338,7 +392,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                       animation: Listenable.merge([_bikes, _drift, _geometry]),
                       builder: (context, _) {
                         if (_geometry.zone == null) return const SizedBox.shrink();
-                        final cam = _cameraFor(size, _depotTarget(size));
+                        final cam = _cameraFor(size);
                         final m = heroDriftMatrix(size, Curves.easeInOut.transform(_drift.value));
                         return Transform(
                           transform: m,
@@ -346,7 +400,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                             clipBehavior: Clip.none,
                             children: [
                               for (var i = 0; i < kHeroRoutes.length; i++)
-                                _movingPin(i, [for (final p in kHeroRoutes[i]) cam.latLngToScreenOffset(p)], m),
+                                _movingPin(i, [for (final p in kHeroRoutes[i]) cam.latLngToScreenOffset(p)], m, size),
                             ],
                           ),
                         );
@@ -360,7 +414,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                 top: 0,
                 left: 0,
                 right: 0,
-                height: widget.topInset + 120,
+                height: widget.topInset + 110,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -377,7 +431,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                 right: 0,
                 height: widget.band,
                 child: CustomMultiChildLayout(
-                  delegate: HeroLayoutDelegate(topInset: widget.topInset, geometry: _geometry, promoNaturalWidth: _promoNaturalWidth()),
+                  delegate: HeroLayoutDelegate(topInset: widget.topInset, geometry: _geometry, plansNaturalWidth: _plansNaturalWidth()),
                   children: [
                     LayoutId(
                       id: HeroSlot.bike,
@@ -391,41 +445,18 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                     ),
                     LayoutId(id: HeroSlot.logo, child: _chip(0, const _Logo())),
                     LayoutId(
-                      id: HeroSlot.nearby,
-                      child: _chip(1, _NearbyChip(text: widget.nearbyText)),
+                      id: HeroSlot.pickup,
+                      child: _chip(1, _PickupChip(text: texts.pickup)),
                     ),
-                    if (widget.showPromo)
+                    if (widget.showPlans)
                       LayoutId(
-                        id: HeroSlot.promo,
-                        child: _chip(2, _PromoCard(title: widget.promoTitle, text: widget.promoText)),
+                        id: HeroSlot.plans,
+                        child: _chip(2, HeroPlansCard(title: texts.plansTitle, text: texts.plansText)),
                       ),
                     LayoutId(
-                      id: HeroSlot.battery,
-                      child: _chip(
-                        3,
-                        AnimatedBuilder(
-                          animation: _count,
-                          builder: (context, _) => _DarkChip(
-                            key: const Key('hero-battery'),
-                            parts: [(LucideIcons.zap, '${(kHeroBattery * _count.value).round()}%'), (null, widget.rangeText)],
-                          ),
-                        ),
-                      ),
-                    ),
-                    LayoutId(
-                      id: HeroSlot.time,
-                      child: ListenableBuilder(
-                        listenable: _geometry,
-                        // Escondido sem perder o tamanho (o layout decide com a medida real).
-                        builder: (context, child) => Visibility.maintain(visible: _geometry.timeVisible, child: child!),
-                        child: _chip(
-                          4,
-                          _DarkChip(
-                            key: const Key('hero-time'),
-                            parts: [(LucideIcons.clock, widget.etaText), (LucideIcons.moveHorizontal, widget.distanceText)],
-                          ),
-                        ),
-                      ),
+                      id: HeroSlot.perks,
+                      // Tela estreita: o cartao dos planos ocupa a linha e a pilula desce, em linha.
+                      child: _chip(3, _PerksPill(insurance: texts.insurance, swap: texts.batterySwap, horizontal: c.maxWidth < 392)),
                     ),
                   ],
                 ),
@@ -445,28 +476,22 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                   child: IgnorePointer(child: MediaQuery.withNoTextScaling(child: visual)),
                 ),
               ),
-              // Semantica real so do logo e da promocao, nos retangulos do layout.
+              // Semantica real (afirmacoes do servico) nos retangulos do layout.
               ListenableBuilder(
                 listenable: _geometry,
                 builder: (context, _) {
-                  final logo = _geometry.logo, promo = _geometry.promo;
+                  final r = _geometry.rects;
+                  Widget node(HeroSlot slot, String key, String label, {bool header = false}) => Positioned.fromRect(
+                    rect: r[slot]!,
+                    child: Semantics(key: Key(key), container: true, header: header, label: label, child: const SizedBox.expand()),
+                  );
                   return Stack(
                     children: [
-                      if (logo != null)
-                        Positioned.fromRect(
-                          rect: logo,
-                          child: Semantics(key: const Key('welcome-logo-semantics'), header: true, label: 'Volti', child: const SizedBox.expand()),
-                        ),
-                      if (promo != null && widget.showPromo)
-                        Positioned.fromRect(
-                          rect: promo,
-                          child: Semantics(
-                            key: const Key('welcome-promo-semantics'),
-                            container: true,
-                            label: '${widget.promoTitle}, ${widget.promoText}',
-                            child: const SizedBox.expand(),
-                          ),
-                        ),
+                      if (r[HeroSlot.logo] != null) node(HeroSlot.logo, 'welcome-logo-semantics', 'Volti', header: true),
+                      if (r[HeroSlot.pickup] != null) node(HeroSlot.pickup, 'welcome-pickup-semantics', texts.pickup),
+                      if (widget.showPlans && r[HeroSlot.plans] != null)
+                        node(HeroSlot.plans, 'welcome-plans-semantics', '${texts.plansTitle}, ${texts.plansText}'),
+                      if (r[HeroSlot.perks] != null) node(HeroSlot.perks, 'welcome-perks-semantics', '${texts.insurance}, ${texts.batterySwap}'),
                     ],
                   );
                 },
@@ -478,14 +503,14 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
     );
   }
 
-  /// Moto [i] na posicao do ciclo atual ao longo da rota projetada, com fade nas
-  /// pontas. Some (com fade curto) onde ficaria atras da promocao, de um chip ou da
-  /// moto; o teste de obstaculo usa a posicao ja com a deriva ([m]).
-  Widget _movingPin(int i, List<Offset> route, Matrix4 m) {
+  /// Moto [i] na posicao do ciclo atual ao longo da rota (saindo do galpao), com
+  /// fade nas pontas. Some (fade curto) onde ficaria atras de um chip ou da moto,
+  /// ou a menos de [kHeroPinInset] das bordas; o teste usa a posicao com a deriva.
+  Widget _movingPin(int i, List<Offset> route, Matrix4 m, Size size) {
     final t = (_bikes.value * _bikeSpeed[i] + _bikeOffset[i]) % 1.0;
     final p = pointAlong(route, t);
-    final fade = t < .12 ? t / .12 : (t > .88 ? (1 - t) / .12 : 1.0);
-    final clear = _geometry.isClear(MatrixUtils.transformPoint(m, p));
+    final fade = t < .15 ? t / .15 : (t > .85 ? (1 - t) / .15 : 1.0);
+    final clear = _geometry.isClear(MatrixUtils.transformPoint(m, p), Size(size.width, widget.band - 16));
     return Positioned(
       key: Key('hero-pin-$i'),
       left: p.dx - 15,
@@ -531,45 +556,35 @@ double distanceToPolyline(Offset p, List<Offset> pts) {
   return best;
 }
 
-enum HeroSlot { logo, nearby, promo, battery, time, bike }
+enum HeroSlot { logo, pickup, plans, perks, bike }
 
-/// Geometria do hero calculada no layout: retangulos do logo, dos chips e da moto,
-/// a area livre do mapa e se o "2 min | 120 m" cabe. Os pins e o galpao a usam para
-/// nunca ficar atras de nada; a semantica do logo e da promocao usa os retangulos.
-/// Avisa depois do quadro (nunca durante o layout).
+/// Geometria do hero calculada no layout: retangulos de cada slot, a area livre do
+/// mapa e os obstaculos (chips e moto). Os pins e o galpao a usam para nunca ficar
+/// atras de nada; a semantica usa os retangulos. Avisa depois do quadro.
 class HeroGeometry extends ChangeNotifier {
-  Rect? zone, bike, promo, logo;
-  bool timeVisible = true;
-  List<Rect> obstacles = const [];
+  Rect? zone;
 
-  void update({
-    required Rect zone,
-    required Rect bike,
-    required Rect logo,
-    required Rect? promo,
-    required bool timeVisible,
-    required List<Rect> obstacles,
-  }) {
-    if (zone == this.zone &&
-        bike == this.bike &&
-        logo == this.logo &&
-        promo == this.promo &&
-        timeVisible == this.timeVisible &&
-        listEquals(obstacles, this.obstacles)) {
-      return;
-    }
+  /// Fundo dos chips: as motos so andam abaixo (na faixa do mapa).
+  double mapTop = 0;
+  Map<HeroSlot, Rect> rects = const {};
+  List<Rect> get obstacles => rects.values.toList();
+  Rect? get bike => rects[HeroSlot.bike];
+
+  void update({required Rect zone, required double mapTop, required Map<HeroSlot, Rect> rects}) {
+    if (zone == this.zone && mapTop == this.mapTop && mapEquals(rects, this.rects)) return;
     this.zone = zone;
-    this.bike = bike;
-    this.logo = logo;
-    this.promo = promo;
-    this.timeVisible = timeVisible;
-    this.obstacles = obstacles;
+    this.mapTop = mapTop;
+    this.rects = rects;
     WidgetsBinding.instance.addPostFrameCallback((_) => notifyListeners());
   }
 
-  /// O pin centrado em [c] (disco de 30 px e barra) nao cruza nenhum obstaculo.
-  bool isClear(Offset c, {double margin = 6}) {
-    final r = Rect.fromLTWH(c.dx - 15, c.dy - 15, 30, 37).inflate(margin);
+  /// O pin centrado em [c] (disco de 30 px e barra) nao cruza nenhum obstaculo e
+  /// fica a [kHeroPinInset] das bordas de [area].
+  bool isClear(Offset c, Size area, {double margin = 6}) {
+    final pin = Rect.fromLTWH(c.dx - 15, c.dy - 15, 30, 37);
+    final inside = Rect.fromLTRB(kHeroPinInset, math.max(kHeroPinInset, mapTop + 4), area.width - kHeroPinInset, area.height - kHeroPinInset);
+    if (pin.left < inside.left || pin.top < inside.top || pin.right > inside.right || pin.bottom > inside.bottom) return false;
+    final r = pin.inflate(margin);
     return !obstacles.any(r.overlaps);
   }
 }
@@ -577,154 +592,76 @@ class HeroGeometry extends ChangeNotifier {
 /// Posiciona logo, chips e a moto **relativos a faixa livre** (o tamanho do
 /// layout = faixa acima da folha). Nenhum chip e pintado sobre a moto.
 ///
-/// Linha 1: logo e "motos perto". Linha 2: a promocao (e a bateria ao lado, se
-/// couber). Depois a bateria (se nao coube) e "2 min | 120 m" em linhas proprias,
-/// uma area livre de mapa (o galpao vai no centro dela) e a moto centrada embaixo.
-/// Preferencia, ate a moto chegar a ~70% da largura: 1) tudo; 2) sem o
-/// "2 min | 120 m"; 3) sem ele e com a bateria ao lado da promocao (estreitada).
-/// Se nem assim couber 70%, fica a opcao 3 e a moto ocupa o que sobra.
+/// Linha 1: logo e "Retire no galpão". Linha 2: cartao dos planos e, a direita, a
+/// pilula "Seguro incluso | Troca de bateria" (se o cartao couber com o titulo em
+/// ate duas linhas; senao a pilula desce para a linha seguinte). Depois, a area
+/// livre do mapa (o galpao no centro) e a moto centrada embaixo com o que sobra
+/// (ate 70% da largura).
 class HeroLayoutDelegate extends MultiChildLayoutDelegate {
-  HeroLayoutDelegate({required this.topInset, required this.geometry, required this.promoNaturalWidth});
-  final double topInset, promoNaturalWidth;
+  HeroLayoutDelegate({required this.topInset, required this.geometry, required this.plansNaturalWidth});
+  final double topInset, plansNaturalWidth;
   final HeroGeometry geometry;
 
-  static const side = 16.0, gap = 10.0, bottomGap = 6.0, minZone = 56.0;
-
-  /// Altura estimada da promocao antes do layout (uma linha / titulo quebrado).
-  static const _promoH = 57.0, _promoWrappedH = 78.0;
+  static const side = 16.0, gap = 10.0, bottomGap = 6.0, minZone = 80.0, minCard = 196.0;
 
   @override
   void performLayout(Size size) {
     final w = size.width;
     final loose = BoxConstraints.loose(Size(w - 2 * side, size.height));
+    final rects = <HeroSlot, Rect>{};
+    Rect place(HeroSlot id, Size s, Offset o) {
+      positionChild(id, o);
+      return rects[id] = o & s;
+    }
+
     final logo = layoutChild(HeroSlot.logo, loose);
-    final nearby = layoutChild(HeroSlot.nearby, loose);
-    final battery = layoutChild(HeroSlot.battery, loose);
-    final time = layoutChild(HeroSlot.time, loose);
-    final hasPromo = hasChild(HeroSlot.promo);
-
+    final pickup = layoutChild(HeroSlot.pickup, loose);
+    final perks = layoutChild(HeroSlot.perks, loose);
     final y1 = topInset + 10;
-    final row1 = math.max(logo.height, nearby.height);
-    final logoRect = Offset(side + 4, y1) & logo;
-    positionChild(HeroSlot.logo, logoRect.topLeft);
-    final nearbyRect = Offset(w - side - nearby.width, y1 + (row1 - nearby.height) / 2) & nearby;
-    positionChild(HeroSlot.nearby, nearbyRect.topLeft);
-    final y2 = y1 + row1 + 14;
+    final row1 = math.max(logo.height, pickup.height);
+    place(HeroSlot.logo, logo, Offset(side + 4, y1 + (row1 - logo.height) / 2));
+    place(HeroSlot.pickup, pickup, Offset(w - side - pickup.width, y1 + (row1 - pickup.height) / 2));
+    var y = y1 + row1 + 14;
 
-    final promoMaxNatural = math.min(w * .7, w - 2 * side);
-    final promoNatural = math.min(promoNaturalWidth, promoMaxNatural);
-    final batteryBesideNatural = hasPromo && side + promoNatural + 12 + battery.width + side <= w;
-    final promoNarrowMax = w - 2 * side - 12 - battery.width;
-
-    double bikeWidthFor(double chipsBottom) =>
-        math.max(0.0, math.min(w * .7, (size.height - chipsBottom - minZone - bottomGap) / _HeroBike.heightPerWidth));
-
-    // Fundo dos chips (estimado) de cada opcao.
-    double estimate({required bool showTime, required bool narrow}) {
-      var y = y2;
-      final beside = batteryBesideNatural || narrow;
-      if (hasPromo) {
-        y += (narrow && promoNaturalWidth > promoNarrowMax ? _promoWrappedH : _promoH);
-        if (beside) y = math.max(y, y2 + battery.height);
-      }
-      final rowsAfter = <double>[];
-      if (!hasPromo || !beside) {
-        // Bateria (e o tempo ao lado, se couber) numa linha propria.
-        final pairFits = showTime && side + time.width + 12 + battery.width + side <= w;
-        rowsAfter.add(pairFits ? math.max(battery.height, time.height) : battery.height);
-        if (showTime && !pairFits) rowsAfter.add(time.height);
-      } else if (showTime) {
-        rowsAfter.add(time.height);
-      }
-      for (final h in rowsAfter) {
-        y += (y == y2 ? 0 : gap) + h;
-      }
-      return y;
-    }
-
-    // Estreitar a promocao (bateria ao lado) so se, mesmo sem o "2 min", a moto nao
-    // chegaria a 70% com a bateria numa linha propria (estimativa: a promocao ainda
-    // nao foi medida e so pode ser medida uma vez).
-    final narrow = hasPromo && !batteryBesideNatural && bikeWidthFor(estimate(showTime: false, narrow: false)) < w * .7 - .5;
-
-    // Layout real.
-    final rects = <Rect>[logoRect, nearbyRect];
-    var y = y2;
-    Rect? promoRect;
-    final beside = hasPromo && (batteryBesideNatural || narrow);
-    if (hasPromo) {
-      final promo = layoutChild(HeroSlot.promo, BoxConstraints.loose(Size(beside && narrow ? promoNarrowMax : promoMaxNatural, size.height)));
-      promoRect = Offset(side, y2) & promo;
-      positionChild(HeroSlot.promo, promoRect.topLeft);
-      rects.add(promoRect);
-      y = promoRect.bottom;
+    if (hasChild(HeroSlot.plans)) {
+      final besideMax = w - 2 * side - 12 - perks.width;
+      final beside = besideMax >= math.min(minCard, plansNaturalWidth);
+      final plans = layoutChild(HeroSlot.plans, BoxConstraints.loose(Size(beside ? besideMax : w - 2 * side, size.height)));
+      final p = place(HeroSlot.plans, plans, Offset(side, y));
       if (beside) {
-        final r = Offset(w - side - battery.width, y2 + math.max(0.0, (promo.height - battery.height) / 2)) & battery;
-        positionChild(HeroSlot.battery, r.topLeft);
-        rects.add(r);
-        y = math.max(y, r.bottom);
+        final row2 = math.max(plans.height, perks.height);
+        place(HeroSlot.perks, perks, Offset(w - side - perks.width, y + (row2 - perks.height) / 2));
+        y += row2;
+      } else {
+        final q = place(HeroSlot.perks, perks, Offset(w - side - perks.width, p.bottom + gap));
+        y = q.bottom;
       }
-    }
-    // Bateria (se nao foi ao lado da promocao) e o "2 min" em linhas proprias; o
-    // "2 min" so aparece se a moto ainda chegar a 70% com ele (medida exata).
-    final rowTop = hasPromo ? y + gap : y2;
-    Rect? batteryRow;
-    var yNoTime = y;
-    if (!beside) {
-      batteryRow = Offset(w - side - battery.width, rowTop) & battery;
-      yNoTime = batteryRow.bottom;
-    }
-    Rect timeRectFor() {
-      if (!beside && side + time.width + 12 + battery.width + side <= w) {
-        return Offset(side, rowTop + (battery.height - time.height) / 2) & time;
-      }
-      return Offset(side, yNoTime + gap) & time;
-    }
-
-    final timeCandidate = timeRectFor();
-    final yWithTime = math.max(yNoTime, timeCandidate.bottom);
-    final showTime = bikeWidthFor(yWithTime) >= w * .7 - .5;
-    if (batteryRow != null) {
-      positionChild(HeroSlot.battery, batteryRow.topLeft);
-      rects.add(batteryRow);
-    }
-    if (showTime) {
-      positionChild(HeroSlot.time, timeCandidate.topLeft);
-      rects.add(timeCandidate);
-      y = yWithTime;
     } else {
-      // Escondido (invisivel e fora da faixa).
-      positionChild(HeroSlot.time, Offset(-time.width - 100, 0));
-      y = yNoTime;
+      y = place(HeroSlot.perks, perks, Offset(w - side - perks.width, y)).bottom;
     }
 
     // Moto: ate 70% com a area livre do mapa inteira; em telas baixas a area encolhe
     // (ate 24 px) antes da moto ficar menor que 45% da largura.
     final free = size.height - y - bottomGap;
-    final hpw = _HeroBike.heightPerWidth;
+    const hpw = _HeroBike.heightPerWidth;
     final zoneH = free >= w * .7 * hpw + minZone ? minZone : (free - w * .45 * hpw).clamp(24.0, minZone);
     final bikeW = math.max(0.0, math.min(w * .7, (free - zoneH) / hpw));
-    final bike = layoutChild(HeroSlot.bike, BoxConstraints.tight(Size(bikeW, bikeW * _HeroBike.heightPerWidth)));
-    final bikeRect = Offset((w - bike.width) / 2, size.height - bottomGap - bike.height) & bike;
-    positionChild(HeroSlot.bike, bikeRect.topLeft);
+    final bike = layoutChild(HeroSlot.bike, BoxConstraints.tight(Size(bikeW, bikeW * hpw)));
+    final bikeRect = place(HeroSlot.bike, bike, Offset((w - bike.width) / 2, size.height - bottomGap - bike.height));
 
-    // Area livre do mapa (o galpao vai no centro): a faixa entre os chips e a moto
-
-    // quando ela tem altura; em telas baixas, o lado esquerdo da moto, abaixo dos chips.
-
+    // Area livre do mapa: a faixa entre os chips e a moto quando ela tem altura;
+    // em telas baixas, o lado esquerdo da moto, abaixo dos chips.
     final strip = Rect.fromLTRB(side, y + 6, w - side, bikeRect.top - 6);
-
     final besideBike = Rect.fromLTRB(side, y + 6, bikeRect.left - 8, size.height - 16);
-
-    final zone = strip.height >= 44 || besideBike.width < 44
-        ? Rect.fromLTRB(strip.left, strip.top, strip.right, math.max(strip.top + 40, strip.bottom))
+    final zone = strip.height >= 48 || besideBike.width < 48
+        ? Rect.fromLTRB(strip.left, strip.top, strip.right, math.max(strip.top + 44, strip.bottom))
         : besideBike;
-    geometry.update(zone: zone, bike: bikeRect, logo: logoRect, promo: promoRect, timeVisible: showTime, obstacles: [...rects, bikeRect]);
+    geometry.update(zone: zone, mapTop: y, rects: rects);
   }
 
   @override
   bool shouldRelayout(HeroLayoutDelegate oldDelegate) =>
-      oldDelegate.topInset != topInset || oldDelegate.geometry != geometry || oldDelegate.promoNaturalWidth != promoNaturalWidth;
+      oldDelegate.topInset != topInset || oldDelegate.geometry != geometry || oldDelegate.plansNaturalWidth != plansNaturalWidth;
 }
 
 /// Moto em destaque (asset recortado, 737x713) com a sombra eliptica sob as rodas.
@@ -805,19 +742,14 @@ class _HeroBike extends StatelessWidget {
   }
 }
 
-/// Fundo do mapa sem rede (ou com tiles falhando): terreno, um parque e ruas
-/// diagonais no tom do DS. Nunca uma tela cinza.
+/// Fundo sem mapa (sem rede ou tiles falhando): terreno e ruas diagonais no tom
+/// do DS. Nunca uma tela cinza.
 class HeroFallbackPainter extends CustomPainter {
   const HeroFallbackPainter();
 
   @override
   void paint(Canvas canvas, Size size) {
     canvas.drawRect(Offset.zero & size, Paint()..color = VoltiColors.mapLand);
-    final park = Paint()..color = VoltiColors.mapPark.withValues(alpha: .7);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Rect.fromLTWH(size.width * .38, size.height * .16, size.width * .2, size.height * .1), const Radius.circular(6)),
-      park,
-    );
     final minor = Paint()
       ..color = VoltiColors.mapRoad
       ..strokeWidth = 5;
@@ -900,14 +832,14 @@ class _Logo extends StatelessWidget {
 
 const _chipText = TextStyle(fontFamily: VoltiTypography.fontSans, fontWeight: VoltiTypography.fwBold, fontSize: 13, height: 1.2);
 
-/// "• 108 motos perto": pilula branca com ponto verde.
-class _NearbyChip extends StatelessWidget {
-  const _NearbyChip({required this.text});
+/// "• 🏭 Retire no galpão": pilula branca com o ponto verde e o icone do galpao.
+class _PickupChip extends StatelessWidget {
+  const _PickupChip({required this.text});
   final String text;
 
   @override
   Widget build(BuildContext context) => Container(
-    key: const Key('hero-nearby'),
+    key: const Key('hero-pickup'),
     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
     decoration: const BoxDecoration(color: VoltiColors.white, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
     child: Row(
@@ -919,6 +851,8 @@ class _NearbyChip extends StatelessWidget {
           decoration: const BoxDecoration(color: VoltiColors.brand, shape: BoxShape.circle),
         ),
         const SizedBox(width: 6),
+        const Icon(LucideIcons.warehouse, size: 14, color: VoltiColors.brandAction),
+        const SizedBox(width: 6),
         Text(
           text,
           style: _chipText.copyWith(fontWeight: VoltiTypography.fwSemibold, color: VoltiColors.ink900),
@@ -928,14 +862,15 @@ class _NearbyChip extends StatelessWidget {
   );
 }
 
-/// Cartao branco "🎁 1ª corrida grátis · até 15 min" (so com a promocao ligada).
-class _PromoCard extends StatelessWidget {
-  const _PromoCard({required this.title, required this.text});
+/// Cartao branco "📅 Planos diário, semanal e mensal · ou por minuto e hora". Usado
+/// no hero e, com texto grande, na folha (escala com o texto).
+class HeroPlansCard extends StatelessWidget {
+  const HeroPlansCard({super.key, required this.title, required this.text});
   final String title, text;
 
   @override
   Widget build(BuildContext context) => Container(
-    key: const Key('welcome-promo'),
+    key: const Key('welcome-plans'),
     padding: const EdgeInsets.fromLTRB(10, 10, 16, 10),
     decoration: const BoxDecoration(color: VoltiColors.white, borderRadius: VoltiRadii.rMd, boxShadow: VoltiShadows.shadow2),
     child: Row(
@@ -944,8 +879,8 @@ class _PromoCard extends StatelessWidget {
         Container(
           width: 36,
           height: 36,
-          decoration: const BoxDecoration(color: VoltiColors.coral50, borderRadius: VoltiRadii.rSm),
-          child: const Icon(LucideIcons.gift, size: 18, color: VoltiColors.coral600),
+          decoration: const BoxDecoration(color: VoltiColors.brandSoft, borderRadius: VoltiRadii.rSm),
+          child: const Icon(LucideIcons.calendarDays, size: 18, color: VoltiColors.brandAction),
         ),
         const SizedBox(width: 10),
         Flexible(
@@ -963,39 +898,65 @@ class _PromoCard extends StatelessWidget {
   );
 }
 
-/// Pilula escura com partes separadas por um traco: "⚡ 92% | ~20 km".
-class _DarkChip extends StatelessWidget {
-  const _DarkChip({super.key, required this.parts});
-  final List<(IconData?, String)> parts;
+/// Pilula escura em duas partes empilhadas: "🛡 Seguro incluso" e "🔋 Troca de bateria".
+class _PerksPill extends StatelessWidget {
+  const _PerksPill({required this.insurance, required this.swap, this.horizontal = false});
+  final String insurance, swap;
+
+  /// As duas partes lado a lado (telas estreitas, linha propria).
+  final bool horizontal;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
-    decoration: const BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow2),
-    child: Row(
+  Widget build(BuildContext context) {
+    Widget part(IconData icon, String text) => Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (var i = 0; i < parts.length; i++) ...[
-          if (i > 0) Container(width: 1, height: 18, margin: const EdgeInsets.symmetric(horizontal: 10), color: VoltiColors.ink600),
-          if (parts[i].$1 != null) ...[
-            Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: VoltiColors.green900,
-                shape: BoxShape.circle,
-                border: Border.all(color: VoltiColors.green700),
-              ),
-              child: Icon(parts[i].$1, size: 14, color: VoltiColors.green400),
-            ),
-            const SizedBox(width: 8),
-          ] else if (i == 0)
-            const SizedBox(width: 8),
-          Text(parts[i].$2, style: _chipText.copyWith(color: VoltiColors.white)),
-        ],
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: VoltiColors.green900,
+            shape: BoxShape.circle,
+            border: Border.all(color: VoltiColors.green700),
+          ),
+          child: Icon(icon, size: 13, color: VoltiColors.green400),
+        ),
+        const SizedBox(width: 8),
+        Text(text, style: _chipText.copyWith(color: VoltiColors.white)),
       ],
-    ),
-  );
+    );
+    if (horizontal) {
+      return Container(
+        key: const Key('hero-perks'),
+        padding: const EdgeInsets.fromLTRB(6, 6, 14, 6),
+        decoration: const BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            part(LucideIcons.shieldCheck, insurance),
+            Container(width: 1, height: 18, margin: const EdgeInsets.symmetric(horizontal: 10), color: VoltiColors.ink600),
+            part(LucideIcons.batteryCharging, swap),
+          ],
+        ),
+      );
+    }
+    return Container(
+      key: const Key('hero-perks'),
+      padding: const EdgeInsets.fromLTRB(8, 7, 14, 7),
+      decoration: const BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
+      child: IntrinsicWidth(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            part(LucideIcons.shieldCheck, insurance),
+            Container(height: 1, margin: const EdgeInsets.symmetric(vertical: 6), color: VoltiColors.ink600),
+            part(LucideIcons.batteryCharging, swap),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Pin de moto: disco escuro com a moto e a barrinha verde de bateria.
