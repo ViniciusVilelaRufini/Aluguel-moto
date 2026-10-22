@@ -152,7 +152,9 @@ Acréscimos aprovados em `docs/decisoes.md` (abordagem A: galpão como entidade,
   `POST /handovers/{id}/dispute`. Eventos `handover.pending`/`handover.updated` em `x-ws-events` e em `realtime.md`.
 - **LGPD:** `LgpdExport.depotReservations` e `LgpdExport.handovers`.
 
-Slugs novos: `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`, `depot-inactive`, `handover-not-pending`, `payment-declined`.
+Slugs novos: `reservation-open`, `reservation-in-handover`, `pickup-outside-hours`, `pickup-too-far-ahead`, `depot-inactive`, `handover-not-pending`, `payment-declined`.
+
+Regra: moto com `depotId` (ou separada por reserva de galpão) só sai pela entrega — `409 vehicle-unavailable` em `POST /rentals` e na reserva de rua; o `nearby` do cliente não mostra motos de galpão nem `awaiting_pickup`.
 
 ## Regras que o contrato garante
 

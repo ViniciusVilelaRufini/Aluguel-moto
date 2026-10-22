@@ -22,7 +22,7 @@ Method | HTTP request | Description
 
 Aceitar a moto e destravar
 
-Só o cliente dono (outro cliente → `404`) e só com a entrega `pending_customer` (senão `422` `handover-not-pending`). Numa transação idempotente por entrega: cria o aluguel com o plano, o seguro e a caução da reserva, cobra o plano (assinatura em `weekly`/`monthly`), converte a reserva, pede o destravamento e a moto vai de `reserved` a `rented`. Aceites repetidos (mesma ou outra `Idempotency-Key`) devolvem o mesmo aluguel, com uma única cobrança. Exige consentimento de localização (`403` `location-consent-required`).  Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError` e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409` `rental-already-active`. 
+Só o cliente dono (outro cliente → `404`) e só com a entrega `pending_customer` (senão `422` `handover-not-pending`). Numa transação idempotente por entrega: cria o aluguel com o plano, o seguro e a caução da reserva, cobra o plano (assinatura em `weekly`/`monthly`), converte a reserva, pede o destravamento e a moto vai de `reserved` a `rented`. Aceites repetidos (mesma ou outra `Idempotency-Key`) devolvem o mesmo aluguel, com uma única cobrança. Exige consentimento de localização (`403` `location-consent-required`).  Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError` e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409` `rental-already-active`. `Idempotency-Key` ausente ou curta → `400`. 
 
 ### Example
 ```dart

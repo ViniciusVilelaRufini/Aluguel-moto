@@ -23,7 +23,7 @@ part 'handover.g.dart';
 /// * [vehicleId]
 /// * [vehicleCode]
 /// * [operatorId]
-/// * [operatorFirstName]
+/// * [operatorFirstName] - Só o primeiro nome do operador (\"Entregue por <nome>\"), nunca o nome completo.
 /// * [checklist]
 /// * [photoKeys]
 /// * [photoUrls] - Links assinados (24 h), na mesma ordem de `photoKeys`.
@@ -62,6 +62,7 @@ abstract class Handover implements Built<Handover, HandoverBuilder> {
   @BuiltValueField(wireName: r'operatorId')
   String get operatorId;
 
+  /// Só o primeiro nome do operador (\"Entregue por <nome>\"), nunca o nome completo.
   @BuiltValueField(wireName: r'operatorFirstName')
   String? get operatorFirstName;
 

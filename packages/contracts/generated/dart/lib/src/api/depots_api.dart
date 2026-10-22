@@ -17,6 +17,7 @@ import 'package:volti_api/src/model/depot_pickup_list.dart';
 import 'package:volti_api/src/model/depot_update.dart';
 import 'package:volti_api/src/model/depot_vehicle_list.dart';
 import 'package:volti_api/src/model/problem.dart';
+import 'package:volti_api/src/model/reservation_status.dart';
 import 'package:volti_api/src/model/vehicle_status.dart';
 
 class DepotsApi {
@@ -218,11 +219,12 @@ class DepotsApi {
   }
 
   /// Agenda de retiradas do dia
-  /// Reservas do galpão com retirada no dia informado (no fuso do galpão), &#x60;now&#x60; e &#x60;scheduled&#x60;, em ordem de horário (&#x60;pickupAt&#x60;, ou &#x60;createdAt&#x60; em &#x60;now&#x60;). Inclui reservas &#x60;active&#x60; e &#x60;handover&#x60; e as já &#x60;converted&#x60;/&#x60;canceled&#x60;/ &#x60;expired&#x60; do dia. Do cliente, só &#x60;customerFirstName&#x60;; nunca vem &#x60;pickupCode&#x60;.
+  /// Todas as reservas do galpão com retirada no dia informado (no fuso do galpão), &#x60;now&#x60; e &#x60;scheduled&#x60;, em ordem de horário (&#x60;pickupAt&#x60;, ou &#x60;createdAt&#x60; em &#x60;now&#x60;), em qualquer status (&#x60;active&#x60;, &#x60;handover&#x60;, &#x60;converted&#x60;, &#x60;canceled&#x60;, &#x60;expired&#x60;); &#x60;status&#x60; filtra. Do cliente, só &#x60;customerFirstName&#x60;; nunca vem &#x60;pickupCode&#x60;.
   ///
   /// Parameters:
   /// * [id]
   /// * [date] - Dia da agenda (`YYYY-MM-DD`, fuso do galpão).
+  /// * [status] - Filtro opcional por status da reserva.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -235,6 +237,7 @@ class DepotsApi {
   Future<Response<DepotPickupList>> listDepotPickups({
     required String id,
     required Date date,
+    ReservationStatus? status,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
     Map<String, dynamic>? extra,
@@ -266,6 +269,9 @@ class DepotsApi {
 
     final _queryParameters = <String, dynamic>{
       r'date': encodeQueryParameter(_serializers, date, const FullType(Date)),
+      if (status != null)
+        r'status': encodeQueryParameter(
+            _serializers, status, const FullType(ReservationStatus)),
     };
 
     final _response = await _dio.request<Object>(

@@ -104,11 +104,11 @@ Name | Type | Description  | Notes
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **listDepotPickups**
-> DepotPickupList listDepotPickups(id, date)
+> DepotPickupList listDepotPickups(id, date, status)
 
 Agenda de retiradas do dia
 
-Reservas do galpão com retirada no dia informado (no fuso do galpão), `now` e `scheduled`, em ordem de horário (`pickupAt`, ou `createdAt` em `now`). Inclui reservas `active` e `handover` e as já `converted`/`canceled`/ `expired` do dia. Do cliente, só `customerFirstName`; nunca vem `pickupCode`. 
+Todas as reservas do galpão com retirada no dia informado (no fuso do galpão), `now` e `scheduled`, em ordem de horário (`pickupAt`, ou `createdAt` em `now`), em qualquer status (`active`, `handover`, `converted`, `canceled`, `expired`); `status` filtra. Do cliente, só `customerFirstName`; nunca vem `pickupCode`. 
 
 ### Example
 ```dart
@@ -117,9 +117,10 @@ import 'package:volti_api/api.dart';
 final api = VoltiApi().getDepotsApi();
 final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
 final Date date = 2013-10-20; // Date | Dia da agenda (`YYYY-MM-DD`, fuso do galpão).
+final ReservationStatus status = ; // ReservationStatus | Filtro opcional por status da reserva.
 
 try {
-    final response = api.listDepotPickups(id, date);
+    final response = api.listDepotPickups(id, date, status);
     print(response);
 } on DioException catch (e) {
     print('Exception when calling DepotsApi->listDepotPickups: $e\n');
@@ -132,6 +133,7 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **String**|  | 
  **date** | **Date**| Dia da agenda (`YYYY-MM-DD`, fuso do galpão). | 
+ **status** | [**ReservationStatus**](.md)| Filtro opcional por status da reserva. | [optional] 
 
 ### Return type
 

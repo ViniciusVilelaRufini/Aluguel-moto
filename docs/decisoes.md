@@ -270,3 +270,17 @@ Modelo de galpão aprovado pelo usuário em 2026-10-22 (spec `docs/superpowers/s
 7. **Slugs novos**: `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`, `depot-inactive`, `handover-not-pending`, `payment-declined` (no aceite e na pré-autorização da caução, `422`). Corrida pela mesma moto → `409 vehicle-unavailable`.
 8. **Acréscimos além da lista da task** (necessários para as tasks seguintes): `PickupMode` (enum nomeado, regra do contrato), `HandoverPage` (lista paginada), `Reservation.deposit`/`handoverId`/`customerFirstName`, `Handover.lastError`/`photoUrls`/`vehicleCode`/`operatorFirstName`/`disputeReason`, `Depot.district`/`availableVehicleCount`/`distanceM`, `FieldTaskCompleteRequest.depotId`.
 9. **Testes de contrato**: `contract-schemas-galpao.spec.ts`; `contract-security.spec.ts` espera 177 operações, com as 12 do galpão numa lista `PENDING_GALPAO` até as Tasks 4 (`/depots*`) e 6 (`/handovers*`) criarem os controllers (o teste falha se uma rota pendente ganhar controller sem sair da lista). Painel: `awaiting_pickup` ganhou rótulo "Aguardando recolhimento" e cor provisória (sun-400) em `apps/admin/src/lib/status.ts` até a task do painel definir o token.
+
+### Contrato do galpão — fix round 1 (revisão) · status: aprovada (coordenador, 2026-10-22)
+
+Só acréscimos e descrições; o contrato prevalece sobre o plano onde divergem (as Tasks 5–7 implementam e testam).
+
+- **Moto do galpão só sai pela entrega (regra).** Moto com `depotId`, ou separada por uma reserva de galpão, responde `409 vehicle-unavailable` em `POST /rentals` e na reserva de rua (`POST /reservations` sem `depotId`; também `awaiting_pickup`). Só sai do galpão pelo aceite (`POST /handovers/{id}/accept`). O `GET /vehicles/nearby` do cliente exclui motos com `depotId` e `awaiting_pickup`; staff continua vendo todas.
+- **Reserva aberta** = `active` ou `handover`: `GET /reservations/current` devolve as duas. `DELETE /reservations/{id}` libera a caução; com `handover` → `409 reservation-in-handover` (slug novo): o cliente usa a disputa ou o operador cancela a entrega.
+- `400` (`BadRequest`) em `accept` (`Idempotency-Key` ausente ou curta) e `dispute` (corpo inválido).
+- Outro cliente em `accept`/`dispute`/`GET /handovers/{id}` → `404` (não revela a entrega).
+- Agenda de retiradas: todas as reservas do dia do galpão em qualquer status (inclusive `converted`, `canceled`, `expired`), com filtro opcional `status`.
+- Sem campos `isOpenNow`/`slots`/`withSlots`: o app calcula os horários a partir de `openingHours`, `maxScheduleDays` e `timezone`, e o servidor valida.
+- `x-ws-events.handover.updated.status` referencia `HandoverStatus` (`$ref`; redocly e geradores aceitam).
+- `Handover.operatorFirstName`: só o primeiro nome ("Entregue por <nome>").
+- A cor provisória de `awaiting_pickup` no painel fica até a Task 12.

@@ -358,6 +358,9 @@ export interface paths {
          * Motos próximas
          * @description Motos disponíveis (`free`) dentro do raio, ordenadas por distância (PostGIS). Para staff, inclui
          *     todos os status. `minRangeKm` filtra pela autonomia estimada.
+         *
+         *     Retirada em galpão: para o cliente, exclui motos com `depotId` (ficam no galpão e só saem pela entrega,
+         *     `GET /depots/{id}/vehicles`) e motos `awaiting_pickup` (esperando recolhimento). Staff continua vendo todas.
          */
         get: operations["listNearbyVehicles"];
         put?: never;
@@ -695,9 +698,9 @@ export interface paths {
         };
         /**
          * Agenda de retiradas do dia
-         * @description Reservas do galpão com retirada no dia informado (no fuso do galpão), `now` e `scheduled`, em ordem de horário
-         *     (`pickupAt`, ou `createdAt` em `now`). Inclui reservas `active` e `handover` e as já `converted`/`canceled`/
-         *     `expired` do dia. Do cliente, só `customerFirstName`; nunca vem `pickupCode`.
+         * @description Todas as reservas do galpão com retirada no dia informado (no fuso do galpão), `now` e `scheduled`, em ordem de
+         *     horário (`pickupAt`, ou `createdAt` em `now`), em qualquer status (`active`, `handover`, `converted`,
+         *     `canceled`, `expired`); `status` filtra. Do cliente, só `customerFirstName`; nunca vem `pickupCode`.
          */
         get: operations["listDepotPickups"];
         put?: never;
@@ -797,7 +800,7 @@ export interface paths {
          *
          *     Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError`
          *     e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409`
-         *     `rental-already-active`.
+         *     `rental-already-active`. `Idempotency-Key` ausente ou curta → `400`.
          */
         post: operations["acceptHandover"];
         delete?: never;
@@ -895,6 +898,9 @@ export interface paths {
          *     ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem
          *     bloqueio nem inadimplência.
          *
+         *     Sem `depotId` (reserva de rua): moto com `depotId`, separada por reserva de galpão ou `awaiting_pickup` →
+         *     `409` `vehicle-unavailable`. Moto do galpão só sai pela entrega.
+         *
          *     **Retirada em galpão** (com `depotId`): exige `Idempotency-Key`, `pickupMode`, `planCode`, `coverage` e
          *     `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422`
          *     `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409`
@@ -920,7 +926,8 @@ export interface paths {
         };
         /**
          * Reserva ativa do cliente
-         * @description Sempre `200`; `reservation` fica ausente quando não há reserva ativa.
+         * @description Sempre `200`; `reservation` fica ausente quando não há reserva aberta. Reserva aberta = `active` ou `handover`
+         *     (entrega de galpão aguardando o aceite; o app abre "Confira sua moto" com `handoverId`).
          */
         get: operations["getCurrentReservation"];
         put?: never;
@@ -941,7 +948,12 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Cancelar reserva */
+        /**
+         * Cancelar reserva
+         * @description Grátis. A moto volta a `free` e, em reserva de galpão, a caução é liberada (pré-autorização cancelada ou Pix
+         *     estornado). Reserva com status `handover` (entrega aberta) → `409` `reservation-in-handover`: o cliente usa
+         *     `POST /handovers/{id}/dispute`, ou o operador cancela a entrega. Reserva já encerrada → `409`.
+         */
         delete: operations["cancelReservation"];
         options?: never;
         head?: never;
@@ -966,6 +978,9 @@ export interface paths {
          * @description Exige KYC aprovado (`403` `kyc-not-approved`), cliente não inadimplente (`403`
          *     `customer-delinquent`), consentimento de localização (`403` `location-consent-required`, ver
          *     `PUT /lgpd/consents`), seguro (`coverage`; `basic` é o mínimo obrigatório) e caução.
+         *
+         *     Moto do galpão: moto com `depotId`, ou separada por uma reserva de galpão (mesmo do próprio cliente), responde
+         *     `409` `vehicle-unavailable` aqui; ela só sai do galpão pelo aceite da entrega (`POST /handovers/{id}/accept`).
          *     A moto precisa estar `free` ou reservada pelo próprio cliente (senão `409` `vehicle-unavailable`).
          *
          *     Caução (`depositMethod`):
@@ -5538,7 +5553,10 @@ export interface components {
             vehicleCode?: string;
             /** Format: uuid */
             operatorId: string;
-            /** @example Rafael */
+            /**
+             * @description Só o primeiro nome do operador ("Entregue por <nome>"), nunca o nome completo.
+             * @example Rafael
+             */
             operatorFirstName?: string;
             checklist: components["schemas"]["HandoverChecklistItem"][];
             photoKeys: string[];
@@ -6839,6 +6857,8 @@ export interface operations {
             query: {
                 /** @description Dia da agenda (`YYYY-MM-DD`, fuso do galpão). */
                 date: string;
+                /** @description Filtro opcional por status da reserva. */
+                status?: components["schemas"]["ReservationStatus"];
             };
             header?: never;
             path: {
@@ -7026,6 +7046,7 @@ export interface operations {
                     "application/json": components["schemas"]["Rental"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
@@ -7266,7 +7287,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Reserva cancelada; a moto volta a `free`. */
+            /** @description Reserva cancelada; a moto volta a `free` e a caução é liberada. */
             204: {
                 headers: {
                     [name: string]: unknown;

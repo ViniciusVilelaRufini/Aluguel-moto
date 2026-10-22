@@ -19,6 +19,8 @@ Method | HTTP request | Description
 
 Cancelar reserva
 
+Grátis. A moto volta a `free` e, em reserva de galpão, a caução é liberada (pré-autorização cancelada ou Pix estornado). Reserva com status `handover` (entrega aberta) → `409` `reservation-in-handover`: o cliente usa `POST /handovers/{id}/dispute`, ou o operador cancela a entrega. Reserva já encerrada → `409`. 
+
 ### Example
 ```dart
 import 'package:volti_api/api.dart';
@@ -59,7 +61,7 @@ void (empty response body)
 
 Reservar moto
 
-Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis); ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem bloqueio nem inadimplência.  **Retirada em galpão** (com `depotId`): exige `Idempotency-Key`, `pickupMode`, `planCode`, `coverage` e `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422` `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409` `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização, recusa → `422` `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva. 
+Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis); ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem bloqueio nem inadimplência.  Sem `depotId` (reserva de rua): moto com `depotId`, separada por reserva de galpão ou `awaiting_pickup` → `409` `vehicle-unavailable`. Moto do galpão só sai pela entrega.  **Retirada em galpão** (com `depotId`): exige `Idempotency-Key`, `pickupMode`, `planCode`, `coverage` e `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422` `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409` `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização, recusa → `422` `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva. 
 
 ### Example
 ```dart
@@ -104,7 +106,7 @@ Name | Type | Description  | Notes
 
 Reserva ativa do cliente
 
-Sempre `200`; `reservation` fica ausente quando não há reserva ativa.
+Sempre `200`; `reservation` fica ausente quando não há reserva aberta. Reserva aberta = `active` ou `handover` (entrega de galpão aguardando o aceite; o app abre \"Confira sua moto\" com `handoverId`). 
 
 ### Example
 ```dart

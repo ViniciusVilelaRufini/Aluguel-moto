@@ -199,7 +199,7 @@ Name | Type | Description  | Notes
 
 Motos próximas
 
-Motos disponíveis (`free`) dentro do raio, ordenadas por distância (PostGIS). Para staff, inclui todos os status. `minRangeKm` filtra pela autonomia estimada. 
+Motos disponíveis (`free`) dentro do raio, ordenadas por distância (PostGIS). Para staff, inclui todos os status. `minRangeKm` filtra pela autonomia estimada.  Retirada em galpão: para o cliente, exclui motos com `depotId` (ficam no galpão e só saem pela entrega, `GET /depots/{id}/vehicles`) e motos `awaiting_pickup` (esperando recolhimento). Staff continua vendo todas. 
 
 ### Example
 ```dart

@@ -22,7 +22,7 @@ class ReservationsApi {
   const ReservationsApi(this._dio, this._serializers);
 
   /// Cancelar reserva
-  ///
+  /// Grátis. A moto volta a &#x60;free&#x60; e, em reserva de galpão, a caução é liberada (pré-autorização cancelada ou Pix estornado). Reserva com status &#x60;handover&#x60; (entrega aberta) → &#x60;409&#x60; &#x60;reservation-in-handover&#x60;: o cliente usa &#x60;POST /handovers/{id}/dispute&#x60;, ou o operador cancela a entrega. Reserva já encerrada → &#x60;409&#x60;.
   ///
   /// Parameters:
   /// * [id]
@@ -78,7 +78,7 @@ class ReservationsApi {
   }
 
   /// Reservar moto
-  /// Uma reserva ativa por cliente (&#x60;409&#x60; &#x60;reservation-already-active&#x60;). Dura 15 minutos (TTL no Redis); ao expirar, a moto volta a &#x60;free&#x60;. Exige KYC aprovado (&#x60;403&#x60; &#x60;kyc-not-approved&#x60;) e cliente sem bloqueio nem inadimplência.  **Retirada em galpão** (com &#x60;depotId&#x60;): exige &#x60;Idempotency-Key&#x60;, &#x60;pickupMode&#x60;, &#x60;planCode&#x60;, &#x60;coverage&#x60; e &#x60;depositMethod&#x60;. Valida galpão ativo (&#x60;422&#x60; &#x60;depot-inactive&#x60;), horário dentro do funcionamento (&#x60;422&#x60; &#x60;pickup-outside-hours&#x60;) e de &#x60;maxScheduleDays&#x60; (&#x60;422&#x60; &#x60;pickup-too-far-ahead&#x60;), moto &#x60;free&#x60; no galpão (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (&#x60;409&#x60; &#x60;rental-already-active&#x60; / &#x60;reservation-open&#x60;). Bloqueia a caução (cartão: pré-autorização, recusa → &#x60;422&#x60; &#x60;payment-declined&#x60;; Pix: &#x60;deposit.pix&#x60; com o QR) e separa a moto (&#x60;free&#x60; → &#x60;reserved&#x60;). O plano só é cobrado no aceite da entrega. A resposta traz &#x60;pickupCode&#x60; (QR de retirada). Cancelar (&#x60;DELETE /reservations/{id}&#x60;) é grátis e libera a caução; ao vencer &#x60;expiresAt&#x60;, um job expira a reserva.
+  /// Uma reserva ativa por cliente (&#x60;409&#x60; &#x60;reservation-already-active&#x60;). Dura 15 minutos (TTL no Redis); ao expirar, a moto volta a &#x60;free&#x60;. Exige KYC aprovado (&#x60;403&#x60; &#x60;kyc-not-approved&#x60;) e cliente sem bloqueio nem inadimplência.  Sem &#x60;depotId&#x60; (reserva de rua): moto com &#x60;depotId&#x60;, separada por reserva de galpão ou &#x60;awaiting_pickup&#x60; → &#x60;409&#x60; &#x60;vehicle-unavailable&#x60;. Moto do galpão só sai pela entrega.  **Retirada em galpão** (com &#x60;depotId&#x60;): exige &#x60;Idempotency-Key&#x60;, &#x60;pickupMode&#x60;, &#x60;planCode&#x60;, &#x60;coverage&#x60; e &#x60;depositMethod&#x60;. Valida galpão ativo (&#x60;422&#x60; &#x60;depot-inactive&#x60;), horário dentro do funcionamento (&#x60;422&#x60; &#x60;pickup-outside-hours&#x60;) e de &#x60;maxScheduleDays&#x60; (&#x60;422&#x60; &#x60;pickup-too-far-ahead&#x60;), moto &#x60;free&#x60; no galpão (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem reserva aberta (&#x60;409&#x60; &#x60;rental-already-active&#x60; / &#x60;reservation-open&#x60;). Bloqueia a caução (cartão: pré-autorização, recusa → &#x60;422&#x60; &#x60;payment-declined&#x60;; Pix: &#x60;deposit.pix&#x60; com o QR) e separa a moto (&#x60;free&#x60; → &#x60;reserved&#x60;). O plano só é cobrado no aceite da entrega. A resposta traz &#x60;pickupCode&#x60; (QR de retirada). Cancelar (&#x60;DELETE /reservations/{id}&#x60;) é grátis e libera a caução; ao vencer &#x60;expiresAt&#x60;, um job expira a reserva.
   ///
   /// Parameters:
   /// * [reservationCreate]
@@ -183,7 +183,7 @@ class ReservationsApi {
   }
 
   /// Reserva ativa do cliente
-  /// Sempre &#x60;200&#x60;; &#x60;reservation&#x60; fica ausente quando não há reserva ativa.
+  /// Sempre &#x60;200&#x60;; &#x60;reservation&#x60; fica ausente quando não há reserva aberta. Reserva aberta &#x3D; &#x60;active&#x60; ou &#x60;handover&#x60; (entrega de galpão aguardando o aceite; o app abre \&quot;Confira sua moto\&quot; com &#x60;handoverId&#x60;).
   ///
   /// Parameters:
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation

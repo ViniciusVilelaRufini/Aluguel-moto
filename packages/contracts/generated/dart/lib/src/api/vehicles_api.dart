@@ -405,7 +405,7 @@ class VehiclesApi {
   }
 
   /// Motos próximas
-  /// Motos disponíveis (&#x60;free&#x60;) dentro do raio, ordenadas por distância (PostGIS). Para staff, inclui todos os status. &#x60;minRangeKm&#x60; filtra pela autonomia estimada.
+  /// Motos disponíveis (&#x60;free&#x60;) dentro do raio, ordenadas por distância (PostGIS). Para staff, inclui todos os status. &#x60;minRangeKm&#x60; filtra pela autonomia estimada.  Retirada em galpão: para o cliente, exclui motos com &#x60;depotId&#x60; (ficam no galpão e só saem pela entrega, &#x60;GET /depots/{id}/vehicles&#x60;) e motos &#x60;awaiting_pickup&#x60; (esperando recolhimento). Staff continua vendo todas.
   ///
   /// Parameters:
   /// * [lat]
