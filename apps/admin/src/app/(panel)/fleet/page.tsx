@@ -54,6 +54,12 @@ export default function FleetPage() {
   const selectedRef = useRef(selected);
   selectedRef.current = selected;
 
+  // A paleta (Ctrl+K) navega para /fleet?vehicle= estando já na frota: acompanha a query string.
+  const paramVehicle = params.get('vehicle');
+  useEffect(() => {
+    if (paramVehicle && paramVehicle !== selectedRef.current) { setSelected(paramVehicle); setReplay(false); }
+  }, [paramVehicle]);
+
   const code = params.get('code');
   useEffect(() => {
     if (!code) return;
