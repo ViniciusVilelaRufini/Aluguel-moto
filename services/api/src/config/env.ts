@@ -80,6 +80,7 @@ export function loadConfig(): AppConfig {
         telemetria: str('SQS_QUEUE_TELEMETRIA_URL'),
         'pagamentos-webhook': str('SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL'),
         alertas: str('SQS_QUEUE_ALERTAS_URL'),
+        estacoes: str('SQS_QUEUE_ESTACOES_URL'),
       },
     },
     kycProvider: 'mock',

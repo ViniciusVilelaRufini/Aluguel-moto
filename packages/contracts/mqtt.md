@@ -111,3 +111,25 @@ Comportamento esperado do firmware: [`docs/firmware-bloqueio-seguro.md`](../../d
 ## Simulador
 
 `services/iot-sim` implementa este contrato (testes validam as mensagens contra os schemas). Ver o README do pacote.
+
+## Estações de troca de bateria (troca pelo cliente via QR)
+
+Armário com vagas que recebe a bateria descarregada e libera uma carregada (spec `docs/superpowers/specs/2026-10-22-volti-troca-bateria-qr-design.md`). Mesmo modelo dos rastreadores: uma *thing* por estação (`thing = station-{stationId}`, certificado X.509 próprio em produção, `clientId` = `thing`), tópicos próprios fora de `$aws/` (o IoT Core reserva esse prefixo).
+
+| Tópico | Sentido | QoS | Payload (schema) | Quando |
+|---|---|---|---|---|
+| `estacoes/{thing}/comandos` | nuvem → estação | 1 | [`estacao-comandos.schema.json`](schemas/estacao-comandos.schema.json) | `open_slot` ao criar a troca (`POST /swap-stations/{id}/swaps`); `release_battery` depois de `battery_returned` **e** `slot_closed` (ou logo depois de uma devolução atrasada); `abort_swap {swapId, slotNumber?}` no cancelamento pelo cliente e em todo prazo vencido |
+| `estacoes/{thing}/eventos` | estação → nuvem | 1 | [`estacao-eventos.schema.json`](schemas/estacao-eventos.schema.json) | `slot_opened {slotNumber}`, `battery_returned {serial, pct}`, `slot_closed`, `battery_released {serial}` |
+
+Regras:
+- A API **nunca** manda `release_battery` sem a devolução registrada; `battery_released` de uma troca que não está liberando é ignorado (exceto atraso depois do prazo de liberação, que completa a troca: o cliente recebeu a bateria).
+- Cada etapa tem prazo de 3 min (a API cancela/falha a troca e manda `abort_swap`: a estação fecha a vaga, se aberta, e confirma com `slot_closed`, sem liberar bateria); eventos repetidos ou fora de ordem são ignorados.
+- Devolução que chega depois do cancelamento pelo cliente ou de um prazo antes da devolução vale: a API registra a bateria, volta a troca para `releasing` e manda `release_battery`; sem carregada livre → troca `failed/no_battery_after_return` e alerta para a operação. Se nesse meio-tempo o aluguel foi encerrado ou abriu outra troca, a devolução fica registrada e a troca vira `failed/return_after_close` (alerta). Devolução numa troca encerrada por qualquer outro motivo só entra no estoque (alerta).
+- **`release_battery` depois de `abort_swap` é válido**: para um `swapId` cuja devolução foi recebida (`battery_returned` publicado pela estação), a estação tem de aceitar o `release_battery` mesmo que antes tenha recebido `abort_swap` para essa troca (o cancelamento cruzou com a devolução). Sem devolução recebida, a estação continua recusando.
+- Encerramento do aluguel pelo staff (forçado ou chegada no galpão): troca sem devolução → `canceled/rental_force_ended` + `abort_swap`; troca com a devolução registrada termina a liberação, mas a moto (já com a operação) não recebe a bateria nova no cadastro — alerta para conferir.
+- Bateria devolvida ou liberada que consta instalada em **outra** moto nunca é desvinculada: troca `failed/serial_mismatch` e alerta (só ids). Série diferente da registrada na moto, ou liberada fora do estoque da estação → alerta, a troca segue.
+- No modo aws a fila `estacoes` tem de ser **FIFO** (`.fifo`, `MessageGroupId` = `thing`): a API recusa subir com outra fila e, quando o processamento de um evento falha, não processa o resto do mesmo grupo naquele lote (volta na ordem depois do visibility timeout).
+- Estoque: `battery_returned` põe a bateria devolvida como `charging` na estação (série e carga lidas); `battery_released` tira uma do `availableBatteries`, instala a liberada na moto (+1 ciclo) e atualiza `Vehicle.batterySerial`.
+- Nada nesses tópicos identifica o cliente (só o `swapId`).
+
+Modos na API (`IOT_MODE`): `stub` (estação imaginária que avança sozinha a cada `STATION_STUB_STEP_MS`, padrão 1,5 s: e2e e emulador sem simulador), `local` (Mosquitto + simulador `services/station-sim`) e `aws` (`Publish` no IoT Data Plane; eventos pela regra IoT `SELECT *, topic(2) AS thing FROM 'estacoes/+/eventos'` → SQS `estacoes`, `SQS_QUEUE_ESTACOES_URL` — regra, fila e política da *thing* ainda não estão no CDK, ver `docs/decisoes.md`).

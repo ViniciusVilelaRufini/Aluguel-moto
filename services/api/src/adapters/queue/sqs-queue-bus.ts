@@ -1,4 +1,4 @@
-import { DeleteMessageCommand, ReceiveMessageCommand, SendMessageCommand, SQSClient } from '@aws-sdk/client-sqs';
+import { DeleteMessageCommand, ReceiveMessageCommand, SendMessageCommand, SQSClient, type Message } from '@aws-sdk/client-sqs';
 import { Logger, OnModuleDestroy } from '@nestjs/common';
 import type { AppConfig } from '../../config/env';
 import type { QueueBus, QueueName } from '../../ports/queue-bus.port';
@@ -37,16 +37,9 @@ export class SqsQueueBus implements QueueBus, OnModuleDestroy {
       while (this.running) {
         try {
           const res = await this.client.send(
-            new ReceiveMessageCommand({ QueueUrl: url, MaxNumberOfMessages: 10, WaitTimeSeconds: 20 }),
+            new ReceiveMessageCommand({ QueueUrl: url, MaxNumberOfMessages: 10, WaitTimeSeconds: 20, MessageSystemAttributeNames: ['MessageGroupId'] }),
           );
-          for (const m of res.Messages ?? []) {
-            try {
-              await handler(JSON.parse(m.Body ?? 'null') as T);
-              await this.client.send(new DeleteMessageCommand({ QueueUrl: url, ReceiptHandle: m.ReceiptHandle }));
-            } catch (err) {
-              this.logger.error({ msg: 'sqs_handler_failed', queue, error: (err as Error).message });
-            }
-          }
+          await this.processBatch(queue, url, res.Messages ?? [], handler);
         } catch (err) {
           this.logger.error({ msg: 'sqs_receive_failed', queue, error: (err as Error).message });
           await new Promise((r) => setTimeout(r, 5000));
@@ -54,6 +47,26 @@ export class SqsQueueBus implements QueueBus, OnModuleDestroy {
       }
     };
     void loop();
+  }
+
+  /**
+   * Processa um lote em ordem. Fix 1 (I4): numa fila FIFO, quando o handler falha, o resto do mesmo `MessageGroupId` neste lote
+   * não é processado nem apagado (volta depois do visibility timeout, na ordem); os outros grupos seguem. Sem grupo (fila
+   * padrão), cada mensagem é independente.
+   */
+  async processBatch<T>(queue: QueueName, url: string, messages: Message[], handler: (message: T) => Promise<void>): Promise<void> {
+    const failedGroups = new Set<string>();
+    for (const m of messages) {
+      const group = m.Attributes?.MessageGroupId;
+      if (group && failedGroups.has(group)) continue;
+      try {
+        await handler(JSON.parse(m.Body ?? 'null') as T);
+        await this.client.send(new DeleteMessageCommand({ QueueUrl: url, ReceiptHandle: m.ReceiptHandle }));
+      } catch (err) {
+        if (group) failedGroups.add(group);
+        this.logger.error({ msg: 'sqs_handler_failed', queue, messageId: m.MessageId, groupHeld: !!group, error: (err as Error).message });
+      }
+    }
   }
 
   onModuleDestroy(): void {

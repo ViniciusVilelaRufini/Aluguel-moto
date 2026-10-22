@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import type { Prisma, Rental, Vehicle } from '@prisma/client';
@@ -12,11 +12,24 @@ import { AuditService } from '../audit/audit.service';
 import { isAdmin, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
 import { FeeCharge, PriceSnapshot, PricingService } from '../pricing/pricing.service';
+import { OPEN_SWAP_STATUSES } from '../station-swaps/station-swap.rules';
+import { StationSwapsService } from '../station-swaps/station-swaps.service';
 import { ZonesService } from '../zones/zones.service';
 import { rentalTimes, toRental } from './rentals.mapper';
 
 export const FORCE_END_FEE_CODE = 'force_end_outside_return_zone';
 export const FORCE_END_FEE_DEFAULT_CENTS = 1500;
+/** Mesmo código de `SWAP_FEE_CODE` (módulo station-swaps), sem importar o módulo para cá. */
+export const STATION_SWAP_FEE_CODE = 'battery_swap_fee';
+
+/**
+ * Troca de bateria na estação em andamento no aluguel (fix 1, I7): o cliente não encerra nem troca de moto no meio dela
+ * (`409 swap-open`). O encerramento forçado pelo staff continua permitido (emergência).
+ */
+export async function hasOpenStationSwap(prisma: Pick<PrismaService, 'stationSwap'>, rentalId: string): Promise<boolean> {
+  const open = await prisma.stationSwap.findFirst({ where: { rentalId, status: { in: OPEN_SWAP_STATUSES } }, select: { id: true } });
+  return !!open;
+}
 /** Intervalo mínimo entre tentativas de travamento de um aluguel em `ending`. */
 export const END_RETRY_INTERVAL_MS = 30_000;
 /** Depois de tantas tentativas sem "travada", para de reenviar e chama a operação (alerta). */
@@ -62,7 +75,15 @@ export class RentalEndService {
     private readonly events: EventEmitter2,
     private readonly audit: AuditService,
     private readonly alerts: AlertsService,
+    // Fix 2 (M-2): fecha trocas abertas na estação quando o staff encerra o aluguel. Opcional: módulos que montam o serviço
+    // sem a estação (testes) seguem funcionando.
+    @Optional() private readonly stationSwaps?: StationSwapsService,
   ) {}
+
+  /** Fecha as trocas na estação ainda abertas antes de um encerramento pelo staff (forçado ou no galpão). */
+  private async closeStationSwaps(rentalId: string): Promise<void> {
+    await this.stationSwaps?.closeForRentalEnd(rentalId).catch((err) => this.logger.error({ msg: 'station_swaps_close_failed', rentalId, error: (err as Error).message }));
+  }
 
   private async load(rentalId: string): Promise<RentalWithVehicle> {
     const r = await this.prisma.rental.findUnique({ where: { id: rentalId }, include: { vehicle: true } });
@@ -86,6 +107,8 @@ export class RentalEndService {
     if (rental.customerId !== customerId) throw notFound('Aluguel não encontrado.');
     if (rental.status === 'ending') return { status: 202 as const, rental: toRental(rental) };
     if (rental.status !== 'active' && rental.status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+    // Fix 1 (I7): a moto está sem bateria (ou com a vaga da estação aberta) no meio de uma troca.
+    if (await hasOpenStationSwap(this.prisma, rentalId)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de encerrar o aluguel.');
 
     if (!rental.returnPhotoUploadKey || dto.returnPhotoObjectKey !== rental.returnPhotoUploadKey) {
       throw unprocessable('return-photo-missing', 'Envie a foto da moto estacionada antes de encerrar.');
@@ -95,18 +118,24 @@ export class RentalEndService {
 
     const now = new Date();
     const closedPause = rental.status === 'paused' && rental.pausedAt ? Math.floor((now.getTime() - rental.pausedAt.getTime()) / 1000) : 0;
-    const moved = await this.prisma.rental.updateMany({
-      where: { id: rentalId, status: { in: ['active', 'paused'] } },
-      data: {
-        status: 'ending',
-        endRequestedAt: now,
-        pausedAt: null,
-        pausedSecondsAcc: rental.pausedSecondsAcc + closedPause,
-        endZoneId: zone.id,
-        returnPhotoObjectKey: dto.returnPhotoObjectKey,
-        endLastAttemptAt: now,
-        endAttempts: { increment: 1 },
-      },
+    // Fix 2 (M-3): trava a linha do aluguel (a mesma que a criação da troca trava) antes de conferir a troca aberta e passar a
+    // `ending`: criação da troca e encerramento se serializam.
+    const moved = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Rental" WHERE "id" = ${rentalId}::uuid FOR UPDATE`;
+      if (await hasOpenStationSwap(tx, rentalId)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de encerrar o aluguel.');
+      return tx.rental.updateMany({
+        where: { id: rentalId, status: { in: ['active', 'paused'] } },
+        data: {
+          status: 'ending',
+          endRequestedAt: now,
+          pausedAt: null,
+          pausedSecondsAcc: rental.pausedSecondsAcc + closedPause,
+          endZoneId: zone.id,
+          returnPhotoObjectKey: dto.returnPhotoObjectKey,
+          endLastAttemptAt: now,
+          endAttempts: { increment: 1 },
+        },
+      });
     });
     if (moved.count === 0) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
     await this.prisma.rentalEvent.create({ data: { rentalId, type: 'ending', actorType: 'customer', actorId: customerId, data: { zoneId: zone.id } } });
@@ -149,7 +178,12 @@ export class RentalEndService {
     await this.audit.record({ actor, action: 'rental.force_end', entityType: 'Rental', entityId: rentalId, reason: reason.trim(), metadata: { outsideReturnZone: !zone } });
     // Bloqueio seguro (rampa até parar) — o encerramento não espera a confirmação.
     await this.requestLock(rentalId, rental.vehicleId, 'rental_force_end').catch(() => false);
-    return this.finalize(rentalId, 'force_ended', { fees, actor });
+    await this.closeStationSwaps(rentalId);
+    const closed = await this.finalize(rentalId, 'force_ended', { fees, actor });
+    // Rodada 3: de novo depois do fechamento (idempotente) — uma troca criada entre a primeira chamada e o finalize não fica
+    // aberta num aluguel encerrado.
+    await this.closeStationSwaps(rentalId);
+    return closed;
   }
 
   /**
@@ -161,8 +195,11 @@ export class RentalEndService {
     const rental = await this.load(rentalId);
     if (rental.status === 'ended' || rental.status === 'force_ended') return toRental(rental);
     if (!['active', 'paused', 'ending'].includes(rental.status)) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+    await this.closeStationSwaps(rentalId);
     await this.requestLock(rentalId, rental.vehicleId, 'rental_depot_return');
-    return this.finalize(rentalId, 'ended', { actor, returnTo: 'depot', depot });
+    const closed = await this.finalize(rentalId, 'ended', { actor, returnTo: 'depot', depot });
+    await this.closeStationSwaps(rentalId); // rodada 3: idem ao encerramento forçado
+    return closed;
   }
 
   /** Pede o travamento (bloqueio seguro). `true` se o rastreador confirmou na hora. */
@@ -207,7 +244,7 @@ export class RentalEndService {
       snapshot: rental.priceSnapshot as unknown as PriceSnapshot,
       elapsedSeconds: timing.elapsedSeconds,
       pausedSeconds: timing.pausedSeconds,
-      fees: opts.fees,
+      fees: [...(opts.fees ?? []), ...(await this.stationSwapFees(rentalId))],
     });
     const claimed = await this.prisma.rental.updateMany({
       where: { id: rentalId, status: { in: ['active', 'paused', 'ending'] } },
@@ -258,6 +295,15 @@ export class RentalEndService {
     this.emitRental(final);
     this.logger.log({ msg: 'rental_finalized', rentalId, status: kind, costCents: breakdown.totalCents });
     return toRental(final);
+  }
+
+  /**
+   * Troca de bateria na estação (spec 2026-10-22): cada troca concluída com taxa (congelada na criação; 0 nos planos
+   * diário/semanal/mensal) entra como linha `battery_swap_fee` desta liquidação — nunca cobrada à parte.
+   */
+  private async stationSwapFees(rentalId: string): Promise<FeeCharge[]> {
+    const swaps = (await this.prisma.stationSwap.findMany({ where: { rentalId, status: 'completed', feeCents: { gt: 0 } }, orderBy: { createdAt: 'asc' }, select: { id: true, feeCents: true } })) ?? [];
+    return swaps.map((s) => ({ code: STATION_SWAP_FEE_CODE, description: 'Troca de bateria na estação', amountCents: s.feeCents }));
   }
 
   /** Moto do galpão: tem `depotId` ou saiu por uma entrega de galpão aceita para este aluguel. Só sai de novo pela entrega. */

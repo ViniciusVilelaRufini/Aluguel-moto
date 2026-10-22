@@ -43,7 +43,7 @@ O servidor coloca o socket nas salas automaticamente, a partir do token; o clien
 |---|---|---|
 | `fleet` | staff com grupo `admin`, `operacao` ou `suporte` | ao conectar |
 | `rental:{rentalId}` | só o cliente dono do aluguel | enquanto o aluguel estiver `active`, `paused` ou `ending` (entra ao conectar, ou quando o aluguel começa; sai quando termina) |
-| `customer:{customerId}` | o próprio cliente | ao conectar (só eventos da entrega no galpão; nunca posição) |
+| `customer:{customerId}` | o próprio cliente | ao conectar (eventos da entrega no galpão e da troca de bateria na estação; nunca posição) |
 | `depot:{depotId}` | staff `admin`, `operacao` ou `campo` | ao conectar (todos os galpões) |
 
 Staff de outros grupos (`financeiro`, `campo`) conecta, mas não recebe eventos da frota. Clientes sem aluguel ativo só recebem os eventos da entrega no galpão (`handover.*`, sem posição; LGPD: a posição só é enviada durante o aluguel).
@@ -63,6 +63,7 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 | `device.event` | `rental:{id}` | `{ rentalId, type: 'queda', ts }` (dispara o "você está bem?") |
 | `handover.pending` | `customer:{id}`, `depot:{id}` | `{ handoverId, reservationId }` |
 | `handover.updated` | `customer:{id}`, `depot:{id}` | `{ handoverId, status: HandoverStatus, lastError? }` |
+| `station_swap.updated` | `customer:{id}` | `{ swapId, status: StationSwapStatus }` |
 
 ### Detalhes por evento
 
@@ -74,6 +75,7 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 - **`zone.notice`** — entrada/saída de zonas que afetam o cliente: `reduced_speed` (com o novo `speedLimitKmh`), `forbidden`, `operation` (saída da área: aviso imediato e bloqueio seguro após 5 minutos fora) e `return`. `message` vem pronto em pt-BR para a UI (ex.: "Você entrou numa área de pedestres. Velocidade máxima: 6 km/h.").
 - **`handover.pending`** — o operador registrou a entrega de saída (`POST /handovers`, `type: pickup`). O app do cliente abre "Confira sua moto" e carrega `GET /handovers/{handoverId}`. Também descrito em `x-ws-events` no `openapi.yaml`.
 - **`handover.updated`** — aceite, disputa ou cancelamento da entrega, chegada no galpão concluída (`return_depot`, `status: accepted`), ou falha no aceite (`lastError`, ex.: `payment-declined`, com `status` ainda `pending_customer`). O operador vê "Aceito", "Pagamento não aprovado" ou "Problema apontado".
+- **`station_swap.updated`** — cada mudança de status da troca de bateria na estação (`opening_slot` → `awaiting_return` → `returned` → `releasing` → `completed`, ou `canceled`/`failed`). O app mostra "Abrindo compartimento", "Devolva a bateria na vaga N", "Liberando a carregada" e "Bateria trocada"; detalhes (vaga, séries, `endReason`) por `GET /swap-stations/{id}/swaps/{swapId}`. Só o dono recebe; sem posição.
 - **`device.event`** — hoje só `queda`. O app abre o "Você está bem?" e responde por `POST /rentals/{id}/wellbeing`; sem resposta em 60 s, a API abre alerta `customer_not_ok` (`critical`).
 
 ### Tipos TypeScript (referência)
@@ -95,6 +97,7 @@ export interface RealtimeEvents {
   'device.event': { rentalId: string; type: 'queda'; ts: string };
   'handover.pending': { handoverId: string; reservationId: string };
   'handover.updated': { handoverId: string; status: S['HandoverStatus']; lastError?: string };
+  'station_swap.updated': { swapId: string; status: S['StationSwapStatus'] };
 }
 ```
 

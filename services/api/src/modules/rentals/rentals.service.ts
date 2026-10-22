@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import type { Prisma, Rental, Vehicle } from '@prisma/client';
@@ -16,7 +16,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
-import type { PriceBreakdown } from '../pricing/pricing.service';
+import { PricingService, type PriceBreakdown } from '../pricing/pricing.service';
+import { OPEN_SWAP_STATUSES, SWAP_FEE_CODE, SWAP_FEE_DEFAULT_CENTS, swapFeeCents } from '../station-swaps/station-swap.rules';
+import { toStationSwap } from '../station-swaps/station-swaps.mapper';
+import { hasOpenStationSwap } from './rental-end.service';
 import { isDepotLocked } from './rental-start.service';
 import type { ListRentalsQuery, LocationShareDto, RatingDto, SwapVehicleDto, WellbeingDto } from './rentals.dto';
 import { toRental, toRentalEvent } from './rentals.mapper';
@@ -38,6 +41,8 @@ export class RentalsService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(IOT_GATEWAY) private readonly iot: IotGateway,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    // Taxa de troca na estação em `current()`; opcional (testes montam o serviço sem ela; cai no mesmo cálculo).
+    @Optional() private readonly pricing?: PricingService,
   ) {}
 
   /** Cliente só enxerga os próprios aluguéis (404 para os demais, sem revelar existência). */
@@ -72,7 +77,14 @@ export class RentalsService {
       include: { vehicle: { select: { code: true } } },
       orderBy: { startedAt: 'desc' },
     });
-    return r ? { rental: toRental(r) } : {};
+    if (!r) return {};
+    // Fix 1 (I1): troca de bateria na estação em andamento, para o app retomar a tela da troca ao reabrir.
+    const swap = await this.prisma.stationSwap.findFirst({ where: { rentalId: r.id, status: { in: OPEN_SWAP_STATUSES } } });
+    // Taxa que uma troca agora congelaria (mesma regra e mesmas funções de `StationSwapsService.create`): o app mostra
+    // "Taxa R$ X" na confirmação antes do POST, sem acesso a `/pricing/fees` (só staff).
+    const pricing = this.pricing ?? new PricingService(this.prisma);
+    const batterySwapFeeCents = swapFeeCents(r.planCode, await pricing.feeAmount(SWAP_FEE_CODE, SWAP_FEE_DEFAULT_CENTS));
+    return { rental: toRental(r), ...(swap ? { currentStationSwap: toStationSwap(swap, { staff: false }) } : {}), batterySwapFeeCents };
   }
 
   async get(user: Principal, id: string) {
@@ -114,6 +126,8 @@ export class RentalsService {
   async swap(user: Principal, id: string, dto: SwapVehicleDto) {
     const r = await this.loadFor(user, id);
     if (r.status !== 'active' && r.status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+    // Fix 1 (I7): no meio de uma troca de bateria na estação a moto não muda.
+    if (await hasOpenStationSwap(this.prisma, id)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de trocar de moto.');
     const target = await this.prisma.vehicle.findUnique({ where: { id: dto.newVehicleId } });
     if (!target) throw notFound('Moto não encontrada.');
     // Retirada em galpão: moto do galpão (ou esperando recolhimento) só sai pela entrega, nunca pela troca.
@@ -124,6 +138,10 @@ export class RentalsService {
       throw unprocessable('validation-error', `A nova moto precisa estar a até ${SWAP_MAX_DISTANCE_M} m.`);
     }
     await this.prisma.$transaction(async (tx) => {
+      // Rodada 3: aluguel travado antes das motos (mesma ordem da liberação na estação: aluguel → moto, sem deadlock) e
+      // troca aberta reconferida sob o lock (uma troca criada depois da pré-checagem também barra).
+      await tx.$queryRaw`SELECT "id" FROM "Rental" WHERE "id" = ${id}::uuid FOR UPDATE`;
+      if (await hasOpenStationSwap(tx, id)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de trocar de moto.');
       const claimed = await tx.vehicle.updateMany({ where: { id: target.id, status: 'free', depotId: null }, data: { status: r.status === 'paused' ? 'paused' : 'rented' } });
       if (claimed.count === 0) throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
       await tx.vehicle.update({ where: { id: r.vehicleId }, data: { status: 'maintenance' } });

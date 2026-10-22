@@ -10,7 +10,7 @@ import type { Principal } from '../auth/principal';
 import type { CouponInputDto, FeeInputDto, ListCouponsQuery, PricingPlanInputDto, QuoteRequestDto } from './pricing.dto';
 import { PricingService } from './pricing.service';
 
-export const SYSTEM_FEES = ['deposit', 'force_end_outside_return_zone'];
+export const SYSTEM_FEES = ['deposit', 'force_end_outside_return_zone', 'battery_swap_fee'];
 const UNIT_MINUTES = { minute: 1, hour: 60, day: 1440, week: 10080, month: 43200 } as const;
 
 export const toPlan = (p: PricingPlan) =>

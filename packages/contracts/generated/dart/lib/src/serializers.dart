@@ -225,6 +225,11 @@ import 'package:volti_api/src/model/staff_user_create.dart';
 import 'package:volti_api/src/model/staff_user_page.dart';
 import 'package:volti_api/src/model/staff_user_update.dart';
 import 'package:volti_api/src/model/start_rental_request.dart';
+import 'package:volti_api/src/model/station_swap.dart';
+import 'package:volti_api/src/model/station_swap_end_reason.dart';
+import 'package:volti_api/src/model/station_swap_page.dart';
+import 'package:volti_api/src/model/station_swap_request.dart';
+import 'package:volti_api/src/model/station_swap_status.dart';
 import 'package:volti_api/src/model/subscription.dart';
 import 'package:volti_api/src/model/subscription_create.dart';
 import 'package:volti_api/src/model/subscription_list.dart';
@@ -243,6 +248,7 @@ import 'package:volti_api/src/model/support_message_status.dart';
 import 'package:volti_api/src/model/support_read_request.dart';
 import 'package:volti_api/src/model/swap_station.dart';
 import 'package:volti_api/src/model/swap_station_list.dart';
+import 'package:volti_api/src/model/swap_station_qr.dart';
 import 'package:volti_api/src/model/swap_vehicle_request.dart';
 import 'package:volti_api/src/model/task_priority.dart';
 import 'package:volti_api/src/model/top_up.dart';
@@ -498,6 +504,11 @@ part 'serializers.g.dart';
   StaffUserPage,
   StaffUserUpdate,
   StartRentalRequest,
+  StationSwap,
+  StationSwapEndReason,
+  StationSwapPage,
+  StationSwapRequest,
+  StationSwapStatus,
   Subscription,
   SubscriptionCreate,
   SubscriptionList,
@@ -516,6 +527,7 @@ part 'serializers.g.dart';
   SupportReadRequest,
   SwapStation,
   SwapStationList,
+  SwapStationQr,
   SwapVehicleRequest,
   TaskPriority,
   TopUp,
@@ -585,6 +597,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Incident)]),
         () => ListBuilder<Incident>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(StationSwap)]),
+        () => ListBuilder<StationSwap>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltMap, [FullType(String), FullType(HealthState)]),

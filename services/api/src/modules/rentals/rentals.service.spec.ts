@@ -20,6 +20,53 @@ function setup() {
   return { prisma, commands, svc };
 }
 
+describe('RentalsService.current — troca na estação em andamento (fix 1, I1)', () => {
+  const now = new Date('2026-10-22T15:00:00Z');
+  const rentalRow = {
+    id: RENTAL_ID, customerId: CUSTOMER_ID, vehicleId: OLD_ID, planCode: 'minute', coverage: 'basic', status: 'active', startedAt: now, pausedAt: null, pausedSecondsAcc: 0,
+    endRequestedAt: null, endedAt: null, priceSnapshot: { planCode: 'minute', unit: 'minute', unlockFeeCents: 0, unitPriceCents: 79, pausePerMinuteCents: 0, insurancePremiumCents: 0 },
+    costCents: 0, breakdown: null, createdAt: now, updatedAt: now, vehicle: { code: 'VLT-0001' },
+  };
+
+  it('traz currentStationSwap (visão do cliente) quando o aluguel tem troca aberta', async () => {
+    const { prisma, svc } = setup();
+    prisma.rental.findFirst.mockResolvedValue(rentalRow as any);
+    prisma.stationSwap.findFirst.mockResolvedValue({
+      id: 'sw1', stationId: 'st1', rentalId: RENTAL_ID, customerId: CUSTOMER_ID, vehicleId: OLD_ID, status: 'awaiting_return', endReason: null, slotNumber: 3, feeCents: 500,
+      distanceM: 12, returnedSerial: null, returnedPct: null, releasedSerial: null, expiresAt: now, idempotencyKey: 'k', completedAt: null, createdAt: now, updatedAt: now,
+    } as any);
+    const out: any = await svc.current(CUSTOMER_ID);
+    expect(out.rental.id).toBe(RENTAL_ID);
+    expect(out.currentStationSwap).toMatchObject({ id: 'sw1', status: 'awaiting_return', slotNumber: 3 });
+    expect(out.currentStationSwap).not.toHaveProperty('distanceM');
+    expect((prisma.stationSwap.findFirst.mock.calls[0][0] as any).where).toEqual({ rentalId: RENTAL_ID, status: { in: ['opening_slot', 'awaiting_return', 'returned', 'releasing'] } });
+  });
+
+  it('batterySwapFeeCents: taxa ativa nos planos minuto/hora (mesma regra do feeAmount da criação); 0 em dia/semana/mês', async () => {
+    const { prisma, svc } = setup();
+    prisma.stationSwap.findFirst.mockResolvedValue(null);
+    prisma.fee.findUnique.mockResolvedValue({ code: 'battery_swap_fee', amountCents: 650, active: true } as any);
+    for (const [planCode, expected] of [['minute', 650], ['hour', 650], ['day', 0], ['weekly', 0], ['monthly', 0]] as const) {
+      prisma.rental.findFirst.mockResolvedValue({ ...rentalRow, planCode } as any);
+      expect(((await svc.current(CUSTOMER_ID)) as any).batterySwapFeeCents).toBe(expected);
+    }
+    expect((prisma.fee.findUnique.mock.calls[0][0] as any).where).toEqual({ code: 'battery_swap_fee' });
+    // Taxa desativada → padrão (500), exatamente como o feeCents que o POST congela.
+    prisma.fee.findUnique.mockResolvedValue({ code: 'battery_swap_fee', amountCents: 650, active: false } as any);
+    prisma.rental.findFirst.mockResolvedValue({ ...rentalRow, planCode: 'minute' } as any);
+    expect(((await svc.current(CUSTOMER_ID)) as any).batterySwapFeeCents).toBe(500);
+  });
+
+  it('sem troca aberta → sem o campo; sem aluguel → {}', async () => {
+    const { prisma, svc } = setup();
+    prisma.rental.findFirst.mockResolvedValue(rentalRow as any);
+    prisma.stationSwap.findFirst.mockResolvedValue(null);
+    expect(await svc.current(CUSTOMER_ID)).not.toHaveProperty('currentStationSwap');
+    prisma.rental.findFirst.mockResolvedValue(null);
+    expect(await svc.current(CUSTOMER_ID)).toEqual({});
+  });
+});
+
 describe('RentalsService.swap — moto do galpão (Task 6)', () => {
   it.each([
     ['com depotId (no galpão)', { status: 'free', depotId: DEPOT_ID }],
@@ -30,6 +77,48 @@ describe('RentalsService.swap — moto do galpão (Task 6)', () => {
     await expect(svc.swap(user, RENTAL_ID, { newVehicleId: NEW_ID, reason: 'Pneu furado' } as any)).rejects.toMatchObject({ slug: 'vehicle-unavailable' });
     expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
     expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('fix 1 (I7): troca de bateria na estação em andamento → 409 swap-open, sem trocar nem travar', async () => {
+    const { prisma, commands, svc } = setup();
+    prisma.stationSwap.findFirst.mockResolvedValue({ id: 'swap-1' } as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ id: NEW_ID, status: 'free', depotId: null, speedLimitKmh: 20, ...here } as any);
+    await expect(svc.swap(user, RENTAL_ID, { newVehicleId: NEW_ID, reason: 'Pneu furado' } as any)).rejects.toMatchObject({ status: 409, slug: 'swap-open' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('rodada 3: a transação trava o aluguel (FOR UPDATE) antes das motos e reconfere a troca aberta → 409 swap-open sem tocar nas motos', async () => {
+    const { prisma, commands, svc } = setup();
+    const order: string[] = [];
+    (prisma.$queryRaw as any).mockImplementation(async (sql: TemplateStringsArray) => {
+      order.push(sql.join('?'));
+      return [];
+    });
+    prisma.vehicle.findUnique.mockResolvedValue({ id: NEW_ID, status: 'free', depotId: null, speedLimitKmh: 20, ...here } as any);
+    // Pré-checagem não vê troca; uma troca nova entrou antes do lock.
+    prisma.stationSwap.findFirst.mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'swap-1' } as any);
+    await expect(svc.swap(user, RENTAL_ID, { newVehicleId: NEW_ID, reason: 'Pneu furado' } as any)).rejects.toMatchObject({ status: 409, slug: 'swap-open' });
+    expect(order.some((q) => /FROM "Rental" WHERE "id" = \?::uuid FOR UPDATE/.test(q))).toBe(true);
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('rodada 3: sem troca aberta, o lock do aluguel vem antes da reivindicação da moto (mesma ordem da liberação na estação)', async () => {
+    const { prisma, svc } = setup();
+    const order: string[] = [];
+    (prisma.$queryRaw as any).mockImplementation(async (sql: TemplateStringsArray) => {
+      order.push(sql.join('?').includes('"Rental"') ? 'lock-rental' : 'outro');
+      return [];
+    });
+    prisma.vehicle.findUnique.mockResolvedValue({ id: NEW_ID, status: 'free', depotId: null, speedLimitKmh: 20, ...here } as any);
+    prisma.vehicle.updateMany.mockImplementation((async () => {
+      order.push('claim-vehicle');
+      return { count: 1 };
+    }) as any);
+    await svc.swap(user, RENTAL_ID, { newVehicleId: NEW_ID, reason: 'Pneu furado' } as any).catch(() => undefined);
+    expect(order.slice(0, 2)).toEqual(['lock-rental', 'claim-vehicle']);
   });
 
   it('a reivindicação da moto alvo exige depotId nulo (corrida com a volta ao galpão)', async () => {

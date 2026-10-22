@@ -36,6 +36,11 @@ export interface IotGateway {
   setStolenMode(req: CommandRequest, on: boolean): Promise<CommandOutcome>;
   horn(req: CommandRequest): Promise<CommandOutcome>;
   getLiveState(thingName: string): Promise<VehicleLiveState | null>;
+  /**
+   * Velocidade conhecida e fresca (a mesma que o bloqueio seguro usa), ou `null` = desconhecida/velha → tratar como em
+   * movimento. Opcional: gateway sem a informação conta como desconhecida.
+   */
+  knownSpeedKmh?(thingName: string): Promise<number | null>;
 }
 
 export class InvalidSpeedLimitError extends Error {}

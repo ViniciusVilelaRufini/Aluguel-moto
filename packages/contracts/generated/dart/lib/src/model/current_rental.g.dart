@@ -9,11 +9,17 @@ part of 'current_rental.dart';
 class _$CurrentRental extends CurrentRental {
   @override
   final Rental? rental;
+  @override
+  final StationSwap? currentStationSwap;
+  @override
+  final int? batterySwapFeeCents;
 
   factory _$CurrentRental([void Function(CurrentRentalBuilder)? updates]) =>
       (CurrentRentalBuilder()..update(updates))._build();
 
-  _$CurrentRental._({this.rental}) : super._();
+  _$CurrentRental._(
+      {this.rental, this.currentStationSwap, this.batterySwapFeeCents})
+      : super._();
   @override
   CurrentRental rebuild(void Function(CurrentRentalBuilder) updates) =>
       (toBuilder()..update(updates)).build();
@@ -24,13 +30,18 @@ class _$CurrentRental extends CurrentRental {
   @override
   bool operator ==(Object other) {
     if (identical(other, this)) return true;
-    return other is CurrentRental && rental == other.rental;
+    return other is CurrentRental &&
+        rental == other.rental &&
+        currentStationSwap == other.currentStationSwap &&
+        batterySwapFeeCents == other.batterySwapFeeCents;
   }
 
   @override
   int get hashCode {
     var _$hash = 0;
     _$hash = $jc(_$hash, rental.hashCode);
+    _$hash = $jc(_$hash, currentStationSwap.hashCode);
+    _$hash = $jc(_$hash, batterySwapFeeCents.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -38,7 +49,9 @@ class _$CurrentRental extends CurrentRental {
   @override
   String toString() {
     return (newBuiltValueToStringHelper(r'CurrentRental')
-          ..add('rental', rental))
+          ..add('rental', rental)
+          ..add('currentStationSwap', currentStationSwap)
+          ..add('batterySwapFeeCents', batterySwapFeeCents))
         .toString();
   }
 }
@@ -51,6 +64,17 @@ class CurrentRentalBuilder
   RentalBuilder get rental => _$this._rental ??= RentalBuilder();
   set rental(RentalBuilder? rental) => _$this._rental = rental;
 
+  StationSwapBuilder? _currentStationSwap;
+  StationSwapBuilder get currentStationSwap =>
+      _$this._currentStationSwap ??= StationSwapBuilder();
+  set currentStationSwap(StationSwapBuilder? currentStationSwap) =>
+      _$this._currentStationSwap = currentStationSwap;
+
+  int? _batterySwapFeeCents;
+  int? get batterySwapFeeCents => _$this._batterySwapFeeCents;
+  set batterySwapFeeCents(int? batterySwapFeeCents) =>
+      _$this._batterySwapFeeCents = batterySwapFeeCents;
+
   CurrentRentalBuilder() {
     CurrentRental._defaults(this);
   }
@@ -59,6 +83,8 @@ class CurrentRentalBuilder
     final $v = _$v;
     if ($v != null) {
       _rental = $v.rental?.toBuilder();
+      _currentStationSwap = $v.currentStationSwap?.toBuilder();
+      _batterySwapFeeCents = $v.batterySwapFeeCents;
       _$v = null;
     }
     return this;
@@ -83,12 +109,16 @@ class CurrentRentalBuilder
       _$result = _$v ??
           _$CurrentRental._(
             rental: _rental?.build(),
+            currentStationSwap: _currentStationSwap?.build(),
+            batterySwapFeeCents: batterySwapFeeCents,
           );
     } catch (_) {
       late String _$failedField;
       try {
         _$failedField = 'rental';
         _rental?.build();
+        _$failedField = 'currentStationSwap';
+        _currentStationSwap?.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'CurrentRental', _$failedField, e.toString());

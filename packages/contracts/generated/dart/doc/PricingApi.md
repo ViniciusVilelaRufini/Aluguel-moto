@@ -248,7 +248,7 @@ void (empty response body)
 
 Desativar taxa
 
-Exclusão lógica. As taxas de sistema (`deposit`, `force_end_outside_return_zone`) não podem ser desativadas (`409`). Grava AuditLog.
+Exclusão lógica. As taxas de sistema (`deposit`, `force_end_outside_return_zone`, `battery_swap_fee`) não podem ser desativadas (`409`). Grava AuditLog.
 
 ### Example
 ```dart
@@ -461,7 +461,7 @@ Name | Type | Description  | Notes
 
 Listar taxas
 
-Inclui, no seed, `deposit` (caução, 5000) e `force_end_outside_return_zone` (1500).
+Inclui `deposit` (caução, 5000), `force_end_outside_return_zone` (1500) e `battery_swap_fee` (troca de bateria na estação nos planos por minuto/hora, 500).
 
 ### Example
 ```dart

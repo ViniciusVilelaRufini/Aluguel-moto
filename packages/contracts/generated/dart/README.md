@@ -18,7 +18,7 @@ Mudanças depois da aprovação da Task 1 são propostas em `docs/decisoes.md` e
 - IDs são UUID. O código visível da moto é `VLT-0001` (também impresso no QR).
 - Paginação por cursor: `?cursor=&limit=` → `{ items, nextCursor }`. `nextCursor` fica **ausente** na
   última página.
-- `Idempotency-Key` (header) é obrigatório em `POST /rentals` e nos POST de pagamento. A mesma chave
+- `Idempotency-Key` (header) é obrigatório em `POST /rentals`, `POST /swap-stations/{id}/swaps` e nos POST de pagamento. A mesma chave
   com o mesmo corpo devolve a mesma resposta sem repetir o efeito; com corpo diferente → `422`
   (`idempotency-key-reused`). Chaves valem por 24 h.
 - Rate limiting global; acima do limite → `429` com `Retry-After`.
@@ -38,7 +38,8 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `subscription-pause-limit-reached`, `subscription-required`, `subscription-vehicle-required`,
 `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`, `gateway-unavailable`,
 `subscription-vehicle-cooldown`, `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`,
-`depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`.
+`depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
+`station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -269,6 +270,11 @@ Class | Method | HTTP request | Description
 [*StaffApi*](doc/StaffApi.md) | [**getStaffUser**](doc/StaffApi.md#getstaffuser) | **GET** /staff/{id} | Detalhe do usuário interno
 [*StaffApi*](doc/StaffApi.md) | [**listStaffUsers**](doc/StaffApi.md#liststaffusers) | **GET** /staff | Usuários internos
 [*StaffApi*](doc/StaffApi.md) | [**updateStaffUser**](doc/StaffApi.md#updatestaffuser) | **PATCH** /staff/{id} | Alterar grupos ou desativar usuário interno
+[*StationsApi*](doc/StationsApi.md) | [**cancelStationSwap**](doc/StationsApi.md#cancelstationswap) | **POST** /swap-stations/{id}/swaps/{swapId}/cancel | Cancelar troca na estação
+[*StationsApi*](doc/StationsApi.md) | [**createStationSwap**](doc/StationsApi.md#createstationswap) | **POST** /swap-stations/{id}/swaps | Iniciar troca de bateria na estação (QR)
+[*StationsApi*](doc/StationsApi.md) | [**getStationSwap**](doc/StationsApi.md#getstationswap) | **GET** /swap-stations/{id}/swaps/{swapId} | Consultar troca na estação
+[*StationsApi*](doc/StationsApi.md) | [**getSwapStationQr**](doc/StationsApi.md#getswapstationqr) | **GET** /swap-stations/{id}/qr | QR da estação (admin)
+[*StationsApi*](doc/StationsApi.md) | [**listStationSwaps**](doc/StationsApi.md#liststationswaps) | **GET** /swap-stations/{id}/swaps | Trocas da estação (painel)
 [*StationsApi*](doc/StationsApi.md) | [**listSwapStations**](doc/StationsApi.md#listswapstations) | **GET** /swap-stations | Estações de troca de bateria (mapa)
 [*SupportApi*](doc/SupportApi.md) | [**createClaim**](doc/SupportApi.md#createclaim) | **POST** /support/claims | Abrir sinistro
 [*SupportApi*](doc/SupportApi.md) | [**createDispute**](doc/SupportApi.md#createdispute) | **POST** /support/disputes | Contestar cobrança
@@ -525,6 +531,11 @@ Class | Method | HTTP request | Description
  - [StaffUserPage](doc/StaffUserPage.md)
  - [StaffUserUpdate](doc/StaffUserUpdate.md)
  - [StartRentalRequest](doc/StartRentalRequest.md)
+ - [StationSwap](doc/StationSwap.md)
+ - [StationSwapEndReason](doc/StationSwapEndReason.md)
+ - [StationSwapPage](doc/StationSwapPage.md)
+ - [StationSwapRequest](doc/StationSwapRequest.md)
+ - [StationSwapStatus](doc/StationSwapStatus.md)
  - [Subscription](doc/Subscription.md)
  - [SubscriptionCreate](doc/SubscriptionCreate.md)
  - [SubscriptionList](doc/SubscriptionList.md)
@@ -543,6 +554,7 @@ Class | Method | HTTP request | Description
  - [SupportReadRequest](doc/SupportReadRequest.md)
  - [SwapStation](doc/SwapStation.md)
  - [SwapStationList](doc/SwapStationList.md)
+ - [SwapStationQr](doc/SwapStationQr.md)
  - [SwapVehicleRequest](doc/SwapVehicleRequest.md)
  - [TaskPriority](doc/TaskPriority.md)
  - [TopUp](doc/TopUp.md)

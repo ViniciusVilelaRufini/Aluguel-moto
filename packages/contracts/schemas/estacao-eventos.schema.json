@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://api.volti.com.br/schemas/mqtt/estacao-eventos.schema.json",
+  "title": "Evento da estação de troca",
+  "description": "Publicado pela estação em estacoes/{thing}/eventos. QoS 1. Ordem de uma troca: slot_opened → battery_returned → slot_closed → (comando release_battery) → battery_released. Vaga fechada sem devolução: slot_opened → slot_closed.",
+  "type": "object",
+  "required": ["type", "swapId", "ts"],
+  "additionalProperties": false,
+  "properties": {
+    "type": { "type": "string", "enum": ["slot_opened", "battery_returned", "slot_closed", "battery_released"] },
+    "swapId": { "type": "string", "format": "uuid" },
+    "slotNumber": { "type": "integer", "minimum": 1, "maximum": 999, "description": "slot_opened: número da vaga aberta" },
+    "serial": { "type": "string", "pattern": "^[A-Za-z0-9._-]{1,64}$", "description": "battery_returned: série lida da bateria devolvida; battery_released: série da bateria liberada" },
+    "pct": { "type": "integer", "minimum": 0, "maximum": 100, "description": "battery_returned: carga lida da bateria devolvida" },
+    "ts": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "slot_opened" } } }, "then": { "required": ["slotNumber"] } },
+    { "if": { "properties": { "type": { "const": "battery_returned" } } }, "then": { "required": ["serial", "pct"] } },
+    { "if": { "properties": { "type": { "const": "battery_released" } } }, "then": { "required": ["serial"] } }
+  ],
+  "examples": [
+    { "type": "slot_opened", "swapId": "5b0e7c1a-1111-4111-8111-111111111111", "slotNumber": 3, "ts": "2026-10-22T15:00:02.000Z" },
+    { "type": "battery_returned", "swapId": "5b0e7c1a-1111-4111-8111-111111111111", "serial": "BAT-00001", "pct": 14, "ts": "2026-10-22T15:00:20.000Z" },
+    { "type": "slot_closed", "swapId": "5b0e7c1a-1111-4111-8111-111111111111", "ts": "2026-10-22T15:00:22.000Z" },
+    { "type": "battery_released", "swapId": "5b0e7c1a-1111-4111-8111-111111111111", "serial": "BT-S1001", "ts": "2026-10-22T15:00:25.000Z" }
+  ]
+}

@@ -390,6 +390,30 @@ enum HandoverStatus {
   canceled
 }
 
+// ───────────── troca de bateria na estação via QR (docs/decisoes.md, 2026-10-22) ─────────────
+
+enum StationSwapStatus {
+  opening_slot
+  awaiting_return
+  returned
+  releasing
+  completed
+  canceled
+  failed
+}
+
+enum StationSwapEndReason {
+  canceled_by_customer
+  slot_closed_without_return
+  station_timeout
+  return_timeout
+  release_timeout
+  no_battery_after_return
+  serial_mismatch
+  return_after_close
+  rental_force_ended
+}
+
 // ───────────── pessoas ─────────────
 
 model Customer {
@@ -1383,8 +1407,45 @@ model SwapStation {
   openingHours       String
   open24h            Boolean  @default(false)
   active             Boolean  @default(true)
+  /// Conteúdo do QR fixo da estação (`vst1.<id>.<hmac>`, assinado com `STATION_QR_SECRET`; sem dado pessoal). Nulo = QR
+  /// ainda não emitido (o seed emite para todas). A API confere a assinatura **e** a igualdade com este valor.
+  stationCode        String?  @unique
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
+
+  swaps StationSwap[]
+}
+
+/// Troca de bateria feita pelo cliente numa estação (QR). Escrito à mão na migração: uma troca aberta por aluguel
+/// (`StationSwap_one_open_per_rental`). LGPD: a posição do celular só é usada na validação; guarda-se a distância.
+model StationSwap {
+  id             String                @id @default(uuid()) @db.Uuid
+  stationId      String                @db.Uuid
+  station        SwapStation           @relation(fields: [stationId], references: [id])
+  rentalId       String                @db.Uuid
+  customerId     String                @db.Uuid
+  vehicleId      String                @db.Uuid
+  status         StationSwapStatus     @default(opening_slot)
+  endReason      StationSwapEndReason?
+  slotNumber     Int?
+  /// Taxa congelada na criação (0 nos planos diário/semanal/mensal); cobrada no fechamento do aluguel (`battery_swap_fee`).
+  feeCents       Int                   @default(0)
+  /// Distância (m) do celular até a estação na validação.
+  distanceM      Int
+  returnedSerial String?
+  returnedPct    Int?
+  releasedSerial String?
+  /// Prazo da etapa atual (3 min por etapa); vencido → o job cancela/falha a troca.
+  expiresAt      DateTime
+  idempotencyKey String?
+  completedAt    DateTime?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  @@unique([customerId, idempotencyKey])
+  @@index([stationId, createdAt])
+  @@index([rentalId, status])
+  @@index([status, expiresAt])
 }
 
 /// Cupom salvo na conta do cliente.
