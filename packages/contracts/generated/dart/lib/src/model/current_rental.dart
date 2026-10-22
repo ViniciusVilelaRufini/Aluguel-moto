@@ -15,6 +15,7 @@ part 'current_rental.g.dart';
 /// Properties:
 /// * [rental]
 /// * [currentStationSwap] - Troca de bateria na estação em andamento neste aluguel (ausente quando não há), para o app retomar a tela da troca.
+/// * [batterySwapFeeCents] - Taxa que uma troca de bateria na estação iniciada agora congelaria (`StationSwap.feeCents`), para o app mostrar \"Taxa R$ X\" na confirmação antes do `POST /swap-stations/{id}/swaps`: 0 nos planos `day`, `weekly` e `monthly`; nos planos `minute` e `hour`, o valor da taxa de sistema `battery_swap_fee` (mesma regra da criação da troca). Presente sempre que há `rental`.
 @BuiltValue()
 abstract class CurrentRental
     implements Built<CurrentRental, CurrentRentalBuilder> {
@@ -24,6 +25,10 @@ abstract class CurrentRental
   /// Troca de bateria na estação em andamento neste aluguel (ausente quando não há), para o app retomar a tela da troca.
   @BuiltValueField(wireName: r'currentStationSwap')
   StationSwap? get currentStationSwap;
+
+  /// Taxa que uma troca de bateria na estação iniciada agora congelaria (`StationSwap.feeCents`), para o app mostrar \"Taxa R$ X\" na confirmação antes do `POST /swap-stations/{id}/swaps`: 0 nos planos `day`, `weekly` e `monthly`; nos planos `minute` e `hour`, o valor da taxa de sistema `battery_swap_fee` (mesma regra da criação da troca). Presente sempre que há `rental`.
+  @BuiltValueField(wireName: r'batterySwapFeeCents')
+  int? get batterySwapFeeCents;
 
   CurrentRental._();
 
@@ -62,6 +67,13 @@ class _$CurrentRentalSerializer implements PrimitiveSerializer<CurrentRental> {
       yield serializers.serialize(
         object.currentStationSwap,
         specifiedType: const FullType(StationSwap),
+      );
+    }
+    if (object.batterySwapFeeCents != null) {
+      yield r'batterySwapFeeCents';
+      yield serializers.serialize(
+        object.batterySwapFeeCents,
+        specifiedType: const FullType(int),
       );
     }
   }
@@ -104,6 +116,14 @@ class _$CurrentRentalSerializer implements PrimitiveSerializer<CurrentRental> {
           ) as StationSwap?;
           if (valueDes == null) continue;
           result.currentStationSwap.replace(valueDes);
+          break;
+        case r'batterySwapFeeCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.batterySwapFeeCents = valueDes;
           break;
         default:
           unhandled.add(key);

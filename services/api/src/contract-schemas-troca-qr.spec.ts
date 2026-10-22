@@ -34,6 +34,8 @@ describe('contrato da troca de bateria na estação', () => {
 
   it('fix 1: currentStationSwap em CurrentRental, motivos novos e SwapStationQr', () => {
     expect(s.CurrentRental.properties.currentStationSwap.$ref).toBe('#/components/schemas/StationSwap');
+    expect(s.CurrentRental.properties.batterySwapFeeCents).toMatchObject({ type: 'integer', minimum: 0 });
+    expect(s.CurrentRental.required ?? []).not.toContain('batterySwapFeeCents');
     expect(s.StationSwapEndReason.enum).toEqual(expect.arrayContaining(['no_battery_after_return', 'serial_mismatch']));
     // Fix 2: só acréscimos (o app do cliente já consome o contrato); a ordem dos valores antigos não muda.
     expect(s.StationSwapEndReason.enum).toEqual([

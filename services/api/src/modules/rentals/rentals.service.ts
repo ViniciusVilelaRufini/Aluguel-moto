@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import type { Prisma, Rental, Vehicle } from '@prisma/client';
@@ -16,8 +16,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
-import type { PriceBreakdown } from '../pricing/pricing.service';
-import { OPEN_SWAP_STATUSES } from '../station-swaps/station-swap.rules';
+import { PricingService, type PriceBreakdown } from '../pricing/pricing.service';
+import { OPEN_SWAP_STATUSES, SWAP_FEE_CODE, SWAP_FEE_DEFAULT_CENTS, swapFeeCents } from '../station-swaps/station-swap.rules';
 import { toStationSwap } from '../station-swaps/station-swaps.mapper';
 import { hasOpenStationSwap } from './rental-end.service';
 import { isDepotLocked } from './rental-start.service';
@@ -41,6 +41,8 @@ export class RentalsService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(IOT_GATEWAY) private readonly iot: IotGateway,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    // Taxa de troca na estação em `current()`; opcional (testes montam o serviço sem ela; cai no mesmo cálculo).
+    @Optional() private readonly pricing?: PricingService,
   ) {}
 
   /** Cliente só enxerga os próprios aluguéis (404 para os demais, sem revelar existência). */
@@ -78,7 +80,11 @@ export class RentalsService {
     if (!r) return {};
     // Fix 1 (I1): troca de bateria na estação em andamento, para o app retomar a tela da troca ao reabrir.
     const swap = await this.prisma.stationSwap.findFirst({ where: { rentalId: r.id, status: { in: OPEN_SWAP_STATUSES } } });
-    return swap ? { rental: toRental(r), currentStationSwap: toStationSwap(swap, { staff: false }) } : { rental: toRental(r) };
+    // Taxa que uma troca agora congelaria (mesma regra e mesmas funções de `StationSwapsService.create`): o app mostra
+    // "Taxa R$ X" na confirmação antes do POST, sem acesso a `/pricing/fees` (só staff).
+    const pricing = this.pricing ?? new PricingService(this.prisma);
+    const batterySwapFeeCents = swapFeeCents(r.planCode, await pricing.feeAmount(SWAP_FEE_CODE, SWAP_FEE_DEFAULT_CENTS));
+    return { rental: toRental(r), ...(swap ? { currentStationSwap: toStationSwap(swap, { staff: false }) } : {}), batterySwapFeeCents };
   }
 
   async get(user: Principal, id: string) {

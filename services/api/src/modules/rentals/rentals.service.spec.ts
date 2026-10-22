@@ -42,6 +42,21 @@ describe('RentalsService.current — troca na estação em andamento (fix 1, I1)
     expect((prisma.stationSwap.findFirst.mock.calls[0][0] as any).where).toEqual({ rentalId: RENTAL_ID, status: { in: ['opening_slot', 'awaiting_return', 'returned', 'releasing'] } });
   });
 
+  it('batterySwapFeeCents: taxa ativa nos planos minuto/hora (mesma regra do feeAmount da criação); 0 em dia/semana/mês', async () => {
+    const { prisma, svc } = setup();
+    prisma.stationSwap.findFirst.mockResolvedValue(null);
+    prisma.fee.findUnique.mockResolvedValue({ code: 'battery_swap_fee', amountCents: 650, active: true } as any);
+    for (const [planCode, expected] of [['minute', 650], ['hour', 650], ['day', 0], ['weekly', 0], ['monthly', 0]] as const) {
+      prisma.rental.findFirst.mockResolvedValue({ ...rentalRow, planCode } as any);
+      expect(((await svc.current(CUSTOMER_ID)) as any).batterySwapFeeCents).toBe(expected);
+    }
+    expect((prisma.fee.findUnique.mock.calls[0][0] as any).where).toEqual({ code: 'battery_swap_fee' });
+    // Taxa desativada → padrão (500), exatamente como o feeCents que o POST congela.
+    prisma.fee.findUnique.mockResolvedValue({ code: 'battery_swap_fee', amountCents: 650, active: false } as any);
+    prisma.rental.findFirst.mockResolvedValue({ ...rentalRow, planCode: 'minute' } as any);
+    expect(((await svc.current(CUSTOMER_ID)) as any).batterySwapFeeCents).toBe(500);
+  });
+
   it('sem troca aberta → sem o campo; sem aluguel → {}', async () => {
     const { prisma, svc } = setup();
     prisma.rental.findFirst.mockResolvedValue(rentalRow as any);
