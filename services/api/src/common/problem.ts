@@ -54,6 +54,13 @@ const DEFAULT_TITLES: Record<string, string> = {
   'referral-not-eligible': 'Indicação não permitida',
   // retirada em galpão
   'depot-inactive': 'Galpão inativo',
+  // troca de bateria na estação via QR
+  'station-not-found': 'Estação não encontrada',
+  'station-unavailable': 'Estação indisponível',
+  'vehicle-moving': 'Moto em movimento',
+  'too-far': 'Longe da estação',
+  'swap-open': 'Já existe uma troca em andamento',
+  'swap-not-cancelable': 'Troca não pode ser cancelada',
   'internal-error': 'Erro interno',
 };
 

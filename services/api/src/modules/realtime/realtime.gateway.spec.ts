@@ -61,4 +61,12 @@ describe('RealtimeGateway', () => {
     gw.onHandoverUpdated({ handoverId: 'h1', status: 'accepted', customerId: 'c1', depotId: 'd1' });
     expect(emit).toHaveBeenCalledWith('handover.updated', { handoverId: 'h1', status: 'accepted' });
   });
+
+  it('troca na estação: station_swap.updated { swapId, status } só na sala customer:{id} do dono', () => {
+    const { gw, emit, to } = setup();
+    gw.onStationSwapUpdated({ swapId: 's1', customerId: 'c1', status: 'awaiting_return' });
+    expect(to).toHaveBeenCalledTimes(1);
+    expect(to).toHaveBeenCalledWith('customer:c1');
+    expect(emit).toHaveBeenCalledWith('station_swap.updated', { swapId: 's1', status: 'awaiting_return' });
+  });
 });

@@ -73,7 +73,9 @@ describe('LgpdService', () => {
     expect(out.customer.id).toBe(ME);
     expect(out.customer.cpf).toBe('12345678901'); // dados do próprio titular, sem máscara
     expect(out.consents).toMatchObject({ termsAccepted: true, locationTracking: true, marketing: false });
-    expect(Object.keys(out).sort()).toEqual(['claims', 'consents', 'coupons', 'customer', 'depotReservations', 'disputes', 'generatedAt', 'handovers', 'incidents', 'maintenanceRequests', 'payments', 'referrals', 'rentals', 'subscriptions', 'tracks', 'walletEntries']);
+    expect(Object.keys(out).sort()).toEqual(['claims', 'consents', 'coupons', 'customer', 'depotReservations', 'disputes', 'generatedAt', 'handovers', 'incidents', 'maintenanceRequests', 'payments', 'referrals', 'rentals', 'stationSwaps', 'subscriptions', 'tracks', 'walletEntries']);
+    // Trocas de bateria na estação do titular (sem posição: só a troca).
+    expect((prisma.stationSwap.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
     expect((prisma.subscription.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
     expect((prisma.customerCoupon.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
     expect((prisma.referral.findMany as jest.Mock).mock.calls[0][0].where.referrerId).toBe(ME);

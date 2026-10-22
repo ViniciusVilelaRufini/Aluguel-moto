@@ -188,6 +188,17 @@ describe('Encerramento do aluguel', () => {
     expect(billing.settle).toHaveBeenCalledTimes(1);
   });
 
+  it('troca de bateria na estação: cada troca concluída com taxa vira uma linha battery_swap_fee no fechamento (sem cobrança à parte)', async () => {
+    const { service, billing, prisma } = setup();
+    prisma.stationSwap.findMany.mockResolvedValue([{ id: 's1', feeCents: 500 }, { id: 's2', feeCents: 650 }] as any);
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+    expect(billing.settle).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 1290 + 1150 }));
+    expect(r.rental.breakdown?.lines.filter((l: any) => l.code === 'battery_swap_fee').map((l: any) => l.amountCents)).toEqual([500, 650]);
+    // Só trocas concluídas e com taxa (cancelada/falha não cobra; plano diário congela taxa 0).
+    expect((prisma.stationSwap.findMany.mock.calls[0][0] as any).where).toEqual({ rentalId: RENTAL_ID, status: 'completed', feeCents: { gt: 0 } });
+  });
+
   it('pausado: o tempo de pausa é fechado no encerramento', async () => {
     const { service, rental, billing } = setup();
     rental.status = 'paused';

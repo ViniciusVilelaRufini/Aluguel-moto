@@ -21,6 +21,7 @@ import { toConsents, toCustomer } from '../customers/customers.mapper';
 import { toPayment, toSubscription, toWalletEntry } from '../payments/payments.mapper';
 import { toCustomerCoupon, toReferralReward } from '../referrals/referrals.service';
 import { toRental } from '../rentals/rentals.mapper';
+import { toStationSwap } from '../station-swaps/station-swaps.mapper';
 import { toClaim, toDispute, toIncident } from '../support/support.mapper';
 
 export interface ConsentsInput {
@@ -118,6 +119,8 @@ export class LgpdService {
       claims: claims.map(toClaim),
       ...(await this.exportV2(customerId, customer.referralCode)),
       ...(await this.exportDepot(customerId, rentalIds)),
+      // Troca de bateria na estação: a troca não guarda a posição do celular (só a distância, que nem sai aqui).
+      stationSwaps: ((await this.prisma.stationSwap.findMany({ where: { customerId }, orderBy: { createdAt: 'desc' } })) ?? []).map((s) => toStationSwap(s, { staff: false })),
     };
   }
 

@@ -17,6 +17,8 @@ import { rentalTimes, toRental } from './rentals.mapper';
 
 export const FORCE_END_FEE_CODE = 'force_end_outside_return_zone';
 export const FORCE_END_FEE_DEFAULT_CENTS = 1500;
+/** Mesmo código de `SWAP_FEE_CODE` (módulo station-swaps), sem importar o módulo para cá. */
+export const STATION_SWAP_FEE_CODE = 'battery_swap_fee';
 /** Intervalo mínimo entre tentativas de travamento de um aluguel em `ending`. */
 export const END_RETRY_INTERVAL_MS = 30_000;
 /** Depois de tantas tentativas sem "travada", para de reenviar e chama a operação (alerta). */
@@ -207,7 +209,7 @@ export class RentalEndService {
       snapshot: rental.priceSnapshot as unknown as PriceSnapshot,
       elapsedSeconds: timing.elapsedSeconds,
       pausedSeconds: timing.pausedSeconds,
-      fees: opts.fees,
+      fees: [...(opts.fees ?? []), ...(await this.stationSwapFees(rentalId))],
     });
     const claimed = await this.prisma.rental.updateMany({
       where: { id: rentalId, status: { in: ['active', 'paused', 'ending'] } },
@@ -258,6 +260,15 @@ export class RentalEndService {
     this.emitRental(final);
     this.logger.log({ msg: 'rental_finalized', rentalId, status: kind, costCents: breakdown.totalCents });
     return toRental(final);
+  }
+
+  /**
+   * Troca de bateria na estação (spec 2026-10-22): cada troca concluída com taxa (congelada na criação; 0 nos planos
+   * diário/semanal/mensal) entra como linha `battery_swap_fee` desta liquidação — nunca cobrada à parte.
+   */
+  private async stationSwapFees(rentalId: string): Promise<FeeCharge[]> {
+    const swaps = (await this.prisma.stationSwap.findMany({ where: { rentalId, status: 'completed', feeCents: { gt: 0 } }, orderBy: { createdAt: 'asc' }, select: { id: true, feeCents: true } })) ?? [];
+    return swaps.map((s) => ({ code: STATION_SWAP_FEE_CODE, description: 'Troca de bateria na estação', amountCents: s.feeCents }));
   }
 
   /** Moto do galpão: tem `depotId` ou saiu por uma entrega de galpão aceita para este aluguel. Só sai de novo pela entrega. */

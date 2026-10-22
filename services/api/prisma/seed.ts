@@ -5,6 +5,7 @@
 import { PrismaClient, type StaffGroup } from '@prisma/client';
 import { seedDepot } from './seed-depot';
 import { seedV2 } from './seed-v2';
+import { seedStationCodes } from './seed-station-codes';
 
 const prisma = new PrismaClient();
 
@@ -163,6 +164,12 @@ async function main(): Promise<void> {
     { code: 'force_end_outside_return_zone', name: 'Encerramento fora da zona de devolução', description: 'Cobrada no encerramento forçado (só admin).', amountCents: 1500, system: true },
   ];
   for (const f of fees) await prisma.fee.upsert({ where: { code: f.code }, create: f, update: { amountCents: f.amountCents, system: true, active: true } });
+  // Troca de bateria na estação (planos por minuto/hora). A migração já cria; o seed não sobrescreve o valor do admin.
+  await prisma.fee.upsert({
+    where: { code: 'battery_swap_fee' },
+    create: { code: 'battery_swap_fee', name: 'Troca de bateria na estação', description: 'Por troca nos planos por minuto e por hora; cobrada no fechamento do aluguel.', amountCents: 500, system: true },
+    update: { system: true, active: true },
+  });
   const coverages = [
     { coverage: 'basic' as const, name: 'Básico', description: 'Obrigatório. Danos a terceiros e acidentes pessoais.', premiumCents: 200, mandatory: true, items: [{ code: 'third_party', description: 'Danos a terceiros', limitCents: 1_000_000 }, { code: 'personal_accident', description: 'Acidentes pessoais', limitCents: 2_000_000 }] },
     { coverage: 'full' as const, name: 'Completo', description: 'Básico + danos à moto e furto.', premiumCents: 600, mandatory: false, items: [{ code: 'third_party', description: 'Danos a terceiros', limitCents: 2_000_000 }, { code: 'personal_accident', description: 'Acidentes pessoais', limitCents: 4_000_000 }, { code: 'vehicle_damage', description: 'Danos à moto' }, { code: 'theft', description: 'Furto' }] },
@@ -208,6 +215,10 @@ async function main(): Promise<void> {
 
   // ── retirada em galpão: galpão de Pinheiros com as motos livres ──
   const depot = await seedDepot(prisma);
+
+  // ── troca de bateria via QR: QR fixo de cada estação (payloads impressos para teste) ──
+  const stationCodes = await seedStationCodes(prisma);
+  console.log(JSON.stringify({ msg: 'station_qr_codes', stations: stationCodes }));
 
   const counts = await Promise.all([prisma.vehicle.count(), prisma.zone.count(), prisma.pricingPlan.count({ where: { active: true } }), prisma.staffUser.count(), prisma.customer.count()]);
   console.log(JSON.stringify({ msg: 'seed_done', vehicles: counts[0], zones: counts[1], plans: counts[2], staff: counts[3], customers: counts[4], ...v2, depotVehicles: depot.depotVehicles }));
