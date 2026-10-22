@@ -74,6 +74,14 @@ await (auth as DevAuthRepository).signIn(sub: 'u1', email: 'a@b.com');
 - Modo `dev` (sem refresh; ao expirar, chame `signIn` de novo): `POST /dev/token` com `sub`, `email`, `groups`, `pool` (`DevAuthPool`). Token só em memória.
 - Modo `cognito`: interface pronta (`CognitoAuthRepository`), mas o login (Hosted UI/PKCE) lança `UnimplementedError` até a infraestrutura de autenticação existir; `accessToken()` devolve `null`.
 
+- Relógio do servidor: `ServerClock` (`serverClockProvider`) com `ServerClockInterceptor` no `apiClientProvider` lê o cabeçalho `Date` de toda resposta (inclusive erro HTTP) e corrige o relógio do aparelho (diferença < 1 s ignorada). Use `ref.watch(serverClockProvider).now()` em contagens regressivas.
+
+## Widgets (ajustes do emulador, rodada 1)
+
+- `SwipeAction`: trilho na largura toda, texto centralizado fora da faixa do botão (quebra linha com texto grande) e botão para leitor de tela (`onTap` = concluir).
+- `VoltiButtonPair`: dois botões na proporção do design; se um rótulo não cabe inteiro, divide pelo que cada um precisa ou empilha. `VoltiButton.minWidth(context)` mede o rótulo na escala de texto atual.
+- `VoltiBottomSheet` ocupa a largura toda mesmo com conteúdo estreito.
+
 ## Testes
 
 ```

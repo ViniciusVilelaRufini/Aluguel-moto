@@ -30,7 +30,8 @@ class LocationHeader extends ConsumerWidget {
         onTap: () => context.push('/account'),
       ),
       const SizedBox(width: VoltiSpacing.s12),
-      Expanded(child: Center(child: _LocationPill(label: l.yourLocation, place: place ?? l.nearYou))),
+      // heightFactor 1: sem ele o Center ocupa a altura toda numa Stack e a barra desce ao meio da tela.
+      Expanded(child: Center(heightFactor: 1, child: _LocationPill(label: l.yourLocation, place: place ?? l.nearYou))),
       const SizedBox(width: VoltiSpacing.s12),
       VoltiIconButton(
         key: const Key('home-bell'),

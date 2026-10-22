@@ -6,6 +6,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/breakdown.dart';
 import '../../core/code_sheet.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
@@ -42,7 +43,13 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
   PlanCode? _plan;
   InsuranceCoverage _coverage = InsuranceCoverage.basic; // basico pre-selecionado e nao removivel
   late String _coupon = ref.read(pendingCouponProvider);
-  DepositMethod _method = DepositMethod.card;
+  /// Escolha do cliente na caucao; `null` = ainda nao escolheu (ver [_method]).
+  DepositMethod? _chosenMethod;
+
+  /// Caucao em uso: a escolha do cliente ou, sem escolha, cartao quando ha
+  /// cartao salvo e Pix quando nao ha (o botao nao fica travado sem motivo).
+  DepositMethod get _method =>
+      _chosenMethod ?? (ref.read(cardsProvider).value?.isEmpty ?? false ? DepositMethod.pix : DepositMethod.card);
   String? _cardId;
   bool _useWallet = false;
   bool _busy = false;
@@ -145,7 +152,10 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
       if (token == null) return;
       final card = await ref.read(backendProvider).addCard(token);
       ref.invalidate(cardsProvider);
-      setState(() => _cardId = card.id);
+      setState(() {
+        _cardId = card.id;
+        _chosenMethod = DepositMethod.card;
+      });
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     }
@@ -206,6 +216,8 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
     final needsCard = _method == DepositMethod.card && _cardId == null;
     final quote = _quote.value;
     final canPay = !_busy && !_requoting && _plan != null && quote != null && !needsCard;
+    // Botao desligado por escolha do cliente: diz o motivo (carregando nao precisa).
+    final blockedReason = needsCard && !cards.isLoading ? l.planNeedsCard : null;
 
     final scheme = Theme.of(context).colorScheme;
     final couponValue = quote != null && quote.couponApplied && quote.breakdown.discountCents > 0
@@ -217,7 +229,21 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, VoltiSpacing.s16),
-            child: VoltiButton(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (blockedReason != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: VoltiSpacing.s8),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      blockedReason,
+                      key: const Key('plan-confirm-reason'),
+                      textAlign: TextAlign.center,
+                      style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ),
+              VoltiButton(
               key: const Key('plan-confirm'),
               label: l.payAndUnlock,
               icon: LucideIcons.lockOpen,
@@ -226,6 +252,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
               loading: _busy,
               onPressed: canPay ? _pay : null,
             ),
+            ]),
           ),
         ),
       ),
@@ -310,7 +337,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                             child: OptionCard(
                               key: Key('coverage-${c.coverage.name}'),
                               title: c.name,
-                              description: c.description,
+                              description: c.mandatory ? withoutMandatoryPrefix(c.description) : c.description,
                               icon: c.coverage == InsuranceCoverage.full ? LucideIcons.shieldCheck : LucideIcons.shield,
                               price: c.premiumCents == 0 ? l.included : money(c.premiumCents),
                               priceNote: c.premiumCents == 0 ? null : l.perRental,
@@ -386,7 +413,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                     selected: _method == DepositMethod.card,
                     onTap: () {
                       if (_method != DepositMethod.card) VoltiHaptics.selection();
-                      setState(() => _method = DepositMethod.card);
+                      setState(() => _chosenMethod = DepositMethod.card);
                     },
                   ),
                   if (_method == DepositMethod.card && cardList.isEmpty && !cards.isLoading)
@@ -408,7 +435,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                     selected: _method == DepositMethod.pix,
                     onTap: () {
                       if (_method != DepositMethod.pix) VoltiHaptics.selection();
-                      setState(() => _method = DepositMethod.pix);
+                      setState(() => _chosenMethod = DepositMethod.pix);
                     },
                   ),
                   if (_error != null)
@@ -426,6 +453,17 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
       ),
     );
   }
+}
+
+final _mandatoryPrefix = RegExp(r'^\s*obrigat[óo]ri[oa]\s*[.:,;\-–—]?\s*', caseSensitive: false);
+
+/// O selo do seguro basico ja diz "Obrigatório": tira a palavra do inicio da
+/// descricao que vem da API para nao repetir.
+String? withoutMandatoryPrefix(String? text) {
+  if (text == null) return null;
+  final rest = text.replaceFirst(_mandatoryPrefix, '');
+  if (rest.isEmpty) return null;
+  return rest[0].toUpperCase() + rest.substring(1);
 }
 
 /// Unidade curta para a nota de preco ("/min", "/hora").
@@ -480,10 +518,8 @@ class _QuoteSummary extends StatelessWidget {
           decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
           child: Column(
             children: [
-              for (final line in bd.lines) row(line.description, money(line.amountCents)),
-              if (bd.insuranceCents > 0) row(l.insurance, money(bd.insuranceCents)),
-              if (bd.feesCents > 0) row(l.fees, money(bd.feesCents)),
-              if (bd.discountCents > 0) row(l.discount, money(-bd.discountCents)),
+              for (final r in breakdownRows(bd, insuranceLabel: l.insurance, feesLabel: l.fees, discountLabel: l.discount))
+                row(r.label, money(r.cents)),
               const Divider(),
               row(l.estimatedTotal, money(bd.totalCents), strong: true, tick: true),
               row(l.depositAmount, money(q.depositCents)),

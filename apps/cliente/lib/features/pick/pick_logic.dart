@@ -148,3 +148,16 @@ String? initialsOf(String? name) {
   final last = parts.length > 1 ? parts.last[0] : '';
   return (first + last).toUpperCase();
 }
+
+/// Desenho da rota a pe ate a moto sem servico de rotas (proposta R2 em
+/// docs/decisoes.md): um "L" (quarteirao) pelo canto que comeca pela perna
+/// mais longa, mais parecido com andar pelas ruas do que a reta. Perto da
+/// moto (< 25 m) ou alinhado num eixo, fica a reta.
+List<LatLng> walkingPath(LatLng from, LatLng to) {
+  if (haversineMeters(from, to) < 25) return [from, to];
+  final dLat = haversineMeters(from, LatLng(to.latitude, from.longitude));
+  final dLng = haversineMeters(from, LatLng(from.latitude, to.longitude));
+  if (dLat < 10 || dLng < 10) return [from, to];
+  final corner = dLat >= dLng ? LatLng(to.latitude, from.longitude) : LatLng(from.latitude, to.longitude);
+  return [from, corner, to];
+}

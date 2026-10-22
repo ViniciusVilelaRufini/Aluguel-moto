@@ -374,7 +374,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                         label: _photo == null ? l.returnStepPhoto : l.returnStepLock,
                       ),
                       const SizedBox(height: 14),
-                      Semantics(header: true, child: Text(l.returnPhotoTitle, style: VoltiTypography.heading)),
+                      Semantics(header: true, child: Text(_photo == null ? l.returnPhotoTitle : l.returnLockTitle, style: VoltiTypography.heading)),
                       const SizedBox(height: 12),
                       PhotoCapture(label: l.takePhoto, hint: l.returnPhotoHintDesign, height: 130, done: _photo != null, onTap: _take),
                       const SizedBox(height: 12),
@@ -396,7 +396,8 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                           message: l.returnOutsideBlocked,
                         )
                       else
-                        _RuleNote(text: l.returnZoneRule),
+                        // Dentro do ponto verde: confirma; sem saber ainda, mostra a regra.
+                        _RuleNote(text: inZone == true ? l.returnInsideRule : l.returnZoneRule),
                       if (_error != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 12),

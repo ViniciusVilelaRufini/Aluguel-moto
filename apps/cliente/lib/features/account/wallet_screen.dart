@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +10,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
+import '../../core/pix_qr.dart';
 import '../../core/widgets.dart';
 import 'account_common.dart';
 
@@ -457,22 +457,6 @@ class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
         ]),
       );
     }
-    Widget? qr;
-    final b64 = pix?.qrCodeBase64;
-    if (b64 != null && b64.isNotEmpty) {
-      try {
-        qr = Image.memory(
-          base64Decode(b64.contains(',') ? b64.split(',').last : b64),
-          key: const Key('topup-qr'),
-          width: 200,
-          height: 200,
-          semanticLabel: l.pixQrLabel,
-          errorBuilder: (_, _, _) => const SizedBox.shrink(),
-        );
-      } catch (_) {
-        qr = null;
-      }
-    }
     return SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -482,7 +466,7 @@ class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
           const SizedBox(height: VoltiSpacing.s8),
           Text(l.topUpPixText(money(t.amountCents)), style: VoltiTypography.body),
           const SizedBox(height: VoltiSpacing.s16),
-          if (qr != null) Center(child: qr),
+          if (pix != null) Center(child: PixQrCode(key: const Key('topup-qr'), pix: pix, semanticLabel: l.pixQrLabel)),
           if (pix != null) ...[
             const SizedBox(height: VoltiSpacing.s12),
             Container(

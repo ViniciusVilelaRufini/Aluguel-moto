@@ -317,7 +317,7 @@ void main() {
       expect(find.text('Pç. Oswaldo Cruz · você está dentro'), findsOneWidget);
       expect(find.text('Passo 1 de 2 · Foto'), findsOneWidget);
       expect(find.text('Fotografe a moto estacionada'), findsOneWidget);
-      expect(find.text('Fora dos pontos verdes não é possível encerrar sem taxa.'), findsOneWidget);
+      expect(find.text('Você está num ponto verde. Pode encerrar sem taxa.'), findsOneWidget);
 
       VoltiButton end() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
       expect(end().onPressed, isNull);

@@ -50,6 +50,30 @@ class VoltiButton extends StatelessWidget {
         VoltiButtonSize.lg => (56, 24, 16, 22),
       };
 
+  static TextStyle _labelStyle(double fs, Color color) => TextStyle(
+    fontFamily: VoltiTypography.fontSans,
+    fontWeight: VoltiTypography.fwSemibold,
+    fontSize: fs,
+    height: 1,
+    color: color,
+  );
+
+  /// Largura minima para o rotulo caber inteiro em uma linha (com o texto
+  /// na escala atual do aparelho).
+  double minWidth(BuildContext context) {
+    final (_, px, fs, ic) = _dims(size);
+    final tp = TextPainter(
+      text: TextSpan(text: label, style: _labelStyle(fs, Colors.black)),
+      textDirection: Directionality.maybeOf(context) ?? TextDirection.ltr,
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final icons = (icon != null || loading ? ic + 10 : 0) + (iconRight != null ? ic + 10 : 0);
+    final w = tp.width + px * 2 + 3 + icons;
+    tp.dispose();
+    return w.ceilToDouble() + 1;
+  }
+
   @override
   Widget build(BuildContext context) {
     final (h, px, fs, ic) = _dims(size);
@@ -113,13 +137,7 @@ class VoltiButton extends StatelessWidget {
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontFamily: VoltiTypography.fontSans,
-              fontWeight: VoltiTypography.fwSemibold,
-              fontSize: fs,
-              height: 1,
-              color: fg,
-            ),
+            style: _labelStyle(fs, fg),
           ),
         ),
         if (iconRight != null && !loading) ...[
@@ -153,6 +171,60 @@ class VoltiButton extends StatelessWidget {
       onTap: off ? null : onPressed,
       semanticLabel: label,
       child: fullWidth ? SizedBox(width: double.infinity, child: shown) : shown,
+    );
+  }
+}
+
+/// Dois botoes lado a lado na proporcao do design (`flex` 1 : 1,3 por
+/// padrao). Se algum rotulo nao couber inteiro, divide pela largura que cada
+/// um precisa; se nem assim couber (texto grande), empilha os dois.
+class VoltiButtonPair extends StatelessWidget {
+  const VoltiButtonPair({
+    super.key,
+    required this.first,
+    required this.second,
+    this.firstFlex = 10,
+    this.secondFlex = 13,
+    this.gap = 10,
+  });
+
+  final VoltiButton first, second;
+  final int firstFlex, secondFlex;
+  final double gap;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, box) {
+        final avail = box.maxWidth - gap;
+        final n1 = first.minWidth(context), n2 = second.minWidth(context);
+        final w1 = avail * firstFlex / (firstFlex + secondFlex);
+        if (n1 <= w1 && n2 <= avail - w1) {
+          return Row(
+            children: [
+              Expanded(flex: firstFlex, child: first),
+              SizedBox(width: gap),
+              Expanded(flex: secondFlex, child: second),
+            ],
+          );
+        }
+        if (n1 + n2 <= avail) {
+          // Sobra dividida igualmente; cada um com o minimo dele.
+          final extra = (avail - n1 - n2) / 2;
+          return Row(
+            children: [
+              SizedBox(width: n1 + extra, child: first),
+              SizedBox(width: gap),
+              Expanded(child: second),
+            ],
+          );
+        }
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [first, SizedBox(height: gap), second],
+        );
+      },
     );
   }
 }
