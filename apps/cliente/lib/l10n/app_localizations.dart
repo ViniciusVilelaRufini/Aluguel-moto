@@ -1965,6 +1965,18 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'bateria {pct} por cento'**
   String batterySemantics(int pct);
+
+  /// No description provided for @pickVehicleTaken.
+  ///
+  /// In pt, this message translates to:
+  /// **'Essa moto acabou de ser reservada. Escolha outra.'**
+  String get pickVehicleTaken;
+
+  /// No description provided for @pickupZonesError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos carregar os pontos de retirada.'**
+  String get pickupZonesError;
 }
 
 class _AppLocalizationsDelegate

@@ -131,6 +131,10 @@ void main() {
       expect(reserveBlock(session: session(), selected: true, hasReservation: true), ReserveBlock.activeReservation);
       expect(reserveBlock(session: session(), selected: true, hasRental: true), ReserveBlock.activeRental);
     });
+    test('sessao carregando: desligado sem motivo (nao e KYC pendente)', () {
+      expect(reserveBlock(session: null, selected: true), ReserveBlock.sessionLoading);
+      expect(reserveBlock(session: null, selected: true, hasReservation: true), ReserveBlock.sessionLoading);
+    });
     test('liberado', () {
       expect(reserveBlock(session: session(), selected: true), ReserveBlock.none);
     });

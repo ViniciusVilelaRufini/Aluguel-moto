@@ -11,8 +11,14 @@ import '../../core/session.dart';
 const kReservationMinutes = 15;
 
 /// Promocao "1a corrida gratis". O contrato nao tem como o cliente saber se ela existe
-/// (cupons so para staff), entao fica desligada ate a proposta de contrato sair.
-/// `--dart-define=FIRST_RIDE_PROMO=true` liga para demonstracao.
+/// (cupons so para staff, nenhuma promocao de primeira corrida na API), entao fica desligada
+/// ate a proposta de contrato (`Me.promotions`, docs/decisoes.md) sair.
+///
+/// E um define de compilacao, e nao configuracao remota, de proposito: mostrar uma promocao
+/// que o backend nao aplica seria propaganda enganosa (CDC), entao ligar exige um build
+/// deliberado (demonstracao/homologacao com o cupom criado a mao), nunca uma troca silenciosa
+/// em producao. Quando a API expuser a elegibilidade, este define sai e o app passa a usar o
+/// campo do contrato. Liga com `--dart-define=FIRST_RIDE_PROMO=true`.
 const kFirstRidePromo = bool.fromEnvironment('FIRST_RIDE_PROMO');
 
 /// Distancia em linha reta (haversine), em metros inteiros.
@@ -110,7 +116,7 @@ String? nearestPlaceName(LatLng? user, List<GeoZone> zones) {
 }
 
 /// Motivo de o botao "Reservar" estar desligado.
-enum ReserveBlock { none, noSelection, kycPending, kycRejected, delinquent, activeReservation, activeRental }
+enum ReserveBlock { none, noSelection, sessionLoading, kycPending, kycRejected, delinquent, activeReservation, activeRental }
 
 ReserveBlock reserveBlock({
   required SessionState? session,
@@ -118,12 +124,14 @@ ReserveBlock reserveBlock({
   bool hasReservation = false,
   bool hasRental = false,
 }) {
+  // Sessao ainda carregando: nao sabemos o KYC, entao desliga sem mostrar motivo.
+  if (session == null) return ReserveBlock.sessionLoading;
   if (hasRental) return ReserveBlock.activeRental;
   if (hasReservation) return ReserveBlock.activeReservation;
-  final kyc = session?.kyc ?? KycStatus.notStarted;
+  final kyc = session.kyc;
   if (kyc == KycStatus.rejected) return ReserveBlock.kycRejected;
   if (kyc != KycStatus.approved) return ReserveBlock.kycPending;
-  if (session?.customer?.delinquent ?? false) return ReserveBlock.delinquent;
+  if (session.customer?.delinquent ?? false) return ReserveBlock.delinquent;
   if (!selected) return ReserveBlock.noSelection;
   return ReserveBlock.none;
 }

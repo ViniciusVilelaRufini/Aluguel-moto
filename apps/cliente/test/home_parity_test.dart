@@ -21,13 +21,22 @@ VehicleSummary vs(String code, double range) => VehicleSummary((b) => b
   ..estimatedRangeKm = range);
 
 class ParityBackend extends FakeBackend {
-  ParityBackend(this.vehicles, {this.unread = 0});
+  ParityBackend(this.vehicles, {this.unread = 0, this.zonesFail = false});
   final List<VehicleSummary> vehicles;
   final int unread;
+  bool zonesFail;
+  int nearbyCalls = 0;
   @override
-  Future<List<VehicleSummary>> nearby(double lat, double lng, {double? minRangeKm}) async => vehicles;
+  Future<List<VehicleSummary>> nearby(double lat, double lng, {double? minRangeKm}) async {
+    nearbyCalls++;
+    return vehicles;
+  }
+
   @override
-  Future<List<GeoZone>> zones() async => [];
+  Future<List<GeoZone>> zones() async {
+    if (zonesFail) throw Exception('zones');
+    return [];
+  }
   @override
   Future<Reservation?> currentReservation() async => null;
   @override
@@ -123,4 +132,34 @@ void main() {
     await pump(t, ParityBackend([vs('A', 12)]), kyc: KycStatus.pending);
     expect(t.takeException(), isNull);
   });
+
+  testWidgets('"Pontos de retirada" sem zonas (erro) avisa e tenta de novo', (t) async {
+    phone(t);
+    final b = ParityBackend([vs('A', 12)], zonesFail: true);
+    await pump(t, b);
+    await t.ensureVisible(find.text('Pontos de retirada'));
+    await t.pump(const Duration(seconds: 1));
+    await t.tap(find.text('Pontos de retirada'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.byKey(const Key('pickup-zones-error')), findsOneWidget);
+    expect(find.text('Não conseguimos carregar os pontos de retirada.'), findsOneWidget);
+    b.zonesFail = false;
+    await t.tap(find.text('Tentar de novo'));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.byKey(const Key('pickup-zones-error')), findsNothing);
+  });
+
+  testWidgets('mapa atualiza as motos a cada 20 s sem voltar ao esqueleto', (t) async {
+    phone(t);
+    final b = ParityBackend([vs('A', 12)]);
+    await pump(t, b);
+    final c0 = b.nearbyCalls;
+    await t.pump(const Duration(seconds: 21));
+    expect(find.byKey(const Key('nearby-skeleton')), findsNothing);
+    await t.pump();
+    expect(b.nearbyCalls, c0 + 1);
+  });
 }
+

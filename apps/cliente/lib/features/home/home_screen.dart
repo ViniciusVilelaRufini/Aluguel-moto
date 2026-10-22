@@ -17,6 +17,7 @@ import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 import '../pick/pick_logic.dart';
+import 'nearby_refresh.dart';
 import 'providers.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
@@ -100,7 +101,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final l = context.l;
     final loc = ref.watch(userLocationProvider).value;
     final nearby = ref.watch(nearbyProvider);
-    final zones = ref.watch(zonesProvider).value ?? const <GeoZone>[];
+    final zonesAsync = ref.watch(zonesProvider);
+    final zones = zonesAsync.value ?? const <GeoZone>[];
     final reservation = ref.watch(currentReservationProvider).value;
     final rental = ref.watch(currentRentalProvider).value;
     final filter = ref.watch(homeFilterProvider);
@@ -120,7 +122,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _dropped.addAll(newIds));
     }
 
-    return Scaffold(
+    return NearbyAutoRefresh(
+      child: Scaffold(
       body: Stack(
         children: [
           Positioned.fill(
@@ -344,7 +347,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       ),
                         ),
                       )
-                    else if (nearby.isLoading)
+                    else if (filter == HomeFilter.pickupPoints && zonesAsync.hasError && zones.isEmpty)
+                      // Sem as zonas o filtro nao tem como achar os pontos: avisa em vez de esvaziar o mapa.
+                      Container(
+                        key: const Key('pickup-zones-error'),
+                        padding: const EdgeInsets.all(VoltiSpacing.s16),
+                        decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
+                        child: VoltiEmptyState(
+                          compact: true,
+                          icon: LucideIcons.mapPinned,
+                          title: l.pickupZonesError,
+                          actionLabel: l.retry,
+                          actionIcon: LucideIcons.refreshCw,
+                          onAction: () => ref.invalidate(zonesProvider),
+                        ),
+                      )
+                    // So a primeira carga: a atualizacao periodica mantem a lista anterior na tela.
+                    else if (!nearby.hasValue)
                       Container(
                         key: const Key('nearby-skeleton'),
                         padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.s16, vertical: VoltiSpacing.s8),
@@ -412,6 +432,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
           ),
         ],
+      ),
       ),
     );
   }

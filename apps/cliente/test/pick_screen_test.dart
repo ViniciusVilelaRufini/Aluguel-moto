@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -51,6 +53,9 @@ class PickBackend extends FakeBackend {
   final reserved = <String>[];
   Reservation? reservation;
 
+  /// Slug do 409 da proxima reserva (null = sucesso).
+  String? conflictSlug;
+
   @override
   Future<List<VehicleSummary>> nearby(double lat, double lng, {double? minRangeKm}) async {
     nearbyCalls++;
@@ -69,6 +74,22 @@ class PickBackend extends FakeBackend {
   @override
   Future<Reservation> reserve(String vehicleId) async {
     reserved.add(vehicleId);
+    final slug = conflictSlug;
+    if (slug != null) {
+      conflictSlug = null;
+      if (slug == 'vehicle-unavailable') {
+        // Outra pessoa reservou: a proxima busca ja nao traz a moto.
+        vehicles = vehicles.where((v) => v.id != vehicleId).toList();
+      } else {
+        reservation = Reservation((b) => b
+          ..id = 'outra'
+          ..vehicleId = 'x'
+          ..status = ReservationStatus.active
+          ..createdAt = DateTime.utc(2026)
+          ..expiresAt = DateTime.utc(2026));
+      }
+      throw AppFailure(kind: FailureKind.api, status: 409, slug: slug);
+    }
     return Reservation((b) => b
       ..id = 'res1'
       ..vehicleId = vehicleId
@@ -270,4 +291,98 @@ void main() {
       expect(o.opacity, 1);
     }
   });
+
+  testWidgets('409 moto ja reservada: avisa, atualiza a lista e tira a selecao da moto', (t) async {
+    phone(t);
+    final b = PickBackend()..conflictSlug = 'vehicle-unavailable';
+    await pumpPick(t, b);
+    final calls = b.nearbyCalls;
+    await t.tap(find.text('Reservar Volti Flash · VT-0458'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    expect(find.text('Essa moto acabou de ser reservada. Escolha outra.'), findsOneWidget);
+    expect(b.nearbyCalls, greaterThan(calls));
+    expect(find.text('VT-0458'), findsNothing);
+    // A proxima mais perto fica selecionada.
+    expect(find.text('Reservar Volti Flash · VT-4821'), findsOneWidget);
+    await t.pump(const Duration(seconds: 5));
+  });
+
+  testWidgets('409 reserva ja ativa: avisa com link e o botao passa a mostrar o motivo', (t) async {
+    phone(t);
+    final b = PickBackend()..conflictSlug = 'reservation-already-active';
+    final router = GoRouter(initialLocation: '/pick', routes: [
+      GoRoute(path: '/pick', builder: (_, _) => const PickScreen()),
+      GoRoute(path: '/reserved', builder: (_, _) => const Scaffold(body: Text('tela-reserva'))),
+    ]);
+    await t.pumpWidget(testRouterApp(router, overrides: [
+      backendProvider.overrideWithValue(b),
+      locationServiceProvider.overrideWithValue(HereLocation()),
+      sessionProvider.overrideWith(() => FakeSession(session())),
+    ]));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    await t.tap(find.text('Reservar Volti Flash · VT-0458'));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 500));
+    // Toast + motivo no rodape (reserva recarregada).
+    expect(find.text('Você já tem uma reserva ativa.'), findsNWidgets(2));
+    await t.tap(find.text('Ver reserva'));
+    await t.pumpAndSettle();
+    expect(find.text('tela-reserva'), findsOneWidget);
+  });
+
+  testWidgets('atualiza sozinha a cada 20 s e ao voltar do segundo plano', (t) async {
+    phone(t);
+    final b = PickBackend();
+    await pumpPick(t, b);
+    final c0 = b.nearbyCalls;
+    await t.pump(const Duration(seconds: 21));
+    await t.pump();
+    expect(b.nearbyCalls, c0 + 1);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    // Em segundo plano o timer nao busca.
+    await t.pump(const Duration(seconds: 21));
+    expect(b.nearbyCalls, c0 + 1);
+    t.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await t.pump();
+    await t.pump();
+    expect(b.nearbyCalls, c0 + 2);
+  });
+
+  testWidgets('lista vazia tambem aceita puxar para atualizar', (t) async {
+    phone(t);
+    final b = PickBackend(vehicles: []);
+    await pumpPick(t, b);
+    final c0 = b.nearbyCalls;
+    b.vehicles = fleet;
+    await t.fling(find.text('Nenhuma moto por perto agora'), const Offset(0, 400), 1000);
+    await t.pumpAndSettle();
+    expect(b.nearbyCalls, c0 + 1);
+    expect(find.text('VT-0458'), findsOneWidget);
+  });
+
+  testWidgets('sessao carregando: sem aviso de KYC, botao desligado', (t) async {
+    phone(t);
+    final b = PickBackend();
+    await t.pumpWidget(testApp(const PickScreen(), overrides: [
+      backendProvider.overrideWithValue(b),
+      locationServiceProvider.overrideWithValue(HereLocation()),
+      sessionProvider.overrideWith(PendingSession.new),
+    ]));
+    await t.pump();
+    await t.pump(const Duration(seconds: 1));
+    expect(find.text('VT-0458'), findsOneWidget);
+    expect(find.text('Verificação em análise'), findsNothing);
+    await t.tap(find.text('Reservar Volti Flash · VT-0458'));
+    await t.pump();
+    expect(b.reserved, isEmpty);
+  });
+}
+
+/// Sessao que nunca termina de carregar.
+class PendingSession extends SessionNotifier {
+  @override
+  Future<SessionState> build() => Completer<SessionState>().future;
 }

@@ -528,5 +528,7 @@
         "type": "int"
       }
     }
-  }
+  },
+  "pickVehicleTaken": "Essa moto acabou de ser reservada. Escolha outra.",
+  "pickupZonesError": "Não conseguimos carregar os pontos de retirada."
 }

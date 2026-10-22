@@ -1063,4 +1063,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String batterySemantics(int pct) {
     return 'bateria $pct por cento';
   }
+
+  @override
+  String get pickVehicleTaken =>
+      'Essa moto acabou de ser reservada. Escolha outra.';
+
+  @override
+  String get pickupZonesError =>
+      'Não conseguimos carregar os pontos de retirada.';
 }
