@@ -1,5 +1,5 @@
 // Segurança, LGPD e regras legais (agente 8), caixa-preta contra a API no ar (AUTH_MODE=dev, IOT_MODE=local + Mosquitto).
-// Testes marcados com `todo` documentam achados abertos do docs/relatorio-qa.md: falham hoje sem quebrar a suíte.
+// Os achados que eram `todo` (QA-03, QA-07, QA-10) foram corrigidos na branch fix/qa-api e passaram a ser testes normais.
 //   node --test tests/e2e/security.e2e.mjs
 import { randomUUID } from 'node:crypto';
 import { after, before, test } from 'node:test';

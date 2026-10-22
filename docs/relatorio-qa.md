@@ -11,13 +11,29 @@ Encontrei **25 problemas: 2 críticos, 3 altos, 7 médios e 13 baixos**. Os dois
 | Id | Severidade | Problema | Situação |
 |---|---|---|---|
 | QA-01 | crítica | Admin/operação conseguia pôr 32 km/h numa moto dentro do calçadão de 6 km/h | corrigido (`a3d9dea`) |
-| QA-02 | crítica | Na AWS a API não lia a telemetria (sem cercas nem limites por zona) e subia sem `DATABASE_URL` | corrigido (`71466a2`), sem deploy real |
-| QA-03 | alta | Editar o limite de uma cerca não reaplica às motos que já estão dentro dela | aberto |
-| QA-04 | alta | Tirar um grupo de um usuário interno no painel não revoga o acesso | aberto |
-| QA-07 | alta | A exclusão LGPD não exclui a identidade no Cognito; o token segue valendo | parcial (`84c053b`) |
-| QA-08 | média | Primeiro acesso com requisições paralelas respondia 409 em 9 de 10 chamadas | corrigido (`653a389`) |
+| QA-02 | crítica | Na AWS a API não lia a telemetria (sem cercas nem limites por zona) e subia sem `DATABASE_URL` | corrigido (`71466a2`), sem deploy real; modos desconhecidos recusam subir (`e263fd9`) |
+| QA-03 | alta | Editar o limite de uma cerca não reaplica às motos que já estão dentro dela | corrigido (`62f186c`) |
+| QA-04 | alta | Tirar um grupo de um usuário interno no painel não revoga o acesso | corrigido (`2d0ba0e`); falta IAM no pool interno (infra) |
+| QA-07 | alta | A exclusão LGPD não exclui a identidade no Cognito; o token segue valendo | corrigido (`84c053b`, `8910ac8`) |
+| QA-08 | média | Primeiro acesso com requisições paralelas respondia 409 em 9 de 10 chamadas | corrigido (`653a389`; staff: `2a15d26`) |
+| QA-05 | média | Zona não distingue área de pedestres (6) de ciclovia (20) | mantido por decisão (sem mudar `ZoneType`); proposta `subtype` em `decisoes.md` (`39cb48d`) |
+| QA-09 | média | Revogar o consentimento de localização não parava a gravação do trajeto | corrigido (`8b1c331`) |
+| QA-10 | baixa | CORS refletia qualquer origem com credenciais | corrigido (`b28023d`); falta `CORS_ORIGINS` na task (infra) |
+| QA-11 | média | Link do recibo gravado no banco expirava | corrigido (`5b943ce`) |
+| QA-12 | média | Localização de início do aluguel ficava para sempre | corrigido (`ef6a378`) |
+| QA-13 | baixa | Exportação LGPD incompleta e sem `no-store` | parcial (`fb0265e`): `no-store`; entidades novas dependem da proposta de contrato em `decisoes.md` |
+| QA-14 | baixa | Fotos de devolução não eram apagadas na exclusão | corrigido (`3c76eba`) |
+| QA-15 | baixa | `AUTH_MODE=dev` possível em produção | corrigido (`1dc289b`) |
+| QA-17 | baixa | Cognito aceitava id token; staff casado por e-mail | corrigido (`cd3fb73`) |
+| QA-18 | baixa | Sem helmet, throttler em memória, trust proxy fixo | corrigido (`9508b05`); falta `TRUST_PROXY=1` e regra de rate no WAF (infra) |
+| QA-19 | baixa | Segredo do webhook nascia `CHANGE_ME` | corrigido na API (`46caedc`: recusa subir em produção) |
+| QA-20 | baixa | `GET /vehicles` com posição até 30 s velha | corrigido (`0949b33`) |
+| QA-21 | média | Aluguel começava (e cobrava) com a moto offline | corrigido (`869da45`) |
+| QA-23 | baixa | Desired pendente perdido na reconexão (intermitente) | corrigido (`e6e144c`) |
+| QA-24 | baixa | Aluguel não exigia aceite dos termos | corrigido (`b19199b`) |
+| QA-25 | baixa | `dev` compilava sem `prisma generate` | corrigido (`d667db0`) |
 
-Os outros achados, todos abertos, estão detalhados abaixo, junto com a tabela de tudo o que passou.
+Situação depois da branch `fix/qa-api` (correções da API) na tabela acima; QA-06, QA-16 e QA-22 ficam com a branch de infra/massa de teste. Os achados estão detalhados abaixo, junto com a tabela de tudo o que passou.
 
 ## Ambiente usado
 
