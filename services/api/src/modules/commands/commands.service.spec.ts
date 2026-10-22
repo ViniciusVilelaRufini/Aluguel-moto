@@ -42,6 +42,8 @@ describe('Comandos remotos', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     h.prisma.vehicle.findUnique.mockResolvedValue(vehicle as any);
+    h.prisma.staffUser.findMany.mockResolvedValue([]);
+    h.prisma.customer.findMany.mockResolvedValue([]);
     let lastCreated: any = {};
     store.row = null;
     h.prisma.vehicleCommand.create.mockImplementation((async (args: any) => (lastCreated = {

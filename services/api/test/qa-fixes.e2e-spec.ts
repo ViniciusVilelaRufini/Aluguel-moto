@@ -35,6 +35,22 @@ describe('Correções do QA (e2e)', () => {
     expect((await prisma.staffUser.findUniqueOrThrow({ where: { id: created.body.id } })).groups).toEqual(['campo']);
   });
 
+  it('autor real: comando enviado por staff mostra o nome dele no log (e a Auditoria também)', async () => {
+    const tag = `${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const email = `actor-${tag}@volti.dev`;
+    const created = await http().post('/staff').set('Authorization', `Bearer ${admin}`).send({ email, name: 'Fulana Operadora', groups: ['operacao'] }).expect(201);
+    const token = await devToken(app, { sub: `actor-${tag}`, email, groups: ['operacao'], pool: 'staff' });
+    const vehicle = await prisma.vehicle.findUniqueOrThrow({ where: { code: 'VLT-0040' } });
+    const sent = await http().post(`/vehicles/${vehicle.id}/commands`).set('Authorization', `Bearer ${token}`).send({ type: 'horn', reason: `autor ${tag}` }).expect(202);
+    expect(sent.body.requestedById).toBe(created.body.id);
+    expect(sent.body.requestedByName).toBe('Fulana Operadora');
+    const list = await http().get(`/vehicles/${vehicle.id}/commands`).set('Authorization', `Bearer ${admin}`).expect(200);
+    const row = list.body.items.find((c: any) => c.id === sent.body.id);
+    expect(row).toMatchObject({ requestedByType: 'staff', requestedById: created.body.id, requestedByName: 'Fulana Operadora' });
+    const audit = await http().get('/audit-logs').query({ entityId: vehicle.id, action: 'vehicle.command.horn' }).set('Authorization', `Bearer ${admin}`).expect(200);
+    expect(audit.body.items.find((a: any) => a.reason === `autor ${tag}`)).toMatchObject({ actorType: 'staff', actorId: created.body.id, actorName: 'Fulana Operadora' });
+  });
+
   it('QA-21: moto offline → 409 vehicle-offline, sem aluguel nem caução retida', async () => {
     const { token, customerId } = await approvedCustomer(app, prisma, 'qa21');
     const v = await freeVehicleInReturnZone(prisma);

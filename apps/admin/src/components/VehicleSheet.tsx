@@ -161,7 +161,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
               <span style={{ font: '500 12px/1.4 var(--font-mono)', color: 'var(--text-secondary)' }}>{formatDateTime(c.createdAt).slice(-5)}</span>
               <div>
                 <div style={{ fontSize: 14, fontWeight: 600 }}>{COMMAND_LABEL[c.type]} · {commandStateLabel(c.status, c.statusReason)}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.requestedByName ?? 'Sistema'} · {c.reason}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.requestedByName ?? (c.requestedByType === 'system' ? 'Sistema' : c.requestedByType === 'customer' ? 'Cliente' : 'Equipe')} · {c.reason}</div>
               </div>
             </div>
           ))}
