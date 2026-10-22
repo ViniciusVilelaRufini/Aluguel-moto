@@ -110,6 +110,15 @@ class GalpaoBackend extends FakeBackend {
   int cancels = 0;
   int vehicleCalls = 0;
   int creates = 0;
+  int currentCalls = 0;
+  Object? vehiclesError;
+  final quoteVehicleIds = <String?>[];
+
+  /// GET /reservations/current sem o `pickupCode` (so a resposta da criacao traz).
+  bool stripCodeOnGet = false;
+
+  /// Caucao Pix aguardando pagamento na resposta da criacao.
+  bool pixDeposit = false;
 
   @override
   Future<List<Depot>> depots({double? lat, double? lng}) async => depotList;
@@ -118,6 +127,7 @@ class GalpaoBackend extends FakeBackend {
   @override
   Future<List<Vehicle>> depotVehicles(String depotId) async {
     vehicleCalls++;
+    if (vehiclesError != null) throw toFailure(vehiclesError!);
     return vehiclesByDepot[depotId] ?? const [];
   }
 
@@ -128,7 +138,14 @@ class GalpaoBackend extends FakeBackend {
   @override
   Future<List<GeoZone>> zones() async => const [];
   @override
-  Future<Reservation?> currentReservation() async => current;
+  Future<Reservation?> currentReservation() async {
+    currentCalls++;
+    final r = current;
+    return stripCodeOnGet && r != null ? r.rebuild((b) => b.pickupCode = null) : r;
+  }
+
+  @override
+  Future<Deposit> deposit(String id) async => pixDepositFixture();
   @override
   Future<Rental?> currentRental() async => null;
   @override
@@ -147,8 +164,19 @@ class GalpaoBackend extends FakeBackend {
         coverage(InsuranceCoverage.full, 'Completo', 1500, ['Danos a terceiros', 'Roubo e furto']),
       ];
   @override
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon}) async => Quote((b) => b
+  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId}) async {
+    quoteVehicleIds.add(vehicleId);
+    // Plano por minuto: a API cota com o preco do modelo da moto.
+    final perMinute = vehiclesByDepot.values.expand((l) => l).where((v) => v.id == vehicleId).map((v) => v.pricePerMinuteCents).firstOrNull ?? 79;
+    return Quote((b) => b
     ..planCode = plan
+    ..breakdown.lines = ListBuilder<PriceLine>([
+      if (plan == PlanCode.minute)
+        PriceLine((l) => l
+          ..code = 'time'
+          ..description = 'Tempo de uso (por minuto)'
+          ..amountCents = perMinute),
+    ])
     ..coverage = coverage
     ..depositCents = 20000
     ..couponApplied = false
@@ -157,6 +185,7 @@ class GalpaoBackend extends FakeBackend {
     ..breakdown.insuranceCents = coverage == InsuranceCoverage.full ? 1500 : 0
     ..breakdown.feesCents = 0
     ..breakdown.discountCents = 0);
+  }
   @override
   Future<List<PaymentCard>> cards() async => withCard
       ? [
@@ -196,7 +225,8 @@ class GalpaoBackend extends FakeBackend {
       ..planCode = request.planCode
       ..coverage = request.coverage
       ..depositMethod = request.depositMethod
-      ..pickupCode = 'VOLTI-RES1-SIG');
+      ..pickupCode = 'VOLTI-RES1-SIG'
+      ..deposit = pixDeposit ? pixDepositFixture().toBuilder() : null);
     current = r;
     return r;
   }
@@ -216,3 +246,17 @@ DepotSelection selection({PricingPlan? p, InsuranceCoverage c = InsuranceCoverag
       coverage: c,
       coverageName: c == InsuranceCoverage.basic ? 'Básico' : 'Completo',
     );
+
+Deposit pixDepositFixture() => Deposit((d) => d
+  ..id = 'dep-pix'
+  ..customerId = 'c1'
+  ..method = DepositMethod.pix
+  ..status = DepositStatus.awaitingPix
+  ..amountCents = 20000
+  ..createdAt = DateTime.utc(2026)
+  ..updatedAt = DateTime.utc(2026)
+  ..pix = PixCharge((p) => p
+    ..chargeId = 'ch1'
+    ..qrCodeBase64 = ''
+    ..copyPaste = '00020126580014BR.GOV.BCB.PIX0136volti-dev'
+    ..expiresAt = DateTime.utc(2030)).toBuilder());

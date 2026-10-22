@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { InsuranceService } from '../insurance/insurance.service';
 import { signalNeedsReview } from './payment-review';
 import { canTransition, SETTLED_STATUSES } from './payment-state';
+import { DEPOSIT_FAILED, type DepositFailedEvent } from './deposit-events';
 import { isUniqueViolation, PaymentStateService } from './payment-state.service';
 import { ProviderCustomersService } from './provider-customers.service';
 import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
@@ -30,7 +31,7 @@ export interface BillingOptions {
 export const BILLING_OPTIONS = Symbol('BILLING_OPTIONS');
 export const DEFAULT_REVIEW_MAX_DAYS = 7;
 
-type HoldInput = { customerId: string; rentalId: string; method: 'card' | 'pix'; idempotencyKey: string };
+type HoldInput = { customerId: string; rentalId: string; method: 'card' | 'pix'; idempotencyKey: string; cardId?: string };
 type HoldResult = { depositId: string; status: 'held' | 'awaiting_pix' | 'failed'; pix?: PixCharge };
 type SettleResult = { paymentId: string; status: 'paid' | 'failed' };
 
@@ -149,7 +150,7 @@ export class RentalBillingService implements RentalBillingPort {
   }
 
   private async holdOnCard(payment: Payment, input: HoldInput, amountCents: number): Promise<HoldResult> {
-    const card = await this.customers.card(input.customerId);
+    const card = await this.customers.card(input.customerId, input.cardId);
     if (!card) {
       await this.state.transition(payment.id, 'failed', { failureReason: 'card_not_found' });
       return this.depositResult(await this.createDeposit(payment, input, { status: 'failed', amountCents }));
@@ -889,7 +890,11 @@ export class RentalBillingService implements RentalBillingPort {
         this.logger.log({ msg: 'deposit_pix_paid', depositId: p.depositId });
       }
     } else if (p.status === 'failed') {
-      await this.prisma.deposit.updateMany({ where: { id: p.depositId!, status: 'awaiting_pix' }, data: { status: 'failed' } });
+      const r = await this.prisma.deposit.updateMany({ where: { id: p.depositId!, status: 'awaiting_pix' }, data: { status: 'failed' } });
+      if (r.count === 1) {
+        const ev: DepositFailedEvent = { depositId: p.depositId!, customerId: p.customerId };
+        await this.events.emitAsync(DEPOSIT_FAILED, ev).catch((err) => this.logger.error({ msg: 'deposit_failed_handler_error', depositId: p.depositId, error: (err as Error).message }));
+      }
     }
   }
 

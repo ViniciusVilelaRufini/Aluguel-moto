@@ -38,7 +38,7 @@ Fontes TTF estáticas (Plus Jakarta Sans 400-800, JetBrains Mono 500/700, OFL) v
 
 ### Motion (design v2)
 
-`VoltiFadeUp`/`VoltiStagger` (cascata 45 ms, primeiro aos 140 ms; `VoltiStagger.wrap(lista)` para `ListView`), `VoltiEnter` (`.pop`, `.toast`), `VoltiPulse` (anel), `VoltiCheckPop`, `VoltiSuccessCheck`, `VoltiShine`, `VoltiRouteDraw` (+ `partial` para truncar polylines), `VoltiUserDot`, `VoltiChip`, `PassCard`, e transições de tela `VoltiPageTransitions.push` / `.modal` (formato `transitionsBuilder`, usável em `CustomTransitionPage` do go_router; `VoltiPageRoute` para Navigator puro). `VoltiIconButton` agora escala .88 ao toque (design v2; era .92). `VoltiButton` ganhou `loading` e `shine`; `VehicleMarker` ganhou `delay`. Com `MediaQuery.disableAnimationsOf` (reduced motion) tudo mostra o estado final já no primeiro frame. Animações infinitas (pulso, brilho) impedem `pumpAndSettle` em testes: use `pump(duration)` ou ligue `disableAnimations`.
+`VoltiFadeUp`/`VoltiStagger` (cascata 45 ms, primeiro aos 140 ms; `VoltiStagger.wrap(lista)` para `ListView`), `VoltiEnter` (`.pop`, `.toast`), `VoltiPulse` (anel), `VoltiCheckPop`, `VoltiSuccessCheck`, `VoltiShine`, `VoltiRouteDraw` (+ `partial` para truncar polylines), `VoltiUserDot`, `VoltiChip`, `PassCard`, e transições de tela `VoltiPageTransitions.push` / `.modal` (formato `transitionsBuilder`, usável em `CustomTransitionPage` do go_router; `VoltiPageRoute` para Navigator puro). `VoltiIconButton` agora escala .88 ao toque (design v2; era .92). `VoltiButton` ganhou `loading`, `shine` e `semanticLabel` (rótulo de leitor de tela mais completo que o texto visível, num único nó); `PhotoCapture` usa `height` como altura mínima (cresce com texto a 200%); `VehicleMarker` ganhou `delay`. Com `MediaQuery.disableAnimationsOf` (reduced motion) tudo mostra o estado final já no primeiro frame. Animações infinitas (pulso, brilho) impedem `pumpAndSettle` em testes: use `pump(duration)` ou ligue `disableAnimations`.
 
 ### Polimento de UI/UX (design pass do app, `docs/design/evolucoes-app.md`)
 
@@ -73,6 +73,14 @@ await (auth as DevAuthRepository).signIn(sub: 'u1', email: 'a@b.com');
 - Retry exponencial (3 tentativas, 300 ms e 600 ms): `connectionTimeout` em qualquer método; `connectionError`, 5xx e timeouts de envio/resposta só se (método idempotente: GET, HEAD, PUT, DELETE) OU (header `Idempotency-Key`) OU (`extra['retryable']=true`) -- qualquer uma basta --, para não duplicar `POST`. Corpos FormData/stream nunca são repetidos.
 - Modo `dev` (sem refresh; ao expirar, chame `signIn` de novo): `POST /dev/token` com `sub`, `email`, `groups`, `pool` (`DevAuthPool`). Token só em memória.
 - Modo `cognito`: interface pronta (`CognitoAuthRepository`), mas o login (Hosted UI/PKCE) lança `UnimplementedError` até a infraestrutura de autenticação existir; `accessToken()` devolve `null`.
+
+- Relógio do servidor: `ServerClock` (`serverClockProvider`) com `ServerClockInterceptor` no `apiClientProvider` lê o cabeçalho `Date` de toda resposta (inclusive erro HTTP) e corrige o relógio do aparelho (diferença < 1 s ignorada). Use `ref.watch(serverClockProvider).now()` em contagens regressivas.
+
+## Widgets (ajustes do emulador, rodada 1)
+
+- `SwipeAction`: trilho na largura toda, texto centralizado fora da faixa do botão (quebra linha com texto grande) e botão para leitor de tela (`onTap` = concluir).
+- `VoltiButtonPair`: dois botões na proporção do design; se um rótulo não cabe inteiro, divide pelo que cada um precisa ou empilha. `VoltiButton.minWidth(context)` mede o rótulo na escala de texto atual.
+- `VoltiBottomSheet` ocupa a largura toda mesmo com conteúdo estreito.
 
 ## Testes
 

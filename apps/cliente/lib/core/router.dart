@@ -16,7 +16,6 @@ import '../features/plan/plan_screen.dart';
 import '../features/reservation/depot_reservation_screen.dart';
 import '../features/return_flow/return_screen.dart';
 import '../features/ride/ride_screen.dart';
-import '../features/scan/scan_screen.dart';
 import '../features/summary/summary_screen.dart';
 import 'session.dart';
 
@@ -76,13 +75,9 @@ List<RouteBase> appRoutes() => [
       GoRoute(path: '/pick', pageBuilder: (c, state) => voltiPage(c, state, const PickScreen())),
       // Reserva de rua (antiga): leva ao inicio, que mostra a reserva atual se houver.
       GoRoute(path: '/reserved', redirect: (_, _) => '/home'),
-      // O cliente nao escaneia mais para alugar: so a troca de moto da corrida (`?swap=`) usa o leitor;
-      // links antigos de scan voltam ao inicio.
-      GoRoute(
-        path: '/scan',
-        redirect: (_, state) => state.uri.queryParameters['swap'] == null ? '/home' : null,
-        pageBuilder: (c, state) => voltiPage(c, state, ScanScreen(swapRentalId: state.uri.queryParameters['swap']), modal: true),
-      ),
+      // Retirada em galpao: o cliente nao escaneia moto (nem para alugar nem para trocar
+      // no meio da corrida, docs/decisoes.md 2026-10-22). Links antigos voltam ao inicio.
+      GoRoute(path: '/scan', redirect: (_, _) => '/home'),
       GoRoute(path: '/plan', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, PlanScreen(selection: state.extra! as DepotSelection))),
       GoRoute(path: '/insurance', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, InsuranceScreen(selection: state.extra! as DepotSelection))),
       GoRoute(path: '/pickup', redirect: _needsSelection, pageBuilder: (c, state) => voltiPage(c, state, PickupScreen(selection: state.extra! as DepotSelection))),

@@ -137,178 +137,205 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     zoom: 15,
                     layers: [
                       // Pontos verdes de devolucao.
-                      PolygonLayer(polygons: [
-                        for (final z in pickupZones(zones))
-                          Polygon(
-                            points: zoneRing(z),
-                            color: VoltiColors.brand.withValues(alpha: 0.14),
-                            borderColor: VoltiColors.brand,
-                            borderStrokeWidth: 1.5,
-                          ),
-                      ]),
-                      MarkerLayer(markers: [
-                        for (final s in stations)
-                          Marker(
-                            key: ValueKey('station-${s.id}'),
-                            point: LatLng(s.lat, s.lng),
-                            width: 36,
-                            height: 36,
-                            child: Semantics(label: l.swapStationSemantics(s.name), child: const _MapBadge(icon: LucideIcons.batteryCharging, color: VoltiColors.blue600, size: 32)),
-                          ),
-                        for (final d in depots.value ?? const <Depot>[])
-                          Marker(
-                            key: ValueKey('depot-pin-${d.id}'),
-                            point: LatLng(d.lat, d.lng),
-                            width: 56,
-                            height: 56,
-                            child: Semantics(
-                              button: true,
-                              label: l.depotPinSemantics(depotTitle(l, d)),
-                              child: GestureDetector(
-                                onTap: () => _selectDepot(d),
-                                child: _MapBadge(icon: LucideIcons.warehouse, color: VoltiColors.brandAction, size: d.id == current?.id ? 52 : 40),
+                      PolygonLayer(
+                        polygons: [
+                          for (final z in pickupZones(zones))
+                            Polygon(
+                              points: zoneRing(z),
+                              color: VoltiColors.brand.withValues(alpha: 0.14),
+                              borderColor: VoltiColors.brand,
+                              borderStrokeWidth: 1.5,
+                            ),
+                        ],
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          for (final s in stations)
+                            Marker(
+                              key: ValueKey('station-${s.id}'),
+                              point: LatLng(s.lat, s.lng),
+                              width: 36,
+                              height: 36,
+                              child: Semantics(
+                                label: l.swapStationSemantics(s.name),
+                                child: const _MapBadge(icon: LucideIcons.batteryCharging, color: VoltiColors.blue600, size: 32),
                               ),
                             ),
-                          ),
-                        if (loc != null)
-                          Marker(
-                            key: const ValueKey('user-dot'),
-                            point: loc,
-                            width: 22,
-                            height: 22,
-                            child: Semantics(label: l.yourLocation, child: const VoltiUserDot()),
-                          ),
-                      ]),
+                          for (final d in depots.value ?? const <Depot>[])
+                            Marker(
+                              key: ValueKey('depot-pin-${d.id}'),
+                              point: LatLng(d.lat, d.lng),
+                              width: 56,
+                              height: 56,
+                              child: Semantics(
+                                button: true,
+                                label: l.depotPinSemantics(depotTitle(l, d)),
+                                // Alvo de toque do marcador inteiro (56 px >= 44 px), nao so do disco.
+                                child: GestureDetector(
+                                  behavior: HitTestBehavior.opaque,
+                                  onTap: () => _selectDepot(d),
+                                  child: _MapBadge(icon: LucideIcons.warehouse, color: VoltiColors.brandAction, size: d.id == current?.id ? 52 : 40),
+                                ),
+                              ),
+                            ),
+                          if (loc != null)
+                            Marker(
+                              key: const ValueKey('user-dot'),
+                              point: loc,
+                              width: 22,
+                              height: 22,
+                              child: Semantics(label: l.yourLocation, child: const VoltiUserDot()),
+                            ),
+                        ],
+                      ),
                     ],
                   ),
           ),
+          // Cabecalho e avisos em cima, cartao do galpao embaixo; o meio fica livre para o mapa.
+          // Com texto grande cada regiao tem um teto e rola por dentro, sem se sobrepor.
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.screenGutter),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
-                    child: VoltiEnter(
-                      key: const Key('home-header'),
-                      duration: VoltiMotion.staggerItem,
-                      delay: const Duration(milliseconds: 80),
-                      fromOffset: const Offset(0, -12),
-                      curve: VoltiMotion.easeOut,
-                      child: const LocationHeader(),
+                  Flexible(
+                    flex: 2,
+                    fit: FlexFit.loose,
+                    child: SingleChildScrollView(
+                      key: const Key('home-top'),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                            child: VoltiEnter(
+                              key: const Key('home-header'),
+                              duration: VoltiMotion.staggerItem,
+                              delay: const Duration(milliseconds: 80),
+                              fromOffset: const Offset(0, -12),
+                              curve: VoltiMotion.easeOut,
+                              child: const LocationHeader(),
+                            ),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const SizedBox(height: VoltiSpacing.s10),
+                                if (rental != null)
+                                  _ActiveBanner(icon: LucideIcons.bike, text: l.rentalInProgress, action: l.backToRide, onTap: () => context.push('/ride'))
+                                else if (reservation != null)
+                                  _ActiveBanner(
+                                    icon: LucideIcons.clock,
+                                    text: l.reservationActive,
+                                    action: l.seeReservation,
+                                    onTap: () => context.push('/reservation/${reservation.id}'),
+                                  ),
+                                if (session != null && session.kyc != KycStatus.approved)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: VoltiPressable(
+                                      semanticLabel: '${l.kycPendingTitle}. ${l.kycHomeNotice}',
+                                      onTap: () => context.push('/account/verification'),
+                                      child: NoticeBanner(icon: LucideIcons.shieldCheck, title: l.kycPendingTitle, message: l.kycHomeNotice),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          // Promocoes (PassCard) numa faixa que rola na horizontal.
+                          SingleChildScrollView(
+                            key: const Key('home-promos'),
+                            scrollDirection: Axis.horizontal,
+                            clipBehavior: Clip.none,
+                            padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
+                            child: Row(
+                              children: VoltiStagger.wrap([
+                                PassCard(
+                                  title: l.promoPassTitle,
+                                  subtitle: l.promoPassText,
+                                  icon: LucideIcons.ticket,
+                                  tone: PassCardTone.sun,
+                                  onTap: () => context.push('/account/subscriptions'),
+                                ),
+                                if (promoFirstRide) ...[
+                                  const SizedBox(width: VoltiSpacing.s10),
+                                  PassCard(title: l.promoFirstRideTitle, subtitle: l.promoFirstRideText, icon: LucideIcons.gift, tone: PassCardTone.coral),
+                                ],
+                              ]),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      const SizedBox(height: VoltiSpacing.s10),
-                      if (rental != null)
-                        _ActiveBanner(
-                          icon: LucideIcons.bike,
-                          text: l.rentalInProgress,
-                          action: l.backToRide,
-                          onTap: () => context.push('/ride'),
-                        )
-                      else if (reservation != null)
-                        _ActiveBanner(
-                          icon: LucideIcons.clock,
-                          text: l.reservationActive,
-                          action: l.seeReservation,
-                          onTap: () => context.push('/reservation/${reservation.id}'),
-                        ),
-                      if (session != null && session.kyc != KycStatus.approved)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: VoltiPressable(
-                            semanticLabel: '${l.kycPendingTitle}. ${l.kycHomeNotice}',
-                            onTap: () => context.push('/account/verification'),
-                            child: NoticeBanner(icon: LucideIcons.shieldCheck, title: l.kycPendingTitle, message: l.kycHomeNotice),
+                  const SizedBox(height: VoltiSpacing.s8),
+                  Flexible(
+                    flex: 3,
+                    fit: FlexFit.loose,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          VoltiIconButton(
+                            icon: LucideIcons.locateFixed,
+                            iconColor: VoltiColors.brand,
+                            label: l.locateMe,
+                            onPressed: () {
+                              ref.invalidate(userLocationProvider);
+                              _moveMap(loc ?? center);
+                            },
                           ),
-                        ),
-                    ]),
-                  ),
-                  // Promocoes (PassCard) numa faixa que rola na horizontal.
-                  SingleChildScrollView(
-                    key: const Key('home-promos'),
-                    scrollDirection: Axis.horizontal,
-                    clipBehavior: Clip.none,
-                    padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
-                    child: Row(
-                      children: VoltiStagger.wrap([
-                        PassCard(
-                          title: l.promoPassTitle,
-                          subtitle: l.promoPassText,
-                          icon: LucideIcons.ticket,
-                          tone: PassCardTone.sun,
-                          onTap: () => context.push('/account/subscriptions'),
-                        ),
-                        if (promoFirstRide) ...[
-                          const SizedBox(width: VoltiSpacing.s10),
-                          PassCard(title: l.promoFirstRideTitle, subtitle: l.promoFirstRideText, icon: LucideIcons.gift, tone: PassCardTone.coral),
+                          const SizedBox(height: VoltiSpacing.s12),
+                          Flexible(
+                            child: VoltiEnter(
+                              key: const Key('depot-card-enter'),
+                              duration: VoltiMotion.durScreen,
+                              curve: VoltiMotion.easeScreen,
+                              fromOffset: const Offset(0, 80),
+                              child: Container(
+                                key: const Key('depot-card'),
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(VoltiSpacing.s16),
+                                decoration: BoxDecoration(color: surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
+                                child: switch (depots) {
+                                  AsyncValue(:final error?, hasValue: false) => ErrorState(error: error, onRetry: () => ref.invalidate(depotsProvider)),
+                                  AsyncValue(hasValue: false) => VoltiSkeleton.list(
+                                    key: const Key('depot-skeleton'),
+                                    rows: 2,
+                                    trailing: false,
+                                    label: l.loading,
+                                  ),
+                                  _ when current == null => VoltiEmptyState(
+                                    compact: true,
+                                    icon: LucideIcons.warehouse,
+                                    title: l.depotsEmpty,
+                                    message: l.depotsEmptyText,
+                                    actionLabel: l.retry,
+                                    actionIcon: LucideIcons.refreshCw,
+                                    onAction: () => ref.invalidate(depotsProvider),
+                                  ),
+                                  _ => _DepotCardBody(
+                                    depots: depots.value!,
+                                    current: current,
+                                    now: now,
+                                    onSelect: _selectDepot,
+                                    onPick: () => context.push('/pick'),
+                                  ),
+                                },
+                              ),
+                            ),
+                          ),
                         ],
-                      ]),
+                      ),
                     ),
                   ),
                 ],
-              ),
-            ),
-          ),
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    VoltiIconButton(
-                      icon: LucideIcons.locateFixed,
-                      iconColor: VoltiColors.brand,
-                      label: l.locateMe,
-                      onPressed: () {
-                        ref.invalidate(userLocationProvider);
-                        _moveMap(loc ?? center);
-                      },
-                    ),
-                    const SizedBox(height: VoltiSpacing.s12),
-                    VoltiEnter(
-                      key: const Key('depot-card-enter'),
-                      duration: VoltiMotion.durScreen,
-                      curve: VoltiMotion.easeScreen,
-                      fromOffset: const Offset(0, 80),
-                      child: Container(
-                        key: const Key('depot-card'),
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(VoltiSpacing.s16),
-                        decoration: BoxDecoration(color: surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
-                        child: switch (depots) {
-                          AsyncValue(:final error?, hasValue: false) => ErrorState(error: error, onRetry: () => ref.invalidate(depotsProvider)),
-                          AsyncValue(hasValue: false) => VoltiSkeleton.list(key: const Key('depot-skeleton'), rows: 2, trailing: false, label: l.loading),
-                          _ when current == null => VoltiEmptyState(
-                              compact: true,
-                              icon: LucideIcons.warehouse,
-                              title: l.depotsEmpty,
-                              message: l.depotsEmptyText,
-                              actionLabel: l.retry,
-                              actionIcon: LucideIcons.refreshCw,
-                              onAction: () => ref.invalidate(depotsProvider),
-                            ),
-                          _ => _DepotCardBody(
-                              depots: depots.value!,
-                              current: current,
-                              now: now,
-                              onSelect: _selectDepot,
-                              onPick: () => context.push('/pick'),
-                            ),
-                        },
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ),
           ),
@@ -338,76 +365,98 @@ class _DepotCardBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (depots.length > 1) ...[
-          Semantics(
-            label: l.depotPicker,
-            container: true,
-            child: SingleChildScrollView(
-              key: const Key('depot-picker'),
-              scrollDirection: Axis.horizontal,
-              child: Row(children: [
-                for (final d in depots) ...[
-                  KeyedSubtree(
-                    key: Key('depot-option-${d.id}'),
-                    child: VoltiChip(
-                      label: d.distanceM == null ? depotTitle(l, d) : '${depotTitle(l, d)} · ${walkingDistanceLabel(d.distanceM!)}',
-                      icon: LucideIcons.warehouse,
-                      selected: d.id == current.id,
-                      onTap: () {
-                        if (d.id != current.id) onSelect(d);
-                      },
+        // Informacoes rolam por dentro com texto grande; o botao fica sempre a vista.
+        Flexible(
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (depots.length > 1) ...[
+                  Semantics(
+                    label: l.depotPicker,
+                    container: true,
+                    child: SingleChildScrollView(
+                      key: const Key('depot-picker'),
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          for (final d in depots) ...[
+                            KeyedSubtree(
+                              key: Key('depot-option-${d.id}'),
+                              child: VoltiChip(
+                                label: d.distanceM == null ? depotTitle(l, d) : '${depotTitle(l, d)} · ${walkingDistanceLabel(d.distanceM!)}',
+                                icon: LucideIcons.warehouse,
+                                selected: d.id == current.id,
+                                onTap: () {
+                                  if (d.id != current.id) onSelect(d);
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: VoltiSpacing.s8),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
-                  const SizedBox(width: VoltiSpacing.s8),
+                  const SizedBox(height: VoltiSpacing.s12),
                 ],
-              ]),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: const BoxDecoration(color: VoltiColors.brandSoft, borderRadius: VoltiRadii.rMd),
+                      child: const Icon(LucideIcons.warehouse, color: VoltiColors.brandAction, size: 22),
+                    ),
+                    const SizedBox(width: VoltiSpacing.s12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Semantics(
+                            header: true,
+                            liveRegion: true,
+                            child: Text(
+                              depotHeadline(l, current),
+                              key: const Key('depot-headline'),
+                              style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface),
+                            ),
+                          ),
+                          if (open != null) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                Container(
+                                  width: 8,
+                                  height: 8,
+                                  decoration: BoxDecoration(shape: BoxShape.circle, color: isOpen ? VoltiColors.brand : VoltiColors.danger),
+                                ),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Text(
+                                    open,
+                                    key: const Key('depot-open'),
+                                    style: VoltiTypography.caption.copyWith(
+                                      color: isOpen ? VoltiColors.successInk : VoltiColors.dangerInkStrong,
+                                      fontWeight: VoltiTypography.fwSemibold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 4),
+                          Text(current.address, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: VoltiSpacing.s12),
-        ],
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: const BoxDecoration(color: VoltiColors.brandSoft, borderRadius: VoltiRadii.rMd),
-              child: const Icon(LucideIcons.warehouse, color: VoltiColors.brandAction, size: 22),
-            ),
-            const SizedBox(width: VoltiSpacing.s12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Semantics(
-                    header: true,
-                    liveRegion: true,
-                    child: Text(depotHeadline(l, current), key: const Key('depot-headline'), style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface)),
-                  ),
-                  if (open != null) ...[
-                    const SizedBox(height: 4),
-                    Row(children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: BoxDecoration(shape: BoxShape.circle, color: isOpen ? VoltiColors.brand : VoltiColors.danger),
-                      ),
-                      const SizedBox(width: 6),
-                      Flexible(
-                        child: Text(
-                          open,
-                          key: const Key('depot-open'),
-                          style: VoltiTypography.caption.copyWith(color: isOpen ? VoltiColors.successInk : VoltiColors.dangerInkStrong, fontWeight: VoltiTypography.fwSemibold),
-                        ),
-                      ),
-                    ]),
-                  ],
-                  const SizedBox(height: 4),
-                  Text(current.address, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-                ],
-              ),
-            ),
-          ],
         ),
         const SizedBox(height: VoltiSpacing.s16),
         VoltiButton(
@@ -442,10 +491,10 @@ class _MapBadge extends StatelessWidget {
         decoration: BoxDecoration(
           color: color,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
+          border: Border.all(color: VoltiColors.white, width: 3),
           boxShadow: VoltiShadows.shadow2,
         ),
-        child: Icon(icon, color: Colors.white, size: size * .46),
+        child: Icon(icon, color: VoltiColors.white, size: size * .46),
       ),
     );
   }
@@ -462,16 +511,27 @@ class _ActiveBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       decoration: BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
-      child: Row(children: [
-        Icon(icon, color: Colors.white, size: 20),
-        const SizedBox(width: 10),
-        Expanded(child: Text(text, style: VoltiTypography.bodyStrong.copyWith(color: Colors.white))),
-        TextButton(
-          onPressed: onTap,
-          style: TextButton.styleFrom(minimumSize: const Size(48, VoltiSpacing.hitMin)),
-          child: Text(action, style: const TextStyle(color: VoltiColors.green400, fontWeight: FontWeight.w600)),
-        ),
-      ]),
+      child: Row(
+        children: [
+          Icon(icon, color: VoltiColors.white, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(text, style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.white)),
+          ),
+          // Texto grande: a acao quebra linha em vez de empurrar a faixa para fora.
+          Flexible(
+            child: TextButton(
+              onPressed: onTap,
+              style: TextButton.styleFrom(minimumSize: const Size(48, VoltiSpacing.hitMin)),
+              child: Text(
+                action,
+                textAlign: TextAlign.end,
+                style: const TextStyle(color: VoltiColors.green400, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

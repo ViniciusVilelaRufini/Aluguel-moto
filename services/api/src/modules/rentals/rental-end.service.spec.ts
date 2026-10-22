@@ -10,6 +10,8 @@ import { RentalEndService } from './rental-end.service';
 import { RentalStartService } from './rental-start.service';
 import { RentalsController } from './rentals.controller';
 import { RentalsService } from './rentals.service';
+import { EV } from '../../common/events';
+import { VehiclesService } from '../vehicles/vehicles.service';
 
 const CUSTOMER_ID = '11111111-1111-4111-8111-111111111111';
 const RENTAL_ID = '88888888-8888-4888-8888-888888888888';
@@ -21,7 +23,7 @@ const admin: Principal = { pool: 'staff', sub: 'a', email: 'a@volti.com.br', gro
 const support: Principal = { ...admin, groups: ['suporte'] };
 
 /** Banco falso mínimo e com estado para o aluguel (findUnique/updateMany/update). */
-function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | 'in_progress' | 'pending' } = {}) {
+function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | 'in_progress' | 'pending'; depotId?: string | null } = {}) {
   const prisma = mockDeep<PrismaClient>();
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   const startedAt = new Date(Date.now() - 10 * 60 * 1000);
@@ -33,7 +35,7 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
     endZoneId: null, returnPhotoUploadKey: opts.photo === false ? null : PHOTO_KEY, returnPhotoObjectKey: null, forceEndReason: null,
     forcedEndById: null, rating: null, speedLimitKmh: null, createdAt: startedAt, updatedAt: startedAt,
   };
-  const vehicle = { id: VEHICLE_ID, code: 'VLT-0001', thingName: 'moto-0001', lat: -23.56, lng: -46.69, status: 'rented' };
+  const vehicle = { id: VEHICLE_ID, code: 'VLT-0001', thingName: 'moto-0001', lat: -23.56, lng: -46.69, status: 'rented', depotId: opts.depotId ?? null };
   prisma.rental.findUnique.mockImplementation((async () => ({ ...rental, vehicle })) as any);
   prisma.rental.updateMany.mockImplementation((async (args: any) => {
     const allowed: string[] | undefined = args.where.status?.in;
@@ -53,8 +55,9 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
   const iot = { getLiveState: jest.fn().mockResolvedValue(null) };
   const audit = { record: jest.fn() };
   const alerts = { create: jest.fn().mockResolvedValue({ id: 'alert-1' }) };
-  const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, new EventEmitter2(), audit as any, alerts as any);
-  return { service, prisma, rental, billing, commands, zones, audit, alerts };
+  const events = new EventEmitter2();
+  const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, events, audit as any, alerts as any);
+  return { service, prisma, rental, billing, commands, zones, audit, alerts, events, vehicle: vehicle as Record<string, unknown> };
 }
 
 describe('Encerramento do aluguel', () => {
@@ -219,6 +222,119 @@ describe('Encerramento do aluguel', () => {
     const { service, billing } = setup({ inZone: false });
     await expect(service.forceEnd(support, RENTAL_ID, 'Motivo qualquer')).rejects.toMatchObject({ status: 403, slug: 'force-end-outside-zone-requires-admin' });
     expect(billing.settle).not.toHaveBeenCalled();
+  });
+});
+
+const DEPOT_ID = '77777777-7777-4777-8777-777777777777';
+
+describe('Devolução em ponto verde (retirada em galpão)', () => {
+  beforeEach(() => jest.useFakeTimers({ now: new Date('2026-10-21T15:00:00.000Z') }));
+  afterEach(() => jest.useRealTimers());
+
+  const statusSetTo = (prisma: ReturnType<typeof setup>['prisma']) =>
+    prisma.vehicle.updateMany.mock.calls.map((c: any) => c[0].data.status).filter(Boolean);
+
+  it('moto do galpão termina em awaiting_pickup e nasce uma tarefa collect na posição da moto', async () => {
+    const { service, prisma } = setup({ depotId: DEPOT_ID });
+    prisma.fieldTask.findFirst.mockResolvedValue(null);
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(r.status).toBe(200);
+    expect(r.rental.status).toBe('ended');
+    expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['rented', 'paused'] } }, data: { status: 'awaiting_pickup' } });
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+    expect(prisma.fieldTask.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ type: 'collect', priority: 'medium', status: 'open', vehicleId: VEHICLE_ID, targetLat: -23.56, targetLng: -46.69 }),
+    });
+  });
+
+  it('moto que saiu por entrega de galpão (handover pickup aceito) também vai para recolhimento, mesmo sem depotId', async () => {
+    const { service, prisma } = setup({ depotId: null });
+    prisma.handover.findFirst.mockResolvedValue({ id: 'h1' } as any);
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect((prisma.handover.findFirst.mock.calls[0][0] as any).where).toMatchObject({ rentalId: RENTAL_ID, type: 'pickup', status: 'accepted' });
+    expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('moto de rua (sem depotId e sem entrega) continua voltando a free, sem tarefa', async () => {
+    const { service, prisma } = setup();
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(statusSetTo(prisma)).toEqual(['free']);
+    expect(prisma.fieldTask.create).not.toHaveBeenCalled();
+  });
+
+  it('já existe collect aberta para a moto → não cria outra', async () => {
+    const { service, prisma } = setup({ depotId: DEPOT_ID });
+    prisma.fieldTask.findFirst.mockResolvedValue({ id: 'task-aberta' } as any);
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    const where = (prisma.fieldTask.findFirst.mock.calls[0][0] as any).where;
+    expect(where).toMatchObject({ vehicleId: VEHICLE_ID, type: 'collect', status: { notIn: ['done', 'canceled'] } });
+    expect(prisma.fieldTask.create).not.toHaveBeenCalled();
+  });
+
+  it('duas finalizações concorrentes (HTTP x evento x job) criam uma tarefa só e liquidam uma vez', async () => {
+    const { service, prisma, rental, billing } = setup({ depotId: DEPOT_ID });
+    rental.status = 'ending';
+    rental.endRequestedAt = new Date();
+    let created = 0;
+    prisma.fieldTask.findFirst.mockImplementation((async () => (created ? { id: 't' } : null)) as any);
+    prisma.fieldTask.create.mockImplementation((async () => ({ id: `t${++created}` })) as any);
+    await Promise.all([service.finalize(RENTAL_ID, 'ended'), service.finalize(RENTAL_ID, 'ended'), service.onCommandChanged({ commandId: 'c', vehicleId: VEHICLE_ID, type: 'lock', status: 'confirmed', payload: { rentalId: RENTAL_ID, purpose: 'rental_end' } })]);
+    await service.finalize(RENTAL_ID, 'ended');
+    expect(created).toBe(1);
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+    // A checagem e a criação ficam sob um lock transacional por moto (finalizações em instâncias diferentes).
+    expect(prisma.$queryRaw).toHaveBeenCalled();
+  });
+
+  it('encerramento forçado de moto do galpão também deixa a moto esperando recolhimento', async () => {
+    const { service, prisma } = setup({ depotId: DEPOT_ID, inZone: false, photo: false });
+    prisma.fieldTask.findFirst.mockResolvedValue(null);
+    await service.forceEnd(admin, RENTAL_ID, 'Cliente sem bateria no celular');
+    expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('fix 1: moto do galpão offline + encerramento forçado → ao reconectar volta como awaiting_pickup (não free)', async () => {
+    const { service, prisma, vehicle, events } = setup({ depotId: DEPOT_ID, inZone: false, photo: false });
+    // Banco falso com estado para a moto: offline durante o aluguel.
+    Object.assign(vehicle, { status: 'offline', online: false, statusBeforeOffline: 'rented' });
+    const matches = (where: any) =>
+      where.id === vehicle.id &&
+      (where.status === undefined || (typeof where.status === 'string' ? where.status === vehicle.status : where.status.in.includes(vehicle.status))) &&
+      (where.statusBeforeOffline === undefined || where.statusBeforeOffline.in.includes(vehicle.statusBeforeOffline));
+    prisma.vehicle.updateMany.mockImplementation((async (a: any) => (matches(a.where) ? (Object.assign(vehicle, a.data), { count: 1 }) : { count: 0 })) as any);
+    prisma.vehicle.findUnique.mockImplementation((async () => ({ ...vehicle })) as any);
+    prisma.vehicle.update.mockImplementation((async (a: any) => Object.assign(vehicle, a.data)) as any);
+    prisma.fieldTask.findFirst.mockResolvedValue(null);
+    const emitted: string[] = [];
+    events.on(EV.VEHICLE_STATUS_CHANGED, (e: { status: string }) => emitted.push(e.status));
+
+    await service.forceEnd(admin, RENTAL_ID, 'Moto sem sinal');
+    expect(vehicle).toMatchObject({ status: 'offline', statusBeforeOffline: 'awaiting_pickup' });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({
+      where: { id: VEHICLE_ID, status: 'offline', statusBeforeOffline: { in: ['rented', 'paused'] } },
+      data: { statusBeforeOffline: 'awaiting_pickup' },
+    });
+    expect(prisma.fieldTask.create).toHaveBeenCalledTimes(1);
+    // Fix 4: o evento leva o status real.
+    expect(emitted).toEqual(['offline']);
+
+    // Rastreador volta: o aluguel já está encerrado; restoredStatus usa o status guardado.
+    prisma.rental.findFirst.mockResolvedValue(null);
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    const vehicles = new VehiclesService(prisma as any, {} as any, {} as any, new EventEmitter2(), {} as any, {} as any, {} as any, {} as any);
+    await vehicles.onConnectivity({ vehicleId: VEHICLE_ID, online: true, ts: new Date().toISOString() } as any);
+    expect(vehicle.status).toBe('awaiting_pickup');
+  });
+
+  it('finalize com returnTo: depot (devolução no galpão, Task 6) não cria recolhimento', async () => {
+    const { service, prisma, rental } = setup({ depotId: DEPOT_ID });
+    rental.status = 'ending';
+    await service.finalize(RENTAL_ID, 'ended', { returnTo: 'depot' });
+    expect(statusSetTo(prisma)).toEqual(['free']);
+    expect(prisma.fieldTask.create).not.toHaveBeenCalled();
   });
 });
 

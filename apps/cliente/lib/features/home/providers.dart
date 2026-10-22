@@ -60,3 +60,19 @@ class PendingCouponNotifier extends Notifier<String> {
   void clear() => state = '';
   void set(String code) => state = code.trim().toUpperCase();
 }
+
+/// Reserva que o app acabou de criar (`POST /reservations`): a resposta traz o
+/// `pickupCode` do QR. A tela da reserva usa enquanto o GET carrega ou quando
+/// ele vier sem o codigo.
+final createdReservationProvider = NotifierProvider<CreatedReservationNotifier, Reservation?>(CreatedReservationNotifier.new);
+
+class CreatedReservationNotifier extends Notifier<Reservation?> {
+  @override
+  Reservation? build() {
+    // Some ao trocar de conta.
+    ref.watch(sessionProvider.select((s) => s.value?.customer?.id));
+    return null;
+  }
+
+  void set(Reservation? r) => state = r;
+}

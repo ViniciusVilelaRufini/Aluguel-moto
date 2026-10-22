@@ -14,6 +14,7 @@ import 'package:volti_operador/data/models.dart';
 import 'package:volti_operador/data/service_unlock.dart';
 import 'package:volti_operador/data/sync.dart';
 import 'package:volti_operador/data/tasks_provider.dart';
+import 'package:volti_operador/features/fleet/fleet_widgets.dart';
 import 'package:volti_operador/features/tasks/completion.dart';
 import 'package:volti_operador/features/tasks/task_list_page.dart' show TaskBadges;
 import 'package:volti_operador/features/tasks/task_ui.dart';
@@ -175,7 +176,13 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
     ref.watch(serviceUnlockProvider);
     final unlocked = ref.read(serviceUnlockProvider.notifier).isUnlocked(task.id);
     final draft = ref.watch(inspectionDraftsProvider)[task.id] ?? const InspectionDraft();
-    final knownStatus = ref.watch(knownVehicleStatusProvider)[task.vehicleId];
+    // Status mudado nesta sessao pelo operador; senao o do servidor (FieldTask.vehicleStatus).
+    final serverStatus = task.vehicleStatus == VehicleStatus.unknownDefaultOpenApi
+        ? null
+        : task.vehicleStatus;
+    final knownStatus = ref.watch(knownVehicleStatusProvider)[task.vehicleId] ?? serverStatus;
+    final address = task.vehicleAddress?.trim().isEmpty ?? true ? null : task.vehicleAddress;
+    final notes = task.notes?.trim().isEmpty ?? true ? null : task.notes;
     final user = watchLocationWhenVisible(ref, context)?.position;
     final isBattery = task.type == FieldTaskType.batterySwap;
     final inspected = registered(JobKind.inspection);
@@ -218,11 +225,11 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
                       style: VoltiTypography.title.copyWith(
                           fontFamily: VoltiTypography.fontMono, letterSpacing: 0)),
                 ),
-                // Endereco depende de contrato: mostra as observacoes da tarefa.
-                if (task.notes != null)
+                // Endereco da moto (contrato v2) e as observacoes da tarefa.
+                for (final line in [?address, ?notes])
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
-                    child: Text(task.notes!,
+                    child: Text(line,
                         style:
                             VoltiTypography.caption.copyWith(color: VoltiColors.textSecondary)),
                   ),
@@ -233,7 +240,6 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (pct != null) BatteryPill(pct, rangeKm: batteryRangeKm(pct)),
-              // Status da moto so quando conhecido (o FieldTask nao traz vehicleStatus).
               if (knownStatus != null) ...[
                 const SizedBox(height: 6),
                 Semantics(
@@ -287,10 +293,13 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
           tone: NoticeTone.neutral,
           icon: LucideIcons.mapPinned,
           title: t.targetLabel,
-          body: t.distanceToTarget(distanceKm(
-                  task.vehicleLat!, task.vehicleLng!, task.targetLat!, task.targetLng!)
-              .toStringAsFixed(1)
-              .replaceAll('.', ',')),
+          body: [
+            if (task.targetAddress?.trim().isNotEmpty ?? false) task.targetAddress!,
+            t.distanceToTarget(distanceKm(
+                    task.vehicleLat!, task.vehicleLng!, task.targetLat!, task.targetLng!)
+                .toStringAsFixed(1)
+                .replaceAll('.', ',')),
+          ].join(' · '),
         ),
       if (lat != null && lng != null)
         VoltiButton(
@@ -329,6 +338,8 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
             size: VoltiButtonSize.lg,
             onPressed: _busy ? null : () => _serviceUnlock(task),
           ),
+      if (task.maintenanceTaskId != null)
+        MaintenanceInfoCard(maintenanceTaskId: task.maintenanceTaskId!),
       if (isBattery) _batteryCard(t, task, sync, swapped, done),
       _checklistCard(t, task, sync, draft, inspected, done),
       PhotoCapture(
@@ -344,6 +355,7 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
           paths: draft.photoPaths,
           onRemove: (i) => ref.read(inspectionDraftsProvider.notifier).removePhoto(task.id, i),
         ),
+      VehicleInfoCard(vehicleId: task.vehicleId),
       ListRow(
         key: const Key('set-status'),
         icon: LucideIcons.arrowLeftRight,
@@ -468,7 +480,13 @@ class _TaskDetailPageState extends ConsumerState<TaskDetailPage> {
             Text(waiting ? t.awaitingSync : t.sectionRegistered,
                 style: VoltiTypography.caption.copyWith(color: VoltiColors.textSecondary)),
           ],
-          // "Retirada: BT-... · % · ciclos" depende de contrato (bateria atual da moto): oculto.
+          // "Retirada: BT-190577 · 12% · 412 ciclos" (bateria atual da moto, contrato v2).
+          if (!swapped && !done && removedBatteryLine(t, task) != null) ...[
+            const SizedBox(height: VoltiSpacing.s6),
+            Text(removedBatteryLine(t, task)!,
+                key: const Key('removed-battery'),
+                style: VoltiTypography.caption.copyWith(color: VoltiColors.textSecondary)),
+          ],
           if (!swapped && !done) ...[
             const SizedBox(height: VoltiSpacing.s10),
             VoltiButton(
@@ -608,9 +626,7 @@ class _MiniMap extends StatelessWidget {
             width: 56,
             height: 64,
             child: VehicleMarker(
-              task.type == FieldTaskType.maintenance
-                  ? VehicleStatus.maintenance
-                  : VehicleStatus.free,
+              markerStatus(task),
               task.vehicleBatteryPct ?? 0,
               selected: true,
             ),

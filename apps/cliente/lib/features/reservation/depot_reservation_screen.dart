@@ -64,6 +64,7 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
     setState(() => _canceling = true);
     try {
       await ref.read(backendProvider).cancelReservation(r.id);
+      ref.read(createdReservationProvider.notifier).set(null);
       ref.invalidate(currentReservationProvider);
       ref.invalidate(depotsProvider);
       ref.read(flashProvider.notifier).show(l.reservationCanceled);
@@ -97,8 +98,16 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
   Widget build(BuildContext context) {
     final l = context.l;
     final res = ref.watch(currentReservationProvider);
-    final r = res.value;
-    if (r == null || r.id != widget.reservationId) {
+    final created = ref.watch(createdReservationProvider);
+    final createdHere = created?.id == widget.reservationId ? created : null;
+    var found = res.value?.id == widget.reservationId ? res.value : null;
+    // Recem-criada: usa a resposta do POST enquanto o GET carrega (ou falha) e
+    // completa o `pickupCode` se o GET vier sem ele.
+    if (found == null && createdHere != null && (!res.hasValue || res.hasError || res.isLoading)) found = createdHere;
+    if (found != null && (found.pickupCode ?? '').isEmpty && (createdHere?.pickupCode ?? '').isNotEmpty) {
+      found = found.rebuild((b) => b.pickupCode = createdHere!.pickupCode);
+    }
+    if (found == null) {
       return VoltiScaffold(
         title: l.depotReservationTitle,
         body: AsyncView<Reservation?>(
@@ -116,6 +125,7 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
       );
     }
 
+    final r = found;
     final scheme = Theme.of(context).colorScheme;
     final depot = r.depotId == null ? null : ref.watch(depotByIdProvider(r.depotId!)).value;
     final offset = tzOffset(depot?.timezone ?? 'America/Sao_Paulo');
@@ -174,7 +184,21 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
                     padding: const EdgeInsets.all(VoltiSpacing.s16),
                     decoration: BoxDecoration(color: VoltiColors.white, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
                     child: Column(children: [
-                      if (code != null && code.isNotEmpty)
+                      if (code == null || code.isEmpty) ...[
+                        Semantics(
+                          liveRegion: true,
+                          child: NoticeBanner(key: const Key('reservation-no-code'), icon: LucideIcons.circleAlert, message: l.reservationNoCode),
+                        ),
+                        const SizedBox(height: VoltiSpacing.s8),
+                        VoltiButton(
+                          key: const Key('reservation-code-retry'),
+                          label: l.retry,
+                          icon: LucideIcons.refreshCw,
+                          variant: VoltiButtonVariant.secondary,
+                          fullWidth: true,
+                          onPressed: () => ref.invalidate(currentReservationProvider),
+                        ),
+                      ] else
                         Semantics(
                           image: true,
                           label: l.reservationQrLabel,

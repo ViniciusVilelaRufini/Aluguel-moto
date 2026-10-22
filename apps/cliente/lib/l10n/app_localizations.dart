@@ -3939,6 +3939,30 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Ir para o início'**
   String get goHome;
+
+  /// No description provided for @planNeedsCard.
+  ///
+  /// In pt, this message translates to:
+  /// **'Adicione um cartão ou escolha Pix para a caução.'**
+  String get planNeedsCard;
+
+  /// No description provided for @returnLockTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Trave e encerre'**
+  String get returnLockTitle;
+
+  /// No description provided for @returnInsideRule.
+  ///
+  /// In pt, this message translates to:
+  /// **'Você está num ponto verde. Pode encerrar sem taxa.'**
+  String get returnInsideRule;
+
+  /// No description provided for @reservationNoCode.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.'**
+  String get reservationNoCode;
 }
 
 class _AppLocalizationsDelegate

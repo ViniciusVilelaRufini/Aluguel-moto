@@ -250,7 +250,14 @@ class _Footer extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              if (reasonView != null) ...[reasonView, const SizedBox(height: VoltiSpacing.s10)],
+              // Texto grande: o motivo tem teto e rola, para a lista continuar visivel.
+              if (reasonView != null) ...[
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .22),
+                  child: SingleChildScrollView(child: reasonView),
+                ),
+                const SizedBox(height: VoltiSpacing.s10),
+              ],
               VoltiButton(
                 key: const Key('pick-continue'),
                 label: v == null ? l.selectABike : l.pickContinue(v.model, v.code),

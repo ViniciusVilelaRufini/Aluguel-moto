@@ -39,6 +39,9 @@ function setup() {
   prisma.referral.findMany.mockResolvedValue([]);
   prisma.maintenanceTask.findMany.mockResolvedValue([]);
   prisma.customer.findMany.mockResolvedValue([]);
+  // Retirada em galpão: reservas de galpão e entregas também vão na exportação.
+  prisma.reservation.findMany.mockResolvedValue([]);
+  prisma.handover.findMany.mockResolvedValue([]);
   prisma.rental.findFirst.mockResolvedValue(null);
   prisma.payment.count.mockResolvedValue(0);
   return { prisma, storage, service, subscriptions };
@@ -70,11 +73,62 @@ describe('LgpdService', () => {
     expect(out.customer.id).toBe(ME);
     expect(out.customer.cpf).toBe('12345678901'); // dados do próprio titular, sem máscara
     expect(out.consents).toMatchObject({ termsAccepted: true, locationTracking: true, marketing: false });
-    expect(Object.keys(out).sort()).toEqual(['claims', 'consents', 'coupons', 'customer', 'disputes', 'generatedAt', 'incidents', 'maintenanceRequests', 'payments', 'referrals', 'rentals', 'subscriptions', 'tracks', 'walletEntries']);
+    expect(Object.keys(out).sort()).toEqual(['claims', 'consents', 'coupons', 'customer', 'depotReservations', 'disputes', 'generatedAt', 'handovers', 'incidents', 'maintenanceRequests', 'payments', 'referrals', 'rentals', 'subscriptions', 'tracks', 'walletEntries']);
     expect((prisma.subscription.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
     expect((prisma.customerCoupon.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
     expect((prisma.referral.findMany as jest.Mock).mock.calls[0][0].where.referrerId).toBe(ME);
     expect((prisma.maintenanceTask.findMany as jest.Mock).mock.calls[0][0].where.customerId).toBe(ME);
+  });
+
+  it('export inclui reservas de galpão e entregas do titular: sem pickupCode e fotos só como chaves (sem URLs)', async () => {
+    const { service, prisma, storage } = setup();
+    const DEPOT = '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c';
+    prisma.rental.findMany.mockResolvedValue([{ id: 'r1', customerId: ME, vehicleId: 'v1', vehicle: { code: 'VLT-0001' }, planCode: 'day', coverage: 'basic', status: 'ended', startedAt: now, pausedSecondsAcc: 0, endedAt: now, endRequestedAt: now, priceSnapshot: { unit: 'day' }, costCents: 0, depositId: 'd1', createdAt: now, updatedAt: now }] as any);
+    prisma.reservation.findMany.mockResolvedValue([
+      {
+        id: 'res1', customerId: ME, vehicleId: 'v1', vehicle: { code: 'VLT-0001' }, status: 'converted', depositId: 'd1', expiresAt: now, endedAt: now, depotId: DEPOT, pickupMode: 'scheduled',
+        pickupAt: now, planCode: 'day', coverage: 'basic', depositMethod: 'card', cardId: 'card-1', couponCode: null, reminderSentAt: now, createdAt: now, updatedAt: now,
+      },
+    ] as any);
+    prisma.handover.findMany.mockResolvedValue([
+      {
+        id: 'h1', type: 'pickup', status: 'accepted', depotId: DEPOT, reservationId: 'res1', rentalId: 'r1', vehicleId: 'v1', vehicle: { code: 'VLT-0001' }, operatorId: 'op-1',
+        checklist: [{ code: 'freios', ok: true }], photoKeys: ['handovers/h1/1.jpg'], batteryPct: 90, batterySerial: 'BAT-1', disputeReason: null, lastError: null, respondedAt: now, createdAt: now, updatedAt: now,
+      },
+    ] as any);
+
+    const out = await service.export(ME);
+
+    const resArgs = prisma.reservation.findMany.mock.calls[0][0] as any;
+    expect(resArgs.where).toEqual({ customerId: ME, depotId: { not: null } });
+    const hoArgs = prisma.handover.findMany.mock.calls[0][0] as any;
+    expect(hoArgs.where).toEqual({ OR: [{ reservation: { customerId: ME } }, { rentalId: { in: ['r1'] } }] });
+
+    expect(out.depotReservations).toEqual([
+      {
+        id: 'res1', vehicleId: 'v1', status: 'converted', createdAt: now.toISOString(), expiresAt: now.toISOString(), depotId: DEPOT,
+        pickupMode: 'scheduled', pickupAt: now.toISOString(), planCode: 'day', coverage: 'basic', depositMethod: 'card',
+      },
+    ]);
+    expect(out.handovers).toEqual([
+      {
+        id: 'h1', type: 'pickup', status: 'accepted', depotId: DEPOT, reservationId: 'res1', rentalId: 'r1', vehicleId: 'v1', vehicleCode: 'VLT-0001', operatorId: 'op-1',
+        checklist: [{ code: 'freios', ok: true }], photoKeys: ['handovers/h1/1.jpg'], batteryPct: 90, batterySerial: 'BAT-1', createdAt: now.toISOString(), respondedAt: now.toISOString(),
+      },
+    ]);
+    const json = JSON.stringify(out);
+    expect(json).not.toContain('pickupCode');
+    expect(json).not.toContain('photoUrls');
+    expect(json).not.toMatch(/https?:\/\//);
+    expect(storage.presignGet).not.toHaveBeenCalled();
+  });
+
+  it('export sem aluguéis busca entregas só pelas reservas do titular', async () => {
+    const { service, prisma } = setup();
+    const out = await service.export(ME);
+    expect((prisma.handover.findMany.mock.calls[0][0] as any).where).toEqual({ OR: [{ reservation: { customerId: ME } }] });
+    expect(out.depotReservations).toEqual([]);
+    expect(out.handovers).toEqual([]);
   });
 
   it('QA-07: DELETE /lgpd/account exclui a identidade no diretório e guarda só o hash do sub (para recusar o token antigo)', async () => {

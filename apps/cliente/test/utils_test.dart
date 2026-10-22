@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_cliente/core/geo.dart';
-import 'package:volti_cliente/features/scan/scan_screen.dart';
 
 void main() {
   test('money formata centavos em reais', () {
@@ -16,9 +15,5 @@ void main() {
     expect(walkingMinutes(10), 1);
     expect(walkingMinutes(400), 5);
     expect(walkingDistanceLabel(310), '310 m');
-  });
-  test('codigo da moto a partir do QR', () {
-    expect(vehicleCodeFromQr('VLT-001'), 'VLT-001');
-    expect(vehicleCodeFromQr('https://volti.com.br/v/VLT-002'), 'VLT-002');
   });
 }

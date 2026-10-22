@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +8,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/breakdown.dart';
 import '../../core/clock.dart';
 import '../../core/code_sheet.dart';
 import '../../core/errors.dart';
@@ -23,8 +26,9 @@ import 'depot_labels.dart';
 
 /// Cotacao do resumo da retirada (plano, seguro e caucao). O plano so e cobrado
 /// na entrega; aqui a cotacao mostra o preco e a caucao que sera bloqueada.
-final pickupQuoteProvider = FutureProvider.autoDispose.family<Quote, (PlanCode, InsuranceCoverage, String)>(
-  (ref, k) => ref.watch(backendProvider).quote(k.$1, k.$2, coupon: k.$3),
+/// Chave: plano, cobertura, cupom e moto (o plano `minute` usa o preco do modelo).
+final pickupQuoteProvider = FutureProvider.autoDispose.family<Quote, (PlanCode, InsuranceCoverage, String, String)>(
+  (ref, k) => ref.watch(backendProvider).quote(k.$1, k.$2, coupon: k.$3, vehicleId: k.$4),
 );
 
 /// Retirada (spec 2026-10-22 §3.5): "Retirar agora (até HH:MM)" ou "Agendar"
@@ -54,6 +58,23 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
   /// Uma Idempotency-Key por pedido: repetir o mesmo pedido (rede caiu) reaproveita a chave.
   String? _idemKey;
   ReservationCreate? _idemFor;
+
+  /// Atualiza "Até HH:MM" e os horarios quando o minuto vira.
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    _tick = Timer.periodic(const Duration(minutes: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
 
   DepotSelection get _sel => widget.selection;
   DepotHours get _hours => DepotHours.of(_sel.depot);
@@ -110,10 +131,15 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
       ],
     );
     if (ok != true) return false;
-    await ref
-        .read(sessionProvider.notifier)
-        .saveConsents(terms: session.termsAccepted, location: true, marketing: session.consents?.marketing ?? false);
-    return true;
+    try {
+      await ref
+          .read(sessionProvider.notifier)
+          .saveConsents(terms: session.termsAccepted, location: true, marketing: session.consents?.marketing ?? false);
+      return true;
+    } catch (e) {
+      if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
+      return false;
+    }
   }
 
   Future<void> _confirm(ReservationCreate request) async {
@@ -133,6 +159,9 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
       final r = await ref.read(backendProvider).createDepotReservation(request, idempotencyKey: _idemKey);
       VoltiHaptics.success();
       ref.read(pendingCouponProvider.notifier).clear();
+      // A resposta da criacao ja traz o `pickupCode` (so vai ao dono): semeia a tela da
+      // reserva com ela, sem depender do GET /reservations/current.
+      ref.read(createdReservationProvider.notifier).set(r);
       ref.invalidate(currentReservationProvider);
       ref.invalidate(depotVehiclesProvider(depotId));
       ref.invalidate(depotsProvider);
@@ -184,7 +213,8 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
     if (_method == null && cards.hasValue) _method = cardList.isEmpty ? DepositMethod.pix : DepositMethod.card;
     final method = _method;
     final plan = _sel.plan!;
-    final quote = ref.watch(pickupQuoteProvider((plan.code, _sel.coverage, _coupon)));
+    final quoteKey = (plan.code, _sel.coverage, _coupon, _sel.vehicle.id);
+    final quote = ref.watch(pickupQuoteProvider(quoteKey));
 
     final whenReady = mode == PickupMode.now ? openNow : slot != null;
     final payReady = method == DepositMethod.pix || (method == DepositMethod.card && _cardId != null);
@@ -202,6 +232,8 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
           ..couponCode = _coupon.isEmpty ? null : _coupon);
 
     final nowExpiry = hhmm(hours.toLocal(hours.pickupNowExpiry(now)));
+    // Cartao escolhido sem cartao salvo: o botao desligado diz o motivo.
+    final blockedReason = method == DepositMethod.card && _cardId == null && cards.hasValue ? l.planNeedsCard : null;
 
     return Scaffold(
       bottomNavigationBar: Container(
@@ -209,7 +241,21 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, VoltiSpacing.s16),
-            child: VoltiButton(
+            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              if (blockedReason != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: VoltiSpacing.s8),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      blockedReason,
+                      key: const Key('plan-confirm-reason'),
+                      textAlign: TextAlign.center,
+                      style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+                ),
+              VoltiButton(
               key: const Key('pickup-confirm'),
               label: mode == PickupMode.scheduled && slot == null ? l.pickupChooseTime : l.confirmReservation,
               icon: LucideIcons.calendarCheck,
@@ -218,6 +264,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
               loading: _busy,
               onPressed: request == null || _busy ? null : () => _confirm(request),
             ),
+            ]),
           ),
         ),
       ),
@@ -315,7 +362,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
                       ),
                   ],
                   SectionTitle(l.summary),
-                  _Summary(selection: _sel, quote: quote, onRetry: () => ref.invalidate(pickupQuoteProvider((plan.code, _sel.coverage, _coupon)))),
+                  _Summary(selection: _sel, quote: quote, onRetry: () => ref.invalidate(pickupQuoteProvider(quoteKey))),
                   const SizedBox(height: VoltiSpacing.s10),
                   Container(
                     padding: const EdgeInsets.all(4),
@@ -384,7 +431,8 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
   }
 }
 
-/// Resumo: plano (preco do periodo), seguro e caucao que sera bloqueada.
+/// Resumo: plano (preco do periodo; no plano por minuto, o da moto), as linhas
+/// da cotacao sem repetir valores ([breakdownRows]) e a caucao que sera bloqueada.
 class _Summary extends StatelessWidget {
   const _Summary({required this.selection, required this.quote, required this.onRetry});
   final DepotSelection selection;
@@ -407,18 +455,25 @@ class _Summary extends StatelessWidget {
           ),
         );
     final q = quote.value;
+    // A linha de tempo da cotacao e o preco do plano: vira a linha "Plano" com o valor cotado.
+    final timeLine = q?.breakdown.lines.where((x) => x.code == 'time').firstOrNull;
+    final unitCents = plan.code == PlanCode.minute && timeLine != null ? timeLine.amountCents : planUnitCents(plan, selection.vehicle);
+    final rows = q == null
+        ? const <BreakdownRow>[]
+        : breakdownRows(
+            q.breakdown.rebuild((b) => b.lines.removeWhere((x) => x.code == 'time')),
+            insuranceLabel: l.insurance,
+            feesLabel: l.fees,
+            discountLabel: l.discount,
+          );
     return Container(
       padding: const EdgeInsets.all(VoltiSpacing.s16),
       decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          row('${l.pickupPlan} · ${plan.name}', '${money(plan.unitPriceCents)}${l.perUnitShort(unitShortLabel(l, plan.unit))}'),
-          row(
-            '${l.insurance} · ${selection.coverageName ?? selection.coverage.name}',
-            q == null ? '…' : (q.breakdown.insuranceCents == 0 ? l.included : money(q.breakdown.insuranceCents)),
-          ),
-          if (q != null && q.breakdown.discountCents > 0) row(l.discount, money(-q.breakdown.discountCents)),
+          row('${l.pickupPlan} · ${plan.name}', '${money(unitCents)}${l.perUnitShort(unitShortLabel(l, plan.unit))}', key: const Key('pickup-plan-price')),
+          for (final r in rows) row(r.label, money(r.cents)),
           const Divider(),
           if (quote.hasError && q == null)
             ErrorState(error: quote.error!, onRetry: onRetry)

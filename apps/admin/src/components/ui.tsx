@@ -150,8 +150,9 @@ export function Select<T extends string>({ value, onChange, options, testId }: {
   );
 }
 
-export function TextInput({ value, onChange, type = 'text', placeholder, testId, min, max, step }: { value: string | number; onChange: (v: string) => void; type?: string; placeholder?: string; testId?: string; min?: number; max?: number; step?: number }) {
-  return <input className="field" data-testid={testId} type={type} value={value} min={min} max={max} step={step} placeholder={placeholder} onChange={(e) => onChange(e.target.value)} style={{ ...fieldBox, height: 48 }} />;
+export function TextInput({ value, onChange, type = 'text', placeholder, testId, min, max, step, readOnly, disabled }: { value: string | number; onChange?: (v: string) => void; type?: string; placeholder?: string; testId?: string; min?: number; max?: number; step?: number; readOnly?: boolean; disabled?: boolean }) {
+  return <input className="field" data-testid={testId} type={type} value={value} min={min} max={max} step={step} placeholder={placeholder} readOnly={readOnly} disabled={disabled} aria-readonly={readOnly || undefined}
+    onChange={(e) => onChange?.(e.target.value)} style={{ ...fieldBox, height: 48, ...(readOnly || disabled ? { color: 'var(--text-secondary)', cursor: 'not-allowed' } : {}) }} />;
 }
 
 /** Campo numérico compacto para tabelas de preço (estilo `PricingView`). */

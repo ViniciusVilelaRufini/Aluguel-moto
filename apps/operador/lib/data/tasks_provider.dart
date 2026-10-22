@@ -62,8 +62,16 @@ class TasksController extends AsyncNotifier<TasksResult> {
       final tasks = sortTasks(await ref.read(fieldRepositoryProvider).listTasks());
       // Lista da API (atribuidas a mim): solta o modo servico de tarefas
       // reatribuidas, canceladas, concluidas ou com a moto em status incompativel.
+      // Status da moto: o do servidor (FieldTask.vehicleStatus, contrato v2) vale
+      // mais que o conhecido localmente, que e anterior a esta leitura.
+      final server = {
+        for (final t in tasks)
+          if (t.vehicleStatus != null && t.vehicleStatus != VehicleStatus.unknownDefaultOpenApi)
+            t.vehicleId: t.vehicleStatus!,
+      };
+      ref.read(knownVehicleStatusProvider.notifier).forget(server.keys);
       await ref.read(serviceUnlockProvider.notifier).reconcile(tasks,
-          vehicleStatuses: ref.read(knownVehicleStatusProvider));
+          vehicleStatuses: {...ref.read(knownVehicleStatusProvider), ...server});
       await queue.saveTasks([
         for (final t in tasks)
           standardSerializers.serializeWith(FieldTask.serializer, t)!

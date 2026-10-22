@@ -57,7 +57,8 @@ abstract class Backend {
   // contratacao
   Future<List<PricingPlan>> plans();
   Future<List<InsuranceCoverageOption>> coverages();
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon});
+  /// [vehicleId]: preco por minuto do modelo da moto (plano `minute`).
+  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId});
   Future<List<PaymentCard>> cards();
   Future<PaymentCard> addCard(String token);
   Future<Wallet> wallet();
@@ -244,12 +245,13 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getInsuranceApi().listInsuranceCoverages()).data!.items.toList());
 
   @override
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon}) =>
+  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId}) =>
       _run(() async => (await _api.getPricingApi().quotePrice(
             quoteRequest: QuoteRequest((b) => b
               ..planCode = plan
               ..coverage = coverage
-              ..couponCode = (coupon == null || coupon.isEmpty) ? null : coupon),
+              ..couponCode = (coupon == null || coupon.isEmpty) ? null : coupon
+              ..vehicleId = vehicleId),
           ))
           .data!);
 

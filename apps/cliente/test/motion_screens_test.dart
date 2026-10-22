@@ -29,7 +29,7 @@ Widget _router({bool reduced = false}) {
 }
 
 void main() {
-  testWidgets('router: scan abre como modal de baixo e a tela de tras recua', (t) async {
+  testWidgets('router: modal abre de baixo e a tela de tras recua', (t) async {
     await t.pumpWidget(_router());
     await t.tap(find.text('abrir'));
     await t.pump();

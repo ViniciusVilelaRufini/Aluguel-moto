@@ -28,3 +28,8 @@ class DepotSelection {
   DepotSelection withCoverage(InsuranceCoverage c, String? name) =>
       DepotSelection(depot: depot, vehicle: vehicle, plan: plan, coverage: c, coverageName: name);
 }
+
+/// Preco unitario do plano para esta moto: no plano `minute`, o preco do modelo
+/// (o mesmo que a API cota com `vehicleId`); nos demais, o do plano.
+int planUnitCents(PricingPlan plan, Vehicle v) =>
+    plan.code == PlanCode.minute ? (v.pricePerMinuteCents ?? plan.unitPriceCents) : plan.unitPriceCents;

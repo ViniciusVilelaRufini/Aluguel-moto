@@ -1348,5 +1348,9 @@
   "payPixDeposit": "Pagar caução Pix",
   "reservationNotFound": "Reserva não encontrada",
   "reservationNotFoundText": "Ela pode ter sido cancelada ou expirado.",
-  "goHome": "Ir para o início"
+  "goHome": "Ir para o início",
+  "planNeedsCard": "Adicione um cartão ou escolha Pix para a caução.",
+  "returnLockTitle": "Trave e encerre",
+  "returnInsideRule": "Você está num ponto verde. Pode encerrar sem taxa.",
+  "reservationNoCode": "Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão."
 }

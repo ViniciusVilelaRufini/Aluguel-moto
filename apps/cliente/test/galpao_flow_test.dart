@@ -5,12 +5,15 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/clock.dart';
+import 'package:volti_cliente/core/errors.dart';
 import 'package:volti_cliente/core/launcher.dart';
 import 'package:volti_cliente/core/router.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/pickup/pickup_screen.dart';
+import 'package:volti_cliente/features/pick/depot_selection.dart';
 import 'package:volti_cliente/features/plan/insurance_screen.dart';
+import 'package:volti_cliente/features/plan/pix_sheet.dart';
 import 'package:volti_cliente/features/plan/plan_screen.dart';
 import 'package:volti_cliente/features/reservation/depot_reservation_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
@@ -28,15 +31,24 @@ void phone(WidgetTester t, {double scale = 1, Size size = const Size(412, 915)})
 
 final opened = <Uri>[];
 
-Future<GoRouter> pumpApp(WidgetTester t, GalpaoBackend b, {String initial = '/home', Object? extra, bool reduceMotion = false, KycStatus kyc = KycStatus.approved}) async {
+Future<GoRouter> pumpApp(
+  WidgetTester t,
+  GalpaoBackend b, {
+  String initial = '/home',
+  Object? extra,
+  bool reduceMotion = false,
+  KycStatus kyc = KycStatus.approved,
+  DateTime Function()? clock,
+  FakeSession Function()? sessionFactory,
+}) async {
   final router = GoRouter(initialLocation: initial, initialExtra: extra, routes: appRoutes());
   addTearDown(router.dispose);
   final app = testRouterApp(router, overrides: [
     backendProvider.overrideWithValue(b),
     pushServiceProvider.overrideWithValue(NoopPushService()),
     locationServiceProvider.overrideWithValue(FakeLocation()),
-    sessionProvider.overrideWith(() => FakeSession(session(kyc: kyc))),
-    clockProvider.overrideWithValue(() => thu10),
+    sessionProvider.overrideWith(sessionFactory ?? () => FakeSession(session(kyc: kyc))),
+    clockProvider.overrideWithValue(clock ?? () => thu10),
     urlLauncherProvider.overrideWithValue((uri) async {
       opened.add(uri);
       return true;
@@ -417,4 +429,179 @@ void main() {
       expect(t.binding.hasScheduledFrame, isFalse);
     });
   });
+
+  group('fix round 1', () {
+    final urban = bike('v2', 'VLT-002', 'Volti Urban', price: 99, category: 'Dois lugares');
+    final minute = plan(PlanCode.minute, 'Por minuto', PlanUnit.minute, 79);
+    final dayPlan = plan(PlanCode.day, 'Diário', PlanUnit.day, 8900);
+
+    testWidgets('preco por minuto do modelo: Urban a R\$ 0,99 no plano e no resumo, cotacao com vehicleId', (t) async {
+      phone(t);
+      final b = GalpaoBackend();
+      await pumpApp(t, b, initial: '/plan', extra: DepotSelection(depot: depotFixture(), vehicle: urban));
+      await tapText(t, 'Outras opções');
+      expect(t.widget<OptionCard>(find.byKey(const Key('plan-minute'))).price, 'R\$ 0,99');
+      await t.pumpWidget(const SizedBox());
+
+      await pumpApp(t, b, initial: '/pickup', extra: DepotSelection(depot: depotFixture(), vehicle: urban, plan: minute, coverageName: 'Básico'));
+      expect(t.widget<Text>(find.byKey(const Key('pickup-plan-price'))).data, 'R\$ 0,99/min');
+      expect(b.quoteVehicleIds, contains('v2'));
+      expect(find.text('Tempo de uso (por minuto)'), findsNothing, reason: 'a linha de tempo vira a linha do plano');
+    });
+
+    testWidgets('/scan com ?swap= tambem volta para a home', (t) async {
+      phone(t);
+      final router = await pumpApp(t, GalpaoBackend(), initial: '/scan?swap=r1');
+      expect(router.state.uri.path, '/home');
+    });
+
+    testWidgets('falha ao salvar o consentimento: toast com o motivo e nada reservado', (t) async {
+      phone(t);
+      final b = GalpaoBackend();
+      await pumpApp(t, b, initial: '/pickup', extra: selection(p: dayPlan), sessionFactory: _FailingConsentSession.new);
+      await tapText(t, 'Confirmar reserva');
+      await tapText(t, 'Permitir e continuar');
+      expect(find.text('Não deu para salvar o consentimento.'), findsOneWidget);
+      expect(b.creates, 0);
+    });
+
+    testWidgets('reserva sem pickupCode: aviso e tentar de novo', (t) async {
+      phone(t);
+      final b = GalpaoBackend();
+      await b.createDepotReservation(ReservationCreate((r) => r
+        ..vehicleId = 'v1'
+        ..depotId = 'dep1'
+        ..pickupMode = PickupMode.now
+        ..planCode = PlanCode.day
+        ..coverage = InsuranceCoverage.basic
+        ..depositMethod = DepositMethod.card));
+      b.stripCodeOnGet = true;
+      await pumpApp(t, b, initial: '/reservation/res1');
+      expect(find.byKey(const Key('reservation-no-code')), findsOneWidget);
+      expect(find.byType(QrImageView), findsNothing);
+      final calls = b.currentCalls;
+      b.stripCodeOnGet = false;
+      await tapText(t, 'Tentar de novo');
+      expect(b.currentCalls, greaterThan(calls));
+      expect(find.byType(QrImageView), findsOneWidget);
+    });
+
+    testWidgets('a resposta da criacao semeia o QR mesmo com o GET sem pickupCode', (t) async {
+      phone(t);
+      final b = GalpaoBackend()..stripCodeOnGet = true;
+      await pumpApp(t, b, initial: '/pickup', extra: selection(p: dayPlan));
+      await tapText(t, 'Confirmar reserva');
+      expect(find.byType(DepotReservationScreen), findsOneWidget);
+      expect(find.byType(QrImageView), findsOneWidget);
+      expect(find.byKey(const Key('reservation-no-code')), findsNothing);
+    });
+
+    testWidgets('"Outras opções" fecha mesmo com o plano por minuto escolhido; seta gira', (t) async {
+      phone(t);
+      await pumpApp(t, GalpaoBackend(), initial: '/plan', extra: selection(p: minute));
+      double turns() => t.widget<AnimatedRotation>(find.byKey(const Key('plan-others-chevron'))).turns;
+      expect(find.byKey(const Key('plan-minute')), findsOneWidget);
+      expect(turns(), .5);
+      await tapText(t, 'Outras opções');
+      expect(find.byKey(const Key('plan-minute')), findsNothing);
+      expect(turns(), 0);
+      // Fechada: o plano escolhido aparece na linha.
+      expect(find.text('Por minuto'), findsOneWidget);
+      await tapText(t, 'Outras opções');
+      expect(find.byKey(const Key('plan-minute')), findsOneWidget);
+      expect(turns(), .5);
+    });
+
+    testWidgets('retirada atualiza "Até HH:MM" a cada minuto', (t) async {
+      phone(t);
+      var now = thu10;
+      await pumpApp(t, GalpaoBackend(), initial: '/pickup', extra: selection(p: dayPlan), clock: () => now);
+      expect(find.text('Até 12:00'), findsOneWidget);
+      now = now.add(const Duration(minutes: 1));
+      await t.pump(const Duration(seconds: 61));
+      expect(find.text('Até 12:01'), findsOneWidget);
+    });
+
+    testWidgets('lista: erro com tentar de novo recarrega', (t) async {
+      phone(t);
+      final b = GalpaoBackend()..vehiclesError = Exception('rede');
+      await pumpApp(t, b, initial: '/pick');
+      expect(find.text('Tentar de novo'), findsOneWidget);
+      b.vehiclesError = null;
+      await tapText(t, 'Tentar de novo');
+      expect(find.text('VLT-001'), findsOneWidget);
+    });
+
+    testWidgets('lista vazia aceita puxar para atualizar', (t) async {
+      phone(t);
+      final b = GalpaoBackend(vehicles: {'dep1': []});
+      await pumpApp(t, b, initial: '/pick');
+      final calls = b.vehicleCalls;
+      b.vehiclesByDepot['dep1'] = [bike('v1', 'VLT-001', 'Volti Flash')];
+      await t.fling(find.text('Nenhuma moto no galpão agora'), const Offset(0, 400), 1000);
+      await settle(t);
+      expect(b.vehicleCalls, calls + 1);
+      expect(find.text('VLT-001'), findsOneWidget);
+    });
+
+    testWidgets('lista a 200% em 360x740 com o aviso de KYC', (t) async {
+      phone(t, scale: 2, size: const Size(360, 740));
+      await pumpApp(t, GalpaoBackend(), initial: '/pick', kyc: KycStatus.pending);
+      expect(find.text('Verificação em análise'), findsOneWidget);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('409 reservation-already-active na confirmacao: aviso e volta a home', (t) async {
+      phone(t);
+      final b = GalpaoBackend()..createError = conflict('reservation-already-active');
+      final router = await pumpApp(t, b, initial: '/pickup', extra: selection(p: dayPlan));
+      await tapText(t, 'Confirmar reserva');
+      expect(find.text('Você já tem uma reserva ativa.'), findsOneWidget);
+      expect(router.state.uri.path, '/home');
+    });
+
+    testWidgets('caucao Pix: a folha abre com reservation.deposit (QR do copia e cola) e segue para a reserva', (t) async {
+      phone(t);
+      final b = GalpaoBackend(withCard: false)..pixDeposit = true;
+      final router = await pumpApp(t, b, initial: '/pickup', extra: selection(p: dayPlan));
+      await tapText(t, 'Confirmar reserva');
+      expect(find.byKey(const Key('pix-qr')), findsOneWidget);
+      final qr = t.widget<QrImageView>(find.descendant(of: find.byKey(const Key('pix-qr')), matching: find.byType(QrImageView)));
+      expect(qr, isNotNull);
+      await t.tap(find.descendant(of: find.byType(PixDepositSheet), matching: find.text('Cancelar')));
+      await settle(t);
+      expect(router.state.uri.path, '/reservation/res1');
+    });
+
+    testWidgets('home a 200% em 360x740 com dois galpoes, reserva e KYC: nada se sobrepoe', (t) async {
+      phone(t, scale: 2, size: const Size(360, 740));
+      final b = GalpaoBackend(depots: [
+        depotFixture(id: 'dep1', distanceM: 1200),
+        depotFixture(id: 'far', name: 'Galpão Volti — Mooca', district: 'Mooca', count: 1, distanceM: 9000),
+      ]);
+      await b.createDepotReservation(ReservationCreate((r) => r
+        ..vehicleId = 'v1'
+        ..depotId = 'dep1'
+        ..pickupMode = PickupMode.now
+        ..planCode = PlanCode.day
+        ..coverage = InsuranceCoverage.basic
+        ..depositMethod = DepositMethod.card));
+      await pumpApp(t, b, kyc: KycStatus.pending);
+      expect(t.takeException(), isNull);
+      expect(find.text('Ver reserva'), findsOneWidget);
+      expect(find.text('Verificação em análise'), findsOneWidget);
+      final card = t.getRect(find.byKey(const Key('depot-card')));
+      final top = t.getRect(find.byKey(const Key('home-top')));
+      expect(top.bottom, lessThanOrEqualTo(card.top), reason: 'cabecalho e avisos acima do cartao do galpao');
+      expect(card.bottom, lessThanOrEqualTo(740));
+      expect(top.top, greaterThanOrEqualTo(0));
+    });
+  });
+}
+
+class _FailingConsentSession extends FakeSession {
+  _FailingConsentSession() : super(session(location: false));
+  @override
+  Future<void> saveConsents({required bool terms, required bool location, bool marketing = false}) async =>
+      throw AppFailure(kind: FailureKind.api, status: 500, detail: 'Não deu para salvar o consentimento.');
 }

@@ -85,15 +85,16 @@ export class VehiclesService {
     });
   }
 
-  /** Motos `free` no raio (clientes) ou todas (staff), ordenadas por distância (PostGIS). */
+  /** Motos `free` de rua no raio (clientes) ou todas (staff), ordenadas por distância (PostGIS). */
   async nearby(user: Principal, q: NearbyQuery) {
     const radius = q.radiusM ?? 1000;
     const minBattery = q.minRangeKm ? Math.ceil((q.minRangeKm / KM_PER_FULL_BATTERY) * 100) : 0;
     const point = Prisma.sql`ST_SetSRID(ST_MakePoint(${q.lng}, ${q.lat}), 4326)::geography`;
     // Contrato v2: moto fixa de assinatura aberta só aparece para o próprio assinante.
+    // Retirada em galpão: moto com `depotId` (só sai pela entrega) e `awaiting_pickup` nunca aparecem para o cliente.
     const statusFilter = isStaff(user)
       ? Prisma.empty
-      : Prisma.sql`AND v."status" = 'free'::"VehicleStatus" AND ${notFixedForOtherSql(user.customerId!)}`;
+      : Prisma.sql`AND v."status" = 'free'::"VehicleStatus" AND v."depotId" IS NULL AND ${notFixedForOtherSql(user.customerId!)}`;
     type NearbyRow = Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct' | 'vehicleModelId'> & {
       distance: number;
       categoryLabel: string | null;
@@ -310,7 +311,8 @@ export class VehiclesService {
     const reservation = await this.prisma.reservation.findFirst({ where: { vehicleId: v.id, status: 'active' }, select: { id: true } });
     if (reservation) return 'reserved';
     const prev = v.statusBeforeOffline;
-    return prev === 'maintenance' || prev === 'blocked' ? prev : 'free';
+    // Retirada em galpão: moto devolvida em ponto verde continua esperando recolhimento.
+    return prev === 'maintenance' || prev === 'blocked' || prev === 'awaiting_pickup' ? prev : 'free';
   }
 
   private emitStatus(vehicleId: string, status: VehicleStatus): void {

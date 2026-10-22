@@ -1,4 +1,4 @@
-import { isOpenAt, pickupExpiry, validatePickup, slotsForDay, DepotRulesInput } from './depot-rules';
+import { isOpenAt, localDayBounds, pickupExpiry, validatePickup, slotsForDay, DepotRulesInput } from './depot-rules';
 
 const depot: DepotRulesInput = {
   timezone: 'America/Sao_Paulo',
@@ -36,5 +36,12 @@ describe('depot-rules', () => {
     expect(s[0]).toBe('2026-10-24T11:00:00.000Z');
     expect(s[s.length - 1]).toBe('2026-10-24T20:30:00.000Z');
     expect(s).toHaveLength(20);
+  });
+  it('limites do dia local em UTC (agenda do galpão)', () => {
+    expect(localDayBounds('America/Sao_Paulo', '2026-10-22')).toEqual({
+      start: new Date('2026-10-22T03:00:00.000Z'),
+      end: new Date('2026-10-23T03:00:00.000Z'),
+    });
+    expect(localDayBounds('UTC', '2026-12-31')).toEqual({ start: new Date('2026-12-31T00:00:00.000Z'), end: new Date('2027-01-01T00:00:00.000Z') });
   });
 });

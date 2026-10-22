@@ -290,3 +290,39 @@ Só acréscimos e descrições; o contrato prevalece sobre o plano onde divergem
 - **Contrato:** `VehicleStatusCounts` (dashboard) ganha `awaiting_pickup` (propriedade e `required`, inteiro ≥ 0), para contar todos os valores de `VehicleStatus`. Clientes TS e Dart regenerados.
 - **Saída refazível:** a entrega `pickup` deixa de ser única por reserva para sempre. Índice parcial `Handover_one_open_pickup_per_reservation` (`type = 'pickup'` e `status IN ('pending_customer','accepted')`): disputada ou cancelada libera nova saída para a mesma reserva. `CHECK` `Handover_type_reference`: `pickup` exige `reservationId`, `return_depot` exige `rentalId`. Migração nova `20261023091000_galpao_pickup_unique` (as já aplicadas não mudam).
 - **Seed:** só o lote `VLT-0011`…`VLT-0030` vai para o "Galpão Volti — Pinheiros" (nome único, upsert atômico), sem as motos usadas pelos e2e de rua; motos fora do lote que apontem para o galpão são desvinculadas (repara bancos semeados antes).
+
+### Galpões — Task 4, fix round 1 (revisão) · status: aprovada (coordenador, 2026-10-22)
+
+- **`Depot.availableVehicleCount`** conta as motos `free` com o `depotId` do galpão **sem nenhuma moto fixa** de assinatura vigente (`active`/`paused` com `currentPeriodEnd` no futuro, `currentSubscriptionWhere`), de qualquer cliente, inclusive de quem consulta. É o número de motos livres para qualquer pessoa retirar, igual para todos os clientes e para o painel.
+- **`GET /depots/{id}/vehicles` (cliente)** esconde a moto fixa da assinatura vigente de **outro** cliente (mesma regra do `nearby`); a moto fixa do próprio cliente continua visível. Staff vê todas.
+- **`GET /depots/{id}/pickups?date=`**: data impossível (ex.: `2026-02-31`) → `400 validation-error` (checagem de ida e volta pelo calendário).
+- Corrida no nome único do galpão (`P2002`) → `409 conflict` "Já existe um galpão com este nome.".
+## 2026-10-22 · agente de correções do emulador, rodada 1 (branch `fix/emulador-1`) · status: decisão (app) + proposta
+
+Achados do teste no emulador (`.superpowers/sdd/2026-10-21-volti-plataforma/emulador-1-achados.md`). Nada mudou no `openapi.yaml`.
+
+1. **Decisão (app): "Voltar" da reserva só para leitor de tela.** O design (`ReservedScreen.jsx`) não tem botão de voltar; o do lote D foi tirado da tela. Fica um nó de semântica "Voltar" (botão) no canto superior esquerdo, primeiro na ordem de leitura e sem área de toque (o toque passa para o mapa), mais o voltar do sistema (`PopScope`; sem tela embaixo, vai ao mapa). Assim TalkBack/VoiceOver mantêm a saída sem mudar o visual. O megafone saiu da reserva (o design não tem); a buzina continua no cartão da moto.
+2. **Decisão (app): relógio do servidor.** Contagens comparam com datas do servidor, então o app corrige o relógio do aparelho pelo cabeçalho HTTP `Date` (`ServerClock` no `volti_flutter`, meio do segundo, diferença < 1 s ignorada). A contagem da reserva arredonda para cima e nunca passa de `expiresAt − createdAt`.
+3. **Decisão (app): seguro, cupom e taxas uma vez no resumo.** A API manda `insurance_basic|insurance_full`, `coupon` e as taxas como `PriceLine` e também os totais (`insuranceCents`, `discountCents`, `feesCents`). Plano e recibo mostram as linhas; os totais só viram linha quando nenhuma linha da categoria veio.
+4. **Decisão (app): caução em Pix sem cartão salvo.** Sem cartão, o plano pré-seleciona Pix; se o cliente escolhe cartão sem ter um, o botão fica desligado com "Adicione um cartão ou escolha Pix para a caução.". **Proposta (contrato):** `Customer.preferredDepositMethod` (`card|pix`), gravado no passo de pagamento do cadastro, para respeitar a escolha mesmo com cartão salvo.
+5. **Decisão (app): QR do Pix a partir do copia e cola.** Quando `qrCodeBase64` vem vazio, inválido ou menor que 64 px (o fake devolve 1×1), o app gera o QR do `copyPaste` (`qr_flutter`), que é o mesmo conteúdo EMV.
+6. **Decisão (app): e-mail sintético nunca aparece.** Cadastro por celular cria `<dígitos>@celular.volti.dev` (dev) e a API usa `<sub>@sem-email.volti.invalid` sem e-mail no token; a conta mostra o telefone formatado (de `Customer.phone` ou dos dígitos do e-mail dev) e, sem telefone, nada. Reforça a proposta 3 do lote A (e-mail opcional no contrato).
+7. **Rota a pé (R2) continua proposta.** Sem serviço de rotas, a linha reta virou um "L" (quarteirão, perna mais longa primeiro) e a reta quando a moto está a menos de 25 m. A reserva será redesenhada para retirada no galpão; a proposta R2 deve ser revista com o novo modelo.
+## 2026-10-22 · agente do painel admin no contrato v2 (branch `feat/v2-admin`) · status: proposta
+
+O painel consome o contrato v2 sem mudanças em `packages/contracts`. As lacunas abaixo ficaram de fora porque o contrato não as expõe; ficam como proposta de mudança do contrato (todas aditivas).
+
+1. **Assinaturas para o staff.** Hoje `GET /payments/subscriptions[/{id}]`, `pause` e `resume` são só do cliente; o painel mostra o plano (`Customer.activePlanCode`), a moto fixa (`Vehicle.assignedSubscriptionId`) e o estado só depois do `PUT .../vehicle`. **Proposta:** `GET /customers/{id}/subscriptions` (admin, financeiro, suporte, operacao) e `POST /payments/subscriptions/{id}/pause|resume` com `staffAuth` (admin, suporte), motivo obrigatório e AuditLog, mesmas regras de limite de pausa.
+2. **Indicação (referral) para o staff.** Valores e elegibilidade vêm de variáveis de ambiente, sem relatório. **Proposta:** `GET/PUT /referrals/config` (admin; recompensa do indicado e de quem indicou em centavos, ativo) e `GET /reports/referrals?from&to` (admin, financeiro; indicações, resgates e valor creditado).
+3. **Configuração das janelas de manutenção.** `GET /me/maintenance-slots` usa janelas fixas (seg–sáb, 8–18 h). **Proposta:** `GET/PUT /maintenance/slots-config` (admin, operacao: dias, horário, duração, capacidade por janela, local) e filtro `source` em `GET /maintenance/tasks` (o painel hoje filtra pedidos de clientes na página carregada).
+4. **`operatorId` em `load`/`unload` da van.** `BatteryTransferRequest` vale só para a van de quem chama; o painel mostra a van de outro operador só para leitura. **Proposta:** `operatorId` opcional em `POST /batteries/van-stock/load|unload`, aceito só para admin/operacao, com AuditLog.
+5. **Relatório de cupons.** Só existe `Coupon.redemptions`. **Proposta:** `GET /reports/coupons?from&to` (admin, financeiro): resgates por cupom no período e desconto concedido em centavos, com `format=csv`.
+
+Regra de exibição adotada no painel (sem mudança de contrato): em Operação > Manutenção > Agenda e no histórico da moto, `operacao` vê só o primeiro nome do cliente; `admin` e `suporte` veem o nome inteiro (alinhado ao M2 da API para `campo`).
+
+## 2026-10-22 · app do cliente na retirada em galpão (branch `feat/galpao-t9`, Task 9) · status: decisão (coordenador, 2026-10-22)
+
+1. **Sem troca de moto no meio da corrida pelo app do cliente.** No modelo de galpão o cliente não escaneia moto: o "Trocar de moto sem nova taxa" do "Reportar problema" saiu (o diálogo só reporta) e `/scan` (com ou sem `?swap=`) só redireciona para a home; o leitor de QR do cliente foi removido. A trava equivalente na API (`POST /rentals/{id}/swap`) é tratada à parte.
+2. **Horários do galpão calculados no app.** Aberto/fechado, "retirar agora (até HH:MM)" e os horários agendáveis saem de `Depot.openingHours`, `timezone`, `maxScheduleDays` e `pickupNowWindowMinutes` (espelho de `depot-rules.ts`); o servidor valida de novo. Nada de `isOpenNow`/`slots` no contrato.
+3. **Preço por minuto do modelo.** O app manda `vehicleId` em `POST /pricing/quote` e mostra no plano "Por minuto" e no resumo da retirada o preço do modelo da moto escolhida.
+4. **Ordem dos galpões.** Mais perto primeiro por `distanceM`; sem localização (sem consentimento ou sem GPS) fica a ordem da API.

@@ -81,7 +81,7 @@ class _InsuranceScreenState extends ConsumerState<InsuranceScreen> {
                             child: OptionCard(
                               key: Key('coverage-${c.coverage.name}'),
                               title: c.name,
-                              description: c.description,
+                              description: c.mandatory ? withoutMandatoryPrefix(c.description) : c.description,
                               icon: c.coverage == InsuranceCoverage.full ? LucideIcons.shieldCheck : LucideIcons.shield,
                               price: c.premiumCents == 0 ? l.included : money(c.premiumCents),
                               priceNote: c.premiumCents == 0 ? null : l.perRental,

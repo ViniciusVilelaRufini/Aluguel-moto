@@ -383,13 +383,14 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     }
   }
 
-  /// Um dialogo so: escolhe o problema (chips) e decide trocar de moto sem nova
-  /// taxa ou so reportar.
+  /// Um dialogo so: escolhe o problema (chips) e reporta. Sem troca de moto no
+  /// meio da corrida (retirada em galpao, docs/decisoes.md 2026-10-22): o
+  /// suporte orienta a volta ao galpao.
   Future<void> _report() async {
     final l = context.l;
     final problems = [l.problemTire, l.problemBrake, l.problemBattery, l.problemLights, l.problemOther];
     String? picked;
-    final swap = await showDialog<bool>(
+    final send = await showDialog<bool>(
       context: context,
       barrierColor: VoltiColors.surfaceScrim,
       builder: (ctx) => StatefulBuilder(
@@ -408,16 +409,9 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           ]),
           actions: [
             VoltiButton(
-              label: l.swapNoFee,
-              icon: LucideIcons.repeat,
+              label: l.reportOnly,
               fullWidth: true,
               onPressed: picked == null ? null : () => Navigator.of(ctx).pop(true),
-            ),
-            VoltiButton(
-              label: l.reportOnly,
-              variant: VoltiButtonVariant.secondary,
-              fullWidth: true,
-              onPressed: picked == null ? null : () => Navigator.of(ctx).pop(false),
             ),
             VoltiButton(label: l.cancel, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(ctx).pop()),
           ],
@@ -425,16 +419,11 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       ),
     );
     final problem = picked;
-    if (swap == null || problem == null || !mounted) return;
+    if (send != true || problem == null || !mounted) return;
     try {
       final r = _rental!;
       await ref.read(backendProvider).reportIncident(IncidentCategory.vehicleProblem, problem, rentalId: r.id, vehicleId: r.vehicleId);
-      if (!mounted) return;
-      if (swap) {
-        context.push('/scan?swap=${r.id}');
-      } else {
-        VoltiToast.show(context, l.reportSentTitle);
-      }
+      if (mounted) VoltiToast.show(context, l.reportSentTitle);
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     }
@@ -614,30 +603,24 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                     VoltiChip(icon: LucideIcons.share2, label: l.shareTrip, onTap: _shareLocation),
                   ]),
                   const SizedBox(height: 12),
-                  Row(children: [
-                    Expanded(
-                      flex: 10,
-                      child: VoltiButton(
-                        label: paused ? l.unpauseRide : l.pause,
-                        icon: paused ? LucideIcons.circlePlay : LucideIcons.pause,
-                        variant: VoltiButtonVariant.secondary,
-                        size: VoltiButtonSize.lg,
-                        fullWidth: true,
-                        onPressed: _busy ? null : _togglePause,
-                      ),
+                  // Proporcao do design (1 : 1,3); se o rotulo nao cabe inteiro, ajusta ou empilha.
+                  VoltiButtonPair(
+                    first: VoltiButton(
+                      label: paused ? l.unpauseRide : l.pause,
+                      icon: paused ? LucideIcons.circlePlay : LucideIcons.pause,
+                      variant: VoltiButtonVariant.secondary,
+                      size: VoltiButtonSize.lg,
+                      fullWidth: true,
+                      onPressed: _busy ? null : _togglePause,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 13,
-                      child: VoltiButton(
-                        label: l.returnVehicle,
-                        variant: VoltiButtonVariant.dark,
-                        size: VoltiButtonSize.lg,
-                        fullWidth: true,
-                        onPressed: () => context.push('/return/${r.id}'),
-                      ),
+                    second: VoltiButton(
+                      label: l.returnVehicle,
+                      variant: VoltiButtonVariant.dark,
+                      size: VoltiButtonSize.lg,
+                      fullWidth: true,
+                      onPressed: () => context.push('/return/${r.id}'),
                     ),
-                  ]),
+                  ),
                 ]),
               ),
             ),

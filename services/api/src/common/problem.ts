@@ -52,6 +52,8 @@ const DEFAULT_TITLES: Record<string, string> = {
   'maintenance-slot-unavailable': 'Horário de manutenção indisponível',
   'referral-code-invalid': 'Código de indicação inválido',
   'referral-not-eligible': 'Indicação não permitida',
+  // retirada em galpão
+  'depot-inactive': 'Galpão inativo',
   'internal-error': 'Erro interno',
 };
 

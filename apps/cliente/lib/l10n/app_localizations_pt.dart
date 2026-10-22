@@ -2264,4 +2264,19 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get goHome => 'Ir para o início';
+
+  @override
+  String get planNeedsCard =>
+      'Adicione um cartão ou escolha Pix para a caução.';
+
+  @override
+  String get returnLockTitle => 'Trave e encerre';
+
+  @override
+  String get returnInsideRule =>
+      'Você está num ponto verde. Pode encerrar sem taxa.';
+
+  @override
+  String get reservationNoCode =>
+      'Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.';
 }
