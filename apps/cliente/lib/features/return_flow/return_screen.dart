@@ -16,6 +16,7 @@ import '../../core/geo.dart';
 import '../../core/services.dart';
 import '../../core/widgets.dart';
 import '../home/providers.dart';
+import '../ride/ride_data.dart' show sharedZonesProvider;
 import '../ride/ride_screen.dart' show mapEnabledProvider;
 
 /// Zonas de devolucao e onde a moto esta em relacao a elas.
@@ -40,7 +41,8 @@ class ReturnContext {
 
 final returnContextProvider = FutureProvider.autoDispose.family<ReturnContext, String>((ref, rentalId) async {
   final backend = ref.watch(backendProvider);
-  final zones = (await backend.zones()).where((z) => z.active && z.type == ZoneType.return_).toList();
+  // Mesmas zonas da corrida (cache de 5 min): abrir a devolucao nao busca de novo.
+  final zones = (await ref.watch(sharedZonesProvider.future)).where((z) => z.active && z.type == ZoneType.return_).toList();
   LatLng? pos;
   try {
     final rental = await backend.rental(rentalId);

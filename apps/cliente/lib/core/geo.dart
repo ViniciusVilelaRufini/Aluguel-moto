@@ -66,11 +66,47 @@ GeoZone? nearestZone(LatLng p, Iterable<GeoZone> zones) {
   return best;
 }
 
-/// Acrescenta [p] a trilha da corrida se a moto andou pelo menos [minMeters]
-/// (evita tremidas do GPS parado). Devolve uma lista nova.
-List<LatLng> appendTrail(List<LatLng> trail, LatLng p, {double minMeters = 3}) {
-  if (trail.isNotEmpty && _distance.as(LengthUnit.Meter, trail.last, p) < minMeters) return trail;
-  return [...trail, p];
+/// Teto de pontos da rota desenhada na corrida (memoria e custo de desenho
+/// limitados mesmo em alugueis longos).
+const kTrailMaxPoints = 1500;
+
+/// Acrescenta [p] a [trail] (no lugar, sem copiar) se a moto andou pelo menos
+/// [minMeters] (evita tremidas do GPS parado). Passando de [maxPoints], dizima
+/// a trilha (ver [decimateTrail]). Devolve `true` se a trilha mudou.
+bool appendTrail(List<LatLng> trail, LatLng p, {double minMeters = 3, int maxPoints = kTrailMaxPoints}) {
+  if (trail.isNotEmpty && _distance.as(LengthUnit.Meter, trail.last, p) < minMeters) return false;
+  trail.add(p);
+  if (trail.length > maxPoints) decimateTrail(trail, maxPoints);
+  return true;
+}
+
+/// Reduz [trail] (no lugar) ate [maxPoints] tirando um ponto sim, um nao do
+/// meio, sempre mantendo o primeiro e o ultimo. Cada passada corta pela metade,
+/// entao o custo por ponto acrescentado e constante (amortizado).
+void decimateTrail(List<LatLng> trail, int maxPoints) {
+  assert(maxPoints >= 2);
+  while (trail.length > maxPoints) {
+    final last = trail.last;
+    var w = 1;
+    for (var r = 2; r < trail.length - 1; r += 2) {
+      trail[w++] = trail[r];
+    }
+    trail.length = w;
+    trail.add(last);
+  }
+}
+
+/// Junta o trajeto salvo e os pontos ao vivo numa passada so (filtro de
+/// [minMeters]) e dizima uma vez no fim.
+List<LatLng> mergeTrail(Iterable<LatLng> saved, Iterable<LatLng> live, {double minMeters = 3, int maxPoints = kTrailMaxPoints}) {
+  final out = <LatLng>[];
+  for (final src in [saved, live]) {
+    for (final p in src) {
+      if (out.isEmpty || _distance.as(LengthUnit.Meter, out.last, p) >= minMeters) out.add(p);
+    }
+  }
+  if (out.length > maxPoints) decimateTrail(out, maxPoints);
+  return out;
 }
 
 /// Minutos a pe (~80 m/min). Nunca mostramos km rodados, so a distancia a pe ate a moto.

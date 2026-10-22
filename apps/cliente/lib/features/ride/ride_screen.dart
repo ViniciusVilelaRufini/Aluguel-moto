@@ -51,11 +51,11 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   bool _markerDropped = false;
 
   /// Rota percorrida (trajeto salvo + posicoes ao vivo). Nunca vira "km rodados".
-  List<LatLng> _trail = const [];
-  bool _routeDrawn = false;
+  /// Lista mutavel, limitada a [kTrailMaxPoints] (dizimada no lugar).
+  final List<LatLng> _trail = [];
 
-  /// Zonas (para dar nome ao aviso de zona, ex. "Ciclovia Faria Lima").
-  List<GeoZone> _zones = const [];
+  /// Move a camera atras da moto sem recriar o mapa (tiles e camadas ficam).
+  final MapController _map = MapController();
 
   RealtimeService? _realtime;
   StreamSubscription<RealtimeEvent>? _events;
@@ -79,6 +79,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     _rtRetry?.cancel();
     _tracking?.cancel();
     _realtime?.dispose();
+    _map.dispose();
     super.dispose();
   }
 
@@ -108,7 +109,6 @@ class _RideScreenState extends ConsumerState<RideScreen> {
         }
       });
       _loadTrail(rental.id);
-      _loadZones();
       _startRealtime();
       _startTracking();
       _tick?.cancel();
@@ -124,23 +124,14 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     try {
       final saved = await ref.read(rentalTrackProvider(rentalId).future);
       if (!mounted || saved.isEmpty) return;
-      setState(() {
-        var t = <LatLng>[];
-        for (final p in [...saved, ..._trail]) {
-          t = appendTrail(t, p);
-        }
-        _trail = t;
-      });
+      // Uma passada so, ja dizimada, antes do setState.
+      final merged = mergeTrail(saved, _trail);
+      setState(() => _trail
+        ..clear()
+        ..addAll(merged));
     } catch (_) {
       // Sem trajeto salvo: a rota comeca dos eventos ao vivo.
     }
-  }
-
-  Future<void> _loadZones() async {
-    try {
-      final zones = await ref.read(backendProvider).zones();
-      if (mounted) setState(() => _zones = zones);
-    } catch (_) {}
   }
 
   Future<void> _startRealtime() async {
@@ -194,8 +185,9 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           _battery = e.batteryPct;
           _limit = e.speedLimitKmh;
           _vehiclePos = LatLng(e.lat, e.lng);
-          _trail = appendTrail(_trail, _vehiclePos!);
+          appendTrail(_trail, _vehiclePos!);
         });
+        _follow(_vehiclePos!);
       case ZoneNotice():
         // Haptica so quando a zona muda (eventos ENTER repetidos nao vibram de novo).
         final z = _zone;
@@ -213,6 +205,14 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     }
   }
 
+  /// Centraliza na moto. Antes do mapa existir (ou com o mapa desligado) nao faz nada.
+  void _follow(LatLng p) {
+    if (!ref.read(mapEnabledProvider)) return;
+    try {
+      _map.move(p, _map.camera.zoom);
+    } catch (_) {}
+  }
+
   bool _isDangerZone(ZoneNotice? z) => z != null && (z.zoneType == 'forbidden' || z.zoneType == 'operation');
 
   String _camel(String s) => s.replaceAllMapped(RegExp(r'_([a-z])'), (m) => m[1]!.toUpperCase());
@@ -226,10 +226,11 @@ class _RideScreenState extends ConsumerState<RideScreen> {
 
   /// Nome da zona onde a moto esta (ex. "Ciclovia Faria Lima") ou o tipo dela.
   String _zoneName(AppLocalizations l, ZoneNotice z) {
+    final zones = ref.read(sharedZonesProvider).value ?? const <GeoZone>[];
     final type = _zoneTypes[z.zoneType];
     final p = _vehiclePos;
     if (type != null && p != null) {
-      final hit = zoneContaining(p.latitude, p.longitude, _zones.where((g) => g.active && g.type == type));
+      final hit = zoneContaining(p.latitude, p.longitude, zones.where((g) => g.active && g.type == type));
       if (hit != null) return hit.name;
     }
     return switch (z.zoneType) {
@@ -294,7 +295,12 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     final l = context.l;
     VoltiHaptics.alert();
     // Contato de emergencia salvo na Conta: o link vai direto para ele (SMS).
-    final contact = ref.read(emergencyContactProvider).value;
+    // Normalmente ja esta carregado; se nao, espera ate 3 s e segue sem ele.
+    EmergencyContact? contact;
+    try {
+      contact = await ref.read(emergencyContactProvider.future).timeout(const Duration(seconds: 3));
+    } catch (_) {}
+    if (!mounted) return;
     await VoltiDialog.show<void>(
       context,
       title: l.sosTitle,
@@ -350,7 +356,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     final l = context.l;
     try {
       final share = await ref.read(backendProvider).shareLocation(_rental!.id);
-      final text = l.shareLocationMessage(share.url);
+      final text = l.shareLocationMessageTimed(share.url);
       if (contact != null && await ref.read(urlLauncherProvider)(smsUri(contact.phone, text))) return;
       await ref.read(shareTextProvider)(text);
     } catch (e) {
@@ -443,26 +449,25 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     final plan = ref.watch(rentalPlanProvider(r.planCode)).value;
     // Carrega o contato de emergencia antes do SOS (o dialogo le o valor pronto).
     ref.watch(emergencyContactProvider);
+    // Zonas compartilhadas com a devolucao (nome da zona no aviso).
+    ref.watch(sharedZonesProvider);
     final fare = _fare(l, plan, paused: paused);
     final coverageLabel = r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong;
     final caption = [paused ? l.ridePaused : l.rideLive, if (plan != null) plan.name, coverageLabel].join(' · ');
     final center = _vehiclePos ?? _userPos ?? const LatLng(-23.5614, -46.6559);
     final mapOn = ref.watch(mapEnabledProvider);
-    // O mapa e recriado quando a posicao muda: o pin so cai na primeira vez.
+    // O pin so cai na primeira vez.
     final firstMarkerDrop = !_markerDropped;
-    // A rota se desenha (vt-draw) so na primeira vez que aparece.
-    final animateRoute = !_routeDrawn;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _markerDropped = true;
-      if (_trail.length >= 2) _routeDrawn = true;
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _markerDropped = true);
 
     return Scaffold(
       body: Stack(children: [
         Positioned.fill(
           child: mapOn
               ? VoltiMap(
-                  key: ValueKey(center.latitude.toStringAsFixed(4) + center.longitude.toStringAsFixed(4)),
+                  // Sem chave por posicao: o mapa nao e recriado a cada evento; a
+                  // camera segue a moto pelo controller e so as camadas mudam.
+                  controller: _map,
                   center: center,
                   layers: [
                     if (_trail.length >= 2)
@@ -470,9 +475,8 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                         key: const Key('ride-route'),
                         points: _trail,
                         color: VoltiColors.brand,
-                        animate: animateRoute,
                       ),
-                    MarkerLayer(markers: [
+                    MarkerLayer(key: const Key('ride-markers'), markers: [
                       if (_userPos != null)
                         Marker(point: _userPos!, width: 34, height: 34, child: const VoltiUserDot(heading: true)),
                       if (_vehiclePos != null)
@@ -779,7 +783,10 @@ class _FallCountdownState extends State<_FallCountdown> {
   Widget build(BuildContext context) {
     final l = context.l;
     final strong = TextStyle(fontWeight: FontWeight.w700, color: Theme.of(context).colorScheme.onSurface);
-    return Text.rich(
+    // liveRegion: leitores de tela anunciam o prazo enquanto ele corre.
+    return Semantics(
+      liveRegion: true,
+      child: Text.rich(
       key: const Key('fall-countdown'),
       TextSpan(children: [
         TextSpan(text: l.wellbeingLead),
@@ -787,6 +794,7 @@ class _FallCountdownState extends State<_FallCountdown> {
         TextSpan(text: l.wellbeingTail),
       ]),
       textAlign: TextAlign.center,
+    ),
     );
   }
 }

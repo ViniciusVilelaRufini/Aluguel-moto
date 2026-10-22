@@ -560,5 +560,14 @@
         "type": "String"
       }
     }
+  },
+  "receiptOpenError": "Não foi possível abrir o recibo. Tente de novo.",
+  "shareLocationMessageTimed": "Estou numa corrida Volti e preciso de ajuda. Minha localização (link válido por 1 h): {url}",
+  "@shareLocationMessageTimed": {
+    "placeholders": {
+      "url": {
+        "type": "String"
+      }
+    }
   }
 }

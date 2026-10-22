@@ -1104,4 +1104,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String invoiceNumberLabel(String number) {
     return 'NFS-e $number';
   }
+
+  @override
+  String get receiptOpenError =>
+      'Não foi possível abrir o recibo. Tente de novo.';
+
+  @override
+  String shareLocationMessageTimed(String url) {
+    return 'Estou numa corrida Volti e preciso de ajuda. Minha localização (link válido por 1 h): $url';
+  }
 }

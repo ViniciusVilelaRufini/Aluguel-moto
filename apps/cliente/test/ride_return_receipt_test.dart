@@ -110,12 +110,51 @@ void main() {
       expect(c.longitude, closeTo(-46.65, 1e-6));
     });
 
-    test('trilha ignora tremidas menores que 3 m', () {
-      var t = appendTrail(const [], const LatLng(-23.56, -46.65));
-      t = appendTrail(t, const LatLng(-23.56001, -46.65)); // ~1 m
+    test('trilha ignora tremidas menores que 3 m e acrescenta no lugar', () {
+      final t = <LatLng>[];
+      expect(appendTrail(t, const LatLng(-23.56, -46.65)), isTrue);
+      expect(appendTrail(t, const LatLng(-23.56001, -46.65)), isFalse); // ~1 m
       expect(t, hasLength(1));
-      t = appendTrail(t, const LatLng(-23.5602, -46.65)); // ~22 m
+      expect(appendTrail(t, const LatLng(-23.5602, -46.65)), isTrue); // ~22 m
       expect(t, hasLength(2));
+    });
+
+    // ~11 m entre pontos consecutivos.
+    LatLng pt(int i) => LatLng(-23.56 + i * 0.0001, -46.65);
+
+    test('10 mil posicoes ficam no teto e preservam as pontas', () {
+      final t = <LatLng>[];
+      for (var i = 0; i < 10000; i++) {
+        appendTrail(t, pt(i));
+        expect(t.length, lessThanOrEqualTo(kTrailMaxPoints));
+      }
+      expect(t.first, pt(0));
+      expect(t.last, pt(9999));
+      expect(t.length, greaterThan(kTrailMaxPoints ~/ 2), reason: 'dizima pela metade, nao esvazia');
+      for (var i = 1; i < t.length; i++) {
+        expect(t[i].latitude, greaterThan(t[i - 1].latitude), reason: 'ordem mantida');
+      }
+    });
+
+    test('junta trajeto salvo e ao vivo numa passada, filtrada e no teto', () {
+      final saved = [for (var i = 0; i < 6000; i++) pt(i)];
+      final live = [pt(5999), for (var i = 6000; i < 9000; i++) pt(i)]; // 1o repetido some no filtro
+      final m = mergeTrail(saved, live);
+      expect(m.length, lessThanOrEqualTo(kTrailMaxPoints));
+      expect(m.first, pt(0));
+      expect(m.last, pt(8999));
+      final small = mergeTrail([pt(0), pt(1)], [pt(1), pt(2)]);
+      expect(small, [pt(0), pt(1), pt(2)]);
+    });
+
+    test('zonas compartilhadas: uma busca so dentro do TTL', () async {
+      final b = _CountZones();
+      final c = ProviderContainer(overrides: [backendProvider.overrideWithValue(b)]);
+      addTearDown(c.dispose);
+      await c.read(sharedZonesProvider.future);
+      await Future<void>.delayed(Duration.zero);
+      await c.read(sharedZonesProvider.future);
+      expect(b.calls, 1);
     });
   });
 
@@ -201,6 +240,7 @@ void main() {
       expect(uri.scheme, 'sms');
       expect(uri.path, '+5511988887777');
       expect(uri.queryParameters['body'], contains('https://volti.app/s/abc'));
+      expect(uri.queryParameters['body'], contains('link válido por 1 h'));
       expect(opened.shared, isEmpty);
       await t.pumpWidget(const SizedBox());
     });
@@ -371,6 +411,21 @@ void main() {
       expect(opened.uris.single.toString(), 'https://files.volti.app/r1.pdf?fresh=1');
       await t.pumpWidget(const SizedBox());
     });
+
+    testWidgets('PDF que nao abre mostra erro', (t) async {
+      tallScreen(t);
+      await t.pumpWidget(testApp(const SummaryScreen(rentalId: 'r1'), overrides: [
+        backendProvider.overrideWithValue(_ReceiptB()),
+        urlLauncherProvider.overrideWithValue((uri) async => throw Exception('sem app')),
+      ]));
+      await t.pump();
+      await t.pump(const Duration(seconds: 2));
+      await t.tap(find.widgetWithText(ListRow, 'Recibo e nota fiscal'));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 300));
+      expect(find.text('Não foi possível abrir o recibo. Tente de novo.'), findsOneWidget);
+      await t.pumpWidget(const SizedBox());
+    });
   });
 
   test('SMS para o contato leva o texto no corpo', () {
@@ -434,5 +489,14 @@ class _ReceiptB extends FakeBackend {
         ..insuranceCents = 150
         ..feesCents = 0
         ..totalCents = 2125).toBuilder());
+  }
+}
+
+class _CountZones extends FakeBackend {
+  int calls = 0;
+  @override
+  Future<List<GeoZone>> zones() async {
+    calls++;
+    return [zoneAround(-23.56, -46.65)];
   }
 }

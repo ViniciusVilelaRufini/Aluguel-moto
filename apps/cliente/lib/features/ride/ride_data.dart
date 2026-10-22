@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
@@ -13,6 +15,24 @@ final rentalTrackProvider = FutureProvider.autoDispose.family<List<LatLng>, Stri
   final api = ref.watch(apiClientProvider);
   final track = (await api.getRentalsApi().getRentalTrack(id: rentalId)).data;
   return [for (final p in track?.points ?? const <TrackPoint>[]) LatLng(p.lat, p.lng)];
+});
+
+/// Quanto tempo as zonas ficam em cache entre telas (corrida, devolucao).
+const kZonesTtl = Duration(minutes: 5);
+
+/// Zonas (`GET /zones`) compartilhadas pela corrida e pela devolucao, com cache
+/// de [kZonesTtl]: sair da corrida e abrir a devolucao nao busca de novo. Erro
+/// nao fica em cache.
+final sharedZonesProvider = FutureProvider.autoDispose<List<GeoZone>>((ref) async {
+  final link = ref.keepAlive();
+  final ttl = Timer(kZonesTtl, link.close);
+  ref.onDispose(ttl.cancel);
+  try {
+    return await ref.watch(backendProvider).zones();
+  } catch (_) {
+    link.close();
+    rethrow;
+  }
 });
 
 /// Contato de emergencia salvo na Conta (`Customer.emergencyContactName/Phone`).

@@ -79,8 +79,13 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
       if (mounted) VoltiToast.show(context, l.receiptPdfPending);
       return;
     }
-    final ok = await ref.read(urlLauncherProvider)(Uri.parse(url));
-    if (!ok && mounted) VoltiToast.show(context, l.receiptPdfPending, tone: VoltiToastTone.danger);
+    var ok = false;
+    try {
+      ok = await ref.read(urlLauncherProvider)(Uri.parse(url));
+    } catch (_) {
+      // URL invalida ou nenhum app para abrir: cai no aviso abaixo.
+    }
+    if (!ok && mounted) VoltiToast.show(context, l.receiptOpenError, tone: VoltiToastTone.danger);
   }
 
   /// "Cartao •••• 4821 · NFS-e 2026-77" (ou o numero do recibo).

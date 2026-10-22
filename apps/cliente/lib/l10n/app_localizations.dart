@@ -2049,6 +2049,18 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'NFS-e {number}'**
   String invoiceNumberLabel(String number);
+
+  /// No description provided for @receiptOpenError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível abrir o recibo. Tente de novo.'**
+  String get receiptOpenError;
+
+  /// No description provided for @shareLocationMessageTimed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estou numa corrida Volti e preciso de ajuda. Minha localização (link válido por 1 h): {url}'**
+  String shareLocationMessageTimed(String url);
 }
 
 class _AppLocalizationsDelegate
