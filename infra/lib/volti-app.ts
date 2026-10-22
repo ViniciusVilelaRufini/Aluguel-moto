@@ -56,18 +56,6 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
   const auth = new AuthStack(app, `${prefix}-auth`, { ...common, cfg });
   const messaging = new MessagingStack(app, `${prefix}-messaging`, { ...common, cfg });
   const iot = new IotStack(app, `${prefix}-iot`, { ...common, cfg, messaging });
-  const api = new ApiStack(app, `${prefix}-api`, {
-    ...common,
-    cfg,
-    vpc: network.vpc,
-    data,
-    auth,
-    messaging,
-    iot,
-    certificateArn: opts.certificateArn ?? FAKE_CERTIFICATE_ARN,
-    imageTag: opts.apiImageTag ?? 'latest',
-    desiredCount: opts.apiDesiredCount ?? 0,
-  });
   const waf = new WafStack(app, `${prefix}-waf`, {
     ...common,
     env: { account, region: 'us-east-1' },
@@ -81,6 +69,19 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     webAclArn: waf.webAclArn,
     adminDomainName: opts.adminDomainName,
     adminCertificateArn: opts.adminCertificateArn,
+  });
+  const api = new ApiStack(app, `${prefix}-api`, {
+    ...common,
+    cfg,
+    vpc: network.vpc,
+    data,
+    auth,
+    messaging,
+    iot,
+    adminOrigin: adminWeb.origin,
+    certificateArn: opts.certificateArn ?? FAKE_CERTIFICATE_ARN,
+    imageTag: opts.apiImageTag ?? 'latest',
+    desiredCount: opts.apiDesiredCount ?? 0,
   });
   const observability = new ObservabilityStack(app, `${prefix}-observability`, {
     ...common,

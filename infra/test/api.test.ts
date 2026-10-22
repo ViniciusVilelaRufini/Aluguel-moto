@@ -85,7 +85,7 @@ describe('ApiStack', () => {
     const REQUIRED_ENV = [
       'NODE_ENV', 'PORT', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'REDIS_URL',
       'S3_BUCKET_KYC', 'S3_BUCKET_RETURN_PHOTOS', 'S3_BUCKET_REPORTS', 'S3_BUCKET_ATTACHMENTS',
-      'AUTH_MODE', 'COGNITO_CUSTOMER_POOL_ID', 'COGNITO_CUSTOMER_CLIENT_ID', 'COGNITO_STAFF_POOL_ID', 'COGNITO_STAFF_CLIENT_ID',
+      'CORS_ORIGINS', 'TRUST_PROXY', 'AUTH_MODE', 'COGNITO_CUSTOMER_POOL_ID', 'COGNITO_CUSTOMER_CLIENT_ID', 'COGNITO_STAFF_POOL_ID', 'COGNITO_STAFF_CLIENT_ID',
       'IOT_MODE', 'GEOFENCE_MODE', 'LOCATION_TRACKER_NAME', 'LOCATION_GEOFENCE_COLLECTION',
       'QUEUE_MODE', 'SQS_QUEUE_TELEMETRIA_URL', 'SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL', 'SQS_QUEUE_ALERTAS_URL',
       'STORAGE_MODE', 'PAYMENT_PROVIDER', 'INSURANCE_PROVIDER', 'KYC_PROVIDER', 'PUSH_MODE',
@@ -120,7 +120,46 @@ describe('ApiStack', () => {
       walk(join(root, 'src'));
       walk(join(root, 'scripts'));
       const text = files.map((f) => readFileSync(f, 'utf8')).join(' ');
-      for (const name of [...REQUIRED_ENV, ...REQUIRED_SECRETS]) expect({ name, found: text.includes(name) }).toEqual({ name, found: true });
+      // CORS_ORIGINS e TRUST_PROXY são lidas pela API só depois do merge de fix/qa-api (QA-10/QA-18); remover a exclusão então.
+      const PENDING_API = ['CORS_ORIGINS', 'TRUST_PROXY'];
+      for (const name of [...REQUIRED_ENV, ...REQUIRED_SECRETS].filter((n) => !PENDING_API.includes(n))) expect({ name, found: text.includes(name) }).toEqual({ name, found: true });
     });
+  });
+
+  it('QA-02/QA-10: CORS only for the admin CloudFront origin and one proxy hop', () => {
+    const td = Object.values(t().findResources('AWS::ECS::TaskDefinition'))[0] as any;
+    const env = td.Properties.ContainerDefinitions[0].Environment;
+    const cors = env.find((e: any) => e.Name === 'CORS_ORIGINS').Value;
+    expect(JSON.stringify(cors)).toMatch(/https:\/\//);
+    expect(JSON.stringify(cors)).toMatch(/ExportsOutputFnGetAtt|admin/i);
+    expect(JSON.stringify(cors)).not.toMatch(/\*/);
+    expect(env.find((e: any) => e.Name === 'TRUST_PROXY').Value).toBe('1');
+  });
+
+  it('QA-04/QA-07: Cognito admin actions are scoped to the two pools', () => {
+    const stmts = Object.values(t().findResources('AWS::IAM::Policy')).flatMap((p: any) => p.Properties.PolicyDocument.Statement) as any[];
+    const list = (x: unknown) => (Array.isArray(x) ? x : [x]);
+    const cog = stmts.filter((s) => list(s.Action).some((a: string) => a.startsWith('cognito-idp:')));
+    for (const s of cog) expect(JSON.stringify(s.Resource)).not.toBe('"*"');
+    const staff = cog.find((s) => list(s.Action).includes('cognito-idp:AdminAddUserToGroup'));
+    expect(list(staff.Action).sort()).toEqual([
+      'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminDeleteUser', 'cognito-idp:AdminDisableUser',
+      'cognito-idp:AdminEnableUser', 'cognito-idp:AdminRemoveUserFromGroup', 'cognito-idp:AdminUserGlobalSignOut',
+    ]);
+    expect(list(staff.Resource)).toHaveLength(1);
+    const customer = cog.find((s) => list(s.Action).length === 3);
+    expect(list(customer.Action).sort()).toEqual(['cognito-idp:AdminDeleteUser', 'cognito-idp:AdminDisableUser', 'cognito-idp:AdminUserGlobalSignOut']);
+    expect(list(customer.Resource)).toHaveLength(1);
+    expect(JSON.stringify(customer.Resource)).not.toEqual(JSON.stringify(staff.Resource));
+  });
+
+  it('QA-18: regional WAF with a per-IP rate rule is associated with the ALB', () => {
+    t().hasResourceProperties('AWS::WAFv2::WebACL', {
+      Scope: 'REGIONAL',
+      Rules: Match.arrayWith([
+        Match.objectLike({ Action: { Block: {} }, Statement: { RateBasedStatement: Match.objectLike({ Limit: 2000, AggregateKeyType: 'IP', EvaluationWindowSec: 300 }) } }),
+      ]),
+    });
+    t().resourceCountIs('AWS::WAFv2::WebACLAssociation', 1);
   });
 });

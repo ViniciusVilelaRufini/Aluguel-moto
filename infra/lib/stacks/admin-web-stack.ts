@@ -33,6 +33,8 @@ export interface AdminWebStackProps extends StackProps {
 export class AdminWebStack extends Stack {
   public readonly bucket: s3.Bucket;
   public readonly distribution: cloudfront.Distribution;
+  /** Origem do painel (usada em CORS_ORIGINS da API): domínio próprio se houver, senão o do CloudFront. */
+  public readonly origin: string;
 
   constructor(scope: Construct, id: string, props: AdminWebStackProps) {
     super(scope, id, props);
@@ -75,6 +77,8 @@ export class AdminWebStack extends Stack {
         { httpStatus: 404, responseHttpStatus: 404, responsePagePath: '/404.html' },
       ],
     });
+
+    this.origin = `https://${custom ? props.adminDomainName! : this.distribution.distributionDomainName}`;
 
     publishParam(this, cfg.name, 'admin/distribution-domain', this.distribution.distributionDomainName);
     publishParam(this, cfg.name, 'admin/site-bucket', this.bucket.bucketName);

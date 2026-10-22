@@ -145,3 +145,5 @@ O `MERCADOPAGO_WEBHOOK_SECRET` em `volti/<env>/app` é gerado no primeiro deploy
 3. Force um novo deploy do serviço (`aws ecs update-service --force-new-deployment`), pois as tasks leem o segredo ao iniciar.
 
 Entre os passos 2 e 3 os webhooks assinados com o valor antigo falham com 401 e o Mercado Pago reenvia; faça tudo numa janela curta. Rotacione também se o segredo vazar.
+
+Ambientes implantados antes da correção QA-19 (segredo do webhook gerado aleatoriamente) ainda têm `MERCADOPAGO_WEBHOOK_SECRET=CHANGE_ME` no segredo, porque o Secrets Manager não regera o valor num segredo existente: rotacione-o à mão com o procedimento acima. Hoje nenhum ambiente existe, então não há o que migrar.
