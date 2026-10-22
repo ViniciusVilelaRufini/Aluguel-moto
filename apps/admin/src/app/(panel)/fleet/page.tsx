@@ -16,6 +16,8 @@ import { rentalWindow } from '@/lib/fleet-copy';
 import { BIKE_ICON, registerFleetImages } from '@/lib/map-icons';
 import { MapView } from '@/components/MapView';
 import { VehicleSheet } from '@/components/VehicleSheet';
+import { FleetList } from '@/components/FleetList';
+import { SegmentedControl } from '@/ds/SegmentedControl';
 import { Field, Select } from '@/components/ui';
 import { FleetStatus } from '@/ds/FleetStatus';
 import { StatTile, StatTileSkeleton } from '@/ds/StatTile';
@@ -51,6 +53,8 @@ export default function FleetPage() {
   const [mapReady, setMapReady] = useState(false);
   const [showHeat, setShowHeat] = useState(false);
   const [replay, setReplay] = useState(false);
+  const [view, setView] = useState<'map' | 'list'>(params.get('view') === 'list' ? 'list' : 'map');
+  const [onlyFixed, setOnlyFixed] = useState(false);
   const mapRef = useRef<MlMap | null>(null);
   const pulseRef = useRef<Marker | null>(null);
   const imagesOff = useRef<() => void>(() => {});
@@ -78,6 +82,8 @@ export default function FleetPage() {
     setReplay(false);
     router.replace(id ? `/fleet?vehicle=${id}` : '/fleet', { scroll: false });
   }, [router]);
+
+  const changeView = (v: 'map' | 'list') => { setView(v); if (v === 'list') setReplay(false); };
 
   // Esc fecha a ficha da moto (quando nenhum diálogo está aberto).
   useEffect(() => {
@@ -217,7 +223,9 @@ export default function FleetPage() {
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 320 }}>
         <MapView onReady={onReady} onDestroy={() => { imagesOff.current(); imagesOff.current = () => {}; pulseRef.current?.remove(); pulseRef.current = null; mapRef.current = null; drawn.current = new Map(); setMapReady(false); }} />
-        <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
+        <div data-view={view} style={view === 'list'
+          ? { position: 'absolute', inset: 0, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', background: 'var(--surface-app)', zIndex: 1 }
+          : { position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
           {dash.data ? (
             <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
               <StatTile icon="Gauge" label="Ocupação" numeric={Math.round(dash.data.occupancyPct)} format={pct} />
@@ -238,12 +246,14 @@ export default function FleetPage() {
             {filter && (
               <button type="button" className="chip-clear" onClick={() => setFilter(null)} aria-label="Limpar filtro de status">Limpar filtro</button>
             )}
-            {canHeat && (
+            <SegmentedControl label="Ver frota como" options={[{ value: 'map', label: 'Mapa' }, { value: 'list', label: 'Lista' }]} value={view} onChange={changeView} style={{ width: 170, boxShadow: 'var(--shadow-1)' }} />
+            {canHeat && view === 'map' && (
               <Button size="sm" variant={showHeat ? 'dark' : 'secondary'} icon="Flame" testId="heat-toggle" style={{ height: 30, background: showHeat ? undefined : '#fff', color: showHeat ? undefined : 'var(--text-primary)', borderColor: showHeat ? 'transparent' : 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => setShowHeat(!showHeat)}>Demanda</Button>
             )}
           </div>
+          {view === 'list' && <div className="section-in"><FleetList vehicles={shown} selected={selected} onSelect={(id) => select(id)} onlyFixed={onlyFixed} onToggleFixed={() => setOnlyFixed((x) => !x)} /></div>}
         </div>
-        {selected && replay && <ReplayBar vehicleId={selected} mapRef={mapRef} mapReady={mapReady} />}
+        {selected && replay && view === 'map' && <ReplayBar vehicleId={selected} mapRef={mapRef} mapReady={mapReady} />}
       </div>
       {selected && <VehicleSheet vehicleId={selected} onClose={() => select(null)} onReplay={() => setReplay((r) => !r)} replayActive={replay} />}
     </div>
