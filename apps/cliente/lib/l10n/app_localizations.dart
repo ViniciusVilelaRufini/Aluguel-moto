@@ -4953,6 +4953,18 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Tempo restante: {time}'**
   String swapCountdownSemantics(String time);
+
+  /// No description provided for @swapEndReturnAfterClose.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua bateria foi recebida depois que a troca foi encerrada. Nossa equipe de operação já foi avisada; fale com o suporte se precisar.'**
+  String get swapEndReturnAfterClose;
+
+  /// No description provided for @swapEndRentalForceEnded.
+  ///
+  /// In pt, this message translates to:
+  /// **'O aluguel foi encerrado pela equipe Volti, então a troca foi cancelada.'**
+  String get swapEndRentalForceEnded;
 }
 
 class _AppLocalizationsDelegate

@@ -161,6 +161,9 @@ String swapEndMessage(AppLocalizations l, StationSwap s) => switch (s.endReason)
   StationSwapEndReason.releaseTimeout => l.swapEndReleaseTimeout,
   StationSwapEndReason.noBatteryAfterReturn => l.swapEndNoBatteryAfterReturn,
   StationSwapEndReason.serialMismatch => l.swapEndSerialMismatch,
+  StationSwapEndReason.returnAfterClose => l.swapEndReturnAfterClose,
+  StationSwapEndReason.rentalForceEnded => l.swapEndRentalForceEnded,
+  // Motivo novo que esta versao do app nao conhece (fallback do cliente gerado) ou ausente.
   _ => l.swapEndGeneric,
 };
 
@@ -174,7 +177,8 @@ bool swapLateReturnAccepted(StationSwap s) =>
 bool swapNeedsSupport(StationSwap s) =>
     s.endReason == StationSwapEndReason.releaseTimeout ||
     s.endReason == StationSwapEndReason.noBatteryAfterReturn ||
-    s.endReason == StationSwapEndReason.serialMismatch;
+    s.endReason == StationSwapEndReason.serialMismatch ||
+    s.endReason == StationSwapEndReason.returnAfterClose;
 
 /// "2:41" ate [expiresAt]; zero quando o prazo passou.
 Duration swapTimeLeft(DateTime expiresAt, DateTime now) {

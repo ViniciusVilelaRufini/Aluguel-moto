@@ -214,6 +214,25 @@ void main() {
       expect(swapNeedsSupport(swapFx(status: StationSwapStatus.failed, reason: StationSwapEndReason.noBatteryAfterReturn)), isTrue);
       expect(swapEndTitle(l, swapFx(status: StationSwapStatus.failed, reason: StationSwapEndReason.releaseTimeout)), l.swapFailedTitle);
     });
+
+    test('motivos novos (return_after_close, rental_force_ended) e desconhecidos', () {
+      final afterClose = swapFx(status: StationSwapStatus.failed, reason: StationSwapEndReason.returnAfterClose);
+      expect(swapEndMessage(l, afterClose), l.swapEndReturnAfterClose);
+      expect(l.swapEndReturnAfterClose, contains('operação já foi avisada'));
+      expect(swapNeedsSupport(afterClose), isTrue);
+      expect(swapLateReturnAccepted(afterClose), isFalse);
+      expect(swapEndTitle(l, afterClose), l.swapFailedTitle);
+
+      final forced = swapFx(status: StationSwapStatus.canceled, reason: StationSwapEndReason.rentalForceEnded);
+      expect(swapEndMessage(l, forced), l.swapEndRentalForceEnded);
+      expect(swapEndTitle(l, forced), l.swapCanceledTitle);
+      expect(swapLateReturnAccepted(forced), isFalse);
+      expect(swapNeedsSupport(forced), isFalse);
+
+      // Valor que esta versao nao conhece (o cliente gerado cai no fallback) ou ausente: mensagem generica.
+      expect(swapEndMessage(l, swapFx(status: StationSwapStatus.failed, reason: StationSwapEndReason.unknownDefaultOpenApi)), l.swapEndGeneric);
+      expect(swapEndMessage(l, swapFx(status: StationSwapStatus.failed)), l.swapEndGeneric);
+    });
   });
 
   group('maquina de estados (station_swap.updated)', () {
@@ -532,6 +551,24 @@ void main() {
       // A estacao recebeu a bateria atrasada e libera uma carregada.
       await push(t, b, swapFx(status: StationSwapStatus.releasing, slot: 2), 'releasing');
       expect(title(t), 'Pegue a bateria carregada');
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('bateria devolvida depois do fim (return_after_close): operacao avisada, suporte', (t) async {
+      final b = SwapBackend()..server = swapFx(status: StationSwapStatus.failed, reason: StationSwapEndReason.returnAfterClose);
+      await pumpProgress(t, b);
+      expect(find.text(l.swapEndReturnAfterClose), findsOneWidget);
+      expect(find.byKey(const Key('swap-support')), findsOneWidget);
+      expect(find.byKey(const Key('swap-late-return')), findsNothing);
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('aluguel encerrado pela equipe (rental_force_ended): troca cancelada', (t) async {
+      final b = SwapBackend()..server = swapFx(status: StationSwapStatus.canceled, reason: StationSwapEndReason.rentalForceEnded);
+      await pumpProgress(t, b);
+      expect(t.widget<Text>(find.byKey(const Key('swap-step-title'))).data, l.swapCanceledTitle);
+      expect(find.text(l.swapEndRentalForceEnded), findsOneWidget);
+      expect(find.byKey(const Key('swap-late-return')), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
 

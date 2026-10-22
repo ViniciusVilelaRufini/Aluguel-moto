@@ -2897,4 +2897,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String swapCountdownSemantics(String time) {
     return 'Tempo restante: $time';
   }
+
+  @override
+  String get swapEndReturnAfterClose =>
+      'Sua bateria foi recebida depois que a troca foi encerrada. Nossa equipe de operação já foi avisada; fale com o suporte se precisar.';
+
+  @override
+  String get swapEndRentalForceEnded =>
+      'O aluguel foi encerrado pela equipe Volti, então a troca foi cancelada.';
 }
