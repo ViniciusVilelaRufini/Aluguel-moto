@@ -36,7 +36,7 @@ export default function TasksPage() {
           ? <Button size="sm" icon="Plus" testId="new-task" onClick={() => setNewTask(true)}>Nova tarefa</Button>
           : <Button size="sm" icon="Plus" onClick={() => setNewMaint(true)}>Agendar manutenção</Button>)}
       </PageHeader>
-      <TabPanel k={view}>{view === 'tasks' ? <Kanban canEdit={canCreate} onCreate={() => setNewTask(true)} /> : <Maintenance />}</TabPanel>
+      <TabPanel k={view}>{view === 'tasks' ? <Kanban canEdit={canCreate} onCreate={() => setNewTask(true)} /> : <Maintenance canSchedule={canCreate} />}</TabPanel>
       {newTask && <NewTaskModal onClose={() => setNewTask(false)} />}
       {newMaint && <NewMaintenanceModal onClose={() => setNewMaint(false)} />}
     </Page>
@@ -149,7 +149,8 @@ function NewTaskModal({ onClose }: { onClose: () => void }) {
   );
 }
 
-function Maintenance() {
+function Maintenance({ canSchedule }: { canSchedule: boolean }) {
+  const [schedule, setSchedule] = useState<string | null>(null);
   const { rows, loading, error, pager } = usePagedQuery<S<'MaintenanceTask'>>(['maintenance'], (cursor) => unwrap(api.GET('/maintenance/tasks', { params: { query: { cursor, limit: 15 } } })));
   const tone = { scheduled: 'warning', in_progress: 'info', done: 'success', canceled: 'neutral' } as const;
   const label = { scheduled: 'Agendada', in_progress: 'Em andamento', done: 'Concluída', canceled: 'Cancelada' } as const;
@@ -163,15 +164,17 @@ function Maintenance() {
           { key: 'kind', label: 'Tipo', render: (r) => (r.kind === 'preventive' ? 'Preventiva' : 'Corretiva') },
           { key: 'scheduledFor', label: 'Agendada para', render: (r) => formatDate(r.scheduledFor) },
           { key: 'status', label: 'Situação', render: (r) => <Pill tone={tone[r.status]}>{label[r.status]}</Pill> },
+          ...(canSchedule ? [{ key: 'schedule', label: '', align: 'right' as const, render: (r: S<'MaintenanceTask'>) => r.vehicleCode ? <Button size="sm" variant="secondary" icon="Wrench" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setSchedule(r.vehicleCode ?? '')}>Agendar</Button> : null }] : []),
         ]} />
+      {schedule !== null && <NewMaintenanceModal initialCode={schedule} onClose={() => setSchedule(null)} />}
     </>
   );
 }
 
-function NewMaintenanceModal({ onClose }: { onClose: () => void }) {
+function NewMaintenanceModal({ onClose, initialCode = '' }: { onClose: () => void; initialCode?: string }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(initialCode);
   const [kind, setKind] = useState<S<'MaintenanceKind'>>('preventive');
   const [title, setTitle] = useState('Revisão preventiva');
   const [date, setDate] = useState('');

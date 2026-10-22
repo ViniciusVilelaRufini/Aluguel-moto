@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { can, canSeeFullCpf } from '@/lib/permissions';
 import { displayCpf } from '@/lib/cpf';
 import { CLAIM_STATUS, CONVERSATION_STATUS, CUSTOMER_STATUS, DISPUTE_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
-import { formatBRL, formatDate, formatDateTime } from '@/lib/format';
+import { formatBRL, formatDate, formatDateTime, formatDuration } from '@/lib/format';
 import type { S } from '@/lib/types';
 import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
@@ -29,6 +29,7 @@ export default function CustomersPage() {
   const [rental, setRental] = useState<string | null>(params.get('rental'));
   const [customer, setCustomer] = useState<string | null>(params.get('customer'));
   const [restrictions, setRestrictions] = useState(false);
+  const [supportCustomer, setSupportCustomer] = useState<string | null>(null);
 
   useEffect(() => {
     const t = params.get('tab') as Tab | null;
@@ -48,16 +49,16 @@ export default function CustomersPage() {
         </PageHeader>
       </div>
       <div key={tab} className="section-in" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
-      {tab === 'customers' && <CustomersTab selected={customer} onSelect={setCustomer} onRentals={(id) => { setRental(id); changeTab('rentals'); }} />}
+      {tab === 'customers' && <CustomersTab selected={customer} onSelect={setCustomer} onRentals={(id) => { setRental(id); changeTab('rentals'); }} onChat={(id) => { setSupportCustomer(id); changeTab('support'); }} />}
       {tab === 'rentals' && <div style={{ flex: 1, display: 'flex', padding: '14px 0 0 28px', minHeight: 0 }}><RentalsPanel selectedId={rental} onSelect={(id) => { setRental(id); router.replace(id ? `/customers?tab=rentals&rental=${id}` : '/customers?tab=rentals', { scroll: false }); }} /></div>}
-      {tab === 'support' && <Page style={{ paddingTop: 14 }}><SupportPanel /></Page>}
+      {tab === 'support' && <Page style={{ paddingTop: 14 }}>{supportCustomer && <div><Button size="sm" variant="ghost" icon="X" onClick={() => setSupportCustomer(null)}>Mostrar o atendimento de todos os clientes</Button></div>}<SupportPanel customerId={supportCustomer ?? undefined} /></Page>}
       </div>
       {restrictions && <RestrictionModal onClose={() => setRestrictions(false)} />}
     </div>
   );
 }
 
-function CustomersTab({ selected, onSelect, onRentals }: { selected: string | null; onSelect: (id: string | null) => void; onRentals: (id: string) => void }) {
+function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: string | null; onSelect: (id: string | null) => void; onRentals: (id: string) => void; onChat: (customerId: string) => void }) {
   const params = useSearchParams();
   const { groups } = useAuth();
   const [filter, setFilter] = useState<Filter>('all');
@@ -111,12 +112,12 @@ function CustomersTab({ selected, onSelect, onRentals }: { selected: string | nu
           ]}
         />
       </Page>
-      {selected && <CustomerSheet id={selected} onClose={() => onSelect(null)} onRentals={onRentals} />}
+      {selected && <CustomerSheet id={selected} onClose={() => onSelect(null)} onRentals={onRentals} onChat={onChat} />}
     </div>
   );
 }
 
-function CustomerSheet({ id, onClose, onRentals }: { id: string; onClose: () => void; onRentals: (id: string) => void }) {
+function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose: () => void; onRentals: (id: string) => void; onChat: (customerId: string) => void }) {
   const { groups } = useAuth();
   const qc = useQueryClient();
   const toast = useToast();
@@ -171,7 +172,7 @@ function CustomerSheet({ id, onClose, onRentals }: { id: string; onClose: () => 
               )}
             </>
           )}
-          {tab === 'support' && <CustomerTickets customerId={id} />}
+          {tab === 'support' && <CustomerTickets customerId={id} onChat={() => onChat(id)} />}
           {tab === 'history' && <CustomerHistory customerId={id} onRentals={onRentals} />}
           <div style={{ flex: 1 }} />
           {can(groups, 'customer.block') && (
@@ -227,19 +228,22 @@ function CustomerSheet({ id, onClose, onRentals }: { id: string; onClose: () => 
   );
 }
 
-function CustomerTickets({ customerId }: { customerId: string }) {
+function CustomerTickets({ customerId, onChat }: { customerId: string; onChat: () => void }) {
   const d = useQuery({ queryKey: ['c-disputes', customerId], queryFn: () => unwrap(api.GET('/support/disputes', { params: { query: { customerId, limit: 5 } } })) });
   const cl = useQuery({ queryKey: ['c-claims', customerId], queryFn: () => unwrap(api.GET('/support/claims', { params: { query: { customerId, limit: 5 } } })) });
   const cv = useQuery({ queryKey: ['c-convs', customerId], queryFn: () => unwrap(api.GET('/support/conversations', { params: { query: { customerId, limit: 5 } } })) });
+  const rf = useQuery({ queryKey: ['c-refunds', customerId], queryFn: () => unwrap(api.GET('/payments', { params: { query: { customerId, limit: 20 } } })) });
+  const refunds = (rf.data?.items ?? []).filter((x) => x.status === 'refunded' || x.status === 'partially_refunded').slice(0, 5);
   const rows: { id: string; t: string; d: string; tone: 'warning' | 'info' | 'success' | 'neutral' | 'danger'; s: string }[] = [
     ...(d.data?.items ?? []).map((x) => ({ id: x.id, t: 'Contestação', d: x.reason, tone: DISPUTE_STATUS[x.status][1], s: DISPUTE_STATUS[x.status][0] })),
     ...(cl.data?.items ?? []).map((x) => ({ id: x.id, t: 'Sinistro', d: x.description, tone: CLAIM_STATUS[x.status][1], s: CLAIM_STATUS[x.status][0] })),
-    ...(cv.data?.items ?? []).map((x) => ({ id: x.id, t: 'Conversa', d: x.subject, tone: CONVERSATION_STATUS[x.status as 'open' | 'closed']?.[1] ?? 'neutral', s: CONVERSATION_STATUS[x.status as 'open' | 'closed']?.[0] ?? x.status })),
+    ...refunds.map((x) => ({ id: x.id, t: 'Estorno', d: `${PAYMENT_KIND[x.kind]} · ${formatBRL(x.amountCents)}`, tone: PAYMENT_STATUS[x.status][1], s: PAYMENT_STATUS[x.status][0] })),
+    ...(cv.data?.items ?? []).map((x) => ({ id: x.id, t: 'Chat', d: x.subject, tone: CONVERSATION_STATUS[x.status as 'open' | 'closed']?.[1] ?? 'neutral', s: CONVERSATION_STATUS[x.status as 'open' | 'closed']?.[0] ?? x.status })),
   ];
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-      {(d.isLoading || cl.isLoading || cv.isLoading) && rows.length === 0 && [0, 1].map((i) => <Skeleton key={i} h={52} r={14} />)}
-      {!(d.isLoading || cl.isLoading || cv.isLoading) && rows.length === 0 && <Empty compact icon="MessageCircle">Nenhum atendimento deste cliente</Empty>}
+      {(d.isLoading || cl.isLoading || cv.isLoading || rf.isLoading) && rows.length === 0 && [0, 1].map((i) => <Skeleton key={i} h={52} r={14} />)}
+      {!(d.isLoading || cl.isLoading || cv.isLoading || rf.isLoading) && rows.length === 0 && <Empty compact icon="MessageCircle">Nenhum atendimento deste cliente</Empty>}
       {rows.map((r) => (
         <div key={r.id} style={{ display: 'flex', gap: 10, alignItems: 'center', padding: '10px 12px', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)' }}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -249,6 +253,7 @@ function CustomerTickets({ customerId }: { customerId: string }) {
           <Pill tone={r.tone}>{r.s}</Pill>
         </div>
       ))}
+      <Button size="sm" variant="secondary" icon="MessageCircle" testId="open-chat" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={onChat}>Abrir chat</Button>
     </div>
   );
 }
@@ -263,6 +268,7 @@ function CustomerHistory({ customerId, onRentals }: { customerId: string; onRent
         columns={[
           { key: 'startedAt', label: 'Data', render: (x) => formatDate(x.startedAt) },
           { key: 'vehicleCode', label: 'Moto', mono: true },
+          { key: 'elapsedSeconds', label: 'Tempo', align: 'right', render: (x) => formatDuration(x.elapsedSeconds) },
           { key: 'planCode', label: 'Plano', render: (x) => PLAN_LABEL[x.planCode] },
           { key: 'status', label: 'Situação', render: (x) => RENTAL_STATUS[x.status][0] },
           { key: 'costCents', label: 'Valor', align: 'right', render: (x) => formatBRL(x.costCents) },

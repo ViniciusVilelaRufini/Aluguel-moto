@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/labels';
+import { formatCompactBRL, moneyDelta, percentDelta, pointsDelta, previousRange } from '@/lib/finance-delta';
 import { dayStartIso, formatBRL, localDay } from '@/lib/format';
 import { Empty, ErrorNote, Page, PageHeader, Pill, DataTable, Skeleton, TabPanel, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
@@ -40,9 +41,31 @@ export default function FinancePage() {
   const occ = useQuery({ queryKey: ['occupancy', period], queryFn: () => unwrap(api.GET('/reports/occupancy', { params: { query: { ...r, groupBy: 'day' } } })).then(asJson) });
   const perVehicle = useQuery({ queryKey: ['rev-vehicle', period], queryFn: () => unwrap(api.GET('/reports/revenue-per-vehicle', { params: { query: r } })).then(asJson) });
 
+  const pr = useMemo(() => previousRange(r.from, r.to), [r]);
+  const finPrev = useQuery({ queryKey: ['finance-prev', period], queryFn: () => unwrap(api.GET('/reports/finance', { params: { query: pr } })).then(asJson) });
+  const occPrev = useQuery({ queryKey: ['occupancy-prev', period], queryFn: () => unwrap(api.GET('/reports/occupancy', { params: { query: { ...pr, groupBy: 'day' } } })).then(asJson) });
+  const perVehiclePrev = useQuery({ queryKey: ['rev-vehicle-prev', period], queryFn: () => unwrap(api.GET('/reports/revenue-per-vehicle', { params: { query: pr } })).then(asJson) });
+
   const occAvg = occ.data && occ.data.rows.length ? occ.data.rows.reduce((a, x) => a + x.occupancyPct, 0) / occ.data.rows.length : null;
   const vehicleDays = perVehicle.data?.rows.length ?? 0;
   const perVehicleDay = vehicleDays ? Math.round((perVehicle.data!.rows.reduce((a, x) => a + x.revenueCents, 0)) / vehicleDays) : null;
+
+  const occPrevAvg = occPrev.data && occPrev.data.rows.length ? occPrev.data.rows.reduce((a, x) => a + x.occupancyPct, 0) / occPrev.data.rows.length : null;
+  const prevVehicleDays = perVehiclePrev.data?.rows.length ?? 0;
+  const perVehicleDayPrev = prevVehicleDays ? Math.round(perVehiclePrev.data!.rows.reduce((a, x) => a + x.revenueCents, 0) / prevVehicleDays) : null;
+  const dRevenue = percentDelta(fin.data?.totalRevenueCents ?? null, finPrev.data?.totalRevenueCents ?? null);
+  const dOcc = pointsDelta(occAvg === null ? null : Math.round(occAvg), occPrevAvg === null ? null : Math.round(occPrevAvg));
+  const dPerVehicle = moneyDelta(perVehicleDay, perVehicleDayPrev);
+  const dDelinquent = moneyDelta(fin.data?.delinquentAmountCents ?? null, finPrev.data?.delinquentAmountCents ?? null);
+
+  const topVehicles = useMemo(() => {
+    const m = new Map<string, { code: string; rentals: number; revenueCents: number }>();
+    for (const x of perVehicle.data?.rows ?? []) {
+      const cur = m.get(x.vehicleCode) ?? { code: x.vehicleCode, rentals: 0, revenueCents: 0 };
+      cur.rentals += x.rentals; cur.revenueCents += x.revenueCents; m.set(x.vehicleCode, cur);
+    }
+    return [...m.values()].sort((a, b) => b.revenueCents - a.revenueCents).slice(0, 5).map((v) => ({ id: v.code, ...v }));
+  }, [perVehicle.data]);
 
   const bars = useMemo(() => (rev.data?.rows ?? []).reduce<Record<string, number>>((a, x) => { a[x.periodStart] = (a[x.periodStart] ?? 0) + x.netCents; return a; }, {}), [rev.data]);
   const barList = Object.entries(bars).sort(([a], [b]) => a.localeCompare(b));
@@ -67,10 +90,10 @@ export default function FinancePage() {
           <ErrorNote error={fin.error ?? rev.error} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
             {fin.isLoading ? [0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />) : <>
-              <StatTile icon="Wallet" label="Receita" numeric={f ? f.totalRevenueCents : null} format={formatBRL} />
-              <StatTile icon="Gauge" label="Taxa de ocupação" numeric={occAvg === null ? null : Math.round(occAvg)} format={(n) => `${n}%`} />
-              <StatTile icon="Bike" label="Receita/moto/dia" numeric={perVehicleDay} format={formatBRL} />
-              <StatTile icon="CircleAlert" label="Inadimplência" numeric={f ? f.delinquentAmountCents : null} format={formatBRL} goodWhen="down"
+              <StatTile icon="Wallet" label="Receita" numeric={f ? f.totalRevenueCents : null} format={formatCompactBRL} delta={dRevenue?.text} trend={dRevenue?.trend} />
+              <StatTile icon="Gauge" label="Taxa de ocupação" numeric={occAvg === null ? null : Math.round(occAvg)} format={(n) => `${n}%`} delta={dOcc?.text} trend={dOcc?.trend} />
+              <StatTile icon="Bike" label="Receita/moto/dia" numeric={perVehicleDay} format={formatBRL} delta={dPerVehicle?.text} trend={dPerVehicle?.trend} />
+              <StatTile icon="CircleAlert" label="Inadimplência" numeric={f ? f.delinquentAmountCents : null} format={formatBRL} goodWhen="down" delta={dDelinquent?.text} trend={dDelinquent ? (dDelinquent.trend === 'up' ? 'down' : 'up') : undefined}
                 caption={f ? `${f.delinquentCustomers} ${f.delinquentCustomers === 1 ? 'cliente' : 'clientes'}` : undefined} />
             </>}
           </div>
@@ -112,6 +135,12 @@ export default function FinancePage() {
               { key: 's', label: 'Status', render: (x) => <Pill tone={x.t}>{x.s}</Pill> },
             ]}
           />
+          <DataTable dense rows={topVehicles} loading={perVehicle.isLoading} empty="Sem receita por moto no período."
+            columns={[
+              { key: 'code', label: 'Receita por moto (maiores do período)', mono: true },
+              { key: 'rentals', label: 'Aluguéis', align: 'right' },
+              { key: 'revenueCents', label: 'Receita', align: 'right', render: (v) => formatBRL(v.revenueCents) },
+            ]} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <Button size="sm" variant="secondary" icon="Download" testId="export-revenue" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/revenue', 'receita.csv')}>Exportar receita (CSV)</Button>
             <Button size="sm" variant="secondary" icon="Download" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/finance', 'financeiro.csv')}>Exportar resumo financeiro (CSV)</Button>

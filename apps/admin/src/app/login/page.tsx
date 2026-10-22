@@ -26,6 +26,7 @@ export default function LoginPage() {
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [code, setCode] = useState('');
+  const [password, setPassword] = useState('');
   const [group, setGroup] = useState<DevGroup>('admin');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -54,7 +55,7 @@ export default function LoginPage() {
         <div style={{ fontSize: 15, color: 'rgba(255,255,255,.6)', marginTop: 12, maxWidth: 380 }}>Frota, clientes e finanças em tempo real. Acesso restrito à equipe.</div>
       </div>
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-app)', padding: 24 }}>
-        <form key={step} className="section-in" onSubmit={(e) => { e.preventDefault(); if (AUTH_MODE === 'cognito') return; if (step === 0) setStep(1); else if (!busy) enter(); }}
+        <form key={step} className="section-in" onSubmit={(e) => { e.preventDefault(); if (AUTH_MODE === 'cognito') return; if (step === 0) setStep(1); else if (!busy && code.length === 6) enter(); }}
           style={{ width: 380, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {AUTH_MODE === 'cognito' ? (
             <>
@@ -66,6 +67,7 @@ export default function LoginPage() {
             <>
               <h1 style={{ ...title, margin: 0 }}>Entrar</h1>
               <Input label="E-mail" value={DEV_USERS[group].email} onChange={() => {}} icon="Mail" />
+              <Input label="Senha" type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} icon="Lock" testId="login-password" />
               <Field label="Perfil de acesso (modo de desenvolvimento)">
                 <Select testId="group-select" value={group} onChange={setGroup} options={GROUP_OPTIONS} />
               </Field>
@@ -78,7 +80,7 @@ export default function LoginPage() {
               <OtpInput value={code} onChange={setCode} autoFocus label="Código de 6 dígitos" />
               <Alert tone="info" icon="ShieldCheck">Modo de desenvolvimento: o código não é verificado. Em produção o 2FA é obrigatório para todos os perfis.</Alert>
               <ErrorNote error={error ? new Error(error) : null} />
-              <Button size="lg" fullWidth type="submit" disabled={busy} testId="login-submit">{busy ? 'Entrando...' : 'Entrar no painel'}</Button>
+              <Button size="lg" fullWidth type="submit" disabled={busy || code.length < 6} testId="login-submit">{busy ? 'Entrando...' : 'Entrar no painel'}</Button>
               <Button variant="ghost" fullWidth onClick={() => { setCode(''); setStep(0); }}>Voltar</Button>
             </>
           )}
