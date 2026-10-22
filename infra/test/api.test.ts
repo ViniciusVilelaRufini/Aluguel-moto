@@ -47,4 +47,23 @@ describe('ApiStack', () => {
     const policies = JSON.stringify(Object.values(t().findResources('AWS::IAM::Policy')));
     expect(policies).toMatch(/AttachmentsBucket/);
   });
+
+  it('QA-16: the task role publishes only to comandos and shadow update/get, never telemetria/eventos', () => {
+    const stmts = Object.values(t().findResources('AWS::IAM::Policy')).flatMap((p: any) => p.Properties.PolicyDocument.Statement) as any[];
+    const toList = (x: unknown) => (Array.isArray(x) ? x : [x]);
+    const publish = stmts.filter((s) => toList(s.Action).includes('iot:Publish'));
+    expect(publish).toHaveLength(1);
+    const resources = toList(publish[0].Resource).map((r) => JSON.stringify(r));
+    expect(resources).toHaveLength(3);
+    expect(resources.some((r) => r.includes('topic/motos/*/comandos'))).toBe(true);
+    expect(resources.some((r) => r.includes('shadow/update'))).toBe(true);
+    expect(resources.some((r) => r.includes('shadow/get'))).toBe(true);
+    for (const r of resources) {
+      expect(r).not.toMatch(/telemetria|eventos/);
+      expect(r).not.toMatch(/topic\/motos\/\*"/);
+      expect(r).not.toMatch(/shadow\/\*"/);
+    }
+    const data = stmts.find((s) => toList(s.Action).includes('iot:GetThingShadow'));
+    expect(toList(data.Action).sort()).toEqual(['iot:GetThingShadow', 'iot:UpdateThingShadow']);
+  });
 });

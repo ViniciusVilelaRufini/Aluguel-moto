@@ -175,7 +175,12 @@ export class ApiStack extends Stack {
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['iot:Publish'],
-        resources: [arn(`iot:${this.region}:${this.account}:topic/motos/*`), arn(`iot:${this.region}:${this.account}:topic/$aws/things/*/shadow/*`)],
+        // QA-16: só comandos e shadow; nunca telemetria/eventos (que são do rastreador).
+        resources: [
+          arn(`iot:${this.region}:${this.account}:topic/motos/*/comandos`),
+          arn(`iot:${this.region}:${this.account}:topic/$aws/things/*/shadow/update`),
+          arn(`iot:${this.region}:${this.account}:topic/$aws/things/*/shadow/get`),
+        ],
       }),
     );
     role.addToPolicy(
