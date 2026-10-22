@@ -350,3 +350,9 @@ Regra de exibição adotada no painel (sem mudança de contrato): em Operação 
 2. **Fuso da agenda.** `?date=` de `GET /depots/{id}/pickups` e todos os horários da agenda usam `Depot.timezone` (pacote `timezone`), não o fuso do aparelho.
 3. **Reenvio de `return_depot`.** Sem `Idempotency-Key` no `POST /handovers`, a fila trata um `409` como sucesso quando o `rentalId` guardado não está mais aberto na moto (`GET /vehicles/by-code/{code}` → `currentRentalId` diferente). A checagem continua mesmo depois de a Task 6 devolver a entrega existente.
 4. **Saída com resposta perdida.** `409 reservation-in-handover` no `POST /handovers` (`pickup`): o app recarrega a agenda e, havendo `handoverId`, abre o estado da entrega.
+## 2026-10-22 · app do cliente na retirada em galpão (branch `feat/galpao-t9`, Task 9) · status: decisão (coordenador, 2026-10-22)
+
+1. **Sem troca de moto no meio da corrida pelo app do cliente.** No modelo de galpão o cliente não escaneia moto: o "Trocar de moto sem nova taxa" do "Reportar problema" saiu (o diálogo só reporta) e `/scan` (com ou sem `?swap=`) só redireciona para a home; o leitor de QR do cliente foi removido. A trava equivalente na API (`POST /rentals/{id}/swap`) é tratada à parte.
+2. **Horários do galpão calculados no app.** Aberto/fechado, "retirar agora (até HH:MM)" e os horários agendáveis saem de `Depot.openingHours`, `timezone`, `maxScheduleDays` e `pickupNowWindowMinutes` (espelho de `depot-rules.ts`); o servidor valida de novo. Nada de `isOpenNow`/`slots` no contrato.
+3. **Preço por minuto do modelo.** O app manda `vehicleId` em `POST /pricing/quote` e mostra no plano "Por minuto" e no resumo da retirada o preço do modelo da moto escolhida.
+4. **Ordem dos galpões.** Mais perto primeiro por `distanceM`; sem localização (sem consentimento ou sem GPS) fica a ordem da API.

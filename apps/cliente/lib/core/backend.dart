@@ -34,21 +34,31 @@ abstract class Backend {
   Future<KycStatusResponse> submitKyc(KycSubmitRequest request);
   Future<KycStatusResponse> kycStatus();
 
-  // mapa
-  Future<List<VehicleSummary>> nearby(double lat, double lng, {double? minRangeKm});
+  // mapa e galpao
   Future<List<GeoZone>> zones();
+  /// Galpoes ativos; com [lat]/[lng] a API ordena por distancia (`distanceM`).
+  Future<List<Depot>> depots({double? lat, double? lng});
+  Future<Depot> depot(String id);
+  /// Motos livres do galpao ("Escolher moto").
+  Future<List<Vehicle>> depotVehicles(String depotId);
+  /// Catalogo de modelos (foto, categoria e preco por modelo).
+  Future<List<VehicleModel>> vehicleModels();
+  /// Estacoes de troca de bateria (mapa da home).
+  Future<List<SwapStation>> swapStations({double? lat, double? lng});
   Future<Vehicle> vehicleByCode(String code);
   Future<void> ring(String vehicleId);
 
   // reserva
   Future<Reservation?> currentReservation();
-  Future<Reservation> reserve(String vehicleId);
+  /// Reserva de retirada no galpao. [idempotencyKey]: uma por tentativa de confirmar.
+  Future<Reservation> createDepotReservation(ReservationCreate request, {String? idempotencyKey});
   Future<void> cancelReservation(String id);
 
   // contratacao
   Future<List<PricingPlan>> plans();
   Future<List<InsuranceCoverageOption>> coverages();
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon});
+  /// [vehicleId]: preco por minuto do modelo da moto (plano `minute`).
+  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId});
   Future<List<PaymentCard>> cards();
   Future<PaymentCard> addCard(String token);
   Future<Wallet> wallet();
@@ -179,11 +189,23 @@ class ApiBackend implements Backend {
   Future<KycStatusResponse> kycStatus() => _run(() async => (await _api.getKycApi().getKycStatus()).data!);
 
   @override
-  Future<List<VehicleSummary>> nearby(double lat, double lng, {double? minRangeKm}) => _run(() async =>
-      (await _api.getVehiclesApi().listNearbyVehicles(lat: lat, lng: lng, radiusM: 1500, minRangeKm: minRangeKm))
-          .data!
-          .items
-          .toList());
+  Future<List<Depot>> depots({double? lat, double? lng}) =>
+      _run(() async => (await _api.getDepotsApi().listDepots(lat: lat, lng: lng)).data!.items.toList());
+
+  @override
+  Future<Depot> depot(String id) => _run(() async => (await _api.getDepotsApi().getDepot(id: id)).data!);
+
+  @override
+  Future<List<Vehicle>> depotVehicles(String depotId) =>
+      _run(() async => (await _api.getDepotsApi().listDepotVehicles(id: depotId)).data!.items.toList());
+
+  @override
+  Future<List<VehicleModel>> vehicleModels() =>
+      _run(() async => (await _api.getCatalogApi().listVehicleModels()).data!.items.toList());
+
+  @override
+  Future<List<SwapStation>> swapStations({double? lat, double? lng}) =>
+      _run(() async => (await _api.getStationsApi().listSwapStations(lat: lat, lng: lng)).data!.items.toList());
 
   @override
   Future<List<GeoZone>> zones() => _run(() async => (await _api.getZonesApi().listZones()).data!.items.toList());
@@ -202,9 +224,11 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getReservationsApi().getCurrentReservation()).data?.reservation);
 
   @override
-  Future<Reservation> reserve(String vehicleId) => _run(() async => (await _api.getReservationsApi().createReservation(
-        reservationCreate: ReservationCreate((b) => b..vehicleId = vehicleId),
-      ))
+  Future<Reservation> createDepotReservation(ReservationCreate request, {String? idempotencyKey}) =>
+      _run(() async => (await _api.getReservationsApi().createReservation(
+            reservationCreate: request,
+            idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
+          ))
           .data!);
 
   @override
@@ -221,12 +245,13 @@ class ApiBackend implements Backend {
       _run(() async => (await _api.getInsuranceApi().listInsuranceCoverages()).data!.items.toList());
 
   @override
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon}) =>
+  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId}) =>
       _run(() async => (await _api.getPricingApi().quotePrice(
             quoteRequest: QuoteRequest((b) => b
               ..planCode = plan
               ..coverage = coverage
-              ..couponCode = (coupon == null || coupon.isEmpty) ? null : coupon),
+              ..couponCode = (coupon == null || coupon.isEmpty) ? null : coupon
+              ..vehicleId = vehicleId),
           ))
           .data!);
 

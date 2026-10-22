@@ -7,81 +7,20 @@ import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/account/account_screens.dart';
 import 'package:volti_cliente/features/onboarding/onboarding_screen.dart';
-import 'package:volti_cliente/features/plan/plan_screen.dart';
+import 'package:volti_cliente/core/clock.dart';
+import 'package:volti_cliente/features/pickup/pickup_screen.dart';
+import 'package:volti_cliente/features/plan/insurance_screen.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import 'galpao_fixtures.dart';
 import 'helpers.dart';
 import 'zone_fixtures.dart';
 
-class PlanBackend extends FakeBackend {
-  int startCalls = 0;
-  @override
-  Future<List<PricingPlan>> plans() async => [
-        PricingPlan((b) => b
-          ..id = 'p1'
-          ..code = PlanCode.minute
-          ..name = 'Por minuto'
-          ..unit = PlanUnit.minute
-          ..unlockFeeCents = 100
-          ..unitPriceCents = 79
-          ..pausePerMinuteCents = 20
-          ..recurring = false
-          ..active = true
-          ..createdAt = DateTime.utc(2026)
-          ..updatedAt = DateTime.utc(2026)),
-      ];
-  @override
-  Future<List<InsuranceCoverageOption>> coverages() async => [
-        InsuranceCoverageOption((b) => b
-          ..coverage = InsuranceCoverage.basic
-          ..name = 'Básico'
-          ..description = 'Cobertura mínima'
-          ..premiumCents = 0
-          ..mandatory = true
-          ..active = true),
-        InsuranceCoverageOption((b) => b
-          ..coverage = InsuranceCoverage.full
-          ..name = 'Completo'
-          ..description = 'Cobertura ampla'
-          ..premiumCents = 300
-          ..mandatory = false
-          ..active = true),
-      ];
-  @override
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon}) async => Quote((b) => b
-    ..planCode = plan
-    ..coverage = coverage
-    ..depositCents = 5000
-    ..couponApplied = false
-    ..breakdown = PriceBreakdown((p) => p
-      ..subtotalCents = 100
-      ..discountCents = 0
-      ..insuranceCents = coverage == InsuranceCoverage.full ? 300 : 0
-      ..feesCents = 0
-      ..totalCents = 100).toBuilder());
-  @override
-  Future<List<PaymentCard>> cards() async => [
-        PaymentCard((b) => b
-          ..id = 'card1'
-          ..brand = 'visa'
-          ..last4 = '4242'
-          ..expMonth = 12
-          ..expYear = 2030
-          ..isDefault = true
-          ..createdAt = DateTime.utc(2026)),
-      ];
-  @override
-  Future<Wallet> wallet() async => Wallet((b) => b
-    ..balanceCents = 0
-    ..minutesBalance = 0
-    ..updatedAt = DateTime.utc(2026));
-  @override
-  Future<RentalStartResult> startRental(StartRentalRequest request, {String? idempotencyKey}) async {
-    startCalls++;
-    throw AppFailure(kind: FailureKind.unknown);
-  }
+/// Backend do galpao que conta as reservas pedidas (consentimento de localizacao, decisao #8).
+class PlanBackend extends GalpaoBackend {
+  int get startCalls => creates;
 }
 
 Finder coverageCard(String c) => find.byKey(Key('coverage-$c'));
@@ -128,20 +67,14 @@ void main() {
     });
   });
 
-  group('plano', () {
-    Future<PlanBackend> pumpPlan(WidgetTester t, {bool location = true}) async {
+  group('seguro e retirada', () {
+    testWidgets('exige seguro: basico pre-selecionado e nao removivel', (t) async {
       tallScreen(t);
-      final backend = PlanBackend();
-      await t.pumpWidget(testApp(PlanScreen(vehicle: sampleVehicle()), overrides: [
-        backendProvider.overrideWithValue(backend),
-        sessionProvider.overrideWith(() => FakeSession(session(location: location))),
+      await t.pumpWidget(testApp(InsuranceScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
+        backendProvider.overrideWithValue(PlanBackend()),
+        sessionProvider.overrideWith(() => FakeSession(session())),
       ]));
       await t.pumpAndSettle();
-      return backend;
-    }
-
-    testWidgets('exige seguro: basico pre-selecionado e nao removivel', (t) async {
-      await pumpPlan(t);
       expect(isSelected(t, 'basic'), isTrue, reason: 'basico vem pre-selecionado');
       expect(isSelected(t, 'full'), isFalse);
       expect(find.text('Obrigatório'), findsOneWidget);
@@ -159,30 +92,32 @@ void main() {
       await t.tap(coverageCard('full'));
       await t.pumpAndSettle();
       expect(isSelected(t, 'basic'), isTrue);
-      await t.tap(coverageCard('basic'));
-      await t.pumpAndSettle();
-      expect(isSelected(t, 'basic'), isTrue);
-
-      final cta = t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
-      expect(cta.onPressed, isNotNull);
+      expect(t.widget<VoltiButton>(find.byKey(const Key('insurance-continue'))).onPressed, isNotNull);
     });
 
-    testWidgets('sem consentimento de localizacao o inicio do aluguel e bloqueado (decisao #8)', (t) async {
-      final backend = await pumpPlan(t, location: false);
-      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
+    testWidgets('sem consentimento de localizacao a reserva e bloqueada (decisao #8)', (t) async {
+      tallScreen(t);
+      final backend = PlanBackend();
+      await t.pumpWidget(testApp(PickupScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
+        backendProvider.overrideWithValue(backend),
+        sessionProvider.overrideWith(() => FakeSession(session(location: false))),
+        clockProvider.overrideWithValue(() => thu10),
+      ]));
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar reserva'));
       await t.pumpAndSettle();
       expect(find.text('Permitir localização?'), findsOneWidget);
       expect(backend.startCalls, 0);
 
       await t.tap(find.text('Agora não'));
       await t.pumpAndSettle();
-      expect(backend.startCalls, 0, reason: 'recusou o consentimento: nao inicia');
+      expect(backend.startCalls, 0, reason: 'recusou o consentimento: nao reserva');
 
-      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
+      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar reserva'));
       await t.pumpAndSettle();
       await t.tap(find.text('Permitir e continuar'));
       await t.pumpAndSettle();
-      expect(backend.startCalls, 1, reason: 'depois do consentimento o aluguel e solicitado');
+      expect(backend.startCalls, 1, reason: 'depois do consentimento a reserva e pedida');
     });
   });
 

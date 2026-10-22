@@ -8,9 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:go_router/go_router.dart';
-import 'package:latlong2/latlong.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
@@ -21,17 +18,16 @@ import 'package:volti_cliente/features/account/wallet_screen.dart';
 import 'package:volti_cliente/core/geo.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
-import 'package:volti_cliente/features/pick/pick_logic.dart';
 import 'package:volti_cliente/features/plan/pix_sheet.dart';
-import 'package:volti_cliente/features/plan/plan_screen.dart';
-import 'package:volti_cliente/features/reservation/reserved_screen.dart';
+import 'package:volti_cliente/features/pickup/pickup_screen.dart';
+import 'package:volti_cliente/features/plan/insurance_screen.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart';
 import 'package:volti_cliente/features/summary/summary_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'account_gap_c_test.dart' show AccountBackend;
-import 'gap_d_test.dart' show GapBackend, bike;
+import 'galpao_fixtures.dart';
 import 'helpers.dart';
 import 'zone_fixtures.dart';
 
@@ -59,29 +55,8 @@ void _screen(WidgetTester t, {Size size = const Size(412, 915), double scale = 1
   addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
 }
 
-final _t0 = DateTime.utc(2026, 10, 22, 12);
-Reservation _reservation() => Reservation((b) => b
-  ..id = 'res1'
-  ..vehicleId = 'v1'
-  ..vehicle = bike().toBuilder()
-  ..status = ReservationStatus.active
-  ..createdAt = _t0
-  ..expiresAt = _t0.add(const Duration(minutes: 15)));
-
-Future<void> _pumpReserved(WidgetTester t, {DateTime Function()? clock, ServerClock? server}) async {
-  await t.pumpWidget(testApp(const ReservedScreen(), overrides: [
-    backendProvider.overrideWithValue(GapBackend(reservation: _reservation())),
-    locationServiceProvider.overrideWithValue(FakeLocation()),
-    sessionProvider.overrideWith(() => FakeSession(session())),
-    if (clock != null) clockProvider.overrideWithValue(clock),
-    if (server != null) serverClockProvider.overrideWithValue(server),
-  ]));
-  await t.pump();
-  await t.pump(const Duration(milliseconds: 100));
-}
-
-/// Plano com cotacao que ja traz a linha do seguro (como a API real).
-class _PlanBackend extends GapBackend {
+/// Galpao com cotacao que ja traz a linha do seguro (como a API real).
+class _PlanBackend extends GalpaoBackend {
   _PlanBackend({this.withInsuranceLine = true, this.savedCards = const []});
   final bool withInsuranceLine;
   final List<PaymentCard> savedCards;
@@ -101,7 +76,7 @@ class _PlanBackend extends GapBackend {
       ];
 
   @override
-  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon}) async => Quote((b) => b
+  Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId}) async => Quote((b) => b
     ..planCode = plan
     ..coverage = coverage
     ..depositCents = 15000
@@ -138,9 +113,19 @@ PaymentCard _card() => PaymentCard((b) => b
   ..isDefault = true
   ..createdAt = DateTime.utc(2026));
 
-Future<void> _pumpPlan(WidgetTester t, _PlanBackend b) async {
+Future<void> _pumpPickup(WidgetTester t, _PlanBackend b) async {
   tallScreen(t);
-  await t.pumpWidget(testApp(PlanScreen(vehicle: sampleVehicle()), overrides: [
+  await t.pumpWidget(testApp(PickupScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
+    backendProvider.overrideWithValue(b),
+    sessionProvider.overrideWith(() => FakeSession(session())),
+    clockProvider.overrideWithValue(() => thu10),
+  ]));
+  await t.pumpAndSettle();
+}
+
+Future<void> _pumpInsurance(WidgetTester t, _PlanBackend b) async {
+  tallScreen(t);
+  await t.pumpWidget(testApp(InsuranceScreen(selection: selection(p: plan(PlanCode.day, 'Diário', PlanUnit.day, 8900))), overrides: [
     backendProvider.overrideWithValue(b),
     sessionProvider.overrideWith(() => FakeSession(session())),
   ]));
@@ -222,152 +207,51 @@ class _ReturnBackend extends FakeBackend {
 void main() {
   setUpAll(_loadFonts);
 
-  group('reserva igual ao design (R)', () {
-    testWidgets('barra no topo, abaixo da status bar, sem cobrir o pin da moto', (t) async {
-      _screen(t);
-      await _pumpReserved(t, clock: () => _t0);
-      final avatar = t.getRect(find.byKey(const Key('home-avatar')));
-      expect(avatar.top, inInclusiveRange(24, 24 + 12), reason: 'logo abaixo da status bar');
-      expect(avatar.left, 20, reason: 'gutter de 20 px');
-      final bell = t.getRect(find.byKey(const Key('home-bell')));
-      expect(bell.right, 412 - 20);
-      // O mapa centra na moto: o pin (64 px) fica no meio da tela.
-      expect(bell.bottom, lessThan(915 / 2 - 64), reason: 'a barra nao chega ao pin');
-      expect(t.takeException(), isNull);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('sem voltar visivel nem megafone; so o alvo acima do painel', (t) async {
-      _screen(t);
-      await _pumpReserved(t, clock: () => _t0);
-      expect(find.byIcon(LucideIcons.arrowLeft), findsNothing);
-      expect(find.byIcon(LucideIcons.megaphone), findsNothing);
-      final locate = t.getRect(find.byKey(const Key('reserved-locate')));
-      final banner = t.getRect(find.byKey(const Key('reservation-banner')));
-      expect(locate.right, 412 - 20, reason: 'alvo a direita');
-      expect(banner.top - locate.bottom, 14, reason: 'gap 14 do design');
-      final scan = t.getRect(find.byKey(const Key('reserved-scan')));
-      expect(scan.top - banner.bottom, 14);
-      expect(scan.width, 412 - 40, reason: 'Escanear QR de largura total');
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('leitor de tela ainda tem "Voltar" e ele volta ao mapa', (t) async {
-      _screen(t);
-      final h = t.ensureSemantics();
-      final router = GoRouter(initialLocation: '/home', routes: [
-        GoRoute(path: '/home', builder: (_, _) => const Scaffold(body: Text('mapa'))),
-        GoRoute(path: '/reserved', builder: (_, _) => const ReservedScreen()),
-      ]);
-      await t.pumpWidget(testRouterApp(router, overrides: [
-        backendProvider.overrideWithValue(GapBackend(reservation: _reservation())),
-        locationServiceProvider.overrideWithValue(FakeLocation()),
-        sessionProvider.overrideWith(() => FakeSession(session())),
-        clockProvider.overrideWithValue(() => _t0),
-      ]));
-      router.push('/reserved');
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 500));
-      t.semantics.tap(find.semantics.byLabel('Voltar'));
-      await t.pump();
-      await t.pump(const Duration(milliseconds: 500));
-      expect(find.text('mapa'), findsOneWidget);
-      h.dispose();
-      await t.pumpWidget(const SizedBox());
-    });
-
-    for (final (size, scale) in [(const Size(412, 915), 1.0), (const Size(360, 740), 2.0)]) {
-      testWidgets('trilho "Deslize para cancelar" de largura total e texto inteiro ($scale x)', (t) async {
-        _screen(t, size: size, scale: scale);
-        await _pumpReserved(t, clock: () => _t0);
-        final banner = t.getRect(find.byKey(const Key('reservation-banner')));
-        final track = t.getRect(find.byType(SwipeAction));
-        expect(track.width, banner.width - 12, reason: 'trilho ocupa o banner (padding 6)');
-        final knob = t.getRect(find.byKey(const Key('swipe-knob')));
-        final label = t.getRect(find.text('Deslize para cancelar'));
-        expect(label.left, greaterThanOrEqualTo(knob.right), reason: 'o botao nao cobre o texto');
-        expect(t.renderObject<RenderParagraph>(find.text('Deslize para cancelar')).didExceedMaxLines, isFalse);
-        expect(t.takeException(), isNull);
-        await t.pumpWidget(const SizedBox());
-      });
-    }
-
-    testWidgets('contagem nunca passa da duracao da reserva (relogio do aparelho 70 s atrasado)', (t) async {
-      _screen(t);
-      await _pumpReserved(t, clock: () => _t0.subtract(const Duration(seconds: 70)));
-      expect(find.textContaining('15 : 00'), findsOneWidget);
-      expect(find.textContaining('16 :'), findsNothing);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    testWidgets('relogio adiantado/atrasado e corrigido pelo Date do servidor', (t) async {
-      _screen(t);
-      // Aparelho 70 s atras; a resposta da API disse 12:01:00 (1 min de reserva corrido).
-      var local = _t0.add(const Duration(seconds: 60)).subtract(const Duration(seconds: 70));
-      final server = ServerClock(localNow: () => local)..observe('Thu, 22 Oct 2026 12:01:00 GMT');
-      await _pumpReserved(t, server: server);
-      expect(find.textContaining('14 : 00'), findsOneWidget, reason: 'usa a hora do servidor, nao a do aparelho');
-      local = local.add(const Duration(seconds: 1));
-      await t.pump(const Duration(seconds: 1));
-      expect(find.textContaining('13 : 59'), findsOneWidget);
-      await t.pumpWidget(const SizedBox());
-    });
-
-    test('rota a pe em "L" (sem servico de rotas) e reta quando a moto esta perto', () {
-      const user = LatLng(-23.5630, -46.6540);
-      const moto = LatLng(-23.5620, -46.6559);
-      final path = walkingPath(user, moto);
-      expect(path, hasLength(3));
-      expect(path.first, user);
-      expect(path.last, moto);
-      expect(path[1].latitude == user.latitude || path[1].latitude == moto.latitude, isTrue);
-      expect(path[1].longitude == user.longitude || path[1].longitude == moto.longitude, isTrue);
-      expect(walkingPath(user, const LatLng(-23.56301, -46.65401)), hasLength(2));
-    });
-  });
-
-  group('plano (P)', () {
-    testWidgets('seguro aparece uma vez so no resumo (a linha da API ja traz)', (t) async {
-      await _pumpPlan(t, _PlanBackend());
+  group('seguro e retirada (P)', () {
+    testWidgets('seguro aparece uma vez so no resumo da retirada (a linha da API ja traz)', (t) async {
+      await _pumpPickup(t, _PlanBackend());
       expect(find.text('Seguro básico'), findsOneWidget);
       expect(find.text('Seguro'), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
 
     testWidgets('sem linha do seguro na API: mostra a partir de insuranceCents', (t) async {
-      await _pumpPlan(t, _PlanBackend(withInsuranceLine: false));
+      await _pumpPickup(t, _PlanBackend(withInsuranceLine: false));
       expect(find.text('Seguro'), findsOneWidget);
       await t.pumpWidget(const SizedBox());
     });
 
     testWidgets('"Obrigatório" so no selo, nao repetido na descricao', (t) async {
-      await _pumpPlan(t, _PlanBackend());
+      await _pumpInsurance(t, _PlanBackend());
       expect(find.textContaining('Obrigatório'), findsOneWidget);
       expect(find.text('Danos a terceiros e acidentes pessoais.'), findsOneWidget);
       await t.pumpWidget(const SizedBox());
     });
 
     testWidgets('sem cartao salvo: Pix ja vem escolhido e da para confirmar', (t) async {
-      await _pumpPlan(t, _PlanBackend());
-      expect(t.widget<OptionCard>(find.widgetWithText(OptionCard, 'Pix')).selected, isTrue);
-      expect(t.widget<OptionCard>(find.widgetWithText(OptionCard, 'Cartão de crédito')).selected, isFalse);
-      expect(t.widget<VoltiButton>(find.byKey(const Key('plan-confirm'))).onPressed, isNotNull);
+      await _pumpPickup(t, _PlanBackend());
+      expect(t.widget<OptionCard>(find.byKey(const Key('pickup-pix'))).selected, isTrue);
+      expect(t.widget<OptionCard>(find.byKey(const Key('pickup-card'))).selected, isFalse);
+      expect(t.widget<VoltiButton>(find.byKey(const Key('pickup-confirm'))).onPressed, isNotNull);
       await t.pumpWidget(const SizedBox());
     });
 
     testWidgets('com cartao salvo: cartao continua o padrao', (t) async {
-      await _pumpPlan(t, _PlanBackend(savedCards: [_card()]));
-      expect(t.widget<OptionCard>(find.widgetWithText(OptionCard, 'Cartão de crédito')).selected, isTrue);
+      await _pumpPickup(t, _PlanBackend(savedCards: [_card()]));
+      expect(t.widget<OptionCard>(find.byKey(const Key('pickup-card'))).selected, isTrue);
       expect(find.byKey(const Key('plan-confirm-reason')), findsNothing);
       await t.pumpWidget(const SizedBox());
     });
 
     testWidgets('cartao escolhido sem cartao: botao desligado mostra o motivo', (t) async {
-      await _pumpPlan(t, _PlanBackend());
-      await t.tap(find.widgetWithText(OptionCard, 'Cartão de crédito'));
+      final h = t.ensureSemantics();
+      await _pumpPickup(t, _PlanBackend());
+      await t.tap(find.byKey(const Key('pickup-card')));
       await t.pumpAndSettle();
-      expect(t.widget<VoltiButton>(find.byKey(const Key('plan-confirm'))).onPressed, isNull);
+      expect(t.widget<VoltiButton>(find.byKey(const Key('pickup-confirm'))).onPressed, isNull);
       expect(find.text('Adicione um cartão ou escolha Pix para a caução.'), findsOneWidget);
+      expect(t.getSemantics(find.byKey(const Key('plan-confirm-reason'))), isSemantics(isLiveRegion: true));
+      h.dispose();
       await t.pumpWidget(const SizedBox());
     });
   });

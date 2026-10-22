@@ -10,10 +10,12 @@ import 'package:volti_cliente/features/onboarding/login_screen.dart';
 import 'package:volti_cliente/features/onboarding/onboarding_screen.dart';
 import 'package:volti_cliente/features/onboarding/otp_flow.dart';
 import 'package:volti_cliente/features/onboarding/payment_step.dart';
-import 'package:volti_cliente/features/plan/plan_screen.dart';
+import 'package:volti_cliente/core/clock.dart';
+import 'package:volti_cliente/features/pickup/pickup_screen.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import 'cognito_test.dart' show FakeTransport, config;
+import 'galpao_fixtures.dart';
 import 'helpers.dart';
 import 'otp_flow_test.dart' show FakeOtpClient;
 import 'screens_test.dart' show PlanBackend;
@@ -354,12 +356,14 @@ void main() {
 
       // Com o consentimento gravado como falso, o Plano pede antes de iniciar.
       final plan = PlanBackend();
-      await t.pumpWidget(testApp(PlanScreen(vehicle: sampleVehicle()), overrides: [
+      await t.pumpWidget(const SizedBox());
+      await t.pumpWidget(testApp(PickupScreen(selection: selection(p: dayPlan())), overrides: [
         backendProvider.overrideWithValue(plan),
         sessionProvider.overrideWith(() => FakeSession(session(location: backend.location!))),
+        clockProvider.overrideWithValue(() => thu10),
       ]));
       await t.pumpAndSettle();
-      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar e destravar'));
+      await t.tap(find.widgetWithText(VoltiButton, 'Confirmar reserva'));
       await t.pumpAndSettle();
       expect(find.text('Permitir localização?'), findsOneWidget);
       expect(plan.startCalls, 0);
@@ -444,3 +448,5 @@ void main() {
     });
   });
 }
+
+PricingPlan dayPlan() => plan(PlanCode.day, 'Diário', PlanUnit.day, 8900);

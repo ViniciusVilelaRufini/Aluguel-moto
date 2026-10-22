@@ -18,6 +18,7 @@ class VoltiChip extends StatelessWidget {
     this.selected = false,
     this.onTap,
     this.elevated = false,
+    this.enabled = true,
   });
 
   final String label;
@@ -28,14 +29,19 @@ class VoltiChip extends StatelessWidget {
   /// Sombra leve para chips sobre o mapa.
   final bool elevated;
 
+  /// Desligado (ex.: dia fechado na agenda): sem toque, texto apagado e
+  /// anunciado como desabilitado.
+  final bool enabled;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final fg = selected ? VoltiColors.successInk : scheme.onSurface;
+    final fg = !enabled ? scheme.onSurfaceVariant : (selected ? VoltiColors.successInk : scheme.onSurface);
     return Semantics(
       selected: selected,
+      enabled: enabled,
       child: VoltiPressable(
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         scale: VoltiMotion.chipPressScale,
         semanticLabel: label,
         // Alvo de toque >= 44 px (E-13): 4 px invisiveis acima e abaixo do
@@ -50,10 +56,10 @@ class VoltiChip extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 36),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? VoltiColors.brandSoft : scheme.surface,
+            color: !enabled ? scheme.surfaceContainerHighest : (selected ? VoltiColors.brandSoft : scheme.surface),
             borderRadius: VoltiRadii.rPill,
             border: Border.all(
-              color: selected ? VoltiColors.brand : (elevated ? Colors.transparent : scheme.outlineVariant),
+              color: selected && enabled ? VoltiColors.brand : (elevated ? Colors.transparent : scheme.outlineVariant),
             ),
             boxShadow: elevated ? VoltiShadows.shadow1 : null,
           ),

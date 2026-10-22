@@ -383,13 +383,14 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     }
   }
 
-  /// Um dialogo so: escolhe o problema (chips) e decide trocar de moto sem nova
-  /// taxa ou so reportar.
+  /// Um dialogo so: escolhe o problema (chips) e reporta. Sem troca de moto no
+  /// meio da corrida (retirada em galpao, docs/decisoes.md 2026-10-22): o
+  /// suporte orienta a volta ao galpao.
   Future<void> _report() async {
     final l = context.l;
     final problems = [l.problemTire, l.problemBrake, l.problemBattery, l.problemLights, l.problemOther];
     String? picked;
-    final swap = await showDialog<bool>(
+    final send = await showDialog<bool>(
       context: context,
       barrierColor: VoltiColors.surfaceScrim,
       builder: (ctx) => StatefulBuilder(
@@ -408,16 +409,9 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           ]),
           actions: [
             VoltiButton(
-              label: l.swapNoFee,
-              icon: LucideIcons.repeat,
+              label: l.reportOnly,
               fullWidth: true,
               onPressed: picked == null ? null : () => Navigator.of(ctx).pop(true),
-            ),
-            VoltiButton(
-              label: l.reportOnly,
-              variant: VoltiButtonVariant.secondary,
-              fullWidth: true,
-              onPressed: picked == null ? null : () => Navigator.of(ctx).pop(false),
             ),
             VoltiButton(label: l.cancel, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(ctx).pop()),
           ],
@@ -425,16 +419,11 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       ),
     );
     final problem = picked;
-    if (swap == null || problem == null || !mounted) return;
+    if (send != true || problem == null || !mounted) return;
     try {
       final r = _rental!;
       await ref.read(backendProvider).reportIncident(IncidentCategory.vehicleProblem, problem, rentalId: r.id, vehicleId: r.vehicleId);
-      if (!mounted) return;
-      if (swap) {
-        context.push('/scan?swap=${r.id}');
-      } else {
-        VoltiToast.show(context, l.reportSentTitle);
-      }
+      if (mounted) VoltiToast.show(context, l.reportSentTitle);
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     }

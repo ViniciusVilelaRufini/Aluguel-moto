@@ -3586,6 +3586,360 @@ abstract class AppLocalizations {
   /// **'Obrigado por andar de Volti'**
   String get thanksForRiding;
 
+  /// No description provided for @depotCardTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão Volti · {district}'**
+  String depotCardTitle(String district);
+
+  /// No description provided for @depotAvailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =0{nenhuma moto disponível} =1{1 moto disponível} other{{count} motos disponíveis}}'**
+  String depotAvailable(int count);
+
+  /// No description provided for @depotOpenUntil.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aberto até {time}'**
+  String depotOpenUntil(String time);
+
+  /// No description provided for @depotClosedOpens.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fechado · abre {day} às {time}'**
+  String depotClosedOpens(String day, String time);
+
+  /// No description provided for @depotClosed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Fechado'**
+  String get depotClosed;
+
+  /// No description provided for @dayToday.
+  ///
+  /// In pt, this message translates to:
+  /// **'Hoje'**
+  String get dayToday;
+
+  /// No description provided for @dayTomorrow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Amanhã'**
+  String get dayTomorrow;
+
+  /// No description provided for @dayTodayLower.
+  ///
+  /// In pt, this message translates to:
+  /// **'hoje'**
+  String get dayTodayLower;
+
+  /// No description provided for @dayTomorrowLower.
+  ///
+  /// In pt, this message translates to:
+  /// **'amanhã'**
+  String get dayTomorrowLower;
+
+  /// No description provided for @weekdayShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'{weekday, select, 0{dom.} 1{seg.} 2{ter.} 3{qua.} 4{qui.} 5{sex.} 6{sáb.} other{}}'**
+  String weekdayShort(String weekday);
+
+  /// No description provided for @dayChip.
+  ///
+  /// In pt, this message translates to:
+  /// **'{weekday} {date}'**
+  String dayChip(String weekday, String date);
+
+  /// No description provided for @dayChipClosed.
+  ///
+  /// In pt, this message translates to:
+  /// **'{label} · Fechado'**
+  String dayChipClosed(String label);
+
+  /// No description provided for @depotPicker.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha o galpão'**
+  String get depotPicker;
+
+  /// No description provided for @depotOptionSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{name}, {distance}'**
+  String depotOptionSemantics(String name, String distance);
+
+  /// No description provided for @depotPinSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão {name}'**
+  String depotPinSemantics(String name);
+
+  /// No description provided for @swapStationSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estação de troca de bateria {name}'**
+  String swapStationSemantics(String name);
+
+  /// No description provided for @depotsEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhum galpão disponível'**
+  String get depotsEmpty;
+
+  /// No description provided for @depotsEmptyText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tente de novo em instantes.'**
+  String get depotsEmptyText;
+
+  /// No description provided for @pickContinue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar com {model} · {code}'**
+  String pickContinue(String model, String code);
+
+  /// No description provided for @pickDepotCount.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =0{Nenhuma moto no galpão} =1{1 moto no galpão} other{{count} motos no galpão}}'**
+  String pickDepotCount(int count);
+
+  /// No description provided for @pickDepotEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma moto no galpão agora'**
+  String get pickDepotEmpty;
+
+  /// No description provided for @pickDepotEmptyText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Volte mais tarde ou escolha outro galpão.'**
+  String get pickDepotEmptyText;
+
+  /// No description provided for @planOtherOptions.
+  ///
+  /// In pt, this message translates to:
+  /// **'Outras opções'**
+  String get planOtherOptions;
+
+  /// No description provided for @planRenews.
+  ///
+  /// In pt, this message translates to:
+  /// **'Renova automaticamente, cancele quando quiser'**
+  String get planRenews;
+
+  /// No description provided for @planChargedAtPickup.
+  ///
+  /// In pt, this message translates to:
+  /// **'O plano é cobrado na retirada, quando você aceitar a moto.'**
+  String get planChargedAtPickup;
+
+  /// No description provided for @vehicleModelCode.
+  ///
+  /// In pt, this message translates to:
+  /// **'{model} · {code}'**
+  String vehicleModelCode(String model, String code);
+
+  /// No description provided for @insuranceTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Seguro'**
+  String get insuranceTitle;
+
+  /// No description provided for @insuranceSubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'O básico já vem incluído. O completo é opcional.'**
+  String get insuranceSubtitle;
+
+  /// No description provided for @pickupTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirada'**
+  String get pickupTitle;
+
+  /// No description provided for @pickupNow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirar agora'**
+  String get pickupNow;
+
+  /// No description provided for @pickupNowUntil.
+  ///
+  /// In pt, this message translates to:
+  /// **'Até {time}'**
+  String pickupNowUntil(String time);
+
+  /// No description provided for @pickupNowClosed.
+  ///
+  /// In pt, this message translates to:
+  /// **'O galpão está fechado agora'**
+  String get pickupNowClosed;
+
+  /// No description provided for @pickupSchedule.
+  ///
+  /// In pt, this message translates to:
+  /// **'Agendar'**
+  String get pickupSchedule;
+
+  /// No description provided for @pickupScheduleHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha dia e hora no funcionamento do galpão'**
+  String get pickupScheduleHint;
+
+  /// No description provided for @pickupDay.
+  ///
+  /// In pt, this message translates to:
+  /// **'Dia'**
+  String get pickupDay;
+
+  /// No description provided for @pickupTime.
+  ///
+  /// In pt, this message translates to:
+  /// **'Horário'**
+  String get pickupTime;
+
+  /// No description provided for @pickupNoSlots.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem horários neste dia'**
+  String get pickupNoSlots;
+
+  /// No description provided for @pickupChooseTime.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha um horário'**
+  String get pickupChooseTime;
+
+  /// No description provided for @pickupPlan.
+  ///
+  /// In pt, this message translates to:
+  /// **'Plano'**
+  String get pickupPlan;
+
+  /// No description provided for @pickupDepositNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confirmar bloqueia só a caução. O plano é cobrado quando você aceitar a moto no galpão.'**
+  String get pickupDepositNote;
+
+  /// No description provided for @confirmReservation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confirmar reserva'**
+  String get confirmReservation;
+
+  /// No description provided for @vehicleJustTaken.
+  ///
+  /// In pt, this message translates to:
+  /// **'Essa moto acabou de ser reservada'**
+  String get vehicleJustTaken;
+
+  /// No description provided for @depotReservationTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserva confirmada'**
+  String get depotReservationTitle;
+
+  /// No description provided for @reservationQrHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Mostre este código no galpão'**
+  String get reservationQrHint;
+
+  /// No description provided for @reservationQrLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'QR da reserva'**
+  String get reservationQrLabel;
+
+  /// No description provided for @reservationPickupUntil.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retire até {time}'**
+  String reservationPickupUntil(String time);
+
+  /// No description provided for @reservationScheduledAt.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirada {day} às {time}'**
+  String reservationScheduledAt(String day, String time);
+
+  /// No description provided for @reservationGrace.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tolerância até {time}'**
+  String reservationGrace(String time);
+
+  /// No description provided for @howToGetThere.
+  ///
+  /// In pt, this message translates to:
+  /// **'Como chegar'**
+  String get howToGetThere;
+
+  /// No description provided for @cancelReservation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar reserva'**
+  String get cancelReservation;
+
+  /// No description provided for @cancelReservationTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar reserva?'**
+  String get cancelReservationTitle;
+
+  /// No description provided for @cancelReservationText.
+  ///
+  /// In pt, this message translates to:
+  /// **'O cancelamento é grátis e a caução é liberada.'**
+  String get cancelReservationText;
+
+  /// No description provided for @keepReservation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Manter reserva'**
+  String get keepReservation;
+
+  /// No description provided for @reservationInHandover.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua moto já está sendo entregue. Use Apontar problema.'**
+  String get reservationInHandover;
+
+  /// No description provided for @reservationPixPending.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pague a caução por Pix para garantir a moto.'**
+  String get reservationPixPending;
+
+  /// No description provided for @payPixDeposit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagar caução Pix'**
+  String get payPixDeposit;
+
+  /// No description provided for @reservationNotFound.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reserva não encontrada'**
+  String get reservationNotFound;
+
+  /// No description provided for @reservationNotFoundText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ela pode ter sido cancelada ou expirado.'**
+  String get reservationNotFoundText;
+
+  /// No description provided for @goHome.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ir para o início'**
+  String get goHome;
+
   /// No description provided for @planNeedsCard.
   ///
   /// In pt, this message translates to:
@@ -3603,6 +3957,12 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Você está num ponto verde. Pode encerrar sem taxa.'**
   String get returnInsideRule;
+
+  /// No description provided for @reservationNoCode.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.'**
+  String get reservationNoCode;
 }
 
 class _AppLocalizationsDelegate

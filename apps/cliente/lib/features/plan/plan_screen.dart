@@ -6,21 +6,16 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
-import '../../core/breakdown.dart';
-import '../../core/code_sheet.dart';
-import '../../core/errors.dart';
 import '../../core/geo.dart';
-import '../../core/services.dart';
-import '../../core/session.dart';
 import '../../core/shared_vehicle.dart';
 import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
-import '../home/providers.dart';
-import 'pix_sheet.dart';
+import '../pick/depot_selection.dart';
 
+/// Planos ativos (diario/semanal/mensal em destaque; minuto e hora em "Outras opções").
 final plansProvider = FutureProvider.autoDispose<List<PricingPlan>>((ref) async {
   final plans = await ref.watch(backendProvider).plans();
-  return plans.where((p) => p.active && !p.recurring).toList();
+  return plans.where((p) => p.active).toList();
 });
 final coveragesProvider = FutureProvider.autoDispose<List<InsuranceCoverageOption>>(
   (ref) async => (await ref.watch(backendProvider).coverages()).where((c) => c.active).toList(),
@@ -28,231 +23,77 @@ final coveragesProvider = FutureProvider.autoDispose<List<InsuranceCoverageOptio
 final cardsProvider = FutureProvider.autoDispose<List<PaymentCard>>((ref) => ref.watch(backendProvider).cards());
 final walletProvider = FutureProvider.autoDispose<Wallet>((ref) => ref.watch(backendProvider).wallet());
 
-/// Contratacao (design `PlanScreen`): plano, seguro (basico obrigatorio), cupom
-/// ou credito, resumo e caucao (cartao ou Pix). Os planos recorrentes (semanal e
-/// mensal) ficam em Conta > Meu plano ate o contrato dizer como `POST /rentals`
-/// usa uma assinatura (proposta em docs/decisoes.md).
+/// Planos em destaque, nesta ordem.
+const kFeaturedPlans = [PlanCode.day, PlanCode.weekly, PlanCode.monthly];
+
+/// Plano do galpao (spec 2026-10-22 §3.3): diario, semanal e mensal em destaque
+/// com o preco do periodo; "Outras opções" (minuto, hora) recolhidas. Semanal e
+/// mensal avisam que renovam. O seguro e a caucao ficam nas telas seguintes; nada
+/// e cobrado aqui (o plano e cobrado quando o cliente aceita a moto no galpao).
 class PlanScreen extends ConsumerStatefulWidget {
-  const PlanScreen({super.key, required this.vehicle});
-  final Vehicle vehicle;
+  const PlanScreen({super.key, required this.selection});
+  final DepotSelection selection;
   @override
   ConsumerState<PlanScreen> createState() => _PlanScreenState();
 }
 
 class _PlanScreenState extends ConsumerState<PlanScreen> {
-  PlanCode? _plan;
-  InsuranceCoverage _coverage = InsuranceCoverage.basic; // basico pre-selecionado e nao removivel
-  late String _coupon = ref.read(pendingCouponProvider);
-  /// Escolha do cliente na caucao; `null` = ainda nao escolheu (ver [_method]).
-  DepositMethod? _chosenMethod;
-
-  /// Caucao em uso: a escolha do cliente ou, sem escolha, cartao quando ha
-  /// cartao salvo e Pix quando nao ha (o botao nao fica travado sem motivo).
-  DepositMethod get _method =>
-      _chosenMethod ?? (ref.read(cardsProvider).value?.isEmpty ?? false ? DepositMethod.pix : DepositMethod.card);
-  String? _cardId;
-  bool _useWallet = false;
-  bool _busy = false;
-  AsyncValue<Quote> _quote = const AsyncLoading();
-
-  /// Recotando com um resumo ja na tela: mantem os valores (o total rola) e escurece.
-  bool _requoting = false;
-
-  /// Numero da ultima cotacao pedida: so a mais recente vale (respostas fora
-  /// de ordem sao descartadas e o pagamento fica bloqueado ate ela chegar).
-  int _quoteSeq = 0;
-  String? _error;
-
-  Future<void> _loadQuote() async {
-    final plan = _plan;
-    if (plan == null) return;
-    final seq = ++_quoteSeq;
-    setState(() {
-      if (_quote.hasValue) {
-        _requoting = true;
-      } else {
-        _quote = const AsyncLoading();
-      }
-    });
-    final result = await AsyncValue.guard(() => ref.read(backendProvider).quote(plan, _coverage, coupon: _coupon));
-    if (!mounted || seq != _quoteSeq) return;
-    setState(() {
-      _quote = result;
-      _requoting = false;
-    });
-  }
-
-  Future<bool> _ensureLocationConsent() async {
-    // Espera a sessao carregar: sem isso, um provider ainda frio pediria o consentimento a toa.
-    final session = ref.read(sessionProvider).value ?? await ref.read(sessionProvider.future).catchError((Object _) => const SessionState.signedOut());
-    if (session.locationConsent) return true;
-    if (!mounted) return false;
-    final l = context.l;
-    final ok = await VoltiDialog.show<bool>(
-      context,
-      title: l.locationConsentTitle,
-      icon: const Icon(LucideIcons.mapPin, size: 32, color: VoltiColors.brand),
-      message: Text(l.locationConsentText),
-      actions: [
-        VoltiButton(label: l.allowAndContinue, fullWidth: true, onPressed: () => Navigator.of(context).pop(true)),
-        VoltiButton(label: l.notNow, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(context).pop(false)),
-      ],
-    );
-    if (ok != true) return false;
-    await ref
-        .read(sessionProvider.notifier)
-        .saveConsents(terms: session.termsAccepted, location: true, marketing: session.consents?.marketing ?? false);
-    return true;
-  }
-
-  Future<void> _pay() async {
-    final l = context.l;
-    // Consentimento antes do spinner: o dialogo nao fica com o botao "carregando" atras.
-    if (_busy || !await _ensureLocationConsent() || !mounted) return;
-    setState(() {
-      _busy = true;
-      _error = null;
-    });
-    try {
-      final backend = ref.read(backendProvider);
-      final request = StartRentalRequest(
-        (b) => b
-          ..vehicleId = widget.vehicle.id
-          ..planCode = _plan
-          ..coverage = _coverage
-          ..depositMethod = _method
-          ..couponCode = _coupon.isEmpty ? null : _coupon
-          ..cardId = _method == DepositMethod.card ? _cardId : null
-          ..useWalletCredits = _useWallet,
-      );
-      var result = await backend.startRental(request);
-      if (result.outcome == RentalStartOutcome.awaitingDeposit) {
-        if (!mounted) return;
-        final paid = await PixDepositSheet.show(context, result.deposit);
-        if (paid != true) return;
-        // Decisao #1: depois do Pix pago, chama POST /rentals de novo com nova Idempotency-Key e depositId.
-        result = await backend.startRental(request.rebuild((b) => b..depositId = result.deposit.id));
-      }
-      // Cupom usado: nao fica pendurado para o proximo aluguel.
-      ref.read(pendingCouponProvider.notifier).clear();
-      ref.invalidate(currentRentalProvider);
-      ref.invalidate(currentReservationProvider);
-      if (mounted) context.go('/ride');
-    } catch (e) {
-      if (mounted) setState(() => _error = failureText(l, e));
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _addCard() async {
-    final l = context.l;
-    try {
-      final token = await ref.read(cardTokenizerProvider).tokenize(context);
-      if (token == null) return;
-      final card = await ref.read(backendProvider).addCard(token);
-      ref.invalidate(cardsProvider);
-      setState(() {
-        _cardId = card.id;
-        _chosenMethod = DepositMethod.card;
-      });
-    } catch (e) {
-      if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
-    }
-  }
-
-  /// "Cupom ou credito": codigo do cupom e uso dos creditos da carteira num sheet.
-  Future<void> _editCoupon(Wallet? wallet) async {
-    final l = context.l;
-    var useWallet = _useWallet;
-    final hasCredit = wallet != null && (wallet.balanceCents > 0 || wallet.minutesBalance > 0);
-    final code = await VoltiBottomSheet.show<String>(
-      context,
-      builder: (ctx) => CodeEntrySheet(
-        title: l.couponOrCredit,
-        actionLabel: l.apply,
-        initial: _coupon,
-        fieldKey: const Key('plan-coupon-field'),
-        actionKey: const Key('plan-coupon-apply'),
-        extra: !hasCredit
-            ? null
-            : StatefulBuilder(
-                builder: (ctx, setSheet) => SwitchListTile(
-                  key: const Key('plan-wallet-switch'),
-                  contentPadding: EdgeInsets.zero,
-                  value: useWallet,
-                  onChanged: (x) => setSheet(() => useWallet = x),
-                  title: Text(l.useWallet),
-                  subtitle: Text(l.walletBalance(money(wallet.balanceCents), wallet.minutesBalance)),
-                ),
-              ),
-      ),
-    );
-    if (code == null || !mounted) return;
-    final couponChanged = code != _coupon;
-    setState(() {
-      _coupon = code;
-      _useWallet = useWallet;
-    });
-    ref.read(pendingCouponProvider.notifier).set(code);
-    if (couponChanged) _loadQuote();
-  }
+  late PlanCode? _plan = widget.selection.plan?.code;
+  /// "Outras opções" abertas; `null` = ainda nao decidiu (abre se o plano inicial estiver la).
+  bool? _showOthers;
 
   @override
   Widget build(BuildContext context) {
     final l = context.l;
     final plans = ref.watch(plansProvider);
-    final coverages = ref.watch(coveragesProvider);
-    final cards = ref.watch(cardsProvider);
-    final wallet = ref.watch(walletProvider).value;
-    final v = widget.vehicle;
-
-    if (_plan == null && plans.hasValue && plans.value!.isNotEmpty) {
-      _plan = plans.value!.first.code;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadQuote());
-    }
-    final cardList = cards.value ?? const <PaymentCard>[];
-    _cardId ??= cardList.where((c) => c.isDefault).map((c) => c.id).firstOrNull ?? cardList.map((c) => c.id).firstOrNull;
-    final needsCard = _method == DepositMethod.card && _cardId == null;
-    final quote = _quote.value;
-    final canPay = !_busy && !_requoting && _plan != null && quote != null && !needsCard;
-    // Botao desligado por escolha do cliente: diz o motivo (carregando nao precisa).
-    final blockedReason = needsCard && !cards.isLoading ? l.planNeedsCard : null;
-
+    final v = widget.selection.vehicle;
     final scheme = Theme.of(context).colorScheme;
-    final couponValue = quote != null && quote.couponApplied && quote.breakdown.discountCents > 0
-        ? money(quote.breakdown.discountCents)
-        : (_coupon.isNotEmpty ? _coupon : (_useWallet ? l.walletCredits : null));
+    final list = plans.value ?? const <PricingPlan>[];
+    final featured = [
+      for (final code in kFeaturedPlans) ...list.where((p) => p.code == code),
+    ];
+    final others = [for (final p in list) if (!kFeaturedPlans.contains(p.code)) p];
+    // Sem escolha ainda: o primeiro em destaque (diario).
+    if (_plan == null && list.isNotEmpty) _plan = (featured.isNotEmpty ? featured : list).first.code;
+    PricingPlan? chosen;
+    for (final p in list) {
+      if (p.code == _plan) chosen = p;
+    }
+    // Comeca aberta se o plano ja escolhido esta entre os "outros"; depois o cliente abre e fecha.
+    final chosenInOthers = featured.isNotEmpty && others.any((p) => p.code == _plan);
+    final othersOpen = _showOthers ?? chosenInOthers;
+
+    Widget option(PricingPlan p) => Padding(
+          padding: const EdgeInsets.only(bottom: VoltiSpacing.s10),
+          child: OptionCard(
+            key: Key('plan-${p.code.name}'),
+            title: p.name,
+            description: p.recurring ? l.planRenews : p.description,
+            // Plano por minuto: o preco do modelo desta moto (o mesmo que a cotacao usa).
+            price: money(planUnitCents(p, v)),
+            priceNote: l.perUnitShort(unitShortLabel(l, p.unit)),
+            selected: _plan == p.code,
+            onTap: () {
+              if (_plan != p.code) VoltiHaptics.selection();
+              setState(() => _plan = p.code);
+            },
+          ),
+        );
+
     return Scaffold(
       bottomNavigationBar: Container(
         decoration: BoxDecoration(color: scheme.surface, boxShadow: VoltiShadows.shadowSheet),
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, VoltiSpacing.s16),
-            child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-              if (blockedReason != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: VoltiSpacing.s8),
-                  child: Semantics(
-                    liveRegion: true,
-                    child: Text(
-                      blockedReason,
-                      key: const Key('plan-confirm-reason'),
-                      textAlign: TextAlign.center,
-                      style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
-                    ),
-                  ),
-                ),
-              VoltiButton(
-              key: const Key('plan-confirm'),
-              label: l.payAndUnlock,
-              icon: LucideIcons.lockOpen,
+            child: VoltiButton(
+              key: const Key('plan-continue'),
+              label: l.continueLabel,
+              icon: LucideIcons.arrowRight,
               size: VoltiButtonSize.lg,
               fullWidth: true,
-              loading: _busy,
-              onPressed: canPay ? _pay : null,
+              onPressed: chosen == null ? null : () => context.push('/insurance', extra: widget.selection.withPlan(chosen!)),
             ),
-            ]),
           ),
         ),
       ),
@@ -261,39 +102,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Cabecalho do design: voltar, titulo e "VT-4821 · Volti Flash · 90%"; a miniatura e o
-            // elemento compartilhado que vem do mapa e do scan (E-15).
-            Padding(
-              padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, VoltiSpacing.s12),
-              child: Row(
-                children: [
-                  if (Navigator.of(context).canPop()) ...[
-                    VoltiIconButton(
-                      icon: LucideIcons.arrowLeft,
-                      size: 40,
-                      label: l.back,
-                      onPressed: () => Navigator.of(context).maybePop(),
-                    ),
-                    const SizedBox(width: VoltiSpacing.s12),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Semantics(header: true, child: Text(l.planTitle, style: VoltiTypography.heading)),
-                        Text(
-                          l.planSubtitle(v.code, v.model, v.batteryPct),
-                          key: const Key('plan-subtitle'),
-                          style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: VoltiSpacing.s12),
-                  VehicleHero(code: v.code, child: const VehicleThumb(size: 48)),
-                ],
-              ),
-            ),
+            FlowHeader(title: l.planTitle, subtitle: l.vehicleModelCode(v.model, v.code), heroCode: v.code),
             Expanded(
               child: ListView(
                 padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, VoltiSpacing.s16),
@@ -302,154 +111,97 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                   AsyncView<List<PricingPlan>>(
                     value: plans,
                     onRetry: () => ref.invalidate(plansProvider),
-                    loading: (_) => VoltiSkeleton.card(height: 76, count: 2, label: l.loading),
-                    data: (list) => Column(
+                    loading: (_) => VoltiSkeleton.card(height: 76, count: 3, label: l.loading),
+                    data: (_) => Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        for (final p in list)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: VoltiSpacing.s10),
-                            child: OptionCard(
-                              title: p.name,
-                              description: p.description ?? l.unlockFee(money(p.unlockFeeCents)),
-                              price: money(p.unitPriceCents),
-                              priceNote: l.perUnitShort(unitShortLabel(l, p.unit)),
-                              selected: _plan == p.code,
-                              onTap: () {
-                                if (_plan != p.code) VoltiHaptics.selection();
-                                setState(() => _plan = p.code);
-                                _loadQuote();
-                              },
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                  SectionTitle(l.chooseInsurance),
-                  AsyncView<List<InsuranceCoverageOption>>(
-                    value: coverages,
-                    onRetry: () => ref.invalidate(coveragesProvider),
-                    loading: (_) => VoltiSkeleton.card(height: 88, count: 2, label: l.loading),
-                    data: (list) => Column(
-                      children: [
-                        for (final c in list)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: VoltiSpacing.s10),
-                            child: OptionCard(
-                              key: Key('coverage-${c.coverage.name}'),
-                              title: c.name,
-                              description: c.mandatory ? withoutMandatoryPrefix(c.description) : c.description,
-                              icon: c.coverage == InsuranceCoverage.full ? LucideIcons.shieldCheck : LucideIcons.shield,
-                              price: c.premiumCents == 0 ? l.included : money(c.premiumCents),
-                              priceNote: c.premiumCents == 0 ? null : l.perRental,
-                              badge: c.coverage == InsuranceCoverage.basic ? l.mandatory : null,
-                              selected: c.coverage == _coverage,
-                              onTap: () {
-                                // O basico nao pode ser removido: tocar nele volta para o basico; o completo e adicional.
-                                final next = c.coverage == InsuranceCoverage.full && _coverage == InsuranceCoverage.full
-                                    ? InsuranceCoverage.basic
-                                    : c.coverage;
-                                if (next != _coverage) VoltiHaptics.selection();
-                                setState(() => _coverage = next);
-                                _loadQuote();
-                              },
-                              child: c.items.isEmpty
-                                  ? null
-                                  : Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        for (final i in c.items)
-                                          Padding(
-                                            padding: const EdgeInsets.only(top: 4),
-                                            child: Row(
-                                              children: [
-                                                const Icon(LucideIcons.check, size: 14),
-                                                const SizedBox(width: 6),
-                                                Expanded(child: Text(i.description, style: VoltiTypography.caption)),
-                                              ],
-                                            ),
-                                          ),
-                                      ],
+                        for (final p in featured.isEmpty ? others : featured) option(p),
+                        if (featured.isNotEmpty && others.isNotEmpty) ...[
+                          Container(
+                            decoration: BoxDecoration(color: scheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
+                            padding: const EdgeInsets.all(4),
+                            child: Semantics(
+                              button: true,
+                              expanded: othersOpen,
+                              child: VoltiPressable(
+                                key: const Key('plan-others'),
+                                onTap: () => setState(() => _showOthers = !othersOpen),
+                                child: Row(children: [
+                                  Expanded(
+                                    child: IgnorePointer(
+                                      child: ListRow(
+                                        icon: LucideIcons.clock,
+                                        title: l.planOtherOptions,
+                                        // Fechada com um desses planos escolhido: mostra qual.
+                                        value: !othersOpen && chosenInOthers ? chosen?.name : null,
+                                        trailing: ListRowTrailing.none,
+                                      ),
                                     ),
+                                  ),
+                                  AnimatedRotation(
+                                    key: const Key('plan-others-chevron'),
+                                    turns: othersOpen ? .5 : 0,
+                                    duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
+                                    child: Icon(LucideIcons.chevronDown, size: 20, color: scheme.onSurfaceVariant),
+                                  ),
+                                  const SizedBox(width: VoltiSpacing.s12),
+                                ]),
+                              ),
                             ),
                           ),
+                          const SizedBox(height: VoltiSpacing.s10),
+                          if (othersOpen) ...[for (final p in others) VoltiFadeUp(child: option(p))],
+                        ],
                       ],
                     ),
                   ),
                   const SizedBox(height: VoltiSpacing.s8),
-                  Container(
-                    padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: scheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
-                    child: ListRow(
-                      key: const Key('plan-coupon'),
-                      icon: LucideIcons.ticket,
-                      iconTone: ListRowTone.sun,
-                      title: l.couponOrCredit,
-                      value: couponValue,
-                      trailing: ListRowTrailing.chevron,
-                      onTap: () => _editCoupon(wallet),
-                    ),
-                  ),
-                  if (quote != null && _coupon.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 6),
-                      child: Text(
-                        quote.couponApplied ? l.couponApplied : (quote.couponMessage ?? l.couponInvalid),
-                        style: VoltiTypography.caption.copyWith(color: quote.couponApplied ? VoltiColors.successInk : VoltiColors.danger),
-                      ),
-                    ),
-                  SectionTitle(l.summary),
-                  AnimatedOpacity(
-                    opacity: _requoting ? .5 : 1,
-                    duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
-                    child: _QuoteSummary(quote: _quote, onRetry: _loadQuote),
-                  ),
-                  SectionTitle(l.deposit),
-                  OptionCard(
-                    title: l.payCard,
-                    icon: LucideIcons.creditCard,
-                    description: _cardId == null
-                        ? l.noCard
-                        : cardList.where((c) => c.id == _cardId).map((c) => '${c.brand} •••• ${c.last4}').firstOrNull,
-                    selected: _method == DepositMethod.card,
-                    onTap: () {
-                      if (_method != DepositMethod.card) VoltiHaptics.selection();
-                      setState(() => _chosenMethod = DepositMethod.card);
-                    },
-                  ),
-                  if (_method == DepositMethod.card && cardList.isEmpty && !cards.isLoading)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: VoltiButton(
-                        label: l.addCard,
-                        icon: LucideIcons.plus,
-                        variant: VoltiButtonVariant.secondary,
-                        fullWidth: true,
-                        onPressed: _addCard,
-                      ),
-                    ),
-                  const SizedBox(height: VoltiSpacing.s10),
-                  OptionCard(
-                    title: l.payPix,
-                    icon: LucideIcons.wallet,
-                    description: l.payPixHint,
-                    selected: _method == DepositMethod.pix,
-                    onTap: () {
-                      if (_method != DepositMethod.pix) VoltiHaptics.selection();
-                      setState(() => _chosenMethod = DepositMethod.pix);
-                    },
-                  ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
-                    ),
-                  const SizedBox(height: VoltiSpacing.s16),
-                  Text(l.noKmNotice, style: VoltiTypography.caption),
+                  Text(l.planChargedAtPickup, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+                  const SizedBox(height: VoltiSpacing.s8),
+                  Text(l.noKmNotice, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
                 ]),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Cabecalho das telas do fluxo (plano, seguro, retirada): voltar, titulo,
+/// "modelo · codigo" e a miniatura da moto, elemento compartilhado com a lista (E-15).
+class FlowHeader extends StatelessWidget {
+  const FlowHeader({super.key, required this.title, required this.subtitle, this.heroCode});
+  final String title, subtitle;
+  final String? heroCode;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s12, VoltiSpacing.screenGutter, VoltiSpacing.s12),
+      child: Row(
+        children: [
+          if (Navigator.of(context).canPop()) ...[
+            VoltiIconButton(icon: LucideIcons.arrowLeft, size: 40, label: l.back, onPressed: () => Navigator.of(context).maybePop()),
+            const SizedBox(width: VoltiSpacing.s12),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Semantics(header: true, child: Text(title, style: VoltiTypography.heading)),
+                Text(subtitle, key: const Key('flow-subtitle'), style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          if (heroCode != null) ...[
+            const SizedBox(width: VoltiSpacing.s12),
+            VehicleHero(code: heroCode!, child: const VehicleThumb(size: 48)),
+          ],
+        ],
       ),
     );
   }
@@ -468,69 +220,20 @@ String? withoutMandatoryPrefix(String? text) {
 
 /// Unidade curta para a nota de preco ("/min", "/hora").
 String unitShortLabel(AppLocalizations l, PlanUnit u) => switch (u) {
-  PlanUnit.minute => l.unitMinuteShort,
-  PlanUnit.hour => l.unitHourShort,
-  PlanUnit.day => l.unitDayShort,
-  PlanUnit.week => l.unitWeekShort,
-  PlanUnit.month => l.unitMonthShort,
-  _ => u.name,
-};
+      PlanUnit.minute => l.unitMinuteShort,
+      PlanUnit.hour => l.unitHourShort,
+      PlanUnit.day => l.unitDayShort,
+      PlanUnit.week => l.unitWeekShort,
+      PlanUnit.month => l.unitMonthShort,
+      _ => u.name,
+    };
 
 /// Unidade do plano em pt-BR (o enum vem em ingles do contrato).
 String unitLabel(AppLocalizations l, PlanUnit u) => switch (u) {
-  PlanUnit.minute => l.unitMinute,
-  PlanUnit.hour => l.unitHour,
-  PlanUnit.day => l.unitDay,
-  PlanUnit.week => l.unitWeek,
-  PlanUnit.month => l.unitMonth,
-  _ => u.name,
-};
-
-class _QuoteSummary extends StatelessWidget {
-  const _QuoteSummary({required this.quote, required this.onRetry});
-  final AsyncValue<Quote> quote;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    final l = context.l;
-    return quote.when(
-      loading: () => VoltiSkeleton.card(height: 132, label: l.loading),
-      error: (e, _) => ErrorState(error: e, onRetry: onRetry),
-      data: (q) {
-        Widget row(String a, String b, {bool strong = false, bool tick = false}) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: Text(a, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body)),
-              const SizedBox(width: VoltiSpacing.s12),
-              // O total rola os digitos quando o seguro ou o cupom mudam.
-              tick
-                  ? VoltiTicker(b, key: const Key('quote-total'), style: VoltiTypography.bodyStrong)
-                  : Text(b, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body),
-            ],
-          ),
-        );
-        final bd = q.breakdown;
-        return Container(
-          padding: const EdgeInsets.all(VoltiSpacing.s16),
-          decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
-          child: Column(
-            children: [
-              for (final r in breakdownRows(bd, insuranceLabel: l.insurance, feesLabel: l.fees, discountLabel: l.discount))
-                row(r.label, money(r.cents)),
-              const Divider(),
-              row(l.estimatedTotal, money(bd.totalCents), strong: true, tick: true),
-              row(l.depositAmount, money(q.depositCents)),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(l.depositHint, style: VoltiTypography.caption),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
+      PlanUnit.minute => l.unitMinute,
+      PlanUnit.hour => l.unitHour,
+      PlanUnit.day => l.unitDay,
+      PlanUnit.week => l.unitWeek,
+      PlanUnit.month => l.unitMonth,
+      _ => u.name,
+    };

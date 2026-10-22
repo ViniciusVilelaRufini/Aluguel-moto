@@ -244,6 +244,15 @@ void main() {
       expect(n, 1);
     });
 
+    testWidgets('chip desligado nao dispara onTap e anuncia desabilitado', (t) async {
+      var n = 0;
+      await t.pumpWidget(_wrap(VoltiChip(label: 'dom. · Fechado', enabled: false, onTap: () => n++)));
+      await t.tap(find.text('dom. · Fechado'));
+      await t.pump(const Duration(seconds: 1));
+      expect(n, 0);
+      expect(t.getSemantics(find.text('dom. · Fechado')), isSemantics(hasEnabledState: true, isEnabled: false));
+    });
+
     testWidgets('PassCard renderiza e dispara onTap', (t) async {
       var n = 0;
       await t.pumpWidget(_wrap(PassCard(title: 'Passe', subtitle: 'sub', onTap: () => n++)));

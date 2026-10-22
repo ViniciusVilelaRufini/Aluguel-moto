@@ -18,24 +18,22 @@ final shareTextProvider = Provider<TextSharer>((ref) => (text) async {
 /// `sms:+5511...?body=...` para mandar o texto direto a um numero.
 Uri smsUri(String phone, String body) => Uri(scheme: 'sms', path: phone, queryParameters: {'body': body});
 
-/// Rota a pe ate ([lat], [lng]) no app de mapas do aparelho, em ordem de
-/// preferencia: o app nativo da plataforma e, por ultimo, o Google Maps na web
-/// (abre em qualquer aparelho). So a moto vai no link; a posicao do cliente
-/// nao sai do aparelho (o app de mapas usa a dele).
-List<Uri> walkingRouteUris(double lat, double lng, {TargetPlatform? platform}) {
+/// Rota ate ([lat], [lng]) no app de mapas ("Como chegar" ao galpao). No
+/// Android, primeiro `geo:` (o sistema oferece os apps de mapas instalados);
+/// por ultimo, o Google Maps na web (`/maps/dir/?api=1`), que abre em qualquer
+/// aparelho. So o destino vai no link; a posicao do cliente nao sai do aparelho.
+List<Uri> directionsUris(double lat, double lng, {TargetPlatform? platform}) {
   final p = platform ?? defaultTargetPlatform;
   final dest = '$lat,$lng';
-  final web = Uri.https('www.google.com', '/maps/dir/', {'api': '1', 'destination': dest, 'travelmode': 'walking'});
   return [
-    if (p == TargetPlatform.android) Uri.parse('google.navigation:q=$dest&mode=w'),
-    if (p == TargetPlatform.iOS) Uri.https('maps.apple.com', '/', {'daddr': dest, 'dirflg': 'w'}),
-    web,
+    if (p == TargetPlatform.android) Uri.parse('geo:$dest?q=$dest'),
+    Uri.parse('https://www.google.com/maps/dir/?api=1&destination=$dest'),
   ];
 }
 
 /// Tenta cada link ate um abrir (erro do plugin conta como "nao abriu").
-Future<bool> openWalkingRoute(UrlOpener open, double lat, double lng, {TargetPlatform? platform}) async {
-  for (final uri in walkingRouteUris(lat, lng, platform: platform)) {
+Future<bool> openDirections(UrlOpener open, double lat, double lng, {TargetPlatform? platform}) async {
+  for (final uri in directionsUris(lat, lng, platform: platform)) {
     try {
       if (await open(uri)) return true;
     } catch (_) {}

@@ -2023,6 +2023,249 @@ class AppLocalizationsPt extends AppLocalizations {
   String get thanksForRiding => 'Obrigado por andar de Volti';
 
   @override
+  String depotCardTitle(String district) {
+    return 'Galpão Volti · $district';
+  }
+
+  @override
+  String depotAvailable(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count motos disponíveis',
+      one: '1 moto disponível',
+      zero: 'nenhuma moto disponível',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String depotOpenUntil(String time) {
+    return 'Aberto até $time';
+  }
+
+  @override
+  String depotClosedOpens(String day, String time) {
+    return 'Fechado · abre $day às $time';
+  }
+
+  @override
+  String get depotClosed => 'Fechado';
+
+  @override
+  String get dayToday => 'Hoje';
+
+  @override
+  String get dayTomorrow => 'Amanhã';
+
+  @override
+  String get dayTodayLower => 'hoje';
+
+  @override
+  String get dayTomorrowLower => 'amanhã';
+
+  @override
+  String weekdayShort(String weekday) {
+    String _temp0 = intl.Intl.selectLogic(weekday, {
+      '0': 'dom.',
+      '1': 'seg.',
+      '2': 'ter.',
+      '3': 'qua.',
+      '4': 'qui.',
+      '5': 'sex.',
+      '6': 'sáb.',
+      'other': '',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String dayChip(String weekday, String date) {
+    return '$weekday $date';
+  }
+
+  @override
+  String dayChipClosed(String label) {
+    return '$label · Fechado';
+  }
+
+  @override
+  String get depotPicker => 'Escolha o galpão';
+
+  @override
+  String depotOptionSemantics(String name, String distance) {
+    return '$name, $distance';
+  }
+
+  @override
+  String depotPinSemantics(String name) {
+    return 'Galpão $name';
+  }
+
+  @override
+  String swapStationSemantics(String name) {
+    return 'Estação de troca de bateria $name';
+  }
+
+  @override
+  String get depotsEmpty => 'Nenhum galpão disponível';
+
+  @override
+  String get depotsEmptyText => 'Tente de novo em instantes.';
+
+  @override
+  String pickContinue(String model, String code) {
+    return 'Continuar com $model · $code';
+  }
+
+  @override
+  String pickDepotCount(int count) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count motos no galpão',
+      one: '1 moto no galpão',
+      zero: 'Nenhuma moto no galpão',
+    );
+    return '$_temp0';
+  }
+
+  @override
+  String get pickDepotEmpty => 'Nenhuma moto no galpão agora';
+
+  @override
+  String get pickDepotEmptyText => 'Volte mais tarde ou escolha outro galpão.';
+
+  @override
+  String get planOtherOptions => 'Outras opções';
+
+  @override
+  String get planRenews => 'Renova automaticamente, cancele quando quiser';
+
+  @override
+  String get planChargedAtPickup =>
+      'O plano é cobrado na retirada, quando você aceitar a moto.';
+
+  @override
+  String vehicleModelCode(String model, String code) {
+    return '$model · $code';
+  }
+
+  @override
+  String get insuranceTitle => 'Seguro';
+
+  @override
+  String get insuranceSubtitle =>
+      'O básico já vem incluído. O completo é opcional.';
+
+  @override
+  String get pickupTitle => 'Retirada';
+
+  @override
+  String get pickupNow => 'Retirar agora';
+
+  @override
+  String pickupNowUntil(String time) {
+    return 'Até $time';
+  }
+
+  @override
+  String get pickupNowClosed => 'O galpão está fechado agora';
+
+  @override
+  String get pickupSchedule => 'Agendar';
+
+  @override
+  String get pickupScheduleHint =>
+      'Escolha dia e hora no funcionamento do galpão';
+
+  @override
+  String get pickupDay => 'Dia';
+
+  @override
+  String get pickupTime => 'Horário';
+
+  @override
+  String get pickupNoSlots => 'Sem horários neste dia';
+
+  @override
+  String get pickupChooseTime => 'Escolha um horário';
+
+  @override
+  String get pickupPlan => 'Plano';
+
+  @override
+  String get pickupDepositNote =>
+      'Confirmar bloqueia só a caução. O plano é cobrado quando você aceitar a moto no galpão.';
+
+  @override
+  String get confirmReservation => 'Confirmar reserva';
+
+  @override
+  String get vehicleJustTaken => 'Essa moto acabou de ser reservada';
+
+  @override
+  String get depotReservationTitle => 'Reserva confirmada';
+
+  @override
+  String get reservationQrHint => 'Mostre este código no galpão';
+
+  @override
+  String get reservationQrLabel => 'QR da reserva';
+
+  @override
+  String reservationPickupUntil(String time) {
+    return 'Retire até $time';
+  }
+
+  @override
+  String reservationScheduledAt(String day, String time) {
+    return 'Retirada $day às $time';
+  }
+
+  @override
+  String reservationGrace(String time) {
+    return 'Tolerância até $time';
+  }
+
+  @override
+  String get howToGetThere => 'Como chegar';
+
+  @override
+  String get cancelReservation => 'Cancelar reserva';
+
+  @override
+  String get cancelReservationTitle => 'Cancelar reserva?';
+
+  @override
+  String get cancelReservationText =>
+      'O cancelamento é grátis e a caução é liberada.';
+
+  @override
+  String get keepReservation => 'Manter reserva';
+
+  @override
+  String get reservationInHandover =>
+      'Sua moto já está sendo entregue. Use Apontar problema.';
+
+  @override
+  String get reservationPixPending =>
+      'Pague a caução por Pix para garantir a moto.';
+
+  @override
+  String get payPixDeposit => 'Pagar caução Pix';
+
+  @override
+  String get reservationNotFound => 'Reserva não encontrada';
+
+  @override
+  String get reservationNotFoundText =>
+      'Ela pode ter sido cancelada ou expirado.';
+
+  @override
+  String get goHome => 'Ir para o início';
+
+  @override
   String get planNeedsCard =>
       'Adicione um cartão ou escolha Pix para a caução.';
 
@@ -2032,4 +2275,8 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get returnInsideRule =>
       'Você está num ponto verde. Pode encerrar sem taxa.';
+
+  @override
+  String get reservationNoCode =>
+      'Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.';
 }

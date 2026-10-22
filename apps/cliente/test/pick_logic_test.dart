@@ -7,8 +7,8 @@ import 'package:volti_cliente/features/pick/pick_logic.dart';
 
 import 'helpers.dart';
 
-VehicleSummary v(String id, String model, {double lat = -23.5614, double lng = -46.6559, double range = 20, int battery = 80}) =>
-    VehicleSummary((b) => b
+Vehicle v(String id, String model, {double lat = -23.5614, double lng = -46.6559, double range = 20, int battery = 80}) =>
+    Vehicle((b) => b
       ..id = id
       ..code = 'VLT-$id'
       ..model = model
@@ -16,29 +16,10 @@ VehicleSummary v(String id, String model, {double lat = -23.5614, double lng = -
       ..lat = lat
       ..lng = lng
       ..batteryPct = battery
-      ..estimatedRangeKm = range);
+      ..estimatedRangeKm = range
+      ..speedLimitKmh = 32);
 
 void main() {
-  group('distancia a pe', () {
-    test('haversine em metros', () {
-      // ~111 m por 0,001 grau de latitude.
-      expect(haversineMeters(const LatLng(-23.5614, -46.6559), const LatLng(-23.5624, -46.6559)), inInclusiveRange(110, 112));
-      expect(haversineMeters(const LatLng(0, 0), const LatLng(0, 0)), 0);
-    });
-
-    test('rotulo "120 m · 2 min" (80 m/min, minimo 1 min)', () {
-      expect(walkLabel(120), '120 m · 2 min');
-      expect(walkLabel(310), '310 m · 4 min');
-      expect(walkLabel(20), '20 m · 1 min');
-      expect(walkLabel(1250), '1,3 km · 16 min');
-    });
-
-    test('sem localizacao do cliente nao ha distancia', () {
-      expect(walkMetersTo(v('1', 'Volti Flash'), null), isNull);
-      expect(walkMetersTo(v('1', 'Volti Flash', lat: -23.5624), const LatLng(-23.5614, -46.6559)), inInclusiveRange(110, 112));
-    });
-  });
-
   test('preco por minuto "R\$ 0,79/min"', () {
     expect(perMinuteLabel(79), r'R$ 0,79/min');
     expect(perMinuteLabel(125), r'R$ 1,25/min');
@@ -69,21 +50,7 @@ void main() {
       expect(filterByModel(list, 'Volti Flash').map((e) => e.id), ['2', '3']);
     });
 
-    test('ordena pela distancia a pe quando ha localizacao', () {
-      final user = const LatLng(-23.5614, -46.6559);
-      final far = v('far', 'Volti Flash', lat: -23.5700);
-      final near = v('near', 'Volti Flash', lat: -23.5620);
-      expect(sortByWalk([far, near], user).map((e) => e.id), ['near', 'far']);
-      expect(sortByWalk([far, near], null).map((e) => e.id), ['far', 'near']);
-    });
-
-    test('filtro do mapa: autonomia 10+ km', () {
-      final l = [v('a', 'X', range: 9.9), v('b', 'X', range: 10), v('c', 'X', range: 18)];
-      expect(applyHomeFilter(l, HomeFilter.all, const []).length, 3);
-      expect(applyHomeFilter(l, HomeFilter.range10, const []).map((e) => e.id), ['b', 'c']);
-    });
-
-    test('filtro do mapa: pontos de retirada (dentro de zona de devolucao ativa)', () {
+    test('lugar conhecido: o ponto verde em que o cliente esta', () {
       final zone = GeoZone((b) => b
         ..id = 'z'
         ..name = 'Ponto Paulista'
@@ -105,9 +72,7 @@ void main() {
           ])).toBuilder()
         ..createdAt = DateTime.utc(2026)
         ..updatedAt = DateTime.utc(2026));
-      final inside = v('in', 'X', lat: -23.565, lng: -46.655);
-      final outside = v('out', 'X', lat: -23.58, lng: -46.70);
-      expect(applyHomeFilter([inside, outside], HomeFilter.pickupPoints, [zone]).map((e) => e.id), ['in']);
+      expect(pickupZones([zone]), hasLength(1));
       expect(nearestPlaceName(const LatLng(-23.565, -46.655), [zone]), 'Ponto Paulista');
       expect(nearestPlaceName(const LatLng(-23.60, -46.70), [zone]), isNull);
       expect(nearestPlaceName(null, [zone]), isNull);

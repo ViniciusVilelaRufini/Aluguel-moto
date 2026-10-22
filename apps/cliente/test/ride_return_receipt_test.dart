@@ -271,13 +271,14 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
-    testWidgets('reportar: um dialogo com chips selecionaveis e "So reportar"', (t) async {
+    testWidgets('reportar: um dialogo com chips selecionaveis e "So reportar", sem troca de moto', (t) async {
       await pumpRide(t);
       await t.tap(find.text('Reportar problema'));
       await t.pump();
       await t.pump(const Duration(milliseconds: 500));
       expect(find.text('Qual o problema?'), findsOneWidget);
-      expect(find.text('Trocar de moto sem nova taxa'), findsOneWidget);
+      // Retirada em galpao: sem troca de moto no meio da corrida.
+      expect(find.text('Trocar de moto sem nova taxa'), findsNothing);
       await t.tap(find.descendant(of: find.byType(Dialog), matching: find.text('Freio')));
       await t.pump(const Duration(milliseconds: 300));
       expect(t.widget<VoltiChip>(find.widgetWithText(VoltiChip, 'Freio')).selected, isTrue);
