@@ -73,7 +73,7 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 - **`rental.updated`** — a cada mudança de status e a cada 30 s com o aluguel `active`/`paused` (atualiza tempo e custo parcial). `costCents` segue a mesma regra de `Rental.costCents`.
 - **`zone.notice`** — entrada/saída de zonas que afetam o cliente: `reduced_speed` (com o novo `speedLimitKmh`), `forbidden`, `operation` (saída da área: aviso imediato e bloqueio seguro após 5 minutos fora) e `return`. `message` vem pronto em pt-BR para a UI (ex.: "Você entrou numa área de pedestres. Velocidade máxima: 6 km/h.").
 - **`handover.pending`** — o operador registrou a entrega de saída (`POST /handovers`, `type: pickup`). O app do cliente abre "Confira sua moto" e carrega `GET /handovers/{handoverId}`. Também descrito em `x-ws-events` no `openapi.yaml`.
-- **`handover.updated`** — aceite, disputa ou cancelamento da entrega, ou falha no aceite (`lastError`, ex.: `payment-declined`, com `status` ainda `pending_customer`). O operador vê "Aceito", "Pagamento não aprovado" ou "Problema apontado".
+- **`handover.updated`** — aceite, disputa ou cancelamento da entrega, chegada no galpão concluída (`return_depot`, `status: accepted`), ou falha no aceite (`lastError`, ex.: `payment-declined`, com `status` ainda `pending_customer`). O operador vê "Aceito", "Pagamento não aprovado" ou "Problema apontado".
 - **`device.event`** — hoje só `queda`. O app abre o "Você está bem?" e responde por `POST /rentals/{id}/wellbeing`; sem resposta em 60 s, a API abre alerta `customer_not_ok` (`critical`).
 
 ### Tipos TypeScript (referência)

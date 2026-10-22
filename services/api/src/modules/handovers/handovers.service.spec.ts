@@ -322,7 +322,7 @@ describe('HandoversService — chegada (return_depot)', () => {
     const s = setup();
     s.prisma.depot.findUnique.mockResolvedValue({ id: DEPOT_ID } as any);
     s.prisma.handover.findFirst.mockResolvedValue(null);
-    s.prisma.rental.findUnique.mockResolvedValue({ id: RENTAL_ID, status: 'active', vehicleId: VEHICLE_ID } as any);
+    s.prisma.rental.findUnique.mockResolvedValue({ id: RENTAL_ID, status: 'active', vehicleId: VEHICLE_ID, customerId: CUSTOMER_ID } as any);
     s.prisma.rental.findFirst.mockResolvedValue(null);
     s.prisma.vehicle.findUnique.mockResolvedValue({ depotId: null } as any);
     s.prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
@@ -368,6 +368,26 @@ describe('HandoversService — chegada (return_depot)', () => {
     expect(prisma.handover.create).not.toHaveBeenCalled();
     expect(ender.endAtDepot).not.toHaveBeenCalled();
     expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('fix 2: chegada concluída → handover.updated accepted para o cliente e o galpão', async () => {
+    const { prisma, events, svc } = forReturn([{ code: 'freios', ok: true }]);
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'free', depotId: DEPOT_ID } as any);
+    await svc.createReturn(operator, returnBody());
+    expect(events.emit).toHaveBeenCalledWith(EV.HANDOVER_UPDATED, { handoverId: HO_ID, status: 'accepted', customerId: CUSTOMER_ID, depotId: DEPOT_ID });
+  });
+
+  it('fix 2: repetição que ainda encerra o aluguel emite handover.updated; repetição sem trabalho não reemite', async () => {
+    const { prisma, events, ender, svc } = forReturn([{ code: 'freios', ok: true }]);
+    prisma.handover.findFirst.mockResolvedValue({ ...handover, type: 'return_depot', status: 'accepted', rentalId: RENTAL_ID } as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'free', depotId: DEPOT_ID } as any);
+    expect((await svc.createReturn(operator, returnBody())).status).toBe(200);
+    expect(ender.endAtDepot).toHaveBeenCalledTimes(1);
+    expect(events.emit).toHaveBeenCalledWith(EV.HANDOVER_UPDATED, { handoverId: HO_ID, status: 'accepted', customerId: CUSTOMER_ID, depotId: DEPOT_ID });
+    events.emit.mockClear();
+    prisma.rental.findUnique.mockResolvedValue({ status: 'ended', customerId: CUSTOMER_ID } as any);
+    expect((await svc.createReturn(operator, returnBody())).status).toBe(200);
+    expect(events.emit).not.toHaveBeenCalledWith(EV.HANDOVER_UPDATED, expect.anything());
   });
 
   it('aluguel encerrado → 409 rental-not-active; galpão inexistente → 404', async () => {
