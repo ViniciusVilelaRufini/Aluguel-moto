@@ -614,30 +614,24 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                     VoltiChip(icon: LucideIcons.share2, label: l.shareTrip, onTap: _shareLocation),
                   ]),
                   const SizedBox(height: 12),
-                  Row(children: [
-                    Expanded(
-                      flex: 10,
-                      child: VoltiButton(
-                        label: paused ? l.unpauseRide : l.pause,
-                        icon: paused ? LucideIcons.circlePlay : LucideIcons.pause,
-                        variant: VoltiButtonVariant.secondary,
-                        size: VoltiButtonSize.lg,
-                        fullWidth: true,
-                        onPressed: _busy ? null : _togglePause,
-                      ),
+                  // Proporcao do design (1 : 1,3); se o rotulo nao cabe inteiro, ajusta ou empilha.
+                  VoltiButtonPair(
+                    first: VoltiButton(
+                      label: paused ? l.unpauseRide : l.pause,
+                      icon: paused ? LucideIcons.circlePlay : LucideIcons.pause,
+                      variant: VoltiButtonVariant.secondary,
+                      size: VoltiButtonSize.lg,
+                      fullWidth: true,
+                      onPressed: _busy ? null : _togglePause,
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      flex: 13,
-                      child: VoltiButton(
-                        label: l.returnVehicle,
-                        variant: VoltiButtonVariant.dark,
-                        size: VoltiButtonSize.lg,
-                        fullWidth: true,
-                        onPressed: () => context.push('/return/${r.id}'),
-                      ),
+                    second: VoltiButton(
+                      label: l.returnVehicle,
+                      variant: VoltiButtonVariant.dark,
+                      size: VoltiButtonSize.lg,
+                      fullWidth: true,
+                      onPressed: () => context.push('/return/${r.id}'),
                     ),
-                  ]),
+                  ),
                 ]),
               ),
             ),

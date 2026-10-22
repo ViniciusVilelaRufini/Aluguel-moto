@@ -6,6 +6,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
+import '../onboarding/otp_flow.dart' show formatBrPhone;
 
 export '../plan/plan_screen.dart' show walletProvider;
 
@@ -113,3 +114,22 @@ final pendingTopUpProvider = NotifierProvider<PendingTopUpNotifier, TopUp?>(Pend
 
 /// Intervalo da conferencia de Pix pendente com a Carteira aberta (baixa frequencia).
 final pendingTopUpPollProvider = Provider<Duration>((ref) => const Duration(seconds: 20));
+
+/// Dominios dos e-mails que o app/API inventam quando o cadastro e por
+/// celular (ou o token nao traz e-mail). Nunca aparecem na interface.
+const _syntheticEmailDomains = ['@celular.volti.dev', '@sem-email.volti.invalid'];
+
+bool isSyntheticEmail(String email) => _syntheticEmailDomains.any(email.toLowerCase().endsWith);
+
+/// Linha de contato abaixo do nome: o e-mail real ou, no cadastro por
+/// celular, o telefone formatado ("(11) 96100-7441"). `null` se nao houver.
+String? contactLine(Customer c) {
+  if (!isSyntheticEmail(c.email)) return c.email;
+  final phone = c.phone;
+  if (phone != null && phone.isNotEmpty) return formatBrPhone(phone);
+  final local = c.email.split('@').first;
+  if (c.email.toLowerCase().endsWith('@celular.volti.dev') && RegExp(r'^\d{12,13}$').hasMatch(local)) {
+    return formatBrPhone('+$local');
+  }
+  return null;
+}

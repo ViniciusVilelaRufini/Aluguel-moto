@@ -180,6 +180,11 @@ export class RentalStartService {
       await this.requestDepositRelease(dto.depositId, customerId);
       throw err;
     }
+    // Retirada em galpão: moto do galpão (ou esperando recolhimento) só sai pela entrega.
+    if (isDepotLocked(vehicle)) {
+      await this.requestDepositRelease(dto.depositId, customerId);
+      throw conflict('vehicle-unavailable', 'Esta moto fica no galpão e só sai pela entrega do operador.');
+    }
     const reservation = await this.prisma.reservation.findFirst({
       where: { vehicleId: vehicle.id, status: 'active', expiresAt: { gt: new Date() } },
     });
@@ -337,6 +342,14 @@ export class RentalStartService {
     const ev: DepositReleaseRequestedEvent = { depositId, customerId, reason: 'rental_not_started' };
     await this.events.emitAsync(EV.DEPOSIT_RELEASE_REQUESTED, ev).catch((err) => this.logger.error({ msg: 'deposit_release_request_failed', depositId, error: (err as Error).message }));
   }
+}
+
+/**
+ * Retirada em galpão: moto com `depotId` (no galpão ou separada por reserva de galpão) ou `awaiting_pickup` não pode ser
+ * alugada pelo `POST /rentals` de rua. Seam para a Task 6: o aceite da entrega passa por aqui com um bypass `fromHandover`.
+ */
+export function isDepotLocked(vehicle: { depotId?: string | null; status: string }): boolean {
+  return !!vehicle.depotId || vehicle.status === 'awaiting_pickup';
 }
 
 /** Coordenada com 3 casas (≈ 100 m). */

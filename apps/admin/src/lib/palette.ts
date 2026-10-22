@@ -12,7 +12,7 @@ export interface PaletteItem {
   keywords?: string;
 }
 
-interface VehicleLike { id: string; code: string; status: string }
+interface VehicleLike { id: string; code: string; status: string; address?: string; model?: string }
 
 /** Minúsculas e sem acento ("Operação" casa com "operacao"). */
 export function normalize(s: string): string {
@@ -40,7 +40,13 @@ export function sectionItems(menu: MenuItem[]): PaletteItem[] {
 }
 
 export function vehicleItems(vehicles: VehicleLike[], statusLabel: (s: string) => string): PaletteItem[] {
-  return vehicles.map((v) => ({ id: `vehicle:${v.id}`, group: 'Motos', label: v.code, hint: statusLabel(v.status), icon: 'Bike', href: `/fleet?vehicle=${v.id}`, keywords: statusLabel(v.status) }));
+  // Endereço e modelo entram na busca ("Teodoro Sampaio" acha a moto que está lá) e o endereço aparece na dica.
+  return vehicles.map((v) => ({
+    id: `vehicle:${v.id}`, group: 'Motos', label: v.code,
+    hint: v.address ? `${statusLabel(v.status)} · ${v.address.split(' · ')[0]}` : statusLabel(v.status),
+    icon: 'Bike', href: `/fleet?vehicle=${v.id}`,
+    keywords: [statusLabel(v.status), v.address, v.model].filter(Boolean).join(' '),
+  }));
 }
 
 /**

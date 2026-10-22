@@ -32,6 +32,8 @@ test('operação: Agendar por linha preenche a moto', async ({ page }) => {
   await login(page, 'admin');
   await page.goto('/tasks/');
   await page.getByRole('button', { name: 'Manutenção', exact: true }).click();
+  // Espera a tabela de revisões carregar antes de decidir se há linha para agendar.
+  await expect(page.getByTestId('service-table').getByRole('row').nth(1)).toBeVisible();
   const btn = page.getByRole('button', { name: 'Agendar', exact: true }).first();
   if (await btn.count() === 0) test.skip(true, 'sem manutenção no seed');
   await btn.click();

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_api/volti_api.dart';
 
 import '../auth/auth_repository.dart';
+import 'server_clock.dart';
 
 /// URL base da API: `--dart-define=API_BASE_URL=...`. Sem o define, usa
 /// `http://10.0.2.2:3000` no emulador Android e `http://localhost:3000` no resto.
@@ -106,7 +107,8 @@ class RetryInterceptor extends Interceptor {
   }
 }
 
-/// Monta o cliente `volti_api` com bearer e retry.
+/// Monta o cliente `volti_api` com bearer e retry; com [serverClock], corrige o
+/// relogio do aparelho pelo cabecalho `Date` das respostas.
 VoltiApi buildVoltiApi({
   required String baseUrl,
   required AuthRepository auth,
@@ -114,6 +116,7 @@ VoltiApi buildVoltiApi({
   Duration baseDelay = const Duration(milliseconds: 300),
   Future<void> Function(Duration)? sleep,
   HttpClientAdapter? httpClientAdapter,
+  ServerClock? serverClock,
 }) {
   final api = VoltiApi(basePathOverride: baseUrl, interceptors: const []);
   if (httpClientAdapter != null) api.dio.httpClientAdapter = httpClientAdapter;
@@ -121,6 +124,8 @@ VoltiApi buildVoltiApi({
     ..connectTimeout = const Duration(seconds: 5)
     ..receiveTimeout = const Duration(seconds: 15);
   api.dio.interceptors.addAll([
+    // Primeiro: ve o `Date` de toda resposta, mesmo as que o retry repete.
+    if (serverClock != null) ServerClockInterceptor(serverClock),
     BearerTokenInterceptor(auth),
     RetryInterceptor(
       dio: api.dio,
@@ -148,6 +153,7 @@ final apiClientProvider = Provider<VoltiApi>((ref) {
   return buildVoltiApi(
     baseUrl: ref.watch(apiBaseUrlProvider),
     auth: ref.watch(authRepositoryProvider),
+    serverClock: ref.watch(serverClockProvider),
   );
 });
 

@@ -36,6 +36,11 @@ const SLUG_MESSAGES: Record<string, string> = {
   'zone-speed-limit-invalid': 'Máximo de 20 km/h em zona de velocidade reduzida',
   'speed-limit-out-of-range': 'Máximo de 32 km/h',
   'force-end-outside-zone-requires-admin': 'Só o admin pode encerrar fora da zona de devolução',
+  // Contrato v2
+  'vehicle-unavailable': 'Moto indisponível: em uso ou fixa de outro assinante',
+  'subscription-required': 'O cliente não tem plano semanal ou mensal ativo',
+  'maintenance-slot-unavailable': 'Horário de manutenção indisponível',
+  'pix-key-invalid': 'Chave Pix inválida',
 };
 
 interface ProblemLike {

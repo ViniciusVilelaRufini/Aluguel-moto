@@ -60,6 +60,27 @@ abstract class FieldRepository {
     required DateTime completedAt,
     required String idempotencyKey,
   });
+
+  /// Contrato v2. Ficha da moto (staff): endereco, modelo, revisao e bateria.
+  Future<Vehicle> getVehicle(String id);
+
+  /// Catalogo de modelos (foto, categoria e preco por minuto).
+  Future<List<VehicleModel>> listVehicleModels();
+
+  /// Manutencao ligada a tarefa (`FieldTask.maintenanceTaskId`).
+  Future<MaintenanceTask> getMaintenanceTask(String id);
+
+  /// Revisao por km/horas (`GET /maintenance/vehicles`), filtrada por situacao.
+  Future<List<VehicleServiceRow>> listServiceStatus({VehicleServiceStatus? status});
+
+  /// Estoque de baterias na van do proprio operador.
+  Future<VanStock> getVanStock();
+
+  /// Carrega baterias (por serie) na van. Exige rede (sem fila offline).
+  Future<VanStock> loadVan(List<String> serials, {int? chargePct});
+
+  /// Descarrega baterias da van para recarga. Exige rede (sem fila offline).
+  Future<VanStock> unloadVan(List<String> serials);
 }
 
 /// Implementacao sobre o cliente `volti_api`.
@@ -216,6 +237,55 @@ class ApiFieldRepository implements FieldRepository {
         );
         return res.data!;
       });
+
+  @override
+  Future<Vehicle> getVehicle(String id) =>
+      _guard(() async => (await _api.getVehiclesApi().getVehicle(id: id)).data!);
+
+  @override
+  Future<List<VehicleModel>> listVehicleModels() => _guard(
+      () async => (await _api.getCatalogApi().listVehicleModels()).data!.items.toList());
+
+  @override
+  Future<MaintenanceTask> getMaintenanceTask(String id) =>
+      _guard(() async => (await _api.getMaintenanceApi().getMaintenanceTask(id: id)).data!);
+
+  @override
+  Future<List<VehicleServiceRow>> listServiceStatus({VehicleServiceStatus? status}) =>
+      _guard(() async {
+        final items = <VehicleServiceRow>[];
+        String? cursor;
+        do {
+          final page = (await _api
+                  .getMaintenanceApi()
+                  .listVehicleServiceStatus(status: status, cursor: cursor, limit: 100))
+              .data!;
+          items.addAll(page.items);
+          cursor = page.nextCursor;
+        } while (cursor != null && items.length < 500);
+        return items;
+      });
+
+  @override
+  Future<VanStock> getVanStock() =>
+      _guard(() async => (await _api.getBatteriesApi().getVanStock()).data!);
+
+  @override
+  Future<VanStock> loadVan(List<String> serials, {int? chargePct}) => _guard(() async =>
+      (await _api.getBatteriesApi().loadVanBatteries(
+        batteryTransferRequest: BatteryTransferRequest((b) => b
+          ..serials = ListBuilder<String>(serials.map((e) => e.trim()))
+          ..chargePct = chargePct),
+      ))
+          .data!);
+
+  @override
+  Future<VanStock> unloadVan(List<String> serials) => _guard(() async =>
+      (await _api.getBatteriesApi().unloadVanBatteries(
+        batteryTransferRequest: BatteryTransferRequest(
+            (b) => b..serials = ListBuilder<String>(serials.map((e) => e.trim()))),
+      ))
+          .data!);
 }
 
 Future<T> _guard<T>(Future<T> Function() body) async {

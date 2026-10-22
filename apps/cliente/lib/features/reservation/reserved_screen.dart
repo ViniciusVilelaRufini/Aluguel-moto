@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -56,7 +57,7 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
   void _maybeWarnLastMinute() {
     final r = ref.read(currentReservationProvider).value;
     if (r == null || _warnedLastMinute) return;
-    final remaining = r.expiresAt.difference(_now).inSeconds;
+    final remaining = _remaining(r);
     if (remaining > 0 && remaining <= 60) {
       _warnedLastMinute = true;
       VoltiHaptics.warning();
@@ -86,16 +87,15 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
     }
   }
 
-  Future<void> _ring(Reservation r) async {
-    final l = context.l;
-    try {
-      await ref.read(backendProvider).ring(r.vehicleId);
-      VoltiHaptics.success();
-      if (mounted) VoltiToast.show(context, l.ringSent);
-    } catch (e) {
-      if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
-    }
+  /// Segundos restantes (arredondados para cima, como um cronometro), nunca
+  /// mais que a duracao da reserva: mesmo com o relogio do aparelho atrasado
+  /// (o clockProvider ja corrige pelo `Date` do servidor), nao passa de 15:00.
+  int _remaining(Reservation r) {
+    final ms = r.expiresAt.difference(_now).inMilliseconds;
+    return math.min((ms / 1000).ceil(), r.expiresAt.difference(r.createdAt).inSeconds);
   }
+
+  void _back() => context.canPop() ? context.pop() : context.go('/home');
 
   @override
   Widget build(BuildContext context) {
@@ -122,142 +122,162 @@ class _ReservedScreenState extends ConsumerState<ReservedScreen> {
     }
 
     final user = ref.watch(userLocationProvider).value;
-    final remaining = r.expiresAt.difference(_now).inSeconds;
     final total = r.expiresAt.difference(r.createdAt).inSeconds;
+    final remaining = _remaining(r);
     final expired = remaining <= 0;
     final v = r.vehicle;
     final bike = v == null ? null : LatLng(v.lat, v.lng);
     final walkM = bike == null ? null : (user == null ? v!.distanceM : haversineMeters(user, bike));
     final center = bike ?? user ?? fallbackCenter;
 
-    return Scaffold(
-      body: Stack(children: [
-        Positioned.fill(
-          child: !ref.watch(mapEnabledProvider)
-              ? const ColoredBox(key: Key('reserved-map'), color: VoltiColors.mapLand)
-              : VoltiMap(
-                  key: const Key('reserved-map'),
-                  controller: _map,
-                  center: center,
-                  zoom: 17,
-                  layers: [
-                    if (user != null && bike != null) DrawnPolyline(points: [user, bike], color: VoltiColors.coral500),
-                    MarkerLayer(markers: [
-                      if (bike != null)
-                        Marker(
-                          point: bike,
-                          width: 56,
-                          height: 64,
-                          child: VehicleMarker(v!.status, v.batteryPct, customerStyle: true, selected: true),
+    // Voltar do sistema: sem tela embaixo (veio por deep link), vai ao mapa.
+    return PopScope(
+      canPop: Navigator.canPop(context),
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) context.go('/home');
+      },
+      child: Scaffold(
+        body: Stack(
+          children: [
+            Positioned.fill(
+              child: !ref.watch(mapEnabledProvider)
+                  ? const ColoredBox(key: Key('reserved-map'), color: VoltiColors.mapLand)
+                  : VoltiMap(
+                      key: const Key('reserved-map'),
+                      controller: _map,
+                      center: center,
+                      zoom: 17,
+                      layers: [
+                        if (user != null && bike != null) DrawnPolyline(points: walkingPath(user, bike), color: VoltiColors.coral500),
+                        MarkerLayer(
+                          markers: [
+                            if (bike != null)
+                              Marker(
+                                point: bike,
+                                width: 56,
+                                height: 64,
+                                child: VehicleMarker(v!.status, v.batteryPct, customerStyle: true, selected: true),
+                              ),
+                            if (bike != null && walkM != null)
+                              Marker(
+                                point: bike,
+                                width: 180,
+                                height: 40,
+                                // Flutua acima do pin de 64 px (centro 60 px acima do ponto).
+                                alignment: const Alignment(0, -3),
+                                child: Center(
+                                  child: RouteInfoPill(minutes: walkingMinutes(walkM), distance: walkingDistanceLabel(walkM)),
+                                ),
+                              ),
+                            if (user != null)
+                              Marker(
+                                point: user,
+                                width: 40,
+                                height: 40,
+                                child: Semantics(label: l.yourLocation, child: const VoltiUserDot(heading: true)),
+                              ),
+                          ],
                         ),
-                      if (bike != null && walkM != null)
-                        Marker(
-                          point: bike,
-                          width: 180,
-                          height: 40,
-                          // Flutua acima do pin de 64 px (centro 60 px acima do ponto).
-                          alignment: const Alignment(0, -3),
-                          child: Center(
-                            child: RouteInfoPill(minutes: walkingMinutes(walkM), distance: walkingDistanceLabel(walkM)),
-                          ),
-                        ),
-                      if (user != null)
-                        Marker(
-                          point: user,
-                          width: 40,
-                          height: 40,
-                          child: Semantics(label: l.yourLocation, child: const VoltiUserDot(heading: true)),
-                        ),
-                    ]),
-                  ],
-                ),
-        ),
-        // Leitores de tela: a rota e a pilula sao desenho; o resumo fica aqui.
-        if (walkM != null)
-          Semantics(
-            key: const Key('reserved-route-semantics'),
-            label: l.walkRouteSemantics(walkingMinutes(walkM), walkingDistanceLabel(walkM)),
-            child: const SizedBox.shrink(),
-          ),
-        SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
-            child: Row(children: [
-              // "Voltar" acessivel (o design so tem o cabecalho): volta ao mapa.
-              VoltiIconButton(
-                key: const Key('reserved-back'),
-                icon: LucideIcons.arrowLeft,
-                label: l.back,
-                onPressed: () => context.canPop() ? context.pop() : context.go('/home'),
+                      ],
+                    ),
+            ),
+            // Leitores de tela: a rota e a pilula sao desenho; o resumo fica aqui.
+            if (walkM != null)
+              Semantics(
+                key: const Key('reserved-route-semantics'),
+                label: l.walkRouteSemantics(walkingMinutes(walkM), walkingDistanceLabel(walkM)),
+                child: const SizedBox.shrink(),
               ),
-              const SizedBox(width: VoltiSpacing.s10),
-              const Expanded(child: LocationHeader()),
-            ]),
-          ),
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 0,
-          child: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 0, VoltiSpacing.screenGutter, VoltiSpacing.s24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: VoltiStagger.wrap([
-                  Row(children: [
-                    if (!expired)
-                      VoltiIconButton(
-                        key: const Key('reserved-ring'),
-                        icon: LucideIcons.megaphone,
-                        label: l.hornAndFlash,
-                        onPressed: () => _ring(r),
-                      ),
-                    const Spacer(),
-                    VoltiIconButton(
-                      key: const Key('reserved-locate'),
-                      icon: LucideIcons.locateFixed,
-                      iconColor: VoltiColors.brand,
-                      label: l.locateMe,
-                      onPressed: () {
-                        ref.invalidate(userLocationProvider);
-                        if (ref.read(mapEnabledProvider)) _map.move(user ?? center, 17);
-                      },
-                    ),
-                  ]),
-                  const SizedBox(height: VoltiSpacing.s14),
-                  if (expired)
-                    NoticeBanner(danger: true, icon: LucideIcons.clock, title: l.reservationExpiredTitle, message: l.reservationExpiredText)
-                  else
-                    Semantics(
-                      label: l.reservationRemaining(clock(remaining)),
-                      child: ReservationBanner(
-                        key: const Key('reservation-banner'),
-                        seconds: remaining,
-                        label: l.reservationTimeLeft,
-                        swipeLabel: l.swipeToCancel,
-                        totalSeconds: total > 0 ? total : null,
-                        onCancel: () => _cancel(r),
-                      ),
-                    ),
-                  const SizedBox(height: VoltiSpacing.s14),
-                  VoltiButton(
-                    key: const Key('reserved-scan'),
-                    label: expired ? l.goToMap : l.scanQr,
-                    icon: expired ? LucideIcons.map : LucideIcons.scanQrCode,
-                    size: VoltiButtonSize.lg,
-                    fullWidth: true,
-                    onPressed: expired
-                        ? () => context.go('/home')
-                        : () => context.push(Uri(path: '/scan', queryParameters: {if (v != null) 'v': v.code}).toString()),
-                  ),
-                ]),
+            // Barra do topo do design (`LocationHeader` a 20 px das bordas, logo
+            // abaixo da status bar): avatar, "Sua localizacao" e sino.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 0),
+                  child: const LocationHeader(),
+                ),
               ),
             ),
-          ),
+            // "Voltar" so para leitor de tela (o design nao tem o botao): no canto
+            // superior esquerdo, primeiro na ordem de leitura; sem area de toque
+            // (o toque passa para o mapa). O voltar do sistema tambem funciona.
+            Positioned(
+              top: 0,
+              left: 0,
+              width: 48,
+              height: math.max(MediaQuery.paddingOf(context).top, 24),
+              child: Semantics(key: const Key('reserved-back'), button: true, label: l.back, onTap: _back, child: const SizedBox.expand()),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              // Design: painel a 40 px da borda de baixo (ou acima da barra do sistema).
+              child: SafeArea(
+                top: false,
+                minimum: const EdgeInsets.only(bottom: 40),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: VoltiStagger.wrap([
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: VoltiIconButton(
+                          key: const Key('reserved-locate'),
+                          icon: LucideIcons.locateFixed,
+                          iconColor: VoltiColors.brand,
+                          label: l.locateMe,
+                          onPressed: () {
+                            ref.invalidate(userLocationProvider);
+                            if (ref.read(mapEnabledProvider)) _map.move(user ?? center, 17);
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: VoltiSpacing.s14),
+                      if (expired)
+                        NoticeBanner(
+                          danger: true,
+                          icon: LucideIcons.clock,
+                          title: l.reservationExpiredTitle,
+                          message: l.reservationExpiredText,
+                        )
+                      else
+                        Semantics(
+                          label: l.reservationRemaining(clock(remaining)),
+                          child: ReservationBanner(
+                            key: const Key('reservation-banner'),
+                            seconds: remaining,
+                            label: l.reservationTimeLeft,
+                            swipeLabel: l.swipeToCancel,
+                            totalSeconds: total > 0 ? total : null,
+                            onCancel: () => _cancel(r),
+                          ),
+                        ),
+                      const SizedBox(height: VoltiSpacing.s14),
+                      VoltiButton(
+                        key: const Key('reserved-scan'),
+                        label: expired ? l.goToMap : l.scanQr,
+                        icon: expired ? LucideIcons.map : LucideIcons.scanQrCode,
+                        size: VoltiButtonSize.lg,
+                        fullWidth: true,
+                        onPressed: expired
+                            ? () => context.go('/home')
+                            : () => context.push(Uri(path: '/scan', queryParameters: {if (v != null) 'v': v.code}).toString()),
+                      ),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
-      ]),
+      ),
     );
   }
 }

@@ -48,6 +48,14 @@ export type Action =
   | 'settings.edit'
   | 'support.reply'
   | 'kyc.review'
+  | 'maintenance.view'
+  | 'maintenance.schedule'
+  | 'maintenance.update'
+  | 'battery.view'
+  | 'battery.transfer'
+  | 'catalog.edit'
+  | 'subscription.assignVehicle'
+  | 'vehicle.edit'
   | 'depot.edit'
   | 'depot.deactivate';
 
@@ -64,6 +72,15 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'settings.edit': ['admin'],
   'support.reply': ['admin', 'suporte'],
   'kyc.review': ['admin', 'suporte'],
+  // Contrato v2 (x-required-groups de cada operação; `campo` não usa o painel).
+  'maintenance.view': ['admin', 'operacao'], // GET /maintenance/vehicles, /maintenance/tasks
+  'maintenance.schedule': ['admin', 'operacao'], // POST /maintenance/tasks
+  'maintenance.update': ['admin', 'operacao'], // PATCH /maintenance/tasks/{id}
+  'battery.view': ['admin', 'operacao'], // GET /batteries, /batteries/van-stock
+  'battery.transfer': ['admin', 'operacao'], // POST /batteries/van-stock/load|unload
+  'catalog.edit': ['admin'], // POST/PATCH /vehicle-models, POST /vehicle-models/uploads
+  'subscription.assignVehicle': ['admin', 'operacao'], // PUT /payments/subscriptions/{id}/vehicle
+  'vehicle.edit': ['admin', 'operacao'], // PATCH /vehicles/{id}
   'depot.edit': ['admin', 'operacao'],
   // Não há DELETE no contrato: "desativar" (PATCH active=false) fica só com o admin.
   'depot.deactivate': ['admin'],
