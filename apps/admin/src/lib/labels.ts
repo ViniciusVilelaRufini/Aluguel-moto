@@ -79,6 +79,7 @@ export const ALERT_TYPE: Record<S<'AlertType'>, [string, string]> = {
   customer_not_ok: ['Cliente não respondeu ao "você está bem?"', 'Activity'],
   incident_reported: ['Ocorrência registrada', 'FileText'],
   speed_limiter_noncompliant: ['Limitador de velocidade acima de 32 km/h', 'Gauge'],
+  battery_stock_low: ['Poucas baterias carregadas no galpão', 'BatteryWarning'],
 };
 
 /** Ações de auditoria da moto (`/audit-logs?entityId=`), no vocabulário do log do design. */

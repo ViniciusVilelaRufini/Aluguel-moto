@@ -32,6 +32,8 @@ class _$Depot extends Depot {
   @override
   final String? swapStationId;
   @override
+  final int? minChargedBatteries;
+  @override
   final bool active;
   @override
   final int? availableVehicleCount;
@@ -58,6 +60,7 @@ class _$Depot extends Depot {
       required this.maxScheduleDays,
       required this.scheduledGraceMinutes,
       this.swapStationId,
+      this.minChargedBatteries,
       required this.active,
       this.availableVehicleCount,
       this.distanceM,
@@ -87,6 +90,7 @@ class _$Depot extends Depot {
         maxScheduleDays == other.maxScheduleDays &&
         scheduledGraceMinutes == other.scheduledGraceMinutes &&
         swapStationId == other.swapStationId &&
+        minChargedBatteries == other.minChargedBatteries &&
         active == other.active &&
         availableVehicleCount == other.availableVehicleCount &&
         distanceM == other.distanceM &&
@@ -109,6 +113,7 @@ class _$Depot extends Depot {
     _$hash = $jc(_$hash, maxScheduleDays.hashCode);
     _$hash = $jc(_$hash, scheduledGraceMinutes.hashCode);
     _$hash = $jc(_$hash, swapStationId.hashCode);
+    _$hash = $jc(_$hash, minChargedBatteries.hashCode);
     _$hash = $jc(_$hash, active.hashCode);
     _$hash = $jc(_$hash, availableVehicleCount.hashCode);
     _$hash = $jc(_$hash, distanceM.hashCode);
@@ -133,6 +138,7 @@ class _$Depot extends Depot {
           ..add('maxScheduleDays', maxScheduleDays)
           ..add('scheduledGraceMinutes', scheduledGraceMinutes)
           ..add('swapStationId', swapStationId)
+          ..add('minChargedBatteries', minChargedBatteries)
           ..add('active', active)
           ..add('availableVehicleCount', availableVehicleCount)
           ..add('distanceM', distanceM)
@@ -199,6 +205,11 @@ class DepotBuilder implements Builder<Depot, DepotBuilder> {
   set swapStationId(String? swapStationId) =>
       _$this._swapStationId = swapStationId;
 
+  int? _minChargedBatteries;
+  int? get minChargedBatteries => _$this._minChargedBatteries;
+  set minChargedBatteries(int? minChargedBatteries) =>
+      _$this._minChargedBatteries = minChargedBatteries;
+
   bool? _active;
   bool? get active => _$this._active;
   set active(bool? active) => _$this._active = active;
@@ -239,6 +250,7 @@ class DepotBuilder implements Builder<Depot, DepotBuilder> {
       _maxScheduleDays = $v.maxScheduleDays;
       _scheduledGraceMinutes = $v.scheduledGraceMinutes;
       _swapStationId = $v.swapStationId;
+      _minChargedBatteries = $v.minChargedBatteries;
       _active = $v.active;
       _availableVehicleCount = $v.availableVehicleCount;
       _distanceM = $v.distanceM;
@@ -284,6 +296,7 @@ class DepotBuilder implements Builder<Depot, DepotBuilder> {
             scheduledGraceMinutes: BuiltValueNullFieldError.checkNotNull(
                 scheduledGraceMinutes, r'Depot', 'scheduledGraceMinutes'),
             swapStationId: swapStationId,
+            minChargedBatteries: minChargedBatteries,
             active: BuiltValueNullFieldError.checkNotNull(
                 active, r'Depot', 'active'),
             availableVehicleCount: availableVehicleCount,

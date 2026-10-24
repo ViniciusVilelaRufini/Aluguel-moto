@@ -142,9 +142,14 @@ Class | Method | HTTP request | Description
 [*AuthApi*](doc/AuthApi.md) | [**getMe**](doc/AuthApi.md#getme) | **GET** /me | Usuário autenticado
 [*AuthApi*](doc/AuthApi.md) | [**registerDevice**](doc/AuthApi.md#registerdevice) | **POST** /me/devices | Registrar dispositivo para push (FCM)
 [*AuthApi*](doc/AuthApi.md) | [**updateMe**](doc/AuthApi.md#updateme) | **PATCH** /me | Atualizar o próprio perfil (cliente)
+[*BatteriesApi*](doc/BatteriesApi.md) | [**createBattery**](doc/BatteriesApi.md#createbattery) | **POST** /batteries | Cadastrar bateria no galpão
 [*BatteriesApi*](doc/BatteriesApi.md) | [**getVanStock**](doc/BatteriesApi.md#getvanstock) | **GET** /batteries/van-stock | Estoque de baterias na van do operador
 [*BatteriesApi*](doc/BatteriesApi.md) | [**listBatteries**](doc/BatteriesApi.md#listbatteries) | **GET** /batteries | Baterias (série, carga, ciclos, onde estão)
+[*BatteriesApi*](doc/BatteriesApi.md) | [**listBatteryMovements**](doc/BatteriesApi.md#listbatterymovements) | **GET** /batteries/{id}/movements | Histórico de movimentação da bateria
 [*BatteriesApi*](doc/BatteriesApi.md) | [**loadVanBatteries**](doc/BatteriesApi.md#loadvanbatteries) | **POST** /batteries/van-stock/load | Carregar baterias na van
+[*BatteriesApi*](doc/BatteriesApi.md) | [**markBatteryCharged**](doc/BatteriesApi.md#markbatterycharged) | **POST** /batteries/{id}/mark-charged | Marcar bateria como carregada
+[*BatteriesApi*](doc/BatteriesApi.md) | [**reportBatteryDefect**](doc/BatteriesApi.md#reportbatterydefect) | **POST** /batteries/{id}/report-defect | Registrar defeito na bateria
+[*BatteriesApi*](doc/BatteriesApi.md) | [**retireBattery**](doc/BatteriesApi.md#retirebattery) | **POST** /batteries/{id}/retire | Dar baixa na bateria
 [*BatteriesApi*](doc/BatteriesApi.md) | [**unloadVanBatteries**](doc/BatteriesApi.md#unloadvanbatteries) | **POST** /batteries/van-stock/unload | Descarregar baterias da van
 [*CatalogApi*](doc/CatalogApi.md) | [**createVehicleModel**](doc/CatalogApi.md#createvehiclemodel) | **POST** /vehicle-models | Cadastrar modelo
 [*CatalogApi*](doc/CatalogApi.md) | [**createVehicleModelPhotoUpload**](doc/CatalogApi.md#createvehiclemodelphotoupload) | **POST** /vehicle-models/uploads | URL de upload da foto do modelo
@@ -334,8 +339,15 @@ Class | Method | HTTP request | Description
  - [AuditLogPage](doc/AuditLogPage.md)
  - [AuthPool](doc/AuthPool.md)
  - [Battery](doc/Battery.md)
+ - [BatteryCreateRequest](doc/BatteryCreateRequest.md)
+ - [BatteryDefectRequest](doc/BatteryDefectRequest.md)
+ - [BatteryInitialStatus](doc/BatteryInitialStatus.md)
+ - [BatteryMovement](doc/BatteryMovement.md)
+ - [BatteryMovementPage](doc/BatteryMovementPage.md)
  - [BatteryPage](doc/BatteryPage.md)
+ - [BatteryRetireRequest](doc/BatteryRetireRequest.md)
  - [BatteryStatus](doc/BatteryStatus.md)
+ - [BatteryStatusCounts](doc/BatteryStatusCounts.md)
  - [BatterySwap](doc/BatterySwap.md)
  - [BatterySwapRequest](doc/BatterySwapRequest.md)
  - [BatteryTransferRequest](doc/BatteryTransferRequest.md)

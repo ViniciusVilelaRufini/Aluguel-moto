@@ -19,6 +19,7 @@ Name | Type | Description | Notes
 **maxScheduleDays** | **int** |  | [optional] 
 **scheduledGraceMinutes** | **int** |  | [optional] 
 **swapStationId** | **String** |  | [optional] 
+**minChargedBatteries** | **int** | 0 desliga o alerta de estoque. | [optional] 
 **active** | **bool** |  | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

@@ -13,7 +13,8 @@ part 'battery_transfer_request.g.dart';
 ///
 /// Properties:
 /// * [serials]
-/// * [stationId] - Só em `unload`; ausente = `charging`.
+/// * [stationId] - Só em `unload`; ausente = `charging` no galpão.
+/// * [depotId] - Só em `unload` sem `stationId`: galpão onde as baterias vão carregar (padrão: o único galpão ativo).
 /// * [chargePct] - Só em `load`; carga informada (padrão 100).
 @BuiltValue()
 abstract class BatteryTransferRequest
@@ -21,9 +22,13 @@ abstract class BatteryTransferRequest
   @BuiltValueField(wireName: r'serials')
   BuiltList<String> get serials;
 
-  /// Só em `unload`; ausente = `charging`.
+  /// Só em `unload`; ausente = `charging` no galpão.
   @BuiltValueField(wireName: r'stationId')
   String? get stationId;
+
+  /// Só em `unload` sem `stationId`: galpão onde as baterias vão carregar (padrão: o único galpão ativo).
+  @BuiltValueField(wireName: r'depotId')
+  String? get depotId;
 
   /// Só em `load`; carga informada (padrão 100).
   @BuiltValueField(wireName: r'chargePct')
@@ -68,6 +73,13 @@ class _$BatteryTransferRequestSerializer
       yield r'stationId';
       yield serializers.serialize(
         object.stationId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.depotId != null) {
+      yield r'depotId';
+      yield serializers.serialize(
+        object.depotId,
         specifiedType: const FullType(String),
       );
     }
@@ -117,6 +129,14 @@ class _$BatteryTransferRequestSerializer
           ) as String?;
           if (valueDes == null) continue;
           result.stationId = valueDes;
+          break;
+        case r'depotId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.depotId = valueDes;
           break;
         case r'chargePct':
           final valueDes = serializers.deserialize(

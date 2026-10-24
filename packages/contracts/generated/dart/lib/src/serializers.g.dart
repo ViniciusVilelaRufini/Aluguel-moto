@@ -21,8 +21,15 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(AuditLogPage.serializer)
       ..add(AuthPool.serializer)
       ..add(Battery.serializer)
+      ..add(BatteryCreateRequest.serializer)
+      ..add(BatteryDefectRequest.serializer)
+      ..add(BatteryInitialStatus.serializer)
+      ..add(BatteryMovement.serializer)
+      ..add(BatteryMovementPage.serializer)
       ..add(BatteryPage.serializer)
+      ..add(BatteryRetireRequest.serializer)
       ..add(BatteryStatus.serializer)
+      ..add(BatteryStatusCounts.serializer)
       ..add(BatterySwap.serializer)
       ..add(BatterySwapRequest.serializer)
       ..add(BatteryTransferRequest.serializer)
@@ -296,6 +303,12 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Battery)]),
           () => ListBuilder<Battery>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(String)]),
+          () => ListBuilder<String>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(BatteryMovement)]),
+          () => ListBuilder<BatteryMovement>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [
             const FullType(BuiltList, const [

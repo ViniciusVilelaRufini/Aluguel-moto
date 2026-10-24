@@ -30,6 +30,8 @@ class _$DepotUpdate extends DepotUpdate {
   @override
   final String? swapStationId;
   @override
+  final int? minChargedBatteries;
+  @override
   final bool? active;
 
   factory _$DepotUpdate([void Function(DepotUpdateBuilder)? updates]) =>
@@ -47,6 +49,7 @@ class _$DepotUpdate extends DepotUpdate {
       this.maxScheduleDays,
       this.scheduledGraceMinutes,
       this.swapStationId,
+      this.minChargedBatteries,
       this.active})
       : super._();
   @override
@@ -71,6 +74,7 @@ class _$DepotUpdate extends DepotUpdate {
         maxScheduleDays == other.maxScheduleDays &&
         scheduledGraceMinutes == other.scheduledGraceMinutes &&
         swapStationId == other.swapStationId &&
+        minChargedBatteries == other.minChargedBatteries &&
         active == other.active;
   }
 
@@ -88,6 +92,7 @@ class _$DepotUpdate extends DepotUpdate {
     _$hash = $jc(_$hash, maxScheduleDays.hashCode);
     _$hash = $jc(_$hash, scheduledGraceMinutes.hashCode);
     _$hash = $jc(_$hash, swapStationId.hashCode);
+    _$hash = $jc(_$hash, minChargedBatteries.hashCode);
     _$hash = $jc(_$hash, active.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -107,6 +112,7 @@ class _$DepotUpdate extends DepotUpdate {
           ..add('maxScheduleDays', maxScheduleDays)
           ..add('scheduledGraceMinutes', scheduledGraceMinutes)
           ..add('swapStationId', swapStationId)
+          ..add('minChargedBatteries', minChargedBatteries)
           ..add('active', active))
         .toString();
   }
@@ -165,6 +171,11 @@ class DepotUpdateBuilder implements Builder<DepotUpdate, DepotUpdateBuilder> {
   set swapStationId(String? swapStationId) =>
       _$this._swapStationId = swapStationId;
 
+  int? _minChargedBatteries;
+  int? get minChargedBatteries => _$this._minChargedBatteries;
+  set minChargedBatteries(int? minChargedBatteries) =>
+      _$this._minChargedBatteries = minChargedBatteries;
+
   bool? _active;
   bool? get active => _$this._active;
   set active(bool? active) => _$this._active = active;
@@ -187,6 +198,7 @@ class DepotUpdateBuilder implements Builder<DepotUpdate, DepotUpdateBuilder> {
       _maxScheduleDays = $v.maxScheduleDays;
       _scheduledGraceMinutes = $v.scheduledGraceMinutes;
       _swapStationId = $v.swapStationId;
+      _minChargedBatteries = $v.minChargedBatteries;
       _active = $v.active;
       _$v = null;
     }
@@ -222,6 +234,7 @@ class DepotUpdateBuilder implements Builder<DepotUpdate, DepotUpdateBuilder> {
             maxScheduleDays: maxScheduleDays,
             scheduledGraceMinutes: scheduledGraceMinutes,
             swapStationId: swapStationId,
+            minChargedBatteries: minChargedBatteries,
             active: active,
           );
     } catch (_) {

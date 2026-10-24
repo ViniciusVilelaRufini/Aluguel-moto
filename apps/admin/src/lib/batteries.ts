@@ -4,13 +4,15 @@ import type { Tone } from './status';
 export type Battery = S<'Battery'>;
 export type BatteryStatus = S<'BatteryStatus'>;
 
-export const BATTERY_STATUSES: BatteryStatus[] = ['in_vehicle', 'in_van', 'in_station', 'charging', 'retired'];
+export const BATTERY_STATUSES: BatteryStatus[] = ['in_vehicle', 'in_van', 'in_station', 'charging', 'charged', 'defective', 'retired'];
 
 export const BATTERY_STATUS: Record<BatteryStatus, [string, Tone]> = {
   in_vehicle: ['Na moto', 'info'],
   in_van: ['Na van', 'warning'],
   in_station: ['Na estação', 'success'],
   charging: ['Carregando', 'neutral'],
+  charged: ['Carregada', 'success'],
+  defective: ['Com defeito', 'danger'],
   retired: ['Descartada', 'neutral'],
 };
 
@@ -36,6 +38,8 @@ export function batteryLocation(b: Battery, names: { stations?: Map<string, stri
     case 'in_van': return b.holderId ? `Van · ${names.staff?.get(b.holderId) ?? 'operador'}` : 'Van';
     case 'in_station': return (b.stationId && names.stations?.get(b.stationId)) || 'Estação';
     case 'charging': return 'Carregador';
+    case 'charged': return 'Galpão';
+    case 'defective': return 'Fora de uso';
     case 'retired': return '—';
   }
 }

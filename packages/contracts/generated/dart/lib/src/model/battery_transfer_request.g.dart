@@ -12,6 +12,8 @@ class _$BatteryTransferRequest extends BatteryTransferRequest {
   @override
   final String? stationId;
   @override
+  final String? depotId;
+  @override
   final int? chargePct;
 
   factory _$BatteryTransferRequest(
@@ -19,7 +21,7 @@ class _$BatteryTransferRequest extends BatteryTransferRequest {
       (BatteryTransferRequestBuilder()..update(updates))._build();
 
   _$BatteryTransferRequest._(
-      {required this.serials, this.stationId, this.chargePct})
+      {required this.serials, this.stationId, this.depotId, this.chargePct})
       : super._();
   @override
   BatteryTransferRequest rebuild(
@@ -36,6 +38,7 @@ class _$BatteryTransferRequest extends BatteryTransferRequest {
     return other is BatteryTransferRequest &&
         serials == other.serials &&
         stationId == other.stationId &&
+        depotId == other.depotId &&
         chargePct == other.chargePct;
   }
 
@@ -44,6 +47,7 @@ class _$BatteryTransferRequest extends BatteryTransferRequest {
     var _$hash = 0;
     _$hash = $jc(_$hash, serials.hashCode);
     _$hash = $jc(_$hash, stationId.hashCode);
+    _$hash = $jc(_$hash, depotId.hashCode);
     _$hash = $jc(_$hash, chargePct.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -54,6 +58,7 @@ class _$BatteryTransferRequest extends BatteryTransferRequest {
     return (newBuiltValueToStringHelper(r'BatteryTransferRequest')
           ..add('serials', serials)
           ..add('stationId', stationId)
+          ..add('depotId', depotId)
           ..add('chargePct', chargePct))
         .toString();
   }
@@ -71,6 +76,10 @@ class BatteryTransferRequestBuilder
   String? get stationId => _$this._stationId;
   set stationId(String? stationId) => _$this._stationId = stationId;
 
+  String? _depotId;
+  String? get depotId => _$this._depotId;
+  set depotId(String? depotId) => _$this._depotId = depotId;
+
   int? _chargePct;
   int? get chargePct => _$this._chargePct;
   set chargePct(int? chargePct) => _$this._chargePct = chargePct;
@@ -84,6 +93,7 @@ class BatteryTransferRequestBuilder
     if ($v != null) {
       _serials = $v.serials.toBuilder();
       _stationId = $v.stationId;
+      _depotId = $v.depotId;
       _chargePct = $v.chargePct;
       _$v = null;
     }
@@ -110,6 +120,7 @@ class BatteryTransferRequestBuilder
           _$BatteryTransferRequest._(
             serials: serials.build(),
             stationId: stationId,
+            depotId: depotId,
             chargePct: chargePct,
           );
     } catch (_) {

@@ -24,6 +24,7 @@ part 'depot_update.g.dart';
 /// * [maxScheduleDays]
 /// * [scheduledGraceMinutes]
 /// * [swapStationId]
+/// * [minChargedBatteries] - 0 desliga o alerta de estoque.
 /// * [active]
 @BuiltValue()
 abstract class DepotUpdate implements Built<DepotUpdate, DepotUpdateBuilder> {
@@ -59,6 +60,10 @@ abstract class DepotUpdate implements Built<DepotUpdate, DepotUpdateBuilder> {
 
   @BuiltValueField(wireName: r'swapStationId')
   String? get swapStationId;
+
+  /// 0 desliga o alerta de estoque.
+  @BuiltValueField(wireName: r'minChargedBatteries')
+  int? get minChargedBatteries;
 
   @BuiltValueField(wireName: r'active')
   bool? get active;
@@ -161,6 +166,13 @@ class _$DepotUpdateSerializer implements PrimitiveSerializer<DepotUpdate> {
       yield serializers.serialize(
         object.swapStationId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.minChargedBatteries != null) {
+      yield r'minChargedBatteries';
+      yield serializers.serialize(
+        object.minChargedBatteries,
+        specifiedType: const FullType(int),
       );
     }
     if (object.active != null) {
@@ -283,6 +295,14 @@ class _$DepotUpdateSerializer implements PrimitiveSerializer<DepotUpdate> {
           ) as String?;
           if (valueDes == null) continue;
           result.swapStationId = valueDes;
+          break;
+        case r'minChargedBatteries':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.minChargedBatteries = valueDes;
           break;
         case r'active':
           final valueDes = serializers.deserialize(

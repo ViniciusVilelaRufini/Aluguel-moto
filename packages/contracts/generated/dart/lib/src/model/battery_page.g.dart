@@ -11,11 +11,15 @@ class _$BatteryPage extends BatteryPage {
   final BuiltList<Battery> items;
   @override
   final String? nextCursor;
+  @override
+  final BatteryStatusCounts statusCounts;
 
   factory _$BatteryPage([void Function(BatteryPageBuilder)? updates]) =>
       (BatteryPageBuilder()..update(updates))._build();
 
-  _$BatteryPage._({required this.items, this.nextCursor}) : super._();
+  _$BatteryPage._(
+      {required this.items, this.nextCursor, required this.statusCounts})
+      : super._();
   @override
   BatteryPage rebuild(void Function(BatteryPageBuilder) updates) =>
       (toBuilder()..update(updates)).build();
@@ -28,7 +32,8 @@ class _$BatteryPage extends BatteryPage {
     if (identical(other, this)) return true;
     return other is BatteryPage &&
         items == other.items &&
-        nextCursor == other.nextCursor;
+        nextCursor == other.nextCursor &&
+        statusCounts == other.statusCounts;
   }
 
   @override
@@ -36,6 +41,7 @@ class _$BatteryPage extends BatteryPage {
     var _$hash = 0;
     _$hash = $jc(_$hash, items.hashCode);
     _$hash = $jc(_$hash, nextCursor.hashCode);
+    _$hash = $jc(_$hash, statusCounts.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -44,7 +50,8 @@ class _$BatteryPage extends BatteryPage {
   String toString() {
     return (newBuiltValueToStringHelper(r'BatteryPage')
           ..add('items', items)
-          ..add('nextCursor', nextCursor))
+          ..add('nextCursor', nextCursor)
+          ..add('statusCounts', statusCounts))
         .toString();
   }
 }
@@ -60,6 +67,12 @@ class BatteryPageBuilder implements Builder<BatteryPage, BatteryPageBuilder> {
   String? get nextCursor => _$this._nextCursor;
   set nextCursor(String? nextCursor) => _$this._nextCursor = nextCursor;
 
+  BatteryStatusCountsBuilder? _statusCounts;
+  BatteryStatusCountsBuilder get statusCounts =>
+      _$this._statusCounts ??= BatteryStatusCountsBuilder();
+  set statusCounts(BatteryStatusCountsBuilder? statusCounts) =>
+      _$this._statusCounts = statusCounts;
+
   BatteryPageBuilder() {
     BatteryPage._defaults(this);
   }
@@ -69,6 +82,7 @@ class BatteryPageBuilder implements Builder<BatteryPage, BatteryPageBuilder> {
     if ($v != null) {
       _items = $v.items.toBuilder();
       _nextCursor = $v.nextCursor;
+      _statusCounts = $v.statusCounts.toBuilder();
       _$v = null;
     }
     return this;
@@ -94,12 +108,16 @@ class BatteryPageBuilder implements Builder<BatteryPage, BatteryPageBuilder> {
           _$BatteryPage._(
             items: items.build(),
             nextCursor: nextCursor,
+            statusCounts: statusCounts.build(),
           );
     } catch (_) {
       late String _$failedField;
       try {
         _$failedField = 'items';
         items.build();
+
+        _$failedField = 'statusCounts';
+        statusCounts.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'BatteryPage', _$failedField, e.toString());

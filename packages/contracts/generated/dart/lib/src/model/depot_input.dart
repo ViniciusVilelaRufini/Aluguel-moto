@@ -24,6 +24,7 @@ part 'depot_input.g.dart';
 /// * [maxScheduleDays]
 /// * [scheduledGraceMinutes]
 /// * [swapStationId]
+/// * [minChargedBatteries] - Ausente ou 0 = sem alerta de estoque.
 /// * [active]
 @BuiltValue()
 abstract class DepotInput implements Built<DepotInput, DepotInputBuilder> {
@@ -59,6 +60,10 @@ abstract class DepotInput implements Built<DepotInput, DepotInputBuilder> {
 
   @BuiltValueField(wireName: r'swapStationId')
   String? get swapStationId;
+
+  /// Ausente ou 0 = sem alerta de estoque.
+  @BuiltValueField(wireName: r'minChargedBatteries')
+  int? get minChargedBatteries;
 
   @BuiltValueField(wireName: r'active')
   bool? get active;
@@ -156,6 +161,13 @@ class _$DepotInputSerializer implements PrimitiveSerializer<DepotInput> {
       yield serializers.serialize(
         object.swapStationId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.minChargedBatteries != null) {
+      yield r'minChargedBatteries';
+      yield serializers.serialize(
+        object.minChargedBatteries,
+        specifiedType: const FullType(int),
       );
     }
     if (object.active != null) {
@@ -273,6 +285,14 @@ class _$DepotInputSerializer implements PrimitiveSerializer<DepotInput> {
           ) as String?;
           if (valueDes == null) continue;
           result.swapStationId = valueDes;
+          break;
+        case r'minChargedBatteries':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.minChargedBatteries = valueDes;
           break;
         case r'active':
           final valueDes = serializers.deserialize(
