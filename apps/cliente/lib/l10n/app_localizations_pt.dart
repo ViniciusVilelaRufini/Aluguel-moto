@@ -75,6 +75,18 @@ class AppLocalizationsPt extends AppLocalizations {
   String get callSupport => 'Ligar para o suporte';
 
   @override
+  String get callSamu => 'Ligar 192 (SAMU)';
+
+  @override
+  String get callSamuSemantics => 'Ligar para o SAMU, telefone 192';
+
+  @override
+  String get callPolice => 'Ligar 190 (Polícia)';
+
+  @override
+  String get callPoliceSemantics => 'Ligar para a Polícia, telefone 190';
+
+  @override
   String get cameraUnavailable =>
       'Não foi possível abrir a câmera. Digite o número da moto.';
 
@@ -397,9 +409,6 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get myPlan => 'Meu plano';
-
-  @override
-  String get nearbyTitle => 'Motos por perto';
 
   @override
   String get needHelp => 'Preciso de ajuda';

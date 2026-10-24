@@ -11,6 +11,8 @@ import 'package:volti_operador/data/sync.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Release sem API_BASE_URL falha aqui, com mensagem clara (nao cai em localhost).
+  defaultApiBaseUrl();
   final dir = await getApplicationDocumentsDirectory();
   Hive.init(dir.path);
   final queue = await HiveOfflineQueue.open();

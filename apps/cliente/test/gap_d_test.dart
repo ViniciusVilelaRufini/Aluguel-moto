@@ -114,13 +114,6 @@ class GapBackend extends FakeBackend {
     return sampleVehicle();
   }
 
-  final swaps = <String>[];
-  @override
-  Future<Rental> swap(String id, String newVehicleId, String reason) async {
-    swaps.add('$id:$newVehicleId');
-    return sampleRental();
-  }
-
   int starts = 0;
   @override
   Future<RentalStartResult> startRental(StartRentalRequest request, {String? idempotencyKey}) async {

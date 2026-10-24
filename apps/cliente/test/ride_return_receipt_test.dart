@@ -13,6 +13,7 @@ import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/errors.dart';
 import 'package:volti_cliente/core/geo.dart';
 import 'package:volti_cliente/core/launcher.dart';
+import 'package:volti_cliente/core/release_env.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/features/return_flow/return_screen.dart';
 import 'package:volti_cliente/features/ride/ride_data.dart';
@@ -257,6 +258,55 @@ void main() {
       await t.pump(const Duration(milliseconds: 500));
       expect(opened.uris, isEmpty);
       expect(opened.shared.single, contains('https://volti.app/s/abc'));
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('SOS: atalhos 192 (SAMU) e 190 (Policia) ligam por tel: e tem rotulo de leitor de tela', (t) async {
+      final sem = t.ensureSemantics();
+      await pumpRide(t);
+      await t.tap(find.byKey(const Key('sos-button')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(find.text('Ligar 192 (SAMU)'), findsOneWidget);
+      expect(find.text('Ligar 190 (Polícia)'), findsOneWidget);
+      expect(t.getSemantics(find.byKey(const Key('sos-call-samu'))).label, contains('SAMU, telefone 192'));
+      expect(t.getSemantics(find.byKey(const Key('sos-call-police'))).label, contains('Polícia, telefone 190'));
+
+      await t.tap(find.byKey(const Key('sos-call-samu')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(opened.uris.single.toString(), 'tel:192');
+
+      await t.tap(find.byKey(const Key('sos-button')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      await t.tap(find.byKey(const Key('sos-call-police')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(opened.uris.last.toString(), 'tel:190');
+
+      await t.tap(find.byKey(const Key('sos-button')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      await t.tap(find.byKey(const Key('sos-call-support')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(opened.uris.last.scheme, 'tel');
+      expect(opened.uris.last.path, kSupportPhone);
+      sem.dispose();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('SOS a 200% de texto: sem estouro e atalhos acessiveis', (t) async {
+      t.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
+      await pumpRide(t);
+      await t.tap(find.byKey(const Key('sos-button')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(t.takeException(), isNull);
+      expect(find.byKey(const Key('sos-call-samu')), findsOneWidget);
+      expect(find.byKey(const Key('sos-call-police')), findsOneWidget);
       await t.pumpWidget(const SizedBox());
     });
 

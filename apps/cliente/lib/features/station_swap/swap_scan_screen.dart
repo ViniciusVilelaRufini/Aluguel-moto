@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -40,7 +41,14 @@ class SwapScanScreen extends ConsumerStatefulWidget {
 
 class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
   final _manual = TextEditingController();
-  final _manualFocus = FocusNode();
+  // Enter do teclado fisico (emulador, tablet com teclado) envia como a acao
+  // "ok" do teclado virtual; a tecla tratada aqui nao chega duas vezes ao campo.
+  late final _manualFocus = FocusNode(onKeyEvent: (node, event) {
+    final enter = event.logicalKey == LogicalKeyboardKey.enter || event.logicalKey == LogicalKeyboardKey.numpadEnter;
+    if (!enter || event is! KeyDownEvent || _manual.text.trim().isEmpty) return KeyEventResult.ignored;
+    _onCode(_manual.text);
+    return KeyEventResult.handled;
+  });
   Future<CurrentRentalState>? _state;
 
   /// Uma leitura por vez: enquanto a confirmacao esta aberta, novos QR sao ignorados.
@@ -311,32 +319,42 @@ class CameraUnavailable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-    return Container(
+    // O visor e um quadrado de altura fixa com a moldura (cantos em L) por cima,
+    // recuada 40 px + 3 px de traco: o conteudo fica dentro dela (recuo 48 px) e,
+    // se nao couber (texto a 200%), rola em vez de estourar.
+    const inset = VoltiSpacing.s48;
+    return ColoredBox(
       color: VoltiColors.ink900,
-      padding: const EdgeInsets.all(VoltiSpacing.s24),
-      alignment: Alignment.center,
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(LucideIcons.cameraOff, color: VoltiColors.white, size: 32),
-            const SizedBox(height: VoltiSpacing.s12),
-            Text(
-              denied ? l.swapScanDenied : l.swapScanUnavailable,
-              textAlign: TextAlign.center,
-              style: VoltiTypography.body.copyWith(color: VoltiColors.white),
+      child: LayoutBuilder(
+        builder: (context, box) => SingleChildScrollView(
+          padding: const EdgeInsets.all(inset),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: (box.maxHeight - inset * 2).clamp(0, double.infinity)),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const ExcludeSemantics(child: Icon(LucideIcons.cameraOff, color: VoltiColors.white, size: 32)),
+                  const SizedBox(height: VoltiSpacing.s12),
+                  Text(
+                    denied ? l.swapScanDenied : l.swapScanUnavailable,
+                    textAlign: TextAlign.center,
+                    style: VoltiTypography.body.copyWith(color: VoltiColors.white),
+                  ),
+                  const SizedBox(height: VoltiSpacing.s16),
+                  VoltiButton(
+                    key: const Key('swap-camera-manual'),
+                    label: l.swapManualToggle,
+                    icon: LucideIcons.keyboard,
+                    variant: VoltiButtonVariant.secondary,
+                    size: VoltiButtonSize.sm,
+                    wrap: true,
+                    onPressed: onManual,
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: VoltiSpacing.s16),
-            VoltiButton(
-              key: const Key('swap-camera-manual'),
-              label: l.swapManualToggle,
-              icon: LucideIcons.keyboard,
-              variant: VoltiButtonVariant.secondary,
-              size: VoltiButtonSize.sm,
-              wrap: true,
-              onPressed: onManual,
-            ),
-          ],
+          ),
         ),
       ),
     );

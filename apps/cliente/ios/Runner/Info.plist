@@ -5,7 +5,7 @@
 		<key>NSCameraUsageDescription</key>
 		<string>A câmera lê o QR code da moto e da estação de troca de bateria e tira a foto do documento, a selfie e a foto da devolução.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>Usamos sua localização para mostrar motos por perto e durante o aluguel.</string>
+		<string>Usamos sua localização durante o aluguel para sua segurança, para aplicar os limites de velocidade da região e para a devolução da moto.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 		<string>Durante um aluguel ativo, a localização continua com o app em segundo plano para segurança. Fora do aluguel, não rastreamos você.</string>
 		<key>UIBackgroundModes</key>
@@ -23,7 +23,7 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>Volti Cliente</string>
+		<string>Volti</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -72,15 +72,10 @@
 		<key>UISupportedInterfaceOrientations</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationLandscapeLeft</string>
-			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 		<key>UISupportedInterfaceOrientations~ipad</key>
 		<array>
 			<string>UIInterfaceOrientationPortrait</string>
-			<string>UIInterfaceOrientationPortraitUpsideDown</string>
-			<string>UIInterfaceOrientationLandscapeLeft</string>
-			<string>UIInterfaceOrientationLandscapeRight</string>
 		</array>
 		<key>UIStatusBarHidden</key>
 		<false/>

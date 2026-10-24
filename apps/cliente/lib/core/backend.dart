@@ -109,7 +109,6 @@ abstract class Backend {
   Future<Rental> rental(String id);
   Future<Rental> pause(String id);
   Future<Rental> resume(String id);
-  Future<Rental> swap(String id, String newVehicleId, String reason);
   Future<void> wellbeing(String id, {required bool ok, String? note});
   Future<LocationShare> shareLocation(String id);
   Future<Incident> reportIncident(IncidentCategory category, String description, {String? rentalId, String? vehicleId});
@@ -405,16 +404,6 @@ class ApiBackend implements Backend {
 
   @override
   Future<Rental> resume(String id) => _run(() async => (await _api.getRentalsApi().resumeRental(id: id)).data!);
-
-  @override
-  Future<Rental> swap(String id, String newVehicleId, String reason) =>
-      _run(() async => (await _api.getRentalsApi().swapRentalVehicle(
-            id: id,
-            swapVehicleRequest: SwapVehicleRequest((b) => b
-              ..newVehicleId = newVehicleId
-              ..reason = reason),
-          ))
-          .data!);
 
   @override
   Future<void> wellbeing(String id, {required bool ok, String? note}) => _run(() async {
