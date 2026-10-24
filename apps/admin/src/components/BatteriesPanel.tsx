@@ -13,6 +13,7 @@ import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
 import { Input } from '@/ds/Input';
+import { StationSwapsModal } from './StationSwapsModal';
 import { DataTable, ErrorNote, Field, Modal, Pill, SectionTitle, Select, Skeleton, TextArea, TextInput, usePagedQuery, useToast } from './ui';
 
 const ME = 'me';
@@ -30,6 +31,8 @@ function loadAllBatteries() {
 export function BatteriesPanel() {
   const { groups } = useAuth();
   const canTransfer = can(groups, 'battery.transfer');
+  const canSwaps = can(groups, 'station.swaps');
+  const [swapsOf, setSwapsOf] = useState<S<'SwapStation'> | null>(null);
   const all = useQuery({ queryKey: ['batteries', 'all'], queryFn: loadAllBatteries, refetchInterval: 120_000 });
   const stations = useQuery({ queryKey: ['swap-stations'], queryFn: () => unwrap(api.GET('/swap-stations')) });
   const staff = useQuery({ queryKey: ['staff', 'campo'], queryFn: () => unwrap(api.GET('/staff', { params: { query: { group: 'campo', active: true, limit: 100 } } })) });
@@ -64,12 +67,14 @@ export function BatteriesPanel() {
               { key: 'available', label: 'Carregadas', align: 'right', render: (s) => <span style={{ fontFamily: 'var(--font-mono)' }}>{s.availableBatteries}/{s.totalSlots}</span> },
               { key: 'stock', label: 'No estoque', align: 'right', render: (s) => inStation.get(s.id) ?? 0 },
               { key: 'hours', label: 'Horário', render: (s) => <span style={{ fontSize: 12 }}>{s.open24h ? '24 h' : s.openingHours}</span> },
+              ...(canSwaps ? [{ key: 'swaps', label: '', align: 'right' as const, render: (s: S<'SwapStation'>) => <Button size="sm" variant="ghost" icon="History" testId={`station-swaps-${s.id}`} onClick={() => setSwapsOf(s)}>Trocas</Button> }] : []),
             ]} />
         </div>
         <VanStock staff={staff.data?.items ?? []} stations={stations.data?.items ?? []} canTransfer={canTransfer} />
       </div>
 
       <BatteryList stationNames={stationNames} staffNames={staffNames} />
+      {swapsOf && <StationSwapsModal station={swapsOf} onClose={() => setSwapsOf(null)} />}
     </div>
   );
 }

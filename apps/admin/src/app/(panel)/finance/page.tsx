@@ -9,13 +9,14 @@ import { formatCompactBRL, moneyDelta, percentDelta, pointsDelta, previousRange 
 import { dayStartIso, formatBRL, localDay } from '@/lib/format';
 import { Empty, ErrorNote, Page, PageHeader, Pill, DataTable, Skeleton, TabPanel, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
+import { DepositsPanel } from '@/components/DepositsPanel';
 import { StatTile, StatTileSkeleton } from '@/ds/StatTile';
 import { Card } from '@/ds/Card';
 import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
 
 type Period = 'today' | '7d' | '30d';
-type Tab = 'overview' | 'rentals';
+type Tab = 'overview' | 'rentals' | 'deposits';
 
 function range(p: Period): { from: string; to: string } {
   const now = new Date();
@@ -79,11 +80,13 @@ export default function FinancePage() {
   return (
     <Page>
       <PageHeader title="Financeiro" subtitle="Receita, planos, inadimplência e cauções">
-        <SegmentedControl options={[{ value: 'overview', label: 'Visão geral' }, { value: 'rentals', label: 'Aluguéis' }]} value={tab} onChange={(t: Tab) => { setTab(t); router.replace(`/finance?tab=${t}`, { scroll: false }); }} style={{ width: 260 }} />
+        <SegmentedControl options={[{ value: 'overview', label: 'Visão geral' }, { value: 'rentals', label: 'Aluguéis' }, { value: 'deposits', label: 'Cauções' }]} value={tab} onChange={(t: Tab) => { setTab(t); router.replace(`/finance?tab=${t}`, { scroll: false }); }} style={{ width: 380 }} />
         {tab === 'overview' && <SegmentedControl options={[{ value: 'today', label: 'Hoje' }, { value: '7d', label: '7 dias' }, { value: '30d', label: '30 dias' }]} value={period} onChange={setPeriod} style={{ width: 280 }} />}
       </PageHeader>
 
-      {tab === 'rentals' ? (
+      {tab === 'deposits' ? (
+        <TabPanel k="deposits"><DepositsPanel /></TabPanel>
+      ) : tab === 'rentals' ? (
         <TabPanel k="rentals" style={{ flex: 1, minHeight: 0 }}><RentalsPanel selectedId={rental} onSelect={setRental} /></TabPanel>
       ) : (
         <TabPanel k="overview">

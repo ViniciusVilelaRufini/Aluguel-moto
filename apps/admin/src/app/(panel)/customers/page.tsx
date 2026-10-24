@@ -14,6 +14,7 @@ import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton,
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { SupportPanel } from '@/components/SupportPanel';
 import { SubscriptionVehicleDialog } from '@/components/SubscriptionVehicleDialog';
+import { WalletAdjustDialog } from '@/components/WalletAdjustDialog';
 import { canSeeFullPixKey, displayPixKey } from '@/lib/pix';
 import { useRealtime } from '@/lib/realtime';
 import { SUBSCRIPTION_STATUS } from '@/lib/labels';
@@ -135,6 +136,7 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
   const full = canSeeFullCpf(groups);
 
   const [unblocking, setUnblocking] = useState(false);
+  const [adjusting, setAdjusting] = useState(false);
 
   return (
     <SidePanel width={400} onClose={onClose} testId="customer-sheet" title={
@@ -183,6 +185,8 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
           {tab === 'support' && <CustomerTickets customerId={id} onChat={() => onChat(id)} />}
           {tab === 'history' && <CustomerHistory customerId={id} onRentals={onRentals} />}
           <div style={{ flex: 1 }} />
+          {can(groups, 'wallet.adjust') && <Button size="sm" variant="secondary" icon="Wallet" testId="wallet-adjust-open" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setAdjusting(true)}>Ajustar carteira</Button>}
+          {adjusting && <WalletAdjustDialog customerId={id} onClose={() => setAdjusting(false)} />}
           {can(groups, 'customer.block') && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
               {c.status === 'blocked'

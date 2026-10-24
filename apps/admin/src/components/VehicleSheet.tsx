@@ -22,6 +22,7 @@ import { commandSentMessage, signalLabel, toAuditRows } from '@/lib/fleet-copy';
 import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
 import { SERVICE_STATUS, formatHours, formatKm, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
 import { SubscriptionVehicleDialog } from './SubscriptionVehicleDialog';
+import { VehicleFormModal } from './VehicleFormModal';
 import { Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
 
 interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason }
@@ -42,6 +43,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   const [active, setActive] = useState<ActiveCommand | null>(null);
   const [history, setHistory] = useState(false);
   const [moveFixed, setMoveFixed] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   useEffect(() => { setActive(null); }, [vehicleId]);
 
@@ -194,6 +196,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
           <Button size="sm" variant="ghost" icon="History" onClick={() => setHistory(true)}>Histórico</Button>
         </div>
       )}
+      {can(groups, 'vehicle.edit') && <Button size="sm" variant="ghost" icon="Pencil" testId="vehicle-edit" style={{ alignSelf: 'flex-start', paddingLeft: 0 }} onClick={() => setEditing(true)}>Editar moto</Button>}
 
       {isAdmin && auditRows.length > 0 ? (
         <div data-testid="audit-log">
@@ -226,6 +229,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
 
       {dialog && <CommandDialog type={dialog} vehicle={v} moving={moving} onClose={() => setDialog(null)} onSend={send} />}
       {moveFixed && v.assignedSubscriptionId && <SubscriptionVehicleDialog subscriptionId={v.assignedSubscriptionId} currentCode={v.code} onClose={() => setMoveFixed(false)} />}
+      {editing && <VehicleFormModal vehicle={v} onClose={() => setEditing(false)} />}
       {history && <HistoryModal vehicleId={vehicleId} code={v.code} groups={groups} onClose={() => setHistory(false)} />}
     </SidePanel>
   );

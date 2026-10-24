@@ -17,6 +17,7 @@ import { toCents, toReais, validMoney } from '@/lib/money';
 import { ModelsSection } from '@/components/ModelsSection';
 import { couponLimitsError } from '@/lib/coupon';
 import { formatDate, dayEndIso, dayStartIso } from '@/lib/format';
+import { buildFeeCreate, buildPlanCreate, EMPTY_FEE_FORM, EMPTY_PLAN_FORM, PLAN_UNIT_BY_CODE, type FeeForm, type PlanForm } from '@/lib/admin-forms';
 
 const UNIT_SUFFIX: Record<S<'PlanUnit'>, string> = { minute: '/min', hour: '/hora', day: '/dia', week: '/semana', month: '/mês' };
 
@@ -41,6 +42,8 @@ export default function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [newCoupon, setNewCoupon] = useState(false);
+  const [newPlan, setNewPlan] = useState(false);
+  const [newFee, setNewFee] = useState(false);
 
   const dirty = useMemo(() => [planEdit, feeEdit, covEdit, couponEdit].some((m) => Object.keys(m).length > 0), [planEdit, feeEdit, covEdit, couponEdit]);
   const discard = () => { setPlanEdit({}); setFeeEdit({}); setCovEdit({}); setCouponEdit({}); setErr(null); };
@@ -123,6 +126,7 @@ export default function SettingsPage() {
       <ErrorNote error={err ?? plans.error ?? fees.error} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(420px, 1fr))', gap: 24, alignItems: 'start' }}>
         {sec('Planos', 'Preço por período, taxa de desbloqueio e pausa (em reais)', (
+          <>
           <DataTable<S<'PricingPlan'>> loading={plans.isLoading} rows={plans.data?.items ?? []}
             columns={[
               { key: 'name', label: 'Plano', render: (p) => PLAN_LABEL[p.code] ?? p.name },
@@ -132,8 +136,11 @@ export default function SettingsPage() {
               { key: 'pause', label: 'Pausa/min', align: 'right', render: (p) => canEdit ? <MiniInput label={`Pausa ${p.name}`} width={76} value={planEdit[p.id]?.pause ?? toReais(p.pausePerMinuteCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], pause: v } }))} /> : toReais(p.pausePerMinuteCents) },
               { key: 'active', label: 'Ativo', align: 'right', render: (p) => <Switch label="" disabled={!canEdit} checked={planEdit[p.id]?.active ?? p.active} onChange={(v: boolean) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], active: v } }))} /> },
             ]} />
+          {canEdit && <div><Button size="sm" variant="secondary" icon="Plus" testId="new-plan" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setNewPlan(true)}>Novo plano</Button></div>}
+          </>
         ))}
         {sec('Taxas', 'Cobranças fixas', (
+          <>
           <Card padding={6}>
             {(fees.data?.items ?? []).map((f) => (
               <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 12px', borderBottom: '1px solid var(--ink-100)' }}>
@@ -144,6 +151,8 @@ export default function SettingsPage() {
             ))}
             {fees.data?.items.length === 0 && <div style={{ padding: 12, fontSize: 14, color: 'var(--text-secondary)' }}>Nenhuma taxa.</div>}
           </Card>
+          {canEdit && <div><Button size="sm" variant="secondary" icon="Plus" testId="new-fee" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setNewFee(true)}>Nova taxa</Button></div>}
+          </>
         ))}
         {sec('Seguros', 'Preço por aluguel e repasse à seguradora', (
           <DataTable<S<'InsuranceCoverageOption'>> rows={(cov.data?.items ?? []).map((c) => ({ ...c, id: c.coverage }) as S<'InsuranceCoverageOption'> & { id: string })} loading={cov.isLoading}
@@ -172,6 +181,8 @@ export default function SettingsPage() {
         ))}
       </div>
       {newCoupon && <CouponModal onClose={() => setNewCoupon(false)} />}
+      {newPlan && <PlanModal onClose={() => setNewPlan(false)} />}
+      {newFee && <FeeModal onClose={() => setNewFee(false)} />}
     </Page>
   );
 }
@@ -233,6 +244,73 @@ function CouponModal({ onClose }: { onClose: () => void }) {
           })}
         </div>
       </Field>
+      <ErrorNote error={err} />
+    </Modal>
+  );
+}
+
+/** Criar plano (`POST /pricing/plans`, só admin): valores em reais, enviados em centavos. Um plano ativo por código. */
+function PlanModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [f, setF] = useState<PlanForm>(EMPTY_PLAN_FORM);
+  const [err, setErr] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setErr(null);
+    const built = buildPlanCreate(f);
+    if (!built.ok) { setErr(new Error(built.error)); return; }
+    setBusy(true);
+    try {
+      await unwrap(api.POST('/pricing/plans', { body: built.body }));
+      toast('Plano criado · log de auditoria atualizado'); qc.invalidateQueries({ queryKey: ['plans'] }); onClose();
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open title="Novo plano" onClose={onClose} testId="plan-form"
+      actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" testId="plan-save" disabled={busy} onClick={submit}>Criar plano</Button></>}>
+      <Field label="Código" hint="Só pode haver um plano ativo por código.">
+        <Select<S<'PlanCode'>> testId="plan-code" value={f.code} onChange={(code) => setF((x) => ({ ...x, code, unit: PLAN_UNIT_BY_CODE[code], recurring: code === 'weekly' || code === 'monthly' }))}
+          options={(Object.keys(PLAN_LABEL) as S<'PlanCode'>[]).map((c) => ({ value: c, label: PLAN_LABEL[c] }))} />
+      </Field>
+      <Field label="Nome"><TextInput testId="plan-name" value={f.name} onChange={(name) => setF((x) => ({ ...x, name }))} placeholder="Diária" /></Field>
+      <Field label="Descrição (opcional)"><TextInput value={f.description} onChange={(description) => setF((x) => ({ ...x, description }))} /></Field>
+      <Field label="Unidade de cobrança"><Select<S<'PlanUnit'>> testId="plan-unit" value={f.unit} onChange={(unit) => setF((x) => ({ ...x, unit }))} options={(Object.keys(UNIT_SUFFIX) as S<'PlanUnit'>[]).map((u) => ({ value: u, label: UNIT_SUFFIX[u].slice(1) }))} /></Field>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <Field label="Preço (R$)"><TextInput testId="plan-price" value={f.unitPrice} onChange={(unitPrice) => setF((x) => ({ ...x, unitPrice }))} placeholder="0,79" /></Field>
+        <Field label="Desbloqueio (R$)"><TextInput testId="plan-unlock" value={f.unlock} onChange={(unlock) => setF((x) => ({ ...x, unlock }))} /></Field>
+        <Field label="Pausa/min (R$)"><TextInput testId="plan-pause" value={f.pause} onChange={(pause) => setF((x) => ({ ...x, pause }))} /></Field>
+      </div>
+      <Switch label="Cobrança recorrente (assinatura)" checked={f.recurring} onChange={(recurring: boolean) => setF((x) => ({ ...x, recurring }))} />
+      <ErrorNote error={err} />
+    </Modal>
+  );
+}
+
+/** Criar taxa (`POST /pricing/fees`, só admin). */
+function FeeModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [f, setF] = useState<FeeForm>(EMPTY_FEE_FORM);
+  const [err, setErr] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const submit = async () => {
+    setErr(null);
+    const built = buildFeeCreate(f);
+    if (!built.ok) { setErr(new Error(built.error)); return; }
+    setBusy(true);
+    try {
+      await unwrap(api.POST('/pricing/fees', { body: built.body }));
+      toast('Taxa criada · log de auditoria atualizado'); qc.invalidateQueries({ queryKey: ['fees'] }); onClose();
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  };
+  return (
+    <Modal open title="Nova taxa" onClose={onClose} testId="fee-form"
+      actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" testId="fee-save" disabled={busy} onClick={submit}>Criar taxa</Button></>}>
+      <Field label="Código" hint="Letras minúsculas, números e _ (exemplo: taxa_limpeza)"><TextInput testId="fee-code" value={f.code} onChange={(code) => setF((x) => ({ ...x, code }))} /></Field>
+      <Field label="Nome"><TextInput testId="fee-name" value={f.name} onChange={(name) => setF((x) => ({ ...x, name }))} placeholder="Taxa de limpeza" /></Field>
+      <Field label="Descrição (opcional)"><TextInput value={f.description} onChange={(description) => setF((x) => ({ ...x, description }))} /></Field>
+      <Field label="Valor (R$)"><TextInput testId="fee-amount" value={f.amount} onChange={(amount) => setF((x) => ({ ...x, amount }))} placeholder="15,00" /></Field>
       <ErrorNote error={err} />
     </Modal>
   );

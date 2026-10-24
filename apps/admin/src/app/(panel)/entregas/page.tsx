@@ -4,10 +4,12 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { rentalHref } from '@/lib/permissions';
+import { can, rentalHref } from '@/lib/permissions';
+import { canCancelHandover } from '@/lib/admin-forms';
 import { HANDOVER_STATUS, HANDOVER_STATUSES, HANDOVER_TYPE_LABEL, supportHref, type HandoverStatus, type HandoverType } from '@/lib/handovers';
 import type { S } from '@/lib/types';
 import { HandoverDetail, HandoverTable } from '@/components/depots/HandoverViews';
+import { CancelHandoverDialog } from '@/components/CancelHandoverDialog';
 import { ErrorNote, Page, PageHeader, PanelSkeleton, Select, SidePanel, usePagedQuery } from '@/components/ui';
 import { SegmentedControl } from '@/ds/SegmentedControl';
 
@@ -27,6 +29,7 @@ export default function HandoversPage() {
   const [type, setType] = useState<TypeFilter>('all');
   const [depotId, setDepotId] = useState('all');
   const [selected, setSelected] = useState<string | null>(null);
+  const [canceling, setCanceling] = useState<S<'Handover'> | null>(null);
 
   const depotsQ = useQuery({ queryKey: ['depots', 'all'], queryFn: () => unwrap(api.GET('/depots', { params: { query: { includeInactive: true } } })) });
   const depots = useMemo(() => depotsQ.data?.items ?? [], [depotsQ.data]);
@@ -74,12 +77,14 @@ export default function HandoversPage() {
           title={<div style={{ font: '700 18px/1.25 var(--font-sans)' }}>Entrega {shown?.vehicleCode ? `· ${shown.vehicleCode}` : ''}</div>}>
           <ErrorNote error={detail.error} />
           {shown ? (
-            <HandoverDetail handover={shown} photosLoading={detail.isLoading} supportHref={supportHref(groups)} rentalHref={shown.rentalId ? rentalHref(groups, shown.rentalId) : null} />
+            <HandoverDetail handover={shown} photosLoading={detail.isLoading} supportHref={supportHref(groups)} rentalHref={shown.rentalId ? rentalHref(groups, shown.rentalId) : null}
+              onCancel={can(groups, 'handover.cancel') && canCancelHandover(shown) ? () => setCanceling(shown) : undefined} />
           ) : (
             <PanelSkeleton />
           )}
         </SidePanel>
       )}
+      <CancelHandoverDialog handover={canceling} onClose={() => setCanceling(null)} />
     </div>
   );
 }
