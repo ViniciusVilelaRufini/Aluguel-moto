@@ -42,10 +42,10 @@ android {
     signingConfigs {
         if (hasReleaseKeystore) {
             create("release") {
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                keyPassword = keystoreProperties.getProperty("keyPassword")
-                storeFile = file(keystoreProperties.getProperty("storeFile"))
-                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = requireNotNull(keystoreProperties.getProperty("keyAlias")) { "key.properties sem keyAlias" }
+                keyPassword = requireNotNull(keystoreProperties.getProperty("keyPassword")) { "key.properties sem keyPassword" }
+                storeFile = file(requireNotNull(keystoreProperties.getProperty("storeFile")) { "key.properties sem storeFile" })
+                storePassword = requireNotNull(keystoreProperties.getProperty("storePassword")) { "key.properties sem storePassword" }
             }
         }
     }
@@ -56,7 +56,11 @@ android {
                 signingConfigs.getByName("release")
             } else {
                 // Sem key.properties: chave debug (APK de teste/emulador). Nao publicar assim.
-                logger.warn("WARNING: android/key.properties ausente: release assinado com a chave DEBUG (nao publicavel).")
+                gradle.taskGraph.whenReady {
+                    if (allTasks.any { it.name.contains("Release", ignoreCase = true) }) {
+                        logger.warn("WARNING: android/key.properties ausente: release assinado com a chave DEBUG (nao publicavel).")
+                    }
+                }
                 signingConfigs.getByName("debug")
             }
         }

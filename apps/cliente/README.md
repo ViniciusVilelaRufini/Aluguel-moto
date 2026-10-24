@@ -17,11 +17,13 @@ Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `de
 
 ## Build de release (prontidão)
 
-**Obrigatórios em release** (`flutter build apk/appbundle/ipa --release`): `API_BASE_URL` (URL https da API), `SUPPORT_PHONE` (telefone real do suporte, ex.: `+5511999990000`; o valor de exemplo `+551100000000` também é recusado) e, como o release usa Cognito, `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN` e `COGNITO_REDIRECT_URI`. Recomendados: `MAP_TILE_URL` (provedor licenciado), `TERMS_URL` e `PRIVACY_URL`. Sem `API_BASE_URL` ou `SUPPORT_PHONE`, o app falha na inicialização, antes do `runApp`, com a lista do que falta (`lib/core/release_env.dart`, testado em `test/release_env_test.dart`); em debug e profile nada disso é exigido (a API cai em `10.0.2.2:3000` no Android e `localhost:3000` no resto).
+**Obrigatórios em release** (`flutter build apk/appbundle/ipa --release`): `API_BASE_URL` (URL https da API), `SUPPORT_PHONE` (telefone real do suporte, só dígitos com + opcional, ex.: `+5511999990000`; o valor de exemplo `+551100000000` também é recusado) e, como o release usa Cognito, `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN` e `COGNITO_REDIRECT_URI`. Recomendados: `MAP_TILE_URL` (provedor licenciado), `TERMS_URL` e `PRIVACY_URL`. Sem `API_BASE_URL` ou `SUPPORT_PHONE`, o app mostra a tela "Configuração inválida do app" (pt-BR) com a lista do que falta, em vez de abrir (`lib/core/release_env.dart`, testado em `test/release_env_test.dart`); em debug e profile nada disso é exigido (a API cai em `10.0.2.2:3000` no Android e `localhost:3000` no resto).
 
 ```bash
 flutter build appbundle --release   --dart-define=API_BASE_URL=https://api.volti.com.br --dart-define=SUPPORT_PHONE=+5511999990000   --dart-define=COGNITO_REGION=sa-east-1 --dart-define=COGNITO_USER_POOL_ID=... --dart-define=COGNITO_CLIENT_ID=...   --dart-define=COGNITO_DOMAIN=... --dart-define=COGNITO_REDIRECT_URI=volti://auth/callback
 ```
+
+**iPad.** O app é retrato-only; por isso o `Info.plist` tem `UIRequiresFullScreen=true` (exigido pela App Store para iPad sem todas as orientações).
 
 **Assinatura Android.** O release lê `android/key.properties` (fora do git, como o keystore). Formato:
 

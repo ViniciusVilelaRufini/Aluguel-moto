@@ -21,7 +21,15 @@ import 'core/release_env.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Release sem API_BASE_URL / SUPPORT_PHONE reais: falha aqui, com mensagem clara.
-  assertReleaseEnvironment();
+  final envProblems = releaseEnvironmentProblems(
+    isRelease: kReleaseMode,
+    apiBaseUrl: const String.fromEnvironment('API_BASE_URL'),
+    supportPhone: kSupportPhone,
+  );
+  if (envProblems.isNotEmpty) {
+    runApp(ConfigErrorApp(problems: envProblems));
+    return;
+  }
   await SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
   // Release: nenhum log de depuracao (tiles com erro, etc.) sai do aparelho.
   if (kReleaseMode) debugPrint = (String? message, {int? wrapWidth}) {};

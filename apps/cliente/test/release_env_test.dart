@@ -29,16 +29,10 @@ void main() {
     });
   });
 
-  group('assertReleaseEnvironment', () {
-    test('lanca ReleaseEnvironmentError com mensagem clara', () {
-      expect(
-        () => assertReleaseEnvironment(isRelease: true, apiBaseUrl: '', supportPhone: ''),
-        throwsA(isA<ReleaseEnvironmentError>().having((e) => e.message, 'message', allOf(contains('API_BASE_URL'), contains('SUPPORT_PHONE')))),
-      );
-    });
-
-    test('debug e profile passam', () {
-      expect(() => assertReleaseEnvironment(isRelease: false, apiBaseUrl: '', supportPhone: ''), returnsNormally);
-    });
+  test('SUPPORT_PHONE que nao parece telefone e recusado', () {
+    for (final bad in ['abc', '12', '+55 (11) 9999']) {
+      expect(releaseEnvironmentProblems(isRelease: true, apiBaseUrl: 'https://a', supportPhone: bad).single, contains('invalido'), reason: bad);
+    }
+    expect(releaseEnvironmentProblems(isRelease: true, apiBaseUrl: 'https://a', supportPhone: '1133334444'), isEmpty);
   });
 }

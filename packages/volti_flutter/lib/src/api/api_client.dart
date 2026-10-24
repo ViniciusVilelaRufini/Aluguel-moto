@@ -21,7 +21,7 @@ class ReleaseConfigError extends StateError {
 String resolveApiBaseUrl({required String fromEnv, required bool isRelease, required bool isAndroid}) {
   if (fromEnv.isNotEmpty) return fromEnv;
   if (isRelease) {
-    throw ReleaseConfigError('API_BASE_URL ausente: build release exige --dart-define=API_BASE_URL=https://...');
+    throw ReleaseConfigError('API_BASE_URL ausente (--dart-define=API_BASE_URL=https://...)');
   }
   return isAndroid ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
 }
