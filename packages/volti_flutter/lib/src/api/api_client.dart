@@ -9,16 +9,30 @@ import 'package:volti_api/volti_api.dart';
 import '../auth/auth_repository.dart';
 import 'server_clock.dart';
 
-/// URL base da API: `--dart-define=API_BASE_URL=...`. Sem o define, usa
-/// `http://10.0.2.2:3000` no emulador Android e `http://localhost:3000` no resto.
-String defaultApiBaseUrl() {
-  const fromEnv = String.fromEnvironment('API_BASE_URL');
-  if (fromEnv.isNotEmpty) return fromEnv;
-  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-    return 'http://10.0.2.2:3000';
-  }
-  return 'http://localhost:3000';
+/// Erro de configuracao de build (define obrigatorio ausente em release).
+class ReleaseConfigError extends StateError {
+  ReleaseConfigError(super.message);
 }
+
+/// Resolve a URL base da API. Em release ([isRelease]) `API_BASE_URL` e
+/// obrigatoria: sem ela, [ReleaseConfigError] (nada de cair em 10.0.2.2/localhost).
+/// Debug/profile usam `http://10.0.2.2:3000` no emulador Android e
+/// `http://localhost:3000` no resto.
+String resolveApiBaseUrl({required String fromEnv, required bool isRelease, required bool isAndroid}) {
+  if (fromEnv.isNotEmpty) return fromEnv;
+  if (isRelease) {
+    throw ReleaseConfigError('API_BASE_URL ausente (--dart-define=API_BASE_URL=https://...)');
+  }
+  return isAndroid ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+}
+
+/// URL base da API: `--dart-define=API_BASE_URL=...`. Obrigatoria em release;
+/// ver [resolveApiBaseUrl].
+String defaultApiBaseUrl() => resolveApiBaseUrl(
+      fromEnv: const String.fromEnvironment('API_BASE_URL'),
+      isRelease: kReleaseMode,
+      isAndroid: !kIsWeb && defaultTargetPlatform == TargetPlatform.android,
+    );
 
 /// Anexa `Authorization: Bearer` com o token do [AuthRepository].
 class BearerTokenInterceptor extends Interceptor {

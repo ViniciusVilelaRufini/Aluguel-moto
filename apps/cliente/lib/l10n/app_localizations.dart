@@ -220,6 +220,30 @@ abstract class AppLocalizations {
   /// **'Ligar para o suporte'**
   String get callSupport;
 
+  /// No description provided for @callSamu.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ligar 192 (SAMU)'**
+  String get callSamu;
+
+  /// No description provided for @callSamuSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ligar para o SAMU, telefone 192'**
+  String get callSamuSemantics;
+
+  /// No description provided for @callPolice.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ligar 190 (Polícia)'**
+  String get callPolice;
+
+  /// No description provided for @callPoliceSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ligar para a Polícia, telefone 190'**
+  String get callPoliceSemantics;
+
   /// No description provided for @cameraUnavailable.
   ///
   /// In pt, this message translates to:
@@ -825,12 +849,6 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Meu plano'**
   String get myPlan;
-
-  /// No description provided for @nearbyTitle.
-  ///
-  /// In pt, this message translates to:
-  /// **'Motos por perto'**
-  String get nearbyTitle;
 
   /// No description provided for @needHelp.
   ///

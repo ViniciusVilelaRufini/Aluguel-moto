@@ -82,3 +82,7 @@ flutter analyze && flutter test && flutter build apk --debug
 ```
 
 Widget tests (`test/pickups_test.dart` cobre o galpão: ordem da agenda e concluídas recolhidas, só primeiro nome, QR, checklist com 4 fotos e bateria, rascunho sem rede, estados ao vivo com `handover.updated`, chegada e fila offline, recolhimento com galpão, fuso do galpão, 200% e semântica de toque; `test/contract_v2_test.dart` cobre o contrato v2: endereço, status, bateria retirada, sugestões da van, van com carregar/descarregar e offline, revisões com filtro, cartões da moto e da manutenção, primeiro nome e texto a 200%): checklist (bloqueios, leitura > 32, confirmação de manutenção, offline com repositório fake, miniaturas com remover), troca de bateria (séries diferentes), regra de conclusão e modo serviço persistido, badge de distância, controle segmentado, fila Hive e ordenação da lista. Testes de unidade: login Cognito, formatação (distância, prazo, prioridade) e regra de conclusão.
+
+## Build de release
+
+Em release `API_BASE_URL` é obrigatória (`--dart-define=API_BASE_URL=https://...`); sem ela o app mostra a tela "Configuração inválida do app" em vez de cair em `10.0.2.2`/`localhost` (debug e profile mantêm o padrão).

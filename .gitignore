@@ -19,3 +19,8 @@ cdk.out/
 .DS_Store
 .superpowers/
 .worktrees/
+
+# Assinatura Android (nunca versionar)
+key.properties
+*.jks
+*.keystore

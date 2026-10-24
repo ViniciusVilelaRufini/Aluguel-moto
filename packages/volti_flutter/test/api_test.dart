@@ -38,6 +38,23 @@ class _StubAuth implements AuthRepository {
 }
 
 void main() {
+  group('resolveApiBaseUrl', () {
+    test('define informado vence em qualquer modo', () {
+      expect(resolveApiBaseUrl(fromEnv: 'https://api.x', isRelease: true, isAndroid: true), 'https://api.x');
+      expect(resolveApiBaseUrl(fromEnv: 'http://h:1', isRelease: false, isAndroid: false), 'http://h:1');
+    });
+    test('debug/profile mantem o padrao do emulador e do localhost', () {
+      expect(resolveApiBaseUrl(fromEnv: '', isRelease: false, isAndroid: true), 'http://10.0.2.2:3000');
+      expect(resolveApiBaseUrl(fromEnv: '', isRelease: false, isAndroid: false), 'http://localhost:3000');
+    });
+    test('release sem API_BASE_URL e erro claro', () {
+      expect(
+        () => resolveApiBaseUrl(fromEnv: '', isRelease: true, isAndroid: true),
+        throwsA(isA<ReleaseConfigError>().having((e) => e.message, 'message', contains('API_BASE_URL'))),
+      );
+    });
+  });
+
   test('retry: erro de rede e 5xx com backoff e sucesso na 3a tentativa', () async {
     final adapter = _FakeAdapter(['net', 503, 200]);
     final sleeps = <Duration>[];

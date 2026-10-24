@@ -4,6 +4,7 @@
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
@@ -314,6 +315,45 @@ void main() {
       await t.pump();
       final field = t.widget<TextField>(find.byKey(const Key('swap-manual-code')));
       expect(field.focusNode!.hasFocus, isTrue);
+    });
+
+    testWidgets('Enter (acao do teclado) no campo de codigo digitado envia', (t) async {
+      final b = SwapBackend();
+      await pumpScan(t, b);
+      await t.enterText(find.byKey(const Key('swap-manual-code')), largoQr);
+      await t.pump();
+      await t.testTextInput.receiveAction(TextInputAction.done);
+      await settle(t);
+      expect(find.byType(SwapConfirmSheet), findsOneWidget);
+    });
+
+    testWidgets('Enter (tecla fisica) no campo de codigo digitado envia', (t) async {
+      final b = SwapBackend();
+      await pumpScan(t, b);
+      await t.tap(find.byKey(const Key('swap-manual-code')));
+      await t.enterText(find.byKey(const Key('swap-manual-code')), largoQr);
+      await t.pump();
+      await t.sendKeyEvent(LogicalKeyboardKey.enter);
+      await settle(t);
+      expect(find.byType(SwapConfirmSheet), findsOneWidget);
+    });
+
+    testWidgets('camera negada a 200%: mensagem e botao ficam dentro da moldura do visor', (t) async {
+      t.platformDispatcher.textScaleFactorTestValue = 2;
+      addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
+      final b = SwapBackend();
+      await pumpScan(t, b, scanner: (context, {required onCode, required onManual}) => CameraUnavailable(denied: true, onManual: onManual));
+      expect(t.takeException(), isNull);
+      final box = t.getRect(find.byKey(const Key('swap-scanner')));
+      final msg = t.getRect(find.text(l.swapScanDenied));
+      // Dentro da moldura (recuo de 40 px + traco de 3 px), nunca sobre os cantos.
+      expect(msg.left, greaterThanOrEqualTo(box.left + 43));
+      expect(msg.right, lessThanOrEqualTo(box.right - 43));
+      // Se nao cabe, rola dentro do visor: o botao continua alcancavel.
+      await t.ensureVisible(find.byKey(const Key('swap-camera-manual')));
+      await t.tap(find.byKey(const Key('swap-camera-manual')));
+      await t.pump();
+      expect(t.widget<TextField>(find.byKey(const Key('swap-manual-code'))).focusNode!.hasFocus, isTrue);
     });
 
     testWidgets('QR lido pela camera tambem abre a confirmacao', (t) async {

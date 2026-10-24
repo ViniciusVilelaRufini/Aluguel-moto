@@ -13,6 +13,7 @@ import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
 import '../../core/launcher.dart';
+import '../../core/release_env.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
@@ -23,8 +24,6 @@ import '../station_swap/swap_logic.dart';
 import '../station_swap/swap_widgets.dart';
 import 'battery_sheet.dart';
 import 'ride_data.dart';
-
-const kSupportPhone = String.fromEnvironment('SUPPORT_PHONE', defaultValue: '+551100000000');
 
 /// Permite desligar o mapa (tiles de rede) nos testes de widget.
 final mapEnabledProvider = Provider<bool>((ref) => true);
@@ -417,6 +416,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       message: Text(l.sosText),
       actions: [
         VoltiButton(
+          key: const Key('sos-call-support'),
           label: l.callSupport,
           icon: LucideIcons.phoneCall,
           variant: VoltiButtonVariant.danger,
@@ -424,6 +424,32 @@ class _RideScreenState extends ConsumerState<RideScreen> {
           onPressed: () async {
             Navigator.of(context).pop();
             await ref.read(urlLauncherProvider)(Uri(scheme: 'tel', path: kSupportPhone));
+          },
+        ),
+        VoltiButton(
+          key: const Key('sos-call-samu'),
+          label: l.callSamu,
+          semanticLabel: l.callSamuSemantics,
+          icon: LucideIcons.siren,
+          variant: VoltiButtonVariant.secondary,
+          fullWidth: true,
+          wrap: true,
+          onPressed: () async {
+            Navigator.of(context).pop();
+            await ref.read(urlLauncherProvider)(Uri(scheme: 'tel', path: kSamuPhone));
+          },
+        ),
+        VoltiButton(
+          key: const Key('sos-call-police'),
+          label: l.callPolice,
+          semanticLabel: l.callPoliceSemantics,
+          icon: LucideIcons.shield,
+          variant: VoltiButtonVariant.secondary,
+          fullWidth: true,
+          wrap: true,
+          onPressed: () async {
+            Navigator.of(context).pop();
+            await ref.read(urlLauncherProvider)(Uri(scheme: 'tel', path: kPolicePhone));
           },
         ),
         VoltiButton(
