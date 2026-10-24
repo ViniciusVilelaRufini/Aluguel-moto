@@ -109,3 +109,23 @@ export const GROUP_LABEL: Record<S<'StaffGroup'>, string> = { admin: 'Administra
 export const SUBSCRIPTION_STATUS: Record<S<'SubscriptionStatus'>, [string, Tone]> = {
   active: ['Ativa', 'success'], paused: ['Pausada', 'warning'], past_due: ['Em atraso', 'danger'], canceled: ['Cancelada', 'neutral'], expired: ['Expirada', 'neutral'],
 };
+
+export const STATION_SWAP_STATUS: Record<S<'StationSwapStatus'>, [string, Tone]> = {
+  opening_slot: ['Abrindo vaga', 'info'],
+  awaiting_return: ['Aguardando devolução', 'warning'],
+  returned: ['Bateria devolvida', 'info'],
+  releasing: ['Liberando carregada', 'info'],
+  completed: ['Concluída', 'success'],
+  canceled: ['Cancelada', 'neutral'],
+  failed: ['Falhou', 'danger'],
+};
+
+export const DEPOSIT_STATUS: Record<S<'DepositStatus'>, [string, Tone]> = {
+  awaiting_pix: ['Aguardando Pix', 'warning'],
+  held: ['Retida', 'info'],
+  failed: ['Falhou', 'danger'],
+  captured: ['Cobrada', 'success'],
+  released: ['Liberada', 'neutral'],
+};
+
+export const DEPOSIT_METHOD: Record<S<'DepositMethod'>, string> = { card: 'Cartão', pix: 'Pix' };

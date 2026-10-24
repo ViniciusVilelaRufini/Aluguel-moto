@@ -57,7 +57,11 @@ export type Action =
   | 'subscription.assignVehicle'
   | 'vehicle.edit'
   | 'depot.edit'
-  | 'depot.deactivate';
+  | 'depot.deactivate'
+  | 'handover.cancel'
+  | 'station.swaps'
+  | 'wallet.adjust'
+  | 'deposit.view';
 
 const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'vehicle.command': ['admin', 'operacao'],
@@ -84,6 +88,11 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'depot.edit': ['admin', 'operacao'],
   // Não há DELETE no contrato: "desativar" (PATCH active=false) fica só com o admin.
   'depot.deactivate': ['admin'],
+  // Rotas que já existiam no contrato (x-required-groups; `campo` não usa o painel).
+  'handover.cancel': ['admin', 'operacao'], // POST /handovers/{id}/cancel (contrato: admin, operacao, campo)
+  'station.swaps': ['admin', 'operacao', 'suporte'], // GET /swap-stations/{id}/swaps
+  'wallet.adjust': ['admin', 'financeiro'], // POST /customers/{id}/wallet/adjustments
+  'deposit.view': ['admin', 'financeiro'], // GET /payments/deposits
 };
 
 export function can(groups: StaffGroup[], action: Action): boolean {

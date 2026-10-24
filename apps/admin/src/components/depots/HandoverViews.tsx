@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { DataTable, KV, Pill, SectionTitle, type Pager } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
+import { Button } from '@/ds/Button';
 import { Icon } from '@/ds/Icon';
 import { formatDateTime } from '@/lib/format';
 import { batteryColor } from '@/lib/status';
@@ -50,7 +51,7 @@ export function HandoverTable({ rows, onSelect, selectedId, loading, pager, empt
  * Detalhe da entrega: fotos (links assinados de `photoUrls`), checklist com observações, bateria e, na disputa, o
  * motivo do cliente com "Abrir no suporte".
  */
-export function HandoverDetail({ handover: h, supportHref, rentalHref, photosLoading }: { handover: Handover; supportHref: string | null; rentalHref: string | null; photosLoading?: boolean }) {
+export function HandoverDetail({ handover: h, supportHref, rentalHref, photosLoading, onCancel }: { handover: Handover; supportHref: string | null; rentalHref: string | null; photosLoading?: boolean; onCancel?: () => void }) {
   const st = HANDOVER_STATUS[h.status];
   // O erro do aceite só importa enquanto a entrega espera o cliente (some quando o aceite dá certo).
   const err = h.status === 'pending_customer' ? lastErrorLabel(h.lastError) : null;
@@ -74,6 +75,9 @@ export function HandoverDetail({ handover: h, supportHref, rentalHref, photosLoa
           style={{ alignSelf: 'flex-start', display: 'inline-flex', alignItems: 'center', gap: 10, height: 36, padding: '0 16px', borderRadius: 'var(--radius-pill)', background: 'var(--surface-inverse)', color: 'var(--text-on-inverse)', font: 'var(--fw-semibold) 14px/1 var(--font-sans)', textDecoration: 'none', boxShadow: 'var(--shadow-2)' }}>
           <Icon name="LifeBuoy" size={16} />Abrir no suporte
         </Link>
+      )}
+      {onCancel && (
+        <Button size="sm" variant="danger" icon="Ban" testId="cancel-handover" style={{ alignSelf: 'flex-start' }} onClick={onCancel}>Cancelar entrega</Button>
       )}
       {err && <Alert tone="warning" title={err}>O cliente ainda não destravou a moto. A entrega continua aguardando.</Alert>}
 
