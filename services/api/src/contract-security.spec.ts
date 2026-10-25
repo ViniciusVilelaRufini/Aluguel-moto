@@ -58,8 +58,8 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     }
   }
 
-  it('cobre as 188 operações do contrato, sem rotas extras', () => {
-    expect(ops).toHaveLength(188);
+  it('cobre as 191 operações do contrato, sem rotas extras', () => {
+    expect(ops).toHaveLength(191);
     const missing = ops.map(([k]) => k).filter((k) => !routes.has(k));
     const extra = [...routes.keys()].filter((k) => !ops.some(([o]) => o === k));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });
@@ -104,8 +104,26 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     expect((spec.security ?? []).map((s) => Object.keys(s)[0])).toContain('customerAuth');
     const route = routes.get(key)!;
     expect(route.requirement?.pools).toContain('customer');
-    // Na raiz /swap-stations o cliente só lê (as estações não são criadas pela API).
-    expect(ops.filter(([k]) => k.endsWith(' /swap-stations')).map(([k]) => k)).toEqual(['GET /swap-stations']);
+    // Na raiz /swap-stations o cliente só lê; o cadastro (POST, Task 12 das lacunas) é só staff admin/operacao.
+    expect(ops.filter(([k]) => k.endsWith(' /swap-stations')).map(([k]) => k).sort()).toEqual(['GET /swap-stations', 'POST /swap-stations']);
+  });
+
+  it('cadastro de estações pelo painel (Task 12 das lacunas): só staff admin/operacao, nunca cliente', () => {
+    const byId = (id: string) => ops.find(([, o]) => o.operationId === id)!;
+    const expected: Record<string, string> = {
+      createSwapStation: 'POST /swap-stations',
+      listSwapStationRegistry: 'GET /swap-stations/registry',
+      updateSwapStation: 'PATCH /swap-stations/:id',
+      getSwapStationQr: 'GET /swap-stations/:id/qr',
+    };
+    for (const [id, key] of Object.entries(expected)) {
+      const [k, op] = byId(id);
+      expect(k).toBe(key);
+      expect((op.security ?? []).map((s) => Object.keys(s)[0])).toEqual(['staffAuth']);
+      expect([...(op['x-required-groups'] ?? [])].sort()).toEqual(['admin', 'operacao']);
+      expect(routes.get(key)?.requirement?.pools).toEqual(['staff']);
+      expect([...(routes.get(key)?.requirement?.groups ?? [])].sort()).toEqual(['admin', 'operacao']);
+    }
   });
 
   it('troca de bateria na estação (QR): criar e cancelar só cliente; consultar dono + staff; listar só staff', () => {
@@ -116,6 +134,8 @@ describe('Contrato × controllers (segurança e grupos)', () => {
       'GET /swap-stations/:id/qr',
       'GET /swap-stations/:id/swaps',
       'GET /swap-stations/:id/swaps/:swapId',
+      'GET /swap-stations/registry',
+      'PATCH /swap-stations/:id',
       'POST /swap-stations/:id/swaps',
       'POST /swap-stations/:id/swaps/:swapId/cancel',
     ]);
@@ -132,10 +152,10 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     // Idempotency-Key obrigatória na criação.
     const params = ((byId('createStationSwap')[1] as unknown as { parameters?: Array<{ $ref?: string }> }).parameters ?? []).map((p) => p.$ref);
     expect(params).toContain('#/components/parameters/IdempotencyKey');
-    // Fix 1 (I6): QR da estação só para admin (staff), nunca para cliente.
+    // Fix 1 (I6) + Task 12 das lacunas: QR da estação só para staff admin/operacao (impressão no painel), nunca para cliente.
     const [qr] = byId('getSwapStationQr');
     expect(qr).toBe('GET /swap-stations/:id/qr');
     expect(pools(qr)).toEqual(['staff']);
-    expect(groups(qr)).toEqual(['admin']);
+    expect(groups(qr)).toEqual(['admin', 'operacao']);
   });
 });

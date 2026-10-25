@@ -46,7 +46,7 @@ describe('Mapeadores v2 × schemas do contrato', () => {
     expect(toVehicleModel(model as any, { staff: false, photoUrl: 'http://localhost:9000/catalogo/catalog/cargo.png?sig=1' })).toSatisfySchemaInApiSpec('VehicleModel');
     expect(toVehicleModel(model as any, { staff: true })).toSatisfySchemaInApiSpec('VehicleModel');
     expect(
-      toSwapStation({ id: U(32), name: 'Estação Largo da Batata', address: 'R. Teodoro Sampaio, 2000 · Pinheiros', lat: -23.56, lng: -46.69, availableBatteries: 8, totalSlots: 12, openingHours: 'Todos os dias, 24 h', open24h: true, active: true, stationCode: 'vst1.x.y', createdAt: now, updatedAt: now }, 321.6),
+      toSwapStation({ id: U(32), name: 'Estação Largo da Batata', address: 'R. Teodoro Sampaio, 2000 · Pinheiros', lat: -23.56, lng: -46.69, availableBatteries: 8, totalSlots: 12, openingHours: 'Todos os dias, 24 h', open24h: true, active: true, stationCode: 'vst1.x.y', thingName: null, createdAt: now, updatedAt: now }, 321.6),
     ).toSatisfySchemaInApiSpec('SwapStation');
     expect(toBattery(battery as any, 'VLT-0001')).toSatisfySchemaInApiSpec('Battery');
     expect(publicServiceInfo(computeServiceInfo({ odometerKm: 10, usageHours: 1, lastServiceOdometerKm: 0, lastServiceUsageHours: 0, intervalKm: 1000, intervalHours: 100 }))).toSatisfySchemaInApiSpec('VehicleServiceInfo');

@@ -142,6 +142,11 @@ export class DepotUpdateDto extends DepotCommonFields {
   @ValidateNested({ each: true })
   @Type(() => DepotOpeningHoursDto)
   openingHours?: DepotOpeningHoursDto[];
+
+  /** `true` desliga o galpão da estação de troca (o contrato não usa `null`; Task 12 das lacunas). */
+  @IsOptional()
+  @IsBoolean()
+  clearSwapStation?: boolean;
 }
 
 export class ListDepotsQuery {

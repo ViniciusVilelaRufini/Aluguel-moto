@@ -51,7 +51,7 @@ describe('GET /swap-stations para o cliente (e2e)', () => {
     await http().get('/swap-stations').expect(401);
   });
 
-  it('cliente não escreve em estações: a rota só tem GET', async () => {
+  it('cliente não escreve em estações: o cadastro (POST, Task 12 das lacunas) é só staff', async () => {
     const { token } = await approvedCustomer(app, prisma, 'swap-write');
     const res = await http().post('/swap-stations').set(bearer(token)).send({ name: 'x' });
     expect([403, 404, 405]).toContain(res.status);

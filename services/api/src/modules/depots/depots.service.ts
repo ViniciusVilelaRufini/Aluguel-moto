@@ -126,6 +126,7 @@ export class DepotsService {
     const issues: ValidationIssue[] = [];
     if (dto.openingHours !== undefined) issues.push(...openingHoursIssues(dto.openingHours));
     if (dto.timezone !== undefined && !isValidTimezone(dto.timezone)) issues.push({ field: 'timezone', message: 'fuso horário IANA inválido' });
+    if (dto.clearSwapStation && dto.swapStationId) issues.push({ field: 'clearSwapStation', message: 'não combine clearSwapStation com swapStationId' });
     if (issues.length) throw badRequest('Verifique os campos informados.', issues);
     if (dto.swapStationId && !(await this.prisma.swapStation.findUnique({ where: { id: dto.swapStationId }, select: { id: true } }))) {
       throw badRequest('Estação de troca não encontrada.', [{ field: 'swapStationId', message: 'estação de troca não encontrada' }]);
@@ -176,10 +177,14 @@ export class DepotsService {
     if (!current) throw notFound('Galpão não encontrado.');
     await this.validate(dto, current.name);
     const d = await this.prisma.$transaction(async (tx) => {
-      const { openingHours, ...fields } = dto;
+      const { openingHours, clearSwapStation, ...fields } = dto;
       const updated = await tx.depot.update({
         where: { id },
-        data: { ...fields, ...(openingHours !== undefined ? { openingHours: openingHours as unknown as Prisma.InputJsonValue } : {}) },
+        data: {
+          ...fields,
+          ...(openingHours !== undefined ? { openingHours: openingHours as unknown as Prisma.InputJsonValue } : {}),
+          ...(clearSwapStation ? { swapStationId: null } : {}),
+        },
       });
       await this.audit.record(
         { actor, action: 'depot.update', entityType: 'Depot', entityId: id, metadata: { fields: Object.keys(dto), ...(dto.active !== undefined ? { active: dto.active } : {}) } },

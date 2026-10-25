@@ -114,7 +114,7 @@ Comportamento esperado do firmware: [`docs/firmware-bloqueio-seguro.md`](../../d
 
 ## Estações de troca de bateria (troca pelo cliente via QR)
 
-Armário com vagas que recebe a bateria descarregada e libera uma carregada (spec `docs/superpowers/specs/2026-10-22-volti-troca-bateria-qr-design.md`). Mesmo modelo dos rastreadores: uma *thing* por estação (`thing = station-{stationId}`, certificado X.509 próprio em produção, `clientId` = `thing`), tópicos próprios fora de `$aws/` (o IoT Core reserva esse prefixo).
+Armário com vagas que recebe a bateria descarregada e libera uma carregada (spec `docs/superpowers/specs/2026-10-22-volti-troca-bateria-qr-design.md`). Mesmo modelo dos rastreadores: uma *thing* por estação (`thing = station-{stationId}`, certificado X.509 próprio em produção, `clientId` = `thing`), tópicos próprios fora de `$aws/` (o IoT Core reserva esse prefixo). Por padrão `thing = station-{stationId}`; o cadastro do painel pode apontar a estação para outro armário provisionado (`SwapStation.thingName`, sempre no formato `station-<uuid>`, único) — a API manda os comandos e atribui os eventos pela thing do cadastro.
 
 | Tópico | Sentido | QoS | Payload (schema) | Quando |
 |---|---|---|---|---|
