@@ -1171,7 +1171,7 @@ abstract class AppLocalizations {
   /// No description provided for @vanUnloadSemantics.
   ///
   /// In pt, this message translates to:
-  /// **'Descarregar {serial} para recarga'**
+  /// **'Descarregar {serial}'**
   String vanUnloadSemantics(String serial);
 
   /// No description provided for @vanUnloaded.
@@ -2018,6 +2018,305 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Concluído'**
   String get buttonDone;
+
+  /// No description provided for @handoverCancelAction.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar entrega'**
+  String get handoverCancelAction;
+
+  /// No description provided for @handoverCancelTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar a entrega?'**
+  String get handoverCancelTitle;
+
+  /// No description provided for @handoverCancelHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto não sai do galpão com esta entrega. Conte o motivo para a equipe.'**
+  String get handoverCancelHint;
+
+  /// No description provided for @handoverCancelReason.
+  ///
+  /// In pt, this message translates to:
+  /// **'Motivo do cancelamento'**
+  String get handoverCancelReason;
+
+  /// No description provided for @handoverCancelReasonTooShort.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escreva pelo menos 3 caracteres.'**
+  String get handoverCancelReasonTooShort;
+
+  /// No description provided for @handoverCancelContinue.
+  ///
+  /// In pt, this message translates to:
+  /// **'Continuar'**
+  String get handoverCancelContinue;
+
+  /// No description provided for @handoverCancelConfirmTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Confirmar o cancelamento'**
+  String get handoverCancelConfirmTitle;
+
+  /// No description provided for @handoverCancelConfirmBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cancelar a entrega da moto {code}? Motivo: {reason}'**
+  String handoverCancelConfirmBody(String code, String reason);
+
+  /// No description provided for @handoverCancelConfirm.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sim, cancelar entrega'**
+  String get handoverCancelConfirm;
+
+  /// No description provided for @handoverCancelBack.
+  ///
+  /// In pt, this message translates to:
+  /// **'Voltar'**
+  String get handoverCancelBack;
+
+  /// No description provided for @handoverCancelDone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Entrega cancelada.'**
+  String get handoverCancelDone;
+
+  /// No description provided for @handoverCanceledBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'Se a reserva ainda estiver no prazo, registre uma nova saída pela agenda.'**
+  String get handoverCanceledBody;
+
+  /// No description provided for @depotFleetTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Motos do galpão'**
+  String get depotFleetTitle;
+
+  /// No description provided for @depotFleetChoose.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escolha o galpão'**
+  String get depotFleetChoose;
+
+  /// No description provided for @depotFleetEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma moto com este status.'**
+  String get depotFleetEmpty;
+
+  /// No description provided for @depotFleetError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar as motos.'**
+  String get depotFleetError;
+
+  /// No description provided for @depotFleetSeen.
+  ///
+  /// In pt, this message translates to:
+  /// **'Último sinal {time}'**
+  String depotFleetSeen(String time);
+
+  /// No description provided for @depotFleetNoSignal.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem sinal registrado'**
+  String get depotFleetNoSignal;
+
+  /// No description provided for @depotFleetFilter.
+  ///
+  /// In pt, this message translates to:
+  /// **'Filtrar por status'**
+  String get depotFleetFilter;
+
+  /// No description provided for @depotFleetSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{code}, {model}, {status}, bateria {pct}%'**
+  String depotFleetSemantics(String code, String model, String status, int pct);
+
+  /// No description provided for @vsFree.
+  ///
+  /// In pt, this message translates to:
+  /// **'Livre'**
+  String get vsFree;
+
+  /// No description provided for @vsRented.
+  ///
+  /// In pt, this message translates to:
+  /// **'Alugada'**
+  String get vsRented;
+
+  /// No description provided for @vsReserved.
+  ///
+  /// In pt, this message translates to:
+  /// **'Reservada'**
+  String get vsReserved;
+
+  /// No description provided for @vsPaused.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pausada'**
+  String get vsPaused;
+
+  /// No description provided for @vsBlocked.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bloqueada'**
+  String get vsBlocked;
+
+  /// No description provided for @vsMaintenance.
+  ///
+  /// In pt, this message translates to:
+  /// **'Manutenção'**
+  String get vsMaintenance;
+
+  /// No description provided for @vsOffline.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sem sinal'**
+  String get vsOffline;
+
+  /// No description provided for @vsAwaitingPickup.
+  ///
+  /// In pt, this message translates to:
+  /// **'Para recolher'**
+  String get vsAwaitingPickup;
+
+  /// No description provided for @vsOther.
+  ///
+  /// In pt, this message translates to:
+  /// **'Outro status'**
+  String get vsOther;
+
+  /// No description provided for @stockTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estoque de baterias'**
+  String get stockTitle;
+
+  /// No description provided for @stockError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar as baterias.'**
+  String get stockError;
+
+  /// No description provided for @stockEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma bateria com este status.'**
+  String get stockEmpty;
+
+  /// No description provided for @stockFilterAll.
+  ///
+  /// In pt, this message translates to:
+  /// **'Todas'**
+  String get stockFilterAll;
+
+  /// No description provided for @stockCountSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{status}: {count}'**
+  String stockCountSemantics(String status, int count);
+
+  /// No description provided for @stockOnVehicle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Na moto {code}'**
+  String stockOnVehicle(String code);
+
+  /// No description provided for @stockItemSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{serial}, {status}, carga {pct}%, {cycles}'**
+  String stockItemSemantics(
+    String serial,
+    String status,
+    int pct,
+    String cycles,
+  );
+
+  /// No description provided for @bsInVehicle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Na moto'**
+  String get bsInVehicle;
+
+  /// No description provided for @bsInVan.
+  ///
+  /// In pt, this message translates to:
+  /// **'Na van'**
+  String get bsInVan;
+
+  /// No description provided for @bsCharging.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão (recarga)'**
+  String get bsCharging;
+
+  /// No description provided for @bsInStation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Na estação'**
+  String get bsInStation;
+
+  /// No description provided for @bsRetired.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aposentada'**
+  String get bsRetired;
+
+  /// No description provided for @bsOther.
+  ///
+  /// In pt, this message translates to:
+  /// **'Outro status'**
+  String get bsOther;
+
+  /// No description provided for @unloadTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Descarregar {serial}'**
+  String unloadTitle(String serial);
+
+  /// No description provided for @unloadWarehouse.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão (recarga)'**
+  String get unloadWarehouse;
+
+  /// No description provided for @unloadWarehouseHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'A bateria fica no galpão para recarregar.'**
+  String get unloadWarehouseHint;
+
+  /// No description provided for @unloadStations.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estações de troca'**
+  String get unloadStations;
+
+  /// No description provided for @unloadStationHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'{count, plural, =0{Nenhuma carregada} =1{1 carregada} other{{count} carregadas}} · {address}'**
+  String unloadStationHint(int count, String address);
+
+  /// No description provided for @unloadStationsError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar as estações. Você ainda pode descarregar no galpão.'**
+  String get unloadStationsError;
+
+  /// No description provided for @unloadedStation.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria descarregada na estação {name}.'**
+  String unloadedStation(String name);
 }
 
 class _AppLocalizationsDelegate

@@ -346,6 +346,28 @@ class _AccountSheet extends ConsumerWidget {
             },
           ),
           ListRow(
+            key: const Key('menu-depot-fleet'),
+            icon: LucideIcons.warehouse,
+            iconTone: ListRowTone.info,
+            title: t.depotFleetTitle,
+            trailing: ListRowTrailing.chevron,
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/depot-fleet');
+            },
+          ),
+          ListRow(
+            key: const Key('menu-stock'),
+            icon: LucideIcons.batteryFull,
+            iconTone: ListRowTone.brand,
+            title: t.stockTitle,
+            trailing: ListRowTrailing.chevron,
+            onTap: () {
+              Navigator.of(context).pop();
+              context.push('/stock');
+            },
+          ),
+          ListRow(
             key: const Key('menu-sign-out'),
             icon: LucideIcons.logOut,
             iconTone: ListRowTone.danger,

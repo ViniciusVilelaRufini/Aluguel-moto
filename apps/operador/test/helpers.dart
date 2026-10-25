@@ -144,6 +144,7 @@ class FakeFieldRepository implements FieldRepository {
   int vanReads = 0;
   final loads = <(List<String>, int?)>[];
   final unloads = <List<String>>[];
+  final unloadStationIds = <String?>[];
   List<VehicleServiceRow> serviceRows = const [];
   final serviceQueries = <VehicleServiceStatus?>[];
   int modelReads = 0;
@@ -171,9 +172,10 @@ class FakeFieldRepository implements FieldRepository {
   }
 
   @override
-  Future<VanStock> unloadVan(List<String> serials) async {
+  Future<VanStock> unloadVan(List<String> serials, {String? stationId}) async {
     _check();
     unloads.add(serials);
+    unloadStationIds.add(stationId);
     van = fakeVan([...?van?.items.where((b) => !serials.contains(b.serial))]);
     return van!;
   }
@@ -296,6 +298,49 @@ class FakeFieldRepository implements FieldRepository {
     final h = handovers[id];
     if (h == null) throw const RepositoryException(FailureKind.rejected, 'not found', status: 404);
     return h;
+  }
+
+  // ── Rotas existentes: cancelar entrega, motos do galpao, baterias, estacoes ──
+  final cancelledHandovers = <(String, String)>[];
+  RepositoryException? cancelRejectWith;
+  final depotVehicleQueries = <(String, VehicleStatus?)>[];
+  List<Vehicle> depotVehicles = [];
+  List<Battery> batteries = [];
+  int batteryReads = 0;
+  List<SwapStation> stations = [];
+  bool stationsFail = false;
+
+  @override
+  Future<Handover> cancelHandover(String id, {required String reason}) async {
+    _check();
+    if (cancelRejectWith != null) throw cancelRejectWith!;
+    cancelledHandovers.add((id, reason));
+    final h = handovers[id];
+    if (h == null) throw const RepositoryException(FailureKind.rejected, 'not found', status: 404);
+    final c = h.rebuild((b) => b..status = HandoverStatus.canceled);
+    handovers[id] = c;
+    return c;
+  }
+
+  @override
+  Future<List<Vehicle>> listDepotVehicles(String depotId, {VehicleStatus? status}) async {
+    _check();
+    depotVehicleQueries.add((depotId, status));
+    return depotVehicles.where((v) => status == null || v.status == status).toList();
+  }
+
+  @override
+  Future<List<Battery>> listBatteries({BatteryStatus? status}) async {
+    _check();
+    batteryReads++;
+    return batteries.where((b) => status == null || b.status == status).toList();
+  }
+
+  @override
+  Future<List<SwapStation>> listSwapStations() async {
+    _check();
+    if (stationsFail) throw const RepositoryException(FailureKind.network, 'offline');
+    return stations;
   }
 
   @override
@@ -666,3 +711,28 @@ class Harness {
     await tester.pump();
   }
 }
+
+SwapStation fakeStation(String id, String name, {int available = 3}) => SwapStation((b) => b
+  ..id = id
+  ..name = name
+  ..address = 'Rua $name, 10'
+  ..lat = -23.56
+  ..lng = -46.68
+  ..availableBatteries = available
+  ..totalSlots = 8
+  ..openingHours = '24h');
+
+Vehicle fakeDepotVehicle(String code,
+        {VehicleStatus status = VehicleStatus.free, int pct = 80, DateTime? lastSeenAt}) =>
+    Vehicle((b) => b
+      ..id = 'veh-$code'
+      ..code = code
+      ..model = 'Volti S'
+      ..status = status
+      ..lat = -23.56
+      ..lng = -46.68
+      ..batteryPct = pct
+      ..estimatedRangeKm = 30
+      ..speedLimitKmh = 32
+      ..depotId = 'depot-1'
+      ..lastSeenAt = lastSeenAt);
