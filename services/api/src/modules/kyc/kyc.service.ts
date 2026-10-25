@@ -98,7 +98,8 @@ export class KycService {
       await this.push.sendToOwner(customerId, {
         title: result.decision === 'approved' ? 'Cadastro aprovado' : 'Cadastro não aprovado',
         body: result.decision === 'approved' ? 'Tudo certo. Você já pode alugar.' : 'Toque para ver o motivo.',
-        data: { kind: 'kyc', status: result.decision },
+        // `type` é o roteamento do app do cliente (push_routing.dart); `kind` fica por compatibilidade.
+        data: { type: 'kyc', kind: 'kyc', status: result.decision },
       });
       this.logger.log({ msg: 'kyc_decided', customerId, decision: result.decision });
     } catch (err) {

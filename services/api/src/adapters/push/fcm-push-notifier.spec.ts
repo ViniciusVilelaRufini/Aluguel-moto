@@ -30,10 +30,10 @@ describe('FcmPushNotifier (firebase-admin simulado)', () => {
   it('envia para todos os dispositivos do destinatário com título, corpo e data', async () => {
     const devices = store(['tok-a', 'tok-b']);
     const messaging: FcmMessaging = { sendEachForMulticast: jest.fn().mockResolvedValue({ successCount: 2, failureCount: 0, responses: [ok, ok] }) };
-    await new FcmPushNotifier(messaging, devices as never).sendToOwner('owner-1', { title: 'Cadastro aprovado', body: 'Tudo certo.', data: { kind: 'kyc' } });
+    await new FcmPushNotifier(messaging, devices as never).sendToOwner('owner-1', { title: 'Cadastro aprovado', body: 'Tudo certo.', data: { type: 'kyc' } });
     expect(devices.device.findMany).toHaveBeenCalledWith({ where: { ownerId: 'owner-1' }, select: { fcmToken: true } });
     expect(messaging.sendEachForMulticast).toHaveBeenCalledWith(
-      expect.objectContaining({ tokens: ['tok-a', 'tok-b'], notification: { title: 'Cadastro aprovado', body: 'Tudo certo.' }, data: { kind: 'kyc' } }),
+      expect.objectContaining({ tokens: ['tok-a', 'tok-b'], notification: { title: 'Cadastro aprovado', body: 'Tudo certo.' }, data: { type: 'kyc' } }),
     );
     expect(devices.device.deleteMany).not.toHaveBeenCalled();
   });

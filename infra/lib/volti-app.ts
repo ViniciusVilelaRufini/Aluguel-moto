@@ -27,6 +27,8 @@ export interface VoltiAppOptions {
   /** Optional admin panel domain, only applied together with adminCertificateArn (ACM in us-east-1). */
   adminDomainName?: string;
   adminCertificateArn?: string;
+  /** API domain (e.g. api.volti.com.br) used in the public SOS location-share link. */
+  apiDomainName?: string;
   alarmEmail?: string;
   /** Account-specific values (SES identity, IdP secret names, Cognito domain prefixes, WAF limit). */
   overrides?: ConfigOverrides;
@@ -86,6 +88,7 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     certificateArn: opts.certificateArn ?? FAKE_CERTIFICATE_ARN,
     imageTag: opts.apiImageTag ?? 'latest',
     desiredCount: opts.apiDesiredCount ?? 0,
+    apiDomainName: opts.apiDomainName,
   });
   const observability = new ObservabilityStack(app, `${prefix}-observability`, {
     ...common,

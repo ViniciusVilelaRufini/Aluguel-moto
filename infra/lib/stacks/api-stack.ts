@@ -30,6 +30,8 @@ export interface ApiStackProps extends StackProps {
   imageTag: string;
   /** 0 on the first deploy (no image in ECR yet); set to >= 1 once an image is pushed. */
   desiredCount: number;
+  /** API domain (e.g. api.volti.com.br) for the public SOS location-share link; unset = the ALB DNS name. */
+  apiDomainName?: string;
 }
 
 export const API_PORT = 3000;
@@ -38,6 +40,8 @@ export class ApiStack extends Stack {
   public readonly repository: ecr.Repository;
   public readonly service: ecsPatterns.ApplicationLoadBalancedFargateService;
   public readonly appSecret: secretsmanager.Secret;
+  /** Firebase service account JSON for PUSH_MODE=fcm (placeholder until pasted by hand). */
+  public readonly fcmSecret: secretsmanager.Secret;
   /** HMAC keys the API refuses to start without in production (generated here, never typed by hand). */
   public readonly signingSecrets: Record<'STATION_QR_SECRET' | 'FRAUD_HASH_SECRET' | 'PICKUP_CODE_SECRET', secretsmanager.Secret>;
   /** Healthy tasks below which the alarm fires (0 while the service is deployed with 0 tasks). */
@@ -67,6 +71,14 @@ export class ApiStack extends Stack {
         passwordLength: 48,
         excludePunctuation: true,
       },
+    });
+
+    // FCM (push): the service account JSON is pasted by hand; while it is a placeholder PUSH_MODE stays 'log'.
+    this.fcmSecret = new secretsmanager.Secret(this, 'FcmSecret', {
+      secretName: `volti/${env}/fcm-service-account`,
+      description: 'Firebase service account JSON (FCM_SERVICE_ACCOUNT_JSON); switch PUSH_MODE to fcm after filling it',
+      generateSecretString: { passwordLength: 32, excludePunctuation: true },
+      removalPolicy: cfg.disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
     });
 
     // Signing keys. Rotating STATION_QR_SECRET invalidates every printed station QR (re-issue them); rotating
@@ -142,6 +154,8 @@ export class ApiStack extends Stack {
           COGNITO_CUSTOMER_CLIENT_ID: auth.customerClient.userPoolClientId,
           COGNITO_STAFF_POOL_ID: auth.staffPool.userPoolId,
           COGNITO_STAFF_CLIENT_ID: auth.staffClient.userPoolClientId,
+          // Lacunas T5: o pool interno aceita o painel e o app do operador.
+          COGNITO_STAFF_CLIENT_IDS: `${auth.staffClient.userPoolClientId},${auth.operatorClient.userPoolClientId}`,
           IOT_MODE: 'aws',
           GEOFENCE_MODE: 'aws',
           LOCATION_TRACKER_NAME: iot.trackerName,
@@ -156,9 +170,12 @@ export class ApiStack extends Stack {
           SQS_QUEUE_ESTACOES_URL: messaging.stations.queue.queueUrl,
           STORAGE_MODE: 's3',
           PAYMENT_PROVIDER: cfg.paymentProvider,
+          // The API refuses PAYMENT_PROVIDER=fake with NODE_ENV=production unless explicitly allowed (dev only, no real customers).
+          ...(cfg.paymentProvider === 'fake' ? { ALLOW_FAKE_PAYMENTS: 'true' } : {}),
           INSURANCE_PROVIDER: 'mock',
           INVOICE_ISSUER: 'mock',
           KYC_PROVIDER: 'mock',
+          // 'fcm' once the FcmSecret holds the real Firebase service account (the API validates the JSON at startup).
           PUSH_MODE: 'log',
           TRACK_RETENTION_DAYS: '90',
           OUT_OF_AREA_LOCK_MINUTES: '5',
@@ -173,9 +190,17 @@ export class ApiStack extends Stack {
           STATION_QR_SECRET: ecs.Secret.fromSecretsManager(this.signingSecrets.STATION_QR_SECRET),
           FRAUD_HASH_SECRET: ecs.Secret.fromSecretsManager(this.signingSecrets.FRAUD_HASH_SECRET),
           PICKUP_CODE_SECRET: ecs.Secret.fromSecretsManager(this.signingSecrets.PICKUP_CODE_SECRET),
+          FCM_SERVICE_ACCOUNT_JSON: ecs.Secret.fromSecretsManager(this.fcmSecret),
         },
       },
     });
+
+    // Public SOS location-share page (served by the API at /share); required in production. Without a domain, the ALB DNS
+    // (HTTPS works only once the certificate covers the name the link uses: set -c domainName).
+    this.service.taskDefinition.defaultContainer!.addEnvironment(
+      'PUBLIC_SHARE_BASE_URL',
+      `https://${props.apiDomainName ?? this.service.loadBalancer.loadBalancerDnsName}/share`,
+    );
 
     (this.service.service.node.defaultChild as ecs.CfnService).desiredCount = desiredCount;
     this.minHealthyTasks = desiredCount === 0 ? 0 : Math.min(cfg.apiMinTasks, desiredCount);
