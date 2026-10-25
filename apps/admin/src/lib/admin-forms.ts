@@ -38,14 +38,17 @@ export interface VehicleForm {
   batterySerial: string;
   odometerKm: string;
   usageHours: string;
+  /** Galpão onde a moto entra (só no cadastro; obrigatório no painel). */
+  depotId: string;
 }
 
-export const EMPTY_VEHICLE_FORM: VehicleForm = { code: '', thingName: '', vehicleModelId: '', model: '', qrCode: '', batterySerial: '', odometerKm: '', usageHours: '' };
+export const EMPTY_VEHICLE_FORM: VehicleForm = { code: '', thingName: '', vehicleModelId: '', model: '', qrCode: '', batterySerial: '', odometerKm: '', usageHours: '', depotId: '' };
 
 export function vehicleFormFrom(v: S<'Vehicle'>): VehicleForm {
   return {
     code: v.code, thingName: v.thingName ?? '', vehicleModelId: v.vehicleModelId ?? '', model: v.model, qrCode: v.qrCode ?? '',
     batterySerial: v.batterySerial ?? '', odometerKm: v.odometerKm !== undefined ? String(v.odometerKm) : '', usageHours: v.usageHours !== undefined ? String(v.usageHours) : '',
+    depotId: v.depotId ?? '',
   };
 }
 
@@ -68,16 +71,20 @@ function commonErrors(f: VehicleForm): string | null {
   return null;
 }
 
-/** POST /vehicles: `code`, `model` e `thingName` obrigatórios; o modelo do catálogo define também o nome. */
+/**
+ * POST /vehicles: `code`, `model` e `thingName` obrigatórios; o modelo do catálogo define também o nome. No painel o
+ * galpão também é obrigatório: a moto nasce `free` nele, disponível para retirada (docs/decisoes.md, 2026-10-25).
+ */
 export function buildVehicleCreate(f: VehicleForm, modelName?: string): Built<S<'VehicleCreate'>> {
   if (!CODE_RE.test(f.code.trim())) return fail('Código no formato VLT-0001 (4 dígitos ou mais)');
   const e = commonErrors(f);
   if (e) return fail(e);
+  if (!f.depotId) return fail('Escolha o galpão onde a moto vai ficar');
   if (f.batterySerial.trim().length > 64) return fail('O número de série pode ter até 64 caracteres');
   return {
     ok: true,
     body: {
-      code: f.code.trim(), thingName: f.thingName.trim(), model: (modelName ?? f.model).trim(),
+      code: f.code.trim(), thingName: f.thingName.trim(), model: (modelName ?? f.model).trim(), depotId: f.depotId,
       ...(f.vehicleModelId ? { vehicleModelId: f.vehicleModelId } : {}),
       ...(f.qrCode.trim() ? { qrCode: f.qrCode.trim() } : {}),
       ...(f.batterySerial.trim() ? { batterySerial: f.batterySerial.trim() } : {}),

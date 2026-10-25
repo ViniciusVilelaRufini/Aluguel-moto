@@ -20,16 +20,17 @@ const vehicle: S<'Vehicle'> = {
 };
 
 describe('moto: cadastrar (POST /vehicles)', () => {
-  const ok = { ...EMPTY_VEHICLE_FORM, code: 'VLT-0061', thingName: 'moto-0061', vehicleModelId: 'm1' };
+  const ok = { ...EMPTY_VEHICLE_FORM, code: 'VLT-0061', thingName: 'moto-0061', vehicleModelId: 'm1', depotId: 'd1' };
   it('monta o corpo do contrato e usa o nome do modelo do catálogo', () => {
     const r = buildVehicleCreate({ ...ok, qrCode: ' volti://v/VLT-0061 ', batterySerial: 'BT-1' }, 'Volti Flash');
-    expect(r).toEqual({ ok: true, body: { code: 'VLT-0061', thingName: 'moto-0061', model: 'Volti Flash', vehicleModelId: 'm1', qrCode: 'volti://v/VLT-0061', batterySerial: 'BT-1' } });
+    expect(r).toEqual({ ok: true, body: { code: 'VLT-0061', thingName: 'moto-0061', model: 'Volti Flash', depotId: 'd1', vehicleModelId: 'm1', qrCode: 'volti://v/VLT-0061', batterySerial: 'BT-1' } });
   });
   it('valida código, rastreador e modelo', () => {
     expect(buildVehicleCreate({ ...ok, code: 'VLT-12' }, 'X')).toMatchObject({ ok: false });
     expect(buildVehicleCreate({ ...ok, code: 'moto-1' }, 'X')).toMatchObject({ ok: false });
     expect(buildVehicleCreate({ ...ok, thingName: 'moto 61' }, 'X')).toMatchObject({ ok: false });
     expect(buildVehicleCreate({ ...ok, vehicleModelId: '' })).toEqual({ ok: false, error: 'Escolha o modelo' });
+    expect(buildVehicleCreate({ ...ok, depotId: '' }, 'X')).toEqual({ ok: false, error: 'Escolha o galpão onde a moto vai ficar' });
   });
   it('sem catálogo aceita o nome do modelo digitado', () => {
     const r = buildVehicleCreate({ ...ok, vehicleModelId: '', model: 'Volti S1' });

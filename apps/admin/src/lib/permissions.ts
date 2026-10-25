@@ -1,6 +1,6 @@
 import type { StaffGroup } from './types';
 
-export type MenuKey = 'fleet' | 'alerts' | 'zones' | 'customers' | 'tasks' | 'finance' | 'settings' | 'depots' | 'stations' | 'pickups' | 'handovers' | 'team';
+export type MenuKey = 'fleet' | 'vehicles' | 'alerts' | 'zones' | 'customers' | 'tasks' | 'finance' | 'settings' | 'depots' | 'stations' | 'pickups' | 'handovers' | 'team';
 
 export interface MenuItem {
   key: MenuKey;
@@ -15,6 +15,8 @@ export interface MenuItem {
 /** Seções do painel, na ordem do design (ui_kits/admin-v2/AdminApp.jsx). `admin` entra em todas. */
 export const MENU: MenuItem[] = [
   { key: 'fleet', label: 'Frota ao vivo', href: '/fleet', icon: 'Map', groups: ['admin', 'operacao', 'suporte'] },
+  // Cadastro de motos (Task 31, docs/decisoes.md 2026-10-25): POST/PATCH /vehicles e transferência são admin/operacao.
+  { key: 'vehicles', label: 'Motos', href: '/motos', icon: 'Bike', groups: ['admin', 'operacao'] },
   // Task 14: financeiro vê os alertas de pagamento (`payment_needs_review`), mas continua começando no Financeiro.
   { key: 'alerts', label: 'Alertas', href: '/alerts', icon: 'Siren', groups: ['admin', 'operacao', 'suporte', 'financeiro'], homeGroups: ['admin', 'operacao', 'suporte'] },
   { key: 'zones', label: 'Cercas e regras', href: '/zones', icon: 'Hexagon', groups: ['admin', 'operacao'] },
@@ -74,6 +76,7 @@ export type Action =
   | 'catalog.edit'
   | 'subscription.assignVehicle'
   | 'vehicle.edit'
+  | 'vehicle.transfer'
   | 'depot.edit'
   | 'depot.deactivate'
   | 'handover.cancel'
@@ -115,6 +118,7 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'catalog.edit': ['admin'], // POST/PATCH /vehicle-models, POST /vehicle-models/uploads
   'subscription.assignVehicle': ['admin', 'operacao'], // PUT /payments/subscriptions/{id}/vehicle
   'vehicle.edit': ['admin', 'operacao'], // PATCH /vehicles/{id}
+  'vehicle.transfer': ['admin', 'operacao'], // POST /vehicles/{id}/transfer-depot
   'depot.edit': ['admin', 'operacao'],
   // Não há DELETE no contrato: "desativar" (PATCH active=false) fica só com o admin.
   'depot.deactivate': ['admin'],

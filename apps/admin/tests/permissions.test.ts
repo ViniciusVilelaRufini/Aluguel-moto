@@ -4,8 +4,8 @@ import { can, menuFor, canSeeFullCpf, homeFor } from '@/lib/permissions';
 const keys = (g: string[]) => menuFor(g as never).map((m) => m.key);
 
 describe('menu by group', () => {
-  it('admin sees the 12 sections in design order', () => {
-    expect(keys(['admin'])).toEqual(['fleet', 'alerts', 'zones', 'customers', 'tasks', 'finance', 'settings', 'depots', 'stations', 'pickups', 'handovers', 'team']);
+  it('admin sees the 13 sections in design order', () => {
+    expect(keys(['admin'])).toEqual(['fleet', 'vehicles', 'alerts', 'zones', 'customers', 'tasks', 'finance', 'settings', 'depots', 'stations', 'pickups', 'handovers', 'team']);
   });
   it('estações (Task 12 das lacunas): admin e operação; suporte, financeiro e campo não', () => {
     expect(keys(['operacao'])).toContain('stations');

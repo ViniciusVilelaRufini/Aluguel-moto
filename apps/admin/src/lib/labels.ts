@@ -97,6 +97,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   'vehicle.status': 'Mudança de situação',
   'vehicle.update': 'Cadastro alterado',
   'vehicle.create': 'Moto cadastrada',
+  'vehicle.transfer_depot': 'Transferência de galpão',
 };
 
 /** Tipos de cerca no menu de camadas e no tooltip. */

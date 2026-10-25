@@ -24,7 +24,6 @@ import { Field, Select } from '@/components/ui';
 import { FleetStatus } from '@/ds/FleetStatus';
 import { StatTile, StatTileSkeleton } from '@/ds/StatTile';
 import { Button } from '@/ds/Button';
-import { VehicleFormModal } from '@/components/VehicleFormModal';
 import { IconButton } from '@/ds/IconButton';
 import { Icon } from '@/ds/Icon';
 import { can, canOpen } from '@/lib/permissions';
@@ -61,7 +60,6 @@ export default function FleetPage() {
   const [replay, setReplay] = useState(false);
   const [view, setView] = useState<'map' | 'list'>(params.get('view') === 'list' ? 'list' : 'map');
   const [onlyFixed, setOnlyFixed] = useState(false);
-  const [newVehicle, setNewVehicle] = useState(false);
   const mapRef = useRef<MlMap | null>(null);
   const pulseRef = useRef<Marker | null>(null);
   const imagesOff = useRef<() => void>(() => {});
@@ -294,7 +292,7 @@ export default function FleetPage() {
           <div role="group" aria-label="Controles da frota" data-testid="fleet-controls" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', pointerEvents: 'auto' }}>
             <SegmentedControl label="Ver frota como" options={[{ value: 'map', label: 'Mapa' }, { value: 'list', label: 'Lista' }]} value={view} onChange={changeView} style={{ width: 170, boxShadow: 'var(--shadow-1)' }} />
             {can(groups, 'vehicle.edit') && (
-              <Button size="sm" variant="secondary" icon="Plus" testId="vehicle-new" style={{ height: 30, background: '#fff', color: 'var(--text-primary)', borderColor: 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => setNewVehicle(true)}>Nova moto</Button>
+              <Button size="sm" variant="secondary" icon="Plus" testId="vehicle-new" style={{ height: 30, background: '#fff', color: 'var(--text-primary)', borderColor: 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => router.push('/motos?new=1')}>Nova moto</Button>
             )}
             {canHeat && view === 'map' && (
               <Button size="sm" variant={showHeat ? 'dark' : 'secondary'} icon="Flame" testId="heat-toggle" style={{ height: 30, background: showHeat ? undefined : '#fff', color: showHeat ? undefined : 'var(--text-primary)', borderColor: showHeat ? 'transparent' : 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => setShowHeat(!showHeat)}>Demanda</Button>
@@ -302,7 +300,6 @@ export default function FleetPage() {
           </div>
           {view === 'list' && <div className="section-in"><FleetList vehicles={shown} selected={selected} onSelect={(id) => select(id)} onlyFixed={onlyFixed} onToggleFixed={() => setOnlyFixed((x) => !x)} /></div>}
         </div>
-        {newVehicle && <VehicleFormModal onClose={() => setNewVehicle(false)} onSaved={(v) => select(v.id)} />}
         {view === 'map' && !(selected && replay) && <div data-testid="map-legend" aria-label="Legenda do mapa" role="group" className="map-legend"
           style={{ position: 'absolute', left: 16, bottom: 24, display: 'flex', gap: 14, alignItems: 'center', padding: '8px 12px', borderRadius: 'var(--radius-md)', background: 'var(--glass-bg)', backdropFilter: 'var(--blur-glass)', WebkitBackdropFilter: 'var(--blur-glass)', boxShadow: 'var(--shadow-1)', font: 'var(--type-caption)', fontWeight: 600 }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>

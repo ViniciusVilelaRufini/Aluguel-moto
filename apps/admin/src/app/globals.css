@@ -96,7 +96,11 @@ a:hover{color:var(--brand-press)}
   .live-text { display: none; }
   .side-panel { width: 320px !important; }
 }
+@media (max-width: 1100px) {
+  .filters-grid { grid-template-columns: 1fr 1fr !important; }
+}
 @media (max-width: 820px) {
+  .filters-grid { grid-template-columns: 1fr !important; }
   .split { flex-direction: column !important; }
   .side-panel { width: 100% !important; max-height: 50vh; border-left: 0 !important; border-top: 1px solid var(--border-subtle); }
 }

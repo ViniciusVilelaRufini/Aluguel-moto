@@ -44,6 +44,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   'vehicle.create': 'Moto cadastrada',
   'vehicle.update': 'Moto atualizada',
   'vehicle.status': 'Situação da moto alterada',
+  'vehicle.transfer_depot': 'Moto transferida de galpão',
   'vehicle.service_unlock': 'Liberação para serviço',
   'vehicle.zone_speed_limit': 'Limite de velocidade da zona',
   'vehicle.out_of_area_lock': 'Bloqueio por sair da área',
