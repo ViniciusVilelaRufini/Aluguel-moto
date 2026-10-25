@@ -35,6 +35,14 @@ const kMapReferenceUrl = String.fromEnvironment(
   defaultValue: kMapTileUrl == kDevMapTileUrl ? kDevMapReferenceUrl : '',
 );
 
+/// Maior zoom em que o provedor tem tiles de verdade (o Esri Light Gray termina no 16;
+/// alem disso responde "Map data not yet available"). Troca com
+/// `--dart-define=MAP_TILE_MAX_ZOOM=18` junto com o servidor (E-07).
+const kMapMaxNativeZoom = int.fromEnvironment('MAP_TILE_MAX_ZOOM', defaultValue: 16);
+
+/// Maior zoom de qualquer mapa do app: um nivel de ampliacao sobre o ultimo tile real.
+const kMapMaxZoom = kMapMaxNativeZoom + 1.0;
+
 /// Subdominios de `{s}` (so usados se o template tiver `{s}`).
 const kMapTileSubdomains = ['a', 'b', 'c'];
 
@@ -174,6 +182,7 @@ TileLayer voltiTileLayer(
   layer = TileLayer(
     urlTemplate: template,
     subdomains: kMapTileSubdomains,
+    maxNativeZoom: kMapMaxNativeZoom,
     userAgentPackageName: kMapUserAgentPackage,
     // `@2x` so quando o provedor tem `{r}` (sem ele o flutter_map pediria 4x mais tiles).
     retinaMode: template.contains('{r}') && RetinaMode.isHighDensity(context),

@@ -24,6 +24,7 @@ import '../pick/depot_selection.dart';
 import '../plan/pix_sheet.dart';
 import '../plan/plan_screen.dart';
 import 'depot_hours.dart';
+import 'depot_refresh.dart';
 import 'depot_labels.dart';
 
 /// Cotacao do resumo da retirada (plano, seguro e caucao). O plano so e cobrado
@@ -53,7 +54,7 @@ class PickupScreen extends ConsumerStatefulWidget {
   ConsumerState<PickupScreen> createState() => _PickupScreenState();
 }
 
-class _PickupScreenState extends ConsumerState<PickupScreen> {
+class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBindingObserver, DepotRefreshOnResume<PickupScreen> {
   PickupMode? _mode;
   LocalDay? _day;
   DateTime? _slot;
@@ -87,7 +88,13 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
     super.dispose();
   }
 
-  DepotSelection get _sel => widget.selection;
+  /// Selecao com o galpao mais recente (E-02): o horario muda quando ele abre/fecha.
+  DepotSelection get _sel {
+    final s = widget.selection;
+    final fresh = ref.read(depotsProvider).value?.where((d) => d.id == s.depot.id).firstOrNull;
+    return fresh == null ? s : DepotSelection(depot: fresh, vehicle: s.vehicle, plan: s.plan, coverage: s.coverage, coverageName: s.coverageName);
+  }
+
   DepotHours get _hours => DepotHours.of(_sel.depot);
 
   Future<void> _addCard() async {
@@ -234,6 +241,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
     final now = ref.watch(clockProvider)();
+    ref.watch(depotsProvider); // rebuild quando o galpao atualiza
     final hours = _hours;
     final openNow = hours.isOpenAt(now);
     final days = hours.scheduleDays(now);

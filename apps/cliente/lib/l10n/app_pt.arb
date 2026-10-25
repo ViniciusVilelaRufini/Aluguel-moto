@@ -65,7 +65,7 @@
   "pickupWhenValue": "{weekday} {date} às {time}",
   "@pickupWhenValue": {"placeholders": {"weekday": {"type": "String"}, "date": {"type": "String"}, "time": {"type": "String"}}},
   "depositAmount": "Caução (devolvida)",
-  "depositHint": "A caução é liberada quando você encerra a corrida.",
+  "depositHint": "A caução cobre o valor da corrida; o que sobrar volta para você.",
   "discount": "Desconto",
   "disputeCharge": "Contestar cobrança",
   "disputeHint": "Explique o motivo da contestação",
@@ -297,7 +297,7 @@
       }
     }
   },
-  "pixText": "Pague {amount} para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução volta quando você encerra a corrida.",
+  "pixText": "Pague {amount} para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução cobre o valor da corrida; o que sobrar volta para você.",
   "@pixText": {
     "placeholders": {
       "amount": {
@@ -838,7 +838,7 @@
   "helpFaq1Title": "Como destravo uma moto?",
   "helpFaq1Text": "Escolha uma moto na lista ou no mapa, o plano e o seguro e reserve. Mostre o QR da reserva no galpão para retirar a moto, confira as fotos e o estado dela e toque em Aceitar e destravar.",
   "helpFaq2Title": "O que é a caução?",
-  "helpFaq2Text": "Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela volta quando você encerra a corrida.",
+  "helpFaq2Text": "Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela cobre o valor da corrida; o que sobrar volta para você.",
   "helpFaq3Title": "Como encerro a corrida?",
   "helpFaq3Text": "Devolva a moto no galpão, onde o operador confere a entrega, ou pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar. Se a bateria estiver baixa, troque-a por QR numa estação, durante a corrida, em Trocar bateria.",
   "helpFaq4Title": "Como uso a carteira e os pacotes?",
@@ -1096,7 +1096,7 @@
   "paySubtitle": "O cartão garante a caução. Você também pode pagar a caução por Pix em cada aluguel.",
   "payPixWallet": "Pix + carteira Volti",
   "payCardMissing": "Adicione um cartão para a caução",
-  "payPixExplain": "Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.",
+  "payPixExplain": "Com Pix, você paga a caução por um QR antes de cada aluguel e ela cobre o valor da corrida; o que sobrar volta para você. Dá para trocar a forma de pagamento a cada aluguel.",
   "payFinish": "Concluir cadastro",
   "onboardingSentToast": "Cadastro enviado. Verificação em até 2 min.",
   "vehicleCategoryDefault": "Moto elétrica",
@@ -1372,7 +1372,10 @@
   "goHome": "Ir para o início",
   "planNeedsCard": "Adicione um cartão ou escolha Pix para a caução.",
   "returnLockTitle": "Trave e encerre",
-  "returnInsideRule": "Você está num ponto verde. Pode encerrar sem taxa.",
+  "returnInsideRule": "Parece que a moto está num ponto verde. Se estiver, dá para encerrar sem taxa.",
+  "returnOutsideRejected": "A moto precisa estar dentro da área verde para encerrar (vale a posição da moto, não a do seu celular). Leve a moto até lá ou devolva no galpão. Encerrar fora da área só com o suporte, com taxa.",
+  "returnGoDepot": "Devolver no galpão",
+  "handoverVehicleOffline": "Tente de novo em instantes ou fale com o operador. Nada foi cobrado.",
   "reservationNoCode": "Não conseguimos carregar o QR da reserva. Tente de novo antes de ir ao galpão.",
   "handoverTitle": "Confira sua moto",
   "handoverIntro": "{operator} separou a {code} para você. Confira as fotos e o checklist antes de aceitar.",

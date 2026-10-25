@@ -100,6 +100,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
 
   /// Encerramento recusado com `409 swap-open`: oferece "Continuar troca".
   bool _swapOpen = false;
+
+  /// Encerramento recusado com `422 rental-outside-return-zone` (E-03): a posicao da MOTO decide.
+  bool _outsideRejected = false;
   Timer? _poll;
   StreamSubscription<RealtimeEvent>? _rideEvents;
 
@@ -201,6 +204,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       _busy = true;
       _error = null;
       _swapOpen = false;
+      _outsideRejected = false;
     });
     try {
       final backend = ref.read(backendProvider);
@@ -222,8 +226,15 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       if (mounted) {
         setState(() {
           _swapOpen = f.slug == 'swap-open';
-          _error = _swapOpen ? l.swapErrorOpen : failureText(l, e);
+          _outsideRejected = f.slug == 'rental-outside-return-zone';
+          _error = _swapOpen
+              ? l.swapErrorOpen
+              : _outsideRejected
+              ? l.returnOutsideRejected
+              : failureText(l, e);
         });
+        // A posicao que o app tinha estava velha: le a da moto de novo.
+        if (_outsideRejected) ref.invalidate(returnContextProvider(widget.rentalId));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -557,6 +568,34 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                             padding: const EdgeInsets.only(top: 12),
                             child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
                           ),
+                        if (_outsideRejected) ...[
+                          const SizedBox(height: VoltiSpacing.s8),
+                          VoltiButton(
+                            key: const Key('return-go-depot'),
+                            label: l.returnGoDepot,
+                            icon: LucideIcons.warehouse,
+                            variant: VoltiButtonVariant.secondary,
+                            fullWidth: true,
+                            onPressed: () {
+                              setState(() {
+                                _mode = ReturnMode.depot;
+                                _outsideRejected = false;
+                                _error = null;
+                              });
+                              final d = ref.read(rentalDepotProvider(widget.rentalId)).value;
+                              if (d != null) _moveMapTo(LatLng(d.lat, d.lng));
+                            },
+                          ),
+                          const SizedBox(height: VoltiSpacing.s8),
+                          VoltiButton(
+                            key: const Key('return-outside-support'),
+                            label: l.contactSupport,
+                            icon: LucideIcons.messageCircle,
+                            variant: VoltiButtonVariant.ghost,
+                            fullWidth: true,
+                            onPressed: () => context.push('/account/support'),
+                          ),
+                        ],
                         if (_swapOpen)
                           Padding(
                             padding: const EdgeInsets.only(top: VoltiSpacing.s8),
@@ -577,7 +616,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                           fullWidth: true,
                           onPressed: canEnd ? () => _end(confirm: inZone == null) : null,
                         ),
-                        if (outside) ...[
+                        if (outside && !_outsideRejected) ...[
                           const SizedBox(height: 8),
                           VoltiButton(
                             label: l.contactSupport,

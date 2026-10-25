@@ -6,6 +6,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import 'map_tiles.dart' show kMapMaxZoom;
+
 /// Ponto dentro do poligono (anel externo GeoJSON, [lng, lat]).
 bool pointInZone(double lat, double lng, GeoZone zone) {
   final rings = zone.geometry.coordinates;
@@ -201,8 +203,8 @@ class DrawnPolyline extends StatelessWidget {
   }
   final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
   final meters = const Distance()(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
-  if (meters < degenerateMeters) return (center: center, zoom: 17, path: false);
+  if (meters < degenerateMeters) return (center: center, zoom: kMapMaxZoom, path: false);
   final span = math.max(maxLat - minLat, (maxLng - minLng) * math.cos(center.latitudeInRad)).clamp(1e-6, 360.0);
-  final zoom = (math.log(360 * 1.4 / span) / math.ln2 - .6).clamp(12.0, 17.0);
+  final zoom = (math.log(360 * 1.4 / span) / math.ln2 - .6).clamp(12.0, kMapMaxZoom);
   return (center: center, zoom: zoom, path: true);
 }

@@ -526,6 +526,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
               icon: LucideIcons.userPlus,
               variant: VoltiButtonVariant.ghost,
               fullWidth: true,
+              wrap: true,
               onPressed: () async {
                 Navigator.of(context).pop();
                 await context.push('/account');
