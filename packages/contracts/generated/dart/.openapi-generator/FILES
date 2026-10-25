@@ -195,6 +195,7 @@ doc/PricingPlan.md
 doc/PricingPlanInput.md
 doc/PricingPlanList.md
 doc/Problem.md
+doc/PublicApi.md
 doc/Quote.md
 doc/QuoteRequest.md
 doc/RatingRequest.md
@@ -232,6 +233,7 @@ doc/RevenueRow.md
 doc/SendCommandRequest.md
 doc/ServiceUnlockRequest.md
 doc/ServiceVehicleStatus.md
+doc/SharedLocation.md
 doc/SpeedLimiterCheck.md
 doc/StaffApi.md
 doc/StaffGroup.md
@@ -328,6 +330,7 @@ lib/src/api/lgpd_api.dart
 lib/src/api/maintenance_api.dart
 lib/src/api/payments_api.dart
 lib/src/api/pricing_api.dart
+lib/src/api/public_api.dart
 lib/src/api/referrals_api.dart
 lib/src/api/rentals_api.dart
 lib/src/api/reports_api.dart
@@ -558,6 +561,7 @@ lib/src/model/revenue_row.dart
 lib/src/model/send_command_request.dart
 lib/src/model/service_unlock_request.dart
 lib/src/model/service_vehicle_status.dart
+lib/src/model/shared_location.dart
 lib/src/model/speed_limiter_check.dart
 lib/src/model/staff_group.dart
 lib/src/model/staff_user.dart
