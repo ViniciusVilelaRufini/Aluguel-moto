@@ -84,17 +84,29 @@ services:
       - caddyconfig:/config
     depends_on: [api]
 
-  # Simulador de rastreadores (opcional): docker compose ... --profile sim up -d iot-sim
+  # Simulador de rastreadores (dev sem rastreador real): um rastreador por moto cadastrada, na posição dela (no galpão, a do
+  # galpão), parado, respondendo pelo shadow como o firmware (trava só < 3 km/h, limite <= 32 km/h). Liga/desliga pelo
+  # parâmetro /volti/dev/config/IOT_SIM (on, o padrão, ou off): o update.sh ativa o profile "sim" conforme o valor.
+  # Só lê o banco (SELECT) e recebe só a senha do Postgres, não o .env inteiro.
   iot-sim:
     profiles: ["sim"]
     build:
       context: ../..
       dockerfile: services/iot-sim/Dockerfile
+    image: volti/iot-sim:dev
     restart: unless-stopped
     environment:
       MQTT_URL: mqtt://mosquitto:1883
-      SIM_VEHICLES: ${SIM_VEHICLES:-5}
-    depends_on: [mosquitto]
+      SIM_FLEET_SOURCE: postgres
+      DATABASE_URL: postgresql://volti:${DB_PASSWORD}@postgres:5432/volti
+      SIM_FLEET_REFRESH_SEC: "60"
+      # false: destravada, a moto fica parada onde está (ninguém pilota no dev). true: um piloto simulado anda perto dali.
+      SIM_RIDE_ON_UNLOCK: ${SIM_RIDE_ON_UNLOCK:-false}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
 
 volumes:
   pgdata:

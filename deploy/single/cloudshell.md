@@ -183,6 +183,43 @@ aws ssm send-command --instance-ids $IID --document-name volti-dev-update
 - Painel: `volti-dev-admin` com `action=publish-panel`.
 - Mudanças de infra: repita o passo 4 com os novos `-c`. O user data só roda no primeiro boot; para trocar a branch de uma instância já criada, edite `VOLTI_BRANCH` em `/etc/volti/instance.env` e rode o update.
 
+## Simulador de rastreadores (motos sem rastreador real)
+
+O dev single não tem rastreador físico. Por isso o `update.sh` sobe o serviço `iot-sim` (`services/iot-sim`, profile `sim` do `compose.yml`) ligado ao Mosquitto da instância. Ele simula um rastreador por moto cadastrada, lendo a frota do Postgres só com `SELECT`, e:
+
+- publica telemetria na posição da moto (moto livre ou em manutenção no galpão fica na posição do galpão), parada, com velocidade 0, a cada 60 s. É esse heartbeat que deixa a moto `online` no painel;
+- responde aos comandos pelo shadow como o firmware: destrava, trava só abaixo de 3 km/h, limite de 0 a 32 km/h. O aceite da entrega (`/handovers/{id}/accept`) deixa de dar `409 vehicle-offline`;
+- quando a moto chega a um galpão pelo recolhimento ou pela entrega (travada e parada), passa a reportar a posição do galpão depois de 3 min.
+
+**Ligado por padrão.** Para desligar (por exemplo, ao instalar um rastreador de bancada com o mesmo `thingName`), crie o parâmetro e rode o update:
+
+```bash
+# primeira vez: cria com a tag do projeto
+aws ssm put-parameter --name /volti/dev/config/IOT_SIM --type String --value off --tags Key=Projeto,Value=Volti
+# se já existe: troca o valor (o --overwrite não aceita --tags)
+aws ssm put-parameter --name /volti/dev/config/IOT_SIM --type String --value off --overwrite
+aws ssm send-command --instance-ids $IID --document-name volti-dev-update --query Command.CommandId --output text
+```
+
+Para religar, use `--value on` (ou apague o parâmetro com `aws ssm delete-parameter --name /volti/dev/config/IOT_SIM`) e rode o update. O `render-env.sh` regrava o `/opt/volti/.env` a cada update, então editar o `.env` à mão não adianta: o valor vem do parâmetro. Opcional: `/volti/dev/config/SIM_RIDE_ON_UNLOCK=true` faz um piloto simulado andar com a moto destravada num laço de ~220 m perto de onde ela está. O padrão `false` deixa a moto parada.
+
+Logs: `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env logs --tail 50 iot-sim` (Session Manager, como root, em `/opt/volti/src`).
+
+## Correção de dados: posição das motos no galpão
+
+`deploy/single/fix-depot-positions.sh` é idempotente. Ele alinha `lat`/`lng` (e o endereço em cache) de toda moto com `depotId` e status `free` ou `maintenance` à posição do galpão dela. Corrige motos movidas de galpão por SQL sem atualizar a posição. Cada moto corrigida ganha um registro `vehicle.position_fix` no AuditLog, e uma segunda execução não muda nada. Primeiro rode sem gravar (`--dry-run`), depois aplique:
+
+```bash
+CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript \
+  --parameters 'commands=["bash /opt/volti/src/deploy/single/fix-depot-positions.sh --dry-run"]' --query Command.CommandId --output text)
+aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query StandardOutputContent --output text
+CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript \
+  --parameters 'commands=["bash /opt/volti/src/deploy/single/fix-depot-positions.sh"]' --query Command.CommandId --output text)
+aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query StandardOutputContent --output text
+```
+
+O script precisa do código atualizado na instância: rode o `volti-dev-update` antes.
+
 ## Segredos manuais (opcionais)
 
 ```bash
