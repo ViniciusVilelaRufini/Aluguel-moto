@@ -5403,6 +5403,66 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Pronto! Você já pode alugar de novo.'**
   String get debtPaidText;
+
+  /// No description provided for @sheetExpand.
+  ///
+  /// In pt, this message translates to:
+  /// **'Expandir'**
+  String get sheetExpand;
+
+  /// No description provided for @sheetCollapse.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recolher'**
+  String get sheetCollapse;
+
+  /// No description provided for @sheetHandleHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Arraste para cima ou para baixo'**
+  String get sheetHandleHint;
+
+  /// No description provided for @depotHoursTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Horários'**
+  String get depotHoursTitle;
+
+  /// No description provided for @depotAddressTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Endereço'**
+  String get depotAddressTitle;
+
+  /// No description provided for @weekdayLong.
+  ///
+  /// In pt, this message translates to:
+  /// **'{weekday, select, 0{Domingo} 1{Segunda} 2{Terça} 3{Quarta} 4{Quinta} 5{Sexta} 6{Sábado} other{}}'**
+  String weekdayLong(String weekday);
+
+  /// No description provided for @depotHoursRange.
+  ///
+  /// In pt, this message translates to:
+  /// **'{opens} às {closes}'**
+  String depotHoursRange(String opens, String closes);
+
+  /// No description provided for @depotHoursTodayTag.
+  ///
+  /// In pt, this message translates to:
+  /// **'hoje'**
+  String get depotHoursTodayTag;
+
+  /// No description provided for @depotHoursRowSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{day}: {hours}'**
+  String depotHoursRowSemantics(String day, String hours);
+
+  /// No description provided for @depotDirectionsSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Como chegar ao {name}'**
+  String depotDirectionsSemantics(String name);
 }
 
 class _AppLocalizationsDelegate

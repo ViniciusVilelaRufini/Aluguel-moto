@@ -9,6 +9,7 @@ import '../../../core/launcher.dart';
 import '../../../core/widgets.dart';
 import '../../pickup/depot_labels.dart';
 import '../depot_providers.dart';
+import '../home_sheet.dart';
 import 'station_logic.dart';
 
 /// Acoes extras de uma linha da folha (ex.: um futuro "Trocar aqui" da troca
@@ -19,78 +20,127 @@ typedef StationActionsBuilder = List<Widget> Function(BuildContext context, Swap
 /// do galpao (nao e modal: o mapa continua visivel e tocar numa linha centra o
 /// ponto). O galpao vem primeiro quando e ponto de troca; depois, as estacoes
 /// mais perto primeiro. A rota so abre no toque em "Como chegar".
-class StationsSheet extends ConsumerWidget {
-  const StationsSheet({super.key = const Key('stations-sheet'), required this.onClose, required this.onFocus, this.extraActions});
+///
+/// Arrastavel ([HomeSheet]): recolhida, meia altura e expandida (lista completa
+/// rolavel); arrastar alem da recolhida fecha, como o X. A linha da estacao
+/// escolhida ([selectedId], pin tocado no mapa) fica destacada e rola para a vista.
+class StationsSheet extends ConsumerStatefulWidget {
+  const StationsSheet({
+    super.key,
+    required this.onClose,
+    required this.onFocus,
+    this.extraActions,
+    this.selectedId,
+    this.maxCollapsedPx = 360,
+    this.height,
+    this.onCollapsedChanged,
+    this.sheetKey,
+  });
 
   final VoidCallback onClose;
   final ValueChanged<SwapStation> onFocus;
   final StationActionsBuilder? extraActions;
+  final String? selectedId;
+  final double maxCollapsedPx;
+  final ValueNotifier<double>? height;
+  final ValueChanged<double>? onCollapsedChanged;
+  final GlobalKey<HomeSheetState>? sheetKey;
 
-  Future<void> _go(BuildContext context, WidgetRef ref, SwapStation s) async {
+  @override
+  ConsumerState<StationsSheet> createState() => _StationsSheetState();
+}
+
+class _StationsSheetState extends ConsumerState<StationsSheet> {
+  final _rowKeys = <String, GlobalKey>{};
+
+  GlobalKey _rowKey(String id) => _rowKeys.putIfAbsent(id, GlobalKey.new);
+
+  @override
+  void didUpdateWidget(covariant StationsSheet old) {
+    super.didUpdateWidget(old);
+    final id = widget.selectedId;
+    if (id != null && id != old.selectedId) {
+      // Pin tocado no mapa: a linha dele rola para a vista.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _rowKeys[id]?.currentContext;
+        if (ctx == null || !mounted) return;
+        Scrollable.ensureVisible(
+          ctx,
+          duration: VoltiMotion.scaled(context, VoltiMotion.durSlow),
+          curve: VoltiMotion.easeScreen,
+          alignment: .05,
+        );
+      });
+    }
+  }
+
+  Future<void> _go(SwapStation s) async {
     final ok = await openDirections(ref.read(urlLauncherProvider), s.lat, s.lng);
-    if (!ok && context.mounted) VoltiToast.show(context, context.l.navigateFailed, tone: VoltiToastTone.danger);
+    if (!ok && mounted) VoltiToast.show(context, context.l.navigateFailed, tone: VoltiToastTone.danger);
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final l = context.l;
     final stations = ref.watch(swapStationsProvider);
     final depot = ref.watch(currentDepotProvider).value;
 
     final Widget body = switch (stations) {
-      AsyncValue(:final error?, hasValue: false) || AsyncValue(:final error?, isLoading: false) => SingleChildScrollView(
-        child: KeyedSubtree(
-          key: const Key('stations-error'),
-          child: ErrorState(error: error, onRetry: () => ref.invalidate(swapStationsProvider)),
-        ),
+      AsyncValue(:final error?, hasValue: false) || AsyncValue(:final error?, isLoading: false) => KeyedSubtree(
+        key: const Key('stations-error'),
+        child: ErrorState(error: error, onRetry: () => ref.invalidate(swapStationsProvider)),
       ),
       AsyncValue(hasValue: false) => VoltiSkeleton.list(key: const Key('stations-skeleton'), rows: 3, trailing: false, label: l.loading),
-      AsyncValue(:final value?) when value.isEmpty => SingleChildScrollView(
-        child: VoltiEmptyState(key: const Key('stations-empty'), compact: true, icon: LucideIcons.batteryCharging, title: l.stationsEmpty),
+      AsyncValue(:final value?) when value.isEmpty => VoltiEmptyState(
+        key: const Key('stations-empty'),
+        compact: true,
+        icon: LucideIcons.batteryCharging,
+        title: l.stationsEmpty,
       ),
-      AsyncValue(:final value) => SingleChildScrollView(
-        key: const Key('stations-list'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            for (final p in orderSwapPoints(depot, value ?? const []))
-              StationRow(
+      AsyncValue(:final value) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (final p in orderSwapPoints(depot, value ?? const []))
+            KeyedSubtree(
+              key: _rowKey(p.station.id),
+              child: StationRow(
                 key: Key('station-row-${p.station.id}'),
                 point: p,
-                onFocus: () => onFocus(p.station),
-                onDirections: () => _go(context, ref, p.station),
-                extraActions: extraActions?.call(context, p) ?? const [],
+                selected: p.station.id == widget.selectedId,
+                onFocus: () => widget.onFocus(p.station),
+                onDirections: () => _go(p.station),
+                extraActions: widget.extraActions?.call(context, p) ?? const [],
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     };
 
-    return VoltiBottomSheet(
-      padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 12, VoltiSpacing.screenGutter, VoltiSpacing.s16),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    return HomeSheet(
+      key: widget.sheetKey,
+      surfaceKey: const Key('stations-sheet'),
+      handleKey: const Key('stations-sheet-handle'),
+      scrollKey: const Key('stations-list'),
+      maxCollapsedPx: widget.maxCollapsedPx,
+      height: widget.height,
+      onCollapsedChanged: widget.onCollapsedChanged,
+      onClose: widget.onClose,
+      header: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Semantics(header: true, child: Text(l.stationsSheetTitle, style: VoltiTypography.title)),
-              ),
-              const SizedBox(width: VoltiSpacing.s8),
-              VoltiIconButton(
-                key: const Key('stations-close'),
-                icon: LucideIcons.x,
-                variant: VoltiIconButtonVariant.soft,
-                label: l.stationsCloseSemantics,
-                onPressed: onClose,
-              ),
-            ],
+          Expanded(
+            child: Semantics(header: true, child: Text(l.stationsSheetTitle, style: VoltiTypography.title)),
           ),
-          const SizedBox(height: VoltiSpacing.s12),
-          Flexible(child: body),
+          const SizedBox(width: VoltiSpacing.s8),
+          VoltiIconButton(
+            key: const Key('stations-close'),
+            icon: LucideIcons.x,
+            variant: VoltiIconButtonVariant.soft,
+            label: l.stationsCloseSemantics,
+            onPressed: widget.onClose,
+          ),
         ],
       ),
+      peek: body,
     );
   }
 }
@@ -98,12 +148,22 @@ class StationsSheet extends ConsumerWidget {
 /// Linha de um ponto de troca: nome, endereco e distancia, pilula de baterias,
 /// horario e as acoes ("Como chegar" e, no futuro, [extraActions]).
 class StationRow extends StatelessWidget {
-  const StationRow({super.key, required this.point, required this.onFocus, required this.onDirections, this.extraActions = const []});
+  const StationRow({
+    super.key,
+    required this.point,
+    required this.onFocus,
+    required this.onDirections,
+    this.extraActions = const [],
+    this.selected = false,
+  });
 
   final SwapPoint point;
   final VoidCallback onFocus;
   final VoidCallback onDirections;
   final List<Widget> extraActions;
+
+  /// Estacao escolhida no mapa: borda da marca.
+  final bool selected;
 
   @override
   Widget build(BuildContext context) {
@@ -124,12 +184,13 @@ class StationRow extends StatelessWidget {
         decoration: BoxDecoration(
           color: scheme.surface,
           borderRadius: VoltiRadii.rLg,
-          border: Border.all(color: scheme.outlineVariant),
+          border: Border.all(color: selected ? scheme.primary : scheme.outlineVariant, width: selected ? 2 : 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Semantics(
+              selected: selected,
               hint: l.stationShowOnMapHint,
               child: VoltiPressable(
                 key: Key('station-focus-${s.id}'),

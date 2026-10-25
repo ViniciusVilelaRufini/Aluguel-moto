@@ -3169,4 +3169,52 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get debtPaidText => 'Pronto! Você já pode alugar de novo.';
+
+  @override
+  String get sheetExpand => 'Expandir';
+
+  @override
+  String get sheetCollapse => 'Recolher';
+
+  @override
+  String get sheetHandleHint => 'Arraste para cima ou para baixo';
+
+  @override
+  String get depotHoursTitle => 'Horários';
+
+  @override
+  String get depotAddressTitle => 'Endereço';
+
+  @override
+  String weekdayLong(String weekday) {
+    String _temp0 = intl.Intl.selectLogic(weekday, {
+      '0': 'Domingo',
+      '1': 'Segunda',
+      '2': 'Terça',
+      '3': 'Quarta',
+      '4': 'Quinta',
+      '5': 'Sexta',
+      '6': 'Sábado',
+      'other': '',
+    });
+    return '$_temp0';
+  }
+
+  @override
+  String depotHoursRange(String opens, String closes) {
+    return '$opens às $closes';
+  }
+
+  @override
+  String get depotHoursTodayTag => 'hoje';
+
+  @override
+  String depotHoursRowSemantics(String day, String hours) {
+    return '$day: $hours';
+  }
+
+  @override
+  String depotDirectionsSemantics(String name) {
+    return 'Como chegar ao $name';
+  }
 }

@@ -78,7 +78,7 @@ Future<void> settle(WidgetTester t) async {
   }
 }
 
-Future<void> pumpHome(WidgetTester t, StationsBackend b, {bool reduceMotion = false, bool mapOn = false}) async {
+Future<void> pumpHome(WidgetTester t, StationsBackend b, {bool reduceMotion = false, bool mapOn = false, ThemeData? theme}) async {
   // Mapa ligado no escopo filho (como em cliente_login_test), so na home.
   final router = GoRouter(
     initialLocation: '/home',
@@ -99,6 +99,7 @@ Future<void> pumpHome(WidgetTester t, StationsBackend b, {bool reduceMotion = fa
   await t.pumpWidget(
     testRouterApp(
       router,
+      theme: theme,
       overrides: [
         backendProvider.overrideWithValue(b),
         pushServiceProvider.overrideWithValue(NoopPushService()),
@@ -511,6 +512,9 @@ void main() {
           ),
         ),
       );
+      await settle(t);
+      // Folha recolhida: a segunda linha fica abaixo; rola ate ela.
+      await t.ensureVisible(find.byKey(const Key('station-focus-st-near')));
       await settle(t);
       await t.tap(find.byKey(const Key('station-focus-st-near')));
       await t.pump();

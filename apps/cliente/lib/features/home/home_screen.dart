@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -13,6 +14,7 @@ import '../../core/backend.dart';
 import '../../core/clock.dart';
 import '../../core/flash.dart';
 import '../../core/geo.dart';
+import '../../core/launcher.dart';
 import '../../core/map_tiles.dart';
 import '../../core/push_routing.dart';
 import '../../core/services.dart';
@@ -26,6 +28,7 @@ import '../ride/ride_screen.dart' show mapEnabledProvider;
 import '../station_swap/swap_widgets.dart';
 import 'depot_providers.dart';
 import 'home_reservation_card.dart';
+import 'home_sheet.dart';
 import 'location_header.dart';
 import 'pending_payment_banner.dart';
 import 'providers.dart';
@@ -39,8 +42,16 @@ import 'stations/stations_sheet.dart';
 /// com o horario e **Escolher moto**. Com varios galpoes o cartao vira seletor,
 /// mais perto primeiro.
 /// Fracao da altura da tela que a camera sobe ao centrar o galpao (fica acima do
-/// cartao do galpao, que cobre a metade de baixo).
+/// cartao do galpao, que cobre a metade de baixo). Com a folha arrastavel a
+/// camera usa a faixa livre de verdade (entre o cabecalho e a folha).
 const homeMapFocusShift = 0.12;
+
+/// Coluna de botoes do mapa (estacoes + localizar: 44 + 8 + 44).
+const homeMapButtonsHeight = 44.0 * 2 + VoltiSpacing.s8;
+
+/// Teto da recolhida da folha "Troca de bateria" (fracao da tela): mostra o
+/// titulo e as primeiras linhas; o resto aparece ao arrastar.
+const homeStationsCollapsedMax = 0.42;
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -60,9 +71,50 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   /// A camera ja foi enquadrada com o galpao e as estacoes ao redor.
   bool _framedStations = false;
 
+  /// Cabecalho e avisos (alto da tela): a camera centra abaixo dele.
+  final _topKey = GlobalKey();
+
+  /// Folhas arrastaveis (galpao e estacoes) e a altura atual da que esta aberta:
+  /// os botoes do mapa sobem junto e a camera considera o que ela cobre.
+  final _depotSheetKey = GlobalKey<HomeSheetState>();
+  final _stationsSheetKey = GlobalKey<HomeSheetState>();
+  final _sheetHeight = ValueNotifier<double>(0);
+
+  /// Altura da recolhida da folha aberta (o cabecalho cede esse espaco).
+  double? _collapsedPx;
+
+  /// A home esta com uma folha arrastavel (galpao ou estacoes) no rodape.
+  bool _sheetMode = false;
+
+  /// Estacao escolhida (pin tocado ou linha tocada): destaque nos dois.
+  String? _selectedStationId;
+
+  double _sheetCoverPx() {
+    final st = (_stationsMode ? _stationsSheetKey : _depotSheetKey).currentState;
+    final h = st?.heightPx ?? 0;
+    return h > 0 ? h : _sheetHeight.value;
+  }
+
   double _toastOffset() {
+    if (_sheetMode) {
+      final cover = _sheetCoverPx();
+      return math.max(0, cover + VoltiSpacing.s12 + homeMapButtonsHeight - MediaQuery.paddingOf(context).bottom);
+    }
     final box = _bottomKey.currentContext?.findRenderObject();
     return box is RenderBox && box.hasSize ? box.size.height : 0;
+  }
+
+  /// Recolhida medida (ou mudou com o texto): o cabecalho cede o espaco e, com a
+  /// home parada, a camera enquadra de novo acima da folha.
+  void _onCollapsedChanged(double px) {
+    if (!mounted) return;
+    if (_collapsedPx == null || (_collapsedPx! - px).abs() > .5) setState(() => _collapsedPx = px);
+    final d = ref.read(currentDepotProvider).value;
+    if (d != null && !_userCentered && !_stationsMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _frameIdle(d);
+      });
+    }
   }
 
   /// Atualiza "Aberto até 20h" quando o horario vira.
@@ -81,14 +133,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   void _setStationsMode(bool on) {
     if (_stationsMode == on) return;
-    setState(() => _stationsMode = on);
+    setState(() {
+      _stationsMode = on;
+      _selectedStationId = null;
+      _collapsedPx = null;
+    });
     // Contagem de baterias ao vivo: busca de novo ao abrir.
     if (on) ref.invalidate(swapStationsProvider);
   }
 
   void _focusStation(SwapStation s) {
     VoltiHaptics.selection();
+    setState(() => _selectedStationId = s.id);
     _moveMap(LatLng(s.lat, s.lng));
+  }
+
+  Future<void> _depotDirections(Depot d) async {
+    final ok = await openDirections(ref.read(urlLauncherProvider), d.lat, d.lng);
+    if (!ok && mounted) VoltiToast.show(context, context.l.navigateFailed, tone: VoltiToastTone.danger, bottomOffset: _toastOffset());
   }
 
   @override
@@ -135,6 +197,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
+    _sheetHeight.dispose();
     super.dispose();
   }
 
@@ -180,8 +243,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   }
 
   /// Deslocamento da camera para o ponto cair na faixa livre do mapa, entre o
-  /// cabecalho e o cartao do galpao (acima do meio da tela).
-  Offset _visibleOffset() => Offset(0, -MediaQuery.sizeOf(context).height * homeMapFocusShift);
+  /// cabecalho e o cartao do galpao (acima do meio da tela). Com a folha
+  /// arrastavel, o meio da faixa entre o cabecalho e a altura atual da folha.
+  Offset _visibleOffset() {
+    final h = MediaQuery.sizeOf(context).height;
+    final fallback = Offset(0, -h * homeMapFocusShift);
+    if (!_sheetMode) return fallback;
+    final cover = _sheetCoverPx();
+    if (cover <= 0) return fallback;
+    final top = _topEdge(h);
+    final bottom = h - cover;
+    if (bottom - top < 120) return fallback;
+    return Offset(0, (top + bottom) / 2 - h / 2);
+  }
+
+  /// Borda de baixo do cabecalho/avisos (ou da faixa do passe).
+  double _topEdge(double h) {
+    for (final k in [_promosKey, _topKey]) {
+      final b = k.currentContext?.findRenderObject();
+      if (b is RenderBox && b.hasSize && b.attached) return b.localToGlobal(Offset.zero).dy + b.size.height;
+    }
+    return h * .18;
+  }
 
   void _moveMap(LatLng to) {
     if (!ref.read(mapEnabledProvider)) return;
@@ -227,7 +310,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     var topPad = media.height * .18;
     if (top is RenderBox && top.hasSize) topPad = top.localToGlobal(Offset.zero).dy + top.size.height + VoltiSpacing.s12;
     var bottomPad = media.height * .45;
-    if (bottom is RenderBox && bottom.hasSize) bottomPad = bottom.size.height + VoltiSpacing.s12;
+    if (_sheetMode && _sheetCoverPx() > 0) {
+      bottomPad = _sheetCoverPx() + VoltiSpacing.s12;
+    } else if (bottom is RenderBox && bottom.hasSize) {
+      bottomPad = bottom.size.height + VoltiSpacing.s12;
+    }
     try {
       _map.fitCamera(
         CameraFit.coordinates(coordinates: pts, padding: EdgeInsets.fromLTRB(48, topPad, 48, bottomPad), maxZoom: 16, minZoom: 12),
@@ -306,6 +393,49 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     final promoFirstRide = firstRideFree(session?.customer, promoActive: kFirstRidePromo);
     final center = current != null ? LatLng(current.lat, current.lng) : (loc ?? fallbackCenter);
     final surface = Theme.of(context).colorScheme.surface;
+    // Folha arrastavel com os galpoes carregados (cartao do galpao) ou no modo
+    // estacoes; corrida, reserva e galpoes carregando/erro ficam no cartao fixo.
+    final sheetMode = _stationsMode || (rental == null && pending == null && depots.hasValue && current != null);
+    _sheetMode = sheetMode;
+    final size = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    // Mesmo teto do cartao fixo: o rodape (botoes + cartao) fica com ate 3/5 da coluna.
+    const gutter = VoltiSpacing.screenGutter;
+    final column = size.height - pad.top - pad.bottom - 2 * gutter - VoltiSpacing.s8;
+    final maxCollapsed = math.max(160.0, column * 3 / 5 - homeMapButtonsHeight - VoltiSpacing.s12 + pad.bottom + gutter);
+    final collapsed = _collapsedPx ?? (_stationsMode ? math.min(maxCollapsed, size.height * homeStationsCollapsedMax) : maxCollapsed);
+    final reserve = math.max(0.0, collapsed + VoltiSpacing.s12 + homeMapButtonsHeight - pad.bottom - gutter);
+    final mapButtons = Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        if (ref.watch(mapEnabledProvider)) const Flexible(child: MapAttribution()),
+        const Spacer(),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Semantics(
+              toggled: _stationsMode,
+              child: VoltiIconButton(
+                key: const Key('home-stations-toggle'),
+                icon: LucideIcons.batteryCharging,
+                variant: _stationsMode ? VoltiIconButtonVariant.brand : VoltiIconButtonVariant.surface,
+                iconColor: _stationsMode ? null : VoltiColors.brand,
+                label: l.stationsToggle,
+                haptic: VoltiHapticKind.selection,
+                onPressed: () => _setStationsMode(!_stationsMode),
+              ),
+            ),
+            const SizedBox(height: VoltiSpacing.s8),
+            VoltiIconButton(
+              icon: LucideIcons.locateFixed,
+              iconColor: VoltiColors.brand,
+              label: l.locateMe,
+              onPressed: () => _locateMe(loc ?? center),
+            ),
+          ],
+        ),
+      ],
+    );
 
     return PopScope(
       // Voltar fecha o modo estacoes antes de sair da home.
@@ -380,7 +510,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                 ),
                               ),
                             // Modo estacoes: por cima do galpao, com a contagem de baterias.
-                            if (_stationsMode) ...stationMarkers(split.loose, onTap: _focusStation),
+                            if (_stationsMode) ...stationMarkers(split.loose, onTap: _focusStation, selectedId: _selectedStationId),
                             if (loc != null)
                               Marker(
                                 key: const ValueKey('user-dot'),
@@ -396,11 +526,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
             ),
             // Cabecalho e avisos em cima, cartao do galpao embaixo; o meio fica livre para o mapa.
             // Com texto grande cada regiao tem um teto e rola por dentro, sem se sobrepor.
+            // Com a folha arrastavel, o rodape so reserva a altura da recolhida (+ botoes):
+            // a folha e os botoes ficam numa camada por cima (expandida, cobre o cabecalho).
             SafeArea(
-              // A folha de estacoes encosta no rodape (ela trata a area segura).
-              bottom: !_stationsMode,
               child: Padding(
-                padding: EdgeInsets.only(top: VoltiSpacing.screenGutter, bottom: _stationsMode ? 0 : VoltiSpacing.screenGutter),
+                padding: const EdgeInsets.only(top: VoltiSpacing.screenGutter, bottom: VoltiSpacing.screenGutter),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -408,7 +538,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                     Flexible(
                       flex: 2,
                       fit: FlexFit.loose,
-                      child: SingleChildScrollView(
+                      child: KeyedSubtree(
+                        key: _topKey,
+                        child: SingleChildScrollView(
                         key: const Key('home-top'),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -495,78 +627,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                           ],
                         ),
                       ),
+                      ),
                     ),
                     const SizedBox(height: VoltiSpacing.s8),
-                    Flexible(
-                      flex: 3,
-                      fit: FlexFit.loose,
-                      child: Column(
-                        key: _bottomKey,
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: [
-                                if (ref.watch(mapEnabledProvider)) const Flexible(child: MapAttribution()),
-                                const Spacer(),
-                                Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Semantics(
-                                      toggled: _stationsMode,
-                                      child: VoltiIconButton(
-                                        key: const Key('home-stations-toggle'),
-                                        icon: LucideIcons.batteryCharging,
-                                        variant: _stationsMode ? VoltiIconButtonVariant.brand : VoltiIconButtonVariant.surface,
-                                        iconColor: _stationsMode ? null : VoltiColors.brand,
-                                        label: l.stationsToggle,
-                                        haptic: VoltiHapticKind.selection,
-                                        onPressed: () => _setStationsMode(!_stationsMode),
-                                      ),
-                                    ),
-                                    const SizedBox(height: VoltiSpacing.s8),
-                                    VoltiIconButton(
-                                      icon: LucideIcons.locateFixed,
-                                      iconColor: VoltiColors.brand,
-                                      label: l.locateMe,
-                                      onPressed: () => _locateMe(loc ?? center),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                    if (sheetMode)
+                      SizedBox(key: const Key('home-sheet-reserve'), height: reserve)
+                    else
+                      Flexible(
+                        flex: 3,
+                        fit: FlexFit.loose,
+                        child: Column(
+                          key: _bottomKey,
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
+                              child: mapButtons,
                             ),
-                          ),
-                          const SizedBox(height: VoltiSpacing.s12),
-                          if (_stationsMode)
-                            Flexible(
-                              child: VoltiEnter(
-                                key: const Key('stations-sheet-enter'),
-                                duration: VoltiMotion.durScreen,
-                                curve: VoltiMotion.easeScreen,
-                                fromOffset: const Offset(0, 80),
-                                child: StationsSheet(
-                                  onClose: () => _setStationsMode(false),
-                                  onFocus: _focusStation,
-                                  // "Trocar aqui" so na estacao a ate 50 m, com aluguel em andamento.
-                                  extraActions: (context, p) => [
-                                    if (nearStation != null && p.station.id == nearStation.id)
-                                      VoltiButton(
-                                        key: Key('station-swap-here-${p.station.id}'),
-                                        label: l.swapHere,
-                                        semanticLabel: l.swapHereSemantics(p.station.name),
-                                        icon: LucideIcons.qrCode,
-                                        size: VoltiButtonSize.sm,
-                                        wrap: true,
-                                        onPressed: () => _openSwapFlow(null, stationId: p.station.id),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                            )
-                          else
+                            const SizedBox(height: VoltiSpacing.s12),
                             Flexible(
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.screenGutter),
@@ -594,6 +673,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                         )
                                       : pending != null
                                       ? HomeReservationCard(key: ValueKey('home-reservation-${pending.id}'), reservation: pending)
+                                      // Galpoes carregando, com erro ou nenhum: cartao fixo (sem arrastar).
                                       : VoltiEnter(
                                           key: const Key('depot-card-enter'),
                                           duration: VoltiMotion.durScreen,
@@ -620,7 +700,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                                 label: l.loading,
                                               ),
                                               // Rola por dentro com texto grande (a coluna de botoes do mapa ocupa espaco).
-                                              _ when current == null => SingleChildScrollView(
+                                              _ => SingleChildScrollView(
                                                 child: VoltiEmptyState(
                                                   compact: true,
                                                   icon: LucideIcons.warehouse,
@@ -631,26 +711,104 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                                   onAction: () => ref.invalidate(depotsProvider),
                                                 ),
                                               ),
-                                              _ => _DepotCardBody(
-                                                depots: depots.value!,
-                                                current: current,
-                                                now: now,
-                                                onSelect: _selectDepot,
-                                                onPick: () => context.push('/pick'),
-                                              ),
                                             },
                                           ),
                                         ),
                                 ),
                               ),
                             ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
             ),
+            if (sheetMode) ...[
+              // Folha arrastavel (galpao ou estacoes) por cima de tudo, do rodape ao alto.
+              Positioned.fill(
+                child: _stationsMode
+                    ? VoltiEnter(
+                        key: const Key('stations-sheet-enter'),
+                        duration: VoltiMotion.durScreen,
+                        curve: VoltiMotion.easeScreen,
+                        fromOffset: const Offset(0, 80),
+                        child: StationsSheet(
+                          sheetKey: _stationsSheetKey,
+                          maxCollapsedPx: math.min(maxCollapsed, size.height * homeStationsCollapsedMax),
+                          height: _sheetHeight,
+                          onCollapsedChanged: _onCollapsedChanged,
+                          selectedId: _selectedStationId,
+                          onClose: () => _setStationsMode(false),
+                          onFocus: _focusStation,
+                          // "Trocar aqui" so na estacao a ate 50 m, com aluguel em andamento.
+                          extraActions: (context, p) => [
+                            if (nearStation != null && p.station.id == nearStation.id)
+                              VoltiButton(
+                                key: Key('station-swap-here-${p.station.id}'),
+                                label: l.swapHere,
+                                semanticLabel: l.swapHereSemantics(p.station.name),
+                                icon: LucideIcons.qrCode,
+                                size: VoltiButtonSize.sm,
+                                wrap: true,
+                                onPressed: () => _openSwapFlow(null, stationId: p.station.id),
+                              ),
+                          ],
+                        ),
+                      )
+                    : VoltiEnter(
+                        key: const Key('depot-card-enter'),
+                        duration: VoltiMotion.durScreen,
+                        curve: VoltiMotion.easeScreen,
+                        fromOffset: const Offset(0, 80),
+                        child: HomeSheet(
+                          key: _depotSheetKey,
+                          surfaceKey: const Key('depot-card'),
+                          handleKey: const Key('depot-sheet-handle'),
+                          scrollKey: const Key('depot-sheet-scroll'),
+                          maxCollapsedPx: maxCollapsed,
+                          height: _sheetHeight,
+                          onCollapsedChanged: _onCollapsedChanged,
+                          peek: _DepotPeek(depots: depots.value!, current: current!, now: now, onSelect: _selectDepot),
+                          more: [
+                            _DepotDetails(depot: current, now: now, onDirections: () => _depotDirections(current)),
+                          ],
+                          // Sempre a vista, em qualquer altura da folha.
+                          footer: VoltiButton(
+                            key: const Key('home-pick'),
+                            label: l.chooseBike,
+                            icon: LucideIcons.list,
+                            size: VoltiButtonSize.lg,
+                            fullWidth: true,
+                            shine: true,
+                            onPressed: () => context.push('/pick'),
+                          ),
+                        ),
+                      ),
+              ),
+              // Botoes do mapa sobem com a folha; somem (sem alvo nem leitor de tela)
+              // quando ela passa da meia altura e o mapa fica coberto.
+              ValueListenableBuilder<double>(
+                valueListenable: _sheetHeight,
+                builder: (context, sheetH, child) {
+                  final y = sheetH > 0 ? sheetH : collapsed;
+                  final fadeStart = size.height * .62, fadeEnd = size.height * .74;
+                  final opacity = 1 - ((y - fadeStart) / (fadeEnd - fadeStart)).clamp(0.0, 1.0);
+                  final hidden = opacity < .5;
+                  return Positioned(
+                    key: const Key('home-map-buttons'),
+                    left: VoltiSpacing.screenGutter,
+                    right: VoltiSpacing.screenGutter,
+                    bottom: y + VoltiSpacing.s12,
+                    child: IgnorePointer(
+                      ignoring: hidden,
+                      child: ExcludeSemantics(excluding: hidden, child: Opacity(opacity: opacity, child: child)),
+                    ),
+                  );
+                },
+                child: mapButtons,
+              ),
+            ],
           ],
         ),
       ),
@@ -658,15 +816,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   }
 }
 
-/// Conteudo do cartao do galpao: seletor (com mais de um), titulo com as motos,
-/// horario, endereco e **Escolher moto**.
-class _DepotCardBody extends StatelessWidget {
-  const _DepotCardBody({required this.depots, required this.current, required this.now, required this.onSelect, required this.onPick});
+/// Topo da folha do galpao (o que aparece recolhida): seletor (com mais de um),
+/// titulo com as motos, horario de hoje e endereco.
+class _DepotPeek extends StatelessWidget {
+  const _DepotPeek({required this.depots, required this.current, required this.now, required this.onSelect});
   final List<Depot> depots;
   final Depot current;
   final DateTime now;
   final ValueChanged<Depot> onSelect;
-  final VoidCallback onPick;
 
   @override
   Widget build(BuildContext context) {
@@ -678,111 +835,217 @@ class _DepotCardBody extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Informacoes rolam por dentro com texto grande; o botao fica sempre a vista.
-        Flexible(
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (depots.length > 1) ...[
-                  Semantics(
-                    label: l.depotPicker,
-                    container: true,
-                    child: SingleChildScrollView(
-                      key: const Key('depot-picker'),
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          for (final d in depots) ...[
-                            KeyedSubtree(
-                              key: Key('depot-option-${d.id}'),
-                              child: VoltiChip(
-                                label: d.distanceM == null
-                                    ? depotTitle(l, d)
-                                    : '${depotTitle(l, d)} · ${walkingDistanceLabel(d.distanceM!)}',
-                                icon: LucideIcons.warehouse,
-                                selected: d.id == current.id,
-                                onTap: () {
-                                  if (d.id != current.id) onSelect(d);
-                                },
-                              ),
-                            ),
-                            const SizedBox(width: VoltiSpacing.s8),
-                          ],
-                        ],
+        if (depots.length > 1) ...[
+          Semantics(
+            label: l.depotPicker,
+            container: true,
+            child: SingleChildScrollView(
+              key: const Key('depot-picker'),
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (final d in depots) ...[
+                    KeyedSubtree(
+                      key: Key('depot-option-${d.id}'),
+                      child: VoltiChip(
+                        label: d.distanceM == null
+                            ? depotTitle(l, d)
+                            : '${depotTitle(l, d)} · ${walkingDistanceLabel(d.distanceM!)}',
+                        icon: LucideIcons.warehouse,
+                        selected: d.id == current.id,
+                        onTap: () {
+                          if (d.id != current.id) onSelect(d);
+                        },
                       ),
+                    ),
+                    const SizedBox(width: VoltiSpacing.s8),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: VoltiSpacing.s12),
+        ],
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(color: context.palette.brandSoft, borderRadius: VoltiRadii.rMd),
+              child: Icon(LucideIcons.warehouse, color: context.palette.textBrand, size: 22),
+            ),
+            const SizedBox(width: VoltiSpacing.s12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Semantics(
+                    header: true,
+                    liveRegion: true,
+                    child: Text(
+                      depotHeadline(l, current),
+                      key: const Key('depot-headline'),
+                      style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface),
                     ),
                   ),
-                  const SizedBox(height: VoltiSpacing.s12),
-                ],
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(color: context.palette.brandSoft, borderRadius: VoltiRadii.rMd),
-                      child: Icon(LucideIcons.warehouse, color: context.palette.textBrand, size: 22),
-                    ),
-                    const SizedBox(width: VoltiSpacing.s12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Semantics(
-                            header: true,
-                            liveRegion: true,
-                            child: Text(
-                              depotHeadline(l, current),
-                              key: const Key('depot-headline'),
-                              style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface),
+                  if (open != null) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(shape: BoxShape.circle, color: isOpen ? VoltiColors.brand : VoltiColors.danger),
+                        ),
+                        const SizedBox(width: 6),
+                        Flexible(
+                          child: Text(
+                            open,
+                            key: const Key('depot-open'),
+                            style: VoltiTypography.caption.copyWith(
+                              color: isOpen ? context.palette.successInk : context.palette.dangerInkStrong,
+                              fontWeight: VoltiTypography.fwSemibold,
                             ),
                           ),
-                          if (open != null) ...[
-                            const SizedBox(height: 4),
-                            Row(
-                              children: [
-                                Container(
-                                  width: 8,
-                                  height: 8,
-                                  decoration: BoxDecoration(shape: BoxShape.circle, color: isOpen ? VoltiColors.brand : VoltiColors.danger),
-                                ),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    open,
-                                    key: const Key('depot-open'),
-                                    style: VoltiTypography.caption.copyWith(
-                                      color: isOpen ? context.palette.successInk : context.palette.dangerInkStrong,
-                                      fontWeight: VoltiTypography.fwSemibold,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                          const SizedBox(height: 4),
-                          Text(current.address, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ],
+                  const SizedBox(height: 4),
+                  Text(current.address, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// "7h", "7h30" a partir de "07:00"/"07:30" do contrato.
+String depotHoursClock(String v) {
+  final parts = v.split(':');
+  final h = int.tryParse(parts.first) ?? 0;
+  final m = parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0;
+  return m == 0 ? '${h}h' : '${h}h${m.toString().padLeft(2, '0')}';
+}
+
+/// Resto da folha do galpao (aparece ao arrastar para cima): horarios da semana
+/// (`openingHours`, hoje em destaque) e o endereco completo com **Como chegar**.
+/// Motos por modelo nao entram: a home so tem `availableVehicleCount` (ja no titulo).
+class _DepotDetails extends StatelessWidget {
+  const _DepotDetails({required this.depot, required this.now, required this.onDirections});
+  final Depot depot;
+  final DateTime now;
+  final VoidCallback onDirections;
+
+  @override
+  Widget build(BuildContext context) {
+    final l = context.l;
+    final scheme = Theme.of(context).colorScheme;
+    final hours = DepotHours.of(depot);
+    final today = LocalDay.of(hours.toLocal(now)).weekday;
+    final section = VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant, fontWeight: VoltiTypography.fwSemibold);
+    final rows = <Widget>[];
+    // Semana comecando na segunda (0 = domingo no contrato).
+    for (final wd in const [1, 2, 3, 4, 5, 6, 0]) {
+      final h = hours.hoursFor(wd);
+      final isToday = wd == today;
+      final day = l.weekdayLong('$wd');
+      final value = h == null ? l.depotClosed : l.depotHoursRange(depotHoursClock(h.opensAt), depotHoursClock(h.closesAt));
+      final style = (isToday ? VoltiTypography.bodyStrong : VoltiTypography.body).copyWith(
+        color: h == null ? scheme.onSurfaceVariant : scheme.onSurface,
+      );
+      rows.add(
+        Semantics(
+          key: Key('depot-hours-$wd'),
+          selected: isToday,
+          label: l.depotHoursRowSemantics(isToday ? '$day, ${l.depotHoursTodayTag}' : day, value),
+          excludeSemantics: true,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text.rich(
+                    TextSpan(
+                      text: day,
+                      children: [
+                        if (isToday)
+                          TextSpan(
+                            text: ' · ${l.depotHoursTodayTag}',
+                            style: VoltiTypography.caption.copyWith(color: context.palette.textBrand),
+                          ),
+                      ],
+                    ),
+                    style: style,
+                  ),
                 ),
+                const SizedBox(width: VoltiSpacing.s8),
+                Text(value, style: style, textAlign: TextAlign.end),
               ],
             ),
           ),
         ),
-        const SizedBox(height: VoltiSpacing.s16),
-        VoltiButton(
-          key: const Key('home-pick'),
-          label: l.chooseBike,
-          icon: LucideIcons.list,
-          size: VoltiButtonSize.lg,
-          fullWidth: true,
-          shine: true,
-          onPressed: onPick,
+      );
+    }
+    return Column(
+      key: const Key('depot-details'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const SizedBox(height: VoltiSpacing.s20),
+        Semantics(header: true, child: Text(l.depotHoursTitle, style: section)),
+        const SizedBox(height: VoltiSpacing.s8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.s12, vertical: VoltiSpacing.s4),
+          decoration: BoxDecoration(color: context.palette.surfaceSunken, borderRadius: VoltiRadii.rMd),
+          child: Column(children: rows),
         ),
+        const SizedBox(height: VoltiSpacing.s20),
+        Semantics(header: true, child: Text(l.depotAddressTitle, style: section)),
+        const SizedBox(height: VoltiSpacing.s8),
+        Semantics(
+          container: true,
+          child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(LucideIcons.mapPin, size: 18, color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(width: VoltiSpacing.s8),
+            Expanded(
+              child: Text(
+                depot.address,
+                key: const Key('depot-address-full'),
+                style: VoltiTypography.body.copyWith(color: scheme.onSurface),
+              ),
+            ),
+          ],
+          ),
+        ),
+        const SizedBox(height: VoltiSpacing.s12),
+        Align(
+          alignment: Alignment.centerLeft,
+          // No proprio no do leitor de tela (sem engolir o endereco).
+          child: Semantics(
+            container: true,
+            child: VoltiButton(
+            key: const Key('depot-directions'),
+            label: l.howToGetThere,
+            semanticLabel: l.depotDirectionsSemantics(depotTitle(l, depot)),
+            icon: LucideIcons.navigation,
+            variant: VoltiButtonVariant.secondary,
+            size: VoltiButtonSize.md,
+            wrap: true,
+            onPressed: onDirections,
+            ),
+          ),
+        ),
+        const SizedBox(height: VoltiSpacing.s8),
       ],
     );
   }

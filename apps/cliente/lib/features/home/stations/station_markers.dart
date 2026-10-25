@@ -13,21 +13,24 @@ const stationMarkerSize = 52.0;
 
 /// Marcadores das estacoes no modo estacoes da home: disco azul com o raio e
 /// a contagem de baterias num selo colorido pela disponibilidade.
-List<Marker> stationMarkers(List<SwapStation> stations, {required ValueChanged<SwapStation> onTap}) => [
+List<Marker> stationMarkers(List<SwapStation> stations, {required ValueChanged<SwapStation> onTap, String? selectedId}) => [
   for (final s in stations)
     Marker(
       key: ValueKey('station-mode-${s.id}'),
       point: LatLng(s.lat, s.lng),
       width: stationMarkerSize,
       height: stationMarkerSize,
-      child: StationMarker(station: s, onTap: () => onTap(s)),
+      child: StationMarker(station: s, selected: s.id == selectedId, onTap: () => onTap(s)),
     ),
 ];
 
 class StationMarker extends StatelessWidget {
-  const StationMarker({super.key, required this.station, this.onTap});
+  const StationMarker({super.key, required this.station, this.onTap, this.selected = false});
   final SwapStation station;
   final VoidCallback? onTap;
+
+  /// Estacao escolhida (linha destacada na folha): disco maior.
+  final bool selected;
 
   /// Fundo e texto do selo: verde (>= 3), ambar (1-2) e cinza (0). Texto com
   /// contraste >= 4,5:1 em cada fundo.
@@ -44,6 +47,7 @@ class StationMarker extends StatelessWidget {
     final disc = a == StationAvailability.none ? VoltiColors.ink400 : VoltiColors.blue600;
     return Semantics(
       button: onTap != null,
+      selected: selected,
       // O toque tambem pelo leitor de tela (o GestureDetector fica sob excludeSemantics).
       onTap: onTap,
       label: l.stationMarkerSemantics(station.name, l.stationAvailability(station.availableBatteries)),
@@ -57,9 +61,12 @@ class StationMarker extends StatelessWidget {
           child: StationBadgeOverlay(
             station: station,
             child: Center(
-              child: Container(
-                width: 38,
-                height: 38,
+              child: AnimatedContainer(
+                key: Key('station-marker-disc-${station.id}'),
+                duration: VoltiMotion.scaled(context, VoltiMotion.durSpring),
+                curve: VoltiMotion.easeSpring,
+                width: selected ? 46 : 38,
+                height: selected ? 46 : 38,
                 decoration: BoxDecoration(
                   color: disc,
                   shape: BoxShape.circle,

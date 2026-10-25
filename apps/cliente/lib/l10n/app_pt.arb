@@ -1869,5 +1869,19 @@
   "debtPixText": "Pague {amount} com o QR ou o código copia e cola no app do seu banco.",
   "@debtPixText": {"placeholders": {"amount": {"type": "String"}}},
   "debtPaid": "Pendência paga",
-  "debtPaidText": "Pronto! Você já pode alugar de novo."
+  "debtPaidText": "Pronto! Você já pode alugar de novo.",
+  "sheetExpand": "Expandir",
+  "sheetCollapse": "Recolher",
+  "sheetHandleHint": "Arraste para cima ou para baixo",
+  "depotHoursTitle": "Horários",
+  "depotAddressTitle": "Endereço",
+  "weekdayLong": "{weekday, select, 0{Domingo} 1{Segunda} 2{Terça} 3{Quarta} 4{Quinta} 5{Sexta} 6{Sábado} other{}}",
+  "@weekdayLong": {"placeholders": {"weekday": {"type": "String"}}},
+  "depotHoursRange": "{opens} às {closes}",
+  "@depotHoursRange": {"placeholders": {"opens": {"type": "String"}, "closes": {"type": "String"}}},
+  "depotHoursTodayTag": "hoje",
+  "depotHoursRowSemantics": "{day}: {hours}",
+  "@depotHoursRowSemantics": {"placeholders": {"day": {"type": "String"}, "hours": {"type": "String"}}},
+  "depotDirectionsSemantics": "Como chegar ao {name}",
+  "@depotDirectionsSemantics": {"placeholders": {"name": {"type": "String"}}}
 }

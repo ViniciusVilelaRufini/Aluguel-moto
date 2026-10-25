@@ -208,9 +208,34 @@ O cliente não acha moto na rua: escolhe no app e retira no galpão.
 - **Marcadores** (`features/home/stations/station_markers.dart`): no modo estações, cada estação vira um disco de 52 px com o raio e um selo com `availableBatteries`: verde (≥ 3), âmbar (1–2) e cinza (0). O rótulo do marcador lê "nome: N baterias disponíveis" e o nó tem ação de toque (leitor de tela). Tocar centra o mapa. A estação do próprio galpão (`Depot.swapStationId` ou a até 30 m, `splitDepotStations`) não ganha marcador por cima: o selo vai no marcador do galpão, que continua tocável e anuncia as baterias. O número do selo acompanha o texto do sistema até 1,3×.
 - **Folha "Troca de bateria"** (`features/home/stations/stations_sheet.dart`, `VoltiBottomSheet` no lugar do cartão, sem modal, então o mapa continua visível): o galpão primeiro quando ele é ponto de troca (`Depot.swapStationId`), depois as estações por `distanceM`. Sem localização (sem consentimento ou sem GPS) a API não manda `distanceM` e fica a ordem da API. Cada linha mostra nome, endereço · distância, a pílula clara de baterias (estilo E-25: "8 baterias disponíveis", "1 bateria disponível", "Sem baterias no momento"), "Aberto 24h" ou o `openingHours` publicado e **Como chegar** (`openDirections`, só no toque). Tocar na linha centra o mapa. Erro de rede: `ErrorState` com "Tentar de novo". Lista vazia: "Nenhum ponto de troca por perto".
 - **Extensão futura:** `StationsSheet(extraActions:)` recebe ações extras por linha, ao lado de "Como chegar", para o "Trocar aqui" da troca por QR (em especificação; não implementado).
+- **Folha arrastável** (ver "Folhas arrastáveis da home" abaixo): recolhida, meia altura e expandida com a lista completa rolável; arrastar abaixo da recolhida fecha, como o X. Tocar num marcador destaca a linha da estação (borda da marca, `selected` no leitor de tela) e a rola para a vista; tocar numa linha aumenta o marcador dela.
 - Lógica pura em `features/home/stations/station_logic.dart` (`orderSwapPoints`, `stationAvailability`, `stationHoursLabel`); reaproveita `swapPlaces` da folha da corrida. Testes em `test/home_stations_test.dart`.
 
 Aberto/fechado e horários saem de `Depot.openingHours`, `timezone`, `maxScheduleDays` e `pickupNowWindowMinutes` em `features/pickup/depot_hours.dart`, espelho de `services/api/src/modules/depots/depot-rules.ts` (fechamento exclusivo; último horário = fechamento − 30 min; "agora" vence no menor entre agora + janela e o fechamento de hoje; horários passados e além de `maxScheduleDays` saem). O servidor valida de novo. Fusos do Brasil com deslocamento fixo (sem horário de verão).
+
+## Folhas arrastáveis da home (branch `feat/galpao`)
+
+O cartão do galpão e a folha "Troca de bateria" são folhas arrastáveis (`features/home/home_sheet.dart`, `HomeSheet` sobre `DraggableScrollableSheet` com `snap`). O mapa continua interativo acima delas.
+
+- **Paradas** (`homeSheetStops`):
+  - **Recolhida**: como o cartão era antes. A altura é medida do conteúdo (alça, cabeçalho, topo e rodapé), com o mesmo teto de 3/5 da coluna. Nas estações o teto é 42% da tela.
+  - **Meia altura**: 55% da tela. Some quando a recolhida já passa dela, por exemplo com texto a 200%.
+  - **Expandida**: tela cheia abaixo da área segura.
+- **Arrasto**:
+  - A alça e o cabeçalho arrastam a folha. Um impulso, ou um arrasto lento de pelo menos 4% da tela, leva à próxima parada naquela direção.
+  - O conteúdo coopera com a folha: com a lista no topo, o gesto arrasta a folha; com a folha expandida, rola a lista.
+  - A folha do galpão não fecha. A de estações fecha ao passar da recolhida.
+- **Galpão expandido**: mostra o topo de antes (seletor, título com as motos, horário de hoje e endereço) e os horários da semana completos (`openingHours`, de segunda a domingo, hoje em destaque, "Fechado" nos dias sem horário). Mostra também o endereço completo com **Como chegar** (`openDirections`). **Escolher moto** fica fixo no rodapé em qualquer parada. A home não carrega motos por modelo (só `availableVehicleCount`, que já está no título), então isso não aparece.
+- **Botões do mapa**: estações, localizar e atribuição sobem com a folha. Passando da meia altura, quando a folha cobre o mapa, eles somem (sem alvo de toque e fora do leitor de tela).
+- **Câmera**: centra no meio da faixa livre entre o cabeçalho e a altura atual da folha. O enquadramento do galpão com as estações usa a altura da folha como padding e é refeito quando a recolhida é medida.
+- **Acessibilidade e motion**:
+  - A alça é um botão "Expandir"/"Recolher" ("Arraste para cima ou para baixo"). A ação de toque alterna entre recolhida e expandida, então o leitor de tela expande sem gesto.
+  - Com reduced motion, a folha muda de parada na hora.
+  - Há háptica leve (`VoltiHaptics.tap`) ao encaixar numa parada.
+  - A superfície usa `colorScheme.surface`, a mesma do tema claro e do escuro.
+- **Corrida, reserva e galpões carregando, com erro ou vazios**: continuam no cartão fixo de antes (`home-bottom-switcher`).
+
+Testes: `test/home_sheets_test.dart`. Cobrem as paradas, o arrasto entre os três pontos com háptica, o arrasto pelo conteúdo, **Escolher moto** à vista nas três paradas, os horários e **Como chegar** na folha expandida, a alça acessível por ação de toque e o reduced motion. Cobrem também os botões que acompanham a folha, o tema escuro, 200% em 360×740, a lista de estações rolando quando expandida, o fechamento das estações ao arrastar para baixo e a sincronia pin ↔ linha.
 
 ## Troca de bateria na estação via QR (branch `feat/cliente-troca-qr`)
 
