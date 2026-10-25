@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { DataTable, KV, Pill, SectionTitle, type Pager } from '@/components/ui';
+import { DataTable, KV, Pill, SectionTitle, type Column, type Pager } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
 import { Icon } from '@/ds/Icon';
@@ -13,8 +13,10 @@ import type { S } from '@/lib/types';
 type Handover = S<'Handover'>;
 
 /** Lista de entregas (`GET /handovers`): mais recentes primeiro, como vem da API. */
-export function HandoverTable({ rows, onSelect, selectedId, loading, pager, empty }: {
+export function HandoverTable({ rows, onSelect, selectedId, loading, pager, empty, compact }: {
   rows: Handover[]; onSelect: (h: Handover) => void; selectedId?: string | null; loading?: boolean; pager?: Pager; empty?: string;
+  /** Com o painel de detalhe aberto: esconde as colunas secundárias para o Status caber em 1366 px. */
+  compact?: boolean;
 }) {
   return (
     <DataTable<Handover>
@@ -28,7 +30,15 @@ export function HandoverTable({ rows, onSelect, selectedId, loading, pager, empt
       empty={empty ?? 'Nenhuma entrega por aqui'}
       emptyIcon="PackageCheck"
       emptyHint="As entregas aparecem quando o operador registra a saída ou a chegada de uma moto no galpão."
-      columns={[
+      columns={handoverColumns(!!compact)}
+    />
+  );
+}
+
+const COMPACT_HIDDEN = new Set(['operator', 'checklist', 'photos']);
+
+function handoverColumns(compact: boolean): Column<Handover>[] {
+  const all: Column<Handover>[] = [
         { key: 'createdAt', label: 'Registrada em', render: (h) => formatDateTime(h.createdAt) },
         { key: 'type', label: 'Tipo', render: (h) => HANDOVER_TYPE_LABEL[h.type] },
         { key: 'vehicleCode', label: 'Moto', mono: true, render: (h) => h.vehicleCode ?? '—' },
@@ -42,9 +52,8 @@ export function HandoverTable({ rows, onSelect, selectedId, loading, pager, empt
         },
         { key: 'photos', label: 'Fotos', align: 'right', render: (h) => h.photoKeys.length },
         { key: 'status', label: 'Status', render: (h) => <Pill tone={HANDOVER_STATUS[h.status].tone}>{HANDOVER_STATUS[h.status].label}</Pill> },
-      ]}
-    />
-  );
+  ];
+  return compact ? all.filter((c) => !COMPACT_HIDDEN.has(c.key)) : all;
 }
 
 /**

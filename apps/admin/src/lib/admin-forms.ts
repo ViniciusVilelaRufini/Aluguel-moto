@@ -1,3 +1,4 @@
+import { formatBRL } from './format';
 import { parseReais, validMoney, toCents } from './money';
 import type { S } from './types';
 
@@ -122,6 +123,16 @@ export const PLAN_UNIT_BY_CODE: Record<S<'PlanCode'>, S<'PlanUnit'>> = { minute:
 
 export const EMPTY_PLAN_FORM: PlanForm = { code: 'day', name: '', description: '', unit: 'day', unlock: '0,00', unitPrice: '', pause: '0,00', recurring: false };
 
+/** Plano ativo que já ocupa o código (o servidor só aceita um ativo por código), se houver. */
+export function activePlanForCode<T extends { code: string; active: boolean }>(plans: readonly T[], code: string): T | undefined {
+  return plans.find((p) => p.code === code && p.active);
+}
+
+/** Primeiro código sem plano ativo (para abrir o diálogo já num código livre); `undefined` se todos estão ocupados. */
+export function firstFreePlanCode<C extends string>(plans: readonly { code: string; active: boolean }[], codes: readonly C[]): C | undefined {
+  return codes.find((c) => !activePlanForCode(plans, c));
+}
+
 const MONEY_ERR = 'Informe os valores em reais, por exemplo 0,79';
 
 /** POST /pricing/plans (só admin). Dinheiro digitado em reais, enviado em centavos. */
@@ -160,6 +171,13 @@ export function buildFeeCreate(f: FeeForm): Built<S<'FeeInput'>> {
 
 export type AdjustDirection = 'credit' | 'debit';
 export const WALLET_ADJUST_MAX_CENTS = 100_000;
+
+/** Mensagem do toast depois do lançamento: mostra o saldo resultante e avisa se um débito o deixou negativo. */
+export function walletAdjustFeedback(entry: { amountCents: number; balanceAfterCents: number }): { message: string; tone: 'success' | 'danger' } {
+  const saldo = formatBRL(entry.balanceAfterCents);
+  if (entry.balanceAfterCents < 0) return { message: `Ajuste lançado, mas o saldo ficou negativo (${saldo}). Lance um crédito para compensar.`, tone: 'danger' };
+  return { message: `Ajuste lançado. Saldo atual: ${saldo}`, tone: 'success' };
+}
 
 /** POST /customers/{id}/wallet/adjustments: valor em reais (positivo) + sentido; o contrato aceita de -R$ 1.000 a R$ 1.000, nunca zero. */
 export function buildWalletAdjustment(amount: string, direction: AdjustDirection, reason: string): Built<S<'WalletAdjustmentRequest'>> {

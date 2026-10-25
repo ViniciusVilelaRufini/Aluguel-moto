@@ -11,6 +11,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 import '../../core/cognito.dart';
 import '../../core/cognito_auth.dart';
 import '../../core/launcher.dart';
+import '../../core/legal.dart';
 import '../../core/map_tiles.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
@@ -51,18 +52,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
     super.dispose();
   }
 
-  Future<void> _openLegal(Uri? uri) async {
-    final l = context.l;
-    if (uri == null) {
-      VoltiToast.show(context, l.welcomeLegalUnavailable, tone: VoltiToastTone.info);
-      return;
-    }
-    var ok = false;
-    try {
-      ok = await ref.read(urlLauncherProvider)(uri);
-    } catch (_) {}
-    if (!ok && mounted) VoltiToast.show(context, l.welcomeLegalOpenError, tone: VoltiToastTone.warning);
-  }
+  Future<void> _openLegal(Uri? uri) => openLegalDocument(context, ref, uri);
 
   Future<void> _social(IdentityProvider provider) async {
     final l = context.l;

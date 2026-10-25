@@ -45,6 +45,9 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int? _from;
   String _name = '', _cpf = '', _birth = '';
 
+  /// CPF que o KYC recusou (409): o passo de dados mostra o aviso no campo.
+  String? _cpfRejected;
+
   void _go(int step) => setState(() {
         _from = _step;
         _step = step;
@@ -70,7 +73,10 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
       progressFrom: from == null || from == onboardingStatusStep ? null : from + 1,
       child: switch (step) {
         onboardingDataStep => ConsentStep(
-            initialName: session.customer?.name ?? '',
+            initialName: _name.isNotEmpty ? _name : (session.customer?.name ?? ''),
+            initialCpf: _cpf,
+            initialBirth: _birth,
+            rejectedCpf: _cpfRejected == null ? null : _cpf,
             initialTerms: session.termsAccepted,
             // LGPD: consentimento so por acao do cliente. A caixa vem desmarcada (o design
             // a mostra marcada; ver docs/decisoes.md) e reflete o que ja foi gravado.
@@ -81,6 +87,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
               _name = name;
               _cpf = cpf;
               _birth = birth;
+              _cpfRejected = null;
               _go(onboardingDocsStep);
             },
           ),
@@ -91,6 +98,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             alreadySubmitted: session.kyc == KycStatus.pending || session.kyc == KycStatus.approved,
             onBack: () => _go(onboardingDataStep),
             onSubmitted: () => _go(onboardingPaymentStep),
+            // CPF ja usado em outra conta: volta ao campo de CPF, sem reenviar.
+            onCpfRejected: () {
+              _cpfRejected = _cpf;
+              _go(onboardingDataStep);
+            },
           ),
         onboardingPaymentStep => PaymentStep(
             onBack: () => _go(onboardingDocsStep),
@@ -164,6 +176,9 @@ class ConsentStep extends ConsumerStatefulWidget {
     required this.onDone,
     this.onBack,
     this.initialName = '',
+    this.initialCpf = '',
+    this.initialBirth = '',
+    this.rejectedCpf,
     this.initialTerms = false,
     this.initialLocation = false,
     this.initialMarketing = false,
@@ -172,7 +187,11 @@ class ConsentStep extends ConsumerStatefulWidget {
 
   /// Voltar: sai do cadastro (encerra a sessao e volta as boas-vindas).
   final VoidCallback? onBack;
-  final String initialName;
+  final String initialName, initialCpf, initialBirth;
+
+  /// CPF recusado pelo envio do KYC (ja cadastrado em outra conta): o campo mostra
+  /// o erro enquanto o texto continuar igual a ele.
+  final String? rejectedCpf;
   final bool initialTerms, initialLocation, initialMarketing;
   @override
   ConsumerState<ConsentStep> createState() => _ConsentStepState();
@@ -180,8 +199,8 @@ class ConsentStep extends ConsumerStatefulWidget {
 
 class _ConsentStepState extends ConsumerState<ConsentStep> {
   late final _name = TextEditingController(text: widget.initialName);
-  final _cpf = TextEditingController();
-  final _birth = TextEditingController();
+  late final _cpf = TextEditingController(text: widget.initialCpf);
+  late final _birth = TextEditingController(text: widget.initialBirth);
   late bool _terms = widget.initialTerms, _location = widget.initialLocation, _marketing = widget.initialMarketing;
   bool _busy = false;
   Object? _error;
@@ -195,9 +214,12 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
   }
 
   /// So os termos sao obrigatorios; localizacao e marketing sao opcionais.
-  bool get _valid => _terms && _name.text.trim().isNotEmpty && isValidCpf(_cpf.text) && validateBirth(_birth.text) == null;
+  bool get _valid =>
+      _terms && _name.text.trim().isNotEmpty && isValidCpf(_cpf.text) && !_cpfRejected && validateBirth(_birth.text) == null;
 
   bool get _cpfComplete => _cpf.text.replaceAll(RegExp(r'\D'), '').length == 11;
+
+  bool get _cpfRejected => widget.rejectedCpf != null && widget.rejectedCpf == _cpf.text.trim();
 
   Future<void> _save() async {
     setState(() {
@@ -254,7 +276,8 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
           decoration: InputDecoration(
             labelText: l.cpf,
             hintText: '000.000.000-00',
-            errorText: _cpfComplete && !isValidCpf(_cpf.text) ? l.cpfInvalidShort : null,
+            errorText: _cpfRejected ? l.cpfAlreadyUsed : (_cpfComplete && !isValidCpf(_cpf.text) ? l.cpfInvalidShort : null),
+            errorMaxLines: 3,
             prefixIcon: const Icon(LucideIcons.idCard),
           ),
         ),
@@ -311,6 +334,7 @@ class DocumentsStep extends ConsumerStatefulWidget {
     required this.birth,
     required this.onBack,
     required this.onSubmitted,
+    this.onCpfRejected,
     this.alreadySubmitted = false,
   });
   final String name, cpf, birth;
@@ -318,6 +342,10 @@ class DocumentsStep extends ConsumerStatefulWidget {
   /// KYC ja enviado (voltando do passo de pagamento): nada a reenviar.
   final bool alreadySubmitted;
   final VoidCallback onBack, onSubmitted;
+
+  /// O envio foi recusado porque o CPF ja esta em outra conta (409): leva ao
+  /// campo de CPF em vez de repetir o mesmo envio.
+  final VoidCallback? onCpfRejected;
   @override
   ConsumerState<DocumentsStep> createState() => _DocumentsStepState();
 }
@@ -327,6 +355,9 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
   Uint8List? _doc, _selfie;
   bool _busy = false;
   Object? _error;
+
+  /// 409 do envio por CPF repetido: o botao vira "Corrigir CPF".
+  bool _cpfTaken = false;
 
   Future<void> _pick(bool selfie) async {
     final bytes = await ref.read(photoPickerProvider).take(front: selfie);
@@ -374,7 +405,15 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
       await ref.read(sessionProvider.notifier).refresh();
       widget.onSubmitted();
     } catch (e) {
-      if (mounted) setState(() => _error = e);
+      // A API responde 409 "CPF ja cadastrado em outra conta": repetir o envio nao resolve.
+      final f = toFailure(e);
+      final taken = widget.onCpfRejected != null && f.status == 409 && (f.detail ?? '').contains('CPF');
+      if (mounted) {
+        setState(() {
+          _cpfTaken = taken;
+          _error = e;
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -408,14 +447,23 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(failureText(l, _error!), style: const TextStyle(color: VoltiColors.danger)),
+            child: Text(_cpfTaken ? l.cpfAlreadyUsed : failureText(l, _error!), style: const TextStyle(color: VoltiColors.danger)),
           ),
-        VoltiButton(
-          label: _error != null ? l.retry : (_busy ? l.sending : l.sendForReview),
-          size: VoltiButtonSize.lg,
-          fullWidth: true,
-          onPressed: (_doc != null && _selfie != null && !_busy) ? _submit : null,
-        ),
+        if (_cpfTaken)
+          VoltiButton(
+            key: const Key('kyc-fix-cpf'),
+            label: l.fixCpf,
+            size: VoltiButtonSize.lg,
+            fullWidth: true,
+            onPressed: widget.onCpfRejected,
+          )
+        else
+          VoltiButton(
+            label: _error != null ? l.retry : (_busy ? l.sending : l.sendForReview),
+            size: VoltiButtonSize.lg,
+            fullWidth: true,
+            onPressed: (_doc != null && _selfie != null && !_busy) ? _submit : null,
+          ),
       ]),
       children: [
         Row(children: [

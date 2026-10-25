@@ -11,6 +11,7 @@ import 'core/auth_mode.dart';
 import 'core/auth_store.dart';
 import 'core/cognito.dart';
 import 'core/cognito_auth.dart';
+import 'core/crash_reporting.dart';
 import 'core/map_tiles.dart';
 import 'core/release_env.dart';
 import 'core/services.dart' show kMpPublicKey;
@@ -19,7 +20,10 @@ import 'core/services.dart' show kMpPublicKey;
 /// `--dart-define=AUTH_MODE=dev|cognito` (padrao dev; release sempre cognito). No modo cognito:
 /// `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`,
 /// `COGNITO_REDIRECT_URI` (ver README). `MP_PUBLIC_KEY` (chave publica do Mercado Pago; obrigatoria em release).
-Future<void> main() async {
+/// `SENTRY_DSN` (opcional): liga o relatorio de falhas em release/profile, sem dados pessoais.
+Future<void> main() => runWithCrashReporting(_start);
+
+Future<void> _start() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Release sem API_BASE_URL / SUPPORT_PHONE reais: falha aqui, com mensagem clara.
   final envProblems = releaseEnvironmentProblems(

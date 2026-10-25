@@ -255,8 +255,12 @@ import 'package:volti_api/src/model/support_message_page.dart';
 import 'package:volti_api/src/model/support_message_status.dart';
 import 'package:volti_api/src/model/support_read_request.dart';
 import 'package:volti_api/src/model/swap_station.dart';
+import 'package:volti_api/src/model/swap_station_admin.dart';
+import 'package:volti_api/src/model/swap_station_admin_list.dart';
+import 'package:volti_api/src/model/swap_station_input.dart';
 import 'package:volti_api/src/model/swap_station_list.dart';
 import 'package:volti_api/src/model/swap_station_qr.dart';
+import 'package:volti_api/src/model/swap_station_update.dart';
 import 'package:volti_api/src/model/swap_vehicle_request.dart';
 import 'package:volti_api/src/model/task_priority.dart';
 import 'package:volti_api/src/model/top_up.dart';
@@ -542,8 +546,12 @@ part 'serializers.g.dart';
   SupportMessageStatus,
   SupportReadRequest,
   SwapStation,
+  SwapStationAdmin,
+  SwapStationAdminList,
+  SwapStationInput,
   SwapStationList,
   SwapStationQr,
+  SwapStationUpdate,
   SwapVehicleRequest,
   TaskPriority,
   TopUp,
@@ -689,6 +697,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(BatteryMovement)]),
         () => ListBuilder<BatteryMovement>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(SwapStationAdmin)]),
+        () => ListBuilder<SwapStationAdmin>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [

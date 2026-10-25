@@ -144,6 +144,7 @@ class FakeFieldRepository implements FieldRepository {
   int vanReads = 0;
   final loads = <(List<String>, int?)>[];
   final unloads = <List<String>>[];
+  final unloadDepotIds = <String?>[];
   final unloadStationIds = <String?>[];
   List<VehicleServiceRow> serviceRows = const [];
   final serviceQueries = <VehicleServiceStatus?>[];
@@ -172,10 +173,11 @@ class FakeFieldRepository implements FieldRepository {
   }
 
   @override
-  Future<VanStock> unloadVan(List<String> serials, {String? stationId}) async {
+  Future<VanStock> unloadVan(List<String> serials, {String? stationId, String? depotId}) async {
     _check();
     unloads.add(serials);
     unloadStationIds.add(stationId);
+    unloadDepotIds.add(depotId);
     van = fakeVan([...?van?.items.where((b) => !serials.contains(b.serial))]);
     return van!;
   }
@@ -330,10 +332,81 @@ class FakeFieldRepository implements FieldRepository {
   }
 
   @override
-  Future<List<Battery>> listBatteries({BatteryStatus? status}) async {
+  Future<List<Battery>> listBatteries({BatteryStatus? status, String? depotId}) async {
     _check();
     batteryReads++;
-    return batteries.where((b) => status == null || b.status == status).toList();
+    batteryDepotQueries.add(depotId);
+    return batteries
+        .where((b) => (status == null || b.status == status) && (depotId == null || b.depotId == depotId))
+        .toList();
+  }
+
+  final batteryDepotQueries = <String?>[];
+  final batteryCountQueries = <String?>[];
+
+  /// Contagem do servidor; `null` = calcula da lista (como a API faz).
+  BatteryStatusCounts? countsOverride;
+
+  @override
+  Future<BatteryStatusCounts> getBatteryCounts({String? depotId}) async {
+    _check();
+    batteryCountQueries.add(depotId);
+    if (countsOverride != null && depotId == null) return countsOverride!;
+    int n(BatteryStatus s) =>
+        batteries.where((b) => b.status == s && (depotId == null || b.depotId == depotId)).length;
+    return BatteryStatusCounts((c) => c
+      ..inVehicle = n(BatteryStatus.inVehicle)
+      ..inVan = n(BatteryStatus.inVan)
+      ..charging = n(BatteryStatus.charging)
+      ..charged = n(BatteryStatus.charged)
+      ..inStation = n(BatteryStatus.inStation)
+      ..defective = n(BatteryStatus.defective)
+      ..retired = n(BatteryStatus.retired));
+  }
+
+  final markedCharged = <String>[];
+  final defects = <(String, String)>[];
+  RepositoryException? lifecycleRejectWith;
+  List<BatteryMovement> movements = [];
+  final movementCursors = <String?>[];
+
+  @override
+  Future<Battery> markBatteryCharged(String id) async {
+    _check();
+    if (lifecycleRejectWith != null) throw lifecycleRejectWith!;
+    markedCharged.add(id);
+    final i = batteries.indexWhere((b) => b.id == id);
+    if (i < 0) throw const RepositoryException(FailureKind.rejected, 'not found', status: 404);
+    final b = batteries[i].rebuild((x) => x
+      ..status = BatteryStatus.charged
+      ..chargePct = 100);
+    batteries = [...batteries]..[i] = b;
+    return b;
+  }
+
+  @override
+  Future<Battery> reportBatteryDefect(String id, {required String reason}) async {
+    _check();
+    if (lifecycleRejectWith != null) throw lifecycleRejectWith!;
+    defects.add((id, reason));
+    final i = batteries.indexWhere((b) => b.id == id);
+    if (i < 0) throw const RepositoryException(FailureKind.rejected, 'not found', status: 404);
+    final b = batteries[i].rebuild((x) => x..status = BatteryStatus.defective);
+    batteries = [...batteries]..[i] = b;
+    return b;
+  }
+
+  @override
+  Future<BatteryMovementPage> listBatteryMovements(String id, {String? cursor}) async {
+    _check();
+    movementCursors.add(cursor);
+    // Duas por pagina; o cursor e o indice da proxima.
+    final start = cursor == null ? 0 : int.parse(cursor);
+    final all = movements.where((m) => m.batteryId == id).toList();
+    final end = (start + 2).clamp(0, all.length);
+    return BatteryMovementPage((b) => b
+      ..items.replace(all.sublist(start, end))
+      ..nextCursor = end < all.length ? '$end' : null);
   }
 
   @override
@@ -443,14 +516,15 @@ class FakeHandoverEvents implements HandoverEvents {
 }
 
 Battery fakeBattery(String serial,
-        {int pct = 100, int cycles = 10, BatteryStatus? status}) =>
+        {int pct = 100, int cycles = 10, BatteryStatus? status, String? depotId}) =>
     Battery((b) => b
       ..id = 'bat-$serial'
       ..serial = serial
       ..chargePct = pct
       ..cycleCount = cycles
       ..status = status ?? BatteryStatus.inVan
-      ..holderId = 'op-1'
+      ..holderId = depotId == null ? 'op-1' : null
+      ..depotId = depotId
       ..updatedAt = DateTime.utc(2026, 10, 22));
 
 VanStock fakeVan(List<Battery> items) => VanStock((b) => b

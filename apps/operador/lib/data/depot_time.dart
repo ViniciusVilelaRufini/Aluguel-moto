@@ -35,3 +35,11 @@ String depotHhmm(DateTime instant, String? zone) {
   final l = inDepotZone(instant, zone);
   return '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
 }
+
+/// "22/10 14:30" no fuso do galpao (historico de movimentacoes).
+String depotDayHhmm(DateTime instant, String? zone) {
+  final l = inDepotZone(instant, zone);
+  final d = l.day.toString().padLeft(2, '0');
+  final m = l.month.toString().padLeft(2, '0');
+  return '$d/$m ${depotHhmm(instant, zone)}';
+}

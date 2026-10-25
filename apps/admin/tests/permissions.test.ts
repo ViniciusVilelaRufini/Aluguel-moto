@@ -4,8 +4,18 @@ import { can, menuFor, canSeeFullCpf } from '@/lib/permissions';
 const keys = (g: string[]) => menuFor(g as never).map((m) => m.key);
 
 describe('menu by group', () => {
-  it('admin sees the 11 sections in design order', () => {
-    expect(keys(['admin'])).toEqual(['fleet', 'alerts', 'zones', 'customers', 'tasks', 'finance', 'settings', 'depots', 'pickups', 'handovers', 'team']);
+  it('admin sees the 12 sections in design order', () => {
+    expect(keys(['admin'])).toEqual(['fleet', 'alerts', 'zones', 'customers', 'tasks', 'finance', 'settings', 'depots', 'stations', 'pickups', 'handovers', 'team']);
+  });
+  it('estações (Task 12 das lacunas): admin e operação; suporte, financeiro e campo não', () => {
+    expect(keys(['operacao'])).toContain('stations');
+    for (const g of ['suporte', 'financeiro', 'campo']) expect(keys([g])).not.toContain('stations');
+    for (const a of ['station.edit', 'station.qr'] as const) {
+      expect(can(['admin'], a)).toBe(true);
+      expect(can(['operacao'], a)).toBe(true);
+      expect(can(['suporte'], a)).toBe(false);
+      expect(can(['financeiro'], a)).toBe(false);
+    }
   });
   it('operacao sees fleet, zones, alerts and field', () => {
     const k = keys(['operacao']);

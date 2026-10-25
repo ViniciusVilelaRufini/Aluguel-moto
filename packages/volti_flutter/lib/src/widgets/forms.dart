@@ -117,8 +117,9 @@ class OptionCard extends StatelessWidget {
                     ),
                     if (badge != null)
                       Container(
-                        height: 20,
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        // Altura minima 20 que cresce com a escala do texto (sem corte a 200%).
+                        constraints: const BoxConstraints(minHeight: 20),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4.5),
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: tagBg,

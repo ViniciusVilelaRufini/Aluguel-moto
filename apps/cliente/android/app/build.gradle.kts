@@ -7,6 +7,12 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Push (FCM): o plugin do Google so entra quando google-services.json existe (fora do git).
+// Sem o arquivo o app compila e roda normalmente, com push desligado.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 // Assinatura de release: android/key.properties (fora do git; formato no README).
 val keystoreProperties = Properties()
 val keystorePropertiesFile = rootProject.file("key.properties")

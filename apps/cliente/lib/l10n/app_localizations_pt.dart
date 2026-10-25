@@ -269,7 +269,7 @@ class AppLocalizationsPt extends AppLocalizations {
       'Número de cartão inválido. Confira os dígitos.';
 
   @override
-  String get cardExpiryInvalid => 'Validade inválida ou vencida.';
+  String get cardExpiryInvalid => 'Data inválida';
 
   @override
   String get cardErrorInvalidCard => 'Cartão inválido. Confira o número.';
@@ -1131,12 +1131,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get nearYou => 'Perto de você';
 
   @override
-  String get notifications => 'Notificações';
-
-  @override
-  String get notificationsUnread => 'Notificações, há mensagens novas';
-
-  @override
   String batterySemantics(int pct) {
     return 'bateria $pct por cento';
   }
@@ -1750,7 +1744,8 @@ class AppLocalizationsPt extends AppLocalizations {
   String get supportChat => 'Chat com o suporte';
 
   @override
-  String get topUpAmountError => 'Escolha um valor entre R\$ 10 e R\$ 1.000';
+  String get topUpAmountError =>
+      'Escolha um valor entre R\$ 10,00 e R\$ 1.000,00';
 
   @override
   String get topUpAmountHint =>
@@ -2987,4 +2982,43 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get returnSwapOpenAction => 'Continuar troca';
+
+  @override
+  String get termsOfUse => 'Termos de uso';
+
+  @override
+  String get privacyPolicy => 'Política de privacidade';
+
+  @override
+  String couponUpTo(String amount) {
+    return 'até $amount';
+  }
+
+  @override
+  String couponPercentOfTime(int percent) {
+    return '-$percent% do tempo';
+  }
+
+  @override
+  String get couponClosingNote =>
+      'O desconto é aplicado no fechamento do aluguel, limitado ao valor do tempo de uso.';
+
+  @override
+  String get fixCpf => 'Corrigir CPF';
+
+  @override
+  String get cpfAlreadyUsed => 'Este CPF já está cadastrado em outra conta.';
+
+  @override
+  String dayChipEnded(String label) {
+    return '$label · Encerrado';
+  }
+
+  @override
+  String dayChipUnavailable(String label) {
+    return '$label · Indisponível';
+  }
+
+  @override
+  String get accountUnread => 'Conta, mensagens novas do suporte';
 }

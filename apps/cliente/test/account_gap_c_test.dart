@@ -363,12 +363,12 @@ void main() {
       await t.pumpAndSettle();
       await t.enterText(find.byKey(const Key('topup-amount')), '5');
       await t.pump();
-      expect(find.text('Escolha um valor entre R\$ 10 e R\$ 1.000'), findsOneWidget);
+      expect(find.text('Escolha um valor entre R\$ 10,00 e R\$ 1.000,00'), findsOneWidget);
       final btn = t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Gerar Pix'));
       expect(btn.onPressed, isNull);
       await t.enterText(find.byKey(const Key('topup-amount')), '1001');
       await t.pump();
-      expect(find.text('Escolha um valor entre R\$ 10 e R\$ 1.000'), findsOneWidget);
+      expect(find.text('Escolha um valor entre R\$ 10,00 e R\$ 1.000,00'), findsOneWidget);
       await t.enterText(find.byKey(const Key('topup-amount')), '37,5');
       await t.pump();
       await t.tap(find.text('Gerar Pix de R\$ 37,50'));

@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_cliente/core/backend.dart';
@@ -7,10 +7,15 @@ import 'package:volti_cliente/core/flash.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/home/home_screen.dart';
-import 'package:volti_flutter/volti_flutter.dart';
 
 import 'galpao_fixtures.dart';
 import 'helpers.dart';
+import 'pick_catalog_test.dart' show loadFonts;
+
+class _LongNameBackend extends ParityBackend {
+  @override
+  Future<List<Depot>> depots({double? lat, double? lng}) async => [depotFixture(district: 'Vila Madalena')];
+}
 
 class ParityBackend extends GalpaoBackend {
   ParityBackend({this.unread = 0, this.depotsFail = false});
@@ -64,6 +69,7 @@ class _Flash extends FlashNotifier {
 }
 
 void main() {
+  setUpAll(loadFonts);
   testWidgets('cabecalho e promocoes como no design; sem filtros de motos na rua', (t) async {
     phone(t);
     await pump(t, ParityBackend());
@@ -77,15 +83,31 @@ void main() {
       expect(find.text(f), findsNothing);
     }
     expect(find.text('Escolher moto'), findsOneWidget);
-    expect(t.widget<VoltiIconButton>(find.byKey(const Key('home-bell'))).dot, isFalse);
+    // Sem central de notificacoes no contrato: nao ha sino; o suporte tem entrada na Conta.
+    expect(find.byKey(const Key('home-bell')), findsNothing);
+    expect(find.byKey(const Key('home-avatar-dot')), findsNothing);
     expect(t.takeException(), isNull);
   });
 
-  testWidgets('sino com bolinha quando ha mensagem nao lida do suporte', (t) async {
+  testWidgets('mensagem nao lida do suporte: bolinha no avatar da Conta, sem sino', (t) async {
     phone(t);
     await pump(t, ParityBackend(unread: 2));
-    expect(t.widget<VoltiIconButton>(find.byKey(const Key('home-bell'))).dot, isTrue);
+    expect(find.byKey(const Key('home-bell')), findsNothing);
+    expect(find.byKey(const Key('home-avatar-dot')), findsOneWidget);
+    expect(find.bySemanticsLabel('Conta, mensagens novas do suporte'), findsOneWidget);
   });
+
+  // Q-10: o nome do galpao quebra em ate 2 linhas em vez de terminar em reticencias.
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('pilula da localizacao com nome longo a ${(scale * 100).round()}%: sem reticencias', (t) async {
+      phone(t, scale: scale);
+      await pump(t, _LongNameBackend());
+      final place = find.descendant(of: find.byKey(const Key('home-location')), matching: find.textContaining('Vila Madalena'));
+      expect(place, findsOneWidget);
+      expect(t.renderObject<RenderParagraph>(place).didExceedMaxLines, isFalse);
+      expect(t.takeException(), isNull);
+    });
+  }
 
   testWidgets('200% de texto sem estouro com aviso de KYC', (t) async {
     phone(t, scale: 2);

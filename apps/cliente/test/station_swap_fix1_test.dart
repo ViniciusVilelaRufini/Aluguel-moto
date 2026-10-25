@@ -148,7 +148,8 @@ void main() {
 
     testWidgets('m-5: "Estação: <nome>" a partir da dica de proximidade', (t) async {
       await pumpScanAt(t, SwapBackend(), (_) {}, initial: '/station-swap/scan?station=$largoId');
-      expect(find.text('Estação: Estação Largo da Batata'), findsOneWidget);
+      expect(find.text('Estação Largo da Batata'), findsOneWidget);
+      expect(find.textContaining('Estação: Estação'), findsNothing);
     });
 
     testWidgets('m-6: taxa exata do aluguel (batterySwapFeeCents) na confirmacao', (t) async {

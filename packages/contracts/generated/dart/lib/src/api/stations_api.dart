@@ -14,8 +14,12 @@ import 'package:volti_api/src/model/station_swap.dart';
 import 'package:volti_api/src/model/station_swap_page.dart';
 import 'package:volti_api/src/model/station_swap_request.dart';
 import 'package:volti_api/src/model/station_swap_status.dart';
+import 'package:volti_api/src/model/swap_station_admin.dart';
+import 'package:volti_api/src/model/swap_station_admin_list.dart';
+import 'package:volti_api/src/model/swap_station_input.dart';
 import 'package:volti_api/src/model/swap_station_list.dart';
 import 'package:volti_api/src/model/swap_station_qr.dart';
+import 'package:volti_api/src/model/swap_station_update.dart';
 
 class StationsApi {
   final Dio _dio;
@@ -226,6 +230,108 @@ class StationsApi {
     );
   }
 
+  /// Cadastrar estação de troca (painel)
+  /// Nome, endereço, posição, horário (&#x60;openingHours&#x60;, texto livre como \&quot;Seg a sáb, 7h às 22h\&quot;, obrigatório sem &#x60;open24h&#x60;; com &#x60;open24h&#x60; e sem texto vale \&quot;Todos os dias, 24 h\&quot;), &#x60;totalSlots&#x60; (≥ 1) e a *thing* do armário no IoT Core (&#x60;thingName&#x60;, padrão &#x60;station-{id}&#x60;; formato &#x60;station-&lt;uuid&gt;&#x60;, o mesmo do provisionamento e da regra IoT). &#x60;thingName&#x60; já usado por outra estação → &#x60;409&#x60; &#x60;thing-name-taken&#x60;. A estação nasce com o QR fixo emitido (o mesmo código do script &#x60;stations:qr&#x60;, lido em &#x60;GET /swap-stations/{id}/qr&#x60;) e sem baterias (&#x60;availableBatteries&#x60; &#x3D; 0; o estoque entra pela van, &#x60;POST /batteries/van-stock/unload&#x60;). Grava AuditLog (&#x60;swap_station.create&#x60;, sem o QR).
+  ///
+  /// Parameters:
+  /// * [swapStationInput]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [SwapStationAdmin] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<SwapStationAdmin>> createSwapStation({
+    required SwapStationInput swapStationInput,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/swap-stations';
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(SwapStationInput);
+      _bodyData =
+          _serializers.serialize(swapStationInput, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    SwapStationAdmin? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(SwapStationAdmin),
+            ) as SwapStationAdmin;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<SwapStationAdmin>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// Consultar troca na estação
   /// Dono (cliente) ou staff. Troca de outro cliente ou de outra estação → &#x60;404&#x60;.
   ///
@@ -323,8 +429,8 @@ class StationsApi {
     );
   }
 
-  /// QR da estação (admin)
-  /// Conteúdo do QR fixo da estação (&#x60;stationCode&#x60;) para imprimir o adesivo. Estação ainda sem código → emitido agora com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação &#x60;stations:qr --reissue&#x60; (ver &#x60;services/api/README.md&#x60;). O código nunca sai em &#x60;SwapStation&#x60;.
+  /// QR da estação (admin e operação)
+  /// Conteúdo do QR fixo da estação (&#x60;stationCode&#x60;, o mesmo código que o script &#x60;stations:qr&#x60; grava) para imprimir o adesivo pelo painel. Estação ainda sem código → emitido agora com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação &#x60;stations:qr --reissue&#x60; (ver &#x60;services/api/README.md&#x60;). O código nunca sai em &#x60;SwapStation&#x60;, em &#x60;SwapStationAdmin&#x60; nem para o cliente.
   ///
   /// Parameters:
   /// * [id]
@@ -512,8 +618,88 @@ class StationsApi {
     );
   }
 
+  /// Cadastro das estações (painel)
+  /// Todas as estações, ativas e inativas, em ordem alfabética, com os campos de cadastro (&#x60;SwapStationAdmin&#x60;: ativa, &#x60;thingName&#x60;, baterias na estação, trocas em andamento e galpões ligados). Nunca traz o QR (&#x60;stationCode&#x60;).
+  ///
+  /// Parameters:
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [SwapStationAdminList] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<SwapStationAdminList>> listSwapStationRegistry({
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/swap-stations/registry';
+    final _options = Options(
+      method: r'GET',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    SwapStationAdminList? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(SwapStationAdminList),
+            ) as SwapStationAdminList;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<SwapStationAdminList>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// Estações de troca de bateria (mapa)
-  /// Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com &#x60;lat&#x60;/&#x60;lng&#x60;, filtra pelo raio e ordena por distância (&#x60;distanceM&#x60;); sem eles, todas em ordem alfabética.  Leitura aberta a qualquer cliente autenticado (&#x60;customerAuth&#x60;, sem grupo: o mapa e a folha \&quot;Troca de bateria\&quot; do app). &#x60;x-required-groups&#x60; vale só para &#x60;staffAuth&#x60;. A resposta traz apenas os campos públicos de &#x60;SwapStation&#x60; (identificador, nome, endereço, posição, baterias, vagas, horário e distância); dados internos da estação (ativa/inativa, datas de cadastro) não saem da API, para nenhum pool.
+  /// Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com &#x60;lat&#x60;/&#x60;lng&#x60;, filtra pelo raio e ordena por distância (&#x60;distanceM&#x60;); sem eles, todas em ordem alfabética.  Leitura aberta a qualquer cliente autenticado (&#x60;customerAuth&#x60;, sem grupo: o mapa e a folha \&quot;Troca de bateria\&quot; do app). &#x60;x-required-groups&#x60; vale só para &#x60;staffAuth&#x60;. A resposta traz apenas os campos públicos de &#x60;SwapStation&#x60; (identificador, nome, endereço, posição, baterias, vagas, horário e distância); dados internos da estação (ativa/inativa, datas de cadastro) não saem desta rota, para nenhum pool; o painel lê o cadastro em &#x60;GET /swap-stations/registry&#x60; (admin/operacao).
   ///
   /// Parameters:
   /// * [lat]
@@ -603,6 +789,113 @@ class StationsApi {
     }
 
     return Response<SwapStationList>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Editar ou desativar estação de troca (painel)
+  /// Campos ausentes não mudam. Validações: - &#x60;totalSlots&#x60; menor que as baterias na estação (o maior entre &#x60;availableBatteries&#x60; e as baterias &#x60;in_station&#x60;   dela) → &#x60;422&#x60; &#x60;slots-below-stock&#x60;; - &#x60;thingName&#x60; de outra estação → &#x60;409&#x60; &#x60;thing-name-taken&#x60;; - desativar (&#x60;active: false&#x60;) ou trocar o &#x60;thingName&#x60; com troca por QR em andamento na estação → &#x60;409&#x60;   &#x60;station-swap-in-progress&#x60; (espere terminar; a desativação e a criação de troca se serializam pela linha da   estação). Estação inativa some de &#x60;GET /swap-stations&#x60; e recusa troca nova (&#x60;422&#x60; &#x60;station-unavailable&#x60;). O QR não muda. Grava AuditLog (&#x60;swap_station.update&#x60;, nomes dos campos).
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [swapStationUpdate]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [SwapStationAdmin] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<SwapStationAdmin>> updateSwapStation({
+    required String id,
+    required SwapStationUpdate swapStationUpdate,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/swap-stations/{id}'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'PATCH',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(SwapStationUpdate);
+      _bodyData =
+          _serializers.serialize(swapStationUpdate, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    SwapStationAdmin? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(SwapStationAdmin),
+            ) as SwapStationAdmin;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<SwapStationAdmin>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

@@ -23,7 +23,8 @@ part 'depot_update.g.dart';
 /// * [pickupNowWindowMinutes]
 /// * [maxScheduleDays]
 /// * [scheduledGraceMinutes]
-/// * [swapStationId]
+/// * [swapStationId] - Liga o galpão à estação de troca (inexistente → `400`).
+/// * [clearSwapStation] - `true` desliga o galpão da estação de troca (o contrato não usa `null`). Junto com `swapStationId` → `400`.
 /// * [minChargedBatteries] - 0 desliga o alerta de estoque.
 /// * [active]
 @BuiltValue()
@@ -58,8 +59,13 @@ abstract class DepotUpdate implements Built<DepotUpdate, DepotUpdateBuilder> {
   @BuiltValueField(wireName: r'scheduledGraceMinutes')
   int? get scheduledGraceMinutes;
 
+  /// Liga o galpão à estação de troca (inexistente → `400`).
   @BuiltValueField(wireName: r'swapStationId')
   String? get swapStationId;
+
+  /// `true` desliga o galpão da estação de troca (o contrato não usa `null`). Junto com `swapStationId` → `400`.
+  @BuiltValueField(wireName: r'clearSwapStation')
+  bool? get clearSwapStation;
 
   /// 0 desliga o alerta de estoque.
   @BuiltValueField(wireName: r'minChargedBatteries')
@@ -166,6 +172,13 @@ class _$DepotUpdateSerializer implements PrimitiveSerializer<DepotUpdate> {
       yield serializers.serialize(
         object.swapStationId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.clearSwapStation != null) {
+      yield r'clearSwapStation';
+      yield serializers.serialize(
+        object.clearSwapStation,
+        specifiedType: const FullType(bool),
       );
     }
     if (object.minChargedBatteries != null) {
@@ -295,6 +308,14 @@ class _$DepotUpdateSerializer implements PrimitiveSerializer<DepotUpdate> {
           ) as String?;
           if (valueDes == null) continue;
           result.swapStationId = valueDes;
+          break;
+        case r'clearSwapStation':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(bool),
+          ) as bool?;
+          if (valueDes == null) continue;
+          result.clearSwapStation = valueDes;
           break;
         case r'minChargedBatteries':
           final valueDes = serializers.deserialize(

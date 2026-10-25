@@ -63,6 +63,10 @@ const DEFAULT_TITLES: Record<string, string> = {
   'too-far': 'Longe da estação',
   'swap-open': 'Já existe uma troca em andamento',
   'swap-not-cancelable': 'Troca não pode ser cancelada',
+  // cadastro de estações pelo painel
+  'thing-name-taken': 'Armário (thing) já usado por outra estação',
+  'station-swap-in-progress': 'Troca em andamento na estação',
+  'slots-below-stock': 'Vagas abaixo das baterias na estação',
   'internal-error': 'Erro interno',
 };
 

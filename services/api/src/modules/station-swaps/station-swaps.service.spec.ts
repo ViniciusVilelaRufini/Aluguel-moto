@@ -40,7 +40,7 @@ function setup(opts: { planCode?: string; rentalStatus?: string; known?: number 
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   const station: any = {
     id: STATION_ID, name: 'Estação', address: 'R. X', ...STATION, availableBatteries: 5, totalSlots: 10, openingHours: 'Todos os dias, 24 h', open24h: true,
-    active: true, stationCode: CODE, createdAt: new Date(), updatedAt: new Date(), ...opts.station,
+    active: true, stationCode: CODE, thingName: null, createdAt: new Date(), updatedAt: new Date(), ...opts.station,
   };
   const rental: any = {
     id: RENTAL_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, planCode: opts.planCode ?? 'minute', status: opts.rentalStatus ?? 'active',
@@ -48,12 +48,15 @@ function setup(opts: { planCode?: string; rentalStatus?: string; known?: number 
   };
   const swaps = new Map<string, any>();
   prisma.swapStation.findUnique.mockImplementation((async (a: any) => (a.where.id === STATION_ID ? station : null)) as any);
+  // Estação de um evento pela thing (Task 12 das lacunas): `thingName` do cadastro ou `station-{id}` sem `thingName`.
+  prisma.swapStation.findFirst.mockImplementation((async (a: any) =>
+    (a.where.OR ?? []).some((c: any) => (c.thingName && c.thingName === station.thingName) || (c.id === station.id && c.thingName === null && !station.thingName)) ? station : null) as any);
   prisma.rental.findUnique.mockImplementation((async (a: any) => (a.where.id === RENTAL_ID ? rental : null)) as any);
   prisma.stationSwap.findFirst.mockResolvedValue(null);
   prisma.stationSwap.count.mockResolvedValue(0);
   // Locks: linha da estação (estoque) e linha do aluguel (status relido sob lock, fix 2 / M-3 e I-1).
   (prisma.$queryRaw as any).mockImplementation(async (sql: TemplateStringsArray) =>
-    sql.join('?').includes('"Rental"') ? [{ status: rental.lockedStatus ?? rental.status }] : [{ availableBatteries: station.availableBatteries }],
+    sql.join('?').includes('"Rental"') ? [{ status: rental.lockedStatus ?? rental.status }] : [{ availableBatteries: station.availableBatteries, active: station.lockedActive ?? station.active }],
   );
   prisma.fee.findUnique.mockResolvedValue({ code: 'battery_swap_fee', amountCents: opts.feeCents ?? 500, active: true } as any);
   prisma.stationSwap.create.mockImplementation((async (a: any) => {
@@ -158,6 +161,10 @@ describe('StationSwapsService.create (regras)', () => {
       const { service } = setup({ station });
       expect(await problem(service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 422, slug: 'station-unavailable' });
     }
+    // Task 12 das lacunas: desativada pelo painel entre a pré-checagem e o lock → 422, nada inserido.
+    const raced = setup({ station: { lockedActive: false } });
+    expect(await problem(raced.service.create(customer, STATION_ID, body(), 'k1234567'))).toEqual({ status: 422, slug: 'station-unavailable' });
+    expect(raced.prisma.stationSwap.create).not.toHaveBeenCalled();
     // Uma carregada e uma troca em andamento na estação: a carregada já está prometida.
     const busy = setup({ station: { availableBatteries: 1 } });
     busy.prisma.stationSwap.count.mockResolvedValue(1);
@@ -375,6 +382,21 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     expect(gateway.send).not.toHaveBeenCalled();
   });
 
+  it('Task 12 das lacunas: estação com thingName do cadastro recebe os comandos nessa thing e só aceita eventos dela', async () => {
+    const CUSTOM = 'station-aaaaaaaa-0000-4000-8000-000000000009';
+    const ctx = setup({ station: { thingName: CUSTOM } });
+    await ctx.service.create(customer, STATION_ID, body(), 'k1234567');
+    expect(ctx.gateway.send).toHaveBeenCalledWith(CUSTOM, expect.objectContaining({ action: 'open_slot', swapId: SWAP_ID }));
+    // A convenção station-{id} não vale mais para esta estação.
+    await ctx.service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 2, ts: ts() });
+    expect(ctx.swaps.get(SWAP_ID).status).toBe('opening_slot');
+    await ctx.service.onStationEvent(CUSTOM, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 2, ts: ts() });
+    await ctx.service.onStationEvent(CUSTOM, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 12, ts: ts() });
+    await ctx.service.onStationEvent(CUSTOM, { type: 'slot_closed', swapId: SWAP_ID, ts: ts() });
+    expect(ctx.swaps.get(SWAP_ID).status).toBe('releasing');
+    expect(ctx.gateway.send).toHaveBeenLastCalledWith(CUSTOM, expect.objectContaining({ action: 'release_battery', swapId: SWAP_ID }));
+  });
+
   it('evento de outra estação (ou thing estranha) é ignorado', async () => {
     const { service, swaps } = await created();
     await service.onStationEvent('station-d0000000-0000-4000-8000-000000000009', { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 1, ts: ts() });
@@ -396,6 +418,33 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
       await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-S1001', ts: ts() });
       expect(swaps.get(SWAP_ID).status).toBe('completed');
     }
+  });
+
+  it('Task 12 (fix I1): estação desativada depois do cancelamento — devolução atrasada é registrada, sem exceção, e a carregada é liberada', async () => {
+    const { service, swaps, prisma, gateway, station } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'canceled_by_customer', slotNumber: 3 });
+    // Painel desativou a estação (a troca cancelada não conta como aberta).
+    station.active = false;
+    station.lockedActive = false;
+    await expect(service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() })).resolves.toBeUndefined();
+    expect(prisma.battery.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { serial: 'BAT-00001' }, update: expect.objectContaining({ status: 'charging', stationId: STATION_ID }) }));
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'releasing', returnedSerial: 'BAT-00001' }));
+    expect(gateway.send).toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery', swapId: SWAP_ID }));
+    // Eventos seguintes da mesma troca também seguem numa estação inativa.
+    await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-S1001', ts: ts() });
+    expect(swaps.get(SWAP_ID).status).toBe('completed');
+  });
+
+  it('Task 12 (fix M1): falha ao ler a thing não manda o comando para a convenção (armário errado); só loga', async () => {
+    const CUSTOM = 'station-aaaaaaaa-0000-4000-8000-000000000009';
+    const ctx = await created({ station: { thingName: CUSTOM } });
+    await ctx.service.onStationEvent(CUSTOM, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 2, ts: ts() });
+    await ctx.service.onStationEvent(CUSTOM, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 12, ts: ts() });
+    ctx.gateway.send.mockClear();
+    ctx.prisma.swapStation.findUnique.mockRejectedValueOnce(new Error('db down'));
+    await expect(ctx.service.onStationEvent(CUSTOM, { type: 'slot_closed', swapId: SWAP_ID, ts: ts() })).resolves.toBeUndefined();
+    expect(ctx.swaps.get(SWAP_ID).status).toBe('releasing');
+    expect(ctx.gateway.send).not.toHaveBeenCalled();
   });
 
   it('fix 1 (I2): devolução atrasada sem carregada disponível → failed/no_battery_after_return + alerta só com ids, sem liberar', async () => {

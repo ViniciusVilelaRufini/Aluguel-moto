@@ -11,10 +11,13 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**cancelStationSwap**](StationsApi.md#cancelstationswap) | **POST** /swap-stations/{id}/swaps/{swapId}/cancel | Cancelar troca na estação
 [**createStationSwap**](StationsApi.md#createstationswap) | **POST** /swap-stations/{id}/swaps | Iniciar troca de bateria na estação (QR)
+[**createSwapStation**](StationsApi.md#createswapstation) | **POST** /swap-stations | Cadastrar estação de troca (painel)
 [**getStationSwap**](StationsApi.md#getstationswap) | **GET** /swap-stations/{id}/swaps/{swapId} | Consultar troca na estação
-[**getSwapStationQr**](StationsApi.md#getswapstationqr) | **GET** /swap-stations/{id}/qr | QR da estação (admin)
+[**getSwapStationQr**](StationsApi.md#getswapstationqr) | **GET** /swap-stations/{id}/qr | QR da estação (admin e operação)
 [**listStationSwaps**](StationsApi.md#liststationswaps) | **GET** /swap-stations/{id}/swaps | Trocas da estação (painel)
+[**listSwapStationRegistry**](StationsApi.md#listswapstationregistry) | **GET** /swap-stations/registry | Cadastro das estações (painel)
 [**listSwapStations**](StationsApi.md#listswapstations) | **GET** /swap-stations | Estações de troca de bateria (mapa)
+[**updateSwapStation**](StationsApi.md#updateswapstation) | **PATCH** /swap-stations/{id} | Editar ou desativar estação de troca (painel)
 
 
 # **cancelStationSwap**
@@ -109,6 +112,49 @@ Name | Type | Description  | Notes
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
+# **createSwapStation**
+> SwapStationAdmin createSwapStation(swapStationInput)
+
+Cadastrar estação de troca (painel)
+
+Nome, endereço, posição, horário (`openingHours`, texto livre como \"Seg a sáb, 7h às 22h\", obrigatório sem `open24h`; com `open24h` e sem texto vale \"Todos os dias, 24 h\"), `totalSlots` (≥ 1) e a *thing* do armário no IoT Core (`thingName`, padrão `station-{id}`; formato `station-<uuid>`, o mesmo do provisionamento e da regra IoT). `thingName` já usado por outra estação → `409` `thing-name-taken`. A estação nasce com o QR fixo emitido (o mesmo código do script `stations:qr`, lido em `GET /swap-stations/{id}/qr`) e sem baterias (`availableBatteries` = 0; o estoque entra pela van, `POST /batteries/van-stock/unload`). Grava AuditLog (`swap_station.create`, sem o QR). 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getStationsApi();
+final SwapStationInput swapStationInput = ; // SwapStationInput | 
+
+try {
+    final response = api.createSwapStation(swapStationInput);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling StationsApi->createSwapStation: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **swapStationInput** | [**SwapStationInput**](SwapStationInput.md)|  | 
+
+### Return type
+
+[**SwapStationAdmin**](SwapStationAdmin.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
 # **getStationSwap**
 > StationSwap getStationSwap(id, swapId)
 
@@ -157,9 +203,9 @@ Name | Type | Description  | Notes
 # **getSwapStationQr**
 > SwapStationQr getSwapStationQr(id)
 
-QR da estação (admin)
+QR da estação (admin e operação)
 
-Conteúdo do QR fixo da estação (`stationCode`) para imprimir o adesivo. Estação ainda sem código → emitido agora com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação `stations:qr --reissue` (ver `services/api/README.md`). O código nunca sai em `SwapStation`. 
+Conteúdo do QR fixo da estação (`stationCode`, o mesmo código que o script `stations:qr` grava) para imprimir o adesivo pelo painel. Estação ainda sem código → emitido agora com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação `stations:qr --reissue` (ver `services/api/README.md`). O código nunca sai em `SwapStation`, em `SwapStationAdmin` nem para o cliente. 
 
 ### Example
 ```dart
@@ -246,12 +292,51 @@ Name | Type | Description  | Notes
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
+# **listSwapStationRegistry**
+> SwapStationAdminList listSwapStationRegistry()
+
+Cadastro das estações (painel)
+
+Todas as estações, ativas e inativas, em ordem alfabética, com os campos de cadastro (`SwapStationAdmin`: ativa, `thingName`, baterias na estação, trocas em andamento e galpões ligados). Nunca traz o QR (`stationCode`). 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getStationsApi();
+
+try {
+    final response = api.listSwapStationRegistry();
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling StationsApi->listSwapStationRegistry: $e\n');
+}
+```
+
+### Parameters
+This endpoint does not need any parameter.
+
+### Return type
+
+[**SwapStationAdminList**](SwapStationAdminList.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
 # **listSwapStations**
 > SwapStationList listSwapStations(lat, lng, radiusM)
 
 Estações de troca de bateria (mapa)
 
-Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com `lat`/`lng`, filtra pelo raio e ordena por distância (`distanceM`); sem eles, todas em ordem alfabética.  Leitura aberta a qualquer cliente autenticado (`customerAuth`, sem grupo: o mapa e a folha \"Troca de bateria\" do app). `x-required-groups` vale só para `staffAuth`. A resposta traz apenas os campos públicos de `SwapStation` (identificador, nome, endereço, posição, baterias, vagas, horário e distância); dados internos da estação (ativa/inativa, datas de cadastro) não saem da API, para nenhum pool. 
+Estações ativas com posição, endereço, horário e baterias carregadas disponíveis. Com `lat`/`lng`, filtra pelo raio e ordena por distância (`distanceM`); sem eles, todas em ordem alfabética.  Leitura aberta a qualquer cliente autenticado (`customerAuth`, sem grupo: o mapa e a folha \"Troca de bateria\" do app). `x-required-groups` vale só para `staffAuth`. A resposta traz apenas os campos públicos de `SwapStation` (identificador, nome, endereço, posição, baterias, vagas, horário e distância); dados internos da estação (ativa/inativa, datas de cadastro) não saem desta rota, para nenhum pool; o painel lê o cadastro em `GET /swap-stations/registry` (admin/operacao). 
 
 ### Example
 ```dart
@@ -289,6 +374,51 @@ Name | Type | Description  | Notes
 ### HTTP request headers
 
  - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **updateSwapStation**
+> SwapStationAdmin updateSwapStation(id, swapStationUpdate)
+
+Editar ou desativar estação de troca (painel)
+
+Campos ausentes não mudam. Validações: - `totalSlots` menor que as baterias na estação (o maior entre `availableBatteries` e as baterias `in_station`   dela) → `422` `slots-below-stock`; - `thingName` de outra estação → `409` `thing-name-taken`; - desativar (`active: false`) ou trocar o `thingName` com troca por QR em andamento na estação → `409`   `station-swap-in-progress` (espere terminar; a desativação e a criação de troca se serializam pela linha da   estação). Estação inativa some de `GET /swap-stations` e recusa troca nova (`422` `station-unavailable`). O QR não muda. Grava AuditLog (`swap_station.update`, nomes dos campos). 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getStationsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final SwapStationUpdate swapStationUpdate = ; // SwapStationUpdate | 
+
+try {
+    final response = api.updateSwapStation(id, swapStationUpdate);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling StationsApi->updateSwapStation: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **swapStationUpdate** | [**SwapStationUpdate**](SwapStationUpdate.md)|  | 
+
+### Return type
+
+[**SwapStationAdmin**](SwapStationAdmin.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
  - **Accept**: application/json, application/problem+json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

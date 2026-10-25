@@ -1441,6 +1441,9 @@ model SwapStation {
   /// Conteúdo do QR fixo da estação (`vst1.<id>.<hmac>`, assinado com `STATION_QR_SECRET`; sem dado pessoal). Nulo = QR
   /// ainda não emitido (o seed emite para todas). A API confere a assinatura **e** a igualdade com este valor.
   stationCode        String?  @unique
+  /// *Thing* do armário no IoT Core (`station-<uuid>`, Task 12 das lacunas). Nulo = `station-{id}` (convenção do
+  /// provisionamento); o painel pode apontar a estação para o armário provisionado com outro uuid.
+  thingName          String?  @unique
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 

@@ -779,10 +779,119 @@
   },
   "bsInVehicle": "Na moto",
   "bsInVan": "Na van",
-  "bsCharging": "Galpão (recarga)",
+  "bsCharging": "Carregando",
+  "bsCharged": "Carregada",
+  "bsDefective": "Com defeito",
   "bsInStation": "Na estação",
   "bsRetired": "Aposentada",
   "bsOther": "Outro status",
+  "stockDepotFilter": "Galpão",
+  "stockAllDepots": "Todos os galpões",
+  "batMarkCharged": "Marcar carregada",
+  "batMarkChargedSemantics": "Marcar a bateria {serial} como carregada",
+  "@batMarkChargedSemantics": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "batMarkedCharged": "Bateria {serial} marcada como carregada.",
+  "@batMarkedCharged": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "batDefect": "Apontar defeito",
+  "batDefectSemantics": "Apontar defeito na bateria {serial}",
+  "@batDefectSemantics": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "batDefectTitle": "Defeito na bateria {serial}",
+  "@batDefectTitle": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "batDefectHint": "A bateria sai de uso até a operação dar baixa. Se ela estiver instalada numa moto, retire-a antes.",
+  "batDefectReason": "Motivo do defeito",
+  "batDefectReasonInvalid": "Escreva entre 3 e 500 caracteres.",
+  "batDefectConfirm": "Registrar defeito",
+  "batDefectDone": "Defeito registrado na bateria {serial}.",
+  "@batDefectDone": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "batHistory": "Histórico",
+  "batHistorySemantics": "Histórico de movimentações da bateria {serial}",
+  "@batHistorySemantics": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "batHistoryTitle": "Movimentações de {serial}",
+  "@batHistoryTitle": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "batHistoryEmpty": "Nenhuma movimentação registrada.",
+  "batHistoryError": "Não foi possível carregar o histórico.",
+  "batHistoryMore": "Ver mais antigas",
+  "batMovementCreated": "Cadastrada · {to}",
+  "@batMovementCreated": {
+    "placeholders": {
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "batMovementChange": "{from} → {to}",
+  "@batMovementChange": {
+    "placeholders": {
+      "from": {
+        "type": "String"
+      },
+      "to": {
+        "type": "String"
+      }
+    }
+  },
+  "batMovementSemantics": "{when}: {change}",
+  "@batMovementSemantics": {
+    "placeholders": {
+      "when": {
+        "type": "String"
+      },
+      "change": {
+        "type": "String"
+      }
+    }
+  },
+  "unloadDepots": "Carregar no galpão",
+  "unloadedDepot": "Bateria descarregada no galpão {name}.",
+  "@unloadedDepot": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "unloadTitle": "Descarregar {serial}",
   "@unloadTitle": {
     "placeholders": {

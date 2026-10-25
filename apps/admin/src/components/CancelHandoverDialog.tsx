@@ -11,7 +11,7 @@ export function CancelHandoverDialog({ handover, onClose }: { handover: S<'Hando
   const qc = useQueryClient();
   const toast = useToast();
   return (
-    <ReasonDialog open={!!handover} testId="cancel-handover-dialog" title="Cancelar entrega" danger confirmLabel="Cancelar entrega" onClose={onClose}
+    <ReasonDialog open={!!handover} testId="cancel-handover-dialog" title="Cancelar entrega" danger confirmLabel="Cancelar entrega" cancelLabel="Voltar" onClose={onClose}
       description="A reserva volta a ficar ativa se ainda estiver no prazo; fora do prazo ela expira, a caução é liberada e a moto volta a ficar livre no galpão."
       onConfirm={async (reason) => {
         const built = buildHandoverCancel(reason);

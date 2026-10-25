@@ -33,6 +33,8 @@ String batteryStatusLabel(AppLocalizations t, BatteryStatus s) {
   if (s == BatteryStatus.inVehicle) return t.bsInVehicle;
   if (s == BatteryStatus.inVan) return t.bsInVan;
   if (s == BatteryStatus.charging) return t.bsCharging;
+  if (s == BatteryStatus.charged) return t.bsCharged;
+  if (s == BatteryStatus.defective) return t.bsDefective;
   if (s == BatteryStatus.inStation) return t.bsInStation;
   if (s == BatteryStatus.retired) return t.bsRetired;
   return t.bsOther;
@@ -40,7 +42,9 @@ String batteryStatusLabel(AppLocalizations t, BatteryStatus s) {
 
 /// Ordem fixa dos status conhecidos; os desconhecidos aparecem depois, juntos.
 final knownBatteryStatuses = <BatteryStatus>[
+  BatteryStatus.charged,
   BatteryStatus.charging,
+  BatteryStatus.defective,
   BatteryStatus.inStation,
   BatteryStatus.inVan,
   BatteryStatus.inVehicle,
@@ -48,3 +52,19 @@ final knownBatteryStatuses = <BatteryStatus>[
 ];
 
 bool isKnownBatteryStatus(BatteryStatus s) => knownBatteryStatuses.contains(s);
+
+/// "Marcar carregada" so vale para bateria carregando (as demais voltam `409`).
+bool canMarkCharged(BatteryStatus s) => s == BatteryStatus.charging;
+
+/// "Apontar defeito": carregando, carregada, na van ou na estacao. Na moto, retire antes.
+bool canReportDefect(BatteryStatus s) =>
+    s == BatteryStatus.charging ||
+    s == BatteryStatus.charged ||
+    s == BatteryStatus.inVan ||
+    s == BatteryStatus.inStation;
+
+/// Motivo do defeito: de 3 a 500 caracteres (`BatteryDefectRequest`).
+bool validDefectReason(String text) {
+  final n = text.trim().length;
+  return n >= 3 && n <= 500;
+}

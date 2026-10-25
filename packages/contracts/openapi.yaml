@@ -44,7 +44,8 @@ info:
     `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`, `gateway-unavailable`,
     `subscription-vehicle-cooldown`, `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`,
     `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
-    `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`.
+    `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
+    `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -1026,7 +1027,8 @@ paths:
         Leitura aberta a qualquer cliente autenticado (`customerAuth`, sem grupo: o mapa e a folha "Troca de bateria"
         do app). `x-required-groups` vale só para `staffAuth`. A resposta traz apenas os campos públicos de
         `SwapStation` (identificador, nome, endereço, posição, baterias, vagas, horário e distância); dados internos
-        da estação (ativa/inativa, datas de cadastro) não saem da API, para nenhum pool.
+        da estação (ativa/inativa, datas de cadastro) não saem desta rota, para nenhum pool; o painel lê o cadastro em
+        `GET /swap-stations/registry` (admin/operacao).
       security:
         - customerAuth: []
         - staffAuth: []
@@ -1050,6 +1052,93 @@ paths:
               schema: { $ref: '#/components/schemas/SwapStationList' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [stations]
+      operationId: createSwapStation
+      summary: Cadastrar estação de troca (painel)
+      description: |
+        Nome, endereço, posição, horário (`openingHours`, texto livre como "Seg a sáb, 7h às 22h", obrigatório sem
+        `open24h`; com `open24h` e sem texto vale "Todos os dias, 24 h"), `totalSlots` (≥ 1) e a *thing* do armário no IoT
+        Core (`thingName`, padrão `station-{id}`; formato `station-<uuid>`, o mesmo do provisionamento e da regra IoT).
+        `thingName` já usado por outra estação → `409` `thing-name-taken`. A estação nasce com o QR fixo emitido (o mesmo
+        código do script `stations:qr`, lido em `GET /swap-stations/{id}/qr`) e sem baterias (`availableBatteries` = 0;
+        o estoque entra pela van, `POST /batteries/van-stock/unload`). Grava AuditLog (`swap_station.create`, sem o QR).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwapStationInput' }
+      responses:
+        '201':
+          description: Estação criada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SwapStationAdmin' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /swap-stations/registry:
+    get:
+      tags: [stations]
+      operationId: listSwapStationRegistry
+      summary: Cadastro das estações (painel)
+      description: |
+        Todas as estações, ativas e inativas, em ordem alfabética, com os campos de cadastro (`SwapStationAdmin`: ativa,
+        `thingName`, baterias na estação, trocas em andamento e galpões ligados). Nunca traz o QR (`stationCode`).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      responses:
+        '200':
+          description: Estações.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SwapStationAdminList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /swap-stations/{id}:
+    parameters:
+      - $ref: '#/components/parameters/PathId'
+    patch:
+      tags: [stations]
+      operationId: updateSwapStation
+      summary: Editar ou desativar estação de troca (painel)
+      description: |
+        Campos ausentes não mudam. Validações:
+        - `totalSlots` menor que as baterias na estação (o maior entre `availableBatteries` e as baterias `in_station`
+          dela) → `422` `slots-below-stock`;
+        - `thingName` de outra estação → `409` `thing-name-taken`;
+        - desativar (`active: false`) ou trocar o `thingName` com troca por QR em andamento na estação → `409`
+          `station-swap-in-progress` (espere terminar; a desativação e a criação de troca se serializam pela linha da
+          estação).
+        Estação inativa some de `GET /swap-stations` e recusa troca nova (`422` `station-unavailable`). O QR não muda.
+        Grava AuditLog (`swap_station.update`, nomes dos campos).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SwapStationUpdate' }
+      responses:
+        '200':
+          description: Estação atualizada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SwapStationAdmin' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /swap-stations/{id}/swaps:
     parameters:
@@ -1137,14 +1226,15 @@ paths:
     get:
       tags: [stations]
       operationId: getSwapStationQr
-      summary: QR da estação (admin)
+      summary: QR da estação (admin e operação)
       description: |
-        Conteúdo do QR fixo da estação (`stationCode`) para imprimir o adesivo. Estação ainda sem código → emitido agora
-        com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação
-        `stations:qr --reissue` (ver `services/api/README.md`). O código nunca sai em `SwapStation`.
+        Conteúdo do QR fixo da estação (`stationCode`, o mesmo código que o script `stations:qr` grava) para imprimir o
+        adesivo pelo painel. Estação ainda sem código → emitido agora com o segredo atual. Grava AuditLog (sem o código).
+        Reemissão em massa (troca do segredo) é pelo script de operação `stations:qr --reissue` (ver
+        `services/api/README.md`). O código nunca sai em `SwapStation`, em `SwapStationAdmin` nem para o cliente.
       security:
         - staffAuth: []
-      x-required-groups: [admin]
+      x-required-groups: [admin, operacao]
       responses:
         '200':
           description: QR da estação.
@@ -7308,6 +7398,63 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/SwapStation' }
+    SwapStationAdmin:
+      type: object
+      description: Estação com os campos de cadastro (só staff admin/operacao). Nunca traz o QR (`stationCode`).
+      required: [id, name, address, lat, lng, availableBatteries, totalSlots, openingHours, open24h, active, thingName, batteriesInStation, openSwaps, depotIds, createdAt, updatedAt]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, examples: [Estação Largo da Batata] }
+        address: { type: string }
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lng: { type: number, format: double, minimum: -180, maximum: 180 }
+        availableBatteries: { type: integer, minimum: 0, description: Baterias carregadas prontas para troca. }
+        totalSlots: { type: integer, minimum: 0 }
+        openingHours: { type: string, examples: ['Seg a sáb, 7h às 22h'] }
+        open24h: { type: boolean }
+        active: { type: boolean }
+        thingName: { type: string, description: '*Thing* do armário no IoT Core (tópicos `estacoes/{thing}/comandos` e `/eventos`).', examples: ['station-d0000000-0000-4000-8000-000000000001'] }
+        batteriesInStation: { type: integer, minimum: 0, description: 'Baterias `in_station` registradas nesta estação (carregadas ou não).' }
+        openSwaps: { type: integer, minimum: 0, description: Trocas por QR em andamento. }
+        depotIds:
+          type: array
+          description: Galpões ligados a esta estação (`Depot.swapStationId`).
+          items: { type: string, format: uuid }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SwapStationAdminList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/SwapStationAdmin' }
+    SwapStationInput:
+      type: object
+      required: [name, address, lat, lng, totalSlots]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        address: { type: string, minLength: 1, maxLength: 300 }
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lng: { type: number, format: double, minimum: -180, maximum: 180 }
+        openingHours: { type: string, maxLength: 120, description: 'Obrigatório sem `open24h` (`400`).', examples: ['Seg a sáb, 7h às 22h'] }
+        open24h: { type: boolean, default: false }
+        totalSlots: { type: integer, minimum: 1, maximum: 200 }
+        thingName: { type: string, pattern: '^station-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', description: 'Padrão `station-{id}`.' }
+        active: { type: boolean, default: true }
+    SwapStationUpdate:
+      type: object
+      description: Campos ausentes não mudam. `openingHours` vazio só com `open24h` (`400`).
+      properties:
+        name: { type: string, minLength: 1, maxLength: 120 }
+        address: { type: string, minLength: 1, maxLength: 300 }
+        lat: { type: number, format: double, minimum: -90, maximum: 90 }
+        lng: { type: number, format: double, minimum: -180, maximum: 180 }
+        openingHours: { type: string, maxLength: 120 }
+        open24h: { type: boolean }
+        totalSlots: { type: integer, minimum: 1, maximum: 200 }
+        thingName: { type: string, pattern: '^station-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' }
+        active: { type: boolean }
     StationSwapStatus:
       type: string
       enum: [opening_slot, awaiting_return, returned, releasing, completed, canceled, failed]
@@ -7752,7 +7899,8 @@ components:
         pickupNowWindowMinutes: { type: integer, minimum: 15, maximum: 480 }
         maxScheduleDays: { type: integer, minimum: 0, maximum: 30 }
         scheduledGraceMinutes: { type: integer, minimum: 0, maximum: 120 }
-        swapStationId: { type: string, format: uuid }
+        swapStationId: { type: string, format: uuid, description: 'Liga o galpão à estação de troca (inexistente → `400`).' }
+        clearSwapStation: { type: boolean, description: '`true` desliga o galpão da estação de troca (o contrato não usa `null`). Junto com `swapStationId` → `400`.' }
         minChargedBatteries: { type: integer, minimum: 0, maximum: 1000, description: '0 desliga o alerta de estoque.' }
         active: { type: boolean }
     DepotList:

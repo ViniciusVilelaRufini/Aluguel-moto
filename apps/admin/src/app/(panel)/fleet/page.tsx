@@ -46,6 +46,8 @@ function toFeatures(list: FleetVehicle[]): GeoJSON.FeatureCollection {
   };
 }
 
+const REVENUE_GROUPS = ['admin', 'financeiro'];
+
 export default function FleetPage() {
   const params = useSearchParams();
   const router = useRouter();
@@ -268,9 +270,10 @@ export default function FleetPage() {
             <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
               <StatTile icon="Gauge" label="Ocupação" numeric={Math.round(dash.data.occupancyPct)} format={pct} />
               <StatTile icon="Bike" label="Aluguéis ativos" numeric={dash.data.activeRentals} />
-              <StatTile icon="Wallet" label="Receita do dia" numeric={dash.data.revenueTodayCents} format={formatBRL} />
+              {/* A API zera a receita para quem não é admin/financeiro: melhor ocultar do que mostrar R$ 0,00. */}
+              {groups.some((g) => REVENUE_GROUPS.includes(g)) && <StatTile icon="Wallet" label="Receita do dia" numeric={dash.data.revenueTodayCents} format={formatBRL} />}
               {/* Alertas vêm do tempo real (alert.created), não só do refresh de 30 s do dashboard. */}
-              <StatTile icon="Siren" label="Alertas abertos" numeric={openAlerts} goodWhen="down" />
+              <StatTile icon="Siren" label="Alertas pendentes" numeric={openAlerts} goodWhen="down" />
             </div>
           ) : dash.isLoading ? (
             <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, maxWidth: 760 }}>
@@ -284,6 +287,9 @@ export default function FleetPage() {
             {filter && (
               <button type="button" className="chip-clear" onClick={() => setFilter(null)} aria-label="Limpar filtro de status">Limpar filtro</button>
             )}
+          </div>
+          {/* Controles em linha própria: não se misturam com os chips quando estes quebram de linha (1366 px, painel aberto). */}
+          <div role="group" aria-label="Controles da frota" data-testid="fleet-controls" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', pointerEvents: 'auto' }}>
             <SegmentedControl label="Ver frota como" options={[{ value: 'map', label: 'Mapa' }, { value: 'list', label: 'Lista' }]} value={view} onChange={changeView} style={{ width: 170, boxShadow: 'var(--shadow-1)' }} />
             {can(groups, 'vehicle.edit') && (
               <Button size="sm" variant="secondary" icon="Plus" testId="vehicle-new" style={{ height: 30, background: '#fff', color: 'var(--text-primary)', borderColor: 'var(--border-subtle)', boxShadow: 'var(--shadow-1)' }} onClick={() => setNewVehicle(true)}>Nova moto</Button>

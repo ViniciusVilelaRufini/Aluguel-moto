@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
+import { useSearchParams } from 'next/navigation';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
@@ -15,7 +16,7 @@ import { prefersReducedMotion } from '@/lib/motion';
 import type { S } from '@/lib/types';
 import { MapView } from '@/components/MapView';
 import { OpeningHoursEditor } from '@/components/depots/OpeningHoursEditor';
-import { Empty, ErrorNote, Field, KV, Modal, SectionTitle, SidePanel, Skeleton, TextInput, useToast } from '@/components/ui';
+import { Empty, ErrorNote, Field, KV, Modal, SectionTitle, Select, SidePanel, Skeleton, TextInput, useToast } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
@@ -35,7 +36,8 @@ export default function DepotsPage() {
   const canDeactivate = can(groups, 'depot.deactivate');
   const mapRef = useRef<MlMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const params = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(params.get('depot'));
   const [draft, setDraft] = useState<DepotDraft | null>(null);
   const [errors, setErrors] = useState<DepotErrors>({});
   const [confirmToggle, setConfirmToggle] = useState(false);
@@ -45,6 +47,9 @@ export default function DepotsPage() {
   const depotsQ = useQuery({ queryKey: ['depots', 'all'], queryFn: () => unwrap(api.GET('/depots', { params: { query: { includeInactive: true } } })) });
   const depots = useMemo(() => depotsQ.data?.items ?? [], [depotsQ.data]);
   const selected = depots.find((d) => d.id === selectedId) ?? null;
+  // Estação de troca do galpão (Task 12 das lacunas): o cadastro das estações é admin/operacao, os mesmos que editam o galpão.
+  const stationsQ = useQuery({ queryKey: ['swap-stations', 'registry'], enabled: canEdit, queryFn: () => unwrap(api.GET('/swap-stations/registry')) });
+  const stations = useMemo(() => stationsQ.data?.items ?? [], [stationsQ.data]);
 
   const vehiclesQ = useQuery({
     queryKey: ['depot-vehicles', selectedId],
@@ -131,6 +136,7 @@ export default function DepotsPage() {
     onSuccess: (saved, d) => {
       toast(d.id ? 'Galpão atualizado' : 'Galpão criado');
       qc.invalidateQueries({ queryKey: ['depots'] });
+      qc.invalidateQueries({ queryKey: ['swap-stations'] });
       setSelectedId(saved.id);
       setDraft(draftFromDepot(saved));
     },
@@ -215,6 +221,19 @@ export default function DepotsPage() {
                 {windowField('scheduledGraceMinutes', 'Tolerância do agendamento (minutos)', 'Depois do horário agendado, antes de a reserva vencer.', 'depot-grace')}
               </div>
             </div>
+            <div>
+              <SectionTitle>Estoque de baterias</SectionTitle>
+              <Field label="Mínimo de baterias carregadas" error={errors.minChargedBatteries} hint="Abaixo desse número abre o alerta de poucas baterias carregadas. Vazio = sem alerta.">
+                <TextInput testId="depot-min-charged" type="number" value={draft.minChargedBatteries} onChange={(v) => patch({ minChargedBatteries: v })} placeholder="Sem alerta" />
+              </Field>
+            </div>
+            <div>
+              <SectionTitle>Estação de troca</SectionTitle>
+              <Field label="Estação de troca do galpão" hint="Onde os clientes trocam a bateria por QR perto deste galpão. Cadastre em Estações.">
+                <Select testId="depot-station" value={draft.swapStationId} onChange={(v) => patch({ swapStationId: v })}
+                  options={[{ value: '', label: 'Nenhuma' }, ...stations.map((s) => ({ value: s.id, label: s.active ? s.name : `${s.name} (inativa)` }))]} />
+              </Field>
+            </div>
             <ErrorNote error={save.error} />
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Button size="sm" icon="Check" testId="depot-save" disabled={save.isPending} onClick={submit}>{save.isPending ? 'Salvando...' : 'Salvar galpão'}</Button>
@@ -236,6 +255,7 @@ export default function DepotsPage() {
             <KV k="Retirar agora" v={`${selected.pickupNowWindowMinutes} min`} />
             <KV k="Agendar até" v={`${selected.maxScheduleDays} dias`} />
             <KV k="Tolerância" v={`${selected.scheduledGraceMinutes} min`} />
+            <KV k="Mínimo de baterias carregadas" v={selected.minChargedBatteries ? String(selected.minChargedBatteries) : 'Sem alerta'} />
             <SectionTitle>Horário de funcionamento</SectionTitle>
             <OpeningHoursEditor value={draftFromDepot(selected).hours} onChange={() => {}} disabled />
           </Card>
@@ -257,7 +277,7 @@ export default function DepotsPage() {
         {!draft && (
           <Card variant="sunken" padding={4}>
             {depotsQ.isLoading && <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 12 }}>{[0, 1].map((i) => <Skeleton key={i} h={40} />)}</div>}
-            <ErrorNote error={depotsQ.error} />
+            <ErrorNote error={depotsQ.error} onRetry={() => depotsQ.refetch()} />
             {!depotsQ.isLoading && !depotsQ.error && depots.length === 0 && (
               <Empty compact icon="Warehouse" action={canEdit ? <Button size="sm" variant="ghost" icon="Plus" onClick={startNew}>Novo galpão</Button> : undefined}>Nenhum galpão cadastrado</Empty>
             )}

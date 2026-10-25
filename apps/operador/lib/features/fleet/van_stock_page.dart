@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart' hide VehicleStatus;
 import 'package:volti_flutter/volti_flutter.dart';
+import 'package:volti_operador/data/depot_state.dart';
 import 'package:volti_operador/data/field_repository.dart';
 import 'package:volti_operador/data/fleet.dart';
 import 'package:volti_operador/data/models.dart';
@@ -64,9 +65,16 @@ class _VanStockPageState extends ConsumerState<VanStockPage> {
     );
     if (dest == null || !mounted) return;
     final station = dest.station;
+    final depot = dest.depot;
     await _run(
-      () => ref.read(vanStockProvider.notifier).unload([b.serial], stationId: station?.id),
-      station == null ? t.vanUnloaded : t.unloadedStation(station.name),
+      () => ref
+          .read(vanStockProvider.notifier)
+          .unload([b.serial], stationId: station?.id, depotId: depot?.id),
+      station != null
+          ? t.unloadedStation(station.name)
+          : depot != null
+          ? t.unloadedDepot(depot.name)
+          : t.vanUnloaded,
     );
   }
 
@@ -246,16 +254,20 @@ class _BatteryRow extends StatelessWidget {
   }
 }
 
-/// Destino da descarga: `station == null` = galpao (recarga).
+/// Destino da descarga: uma estacao, um galpao (recarga, com `depotId`) ou, sem
+/// a lista de galpoes, `warehouse()` (a API usa o unico galpao ativo).
 class UnloadDestination {
-  const UnloadDestination.warehouse() : station = null;
-  const UnloadDestination.station(SwapStation this.station);
+  const UnloadDestination.warehouse() : station = null, depot = null;
+  const UnloadDestination.depot(Depot this.depot) : station = null;
+  const UnloadDestination.station(SwapStation this.station) : depot = null;
 
   final SwapStation? station;
+  final Depot? depot;
 }
 
-/// Folha "Descarregar BT-...": "Galpao (recarga)" ou uma estacao de
-/// `GET /swap-stations`. Sem rede para as estacoes, o galpao continua valendo.
+/// Folha "Descarregar BT-...": um galpao ativo (`GET /depots`, recarga) ou uma
+/// estacao de `GET /swap-stations`. Sem a lista de galpoes, "Galpao (recarga)"
+/// continua valendo (sem `depotId`); sem rede para as estacoes, o aviso aparece.
 class UnloadDestinationSheet extends ConsumerWidget {
   const UnloadDestinationSheet({super.key, required this.serial});
 
@@ -265,6 +277,7 @@ class UnloadDestinationSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final t = AppLocalizations.of(context);
     final stations = ref.watch(swapStationsProvider);
+    final depots = ref.watch(depotsProvider).value?.depots ?? const <Depot>[];
     return VoltiBottomSheet(
       child: SingleChildScrollView(
         child: Column(
@@ -275,15 +288,37 @@ class UnloadDestinationSheet extends ConsumerWidget {
                 header: true,
                 child: Text(t.unloadTitle(serial), style: VoltiTypography.heading)),
             const SizedBox(height: VoltiSpacing.s8),
-            ListRow(
-              key: const Key('unload-warehouse'),
-              icon: LucideIcons.warehouse,
-              iconTone: ListRowTone.brand,
-              title: t.unloadWarehouse,
-              subtitle: t.unloadWarehouseHint,
-              trailing: ListRowTrailing.chevron,
-              onTap: () => Navigator.of(context).pop(const UnloadDestination.warehouse()),
-            ),
+            if (depots.isEmpty)
+              ListRow(
+                key: const Key('unload-warehouse'),
+                icon: LucideIcons.warehouse,
+                iconTone: ListRowTone.brand,
+                title: t.unloadWarehouse,
+                subtitle: t.unloadWarehouseHint,
+                trailing: ListRowTrailing.chevron,
+                onTap: () => Navigator.of(
+                  context,
+                ).pop(const UnloadDestination.warehouse()),
+              )
+            else ...[
+              Text(
+                t.unloadDepots,
+                style: VoltiTypography.label.copyWith(
+                  color: VoltiColors.textSecondary,
+                ),
+              ),
+              for (final d in depots)
+                ListRow(
+                  key: Key('unload-depot-${d.id}'),
+                  icon: LucideIcons.warehouse,
+                  iconTone: ListRowTone.brand,
+                  title: d.name,
+                  subtitle: t.unloadWarehouseHint,
+                  trailing: ListRowTrailing.chevron,
+                  onTap: () =>
+                      Navigator.of(context).pop(UnloadDestination.depot(d)),
+                ),
+            ],
             const SizedBox(height: VoltiSpacing.s8),
             Text(t.unloadStations,
                 style: VoltiTypography.label.copyWith(color: VoltiColors.textSecondary)),

@@ -16,6 +16,7 @@ import '../../core/geo.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
+import '../../l10n/app_localizations.dart';
 import '../home/depot_providers.dart';
 import '../home/providers.dart';
 import '../pick/depot_selection.dart';
@@ -29,6 +30,12 @@ import 'depot_labels.dart';
 /// Chave: plano, cobertura, cupom e moto (o plano `minute` usa o preco do modelo).
 final pickupQuoteProvider = FutureProvider.autoDispose.family<Quote, (PlanCode, InsuranceCoverage, String, String)>(
   (ref, k) => ref.watch(backendProvider).quote(k.$1, k.$2, coupon: k.$3, vehicleId: k.$4),
+);
+
+/// Regra do cupom (valor fixo ou percentual), para o resumo mostrar o desconto
+/// que sera aplicado no fechamento (a cotacao so cobre o minimo estimado).
+final pickupCouponProvider = FutureProvider.autoDispose.family<CouponValidation, (String, PlanCode)>(
+  (ref, k) => ref.watch(backendProvider).validateCoupon(k.$1, plan: k.$2),
 );
 
 /// Retirada (spec 2026-10-22 §3.5): "Retirar agora (até HH:MM)" ou "Agendar"
@@ -201,6 +208,15 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
     }
   }
 
+  /// "Amanhã", "Amanhã · Fechado" (sem expediente), "Hoje · Encerrado" (expediente
+  /// ja passou) ou "... · Indisponível" (fora da janela de agendamento).
+  String _dayLabel(AppLocalizations l, ScheduleDay d, LocalDay today) {
+    final label = dayChipLabel(l, d.day, today);
+    if (d.slots.isNotEmpty) return label;
+    if (d.closed) return l.dayChipClosed(label);
+    return d.day == today ? l.dayChipEnded(label) : l.dayChipUnavailable(label);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = context.l;
@@ -329,7 +345,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
                           for (final d in days) ...[
                             VoltiChip(
                               key: Key('pickup-day-${d.day}'),
-                              label: d.closed ? l.dayChipClosed(dayChipLabel(l, d.day, today)) : dayChipLabel(l, d.day, today),
+                              label: _dayLabel(l, d, today),
                               selected: d.day == day?.day,
                               enabled: d.slots.isNotEmpty,
                               onTap: () {
@@ -374,7 +390,12 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
                       ),
                   ],
                   SectionTitle(l.summary),
-                  _Summary(selection: _sel, quote: quote, onRetry: () => ref.invalidate(pickupQuoteProvider(quoteKey))),
+                  _Summary(
+                    selection: _sel,
+                    quote: quote,
+                    coupon: _coupon.isEmpty ? null : ref.watch(pickupCouponProvider((_coupon, plan.code))),
+                    onRetry: () => ref.invalidate(pickupQuoteProvider(quoteKey)),
+                  ),
                   const SizedBox(height: VoltiSpacing.s10),
                   Container(
                     padding: const EdgeInsets.all(4),
@@ -446,34 +467,62 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
 /// Resumo: plano (preco do periodo; no plano por minuto, o da moto), as linhas
 /// da cotacao sem repetir valores ([breakdownRows]) e a caucao que sera bloqueada.
 class _Summary extends StatelessWidget {
-  const _Summary({required this.selection, required this.quote, required this.onRetry});
+  const _Summary({required this.selection, required this.quote, required this.onRetry, this.coupon});
   final DepotSelection selection;
   final AsyncValue<Quote> quote;
   final VoidCallback onRetry;
+
+  /// Regra do cupom informado (null = sem cupom).
+  final AsyncValue<CouponValidation>? coupon;
+
+  /// Valor do desconto do cupom como a API vai cobrar: o fixo "ate R$ X" (o
+  /// real e o menor entre o cupom e o valor do tempo, so conhecido no
+  /// fechamento), o percentual "-N% do tempo", ou, sem a regra, o minimo cotado.
+  (String text, bool exact) _couponValue(AppLocalizations l, int quotedCents) {
+    final rule = coupon?.value;
+    if (rule == null || !rule.valid) return (money(quotedCents), false);
+    final off = rule.amountOffCents;
+    if (rule.discountType == DiscountType.percent && rule.percentOff != null) return (l.couponPercentOfTime(rule.percentOff!), false);
+    // O cupom inteiro ja cabe na cotacao: o desconto real e exatamente esse valor.
+    if (off != null && quotedCents.abs() >= off) return (money(-off), true);
+    return off == null ? (money(quotedCents), false) : (l.couponUpTo(money(-off)), false);
+  }
 
   @override
   Widget build(BuildContext context) {
     final l = context.l;
     final plan = selection.plan!;
-    Widget row(String a, String b, {bool strong = false, Key? key}) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: Text(a, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body)),
-              const SizedBox(width: VoltiSpacing.s12),
-              Flexible(child: Text(b, key: key, textAlign: TextAlign.end, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body)),
-            ],
-          ),
-        );
+    // Texto grande: rotulo em cima e valor embaixo, alinhado a direita (sem quebrar no meio da palavra).
+    final big = MediaQuery.textScalerOf(context).scale(10) > 13;
+    Widget row(String a, String b, {bool strong = false, Key? key}) {
+      final style = strong ? VoltiTypography.bodyStrong : VoltiTypography.body;
+      final label = Text(a, style: style);
+      final value = Text(b, key: key, textAlign: TextAlign.end, style: style);
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.s6),
+        child: big
+            ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [label, value])
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [Expanded(child: label), const SizedBox(width: VoltiSpacing.s12), value],
+              ),
+      );
+    }
+
     final q = quote.value;
+    final couponLine = q?.breakdown.lines.where((x) => x.code == 'coupon').firstOrNull;
+    final couponValue = couponLine == null ? null : _couponValue(l, couponLine.amountCents);
     // A linha de tempo da cotacao e o preco do plano: vira a linha "Plano" com o valor cotado.
     final timeLine = q?.breakdown.lines.where((x) => x.code == 'time').firstOrNull;
     final unitCents = plan.code == PlanCode.minute && timeLine != null ? timeLine.amountCents : planUnitCents(plan, selection.vehicle);
     final rows = q == null
         ? const <BreakdownRow>[]
         : breakdownRows(
-            q.breakdown.rebuild((b) => b.lines.removeWhere((x) => x.code == 'time')),
+            q.breakdown.rebuild((b) {
+              b.lines.removeWhere((x) => x.code == 'time' || x.code == 'coupon');
+              // O cupom ja e a linha propria acima: sem o total, nao vira uma segunda linha "Desconto".
+              b.discountCents = 0;
+            }),
             insuranceLabel: l.insurance,
             feesLabel: l.fees,
             discountLabel: l.discount,
@@ -485,6 +534,7 @@ class _Summary extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           row('${l.pickupPlan} · ${plan.name}', '${money(unitCents)}${l.perUnitShort(unitShortLabel(l, plan.unit))}', key: const Key('pickup-plan-price')),
+          if (couponLine != null) row(couponLine.description, couponValue!.$1, key: const Key('pickup-coupon-discount')),
           for (final r in rows) row(r.label, money(r.cents)),
           const Divider(),
           if (quote.hasError && q == null)
@@ -493,6 +543,11 @@ class _Summary extends StatelessWidget {
             VoltiSkeleton.card(height: 24, label: l.loading)
           else
             row(l.deposit, money(q.depositCents), strong: true, key: const Key('pickup-deposit')),
+          if (couponValue != null && !couponValue.$2)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(l.couponClosingNote, key: const Key('pickup-coupon-note'), style: VoltiTypography.caption),
+            ),
           if (plan.recurring)
             Padding(
               padding: const EdgeInsets.only(top: 4),

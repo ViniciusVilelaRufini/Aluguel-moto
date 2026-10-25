@@ -2255,8 +2255,20 @@ abstract class AppLocalizations {
   /// No description provided for @bsCharging.
   ///
   /// In pt, this message translates to:
-  /// **'Galpão (recarga)'**
+  /// **'Carregando'**
   String get bsCharging;
+
+  /// No description provided for @bsCharged.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregada'**
+  String get bsCharged;
+
+  /// No description provided for @bsDefective.
+  ///
+  /// In pt, this message translates to:
+  /// **'Com defeito'**
+  String get bsDefective;
 
   /// No description provided for @bsInStation.
   ///
@@ -2275,6 +2287,150 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Outro status'**
   String get bsOther;
+
+  /// No description provided for @stockDepotFilter.
+  ///
+  /// In pt, this message translates to:
+  /// **'Galpão'**
+  String get stockDepotFilter;
+
+  /// No description provided for @stockAllDepots.
+  ///
+  /// In pt, this message translates to:
+  /// **'Todos os galpões'**
+  String get stockAllDepots;
+
+  /// No description provided for @batMarkCharged.
+  ///
+  /// In pt, this message translates to:
+  /// **'Marcar carregada'**
+  String get batMarkCharged;
+
+  /// No description provided for @batMarkChargedSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Marcar a bateria {serial} como carregada'**
+  String batMarkChargedSemantics(String serial);
+
+  /// No description provided for @batMarkedCharged.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria {serial} marcada como carregada.'**
+  String batMarkedCharged(String serial);
+
+  /// No description provided for @batDefect.
+  ///
+  /// In pt, this message translates to:
+  /// **'Apontar defeito'**
+  String get batDefect;
+
+  /// No description provided for @batDefectSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Apontar defeito na bateria {serial}'**
+  String batDefectSemantics(String serial);
+
+  /// No description provided for @batDefectTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Defeito na bateria {serial}'**
+  String batDefectTitle(String serial);
+
+  /// No description provided for @batDefectHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'A bateria sai de uso até a operação dar baixa. Se ela estiver instalada numa moto, retire-a antes.'**
+  String get batDefectHint;
+
+  /// No description provided for @batDefectReason.
+  ///
+  /// In pt, this message translates to:
+  /// **'Motivo do defeito'**
+  String get batDefectReason;
+
+  /// No description provided for @batDefectReasonInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Escreva entre 3 e 500 caracteres.'**
+  String get batDefectReasonInvalid;
+
+  /// No description provided for @batDefectConfirm.
+  ///
+  /// In pt, this message translates to:
+  /// **'Registrar defeito'**
+  String get batDefectConfirm;
+
+  /// No description provided for @batDefectDone.
+  ///
+  /// In pt, this message translates to:
+  /// **'Defeito registrado na bateria {serial}.'**
+  String batDefectDone(String serial);
+
+  /// No description provided for @batHistory.
+  ///
+  /// In pt, this message translates to:
+  /// **'Histórico'**
+  String get batHistory;
+
+  /// No description provided for @batHistorySemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Histórico de movimentações da bateria {serial}'**
+  String batHistorySemantics(String serial);
+
+  /// No description provided for @batHistoryTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Movimentações de {serial}'**
+  String batHistoryTitle(String serial);
+
+  /// No description provided for @batHistoryEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhuma movimentação registrada.'**
+  String get batHistoryEmpty;
+
+  /// No description provided for @batHistoryError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar o histórico.'**
+  String get batHistoryError;
+
+  /// No description provided for @batHistoryMore.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ver mais antigas'**
+  String get batHistoryMore;
+
+  /// No description provided for @batMovementCreated.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cadastrada · {to}'**
+  String batMovementCreated(String to);
+
+  /// No description provided for @batMovementChange.
+  ///
+  /// In pt, this message translates to:
+  /// **'{from} → {to}'**
+  String batMovementChange(String from, String to);
+
+  /// No description provided for @batMovementSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'{when}: {change}'**
+  String batMovementSemantics(String when, String change);
+
+  /// No description provided for @unloadDepots.
+  ///
+  /// In pt, this message translates to:
+  /// **'Carregar no galpão'**
+  String get unloadDepots;
+
+  /// No description provided for @unloadedDepot.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bateria descarregada no galpão {name}.'**
+  String unloadedDepot(String name);
 
   /// No description provided for @unloadTitle.
   ///

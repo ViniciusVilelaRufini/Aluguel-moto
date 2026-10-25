@@ -31,7 +31,7 @@ export function AnimatedNumber({ value, format = (n) => String(n), integer = tru
  */
 export function StatTile({ label, value, numeric, format, goodWhen = 'up', delta, trend = 'up', caption, icon, testId, style }: {
   label: string; value?: ReactNode; numeric?: number | null; format?: (n: number) => string; goodWhen?: 'up' | 'down';
-  delta?: string; trend?: 'up' | 'down'; caption?: string; icon?: string; testId?: string; style?: CSSProperties;
+  delta?: string; trend?: 'up' | 'down' | 'flat'; caption?: string; icon?: string; testId?: string; style?: CSSProperties;
 }) {
   const prev = useRef<number | null | undefined>(numeric);
   const [live, setLive] = useState<{ text: string; tone: 'success' | 'danger'; key: number } | null>(null);
@@ -47,6 +47,7 @@ export function StatTile({ label, value, numeric, format, goodWhen = 'up', delta
     return () => clearTimeout(h);
   }, [numeric, format, goodWhen]);
   const up = trend === 'up';
+  const flat = trend === 'flat';
   return (
     <div data-testid={testId} className={live ? 'stat-tile stat-flash' : 'stat-tile'}
       style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', padding: 16, boxShadow: 'var(--shadow-1)', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, ...style }}>
@@ -63,8 +64,8 @@ export function StatTile({ label, value, numeric, format, goodWhen = 'up', delta
       </div>
       {caption && <div style={{ font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>{caption}</div>}
       {delta && (
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, font: 'var(--fw-semibold) 12px/1 var(--font-sans)', color: up ? 'var(--success-ink)' : 'var(--danger-ink)' }}>
-          <Icon name={up ? 'TrendingUp' : 'TrendingDown'} size={14} />{delta}
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, font: 'var(--fw-semibold) 12px/1 var(--font-sans)', color: flat ? 'var(--text-secondary)' : up ? 'var(--success-ink)' : 'var(--danger-ink)' }}>
+          {!flat && <Icon name={up ? 'TrendingUp' : 'TrendingDown'} size={14} />}{delta}
         </div>
       )}
     </div>

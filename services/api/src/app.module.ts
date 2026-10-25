@@ -40,6 +40,7 @@ import { ReferralsModule } from './modules/referrals/referrals.module';
 import { DepotsModule } from './modules/depots/depots.module';
 import { HandoversModule } from './modules/handovers/handovers.module';
 import { StationSwapsModule } from './modules/station-swaps/station-swaps.module';
+import { SwapStationsModule } from './modules/swap-stations/swap-stations.module';
 
 /**
  * Módulo raiz. Arquivo compartilhado (spec §6): Tasks 4 e 5 só acrescentam imports.
@@ -86,6 +87,7 @@ import { StationSwapsModule } from './modules/station-swaps/station-swaps.module
     HandoversModule,
     // Troca de bateria na estação via QR (spec 2026-10-22-volti-troca-bateria-qr).
     StationSwapsModule,
+    SwapStationsModule,
   ],
   controllers: [HealthController, KycController, CustomersController, StaffController, AuditController, LgpdController],
   providers: [

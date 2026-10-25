@@ -101,11 +101,12 @@ export function PanelSkeleton({ rows = 6 }: { rows?: number }) {
   );
 }
 
-export function ErrorNote({ error }: { error: unknown }) {
+export function ErrorNote({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   if (!error) return null;
   return (
-    <div role="alert" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--danger-soft)', color: 'var(--danger-ink)', fontSize: 13, fontWeight: 600 }}>
-      {error instanceof Error ? error.message : 'Algo deu errado. Tente de novo.'}
+    <div role="alert" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--danger-soft)', color: 'var(--danger-ink)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <span style={{ flex: 1, minWidth: 0 }}>{error instanceof Error ? error.message : 'Algo deu errado. Tente de novo.'}</span>
+      {onRetry && <Button size="sm" variant="ghost" icon="RefreshCw" testId="retry" onClick={onRetry}>Tentar de novo</Button>}
     </div>
   );
 }
@@ -169,7 +170,7 @@ export function MiniInput({ value, onChange, width = 110, align = 'right', label
  * Diálogo modal: entra com fade do scrim e "pop" curto do cartão, prende o foco (Tab/Shift+Tab),
  * foca o primeiro campo ao abrir, devolve o foco a quem abriu ao fechar e só o do topo responde ao Esc.
  */
-export function Modal({ open, title, children, actions, onClose, width = 440, testId }: { open: boolean; title: string; children: ReactNode; actions?: ReactNode; onClose: () => void; width?: number; testId?: string }) {
+export function Modal({ open, title, children, actions, onClose, width = 440, testId }: { open: boolean; title: string; children: ReactNode; actions?: ReactNode; onClose: () => void; width?: number | string; testId?: string }) {
   const box = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -215,9 +216,9 @@ export function Modal({ open, title, children, actions, onClose, width = 440, te
 
 /** Ação com motivo obrigatório e confirmação explícita. */
 export function ReasonDialog({
-  open, title, description, confirmLabel, danger, minLength = 3, onClose, onConfirm, children, testId,
+  open, title, description, confirmLabel, cancelLabel = 'Cancelar', danger, minLength = 3, onClose, onConfirm, children, testId,
 }: {
-  open: boolean; title: string; description?: ReactNode; confirmLabel: string; danger?: boolean; minLength?: number;
+  open: boolean; title: string; description?: ReactNode; confirmLabel: string; /** Rótulo de fechar sem confirmar; use "Voltar" quando a confirmação também começa com "Cancelar". */ cancelLabel?: string; danger?: boolean; minLength?: number;
   onClose: () => void; onConfirm: (reason: string) => Promise<void>; children?: ReactNode; testId?: string;
 }) {
   const [reason, setReason] = useState('');
@@ -231,7 +232,7 @@ export function ReasonDialog({
   return (
     <Modal open={open} title={title} onClose={onClose} testId={testId}
       actions={<>
-        <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button variant="ghost" size="sm" onClick={onClose}>{cancelLabel}</Button>
         <Button size="sm" variant={danger ? 'danger' : 'dark'} testId="confirm-action" disabled={busy}
           onClick={async () => {
             setTouched(true);
@@ -312,12 +313,18 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 /* ---------- Tabela com paginação por cursor ---------- */
 
+const PIN_STYLE: CSSProperties = { position: 'sticky', right: 0, zIndex: 1, boxShadow: '-8px 0 8px -8px rgba(0,0,0,.18)' };
+
 export interface Column<T> {
   key: string;
   label: string;
   align?: 'left' | 'right';
   mono?: boolean;
   width?: number | string;
+  /** Texto longo: quebra em várias linhas (largura mínima de 160 px) em vez de alargar a tabela. */
+  wrap?: boolean;
+  /** Fixa a coluna à direita ao rolar na horizontal (ações sempre visíveis em telas estreitas). */
+  pin?: boolean;
   render?: (row: T) => ReactNode;
 }
 
@@ -351,7 +358,7 @@ export function DataTable<T extends object>({
           <thead>
             <tr>
               {columns.map((c) => (
-                <th key={c.key} scope="col" style={{ textAlign: c.align ?? 'left', padding: pad, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--ink-50)', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap', width: c.width }}>{c.label}</th>
+                <th key={c.key} scope="col" style={{ textAlign: c.align ?? 'left', padding: pad, fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', background: 'var(--ink-50)', borderBottom: '1px solid var(--border-subtle)', whiteSpace: 'nowrap', width: c.width, ...(c.pin ? PIN_STYLE : null) }}>{c.label}</th>
               ))}
             </tr>
           </thead>
@@ -376,7 +383,7 @@ export function DataTable<T extends object>({
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
                   onKeyDown={onRowClick ? (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); onRowClick(r); } } : undefined}>
                   {columns.map((c) => (
-                    <td key={c.key} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: 'nowrap' }}>
+                    <td key={c.key} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: c.wrap ? 'normal' : 'nowrap', minWidth: c.wrap ? 160 : undefined, ...(c.pin ? { ...PIN_STYLE, background: 'var(--surface-card)' } : null) }}>
                       {c.render ? c.render(r) : (get(r, c.key) as ReactNode)}
                     </td>
                   ))}

@@ -188,7 +188,7 @@ void main() {
       await _settle(tester);
       // Abre a folha de destino; o galpao descarrega para recarga.
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('unload-warehouse')));
+      await tester.tap(find.byKey(const Key('unload-depot-depot-1')));
       await tester.pumpAndSettle();
       expect(repo.unloads.single, ['BT-2']);
     });

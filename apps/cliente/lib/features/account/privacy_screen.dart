@@ -10,6 +10,8 @@ import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
 import '../../core/errors.dart';
+import '../../core/launcher.dart';
+import '../../core/legal.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 
@@ -117,6 +119,21 @@ class _PrivacyScreenState extends ConsumerState<PrivacyScreen> {
                 : (v) => _guard(() => ref
                     .read(sessionProvider.notifier)
                     .saveConsents(terms: s?.termsAccepted ?? true, location: s?.locationConsent ?? false, marketing: v)),
+          ),
+          const SizedBox(height: 4),
+          ListRow(
+            key: const Key('privacy-terms'),
+            icon: LucideIcons.fileText,
+            title: l.termsOfUse,
+            trailing: ListRowTrailing.chevron,
+            onTap: () => openLegalDocument(context, ref, ref.read(legalLinksProvider).terms),
+          ),
+          ListRow(
+            key: const Key('privacy-policy'),
+            icon: LucideIcons.shieldCheck,
+            title: l.privacyPolicy,
+            trailing: ListRowTrailing.chevron,
+            onTap: () => openLegalDocument(context, ref, ref.read(legalLinksProvider).privacy),
           ),
           const SizedBox(height: 12),
           VoltiButton(

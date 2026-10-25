@@ -37,6 +37,7 @@ export const PAYMENT_STATUS: Record<S<'PaymentStatus'>, [string, Tone]> = {
 };
 
 export const PAYMENT_KIND: Record<S<'PaymentKind'>, string> = { rental: 'Aluguel', deposit: 'Caução', top_up: 'Recarga', subscription: 'Assinatura', fee: 'Taxa' };
+export const PAYMENT_METHOD: Record<S<'PaymentMethod'>, string> = { card: 'Cartão', pix: 'Pix', wallet: 'Carteira' };
 
 export const RENTAL_EVENT: Record<S<'RentalEventType'>, string> = {
   started: 'Aluguel iniciado', paused: 'Pausado', resumed: 'Retomado', vehicle_swapped: 'Moto trocada', zone_entered: 'Entrou em zona',

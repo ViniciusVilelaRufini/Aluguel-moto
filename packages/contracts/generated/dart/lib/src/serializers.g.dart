@@ -250,8 +250,12 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(SupportMessageStatus.serializer)
       ..add(SupportReadRequest.serializer)
       ..add(SwapStation.serializer)
+      ..add(SwapStationAdmin.serializer)
+      ..add(SwapStationAdminList.serializer)
+      ..add(SwapStationInput.serializer)
       ..add(SwapStationList.serializer)
       ..add(SwapStationQr.serializer)
+      ..add(SwapStationUpdate.serializer)
       ..add(SwapVehicleRequest.serializer)
       ..add(TaskPriority.serializer)
       ..add(TopUp.serializer)
@@ -548,6 +552,9 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(String)]),
           () => ListBuilder<String>())
       ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(String)]),
+          () => ListBuilder<String>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(Subscription)]),
           () => ListBuilder<Subscription>())
       ..addBuilderFactory(
@@ -560,6 +567,9 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(SwapStation)]),
           () => ListBuilder<SwapStation>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(SwapStationAdmin)]),
+          () => ListBuilder<SwapStationAdmin>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(TrackPoint)]),
           () => ListBuilder<TrackPoint>())

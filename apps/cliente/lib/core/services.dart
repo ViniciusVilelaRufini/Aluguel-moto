@@ -16,6 +16,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 import '../features/payments/card_form_sheet.dart';
 import 'backend.dart';
 import 'mercadopago_gateway.dart';
+import 'push_routing.dart';
 
 // ---------------------------------------------------------------------------
 // Tempo real (Socket.IO, namespace /realtime, sala rental:{id})
@@ -303,28 +304,107 @@ final locationServiceProvider = Provider<LocationService>((ref) => GeolocatorLoc
 // ---------------------------------------------------------------------------
 
 abstract class PushService {
-  /// Registra o token FCM na API. Sem Firebase configurado, nao faz nada.
-  Future<void> register(Backend backend);
+  /// Registra o token FCM na API e liga os ouvintes de mensagem. Sem Firebase
+  /// configurado, nao faz nada. [onForeground]: mensagem recebida com o app aberto;
+  /// [onOpen]: rota para onde o toque numa notificacao (ou a mensagem que abriu o app) leva.
+  Future<void> register(
+    Backend backend, {
+    void Function(PushPayload message)? onForeground,
+    void Function(String route)? onOpen,
+  });
 }
 
 class NoopPushService implements PushService {
   @override
-  Future<void> register(Backend backend) async {}
+  Future<void> register(
+    Backend backend, {
+    void Function(PushPayload message)? onForeground,
+    void Function(String route)? onOpen,
+  }) async {}
+}
+
+/// Acesso ao Firebase Messaging; atras de interface para testar sem plugin.
+abstract class PushTransport {
+  /// `false` quando o Firebase nao esta configurado neste build.
+  Future<bool> init();
+  Future<void> requestPermission();
+  Future<String?> getToken();
+  Stream<String> get onTokenRefresh;
+  Stream<PushPayload> get onMessage;
+  Stream<PushPayload> get onMessageOpenedApp;
+  Future<PushPayload?> getInitialMessage();
+}
+
+PushPayload _payloadOf(RemoteMessage m) => PushPayload(
+      title: m.notification?.title,
+      body: m.notification?.body,
+      data: {for (final e in m.data.entries) e.key: '${e.value}'},
+    );
+
+class FirebasePushTransport implements PushTransport {
+  @override
+  Future<bool> init() async {
+    // Sem google-services.json / GoogleService-Info.plist a inicializacao lanca: push fica desligado.
+    try {
+      if (Firebase.apps.isEmpty) await Firebase.initializeApp();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<void> requestPermission() => FirebaseMessaging.instance.requestPermission();
+  @override
+  Future<String?> getToken() => FirebaseMessaging.instance.getToken();
+  @override
+  Stream<String> get onTokenRefresh => FirebaseMessaging.instance.onTokenRefresh;
+  @override
+  Stream<PushPayload> get onMessage => FirebaseMessaging.onMessage.map(_payloadOf);
+  @override
+  Stream<PushPayload> get onMessageOpenedApp => FirebaseMessaging.onMessageOpenedApp.map(_payloadOf);
+  @override
+  Future<PushPayload?> getInitialMessage() async {
+    final m = await FirebaseMessaging.instance.getInitialMessage();
+    return m == null ? null : _payloadOf(m);
+  }
 }
 
 class FirebasePushService implements PushService {
+  FirebasePushService({PushTransport? transport}) : _transport = transport ?? FirebasePushTransport();
+  final PushTransport _transport;
+  bool _started = false;
+  // Ouvintes ligados uma vez; chamam sempre os callbacks da ultima chamada de register.
+  void Function(PushPayload message)? _onForeground;
+  void Function(String route)? _onOpen;
+
   @override
-  Future<void> register(Backend backend) async {
+  Future<void> register(
+    Backend backend, {
+    void Function(PushPayload message)? onForeground,
+    void Function(String route)? onOpen,
+  }) async {
     if (kIsWeb) return;
     try {
-      // Falha sem google-services.json / GoogleService-Info.plist: o app segue sem push.
-      if (Firebase.apps.isEmpty) await Firebase.initializeApp();
-      final messaging = FirebaseMessaging.instance;
-      await messaging.requestPermission();
+      if (!await _transport.init()) {
+        debugPrint('Push desativado: Firebase nao configurado');
+        return;
+      }
+      await _transport.requestPermission();
       final platform = defaultTargetPlatform == TargetPlatform.iOS ? DevicePlatform.ios : DevicePlatform.android;
-      final token = await messaging.getToken();
+      _onForeground = onForeground;
+      _onOpen = onOpen;
+      // Ouvintes so uma vez (o registro roda a cada abertura da home); o token, sempre.
+      if (!_started) {
+        _started = true;
+        _transport.onTokenRefresh.listen((t) => backend.registerDevice(t, platform).catchError((_) {}));
+        _transport.onMessage.listen((m) => _onForeground?.call(m));
+        _transport.onMessageOpenedApp.listen((m) => _onOpen?.call(routeForPush(m.data)));
+        final initial = await _transport.getInitialMessage();
+        if (initial != null) _onOpen?.call(routeForPush(initial.data));
+      }
+      final token = await _transport.getToken();
       if (token != null) await backend.registerDevice(token, platform);
-      messaging.onTokenRefresh.listen((t) => backend.registerDevice(t, platform).catchError((_) {}));
     } catch (e) {
       debugPrint('Push desativado: $e');
     }
