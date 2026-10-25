@@ -6,7 +6,24 @@ import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound } from '../../common/problem';
 import { compact, iso } from '../../common/util';
 import { PrismaService } from '../../prisma/prisma.service';
-import type { Principal } from '../auth/principal';
+import { hasGroup, type Principal } from '../auth/principal';
+import { isUniqueViolation } from '../payments/payment-state.service';
+
+/** Alertas financeiros: vistos por `admin`, `suporte` e `financeiro`; nunca por quem é só `operacao`. */
+export const FINANCIAL_ALERT_TYPES: readonly AlertType[] = ['payment_needs_review'];
+
+/**
+ * Filtro por perfil (Task 14): `admin`/`suporte` veem tudo; `operacao` vê os operacionais; `financeiro` só os financeiros.
+ * `null` = sem filtro. Perfis combinados somam o que cada um vê.
+ */
+export function alertScope(user: Principal | undefined): Prisma.AlertWhereInput | null {
+  if (!user || hasGroup(user, 'admin', 'suporte')) return null;
+  const ops = hasGroup(user, 'operacao');
+  const fin = hasGroup(user, 'financeiro');
+  if (ops && fin) return null;
+  if (fin) return { type: { in: [...FINANCIAL_ALERT_TYPES] } };
+  return { type: { notIn: [...FINANCIAL_ALERT_TYPES] } };
+}
 
 export interface CreateAlertInput {
   type: AlertType;
@@ -16,6 +33,8 @@ export interface CreateAlertInput {
   rentalId?: string;
   /** Galpão do alerta (`battery_stock_low`). */
   depotId?: string;
+  /** Pagamento do alerta (`payment_needs_review`; um aberto por pagamento). */
+  paymentId?: string;
   lat?: number;
   lng?: number;
 }
@@ -32,6 +51,7 @@ export function toAlert(a: AlertRow) {
     vehicleCode: a.vehicle?.code,
     rentalId: a.rentalId ?? undefined,
     depotId: a.depotId ?? undefined,
+    paymentId: a.paymentId ?? undefined,
     message: a.message,
     lat: a.lat ?? undefined,
     lng: a.lng ?? undefined,
@@ -71,7 +91,18 @@ export class AlertsService {
       });
       if (recent) return recent;
     }
-    const alert = await this.prisma.alert.create({ data: { ...input } });
+    // Um alerta aberto por pagamento (índice parcial `Alert_one_open_per_payment`): repetição devolve o existente.
+    if (input.paymentId) {
+      const open = await this.prisma.alert.findFirst({ where: { paymentId: input.paymentId, status: { not: 'resolved' } } });
+      if (open) return open;
+    }
+    let alert: Alert;
+    try {
+      alert = await this.prisma.alert.create({ data: { ...input } });
+    } catch (err) {
+      if (!input.paymentId || !isUniqueViolation(err)) throw err;
+      return (await this.prisma.alert.findFirst({ where: { paymentId: input.paymentId, status: { not: 'resolved' } } }))!;
+    }
     const ev: AlertCreatedEvent = {
       alertId: alert.id,
       vehicleId: alert.vehicleId ?? undefined,
@@ -98,11 +129,11 @@ export class AlertsService {
   }
 
   /** Ordem: prioridade (critical primeiro), depois criação mais recente. */
-  async list(q: ListAlertsFilter) {
-    const where: Prisma.AlertWhereInput = {};
+  async list(q: ListAlertsFilter, user?: Principal) {
+    const where: Prisma.AlertWhereInput = { ...(alertScope(user) ?? {}) };
     if (q.status) where.status = q.status;
     if (q.priority) where.priority = q.priority;
-    if (q.type) where.type = q.type;
+    if (q.type) where.AND = [{ type: q.type }];
     if (q.vehicleId) where.vehicleId = q.vehicleId;
     if (q.assigneeId) where.assigneeId = q.assigneeId;
     // Enum `AlertPriority` está em ordem low→critical no banco: desc = critical primeiro.
@@ -112,15 +143,21 @@ export class AlertsService {
     return toPage(enriched, q, toAlert);
   }
 
-  async get(id: string) {
-    const a = await this.prisma.alert.findUnique({ where: { id } });
+  /** Alerta visível para o perfil (fora do escopo = 404, sem revelar que existe). */
+  private async visible(id: string, user?: Principal): Promise<Alert> {
+    const scope = alertScope(user);
+    const a = await this.prisma.alert.findFirst({ where: scope ? { AND: [{ id }, scope] } : { id } });
     if (!a) throw notFound('Alerta não encontrado.');
+    return a;
+  }
+
+  async get(id: string, user?: Principal) {
+    const a = await this.visible(id, user);
     return toAlert((await this.withRelations([a]))[0]);
   }
 
-  async assign(id: string, assigneeId: string, _actor: Principal) {
-    const a = await this.prisma.alert.findUnique({ where: { id } });
-    if (!a) throw notFound('Alerta não encontrado.');
+  async assign(id: string, assigneeId: string, actor: Principal) {
+    const a = await this.visible(id, actor);
     if (a.status === 'resolved') throw conflict('conflict', 'Alerta já resolvido.');
     const staff = await this.prisma.staffUser.findUnique({ where: { id: assigneeId } });
     if (!staff || !staff.active) throw notFound('Responsável não encontrado.');
@@ -128,9 +165,8 @@ export class AlertsService {
     return toAlert((await this.withRelations([updated]))[0]);
   }
 
-  async resolve(id: string, resolution: string, _actor: Principal) {
-    const a = await this.prisma.alert.findUnique({ where: { id } });
-    if (!a) throw notFound('Alerta não encontrado.');
+  async resolve(id: string, resolution: string, actor: Principal) {
+    const a = await this.visible(id, actor);
     if (a.status === 'resolved') throw conflict('conflict', 'Alerta já resolvido.');
     const updated = await this.prisma.alert.update({ where: { id }, data: { status: 'resolved', resolution, resolvedAt: new Date() } });
     return toAlert((await this.withRelations([updated]))[0]);

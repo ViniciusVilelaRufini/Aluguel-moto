@@ -8,7 +8,17 @@ import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEv
 
 /** Tentativas de excluir a identidade no Cognito antes do alerta de revisão manual. */
 export const MAX_IDENTITY_DELETION_ATTEMPTS = 10;
-import type { Prisma, TrackPoint } from '@prisma/client';
+/** Tentativas de excluir o cliente (e cartões) no gateway antes do log de revisão manual (Task 14). */
+export const MAX_GATEWAY_DELETION_ATTEMPTS = 10;
+/**
+ * Sinistro em andamento (`submitted`, `under_review`, `approved`): fotos e boletim ficam até o desfecho com a seguradora
+ * (execução do contrato de seguro e exercício regular de direitos, LGPD art. 7º, V e VI). Encerrado (`rejected`, `paid`)
+ * → apagados na exclusão ou, depois, pelo job diário. Ver docs/decisoes.md (Task 14).
+ */
+export const CLOSED_CLAIM_STATUSES = ['rejected', 'paid'] as const;
+const REMOVED_TEXT = 'Removido a pedido do titular (LGPD).';
+import type { Prisma, SupportMessage, TrackPoint } from '@prisma/client';
+import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/provider/payment-provider';
 import { compact, iso } from '../../common/util';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { conflict, notFound } from '../../common/problem';
@@ -22,7 +32,7 @@ import { toPayment, toSubscription, toWalletEntry } from '../payments/payments.m
 import { toCustomerCoupon, toReferralReward } from '../referrals/referrals.service';
 import { toRental } from '../rentals/rentals.mapper';
 import { toStationSwap } from '../station-swaps/station-swaps.mapper';
-import { toClaim, toDispute, toIncident } from '../support/support.mapper';
+import { toClaim, toConversation, toDispute, toIncident, toMessage } from '../support/support.mapper';
 
 export interface ConsentsInput {
   termsVersion: string;
@@ -45,6 +55,8 @@ export class LgpdService {
     @Optional() @Inject(CUSTOMER_IDENTITY) private readonly identity?: CustomerIdentityDirectory,
     @Optional() private readonly events?: EventEmitter2,
     @Optional() @Inject(V2_CONFIG) private readonly v2?: V2Config,
+    /** Task 14: exclusão do cliente e dos cartões no gateway (Mercado Pago) depois da exclusão da conta. */
+    @Optional() @Inject(PAYMENT_PROVIDER) private readonly provider?: PaymentProvider,
   ) {}
 
   private async customer(customerId: string) {
@@ -121,7 +133,20 @@ export class LgpdService {
       ...(await this.exportDepot(customerId, rentalIds)),
       // Troca de bateria na estação: a troca não guarda a posição do celular (só a distância, que nem sai aqui).
       stationSwaps: ((await this.prisma.stationSwap.findMany({ where: { customerId }, orderBy: { createdAt: 'desc' } })) ?? []).map((s) => toStationSwap(s, { staff: false })),
+      supportConversations: await this.exportSupport(customerId),
     };
+  }
+
+  /** Task 14: chat do suporte com as mensagens; anexos só como chaves; atendente só pelo primeiro nome (sem id). */
+  private async exportSupport(customerId: string) {
+    const conversations = (await this.prisma.supportConversation.findMany({ where: { customerId }, include: { messages: { orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'desc' } })) ?? [];
+    const message = (m: SupportMessage) => {
+      const out = toMessage(m);
+      if (m.authorType !== 'staff') return out;
+      const { authorId: _id, ...rest } = out;
+      return { ...rest, ...(m.authorName ? { authorName: m.authorName.trim().split(/\s+/)[0] } : {}) };
+    };
+    return conversations.map((c) => ({ ...toConversation(c), messages: c.messages.map(message) }));
   }
 
   /**
@@ -188,7 +213,8 @@ export class LgpdService {
     const requestedAt = new Date();
     const customer = await this.customer(customerId);
     const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
-    const pendingDebts = await this.prisma.payment.count({ where: { customerId, status: { in: ['failed', 'pending'] }, kind: { in: ['rental', 'fee'] } } });
+    // Task 14: dívida quitada (pelo cliente ou manualmente) não bloqueia mais.
+    const pendingDebts = await this.prisma.payment.count({ where: { customerId, status: { in: ['failed', 'pending'] }, kind: { in: ['rental', 'fee'] }, debtSettledAt: null } });
     if (open || customer.delinquent || pendingDebts > 0) {
       throw conflict('account-deletion-blocked', 'Encerre o aluguel e regularize os pagamentos antes de excluir a conta.');
     }
@@ -201,8 +227,16 @@ export class LgpdService {
     const rentalIds = rentals.map((r) => r.id);
     // QA-14: a foto de devolução pode identificar o titular (rosto, casa); sai junto com a conta.
     const photoKeys = [...new Set(rentals.flatMap((r) => [r.returnPhotoObjectKey, r.returnPhotoUploadKey]).filter((k): k is string => !!k))];
+    // Task 14: anexos e mensagens do suporte, fotos de entrega, fotos de ocorrência e de sinistro encerrado.
+    const files = await this.customerFiles(customerId, rentalIds);
+    const gateway = await this.gatewayDeletionTarget(customerId);
 
     await this.prisma.$transaction(async (tx) => {
+      await this.anonymizeCustomerContent(tx, customerId, files);
+      if (gateway) {
+        await tx.paymentCard.updateMany({ where: { customerId, deletedAt: null }, data: { deletedAt: requestedAt, isDefault: false } });
+        await tx.providerCustomerDeletion.upsert({ where: { customerId }, create: { customerId, ...gateway }, update: {} });
+      }
       if (rentalIds.length) await tx.trackPoint.deleteMany({ where: { rentalId: { in: rentalIds } } });
       // QA-12: a posição de início é localização ligada ao titular.
       await tx.rental.updateMany({ where: { customerId }, data: { startLat: null, startLng: null, returnPhotoObjectKey: null, returnPhotoUploadKey: null } });
@@ -252,16 +286,128 @@ export class LgpdService {
         this.logger.warn({ msg: 'kyc_object_delete_failed', customerId, error: (err as Error).message });
       }
     }
-    for (const key of photoKeys) {
+    for (const key of [...photoKeys, ...files.handoverPhotoKeys]) {
       try {
         await this.storage.deleteObject({ bucket: this.cfg.buckets.returnPhotos, key });
       } catch (err) {
         this.logger.warn({ msg: 'return_photo_delete_failed', customerId, error: (err as Error).message });
       }
     }
+    await this.deleteAttachments(customerId, files.attachmentKeys);
+    // Task 14: cliente e cartões no gateway; falha não bloqueia a exclusão (o job refaz).
+    if (gateway) await this.attemptGatewayDeletion({ customerId, ...gateway, attempts: 0 });
     this.events?.emit(EV.PRINCIPAL_REVOKED, { pool: 'customer', userId: customerId } satisfies PrincipalRevokedEvent);
     this.logger.log({ msg: 'account_anonymized', customerId });
     return { status: 'completed' as const, requestedAt: requestedAt.toISOString(), completedAt: new Date().toISOString() };
+  }
+
+  /**
+   * Task 14: o que sai junto com a conta, além de KYC e foto de devolução:
+   * - chat do suporte: corpo das mensagens e anexos (todas as mensagens das conversas do titular, inclusive do atendente,
+   *   que podem citar endereço ou placa); assunto da conversa;
+   * - entregas no galpão do titular (pelas reservas ou aluguéis dele): fotos e motivo da disputa (texto do cliente);
+   *   o checklist do operador (estado da moto) fica;
+   * - ocorrências abertas pelo titular: fotos, texto e posição;
+   * - sinistros **encerrados**: fotos, boletim, texto e posição. Em andamento ficam até o desfecho (`CLOSED_CLAIM_STATUSES`).
+   */
+  private async customerFiles(customerId: string, rentalIds: string[]) {
+    const handoverWhere: Prisma.HandoverWhereInput[] = [{ reservation: { customerId } }];
+    if (rentalIds.length) handoverWhere.push({ rentalId: { in: rentalIds } });
+    const [messages, handovers, incidents, claims] = await Promise.all([
+      this.prisma.supportMessage.findMany({ where: { conversation: { customerId } }, select: { attachmentObjectKeys: true } }),
+      this.prisma.handover.findMany({ where: { OR: handoverWhere }, select: { id: true, photoKeys: true } }),
+      this.prisma.incident.findMany({ where: { customerId }, select: { photoObjectKeys: true } }),
+      this.prisma.claim.findMany({ where: { customerId, status: { in: [...CLOSED_CLAIM_STATUSES] } }, select: { photoObjectKeys: true } }),
+    ]);
+    const all = <T>(rows: T[] | undefined | null): T[] => rows ?? [];
+    return {
+      handoverIds: all(handovers).map((h) => h.id),
+      handoverPhotoKeys: [...new Set(all(handovers).flatMap((h) => h.photoKeys ?? []))],
+      attachmentKeys: [
+        ...new Set([
+          ...all(messages).flatMap((m) => m.attachmentObjectKeys ?? []),
+          ...all(incidents).flatMap((i) => i.photoObjectKeys ?? []),
+          ...all(claims).flatMap((c) => c.photoObjectKeys ?? []),
+        ]),
+      ],
+    };
+  }
+
+  private async anonymizeCustomerContent(tx: Prisma.TransactionClient, customerId: string, files: { handoverIds: string[] }): Promise<void> {
+    await tx.supportMessage.updateMany({ where: { conversation: { customerId } }, data: { body: REMOVED_TEXT, attachmentObjectKeys: [] } });
+    await tx.supportConversation.updateMany({ where: { customerId }, data: { subject: 'Conversa removida' } });
+    if (files.handoverIds.length) await tx.handover.updateMany({ where: { id: { in: files.handoverIds } }, data: { photoKeys: [], disputeReason: null } });
+    await tx.incident.updateMany({ where: { customerId }, data: { description: REMOVED_TEXT, photoObjectKeys: [], lat: null, lng: null } });
+    await tx.claim.updateMany({ where: { customerId, status: { in: [...CLOSED_CLAIM_STATUSES] } }, data: { description: REMOVED_TEXT, photoObjectKeys: [], lat: null, lng: null } });
+  }
+
+  /** Anexos do suporte, ocorrências e sinistros ficam no bucket de anexos. Falha só é registrada (sem a chave no log). */
+  private async deleteAttachments(customerId: string, keys: string[]): Promise<void> {
+    for (const key of keys) {
+      try {
+        await this.storage.deleteObject({ bucket: this.cfg.buckets.attachments, key });
+      } catch (err) {
+        this.logger.warn({ msg: 'attachment_delete_failed', customerId, error: (err as Error).message });
+      }
+    }
+  }
+
+  /** Sinistros que encerraram depois da exclusão da conta: fotos, boletim, texto e posição saem (job diário). */
+  async purgeClosedClaimsOfDeletedCustomers(): Promise<number> {
+    const claims = await this.prisma.claim.findMany({
+      where: { status: { in: [...CLOSED_CLAIM_STATUSES] }, customer: { status: 'deleted' }, NOT: { description: REMOVED_TEXT } },
+      select: { id: true, customerId: true, photoObjectKeys: true },
+      take: 200,
+    });
+    for (const c of claims) {
+      await this.deleteAttachments(c.customerId, c.photoObjectKeys);
+      await this.prisma.claim.update({ where: { id: c.id }, data: { description: REMOVED_TEXT, photoObjectKeys: [], lat: null, lng: null } });
+    }
+    return claims.length;
+  }
+
+  /** Cliente no gateway (referência gravada) e ids dos cartões salvos, inclusive os já removidos no app. */
+  private async gatewayDeletionTarget(customerId: string): Promise<{ provider: string; providerCustomerId: string; providerCardIds: string[] } | null> {
+    if (!this.provider) return null;
+    const ref = await this.prisma.paymentProviderRef.findUnique({
+      where: { entityType_entityId_provider: { entityType: 'customer', entityId: customerId, provider: this.provider.name } },
+    });
+    if (!ref) return null;
+    const cards = (await this.prisma.paymentCard.findMany({ where: { customerId }, select: { providerCardId: true } })) ?? [];
+    return { provider: this.provider.name, providerCustomerId: ref.providerId, providerCardIds: [...new Set(cards.map((c) => c.providerCardId))] };
+  }
+
+  /**
+   * Task 14: exclui cartões e cliente no gateway. Sucesso apaga a pendência e a referência; falha soma tentativa (o job
+   * `lgpd-gateway-deletion-retry` refaz a cada 5 min). Esgotadas as tentativas: log de erro para revisão manual.
+   */
+  private async attemptGatewayDeletion(row: { customerId: string; provider: string; providerCustomerId: string; providerCardIds: string[]; attempts: number }): Promise<void> {
+    if (!this.provider || this.provider.name !== row.provider) return;
+    try {
+      await this.provider.deleteCustomer({ providerCustomerId: row.providerCustomerId, providerCardIds: row.providerCardIds });
+      await this.quiet(() => this.prisma.providerCustomerDeletion.delete({ where: { customerId: row.customerId } }));
+      await this.quiet(() => this.prisma.paymentProviderRef.deleteMany({ where: { entityType: 'customer', entityId: row.customerId, provider: row.provider } }));
+      this.logger.log({ msg: 'gateway_customer_deleted', customerId: row.customerId });
+    } catch (err) {
+      const message = (err as Error).message.slice(0, 500);
+      const updated = await this.quiet(() =>
+        this.prisma.providerCustomerDeletion.update({ where: { customerId: row.customerId }, data: { attempts: { increment: 1 }, lastError: message } }),
+      );
+      const attempts = updated?.attempts ?? row.attempts + 1;
+      this.logger.warn({ msg: 'gateway_customer_delete_failed', customerId: row.customerId, attempts, error: message });
+      if (attempts >= MAX_GATEWAY_DELETION_ATTEMPTS) this.logger.error({ msg: 'lgpd_gateway_deletion_needs_manual_review', customerId: row.customerId, attempts });
+    }
+  }
+
+  async retryGatewayDeletions(): Promise<void> {
+    const pending = await this.prisma.providerCustomerDeletion.findMany({ where: { attempts: { lt: MAX_GATEWAY_DELETION_ATTEMPTS } }, orderBy: { updatedAt: 'asc' }, take: 50 });
+    for (const row of pending) await this.attemptGatewayDeletion(row);
+  }
+
+  @Interval('lgpd-gateway-deletion-retry', 5 * 60_000)
+  async gatewayRetryJob(): Promise<void> {
+    if (!this.cfg.jobsEnabled) return;
+    await this.retryGatewayDeletions().catch((err) => this.logger.error({ msg: 'gateway_deletion_retry_failed', error: (err as Error).message }));
   }
 
   /**
@@ -326,6 +472,10 @@ export class LgpdService {
     if (!this.cfg.jobsEnabled) return;
     const count = await this.purgeExpiredTracks();
     const startLocations = await this.purgeExpiredStartLocations();
-    this.logger.log({ msg: 'expired_tracks_purged', count, startLocations });
+    const closedClaims = await this.purgeClosedClaimsOfDeletedCustomers().catch((err) => {
+      this.logger.error({ msg: 'closed_claims_purge_failed', error: (err as Error).message });
+      return 0;
+    });
+    this.logger.log({ msg: 'expired_tracks_purged', count, startLocations, closedClaims });
   }
 }

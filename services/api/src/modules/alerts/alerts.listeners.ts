@@ -1,11 +1,20 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import type { AlertPriority, AlertType } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { CommandChangedEvent, EV, GeofenceTransitionEvent, IotConnectivityEvent, IotDeviceEvent } from '../../common/events';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PAYMENT_NEEDS_REVIEW, type PaymentNeedsReviewEvent } from '../payments/payment-review';
 import { AlertsService, CreateAlertInput } from './alerts.service';
+
+/** Motivo técnico da revisão → texto pt-BR do alerta (sem dados pessoais). */
+export function paymentReviewMessage(reason: string): string {
+  if (reason.startsWith('subscription_late_charge')) return 'Cobrança de assinatura encerrada precisa de revisão (estorno não concluído).';
+  if (reason.startsWith('refund')) return 'Estorno recusado pelo gateway: revisar o pagamento.';
+  if (reason === 'review_timeout') return 'Cobrança em análise no gateway além do prazo: revisar o pagamento.';
+  return 'Cobrança do aluguel parada para revisão manual.';
+}
 
 const DEVICE_ALERTS: Record<IotDeviceEvent['type'], { type: AlertType; priority: AlertPriority; message: string }> = {
   queda: { type: 'fall_detected', priority: 'high', message: 'Queda detectada.' },
@@ -17,6 +26,8 @@ const DEVICE_ALERTS: Record<IotDeviceEvent['type'], { type: AlertType; priority:
 /** Gera alertas a partir dos eventos internos e da fila `alertas` (SQS/EventBridge em produção). */
 @Injectable()
 export class AlertsListeners implements OnModuleInit {
+  private readonly logger = new Logger('AlertsListeners');
+
   constructor(
     private readonly alerts: AlertsService,
     private readonly prisma: PrismaService,
@@ -68,6 +79,17 @@ export class AlertsListeners implements OnModuleInit {
     }
     if (ev.zoneType === 'forbidden' && ev.transition === 'ENTER') {
       await this.alerts.create({ type: 'forbidden_zone_entered', priority: 'high', message: 'Moto entrou em zona proibida.', vehicleId: ev.vehicleId, rentalId: ev.rentalId, ...(await this.position(ev.vehicleId)) });
+    }
+  }
+
+  /** Pagamento que exige revisão manual (Task 14): alerta `payment_needs_review`, um aberto por pagamento. */
+  @OnEvent(PAYMENT_NEEDS_REVIEW, { async: true, promisify: true })
+  async onPaymentNeedsReview(ev: PaymentNeedsReviewEvent): Promise<void> {
+    try {
+      await this.alerts.create({ type: 'payment_needs_review', priority: 'high', message: paymentReviewMessage(ev.reason), paymentId: ev.paymentId, rentalId: ev.rentalId }, { dedupe: false });
+    } catch (err) {
+      // O pagamento já ficou marcado para revisão (log `payment_needs_manual_review`); a falha do alerta não pode derrubar quem emitiu.
+      this.logger.error({ msg: 'payment_review_alert_failed', paymentId: ev.paymentId, error: (err as Error).message });
     }
   }
 
