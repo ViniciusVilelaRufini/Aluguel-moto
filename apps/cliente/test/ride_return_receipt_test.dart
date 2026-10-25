@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:built_collection/built_collection.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -247,6 +248,24 @@ void main() {
       await t.pumpWidget(const SizedBox());
     });
 
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('E-06 SOS: "Cadastrar contato de emergencia" quebra linha e cabe a ${(scale * 100).round()}%', (t) async {
+        await pumpRide(t);
+        t.view.physicalSize = const Size(412, 1800);
+        t.platformDispatcher.textScaleFactorTestValue = scale;
+        addTearDown(t.platformDispatcher.clearTextScaleFactorTestValue);
+        await t.pump();
+        await t.tap(find.byKey(const Key('sos-button')));
+        await t.pump();
+        await t.pump(const Duration(milliseconds: 500));
+        final label = find.descendant(of: find.byKey(const Key('sos-add-contact')), matching: find.text('Cadastrar contato de emergência'));
+        expect(label, findsOneWidget);
+        expect(t.renderObject<RenderParagraph>(label).didExceedMaxLines, isFalse, reason: 'sem reticencias');
+        expect(t.takeException(), isNull);
+        await t.pumpWidget(const SizedBox());
+      });
+    }
+
     testWidgets('SOS sem contato: CTA para cadastrar e envio pela folha de compartilhar', (t) async {
       await pumpRide(t);
       await t.tap(find.byKey(const Key('sos-button')));
@@ -368,7 +387,7 @@ void main() {
       expect(find.text('Pç. Oswaldo Cruz · você está dentro'), findsOneWidget);
       expect(find.text('Passo 1 de 2 · Foto'), findsOneWidget);
       expect(find.text('Fotografe a moto estacionada'), findsOneWidget);
-      expect(find.text('Você está num ponto verde. Pode encerrar sem taxa.'), findsOneWidget);
+      expect(find.text('Parece que a moto está num ponto verde. Se estiver, dá para encerrar sem taxa.'), findsOneWidget);
 
       VoltiButton end() => t.widget<VoltiButton>(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
       expect(end().onPressed, isNull);

@@ -263,7 +263,7 @@ class _VoltiMapState extends State<VoltiMap> with WidgetsBindingObserver {
         initialCenter: widget.center,
         initialZoom: widget.zoom,
         minZoom: 3,
-        maxZoom: 19,
+        maxZoom: kMapMaxZoom,
         backgroundColor: widget.backgroundColor,
         interactionOptions: InteractionOptions(
           flags: widget.interactive ? InteractiveFlag.all & ~InteractiveFlag.rotate : InteractiveFlag.none,

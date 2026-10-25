@@ -14,6 +14,7 @@ import '../../l10n/app_localizations.dart';
 import '../home/depot_providers.dart';
 import '../home/providers.dart';
 import '../pickup/depot_labels.dart';
+import '../pickup/depot_refresh.dart';
 import 'depot_selection.dart';
 import 'pick_logic.dart';
 
@@ -27,9 +28,10 @@ class PickScreen extends ConsumerStatefulWidget {
   ConsumerState<PickScreen> createState() => _PickScreenState();
 }
 
-class _PickScreenState extends ConsumerState<PickScreen> {
+class _PickScreenState extends ConsumerState<PickScreen> with WidgetsBindingObserver, DepotRefreshOnResume<PickScreen> {
   String? _model;
   String? _selectedId;
+  bool _sawLoading = false;
 
   /// Cartao aberto com os detalhes (um por vez; pressionar e segurar abre/fecha).
   String? _expandedId;
@@ -90,6 +92,8 @@ class _PickScreenState extends ConsumerState<PickScreen> {
     final hasReservation = ref.watch(currentReservationProvider).value != null;
     final hasRental = ref.watch(currentRentalProvider).value != null;
 
+    // E-01: depois do esqueleto os cartoes entram direto (sem fade em branco).
+    if (!vehiclesAsync.hasValue) _sawLoading = true;
     final all = vehiclesAsync.value ?? const <Vehicle>[];
     final modelNames = modelsIn(all, models);
     final model = modelNames.contains(_model) ? _model : null;
@@ -177,7 +181,7 @@ class _PickScreenState extends ConsumerState<PickScreen> {
                 },
               );
               // Cascata so nos primeiros itens (lista preguicosa).
-              return i < 8 ? VoltiFadeUp(delay: VoltiMotion.staggerDelay(i), child: card) : card;
+              return i < 8 && !_sawLoading ? VoltiFadeUp(delay: VoltiMotion.staggerDelay(i), child: card) : card;
             },
           ),
         ),

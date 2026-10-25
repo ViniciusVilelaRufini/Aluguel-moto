@@ -211,7 +211,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get depositHint =>
-      'A caução é liberada quando você encerra a corrida.';
+      'A caução cobre o valor da corrida; o que sobrar volta para você.';
 
   @override
   String get discount => 'Desconto';
@@ -859,7 +859,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String pixText(String amount) {
-    return 'Pague $amount para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução volta quando você encerra a corrida.';
+    return 'Pague $amount para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução cobre o valor da corrida; o que sobrar volta para você.';
   }
 
   @override
@@ -1572,7 +1572,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get helpFaq2Text =>
-      'Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela volta quando você encerra a corrida.';
+      'Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela cobre o valor da corrida; o que sobrar volta para você.';
 
   @override
   String get helpFaq3Title => 'Como encerro a corrida?';
@@ -2001,7 +2001,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get payPixExplain =>
-      'Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.';
+      'Com Pix, você paga a caução por um QR antes de cada aluguel e ela cobre o valor da corrida; o que sobrar volta para você. Dá para trocar a forma de pagamento a cada aluguel.';
 
   @override
   String get payFinish => 'Concluir cadastro';
@@ -2375,7 +2375,18 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get returnInsideRule =>
-      'Você está num ponto verde. Pode encerrar sem taxa.';
+      'Parece que a moto está num ponto verde. Se estiver, dá para encerrar sem taxa.';
+
+  @override
+  String get returnOutsideRejected =>
+      'A moto precisa estar dentro da área verde para encerrar (vale a posição da moto, não a do seu celular). Leve a moto até lá ou devolva no galpão. Encerrar fora da área só com o suporte, com taxa.';
+
+  @override
+  String get returnGoDepot => 'Devolver no galpão';
+
+  @override
+  String get handoverVehicleOffline =>
+      'Tente de novo em instantes ou fale com o operador. Nada foi cobrado.';
 
   @override
   String get reservationNoCode =>

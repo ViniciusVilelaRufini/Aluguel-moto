@@ -481,7 +481,7 @@ abstract class AppLocalizations {
   /// No description provided for @depositHint.
   ///
   /// In pt, this message translates to:
-  /// **'A caução é liberada quando você encerra a corrida.'**
+  /// **'A caução cobre o valor da corrida; o que sobrar volta para você.'**
   String get depositHint;
 
   /// No description provided for @discount.
@@ -1687,7 +1687,7 @@ abstract class AppLocalizations {
   /// No description provided for @pixText.
   ///
   /// In pt, this message translates to:
-  /// **'Pague {amount} para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução volta quando você encerra a corrida.'**
+  /// **'Pague {amount} para confirmar a reserva. A moto é liberada na entrega, no galpão, e a caução cobre o valor da corrida; o que sobrar volta para você.'**
   String pixText(String amount);
 
   /// No description provided for @receiptNumber.
@@ -2815,7 +2815,7 @@ abstract class AppLocalizations {
   /// No description provided for @helpFaq2Text.
   ///
   /// In pt, this message translates to:
-  /// **'Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela volta quando você encerra a corrida.'**
+  /// **'Uma pré-autorização no cartão ou um depósito via Pix feito antes de destravar. Ela cobre o valor da corrida; o que sobrar volta para você.'**
   String get helpFaq2Text;
 
   /// No description provided for @helpFaq3Title.
@@ -3547,7 +3547,7 @@ abstract class AppLocalizations {
   /// No description provided for @payPixExplain.
   ///
   /// In pt, this message translates to:
-  /// **'Com Pix, você paga a caução por um QR antes de cada aluguel e ela volta quando você encerra a corrida. Dá para trocar a forma de pagamento a cada aluguel.'**
+  /// **'Com Pix, você paga a caução por um QR antes de cada aluguel e ela cobre o valor da corrida; o que sobrar volta para você. Dá para trocar a forma de pagamento a cada aluguel.'**
   String get payPixExplain;
 
   /// No description provided for @payFinish.
@@ -4135,8 +4135,26 @@ abstract class AppLocalizations {
   /// No description provided for @returnInsideRule.
   ///
   /// In pt, this message translates to:
-  /// **'Você está num ponto verde. Pode encerrar sem taxa.'**
+  /// **'Parece que a moto está num ponto verde. Se estiver, dá para encerrar sem taxa.'**
   String get returnInsideRule;
+
+  /// No description provided for @returnOutsideRejected.
+  ///
+  /// In pt, this message translates to:
+  /// **'A moto precisa estar dentro da área verde para encerrar (vale a posição da moto, não a do seu celular). Leve a moto até lá ou devolva no galpão. Encerrar fora da área só com o suporte, com taxa.'**
+  String get returnOutsideRejected;
+
+  /// No description provided for @returnGoDepot.
+  ///
+  /// In pt, this message translates to:
+  /// **'Devolver no galpão'**
+  String get returnGoDepot;
+
+  /// No description provided for @handoverVehicleOffline.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tente de novo em instantes ou fale com o operador. Nada foi cobrado.'**
+  String get handoverVehicleOffline;
 
   /// No description provided for @reservationNoCode.
   ///

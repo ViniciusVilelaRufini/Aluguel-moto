@@ -324,7 +324,7 @@ void main() {
 
     testWidgets('dentro do ponto verde: texto positivo, sem o aviso de taxa', (t) async {
       await pumpReturn(t, [zoneAround(-23.56, -46.65)]);
-      expect(find.text('Você está num ponto verde. Pode encerrar sem taxa.'), findsOneWidget);
+      expect(find.text('Parece que a moto está num ponto verde. Se estiver, dá para encerrar sem taxa.'), findsOneWidget);
       expect(find.text('Fora dos pontos verdes não é possível encerrar sem taxa.'), findsNothing);
       await t.pumpWidget(const SizedBox());
     });

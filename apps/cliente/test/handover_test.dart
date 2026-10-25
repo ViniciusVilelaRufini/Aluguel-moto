@@ -465,6 +465,16 @@ void main() {
       expect(where(router), '/ride');
     });
 
+    testWidgets('E-05 moto sem conexao: nao manda escolher outra (a moto ja foi separada)', (t) async {
+      phone(t);
+      final b = HandoverBackend()..acceptErrors.add(problem(409, 'vehicle-offline', detail: 'A moto está sem conexão agora. Escolha outra moto; nada foi cobrado.'));
+      final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
+      await tapKey(t, 'handover-accept');
+      expect(where(router), '/handover/h1');
+      expect(find.text('Tente de novo em instantes ou fale com o operador. Nada foi cobrado.'), findsOneWidget);
+      expect(find.textContaining('Escolha outra moto'), findsNothing);
+    });
+
     testWidgets('caução não retida mostra o aviso e mantem a tela', (t) async {
       phone(t);
       final b = HandoverBackend()..acceptErrors.add(problem(422, 'deposit-not-held'));

@@ -20,6 +20,7 @@ class InsuranceScreen extends ConsumerStatefulWidget {
 }
 
 class _InsuranceScreenState extends ConsumerState<InsuranceScreen> {
+  bool _sawLoading = false;
   late InsuranceCoverage _coverage = widget.selection.coverage;
 
   void _toggle(InsuranceCoverage c) {
@@ -33,6 +34,9 @@ class _InsuranceScreenState extends ConsumerState<InsuranceScreen> {
   Widget build(BuildContext context) {
     final l = context.l;
     final coverages = ref.watch(coveragesProvider);
+    // E-01: o esqueleto aparece ja no 1o quadro (sem fade) e o conteudo que o substitui entra direto.
+    if (!coverages.hasValue) _sawLoading = true;
+    final animate = coverages.hasValue && !_sawLoading;
     final v = widget.selection.vehicle;
     final scheme = Theme.of(context).colorScheme;
     final list = coverages.value ?? const <InsuranceCoverageOption>[];
@@ -112,7 +116,7 @@ class _InsuranceScreenState extends ConsumerState<InsuranceScreen> {
                       ],
                     ),
                   ),
-                ], animate: coverages.hasValue),
+                ], animate: animate),
               ),
             ),
           ],

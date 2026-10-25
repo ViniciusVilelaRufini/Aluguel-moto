@@ -57,7 +57,7 @@ Provedores descartados:
 - o OSM público é proibido para apps;
 - o CARTO público passou a exigir chave e devolve um tile "API KEY" com status 200.
 
-**Configuração:** `--dart-define=MAP_TILE_URL=...`, `MAP_TILE_REFERENCE_URL=...` (vazio desliga a camada de rótulos; com um `MAP_TILE_URL` próprio ela já vem desligada) e `MAP_TILE_ATTRIBUTION=...`. O User-Agent usa o id real do pacote (`br.com.volti.volti_cliente`). `@2x` só é pedido quando o template tem `{r}`.
+**Configuração:** `--dart-define=MAP_TILE_URL=...`, `MAP_TILE_REFERENCE_URL=...` (vazio desliga a camada de rótulos; com um `MAP_TILE_URL` próprio ela já vem desligada) e `MAP_TILE_ATTRIBUTION=...`. O User-Agent usa o id real do pacote (`br.com.volti.volti_cliente`). `@2x` só é pedido quando o template tem `{r}`. `MAP_TILE_MAX_ZOOM` (padrão 16, o último nível do Esri Light Gray) é o maior zoom com tiles reais: os mapas ampliam no máximo um nível além dele (evita "Map data not yet available").
 
 **Falhas de tile:**
 - o `NetworkTileProvider` tenta de novo (`RetryClient`);

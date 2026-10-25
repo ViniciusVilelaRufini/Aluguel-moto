@@ -42,11 +42,15 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
   late PlanCode? _plan = widget.selection.plan?.code;
   /// "Outras opções" abertas; `null` = ainda nao decidiu (abre se o plano inicial estiver la).
   bool? _showOthers;
+  bool _sawLoading = false;
 
   @override
   Widget build(BuildContext context) {
     final l = context.l;
     final plans = ref.watch(plansProvider);
+    // E-01: o esqueleto aparece ja no 1o quadro (sem fade) e o conteudo que o substitui entra direto.
+    if (!plans.hasValue) _sawLoading = true;
+    final animate = plans.hasValue && !_sawLoading;
     final v = widget.selection.vehicle;
     final scheme = Theme.of(context).colorScheme;
     final list = plans.value ?? const <PricingPlan>[];
@@ -160,7 +164,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                   Text(l.planChargedAtPickup, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
                   const SizedBox(height: VoltiSpacing.s8),
                   Text(l.noKmNotice, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-                ], animate: plans.hasValue),
+                ], animate: animate),
               ),
             ),
           ],

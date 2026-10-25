@@ -29,6 +29,7 @@ String handoverItemLabel(AppLocalizations l, String code) => switch (code) {
 String handoverErrorText(AppLocalizations l, String code) => switch (code) {
       'payment-declined' => l.handoverPaymentDeclined,
       'deposit-not-held' => l.handoverDepositNotHeld,
+      'vehicle-offline' => l.handoverVehicleOffline,
       _ => l.handoverAcceptFailed,
     };
 
@@ -128,7 +129,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
       } else {
         if (mounted) {
           setState(() => _error = switch (f.slug) {
-                'payment-declined' || 'deposit-not-held' => handoverErrorText(l, f.slug!),
+                'payment-declined' || 'deposit-not-held' || 'vehicle-offline' => handoverErrorText(l, f.slug!),
                 _ => f.message(l),
               });
         }

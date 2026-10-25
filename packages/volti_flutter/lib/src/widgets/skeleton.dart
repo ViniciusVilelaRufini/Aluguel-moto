@@ -45,7 +45,8 @@ class VoltiSkeleton extends StatefulWidget {
   factory VoltiSkeleton.card({Key? key, double height = 88, int count = 1, String label = 'Carregando'}) => VoltiSkeleton(
         key: key,
         label: label,
-        child: Column(children: [
+        // stretch: sem largura propria o bloco ficaria com 0 px dentro de um ListView (E-01).
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           for (var i = 0; i < count; i++)
             Padding(
               padding: EdgeInsets.only(bottom: i == count - 1 ? 0 : VoltiSpacing.s10),
