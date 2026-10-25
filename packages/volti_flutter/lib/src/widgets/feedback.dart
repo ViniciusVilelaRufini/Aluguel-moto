@@ -209,6 +209,10 @@ class VoltiToast extends StatelessWidget {
     String? actionLabel,
     VoidCallback? onAction,
     Duration duration = const Duration(seconds: 4),
+
+    /// Espaco extra sob o toast para ele ficar acima de uma barra/cartao fixo no
+    /// rodape (que o SnackBar nao conhece, por estar dentro do corpo).
+    double bottomOffset = 0,
   }) {
     final m = ScaffoldMessenger.of(context);
     m.hideCurrentSnackBar();
@@ -218,11 +222,11 @@ class VoltiToast extends StatelessWidget {
         elevation: 0,
         padding: EdgeInsets.zero,
         behavior: SnackBarBehavior.floating,
-        margin: const EdgeInsets.fromLTRB(
+        margin: EdgeInsets.fromLTRB(
           VoltiSpacing.screenGutter,
           0,
           VoltiSpacing.screenGutter,
-          16,
+          16 + bottomOffset,
         ),
         duration: duration,
         content: VoltiToast(

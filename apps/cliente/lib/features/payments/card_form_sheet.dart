@@ -137,7 +137,11 @@ class _CardFormSheetState extends State<CardFormSheet> {
       autocorrect: false,
       enableSuggestions: false,
       autofillHints: const [AutofillHints.creditCardSecurityCode],
-      decoration: InputDecoration(labelText: l.cardCvv),
+      decoration: InputDecoration(
+        labelText: l.cardCvv,
+        errorText: _cvv.text.isNotEmpty && !_cvvOk ? l.cardCvvInvalid : null,
+        errorMaxLines: 3,
+      ),
     );
     final cpfDone = _cpf.text.replaceAll(RegExp(r'\D'), '').length == 11;
     return SingleChildScrollView(

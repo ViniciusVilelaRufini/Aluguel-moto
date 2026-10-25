@@ -5,6 +5,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/geo.dart' show walkingDistanceLabel;
 import '../../core/launcher.dart';
 import '../../core/widgets.dart';
 import '../home/depot_providers.dart';
@@ -53,8 +54,9 @@ class BatterySwapSheet extends ConsumerWidget {
   const BatterySwapSheet({super.key, required this.rentalId});
   final String rentalId;
 
-  static Future<void> show(BuildContext context, String rentalId) =>
-      VoltiBottomSheet.show<void>(context, builder: (_) => BatterySwapSheet(rentalId: rentalId));
+  /// Devolve `true` quando o cliente pediu "Escanear QR" (quem abriu a folha abre o leitor).
+  static Future<bool?> show(BuildContext context, String rentalId) =>
+      VoltiBottomSheet.show<bool>(context, builder: (_) => BatterySwapSheet(rentalId: rentalId));
 
   Future<void> _go(BuildContext context, WidgetRef ref, double lat, double lng) async {
     final ok = await openDirections(ref.read(urlLauncherProvider), lat, lng);
@@ -70,7 +72,7 @@ class BatterySwapSheet extends ConsumerWidget {
     final depot = depotAsync.value;
     final places = swapPlaces(depot, stationsAsync.value ?? const []);
 
-    Widget place({required Key key, required String title, required String subtitle, required IconData icon, required ListRowTone tone, required VoidCallback onTap}) =>
+    Widget place({required Key key, required String title, required String subtitle, required IconData icon, required ListRowTone tone, required VoidCallback? onTap}) =>
         Padding(
           padding: const EdgeInsets.only(bottom: VoltiSpacing.s8),
           child: Semantics(
@@ -110,10 +112,15 @@ class BatterySwapSheet extends ConsumerWidget {
               place(
                 key: Key('swap-station-${s.id}'),
                 title: s.name,
-                subtitle: '${s.address} · ${l.swapAvailable(s.availableBatteries)}',
+                subtitle: [
+                  s.address,
+                  if (s.distanceM != null) walkingDistanceLabel(s.distanceM!.round()),
+                  l.swapAvailable(s.availableBatteries),
+                ].join(' · '),
                 icon: LucideIcons.batteryCharging,
                 tone: ListRowTone.info,
-                onTap: () => _go(context, ref, s.lat, s.lng),
+                // Estacao sem bateria nao leva ninguem la a toa.
+                onTap: s.availableBatteries > 0 ? () => _go(context, ref, s.lat, s.lng) : null,
               ),
             if (stationsAsync.hasError && !stationsAsync.isLoading)
               KeyedSubtree(
@@ -127,6 +134,15 @@ class BatterySwapSheet extends ConsumerWidget {
               ),
           ],
           const SizedBox(height: VoltiSpacing.s8),
+          // Quem ja esta na estacao (GPS impreciso) escaneia o QR sem depender da distancia.
+          VoltiButton(
+            key: const Key('swap-scan-qr'),
+            label: l.scanQr,
+            icon: LucideIcons.qrCode,
+            variant: VoltiButtonVariant.secondary,
+            fullWidth: true,
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
           VoltiButton(label: l.close, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: () => Navigator.of(context).pop()),
         ],
       ),

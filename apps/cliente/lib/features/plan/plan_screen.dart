@@ -69,7 +69,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
           child: OptionCard(
             key: Key('plan-${p.code.name}'),
             title: p.name,
-            description: p.recurring ? l.planRenews : p.description,
+            description: p.recurring ? l.planRenews : (p.description ?? (p.code == PlanCode.day ? l.planDayDescription : null)),
             // Plano por minuto: o preco do modelo desta moto (o mesmo que a cotacao usa).
             price: money(planUnitCents(p, v)),
             priceNote: l.perUnitShort(unitShortLabel(l, p.unit)),
@@ -160,7 +160,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                   Text(l.planChargedAtPickup, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
                   const SizedBox(height: VoltiSpacing.s8),
                   Text(l.noKmNotice, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-                ]),
+                ], animate: plans.hasValue),
               ),
             ),
           ],

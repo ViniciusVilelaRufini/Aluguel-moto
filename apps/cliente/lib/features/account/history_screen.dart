@@ -65,7 +65,7 @@ class HistoryScreen extends ConsumerWidget {
     final l = context.l;
     return ListRow(
       title: l.historyItem(r.vehicleCode, formatDateTimeSp(r.startedAt)),
-      icon: LucideIcons.bike,
+      icon: LucideIcons.motorbike,
       subtitle: durationLabel(r.elapsedSeconds),
       value: money(r.costCents),
       trailing: ListRowTrailing.chevron,

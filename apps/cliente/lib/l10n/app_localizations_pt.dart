@@ -17,6 +17,16 @@ class AppLocalizationsPt extends AppLocalizations {
       'Só rastreamos sua posição com um aluguel ativo. Você pode revogar quando quiser em Conta.';
 
   @override
+  String get acceptLocationHintHere =>
+      'Só rastreamos sua posição com um aluguel ativo. Você pode desligar aqui quando quiser.';
+
+  @override
+  String get privacyConsents => 'Consentimentos';
+
+  @override
+  String get privacyDocuments => 'Documentos';
+
+  @override
   String get acceptMarketing => 'Quero receber novidades e ofertas';
 
   @override
@@ -186,6 +196,17 @@ class AppLocalizationsPt extends AppLocalizations {
   String get deposit => 'Caução';
 
   @override
+  String get blockedNow => 'Bloqueado agora (caução)';
+
+  @override
+  String get pickupWhenLine => 'Retirada';
+
+  @override
+  String pickupWhenValue(String weekday, String date, String time) {
+    return '$weekday $date às $time';
+  }
+
+  @override
   String get depositAmount => 'Caução (devolvida)';
 
   @override
@@ -209,6 +230,18 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get documentPhoto => 'Foto do documento (RG ou CNH)';
+
+  @override
+  String get documentPhotoCnh => 'Foto da CNH';
+
+  @override
+  String get documentPhotoRg => 'Foto do RG';
+
+  @override
+  String get photoSent => 'Enviada';
+
+  @override
+  String get photoRetake => 'Refazer';
 
   @override
   String get documentPhotoHint => 'Frente, sem reflexo';
@@ -247,7 +280,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get cardNumber => 'Número do cartão';
 
   @override
-  String get cardHolder => 'Nome impresso no cartão';
+  String get cardHolder => 'Nome no cartão';
 
   @override
   String get cardExpiry => 'Validade (MM/AA)';
@@ -793,6 +826,15 @@ class AppLocalizationsPt extends AppLocalizations {
   String get yourLocation => 'Sua localização';
 
   @override
+  String get pickupAtLabel => 'Retire em';
+
+  @override
+  String get cardCvvInvalid => 'CVV com 3 ou 4 dígitos';
+
+  @override
+  String get planDayDescription => '24 horas · devolva até o fim do dia';
+
+  @override
   String get zoneNotice => 'Aviso de zona';
 
   @override
@@ -1111,7 +1153,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get filterPickupPoints => 'Pontos de retirada';
 
   @override
-  String get promoPassTitle => 'Desbloqueie seu passe';
+  String get promoPassTitle => 'Desbloqueie seu plano';
 
   @override
   String get promoPassText => 'Ande mais, pague menos';
@@ -1523,7 +1565,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get helpFaq1Text =>
-      'No mapa, toque em Escanear para andar e aponte para o QR no guidão, ou digite o número da moto. Escolha o plano e o seguro e confirme.';
+      'Escolha uma moto na lista ou no mapa, o plano e o seguro e reserve. Mostre o QR da reserva no galpão para retirar a moto, confira as fotos e o estado dela e toque em Aceitar e destravar.';
 
   @override
   String get helpFaq2Title => 'O que é a caução?';
@@ -1537,7 +1579,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get helpFaq3Text =>
-      'Pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar.';
+      'Devolva a moto no galpão, onde o operador confere a entrega, ou pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar. Se a bateria estiver baixa, troque-a por QR numa estação, durante a corrida, em Trocar bateria.';
 
   @override
   String get helpFaq4Title => 'Como uso a carteira e os pacotes?';
@@ -1607,11 +1649,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pixQrLabel => 'QR code do Pix';
 
   @override
-  String get planMonthlyDescription => 'Cobrança recorrente no cartão todo mês';
+  String get planMonthlyDescription =>
+      'Renova automaticamente, cancele quando quiser';
 
   @override
   String get planWeeklyDescription =>
-      'Para entregadores · cobrança toda semana';
+      'Renova automaticamente, cancele quando quiser';
 
   @override
   String get remove => 'Remover';
@@ -2791,6 +2834,11 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String swapConfirmFeeAmount(String amount) {
     return 'Taxa $amount';
+  }
+
+  @override
+  String swapConfirmBatteryHigh(int pct) {
+    return 'Sua bateria está em $pct%. Trocar mesmo assim?';
   }
 
   @override

@@ -107,6 +107,19 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   late final ReturnScreensOpen _openFlag;
   bool _finished = false;
   ReturnMode _mode = ReturnMode.point;
+  final _map = MapController();
+
+  /// Segmento "Galpao": a camera vai ao galpao; "Ponto verde": volta a moto.
+  void _moveMapTo(LatLng to) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !ref.read(mapEnabledProvider)) return;
+      try {
+        _map.move(to, 16);
+      } catch (_) {
+        // mapa ainda nao montado
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -122,6 +135,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     _poll?.cancel();
     _rideEvents?.cancel();
     _openFlag.count -= 1;
+    _map.dispose();
     super.dispose();
   }
 
@@ -354,6 +368,11 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     final canEnd = _photo != null && !_busy && ctx.hasValue && !outside;
     final atDepot = _mode == ReturnMode.depot;
     final depot = atDepot ? ref.watch(rentalDepotProvider(widget.rentalId)).value : null;
+    // O galpao pode chegar depois de o cliente tocar no segmento: centra quando chegar.
+    ref.listen(rentalDepotProvider(widget.rentalId), (_, next) {
+      final d = next.value;
+      if (_mode == ReturnMode.depot && d != null) _moveMapTo(LatLng(d.lat, d.lng));
+    });
 
     return Scaffold(
       body: Stack(
@@ -363,9 +382,11 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                 ? Semantics(
                     label: l.returnZonesMap(rc.zones.length),
                     child: VoltiMap(
+                      controller: _map,
                       center: center,
                       zoom: 16,
                       layers: [
+                        if (!atDepot)
                         PolygonLayer(
                           key: const Key('return-zones'),
                           polygons: [
@@ -380,7 +401,18 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                         ),
                         MarkerLayer(
                           markers: [
-                            if (rc.nearest != null)
+                            if (atDepot && depot != null)
+                              Marker(
+                                key: const Key('return-depot-pin'),
+                                point: LatLng(depot.lat, depot.lng),
+                                width: 48,
+                                height: 48,
+                                child: Container(
+                                  decoration: const BoxDecoration(color: VoltiColors.brandAction, shape: BoxShape.circle, boxShadow: VoltiShadows.shadow2),
+                                  child: const Icon(LucideIcons.warehouse, color: VoltiColors.white, size: 24),
+                                ),
+                              ),
+                            if (!atDepot && rc.nearest != null)
                               Marker(
                                 point: zoneCenter(rc.nearest!),
                                 width: 40,
@@ -473,7 +505,17 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                             VoltiSegment(value: ReturnMode.depot, label: l.returnModeDepot),
                           ],
                           value: _mode,
-                          onChanged: _busy ? null : (m) => setState(() => _mode = m),
+                          onChanged: _busy
+                              ? null
+                              : (m) {
+                                  setState(() => _mode = m);
+                                  final d = ref.read(rentalDepotProvider(widget.rentalId)).value;
+                                  if (m == ReturnMode.depot && d != null) {
+                                    _moveMapTo(LatLng(d.lat, d.lng));
+                                  } else if (m == ReturnMode.point) {
+                                    _moveMapTo(center);
+                                  }
+                                },
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -531,7 +573,6 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                         VoltiButton(
                           label: _busy ? l.confirmingLock : l.lockAndEnd,
                           icon: LucideIcons.lock,
-                          variant: VoltiButtonVariant.dark,
                           size: VoltiButtonSize.lg,
                           fullWidth: true,
                           onPressed: canEnd ? () => _end(confirm: inZone == null) : null,

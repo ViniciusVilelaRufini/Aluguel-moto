@@ -127,7 +127,7 @@ class _PickScreenState extends ConsumerState<PickScreen> {
       body = _pullable(
         depot!.id,
         VoltiEmptyState(
-          icon: LucideIcons.bike,
+          icon: LucideIcons.motorbike,
           title: l.pickDepotEmpty,
           message: l.pickDepotEmptyText,
           actionLabel: l.retry,
@@ -139,7 +139,7 @@ class _PickScreenState extends ConsumerState<PickScreen> {
       body = _pullable(
         depot!.id,
         VoltiEmptyState(
-          icon: LucideIcons.bike,
+          icon: LucideIcons.motorbike,
           title: l.pickEmptyModel,
           message: l.pickEmptyModelText,
           actionLabel: l.pickAllModels,
@@ -500,7 +500,7 @@ class _PickCardState extends State<_PickCard> {
                                       fit: BoxFit.contain,
                                       // Decodifica no tamanho da miniatura (88 px x densidade), nao no da foto original.
                                       cacheWidth: (88 * MediaQuery.devicePixelRatioOf(context)).round(),
-                                      errorBuilder: (_, _, _) => const Icon(LucideIcons.bike, size: 32, color: VoltiColors.blue600),
+                                      errorBuilder: (_, _, _) => const Icon(LucideIcons.motorbike, size: 32, color: VoltiColors.blue600),
                                     ),
                                   ),
                                 ),
