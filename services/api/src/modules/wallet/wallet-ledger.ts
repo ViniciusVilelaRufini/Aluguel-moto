@@ -14,9 +14,9 @@ export async function appendWalletEntry(tx: Prisma.TransactionClient, data: Omit
 
 /**
  * Saldo em centavos que pode abater um fechamento (R2-01): soma do ledger, nunca negativa. Tolerante a um cliente Prisma
- * parcial (testes com banco falso sem `walletEntry`): sem ledger, não há saldo.
+ * de teste que devolve `undefined`: sem agregado, não há saldo.
  */
 export async function walletCentsAvailable(tx: Prisma.TransactionClient, customerId: string): Promise<number> {
-  const agg = await tx.walletEntry?.aggregate({ where: { customerId }, _sum: { amountCents: true } });
+  const agg = await tx.walletEntry.aggregate({ where: { customerId }, _sum: { amountCents: true } });
   return Math.max(0, agg?._sum?.amountCents ?? 0);
 }

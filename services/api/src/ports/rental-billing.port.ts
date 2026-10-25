@@ -6,7 +6,11 @@ export interface PixCharge { chargeId: string; qrCodeBase64: string; copyPaste: 
 export interface RentalBillingPort {
   holdDeposit(input: { customerId: string; rentalId: string; method: 'card' | 'pix'; idempotencyKey: string; cardId?: string })
     : Promise<{ depositId: string; status: 'held' | 'awaiting_pix' | 'failed'; pix?: PixCharge }>;
-  settle(input: { rentalId: string; amountCents: number; idempotencyKey: string })
+  /**
+   * `amountCents`: o que falta cobrar (caução/cartão/dívida); `walletCents`: o que a carteira já pagou no fechamento
+   * (Task 16). O `Payment` do aluguel registra o bruto (`amountCents + walletCents`) com a divisão em `walletCents`.
+   */
+  settle(input: { rentalId: string; amountCents: number; idempotencyKey: string; walletCents?: number })
     : Promise<{ paymentId: string; status: 'paid' | 'failed' }>;
   isDelinquent(customerId: string): Promise<boolean>;
 }

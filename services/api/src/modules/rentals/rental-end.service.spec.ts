@@ -222,7 +222,7 @@ describe('Encerramento do aluguel', () => {
     expect(r.status).toBe(200);
     expect(r.rental.status).toBe('ended');
     expect(billing.settle).toHaveBeenCalledTimes(1);
-    expect(billing.settle).toHaveBeenCalledWith({ rentalId: RENTAL_ID, amountCents: 1290, idempotencyKey: `rental-settlement:${RENTAL_ID}` });
+    expect(billing.settle).toHaveBeenCalledWith({ rentalId: RENTAL_ID, amountCents: 1290, walletCents: 0, idempotencyKey: `rental-settlement:${RENTAL_ID}` });
     expect(r.rental.costCents).toBe(1290);
     expect(rental.paymentId).toBe('pay-1');
     expect(rental.endZoneId).toBe(ZONE_ID);
@@ -243,7 +243,7 @@ describe('Encerramento do aluguel', () => {
     }) as any);
     const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
     expect(r.status).toBe(200);
-    expect(billing.settle).toHaveBeenCalledWith({ rentalId: RENTAL_ID, amountCents: 790, idempotencyKey: `rental-settlement:${RENTAL_ID}` });
+    expect(billing.settle).toHaveBeenCalledWith({ rentalId: RENTAL_ID, amountCents: 790, walletCents: 500, idempotencyKey: `rental-settlement:${RENTAL_ID}` });
     expect(rental.breakdown).toMatchObject({ walletAppliedCents: 500, totalCents: 790 });
     expect(rental.breakdown.lines).toContainEqual({ code: 'wallet', description: 'Créditos da carteira', amountCents: -500 });
     expect(prisma.walletEntry.create).toHaveBeenCalledTimes(1);

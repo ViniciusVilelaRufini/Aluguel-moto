@@ -32,6 +32,7 @@ part 'payment.g.dart';
 /// * [receiptUrl]
 /// * [customerName] - staff. Nome do cliente (detalhe e listas do painel).
 /// * [outstandingCents] - Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
+/// * [walletCents] - Aluguel: parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante foi cobrado na caução/gateway. O estorno devolve primeiro a parte do gateway e depois credita a da carteira (lançamento `refund`). Ausente quando a carteira não foi usada.
 /// * [debtSettledAt] - Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro).
 /// * [debtSettlement]
 /// * [settlesPaymentId] - Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.
@@ -93,6 +94,10 @@ abstract class Payment implements Built<Payment, PaymentBuilder> {
   /// Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
   @BuiltValueField(wireName: r'outstandingCents')
   int? get outstandingCents;
+
+  /// Aluguel: parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante foi cobrado na caução/gateway. O estorno devolve primeiro a parte do gateway e depois credita a da carteira (lançamento `refund`). Ausente quando a carteira não foi usada.
+  @BuiltValueField(wireName: r'walletCents')
+  int? get walletCents;
 
   /// Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro).
   @BuiltValueField(wireName: r'debtSettledAt')
@@ -233,6 +238,13 @@ class _$PaymentSerializer implements PrimitiveSerializer<Payment> {
       yield r'outstandingCents';
       yield serializers.serialize(
         object.outstandingCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.walletCents != null) {
+      yield r'walletCents';
+      yield serializers.serialize(
+        object.walletCents,
         specifiedType: const FullType(int),
       );
     }
@@ -419,6 +431,14 @@ class _$PaymentSerializer implements PrimitiveSerializer<Payment> {
           ) as int?;
           if (valueDes == null) continue;
           result.outstandingCents = valueDes;
+          break;
+        case r'walletCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.walletCents = valueDes;
           break;
         case r'debtSettledAt':
           final valueDes = serializers.deserialize(

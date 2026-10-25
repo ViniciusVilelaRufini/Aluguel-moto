@@ -301,7 +301,9 @@ export class RentalEndService {
     });
 
     try {
-      const settlement = await this.billing.settle({ rentalId, amountCents: breakdown.totalCents, idempotencyKey: `rental-settlement:${rentalId}` });
+      const settlement = await this.billing.settle({
+        rentalId, amountCents: breakdown.totalCents, walletCents: breakdown.walletAppliedCents ?? 0, idempotencyKey: `rental-settlement:${rentalId}`,
+      });
       await this.prisma.rental.update({ where: { id: rentalId }, data: { paymentId: settlement.paymentId } });
     } catch (err) {
       // A cobrança é reprocessada pela Task 5 (inadimplência); o aluguel continua encerrado.

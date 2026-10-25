@@ -1020,13 +1020,14 @@ describe('Task 16 (R2-01): ordem de liquidação no fechamento — carteira → 
     return receiptPaymentInfo(ctx.db as any, rental, await ctx.db.payment.findUnique({ where: { id: paymentId } }));
   };
 
-  it('1) carteira cobriu tudo (o fechamento já abateu: valor 0 com walletAppliedCents) → paga pela carteira e a caução Pix volta inteira', async () => {
+  it('1) carteira cobriu tudo (o fechamento já abateu: nada a cobrar, walletCents = bruto) → paga pela carteira e a caução Pix volta inteira', async () => {
     const ctx = await setup({ card: null });
     const { held, dp } = await pixDepositPaid(ctx);
-    await ctx.db.rental.update({ where: { id: RENTAL }, data: { breakdown: { lines: [], subtotalCents: 1290, discountCents: 0, insuranceCents: 0, feesCents: 0, walletAppliedCents: 1290, totalCents: 0 } } });
-    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 0, idempotencyKey: SETTLE_KEY });
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 0, walletCents: 1290, idempotencyKey: SETTLE_KEY });
     expect(r.status).toBe('paid');
-    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'paid', method: 'wallet' });
+    // Fix round 1: o pagamento registra o bruto (NFS-e e PDF pelo valor cheio), com a parte da carteira.
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'paid', method: 'wallet', amountCents: 1290, walletCents: 1290 });
+    expect(ctx.receipts.issueForPayment).toHaveBeenCalledWith(r.paymentId);
     expect(await ctx.db.payment.findUnique({ where: { id: dp.id } })).toMatchObject({ status: 'refunded', refundedCents: 5000 });
     expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'released' });
     expect(await info(ctx, r.paymentId)).toEqual({ status: 'paid', method: 'wallet', depositReleasedCents: 5000 });
@@ -1069,6 +1070,24 @@ describe('Task 16 (R2-01): ordem de liquidação no fechamento — carteira → 
     expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
     await ctx.db.payment.update({ where: { id: r.paymentId }, data: { debtSettledAt: new Date(), debtSettlement: 'manual' } });
     expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(false);
+  });
+
+  it('fix round 1: carteira parcial + caução Pix + sem cartão → bruto no pagamento; dívida = bruto − carteira − caução', async () => {
+    const ctx = await setup({ card: null });
+    await pixDepositPaid(ctx);
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 6500, walletCents: 1000, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('failed');
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ amountCents: 7500, walletCents: 1000, status: 'failed' });
+    expect(await info(ctx, r.paymentId)).toEqual({ status: 'pending', amountDueCents: 1500, depositUsedCents: 5000, depositReleasedCents: 0 });
+  });
+
+  it('fix round 1: carteira parcial + caução Pix cobre o resto → captura só o restante (não o bruto)', async () => {
+    const ctx = await setup({ card: null });
+    const { held } = await pixDepositPaid(ctx);
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, walletCents: 300, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('paid');
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ amountCents: 1590, walletCents: 300, method: 'pix' });
+    expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'captured', capturedCents: 1290 });
   });
 
   it('5) sem caução retida e sem cartão → o valor inteiro vira dívida (processando enquanto a liquidação está pendente)', async () => {

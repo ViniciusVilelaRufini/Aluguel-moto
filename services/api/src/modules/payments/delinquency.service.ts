@@ -59,7 +59,8 @@ export class DelinquencyService {
     const depositIds = [...new Set(debts.map((p) => (p.kind === 'rental' ? p.depositId : null)).filter((x): x is string => !!x))];
     const deposits = depositIds.length ? await this.prisma.deposit.findMany({ where: { id: { in: depositIds } }, select: { id: true, status: true, capturedCents: true } }) : [];
     const captured = new Map(deposits.map((d) => [d.id, d.status === 'captured' ? (d.capturedCents ?? 0) : 0]));
-    return new Map(debts.map((p) => [p.id, Math.max(0, p.amountCents - (p.depositId ? (captured.get(p.depositId) ?? 0) : 0))]));
+    // Task 16: o pagamento registra o bruto; a parte da carteira (`walletCents`) já foi paga no fechamento.
+    return new Map(debts.map((p) => [p.id, Math.max(0, p.amountCents - (p.walletCents ?? 0) - (p.depositId ? (captured.get(p.depositId) ?? 0) : 0))]));
   }
 
   async outstanding(p: Payment): Promise<number | undefined> {

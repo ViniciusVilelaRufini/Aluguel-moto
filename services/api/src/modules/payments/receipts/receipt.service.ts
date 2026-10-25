@@ -114,6 +114,7 @@ export class ReceiptService {
       if (b?.feesCents) doc.text(`Taxas: ${brl(b.feesCents)}`);
       doc.moveDown().fontSize(12).text(`Total: ${brl(payment.amountCents)}`);
       // R2-01: forma do que foi recebido (quitação Pix de uma dívida, caução usada, carteira) em vez do método inicial.
+      if (payment.walletCents > 0) doc.fontSize(10).text(`Pago com a carteira: ${brl(payment.walletCents)}`);
       if (info.depositUsedCents) doc.fontSize(10).text(`Caução usada: ${brl(info.depositUsedCents)}`);
       const method = info.method ? METHOD_LABEL[info.method] : 'registrado pela equipe Volti';
       const last4 = info.cardLast4 ? ` (final ${info.cardLast4})` : '';

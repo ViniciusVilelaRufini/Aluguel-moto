@@ -6363,6 +6363,7 @@ components:
           type: integer
           minimum: 0
           description: Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
+        walletCents: { type: integer, minimum: 1, description: 'Aluguel: parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante foi cobrado na caução/gateway. O estorno devolve primeiro a parte do gateway e depois credita a da carteira (lançamento `refund`). Ausente quando a carteira não foi usada.' }
         debtSettledAt: { type: string, format: date-time, description: Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro). }
         debtSettlement: { $ref: '#/components/schemas/DebtSettlementKind' }
         settlesPaymentId: { type: string, format: uuid, description: 'Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.' }

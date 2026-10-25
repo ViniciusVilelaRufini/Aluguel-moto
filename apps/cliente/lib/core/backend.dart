@@ -411,10 +411,16 @@ class ApiBackend implements Backend {
 
   @override
   Future<List<Payment>> openDebts() => _run(() async {
-        final page = (await _api.getPaymentsApi().listPayments(status: PaymentStatus.failed, limit: 50)).data!;
-        final debts = page.items.where((p) => (p.outstandingCents ?? 0) > 0).toList()
-          ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
-        return debts;
+        // Todas as paginas: o aviso da home soma todas as dividas em aberto.
+        final debts = <Payment>[];
+        String? cursor;
+        for (var i = 0; i < 20; i++) {
+          final page = (await _api.getPaymentsApi().listPayments(status: PaymentStatus.failed, limit: 100, cursor: cursor)).data!;
+          debts.addAll(page.items.where((p) => (p.outstandingCents ?? 0) > 0));
+          cursor = page.nextCursor;
+          if (cursor == null || cursor.isEmpty) break;
+        }
+        return debts..sort((a, b) => a.createdAt.compareTo(b.createdAt));
       });
 
   @override

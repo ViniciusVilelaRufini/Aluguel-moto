@@ -18,7 +18,7 @@ export interface ReceiptPaymentInfo {
   depositUsedCents?: number;
   /** Parte da caução devolvida/liberada ao cliente depois do fechamento. */
   depositReleasedCents?: number;
-  /** Saldo devedor quando `pending` (valor − caução usada; o mesmo `outstandingCents` do pagamento). */
+  /** Saldo devedor quando `pending` (bruto − carteira − caução usada; o mesmo `outstandingCents` do pagamento). */
   amountDueCents?: number;
 }
 
@@ -50,8 +50,8 @@ export async function receiptPaymentInfo(prisma: Db, rental: { depositId: string
       });
       return { status: 'paid', ...(settlement ? { method: settlement.method, ...(settlement.cardLast4 ? { cardLast4: settlement.cardLast4 } : {}) } : {}), ...extras };
     }
-    // Mesmo cálculo do `outstandingCents` (DelinquencyService.outstandingMap): valor − caução capturada.
-    const due = Math.max(0, payment.amountCents - used);
+    // Mesmo cálculo do `outstandingCents` (DelinquencyService.outstandingMap): bruto − carteira − caução capturada.
+    const due = Math.max(0, payment.amountCents - (payment.walletCents ?? 0) - used);
     return due > 0 ? { status: 'pending', amountDueCents: due, ...extras } : { status: 'paid', ...extras };
   }
   // canceled: não houve cobrança (não acontece na liquidação de aluguel); nada a pagar.

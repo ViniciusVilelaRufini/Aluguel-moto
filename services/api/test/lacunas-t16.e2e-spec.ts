@@ -4,7 +4,7 @@ import { createHmac, randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { FakePaymentProvider } from '../src/modules/payments/provider/fake-payment-provider';
 import { PAYMENT_PROVIDER } from '../src/modules/payments/provider/payment-provider';
-import { approvedCustomer, bootE2eApp, freeVehicleInReturnZone } from './helpers/e2e-app';
+import { approvedCustomer, bootE2eApp, devToken, freeVehicleInReturnZone } from './helpers/e2e-app';
 
 /**
  * Task 16 das lacunas (R2-01) contra Postgres + Redis + MinIO, gateway fake: fechamento na ordem carteira → caução →
@@ -127,7 +127,10 @@ describe('Lacunas T16: fechamento sem cartão (e2e)', () => {
     const applied = ((await prisma.rental.findUniqueOrThrow({ where: { id: rentalId } })).breakdown as { walletAppliedCents?: number }).walletAppliedCents ?? 0;
     expect(applied).toBeGreaterThan(0);
     expect(rental.costCents).toBe(0);
-    expect(pay).toMatchObject({ status: 'paid', method: 'wallet', amountCents: 0 });
+    // Fix round 1: o pagamento registra o bruto (NFS-e pelo valor cheio) com a parte da carteira.
+    expect(pay).toMatchObject({ status: 'paid', method: 'wallet', amountCents: applied, walletCents: applied });
+    await until(() => prisma.invoice.findUnique({ where: { paymentId: pay.id } }), (v) => !!v);
+    expect(await prisma.invoice.findUnique({ where: { paymentId: pay.id } })).toMatchObject({ amountCents: applied });
     expect(await prisma.walletEntry.findMany({ where: { customerId, type: 'rental_charge' } })).toEqual([expect.objectContaining({ amountCents: -applied, rentalId })]);
     expect(await walletBalance(customerId)).toBe(100_000 - applied);
     expect(await prisma.payment.findUniqueOrThrow({ where: { id: depositPaymentId } })).toMatchObject({ status: 'refunded', refundedCents: DEPOSIT });
@@ -135,6 +138,11 @@ describe('Lacunas T16: fechamento sem cartão (e2e)', () => {
     const receipt = await http().get(`/rentals/${rentalId}/receipt`).set(auth).expect(200);
     expect(receipt.body).toMatchObject({ paymentStatus: 'paid', paymentMethod: 'wallet', depositReleasedCents: DEPOSIT });
     expect(receipt.body.breakdown.lines).toContainEqual(expect.objectContaining({ code: 'wallet', amountCents: -applied }));
+    // Estorno total pelo painel: volta tudo para a carteira, sem gateway.
+    const admin = await devToken(app, { sub: 'dev-admin', email: 'admin@volti.dev', groups: ['admin'], pool: 'staff' });
+    const refunded = await http().post(`/payments/${pay.id}/refund`).set({ Authorization: `Bearer ${admin}` }).set('Idempotency-Key', randomUUID()).send({ reason: 'Teste de estorno' }).expect(200);
+    expect(refunded.body).toMatchObject({ status: 'refunded', refundedCents: applied, walletCents: applied });
+    expect(await walletBalance(customerId)).toBe(100_000);
   });
 
   it('carteira parcial + caução Pix: a carteira abate primeiro, a caução paga o restante e devolve só o saldo', async () => {
@@ -143,7 +151,7 @@ describe('Lacunas T16: fechamento sem cartão (e2e)', () => {
     const gross = rental.costCents + 300;
     expect((await prisma.rental.findUniqueOrThrow({ where: { id: rentalId } })).breakdown).toMatchObject({ walletAppliedCents: 300, totalCents: gross - 300 });
     expect(await walletBalance(customerId)).toBe(0);
-    expect(pay).toMatchObject({ status: 'paid', method: 'pix', amountCents: rental.costCents });
+    expect(pay).toMatchObject({ status: 'paid', method: 'pix', amountCents: gross, walletCents: 300 });
     expect(await prisma.deposit.findUniqueOrThrow({ where: { id: depositId } })).toMatchObject({ status: 'captured', capturedCents: rental.costCents });
     expect(await prisma.payment.findUniqueOrThrow({ where: { id: depositPaymentId } })).toMatchObject({ status: 'partially_refunded', refundedCents: DEPOSIT - rental.costCents });
     const receipt = await http().get(`/rentals/${rentalId}/receipt`).set(auth).expect(200);

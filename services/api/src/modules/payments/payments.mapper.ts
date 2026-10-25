@@ -28,6 +28,7 @@ export function toPayment(p: Payment, receiptUrl?: string, extras: PaymentExtras
     receiptUrl,
     customerName: extras.customerName,
     outstandingCents: extras.outstandingCents,
+    walletCents: p.walletCents > 0 ? p.walletCents : undefined,
     debtSettledAt: iso(p.debtSettledAt),
     debtSettlement: p.debtSettlement ?? undefined,
     settlesPaymentId: p.settlesPaymentId ?? undefined,

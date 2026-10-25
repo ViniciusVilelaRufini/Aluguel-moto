@@ -603,3 +603,10 @@ Perguntas para o dono:
 - b) Minutos de pacote (`WalletEntry.minutes`) não abatem o fechamento (só o saldo em reais). Devem abater antes da carteira?
 - c) Estorno de um aluguel pago em parte pela carteira (`POST /payments/{id}/refund`) não devolve a parte da carteira. Devolver como `refund` no ledger?
 - d) `POST /rentals` com dívida continua `403 customer-delinquent`; unificar com `409 payment-pending`?
+- e) Aluguel pago 100% pela carteira: resolvido no fix round 1 (o pagamento registra o bruto e a NFS-e sai pelo valor cheio). Fica a confirmar se a NFS-e de um aluguel pago com crédito de carteira (que veio de recarga, sem nota própria) é a forma fiscal desejada.
+
+### 2026-10-25 · fechamento sem cartão — fix round 1 da revisão (branch `feat/lacunas-t16`) · status: decisão do coordenador aplicada (migração aditiva, contrato aditivo)
+
+- **I-1:** o `Payment` do aluguel registra o **bruto** (`amountCents`), com a parte paga pela carteira em `Payment.walletCents` (coluna nova, padrão 0; migração `20261025100000_payment_wallet_cents`; campo opcional `walletCents` no schema `Payment`). A porta `settle` recebe `walletCents` (o fechamento passa `breakdown.walletAppliedCents`) e a liquidação cobra só `amountCents − walletCents` na caução/gateway. NFS-e e PDF usam o bruto (o PDF mostra "Pago com a carteira"). Saldo devedor e `amountDueCents` = bruto − carteira − caução capturada.
+- **Estorno por origem:** devolve primeiro a parte do gateway (cartão/Pix/caução capturada, até o capturado) e depois credita a da carteira (lançamento `refund` no ledger, pedido de estorno `succeeded` com a chave `<chave>:wallet`). Recusa do gateway → `422` e nada vai para a carteira. Pagamento `method: wallet` é todo carteira. Com "gateway primeiro", um pedido ao gateway só existe enquanto nenhuma parte da carteira foi devolvida, então a reconciliação por total acumulado continua valendo.
+- **Menores:** a home soma todas as dívidas (`Backend.openDebts` percorre todas as páginas de `GET /payments?status=failed`); removido o `?.` só de teste em `wallet-ledger.ts`.

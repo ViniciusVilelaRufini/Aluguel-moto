@@ -4431,6 +4431,8 @@ export interface components {
             customerName?: string;
             /** @description Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida. */
             outstandingCents?: number;
+            /** @description Aluguel: parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante foi cobrado na caução/gateway. O estorno devolve primeiro a parte do gateway e depois credita a da carteira (lançamento `refund`). Ausente quando a carteira não foi usada. */
+            walletCents?: number;
             /**
              * Format: date-time
              * @description Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro).
