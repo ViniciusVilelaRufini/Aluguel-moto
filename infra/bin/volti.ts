@@ -16,6 +16,7 @@ const { app } = createVoltiApp({
   apiImageTag: get('apiImageTag'),
   apiDesiredCount: get('apiDesiredCount') === undefined ? undefined : Number(get('apiDesiredCount')),
   adminDomainName: domain ? `admin.${domain}` : undefined,
+  apiDomainName: domain ? `api.${domain}` : undefined,
   adminCertificateArn: get('adminCertificateArn'),
   alarmEmail: get('alarmEmail'),
   overrides: {

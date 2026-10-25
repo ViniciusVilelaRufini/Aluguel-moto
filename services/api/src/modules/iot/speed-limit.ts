@@ -18,6 +18,26 @@ export function effectiveZoneLimit(zoneLimits: number[]): number {
   return Math.min(MAX_SPEED_KMH, ...valid);
 }
 
+/** Menor degrau que a rampa publica sem velocidade fresca < 3 nem hold confirmado (0 só depois do degrau 3 confirmado). */
+export const SAFE_LOCK_MIN_START_KMH = 3;
+
+/**
+ * Degraus da rampa (lacunas T5, fix 2): o **primeiro** sai da velocidade medida agora (fresca) e do máximo regulatório — o menor
+ * degrau da escada 15/8 que não fica abaixo da velocidade (sem velocidade ou acima de 15: 15) —, limitado pelo teto confirmado (zona) mas
+ * **nunca abaixo de 3**: um teto guardado (velho ou não) jamais vira um corte de potência de uma vez numa moto em movimento.
+ * Só um hold confirmado (limite já segurado em 0) começa em 0. Depois desce 8 → 3 → 0 (o 0 só após o 3 confirmado).
+ */
+export function rampSteps(speedKmh: number | null, ceilingKmh: number, holdConfirmed: boolean): number[] {
+  if (holdConfirmed) return [0];
+  // 3 nunca é o primeiro degrau de uma moto andando (≥ 3 km/h): começa em 8 ou 15, sempre ≥ a velocidade (acima de 15, 15).
+  const ladder = [8, 15];
+  let first = 15;
+  if (speedKmh !== null && Number.isFinite(speedKmh)) first = ladder.find((s) => s >= speedKmh) ?? 15;
+  const cap = Number.isFinite(ceilingKmh) ? Math.max(SAFE_LOCK_MIN_START_KMH, Math.floor(ceilingKmh)) : 15;
+  first = Math.min(first, cap);
+  return safeLockSteps(first);
+}
+
 /** Degraus da rampa do bloqueio seguro: `min(atual, 15) → 8 → 3 → 0`, só decrescentes (nunca sobe o limite). */
 export function safeLockSteps(currentLimitKmh: number): number[] {
   const first = Math.min(Math.max(0, Math.floor(currentLimitKmh)), 15);

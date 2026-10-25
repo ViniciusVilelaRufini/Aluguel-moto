@@ -24,6 +24,7 @@ import { isDepotLocked } from './rental-start.service';
 import type { ListRentalsQuery, LocationShareDto, RatingDto, SwapVehicleDto, WellbeingDto } from './rentals.dto';
 import { toRental, toRentalEvent } from './rentals.mapper';
 import { receiptLinks } from '../payments/receipts/receipt-links';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const SWAP_MAX_DISTANCE_M = 200;
 type RentalWithVehicle = Rental & { vehicle: Vehicle };
@@ -235,6 +236,7 @@ export class RentalsService {
 
   /** Sem resposta ao "você está bem?" em 60 s → alerta `customer_not_ok` (critical). */
   @Interval('wellbeing-timeout', 10_000)
+  @ExclusiveJob('wellbeing-timeout', jobLockTtl(10_000), { runIfUnavailable: true })
   async wellbeingJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     const overdue = await this.prisma.rental.findMany({ where: { wellbeingCheckDueAt: { lt: new Date() } }, include: { vehicle: true }, take: 50 });
@@ -250,6 +252,7 @@ export class RentalsService {
 
   /** `rental.updated` a cada 30 s com o aluguel ativo/pausado (tempo e custo parcial). */
   @Interval('rental-ticker', 30_000)
+  @ExclusiveJob('rental-ticker', jobLockTtl(30_000))
   async tickerJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     const open = await this.prisma.rental.findMany({ where: { status: { in: ['active', 'paused'] } }, take: 1000 });

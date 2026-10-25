@@ -35,7 +35,7 @@ async function problem(p: Promise<unknown>): Promise<{ status: number; slug: str
   throw new Error('esperava erro');
 }
 
-function setup(opts: { planCode?: string; rentalStatus?: string; known?: number | null; live?: Record<string, unknown> | null; station?: Record<string, unknown>; feeCents?: number } = {}) {
+function setup(opts: { planCode?: string; rentalStatus?: string; known?: number | null; live?: Record<string, unknown> | null; station?: Record<string, unknown>; feeCents?: number; slotClosedGraceMs?: number } = {}) {
   const prisma = mockDeep<PrismaClient>();
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   const station: any = {
@@ -97,7 +97,7 @@ function setup(opts: { planCode?: string; rentalStatus?: string; known?: number 
   events.on(EV.STATION_SWAP_UPDATED, (e) => emitted.push(e));
   const audit = { record: jest.fn().mockResolvedValue(undefined) };
   prisma.swapStation.update.mockImplementation((async (a: any) => Object.assign(station, a.data)) as any);
-  const service = new StationSwapsService(prisma as any, new PricingService(prisma as any), iot as any, gateway as any, events, alerts as any, { stepTimeoutMs: 180_000, qrSecret: SECRET }, audit as any);
+  const service = new StationSwapsService(prisma as any, new PricingService(prisma as any), iot as any, gateway as any, events, alerts as any, { stepTimeoutMs: 180_000, qrSecret: SECRET, slotClosedGraceMs: opts.slotClosedGraceMs }, audit as any);
   return { service, prisma, station, rental, swaps, iot, gateway, alerts, emitted, audit };
 }
 
@@ -344,10 +344,40 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     expect(prisma.vehicle.update).not.toHaveBeenCalled();
   });
 
-  it('vaga fechada sem devolução cancela e não pede liberação', async () => {
-    const { service, swaps, gateway } = await created();
+  it('vaga fechada sem devolução cancela (depois da folga de reordenação) e não pede liberação', async () => {
+    const { service, swaps, gateway } = await created({ slotClosedGraceMs: 20 });
     await service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 1, ts: ts() });
     await service.onStationEvent(THING, { type: 'slot_closed', swapId: SWAP_ID, ts: ts() });
+    // Lacunas T5: o IoT Core não garante a ordem entre mensagens a ms de distância — espera um `battery_returned` atrasado.
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'awaiting_return' }));
+    expect(swaps.get(SWAP_ID).slotClosedAt).toBeInstanceOf(Date);
+    await new Promise((r) => setTimeout(r, 60));
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'canceled', endReason: 'slot_closed_without_return' }));
+    expect(gateway.send).not.toHaveBeenCalled(); // nem liberação nem abort (a vaga já está fechada)
+  });
+
+  it('lacunas T5: slot_closed chegando antes do battery_returned (ordem invertida) → a troca segue: returned → releasing e libera', async () => {
+    const { service, swaps, gateway, emitted, prisma } = await created({ slotClosedGraceMs: 5_000 });
+    await service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 2, ts: ts() });
+    const returnedAt = ts();
+    await service.onStationEvent(THING, { type: 'slot_closed', swapId: SWAP_ID, ts: new Date(Date.now() + 5).toISOString() });
+    await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 15, ts: returnedAt });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'releasing', returnedSerial: 'BAT-00001' }));
+    expect(gateway.send).toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery', swapId: SWAP_ID }));
+    expect(emitted.map((e) => e.status)).toEqual(['awaiting_return', 'returned', 'releasing']);
+    // O prazo da folga venceu depois: nada muda (a troca já não está esperando devolução).
+    prisma.stationSwap.findMany.mockResolvedValue([{ id: SWAP_ID }] as any);
+    expect(await service.expireOverdue(new Date(Date.now() + 10_000))).toBe(0);
+    expect(swaps.get(SWAP_ID).status).toBe('releasing');
+  });
+
+  it('lacunas T5: sem o timer local (deploy), o job de prazos cancela a vaga fechada vencida com o motivo certo', async () => {
+    const { service, swaps, gateway, prisma } = await created({ slotClosedGraceMs: 60_000 });
+    await service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 1, ts: ts() });
+    await service.onStationEvent(THING, { type: 'slot_closed', swapId: SWAP_ID, ts: ts() });
+    await service.onModuleDestroy(); // timers locais perdidos
+    prisma.stationSwap.findMany.mockResolvedValue([{ id: SWAP_ID }] as any);
+    expect(await service.expireOverdue(new Date(Date.now() + 61_000))).toBe(1);
     expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'canceled', endReason: 'slot_closed_without_return' }));
     expect(gateway.send).not.toHaveBeenCalled();
   });

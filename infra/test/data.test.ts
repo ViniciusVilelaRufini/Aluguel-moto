@@ -74,6 +74,13 @@ describe.each(['dev', 'prod'] as const)('DataStack (%s)', (env) => {
     });
   });
 
+  it('lacunas T5 (revisão I2): Redis com maxmemory-policy noeviction (estado de segurança sem TTL nunca é expulso)', () => {
+    t().hasResourceProperties('AWS::ElastiCache::ParameterGroup', { CacheParameterGroupFamily: 'redis7', Properties: { 'maxmemory-policy': 'noeviction' } });
+    const groups = t().findResources('AWS::ElastiCache::ParameterGroup');
+    const [id] = Object.keys(groups);
+    t().hasResourceProperties('AWS::ElastiCache::ReplicationGroup', { CacheParameterGroupName: { Ref: id } });
+  });
+
   it('publishes the SSM parameters', () => {
     for (const n of ['rds/endpoint', 'rds/secret-arn', 'redis/endpoint', 's3/kyc-bucket', 's3/return-photos-bucket', 's3/reports-bucket', 's3/attachments-bucket', 's3/catalog-bucket']) {
       t().hasResourceProperties('AWS::SSM::Parameter', { Name: `/volti/${env}/${n}` });

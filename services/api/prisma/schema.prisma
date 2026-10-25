@@ -1471,6 +1471,8 @@ model StationSwap {
   releasedSerial String?
   /// Prazo da etapa atual (3 min por etapa); vencido → o job cancela/falha a troca.
   expiresAt      DateTime
+  /// Lacunas T5: `slot_closed` recebido sem devolução; o cancelamento espera alguns segundos por um `battery_returned` atrasado.
+  slotClosedAt   DateTime?
   idempotencyKey String?
   completedAt    DateTime?
   createdAt      DateTime              @default(now())

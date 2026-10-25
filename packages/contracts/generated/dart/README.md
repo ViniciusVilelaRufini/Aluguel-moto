@@ -244,6 +244,8 @@ Class | Method | HTTP request | Description
 [*PricingApi*](doc/PricingApi.md) | [**updateFee**](doc/PricingApi.md#updatefee) | **PUT** /pricing/fees/{id} | Atualizar taxa
 [*PricingApi*](doc/PricingApi.md) | [**updatePricingPlan**](doc/PricingApi.md#updatepricingplan) | **PUT** /pricing/plans/{id} | Atualizar plano
 [*PricingApi*](doc/PricingApi.md) | [**validateMyCoupon**](doc/PricingApi.md#validatemycoupon) | **POST** /me/coupons/validate | Validar cupom sem salvar
+[*PublicApi*](doc/PublicApi.md) | [**getSharedLocation**](doc/PublicApi.md#getsharedlocation) | **GET** /public/location-shares/{token} | Localização compartilhada (link público do SOS)
+[*PublicApi*](doc/PublicApi.md) | [**getSharedLocationPage**](doc/PublicApi.md#getsharedlocationpage) | **GET** /share/{token} | Página da localização compartilhada
 [*ReferralsApi*](doc/ReferralsApi.md) | [**getMyReferral**](doc/ReferralsApi.md#getmyreferral) | **GET** /me/referral | Programa de indicação do cliente
 [*ReferralsApi*](doc/ReferralsApi.md) | [**listMyReferralRewards**](doc/ReferralsApi.md#listmyreferralrewards) | **GET** /me/referral/rewards | Recompensas de indicação
 [*ReferralsApi*](doc/ReferralsApi.md) | [**redeemReferralCode**](doc/ReferralsApi.md#redeemreferralcode) | **POST** /me/referral/redeem | Usar código de indicação de um amigo
@@ -540,6 +542,7 @@ Class | Method | HTTP request | Description
  - [SendCommandRequest](doc/SendCommandRequest.md)
  - [ServiceUnlockRequest](doc/ServiceUnlockRequest.md)
  - [ServiceVehicleStatus](doc/ServiceVehicleStatus.md)
+ - [SharedLocation](doc/SharedLocation.md)
  - [SpeedLimiterCheck](doc/SpeedLimiterCheck.md)
  - [StaffGroup](doc/StaffGroup.md)
  - [StaffUser](doc/StaffUser.md)

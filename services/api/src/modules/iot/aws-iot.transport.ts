@@ -11,8 +11,9 @@ import type { DesiredState, InboundHandler, IotTransport, MomentaryCommand, Repo
  *   (proposta: regra de `motos/+/eventos` também para esta fila — hoje ela vai para `alertas`, ver docs/decisoes.md);
  * - `reported`: enquanto houver comando ou rampa aguardando uma moto, `GetThingShadow` a cada `pollMs`.
  *   (A task role da API não tem `iot:Connect`/`iot:Subscribe`; assinar `/update/documents` exigiria isso.)
- * - presença: os eventos vão para o EventBridge e não chegam aqui. Offline = vigia de inatividade do `TelemetryService` (180 s);
- *   reconexão = lacuna entre mensagens maior que `IOT_RECONNECT_GAP_MS` (`TelemetryService.heard`), que abre a graça da rampa.
+ * - presença: `$aws/events/presence` → EventBridge → regra `presence-to-telemetry` → esta fila como
+ *   `{ thingName, presence: 'connected' | 'disconnected', timestamp }` (infra/README.md) → `inbound.presence`. A vigia de inatividade
+ *   (180 s) e a lacuna entre mensagens (`IOT_RECONNECT_GAP_MS`) continuam valendo se a presença atrasar ou se perder.
  */
 export class AwsIotTransport implements IotTransport {
   private readonly logger = new Logger('AwsIotTransport');
@@ -35,6 +36,11 @@ export class AwsIotTransport implements IotTransport {
     this.queue.subscribe<Record<string, unknown>>('telemetria', async (m) => {
       if (!m || typeof m !== 'object' || typeof m.thingName !== 'string') return;
       const { thingName, ingestedAt: _ingested, ...body } = m;
+      if ('presence' in body) {
+        if (body.presence === 'connected' || body.presence === 'disconnected') await inbound.presence(thingName, body.presence === 'connected', presenceTime(body.timestamp));
+        else this.logger.warn({ msg: 'presence_invalid', thingName });
+        return;
+      }
       if ('tipo' in body) await inbound.deviceEvent(thingName, body);
       else await inbound.telemetry(thingName, body);
     });
@@ -55,6 +61,13 @@ export class AwsIotTransport implements IotTransport {
 
   async updateDesired(thingName: string, desired: DesiredState): Promise<void> {
     await this.client.send(new UpdateThingShadowCommand({ thingName, payload: new TextEncoder().encode(JSON.stringify({ state: { desired } })) }));
+  }
+
+  async readShadow(thingName: string): Promise<{ desired: DesiredState; reported: ReportedState } | null> {
+    const res = await this.client.send(new GetThingShadowCommand({ thingName }));
+    if (!res.payload) return null;
+    const doc = JSON.parse(new TextDecoder().decode(res.payload)) as { state?: { desired?: Record<string, unknown>; reported?: Record<string, unknown> } };
+    return { desired: sanitizeReported(doc.state?.desired ?? {}), reported: sanitizeReported(doc.state?.reported ?? {}) };
   }
 
   async publishCommand(thingName: string, command: MomentaryCommand): Promise<void> {
@@ -105,4 +118,10 @@ export class AwsIotTransport implements IotTransport {
       this.polling = false;
     }
   }
+}
+
+/** `timestamp` do evento de presença: ms (número, como no IoT Core) ou ISO 8601; inválido → desconhecido. */
+function presenceTime(v: unknown): number | undefined {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? (/^\d+$/.test(v) ? Number(v) : Date.parse(v)) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }

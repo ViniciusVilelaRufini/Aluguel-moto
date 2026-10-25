@@ -156,4 +156,15 @@ describe('TelemetryService', () => {
     expect(updates).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
     expect(emitted[EV.IOT_CONNECTIVITY]).toHaveLength(1);
   });
+
+  it('revisão M2: disconnected atrasado (mais velho que a última telemetria) é descartado; o atual derruba', async () => {
+    const { svc, clock, gateway } = setup();
+    await svc.telemetry(T, msg({ timestamp: new Date(clock.now()).toISOString() }));
+    const sentAt = clock.now() - 30_000; // evento de presença de antes da telemetria, chegando agora
+    await svc.presence(T, false, sentAt);
+    expect(gateway.live.isOnline(T)).toBe(true);
+    await clock.advance(1_000);
+    await svc.presence(T, false, clock.now());
+    expect(gateway.live.isOnline(T)).toBe(false);
+  });
 });

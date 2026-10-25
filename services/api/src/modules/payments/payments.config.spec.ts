@@ -42,4 +42,15 @@ describe('loadPaymentsConfig (fix round 1)', () => {
     process.env.MERCADOPAGO_WEBHOOK_TOLERANCE_SECONDS = '120';
     expect(loadPaymentsConfig().webhookToleranceSeconds).toBe(120);
   });
+
+  it('lacunas T5: PAYMENT_PROVIDER=fake com NODE_ENV=production → recusa com erro claro, salvo ALLOW_FAKE_PAYMENTS=true', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.PAYMENT_PROVIDER = 'fake';
+    delete process.env.ALLOW_FAKE_PAYMENTS;
+    expect(() => loadPaymentsConfig()).toThrow(/PAYMENT_PROVIDER=fake não é permitido com NODE_ENV=production/);
+    process.env.ALLOW_FAKE_PAYMENTS = 'false';
+    expect(() => loadPaymentsConfig()).toThrow(/PAYMENT_PROVIDER=fake/);
+    process.env.ALLOW_FAKE_PAYMENTS = 'true';
+    expect(loadPaymentsConfig().provider).toBe('fake');
+  });
 });

@@ -84,10 +84,22 @@ describe('Contrato: respostas reais × openapi.yaml', () => {
     expect(await http().get('/rentals/current').set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();
     expect(await http().get(`/rentals/${id}`).set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();
     expect(await http().get(`/rentals/${id}/events`).set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();
+    // Lacunas T5: link público do SOS (sem autenticação) — 200 com o aluguel aberto, 404 depois do encerramento.
+    await prisma.vehicle.update({ where: { id: vehicle.id }, data: { lastSeenAt: new Date() } });
+    const share = await http().post(`/rentals/${id}/location-share`).set('Authorization', `Bearer ${customer}`).send({ durationMinutes: 30 });
+    expect(share.status).toBe(201);
+    expect(share).toSatisfyApiSpec();
+    const token = String(share.body.url).split('/').pop();
+    const shared = await http().get(`/public/location-shares/${token}`);
+    expect(shared.status).toBe(200);
+    expect(shared).toSatisfyApiSpec();
     const forced = await http().post(`/rentals/${id}/force-end`).set('Authorization', `Bearer ${admin}`).send({ reason: 'Teste de contrato' });
     expect(forced.body.status).toBe('force_ended');
     expect(forced).toSatisfyApiSpec();
     expect(await http().get(`/rentals/${id}/receipt`).set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();
+    const closed = await http().get(`/public/location-shares/${token}`);
+    expect(closed.status).toBe(404);
+    expect(closed).toSatisfyApiSpec();
   });
 
   it('9. staff: GET /vehicles, GET /alerts, GET /reports/dashboard, GET /audit-logs', async () => {

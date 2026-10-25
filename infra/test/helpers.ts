@@ -5,7 +5,7 @@ import { createVoltiApp, VoltiStacks } from '../lib/volti-app';
 const cache: Record<string, VoltiStacks> = {};
 
 export function stacksFor(env: 'dev' | 'prod'): VoltiStacks {
-  if (!cache[env]) cache[env] = createVoltiApp({ envName: env });
+  if (!cache[env]) cache[env] = createVoltiApp({ envName: env, ...(env === 'prod' ? { apiDomainName: 'api.volti.example' } : {}) });
   return cache[env];
 }
 

@@ -50,6 +50,22 @@ describe('AwsIotTransport', () => {
     expect(inbound.telemetry).toHaveBeenCalledTimes(1);
   });
 
+  it('lacunas T5: presença vinda do EventBridge pela fila de telemetria ({ presence }) → inbound.presence, nunca telemetria inválida', async () => {
+    const { t, inbound, deliver } = setup();
+    await t.start(inbound);
+    await deliver({ thingName: 'moto-0001', presence: 'connected', timestamp: '2026-10-24T12:00:00Z' });
+    await deliver({ thingName: 'moto-0001', presence: 'disconnected', timestamp: '2026-10-24T12:05:00Z' });
+    await deliver({ thingName: 'moto-0001', presence: 'talvez', timestamp: '2026-10-24T12:06:00Z' });
+    expect(inbound.presence.mock.calls).toEqual([
+      ['moto-0001', true, Date.parse('2026-10-24T12:00:00Z')],
+      ['moto-0001', false, Date.parse('2026-10-24T12:05:00Z')],
+    ]);
+    await deliver({ thingName: 'moto-0001', presence: 'connected', timestamp: 1_761_307_200_000 });
+    expect(inbound.presence).toHaveBeenLastCalledWith('moto-0001', true, 1_761_307_200_000);
+    expect(inbound.telemetry).not.toHaveBeenCalled();
+    expect(inbound.deviceEvent).not.toHaveBeenCalled();
+  });
+
   it('enquanto houver comando aguardando, consulta o shadow e repassa só campos com metadata mais nova (fromPoll, nunca sinal de vida)', async () => {
     const shadow = JSON.parse(JSON.stringify(shadowDoc));
     const { t, inbound, sent } = setup(shadow);

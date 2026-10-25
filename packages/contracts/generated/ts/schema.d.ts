@@ -1485,6 +1485,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/public/location-shares/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Localização compartilhada (link público do SOS)
+         * @description Sem autenticação: quem tem o link vê **só** a última posição da moto e o horário dela, enquanto o compartilhamento
+         *     estiver dentro da validade e o aluguel continuar aberto. Nenhum dado pessoal (nome, telefone, moto, trajeto).
+         *     Token desconhecido, expirado ou aluguel encerrado → 404 (mesma resposta, sem revelar qual). Rate limit por IP.
+         *     `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`.
+         */
+        get: operations["getSharedLocation"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/share/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Página da localização compartilhada
+         * @description Página HTML mínima (pt-BR) aberta pelo link de `POST /rentals/{id}/location-share` (`PUBLIC_SHARE_BASE_URL/{token}`):
+         *     mostra a última posição e o horário (fuso America/Sao_Paulo), com link para abrir no mapa, e se atualiza sozinha a cada
+         *     15 s lendo `GET /public/location-shares/{token}`. Sem autenticação, sem cookies e sem scripts de terceiros.
+         */
+        get: operations["getSharedLocationPage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rentals/{id}/wellbeing": {
         parameters: {
             query?: never;
@@ -4063,6 +4108,21 @@ export interface components {
             /** Format: date-time */
             expiresAt: string;
         };
+        /** @description Só a posição e o horário — nenhum dado pessoal nem da moto. */
+        SharedLocation: {
+            lat: number;
+            lng: number;
+            /**
+             * Format: date-time
+             * @description Horário da última posição conhecida (UTC).
+             */
+            recordedAt: string;
+            /**
+             * Format: date-time
+             * @description Fim da validade do link (UTC); o fim do aluguel encerra antes.
+             */
+            expiresAt: string;
+        };
         WellbeingResponse: {
             ok: boolean;
             note?: string;
@@ -6288,6 +6348,8 @@ export interface components {
         IdempotencyKey: string;
         /** @description Recomendado para reenvios da fila offline. Válida por 24 h. */
         IdempotencyKeyOptional: string;
+        /** @description Token do link de localização compartilhada (base64url, 32 caracteres). */
+        ShareToken: string;
     };
     requestBodies: never;
     headers: never;
@@ -8594,6 +8656,55 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    getSharedLocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Token do link de localização compartilhada (base64url, 32 caracteres). */
+                token: components["parameters"]["ShareToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Última posição conhecida. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SharedLocation"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getSharedLocationPage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Token do link de localização compartilhada (base64url, 32 caracteres). */
+                token: components["parameters"]["ShareToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página HTML (o estado "link expirado" também é uma página 200; os dados vêm da rota JSON). */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
         };
     };
     respondWellbeingCheck: {

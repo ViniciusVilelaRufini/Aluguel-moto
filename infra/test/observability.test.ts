@@ -64,7 +64,7 @@ describe('ObservabilityStack', () => {
   });
 
   it('healthy ECS tasks alarm notifies once the service runs (threshold = min tasks)', () => {
-    const app = createVoltiApp({ envName: 'prod', apiDesiredCount: 2 });
+    const app = createVoltiApp({ envName: 'prod', apiDesiredCount: 2, apiDomainName: 'api.volti.example' });
     const a = named(Template.fromStack(app.observability), 'prod', 'ApiHealthyTasks');
     expect(a.ActionsEnabled).toBe(true);
     expect(a.Threshold).toBe(2);
