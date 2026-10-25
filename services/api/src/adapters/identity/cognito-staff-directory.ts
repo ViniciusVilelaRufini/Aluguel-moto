@@ -2,6 +2,7 @@ import {
   AdminAddUserToGroupCommand,
   AdminDisableUserCommand,
   AdminEnableUserCommand,
+  AdminGetUserCommand,
   AdminRemoveUserFromGroupCommand,
   AdminUserGlobalSignOutCommand,
   type CognitoIdentityProviderClient,
@@ -39,5 +40,13 @@ export class CognitoStaffDirectory implements StaffDirectory {
     }
     await this.client.send(new AdminDisableUserCommand({ UserPoolId: this.userPoolId, Username }));
     await this.client.send(new AdminUserGlobalSignOutCommand({ UserPoolId: this.userPoolId, Username }));
+  }
+
+  /** M7: e-mail só se `email_verified = true` (um e-mail não verificado nunca liga um convite com grupos). */
+  async verifiedEmail(sub: string): Promise<string | null> {
+    const res = await this.client.send(new AdminGetUserCommand({ UserPoolId: this.userPoolId, Username: sub }));
+    const attrs = new Map((res.UserAttributes ?? []).map((a) => [a.Name, a.Value]));
+    const email = attrs.get('email')?.trim().toLowerCase();
+    return email && attrs.get('email_verified') === 'true' ? email : null;
   }
 }
