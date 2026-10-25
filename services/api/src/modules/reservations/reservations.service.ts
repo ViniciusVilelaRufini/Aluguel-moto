@@ -81,7 +81,7 @@ export class ReservationsService implements OnModuleInit {
 
   async create(customerId: string, vehicleId: string) {
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
-    await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: false });
+    await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: false, debtAsConflict: true });
 
     const active = await this.prisma.reservation.findFirst({
       where: { customerId, OR: [{ status: 'active', expiresAt: { gt: new Date() } }, { status: 'handover' }] },

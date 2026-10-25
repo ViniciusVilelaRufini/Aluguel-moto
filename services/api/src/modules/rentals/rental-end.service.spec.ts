@@ -233,6 +233,39 @@ describe('Encerramento do aluguel', () => {
     expect(billing.settle).toHaveBeenCalledTimes(1);
   });
 
+  it('Task 16 (R2-01): a carteira abate primeiro, na transação do fechamento (cliente travado); só o restante vai para a liquidação, uma vez', async () => {
+    const { service, billing, prisma, rental } = setup();
+    let balance = 500;
+    prisma.walletEntry.aggregate.mockImplementation((async () => ({ _sum: { amountCents: balance, minutes: null }, _max: { createdAt: null } })) as any);
+    prisma.walletEntry.create.mockImplementation((async (args: any) => {
+      balance += args.data.amountCents;
+      return args.data;
+    }) as any);
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(r.status).toBe(200);
+    expect(billing.settle).toHaveBeenCalledWith({ rentalId: RENTAL_ID, amountCents: 790, idempotencyKey: `rental-settlement:${RENTAL_ID}` });
+    expect(rental.breakdown).toMatchObject({ walletAppliedCents: 500, totalCents: 790 });
+    expect(rental.breakdown.lines).toContainEqual({ code: 'wallet', description: 'Créditos da carteira', amountCents: -500 });
+    expect(prisma.walletEntry.create).toHaveBeenCalledTimes(1);
+    expect(prisma.walletEntry.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ customerId: CUSTOMER_ID, type: 'rental_charge', amountCents: -500, rentalId: RENTAL_ID, balanceAfterCents: 0 }),
+    });
+    const sqls = (prisma.$queryRaw as any).mock.calls.map((c: any[]) => (c[0] as string[]).join('?'));
+    expect(sqls.some((q: string) => /FROM "Customer" WHERE "id" = \?::uuid FOR UPDATE/.test(q))).toBe(true);
+    // Repetir o fechamento não debita a carteira de novo nem liquida outra vez.
+    await service.finalize(RENTAL_ID, 'ended');
+    expect(prisma.walletEntry.create).toHaveBeenCalledTimes(1);
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('Task 16 (R2-01): saldo negativo (ajuste) ou zero não abate nada', async () => {
+    const { service, billing, prisma } = setup();
+    prisma.walletEntry.aggregate.mockResolvedValue({ _sum: { amountCents: -300 } } as any);
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(billing.settle).toHaveBeenCalledWith(expect.objectContaining({ amountCents: 1290 }));
+    expect(prisma.walletEntry.create).not.toHaveBeenCalled();
+  });
+
   it('troca de bateria na estação: cada troca concluída com taxa vira uma linha battery_swap_fee no fechamento (sem cobrança à parte)', async () => {
     const { service, billing, prisma } = setup();
     prisma.stationSwap.findMany.mockResolvedValue([{ id: 's1', feeCents: 500 }, { id: 's2', feeCents: 650 }] as any);

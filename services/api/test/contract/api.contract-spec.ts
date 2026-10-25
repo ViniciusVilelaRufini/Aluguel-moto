@@ -169,4 +169,35 @@ describe('Contrato: respostas reais × openapi.yaml', () => {
     expect(alerts.status).toBe(200);
     expect(alerts).toSatisfyApiSpec();
   });
+
+  it('14. Task 16 (R2-01): recibo com pagamento pendente (caução usada, saldo a pagar, sem PDF) e reserva recusada com 409 payment-pending', async () => {
+    const c = await approvedCustomer(app, prisma, 'contract-t16');
+    const auth = { Authorization: `Bearer ${c.token}` };
+    const vehicle = await freeVehicleInReturnZone(prisma);
+    const deposit = await prisma.deposit.create({ data: { customerId: c.customerId, method: 'pix', status: 'captured', amountCents: 5000, capturedCents: 5000 } });
+    const endedAt = new Date();
+    const rental = await prisma.rental.create({
+      data: {
+        customerId: c.customerId, vehicleId: vehicle.id, planCode: 'minute', coverage: 'basic', status: 'ended', startedAt: new Date(endedAt.getTime() - 3600_000), endedAt,
+        endRequestedAt: endedAt, priceSnapshot: {}, depositId: deposit.id, costCents: 8000,
+        breakdown: { lines: [{ code: 'time', description: 'Tempo de uso (por minuto)', amountCents: 8000 }], subtotalCents: 8000, discountCents: 0, insuranceCents: 0, feesCents: 0, totalCents: 8000 },
+      },
+    });
+    const pay = await prisma.payment.create({ data: { customerId: c.customerId, rentalId: rental.id, depositId: deposit.id, kind: 'rental', method: 'card', status: 'failed', amountCents: 8000, failureReason: 'card_not_found' } });
+    await prisma.rental.update({ where: { id: rental.id }, data: { paymentId: pay.id } });
+    await prisma.customer.update({ where: { id: c.customerId }, data: { delinquent: true } });
+
+    const receipt = await http().get(`/rentals/${rental.id}/receipt`).set(auth);
+    expect(receipt.status).toBe(200);
+    expect(receipt.body).toMatchObject({ paymentId: pay.id, paymentStatus: 'pending', amountDueCents: 3000, depositUsedCents: 5000, depositReleasedCents: 0 });
+    expect(receipt.body).not.toHaveProperty('pdfUrl');
+    expect(receipt.body).not.toHaveProperty('paymentMethod');
+    expect(receipt).toSatisfyApiSpec();
+
+    const denied = await http().post('/reservations').set(auth).send({ vehicleId: (await freeVehicleInReturnZone(prisma)).id });
+    expect(denied.status).toBe(409);
+    expect(denied.body).toMatchObject({ type: expect.stringMatching(/payment-pending$/), detail: 'Pague o valor pendente para alugar de novo.' });
+    expect(denied).toSatisfyApiSpec();
+  });
 });
+

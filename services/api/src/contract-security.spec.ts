@@ -158,4 +158,13 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     expect(pools(qr)).toEqual(['staff']);
     expect(groups(qr)).toEqual(['admin', 'operacao']);
   });
+  it('fechamento sem cartão (Task 16, R2-01): quitação e recibo abertos ao cliente; reserva e quitação com os códigos do contrato', () => {
+    const raw = spec as unknown as { paths: Record<string, Record<string, Op & { responses?: Record<string, unknown> }>> };
+    const pools = (key: string) => [...(routes.get(key)?.requirement?.pools ?? [])].sort();
+    // O cliente paga a própria dívida (Pix/cartão) e lê o próprio recibo; staff só lê o recibo.
+    expect(pools('POST /payments/:id/retry')).toEqual(['customer']);
+    expect(pools('GET /rentals/:id/receipt')).toEqual(['customer', 'staff']);
+    expect(Object.keys(raw.paths['/payments/{id}/retry'].post.responses ?? {})).toEqual(expect.arrayContaining(['201', '402', '409', '503']));
+    expect(Object.keys(raw.paths['/reservations'].post.responses ?? {})).toContain('409');
+  });
 });

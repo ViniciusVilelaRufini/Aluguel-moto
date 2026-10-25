@@ -11,6 +11,7 @@ import { ProviderCustomersService } from './provider-customers.service';
 import { DEPOSIT_FAILED, type DepositFailedEvent } from './deposit-events';
 import { RentalBillingService } from './rental-billing.service';
 import { createInMemoryPrisma, type InMemoryPrisma } from './testing/in-memory-prisma';
+import { receiptPaymentInfo } from './receipts/receipt-status';
 
 const CUSTOMER = '11111111-1111-4111-8111-111111111111';
 const RENTAL = '88888888-8888-4888-8888-888888888888';
@@ -1002,5 +1003,82 @@ describe('fix round 4: análise com prazo, garantia em análise, recusa explíci
     await ctx.svc.retryPendingSettlements(0);
     expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('failed');
     expect((await ctx.db.settlementProgress.findUnique({ where: { paymentId: r.paymentId } })).finishedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('Task 16 (R2-01): ordem de liquidação no fechamento — carteira → caução → cartão → dívida', () => {
+  /** Caução Pix paga (como no QA: cliente só com Pix). */
+  async function pixDepositPaid(ctx: Awaited<ReturnType<typeof setup>>) {
+    const { held } = await rentalWithDeposit(ctx, 'pix');
+    const dp = await depositPayment(ctx.db, held.depositId);
+    ctx.provider.simulatePixPaid(dp.providerPaymentId);
+    await ctx.svc.applyProviderPayment(await ctx.provider.getPayment(dp.providerPaymentId));
+    return { held, dp };
+  }
+  const info = async (ctx: Awaited<ReturnType<typeof setup>>, paymentId: string) => {
+    const rental = await ctx.db.rental.findUnique({ where: { id: RENTAL } });
+    return receiptPaymentInfo(ctx.db as any, rental, await ctx.db.payment.findUnique({ where: { id: paymentId } }));
+  };
+
+  it('1) carteira cobriu tudo (o fechamento já abateu: valor 0 com walletAppliedCents) → paga pela carteira e a caução Pix volta inteira', async () => {
+    const ctx = await setup({ card: null });
+    const { held, dp } = await pixDepositPaid(ctx);
+    await ctx.db.rental.update({ where: { id: RENTAL }, data: { breakdown: { lines: [], subtotalCents: 1290, discountCents: 0, insuranceCents: 0, feesCents: 0, walletAppliedCents: 1290, totalCents: 0 } } });
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 0, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('paid');
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'paid', method: 'wallet' });
+    expect(await ctx.db.payment.findUnique({ where: { id: dp.id } })).toMatchObject({ status: 'refunded', refundedCents: 5000 });
+    expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'released' });
+    expect(await info(ctx, r.paymentId)).toEqual({ status: 'paid', method: 'wallet', depositReleasedCents: 5000 });
+  });
+
+  it('2) caução Pix cobre o restante → abate e devolve só o saldo; recibo pago com "caução usada"', async () => {
+    const ctx = await setup({ card: null });
+    await pixDepositPaid(ctx);
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('paid');
+    expect(await info(ctx, r.paymentId)).toEqual({ status: 'paid', method: 'pix', depositUsedCents: 1290, depositReleasedCents: 3710 });
+  });
+
+  it('3) caução Pix menor que o valor e cartão salvo → a caução inteira abate e o cartão paga só o restante', async () => {
+    const ctx = await setup();
+    const { held } = await pixDepositPaid(ctx);
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 6500, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('paid');
+    expect(ctx.provider.operations('charge')).toBe(1);
+    const charged = (await ctx.provider.searchPayments({ externalReference: r.paymentId }))[0];
+    expect(charged.amountCents).toBe(1500);
+    expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'captured', capturedCents: 5000 });
+    expect(await info(ctx, r.paymentId)).toMatchObject({ status: 'paid', method: 'card', cardLast4: '4242', depositUsedCents: 5000, depositReleasedCents: 0 });
+  });
+
+  it('4) sem cartão (cenário do QA) → caução retida para abater, o restante vira dívida pagável no app e bloqueia novo aluguel', async () => {
+    const ctx = await setup({ card: null });
+    const { held } = await pixDepositPaid(ctx);
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 26635, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('failed');
+    expect(ctx.provider.operations('charge')).toBe(0);
+    // A caução não é devolvida: abate o valor devido.
+    expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'captured', capturedCents: 5000 });
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'failed', failureReason: 'card_not_found' });
+    expect(await info(ctx, r.paymentId)).toEqual({ status: 'pending', amountDueCents: 21635, depositUsedCents: 5000, depositReleasedCents: 0 });
+    expect(ctx.receipts.issueForPayment).not.toHaveBeenCalled();
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
+    // Mesmo sem a flag (qualquer caminho que a limpe), a dívida em aberto continua impedindo alugar.
+    await ctx.db.customer.update({ where: { id: CUSTOMER }, data: { delinquent: false } });
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
+    await ctx.db.payment.update({ where: { id: r.paymentId }, data: { debtSettledAt: new Date(), debtSettlement: 'manual' } });
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(false);
+  });
+
+  it('5) sem caução retida e sem cartão → o valor inteiro vira dívida (processando enquanto a liquidação está pendente)', async () => {
+    const ctx = await setup({ card: null });
+    await ctx.db.rental.create({ data: { id: RENTAL, customerId: CUSTOMER, vehicleId: 'v', planCode: 'minute', coverage: 'basic', status: 'ended', depositId: null, priceSnapshot: {} } });
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 1290, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('failed');
+    expect(await info(ctx, r.paymentId)).toEqual({ status: 'pending', amountDueCents: 1290 });
+    // Liquidação ainda pendente (ex.: cartão recusado, retentando) → processando, sem forma de pagamento.
+    await ctx.db.payment.update({ where: { id: r.paymentId }, data: { status: 'pending' } });
+    expect(await info(ctx, r.paymentId)).toEqual({ status: 'processing' });
   });
 });

@@ -70,7 +70,7 @@ interface StepContext {
   attemptKey: (base: string) => string;
   customerId: string;
 }
-type SettleRental = { customerId: string; depositId: string; insurancePolicyId: string | null };
+type SettleRental = { customerId: string; depositId: string; insurancePolicyId: string | null; breakdown?: Prisma.JsonValue | null };
 /** Resultado de um passo de cobrança: pagamento do gateway, `null` (sem cartão) ou "pare aqui" com a resposta da porta. */
 type StepOutcome = ProviderPayment | null | { stop: SettleResult };
 const isStop = (o: StepOutcome): o is { stop: SettleResult } => !!o && 'stop' in o;
@@ -319,7 +319,7 @@ export class RentalBillingService implements RentalBillingPort {
   private async runSettlement(input: { rentalId: string; amountCents: number; idempotencyKey: string }, retry: boolean): Promise<SettleResult> {
     const existing = await this.prisma.payment.findUnique({ where: { idempotencyKey: input.idempotencyKey } });
     if (existing && existing.status !== 'pending') return this.settleResult(existing);
-    const rental = await this.prisma.rental.findUnique({ where: { id: input.rentalId }, select: { customerId: true, depositId: true, insurancePolicyId: true } });
+    const rental = await this.prisma.rental.findUnique({ where: { id: input.rentalId }, select: { customerId: true, depositId: true, insurancePolicyId: true, breakdown: true } });
     if (!rental) throw new Error('Aluguel não encontrado para liquidação.');
     let pay = existing;
     if (!pay) {
@@ -454,7 +454,9 @@ export class RentalBillingService implements RentalBillingPort {
     if (plan === 'zero') {
       if (!steps.release && deposit) await this.releaseDeposit(deposit, `${key}:release`);
       if (!steps.release) await save({ release: true });
-      return this.finishPaid(pay, rental, { method: deposit?.method ?? 'card' });
+      // R2-01: a carteira cobriu tudo no fechamento → o pagamento é da carteira.
+      const walletPaid = ((rental.breakdown as { walletAppliedCents?: number } | null | undefined)?.walletAppliedCents ?? 0) > 0;
+      return this.finishPaid(pay, rental, { method: walletPaid ? 'wallet' : (deposit?.method ?? 'card') });
     }
 
     if (plan === 'card_capture') {
@@ -766,9 +768,12 @@ export class RentalBillingService implements RentalBillingPort {
     this.logger.log({ msg: 'customer_delinquency_cleared' });
   }
 
+  /** Flag `delinquent` **ou** dívida em aberto (R2-01: uma dívida sem a flag, por qualquer caminho, também impede alugar). */
   async isDelinquent(customerId: string): Promise<boolean> {
     const c = await this.prisma.customer.findUnique({ where: { id: customerId }, select: { delinquent: true } });
-    return c?.delinquent === true;
+    if (c?.delinquent === true) return true;
+    const open = await this.prisma.payment.count({ where: { customerId, kind: { in: ['rental', 'subscription'] }, status: 'failed', debtSettledAt: null } });
+    return open > 0;
   }
 
   /** Liquidações `pending` (erro do gateway ou cobrança recusada) são retomadas pelo plano gravado, sem cobrar duas vezes. */

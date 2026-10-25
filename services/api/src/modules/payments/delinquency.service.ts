@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import type { Payment, Prisma } from '@prisma/client';
 import { conflict, notFound, ProblemException } from '../../common/problem';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
@@ -11,6 +11,7 @@ import { ProviderCustomersService } from './provider-customers.service';
 import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError } from './provider/payment-provider';
 import { BILLING_OPTIONS, type BillingOptions, RentalBillingService } from './rental-billing.service';
+import { ReceiptService } from './receipts/receipt.service';
 
 /** Pagamentos que geram dívida quando terminam `failed` (decisão #7: recarga recusada não gera dívida). */
 export const DEBT_KINDS = ['rental', 'subscription'] as const;
@@ -49,6 +50,7 @@ export class DelinquencyService {
     private readonly audit: AuditService,
     @Inject(QUEUE_BUS) private readonly queue: QueueBus,
     @Inject(BILLING_OPTIONS) private readonly opts: BillingOptions,
+    @Optional() private readonly receipts?: ReceiptService,
   ) {}
 
   /** Saldo devedor de cada pagamento com dívida em aberto (os demais ficam fora do mapa). */
@@ -73,26 +75,44 @@ export class DelinquencyService {
   }
 
   /**
-   * Cobrança automática ainda em curso no gateway para a dívida (ou, sem `debt`, para qualquer dívida do cliente):
+   * Cobrança automática ainda em curso no gateway para a dívida:
    * - aluguel: liquidação `pending` com recusa e tentativas restantes (nem estacionada nem concluída);
-   * - assinatura (fix round 1, I-2): `past_due` (o gateway ainda retenta a recorrência) ou fechada com o cancelamento no
-   *   gateway ainda não confirmado (`gatewayCancelPendingAt`). Pagar por fora agora cobraria o mesmo ciclo duas vezes.
+   * - assinatura (fix round 1, I-2): a assinatura da dívida em `past_due` (o gateway ainda retenta a recorrência) ou fechada
+   *   com o cancelamento no gateway ainda não confirmado (`gatewayCancelPendingAt`). Pagar por fora agora cobraria o mesmo
+   *   ciclo duas vezes.
    */
-  private async inCollection(customerId: string, debt?: Pick<Payment, 'kind' | 'subscriptionId'>): Promise<boolean> {
-    if (!debt || debt.kind === 'rental') {
-      const pending = await this.prisma.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } });
-      if (pending.length) {
-        const n = await this.prisma.settlementProgress.count({ where: { paymentId: { in: pending.map((p) => p.id) }, attempts: { gt: 0 }, parkedAt: null, finishedAt: null } });
-        if (n > 0) return true;
-      }
+  private async inCollection(customerId: string, debt: Pick<Payment, 'kind' | 'subscriptionId'>): Promise<boolean> {
+    if (debt.kind === 'subscription') return this.subscriptionInCollection(customerId, debt.subscriptionId);
+    return this.rentalInCollection(customerId);
+  }
+
+  /** Liquidação de aluguel `pending` com recusa e tentativas restantes (nem estacionada nem concluída). */
+  private async rentalInCollection(customerId: string): Promise<boolean> {
+    const pending = await this.prisma.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } });
+    if (!pending.length) return false;
+    const n = await this.prisma.settlementProgress.count({ where: { paymentId: { in: pending.map((p) => p.id) }, attempts: { gt: 0 }, parkedAt: null, finishedAt: null } });
+    return n > 0;
+  }
+
+  /**
+   * A assinatura **ligada à dívida** ainda é cobrada pelo gateway (`past_due` ou cancelamento não confirmado). Uma outra
+   * assinatura do cliente em `past_due` não bloqueia a quitação desta dívida (Task 16, menor da re-revisão da Task 14).
+   */
+  private async subscriptionInCollection(customerId: string, subscriptionId: string | null): Promise<boolean> {
+    if (!subscriptionId) return false;
+    const n = await this.prisma.subscription.count({
+      where: { customerId, id: subscriptionId, OR: [{ status: 'past_due' }, { gatewayCancelPendingAt: { not: null } }] },
+    });
+    return n > 0;
+  }
+
+  /** R2-01: dívida de aluguel quitada → o recibo (PDF + NFS-e) do aluguel fica pronto. Falha não derruba a quitação. */
+  private async issueReceipts(paymentIds: string[]): Promise<void> {
+    if (!this.receipts || !paymentIds.length) return;
+    const rentals = await this.prisma.payment.findMany({ where: { id: { in: paymentIds }, kind: 'rental' }, select: { id: true } });
+    for (const p of rentals) {
+      await this.receipts.issueForPayment(p.id).catch((err) => this.logger.error({ msg: 'receipt_failed', paymentId: p.id, error: (err as Error).message }));
     }
-    if (!debt || debt.kind === 'subscription') {
-      const n = await this.prisma.subscription.count({
-        where: { customerId, ...(debt?.subscriptionId ? { id: debt.subscriptionId } : {}), OR: [{ status: 'past_due' }, { gatewayCancelPendingAt: { not: null } }] },
-      });
-      if (n > 0) return true;
-    }
-    return false;
   }
 
   private gatewayUnavailable(): ProblemException {
@@ -181,6 +201,9 @@ export class DelinquencyService {
    */
   async onLatePaid(pay: Payment, providerPaymentId: string): Promise<void> {
     if (pay.kind !== 'debt_settlement' || !pay.settlesPaymentId) return;
+    // Idempotente por pagamento: notificações repetidas do Mercado Pago (eventos diferentes do mesmo pagamento) não abrem
+    // um segundo alerta (`debt_settlement_after_settled` falso).
+    if (pay.failureReason === 'paid_after_failed') return;
     await this.state.annotate(pay.id, { providerPaymentId: pay.providerPaymentId ?? providerPaymentId, failureReason: 'paid_after_failed' });
     const res = await this.prisma.payment.updateMany({
       where: { id: pay.settlesPaymentId, customerId: pay.customerId, status: 'failed', debtSettledAt: null },
@@ -190,6 +213,7 @@ export class DelinquencyService {
       this.logger.warn({ msg: 'debt_settled_by_late_payment', paymentId: pay.settlesPaymentId, settlementPaymentId: pay.id });
       await this.billing.clearDelinquencyIfSettled(pay.customerId);
       this.state.needsReview({ paymentId: pay.id, reason: 'debt_settlement_paid_after_failed' });
+      await this.issueReceipts([pay.settlesPaymentId]);
     } else {
       this.state.needsReview({ paymentId: pay.id, reason: 'debt_settlement_after_settled' });
     }
@@ -270,6 +294,7 @@ export class DelinquencyService {
     }
     this.logger.log({ msg: 'debt_settled', paymentId: pay.settlesPaymentId, settlementPaymentId: pay.id });
     await this.billing.clearDelinquencyIfSettled(pay.customerId);
+    await this.issueReceipts([pay.settlesPaymentId]);
   }
 
   // ───────────────────────── financeiro registra ─────────────────────────
@@ -280,7 +305,14 @@ export class DelinquencyService {
     if (!customer) throw notFound('Cliente não encontrado.');
     const debts = await this.prisma.payment.findMany({ where: openDebtWhere(customerId) });
     if (!customer.delinquent && debts.length === 0) throw conflict('debt-not-payable', 'Este cliente não está inadimplente.');
-    if (await this.inCollection(customerId)) throw conflict('debt-in-collection', 'Há uma cobrança automática em andamento no cartão do cliente. Aguarde o resultado antes de registrar a quitação.');
+    // Só bloqueia o que ainda é cobrado automaticamente: liquidação de aluguel em retentativa ou a assinatura ligada a uma das dívidas.
+    const subscriptionBusy = async () => {
+      for (const id of new Set(debts.map((d) => (d.kind === 'subscription' ? d.subscriptionId : null)).filter((x): x is string => !!x))) {
+        if (await this.subscriptionInCollection(customerId, id)) return true;
+      }
+      return false;
+    };
+    if ((await this.rentalInCollection(customerId)) || (await subscriptionBusy())) throw conflict('debt-in-collection', 'Há uma cobrança automática em andamento no cartão do cliente. Aguarde o resultado antes de registrar a quitação.');
     const outstanding = await this.outstandingMap(debts);
     const now = new Date();
     let settled: string[] = [];
@@ -299,5 +331,6 @@ export class DelinquencyService {
       );
     });
     this.logger.log({ msg: 'delinquency_cleared_manually', customerId, payments: settled.length });
+    await this.issueReceipts(settled);
   }
 }

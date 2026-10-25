@@ -20,6 +20,7 @@ const DEFAULT_TITLES: Record<string, string> = {
   'kyc-underage': 'Cliente menor de 18 anos',
   'customer-blocked': 'Conta bloqueada',
   'customer-delinquent': 'Pagamento pendente',
+  'payment-pending': 'Pagamento pendente',
   'vehicle-unavailable': 'Moto indisponível',
   'vehicle-offline': 'Moto sem conexão',
   'reservation-already-active': 'Já existe uma reserva ativa',

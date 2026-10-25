@@ -17,6 +17,7 @@ import { StationSwapsService } from '../station-swaps/station-swaps.service';
 import { ZonesService } from '../zones/zones.service';
 import { rentalTimes, toRental } from './rentals.mapper';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
+import { appendWalletEntry, walletCentsAvailable } from '../wallet/wallet-ledger';
 
 export const FORCE_END_FEE_CODE = 'force_end_outside_return_zone';
 export const FORCE_END_FEE_DEFAULT_CENTS = 1500;
@@ -241,23 +242,39 @@ export class RentalEndService {
 
     const now = new Date();
     const timing = rentalTimes({ ...rental, endRequestedAt: rental.endRequestedAt ?? now });
-    const breakdown = this.pricing.calculate({
-      snapshot: rental.priceSnapshot as unknown as PriceSnapshot,
-      elapsedSeconds: timing.elapsedSeconds,
-      pausedSeconds: timing.pausedSeconds,
-      fees: [...(opts.fees ?? []), ...(await this.stationSwapFees(rentalId))],
-    });
-    const claimed = await this.prisma.rental.updateMany({
-      where: { id: rentalId, status: { in: ['active', 'paused', 'ending'] } },
-      data: {
-        status: kind,
-        endedAt: now,
-        endRequestedAt: rental.endRequestedAt ?? now,
-        pausedAt: null,
-        pausedSecondsAcc: timing.pausedSeconds,
-        costCents: breakdown.totalCents,
-        breakdown: breakdown as unknown as Prisma.InputJsonValue,
-      },
+    const fees = [...(opts.fees ?? []), ...(await this.stationSwapFees(rentalId))];
+    // R2-01: a carteira abate primeiro (ordem de liquidação: carteira → caução → cartão → dívida). O saldo é lido e debitado
+    // na mesma transação que fecha o aluguel, com o cliente travado (FOR UPDATE): o débito acontece uma única vez (o
+    // fechamento é condicional) e o mesmo saldo nunca paga dois fechamentos. O restante (`totalCents`) vai para a liquidação.
+    const { claimed, breakdown } = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${rental.customerId}::uuid FOR UPDATE`;
+      const walletAvailableCents = await walletCentsAvailable(tx, rental.customerId);
+      const breakdown = this.pricing.calculate({
+        snapshot: rental.priceSnapshot as unknown as PriceSnapshot,
+        elapsedSeconds: timing.elapsedSeconds,
+        pausedSeconds: timing.pausedSeconds,
+        fees,
+        walletAvailableCents,
+      });
+      const claimed = await tx.rental.updateMany({
+        where: { id: rentalId, status: { in: ['active', 'paused', 'ending'] } },
+        data: {
+          status: kind,
+          endedAt: now,
+          endRequestedAt: rental.endRequestedAt ?? now,
+          pausedAt: null,
+          pausedSecondsAcc: timing.pausedSeconds,
+          costCents: breakdown.totalCents,
+          breakdown: breakdown as unknown as Prisma.InputJsonValue,
+        },
+      });
+      if (claimed.count === 1 && breakdown.walletAppliedCents) {
+        await appendWalletEntry(tx, {
+          customerId: rental.customerId, type: 'rental_charge', amountCents: -breakdown.walletAppliedCents, rentalId,
+          description: 'Aluguel: abatido da carteira no fechamento',
+        });
+      }
+      return { claimed, breakdown };
     });
     if (claimed.count === 0) return toRental(await this.load(rentalId));
 

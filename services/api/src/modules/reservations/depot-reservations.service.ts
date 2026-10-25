@@ -82,7 +82,7 @@ export class DepotReservationsService {
     if (!check.ok) throw PICKUP_ERRORS[check.code]();
 
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
-    await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: false, requireTerms: true });
+    await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: false, requireTerms: true, debtAsConflict: true });
 
     const openRental = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
     if (openRental) throw conflict('rental-already-active', 'Você já tem um aluguel em andamento.');
