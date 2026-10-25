@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -49,8 +50,8 @@ class VoltiEmptyState extends StatelessWidget {
               Container(
                 width: disc,
                 height: disc,
-                decoration: const BoxDecoration(color: VoltiColors.brandSoft, shape: BoxShape.circle),
-                child: Icon(icon, size: disc * .44, color: VoltiColors.successInk),
+                decoration: BoxDecoration(color: VoltiPalette.of(context).brandSoft, shape: BoxShape.circle),
+                child: Icon(icon, size: disc * .44, color: VoltiPalette.of(context).onBrandSoft),
               ),
         ),
         SizedBox(height: compact ? VoltiSpacing.s10 : VoltiSpacing.s16),
@@ -125,11 +126,12 @@ class VoltiStatusBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = VoltiMotion.scaled(context, VoltiMotion.durSlow);
+    final p = VoltiPalette.of(context);
     final (bg, fg) = switch (tone) {
-      VoltiStatusTone.info => (VoltiColors.blue50, VoltiColors.blue600),
-      VoltiStatusTone.warning => (VoltiColors.warningSoft, VoltiColors.warningInkStrong),
-      VoltiStatusTone.danger => (VoltiColors.dangerSoft, VoltiColors.dangerInkStrong),
-      VoltiStatusTone.offline => (VoltiColors.surfaceInverse, Colors.white),
+      VoltiStatusTone.info => (p.infoSoft, p.infoInk),
+      VoltiStatusTone.warning => (p.warningSoft, p.warningInkStrong),
+      VoltiStatusTone.danger => (p.dangerSoft, p.dangerInkStrong),
+      VoltiStatusTone.offline => (p.pill, Colors.white),
     };
     final body = Padding(
       key: ValueKey('$tone|$title|$message'),

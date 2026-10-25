@@ -30,6 +30,24 @@ MaterialApp(theme: VoltiTheme.light(), darkTheme: VoltiTheme.dark(), ...);
 | `VoltiTypography` | `display`, `title`, `heading`, `bodyStrong`, `body`, `label`, `caption`, `overline`, `timer` (JetBrains Mono) |
 | `VoltiTheme` | `light()` e `dark()` (Material 3; escuro usa superfícies ink e mantém o verde) |
 
+### Tema claro/escuro (`VoltiPalette`)
+
+`VoltiColors` traduz o `colors.css`, que só descreve o tema **claro**. Toda cor que precisa acompanhar o modo escuro do aparelho vem da extensão de tema `VoltiPalette` (registrada em `VoltiTheme.light()/dark()`):
+
+```dart
+final p = VoltiPalette.of(context); // ou context.palette
+Container(color: p.surfaceCard, child: Text('Oi', style: TextStyle(color: p.textPrimary)));
+```
+
+| Grupo | Campos |
+|---|---|
+| Superfícies | `surfaceApp`, `surfaceCard`, `surfaceSunken`, `surfaceRaised`, `surfaceMedia`/`onSurfaceMedia`, `scrim`, `inverse`/`onInverse`, `pill` (pílula de dado e toast, sempre escura com texto branco) |
+| Texto e borda | `textPrimary`, `textStrong`, `textSecondary`, `textTertiary`, `textBrand`, `borderSubtle`, `borderStrong` |
+| Tons (soft + ink) | `brandSoft`/`brandSoftStrong`/`onBrandSoft`, `successSoft/Ink`, `infoSoft/Ink`, `warningSoft/Ink/InkStrong`, `dangerSoft/Ink/InkStrong`, `sunSoft/sunInk` |
+| Mapa e outros | `glassBg`/`onGlass`, `mapLand`, `skeletonBase/Highlight`, `pressOverlay` |
+
+Escuro: ink-900 (tela), ink-800 (cartão), `#2A2F33` (afundado/campos), tons soft profundos com ink claro. Todo par texto/fundo passa de 4,5:1 nos dois temas (`test/palette_test.dart`); no claro, `successInk`/`onBrandSoft` usam `#176B2F` (o green-700 fica em 4,0:1 sobre green-50). Ficam fixos de propósito: o verde de ação com texto branco (`brandAction`), o coral do SOS, status da frota e bateria, branco sobre foto/mapa e o fundo branco de QR. `VoltiTheme.overlayStyle(brightness)` dá a barra de status/navegação do tema (também no `AppBarTheme`). Os widgets do pacote (botões, badge, chips, `PassCard`, `ListRow`, `OptionCard`, `PhotoCapture`, toast, `VoltiStatusBanner`, `VoltiEmptyState`, skeleton, folha e diálogo) já usam a paleta; `VoltiBadge.colorsFor(tone, palette)` e `VoltiButton.pressedColor(variant, bg, palette)` aceitam a paleta (sem ela, claro).
+
 Fontes TTF estáticas (Plus Jakarta Sans 400-800, JetBrains Mono 500/700, OFL) vão em `fonts/` e já estão declaradas no `pubspec.yaml` do pacote. As famílias são referenciadas como `packages/volti_flutter/Plus Jakarta Sans` e `packages/volti_flutter/JetBrains Mono` (`VoltiTypography.fontSans/fontMono`): **os apps não devem redeclarar as fontes** nem usar o nome sem prefixo.
 
 ## Widgets

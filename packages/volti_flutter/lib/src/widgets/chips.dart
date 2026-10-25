@@ -3,6 +3,7 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 
 import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -36,7 +37,8 @@ class VoltiChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final fg = !enabled ? scheme.onSurfaceVariant : (selected ? VoltiColors.successInk : scheme.onSurface);
+    final p = VoltiPalette.of(context);
+    final fg = !enabled ? scheme.onSurfaceVariant : (selected ? p.onBrandSoft : scheme.onSurface);
     return Semantics(
       selected: selected,
       enabled: enabled,
@@ -58,7 +60,7 @@ class VoltiChip extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 36),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
-            color: !enabled ? scheme.surfaceContainerHighest : (selected ? VoltiColors.brandSoft : scheme.surface),
+            color: !enabled ? scheme.surfaceContainerHighest : (selected ? p.brandSoft : scheme.surface),
             borderRadius: VoltiRadii.rPill,
             border: Border.all(
               color: selected && enabled ? VoltiColors.brand : (elevated ? Colors.transparent : scheme.outlineVariant),
@@ -119,11 +121,12 @@ class PassCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final p = VoltiPalette.of(context);
     final (bg, fg) = switch (tone) {
-      PassCardTone.brand => (VoltiColors.green100, VoltiColors.green700),
-      PassCardTone.sun => (const Color(0xFFFFF3CC), VoltiColors.orange600),
-      PassCardTone.sky => (VoltiColors.sky100, VoltiColors.blue600),
-      PassCardTone.coral => (VoltiColors.coral50, VoltiColors.coral600),
+      PassCardTone.brand => (p.brandSoftStrong, p.onBrandSoft),
+      PassCardTone.sun => (p.sunSoft, p.sunInk),
+      PassCardTone.sky => (p.surfaceMedia, p.onSurfaceMedia),
+      PassCardTone.coral => (p.dangerSoft, p.dangerInk),
     };
     return VoltiPressable(
       onTap: onTap,
@@ -137,7 +140,7 @@ class PassCard extends StatelessWidget {
             filter: ImageFilter.blur(sigmaX: VoltiShadows.glassBlur, sigmaY: VoltiShadows.glassBlur),
             child: Container(
               padding: const EdgeInsets.fromLTRB(8, 8, 18, 8),
-              color: VoltiColors.glassBg,
+              color: p.glassBg,
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Container(
                   width: 44,

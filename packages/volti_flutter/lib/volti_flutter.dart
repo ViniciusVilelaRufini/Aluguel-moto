@@ -6,6 +6,7 @@ export 'src/api/server_clock.dart';
 export 'src/auth/auth_repository.dart';
 export 'src/theme.dart';
 export 'src/tokens/colors.dart';
+export 'src/tokens/palette.dart';
 export 'src/tokens/shadows.dart';
 export 'src/tokens/spacing.dart';
 export 'src/tokens/typography.dart';

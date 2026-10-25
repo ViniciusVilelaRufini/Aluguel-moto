@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 
@@ -115,9 +115,9 @@ class VoltiSkeletonBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dark = Theme.of(context).brightness == Brightness.dark;
-    final base = dark ? VoltiColors.ink800 : VoltiColors.ink100;
-    final hi = dark ? VoltiColors.ink700 : VoltiColors.ink50;
+    final p = VoltiPalette.of(context);
+    final base = p.skeletonBase;
+    final hi = p.skeletonHighlight;
     final scope = context.dependOnInheritedWidgetOfExactType<_SkeletonScope>();
     final box = SizedBox(width: width, height: height);
     final r = BorderRadius.circular(radius);

@@ -6,6 +6,7 @@ import 'package:flutter/semantics.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -135,6 +136,10 @@ class VoltiButton extends StatelessWidget {
     // Texto grande (200%): a altura fixa cresce com o rotulo (folga de 8 px em cima e embaixo).
     final h = math.max(h0, MediaQuery.textScalerOf(context).scale(fs) + 16);
     final scheme = Theme.of(context).colorScheme;
+    final p = VoltiPalette.of(context);
+    // No escuro o verde de acao (#1C7F38) fica abaixo de 4,5:1 sobre ink-800:
+    // texto/contorno do secundario usam o verde claro do tema.
+    final brandText = p.isDark ? p.textBrand : VoltiColors.brandAction;
     final (bg, fg, bd, sh) = switch (variant) {
       // Fundo no tom de acao (E-12): texto branco >= 4,5:1.
       VoltiButtonVariant.primary => (
@@ -146,8 +151,8 @@ class VoltiButton extends StatelessWidget {
       // Extensao do E-12: texto e contorno no tom de acao (>= 4,5:1 sobre branco).
       VoltiButtonVariant.secondary => (
         scheme.surface,
-        VoltiColors.brandAction,
-        VoltiColors.brandAction,
+        brandText,
+        brandText,
         const <BoxShadow>[],
       ),
       VoltiButtonVariant.ghost => (
@@ -156,8 +161,9 @@ class VoltiButton extends StatelessWidget {
         Colors.transparent,
         const <BoxShadow>[],
       ),
+      // Pilula escura nos dois temas (ink-900 no claro, ink-700 no escuro).
       VoltiButtonVariant.dark => (
-        VoltiColors.surfaceInverse,
+        p.pill,
         VoltiColors.textOnInverse,
         Colors.transparent,
         VoltiShadows.shadow2,
@@ -171,7 +177,7 @@ class VoltiButton extends StatelessWidget {
       VoltiButtonVariant.neutral => (
         scheme.surface,
         scheme.onSurface,
-        VoltiColors.borderStrong,
+        p.borderStrong,
         const <BoxShadow>[],
       ),
       // Do tema: claro = ink100 / ink900; escuro = ink700 / branco.
@@ -190,11 +196,11 @@ class VoltiButton extends StatelessWidget {
     final ripple = switch (variant) {
       VoltiButtonVariant.primary => VoltiColors.rippleOnFilled,
       VoltiButtonVariant.secondary => VoltiColors.rippleBrand,
-      VoltiButtonVariant.ghost => VoltiColors.rippleInk,
+      VoltiButtonVariant.ghost => p.isDark ? VoltiColors.rippleOnDark : VoltiColors.rippleInk,
       VoltiButtonVariant.dark => VoltiColors.rippleOnDark,
       VoltiButtonVariant.danger => VoltiColors.rippleOnDanger,
       VoltiButtonVariant.neutral ||
-      VoltiButtonVariant.soft => VoltiColors.rippleInk,
+      VoltiButtonVariant.soft => p.isDark ? VoltiColors.rippleOnDark : VoltiColors.rippleInk,
     };
     final labels = VoltiButtonLabels.maybeOf(context);
     final busyValue = success
@@ -317,7 +323,7 @@ class VoltiButton extends StatelessWidget {
               // sucesso fica dentro da pilula.
               clipBehavior: success ? Clip.antiAlias : Clip.none,
               decoration: BoxDecoration(
-                color: pressed ? pressedColor(variant, bg) : bg,
+                color: pressed ? pressedColor(variant, bg, p) : bg,
                 borderRadius: VoltiRadii.rPill,
                 border: Border.all(color: bd, width: 1.5),
                 boxShadow: dim
@@ -370,10 +376,10 @@ class VoltiButton extends StatelessWidget {
   /// Fundo no press: preenchidos escurecem 6% (o contraste com o texto so
   /// sobe; E-12 continua >= 4,5:1); o secundario ganha o verde suave e o
   /// fantasma um veu de 6% de tinta.
-  static Color pressedColor(VoltiButtonVariant variant, Color bg) =>
+  static Color pressedColor(VoltiButtonVariant variant, Color bg, [VoltiPalette p = VoltiPalette.light]) =>
       switch (variant) {
-        VoltiButtonVariant.secondary => VoltiColors.brandSoft,
-        VoltiButtonVariant.ghost => VoltiColors.ink900.withValues(
+        VoltiButtonVariant.secondary => p.brandSoft,
+        VoltiButtonVariant.ghost => (p.isDark ? VoltiColors.white : VoltiColors.ink900).withValues(
           alpha: VoltiMotion.pressDarken,
         ),
         _ => Color.lerp(bg, const Color(0xFF000000), VoltiMotion.pressDarken)!,
@@ -590,7 +596,7 @@ class VoltiIconButton extends StatelessWidget {
         VoltiShadows.shadowBrand,
       ),
       VoltiIconButtonVariant.dark => (
-        VoltiColors.surfaceInverse,
+        VoltiPalette.of(context).pill,
         VoltiColors.white,
         const <BoxShadow>[],
       ),

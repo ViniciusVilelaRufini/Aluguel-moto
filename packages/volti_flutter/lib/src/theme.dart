@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'tokens/colors.dart';
+import 'tokens/palette.dart';
 import 'tokens/spacing.dart';
 import 'tokens/typography.dart';
 
@@ -29,7 +31,7 @@ abstract final class VoltiTheme {
           inverseSurface: VoltiColors.ink900,
           onInverseSurface: VoltiColors.white,
         ),
-        VoltiColors.surfaceApp,
+        VoltiPalette.light,
       );
 
   /// Escuro: superficies de tinta (ink-900/800/700), verde de marca mantido.
@@ -49,14 +51,14 @@ abstract final class VoltiTheme {
           surface: VoltiColors.ink800,
           onSurface: VoltiColors.ink50,
           onSurfaceVariant: VoltiColors.ink400,
-          surfaceContainerHighest: VoltiColors.ink700,
+          surfaceContainerHighest: Color(0xFF2A2F33),
           outline: VoltiColors.ink600,
           outlineVariant: VoltiColors.ink700,
           scrim: VoltiColors.ink900,
           inverseSurface: VoltiColors.ink100,
           onInverseSurface: VoltiColors.ink900,
         ),
-        VoltiColors.ink900,
+        VoltiPalette.dark,
       );
 
   // Instancia unica: uma closure nova a cada build deixaria o ThemeData
@@ -65,7 +67,22 @@ abstract final class VoltiTheme {
     (s) => s.contains(WidgetState.selected) && !s.contains(WidgetState.disabled) ? VoltiColors.brandAction : null,
   );
 
-  static ThemeData _build(ColorScheme scheme, Color scaffold) {
+  /// Barra de status e de navegacao do sistema no tom do tema: icones escuros
+  /// no claro e claros no escuro, fundo da barra de navegacao = fundo da tela.
+  static SystemUiOverlayStyle overlayStyle(Brightness brightness) {
+    final dark = brightness == Brightness.dark;
+    return SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+      statusBarBrightness: brightness, // iOS: brilho do fundo sob a barra
+      systemNavigationBarColor: dark ? VoltiPalette.dark.surfaceApp : VoltiPalette.light.surfaceApp,
+      systemNavigationBarIconBrightness: dark ? Brightness.light : Brightness.dark,
+      systemNavigationBarDividerColor: Colors.transparent,
+    );
+  }
+
+  static ThemeData _build(ColorScheme scheme, VoltiPalette palette) {
+    final scaffold = palette.surfaceApp;
     final base = ThemeData(
       useMaterial3: true,
       colorScheme: scheme,
@@ -88,6 +105,7 @@ abstract final class VoltiTheme {
         .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
     return base.copyWith(
       textTheme: text,
+      extensions: [palette],
       cardTheme: CardThemeData(
         color: scheme.surface,
         elevation: 0,
@@ -99,6 +117,8 @@ abstract final class VoltiTheme {
         backgroundColor: scaffold,
         surfaceTintColor: Colors.transparent,
         scrolledUnderElevation: 0,
+        foregroundColor: scheme.onSurface,
+        systemOverlayStyle: overlayStyle(scheme.brightness),
       ),
       // Caixas Material (CheckboxListTile etc.) no padrao do kit:
       // marcado no tom de acao (E-12), sem halo de toque.
@@ -119,10 +139,19 @@ abstract final class VoltiTheme {
       ),
       bottomSheetTheme: BottomSheetThemeData(
         backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
+        modalBarrierColor: palette.scrim,
         shape: const RoundedRectangleBorder(borderRadius: VoltiRadii.sheetTop),
       ),
+      snackBarTheme: SnackBarThemeData(
+        backgroundColor: palette.pill,
+        contentTextStyle: VoltiTypography.label.copyWith(color: VoltiColors.white),
+      ),
+      dividerTheme: DividerThemeData(color: scheme.outlineVariant),
+      progressIndicatorTheme: ProgressIndicatorThemeData(color: scheme.primary, linearTrackColor: palette.surfaceSunken),
       dialogTheme: DialogThemeData(
         backgroundColor: scheme.surface,
+        surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(borderRadius: VoltiRadii.rXl),
       ),
     );

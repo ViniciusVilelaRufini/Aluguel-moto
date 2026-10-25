@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -33,7 +34,7 @@ class VoltiBottomSheet extends StatelessWidget {
       enableDrag: enableDrag,
       backgroundColor: Colors.transparent,
       elevation: 0,
-      barrierColor: VoltiColors.surfaceScrim,
+      barrierColor: VoltiPalette.of(context).scrim,
       // Mesma mola da troca de tela (`--dur-screen`/`--ease-screen`, como o
       // BottomSheet do kit); o scrim acompanha a animacao da rota. Reduced
       // motion ou leitor de tela: instantaneo.
@@ -119,7 +120,7 @@ class VoltiDialog extends StatelessWidget {
     return showDialog<T>(
       context: context,
       barrierDismissible: barrierDismissible,
-      barrierColor: VoltiColors.surfaceScrim,
+      barrierColor: VoltiPalette.of(context).scrim,
       builder: (_) => VoltiDialog(
         title: title,
         message: message,
@@ -255,8 +256,8 @@ class VoltiToast extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(minHeight: 48),
         padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
-        decoration: const BoxDecoration(
-          color: VoltiColors.surfaceInverse,
+        decoration: BoxDecoration(
+          color: VoltiPalette.of(context).pill,
           borderRadius: VoltiRadii.rMd,
           boxShadow: VoltiShadows.shadow2,
         ),

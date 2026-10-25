@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
 
@@ -27,18 +28,20 @@ class VoltiBadge extends StatelessWidget {
   /// Texto lido pelo leitor de tela no lugar de [label] (ex.: "Prioridade alta").
   final String? semanticLabel;
 
-  static (Color, Color) colorsFor(VoltiBadgeTone tone) => switch (tone) {
-        VoltiBadgeTone.success => (VoltiColors.successSoft, VoltiColors.successInk),
-        VoltiBadgeTone.info => (VoltiColors.infoSoft, VoltiColors.infoInk),
-        VoltiBadgeTone.warning => (VoltiColors.warningSoft, VoltiColors.warningInk),
-        VoltiBadgeTone.danger => (VoltiColors.dangerSoft, VoltiColors.dangerInk),
-        VoltiBadgeTone.neutral => (VoltiColors.surfaceSunken, VoltiColors.ink700),
-        VoltiBadgeTone.dark => (VoltiColors.surfaceInverse, VoltiColors.white),
+  /// Fundo e texto do tom. Passe a paleta do tema ([VoltiPalette.of]); sem
+  /// ela, vale o claro. Texto sempre >= 4,5:1 (warning/danger usam o ink forte).
+  static (Color, Color) colorsFor(VoltiBadgeTone tone, [VoltiPalette p = VoltiPalette.light]) => switch (tone) {
+        VoltiBadgeTone.success => (p.successSoft, p.successInk),
+        VoltiBadgeTone.info => (p.infoSoft, p.infoInk),
+        VoltiBadgeTone.warning => (p.warningSoft, p.warningInkStrong),
+        VoltiBadgeTone.danger => (p.dangerSoft, p.dangerInkStrong),
+        VoltiBadgeTone.neutral => (p.surfaceSunken, p.textStrong),
+        VoltiBadgeTone.dark => (p.pill, VoltiColors.white),
       };
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg) = colorsFor(tone);
+    final (bg, fg) = colorsFor(tone, VoltiPalette.of(context));
     final sm = size == VoltiBadgeSize.sm;
     final text = Text(
       label,

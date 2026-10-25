@@ -3,6 +3,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart' show VehicleStatus;
 
 import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -50,8 +51,8 @@ class BatteryPill extends StatelessWidget {
       child: Container(
         height: 30,
         padding: const EdgeInsets.only(left: 4, right: 12),
-        decoration: const BoxDecoration(
-          color: VoltiColors.surfaceInverse,
+        decoration: BoxDecoration(
+          color: VoltiPalette.of(context).pill,
           borderRadius: VoltiRadii.rPill,
         ),
         child: Row(
@@ -111,7 +112,7 @@ class BatteryPill extends StatelessWidget {
             Text('$pct%', style: style),
             if (rangeKm != null) ...[
               const SizedBox(width: 8),
-              Container(width: 1, height: 14, color: VoltiColors.borderStrong),
+              Container(width: 1, height: 14, color: VoltiPalette.of(context).borderStrong),
               const SizedBox(width: 8),
               Text('~$rangeKm km', style: style),
             ],
@@ -393,7 +394,8 @@ class FleetStatusBadge extends StatelessWidget {
         ],
       );
     }
-    final fg = selected ? Colors.white : scheme.onSurface;
+    final p = VoltiPalette.of(context);
+    final fg = selected ? p.onInverse : scheme.onSurface;
     final txt = TextStyle(
       fontFamily: VoltiTypography.fontSans,
       fontWeight: VoltiTypography.fwMedium,
@@ -407,10 +409,10 @@ class FleetStatusBadge extends StatelessWidget {
         height: 30,
         padding: const EdgeInsets.symmetric(horizontal: 10),
         decoration: BoxDecoration(
-          color: selected ? VoltiColors.ink900 : scheme.surface,
+          color: selected ? p.inverse : scheme.surface,
           borderRadius: VoltiRadii.rPill,
           border: Border.all(
-            color: selected ? VoltiColors.ink900 : scheme.outlineVariant,
+            color: selected ? p.inverse : scheme.outlineVariant,
           ),
         ),
         child: Row(
@@ -474,8 +476,8 @@ class RouteInfoPill extends StatelessWidget {
     return Container(
       height: 32,
       padding: const EdgeInsets.only(left: 5, right: 12),
-      decoration: const BoxDecoration(
-        color: VoltiColors.surfaceInverse,
+      decoration: BoxDecoration(
+        color: VoltiPalette.of(context).pill,
         borderRadius: VoltiRadii.rPill,
         boxShadow: VoltiShadows.shadow2,
       ),
@@ -776,12 +778,13 @@ class ListRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final p = VoltiPalette.of(context);
     final (bg, fg) = switch (iconTone) {
       ListRowTone.neutral => (scheme.surfaceContainerHighest, scheme.onSurface),
-      ListRowTone.brand => (VoltiColors.green50, VoltiColors.green700),
-      ListRowTone.info => (VoltiColors.blue50, VoltiColors.blue600),
-      ListRowTone.sun => (const Color(0xFFFFF3CC), VoltiColors.orange600),
-      ListRowTone.danger => (VoltiColors.coral50, VoltiColors.coral600),
+      ListRowTone.brand => (p.brandSoft, p.onBrandSoft),
+      ListRowTone.info => (p.infoSoft, p.infoInk),
+      ListRowTone.sun => (p.sunSoft, p.sunInk),
+      ListRowTone.danger => (p.dangerSoft, p.dangerInk),
     };
     final t = switch (trailing) {
       ListRowTrailing.arrow => LucideIcons.arrowRight,
@@ -882,7 +885,8 @@ class PhotoCapture extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final fg = done ? VoltiColors.successInk : scheme.onSurface;
+    final p = VoltiPalette.of(context);
+    final fg = done ? p.successInk : scheme.onSurface;
     return VoltiPressable(
       onTap: onTap,
       scale: .99,
@@ -900,7 +904,7 @@ class PhotoCapture extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
           decoration: BoxDecoration(
             color: done
-                ? VoltiColors.brandSoft
+                ? p.brandSoft
                 : scheme.surfaceContainerHighest,
             borderRadius: VoltiRadii.rLg,
           ),
@@ -912,14 +916,14 @@ class PhotoCapture extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: done ? VoltiColors.brand : Colors.white,
+                  color: done ? VoltiColors.brand : p.surfaceRaised,
                   shape: BoxShape.circle,
                   boxShadow: VoltiShadows.shadow1,
                 ),
                 child: Icon(
                   done ? LucideIcons.check : icon,
                   size: 22,
-                  color: done ? Colors.white : VoltiColors.ink700,
+                  color: done ? Colors.white : p.textStrong,
                 ),
               ),
               const SizedBox(height: 8),
@@ -1047,7 +1051,7 @@ class VehicleSummaryCard extends StatelessWidget {
                     fontWeight: VoltiTypography.fwSemibold,
                     fontSize: 13,
                     height: 1.2,
-                    color: scheme.brightness == Brightness.dark ? VoltiColors.warning : VoltiColors.warningInkStrong,
+                    color: VoltiPalette.of(context).warningInkStrong,
                   ),
                 ),
                 const SizedBox(height: 6),
@@ -1098,11 +1102,11 @@ class VehicleThumb extends StatelessWidget {
         height: size,
         clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
-          color: VoltiColors.surfaceMedia,
+          color: VoltiPalette.of(context).surfaceMedia,
           borderRadius: BorderRadius.circular(size >= 96 ? VoltiRadii.lg : VoltiRadii.md),
         ),
         alignment: Alignment.center,
-        child: image ?? Icon(LucideIcons.motorbike, size: size * .42, color: VoltiColors.blue600),
+        child: image ?? Icon(LucideIcons.motorbike, size: size * .42, color: VoltiPalette.of(context).onSurfaceMedia),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -40,7 +41,8 @@ class OptionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final tagBg = selected ? Colors.white : scheme.surfaceContainerHighest;
+    final p = VoltiPalette.of(context);
+    final tagBg = selected ? p.surfaceRaised : scheme.surfaceContainerHighest;
     // Texto grande (> ~130%): o preco desce para baixo do titulo em vez de
     // disputar a largura da linha.
     final stacked = MediaQuery.textScalerOf(context).scale(10) > 13;
@@ -69,7 +71,7 @@ class OptionCard extends StatelessWidget {
       curve: VoltiMotion.easeOut,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: selected ? VoltiColors.brandSoft : scheme.surface,
+        color: selected ? p.brandSoft : scheme.surface,
         borderRadius: VoltiRadii.rLg,
         border: Border.all(
           color: selected ? VoltiColors.brand : scheme.outlineVariant,
@@ -96,7 +98,7 @@ class OptionCard extends StatelessWidget {
                 color: tagBg,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: Icon(icon, size: 18, color: VoltiColors.ink700),
+              child: Icon(icon, size: 18, color: p.textStrong),
             ),
             const SizedBox(width: 12),
           ],
@@ -127,12 +129,12 @@ class OptionCard extends StatelessWidget {
                         ),
                         child: Text(
                           badge!,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: VoltiTypography.fontSans,
                             fontWeight: VoltiTypography.fwSemibold,
                             fontSize: 11,
                             height: 1,
-                            color: VoltiColors.ink700,
+                            color: p.textStrong,
                           ),
                         ),
                       ),
@@ -208,7 +210,7 @@ class VoltiRadio extends StatelessWidget {
         width: size,
         height: size,
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: VoltiPalette.of(context).surfaceRaised,
           shape: BoxShape.circle,
           border: Border.all(color: selected ? VoltiColors.brand : scheme.outline, width: 1.5),
         ),

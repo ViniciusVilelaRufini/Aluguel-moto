@@ -81,7 +81,7 @@ class VoltiSegmentedControl<T> extends StatelessWidget {
           height: 36,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: on ? (dark ? VoltiColors.ink800 : VoltiColors.surfaceCard) : Colors.transparent,
+            color: on ? (dark ? VoltiColors.ink700 : VoltiColors.surfaceCard) : Colors.transparent,
             borderRadius: VoltiRadii.rPill,
             boxShadow: on ? VoltiShadows.shadow1 : const [],
           ),

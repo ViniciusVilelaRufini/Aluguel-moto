@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/typography.dart';
 
@@ -70,7 +71,7 @@ class VoltiSpeedGauge extends StatelessWidget {
                     fontSize: size * .36,
                     height: 1,
                     letterSpacing: -.5,
-                    color: over ? VoltiColors.dangerInkStrong : Theme.of(context).colorScheme.onSurface,
+                    color: over ? VoltiPalette.of(context).dangerInkStrong : Theme.of(context).colorScheme.onSurface,
                   ),
                   child: Text('${speedKmh.round()}', key: const Key('volti-gauge-speed')),
                 ),

@@ -93,9 +93,10 @@ void main() {
 
   group('VoltiBadge', () {
     for (final (tone, bg, fg) in [
-      (VoltiBadgeTone.success, VoltiColors.successSoft, VoltiColors.successInk),
-      (VoltiBadgeTone.warning, VoltiColors.warningSoft, VoltiColors.warningInk),
-      (VoltiBadgeTone.danger, VoltiColors.dangerSoft, VoltiColors.dangerInk),
+      // Texto dos tons com AA (>= 4,5:1): verde e ink forte de aviso/perigo.
+      (VoltiBadgeTone.success, VoltiColors.successSoft, VoltiPalette.light.successInk),
+      (VoltiBadgeTone.warning, VoltiColors.warningSoft, VoltiColors.warningInkStrong),
+      (VoltiBadgeTone.danger, VoltiColors.dangerSoft, VoltiColors.dangerInkStrong),
       (VoltiBadgeTone.info, VoltiColors.infoSoft, VoltiColors.infoInk),
       (VoltiBadgeTone.neutral, VoltiColors.surfaceSunken, VoltiColors.ink700),
       (VoltiBadgeTone.dark, VoltiColors.surfaceInverse, VoltiColors.white),
@@ -108,6 +109,16 @@ void main() {
         expect(t.getSize(find.byKey(const Key('volti-badge'))).height, 20);
       });
     }
+
+    testWidgets('no tema escuro usa a paleta escura', (t) async {
+      await t.pumpWidget(MaterialApp(
+        theme: VoltiTheme.dark(),
+        home: const Scaffold(body: VoltiBadge('Ok', tone: VoltiBadgeTone.success)),
+      ));
+      final box = t.widget<Container>(find.byKey(const Key('volti-badge')));
+      expect((box.decoration! as BoxDecoration).color, VoltiPalette.dark.successSoft);
+      expect(t.widget<Text>(find.text('Ok')).style!.color, VoltiPalette.dark.successInk);
+    });
 
     for (final size in VoltiBadgeSize.values) {
       testWidgets('a 200% de fonte a altura cresce com o texto, sem corte (${size.name})', (t) async {

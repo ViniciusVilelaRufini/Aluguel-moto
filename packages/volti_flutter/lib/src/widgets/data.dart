@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../tokens/colors.dart';
+import '../tokens/palette.dart';
 import '../tokens/shadows.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
@@ -29,7 +29,8 @@ class StatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final deltaColor = trendUp ? VoltiColors.successInk : VoltiColors.dangerInk;
+    final p = VoltiPalette.of(context);
+    final deltaColor = trendUp ? p.successInk : p.dangerInkStrong;
     final tile = Container(
       padding: const EdgeInsets.all(VoltiSpacing.s16),
       decoration: BoxDecoration(

@@ -311,7 +311,7 @@ class StatusTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg) = VoltiBadge.colorsFor(tone);
+    final (bg, fg) = VoltiBadge.colorsFor(tone, VoltiPalette.of(context));
     return Container(
       constraints: const BoxConstraints(minHeight: 20),
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
