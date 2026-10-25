@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../theme.dart';
 import '../tokens/spacing.dart';
 import '../tokens/typography.dart';
+import 'logo.dart';
 import 'states.dart';
 
 /// App minimo de tela cheia para build release mal configurado (define
@@ -42,6 +43,12 @@ class ConfigErrorPage extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                VoltiLogo(
+                  key: const Key('config-error-logo'),
+                  variant: VoltiLogoVariant.adaptive(Theme.of(context).brightness),
+                  fontSize: 26,
+                ),
+                const SizedBox(height: VoltiSpacing.s24),
                 const VoltiEmptyState(
                   icon: LucideIcons.triangleAlert,
                   title: 'Configuração inválida do app',

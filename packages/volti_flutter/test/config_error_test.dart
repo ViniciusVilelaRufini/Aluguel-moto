@@ -17,6 +17,7 @@ void main() {
       await t.pump(const Duration(milliseconds: 500));
       expect(t.takeException(), isNull);
       expect(find.text('Configuração inválida do app'), findsOneWidget);
+      expect(find.byKey(const Key('config-error-logo')), findsOneWidget);
       expect(find.textContaining('SUPPORT_PHONE ausente'), findsOneWidget);
       expect(find.textContaining('API_BASE_URL ausente'), findsOneWidget);
     });
