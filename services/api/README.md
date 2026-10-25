@@ -210,6 +210,16 @@ Status: `in_vehicle`, `in_van`, `charging` (no galpão `depotId`, ou na estaçã
 - CSV dos relatórios em pt-BR (cabeçalhos, R$ com vírgula, datas de São Paulo); a receita tem `walletCents` (pago com carteira).
 - Testes: `delinquency.service.spec.ts`, `alerts.service.spec.ts`, `lgpd-completa.spec.ts`, `reports-csv.spec.ts`, e2e `test/lacunas-t14.e2e-spec.ts` e o caso 13 do contrato.
 
+## Correções da varredura E2E na AWS (Task 30)
+
+- **Cartão padrão:** `PUT /payments/cards/{id}/default` (idempotente). O primeiro cartão (ou o primeiro com a conta sem padrão) vira padrão; remover o padrão promove o ativo mais recente. Sem `cardId`, toda cobrança usa `resolveCustomerCard` (padrão → ativo mais recente). Caução no cartão (reserva de galpão e `POST /rentals`) e assinatura sem nenhum cartão ativo → `422 card-required`, checado antes de criar a caução (`payments/card-required.ts`). Migração de dados `20261025200000_default_card_backfill`.
+- **Exclusão de conta:** também recusada (`409 account-deletion-blocked`, mensagem do que fazer) com reserva aberta (`active`/`handover`) ou caução `held`/`awaiting_pix`.
+- **Aceite com a moto sem conexão:** `409 vehicle-offline` com texto próprio do aceite (a caução continua retida; nada cobrado).
+- **Nome da equipe:** o staff criado no primeiro login fica sem nome; para o cliente sai o primeiro nome cadastrado ou "Equipe Volti" (`common/staff-display-name.ts`). Migração de dados `20261025201000_staff_name_not_from_email`.
+- **E-mail do cliente:** `CustomerIdentityDirectory.contactInfo` (aws: `AdminGetUser` no pool de clientes, só atributos verificados; local: `null`) preenche e-mail/telefone no primeiro acesso e completa quem ficou com `@sem-email.volti.invalid` (no máximo uma consulta a cada 10 min por cliente e instância).
+- **Anexos do chat:** `SupportMessage.attachmentUrls` (só staff; GET pré-assinado de 15 min; só chaves `support/<authorId>/…`).
+- **Receita:** `totalRevenueCents` (Financeiro) e `revenueTodayCents` (dashboard) = aluguéis encerrados + cobranças de assinatura (bruto; estornos em `refundsCents`). Recargas e pacotes ficam fora (crédito pré-pago).
+
 ## Fechamento sem cartão (R2-01, lacunas Task 16)
 
 - Ordem no fechamento: **carteira → caução → cartão salvo → dívida**. A carteira é debitada (`rental_charge`) na transação que fecha o aluguel (cliente travado com `FOR UPDATE`), aparece como linha `wallet` no `breakdown` e só o restante vai para a liquidação; carteira cobrindo tudo → pagamento `method: wallet` e caução liberada. A caução Pix abate e devolve só o saldo; sem cartão, o restante vira dívida (`outstandingCents`), paga no app por Pix (`POST /payments/{id}/retry`).
