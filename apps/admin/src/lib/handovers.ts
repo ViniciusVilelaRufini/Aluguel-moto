@@ -35,6 +35,9 @@ export function checklistSummary(list: ChecklistItem[]): { ok: number; total: nu
 const ERROR_LABEL: Record<string, string> = {
   'payment-declined': 'Pagamento não aprovado',
   'gateway-unavailable': 'Pagamento indisponível no momento',
+  // Task 30: a moto não respondeu ao destravamento no aceite (caução continua retida; o cliente pode aceitar de novo).
+  'vehicle-offline': 'Moto sem conexão no destravamento',
+  'deposit-not-held': 'Caução não retida',
 };
 
 export function lastErrorLabel(slug?: string | null): string | null {

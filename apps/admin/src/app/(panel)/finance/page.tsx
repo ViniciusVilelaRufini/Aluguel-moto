@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { revenueCaption } from '@/lib/finance-revenue';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
@@ -115,7 +116,7 @@ export default function FinancePage() {
           <ErrorNote error={fin.error ?? rev.error ?? occ.error ?? perVehicle.error} onRetry={() => { fin.refetch(); rev.refetch(); occ.refetch(); perVehicle.refetch(); finPrev.refetch(); occPrev.refetch(); perVehiclePrev.refetch(); }} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 12 }}>
             {fin.isLoading ? [0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />) : <>
-              <StatTile icon="Wallet" label="Receita" numeric={f ? f.totalRevenueCents : null} format={formatCompactBRL} delta={dRevenue?.text} trend={dRevenue?.trend} />
+              <StatTile icon="Wallet" label="Receita" numeric={f ? f.totalRevenueCents : null} format={formatCompactBRL} delta={dRevenue?.text} trend={dRevenue?.trend} caption={revenueCaption(f)} />
               <StatTile icon="Gauge" label="Taxa de ocupação" numeric={occAvg === null ? null : Math.round(occAvg)} format={(n) => `${n}%`} delta={dOcc?.text} trend={dOcc?.trend} />
               <StatTile icon="Bike" label="Receita/moto/dia" numeric={perVehicleDay} format={formatBRL} delta={dPerVehicle?.text} trend={dPerVehicle?.trend} />
               <StatTile icon="CircleAlert" label="Inadimplência" numeric={f ? f.delinquentAmountCents : null} format={formatBRL} goodWhen="down" delta={dDelinquent?.text} trend={dDelinquent ? (dDelinquent.trend === 'flat' ? 'flat' : dDelinquent.trend === 'up' ? 'down' : 'up') : undefined}

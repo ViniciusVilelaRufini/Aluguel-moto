@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { ChatAttachments } from './ChatAttachments';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
@@ -107,6 +108,7 @@ function Conversations({ customerId }: { customerId?: string }) {
               {items.map((m) => (
                 <div key={m.id} style={{ alignSelf: m.authorType === 'customer' ? 'flex-start' : 'flex-end', maxWidth: '75%', padding: '8px 12px', borderRadius: 14, background: m.authorType === 'customer' ? 'var(--surface-sunken)' : 'var(--brand-soft)', fontSize: 14 }}>
                   <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
+                  <ChatAttachments message={m} />
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, justifyContent: m.authorType === 'customer' ? 'flex-start' : 'flex-end' }}>
                     <span>{m.authorName ?? (m.authorType === 'system' ? 'Sistema' : 'Cliente')} · {formatDateTime(m.createdAt)}</span>
                     {m.authorType !== 'customer' && (() => {

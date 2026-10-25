@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { staffLabel } from '@/lib/staff-label';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { AUDIT_ACTION_OPTIONS, AUDIT_ENTITY_OPTIONS, AUDIT_OTHER, auditActionLabel, auditEntityLabel, auditFilterValue } from '@/lib/audit-labels';
@@ -55,7 +56,7 @@ function Team() {
       <ErrorNote error={error} />
       <DataTable<S<'StaffUser'>> rows={rows} loading={loading} pager={pager} onRowClick={setEdit} empty="Nenhuma pessoa na equipe" emptyIcon="Users"
         columns={[
-          { key: 'name', label: 'Pessoa', render: (r) => <span style={{ fontWeight: 600 }}>{r.name}</span> },
+          { key: 'name', label: 'Pessoa', render: (r) => <span style={{ fontWeight: 600 }}>{staffLabel(r)}</span> },
           { key: 'email', label: 'E-mail' },
           { key: 'groups', label: 'Perfil', render: (r) => <span style={{ display: 'inline-flex', gap: 4 }}>{r.groups.map((g) => <Badge key={g} size="sm" tone={TONE[g]}>{GROUP_LABEL[g]}</Badge>)}</span> },
           { key: 'mfa', label: '2FA', render: (r) => (r.mfaEnabled === false ? <Badge size="sm" tone="warning">Pendente</Badge> : <Badge size="sm" tone="success" icon="ShieldCheck">Ativo</Badge>) },
