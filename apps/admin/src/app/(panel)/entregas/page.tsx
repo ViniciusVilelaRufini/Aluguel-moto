@@ -69,7 +69,7 @@ export default function HandoversPage() {
           )}
         </div>
         <ErrorNote error={page.error} onRetry={() => page.refetch()} />
-        <HandoverTable rows={page.rows} loading={page.loading} pager={page.pager} selectedId={selected} onSelect={(h) => setSelected(h.id)}
+        <HandoverTable rows={page.rows} loading={page.loading} pager={page.pager} selectedId={selected} onSelect={(h) => setSelected(h.id)} compact={!!selected}
           empty={view === 'disputes' ? 'Nenhuma disputa aberta' : undefined} />
       </Page>
       {selected && (

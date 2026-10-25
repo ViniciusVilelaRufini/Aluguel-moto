@@ -28,7 +28,7 @@ export function StationSwapsModal({ station, onClose }: { station: Pick<S<'SwapS
   const { rows, loading, error, pager, refetch } = usePagedQuery<Swap>(['station-swaps', station.id, status], (cursor) =>
     unwrap(api.GET('/swap-stations/{id}/swaps', { params: { path: { id: station.id }, query: { limit: 15, cursor, status: status || undefined } } })));
   return (
-    <Modal open title={`Trocas · ${station.name}`} onClose={onClose} width={720} testId="station-swaps"
+    <Modal open title={`Trocas · ${station.name}`} onClose={onClose} width={860} testId="station-swaps"
       actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
       <div style={{ width: 240 }}>
         <Select<StatusFilter> testId="station-swaps-status" value={status} onChange={setStatus}

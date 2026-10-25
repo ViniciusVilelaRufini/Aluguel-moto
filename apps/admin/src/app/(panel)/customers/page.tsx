@@ -8,9 +8,9 @@ import { useAuth } from '@/lib/auth';
 import { can, canSeeFullCpf } from '@/lib/permissions';
 import { displayCpf } from '@/lib/cpf';
 import { CLAIM_STATUS, CONVERSATION_STATUS, CUSTOMER_STATUS, DISPUTE_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
-import { formatBRL, formatDate, formatDateTime, formatDuration } from '@/lib/format';
+import { formatBRL, formatDate, formatDateTime, formatDuration, formatPhone } from '@/lib/format';
 import type { S } from '@/lib/types';
-import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast } from '@/components/ui';
+import { DataTable, Empty, ErrorNote, Field, Initials, KV, Modal, PanelSkeleton, Page, PageHeader, Pill, ReasonDialog, SectionTitle, SidePanel, Skeleton, TextInput, usePagedQuery, useToast, type Column } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { SupportPanel } from '@/components/SupportPanel';
 import { SubscriptionVehicleDialog } from '@/components/SubscriptionVehicleDialog';
@@ -101,7 +101,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
           emptyIcon={debounced ? 'Search' : 'Users'}
           emptyHint={debounced ? 'Confira a grafia ou busque por CPF, e-mail ou telefone.' : undefined}
           emptyAction={debounced || filter !== 'all' ? <Button size="sm" variant="ghost" icon="X" onClick={() => { setQ(''); setFilter('all'); }}>Limpar busca e filtros</Button> : undefined}
-          columns={[
+          columns={([
             { key: 'name', label: 'Cliente', render: (r) => <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><Initials name={r.name ?? r.email} /><span style={{ fontWeight: 600 }}>{r.name ?? r.email}</span></div> },
             { key: 'cpf', label: 'CPF', mono: true, render: (r) => displayCpf(r.cpf, full) },
             { key: 'kycStatus', label: 'Verificação', render: (r) => { const [l, t, i] = KYC_STATUS[r.kycStatus]; return <Badge size="sm" tone={t} icon={i}>{l}</Badge>; } },
@@ -115,7 +115,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
                 {r.restricted && <Pill tone="danger">Restrição</Pill>}
               </div>
             ) },
-          ]}
+          ] as Column<S<'Customer'>>[]).filter((c) => !(selected && ['cpf', 'plan', 'rentals'].includes(c.key)))}
         />
       </Page>
       {selected && <CustomerSheet id={selected} onClose={() => onSelect(null)} onRentals={onRentals} onChat={onChat} />}
@@ -165,7 +165,7 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
                 <KV k="Verificação" v={KYC_STATUS[c.kycStatus][0]} />
                 <KV k="CPF" v={displayCpf(c.cpf, full)} mono />
                 <KV k="E-mail" v={c.email} />
-                <KV k="Telefone" v={c.phone ?? '—'} />
+                <KV k="Telefone" v={formatPhone(c.phone)} />
                 <KV k="Nascimento" v={formatDate(c.birthDate)} />
                 <KV k="Localização autorizada" v={c.locationConsent ? 'Sim' : 'Não'} />
                 <KV k="Plano" v={c.activePlanCode ? PLAN_LABEL[c.activePlanCode] : 'Avulso'} />
