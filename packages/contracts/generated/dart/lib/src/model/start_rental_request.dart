@@ -21,7 +21,7 @@ part 'start_rental_request.g.dart';
 /// * [couponCode]
 /// * [cardId] - Cartão para a caução e a cobrança final (padrão do cliente se ausente).
 /// * [depositId] - Caução Pix já paga (segunda chamada do fluxo Pix).
-/// * [useWalletCredits] - Abater o valor final com o saldo da carteira antes de cobrar o cartão.
+/// * [useWalletCredits] - Ignorado (R2-01, Task 16 das lacunas): no fechamento a carteira sempre abate primeiro (ordem carteira → caução → cartão → dívida), com a linha `wallet` no `breakdown`.
 @BuiltValue()
 abstract class StartRentalRequest
     implements Built<StartRentalRequest, StartRentalRequestBuilder> {
@@ -51,7 +51,8 @@ abstract class StartRentalRequest
   @BuiltValueField(wireName: r'depositId')
   String? get depositId;
 
-  /// Abater o valor final com o saldo da carteira antes de cobrar o cartão.
+  /// Ignorado (R2-01, Task 16 das lacunas): no fechamento a carteira sempre abate primeiro (ordem carteira → caução → cartão → dívida), com a linha `wallet` no `breakdown`.
+  @Deprecated('useWalletCredits has been deprecated')
   @BuiltValueField(wireName: r'useWalletCredits')
   bool? get useWalletCredits;
 

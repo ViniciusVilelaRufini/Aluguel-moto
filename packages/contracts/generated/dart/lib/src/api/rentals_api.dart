@@ -533,7 +533,7 @@ class RentalsApi {
   }
 
   /// Recibo do aluguel
-  /// Disponível após &#x60;ended&#x60;/&#x60;force_ended&#x60; (senão &#x60;409&#x60;). Inclui o trajeto e o link do PDF.
+  /// Disponível após &#x60;ended&#x60;/&#x60;force_ended&#x60; (senão &#x60;409&#x60;). Inclui o trajeto, a situação do pagamento (&#x60;paymentStatus&#x60;) e, só com o pagamento recebido (&#x60;paid&#x60;), o link do PDF. Ordem de liquidação no fechamento: carteira (linha &#x60;wallet&#x60; do &#x60;breakdown&#x60;) → caução (a caução Pix abate o valor; só o saldo é devolvido, &#x60;depositUsedCents&#x60; / &#x60;depositReleasedCents&#x60;) → cartão salvo → o restante vira dívida (&#x60;pending&#x60;, &#x60;amountDueCents&#x60;), paga pelo cliente em &#x60;POST /payments/{paymentId}/retry&#x60; (Pix ou cartão).
   ///
   /// Parameters:
   /// * [id]

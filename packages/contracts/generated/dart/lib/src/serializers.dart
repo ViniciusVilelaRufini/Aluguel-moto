@@ -201,6 +201,7 @@ import 'package:volti_api/src/model/quote_request.dart';
 import 'package:volti_api/src/model/rating_request.dart';
 import 'package:volti_api/src/model/reason_request.dart';
 import 'package:volti_api/src/model/receipt.dart';
+import 'package:volti_api/src/model/receipt_payment_status.dart';
 import 'package:volti_api/src/model/referral_redeem_request.dart';
 import 'package:volti_api/src/model/referral_redemption.dart';
 import 'package:volti_api/src/model/referral_reward.dart';
@@ -496,6 +497,7 @@ part 'serializers.g.dart';
   RatingRequest,
   ReasonRequest,
   Receipt,
+  ReceiptPaymentStatus,
   ReferralRedeemRequest,
   ReferralRedemption,
   ReferralReward,

@@ -249,7 +249,7 @@ Name | Type | Description  | Notes
 
 Recibo do aluguel
 
-Disponível após `ended`/`force_ended` (senão `409`). Inclui o trajeto e o link do PDF.
+Disponível após `ended`/`force_ended` (senão `409`). Inclui o trajeto, a situação do pagamento (`paymentStatus`) e, só com o pagamento recebido (`paid`), o link do PDF. Ordem de liquidação no fechamento: carteira (linha `wallet` do `breakdown`) → caução (a caução Pix abate o valor; só o saldo é devolvido, `depositUsedCents` / `depositReleasedCents`) → cartão salvo → o restante vira dívida (`pending`, `amountDueCents`), paga pelo cliente em `POST /payments/{paymentId}/retry` (Pix ou cartão). 
 
 ### Example
 ```dart
