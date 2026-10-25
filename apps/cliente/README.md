@@ -309,6 +309,15 @@ flutter analyze && flutter test
 ```
 Cobrem login (dev × cognito), código por SMS com reenvio e limite de 60 s, passo de pagamento, CPF inválido, o fluxo do galpão (`test/galpao_flow_test.dart`: home, seletor de galpões, lista, plano, seguro, retirada, reserva com QR, 409, handover, 200% em 360×740 e reduced motion), a entrega, a bateria e a devolução no galpão (`test/handover_test.dart`: `handover.pending` abre "Confira sua moto", app aberto com reserva em `handover`, aceite com toque duplo e mesma chave na nova tentativa, pagamento recusado, caução não retida, entrega não pendente, 404, apontar problema, galpão primeiro na troca de bateria, devolução no galpão com `handover.updated`, 200% em 360×740, reduced motion e semântica), as regras de horário (`test/depot_hours_test.dart`), `test/pick_logic_test.dart`, a home (`test/home_parity_test.dart`), o cartão "Sua reserva" (`test/home_reservation_card_test.dart`: agora com contagem, agendada, entrega com Conferir moto, passe e Escolher moto escondidos, modo estações, expiração recarrega, segundo plano pausa, reduced motion, semântica e 200% em 360×740), os pontos de troca na home (`test/home_stations_test.dart`: botão alterna o modo, marcadores com contagem e cor, galpão primeiro e depois distância, pílulas 0/1/muitas, Como chegar, erro, vazio, 200% em 360×740 e reduced motion), onboarding sem consentimento, seguro básico fixo, reserva bloqueada sem consentimento de localização, `zone.notice`, `device.event` de queda, encerrar sem foto e erro de rede com "Tentar de novo".
 
+## Fechamento sem cartão (R2-01, lacunas Task 16)
+
+Testes em `test/fechamento_sem_cartao_test.dart` (100% e 200% de fonte).
+
+- **Recibo:** situação do pagamento (Pago / Pendente / Processando, `VoltiBadge`), caução usada e devolvida, "A pagar" e o texto do fechamento conforme o pagamento ("Falta pagar R$ X", "Usamos R$ X da caução"). "Recibo e nota fiscal" mostra "Aguardando pagamento" e só abre o PDF com o recibo pago.
+- **Pagar agora:** quitação por Pix (`POST /payments/{id}/retry`, `Backend.payDebtPix`) com QR e copia e cola no mesmo componente da recarga (`core/pix_charge_panel.dart`, usado também pela `TopUpPixSheet`); acompanha `GET /payments/{id}` até `paid`, fecha e recarrega o recibo.
+- **Home:** `PendingPaymentBanner` com o total em aberto (`Backend.openDebts`: `GET /payments?status=failed` com `outstandingCents`) e "Pagar agora" (dívida mais antiga primeiro).
+- **Reserva:** `409 payment-pending` (ou `403 customer-delinquent`) na confirmação → aviso "Pague o valor pendente para alugar de novo." e volta à home com a pendência.
+
 ## Correções do emulador (2026-10-22, branch `feat/cliente-login`)
 
 - A explicação da localização fala do galpão ("Galpão mais perto"), não de motos por perto.

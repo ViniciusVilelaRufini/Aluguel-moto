@@ -227,6 +227,7 @@ export 'package:volti_api/src/model/quote_request.dart';
 export 'package:volti_api/src/model/rating_request.dart';
 export 'package:volti_api/src/model/reason_request.dart';
 export 'package:volti_api/src/model/receipt.dart';
+export 'package:volti_api/src/model/receipt_payment_status.dart';
 export 'package:volti_api/src/model/referral_redeem_request.dart';
 export 'package:volti_api/src/model/referral_redemption.dart';
 export 'package:volti_api/src/model/referral_reward.dart';

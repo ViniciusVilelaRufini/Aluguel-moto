@@ -5241,6 +5241,138 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Conta, mensagens novas do suporte'**
   String get accountUnread;
+
+  /// No description provided for @payNow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagar agora'**
+  String get payNow;
+
+  /// No description provided for @paymentPendingTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagamento pendente'**
+  String get paymentPendingTitle;
+
+  /// No description provided for @paymentPendingHomeText.
+  ///
+  /// In pt, this message translates to:
+  /// **'{amount} em aberto. Pague para alugar de novo.'**
+  String paymentPendingHomeText(String amount);
+
+  /// No description provided for @paymentPendingBlock.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pague o valor pendente para alugar de novo.'**
+  String get paymentPendingBlock;
+
+  /// No description provided for @receiptPaymentLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagamento'**
+  String get receiptPaymentLabel;
+
+  /// No description provided for @receiptStatusPaid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pago'**
+  String get receiptStatusPaid;
+
+  /// No description provided for @receiptStatusPending.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pendente'**
+  String get receiptStatusPending;
+
+  /// No description provided for @receiptStatusProcessing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Processando'**
+  String get receiptStatusProcessing;
+
+  /// No description provided for @receiptDepositUsed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Caução usada'**
+  String get receiptDepositUsed;
+
+  /// No description provided for @receiptDepositReleased.
+  ///
+  /// In pt, this message translates to:
+  /// **'Caução devolvida'**
+  String get receiptDepositReleased;
+
+  /// No description provided for @receiptAmountDue.
+  ///
+  /// In pt, this message translates to:
+  /// **'A pagar'**
+  String get receiptAmountDue;
+
+  /// No description provided for @receiptPendingText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não conseguimos cobrar {amount}. Pague com Pix para liberar o recibo e novos aluguéis.'**
+  String receiptPendingText(String amount);
+
+  /// No description provided for @receiptProcessingText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estamos confirmando o pagamento. O recibo fica pronto em seguida.'**
+  String get receiptProcessingText;
+
+  /// No description provided for @receiptAwaitingPayment.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aguardando pagamento'**
+  String get receiptAwaitingPayment;
+
+  /// No description provided for @receiptPdfAfterPayment.
+  ///
+  /// In pt, this message translates to:
+  /// **'O recibo fica disponível depois do pagamento.'**
+  String get receiptPdfAfterPayment;
+
+  /// No description provided for @rideFinishedDepositUsed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto travada. Usamos {amount} da caução.'**
+  String rideFinishedDepositUsed(String amount);
+
+  /// No description provided for @rideFinishedPending.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto travada. Falta pagar {amount}.'**
+  String rideFinishedPending(String amount);
+
+  /// No description provided for @rideFinishedProcessing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Moto travada. Pagamento em processamento.'**
+  String get rideFinishedProcessing;
+
+  /// No description provided for @debtPixTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pague a pendência com Pix'**
+  String get debtPixTitle;
+
+  /// No description provided for @debtPixText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pague {amount} com o QR ou o código copia e cola no app do seu banco.'**
+  String debtPixText(String amount);
+
+  /// No description provided for @debtPaid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pendência paga'**
+  String get debtPaid;
+
+  /// No description provided for @debtPaidText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pronto! Você já pode alugar de novo.'**
+  String get debtPaidText;
 }
 
 class _AppLocalizationsDelegate

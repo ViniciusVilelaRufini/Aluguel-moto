@@ -1109,7 +1109,9 @@ export interface paths {
          * Reservar moto
          * @description Uma reserva ativa por cliente (`409` `reservation-already-active`). Dura 15 minutos (TTL no Redis);
          *     ao expirar, a moto volta a `free`. Exige KYC aprovado (`403` `kyc-not-approved`) e cliente sem
-         *     bloqueio nem inadimplência.
+         *     bloqueio. Cliente inadimplente ou com dívida em aberto (pagamento de aluguel/assinatura `failed` não quitado) →
+         *     `409` `payment-pending` ("Pague o valor pendente para alugar de novo."); a dívida é paga por
+         *     `POST /payments/{id}/retry`.
          *
          *     Sem `depotId` (reserva de rua): moto com `depotId`, separada por reserva de galpão ou `awaiting_pickup` →
          *     `409` `vehicle-unavailable`. Moto do galpão só sai pela entrega.
@@ -1434,7 +1436,11 @@ export interface paths {
         };
         /**
          * Recibo do aluguel
-         * @description Disponível após `ended`/`force_ended` (senão `409`). Inclui o trajeto e o link do PDF.
+         * @description Disponível após `ended`/`force_ended` (senão `409`). Inclui o trajeto, a situação do pagamento (`paymentStatus`)
+         *     e, só com o pagamento recebido (`paid`), o link do PDF. Ordem de liquidação no fechamento: carteira (linha
+         *     `wallet` do `breakdown`) → caução (a caução Pix abate o valor; só o saldo é devolvido, `depositUsedCents` /
+         *     `depositReleasedCents`) → cartão salvo → o restante vira dívida (`pending`, `amountDueCents`), paga pelo cliente
+         *     em `POST /payments/{paymentId}/retry` (Pix ou cartão).
          */
         get: operations["getRentalReceipt"];
         put?: never;
@@ -1974,8 +1980,12 @@ export interface paths {
          *     (inadimplência). Cria um pagamento `debt_settlement` com `settlesPaymentId` = este id. Cartão: cobrança na hora
          *     (`201` `paid`; recusa → `402` `payment-failed`; sem cartão → `402` `card-not-found`). Pix: `201` `pending` com `pix`;
          *     a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha `debtSettledAt` e a flag
-         *     `delinquent` sai quando não restar outra dívida. Não é dívida (ou já quitada) → `409` `debt-not-payable`; cobrança
-         *     ainda em retentativa automática → `409` `debt-in-collection`. Uma quitação Pix pendente e ainda válida é reaproveitada.
+         *     `delinquent` sai quando não restar outra dívida e o recibo do aluguel (PDF) fica pronto. Não é dívida (ou já
+         *     quitada) → `409` `debt-not-payable`; cobrança automática ainda em curso → `409` `debt-in-collection` (aluguel: a
+         *     liquidação ainda retenta no cartão; assinatura: a assinatura desta dívida está `past_due`, com o gateway retentando
+         *     a recorrência, ou com o cancelamento no gateway ainda não confirmado). Uma quitação Pix pendente e ainda válida é
+         *     reaproveitada. Gateway sem resposta conclusiva (resultado da cobrança desconhecido ou tentativa anterior que não deu
+         *     para conferir) → `503` `gateway-unavailable`; a tentativa fica `pending` e é conferida antes de qualquer nova cobrança.
          */
         post: operations["payDebt"];
         delete?: never;
@@ -3152,9 +3162,10 @@ export interface paths {
          * Registrar quitação manual da inadimplência
          * @description O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados
          *     (`debtSettledAt`, `debtSettlement: manual`) todos os pagamentos `failed` de aluguel/assinatura ainda em aberto e
-         *     tira a flag `delinquent`. Grava AuditLog com o motivo e o valor quitado. Cliente sem inadimplência → `409`
-         *     `debt-not-payable`; cobrança ainda em retentativa automática no gateway → `409` `debt-in-collection` (evita cobrar
-         *     de novo o que foi pago fora).
+         *     tira a flag `delinquent`. Grava AuditLog com o motivo e o valor quitado; os recibos dos aluguéis quitados ficam
+         *     prontos. Cliente sem inadimplência → `409` `debt-not-payable`; cobrança ainda em retentativa automática no gateway
+         *     → `409` `debt-in-collection` (liquidação de aluguel retentando ou a assinatura ligada a uma das dívidas em
+         *     `past_due`/cancelamento pendente; outra assinatura do cliente não bloqueia), para não cobrar de novo o que foi pago fora.
          */
         post: operations["clearCustomerDelinquency"];
         delete?: never;
@@ -3972,7 +3983,9 @@ export interface components {
              */
             depositId?: string;
             /**
-             * @description Abater o valor final com o saldo da carteira antes de cobrar o cartão.
+             * @deprecated
+             * @description Ignorado (R2-01, Task 16 das lacunas): no fechamento a carteira sempre abate primeiro (ordem carteira → caução →
+             *     cartão → dívida), com a linha `wallet` no `breakdown`.
              * @default false
              */
             useWalletCredits?: boolean;
@@ -4037,6 +4050,7 @@ export interface components {
             discountCents: number;
             insuranceCents: number;
             feesCents: number;
+            /** @description Saldo da carteira abatido no fechamento (R2-01: a carteira abate primeiro). `totalCents` já vem descontado. */
             walletAppliedCents?: number;
             totalCents: number;
         };
@@ -4202,17 +4216,37 @@ export interface components {
             endedAt: string;
             durationSeconds: number;
             breakdown: components["schemas"]["PriceBreakdown"];
+            /**
+             * Format: uuid
+             * @description Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`).
+             */
+            paymentId?: string;
+            paymentStatus?: components["schemas"]["ReceiptPaymentStatus"];
+            /** @description Forma do valor recebido (a da quitação, quando a dívida foi paga depois). Ausente enquanto não pago e na quitação manual. */
             paymentMethod?: components["schemas"]["PaymentMethod"];
             cardLast4?: string;
+            /** @description Parte da caução usada para abater o valor (caução capturada). Ausente quando a caução não foi usada. */
+            depositUsedCents?: number;
+            /** @description Parte da caução devolvida/liberada ao cliente depois do fechamento. */
+            depositReleasedCents?: number;
+            /** @description Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento). */
+            amountDueCents?: number;
             /**
              * Format: uri
-             * @description URL pré-assinada do PDF (expira em 15 min).
+             * @description URL pré-assinada do PDF (expira em 15 min). Só com `paymentStatus` `paid`.
              */
             pdfUrl?: string;
             /** @description Número da NFS-e, quando emitida. */
             invoiceNumber?: string;
             track?: components["schemas"]["TrackPoint"][];
         };
+        /**
+         * @description `paid`: recebido (cobrança aprovada, carteira/caução cobriram tudo ou dívida quitada pelo cliente ou pelo
+         *     financeiro); `pending`: dívida em aberto que o cliente paga no app (`amountDueCents`); `processing`: a cobrança
+         *     ainda está em andamento no gateway (retentativa ou análise), nada a pagar por enquanto.
+         * @enum {string}
+         */
+        ReceiptPaymentStatus: "paid" | "pending" | "processing";
         /**
          * @description Regras do seed: `minute` desbloqueio 300 + 79/min (minuto parcial arredonda para cima), pausa 20/min;
          *     `hour` 2900 por hora iniciada; `day` 8900 por dia iniciado; `weekly` 24900 e `monthly` 79900 recorrentes.
@@ -4397,6 +4431,8 @@ export interface components {
             customerName?: string;
             /** @description Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida. */
             outstandingCents?: number;
+            /** @description Aluguel: parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante foi cobrado na caução/gateway. O estorno devolve primeiro a parte do gateway e depois credita a da carteira (lançamento `refund`). Ausente quando a carteira não foi usada. */
+            walletCents?: number;
             /**
              * Format: date-time
              * @description Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro).
@@ -9699,6 +9735,7 @@ export interface operations {
             402: components["responses"]["PaymentRequired"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            503: components["responses"]["ServiceUnavailable"];
         };
     };
     receiveMercadoPagoWebhook: {

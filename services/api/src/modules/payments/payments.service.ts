@@ -165,37 +165,57 @@ export class PaymentsService {
     if (!canTransition(p.status, 'partially_refunded') && !canTransition(p.status, 'refunded')) {
       throw unprocessable('validation-error', 'Só é possível estornar pagamentos pagos ou capturados.');
     }
+    // Task 16 (fix round 1): o pagamento do aluguel registra o bruto, com a parte da carteira em `walletCents`. O estorno
+    // devolve primeiro a parte do gateway (cartão/Pix/caução capturada) e depois a da carteira (lançamento `refund` no
+    // ledger). Pagamento só da carteira (`method: wallet`) inteiro é carteira.
     const captured = await this.prisma.paymentCapture.findUnique({ where: { paymentId: p.id } });
-    const base = captured?.capturedCents ?? p.amountCents;
+    const walletBase = p.method === 'wallet' ? p.amountCents : p.walletCents;
+    const gatewayBase = p.method === 'wallet' ? 0 : (captured?.capturedCents ?? p.amountCents - p.walletCents);
+    const base = gatewayBase + walletBase;
     const remaining = base - p.refundedCents;
     const amount = dto.amountCents ?? remaining;
     if (amount <= 0 || amount > remaining) throw unprocessable('validation-error', `Valor acima do disponível para estorno (${remaining}).`);
-    const refundedCents = p.refundedCents + amount;
-    const to = refundedCents >= base ? 'refunded' : 'partially_refunded';
-    const viaWallet = p.method === 'wallet';
-    if (!viaWallet && !p.providerPaymentId) throw unprocessable('validation-error', 'Pagamento sem registro no gateway para estornar.');
+    // Gateway primeiro: o já estornado conta primeiro contra a parte do gateway.
+    const gatewayLeft = Math.max(0, gatewayBase - p.refundedCents);
+    const gatewayPart = Math.min(amount, gatewayLeft);
+    const walletPart = amount - gatewayPart;
+    if (gatewayPart > 0 && !p.providerPaymentId) throw unprocessable('validation-error', 'Pagamento sem registro no gateway para estornar.');
 
     // Um estorno em aberto por pagamento: sem isso, a reconciliação (que compara totais acumulados) confundiria pedidos.
     const open = await this.prisma.paymentRefund.findFirst({ where: { paymentId: p.id, status: { in: ['claimed', 'pending'] } } });
     if (open) throw conflict('conflict', 'Há um estorno deste pagamento aguardando confirmação do gateway. Tente de novo depois.');
 
-    const record = await this.prisma.$transaction(async (tx) => {
-      if (!(await this.state.claimRefund(tx, p, to, refundedCents))) return null;
-      if (viaWallet) {
-        await appendWalletEntry(tx, { customerId: p.customerId, type: 'refund', amountCents: amount, description: `Estorno: ${dto.reason}`, paymentId: p.id, rentalId: p.rentalId, createdById: actor.userId });
-      }
-      return tx.paymentRefund.create({
-        data: {
-          paymentId: p.id, idempotencyKey: key, amountCents: amount, prevStatus: p.status, prevRefundedCents: p.refundedCents,
-          newStatus: to, newRefundedCents: refundedCents, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
-        },
+    /** Reserva um pedido de estorno (com o lançamento na carteira quando é a parte da carteira). */
+    const claim = async (read: Payment, part: number, viaWallet: boolean, recordKey: string) => {
+      const refundedCents = read.refundedCents + part;
+      const to = refundedCents >= base ? 'refunded' : 'partially_refunded';
+      return this.prisma.$transaction(async (tx) => {
+        if (!(await this.state.claimRefund(tx, read, to, refundedCents))) return null;
+        if (viaWallet) {
+          await appendWalletEntry(tx, { customerId: read.customerId, type: 'refund', amountCents: part, description: `Estorno: ${dto.reason}`, paymentId: read.id, rentalId: read.rentalId, createdById: actor.userId });
+        }
+        return tx.paymentRefund.create({
+          data: {
+            paymentId: read.id, idempotencyKey: recordKey, amountCents: part, prevStatus: read.status, prevRefundedCents: read.refundedCents,
+            newStatus: to, newRefundedCents: refundedCents, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
+          },
+        });
       });
-    });
-    if (!record) throw conflict('conflict', 'Outro estorno deste pagamento foi registrado ao mesmo tempo. Atualize e tente de novo.');
+    };
+    const raced = () => conflict('conflict', 'Outro estorno deste pagamento foi registrado ao mesmo tempo. Atualize e tente de novo.');
 
-    if (!viaWallet) {
+    let current = p;
+    if (gatewayPart > 0) {
+      const record = await claim(current, gatewayPart, false, key);
+      if (!record) throw raced();
       const outcome = await this.callGatewayRefund(record);
       if (outcome === 'rejected') throw new ProblemException(422, 'payment-failed', 'O gateway recusou o estorno.');
+      current = (await this.prisma.payment.findUnique({ where: { id } }))!;
+    }
+    if (walletPart > 0) {
+      // A chave original fica com o pedido do gateway; a parte da carteira usa uma derivada (mesma repetição → mesma chave).
+      const record = await claim(current, walletPart, true, gatewayPart > 0 ? `${key}:wallet` : key);
+      if (!record) throw raced();
     }
     const updated = (await this.prisma.payment.findUnique({ where: { id } }))!;
     this.state.emitUpdated(updated);

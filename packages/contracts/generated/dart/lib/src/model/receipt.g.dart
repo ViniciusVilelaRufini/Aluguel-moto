@@ -30,9 +30,19 @@ class _$Receipt extends Receipt {
   @override
   final PriceBreakdown breakdown;
   @override
+  final String? paymentId;
+  @override
+  final ReceiptPaymentStatus? paymentStatus;
+  @override
   final PaymentMethod? paymentMethod;
   @override
   final String? cardLast4;
+  @override
+  final int? depositUsedCents;
+  @override
+  final int? depositReleasedCents;
+  @override
+  final int? amountDueCents;
   @override
   final String? pdfUrl;
   @override
@@ -55,8 +65,13 @@ class _$Receipt extends Receipt {
       required this.endedAt,
       required this.durationSeconds,
       required this.breakdown,
+      this.paymentId,
+      this.paymentStatus,
       this.paymentMethod,
       this.cardLast4,
+      this.depositUsedCents,
+      this.depositReleasedCents,
+      this.amountDueCents,
       this.pdfUrl,
       this.invoiceNumber,
       this.track})
@@ -83,8 +98,13 @@ class _$Receipt extends Receipt {
         endedAt == other.endedAt &&
         durationSeconds == other.durationSeconds &&
         breakdown == other.breakdown &&
+        paymentId == other.paymentId &&
+        paymentStatus == other.paymentStatus &&
         paymentMethod == other.paymentMethod &&
         cardLast4 == other.cardLast4 &&
+        depositUsedCents == other.depositUsedCents &&
+        depositReleasedCents == other.depositReleasedCents &&
+        amountDueCents == other.amountDueCents &&
         pdfUrl == other.pdfUrl &&
         invoiceNumber == other.invoiceNumber &&
         track == other.track;
@@ -104,8 +124,13 @@ class _$Receipt extends Receipt {
     _$hash = $jc(_$hash, endedAt.hashCode);
     _$hash = $jc(_$hash, durationSeconds.hashCode);
     _$hash = $jc(_$hash, breakdown.hashCode);
+    _$hash = $jc(_$hash, paymentId.hashCode);
+    _$hash = $jc(_$hash, paymentStatus.hashCode);
     _$hash = $jc(_$hash, paymentMethod.hashCode);
     _$hash = $jc(_$hash, cardLast4.hashCode);
+    _$hash = $jc(_$hash, depositUsedCents.hashCode);
+    _$hash = $jc(_$hash, depositReleasedCents.hashCode);
+    _$hash = $jc(_$hash, amountDueCents.hashCode);
     _$hash = $jc(_$hash, pdfUrl.hashCode);
     _$hash = $jc(_$hash, invoiceNumber.hashCode);
     _$hash = $jc(_$hash, track.hashCode);
@@ -127,8 +152,13 @@ class _$Receipt extends Receipt {
           ..add('endedAt', endedAt)
           ..add('durationSeconds', durationSeconds)
           ..add('breakdown', breakdown)
+          ..add('paymentId', paymentId)
+          ..add('paymentStatus', paymentStatus)
           ..add('paymentMethod', paymentMethod)
           ..add('cardLast4', cardLast4)
+          ..add('depositUsedCents', depositUsedCents)
+          ..add('depositReleasedCents', depositReleasedCents)
+          ..add('amountDueCents', amountDueCents)
           ..add('pdfUrl', pdfUrl)
           ..add('invoiceNumber', invoiceNumber)
           ..add('track', track))
@@ -186,6 +216,15 @@ class ReceiptBuilder implements Builder<Receipt, ReceiptBuilder> {
   set breakdown(PriceBreakdownBuilder? breakdown) =>
       _$this._breakdown = breakdown;
 
+  String? _paymentId;
+  String? get paymentId => _$this._paymentId;
+  set paymentId(String? paymentId) => _$this._paymentId = paymentId;
+
+  ReceiptPaymentStatus? _paymentStatus;
+  ReceiptPaymentStatus? get paymentStatus => _$this._paymentStatus;
+  set paymentStatus(ReceiptPaymentStatus? paymentStatus) =>
+      _$this._paymentStatus = paymentStatus;
+
   PaymentMethod? _paymentMethod;
   PaymentMethod? get paymentMethod => _$this._paymentMethod;
   set paymentMethod(PaymentMethod? paymentMethod) =>
@@ -194,6 +233,21 @@ class ReceiptBuilder implements Builder<Receipt, ReceiptBuilder> {
   String? _cardLast4;
   String? get cardLast4 => _$this._cardLast4;
   set cardLast4(String? cardLast4) => _$this._cardLast4 = cardLast4;
+
+  int? _depositUsedCents;
+  int? get depositUsedCents => _$this._depositUsedCents;
+  set depositUsedCents(int? depositUsedCents) =>
+      _$this._depositUsedCents = depositUsedCents;
+
+  int? _depositReleasedCents;
+  int? get depositReleasedCents => _$this._depositReleasedCents;
+  set depositReleasedCents(int? depositReleasedCents) =>
+      _$this._depositReleasedCents = depositReleasedCents;
+
+  int? _amountDueCents;
+  int? get amountDueCents => _$this._amountDueCents;
+  set amountDueCents(int? amountDueCents) =>
+      _$this._amountDueCents = amountDueCents;
 
   String? _pdfUrl;
   String? get pdfUrl => _$this._pdfUrl;
@@ -227,8 +281,13 @@ class ReceiptBuilder implements Builder<Receipt, ReceiptBuilder> {
       _endedAt = $v.endedAt;
       _durationSeconds = $v.durationSeconds;
       _breakdown = $v.breakdown.toBuilder();
+      _paymentId = $v.paymentId;
+      _paymentStatus = $v.paymentStatus;
       _paymentMethod = $v.paymentMethod;
       _cardLast4 = $v.cardLast4;
+      _depositUsedCents = $v.depositUsedCents;
+      _depositReleasedCents = $v.depositReleasedCents;
+      _amountDueCents = $v.amountDueCents;
       _pdfUrl = $v.pdfUrl;
       _invoiceNumber = $v.invoiceNumber;
       _track = $v.track?.toBuilder();
@@ -275,8 +334,13 @@ class ReceiptBuilder implements Builder<Receipt, ReceiptBuilder> {
             durationSeconds: BuiltValueNullFieldError.checkNotNull(
                 durationSeconds, r'Receipt', 'durationSeconds'),
             breakdown: breakdown.build(),
+            paymentId: paymentId,
+            paymentStatus: paymentStatus,
             paymentMethod: paymentMethod,
             cardLast4: cardLast4,
+            depositUsedCents: depositUsedCents,
+            depositReleasedCents: depositReleasedCents,
+            amountDueCents: amountDueCents,
             pdfUrl: pdfUrl,
             invoiceNumber: invoiceNumber,
             track: _track?.build(),

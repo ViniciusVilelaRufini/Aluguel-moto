@@ -18,7 +18,7 @@ part 'price_breakdown.g.dart';
 /// * [discountCents]
 /// * [insuranceCents]
 /// * [feesCents]
-/// * [walletAppliedCents]
+/// * [walletAppliedCents] - Saldo da carteira abatido no fechamento (R2-01: a carteira abate primeiro). `totalCents` já vem descontado.
 /// * [totalCents]
 @BuiltValue()
 abstract class PriceBreakdown
@@ -39,6 +39,7 @@ abstract class PriceBreakdown
   @BuiltValueField(wireName: r'feesCents')
   int get feesCents;
 
+  /// Saldo da carteira abatido no fechamento (R2-01: a carteira abate primeiro). `totalCents` já vem descontado.
   @BuiltValueField(wireName: r'walletAppliedCents')
   int? get walletAppliedCents;
 

@@ -112,7 +112,7 @@ Name | Type | Description  | Notes
 
 Registrar quitação manual da inadimplência
 
-O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados (`debtSettledAt`, `debtSettlement: manual`) todos os pagamentos `failed` de aluguel/assinatura ainda em aberto e tira a flag `delinquent`. Grava AuditLog com o motivo e o valor quitado. Cliente sem inadimplência → `409` `debt-not-payable`; cobrança ainda em retentativa automática no gateway → `409` `debt-in-collection` (evita cobrar de novo o que foi pago fora). 
+O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados (`debtSettledAt`, `debtSettlement: manual`) todos os pagamentos `failed` de aluguel/assinatura ainda em aberto e tira a flag `delinquent`. Grava AuditLog com o motivo e o valor quitado; os recibos dos aluguéis quitados ficam prontos. Cliente sem inadimplência → `409` `debt-not-payable`; cobrança ainda em retentativa automática no gateway → `409` `debt-in-collection` (liquidação de aluguel retentando ou a assinatura ligada a uma das dívidas em `past_due`/cancelamento pendente; outra assinatura do cliente não bloqueia), para não cobrar de novo o que foi pago fora. 
 
 ### Example
 ```dart

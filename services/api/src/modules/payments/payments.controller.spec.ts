@@ -135,6 +135,38 @@ describe('PaymentsService.refund (via gateway)', () => {
     expect(await db.walletEntry.findFirst({ where: { customerId: CUSTOMER_ID } })).toMatchObject({ type: 'refund', amountCents: 800, paymentId: w.id });
   });
 
+  it('Task 16 (fix round 1): aluguel só pela carteira (bruto em amountCents e walletCents) → estorno total volta à carteira, sem gateway', async () => {
+    const { db, svc, provider } = await setup();
+    const w = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'rental', method: 'wallet', status: 'paid', amountCents: 1290, walletCents: 1290 } });
+    expect(await svc.refund(admin, w.id, { reason: 'Devolução' })).toMatchObject({ status: 'refunded', refundedCents: 1290, walletCents: 1290 });
+    expect(provider.operations('refund')).toBe(0);
+    expect(await db.walletEntry.findMany({ where: { paymentId: w.id } })).toEqual([expect.objectContaining({ type: 'refund', amountCents: 1290 })]);
+  });
+
+  it('Task 16 (fix round 1): carteira parcial → estorno devolve primeiro o gateway e depois a carteira (lançamento refund)', async () => {
+    const { db, svc, p, provider } = await setup();
+    // Bruto 6500: 1500 da carteira + 5000 no cartão.
+    await db.payment.update({ where: { id: p.id }, data: { amountCents: 6500, walletCents: 1500 } });
+    expect(await svc.refund(admin, p.id, { amountCents: 4000, reason: 'Parcial' })).toMatchObject({ status: 'partially_refunded', refundedCents: 4000 });
+    expect(provider.operations('refund')).toBe(1);
+    expect(await db.walletEntry.count({ where: { paymentId: p.id } })).toBe(0);
+    // 1000 restantes do cartão + 1500 da carteira.
+    expect(await svc.refund(admin, p.id, { reason: 'Resto' })).toMatchObject({ status: 'refunded', refundedCents: 6500 });
+    expect(provider.operations('refund')).toBe(2);
+    expect((await provider.getPayment(p.providerPaymentId!)).refundedCents).toBe(5000);
+    expect(await db.walletEntry.findMany({ where: { paymentId: p.id } })).toEqual([expect.objectContaining({ type: 'refund', amountCents: 1500 })]);
+    await expect(svc.refund(admin, p.id, { amountCents: 1, reason: 'x' })).rejects.toMatchObject({ slug: 'validation-error' });
+  });
+
+  it('Task 16 (fix round 1): estorno da parte do gateway recusado → 422 e nada vai para a carteira', async () => {
+    const { db, svc, p, provider } = await setup();
+    await db.payment.update({ where: { id: p.id }, data: { amountCents: 6500, walletCents: 1500 } });
+    jest.spyOn(provider, 'refund').mockRejectedValueOnce(new RefundRejectedError('recusado'));
+    await expect(svc.refund(admin, p.id, { reason: 'Tudo' })).rejects.toMatchObject({ slug: 'payment-failed' });
+    expect(await db.walletEntry.count({ where: { paymentId: p.id } })).toBe(0);
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'paid', refundedCents: 0 });
+  });
+
   it('fix round 1: dois estornos concorrentes pela carteira → um crédito só, o outro 409', async () => {
     const { db, svc } = await setup();
     const w = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'rental', method: 'wallet', status: 'paid', amountCents: 800 } });

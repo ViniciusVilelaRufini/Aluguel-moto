@@ -205,6 +205,7 @@ doc/QuoteRequest.md
 doc/RatingRequest.md
 doc/ReasonRequest.md
 doc/Receipt.md
+doc/ReceiptPaymentStatus.md
 doc/ReferralRedeemRequest.md
 doc/ReferralRedemption.md
 doc/ReferralReward.md
@@ -545,6 +546,7 @@ lib/src/model/quote_request.dart
 lib/src/model/rating_request.dart
 lib/src/model/reason_request.dart
 lib/src/model/receipt.dart
+lib/src/model/receipt_payment_status.dart
 lib/src/model/referral_redeem_request.dart
 lib/src/model/referral_redemption.dart
 lib/src/model/referral_reward.dart

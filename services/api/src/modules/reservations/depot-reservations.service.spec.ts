@@ -111,6 +111,14 @@ describe('DepotReservationsService.create', () => {
     expect(billing.holdDeposit).not.toHaveBeenCalled();
   });
 
+  it('Task 16 (R2-01): dívida em aberto → 409 payment-pending ("Pague o valor pendente para alugar de novo."), sem caução nem moto separada', async () => {
+    const { service, billing, prisma } = setup();
+    billing.isDelinquent.mockResolvedValue(true);
+    await expect(service.create(CUSTOMER_ID, input(), 'k-debt')).rejects.toMatchObject({ status: 409, slug: 'payment-pending', detail: 'Pague o valor pendente para alugar de novo.' });
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
   it('galpão inativo → 422 depot-inactive; inexistente → 404', async () => {
     const { service, prisma, billing } = setup();
     prisma.depot.findUnique.mockResolvedValue({ ...depot, active: false } as any);

@@ -9,6 +9,7 @@ import 'package:volti_api/src/model/payment_method.dart';
 import 'package:built_collection/built_collection.dart';
 import 'package:volti_api/src/model/insurance_coverage.dart';
 import 'package:volti_api/src/model/price_breakdown.dart';
+import 'package:volti_api/src/model/receipt_payment_status.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -28,9 +29,14 @@ part 'receipt.g.dart';
 /// * [endedAt]
 /// * [durationSeconds]
 /// * [breakdown]
-/// * [paymentMethod]
+/// * [paymentId] - Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`).
+/// * [paymentStatus]
+/// * [paymentMethod] - Forma do valor recebido (a da quitação, quando a dívida foi paga depois). Ausente enquanto não pago e na quitação manual.
 /// * [cardLast4]
-/// * [pdfUrl] - URL pré-assinada do PDF (expira em 15 min).
+/// * [depositUsedCents] - Parte da caução usada para abater o valor (caução capturada). Ausente quando a caução não foi usada.
+/// * [depositReleasedCents] - Parte da caução devolvida/liberada ao cliente depois do fechamento.
+/// * [amountDueCents] - Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento).
+/// * [pdfUrl] - URL pré-assinada do PDF (expira em 15 min). Só com `paymentStatus` `paid`.
 /// * [invoiceNumber] - Número da NFS-e, quando emitida.
 /// * [track]
 @BuiltValue()
@@ -71,6 +77,15 @@ abstract class Receipt implements Built<Receipt, ReceiptBuilder> {
   @BuiltValueField(wireName: r'breakdown')
   PriceBreakdown get breakdown;
 
+  /// Pagamento do aluguel (o `id` de `POST /payments/{id}/retry` quando `paymentStatus` é `pending`).
+  @BuiltValueField(wireName: r'paymentId')
+  String? get paymentId;
+
+  @BuiltValueField(wireName: r'paymentStatus')
+  ReceiptPaymentStatus? get paymentStatus;
+  // enum paymentStatusEnum {  paid,  pending,  processing,  };
+
+  /// Forma do valor recebido (a da quitação, quando a dívida foi paga depois). Ausente enquanto não pago e na quitação manual.
   @BuiltValueField(wireName: r'paymentMethod')
   PaymentMethod? get paymentMethod;
   // enum paymentMethodEnum {  card,  pix,  wallet,  };
@@ -78,7 +93,19 @@ abstract class Receipt implements Built<Receipt, ReceiptBuilder> {
   @BuiltValueField(wireName: r'cardLast4')
   String? get cardLast4;
 
-  /// URL pré-assinada do PDF (expira em 15 min).
+  /// Parte da caução usada para abater o valor (caução capturada). Ausente quando a caução não foi usada.
+  @BuiltValueField(wireName: r'depositUsedCents')
+  int? get depositUsedCents;
+
+  /// Parte da caução devolvida/liberada ao cliente depois do fechamento.
+  @BuiltValueField(wireName: r'depositReleasedCents')
+  int? get depositReleasedCents;
+
+  /// Só com `paymentStatus` `pending`: saldo a pagar (o `outstandingCents` do pagamento).
+  @BuiltValueField(wireName: r'amountDueCents')
+  int? get amountDueCents;
+
+  /// URL pré-assinada do PDF (expira em 15 min). Só com `paymentStatus` `paid`.
   @BuiltValueField(wireName: r'pdfUrl')
   String? get pdfUrl;
 
@@ -169,6 +196,20 @@ class _$ReceiptSerializer implements PrimitiveSerializer<Receipt> {
       object.breakdown,
       specifiedType: const FullType(PriceBreakdown),
     );
+    if (object.paymentId != null) {
+      yield r'paymentId';
+      yield serializers.serialize(
+        object.paymentId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.paymentStatus != null) {
+      yield r'paymentStatus';
+      yield serializers.serialize(
+        object.paymentStatus,
+        specifiedType: const FullType(ReceiptPaymentStatus),
+      );
+    }
     if (object.paymentMethod != null) {
       yield r'paymentMethod';
       yield serializers.serialize(
@@ -181,6 +222,27 @@ class _$ReceiptSerializer implements PrimitiveSerializer<Receipt> {
       yield serializers.serialize(
         object.cardLast4,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.depositUsedCents != null) {
+      yield r'depositUsedCents';
+      yield serializers.serialize(
+        object.depositUsedCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.depositReleasedCents != null) {
+      yield r'depositReleasedCents';
+      yield serializers.serialize(
+        object.depositReleasedCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.amountDueCents != null) {
+      yield r'amountDueCents';
+      yield serializers.serialize(
+        object.amountDueCents,
+        specifiedType: const FullType(int),
       );
     }
     if (object.pdfUrl != null) {
@@ -307,6 +369,22 @@ class _$ReceiptSerializer implements PrimitiveSerializer<Receipt> {
           ) as PriceBreakdown;
           result.breakdown.replace(valueDes);
           break;
+        case r'paymentId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.paymentId = valueDes;
+          break;
+        case r'paymentStatus':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(ReceiptPaymentStatus),
+          ) as ReceiptPaymentStatus?;
+          if (valueDes == null) continue;
+          result.paymentStatus = valueDes;
+          break;
         case r'paymentMethod':
           final valueDes = serializers.deserialize(
             value,
@@ -322,6 +400,30 @@ class _$ReceiptSerializer implements PrimitiveSerializer<Receipt> {
           ) as String?;
           if (valueDes == null) continue;
           result.cardLast4 = valueDes;
+          break;
+        case r'depositUsedCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.depositUsedCents = valueDes;
+          break;
+        case r'depositReleasedCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.depositReleasedCents = valueDes;
+          break;
+        case r'amountDueCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.amountDueCents = valueDes;
           break;
         case r'pdfUrl':
           final valueDes = serializers.deserialize(

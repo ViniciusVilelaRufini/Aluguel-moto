@@ -40,7 +40,8 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `subscription-vehicle-cooldown`, `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`,
 `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
 `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
-`thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`.
+`thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`,
+`payment-pending`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -520,6 +521,7 @@ Class | Method | HTTP request | Description
  - [RatingRequest](doc/RatingRequest.md)
  - [ReasonRequest](doc/ReasonRequest.md)
  - [Receipt](doc/Receipt.md)
+ - [ReceiptPaymentStatus](doc/ReceiptPaymentStatus.md)
  - [ReferralRedeemRequest](doc/ReferralRedeemRequest.md)
  - [ReferralRedemption](doc/ReferralRedemption.md)
  - [ReferralReward](doc/ReferralReward.md)

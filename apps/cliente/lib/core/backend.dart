@@ -104,6 +104,17 @@ abstract class Backend {
   Future<RentalStartResult> startRental(StartRentalRequest request, {String? idempotencyKey});
   Future<Deposit> deposit(String id);
 
+  /// Dividas em aberto do cliente (R2-01): pagamentos `failed` de aluguel/assinatura com saldo devedor
+  /// (`outstandingCents` > 0), mais antigas primeiro.
+  Future<List<Payment>> openDebts();
+
+  /// Quita a divida [paymentId] por Pix (`POST /payments/{id}/retry`): devolve a cobranca `debt_settlement`
+  /// com o QR. Um Pix pendente e valido da mesma divida e reaproveitado pela API.
+  Future<Payment> payDebtPix(String paymentId, {String? idempotencyKey});
+
+  /// Pagamento do cliente (acompanha a quitacao ate `paid`).
+  Future<Payment> payment(String id);
+
   // aluguel
   Future<Rental?> currentRental();
   /// Aluguel atual com a troca na estacao em andamento (um GET so).
@@ -397,6 +408,31 @@ class ApiBackend implements Backend {
 
   @override
   Future<Deposit> deposit(String id) => _run(() async => (await _api.getPaymentsApi().getDeposit(id: id)).data!);
+
+  @override
+  Future<List<Payment>> openDebts() => _run(() async {
+        // Todas as paginas: o aviso da home soma todas as dividas em aberto.
+        final debts = <Payment>[];
+        String? cursor;
+        for (var i = 0; i < 20; i++) {
+          final page = (await _api.getPaymentsApi().listPayments(status: PaymentStatus.failed, limit: 100, cursor: cursor)).data!;
+          debts.addAll(page.items.where((p) => (p.outstandingCents ?? 0) > 0));
+          cursor = page.nextCursor;
+          if (cursor == null || cursor.isEmpty) break;
+        }
+        return debts..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      });
+
+  @override
+  Future<Payment> payDebtPix(String paymentId, {String? idempotencyKey}) => _run(() async => (await _api.getPaymentsApi().payDebt(
+            id: paymentId,
+            idempotencyKey: idempotencyKey ?? newIdempotencyKey(),
+            debtPaymentRequest: DebtPaymentRequest((b) => b..method = DebtPaymentRequestMethodEnum.pix),
+          ))
+          .data!);
+
+  @override
+  Future<Payment> payment(String id) => _run(() async => (await _api.getPaymentsApi().getPayment(id: id)).data!);
 
   @override
   Future<Rental?> currentRental() async => (await currentRentalState()).rental;

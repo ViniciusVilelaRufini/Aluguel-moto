@@ -88,10 +88,10 @@ describe('ReservationsService', () => {
     await expect(service.create(CUSTOMER_ID, VEHICLE_ID)).rejects.toMatchObject({ slug: 'kyc-not-approved', status: 403 });
   });
 
-  it('cliente inadimplente → 403 customer-delinquent; bloqueado → 403 customer-blocked', async () => {
+  it('Task 16 (R2-01): cliente com dívida em aberto → 409 payment-pending com o texto do app; bloqueado → 403 customer-blocked', async () => {
     const a = setup();
     a.billing.isDelinquent.mockResolvedValue(true);
-    await expect(a.service.create(CUSTOMER_ID, VEHICLE_ID)).rejects.toMatchObject({ slug: 'customer-delinquent' });
+    await expect(a.service.create(CUSTOMER_ID, VEHICLE_ID)).rejects.toMatchObject({ status: 409, slug: 'payment-pending', detail: 'Pague o valor pendente para alugar de novo.' });
     const b = setup();
     b.prisma.customer.findUnique.mockResolvedValue({ ...approvedCustomer, status: 'blocked' } as any);
     await expect(b.service.create(CUSTOMER_ID, VEHICLE_ID)).rejects.toMatchObject({ slug: 'customer-blocked' });

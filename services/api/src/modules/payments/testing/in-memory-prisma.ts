@@ -17,7 +17,7 @@ interface ModelSpec {
 }
 
 const SPECS: Record<string, ModelSpec> = {
-  payment: { unique: [['id'], ['idempotencyKey']], defaults: () => ({ refundedCents: 0, rentalId: null, depositId: null, subscriptionId: null, cardLast4: null, failureReason: null, providerPaymentId: null, receiptUrl: null, idempotencyKey: null, debtSettledAt: null, debtSettlement: null, settlesPaymentId: null, pix: null }), updatedAt: true },
+  payment: { unique: [['id'], ['idempotencyKey']], defaults: () => ({ refundedCents: 0, walletCents: 0, rentalId: null, depositId: null, subscriptionId: null, cardLast4: null, failureReason: null, providerPaymentId: null, receiptUrl: null, idempotencyKey: null, debtSettledAt: null, debtSettlement: null, settlesPaymentId: null, pix: null }), updatedAt: true },
   deposit: { unique: [['id'], ['idempotencyKey']], defaults: () => ({ rentalId: null, capturedCents: null, cardId: null, idempotencyKey: null, providerReference: null, pix: null }), updatedAt: true },
   customer: { unique: [['id']], defaults: () => ({ delinquent: false, status: 'active', kycStatus: 'approved', deletedAt: null }), updatedAt: true },
   rental: { unique: [['id']], defaults: () => ({ insurancePolicyId: null, paymentId: null, breakdown: null }), updatedAt: true },

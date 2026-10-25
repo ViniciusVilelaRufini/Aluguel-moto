@@ -238,7 +238,7 @@ class CustomersApi {
   }
 
   /// Registrar quitação manual da inadimplência
-  /// O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados (&#x60;debtSettledAt&#x60;, &#x60;debtSettlement: manual&#x60;) todos os pagamentos &#x60;failed&#x60; de aluguel/assinatura ainda em aberto e tira a flag &#x60;delinquent&#x60;. Grava AuditLog com o motivo e o valor quitado. Cliente sem inadimplência → &#x60;409&#x60; &#x60;debt-not-payable&#x60;; cobrança ainda em retentativa automática no gateway → &#x60;409&#x60; &#x60;debt-in-collection&#x60; (evita cobrar de novo o que foi pago fora).
+  /// O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados (&#x60;debtSettledAt&#x60;, &#x60;debtSettlement: manual&#x60;) todos os pagamentos &#x60;failed&#x60; de aluguel/assinatura ainda em aberto e tira a flag &#x60;delinquent&#x60;. Grava AuditLog com o motivo e o valor quitado; os recibos dos aluguéis quitados ficam prontos. Cliente sem inadimplência → &#x60;409&#x60; &#x60;debt-not-payable&#x60;; cobrança ainda em retentativa automática no gateway → &#x60;409&#x60; &#x60;debt-in-collection&#x60; (liquidação de aluguel retentando ou a assinatura ligada a uma das dívidas em &#x60;past_due&#x60;/cancelamento pendente; outra assinatura do cliente não bloqueia), para não cobrar de novo o que foi pago fora.
   ///
   /// Parameters:
   /// * [id]

@@ -31,8 +31,9 @@ async function setup(opts: { card?: string | null } = {}) {
   const billingOpts = { pixExpirationMinutes: 15, fakePixAutoConfirmSeconds: 0, reviewMaxDays: 7 };
   const billing = new RentalBillingService(db as any, provider, state, customers, insurance, { issueForPayment: jest.fn() } as any, queue as any, events, billingOpts);
   const audit = { record: jest.fn(async (entry: any, tx: any = db) => tx.auditLog.create({ data: { action: entry.action, entityId: entry.entityId, reason: entry.reason, metadata: entry.metadata } })) };
-  const svc = new DelinquencyService(db as any, provider, state, customers, billing, audit as any, queue as any, billingOpts);
-  return { db, provider, svc, state, billing, audit, reviews, queue, customers };
+  const receipts = { issueForPayment: jest.fn().mockResolvedValue(undefined) };
+  const svc = new DelinquencyService(db as any, provider, state, customers, billing, audit as any, queue as any, billingOpts, receipts as any);
+  return { db, provider, svc, state, billing, audit, reviews, queue, customers, receipts };
 }
 
 /** Dívida: liquidação de aluguel que terminou `failed`; com caução capturada como garantia (opcional). */
@@ -322,5 +323,68 @@ describe('DelinquencyService — fix round 1 (I-2): dívida de assinatura com a 
     await subDebt(db, 'past_due');
     const d = await debt(db, 3000);
     expect(await svc.payDebt(CUSTOMER, d.id, { method: 'card' })).toMatchObject({ status: 'paid' });
+  });
+});
+
+describe('Task 16: recibo depois da quitação e menores da re-revisão da Task 14', () => {
+  const webhookFor = (ctx: Awaited<ReturnType<typeof setup>>) =>
+    new WebhookProcessor(ctx.db as any, ctx.provider, ctx.billing, { onTopUpPayment: jest.fn() } as any, { onRecurringPayment: jest.fn() } as any, { subscribe: jest.fn() } as any, ctx.svc);
+
+  it('R2-01: dívida de aluguel quitada por Pix (webhook) → recibo (PDF + NFS-e) emitido para o pagamento do aluguel', async () => {
+    const ctx = await setup({ card: null });
+    const d = await debt(ctx.db, 26635, 5000);
+    const pix = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    expect(pix).toMatchObject({ method: 'pix', status: 'pending', amountCents: 21635 });
+    expect(ctx.receipts.issueForPayment).not.toHaveBeenCalled();
+    ctx.provider.simulatePixPaid(pix.providerPaymentId!);
+    await webhookFor(ctx).process({ provider: 'fake', eventId: 'pix-1', type: 'payment', dataId: pix.providerPaymentId! });
+    expect(ctx.receipts.issueForPayment).toHaveBeenCalledWith(d.id);
+    expect(await ctx.billing.isDelinquent(CUSTOMER)).toBe(false);
+  });
+
+  it('R2-01: quitação manual também deixa o recibo do aluguel pronto (assinatura não ganha recibo de aluguel)', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    await ctx.svc.clearManually(STAFF, CUSTOMER, 'Transferência recebida');
+    expect(ctx.receipts.issueForPayment).toHaveBeenCalledTimes(1);
+    expect(ctx.receipts.issueForPayment).toHaveBeenCalledWith(d.id);
+  });
+
+  it('onLatePaid é idempotente por pagamento: notificações repetidas do gateway não abrem alerta falso debt_settlement_after_settled', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    await ctx.state.transition(pix.id, 'failed', { failureReason: 'pix_expired' });
+    ctx.provider.simulatePixPaid(pix.providerPaymentId!);
+    const webhook = webhookFor(ctx);
+    // Dois eventos diferentes do Mercado Pago para o mesmo pagamento (o dedupe por evento não segura).
+    expect(await webhook.process({ provider: 'fake', eventId: 'late-a', type: 'payment', dataId: pix.providerPaymentId! })).toBe('processed');
+    expect(await webhook.process({ provider: 'fake', eventId: 'late-b', type: 'payment', dataId: pix.providerPaymentId! })).toBe('processed');
+    expect(ctx.reviews).toEqual([{ paymentId: pix.id, reason: 'debt_settlement_paid_after_failed' }]);
+    expect(ctx.receipts.issueForPayment).toHaveBeenCalledTimes(1);
+  });
+
+  it('onLatePaid repetido depois de uma queda entre a anotação e a quitação: conclui a quitação (sem perder o dinheiro recebido)', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    await ctx.state.transition(pix.id, 'failed', { failureReason: 'paid_after_failed' });
+    await ctx.svc.onLatePaid((await ctx.db.payment.findUnique({ where: { id: pix.id } }))!, 'pp');
+    expect(await ctx.db.payment.findUnique({ where: { id: d.id } })).toMatchObject({ debtSettlement: 'payment' });
+    expect(ctx.reviews).toEqual([{ paymentId: pix.id, reason: 'debt_settlement_paid_after_failed' }]);
+  });
+
+  it('quitação manual só é bloqueada pela assinatura ligada à dívida, não por outra assinatura do cliente', async () => {
+    const ctx = await setup();
+    // Outra assinatura do cliente em past_due, sem dívida registrada aqui.
+    await ctx.db.subscription.create({ data: { customerId: CUSTOMER, planCode: 'weekly', status: 'past_due', priceCents: 24900, currentPeriodStart: new Date(), currentPeriodEnd: new Date(), gatewayCancelPendingAt: null } });
+    const d = await debt(ctx.db, 3000);
+    await ctx.svc.clearManually(STAFF, CUSTOMER, 'Pago por fora');
+    expect(await ctx.db.payment.findUnique({ where: { id: d.id } })).toMatchObject({ debtSettlement: 'manual' });
+    // A assinatura da própria dívida em past_due continua bloqueando.
+    const ctx2 = await setup();
+    const sub = await ctx2.db.subscription.create({ data: { customerId: CUSTOMER, planCode: 'weekly', status: 'past_due', priceCents: 24900, currentPeriodStart: new Date(), currentPeriodEnd: new Date(), gatewayCancelPendingAt: null } });
+    await ctx2.db.payment.create({ data: { customerId: CUSTOMER, kind: 'subscription', method: 'card', status: 'failed', amountCents: 24900, subscriptionId: sub.id } });
+    await expect(ctx2.svc.clearManually(STAFF, CUSTOMER, 'Pago')).rejects.toMatchObject({ slug: 'debt-in-collection' });
   });
 });

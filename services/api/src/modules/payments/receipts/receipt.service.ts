@@ -5,6 +5,7 @@ import { OBJECT_STORAGE, type ObjectStorage } from '../../../ports/object-storag
 import { PrismaService } from '../../../prisma/prisma.service';
 import { isUniqueViolation } from '../payment-state.service';
 import { INVOICE_ISSUER, type InvoiceIssuer } from './invoice-issuer';
+import { receiptPaymentInfo, type ReceiptPaymentInfo } from './receipt-status';
 
 export interface ReceiptOptions {
   /** `S3_BUCKET_REPORTS` (bucket `relatorios`). */
@@ -26,6 +27,7 @@ interface Breakdown {
   totalCents?: number;
 }
 
+const METHOD_LABEL: Record<string, string> = { card: 'cartão', pix: 'Pix', wallet: 'carteira Volti' };
 const brl = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 const spDate = (d: Date) =>
   new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }).format(d);
@@ -58,7 +60,8 @@ export class ReceiptService {
     if (await this.prisma.paymentReceipt.findUnique({ where: { paymentId: payment.id } })) return;
     const issuedAt = rental?.endedAt ?? payment.createdAt;
     const key = `recibos/${issuedAt.getUTCFullYear()}/${String(issuedAt.getUTCMonth() + 1).padStart(2, '0')}/${rental?.id ?? payment.id}.pdf`;
-    const body = await this.render(payment, rental, issuedAt);
+    const info = await receiptPaymentInfo(this.prisma, { depositId: rental?.depositId ?? payment.depositId ?? null }, payment);
+    const body = await this.render(payment, rental, issuedAt, info);
     await this.storage.putObject({ bucket: this.opts.reportsBucket, key, body, contentType: 'application/pdf' });
     try {
       await this.prisma.paymentReceipt.create({ data: { paymentId: payment.id, rentalId: rental?.id ?? null, bucket: this.opts.reportsBucket, objectKey: key } });
@@ -85,7 +88,7 @@ export class ReceiptService {
     }
   }
 
-  private render(payment: Payment, rental: Rental | null, issuedAt: Date): Promise<Buffer> {
+  private render(payment: Payment, rental: Rental | null, issuedAt: Date, info: ReceiptPaymentInfo): Promise<Buffer> {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({ size: 'A4', margin: 56, info: { Title: 'Recibo Volti', Author: 'Volti' } });
       const chunks: Buffer[] = [];
@@ -110,7 +113,12 @@ export class ReceiptService {
       if (b?.insuranceCents) doc.text(`Seguro: ${brl(b.insuranceCents)}`);
       if (b?.feesCents) doc.text(`Taxas: ${brl(b.feesCents)}`);
       doc.moveDown().fontSize(12).text(`Total: ${brl(payment.amountCents)}`);
-      doc.fontSize(10).text(`Forma de pagamento: ${payment.method}${payment.cardLast4 ? ` (final ${payment.cardLast4})` : ''}`);
+      // R2-01: forma do que foi recebido (quitação Pix de uma dívida, caução usada, carteira) em vez do método inicial.
+      if (payment.walletCents > 0) doc.fontSize(10).text(`Pago com a carteira: ${brl(payment.walletCents)}`);
+      if (info.depositUsedCents) doc.fontSize(10).text(`Caução usada: ${brl(info.depositUsedCents)}`);
+      const method = info.method ? METHOD_LABEL[info.method] : 'registrado pela equipe Volti';
+      const last4 = info.cardLast4 ? ` (final ${info.cardLast4})` : '';
+      doc.fontSize(10).text(`Forma de pagamento: ${method}${last4}`);
       doc.moveDown().fontSize(8).text('O seguro é emitido por seguradora parceira registrada na SUSEP; a Volti atua como intermediária.');
       doc.end();
     });

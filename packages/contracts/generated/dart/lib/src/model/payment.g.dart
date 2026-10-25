@@ -40,6 +40,8 @@ class _$Payment extends Payment {
   @override
   final int? outstandingCents;
   @override
+  final int? walletCents;
+  @override
   final DateTime? debtSettledAt;
   @override
   final DebtSettlementKind? debtSettlement;
@@ -72,6 +74,7 @@ class _$Payment extends Payment {
       this.receiptUrl,
       this.customerName,
       this.outstandingCents,
+      this.walletCents,
       this.debtSettledAt,
       this.debtSettlement,
       this.settlesPaymentId,
@@ -106,6 +109,7 @@ class _$Payment extends Payment {
         receiptUrl == other.receiptUrl &&
         customerName == other.customerName &&
         outstandingCents == other.outstandingCents &&
+        walletCents == other.walletCents &&
         debtSettledAt == other.debtSettledAt &&
         debtSettlement == other.debtSettlement &&
         settlesPaymentId == other.settlesPaymentId &&
@@ -133,6 +137,7 @@ class _$Payment extends Payment {
     _$hash = $jc(_$hash, receiptUrl.hashCode);
     _$hash = $jc(_$hash, customerName.hashCode);
     _$hash = $jc(_$hash, outstandingCents.hashCode);
+    _$hash = $jc(_$hash, walletCents.hashCode);
     _$hash = $jc(_$hash, debtSettledAt.hashCode);
     _$hash = $jc(_$hash, debtSettlement.hashCode);
     _$hash = $jc(_$hash, settlesPaymentId.hashCode);
@@ -162,6 +167,7 @@ class _$Payment extends Payment {
           ..add('receiptUrl', receiptUrl)
           ..add('customerName', customerName)
           ..add('outstandingCents', outstandingCents)
+          ..add('walletCents', walletCents)
           ..add('debtSettledAt', debtSettledAt)
           ..add('debtSettlement', debtSettlement)
           ..add('settlesPaymentId', settlesPaymentId)
@@ -244,6 +250,10 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
   set outstandingCents(int? outstandingCents) =>
       _$this._outstandingCents = outstandingCents;
 
+  int? _walletCents;
+  int? get walletCents => _$this._walletCents;
+  set walletCents(int? walletCents) => _$this._walletCents = walletCents;
+
   DateTime? _debtSettledAt;
   DateTime? get debtSettledAt => _$this._debtSettledAt;
   set debtSettledAt(DateTime? debtSettledAt) =>
@@ -294,6 +304,7 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
       _receiptUrl = $v.receiptUrl;
       _customerName = $v.customerName;
       _outstandingCents = $v.outstandingCents;
+      _walletCents = $v.walletCents;
       _debtSettledAt = $v.debtSettledAt;
       _debtSettlement = $v.debtSettlement;
       _settlesPaymentId = $v.settlesPaymentId;
@@ -345,6 +356,7 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
             receiptUrl: receiptUrl,
             customerName: customerName,
             outstandingCents: outstandingCents,
+            walletCents: walletCents,
             debtSettledAt: debtSettledAt,
             debtSettlement: debtSettlement,
             settlesPaymentId: settlesPaymentId,

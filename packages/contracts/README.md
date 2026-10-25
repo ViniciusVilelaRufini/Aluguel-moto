@@ -167,6 +167,13 @@ Regra: moto com `depotId` (ou separada por reserva de galpão) só sai pela entr
 
 Slugs novos: `debt-not-payable`, `debt-in-collection`.
 
+## Fechamento sem cartão (2026-10-25, Task 16 das lacunas, R2-01)
+
+- `Receipt`: `paymentId`, `paymentStatus` (`ReceiptPaymentStatus`: `paid`, `pending`, `processing`), `depositUsedCents`, `depositReleasedCents`, `amountDueCents`; `pdfUrl` só com `paid`; `paymentMethod` é a forma do valor recebido.
+- Reservas com dívida em aberto: `409` `payment-pending` (slug novo). `payDebt` declara `503`.
+- `StartRentalRequest.useWalletCredits` `deprecated` (a carteira sempre abate primeiro no fechamento).
+- `realtime.md`: salas `alerts:ops` e `alerts:finance`.
+
 ## Regras que o contrato garante
 
 - `speedLimitKmh` configurável sempre `0..32` (comandos, zonas, ficha da moto); acima disso → 400.

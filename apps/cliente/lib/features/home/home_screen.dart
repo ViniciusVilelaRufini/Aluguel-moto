@@ -27,6 +27,7 @@ import '../station_swap/swap_widgets.dart';
 import 'depot_providers.dart';
 import 'home_reservation_card.dart';
 import 'location_header.dart';
+import 'pending_payment_banner.dart';
 import 'providers.dart';
 import 'stations/station_logic.dart';
 import 'stations/station_markers.dart';
@@ -454,6 +455,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                         ),
                                       ),
                                     ),
+                                  // R2-01: divida em aberto (fechamento sem cartao) com "Pagar agora".
+                                  if (rental == null) const PendingPaymentBanner(),
                                 ],
                               ),
                             ),

@@ -84,7 +84,11 @@ export class AlertsService {
     private readonly events: EventEmitter2,
   ) {}
 
-  /** Cria o alerta e publica `alert.created` (sala `fleet`). Deduplica alerta aberto igual nos últimos 10 min. */
+  /**
+   * Cria o alerta e publica `alert.created` na sala `alerts:ops` (operação) ou, quando é de pagamento
+   * (`payment_needs_review`), na `alerts:finance` (ver `packages/contracts/realtime.md`). Deduplica alerta aberto igual nos
+   * últimos 10 min (por moto) e mantém um aberto por pagamento.
+   */
   async create(input: CreateAlertInput, opts: { dedupe?: boolean } = { dedupe: true }): Promise<Alert> {
     if (opts.dedupe !== false && input.vehicleId) {
       const recent = await this.prisma.alert.findFirst({

@@ -13,7 +13,7 @@ Name | Type | Description | Notes
 **discountCents** | **int** |  | 
 **insuranceCents** | **int** |  | 
 **feesCents** | **int** |  | 
-**walletAppliedCents** | **int** |  | [optional] 
+**walletAppliedCents** | **int** | Saldo da carteira abatido no fechamento (R2-01: a carteira abate primeiro). `totalCents` já vem descontado. | [optional] 
 **totalCents** | **int** |  | 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

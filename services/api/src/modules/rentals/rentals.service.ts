@@ -23,6 +23,7 @@ import { hasOpenStationSwap } from './rental-end.service';
 import { isDepotLocked } from './rental-start.service';
 import type { ListRentalsQuery, LocationShareDto, RatingDto, SwapVehicleDto, WellbeingDto } from './rentals.dto';
 import { toRental, toRentalEvent } from './rentals.mapper';
+import { receiptPaymentInfo } from '../payments/receipts/receipt-status';
 import { receiptLinks } from '../payments/receipts/receipt-links';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
@@ -186,8 +187,10 @@ export class RentalsService {
       this.track(user, id),
     ]);
     const endedAt = r.endedAt ?? r.updatedAt;
-    // QA-11: link de 15 min gerado agora a partir da chave do objeto (nada que expire fica gravado).
-    const pdfUrl = payment ? (await receiptLinks(this.prisma, this.storage, [payment.id])).get(payment.id) : undefined;
+    // R2-01: situação do pagamento (pago / pendente / processando), caução usada e saldo a pagar.
+    const info = await receiptPaymentInfo(this.prisma, r, payment);
+    // QA-11: link de 15 min gerado agora a partir da chave do objeto (nada que expire fica gravado). R2-01: só com o recibo pago.
+    const pdfUrl = payment && info.status === 'paid' ? (await receiptLinks(this.prisma, this.storage, [payment.id])).get(payment.id) : undefined;
     return compact({
       rentalId: r.id,
       number: `VLT-${endedAt.toISOString().slice(0, 10).replace(/-/g, '')}-${r.id.slice(0, 8).toUpperCase()}`,
@@ -200,8 +203,13 @@ export class RentalsService {
       endedAt: endedAt.toISOString(),
       durationSeconds: Math.max(0, Math.floor(((r.endRequestedAt ?? endedAt).getTime() - r.startedAt.getTime()) / 1000)),
       breakdown: (r.breakdown as unknown as PriceBreakdown) ?? { lines: [], subtotalCents: 0, discountCents: 0, insuranceCents: 0, feesCents: 0, totalCents: r.costCents },
-      paymentMethod: payment?.method,
-      cardLast4: payment?.cardLast4 ?? undefined,
+      paymentId: payment?.id,
+      paymentStatus: info.status,
+      paymentMethod: info.method,
+      cardLast4: info.cardLast4,
+      depositUsedCents: info.depositUsedCents,
+      depositReleasedCents: info.depositReleasedCents,
+      amountDueCents: info.amountDueCents,
       pdfUrl,
       track: track.points,
     });

@@ -45,8 +45,10 @@ O servidor coloca o socket nas salas automaticamente, a partir do token; o clien
 | `rental:{rentalId}` | só o cliente dono do aluguel | enquanto o aluguel estiver `active`, `paused` ou `ending` (entra ao conectar, ou quando o aluguel começa; sai quando termina) |
 | `customer:{customerId}` | o próprio cliente | ao conectar (eventos da entrega no galpão e da troca de bateria na estação; nunca posição) |
 | `depot:{depotId}` | staff `admin`, `operacao` ou `campo` | ao conectar (todos os galpões) |
+| `alerts:ops` | staff `admin`, `operacao` ou `suporte` | ao conectar (`alert.created` de operação: frota, comandos, quedas, estoque de baterias) |
+| `alerts:finance` | staff `admin`, `suporte` ou `financeiro` | ao conectar (`alert.created` de `payment_needs_review`, mesmo escopo do `GET /alerts`) |
 
-Staff de outros grupos (`financeiro`, `campo`) conecta, mas não recebe eventos da frota. Clientes sem aluguel ativo só recebem os eventos da entrega no galpão (`handover.*`, sem posição; LGPD: a posição só é enviada durante o aluguel).
+Staff de outros grupos (`financeiro`, `campo`) conecta, mas não recebe eventos da frota (o `financeiro` recebe só os alertas de pagamento, pela `alerts:finance`). Clientes sem aluguel ativo só recebem os eventos da entrega no galpão (`handover.*`, sem posição; LGPD: a posição só é enviada durante o aluguel).
 
 ## Eventos
 

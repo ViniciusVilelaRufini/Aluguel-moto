@@ -902,6 +902,8 @@ model Payment {
   status            PaymentStatus
   amountCents       Int
   refundedCents     Int           @default(0)
+  /// Task 16 (R2-01): parte do `amountCents` (bruto) paga com a carteira no fechamento; o restante é cobrado no gateway/caução.
+  walletCents       Int           @default(0)
   cardLast4         String?
   failureReason     String?
   providerPaymentId String?
