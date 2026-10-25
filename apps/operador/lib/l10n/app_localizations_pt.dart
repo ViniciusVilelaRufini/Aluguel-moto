@@ -629,7 +629,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String vanUnloadSemantics(String serial) {
-    return 'Descarregar $serial para recarga';
+    return 'Descarregar $serial';
   }
 
   @override
@@ -1105,4 +1105,189 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get buttonDone => 'Concluído';
+
+  @override
+  String get handoverCancelAction => 'Cancelar entrega';
+
+  @override
+  String get handoverCancelTitle => 'Cancelar a entrega?';
+
+  @override
+  String get handoverCancelHint =>
+      'A moto não sai do galpão com esta entrega. Conte o motivo para a equipe.';
+
+  @override
+  String get handoverCancelReason => 'Motivo do cancelamento';
+
+  @override
+  String get handoverCancelReasonTooShort => 'Escreva pelo menos 3 caracteres.';
+
+  @override
+  String get handoverCancelContinue => 'Continuar';
+
+  @override
+  String get handoverCancelConfirmTitle => 'Confirmar o cancelamento';
+
+  @override
+  String handoverCancelConfirmBody(String code, String reason) {
+    return 'Cancelar a entrega da moto $code? Motivo: $reason';
+  }
+
+  @override
+  String get handoverCancelConfirm => 'Sim, cancelar entrega';
+
+  @override
+  String get handoverCancelBack => 'Voltar';
+
+  @override
+  String get handoverCancelDone => 'Entrega cancelada.';
+
+  @override
+  String get handoverCanceledBody =>
+      'Se a reserva ainda estiver no prazo, registre uma nova saída pela agenda.';
+
+  @override
+  String get depotFleetTitle => 'Motos do galpão';
+
+  @override
+  String get depotFleetChoose => 'Escolha o galpão';
+
+  @override
+  String get depotFleetEmpty => 'Nenhuma moto com este status.';
+
+  @override
+  String get depotFleetError => 'Não foi possível carregar as motos.';
+
+  @override
+  String depotFleetSeen(String time) {
+    return 'Último sinal $time';
+  }
+
+  @override
+  String get depotFleetNoSignal => 'Sem sinal registrado';
+
+  @override
+  String get depotFleetFilter => 'Filtrar por status';
+
+  @override
+  String depotFleetSemantics(
+    String code,
+    String model,
+    String status,
+    int pct,
+  ) {
+    return '$code, $model, $status, bateria $pct%';
+  }
+
+  @override
+  String get vsFree => 'Livre';
+
+  @override
+  String get vsRented => 'Alugada';
+
+  @override
+  String get vsReserved => 'Reservada';
+
+  @override
+  String get vsPaused => 'Pausada';
+
+  @override
+  String get vsBlocked => 'Bloqueada';
+
+  @override
+  String get vsMaintenance => 'Manutenção';
+
+  @override
+  String get vsOffline => 'Sem sinal';
+
+  @override
+  String get vsAwaitingPickup => 'Para recolher';
+
+  @override
+  String get vsOther => 'Outro status';
+
+  @override
+  String get stockTitle => 'Estoque de baterias';
+
+  @override
+  String get stockError => 'Não foi possível carregar as baterias.';
+
+  @override
+  String get stockEmpty => 'Nenhuma bateria com este status.';
+
+  @override
+  String get stockFilterAll => 'Todas';
+
+  @override
+  String stockCountSemantics(String status, int count) {
+    return '$status: $count';
+  }
+
+  @override
+  String stockOnVehicle(String code) {
+    return 'Na moto $code';
+  }
+
+  @override
+  String stockItemSemantics(
+    String serial,
+    String status,
+    int pct,
+    String cycles,
+  ) {
+    return '$serial, $status, carga $pct%, $cycles';
+  }
+
+  @override
+  String get bsInVehicle => 'Na moto';
+
+  @override
+  String get bsInVan => 'Na van';
+
+  @override
+  String get bsCharging => 'Galpão (recarga)';
+
+  @override
+  String get bsInStation => 'Na estação';
+
+  @override
+  String get bsRetired => 'Aposentada';
+
+  @override
+  String get bsOther => 'Outro status';
+
+  @override
+  String unloadTitle(String serial) {
+    return 'Descarregar $serial';
+  }
+
+  @override
+  String get unloadWarehouse => 'Galpão (recarga)';
+
+  @override
+  String get unloadWarehouseHint => 'A bateria fica no galpão para recarregar.';
+
+  @override
+  String get unloadStations => 'Estações de troca';
+
+  @override
+  String unloadStationHint(int count, String address) {
+    String _temp0 = intl.Intl.pluralLogic(
+      count,
+      locale: localeName,
+      other: '$count carregadas',
+      one: '1 carregada',
+      zero: 'Nenhuma carregada',
+    );
+    return '$_temp0 · $address';
+  }
+
+  @override
+  String get unloadStationsError =>
+      'Não foi possível carregar as estações. Você ainda pode descarregar no galpão.';
+
+  @override
+  String unloadedStation(String name) {
+    return 'Bateria descarregada na estação $name.';
+  }
 }

@@ -43,9 +43,10 @@ class VanStockController extends AsyncNotifier<VanStock> {
     return v;
   }
 
-  /// Descarrega as series para recarga.
-  Future<VanStock> unload(List<String> serials) async {
-    final v = await ref.read(fieldRepositoryProvider).unloadVan(serials);
+  /// Descarrega as series: para recarga no galpao (`stationId` nulo) ou numa estacao.
+  Future<VanStock> unload(List<String> serials, {String? stationId}) async {
+    final v =
+        await ref.read(fieldRepositoryProvider).unloadVan(serials, stationId: stationId);
     state = AsyncData(v);
     return v;
   }
@@ -77,4 +78,20 @@ final vehicleModelsProvider =
 /// Manutencao ligada a tarefa.
 final maintenanceTaskProvider = FutureProvider.autoDispose.family<MaintenanceTask, String>(
     (ref, id) => ref.read(fieldRepositoryProvider).getMaintenanceTask(id),
+    retry: _noRetry);
+
+/// Motos do galpao (visao interna), por status; `null` = todas.
+final depotVehiclesProvider = FutureProvider.autoDispose
+    .family<List<Vehicle>, ({String depotId, VehicleStatus? status})>(
+        (ref, q) => ref.read(fieldRepositoryProvider).listDepotVehicles(q.depotId, status: q.status),
+        retry: _noRetry);
+
+/// Todas as baterias (galpao, estacoes, van e motos); o app agrupa por status.
+final batteriesProvider = FutureProvider.autoDispose<List<Battery>>(
+    (ref) => ref.read(fieldRepositoryProvider).listBatteries(),
+    retry: _noRetry);
+
+/// Estacoes de troca de bateria (destino da descarga da van).
+final swapStationsProvider = FutureProvider.autoDispose<List<SwapStation>>(
+    (ref) => ref.read(fieldRepositoryProvider).listSwapStations(),
     retry: _noRetry);

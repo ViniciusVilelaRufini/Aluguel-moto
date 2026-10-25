@@ -87,6 +87,19 @@ abstract class FieldRepository {
 
   Future<Handover> getHandover(String id);
 
+  /// Cancela a saida pendente ou disputada (`POST /handovers/{id}/cancel`).
+  /// [reason] tem de 3 a 500 caracteres. Exige rede.
+  Future<Handover> cancelHandover(String id, {required String reason});
+
+  /// Motos do galpao (`GET /depots/{id}/vehicles`, visao de staff), com filtro de status.
+  Future<List<Vehicle>> listDepotVehicles(String depotId, {VehicleStatus? status});
+
+  /// Baterias (`GET /batteries`): galpao, estacoes, van e motos. Segue as paginas (ate 500).
+  Future<List<Battery>> listBatteries({BatteryStatus? status});
+
+  /// Estacoes de troca de bateria (`GET /swap-stations`), destino da descarga da van.
+  Future<List<SwapStation>> listSwapStations();
+
   /// Moto pelo codigo impresso ou QR (`GET /vehicles/by-code/{code}`).
   Future<Vehicle> vehicleByCode(String code);
   /// Contrato v2. Ficha da moto (staff): endereco, modelo, revisao e bateria.
@@ -108,7 +121,8 @@ abstract class FieldRepository {
   Future<VanStock> loadVan(List<String> serials, {int? chargePct});
 
   /// Descarrega baterias da van para recarga. Exige rede (sem fila offline).
-  Future<VanStock> unloadVan(List<String> serials);
+  /// Com [stationId], as baterias vao para a estacao (`in_station`); sem ele, para recarga no galpao.
+  Future<VanStock> unloadVan(List<String> serials, {String? stationId});
 }
 
 /// Corpo do `POST /handovers` de saida.
@@ -266,6 +280,40 @@ class ApiFieldRepository implements FieldRepository {
       _guard(() async => (await _api.getHandoversApi().getHandover(id: id)).data!);
 
   @override
+  Future<Handover> cancelHandover(String id, {required String reason}) => _guard(() async =>
+      (await _api.getHandoversApi().cancelHandover(
+        id: id,
+        handoverCancel: HandoverCancel((b) => b..reason = reason.trim()),
+      ))
+          .data!);
+
+  @override
+  Future<List<Vehicle>> listDepotVehicles(String depotId, {VehicleStatus? status}) =>
+      _guard(() async => (await _api.getDepotsApi().listDepotVehicles(id: depotId, status: status))
+          .data!
+          .items
+          .toList());
+
+  @override
+  Future<List<Battery>> listBatteries({BatteryStatus? status}) => _guard(() async {
+        final items = <Battery>[];
+        String? cursor;
+        do {
+          final page = (await _api
+                  .getBatteriesApi()
+                  .listBatteries(status: status, cursor: cursor, limit: 100))
+              .data!;
+          items.addAll(page.items);
+          cursor = page.nextCursor;
+        } while (cursor != null && items.length < 500);
+        return items;
+      });
+
+  @override
+  Future<List<SwapStation>> listSwapStations() => _guard(
+      () async => (await _api.getStationsApi().listSwapStations()).data!.items.toList());
+
+  @override
   Future<Vehicle> vehicleByCode(String code) => _guard(
       () async => (await _api.getVehiclesApi().getVehicleByCode(code: code.trim())).data!);
 
@@ -388,10 +436,11 @@ class ApiFieldRepository implements FieldRepository {
           .data!);
 
   @override
-  Future<VanStock> unloadVan(List<String> serials) => _guard(() async =>
+  Future<VanStock> unloadVan(List<String> serials, {String? stationId}) => _guard(() async =>
       (await _api.getBatteriesApi().unloadVanBatteries(
-        batteryTransferRequest: BatteryTransferRequest(
-            (b) => b..serials = ListBuilder<String>(serials.map((e) => e.trim()))),
+        batteryTransferRequest: BatteryTransferRequest((b) => b
+          ..serials = ListBuilder<String>(serials.map((e) => e.trim()))
+          ..stationId = stationId),
       ))
           .data!);
 }

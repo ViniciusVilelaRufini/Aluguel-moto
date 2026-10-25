@@ -55,9 +55,19 @@ class _VanStockPageState extends ConsumerState<VanStockPage> {
     await _run(() => ref.read(vanStockProvider.notifier).load(serials), t.vanLoaded);
   }
 
-  Future<void> _unload(Battery b) {
+  /// Pergunta o destino (galpao para recarga ou uma estacao) e descarrega.
+  Future<void> _unload(Battery b) async {
     final t = AppLocalizations.of(context);
-    return _run(() => ref.read(vanStockProvider.notifier).unload([b.serial]), t.vanUnloaded);
+    final dest = await VoltiBottomSheet.show<UnloadDestination>(
+      context,
+      builder: (_) => UnloadDestinationSheet(serial: b.serial),
+    );
+    if (dest == null || !mounted) return;
+    final station = dest.station;
+    await _run(
+      () => ref.read(vanStockProvider.notifier).unload([b.serial], stationId: station?.id),
+      station == null ? t.vanUnloaded : t.unloadedStation(station.name),
+    );
   }
 
   @override
@@ -231,6 +241,82 @@ class _BatteryRow extends StatelessWidget {
             onPressed: onUnload,
           )),
         ],
+      ),
+    );
+  }
+}
+
+/// Destino da descarga: `station == null` = galpao (recarga).
+class UnloadDestination {
+  const UnloadDestination.warehouse() : station = null;
+  const UnloadDestination.station(SwapStation this.station);
+
+  final SwapStation? station;
+}
+
+/// Folha "Descarregar BT-...": "Galpao (recarga)" ou uma estacao de
+/// `GET /swap-stations`. Sem rede para as estacoes, o galpao continua valendo.
+class UnloadDestinationSheet extends ConsumerWidget {
+  const UnloadDestinationSheet({super.key, required this.serial});
+
+  final String serial;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final t = AppLocalizations.of(context);
+    final stations = ref.watch(swapStationsProvider);
+    return VoltiBottomSheet(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+                header: true,
+                child: Text(t.unloadTitle(serial), style: VoltiTypography.heading)),
+            const SizedBox(height: VoltiSpacing.s8),
+            ListRow(
+              key: const Key('unload-warehouse'),
+              icon: LucideIcons.warehouse,
+              iconTone: ListRowTone.brand,
+              title: t.unloadWarehouse,
+              subtitle: t.unloadWarehouseHint,
+              trailing: ListRowTrailing.chevron,
+              onTap: () => Navigator.of(context).pop(const UnloadDestination.warehouse()),
+            ),
+            const SizedBox(height: VoltiSpacing.s8),
+            Text(t.unloadStations,
+                style: VoltiTypography.label.copyWith(color: VoltiColors.textSecondary)),
+            stations.when(
+              loading: () => const Padding(
+                padding: EdgeInsets.all(VoltiSpacing.s16),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (_, _) => Padding(
+                padding: const EdgeInsets.only(top: VoltiSpacing.s8),
+                child: Notice(
+                  key: const Key('unload-stations-error'),
+                  tone: NoticeTone.neutral,
+                  icon: LucideIcons.cloudOff,
+                  title: t.unloadStationsError,
+                ),
+              ),
+              data: (list) => Column(
+                children: [
+                  for (final s in list)
+                    ListRow(
+                      key: Key('unload-station-${s.id}'),
+                      icon: LucideIcons.batteryCharging,
+                      title: s.name,
+                      subtitle: t.unloadStationHint(s.availableBatteries, s.address),
+                      trailing: ListRowTrailing.chevron,
+                      onTap: () => Navigator.of(context).pop(UnloadDestination.station(s)),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

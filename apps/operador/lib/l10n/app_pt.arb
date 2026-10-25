@@ -367,7 +367,7 @@
   "vanLoadDuplicate": "Essa série já está na lista.",
   "vanLoaded": "Baterias carregadas na van.",
   "vanUnload": "Descarregar",
-  "vanUnloadSemantics": "Descarregar {serial} para recarga",
+  "vanUnloadSemantics": "Descarregar {serial}",
   "@vanUnloadSemantics": {
     "placeholders": {
       "serial": {
@@ -668,7 +668,150 @@
   "pickupCodeProceed": "Continuar mesmo assim",
   "arrivalVehicleAuth": "Sua sessão expirou. Entre de novo para conferir a moto.",
   "buttonBusy": "Carregando…",
-  "@buttonBusy": {"description": "Leitor de tela: botao ocupado (loading)"},
+  "@buttonBusy": {
+    "description": "Leitor de tela: botao ocupado (loading)"
+  },
   "buttonDone": "Concluído",
-  "@buttonDone": {"description": "Leitor de tela: botao no estado de sucesso"}
+  "@buttonDone": {
+    "description": "Leitor de tela: botao no estado de sucesso"
+  },
+  "handoverCancelAction": "Cancelar entrega",
+  "handoverCancelTitle": "Cancelar a entrega?",
+  "handoverCancelHint": "A moto não sai do galpão com esta entrega. Conte o motivo para a equipe.",
+  "handoverCancelReason": "Motivo do cancelamento",
+  "handoverCancelReasonTooShort": "Escreva pelo menos 3 caracteres.",
+  "handoverCancelContinue": "Continuar",
+  "handoverCancelConfirmTitle": "Confirmar o cancelamento",
+  "handoverCancelConfirmBody": "Cancelar a entrega da moto {code}? Motivo: {reason}",
+  "@handoverCancelConfirmBody": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      },
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "handoverCancelConfirm": "Sim, cancelar entrega",
+  "handoverCancelBack": "Voltar",
+  "handoverCancelDone": "Entrega cancelada.",
+  "handoverCanceledBody": "Se a reserva ainda estiver no prazo, registre uma nova saída pela agenda.",
+  "depotFleetTitle": "Motos do galpão",
+  "depotFleetChoose": "Escolha o galpão",
+  "depotFleetEmpty": "Nenhuma moto com este status.",
+  "depotFleetError": "Não foi possível carregar as motos.",
+  "depotFleetSeen": "Último sinal {time}",
+  "@depotFleetSeen": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "depotFleetNoSignal": "Sem sinal registrado",
+  "depotFleetFilter": "Filtrar por status",
+  "depotFleetSemantics": "{code}, {model}, {status}, bateria {pct}%",
+  "@depotFleetSemantics": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      },
+      "model": {
+        "type": "String"
+      },
+      "status": {
+        "type": "String"
+      },
+      "pct": {
+        "type": "int"
+      }
+    }
+  },
+  "vsFree": "Livre",
+  "vsRented": "Alugada",
+  "vsReserved": "Reservada",
+  "vsPaused": "Pausada",
+  "vsBlocked": "Bloqueada",
+  "vsMaintenance": "Manutenção",
+  "vsOffline": "Sem sinal",
+  "vsAwaitingPickup": "Para recolher",
+  "vsOther": "Outro status",
+  "stockTitle": "Estoque de baterias",
+  "stockError": "Não foi possível carregar as baterias.",
+  "stockEmpty": "Nenhuma bateria com este status.",
+  "stockFilterAll": "Todas",
+  "stockCountSemantics": "{status}: {count}",
+  "@stockCountSemantics": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "stockOnVehicle": "Na moto {code}",
+  "@stockOnVehicle": {
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
+  },
+  "stockItemSemantics": "{serial}, {status}, carga {pct}%, {cycles}",
+  "@stockItemSemantics": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      },
+      "status": {
+        "type": "String"
+      },
+      "pct": {
+        "type": "int"
+      },
+      "cycles": {
+        "type": "String"
+      }
+    }
+  },
+  "bsInVehicle": "Na moto",
+  "bsInVan": "Na van",
+  "bsCharging": "Galpão (recarga)",
+  "bsInStation": "Na estação",
+  "bsRetired": "Aposentada",
+  "bsOther": "Outro status",
+  "unloadTitle": "Descarregar {serial}",
+  "@unloadTitle": {
+    "placeholders": {
+      "serial": {
+        "type": "String"
+      }
+    }
+  },
+  "unloadWarehouse": "Galpão (recarga)",
+  "unloadWarehouseHint": "A bateria fica no galpão para recarregar.",
+  "unloadStations": "Estações de troca",
+  "unloadStationHint": "{count, plural, =0{Nenhuma carregada} =1{1 carregada} other{{count} carregadas}} · {address}",
+  "@unloadStationHint": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "address": {
+        "type": "String"
+      }
+    }
+  },
+  "unloadStationsError": "Não foi possível carregar as estações. Você ainda pode descarregar no galpão.",
+  "unloadedStation": "Bateria descarregada na estação {name}.",
+  "@unloadedStation": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  }
 }

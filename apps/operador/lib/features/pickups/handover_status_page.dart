@@ -29,6 +29,7 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
   String? _lastError;
   bool _loading = false;
   bool _loadFailed = false;
+  bool _canceling = false;
   StreamSubscription<HandoverUpdate>? _updates;
   StreamSubscription<bool>? _conn;
 
@@ -84,12 +85,45 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
     }
   }
 
+  /// Saida pendente ou disputada pode ser cancelada pela operacao (so `pickup`).
+  bool get _canCancel =>
+      (_status == HandoverStatus.pendingCustomer || _status == HandoverStatus.disputed) &&
+      (_handover == null || _handover!.type == HandoverType.pickup);
+
+  Future<void> _cancel() async {
+    final t = AppLocalizations.of(context);
+    final reason = await VoltiBottomSheet.show<String>(
+      context,
+      builder: (_) => CancelHandoverSheet(vehicleCode: _handover?.vehicleCode),
+    );
+    if (reason == null || !mounted) return;
+    setState(() => _canceling = true);
+    try {
+      final h = await ref.read(fieldRepositoryProvider).cancelHandover(widget.handoverId, reason: reason);
+      if (!mounted) return;
+      setState(() {
+        _apply(h);
+        _lastError = null;
+      });
+      VoltiToast.show(context, t.handoverCancelDone);
+    } on RepositoryException catch (e) {
+      if (mounted) {
+        VoltiToast.show(context, e.kind == FailureKind.network ? t.offlineAction : e.message,
+            tone: VoltiToastTone.danger);
+        // 409/422: a entrega mudou (aceita, ja cancelada); le o estado de novo.
+        if (e.kind == FailureKind.rejected) _refresh();
+      }
+    } finally {
+      if (mounted) setState(() => _canceling = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
     final status = _status;
     final h = _handover;
-    final (NoticeTone tone, IconData icon, String title, String? body) = switch (status) {
+    final (NoticeTone tone, IconData icon, String title, String body) = switch (status) {
       HandoverStatus.accepted =>
         (NoticeTone.success, LucideIcons.circleCheck, t.handoverAccepted, t.handoverAcceptedBody),
       HandoverStatus.disputed => (
@@ -100,7 +134,12 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
               ? t.handoverDisputedBody(h!.disputeReason!.trim())
               : t.handoverDisputedNoReason,
         ),
-      HandoverStatus.canceled => (NoticeTone.neutral, LucideIcons.circleX, t.handoverCanceled, null),
+      HandoverStatus.canceled => (
+          NoticeTone.neutral,
+          LucideIcons.circleX,
+          t.handoverCanceled,
+          t.handoverCanceledBody,
+        ),
       HandoverStatus.pendingCustomer when _lastError != null => (
           NoticeTone.warning,
           LucideIcons.creditCard,
@@ -158,6 +197,18 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
                   loading: _loading,
                   onPressed: _loading ? null : _refresh,
                 ),
+                if (_canCancel) ...[
+                  const SizedBox(height: VoltiSpacing.s10),
+                  VoltiButton(
+                    key: const Key('handover-cancel'),
+                    label: t.handoverCancelAction,
+                    icon: LucideIcons.circleX,
+                    variant: VoltiButtonVariant.danger,
+                    fullWidth: true,
+                    loading: _canceling,
+                    onPressed: _canceling ? null : _cancel,
+                  ),
+                ],
                 const SizedBox(height: VoltiSpacing.s10),
                 VoltiButton(
                   key: const Key('handover-back'),
@@ -170,6 +221,97 @@ class _HandoverStatusPageState extends ConsumerState<HandoverStatusPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Folha do cancelamento: motivo obrigatorio (3 a 500 caracteres) e, em
+/// seguida, a confirmacao. Devolve o motivo ao confirmar, ou `null`.
+class CancelHandoverSheet extends StatefulWidget {
+  const CancelHandoverSheet({super.key, this.vehicleCode});
+
+  final String? vehicleCode;
+
+  @override
+  State<CancelHandoverSheet> createState() => _CancelHandoverSheetState();
+}
+
+class _CancelHandoverSheetState extends State<CancelHandoverSheet> {
+  final _reason = TextEditingController();
+  bool _confirming = false;
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final reason = _reason.text.trim();
+    final valid = reason.length >= 3;
+    return VoltiBottomSheet(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Semantics(
+              header: true,
+              child: Text(_confirming ? t.handoverCancelConfirmTitle : t.handoverCancelTitle,
+                  style: VoltiTypography.heading),
+            ),
+            const SizedBox(height: VoltiSpacing.s8),
+            if (_confirming) ...[
+              Text(
+                t.handoverCancelConfirmBody(widget.vehicleCode ?? '—', reason),
+                key: const Key('handover-cancel-summary'),
+                style: VoltiTypography.body,
+              ),
+              const SizedBox(height: VoltiSpacing.s16),
+              VoltiButton(
+                key: const Key('handover-cancel-confirm'),
+                label: t.handoverCancelConfirm,
+                variant: VoltiButtonVariant.danger,
+                fullWidth: true,
+                onPressed: () => Navigator.of(context).pop(reason),
+              ),
+              const SizedBox(height: VoltiSpacing.s10),
+              VoltiButton(
+                key: const Key('handover-cancel-back'),
+                label: t.handoverCancelBack,
+                variant: VoltiButtonVariant.ghost,
+                fullWidth: true,
+                onPressed: () => setState(() => _confirming = false),
+              ),
+            ] else ...[
+              Text(t.handoverCancelHint, style: VoltiTypography.body),
+              const SizedBox(height: VoltiSpacing.s12),
+              TextField(
+                key: const Key('handover-cancel-reason'),
+                controller: _reason,
+                maxLength: 500,
+                minLines: 2,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  labelText: t.handoverCancelReason,
+                  errorText:
+                      _reason.text.isNotEmpty && !valid ? t.handoverCancelReasonTooShort : null,
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: VoltiSpacing.s12),
+              VoltiButton(
+                key: const Key('handover-cancel-continue'),
+                label: t.handoverCancelContinue,
+                fullWidth: true,
+                onPressed: valid ? () => setState(() => _confirming = true) : null,
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

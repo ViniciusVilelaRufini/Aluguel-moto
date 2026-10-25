@@ -183,9 +183,13 @@ void main() {
       await _settle(tester);
       final btn = find.byKey(const Key('van-unload-BT-2'));
       expect(tester.getSemantics(btn),
-          isSemantics(label: 'Descarregar BT-2 para recarga', hasTapAction: true));
-      await _semanticsTap(tester, 'Descarregar BT-2 para recarga');
+          isSemantics(label: 'Descarregar BT-2', hasTapAction: true));
+      await _semanticsTap(tester, 'Descarregar BT-2');
       await _settle(tester);
+      // Abre a folha de destino; o galpao descarrega para recarga.
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const Key('unload-warehouse')));
+      await tester.pumpAndSettle();
       expect(repo.unloads.single, ['BT-2']);
     });
   });
