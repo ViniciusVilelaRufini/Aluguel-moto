@@ -13,7 +13,7 @@ flutter run -d chrome --dart-define=API_BASE_URL=http://localhost:4010
 flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
 ```
 
-Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `dev`; build release sempre usa cognito), `SUPPORT_PHONE` (telefone do botão SOS), no modo cognito `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_REDIRECT_URI` (ver Login), `FIRST_RIDE_PROMO=true` (liga o cartão "1ª corrida grátis" da home e o selo "1ª grátis" da lista para clientes sem aluguéis; padrão desligado, porque o contrato ainda não diz se a promoção existe; a boas-vindas não mostra promoção), `MAP_TILE_URL`, `MAP_TILE_REFERENCE_URL` e `MAP_TILE_ATTRIBUTION` (tiles dos mapas, ver abaixo), `TERMS_URL` e `PRIVACY_URL` (links dos termos de uso e da política de privacidade no rodapé da boas-vindas; sem eles, o link avisa que o documento não está publicado neste ambiente).
+Variáveis `--dart-define`: `SENTRY_DSN` (opcional, ver Relatório de falhas), `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `dev`; build release sempre usa cognito), `SUPPORT_PHONE` (telefone do botão SOS), no modo cognito `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_REDIRECT_URI` (ver Login), `FIRST_RIDE_PROMO=true` (liga o cartão "1ª corrida grátis" da home e o selo "1ª grátis" da lista para clientes sem aluguéis; padrão desligado, porque o contrato ainda não diz se a promoção existe; a boas-vindas não mostra promoção), `MAP_TILE_URL`, `MAP_TILE_REFERENCE_URL` e `MAP_TILE_ATTRIBUTION` (tiles dos mapas, ver abaixo), `TERMS_URL` e `PRIVACY_URL` (links dos termos de uso e da política de privacidade no rodapé da boas-vindas; sem eles, o link avisa que o documento não está publicado neste ambiente).
 
 ### Cartão de crédito (Mercado Pago)
 
@@ -247,10 +247,21 @@ Testes: `test/station_swap_test.dart` (proximidade, QR, taxa, slugs, máquina de
 ## Pontos de integração
 
 ### Push (Firebase Cloud Messaging)
-`PushService` tem a implementação `FirebasePushService` (registra o token em `POST /me/devices`). Sem Firebase configurado ela falha em silêncio e o app segue sem push. Para ativar:
-1. Crie o projeto no Firebase e registre `br.com.volti.cliente` (Android e iOS).
-2. Android: coloque `google-services.json` em `android/app/` e aplique o plugin `com.google.gms.google-services` em `android/settings.gradle.kts` e `android/app/build.gradle.kts`.
-3. iOS: `GoogleService-Info.plist` em `ios/Runner/`, capacidades Push Notifications e Background Modes, chave APNs no Firebase.
+`PushService` (`core/services.dart`) tem a implementação `FirebasePushService`, sobre a interface `PushTransport` (testável sem plugin). Na home ela pede permissão, registra o token em `POST /me/devices` (e de novo quando o FCM renova o token) e liga os ouvintes:
+- **Primeiro plano** (`onMessage`): vira aviso (`VoltiToast`) com título e texto.
+- **Toque na notificação** (`onMessageOpenedApp`) e **mensagem que abriu o app** (`getInitialMessage`): `routeForPush` (`core/push_routing.dart`) converte o `data` da API em rota, empilhada sobre a home: `reservation.reminder` -> `/reservation/:reservationId`; `handover.pending` -> `/handover/:handoverId` ("Confira sua moto"; sem `handoverId`, a reserva); `rental.*` -> `/ride`; `swap.*` -> `/station-swap/:stationId/:swapId`; `receipt` / `rental.finished` -> `/summary/:rentalId`; `kind: kyc` -> `/account/verification`. Tipo desconhecido ou id fora de `[A-Za-z0-9_-]{1,64}` -> `/home`. Hoje a API só envia `reservation.reminder` e `kind: kyc`; os demais tipos são aceitos para quando ela passar a enviá-los.
+
+**Sem configuração do Firebase o app funciona normalmente, com push desligado** (a inicialização falha em silêncio; nenhum arquivo do Firebase é versionado). Para ativar:
+1. Crie o projeto no Firebase e registre o app Android (`br.com.volti.volti_cliente`) e o iOS (bundle `br.com.volti.voltiCliente`).
+2. Android: baixe `google-services.json` para `android/app/`. O Gradle aplica o plugin `com.google.gms.google-services` **só quando esse arquivo existe** (`android/app/build.gradle.kts`). Android 13+ pede a permissão de notificações (já no manifesto).
+3. iOS: `GoogleService-Info.plist` em `ios/Runner/` (adicione ao alvo Runner no Xcode) e chave APNs no Firebase. O projeto já traz `Runner.entitlements` (`aps-environment`; a assinatura de distribuição troca `development` por `production`) e `UIBackgroundModes` com `remote-notification`.
+4. Na API, `PUSH_MODE=fcm` com as credenciais do serviço (ver README da API).
+
+### Relatório de falhas (Sentry), opcional
+`--dart-define=SENTRY_DSN=https://...` liga o `sentry_flutter` (`core/crash_reporting.dart`) **só em release/profile**; sem DSN, ou em debug, fica desligado e nada é exigido no build. Nada de dado pessoal sai do aparelho: `sendDefaultPii=false`, sem captura de tela, sem trilha de ações (URLs e posição), sem traces; `beforeSend` remonta o evento sem usuário, requisição (URL, cabeçalhos, cookies, corpo), extras, tags e transação, e redige token/JWT, e-mail, CPF e coordenadas no texto das exceções. Não registre localização nem dados do cliente em mensagens de erro.
+
+### Privacidade nas lojas
+`ios/Runner/PrivacyInfo.xcprivacy` (incluído no alvo Runner) declara sem rastreamento (`NSPrivacyTracking=false`) os dados coletados e vinculados ao usuário para funcionamento do app: localização precisa (só durante o aluguel, com consentimento), fotos e conteúdo do usuário (documento e selfie do KYC, foto da devolução), nome, e-mail, telefone, dados de pagamento (o cartão vai direto ao Mercado Pago; só o token chega à API), ID de usuário e de dispositivo (token FCM) e dados de falha (Sentry, sem vínculo ao usuário), além dos motivos de uso das APIs de UserDefaults (`CA92.1`) e carimbo de data de arquivo (`C617.1`). Mantenha esta lista alinhada ao questionário "Segurança dos dados" do Google Play e aos "rótulos de privacidade" da App Store quando mudar o que o app coleta.
 
 ### Cartão (Mercado Pago)
 `CardTokenizer` devolve só o token; o número do cartão nunca vai à API. `DevCardTokenizer` devolve `tok_visa_4242` (token do gateway falso, `PAYMENT_PROVIDER=fake`). Para produção, implemente `CardTokenizer` com o SDK do Mercado Pago (formulário de cartão) e sobrescreva `cardTokenizerProvider` em `main.dart`.

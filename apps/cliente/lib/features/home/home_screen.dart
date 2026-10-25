@@ -14,6 +14,7 @@ import '../../core/clock.dart';
 import '../../core/flash.dart';
 import '../../core/geo.dart';
 import '../../core/map_tiles.dart';
+import '../../core/push_routing.dart';
 import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
@@ -79,7 +80,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     // Push: registra o token (no-op sem Firebase).
-    Future.microtask(() => ref.read(pushServiceProvider).register(ref.read(backendProvider)));
+    Future.microtask(() => ref.read(pushServiceProvider).register(
+          ref.read(backendProvider),
+          onForeground: _onPushForeground,
+          onOpen: _onPushOpen,
+        ));
     _tick = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
@@ -95,6 +100,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void dispose() {
     _tick?.cancel();
     super.dispose();
+  }
+
+  /// Mensagem push com o app aberto: vira aviso na tela (o sistema nao mostra banner).
+  void _onPushForeground(PushPayload m) {
+    if (!mounted) return;
+    final text = [m.title, m.body].whereType<String>().where((t) => t.isNotEmpty).join(': ');
+    if (text.isNotEmpty) VoltiToast.show(context, text, tone: VoltiToastTone.info);
+  }
+
+  /// Toque na notificacao: abre a tela do evento por cima do inicio.
+  void _onPushOpen(String route) {
+    if (!mounted || route == '/home') return;
+    GoRouter.of(context).push(route);
   }
 
   /// Toast deixado por outra tela (reserva cancelada, recibo, cadastro).
