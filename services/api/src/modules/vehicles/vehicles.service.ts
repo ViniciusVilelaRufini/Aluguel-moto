@@ -4,22 +4,22 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma, type Vehicle } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
-import { EV, IotConnectivityEvent, IotTelemetryEvent, VehicleStatusChangedEvent } from '../../common/events';
+import { BatteryChargedStockDecreasedEvent, EV, IotConnectivityEvent, IotTelemetryEvent, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
-import { badRequest, conflict, forbidden, notFound } from '../../common/problem';
+import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../common/problem';
 import { KM_PER_FULL_BATTERY } from '../../common/util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { REDIS_STORE, type RedisStore } from '../../redis/redis-store';
 import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
-import type { ListVehiclesQuery, NearbyQuery, VehicleCreateDto, VehicleStatusChangeDto, VehicleUpdateDto } from './vehicles.dto';
+import type { ListVehiclesQuery, NearbyQuery, VehicleCreateDto, VehicleDepotTransferDto, VehicleStatusChangeDto, VehicleUpdateDto } from './vehicles.dto';
 import { V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { VEHICLE_MODEL_SELECT } from '../catalog/catalog.service';
 import { UsageTracker } from '../maintenance/usage-tracker.service';
 import { VehicleAddressService } from './vehicle-address.service';
 import { toVehicle, toVehicleSummary } from './vehicles.mapper';
-import { movement, recordMovements } from '../batteries/battery-movements';
+import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
 
 /** Relações lidas junto com a moto (contrato v2: modelo do catálogo). */
 const VEHICLE_INCLUDE = { tracker: { select: { id: true } }, vehicleModel: { select: VEHICLE_MODEL_SELECT } } as const;
@@ -142,7 +142,12 @@ export class VehiclesService {
     const where: Prisma.VehicleWhereInput = {};
     if (q.status) where.status = q.status;
     if (q.maxBatteryPct !== undefined) where.batteryPct = { lte: q.maxBatteryPct };
-    if (q.q) where.OR = [{ code: { contains: q.q, mode: 'insensitive' } }, { thingName: { contains: q.q, mode: 'insensitive' } }, { model: { contains: q.q, mode: 'insensitive' } }];
+    if (q.depotId) where.depotId = q.depotId;
+    if (q.vehicleModelId) where.vehicleModelId = q.vehicleModelId;
+    if (q.q) {
+      const contains = { contains: q.q, mode: 'insensitive' as const };
+      where.OR = [{ code: contains }, { thingName: contains }, { qrCode: contains }, { model: contains }];
+    }
     const dbRows = await this.prisma.vehicle.findMany({ where, include: VEHICLE_INCLUDE, orderBy: [{ code: 'asc' }, { id: 'asc' }], ...pageArgs(q) });
     // QA-20: posição/telemetria ao vivo do Redis quando mais nova que o Postgres (gravado a cada 30 s).
     const rows = await withLiveState(this.redis, dbRows);
@@ -156,29 +161,98 @@ export class VehiclesService {
     const dup = await this.prisma.vehicle.findFirst({ where: { OR: [{ code: dto.code }, { thingName: dto.thingName }] } });
     if (dup) throw conflict('conflict', 'Já existe uma moto com este código ou rastreador.');
     const modelName = dto.vehicleModelId ? await this.modelName(dto.vehicleModelId) : undefined;
+    // Cadastro no painel (docs/decisoes.md, 2026-10-25): com galpão a moto nasce `free` na posição dele (disponível para
+    // retirada); sem galpão continua nascendo `maintenance`.
+    const depot = dto.depotId ? await this.activeDepot(dto.depotId) : null;
     const serial = dto.batterySerial?.trim() || undefined;
-    // QA-19: a bateria informada no cadastro passa a existir no estoque (instalada nesta moto). Uma série já cadastrada
-    // (no galpão, na van, numa estação ou em outra moto) não é movida por aqui: a instalação é pela operação.
-    if (serial && (await this.prisma.battery.findUnique({ where: { serial }, select: { id: true } }))) {
-      throw conflict('conflict', `Bateria já cadastrada: ${serial}. Informe outra série ou instale pela operação.`);
+    // QA-19: série nova passa a existir no estoque (instalada nesta moto). Série existente só se for uma bateria `charged`
+    // livre (no galpão, sem moto): é instalada aqui. Em qualquer outra situação a instalação é pela operação.
+    const existing = serial ? await this.prisma.battery.findUnique({ where: { serial } }) : null;
+    if (existing && (existing.status !== 'charged' || existing.vehicleId)) {
+      throw conflict('conflict', `Bateria ${serial} não está livre no galpão. Informe outra série ou instale pela operação.`);
     }
-    const v = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.vehicle.create({
-        data: { ...dto, batterySerial: serial ?? null, model: modelName ?? dto.model, qrCode: dto.qrCode ?? `volti://v/${dto.code}`, status: 'maintenance' },
-        include: VEHICLE_INCLUDE,
+    const { depotId: _depotId, ...fields } = dto;
+    const moves: MovementInput[] = [];
+    const v = await this.prisma
+      .$transaction(async (tx) => {
+        const created = await tx.vehicle.create({
+          data: {
+            ...fields,
+            batterySerial: serial ?? null,
+            model: modelName ?? dto.model,
+            qrCode: dto.qrCode?.trim() || `volti://v/${dto.code}`,
+            ...(depot ? { status: 'free' as const, depotId: depot.id, lat: depot.lat, lng: depot.lng } : { status: 'maintenance' as const }),
+            ...(existing ? { batteryPct: existing.chargePct } : {}),
+          },
+          include: VEHICLE_INCLUDE,
+        });
+        if (existing) {
+          // Bateria livre do galpão instalada no cadastro: +1 ciclo (regra do contrato v2) e sai do galpão.
+          const installed = await tx.battery.updateMany({
+            where: { id: existing.id, status: 'charged', vehicleId: null },
+            data: { status: 'in_vehicle', vehicleId: created.id, depotId: null, stationId: null, holderId: null, cycleCount: { increment: 1 } },
+          });
+          if (!installed.count) throw conflict('conflict', `Bateria ${serial} mudou de situação. Atualize e tente de novo.`);
+          moves.push(movement(existing, { status: 'in_vehicle', vehicleId: created.id }, actor.userId, 'Instalada no cadastro da moto'));
+        } else if (serial) {
+          // `cycleCount` soma 1 a cada instalação numa moto (regra do contrato v2): nasce instalada, então 1; no galpão nasce 0.
+          const b = await tx.battery.create({ data: { serial, status: 'in_vehicle', vehicleId: created.id, chargePct: created.batteryPct, cycleCount: 1 } });
+          moves.push(movement(null, { status: 'in_vehicle', vehicleId: created.id }, actor.userId, 'Cadastrada com a moto', b.id));
+        }
+        await recordMovements(tx, moves);
+        await this.audit.record(
+          { actor, action: 'vehicle.create', entityType: 'Vehicle', entityId: created.id, metadata: { code: dto.code, ...(depot ? { depotId: depot.id } : {}) } },
+          tx as any,
+        );
+        return created;
+      })
+      .catch((err: unknown) => {
+        if ((err as { code?: string }).code === 'P2002') throw conflict('conflict', 'Já existe uma moto com este código ou rastreador, ou a bateria já está cadastrada.');
+        throw err;
       });
-      if (serial) {
-        // `cycleCount` soma 1 a cada instalação numa moto (regra do contrato v2): nasce instalada, então 1; no galpão nasce 0.
-        const b = await tx.battery.create({ data: { serial, status: 'in_vehicle', vehicleId: created.id, chargePct: created.batteryPct, cycleCount: 1 } });
-        await recordMovements(tx, [movement(null, { status: 'in_vehicle', vehicleId: created.id }, actor.userId, 'Cadastrada com a moto', b.id)]);
-      }
-      await this.audit.record({ actor, action: 'vehicle.create', entityType: 'Vehicle', entityId: created.id, metadata: { code: dto.code } }, tx as any);
-      return created;
-    }).catch((err: unknown) => {
-      if ((err as { code?: string }).code === 'P2002') throw conflict('conflict', 'Já existe uma moto com este código ou rastreador, ou a bateria já está cadastrada.');
-      throw err;
-    });
+    this.emitStockDecrease(moves);
+    if (depot) this.emitStatus(v.id, 'free');
     return (await this.enrich([v], true))[0];
+  }
+
+  /**
+   * Transferência de galpão (docs/decisoes.md, 2026-10-25): só moto `free`/`maintenance` sem aluguel aberto nem reserva
+   * ativa; `depotId` e posição passam a ser os do galpão de destino. Gravação condicionada ao estado lido (409 se mudou).
+   */
+  async transferDepot(actor: Principal, id: string, dto: VehicleDepotTransferDto) {
+    const v = await this.prisma.vehicle.findUnique({ where: { id } });
+    if (!v) throw notFound('Moto não encontrada.');
+    const depot = await this.activeDepot(dto.depotId);
+    if (v.depotId === depot.id) throw conflict('conflict', 'A moto já está neste galpão.');
+    if (v.status !== 'free' && v.status !== 'maintenance') throw conflict('vehicle-unavailable', 'Só é possível transferir moto livre ou em manutenção.');
+    const [rental, reservation] = await Promise.all([
+      this.prisma.rental.findFirst({ where: { vehicleId: id, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } }),
+      this.prisma.reservation.findFirst({ where: { vehicleId: id, status: { in: ['active', 'handover'] } }, select: { id: true } }),
+    ]);
+    if (rental || reservation) throw conflict('vehicle-unavailable', 'A moto tem aluguel ou reserva ativa.');
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const moved = await tx.vehicle.updateMany({ where: { id, status: v.status, depotId: v.depotId }, data: { depotId: depot.id, lat: depot.lat, lng: depot.lng } });
+      if (!moved.count) throw conflict('vehicle-unavailable', 'A moto mudou de situação; atualize e tente de novo.');
+      await this.audit.record(
+        { actor, action: 'vehicle.transfer_depot', entityType: 'Vehicle', entityId: id, reason: dto.reason, metadata: { fromDepotId: v.depotId, toDepotId: depot.id, status: v.status } },
+        tx as any,
+      );
+      return tx.vehicle.findUniqueOrThrow({ where: { id }, include: VEHICLE_INCLUDE });
+    });
+    return (await this.enrich([updated], true))[0];
+  }
+
+  /** Galpão para cadastrar/transferir motos: inexistente → 404; inativo → 422 `depot-inactive`. */
+  private async activeDepot(depotId: string) {
+    const d = await this.prisma.depot.findUnique({ where: { id: depotId }, select: { id: true, lat: true, lng: true, active: true } });
+    if (!d) throw notFound('Galpão não encontrado.');
+    if (!d.active) throw unprocessable('depot-inactive', 'Este galpão está desativado; escolha outro galpão.');
+    return d;
+  }
+
+  private emitStockDecrease(moves: MovementInput[]): void {
+    const depotIds = depotsLeavingCharged(moves);
+    if (depotIds.length) this.events.emit(EV.BATTERY_CHARGED_STOCK_DECREASED, { depotIds } satisfies BatteryChargedStockDecreasedEvent);
   }
 
   private async modelName(vehicleModelId: string): Promise<string> {

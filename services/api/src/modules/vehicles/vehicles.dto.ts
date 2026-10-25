@@ -46,6 +46,14 @@ export class ListVehiclesQuery extends PageQuery {
   @Min(0)
   @Max(100)
   maxBatteryPct?: number;
+
+  @IsOptional()
+  @IsUUID()
+  depotId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  vehicleModelId?: string;
 }
 
 export class VehicleCreateDto {
@@ -74,6 +82,21 @@ export class VehicleCreateDto {
   @IsOptional()
   @IsUUID()
   vehicleModelId?: string;
+
+  /** Cadastro no painel (docs/decisoes.md, 2026-10-25): com galpão a moto nasce `free` na posição dele. */
+  @IsOptional()
+  @IsUUID()
+  depotId?: string;
+}
+
+export class VehicleDepotTransferDto {
+  @IsUUID()
+  depotId: string;
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason: string;
 }
 
 export class VehicleUpdateDto {

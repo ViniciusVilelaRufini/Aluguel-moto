@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Que
 import { Throttle } from '@nestjs/throttler';
 import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, StaffOnly } from '../auth/principal';
 import { ServiceUnlockDto } from '../commands/commands.dto';
-import { ListVehiclesQuery, NearbyQuery, TrackQuery, VehicleCreateDto, VehicleStatusChangeDto, VehicleUpdateDto } from './vehicles.dto';
+import { ListVehiclesQuery, NearbyQuery, TrackQuery, VehicleCreateDto, VehicleDepotTransferDto, VehicleStatusChangeDto, VehicleUpdateDto } from './vehicles.dto';
 import { VehiclesService } from './vehicles.service';
 
 /** Rotas literais (`nearby`, `by-code/:code`) declaradas antes de `:id`. */
@@ -51,6 +51,13 @@ export class VehiclesController {
   @StaffOnly('admin', 'operacao', 'campo')
   setStatus(@Param('id', ParseUUIDPipe) id: string, @Body() dto: VehicleStatusChangeDto, @CurrentUser() u: Principal) {
     return this.vehicles.setStatus(u, id, dto);
+  }
+
+  @Post(':id/transfer-depot')
+  @HttpCode(200)
+  @StaffOnly('admin', 'operacao')
+  transferDepot(@Param('id', ParseUUIDPipe) id: string, @Body() dto: VehicleDepotTransferDto, @CurrentUser() u: Principal) {
+    return this.vehicles.transferDepot(u, id, dto);
   }
 
   @Get(':id/track')
