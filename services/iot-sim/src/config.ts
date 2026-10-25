@@ -8,8 +8,21 @@ export interface Injection {
   atSec: number;
 }
 
+export type FleetSourceKind = 'routes' | 'postgres';
+
 export interface SimConfig {
   mqttUrl: string;
+  /**
+   * `routes` (padrão): N motos `moto-0001`… rodando as rotas de demonstração. `postgres`: um rastreador por moto cadastrada
+   * no banco da API (dev single), na posição dela, parado.
+   */
+  fleetSource: FleetSourceKind;
+  /** Só com `fleetSource: 'postgres'` (só leitura). Nunca logado. */
+  databaseUrl?: string;
+  /** Releitura da frota (motos novas e motos levadas para outro lugar). */
+  fleetRefreshSec: number;
+  /** Moto travada e parada há pelo menos isso, com o cadastro em outro lugar (> 50 m) → foi levada; o rastreador vai junto. */
+  relocateAfterSec: number;
   vehicles: number;
   firstVehicle: number;
   tickMs: number;
@@ -69,10 +82,18 @@ export function loadConfig(env: Env = process.env): SimConfig {
     if (!m) throw new Error(`SIM_INJECT inválido: "${part}" (formato moto-0003:queda@30)`);
     injections.push({ thingName: m[1], type: eventType(m[2]), atSec: Number(m[3]) });
   }
+  const fleetSource = (env.SIM_FLEET_SOURCE || 'routes') as FleetSourceKind;
+  if (fleetSource !== 'routes' && fleetSource !== 'postgres') throw new Error(`SIM_FLEET_SOURCE inválido: "${fleetSource}" (routes ou postgres)`);
+  const databaseUrl = env.DATABASE_URL || undefined;
+  if (fleetSource === 'postgres' && !databaseUrl) throw new Error('SIM_FLEET_SOURCE=postgres exige DATABASE_URL');
   const cruiseMaxKmh = int(env, 'SIM_CRUISE_MAX_KMH', 26, 1, MAX_SPEED_KMH);
   const cruiseMinKmh = int(env, 'SIM_CRUISE_MIN_KMH', Math.min(14, cruiseMaxKmh), 1, cruiseMaxKmh);
   return {
     mqttUrl: env.MQTT_URL || 'mqtt://localhost:1883',
+    fleetSource,
+    databaseUrl: fleetSource === 'postgres' ? databaseUrl : undefined,
+    fleetRefreshSec: int(env, 'SIM_FLEET_REFRESH_SEC', 60, 10, 3600),
+    relocateAfterSec: int(env, 'SIM_RELOCATE_AFTER_SEC', 180, 30, 24 * 3600),
     vehicles: int(env, 'SIM_VEHICLES', 50, 1, 5000),
     firstVehicle: int(env, 'SIM_FIRST_VEHICLE', 1, 1, 9999),
     tickMs: int(env, 'SIM_TICK_MS', 1000, 100, 10_000),

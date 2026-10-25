@@ -81,3 +81,23 @@ export function insideOperationArea([lat, lng]: LatLng): boolean {
   const a = OPERATION_AREA;
   return lat > a.minLat && lat < a.maxLat && lng > a.minLng && lng < a.maxLng;
 }
+
+/** Lado do laço local (graus, ~220 m): usado pelas motos da frota real, que ficam onde estão cadastradas. */
+const LOCAL_LOOP_DEG = 0.002;
+
+/**
+ * Laço curto (quadrado de ~220 m) que começa exatamente em `start`: a moto parada fica no ponto de cadastro (galpão ou
+ * rua); se o piloto simulado andar, roda perto dali em vez de "saltar" para as rotas de Pinheiros.
+ */
+export function localLoop(start: LatLng): Route {
+  const [lat, lng] = start;
+  return {
+    name: 'laço local',
+    points: [
+      [lat, lng],
+      [lat + LOCAL_LOOP_DEG, lng],
+      [lat + LOCAL_LOOP_DEG, lng + LOCAL_LOOP_DEG],
+      [lat, lng + LOCAL_LOOP_DEG],
+    ],
+  };
+}
