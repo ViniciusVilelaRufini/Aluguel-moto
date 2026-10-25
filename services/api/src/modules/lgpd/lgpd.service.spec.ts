@@ -235,6 +235,26 @@ describe('LgpdService', () => {
     expect(prisma.customer.update).not.toHaveBeenCalled();
   });
 
+  it('Task 30: reserva de galpão aberta (active ou handover) bloqueia a exclusão com mensagem do que fazer', async () => {
+    const { service, prisma, subscriptions } = setup();
+    prisma.reservation.findFirst.mockResolvedValue({ id: 'res', status: 'handover' } as any);
+    await expect(service.deleteAccount(ME)).rejects.toMatchObject({ status: 409, slug: 'account-deletion-blocked', detail: expect.stringContaining('cancelar a entrega') });
+    const where = (prisma.reservation.findFirst.mock.calls[0][0] as any).where;
+    expect(where.customerId).toBe(ME);
+    expect(JSON.stringify(where)).toContain('handover');
+    expect(subscriptions.closeForAccountDeletion).not.toHaveBeenCalled();
+    expect(prisma.customer.update).not.toHaveBeenCalled();
+  });
+
+  it('Task 30: caução retida ou aguardando Pix bloqueia a exclusão', async () => {
+    const { service, prisma } = setup();
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    prisma.deposit.findFirst.mockResolvedValue({ id: 'd', status: 'held' } as any);
+    await expect(service.deleteAccount(ME)).rejects.toMatchObject({ status: 409, slug: 'account-deletion-blocked', detail: expect.stringContaining('caução') });
+    expect((prisma.deposit.findFirst.mock.calls[0][0] as any).where).toEqual({ customerId: ME, status: { in: ['held', 'awaiting_pix'] } });
+    expect(prisma.customer.update).not.toHaveBeenCalled();
+  });
+
   it('exclusão bloqueada com débito pendente → 409', async () => {
     const { service, prisma } = setup();
     prisma.customer.findUnique.mockResolvedValue({ ...me, delinquent: true } as any);

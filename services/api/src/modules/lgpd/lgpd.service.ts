@@ -216,6 +216,24 @@ export class LgpdService {
     const customer = await this.customer(customerId);
     const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
     if (open) throw conflict('account-deletion-blocked', 'Encerre o aluguel antes de excluir a conta.');
+    // Task 30 (item 36): reserva aberta (rua ou galpão, inclusive com a entrega em andamento) e caução retida bloqueiam;
+    // senão a moto ficaria separada e a caução presa numa conta anonimizada.
+    const reservation = await this.prisma.reservation.findFirst({
+      where: { customerId, OR: [{ status: 'active', expiresAt: { gt: requestedAt } }, { status: 'handover' }] },
+      select: { id: true, status: true },
+    });
+    if (reservation) {
+      throw conflict(
+        'account-deletion-blocked',
+        reservation.status === 'handover'
+          ? 'Você tem uma retirada de moto em andamento. Fale com o operador ou com o suporte para cancelar a entrega antes de excluir a conta.'
+          : 'Você tem uma reserva de moto em aberto. Cancele a reserva no app antes de excluir a conta.',
+      );
+    }
+    const deposit = await this.prisma.deposit.findFirst({ where: { customerId, status: { in: ['held', 'awaiting_pix'] } }, select: { id: true } });
+    if (deposit) {
+      throw conflict('account-deletion-blocked', 'Sua caução ainda está retida ou aguardando o Pix. Aguarde a liberação (alguns minutos) ou fale com o suporte antes de excluir a conta.');
+    }
     // Revisão final (I1): mesma definição de dívida da inadimplência (aluguel e assinatura, `open-debt.ts`); dívida
     // quitada (pelo cliente ou manualmente) não bloqueia. Cobrança ainda em curso no gateway também bloqueia.
     if (customer.delinquent || (await blocksAccountDeletion(this.prisma, customerId))) {
