@@ -281,6 +281,9 @@ function MovementsModal({ battery, depotNames, depots, onClose }: { battery: Bat
   );
 }
 
+/** Botões de linha mais compactos: as quatro ações cabem na tabela a 1366 px sem rolagem horizontal. */
+const ACTION_BTN = { padding: '0 8px', gap: 6 } as const;
+
 function BatteryList({ stationNames, staffNames, depotNames, depots, depotId }: { stationNames: Map<string, string>; staffNames: Map<string, string>; depotNames: Map<string, string>; depots: S<'Depot'>[]; depotId?: string }) {
   const { groups } = useAuth();
   const qc = useQueryClient();
@@ -315,23 +318,23 @@ function BatteryList({ stationNames, staffNames, depotNames, depots, depotId }: 
         <div style={{ width: 220 }}><Select testId="battery-status" value={status} onChange={setStatus} options={[{ value: 'all', label: 'Todas as situações' }, ...BATTERY_STATUSES.map((s) => ({ value: s, label: BATTERY_STATUS[s][0] }))]} /></div>
       </div>
       <ErrorNote error={error ?? actionErr} onRetry={error ? () => refetch() : undefined} />
-      <DataTable<Battery> testId="batteries-table" rows={rows} loading={loading} pager={pager} empty={dq ? `Nenhuma bateria com "${dq}"` : 'Nenhuma bateria nesta situação'} emptyIcon="Battery"
+      <DataTable<Battery> dense testId="batteries-table" rows={rows} loading={loading} pager={pager} empty={dq ? `Nenhuma bateria com "${dq}"` : 'Nenhuma bateria nesta situação'} emptyIcon="Battery"
         columns={[
           { key: 'serial', label: 'Série', mono: true },
           { key: 'chargePct', label: 'Carga', align: 'right', render: (b) => <Pill tone={chargeTone(b.chargePct)}>{b.chargePct}%</Pill> },
           { key: 'cycleCount', label: 'Ciclos', align: 'right', render: (b) => <span style={{ fontFamily: 'var(--font-mono)' }}>{b.cycleCount}</span> },
           { key: 'status', label: 'Situação', render: (b) => <Pill tone={BATTERY_STATUS[b.status][1]}>{BATTERY_STATUS[b.status][0]}</Pill> },
-          { key: 'where', label: 'Onde', render: (b) => batteryLocation(b, { stations: stationNames, staff: staffNames, depots: depotNames }) },
+          { key: 'where', label: 'Onde', wrap: true, render: (b) => batteryLocation(b, { stations: stationNames, staff: staffNames, depots: depotNames }) },
           { key: 'updatedAt', label: 'Atualizada', render: (b) => timeAgo(b.updatedAt) },
           ...(hasActions ? [{
             key: 'actions', label: '', align: 'right' as const, pin: true, render: (b: Battery) => {
               const a = batteryActions(b.status);
               return (
                 <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
-                  {canMark && a.markCharged && <Button size="sm" variant="ghost" icon="BatteryCharging" testId={`battery-charged-${b.id}`} onClick={() => markCharged(b)}>Carregada</Button>}
-                  {canDefect && a.reportDefect && <Button size="sm" variant="ghost" icon="TriangleAlert" testId={`battery-defect-${b.id}`} onClick={() => setReasonFor({ battery: b, kind: 'defect' })}>Defeito</Button>}
-                  {canRetire && a.retire && <Button size="sm" variant="ghost" icon="Trash2" testId={`battery-retire-${b.id}`} style={{ color: 'var(--danger-ink)' }} onClick={() => setReasonFor({ battery: b, kind: 'retire' })}>Dar baixa</Button>}
-                  {canHistory && <Button size="sm" variant="ghost" icon="History" testId={`battery-history-${b.id}`} onClick={() => setHistoryOf(b)}>Histórico</Button>}
+                  {canMark && a.markCharged && <Button size="sm" variant="ghost" icon="BatteryCharging" style={ACTION_BTN} testId={`battery-charged-${b.id}`} onClick={() => markCharged(b)}>Carregada</Button>}
+                  {canDefect && a.reportDefect && <Button size="sm" variant="ghost" icon="TriangleAlert" style={ACTION_BTN} testId={`battery-defect-${b.id}`} onClick={() => setReasonFor({ battery: b, kind: 'defect' })}>Defeito</Button>}
+                  {canRetire && a.retire && <Button size="sm" variant="ghost" icon="Trash2" testId={`battery-retire-${b.id}`} style={{ ...ACTION_BTN, color: 'var(--danger-ink)' }} onClick={() => setReasonFor({ battery: b, kind: 'retire' })}>Dar baixa</Button>}
+                  {canHistory && <Button size="sm" variant="ghost" icon="History" style={ACTION_BTN} testId={`battery-history-${b.id}`} onClick={() => setHistoryOf(b)}>Histórico</Button>}
                 </div>
               );
             },

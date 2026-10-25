@@ -16,7 +16,7 @@ export function Button({ children, variant = 'primary', size = 'md', icon, iconR
   return (
     <button type={type} disabled={disabled} onClick={onClick} data-testid={testId} title={title}
       onPointerDown={() => setP(true)} onPointerUp={() => setP(false)} onPointerLeave={() => setP(false)}
-      style={{ display: fullWidth ? 'flex' : 'inline-flex', width: fullWidth ? '100%' : undefined, alignItems: 'center', justifyContent: 'center', gap: 10,
+      style={{ display: fullWidth ? 'flex' : 'inline-flex', width: fullWidth ? '100%' : undefined, alignItems: 'center', justifyContent: 'center', gap: 10, flexShrink: 0,
         height: s.h, padding: '0 ' + s.px + 'px', borderRadius: 'var(--radius-pill)', border: '1.5px solid ' + v.bd, background: v.bg, color: v.fg,
         font: 'var(--fw-semibold) ' + s.fs + 'px/1 var(--font-sans)', boxShadow: disabled ? 'none' : v.sh, cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.4 : 1, transform: p && !disabled ? 'scale(var(--press-scale))' : 'none', filter: p && !disabled ? 'brightness(.94)' : 'none',

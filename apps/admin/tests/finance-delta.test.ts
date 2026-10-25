@@ -33,7 +33,7 @@ describe('pointsDelta e moneyDelta', () => {
     expect(moneyDelta(null, 1)).toBeNull();
   });
   it('variação zero é neutra, sem sinal nem seta', () => {
-    expect(moneyDelta(0, 0)).toEqual({ text: 'R$ 0,00', trend: 'flat' });
+    expect(moneyDelta(0, 0)).toEqual({ text: 'Sem variação', trend: 'flat' });
     expect(pointsDelta(60, 60)?.trend).toBe('flat');
     expect(percentDelta(100, 100)).toEqual({ text: '0% vs. período anterior', trend: 'flat' });
   });

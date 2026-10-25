@@ -32,6 +32,7 @@ export function pointsDelta(cur: number | null, prev: number | null): Delta | nu
 export function moneyDelta(curCents: number | null, prevCents: number | null): Delta | null {
   if (curCents == null || prevCents == null) return null;
   const d = curCents - prevCents;
+  if (d === 0) return { text: 'Sem variação', trend: 'flat' };
   return { text: `${signed(d)}R$ ${num(Math.abs(d) / 100, 2)}`, trend: trendOf(d) };
 }
 
