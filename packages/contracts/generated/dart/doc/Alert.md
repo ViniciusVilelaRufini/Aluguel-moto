@@ -16,6 +16,7 @@ Name | Type | Description | Notes
 **vehicleCode** | **String** |  | [optional] 
 **rentalId** | **String** |  | [optional] 
 **depotId** | **String** | Galpão do alerta (`battery_stock_low`). | [optional] 
+**paymentId** | **String** | Pagamento do alerta (`payment_needs_review`). | [optional] 
 **message** | **String** | Texto pt-BR. | 
 **lat** | **double** |  | [optional] 
 **lng** | **double** |  | [optional] 

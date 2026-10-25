@@ -40,7 +40,7 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `subscription-vehicle-cooldown`, `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`,
 `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
 `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
-`thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`.
+`thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -161,6 +161,7 @@ Class | Method | HTTP request | Description
 [*CommandsApi*](doc/CommandsApi.md) | [**sendVehicleCommand**](doc/CommandsApi.md#sendvehiclecommand) | **POST** /vehicles/{id}/commands | Enviar comando à moto
 [*CustomersApi*](doc/CustomersApi.md) | [**addRestriction**](doc/CustomersApi.md#addrestriction) | **POST** /customer-restrictions | Incluir CPF na lista de restrição
 [*CustomersApi*](doc/CustomersApi.md) | [**blockCustomer**](doc/CustomersApi.md#blockcustomer) | **POST** /customers/{id}/block | Bloquear conta
+[*CustomersApi*](doc/CustomersApi.md) | [**clearCustomerDelinquency**](doc/CustomersApi.md#clearcustomerdelinquency) | **POST** /customers/{id}/delinquency/clear | Registrar quitação manual da inadimplência
 [*CustomersApi*](doc/CustomersApi.md) | [**getCustomer**](doc/CustomersApi.md#getcustomer) | **GET** /customers/{id} | Ficha do cliente
 [*CustomersApi*](doc/CustomersApi.md) | [**listCustomers**](doc/CustomersApi.md#listcustomers) | **GET** /customers | Buscar clientes
 [*CustomersApi*](doc/CustomersApi.md) | [**listRestrictions**](doc/CustomersApi.md#listrestrictions) | **GET** /customer-restrictions | Lista de restrição
@@ -224,6 +225,7 @@ Class | Method | HTTP request | Description
 [*PaymentsApi*](doc/PaymentsApi.md) | [**listPayments**](doc/PaymentsApi.md#listpayments) | **GET** /payments | Listar pagamentos
 [*PaymentsApi*](doc/PaymentsApi.md) | [**listSubscriptions**](doc/PaymentsApi.md#listsubscriptions) | **GET** /payments/subscriptions | Assinaturas do cliente (planos semanal e mensal)
 [*PaymentsApi*](doc/PaymentsApi.md) | [**pauseSubscription**](doc/PaymentsApi.md#pausesubscription) | **POST** /payments/subscriptions/{id}/pause | Pausar assinatura
+[*PaymentsApi*](doc/PaymentsApi.md) | [**payDebt**](doc/PaymentsApi.md#paydebt) | **POST** /payments/{id}/retry | Quitar dívida (cliente)
 [*PaymentsApi*](doc/PaymentsApi.md) | [**refundPayment**](doc/PaymentsApi.md#refundpayment) | **POST** /payments/{id}/refund | Estornar pagamento
 [*PaymentsApi*](doc/PaymentsApi.md) | [**resumeSubscription**](doc/PaymentsApi.md#resumesubscription) | **POST** /payments/subscriptions/{id}/resume | Retomar assinatura pausada
 [*PricingApi*](doc/PricingApi.md) | [**addMyCoupon**](doc/PricingApi.md#addmycoupon) | **POST** /me/coupons | Adicionar cupom à conta
@@ -389,6 +391,9 @@ Class | Method | HTTP request | Description
  - [CustomerStats](doc/CustomerStats.md)
  - [CustomerStatus](doc/CustomerStatus.md)
  - [DashboardSummary](doc/DashboardSummary.md)
+ - [DebtPaymentRequest](doc/DebtPaymentRequest.md)
+ - [DebtSettlementKind](doc/DebtSettlementKind.md)
+ - [DelinquencyClearRequest](doc/DelinquencyClearRequest.md)
  - [DemandHeatmap](doc/DemandHeatmap.md)
  - [Deposit](doc/Deposit.md)
  - [DepositMethod](doc/DepositMethod.md)
@@ -464,6 +469,7 @@ Class | Method | HTTP request | Description
  - [KycUploadRequest](doc/KycUploadRequest.md)
  - [KycUploads](doc/KycUploads.md)
  - [LgpdExport](doc/LgpdExport.md)
+ - [LgpdSupportConversation](doc/LgpdSupportConversation.md)
  - [LocationShare](doc/LocationShare.md)
  - [LocationShareRequest](doc/LocationShareRequest.md)
  - [MaintenanceKind](doc/MaintenanceKind.md)

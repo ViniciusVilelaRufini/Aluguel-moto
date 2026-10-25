@@ -113,7 +113,7 @@ import 'package:volti_api/api.dart';
 final api = VoltiApi().getReportsApi();
 final DateTime from = 2013-10-20T19:20:30+01:00; // DateTime | Início do período (inclusive), UTC.
 final DateTime to = 2013-10-20T19:20:30+01:00; // DateTime | Fim do período (exclusivo), UTC.
-final ReportFormat format = ; // ReportFormat | `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).
+final ReportFormat format = ; // ReportFormat | `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.
 
 try {
     final response = api.getFinanceReport(from, to, format);
@@ -129,7 +129,7 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **from** | **DateTime**| Início do período (inclusive), UTC. | 
  **to** | **DateTime**| Fim do período (exclusivo), UTC. | 
- **format** | [**ReportFormat**](.md)| `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). | [optional] 
+ **format** | [**ReportFormat**](.md)| `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. | [optional] 
 
 ### Return type
 
@@ -159,7 +159,7 @@ final api = VoltiApi().getReportsApi();
 final DateTime from = 2013-10-20T19:20:30+01:00; // DateTime | Início do período (inclusive), UTC.
 final DateTime to = 2013-10-20T19:20:30+01:00; // DateTime | Fim do período (exclusivo), UTC.
 final ReportGroupBy groupBy = ; // ReportGroupBy | 
-final ReportFormat format = ; // ReportFormat | `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).
+final ReportFormat format = ; // ReportFormat | `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.
 
 try {
     final response = api.getOccupancyReport(from, to, groupBy, format);
@@ -176,7 +176,7 @@ Name | Type | Description  | Notes
  **from** | **DateTime**| Início do período (inclusive), UTC. | 
  **to** | **DateTime**| Fim do período (exclusivo), UTC. | 
  **groupBy** | [**ReportGroupBy**](.md)|  | [optional] 
- **format** | [**ReportFormat**](.md)| `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). | [optional] 
+ **format** | [**ReportFormat**](.md)| `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. | [optional] 
 
 ### Return type
 
@@ -206,7 +206,7 @@ final api = VoltiApi().getReportsApi();
 final DateTime from = 2013-10-20T19:20:30+01:00; // DateTime | Início do período (inclusive), UTC.
 final DateTime to = 2013-10-20T19:20:30+01:00; // DateTime | Fim do período (exclusivo), UTC.
 final String vehicleId = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
-final ReportFormat format = ; // ReportFormat | `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).
+final ReportFormat format = ; // ReportFormat | `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.
 
 try {
     final response = api.getRevenuePerVehicleReport(from, to, vehicleId, format);
@@ -223,7 +223,7 @@ Name | Type | Description  | Notes
  **from** | **DateTime**| Início do período (inclusive), UTC. | 
  **to** | **DateTime**| Fim do período (exclusivo), UTC. | 
  **vehicleId** | **String**|  | [optional] 
- **format** | [**ReportFormat**](.md)| `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). | [optional] 
+ **format** | [**ReportFormat**](.md)| `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. | [optional] 
 
 ### Return type
 
@@ -254,7 +254,7 @@ final DateTime from = 2013-10-20T19:20:30+01:00; // DateTime | Início do perío
 final DateTime to = 2013-10-20T19:20:30+01:00; // DateTime | Fim do período (exclusivo), UTC.
 final ReportGroupBy groupBy = ; // ReportGroupBy | 
 final PlanCode planCode = ; // PlanCode | 
-final ReportFormat format = ; // ReportFormat | `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).
+final ReportFormat format = ; // ReportFormat | `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.
 
 try {
     final response = api.getRevenueReport(from, to, groupBy, planCode, format);
@@ -272,7 +272,7 @@ Name | Type | Description  | Notes
  **to** | **DateTime**| Fim do período (exclusivo), UTC. | 
  **groupBy** | [**ReportGroupBy**](.md)|  | [optional] 
  **planCode** | [**PlanCode**](.md)|  | [optional] 
- **format** | [**ReportFormat**](.md)| `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). | [optional] 
+ **format** | [**ReportFormat**](.md)| `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. | [optional] 
 
 ### Return type
 

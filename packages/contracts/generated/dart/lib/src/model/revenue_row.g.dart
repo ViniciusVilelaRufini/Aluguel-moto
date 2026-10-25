@@ -22,6 +22,8 @@ class _$RevenueRow extends RevenueRow {
   @override
   final int feesCents;
   @override
+  final int? walletCents;
+  @override
   final int? refundsCents;
   @override
   final int netCents;
@@ -37,6 +39,7 @@ class _$RevenueRow extends RevenueRow {
       required this.discountCents,
       required this.insuranceCents,
       required this.feesCents,
+      this.walletCents,
       this.refundsCents,
       required this.netCents})
       : super._();
@@ -58,6 +61,7 @@ class _$RevenueRow extends RevenueRow {
         discountCents == other.discountCents &&
         insuranceCents == other.insuranceCents &&
         feesCents == other.feesCents &&
+        walletCents == other.walletCents &&
         refundsCents == other.refundsCents &&
         netCents == other.netCents;
   }
@@ -72,6 +76,7 @@ class _$RevenueRow extends RevenueRow {
     _$hash = $jc(_$hash, discountCents.hashCode);
     _$hash = $jc(_$hash, insuranceCents.hashCode);
     _$hash = $jc(_$hash, feesCents.hashCode);
+    _$hash = $jc(_$hash, walletCents.hashCode);
     _$hash = $jc(_$hash, refundsCents.hashCode);
     _$hash = $jc(_$hash, netCents.hashCode);
     _$hash = $jf(_$hash);
@@ -88,6 +93,7 @@ class _$RevenueRow extends RevenueRow {
           ..add('discountCents', discountCents)
           ..add('insuranceCents', insuranceCents)
           ..add('feesCents', feesCents)
+          ..add('walletCents', walletCents)
           ..add('refundsCents', refundsCents)
           ..add('netCents', netCents))
         .toString();
@@ -127,6 +133,10 @@ class RevenueRowBuilder implements Builder<RevenueRow, RevenueRowBuilder> {
   int? get feesCents => _$this._feesCents;
   set feesCents(int? feesCents) => _$this._feesCents = feesCents;
 
+  int? _walletCents;
+  int? get walletCents => _$this._walletCents;
+  set walletCents(int? walletCents) => _$this._walletCents = walletCents;
+
   int? _refundsCents;
   int? get refundsCents => _$this._refundsCents;
   set refundsCents(int? refundsCents) => _$this._refundsCents = refundsCents;
@@ -149,6 +159,7 @@ class RevenueRowBuilder implements Builder<RevenueRow, RevenueRowBuilder> {
       _discountCents = $v.discountCents;
       _insuranceCents = $v.insuranceCents;
       _feesCents = $v.feesCents;
+      _walletCents = $v.walletCents;
       _refundsCents = $v.refundsCents;
       _netCents = $v.netCents;
       _$v = null;
@@ -185,6 +196,7 @@ class RevenueRowBuilder implements Builder<RevenueRow, RevenueRowBuilder> {
               insuranceCents, r'RevenueRow', 'insuranceCents'),
           feesCents: BuiltValueNullFieldError.checkNotNull(
               feesCents, r'RevenueRow', 'feesCents'),
+          walletCents: walletCents,
           refundsCents: refundsCents,
           netCents: BuiltValueNullFieldError.checkNotNull(
               netCents, r'RevenueRow', 'netCents'),

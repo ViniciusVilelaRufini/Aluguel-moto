@@ -74,6 +74,9 @@ import 'package:volti_api/src/model/customer_page.dart';
 import 'package:volti_api/src/model/customer_stats.dart';
 import 'package:volti_api/src/model/customer_status.dart';
 import 'package:volti_api/src/model/dashboard_summary.dart';
+import 'package:volti_api/src/model/debt_payment_request.dart';
+import 'package:volti_api/src/model/debt_settlement_kind.dart';
+import 'package:volti_api/src/model/delinquency_clear_request.dart';
 import 'package:volti_api/src/model/demand_heatmap.dart';
 import 'package:volti_api/src/model/deposit.dart';
 import 'package:volti_api/src/model/deposit_method.dart';
@@ -149,6 +152,7 @@ import 'package:volti_api/src/model/kyc_submit_request.dart';
 import 'package:volti_api/src/model/kyc_upload_request.dart';
 import 'package:volti_api/src/model/kyc_uploads.dart';
 import 'package:volti_api/src/model/lgpd_export.dart';
+import 'package:volti_api/src/model/lgpd_support_conversation.dart';
 import 'package:volti_api/src/model/location_share.dart';
 import 'package:volti_api/src/model/location_share_request.dart';
 import 'package:volti_api/src/model/maintenance_kind.dart';
@@ -364,6 +368,9 @@ part 'serializers.g.dart';
   CustomerStats,
   CustomerStatus,
   DashboardSummary,
+  DebtPaymentRequest,
+  DebtSettlementKind,
+  DelinquencyClearRequest,
   DemandHeatmap,
   Deposit,
   DepositMethod,
@@ -439,6 +446,7 @@ part 'serializers.g.dart';
   KycUploadRequest,
   KycUploads,
   LgpdExport,
+  LgpdSupportConversation,
   LocationShare,
   LocationShareRequest,
   MaintenanceKind,
@@ -535,6 +543,7 @@ part 'serializers.g.dart';
   SubscriptionStatus,
   SubscriptionVehicleAssignment,
   SupportConversation,
+  $SupportConversation,
   SupportConversationCreate,
   SupportConversationPage,
   SupportConversationUpdate,
@@ -765,6 +774,10 @@ Serializers serializers = (_$serializers.toBuilder()
         () => ListBuilder<WalletEntry>(),
       )
       ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(LgpdSupportConversation)]),
+        () => ListBuilder<LgpdSupportConversation>(),
+      )
+      ..addBuilderFactory(
         const FullType(BuiltList, [FullType(PlanCode)]),
         () => ListBuilder<PlanCode>(),
       )
@@ -859,6 +872,7 @@ Serializers serializers = (_$serializers.toBuilder()
         const FullType(BuiltList, [FullType(Reservation)]),
         () => ListBuilder<Reservation>(),
       )
+      ..add(SupportConversation.serializer)
       ..add(const OneOfSerializer())
       ..add(const AnyOfSerializer())
       ..add(const DateSerializer())

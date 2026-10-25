@@ -11,6 +11,7 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**addRestriction**](CustomersApi.md#addrestriction) | **POST** /customer-restrictions | Incluir CPF na lista de restrição
 [**blockCustomer**](CustomersApi.md#blockcustomer) | **POST** /customers/{id}/block | Bloquear conta
+[**clearCustomerDelinquency**](CustomersApi.md#clearcustomerdelinquency) | **POST** /customers/{id}/delinquency/clear | Registrar quitação manual da inadimplência
 [**getCustomer**](CustomersApi.md#getcustomer) | **GET** /customers/{id} | Ficha do cliente
 [**listCustomers**](CustomersApi.md#listcustomers) | **GET** /customers | Buscar clientes
 [**listRestrictions**](CustomersApi.md#listrestrictions) | **GET** /customer-restrictions | Lista de restrição
@@ -90,6 +91,51 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **String**|  | 
  **customerBlockRequest** | [**CustomerBlockRequest**](CustomerBlockRequest.md)|  | 
+
+### Return type
+
+[**Customer**](Customer.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **clearCustomerDelinquency**
+> Customer clearCustomerDelinquency(id, delinquencyClearRequest)
+
+Registrar quitação manual da inadimplência
+
+O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados (`debtSettledAt`, `debtSettlement: manual`) todos os pagamentos `failed` de aluguel/assinatura ainda em aberto e tira a flag `delinquent`. Grava AuditLog com o motivo e o valor quitado. Cliente sem inadimplência → `409` `debt-not-payable`; cobrança ainda em retentativa automática no gateway → `409` `debt-in-collection` (evita cobrar de novo o que foi pago fora). 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getCustomersApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final DelinquencyClearRequest delinquencyClearRequest = ; // DelinquencyClearRequest | 
+
+try {
+    final response = api.clearCustomerDelinquency(id, delinquencyClearRequest);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling CustomersApi->clearCustomerDelinquency: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **delinquencyClearRequest** | [**DelinquencyClearRequest**](DelinquencyClearRequest.md)|  | 
 
 ### Return type
 

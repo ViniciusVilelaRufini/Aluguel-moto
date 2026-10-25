@@ -22,6 +22,7 @@ Method | HTTP request | Description
 [**listPayments**](PaymentsApi.md#listpayments) | **GET** /payments | Listar pagamentos
 [**listSubscriptions**](PaymentsApi.md#listsubscriptions) | **GET** /payments/subscriptions | Assinaturas do cliente (planos semanal e mensal)
 [**pauseSubscription**](PaymentsApi.md#pausesubscription) | **POST** /payments/subscriptions/{id}/pause | Pausar assinatura
+[**payDebt**](PaymentsApi.md#paydebt) | **POST** /payments/{id}/retry | Quitar dívida (cliente)
 [**refundPayment**](PaymentsApi.md#refundpayment) | **POST** /payments/{id}/refund | Estornar pagamento
 [**resumeSubscription**](PaymentsApi.md#resumesubscription) | **POST** /payments/subscriptions/{id}/resume | Retomar assinatura pausada
 
@@ -582,6 +583,53 @@ Name | Type | Description  | Notes
 ### Return type
 
 [**Subscription**](Subscription.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **payDebt**
+> Payment payDebt(id, idempotencyKey, debtPaymentRequest)
+
+Quitar dívida (cliente)
+
+O cliente paga o saldo devedor (`outstandingCents`) de um pagamento de aluguel ou assinatura que terminou `failed` (inadimplência). Cria um pagamento `debt_settlement` com `settlesPaymentId` = este id. Cartão: cobrança na hora (`201` `paid`; recusa → `402` `payment-failed`; sem cartão → `402` `card-not-found`). Pix: `201` `pending` com `pix`; a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha `debtSettledAt` e a flag `delinquent` sai quando não restar outra dívida. Não é dívida (ou já quitada) → `409` `debt-not-payable`; cobrança ainda em retentativa automática → `409` `debt-in-collection`. Uma quitação Pix pendente e ainda válida é reaproveitada. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPaymentsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final String idempotencyKey = idempotencyKey_example; // String | Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
+final DebtPaymentRequest debtPaymentRequest = ; // DebtPaymentRequest | 
+
+try {
+    final response = api.payDebt(id, idempotencyKey, debtPaymentRequest);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PaymentsApi->payDebt: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **idempotencyKey** | **String**| Chave única por intenção (UUID v4 recomendado). Válida por 24 h. | 
+ **debtPaymentRequest** | [**DebtPaymentRequest**](DebtPaymentRequest.md)|  | 
+
+### Return type
+
+[**Payment**](Payment.md)
 
 ### Authorization
 

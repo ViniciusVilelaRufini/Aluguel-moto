@@ -36,6 +36,18 @@ class _$Payment extends Payment {
   @override
   final String? receiptUrl;
   @override
+  final String? customerName;
+  @override
+  final int? outstandingCents;
+  @override
+  final DateTime? debtSettledAt;
+  @override
+  final DebtSettlementKind? debtSettlement;
+  @override
+  final String? settlesPaymentId;
+  @override
+  final PixCharge? pix;
+  @override
   final DateTime createdAt;
   @override
   final DateTime updatedAt;
@@ -58,6 +70,12 @@ class _$Payment extends Payment {
       this.failureReason,
       this.providerPaymentId,
       this.receiptUrl,
+      this.customerName,
+      this.outstandingCents,
+      this.debtSettledAt,
+      this.debtSettlement,
+      this.settlesPaymentId,
+      this.pix,
       required this.createdAt,
       required this.updatedAt})
       : super._();
@@ -86,6 +104,12 @@ class _$Payment extends Payment {
         failureReason == other.failureReason &&
         providerPaymentId == other.providerPaymentId &&
         receiptUrl == other.receiptUrl &&
+        customerName == other.customerName &&
+        outstandingCents == other.outstandingCents &&
+        debtSettledAt == other.debtSettledAt &&
+        debtSettlement == other.debtSettlement &&
+        settlesPaymentId == other.settlesPaymentId &&
+        pix == other.pix &&
         createdAt == other.createdAt &&
         updatedAt == other.updatedAt;
   }
@@ -107,6 +131,12 @@ class _$Payment extends Payment {
     _$hash = $jc(_$hash, failureReason.hashCode);
     _$hash = $jc(_$hash, providerPaymentId.hashCode);
     _$hash = $jc(_$hash, receiptUrl.hashCode);
+    _$hash = $jc(_$hash, customerName.hashCode);
+    _$hash = $jc(_$hash, outstandingCents.hashCode);
+    _$hash = $jc(_$hash, debtSettledAt.hashCode);
+    _$hash = $jc(_$hash, debtSettlement.hashCode);
+    _$hash = $jc(_$hash, settlesPaymentId.hashCode);
+    _$hash = $jc(_$hash, pix.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jc(_$hash, updatedAt.hashCode);
     _$hash = $jf(_$hash);
@@ -130,6 +160,12 @@ class _$Payment extends Payment {
           ..add('failureReason', failureReason)
           ..add('providerPaymentId', providerPaymentId)
           ..add('receiptUrl', receiptUrl)
+          ..add('customerName', customerName)
+          ..add('outstandingCents', outstandingCents)
+          ..add('debtSettledAt', debtSettledAt)
+          ..add('debtSettlement', debtSettlement)
+          ..add('settlesPaymentId', settlesPaymentId)
+          ..add('pix', pix)
           ..add('createdAt', createdAt)
           ..add('updatedAt', updatedAt))
         .toString();
@@ -199,6 +235,34 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
   String? get receiptUrl => _$this._receiptUrl;
   set receiptUrl(String? receiptUrl) => _$this._receiptUrl = receiptUrl;
 
+  String? _customerName;
+  String? get customerName => _$this._customerName;
+  set customerName(String? customerName) => _$this._customerName = customerName;
+
+  int? _outstandingCents;
+  int? get outstandingCents => _$this._outstandingCents;
+  set outstandingCents(int? outstandingCents) =>
+      _$this._outstandingCents = outstandingCents;
+
+  DateTime? _debtSettledAt;
+  DateTime? get debtSettledAt => _$this._debtSettledAt;
+  set debtSettledAt(DateTime? debtSettledAt) =>
+      _$this._debtSettledAt = debtSettledAt;
+
+  DebtSettlementKind? _debtSettlement;
+  DebtSettlementKind? get debtSettlement => _$this._debtSettlement;
+  set debtSettlement(DebtSettlementKind? debtSettlement) =>
+      _$this._debtSettlement = debtSettlement;
+
+  String? _settlesPaymentId;
+  String? get settlesPaymentId => _$this._settlesPaymentId;
+  set settlesPaymentId(String? settlesPaymentId) =>
+      _$this._settlesPaymentId = settlesPaymentId;
+
+  PixChargeBuilder? _pix;
+  PixChargeBuilder get pix => _$this._pix ??= PixChargeBuilder();
+  set pix(PixChargeBuilder? pix) => _$this._pix = pix;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -228,6 +292,12 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
       _failureReason = $v.failureReason;
       _providerPaymentId = $v.providerPaymentId;
       _receiptUrl = $v.receiptUrl;
+      _customerName = $v.customerName;
+      _outstandingCents = $v.outstandingCents;
+      _debtSettledAt = $v.debtSettledAt;
+      _debtSettlement = $v.debtSettlement;
+      _settlesPaymentId = $v.settlesPaymentId;
+      _pix = $v.pix?.toBuilder();
       _createdAt = $v.createdAt;
       _updatedAt = $v.updatedAt;
       _$v = null;
@@ -249,32 +319,52 @@ class PaymentBuilder implements Builder<Payment, PaymentBuilder> {
   Payment build() => _build();
 
   _$Payment _build() {
-    final _$result = _$v ??
-        _$Payment._(
-          id: BuiltValueNullFieldError.checkNotNull(id, r'Payment', 'id'),
-          customerId: BuiltValueNullFieldError.checkNotNull(
-              customerId, r'Payment', 'customerId'),
-          rentalId: rentalId,
-          depositId: depositId,
-          subscriptionId: subscriptionId,
-          kind: BuiltValueNullFieldError.checkNotNull(kind, r'Payment', 'kind'),
-          method: BuiltValueNullFieldError.checkNotNull(
-              method, r'Payment', 'method'),
-          status: BuiltValueNullFieldError.checkNotNull(
-              status, r'Payment', 'status'),
-          amountCents: BuiltValueNullFieldError.checkNotNull(
-              amountCents, r'Payment', 'amountCents'),
-          refundedCents: BuiltValueNullFieldError.checkNotNull(
-              refundedCents, r'Payment', 'refundedCents'),
-          cardLast4: cardLast4,
-          failureReason: failureReason,
-          providerPaymentId: providerPaymentId,
-          receiptUrl: receiptUrl,
-          createdAt: BuiltValueNullFieldError.checkNotNull(
-              createdAt, r'Payment', 'createdAt'),
-          updatedAt: BuiltValueNullFieldError.checkNotNull(
-              updatedAt, r'Payment', 'updatedAt'),
-        );
+    _$Payment _$result;
+    try {
+      _$result = _$v ??
+          _$Payment._(
+            id: BuiltValueNullFieldError.checkNotNull(id, r'Payment', 'id'),
+            customerId: BuiltValueNullFieldError.checkNotNull(
+                customerId, r'Payment', 'customerId'),
+            rentalId: rentalId,
+            depositId: depositId,
+            subscriptionId: subscriptionId,
+            kind:
+                BuiltValueNullFieldError.checkNotNull(kind, r'Payment', 'kind'),
+            method: BuiltValueNullFieldError.checkNotNull(
+                method, r'Payment', 'method'),
+            status: BuiltValueNullFieldError.checkNotNull(
+                status, r'Payment', 'status'),
+            amountCents: BuiltValueNullFieldError.checkNotNull(
+                amountCents, r'Payment', 'amountCents'),
+            refundedCents: BuiltValueNullFieldError.checkNotNull(
+                refundedCents, r'Payment', 'refundedCents'),
+            cardLast4: cardLast4,
+            failureReason: failureReason,
+            providerPaymentId: providerPaymentId,
+            receiptUrl: receiptUrl,
+            customerName: customerName,
+            outstandingCents: outstandingCents,
+            debtSettledAt: debtSettledAt,
+            debtSettlement: debtSettlement,
+            settlesPaymentId: settlesPaymentId,
+            pix: _pix?.build(),
+            createdAt: BuiltValueNullFieldError.checkNotNull(
+                createdAt, r'Payment', 'createdAt'),
+            updatedAt: BuiltValueNullFieldError.checkNotNull(
+                updatedAt, r'Payment', 'updatedAt'),
+          );
+    } catch (_) {
+      late String _$failedField;
+      try {
+        _$failedField = 'pix';
+        _pix?.build();
+      } catch (e) {
+        throw BuiltValueNestedFieldError(
+            r'Payment', _$failedField, e.toString());
+      }
+      rethrow;
+    }
     replace(_$result);
     return _$result;
   }

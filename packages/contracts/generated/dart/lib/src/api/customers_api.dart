@@ -13,6 +13,7 @@ import 'package:volti_api/src/model/customer.dart';
 import 'package:volti_api/src/model/customer_block_request.dart';
 import 'package:volti_api/src/model/customer_page.dart';
 import 'package:volti_api/src/model/customer_status.dart';
+import 'package:volti_api/src/model/delinquency_clear_request.dart';
 import 'package:volti_api/src/model/kyc_status.dart';
 import 'package:volti_api/src/model/problem.dart';
 import 'package:volti_api/src/model/reason_request.dart';
@@ -183,6 +184,113 @@ class CustomersApi {
       const _type = FullType(CustomerBlockRequest);
       _bodyData =
           _serializers.serialize(customerBlockRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Customer? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Customer),
+            ) as Customer;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Customer>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Registrar quitação manual da inadimplência
+  /// O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados (&#x60;debtSettledAt&#x60;, &#x60;debtSettlement: manual&#x60;) todos os pagamentos &#x60;failed&#x60; de aluguel/assinatura ainda em aberto e tira a flag &#x60;delinquent&#x60;. Grava AuditLog com o motivo e o valor quitado. Cliente sem inadimplência → &#x60;409&#x60; &#x60;debt-not-payable&#x60;; cobrança ainda em retentativa automática no gateway → &#x60;409&#x60; &#x60;debt-in-collection&#x60; (evita cobrar de novo o que foi pago fora).
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [delinquencyClearRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Customer] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Customer>> clearCustomerDelinquency({
+    required String id,
+    required DelinquencyClearRequest delinquencyClearRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/customers/{id}/delinquency/clear'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(DelinquencyClearRequest);
+      _bodyData =
+          _serializers.serialize(delinquencyClearRequest, specifiedType: _type);
     } catch (error, stackTrace) {
       throw DioException(
         requestOptions: _options.compose(

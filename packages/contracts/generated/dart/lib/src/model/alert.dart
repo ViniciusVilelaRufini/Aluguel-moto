@@ -22,6 +22,7 @@ part 'alert.g.dart';
 /// * [vehicleCode]
 /// * [rentalId]
 /// * [depotId] - Galpão do alerta (`battery_stock_low`).
+/// * [paymentId] - Pagamento do alerta (`payment_needs_review`).
 /// * [message] - Texto pt-BR.
 /// * [lat]
 /// * [lng]
@@ -38,7 +39,7 @@ abstract class Alert implements Built<Alert, AlertBuilder> {
 
   @BuiltValueField(wireName: r'type')
   AlertType get type;
-  // enum typeEnum {  out_of_operation_area,  forbidden_zone_entered,  fall_detected,  tamper,  battery_critical,  movement_without_rental,  vehicle_offline,  command_failed,  customer_not_ok,  incident_reported,  speed_limiter_noncompliant,  battery_stock_low,  };
+  // enum typeEnum {  out_of_operation_area,  forbidden_zone_entered,  fall_detected,  tamper,  battery_critical,  movement_without_rental,  vehicle_offline,  command_failed,  customer_not_ok,  incident_reported,  speed_limiter_noncompliant,  battery_stock_low,  payment_needs_review,  };
 
   @BuiltValueField(wireName: r'priority')
   AlertPriority get priority;
@@ -60,6 +61,10 @@ abstract class Alert implements Built<Alert, AlertBuilder> {
   /// Galpão do alerta (`battery_stock_low`).
   @BuiltValueField(wireName: r'depotId')
   String? get depotId;
+
+  /// Pagamento do alerta (`payment_needs_review`).
+  @BuiltValueField(wireName: r'paymentId')
+  String? get paymentId;
 
   /// Texto pt-BR.
   @BuiltValueField(wireName: r'message')
@@ -157,6 +162,13 @@ class _$AlertSerializer implements PrimitiveSerializer<Alert> {
       yield r'depotId';
       yield serializers.serialize(
         object.depotId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.paymentId != null) {
+      yield r'paymentId';
+      yield serializers.serialize(
+        object.paymentId,
         specifiedType: const FullType(String),
       );
     }
@@ -303,6 +315,14 @@ class _$AlertSerializer implements PrimitiveSerializer<Alert> {
           ) as String?;
           if (valueDes == null) continue;
           result.depotId = valueDes;
+          break;
+        case r'paymentId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.paymentId = valueDes;
           break;
         case r'message':
           final valueDes = serializers.deserialize(

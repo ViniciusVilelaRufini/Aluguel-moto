@@ -1914,6 +1914,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payments/{id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Quitar dívida (cliente)
+         * @description O cliente paga o saldo devedor (`outstandingCents`) de um pagamento de aluguel ou assinatura que terminou `failed`
+         *     (inadimplência). Cria um pagamento `debt_settlement` com `settlesPaymentId` = este id. Cartão: cobrança na hora
+         *     (`201` `paid`; recusa → `402` `payment-failed`; sem cartão → `402` `card-not-found`). Pix: `201` `pending` com `pix`;
+         *     a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha `debtSettledAt` e a flag
+         *     `delinquent` sai quando não restar outra dívida. Não é dívida (ou já quitada) → `409` `debt-not-payable`; cobrança
+         *     ainda em retentativa automática → `409` `debt-in-collection`. Uma quitação Pix pendente e ainda válida é reaproveitada.
+         */
+        post: operations["payDebt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhooks/mercadopago": {
         parameters: {
             query?: never;
@@ -2133,6 +2158,7 @@ export interface paths {
         /**
          * Fila de alertas
          * @description Ordenados por prioridade (critical primeiro) e depois por criação. Novos alertas chegam por `alert.created` (sala `fleet`).
+         *     `financeiro` vê (e atribui/resolve) só alertas `payment_needs_review`; `operacao` não vê esses alertas financeiros (`404`).
          */
         get: operations["listAlerts"];
         put?: never;
@@ -3068,6 +3094,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/customers/{id}/delinquency/clear": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Registrar quitação manual da inadimplência
+         * @description O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados
+         *     (`debtSettledAt`, `debtSettlement: manual`) todos os pagamentos `failed` de aluguel/assinatura ainda em aberto e
+         *     tira a flag `delinquent`. Grava AuditLog com o motivo e o valor quitado. Cliente sem inadimplência → `409`
+         *     `debt-not-payable`; cobrança ainda em retentativa automática no gateway → `409` `debt-in-collection` (evita cobrar
+         *     de novo o que foi pago fora).
+         */
+        post: operations["clearCustomerDelinquency"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/staff": {
         parameters: {
             query?: never;
@@ -3274,8 +3324,11 @@ export interface components {
          * @enum {string}
          */
         PaymentStatus: "pending" | "authorized" | "captured" | "canceled" | "paid" | "refunded" | "partially_refunded" | "failed";
-        /** @enum {string} */
-        PaymentKind: "rental" | "deposit" | "top_up" | "subscription" | "fee";
+        /**
+         * @description `debt_settlement`: quitação de uma dívida pelo cliente (`POST /payments/{id}/retry`), com `settlesPaymentId`.
+         * @enum {string}
+         */
+        PaymentKind: "rental" | "deposit" | "top_up" | "subscription" | "fee" | "debt_settlement";
         /** @enum {string} */
         PaymentMethod: "card" | "pix" | "wallet";
         /** @enum {string} */
@@ -3298,9 +3351,11 @@ export interface components {
         PolicyStatus: "active" | "canceled" | "expired";
         /**
          * @description `battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`).
+         *     `payment_needs_review`: pagamento que exige revisão manual do financeiro (liquidação estacionada, estorno recusado em
+         *     `needs_review`, cobrança tardia de assinatura sem estorno automático); `paymentId` aponta o pagamento (um aberto por pagamento).
          * @enum {string}
          */
-        AlertType: "out_of_operation_area" | "forbidden_zone_entered" | "fall_detected" | "tamper" | "battery_critical" | "movement_without_rental" | "vehicle_offline" | "command_failed" | "customer_not_ok" | "incident_reported" | "speed_limiter_noncompliant" | "battery_stock_low";
+        AlertType: "out_of_operation_area" | "forbidden_zone_entered" | "fall_detected" | "tamper" | "battery_critical" | "movement_without_rental" | "vehicle_offline" | "command_failed" | "customer_not_ok" | "incident_reported" | "speed_limiter_noncompliant" | "battery_stock_low" | "payment_needs_review";
         /** @enum {string} */
         AlertPriority: "low" | "medium" | "high" | "critical";
         /** @enum {string} */
@@ -4278,10 +4333,44 @@ export interface components {
             providerPaymentId?: string;
             /** Format: uri */
             receiptUrl?: string;
+            /** @description staff. Nome do cliente (detalhe e listas do painel). */
+            customerName?: string;
+            /** @description Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida. */
+            outstandingCents?: number;
+            /**
+             * Format: date-time
+             * @description Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro).
+             */
+            debtSettledAt?: string;
+            debtSettlement?: components["schemas"]["DebtSettlementKind"];
+            /**
+             * Format: uuid
+             * @description Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.
+             */
+            settlesPaymentId?: string;
+            pix?: components["schemas"]["PixCharge"];
             /** Format: date-time */
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        /**
+         * @description `payment`: o cliente pagou (`debt_settlement`); `manual`: o financeiro registrou a quitação (AuditLog com o motivo).
+         * @enum {string}
+         */
+        DebtSettlementKind: "payment" | "manual";
+        DebtPaymentRequest: {
+            /** @enum {string} */
+            method: "card" | "pix";
+            /**
+             * Format: uuid
+             * @description Cartão salvo (padrão: o cartão padrão). Só `card`.
+             */
+            cardId?: string;
+        };
+        DelinquencyClearRequest: {
+            /** @description Como a dívida foi paga (ex.: "Transferência recebida em 20/10"). */
+            reason: string;
         };
         PaymentPage: {
             items: components["schemas"]["Payment"][];
@@ -4533,6 +4622,11 @@ export interface components {
              * @description Galpão do alerta (`battery_stock_low`).
              */
             depotId?: string;
+            /**
+             * Format: uuid
+             * @description Pagamento do alerta (`payment_needs_review`).
+             */
+            paymentId?: string;
             /** @description Texto pt-BR. */
             message: string;
             /** Format: double */
@@ -5056,6 +5150,8 @@ export interface components {
             discountCents: number;
             insuranceCents: number;
             feesCents: number;
+            /** @description Créditos da carteira usados nos aluguéis. `netCents` = `grossCents` − `discountCents` + `insuranceCents` + `feesCents` − `walletCents`. */
+            walletCents?: number;
             refundsCents?: number;
             netCents: number;
         };
@@ -5169,6 +5265,10 @@ export interface components {
              */
             activeSubscriptionId?: string;
             stats?: components["schemas"]["CustomerStats"];
+            /** @description Só `admin` e `financeiro`, no detalhe (`GET /customers/{id}`): saldo da carteira (soma do ledger; pode ser negativo depois de um ajuste antigo). */
+            walletBalanceCents?: number;
+            /** @description Só `admin` e `financeiro`, no detalhe: soma do saldo devedor (`outstandingCents`) das dívidas em aberto. */
+            debtCents?: number;
             /** Format: date-time */
             createdAt: string;
         };
@@ -5297,6 +5397,11 @@ export interface components {
             handovers?: components["schemas"]["Handover"][];
             /** @description Trocas de bateria na estação feitas pelo titular (sem posição). */
             stationSwaps?: components["schemas"]["StationSwap"][];
+            /** @description Conversas do chat de suporte com as mensagens (anexos só como chaves; atendente só pelo primeiro nome). */
+            supportConversations?: components["schemas"]["LgpdSupportConversation"][];
+        };
+        LgpdSupportConversation: components["schemas"]["SupportConversation"] & {
+            messages: components["schemas"]["SupportMessage"][];
         };
         AccountDeletion: {
             status: components["schemas"]["AccountDeletionStatus"];
@@ -6153,6 +6258,15 @@ export interface components {
              */
             lastError?: string;
             disputeReason?: string;
+            /** @description staff. Motivo do cancelamento (`POST /handovers/{id}/cancel`), lido do AuditLog. */
+            cancelReason?: string;
+            /**
+             * Format: date-time
+             * @description staff. Quando foi cancelada.
+             */
+            canceledAt?: string;
+            /** @description staff. Nome de quem cancelou. */
+            canceledByName?: string;
             /** Format: date-time */
             createdAt: string;
             /**
@@ -6282,7 +6396,7 @@ export interface components {
         FromRequired: string;
         /** @description Fim do período (exclusivo), UTC. */
         ToRequired: string;
-        /** @description `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). */
+        /** @description `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. */
         ReportFormat: components["schemas"]["ReportFormat"];
         /** @description Chave única por intenção (UUID v4 recomendado). Válida por 24 h. */
         IdempotencyKey: string;
@@ -9442,6 +9556,40 @@ export interface operations {
             422: components["responses"]["Unprocessable"];
         };
     };
+    payDebt: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Chave única por intenção (UUID v4 recomendado). Válida por 24 h. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DebtPaymentRequest"];
+            };
+        };
+        responses: {
+            /** @description Pagamento da quitação. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Payment"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            402: components["responses"]["PaymentRequired"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     receiveMercadoPagoWebhook: {
         parameters: {
             query?: never;
@@ -11181,7 +11329,7 @@ export interface operations {
                 to: components["parameters"]["ToRequired"];
                 groupBy?: components["schemas"]["ReportGroupBy"];
                 planCode?: components["schemas"]["PlanCode"];
-                /** @description `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). */
+                /** @description `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. */
                 format?: components["parameters"]["ReportFormat"];
             };
             header?: never;
@@ -11213,7 +11361,7 @@ export interface operations {
                 /** @description Fim do período (exclusivo), UTC. */
                 to: components["parameters"]["ToRequired"];
                 groupBy?: components["schemas"]["ReportGroupBy"];
-                /** @description `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). */
+                /** @description `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. */
                 format?: components["parameters"]["ReportFormat"];
             };
             header?: never;
@@ -11245,7 +11393,7 @@ export interface operations {
                 /** @description Fim do período (exclusivo), UTC. */
                 to: components["parameters"]["ToRequired"];
                 vehicleId?: string;
-                /** @description `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). */
+                /** @description `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. */
                 format?: components["parameters"]["ReportFormat"];
             };
             header?: never;
@@ -11276,7 +11424,7 @@ export interface operations {
                 from: components["parameters"]["FromRequired"];
                 /** @description Fim do período (exclusivo), UTC. */
                 to: components["parameters"]["ToRequired"];
-                /** @description `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos). */
+                /** @description `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC. */
                 format?: components["parameters"]["ReportFormat"];
             };
             header?: never;
@@ -11482,6 +11630,37 @@ export interface operations {
         };
         responses: {
             /** @description Conta desbloqueada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Customer"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    clearCustomerDelinquency: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DelinquencyClearRequest"];
+            };
+        };
+        responses: {
+            /** @description Inadimplência quitada. */
             200: {
                 headers: {
                     [name: string]: unknown;
