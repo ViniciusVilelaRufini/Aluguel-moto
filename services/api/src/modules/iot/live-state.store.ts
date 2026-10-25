@@ -127,8 +127,7 @@ export class LiveStateStore {
     return this.refresh(thingName);
   }
 
-  /** Relê o Redis agora (varreduras: inatividade, rampa pendente). */
-  /** Última leitura do Redis desta moto falhou (a cópia em memória pode estar velha). */
+  /** Última leitura do Redis desta moto falhou ou não trouxe nada (a cópia em memória não está confirmada). */
   private readonly refreshFailed = new Set<string>();
 
   /** A cópia devolvida por `load`/`refresh` veio de uma leitura do Redis que funcionou? */
@@ -136,6 +135,7 @@ export class LiveStateStore {
     return !this.refreshFailed.has(thingName);
   }
 
+  /** Relê o Redis agora (varreduras: inatividade, rampa pendente). */
   async refresh(thingName: string): Promise<VehicleLiveState | null> {
     const mem = this.states.get(thingName);
     let h: Record<string, string>;
@@ -146,7 +146,10 @@ export class LiveStateStore {
       this.refreshFailed.add(thingName);
       return mem ?? null;
     }
-    if (!h || !h.lastSeenAt) return mem ?? null;
+    if (!h || !h.lastSeenAt) {
+      this.refreshFailed.add(thingName); // nada no Redis: a cópia da memória (se houver) não é confirmada
+      return mem ?? null;
+    }
     const at = Number(h._at) || 0;
     if (mem && at <= (this.syncedAt.get(thingName) ?? 0)) return mem;
     const fromRedis: VehicleLiveState = {

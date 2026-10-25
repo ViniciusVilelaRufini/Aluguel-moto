@@ -553,3 +553,12 @@ Lacuna: estações só entravam pelo seed; o painel não criava nem editava e o 
 - **M4:** a criação grava sempre a thing efetiva (`station-{id}` quando não informada), então o índice único cobre a colisão para estações novas; linhas antigas com `thingName` nulo continuam pela checagem na transação.
 - **M5:** removido o aviso "só visualiza" inalcançável da página Estações. **M6:** desativar/trocar thing decide pelo estado relido sob o lock.
 - Fica: **M3** (teste de componente da página Estações; regras cobertas em `lib/stations` e verificação manual).
+
+### 2026-10-25 · API várias instâncias — menores da re-revisão 3 (branch `feat/lacunas-t5`, depois do merge de `feat/galpao`)
+
+- **M1:** a rampa retomada de uma órfã não considera o degrau herdado confirmado: republica e só desce depois do reported dele.
+- **M2:** a rampa retomada tem prazo (120 s) como qualquer outra; no prazo, um degrau sem ack é republicado (nunca fica presa esperando um ack que não vem); desfecho só uma vez.
+- **M3:** com rampa, o `setSpeedLimit` publica sob o lock da moto (`publishIfAllowed`), reconferindo contra o degrau atual.
+- **M4:** desfecho `failed` e alerta saem num `finally`, mesmo se a publicação da retomada falhar.
+- **M5:** a retomada sem degrau próprio respeita um teto confirmado < 3 (não sobe para 3).
+

@@ -101,7 +101,7 @@ describe('Bloqueio seguro com estado compartilhado (várias instâncias)', () =>
     await b.clock.advance(1);
     await b.svc.sweep();
     expect(b.outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'did_not_stop' }]);
-    expect(bike.limits()).toEqual([15, 8]);
+    expect(bike.limits()).toEqual([15, 8, 8]); // degrau sem ack republicado (M2); nunca 0
     expect(bike.locked()).toBe(false);
   });
 
@@ -121,7 +121,9 @@ describe('Bloqueio seguro com estado compartilhado (várias instâncias)', () =>
     await a.svc.sweep();
     await clock.advance(130_000);
     expect(bike.locked()).toBe(false);
-    expect(bike.limits()).toEqual([15, 8]); // retomada a partir do 15 que a rampa perdida impunha; nunca 0
+    // Retomada a partir do 15 que a rampa perdida impunha: republicado e esperando o ack (M1), republicado de novo no prazo
+    // seguinte (M2); nunca 8 sem o ack do 15, nunca 0.
+    expect(bike.limits()).toEqual([15, 15, 15]);
     expect(b.held).toEqual([T]);
     expect([...a.outcomes, ...b.outcomes]).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
     const index = await redis.hgetall('iot:safe-lock:index');

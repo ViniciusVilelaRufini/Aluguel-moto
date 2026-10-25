@@ -284,10 +284,10 @@ export class SafeLockService {
   }
 
   /**
-   * Rampa cujo estado sumiu sem `finish` (expulsão/failover): mesmo desfecho do timeout da fase `locking` — o desired volta para
-   * `travada: false` segurando `limite_kmh: 0` (nunca fica um `travada: true` órfão que um rastreador offline aplicaria ao
-   * reconectar), o limite fica segurado até um unlock explícito e os comandos terminam `failed`. Rampa ainda `waiting_online`
-   * (nada publicado) só encerra os comandos.
+   * Rampa cujo estado sumiu sem `finish` (expulsão/failover): os comandos terminam `failed`, o limite fica segurado (hold) e a
+   * rampa é retomada (`resume`) a partir do limite que a perdida impunha — o degrau herdado é republicado e espera o ack; nunca
+   * `travada: true` órfão (sem velocidade fresca < 3 sai `travada: false`) nem limite 0 de uma vez. `waiting_online` (nada
+   * publicado) só encerra os comandos.
    */
   private async recoverOrphan(orphan: OrphanRamp): Promise<void> {
     await this.store.withLock(orphan.thingName, async () => {
@@ -309,16 +309,20 @@ export class SafeLockService {
           phase: orphan.phase,
           steps: [],
           stepIdx: 0,
-          awaitingAck: false,
+          // O degrau herdado não conta como confirmado (M1): é republicado e o próximo só sai depois do reported dele.
+          awaitingAck: true,
           lastSpeed: null,
           publishedAt: this.clock.now(),
           ...(orphan.limitKmh !== undefined ? { lastPublishedLimit: orphan.limitKmh } : {}),
         };
-        await this.resume(ramp);
+        try {
+          await this.resume(ramp);
+        } finally {
+          this.emitFailed(orphan.commandIds, 'timeout');
+        }
+        return;
       }
-      outsideLock(() => {
-        for (const commandId of orphan.commandIds) this.sink({ commandId, status: 'failed', reason: 'timeout' });
-      });
+      this.emitFailed(orphan.commandIds, 'timeout');
     });
   }
 
@@ -451,9 +455,36 @@ export class SafeLockService {
     const reason = ramp.phase === 'ramping' ? 'did_not_stop' : 'timeout';
     ramp.commandIds = [];
     this.opts.onHeld?.(ramp.thingName);
-    await this.resume(ramp);
+    // Desfecho e alerta saem mesmo se a publicação da retomada falhar (IoT fora) — M4.
+    try {
+      await this.resume(ramp);
+    } finally {
+      this.emitFailed(commands, reason);
+    }
+  }
+
+  private emitFailed(commandIds: string[], reason: 'did_not_stop' | 'timeout'): void {
+    if (!commandIds.length) return;
     outsideLock(() => {
-      for (const commandId of commands) this.sink({ commandId, status: 'failed', reason });
+      for (const commandId of commandIds) this.sink({ commandId, status: 'failed', reason });
+    });
+  }
+
+  /**
+   * M3: publica um limite pedido por fora sob o lock da moto, conferindo de novo contra a rampa (se houver): nada que um degrau
+   * publicado entre a checagem e a publicação tenha baixado é sobrescrito para cima. `false` = recusado (subiria).
+   */
+  async publishIfAllowed(thingName: string, kmh: number, publish: () => Promise<void>): Promise<boolean> {
+    return this.store.withLock(thingName, async () => {
+      const ramp = await this.store.get(thingName);
+      if (ramp) {
+        const current = rampCurrentLimit(ramp);
+        if (current !== undefined && kmh > current) return false;
+        ramp.capKmh = Math.min(ramp.capKmh ?? kmh, kmh);
+        await this.save(ramp);
+      }
+      await publish();
+      return true;
     });
   }
 
@@ -467,18 +498,14 @@ export class SafeLockService {
     const state = this.opts.probe ? await this.opts.probe(ramp.thingName).catch(() => null) : null;
     const speed = state?.speedKmh ?? null;
     if (speed !== null) ramp.lastSpeed = speed;
-    ramp.deadlineAt = undefined;
-    const t = this.timers.get(ramp.thingName);
-    if (t) {
-      this.clock.clearTimeout(t.deadline);
-      t.deadline = undefined;
-    }
+    // M2: a rampa retomada tem prazo como qualquer outra; no próximo prazo ela é retomada de novo (degrau republicado), sem
+    // novo desfecho (os comandos já terminaram) — nunca fica presa esperando um ack que não vem.
+    ramp.deadlineAt = this.clock.now() + this.timeoutMs;
+    this.schedule(ramp, 'deadline', ramp.deadlineAt);
     if (ramp.phase === 'locking') {
       if (speed !== null && speed < SAFE_LOCK_SPEED_KMH) {
-        ramp.deadlineAt = this.clock.now() + this.timeoutMs;
         ramp.publishedAt = this.clock.now();
         await this.save(ramp);
-        this.schedule(ramp, 'deadline', ramp.deadlineAt);
         return;
       }
       ramp.phase = 'ramping';
@@ -486,7 +513,8 @@ export class SafeLockService {
       await this.save(ramp);
       await this.transport.updateDesired(ramp.thingName, { travada: false });
     }
-    const current = rampCurrentLimit(ramp);
+    // M5: sem degrau próprio (trava direta, órfã antiga), um teto confirmado < 3 também conta — a retomada nunca sobe dele.
+    const current = rampCurrentLimit(ramp) ?? (state && state.speedLimitKmh < SAFE_LOCK_SPEED_KMH ? state.speedLimitKmh : undefined);
     if (current !== undefined && current < SAFE_LOCK_SPEED_KMH) {
       // Já no degrau 0 (depois do 3 confirmado): fica; trava quando a velocidade fresca cair abaixo de 3.
       ramp.steps = [current];
@@ -498,9 +526,9 @@ export class SafeLockService {
     const steps = rampSteps(speed, ceiling, false).map((v) => Math.min(v, current ?? MAX_SPEED_KMH));
     ramp.steps = steps.filter((v, i) => i === 0 || v < steps[i - 1]);
     ramp.stepIdx = 0;
-    if (ramp.steps[0] === ramp.lastPublishedLimit) {
-      // O degrau atual já está publicado: espera o ack dele (ou, se já veio, o próximo degrau sai no intervalo normal).
-      if (!ramp.awaitingAck && ramp.steps.length > 1) {
+    if (ramp.steps[0] === ramp.lastPublishedLimit && !ramp.awaitingAck) {
+      // Degrau atual publicado e confirmado: o próximo sai no intervalo normal.
+      if (ramp.steps.length > 1) {
         ramp.nextStepAt = this.clock.now() + this.stepIntervalMs;
         await this.save(ramp);
         this.schedule(ramp, 'step', ramp.nextStepAt);
@@ -509,6 +537,7 @@ export class SafeLockService {
       }
       return;
     }
+    // Novo degrau, ou o atual sem ack (o desired pode ter sido sobrescrito, ou é herdado de uma órfã): (re)publica e espera.
     await this.publishStep(ramp);
   }
 

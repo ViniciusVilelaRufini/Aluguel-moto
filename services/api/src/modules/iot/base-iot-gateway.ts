@@ -250,7 +250,7 @@ export abstract class BaseIotGateway implements IotGateway {
   async setSpeedLimit(req: CommandRequest, kmh: number): Promise<CommandOutcome> {
     assertSpeedLimit(kmh);
     // Durante o bloqueio seguro, a rampa é dona do limite: nada (zona, operador) pode subir ou mexer nos degraus.
-    // Depois de `did_not_stop`, o limite fica segurado em 0 até um unlock explícito.
+    // Depois de `did_not_stop`, o limite fica segurado (hold) no degrau em que a rampa retomada está, até um unlock explícito.
     // QA-01: nenhum limite (operador/admin) acima do limite da zona em que a moto está (6 calçadão, 20 ciclovia), reavaliada pela
     // posição atual. O motor de cercas manda exatamente o limite em vigor, então só comandos manuais acima dele são recusados.
     const zoneLimit = await this.limitResolver(req.thingName, await this.positionOf(req.thingName));
@@ -265,24 +265,39 @@ export abstract class BaseIotGateway implements IotGateway {
     // Fix 3: com rampa ativa (degradada ou compartilhada, conferida sob o lock da moto), ela é dona do limite — qualquer subida em
     // relação ao limite que ela impõe é recusada, seja qual for o teto lido; a redução aceita vira teto dos próximos degraus.
     const local = await this.safeLockLocal.claimLimit(req.thingName, kmh);
+    if (local === 'refused') return refuse('ramp');
     let shared: 'no_ramp' | 'refused' | 'accepted' | 'unknown';
     try {
       shared = await this.safeLock.claimLimit(req.thingName, kmh);
     } catch {
       shared = 'unknown';
     }
-    if (local === 'refused' || shared === 'refused') return refuse('ramp');
-    if (local !== 'accepted' && shared !== 'accepted') {
-      // Sem rampa conhecida: hold confirmado → só 0; hold ilegível ou estado do Redis ilegível → só reduções em relação ao teto
-      // confirmado (Redis confiável ou documento do shadow); teto desconhecido → aceito (reduzir nunca é recusado).
-      const held = await this.live.heldState(req.thingName);
-      if (held === true && kmh > 0) return refuse(0);
-      if (held === null || shared === 'unknown') {
-        // Teto desconhecido: o reported só conta se veio do Redis agora (a cópia em memória pode estar velha para baixo).
-        const s = await this.live.load(req.thingName);
-        const ceiling = (await this.confirmedCeiling(req.thingName)) ?? (s && this.live.isConfirmed(req.thingName) ? s.speedLimitKmh : null);
-        if (ceiling !== null && kmh > ceiling) return refuse(ceiling);
+    if (shared === 'refused') return refuse('ramp');
+    if (local === 'accepted' || shared === 'accepted') {
+      // M3: com rampa, a publicação sai sob o lock da moto e reconfere contra o degrau atual.
+      const underLocal = (pub: () => Promise<void>) => (local === 'accepted' ? this.safeLockLocal.publishIfAllowed(req.thingName, kmh, pub) : pub().then(() => true));
+      const publish = (d: DesiredState) =>
+        shared === 'accepted'
+          ? this.safeLock.publishIfAllowed(req.thingName, kmh, async () => {
+              if (!(await underLocal(() => this.publishDesired(req.thingName, d)))) throw new RampRefusedError();
+            })
+          : underLocal(() => this.publishDesired(req.thingName, d));
+      try {
+        return await this.desiredCommand(req, { limite_kmh: kmh }, {}, publish);
+      } catch (err) {
+        if (err instanceof RampRefusedError) return refuse('ramp');
+        throw err;
       }
+    }
+    // Sem rampa conhecida: hold confirmado → só 0; hold ilegível ou estado do Redis ilegível → só reduções em relação ao teto
+    // confirmado (Redis confiável ou documento do shadow); teto desconhecido → aceito (reduzir nunca é recusado).
+    const held = await this.live.heldState(req.thingName);
+    if (held === true && kmh > 0) return refuse(0);
+    if (held === null || shared === 'unknown') {
+      // Teto desconhecido: o reported só conta se veio do Redis agora (a cópia em memória pode estar velha para baixo).
+      const s = await this.live.load(req.thingName);
+      const ceiling = (await this.confirmedCeiling(req.thingName)) ?? (s && this.live.isConfirmed(req.thingName) ? s.speedLimitKmh : null);
+      if (ceiling !== null && kmh > ceiling) return refuse(ceiling);
     }
     return this.desiredCommand(req, { limite_kmh: kmh });
   }
@@ -354,7 +369,12 @@ export abstract class BaseIotGateway implements IotGateway {
     this.transport.watch?.(thingName, this.isWatching(thingName));
   }
 
-  private async desiredCommand(req: CommandRequest, expect: DesiredState, extra: DesiredState = {}): Promise<CommandOutcome> {
+  private async desiredCommand(
+    req: CommandRequest,
+    expect: DesiredState,
+    extra: DesiredState = {},
+    publish?: (desired: DesiredState) => Promise<boolean>,
+  ): Promise<CommandOutcome> {
     await this.live.load(req.thingName);
     const online = this.live.isOnline(req.thingName);
     this.supersede(req.thingName, Object.keys(expect) as Array<keyof ReportedState>);
@@ -363,7 +383,8 @@ export abstract class BaseIotGateway implements IotGateway {
     if (online) tracked.timer = this.clock.setTimeout(() => this.onTrackedTimeout(req.commandId), this.opts.commandTimeoutMs);
     this.tracked.set(req.commandId, tracked);
     try {
-      await this.publishDesired(req.thingName, { ...expect, ...extra });
+      const ok = publish ? await publish({ ...expect, ...extra }) : (await this.publishDesired(req.thingName, { ...expect, ...extra }), true);
+      if (!ok) throw new RampRefusedError();
     } catch (err) {
       this.untrack(tracked);
       this.waiters.delete(req.commandId);
@@ -448,3 +469,6 @@ function matches(s: VehicleLiveState | null, expect: Partial<ReportedState>): bo
   if (expect.modo_roubada !== undefined && s.stolenMode !== expect.modo_roubada) return false;
   return true;
 }
+
+/** O limite pedido subiria acima do degrau atual da rampa (reconferido sob o lock da moto). */
+class RampRefusedError extends Error {}
