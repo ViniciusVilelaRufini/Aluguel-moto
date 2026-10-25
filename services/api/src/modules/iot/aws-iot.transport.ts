@@ -11,8 +11,9 @@ import type { DesiredState, InboundHandler, IotTransport, MomentaryCommand, Repo
  *   (proposta: regra de `motos/+/eventos` também para esta fila — hoje ela vai para `alertas`, ver docs/decisoes.md);
  * - `reported`: enquanto houver comando ou rampa aguardando uma moto, `GetThingShadow` a cada `pollMs`.
  *   (A task role da API não tem `iot:Connect`/`iot:Subscribe`; assinar `/update/documents` exigiria isso.)
- * - presença: os eventos vão para o EventBridge e não chegam aqui. Offline = vigia de inatividade do `TelemetryService` (180 s);
- *   reconexão = lacuna entre mensagens maior que `IOT_RECONNECT_GAP_MS` (`TelemetryService.heard`), que abre a graça da rampa.
+ * - presença: `$aws/events/presence` → EventBridge → regra `presence-to-telemetry` → esta fila como
+ *   `{ thingName, presence: 'connected' | 'disconnected', timestamp }` (infra/README.md) → `inbound.presence`. A vigia de inatividade
+ *   (180 s) e a lacuna entre mensagens (`IOT_RECONNECT_GAP_MS`) continuam valendo se a presença atrasar ou se perder.
  */
 export class AwsIotTransport implements IotTransport {
   private readonly logger = new Logger('AwsIotTransport');
@@ -35,6 +36,11 @@ export class AwsIotTransport implements IotTransport {
     this.queue.subscribe<Record<string, unknown>>('telemetria', async (m) => {
       if (!m || typeof m !== 'object' || typeof m.thingName !== 'string') return;
       const { thingName, ingestedAt: _ingested, ...body } = m;
+      if ('presence' in body) {
+        if (body.presence === 'connected' || body.presence === 'disconnected') await inbound.presence(thingName, body.presence === 'connected');
+        else this.logger.warn({ msg: 'presence_invalid', thingName });
+        return;
+      }
       if ('tipo' in body) await inbound.deviceEvent(thingName, body);
       else await inbound.telemetry(thingName, body);
     });
