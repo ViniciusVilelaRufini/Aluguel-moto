@@ -109,7 +109,7 @@ describe('SafeLockService (bloqueio seguro)', () => {
     expect(transport.limits()).toEqual([8]);
   });
 
-  it('120 s sem parar → failed/did_not_stop, mantém limite_kmh 0 e não trava', async () => {
+  it('120 s sem parar → failed/did_not_stop; a rampa segue no 0 (já confirmado) e só trava quando a velocidade cair abaixo de 3', async () => {
     const { clock, transport, outcomes, svc } = setup();
     await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
     for (const step of [15, 8, 3, 0]) {
@@ -122,10 +122,12 @@ describe('SafeLockService (bloqueio seguro)', () => {
     expect(transport.lockPublished()).toBe(false);
     const last = transport.desired[transport.desired.length - 1];
     expect(last.desired.limite_kmh).toBe(0);
-    // Depois da falha a rampa acabou: velocidade baixa não trava sem novo comando.
-    await svc.onSpeed(T, 0);
+    // Fix 3: a rampa continua (segurando o limite); ainda andando não trava; parou → trava.
+    expect(svc.isActive(T)).toBe(true);
+    await svc.onSpeed(T, 5);
     expect(transport.lockPublished()).toBe(false);
-    expect(svc.isActive(T)).toBe(false);
+    await svc.onSpeed(T, 0);
+    expect(transport.lockPublished()).toBe(true);
   });
 
   it('timeout de 120 s conta desde o início (não reinicia a cada degrau)', async () => {
@@ -137,12 +139,16 @@ describe('SafeLockService (bloqueio seguro)', () => {
     expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'did_not_stop' }]);
   });
 
-  it('timeout sem nenhum reported → did_not_stop e garante limite 0 publicado', async () => {
+  it('timeout sem nenhum reported → did_not_stop; fix 3: nada de limite 0 de uma vez (fica no degrau publicado, esperando o ack)', async () => {
     const { clock, transport, outcomes, svc } = setup();
     await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
     await clock.advance(120_000);
     expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'did_not_stop' }]);
-    expect(transport.limits()).toEqual([15, 0]);
+    expect(transport.limits()).toEqual([15]);
+    // O ack chega depois: a escada continua normalmente.
+    await svc.onReported(T, { limite_kmh: 15 });
+    await clock.advance(2_000);
+    expect(transport.limits()).toEqual([15, 8]);
   });
 
   it('já travada → confirmed sem publicar nada', async () => {
@@ -209,12 +215,25 @@ describe('SafeLockService (bloqueio seguro)', () => {
     expect(transport.limits()).toEqual([6, 3, 0]);
   });
 
-  it('travada enviada mas sem confirmação em 120 s → failed/timeout e o desired volta a travada:false com limite 0 (um lock futuro refaz a rampa)', async () => {
+  it('travada enviada mas sem confirmação em 120 s → failed/timeout; sem velocidade fresca < 3: travada:false e rampa gradual (nunca limite 0 de uma vez)', async () => {
     const { clock, outcomes, svc, transport } = setup();
     await svc.start(REQ, { speedKmh: 0, speedLimitKmh: 32, locked: false, online: true });
     await clock.advance(120_000);
     expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
-    expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: false, limite_kmh: 0 });
+    expect(transport.desired.slice(-2).map((d) => d.desired)).toEqual([{ travada: false }, { limite_kmh: 15 }]);
+  });
+
+  it('fix 3: trava sem confirmação em 120 s com velocidade fresca < 3 (probe) → continua esperando a confirmação, sem desfazer', async () => {
+    const clock = new FakeClock(Date.parse('2026-10-21T15:00:00Z'));
+    const transport = new FakeTransport(clock);
+    const outcomes: CommandOutcome[] = [];
+    const svc = new SafeLockService(clock, transport, (o) => outcomes.push(o), { probe: async () => ({ speedKmh: 0, speedLimitKmh: 32, locked: false, online: true }) });
+    await svc.start(REQ, { speedKmh: 0, speedLimitKmh: 32, locked: false, online: true });
+    await clock.advance(120_000);
+    expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
+    expect(transport.desired.map((d) => d.desired)).toEqual([{ travada: true }]);
+    await svc.onReported(T, { travada: true });
+    expect(svc.isActive(T)).toBe(false);
   });
 
   it('eventos de outra moto não afetam a rampa', async () => {

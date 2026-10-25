@@ -24,6 +24,16 @@ export interface RampState {
   publishedAt: number;
   nextStepAt?: number;
   deadlineAt?: number;
+  /**
+   * Redução aceita durante a rampa (fix 3: a rampa é dona do limite; só reduções entram): nenhum degrau sai acima dela.
+   */
+  capKmh?: number;
+}
+
+/** Limite em vigor imposto pela rampa (o menor entre o último degrau publicado e a redução aceita); `undefined` = nada publicado. */
+export function rampCurrentLimit(r: Pick<RampState, 'lastPublishedLimit' | 'capKmh'>): number | undefined {
+  const vals = [r.lastPublishedLimit, r.capKmh].filter((v): v is number => typeof v === 'number');
+  return vals.length ? Math.min(...vals) : undefined;
 }
 
 /**
@@ -35,6 +45,8 @@ export interface OrphanRamp {
   rampId: string;
   phase: SafeLockPhase;
   commandIds: string[];
+  /** Último limite imposto pela rampa perdida (a retomada nunca sobe acima dele). */
+  limitKmh?: number;
 }
 
 /** Onde as rampas vivem. `withLock` serializa tudo o que mexe na rampa de uma moto (entre instâncias, no Redis). */
@@ -125,7 +137,7 @@ export class RedisSafeLockStore implements SafeLockStore {
   }
 
   async put(ramp: RampState): Promise<void> {
-    const entry = JSON.stringify({ rampId: ramp.id, phase: ramp.phase, commandIds: ramp.commandIds });
+    const entry = JSON.stringify({ rampId: ramp.id, phase: ramp.phase, commandIds: ramp.commandIds, limitKmh: rampCurrentLimit(ramp) });
     await this.redis.setWithIndex(this.key(ramp.thingName), JSON.stringify(ramp), this.index, ramp.thingName, entry);
   }
 
@@ -145,8 +157,8 @@ export class RedisSafeLockStore implements SafeLockStore {
         continue;
       }
       try {
-        const e = JSON.parse(raw) as { rampId: string; phase: SafeLockPhase; commandIds?: string[] };
-        orphans.push({ thingName, rampId: e.rampId, phase: e.phase, commandIds: e.commandIds ?? [] });
+        const e = JSON.parse(raw) as { rampId: string; phase: SafeLockPhase; commandIds?: string[]; limitKmh?: number };
+        orphans.push({ thingName, rampId: e.rampId, phase: e.phase, commandIds: e.commandIds ?? [], ...(typeof e.limitKmh === 'number' ? { limitKmh: e.limitKmh } : {}) });
       } catch {
         orphans.push({ thingName, rampId: '', phase: 'locking', commandIds: [] }); // entrada ilegível: trata como a pior fase
       }

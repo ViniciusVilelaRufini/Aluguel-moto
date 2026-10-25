@@ -72,20 +72,27 @@ function cluster() {
   return { redis, state, clock, shadow, a: make('a'), b: make('b') };
 }
 
-/** A recebe a telemetria (velocidade fresca) e faz uma rampa terminar em 0 (did_not_stop → limite 0 segurado). */
+/** A recebe a telemetria (velocidade fresca) e faz uma rampa descer a escada até 0 e travar parada (o mapa antigo de A ficaria em 0). */
 async function rampEndsAtZeroOnA(c: ReturnType<typeof cluster>) {
   await c.a.live.applyTelemetry(T, tel(25, c.clock.now()));
   const p = c.a.gw.lock({ commandId: 'lock-1', thingName: T });
   await c.clock.advance(20);
   await p;
-  await c.clock.advance(120_000);
+  for (const step of [15, 8, 3]) {
+    await c.a.gw.onReported(T, { limite_kmh: step });
+    await c.clock.advance(2_000);
+  }
   expect(c.shadow.lastLimit()).toBe(0);
-  // O did_not_stop (120 s sem parar) segura o limite em 0 por desenho (hold confirmado); não é o que este arquivo verifica.
-  c.shadow.violations = [];
+  c.shadow.speed = 1;
+  await c.a.gw.onSpeed(T, 1);
+  await c.a.gw.onReported(T, { travada: true });
+  expect(c.shadow.desired.travada).toBe(true);
+  c.shadow.speed = 25;
   // Próximo aluguel destravado pela instância B (Redis e shadow em 32, hold solto).
   const u = c.b.gw.unlock({ commandId: 'unlock', thingName: T });
   await c.clock.advance(20);
   await u;
+  await c.b.gw.onReported(T, { travada: false, limite_kmh: 32 }); // o rastreador aplicou
   expect(c.shadow.desired).toMatchObject({ travada: false, limite_kmh: 32 });
 }
 
@@ -182,8 +189,9 @@ describe('Órfã do índice tratada uma vez só (fix 2, N2)', () => {
     await s.redis.del(`iot:safe-lock:${T}`);
     s.shadow.published = [];
     await Promise.all([a.sweep(), b.sweep()]);
-    expect(s.shadow.published.filter((p) => p.d.travada === false)).toHaveLength(1);
     expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'timeout' }]);
+    expect(Object.keys(await s.redis.hgetall('iot:safe-lock:index'))).toHaveLength(1); // uma rampa retomada, não duas
+    expect(s.shadow.published.some((p) => p.d.limite_kmh === 0)).toBe(false);
   });
 
   it('lock novo começa e termina entre o scan e a reversão → nada é desfeito', async () => {
@@ -235,5 +243,98 @@ describe('Unlock depois de falha do Redis: zona reavaliada pela posição (fix 2
     await clock.advance(20);
     await u;
     expect(shadow.desired).toMatchObject({ travada: false, limite_kmh: 6 });
+  });
+});
+
+describe('Fix 3: a rampa é dona do limite; teto do Redis sem confiança depois de escrita perdida', () => {
+  it('rampa local com o Redis fora (15 → 8), Redis volta com 32 velho: a cerca pede 20 → recusado (nada sobe no meio do bloqueio)', async () => {
+    const c = cluster();
+    await c.redis.set(`iot:desired-limit:${T}`, '32');
+    await c.a.live.applyTelemetry(T, tel(25, c.clock.now()));
+    c.state.down = true;
+    const p = c.a.gw.lock({ commandId: 'lock', thingName: T });
+    await c.clock.advance(20);
+    await p;
+    await c.a.gw.onReported(T, { limite_kmh: 15 });
+    await c.clock.advance(2_000);
+    expect(c.shadow.limitsFrom('a')).toEqual([15, 8]);
+    c.state.down = false; // volta com o 32 de antes da queda
+    const z = await c.a.gw.setSpeedLimit({ commandId: 'z20', thingName: T }, 20);
+    expect(z.status).toBe('failed');
+    expect(c.shadow.desired.limite_kmh).toBe(8);
+    // A varredura (1 s) grava o teto pendente (o Redis passa a dizer 8) e migra a rampa local para o Redis: a outra instância
+    // também recusa a subida.
+    await c.a.gw.sweepSafeLock();
+    expect(await c.redis.get(`iot:desired-limit:${T}`)).toBe('8');
+    expect((await c.b.gw.setSpeedLimit({ commandId: 'z20b', thingName: T }, 20)).status).toBe('failed');
+    // Redução continua aceita (vira teto dos degraus).
+    const r = c.b.gw.setSpeedLimit({ commandId: 'z6', thingName: T }, 6);
+    await c.clock.advance(20);
+    expect((await r).status).not.toBe('failed');
+    expect(c.shadow.violations).toEqual([]);
+  });
+
+  it('teto confirmado sem confiança: publicação cuja gravação no Redis falhou → vale o documento do shadow até gravar', async () => {
+    const c = cluster();
+    await c.redis.set(`iot:desired-limit:${T}`, '32');
+    await c.a.live.applyReported(T, { travada: false, limite_kmh: 32 });
+    const realSet = c.redis.set.bind(c.redis);
+    c.redis.set = async (k: string, v: string, ttl?: number) => (k.startsWith('iot:desired-limit:') ? Promise.reject(new Error('ECONNREFUSED')) : realSet(k, v, ttl));
+    const z = c.a.gw.setSpeedLimit({ commandId: 'z6', thingName: T }, 6);
+    await c.clock.advance(20);
+    await z;
+    expect(await c.redis.get(`iot:desired-limit:${T}`)).toBe('32'); // Redis ficou com o valor de antes
+    // Lock com a moto a 25: o teto vem do shadow (6), não do 32 velho do Redis.
+    await c.a.live.applyTelemetry(T, tel(25, c.clock.now()));
+    const p = c.a.gw.lock({ commandId: 'lock', thingName: T });
+    await c.clock.advance(20);
+    await p;
+    expect(c.shadow.limitsFrom('a')).toEqual([6, 6]);
+  });
+
+  it('menor 1: redução para 2 aceita no meio da rampa → os degraus seguintes nunca sobem para 3', async () => {
+    const c = cluster();
+    await c.a.live.applyTelemetry(T, tel(25, c.clock.now()));
+    const p = c.a.gw.lock({ commandId: 'lock', thingName: T });
+    await c.clock.advance(20);
+    await p;
+    const r = c.a.gw.setSpeedLimit({ commandId: 'z2', thingName: T }, 2);
+    await c.clock.advance(20);
+    await r;
+    for (const step of [15, 8, 3]) {
+      await c.a.gw.onReported(T, { limite_kmh: Math.min(step, 2) });
+      await c.clock.advance(2_000);
+    }
+    const after = c.shadow.limitsFrom('a').slice(c.shadow.limitsFrom('a').indexOf(2));
+    expect(after.every((l) => l! <= 2)).toBe(true);
+  });
+
+  it('menor 2: Redis fora e reported velho em 0 na memória de A → o lock a 25 km/h começa em 15 (teto do shadow), não em 3', async () => {
+    const c = cluster();
+    await c.a.live.applyReported(T, { travada: false, limite_kmh: 0 }); // cópia de A
+    await c.a.live.applyTelemetry(T, tel(25, c.clock.now())); // A tem velocidade fresca
+    await c.clock.advance(1);
+    await c.b.live.applyReported(T, { travada: false, limite_kmh: 32 }); // B ouviu depois (Redis = 32; A não releu)
+    c.shadow.desired = { travada: false, limite_kmh: 32 };
+    c.state.down = true;
+    const p = c.a.gw.lock({ commandId: 'lock', thingName: T });
+    await c.clock.advance(20);
+    await p;
+    expect(c.shadow.limitsFrom('a')).toEqual([15]);
+  });
+
+  it('menor 3: teto desconhecido (Redis e shadow indisponíveis) e reported velho em memória → a redução é aceita', async () => {
+    const { redis, state } = flakyRedis();
+    const clock = new FakeClock(T0);
+    const desired: DesiredState[] = [];
+    const transport: IotTransport = { updateDesired: async (_t, d) => void desired.push(d), publishCommand: async () => undefined, start: async () => undefined, stop: async () => undefined };
+    const live = new LiveStateStore(redis, clock);
+    const gw = new GW(transport, live, clock, new EventEmitter2(), { confirmWaitMs: 10, commandTimeoutMs: 30_000, safeLockStore: new RedisSafeLockStore(redis) });
+    await live.applyReported(T, { travada: false, limite_kmh: 6 }); // cópia velha
+    state.down = true;
+    const z = gw.setSpeedLimit({ commandId: 'z20', thingName: T }, 20);
+    await clock.advance(20);
+    expect((await z).status).not.toBe('failed');
+    expect(desired).toEqual([{ limite_kmh: 20 }]);
   });
 });

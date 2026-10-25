@@ -244,14 +244,15 @@ describe('Bloqueio seguro — regressões da revisão', () => {
     expect(transport.locked()).toBe(true);
   });
 
-  it('did_not_stop mantém o limite em 0: setSpeedLimit (zona) recusado até um unlock explícito, mesmo depois de reiniciar', async () => {
+  it('did_not_stop segura o limite (fix 3: no degrau em que está, nunca 0 de uma vez): setSpeedLimit acima dele recusado até um unlock explícito, mesmo depois de reiniciar', async () => {
     const { transport, tel, gw, clock, live } = localSetup();
     await tel.telemetry(T, telemetry(25));
     const p = gw.lock({ commandId: 'c1', thingName: T });
     await clock.advance(1000);
     await p;
     await clock.advance(120_000);
-    expect(transport.limits()[transport.limits().length - 1]).toBe(0);
+    expect(transport.limits()[transport.limits().length - 1]).toBe(15);
+    expect(transport.limits()).not.toContain(0);
     const before = transport.desired.length;
     expect((await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 32)).status).toBe('failed');
     expect(transport.desired.length).toBe(before);
@@ -404,7 +405,7 @@ describe('Bloqueio seguro — regressões da revisão 2', () => {
     expect(await live.isHeld(T)).toBe(true);
   });
 
-  it('lock que expira em "locking" segura o limite em 0 (setSpeedLimit recusado até unlock)', async () => {
+  it('lock que expira em "locking" sem velocidade fresca < 3: travada:false e rampa gradual (fix 3); setSpeedLimit acima do degrau recusado até unlock', async () => {
     const { transport, tel, gw, clock } = localSetup();
     await tel.telemetry(T, telemetry(0, iso(clock.now())));
     await clock.advance(10_000); // graça pós-reconexão (revisão 5)
@@ -414,11 +415,11 @@ describe('Bloqueio seguro — regressões da revisão 2', () => {
     await p;
     expect(transport.desired).toEqual([{ travada: true }]);
     await clock.advance(120_000);
-    expect(transport.desired[transport.desired.length - 1]).toEqual({ travada: false, limite_kmh: 0 });
+    expect(transport.desired.slice(-2)).toEqual([{ travada: false }, { limite_kmh: 15 }]);
     expect((await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 32)).status).toBe('failed');
   });
 
-  it('novo lock numa moto segurada em 0 que ainda não reportou 0: o primeiro degrau não sobe acima do desired (0)', async () => {
+  it('novo lock depois do did_not_stop entra na rampa retomada (que segura o limite): nada sobe nem salta para 0', async () => {
     const { transport, tel, gw, clock } = localSetup();
     await tel.telemetry(T, telemetry(25, iso(clock.now())));
     const p = gw.lock({ commandId: 'c1', thingName: T });
@@ -432,8 +433,9 @@ describe('Bloqueio seguro — regressões da revisão 2', () => {
     await clock.advance(1000);
     await q;
     const after = transport.desired.slice(before);
-    expect(after[0]).toEqual({ limite_kmh: 0 });
-    expect(after.every((d) => d.limite_kmh === undefined || d.limite_kmh === 0)).toBe(true);
+    expect((await q).status).toBe('in_progress');
+    expect(after.every((d) => d.limite_kmh === undefined || d.limite_kmh <= 15)).toBe(true);
+    expect(after.some((d) => d.limite_kmh === 0)).toBe(false);
   });
 
   it('degraus nunca acima do último desired publicado (limite de zona 6 ainda não reportado)', async () => {

@@ -54,8 +54,8 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
     this.lockSweep = setInterval(() => {
       if (sweepingLocks) return;
       sweepingLocks = true;
-      void gateway.safeLock
-        .sweep()
+      void gateway
+        .sweepSafeLock()
         .then(() => lockHealth.ok(), (err) => lockHealth.failed(err as Error))
         .finally(() => (sweepingLocks = false));
     }, SAFE_LOCK_SWEEP_MS);

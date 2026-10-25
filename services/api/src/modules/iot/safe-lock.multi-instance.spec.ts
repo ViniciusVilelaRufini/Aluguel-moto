@@ -94,18 +94,18 @@ describe('Bloqueio seguro com estado compartilhado (várias instâncias)', () =>
     await b.svc.sweep();
     expect(bike.limits()).toEqual([15, 8]); // degrau vencido cumprido por B
     expect(b.svc.isActive(T)).toBe(true); // B passou a acompanhar a rampa
-    // Moto não para: prazo de 120 s desde o início (T0) → did_not_stop com limite 0, sem nunca travar.
+    // Moto não para: prazo de 120 s desde o início (T0) → did_not_stop; fix 3: segue no degrau publicado (nunca 0 de uma vez).
     await b.clock.advance(114_999);
     await b.svc.sweep();
     expect(b.outcomes).toEqual([]);
     await b.clock.advance(1);
     await b.svc.sweep();
     expect(b.outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'did_not_stop' }]);
-    expect(bike.limits()).toEqual([15, 8, 0]);
+    expect(bike.limits()).toEqual([15, 8]);
     expect(bike.locked()).toBe(false);
   });
 
-  it('falha segura: estado perdido no Redis → nunca trava; a varredura acha a órfã no índice e faz o mesmo que o timeout (travada:false, limite 0, hold, failed)', async () => {
+  it('falha segura: estado perdido no Redis → nunca trava sem estado; a varredura acha a órfã e retoma a rampa gradual (sem limite 0 de uma vez), hold e failed', async () => {
     const redis = new MemoryRedisStore();
     const bike = new Bike();
     const clock = new FakeClock(T0);
@@ -121,15 +121,18 @@ describe('Bloqueio seguro com estado compartilhado (várias instâncias)', () =>
     await a.svc.sweep();
     await clock.advance(130_000);
     expect(bike.locked()).toBe(false);
-    expect(bike.limits()).toEqual([15, 0]);
-    expect(bike.desired[bike.desired.length - 1].d).toEqual({ travada: false, limite_kmh: 0 });
+    expect(bike.limits()).toEqual([15, 8]); // retomada a partir do 15 que a rampa perdida impunha; nunca 0
     expect(b.held).toEqual([T]);
     expect([...a.outcomes, ...b.outcomes]).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
-    expect(await redis.hgetall('iot:safe-lock:index')).toEqual({}); // órfã tratada uma vez só
-    expect(a.svc.isActive(T)).toBe(false);
+    const index = await redis.hgetall('iot:safe-lock:index');
+    expect(Object.keys(index)).toEqual([T]); // a rampa retomada (outro rampId) — a órfã foi tratada uma vez só
+    // Velocidade fresca < 3 → a rampa retomada trava.
+    await b.svc.onSpeed(T, 0);
+    expect(bike.locked()).toBe(true);
+    expect(bike.violations).toEqual([]);
   });
 
-  it('órfã na fase locking (travada:true publicado, estado perdido) → o desired volta para travada:false com limite 0', async () => {
+  it('órfã na fase locking (travada:true publicado, estado perdido) sem velocidade fresca → travada:false e rampa gradual (nunca limite 0 de uma vez)', async () => {
     const redis = new MemoryRedisStore();
     const bike = new Bike();
     const clock = new FakeClock(T0);
@@ -140,7 +143,7 @@ describe('Bloqueio seguro com estado compartilhado (várias instâncias)', () =>
     await redis.del('iot:safe-lock:moto-0001');
     const b = instance('b', redis, bike, new FakeClock(T0 + 5_000));
     await b.svc.sweep();
-    expect(bike.desired[bike.desired.length - 1].d).toEqual({ travada: false, limite_kmh: 0 });
+    expect(bike.desired.slice(-2).map((x) => x.d)).toEqual([{ travada: false }, { limite_kmh: 15 }]);
     expect(b.outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
   });
 

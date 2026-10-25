@@ -2,7 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { SAFE_LOCK_SPEED_KMH } from '../../common/enums';
 import type { CommandOutcome, CommandRequest } from '../../ports/iot-gateway.port';
 import type { Clock, TimerHandle } from './clock';
-import { MemorySafeLockStore, outsideLock, type OrphanRamp, type RampState, type SafeLockStore } from './safe-lock.store';
+import { MAX_SPEED_KMH } from '../../common/enums';
+import { MemorySafeLockStore, outsideLock, rampCurrentLimit, type OrphanRamp, type RampState, type SafeLockStore } from './safe-lock.store';
 import type { ReportedState, ShadowTransport } from './shadow-transport';
 import { rampSteps } from './speed-limit';
 
@@ -95,11 +96,73 @@ export class SafeLockService {
     return (await this.store.get(thingName)) !== null;
   }
 
+  /**
+   * Fix 3: enquanto há rampa para a moto, ela é dona do limite. Sob o lock da moto, um limite pedido por fora (cerca, operador)
+   * só entra se não subir o limite em vigor da rampa; aceito, vira teto dos degraus seguintes (`capKmh`). `no_ramp` = sem rampa
+   * aqui (quem chama aplica as outras regras). Erro do armazenamento propaga.
+   */
+  async claimLimit(thingName: string, kmh: number): Promise<'no_ramp' | 'refused' | 'accepted'> {
+    if (!this.local.has(thingName) && (await this.store.get(thingName)) === null) return 'no_ramp';
+    return this.store.withLock(thingName, async () => {
+      const ramp = await this.store.get(thingName);
+      if (!ramp) return 'no_ramp';
+      const current = rampCurrentLimit(ramp);
+      if (current !== undefined && kmh > current) return 'refused';
+      ramp.capKmh = Math.min(ramp.capKmh ?? kmh, kmh);
+      await this.save(ramp);
+      return 'accepted';
+    });
+  }
+
+  /** Rampas desta instância (estado próprio) — para migrar a rampa degradada (memória) para o Redis quando ele volta. */
+  async snapshot(): Promise<RampState[]> {
+    const { active } = await this.store.scan();
+    const out: RampState[] = [];
+    for (const t of active) {
+      const r = await this.store.get(t);
+      if (r) out.push(JSON.parse(JSON.stringify(r)) as RampState);
+    }
+    return out;
+  }
+
+  /** Larga a rampa sem desfecho (ela foi adotada por outro armazenamento). */
+  async drop(thingName: string, rampId: string): Promise<void> {
+    await this.store.withLock(thingName, async () => {
+      await this.store.remove(thingName, rampId);
+      this.forget(thingName);
+    });
+  }
+
+  /**
+   * Adota uma rampa vinda da rampa degradada (memória): se já houver rampa compartilhada, só junta os comandos e o teto; senão
+   * grava a rampa como está e reagenda os prazos. Erro do armazenamento propaga (Redis ainda fora → tenta na próxima varredura).
+   */
+  async adopt(ramp: RampState): Promise<void> {
+    await this.store.withLock(ramp.thingName, async () => {
+      const existing = await this.store.get(ramp.thingName);
+      if (existing) {
+        existing.commandIds.push(...ramp.commandIds.filter((c) => !existing.commandIds.includes(c)));
+        const cap = rampCurrentLimit(ramp);
+        if (cap !== undefined) existing.capKmh = Math.min(existing.capKmh ?? cap, cap);
+        await this.save(existing);
+        return;
+      }
+      await this.save(ramp);
+      if (ramp.deadlineAt !== undefined) this.schedule(ramp, 'deadline', ramp.deadlineAt);
+      if (ramp.nextStepAt !== undefined && !ramp.awaitingAck) this.schedule(ramp, 'step', ramp.nextStepAt);
+    });
+  }
+
   async start(req: CommandRequest, state: SafeLockVehicleState): Promise<CommandOutcome> {
     return this.store.withLock(req.thingName, async () => {
       const existing = await this.store.get(req.thingName);
       if (existing) {
         existing.commandIds.push(req.commandId);
+        // Rampa retomada depois de um prazo (sem prazo próprio): o comando novo tem os 120 s dele.
+        if (existing.deadlineAt === undefined && existing.phase !== 'waiting_online') {
+          existing.deadlineAt = this.clock.now() + this.timeoutMs;
+          this.schedule(existing, 'deadline', existing.deadlineAt);
+        }
         await this.save(existing);
         return existing.phase === 'waiting_online'
           ? { commandId: req.commandId, status: 'pending', reason: 'offline' }
@@ -232,13 +295,27 @@ export class SafeLockService {
       // já tratou, ou um lock novo começou/terminou entre o scan e aqui → nada (nunca desfaz uma trava recém-confirmada).
       if ((await this.store.get(orphan.thingName)) !== null) return;
       if (!(await this.store.isOrphan(orphan.thingName, orphan.rampId))) return;
-      if (orphan.phase !== 'waiting_online') {
-        this.opts.onHeld?.(orphan.thingName);
-        await this.transport.updateDesired(orphan.thingName, { travada: false, limite_kmh: 0 });
-      }
       this.opts.onError?.({ msg: 'safe_lock_state_lost', thingName: orphan.thingName, phase: orphan.phase, commands: orphan.commandIds.length });
       await this.store.clearOrphan(orphan.thingName, orphan.rampId);
       this.forget(orphan.thingName);
+      // Fix 3: nada de limite 0 de uma vez com a moto possivelmente andando — a rampa é retomada pela velocidade medida agora
+      // (nunca acima do limite que a rampa perdida já impunha); trava só com velocidade fresca < 3. Os comandos terminam `failed`.
+      if (orphan.phase !== 'waiting_online') {
+        this.opts.onHeld?.(orphan.thingName);
+        const ramp: RampState = {
+          id: randomUUID(),
+          thingName: orphan.thingName,
+          commandIds: [],
+          phase: orphan.phase,
+          steps: [],
+          stepIdx: 0,
+          awaitingAck: false,
+          lastSpeed: null,
+          publishedAt: this.clock.now(),
+          ...(orphan.limitKmh !== undefined ? { lastPublishedLimit: orphan.limitKmh } : {}),
+        };
+        await this.resume(ramp);
+      }
       outsideLock(() => {
         for (const commandId of orphan.commandIds) this.sink({ commandId, status: 'failed', reason: 'timeout' });
       });
@@ -330,7 +407,7 @@ export class SafeLockService {
 
   /** Grava o estado **antes** de publicar (outra instância, ou um reported imediato, já vê o degrau publicado). */
   private async publishStep(ramp: RampState): Promise<void> {
-    const limit = ramp.steps[ramp.stepIdx];
+    const limit = Math.min(ramp.steps[ramp.stepIdx], ramp.capKmh ?? MAX_SPEED_KMH);
     ramp.awaitingAck = true;
     ramp.lastPublishedLimit = limit;
     ramp.publishedAt = this.clock.now();
@@ -363,22 +440,76 @@ export class SafeLockService {
     await this.transport.updateDesired(ramp.thingName, { travada: true });
   }
 
+  /**
+   * Prazo de 120 s vencido. Os comandos terminam `failed` (`did_not_stop` na rampa → alerta `command_failed`; `timeout` na trava),
+   * o limite fica segurado (hold: nada sobe até um unlock) e — fix 3 — **nada de limite 0 de uma vez**: a rampa continua pela
+   * velocidade medida agora, nunca acima do limite que já impõe, sem prazo novo; trava só com velocidade fresca < 3.
+   */
   private async onTimeout(ramp: RampState): Promise<void> {
-    const thingName = ramp.thingName;
-    if (ramp.phase === 'ramping') {
-      // Limite 0 fica "segurado" até um unlock explícito (o gateway recusa qualquer setSpeedLimit).
-      this.opts.onHeld?.(thingName);
-      await this.finish(ramp, { status: 'failed', reason: 'did_not_stop' });
-      if (ramp.lastPublishedLimit !== 0) await this.transport.updateDesired(thingName, { limite_kmh: 0 });
-      return;
+    if (ramp.phase !== 'ramping' && ramp.phase !== 'locking') return;
+    const commands = ramp.commandIds;
+    const reason = ramp.phase === 'ramping' ? 'did_not_stop' : 'timeout';
+    ramp.commandIds = [];
+    this.opts.onHeld?.(ramp.thingName);
+    await this.resume(ramp);
+    outsideLock(() => {
+      for (const commandId of commands) this.sink({ commandId, status: 'failed', reason });
+    });
+  }
+
+  /**
+   * Retoma a rampa (timeout ou órfã), sob o lock: velocidade fresca do `probe` (sem ele, desconhecida = em movimento).
+   * - fase `locking` com velocidade fresca < 3: segue esperando a confirmação da trava (prazo novo);
+   * - fase `locking` sem isso: `travada:false` (um `travada:true` não confirmado não fica no desired) e rampa;
+   * - rampa: degraus de `rampSteps` pela velocidade, nunca acima do limite em vigor; já em < 3 (degrau 0 confirmado), fica.
+   */
+  private async resume(ramp: RampState): Promise<void> {
+    const state = this.opts.probe ? await this.opts.probe(ramp.thingName).catch(() => null) : null;
+    const speed = state?.speedKmh ?? null;
+    if (speed !== null) ramp.lastSpeed = speed;
+    ramp.deadlineAt = undefined;
+    const t = this.timers.get(ramp.thingName);
+    if (t) {
+      this.clock.clearTimeout(t.deadline);
+      t.deadline = undefined;
     }
     if (ramp.phase === 'locking') {
-      // travada:true sem confirmação não pode ficar no desired: um rastreador offline o aplicaria ao reconectar em qualquer
-      // velocidade. Volta para travada:false segurando o limite em 0; um lock futuro refaz a rampa.
-      this.opts.onHeld?.(thingName);
-      await this.finish(ramp, { status: 'failed', reason: 'timeout' });
-      await this.transport.updateDesired(thingName, { travada: false, limite_kmh: 0 });
+      if (speed !== null && speed < SAFE_LOCK_SPEED_KMH) {
+        ramp.deadlineAt = this.clock.now() + this.timeoutMs;
+        ramp.publishedAt = this.clock.now();
+        await this.save(ramp);
+        this.schedule(ramp, 'deadline', ramp.deadlineAt);
+        return;
+      }
+      ramp.phase = 'ramping';
+      ramp.awaitingAck = false;
+      await this.save(ramp);
+      await this.transport.updateDesired(ramp.thingName, { travada: false });
     }
+    const current = rampCurrentLimit(ramp);
+    if (current !== undefined && current < SAFE_LOCK_SPEED_KMH) {
+      // Já no degrau 0 (depois do 3 confirmado): fica; trava quando a velocidade fresca cair abaixo de 3.
+      ramp.steps = [current];
+      ramp.stepIdx = 0;
+      await this.save(ramp);
+      return;
+    }
+    const ceiling = Math.min(current ?? MAX_SPEED_KMH, state?.speedLimitKmh ?? MAX_SPEED_KMH);
+    const steps = rampSteps(speed, ceiling, false).map((v) => Math.min(v, current ?? MAX_SPEED_KMH));
+    ramp.steps = steps.filter((v, i) => i === 0 || v < steps[i - 1]);
+    ramp.stepIdx = 0;
+    if (ramp.steps[0] === ramp.lastPublishedLimit) {
+      // O degrau atual já está publicado: espera o ack dele (ou, se já veio, o próximo degrau sai no intervalo normal).
+      if (!ramp.awaitingAck && ramp.steps.length > 1) {
+        ramp.nextStepAt = this.clock.now() + this.stepIntervalMs;
+        await this.save(ramp);
+        this.schedule(ramp, 'step', ramp.nextStepAt);
+      } else {
+        await this.save(ramp);
+      }
+      return;
+    }
+    await this.publishStep(ramp);
   }
 
   private async finish(ramp: RampState, outcome: Omit<CommandOutcome, 'commandId'>): Promise<void> {
