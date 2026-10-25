@@ -194,6 +194,27 @@ void main() {
     });
   }
 
+  for (final scale in [1.0, 2.0]) {
+    testWidgets('E-01 plano e seguro: cartoes do esqueleto tem largura (3 planos, 2 coberturas) e Continuar desabilitado a ${(scale * 100).round()}%', (t) async {
+      phone(t, scale: scale);
+      final b = _Slow();
+      Future<void> check(Widget screen, int cards, String continueKey) async {
+        await t.pumpWidget(testApp(screen, overrides: [backendProvider.overrideWithValue(b)]));
+        await t.pump();
+        final boxes = find.byType(VoltiSkeletonBox);
+        expect(boxes, findsNWidgets(cards));
+        for (final e in boxes.evaluate()) {
+          expect((e.renderObject! as RenderBox).size.width, greaterThan(200), reason: 'bloco do esqueleto visivel, nao 0 px');
+        }
+        expect(t.widget<VoltiButton>(find.byKey(Key(continueKey))).onPressed, isNull);
+        await t.pumpWidget(const SizedBox());
+      }
+
+      await check(PlanScreen(selection: _selection()), 3, 'plan-continue');
+      await check(InsuranceScreen(selection: _selection()), 2, 'insurance-continue');
+    });
+  }
+
   test('E-03 mensagens: condicional antes e clara depois da recusa', () {
     final l = AppLocalizationsPt();
     expect(l.returnInsideRule, startsWith('Parece que'));
