@@ -33,14 +33,14 @@ export class RedisIoAdapter extends IoAdapter {
     this.logger.log({ msg: 'socket_io_redis_adapter_ready' });
   }
 
-  createIOServer(port: number, options?: ServerOptions): Server {
+  override createIOServer(port: number, options?: ServerOptions): Server {
     const server = super.createIOServer(port, options) as Server;
     if (this.adapterConstructor) server.adapter(this.adapterConstructor);
     return server;
   }
 
   /** Chamado pelo Nest no `app.close()` (encerramento da task): fecha também as conexões pub/sub. */
-  async dispose(): Promise<void> {
+  override async dispose(): Promise<void> {
     await super.dispose();
     await Promise.all(this.clients.map((c) => c.quit().catch(() => undefined)));
     this.clients = [];
