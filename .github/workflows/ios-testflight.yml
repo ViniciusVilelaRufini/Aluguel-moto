@@ -63,7 +63,7 @@ jobs:
       # APP_CHANNEL=beta: aceita o telefone de exemplo do suporte e o cartão de teste falso (sem Mercado Pago).
       - name: configurar build (dev)
         run: |
-          flutter build ios --release --config-only \
+          flutter build ios --release --config-only --no-codesign \
             --build-name=0.1.0 --build-number="$BUILD_NUMBER" \
             --dart-define=APP_CHANNEL=beta \
             --dart-define=SUPPORT_PHONE=+551100000000 \
