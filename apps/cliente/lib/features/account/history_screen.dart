@@ -66,7 +66,7 @@ class HistoryScreen extends ConsumerWidget {
     return ListRow(
       title: l.historyItem(r.vehicleCode, formatDateTimeSp(r.startedAt)),
       icon: LucideIcons.bike,
-      subtitle: clock(r.elapsedSeconds),
+      subtitle: durationLabel(r.elapsedSeconds),
       value: money(r.costCents),
       trailing: ListRowTrailing.chevron,
       onTap: () => RentalActionsSheet.show(context, r, pick: pick),
@@ -104,7 +104,7 @@ class RentalActionsSheet extends StatelessWidget {
     return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Semantics(header: true, child: Text(l.historyItem(rental.vehicleCode, formatDateTimeSp(rental.startedAt)), style: VoltiTypography.heading)),
       const SizedBox(height: VoltiSpacing.s4),
-      Text('${clock(rental.elapsedSeconds)} · ${money(rental.costCents)}', style: VoltiTypography.caption),
+      Text('${durationLabel(rental.elapsedSeconds)} · ${money(rental.costCents)}', style: VoltiTypography.caption),
       const SizedBox(height: VoltiSpacing.s16),
       if (!pick) ...[
         VoltiButton(label: l.viewReceipt, icon: LucideIcons.receipt, fullWidth: true, onPressed: () => onAction('receipt')),

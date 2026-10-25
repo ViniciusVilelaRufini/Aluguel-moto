@@ -30,6 +30,15 @@ final legalLinksProvider = Provider<LegalLinks>((ref) => LegalLinks(terms: _http
 
 final urlLauncherProvider = Provider<UrlOpener>((ref) => (uri) => launchUrl(uri, mode: LaunchMode.externalApplication));
 
+/// Abre um documento (PDF do recibo) numa aba dentro do app, sem sair para o
+/// navegador externo (que pode abrir com tela de primeiro uso).
+final inAppUrlLauncherProvider = Provider<UrlOpener>((ref) => (uri) async {
+      try {
+        if (await launchUrl(uri, mode: LaunchMode.inAppBrowserView)) return true;
+      } catch (_) {}
+      return launchUrl(uri, mode: LaunchMode.externalApplication);
+    });
+
 final shareTextProvider = Provider<TextSharer>((ref) => (text) async {
       await SharePlus.instance.share(ShareParams(text: text));
     });

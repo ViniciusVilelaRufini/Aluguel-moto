@@ -354,11 +354,15 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     return z.speedLimitKmh != null ? l.zoneTitle(name, z.speedLimitKmh!) : name;
   }
 
-  /// "R$ 0,79/min" (ou /h, /dia) do plano; pausada, a tarifa da pausa.
-  String? _fare(AppLocalizations l, PricingPlan? plan, {required bool paused}) {
+  /// "R$ 0,79/min" (ou /h, /dia); pausada, a tarifa da pausa. O preco vem da
+  /// linha de tempo do `breakdown` do aluguel (o preco congelado na largada,
+  /// o mesmo da cobranca, inclusive o preco proprio do modelo da moto); sem ele,
+  /// o do plano.
+  String? _fare(AppLocalizations l, PricingPlan? plan, Rental rental, {required bool paused}) {
     if (plan == null) return null;
     if (paused) return l.farePerMinute(money(plan.pausePerMinuteCents));
-    final price = money(plan.unitPriceCents);
+    final timeLine = rental.breakdown?.lines.where((x) => x.code == 'time' && x.unitCents != null).firstOrNull;
+    final price = money(timeLine?.unitCents ?? plan.unitPriceCents);
     return switch (plan.unit) {
       PlanUnit.minute => l.farePerMinute(price),
       PlanUnit.hour => l.farePerHour(price),
@@ -575,9 +579,22 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     ref.watch(emergencyContactProvider);
     // Zonas compartilhadas com a devolucao (nome da zona no aviso).
     ref.watch(sharedZonesProvider);
-    final fare = _fare(l, plan, paused: paused);
+    final fare = _fare(l, plan, r, paused: paused);
     final coverageLabel = r.coverage == InsuranceCoverage.full ? l.coverageFullLong : l.coverageBasicLong;
-    final caption = [paused ? l.ridePaused : l.rideLive, if (plan != null) plan.name, coverageLabel].join(' · ');
+    // Fonte grande: o titulo fica so com o estado; plano e seguro viram chips.
+    final big = MediaQuery.textScalerOf(context).scale(10) > 13;
+    final stateLabel = paused ? l.ridePaused : l.rideLive;
+    final caption = big ? stateLabel : [stateLabel, if (plan != null) plan.name, coverageLabel].join(' · ');
+    final stateBadge = _StateBadge(
+      paused: paused,
+      label: paused ? (fare ?? l.pausedBadge) : l.liveBadge,
+      semanticsLabel: paused && fare != null ? l.pausedFareSemantics(fare) : null,
+    );
+    final stats = <Widget>[
+      _Stat(l.fareLabel, fare ?? '—', key: const Key('ride-fare'), stacked: big),
+      _Stat(l.accumulatedCost, money(_cost), ticker: true, stacked: big),
+      _Stat(l.battery, '$_battery%', ticker: true, stacked: big),
+    ];
     final center = _vehiclePos ?? _userPos ?? const LatLng(-23.5614, -46.6559);
     final mapOn = ref.watch(mapEnabledProvider);
     // Aviso de estacao a ate 50 m: posicao do rastreio da corrida (ja ligado,
@@ -715,32 +732,45 @@ class _RideScreenState extends ConsumerState<RideScreen> {
                     SwapNearbyCard(station: nearStation, onSwap: () => _openSwapFlow(stationId: nearStation.id)),
                     const SizedBox(height: 12),
                   ],
-                  Row(children: [
-                    Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(caption, style: VoltiTypography.caption),
-                        FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.centerLeft,
-                          child: VoltiTicker(clock(_elapsed), key: const Key('ride-clock'), style: VoltiTypography.timer),
-                        ),
-                      ]),
+                  if (big) ...[
+                    Text(caption, style: VoltiTypography.caption),
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: VoltiTicker(clock(_elapsed), key: const Key('ride-clock'), style: VoltiTypography.timer),
                     ),
-                    _StateBadge(
-                      paused: paused,
-                      label: paused ? (fare ?? l.pausedBadge) : l.liveBadge,
-                      semanticsLabel: paused && fare != null ? l.pausedFareSemantics(fare) : null,
-                    ),
-                  ]),
+                    const SizedBox(height: 8),
+                    Wrap(spacing: 8, runSpacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                      stateBadge,
+                      if (plan != null) VoltiChip(label: plan.name),
+                      VoltiChip(label: coverageLabel),
+                    ]),
+                  ] else
+                    Row(children: [
+                      Expanded(
+                        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(caption, style: VoltiTypography.caption),
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: Alignment.centerLeft,
+                            child: VoltiTicker(clock(_elapsed), key: const Key('ride-clock'), style: VoltiTypography.timer),
+                          ),
+                        ]),
+                      ),
+                      stateBadge,
+                    ]),
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: VoltiRadii.rMd),
-                    child: Row(children: [
-                      _Stat(l.fareLabel, fare ?? '—', key: const Key('ride-fare')),
-                      _Stat(l.accumulatedCost, money(_cost), ticker: true),
-                      _Stat(l.battery, '$_battery%', ticker: true),
-                    ]),
+                    child: big
+                        ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            for (var i = 0; i < stats.length; i++) ...[
+                              if (i > 0) const SizedBox(height: VoltiSpacing.s12),
+                              stats[i],
+                            ],
+                          ])
+                        : Row(children: stats),
                   ),
                   const SizedBox(height: 12),
                   Wrap(spacing: 8, runSpacing: 8, children: [
@@ -778,14 +808,17 @@ class _RideScreenState extends ConsumerState<RideScreen> {
 }
 
 class _Stat extends StatelessWidget {
-  const _Stat(this.label, this.value, {super.key, this.ticker = false});
+  const _Stat(this.label, this.value, {super.key, this.ticker = false, this.stacked = false});
   final String label, value;
+
+  /// Fonte grande: uma metrica por linha (sem `Expanded`), sem quebra no meio da palavra.
+  final bool stacked;
 
   /// Valor que muda ao vivo: rola os digitos (`VoltiTicker`).
   final bool ticker;
   @override
-  Widget build(BuildContext context) => Expanded(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+  Widget build(BuildContext context) {
+    final column = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(label, style: VoltiTypography.caption),
           if (ticker)
             FittedBox(
@@ -795,8 +828,9 @@ class _Stat extends StatelessWidget {
             )
           else
             Text(value, style: VoltiTypography.heading),
-        ]),
-      );
+    ]);
+    return stacked ? column : Expanded(child: column);
+  }
 }
 
 /// Selo "Ao vivo" (ponto piscando) ou "Pausada", troca com cross-fade.

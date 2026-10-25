@@ -90,6 +90,8 @@ abstract class Backend {
   Future<List<InsuranceCoverageOption>> coverages();
   /// [vehicleId]: preco por minuto do modelo da moto (plano `minute`).
   Future<Quote> quote(PlanCode plan, InsuranceCoverage coverage, {String? coupon, String? vehicleId});
+  /// `POST /me/coupons/validate`: regra do cupom (valor fixo ou percentual) para o resumo da retirada.
+  Future<CouponValidation> validateCoupon(String code, {PlanCode? plan});
   Future<List<PaymentCard>> cards();
   Future<PaymentCard> addCard(String token);
   Future<Wallet> wallet();
@@ -331,6 +333,15 @@ class ApiBackend implements Backend {
               ..coverage = coverage
               ..couponCode = (coupon == null || coupon.isEmpty) ? null : coupon
               ..vehicleId = vehicleId),
+          ))
+          .data!);
+
+  @override
+  Future<CouponValidation> validateCoupon(String code, {PlanCode? plan}) =>
+      _run(() async => (await _api.getPricingApi().validateMyCoupon(
+            couponCodeRequest: CouponCodeRequest((b) => b
+              ..code = code
+              ..planCode = plan),
           ))
           .data!);
 

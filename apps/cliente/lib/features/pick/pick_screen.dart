@@ -219,24 +219,14 @@ class _PickScreenState extends ConsumerState<PickScreen> {
               Semantics(
                 label: l.pickModelFilters,
                 container: true,
-                child: SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 10, VoltiSpacing.screenGutter, 2),
-                  child: Row(
-                    children: [
-                      for (final m in [null, ...modelNames]) ...[
-                        VoltiChip(
-                          label: m ?? l.pickAllModels,
-                          selected: model == m,
-                          onTap: () {
-                            if (model != m) VoltiHaptics.selection();
-                            setState(() => _model = m);
-                          },
-                        ),
-                        const SizedBox(width: VoltiSpacing.s8),
-                      ],
-                    ],
-                  ),
+                child: _ModelFilters(
+                  models: modelNames,
+                  selected: model,
+                  allLabel: l.pickAllModels,
+                  onSelect: (m) {
+                    if (model != m) VoltiHaptics.selection();
+                    setState(() => _model = m);
+                  },
                 ),
               ),
             // A lista rola por baixo do botao flutuante (sem rodape opaco).
@@ -557,8 +547,9 @@ class _PickCardState extends State<_PickCard> {
                                 description,
                                 key: const Key('pick-description'),
                                 // Fechado: ate 2 linhas (fatos-chave primeiro). Aberto: inteira.
-                                maxLines: expanded ? null : 2,
-                                overflow: expanded ? null : TextOverflow.ellipsis,
+                                // Fonte grande: inteira (sem reticencias).
+                                maxLines: expanded || MediaQuery.textScalerOf(context).scale(10) > 13 ? null : 2,
+                                overflow: expanded || MediaQuery.textScalerOf(context).scale(10) > 13 ? null : TextOverflow.ellipsis,
                                 style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
                               ),
                             ],
@@ -673,5 +664,32 @@ class _ExpandSize extends StatelessWidget {
   Widget build(BuildContext context) {
     if (VoltiMotion.reduced(context)) return child;
     return AnimatedSize(duration: VoltiMotion.durBase, curve: VoltiMotion.easeOut, alignment: Alignment.topCenter, child: child);
+  }
+}
+
+/// Filtros por modelo ("Todas" + modelos). Fonte normal: uma linha que rola;
+/// fonte grande: os chips quebram linha, sem ficar cortados na borda.
+class _ModelFilters extends StatelessWidget {
+  const _ModelFilters({required this.models, required this.selected, required this.allLabel, required this.onSelect});
+  final List<String> models;
+  final String? selected;
+  final String allLabel;
+  final ValueChanged<String?> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final chips = [
+      for (final m in <String?>[null, ...models])
+        VoltiChip(label: m ?? allLabel, selected: selected == m, onTap: () => onSelect(m)),
+    ];
+    const padding = EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 10, VoltiSpacing.screenGutter, 2);
+    if (MediaQuery.textScalerOf(context).scale(10) > 13) {
+      return Padding(padding: padding, child: Wrap(spacing: VoltiSpacing.s8, children: chips));
+    }
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: padding,
+      child: Row(children: [for (final c in chips) ...[c, const SizedBox(width: VoltiSpacing.s8)]]),
+    );
   }
 }

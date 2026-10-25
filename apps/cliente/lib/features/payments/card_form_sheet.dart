@@ -125,6 +125,7 @@ class _CardFormSheetState extends State<CardFormSheet> {
         labelText: l.cardExpiry,
         hintText: l.cardExpiryHint,
         errorText: _expiry.text.length == 5 && !_expiryOk ? l.cardExpiryInvalid : null,
+        errorMaxLines: 3,
       ),
     );
     final cvvField = TextField(
@@ -162,6 +163,7 @@ class _CardFormSheetState extends State<CardFormSheet> {
                 labelText: l.cardNumber,
                 hintText: '0000 0000 0000 0000',
                 errorText: numberDone && !_numberOk ? l.cardNumberInvalid : null,
+                errorMaxLines: 3,
                 prefixIcon: const Icon(LucideIcons.creditCard),
               ),
             ),
@@ -201,6 +203,7 @@ class _CardFormSheetState extends State<CardFormSheet> {
                 labelText: l.cardHolderCpf,
                 hintText: '000.000.000-00',
                 errorText: cpfDone && !_cpfOk ? l.cpfInvalidShort : null,
+                errorMaxLines: 3,
                 prefixIcon: const Icon(LucideIcons.idCard),
               ),
             ),

@@ -56,8 +56,9 @@ class VoltiBadge extends StatelessWidget {
       excludeSemantics: semanticLabel != null,
       child: Container(
         key: const Key('volti-badge'),
-        height: sm ? 20 : 26,
-        padding: EdgeInsets.symmetric(horizontal: sm ? 6 : 8),
+        // Altura minima que cresce com a escala do texto (sem corte a 200%).
+        constraints: BoxConstraints(minHeight: sm ? 20 : 26),
+        padding: EdgeInsets.symmetric(horizontal: sm ? 6 : 8, vertical: sm ? 4.5 : 7),
         decoration: BoxDecoration(color: bg, borderRadius: VoltiRadii.rXs),
         child: Row(
           mainAxisSize: MainAxisSize.min,

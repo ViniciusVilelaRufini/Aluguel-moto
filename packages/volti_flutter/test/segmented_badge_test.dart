@@ -108,5 +108,29 @@ void main() {
         expect(t.getSize(find.byKey(const Key('volti-badge'))).height, 20);
       });
     }
+
+    for (final size in VoltiBadgeSize.values) {
+      testWidgets('a 200% de fonte a altura cresce com o texto, sem corte (${size.name})', (t) async {
+        await t.pumpWidget(MediaQuery(
+          data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+          child: _wrap(VoltiBadge('Verificada 18+', size: size)),
+        ));
+        final pill = t.getSize(find.byKey(const Key('volti-badge'))), text = t.getSize(find.text('Verificada 18+'));
+        expect(pill.height, greaterThanOrEqualTo(text.height));
+        expect(pill.width, greaterThanOrEqualTo(text.width));
+        expect(t.takeException(), isNull);
+      });
+    }
+  });
+
+  testWidgets('OptionCard: selo "Obrigatório" a 200% cresce com o texto', (t) async {
+    await t.pumpWidget(MediaQuery(
+      data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+      child: _wrap(const OptionCard(title: 'Seguro básico', badge: 'Obrigatório', price: 'Incluso')),
+    ));
+    final text = find.text('Obrigatório');
+    final pill = find.ancestor(of: text, matching: find.byType(Container)).first;
+    expect(t.getSize(pill).height, greaterThanOrEqualTo(t.getSize(text).height));
+    expect(t.takeException(), isNull);
   });
 }
