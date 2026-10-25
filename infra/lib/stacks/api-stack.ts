@@ -38,6 +38,10 @@ export class ApiStack extends Stack {
   public readonly repository: ecr.Repository;
   public readonly service: ecsPatterns.ApplicationLoadBalancedFargateService;
   public readonly appSecret: secretsmanager.Secret;
+  /** HMAC keys the API refuses to start without in production (generated here, never typed by hand). */
+  public readonly signingSecrets: Record<'STATION_QR_SECRET' | 'FRAUD_HASH_SECRET' | 'PICKUP_CODE_SECRET', secretsmanager.Secret>;
+  /** Healthy tasks below which the alarm fires (0 while the service is deployed with 0 tasks). */
+  public readonly minHealthyTasks: number;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
@@ -64,6 +68,21 @@ export class ApiStack extends Stack {
         excludePunctuation: true,
       },
     });
+
+    // Signing keys. Rotating STATION_QR_SECRET invalidates every printed station QR (re-issue them); rotating
+    // FRAUD_HASH_SECRET breaks matching of previously hashed CPFs; PICKUP_CODE_SECRET only voids open pickup codes.
+    const signing = (key: string, name: string, description: string) =>
+      new secretsmanager.Secret(this, key, {
+        secretName: `volti/${env}/${name}`,
+        description,
+        generateSecretString: { passwordLength: 64, excludePunctuation: true },
+        removalPolicy: cfg.disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
+      });
+    this.signingSecrets = {
+      STATION_QR_SECRET: signing('StationQrSecret', 'station-qr-secret', 'HMAC of the swap station QR codes'),
+      FRAUD_HASH_SECRET: signing('FraudHashSecret', 'fraud-hash-secret', 'HMAC of the CPF for fraud prevention'),
+      PICKUP_CODE_SECRET: signing('PickupCodeSecret', 'pickup-code-secret', 'HMAC of the depot pickup codes'),
+    };
 
     const cluster = new ecs.Cluster(this, 'Cluster', {
       clusterName: `volti-${env}`,
@@ -112,6 +131,9 @@ export class ApiStack extends Stack {
           S3_BUCKET_RETURN_PHOTOS: data.returnPhotosBucket.bucketName,
           S3_BUCKET_REPORTS: data.reportsBucket.bucketName,
           S3_BUCKET_ATTACHMENTS: data.attachmentsBucket.bucketName,
+          S3_BUCKET_CATALOG: data.catalogBucket.bucketName,
+          // The entrypoint (scripts/start.mjs) applies the Prisma migrations before starting (advisory lock: safe with N tasks).
+          RUN_MIGRATIONS: 'true',
           // QA-10/QA-18: CORS só para o painel; a API está atrás do ALB (um salto de proxy).
           CORS_ORIGINS: props.adminOrigin,
           TRUST_PROXY: '1',
@@ -124,14 +146,18 @@ export class ApiStack extends Stack {
           GEOFENCE_MODE: 'aws',
           LOCATION_TRACKER_NAME: iot.trackerName,
           LOCATION_GEOFENCE_COLLECTION: iot.geofenceCollectionName,
+          GEOCODER_MODE: 'aws',
+          LOCATION_PLACE_INDEX: iot.placeIndexName,
           // QA-02: valores e nomes iguais aos do services/api/src/config/env.ts (antes: 'aws' caía na fila em processo e a telemetria do SQS nunca era lida).
           QUEUE_MODE: 'sqs',
           SQS_QUEUE_TELEMETRIA_URL: messaging.telemetry.queue.queueUrl,
           SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL: messaging.paymentsWebhook.queue.queueUrl,
           SQS_QUEUE_ALERTAS_URL: messaging.alerts.queue.queueUrl,
+          SQS_QUEUE_ESTACOES_URL: messaging.stations.queue.queueUrl,
           STORAGE_MODE: 's3',
           PAYMENT_PROVIDER: cfg.paymentProvider,
           INSURANCE_PROVIDER: 'mock',
+          INVOICE_ISSUER: 'mock',
           KYC_PROVIDER: 'mock',
           PUSH_MODE: 'log',
           TRACK_RETENTION_DAYS: '90',
@@ -144,11 +170,15 @@ export class ApiStack extends Stack {
           IOT_ENDPOINT: ecs.Secret.fromSsmParameter(iot.endpointParam),
           MERCADOPAGO_ACCESS_TOKEN: ecs.Secret.fromSecretsManager(this.appSecret, 'MERCADOPAGO_ACCESS_TOKEN'),
           MERCADOPAGO_WEBHOOK_SECRET: ecs.Secret.fromSecretsManager(this.appSecret, 'MERCADOPAGO_WEBHOOK_SECRET'),
+          STATION_QR_SECRET: ecs.Secret.fromSecretsManager(this.signingSecrets.STATION_QR_SECRET),
+          FRAUD_HASH_SECRET: ecs.Secret.fromSecretsManager(this.signingSecrets.FRAUD_HASH_SECRET),
+          PICKUP_CODE_SECRET: ecs.Secret.fromSecretsManager(this.signingSecrets.PICKUP_CODE_SECRET),
         },
       },
     });
 
     (this.service.service.node.defaultChild as ecs.CfnService).desiredCount = desiredCount;
+    this.minHealthyTasks = desiredCount === 0 ? 0 : Math.min(cfg.apiMinTasks, desiredCount);
 
     this.service.targetGroup.configureHealthCheck({
       path: '/health',
@@ -173,17 +203,20 @@ export class ApiStack extends Stack {
     data.returnPhotosBucket.grantReadWrite(role);
     data.reportsBucket.grantReadWrite(role);
     data.attachmentsBucket.grantReadWrite(role);
+    data.catalogBucket.grantReadWrite(role);
     messaging.telemetry.queue.grantConsumeMessages(role);
     messaging.alerts.queue.grantConsumeMessages(role);
+    messaging.stations.queue.grantConsumeMessages(role);
     messaging.paymentsWebhook.queue.grantSendMessages(role);
     messaging.paymentsWebhook.queue.grantConsumeMessages(role);
     const arn = (suffix: string) => `arn:aws:${suffix}`;
     role.addToPolicy(
       new iam.PolicyStatement({
         actions: ['iot:Publish'],
-        // QA-16: só comandos e shadow; nunca telemetria/eventos (que são do rastreador).
+        // QA-16: só comandos e shadow; nunca telemetria/eventos (que são do rastreador ou da estação).
         resources: [
           arn(`iot:${this.region}:${this.account}:topic/motos/*/comandos`),
+          arn(`iot:${this.region}:${this.account}:topic/estacoes/*/comandos`),
           arn(`iot:${this.region}:${this.account}:topic/$aws/things/*/shadow/update`),
           arn(`iot:${this.region}:${this.account}:topic/$aws/things/*/shadow/get`),
         ],
@@ -205,6 +238,12 @@ export class ApiStack extends Stack {
       new iam.PolicyStatement({
         actions: ['geo:PutGeofence', 'geo:BatchPutGeofence', 'geo:GetGeofence', 'geo:ListGeofences', 'geo:BatchDeleteGeofence'],
         resources: [arn(`geo:${this.region}:${this.account}:geofence-collection/${iot.geofenceCollectionName}`)],
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ['geo:SearchPlaceIndexForPosition'],
+        resources: [arn(`geo:${this.region}:${this.account}:place-index/${iot.placeIndexName}`)],
       }),
     );
     // QA-04/QA-07: grupos e exclusão/bloqueio de identidades. Escopo: só os dois pools.
@@ -234,8 +273,21 @@ export class ApiStack extends Stack {
       }),
     );
 
-    // QA-18: WAF regional no ALB com limite por IP (2000 requisições em 5 minutos) e regras gerenciadas básicas.
+    // QA-18: WAF regional no ALB: limite por IP (por ambiente, em 5 minutos) e regras gerenciadas da AWS.
     const vis = (name: string) => ({ cloudWatchMetricsEnabled: true, sampledRequestsEnabled: true, metricName: name });
+    const managed = (name: string, priority: number, countOnly: string[] = []): wafv2.CfnWebACL.RuleProperty => ({
+      name,
+      priority,
+      overrideAction: { none: {} },
+      statement: {
+        managedRuleGroupStatement: {
+          vendorName: 'AWS',
+          name,
+          ruleActionOverrides: countOnly.length ? countOnly.map((rule) => ({ name: rule, actionToUse: { count: {} } })) : undefined,
+        },
+      },
+      visibilityConfig: vis(`Api${name}`),
+    });
     const albAcl = new wafv2.CfnWebACL(this, 'AlbAcl', {
       name: `volti-${env}-api`,
       scope: 'REGIONAL',
@@ -246,9 +298,13 @@ export class ApiStack extends Stack {
           name: 'RateLimitPerIp',
           priority: 10,
           action: { block: {} },
-          statement: { rateBasedStatement: { limit: 2000, aggregateKeyType: 'IP', evaluationWindowSec: 300 } },
+          statement: { rateBasedStatement: { limit: cfg.apiRateLimitPer5Min, aggregateKeyType: 'IP', evaluationWindowSec: 300 } },
           visibilityConfig: vis('ApiRateLimitPerIp'),
         },
+        managed('AWSManagedRulesAmazonIpReputationList', 20),
+        managed('AWSManagedRulesKnownBadInputsRuleSet', 30),
+        // SizeRestrictions_BODY (8 KB) only counts: zone polygons from the panel are legitimately larger (Express caps at 100 KB).
+        managed('AWSManagedRulesCommonRuleSet', 40, ['SizeRestrictions_BODY']),
       ],
     });
     new wafv2.CfnWebACLAssociation(this, 'AlbAclAssociation', {

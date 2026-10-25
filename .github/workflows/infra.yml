@@ -4,11 +4,19 @@ on:
   pull_request:
     paths:
       - 'infra/**'
+      - 'services/api/**'
+      - 'apps/admin/**'
+      - 'packages/contracts/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/infra.yml'
   push:
     branches: [main]
     paths:
       - 'infra/**'
+      - 'services/api/**'
+      - 'apps/admin/**'
+      - 'packages/contracts/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/infra.yml'
 
 permissions:
@@ -20,6 +28,29 @@ env:
   AWS_REGION: sa-east-1
 
 jobs:
+  # Gate before any deploy: API (lint + unit tests), admin panel (lint + vitest) and the OpenAPI contract (redocly).
+  checks:
+    name: lint + tests (api, admin, contract)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: contract (redocly)
+        run: pnpm --filter @volti/contracts lint
+      - name: api lint
+        run: pnpm --filter api lint
+      - name: api unit tests
+        run: pnpm --filter api test
+      - name: admin lint
+        run: pnpm --filter admin lint
+      - name: admin tests (vitest)
+        run: pnpm --filter admin test
+
   synth:
     name: test + synth (${{ matrix.env }})
     runs-on: ubuntu-latest
@@ -65,7 +96,7 @@ jobs:
   deploy-dev:
     name: deploy (dev)
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: synth
+    needs: [checks, synth]
     runs-on: ubuntu-latest
     environment: dev
     concurrency: infra-deploy-dev
@@ -101,7 +132,8 @@ jobs:
         if: steps.api.outputs.present == 'true'
         run: |
           REPO="${{ steps.ecr.outputs.registry }}/volti-dev-api"
-          docker build -t "$REPO:${{ github.sha }}" services/api
+          # The Dockerfile copies the workspace files (pnpm-lock.yaml, tsconfig.base.json): build from the repo root.
+          docker build -f services/api/Dockerfile -t "$REPO:${{ github.sha }}" .
           docker push "$REPO:${{ github.sha }}"
       # 3) Redeploy with the service running, now that the image tag exists.
       - name: cdk deploy (service running)

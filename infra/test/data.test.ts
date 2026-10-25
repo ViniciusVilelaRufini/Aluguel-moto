@@ -19,7 +19,7 @@ describe.each(['dev', 'prod'] as const)('DataStack (%s)', (env) => {
 
   it('all buckets block public access and are encrypted; KYC uses KMS', () => {
     const buckets = t().findResources('AWS::S3::Bucket');
-    expect(Object.keys(buckets)).toHaveLength(4);
+    expect(Object.keys(buckets)).toHaveLength(5);
     for (const b of Object.values(buckets) as any[]) {
       expect(b.Properties.PublicAccessBlockConfiguration).toEqual({
         BlockPublicAcls: true,
@@ -42,6 +42,22 @@ describe.each(['dev', 'prod'] as const)('DataStack (%s)', (env) => {
     t().hasResourceProperties('AWS::S3::Bucket', { BucketName: Match.stringLikeRegexp('fotos-devolucao') });
     t().hasResourceProperties('AWS::S3::Bucket', { BucketName: Match.stringLikeRegexp('relatorios') });
     t().hasResourceProperties('AWS::S3::Bucket', { BucketName: Match.stringLikeRegexp('anexos') });
+    t().hasResourceProperties('AWS::S3::Bucket', { BucketName: Match.stringLikeRegexp('catalogo') });
+  });
+
+  it('catalog bucket: CORS only for the admin panel origin (browser uploads by presigned URL), never *', () => {
+    const catalog = Object.entries(t().findResources('AWS::S3::Bucket')).find(([id]) => id.startsWith('CatalogBucket'))![1] as any;
+    const rules = catalog.Properties.CorsConfiguration.CorsRules;
+    expect(rules).toHaveLength(1);
+    expect(rules[0].AllowedMethods.sort()).toEqual(['GET', 'PUT']);
+    const origins = JSON.stringify(rules[0].AllowedOrigins);
+    expect(origins).not.toContain('*');
+    expect(origins).toMatch(/https:\/\//);
+    if (env === 'dev') expect(rules[0].AllowedOrigins).toContain('http://localhost:3100');
+    else expect(origins).not.toMatch(/localhost/);
+    // Only the other buckets stay without CORS.
+    const withCors = Object.values(t().findResources('AWS::S3::Bucket')).filter((b: any) => b.Properties.CorsConfiguration);
+    expect(withCors).toHaveLength(1);
   });
 
   it('buckets have lifecycle rules', () => {
@@ -59,7 +75,7 @@ describe.each(['dev', 'prod'] as const)('DataStack (%s)', (env) => {
   });
 
   it('publishes the SSM parameters', () => {
-    for (const n of ['rds/endpoint', 'rds/secret-arn', 'redis/endpoint', 's3/kyc-bucket', 's3/return-photos-bucket', 's3/reports-bucket', 's3/attachments-bucket']) {
+    for (const n of ['rds/endpoint', 'rds/secret-arn', 'redis/endpoint', 's3/kyc-bucket', 's3/return-photos-bucket', 's3/reports-bucket', 's3/attachments-bucket', 's3/catalog-bucket']) {
       t().hasResourceProperties('AWS::SSM::Parameter', { Name: `/volti/${env}/${n}` });
     }
   });
