@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -10,6 +11,7 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/backend.dart';
+import '../../core/clock.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
 import '../../core/launcher.dart';
@@ -38,7 +40,7 @@ class RideScreen extends ConsumerStatefulWidget {
   ConsumerState<RideScreen> createState() => _RideScreenState();
 }
 
-class _RideScreenState extends ConsumerState<RideScreen> {
+class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObserver {
   Rental? _rental;
   Object? _loadError;
   int _elapsed = 0;
@@ -86,11 +88,47 @@ class _RideScreenState extends ConsumerState<RideScreen> {
   void initState() {
     super.initState();
     _link = ref.read(rideRealtimeLinkProvider)..openCount += 1;
+    WidgetsBinding.instance.addObserver(this);
     _load();
+  }
+
+  /// Volta do segundo plano (ex.: discador do SOS): o timer nao correu, entao
+  /// relê o aluguel e recalcula o tempo pelo `startedAt` do servidor.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _rental != null) _resync();
+  }
+
+  Future<void> _resync() async {
+    try {
+      final rental = (await ref.read(backendProvider).currentRentalState()).rental;
+      if (!mounted || rental == null) return;
+      setState(() {
+        _rental = rental;
+        _cost = rental.costCents;
+        _syncElapsed();
+      });
+    } catch (_) {
+      if (mounted) setState(_syncElapsed);
+    }
+  }
+
+  /// Tempo de corrida = agora (relogio corrigido pelo servidor) - `startedAt` -
+  /// segundos em pausa. Nao depende de o timer ter rodado. Em pausa, o servidor manda.
+  void _syncElapsed() {
+    final r = _rental;
+    if (r == null) return;
+    if (r.status != RentalStatus.active) {
+      _elapsed = r.elapsedSeconds;
+      return;
+    }
+    final now = ref.read(clockProvider)();
+    _elapsed = math.max(0, now.difference(r.startedAt.toUtc()).inSeconds - r.pausedSeconds);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _link.openCount -= 1;
     _tick?.cancel();
     _events?.cancel();
@@ -120,7 +158,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       setState(() {
         _rental = rental;
         _openSwap = isOpenSwap(state.stationSwap) ? state.stationSwap : null;
-        _elapsed = rental.elapsedSeconds;
+        _syncElapsed();
         _cost = rental.costCents;
         _limit = rental.speedLimitKmh ?? vehicle?.speedLimitKmh ?? 32;
         if (vehicle != null) {
@@ -134,7 +172,7 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       _startTracking();
       _tick?.cancel();
       _tick = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (_rental?.status == RentalStatus.active && mounted) setState(() => _elapsed++);
+        if (_rental?.status == RentalStatus.active && mounted) setState(_syncElapsed);
       });
     } catch (e) {
       if (mounted) setState(() => _loadError = e);
@@ -264,9 +302,20 @@ class _RideScreenState extends ConsumerState<RideScreen> {
     switch (e) {
       case RentalUpdated():
         setState(() {
-          _elapsed = e.elapsedSeconds;
           _cost = e.costCents;
-          _rental = _rental?.rebuild((b) => b..status = RentalStatus.values.firstWhere((s) => s.name == _camel(e.status), orElse: () => _rental!.status));
+          final status = RentalStatus.values.firstWhere((s) => s.name == _camel(e.status), orElse: () => _rental?.status ?? RentalStatus.active);
+          final r = _rental;
+          if (r != null) {
+            // Mantem startedAt como base: os segundos em pausa saem da diferenca
+            // entre o tempo decorrido e o que o servidor contou.
+            final now = ref.read(clockProvider)();
+            final paused = math.max(0, now.difference(r.startedAt.toUtc()).inSeconds - e.elapsedSeconds);
+            _rental = r.rebuild((b) {
+              b.status = status;
+              if (status == RentalStatus.active) b.pausedSeconds = paused;
+            });
+          }
+          _elapsed = e.elapsedSeconds;
         });
         if (e.status == 'ended' || e.status == 'force_ended') {
           _goToSummary(e.rentalId);
@@ -511,7 +560,12 @@ class _RideScreenState extends ConsumerState<RideScreen> {
       final r = _rental!;
       final updated = r.status == RentalStatus.paused ? await backend.resume(r.id) : await backend.pause(r.id);
       VoltiHaptics.tap();
-      if (mounted) setState(() => _rental = updated);
+      if (mounted) {
+        setState(() {
+          _rental = updated;
+          _syncElapsed();
+        });
+      }
     } catch (e) {
       if (mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
     } finally {

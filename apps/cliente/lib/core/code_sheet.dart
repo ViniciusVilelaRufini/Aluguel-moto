@@ -43,7 +43,9 @@ class _CodeEntrySheetState extends State<CodeEntrySheet> {
   @override
   Widget build(BuildContext context) {
     final l = context.l;
-    return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    return SingleChildScrollView(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Semantics(header: true, child: Text(widget.title, style: VoltiTypography.title)),
       const SizedBox(height: 12),
       TextField(
@@ -64,6 +66,7 @@ class _CodeEntrySheetState extends State<CodeEntrySheet> {
           fullWidth: true,
           onPressed: () => Navigator.of(context).pop(''),
         ),
-    ]);
+    ]),
+    );
   }
 }

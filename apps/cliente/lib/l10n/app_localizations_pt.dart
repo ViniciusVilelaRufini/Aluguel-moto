@@ -1523,7 +1523,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get helpFaq1Text =>
-      'No mapa, toque em Escanear para andar e aponte para o QR no guidão, ou digite o número da moto. Escolha o plano e o seguro e confirme.';
+      'Escolha uma moto na lista ou no mapa, o plano e o seguro e reserve. Mostre o QR da reserva no galpão para retirar a moto, confira as fotos e o estado dela e toque em Aceitar e destravar.';
 
   @override
   String get helpFaq2Title => 'O que é a caução?';
@@ -1537,7 +1537,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get helpFaq3Text =>
-      'Pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar.';
+      'Devolva a moto no galpão, onde o operador confere a entrega, ou pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar. Se a bateria estiver baixa, troque-a por QR numa estação, durante a corrida, em Trocar bateria.';
 
   @override
   String get helpFaq4Title => 'Como uso a carteira e os pacotes?';

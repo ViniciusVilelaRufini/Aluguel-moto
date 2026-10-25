@@ -2725,7 +2725,7 @@ abstract class AppLocalizations {
   /// No description provided for @helpFaq1Text.
   ///
   /// In pt, this message translates to:
-  /// **'No mapa, toque em Escanear para andar e aponte para o QR no guidão, ou digite o número da moto. Escolha o plano e o seguro e confirme.'**
+  /// **'Escolha uma moto na lista ou no mapa, o plano e o seguro e reserve. Mostre o QR da reserva no galpão para retirar a moto, confira as fotos e o estado dela e toque em Aceitar e destravar.'**
   String get helpFaq1Text;
 
   /// No description provided for @helpFaq2Title.
@@ -2749,7 +2749,7 @@ abstract class AppLocalizations {
   /// No description provided for @helpFaq3Text.
   ///
   /// In pt, this message translates to:
-  /// **'Pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar.'**
+  /// **'Devolva a moto no galpão, onde o operador confere a entrega, ou pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar. Se a bateria estiver baixa, troque-a por QR numa estação, durante a corrida, em Trocar bateria.'**
   String get helpFaq3Text;
 
   /// No description provided for @helpFaq4Title.

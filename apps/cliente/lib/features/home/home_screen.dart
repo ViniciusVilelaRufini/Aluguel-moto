@@ -355,12 +355,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 children: [
                                   const SizedBox(height: VoltiSpacing.s10),
                                   if (rental != null) ...[
-                                    _ActiveBanner(icon: LucideIcons.bike, text: l.rentalInProgress, action: l.backToRide, onTap: () => context.push('/ride')),
                                     if (openSwap != null) ...[
-                                      const SizedBox(height: VoltiSpacing.s8),
                                       SwapResumeCard(onResume: () => _openSwapFlow(openSwap)),
                                     ] else if (nearStation != null) ...[
-                                      const SizedBox(height: VoltiSpacing.s8),
                                       SwapNearbyCard(station: nearStation, onSwap: () => _openSwapFlow(null, stationId: nearStation.id)),
                                     ],
                                   ] else if (reservation != null)
@@ -380,7 +377,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                             // Promocoes (PassCard) numa faixa que rola na horizontal. Somem com
                             // reserva em aberto e no modo estacoes (cobriam um marcador).
-                            if (pending == null && !_stationsMode)
+                            if (pending == null && rental == null && !_stationsMode)
                               SingleChildScrollView(
                                 key: const Key('home-promos'),
                                 scrollDirection: Axis.horizontal,
@@ -494,7 +491,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       child: child,
                                     ),
                                   ),
-                                  child: pending != null
+                                  child: rental != null
+                                      ? _ActiveRideCard(key: const Key('home-ride-card'), rental: rental, onTap: () => context.push('/ride'))
+                                      : pending != null
                                       ? HomeReservationCard(key: ValueKey('home-reservation-${pending.id}'), reservation: pending)
                                       : VoltiEnter(
                                           key: const Key('depot-card-enter'),
@@ -711,36 +710,28 @@ class _MapBadge extends StatelessWidget {
   }
 }
 
-class _ActiveBanner extends StatelessWidget {
-  const _ActiveBanner({required this.icon, required this.text, required this.action, required this.onTap});
-  final IconData icon;
-  final String text, action;
+/// Corrida em andamento: ocupa o lugar do cartao do galpao (sem "Escolher moto").
+class _ActiveRideCard extends StatelessWidget {
+  const _ActiveRideCard({super.key, required this.rental, required this.onTap});
+  final Rental rental;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final l = context.l;
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-      decoration: BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
-      child: Row(
+      width: double.infinity,
+      padding: const EdgeInsets.all(VoltiSpacing.s16),
+      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(icon, color: VoltiColors.white, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(text, style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.white)),
-          ),
-          // Texto grande: a acao quebra linha em vez de empurrar a faixa para fora.
-          Flexible(
-            child: TextButton(
-              onPressed: onTap,
-              style: TextButton.styleFrom(minimumSize: const Size(48, VoltiSpacing.hitMin)),
-              child: Text(
-                action,
-                textAlign: TextAlign.end,
-                style: const TextStyle(color: VoltiColors.green400, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ),
+          Semantics(header: true, child: Text(l.rentalInProgress, style: VoltiTypography.title)),
+          const SizedBox(height: VoltiSpacing.s4),
+          Text(rental.vehicleCode, style: VoltiTypography.caption),
+          const SizedBox(height: VoltiSpacing.s12),
+          VoltiButton(key: const Key('home-back-to-ride'), label: l.backToRide, icon: LucideIcons.bike, fullWidth: true, onPressed: onTap),
         ],
       ),
     );
