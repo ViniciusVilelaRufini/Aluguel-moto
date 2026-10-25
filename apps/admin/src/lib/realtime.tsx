@@ -50,7 +50,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
 
   const canList = groups.some((g) => LIST_GROUPS.includes(g));
   const canFleet = groups.some((g) => FLEET_GROUPS.includes(g));
-  // Task 14: o financeiro vê os alertas de pagamento (sem socket da frota: o contador é atualizado por consulta).
+  // Task 14: o financeiro vê os alertas de pagamento (socket só com a sala `alerts:finance`; consulta a cada 60 s de reserva).
   const canFinanceAlerts = groups.includes('financeiro');
   const groupsRef = useRef(groups);
   groupsRef.current = groups;
@@ -85,7 +85,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!token || !canFleet) return;
+    if (!token || !(canFleet || canFinanceAlerts)) return;
     const socket: Socket = io(`${API_BASE_URL}/realtime`, { auth: (cb) => cb({ token: getToken() ?? token }), transports: ['websocket'] });
     const emit = (event: string, payload: unknown) => handlers.current.get(event)?.forEach((h) => (h as (p: unknown) => void)(payload));
     socket.on('connect', () => {
@@ -114,7 +114,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       qc.invalidateQueries({ queryKey: ['alerts'] });
     });
     return () => { socket.close(); setConnected(false); };
-  }, [token, canFleet, qc]);
+  }, [token, canFleet, canFinanceAlerts, qc]);
 
   const on = useCallback(<K extends keyof RealtimeEvents>(event: K, handler: Handler<K>) => {
     const set = handlers.current.get(event) ?? new Set();

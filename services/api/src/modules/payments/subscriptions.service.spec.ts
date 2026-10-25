@@ -88,7 +88,7 @@ function setup(sub: Row, opts: { vehicles?: Row[]; others?: Row[]; payments?: Ro
     emitUpdated: jest.fn(),
     needsReview: jest.fn(),
   };
-  const billing: any = { markDelinquent: jest.fn(async () => undefined) };
+  const billing: any = { markDelinquent: jest.fn(async () => undefined), clearDelinquencyIfSettled: jest.fn(async () => undefined) };
   const svc = new SubscriptionsService(prisma, provider, state, customers, billing, { record: jest.fn() } as any, loadV2Config());
   return { svc, prisma, provider, billing, customers, state, row: subscription.rows[0] };
 }
@@ -319,5 +319,22 @@ describe('SubscriptionsService — assinatura fechada não reabre (fix round 2, 
     expect(row.status).toBe('canceled');
     expect(provider.cancelSubscription).not.toHaveBeenCalled();
     expect(row.gatewayCancelPendingAt).toBeNull();
+  });
+});
+
+describe('SubscriptionsService — renovação paga quita o ciclo recusado (Task 14, fix round 1, I-2)', () => {
+  it('as tentativas recusadas do ciclo viram quitadas (payment) e a flag é reavaliada; outra assinatura não é tocada', async () => {
+    const t0 = Date.now();
+    const failed = (id: string, ago: number, sub = 's1') => ({
+      id, customerId: 'c1', subscriptionId: sub, kind: 'subscription', method: 'card', status: 'failed', amountCents: 24900, refundedCents: 0, debtSettledAt: null, createdAt: new Date(t0 - ago),
+    });
+    const paid = { id: 'p9', customerId: 'c1', subscriptionId: 's1', kind: 'subscription', method: 'card', status: 'paid', amountCents: 24900, refundedCents: 0, providerPaymentId: 'mp-9', idempotencyKey: 'subscription-charge:mp-9', debtSettledAt: null, createdAt: new Date(t0) };
+    const { svc, prisma, billing } = setup({ status: 'past_due' }, { payments: [failed('f1', 3 * DAY), failed('f2', DAY), failed('fx', DAY, 's2'), paid] });
+    await svc.onSubscriptionPaymentChanged(paid as any);
+    const byId = Object.fromEntries(prisma.payment.rows.map((r: any) => [r.id, r]));
+    expect(byId.f1).toMatchObject({ debtSettlement: 'payment', debtSettledAt: expect.any(Date) });
+    expect(byId.f2).toMatchObject({ debtSettlement: 'payment' });
+    expect(byId.fx.debtSettledAt).toBeNull();
+    expect(billing.clearDelinquencyIfSettled).toHaveBeenCalledWith('c1');
   });
 });

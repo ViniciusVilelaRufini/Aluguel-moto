@@ -2202,7 +2202,7 @@ export interface paths {
         };
         /**
          * Fila de alertas
-         * @description Ordenados por prioridade (critical primeiro) e depois por criação. Novos alertas chegam por `alert.created` (sala `fleet`).
+         * @description Ordenados por prioridade (critical primeiro) e depois por criação. Novos alertas chegam por `alert.created` (sala `alerts:ops`; os de pagamento na `alerts:finance`).
          *     `financeiro` vê (e atribui/resolve) só alertas `payment_needs_review`; `operacao` não vê esses alertas financeiros (`404`).
          */
         get: operations["listAlerts"];

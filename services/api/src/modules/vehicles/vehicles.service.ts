@@ -168,6 +168,7 @@ export class VehiclesService {
         include: VEHICLE_INCLUDE,
       });
       if (serial) {
+        // `cycleCount` soma 1 a cada instalação numa moto (regra do contrato v2): nasce instalada, então 1; no galpão nasce 0.
         const b = await tx.battery.create({ data: { serial, status: 'in_vehicle', vehicleId: created.id, chargePct: created.batteryPct, cycleCount: 1 } });
         await recordMovements(tx, [movement(null, { status: 'in_vehicle', vehicleId: created.id }, actor.userId, 'Cadastrada com a moto', b.id)]);
       }

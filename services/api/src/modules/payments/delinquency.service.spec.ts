@@ -217,3 +217,110 @@ describe('DelinquencyService — corrida entre duas quitações', () => {
     await expect(svc.payDebt(CUSTOMER, d.id, { method: 'pix' })).rejects.toMatchObject({ slug: 'debt-not-payable' });
   });
 });
+
+describe('DelinquencyService — fix round 1 (I-1): nunca dar como falha o que o gateway pode ter cobrado', () => {
+  async function expiredPix(ctx: Awaited<ReturnType<typeof setup>>, d: { id: string }) {
+    const pix = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    await ctx.db.payment.update({ where: { id: pix.id }, data: { pix: { ...(pix.pix as any), expiresAt: new Date(Date.now() - 60_000).toISOString() } } });
+    return pix;
+  }
+
+  it('Pix vencido mas pago no gateway (cancelamento recusado): quita a dívida e responde 409, sem nova cobrança', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await expiredPix(ctx, d);
+    ctx.provider.simulatePixPaid(pix.providerPaymentId!);
+    await expect(ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' })).rejects.toMatchObject({ slug: 'debt-not-payable' });
+    expect(await ctx.db.payment.findUnique({ where: { id: pix.id } })).toMatchObject({ status: 'paid' });
+    expect(await ctx.db.payment.findUnique({ where: { id: d.id } })).toMatchObject({ debtSettlement: 'payment' });
+    expect(ctx.provider.operations('createPix')).toBe(1);
+  });
+
+  it('Pix vencido com o gateway fora (cancelamento e consulta falham): 503 e a tentativa continua pending', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await expiredPix(ctx, d);
+    jest.spyOn(ctx.provider, 'cancelPix').mockRejectedValueOnce(new PaymentProviderError('fora'));
+    jest.spyOn(ctx.provider, 'getPayment').mockRejectedValueOnce(new PaymentProviderError('fora'));
+    await expect(ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' })).rejects.toMatchObject({ slug: 'gateway-unavailable' });
+    expect((await ctx.db.payment.findUnique({ where: { id: pix.id } })).status).toBe('pending');
+  });
+
+  it('Pix vencido e cancelado no gateway: a tentativa falha e um Pix novo é criado', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await expiredPix(ctx, d);
+    const next = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    expect(next.id).not.toBe(pix.id);
+    expect((await ctx.db.payment.findUnique({ where: { id: pix.id } })).status).toBe('failed');
+  });
+
+  it('cartão sem resposta e busca no gateway com erro: 503, tentativa pending (nunca "nada encontrado")', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    jest.spyOn(ctx.provider, 'charge').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+    await expect(ctx.svc.payDebt(CUSTOMER, d.id, { method: 'card' })).rejects.toMatchObject({ slug: 'gateway-unavailable' });
+    const [attempt] = await ctx.db.payment.findMany({ where: { settlesPaymentId: d.id } });
+    await ctx.db.payment.update({ where: { id: attempt.id }, data: { createdAt: new Date(Date.now() - 3600_000) } });
+    jest.spyOn(ctx.provider, 'searchPayments').mockRejectedValueOnce(new PaymentProviderError('fora'));
+    await expect(ctx.svc.payDebt(CUSTOMER, d.id, { method: 'card' })).rejects.toMatchObject({ slug: 'gateway-unavailable' });
+    expect((await ctx.db.payment.findUnique({ where: { id: attempt.id } })).status).toBe('pending');
+  });
+
+  it('webhook pago numa quitação já failed: quita a dívida, tira a flag e abre revisão (payment_needs_review)', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    await ctx.state.transition(pix.id, 'failed', { failureReason: 'pix_expired' });
+    ctx.provider.simulatePixPaid(pix.providerPaymentId!);
+    const webhook = new WebhookProcessor(ctx.db as any, ctx.provider, ctx.billing, { onTopUpPayment: jest.fn() } as any, { onRecurringPayment: jest.fn() } as any, { subscribe: jest.fn() } as any, ctx.svc);
+    expect(await webhook.process({ provider: 'fake', eventId: 'late-1', type: 'payment', dataId: pix.providerPaymentId! })).toBe('processed');
+    expect(await ctx.db.payment.findUnique({ where: { id: d.id } })).toMatchObject({ debtSettlement: 'payment' });
+    expect((await ctx.db.customer.findUnique({ where: { id: CUSTOMER } })).delinquent).toBe(false);
+    expect(ctx.reviews).toEqual([{ paymentId: pix.id, reason: 'debt_settlement_paid_after_failed' }]);
+    expect((await ctx.db.payment.findUnique({ where: { id: pix.id } })).failureReason).toBe('paid_after_failed');
+  });
+
+  it('webhook pago numa quitação failed com a dívida já quitada: só revisão (para devolver)', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    await ctx.state.transition(pix.id, 'failed', { failureReason: 'pix_expired' });
+    await ctx.svc.clearManually(STAFF, CUSTOMER, 'Pago por fora');
+    await ctx.svc.onLatePaid((await ctx.db.payment.findUnique({ where: { id: pix.id } }))!, 'pp');
+    expect(ctx.reviews).toEqual([{ paymentId: pix.id, reason: 'debt_settlement_after_settled' }]);
+  });
+});
+
+describe('DelinquencyService — fix round 1 (I-2): dívida de assinatura com a recorrência ainda cobrando', () => {
+  async function subDebt(db: InMemoryPrisma, status: string, over: Record<string, unknown> = {}) {
+    const sub = await db.subscription.create({
+      data: { customerId: CUSTOMER, planCode: 'weekly', status, priceCents: 24900, currentPeriodStart: new Date(), currentPeriodEnd: new Date(), gatewayCancelPendingAt: null, ...over },
+    });
+    const pay = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'subscription', method: 'card', status: 'failed', amountCents: 24900, subscriptionId: sub.id } });
+    return { sub, pay };
+  }
+
+  it('assinatura past_due → 409 debt-in-collection (cliente e financeiro), sem cobrança', async () => {
+    const { db, svc, provider } = await setup();
+    const { pay } = await subDebt(db, 'past_due');
+    await expect(svc.payDebt(CUSTOMER, pay.id, { method: 'card' })).rejects.toMatchObject({ slug: 'debt-in-collection' });
+    await expect(svc.clearManually(STAFF, CUSTOMER, 'Pago')).rejects.toMatchObject({ slug: 'debt-in-collection' });
+    expect(provider.operations('charge')).toBe(0);
+  });
+
+  it('assinatura expirada com cancelamento no gateway pendente → 409; confirmado → pode quitar', async () => {
+    const { db, svc } = await setup();
+    const { sub, pay } = await subDebt(db, 'expired', { gatewayCancelPendingAt: new Date() });
+    await expect(svc.payDebt(CUSTOMER, pay.id, { method: 'card' })).rejects.toMatchObject({ slug: 'debt-in-collection' });
+    await db.subscription.update({ where: { id: sub.id }, data: { gatewayCancelPendingAt: null } });
+    expect(await svc.payDebt(CUSTOMER, pay.id, { method: 'card' })).toMatchObject({ status: 'paid', amountCents: 24900 });
+  });
+
+  it('assinatura em cobrança não bloqueia quitar dívida de aluguel', async () => {
+    const { db, svc } = await setup();
+    await subDebt(db, 'past_due');
+    const d = await debt(db, 3000);
+    expect(await svc.payDebt(CUSTOMER, d.id, { method: 'card' })).toMatchObject({ status: 'paid' });
+  });
+});

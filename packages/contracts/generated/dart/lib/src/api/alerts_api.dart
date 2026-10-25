@@ -218,7 +218,7 @@ class AlertsApi {
   }
 
   /// Fila de alertas
-  /// Ordenados por prioridade (critical primeiro) e depois por criação. Novos alertas chegam por &#x60;alert.created&#x60; (sala &#x60;fleet&#x60;). &#x60;financeiro&#x60; vê (e atribui/resolve) só alertas &#x60;payment_needs_review&#x60;; &#x60;operacao&#x60; não vê esses alertas financeiros (&#x60;404&#x60;).
+  /// Ordenados por prioridade (critical primeiro) e depois por criação. Novos alertas chegam por &#x60;alert.created&#x60; (sala &#x60;alerts:ops&#x60;; os de pagamento na &#x60;alerts:finance&#x60;). &#x60;financeiro&#x60; vê (e atribui/resolve) só alertas &#x60;payment_needs_review&#x60;; &#x60;operacao&#x60; não vê esses alertas financeiros (&#x60;404&#x60;).
   ///
   /// Parameters:
   /// * [cursor] - Cursor opaco devolvido em `nextCursor` da página anterior.

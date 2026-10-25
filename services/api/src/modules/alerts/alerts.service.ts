@@ -14,7 +14,8 @@ export const FINANCIAL_ALERT_TYPES: readonly AlertType[] = ['payment_needs_revie
 
 /**
  * Filtro por perfil (Task 14): `admin`/`suporte` veem tudo; `operacao` vê os operacionais; `financeiro` só os financeiros.
- * `null` = sem filtro. Perfis combinados somam o que cada um vê.
+ * `null` = sem filtro. Perfis combinados somam o que cada um vê. Espelhado em `alertVisibleTo` (apps/admin/src/lib/permissions.ts)
+ * e nas salas `alerts:ops`/`alerts:finance` do realtime.gateway.ts: mudar os três juntos.
  */
 export function alertScope(user: Principal | undefined): Prisma.AlertWhereInput | null {
   if (!user || hasGroup(user, 'admin', 'suporte')) return null;

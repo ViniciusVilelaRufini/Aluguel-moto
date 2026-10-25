@@ -68,6 +68,9 @@ export class WebhookProcessor implements OnModuleInit {
       } else if (applied.changed && applied.payment.kind === 'debt_settlement' && applied.payment.status === 'paid') {
         // Task 14: quitação por Pix (ou cartão que estava em análise) confirmada pelo gateway.
         await this.delinquency?.onSettlementPaid(applied.payment);
+      } else if (applied.payment.kind === 'debt_settlement' && applied.payment.status === 'failed' && pp.status === 'paid') {
+        // Fix round 1 (I-1): pago no gateway depois de virar `failed` aqui → quita a dívida e avisa o financeiro.
+        await this.delinquency?.onLatePaid(applied.payment, pp.providerPaymentId);
       }
       this.logger.log({ msg: 'webhook_processed', eventId: msg.eventId, status: pp.status });
       return 'processed';

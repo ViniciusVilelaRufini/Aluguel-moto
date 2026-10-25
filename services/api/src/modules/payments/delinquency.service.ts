@@ -72,12 +72,31 @@ export class DelinquencyService {
     return total;
   }
 
-  /** Liquidação de aluguel ainda retentando no gateway (recusa com tentativas restantes, nem estacionada nem concluída). */
-  private async inCollection(customerId: string): Promise<boolean> {
-    const pending = await this.prisma.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } });
-    if (!pending.length) return false;
-    const n = await this.prisma.settlementProgress.count({ where: { paymentId: { in: pending.map((p) => p.id) }, attempts: { gt: 0 }, parkedAt: null, finishedAt: null } });
-    return n > 0;
+  /**
+   * Cobrança automática ainda em curso no gateway para a dívida (ou, sem `debt`, para qualquer dívida do cliente):
+   * - aluguel: liquidação `pending` com recusa e tentativas restantes (nem estacionada nem concluída);
+   * - assinatura (fix round 1, I-2): `past_due` (o gateway ainda retenta a recorrência) ou fechada com o cancelamento no
+   *   gateway ainda não confirmado (`gatewayCancelPendingAt`). Pagar por fora agora cobraria o mesmo ciclo duas vezes.
+   */
+  private async inCollection(customerId: string, debt?: Pick<Payment, 'kind' | 'subscriptionId'>): Promise<boolean> {
+    if (!debt || debt.kind === 'rental') {
+      const pending = await this.prisma.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } });
+      if (pending.length) {
+        const n = await this.prisma.settlementProgress.count({ where: { paymentId: { in: pending.map((p) => p.id) }, attempts: { gt: 0 }, parkedAt: null, finishedAt: null } });
+        if (n > 0) return true;
+      }
+    }
+    if (!debt || debt.kind === 'subscription') {
+      const n = await this.prisma.subscription.count({
+        where: { customerId, ...(debt?.subscriptionId ? { id: debt.subscriptionId } : {}), OR: [{ status: 'past_due' }, { gatewayCancelPendingAt: { not: null } }] },
+      });
+      if (n > 0) return true;
+    }
+    return false;
+  }
+
+  private gatewayUnavailable(): ProblemException {
+    return new ProblemException(503, 'gateway-unavailable', 'Não conseguimos confirmar o pagamento anterior agora. Tente de novo em instantes.');
   }
 
   // ───────────────────────── cliente quita ─────────────────────────
@@ -86,7 +105,7 @@ export class DelinquencyService {
     const debt = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!debt || debt.customerId !== customerId) throw notFound('Pagamento não encontrado.');
     if (!isOpenDebt(debt)) throw conflict('debt-not-payable', 'Este pagamento não tem dívida em aberto.');
-    if (await this.inCollection(customerId)) throw conflict('debt-in-collection', 'Ainda estamos tentando cobrar no seu cartão. Aguarde o resultado.');
+    if (await this.inCollection(customerId, debt)) throw conflict('debt-in-collection', 'Ainda estamos tentando cobrar no seu cartão. Aguarde o resultado.');
     const amountCents = (await this.outstanding(debt)) ?? 0;
     if (amountCents <= 0) throw conflict('debt-not-payable', 'Este pagamento não tem saldo devedor.');
 
@@ -99,28 +118,81 @@ export class DelinquencyService {
   }
 
   /**
-   * Quitação ainda em aberto para a dívida: Pix válido é reaproveitado; Pix vencido é cancelado; cartão sem resposta
-   * conclusiva é conferido no gateway pela referência externa (pago → quita; nada lá depois de 10 min → falha).
+   * Quitação ainda em aberto para a dívida: Pix válido é reaproveitado; cartão sem resposta conclusiva é conferido no
+   * gateway pela referência externa. Fix round 1 (I-1): a tentativa só vira `failed` com a recusa/cancelamento confirmado
+   * pelo gateway. Erro de consulta nunca conta como "nada lá": a tentativa fica `pending` e o cliente recebe 503.
    */
   private async openAttempt(debtId: string): Promise<Payment | null> {
     const open = await this.prisma.payment.findFirst({ where: { settlesPaymentId: debtId, kind: 'debt_settlement', status: 'pending' }, orderBy: { createdAt: 'desc' } });
     if (!open) return null;
+    const paidNow = async (providerPaymentId: string, cardLast4?: string | null): Promise<never> => {
+      await this.onSettlementPaid(await this.state.transition(open.id, 'paid', { providerPaymentId, cardLast4: cardLast4 ?? open.cardLast4 }));
+      throw conflict('debt-not-payable', 'Esta dívida já foi paga.');
+    };
     if (open.method === 'pix') {
       const pix = open.pix as PixCharge | null;
       if (pix && new Date(pix.expiresAt).getTime() > Date.now()) return open;
-      if (open.providerPaymentId) await this.provider.cancelPix({ providerPaymentId: open.providerPaymentId, idempotencyKey: `debt-settlement-cancel:${open.id}` }).catch(() => undefined);
-      await this.state.transition(open.id, 'failed', { failureReason: 'pix_expired' }).catch(() => undefined);
-      return null;
+      if (!open.providerPaymentId) {
+        // O Pix nem chegou a ser criado no gateway: nada a cobrar.
+        await this.state.transition(open.id, 'failed', { failureReason: 'pix_not_created' });
+        return null;
+      }
+      const ppid = open.providerPaymentId;
+      let status: string | undefined;
+      try {
+        status = (await this.provider.cancelPix({ providerPaymentId: ppid, idempotencyKey: `debt-settlement-cancel:${open.id}` })).status;
+      } catch {
+        status = undefined;
+      }
+      if (status !== 'failed' && status !== 'canceled') {
+        // Cancelamento não confirmado (pode já ter sido pago): o estado no gateway decide.
+        let seen;
+        try {
+          seen = await this.provider.getPayment(ppid);
+        } catch {
+          throw this.gatewayUnavailable();
+        }
+        if (seen.status === 'paid') return paidNow(seen.providerPaymentId);
+        status = seen.status;
+      }
+      if (status === 'failed' || status === 'canceled') {
+        await this.state.transition(open.id, 'failed', { failureReason: 'pix_expired' });
+        return null;
+      }
+      throw this.gatewayUnavailable();
     }
-    const found = await this.provider.searchPayments({ externalReference: open.id }).catch(() => []);
+    let found;
+    try {
+      found = await this.provider.searchPayments({ externalReference: open.id });
+    } catch {
+      throw this.gatewayUnavailable();
+    }
     const paid = found.find((p) => p.status === 'paid');
-    if (paid) {
-      await this.onSettlementPaid(await this.state.transition(open.id, 'paid', { providerPaymentId: paid.providerPaymentId, cardLast4: paid.cardLast4 ?? open.cardLast4 }));
-      throw conflict('debt-not-payable', 'Esta dívida já foi paga.');
-    }
+    if (paid) return paidNow(paid.providerPaymentId, paid.cardLast4);
     if (found.some((p) => p.status === 'pending') || Date.now() - open.createdAt.getTime() < STALE_CARD_SETTLEMENT_MS) return open;
     await this.state.transition(open.id, 'failed', { failureReason: 'gateway_no_result' });
     return null;
+  }
+
+  /**
+   * Fix round 1 (I-1): o gateway confirmou como pago uma quitação que já estava `failed` localmente (Pix pago no limite,
+   * cobrança que apareceu depois da busca). O dinheiro entrou: a dívida é quitada (idempotente) e o financeiro é avisado
+   * (o registro local continua `failed` e precisa de conciliação; se a dívida já estava quitada, há valor a devolver).
+   */
+  async onLatePaid(pay: Payment, providerPaymentId: string): Promise<void> {
+    if (pay.kind !== 'debt_settlement' || !pay.settlesPaymentId) return;
+    await this.state.annotate(pay.id, { providerPaymentId: pay.providerPaymentId ?? providerPaymentId, failureReason: 'paid_after_failed' });
+    const res = await this.prisma.payment.updateMany({
+      where: { id: pay.settlesPaymentId, customerId: pay.customerId, status: 'failed', debtSettledAt: null },
+      data: { debtSettledAt: new Date(), debtSettlement: 'payment' },
+    });
+    if (res.count === 1) {
+      this.logger.warn({ msg: 'debt_settled_by_late_payment', paymentId: pay.settlesPaymentId, settlementPaymentId: pay.id });
+      await this.billing.clearDelinquencyIfSettled(pay.customerId);
+      this.state.needsReview({ paymentId: pay.id, reason: 'debt_settlement_paid_after_failed' });
+    } else {
+      this.state.needsReview({ paymentId: pay.id, reason: 'debt_settlement_after_settled' });
+    }
   }
 
   /**
@@ -210,18 +282,22 @@ export class DelinquencyService {
     if (!customer.delinquent && debts.length === 0) throw conflict('debt-not-payable', 'Este cliente não está inadimplente.');
     if (await this.inCollection(customerId)) throw conflict('debt-in-collection', 'Há uma cobrança automática em andamento no cartão do cliente. Aguarde o resultado antes de registrar a quitação.');
     const outstanding = await this.outstandingMap(debts);
-    const amountCents = [...outstanding.values()].reduce((a, b) => a + b, 0);
     const now = new Date();
+    let settled: string[] = [];
     await this.prisma.$transaction(async (tx) => {
+      // Fix round 1 (M1): o log registra só o que esta transação quitou (uma quitação paga no meio fica fora).
       if (debts.length) {
-        await tx.payment.updateMany({ where: { id: { in: debts.map((d) => d.id) }, debtSettledAt: null }, data: { debtSettledAt: now, debtSettlement: 'manual' } });
+        const still = await tx.payment.findMany({ where: { id: { in: debts.map((d) => d.id) }, debtSettledAt: null }, select: { id: true } });
+        settled = still.map((d) => d.id);
+        if (settled.length) await tx.payment.updateMany({ where: { id: { in: settled }, debtSettledAt: null }, data: { debtSettledAt: now, debtSettlement: 'manual' } });
       }
       await tx.customer.update({ where: { id: customerId }, data: { delinquent: false } });
+      const amountCents = settled.reduce((a, id) => a + (outstanding.get(id) ?? 0), 0);
       await this.audit.record(
-        { actor, action: 'customer.delinquency_clear', entityType: 'Customer', entityId: customerId, reason, metadata: { paymentIds: debts.map((d) => d.id), amountCents } },
+        { actor, action: 'customer.delinquency_clear', entityType: 'Customer', entityId: customerId, reason, metadata: { paymentIds: settled, amountCents } },
         tx as never,
       );
     });
-    this.logger.log({ msg: 'delinquency_cleared_manually', customerId, payments: debts.length, amountCents });
+    this.logger.log({ msg: 'delinquency_cleared_manually', customerId, payments: settled.length });
   }
 }

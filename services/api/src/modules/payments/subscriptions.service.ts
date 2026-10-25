@@ -406,7 +406,10 @@ export class SubscriptionsService {
     const isFirst = payment.idempotencyKey === `subscription:${sub.id}:1`;
     if (payment.status === 'paid' && !isFirst) {
       for (let attempt = 0; sub && !CLOSED.includes(sub.status) && attempt < 3; attempt++) {
-        if (await this.renew(sub)) return;
+        if (await this.renew(sub)) {
+          await this.settleFailedCycle(sub, payment);
+          return;
+        }
         // Mudou entre a leitura e a gravação (job de ciclo de vida, pausa): relê e decide de novo.
         sub = await this.prisma.subscription.findUnique({ where: { id: sub.id } });
       }
@@ -421,6 +424,24 @@ export class SubscriptionsService {
       }
       await this.billing.markDelinquent(sub.customerId, payment.id, payment.failureReason ?? 'subscription_charge_failed');
     }
+  }
+
+  /**
+   * Fix round 1 (I-2): renovação paga quita as tentativas recusadas do mesmo ciclo (desde a última cobrança paga desta
+   * assinatura), para o cliente nunca ser cobrado de novo por um ciclo que a recorrência já recebeu, e tira a flag se
+   * não sobrar outra dívida.
+   */
+  private async settleFailedCycle(sub: Subscription, paid: Payment): Promise<void> {
+    const lastPaid = await this.prisma.payment.findFirst({
+      where: { subscriptionId: sub.id, kind: 'subscription', status: { in: ['paid', 'partially_refunded', 'refunded'] }, id: { not: paid.id }, createdAt: { lt: paid.createdAt } },
+      orderBy: { createdAt: 'desc' },
+    });
+    const res = await this.prisma.payment.updateMany({
+      where: { subscriptionId: sub.id, kind: 'subscription', status: 'failed', debtSettledAt: null, createdAt: { lte: paid.createdAt, ...(lastPaid ? { gt: lastPaid.createdAt } : {}) } },
+      data: { debtSettledAt: new Date(), debtSettlement: 'payment' },
+    });
+    if (res.count > 0) this.logger.log({ msg: 'subscription_failed_cycle_settled', subscriptionId: sub.id, paymentId: paid.id, settled: res.count });
+    await this.billing.clearDelinquencyIfSettled(sub.customerId);
   }
 
   /** Renovação paga: período seguinte; pausada continua pausada (I1, regra em `renewEffect`). Só sobre o estado lido. */
