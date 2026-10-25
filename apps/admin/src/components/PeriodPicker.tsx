@@ -11,7 +11,7 @@ export const DEFAULT_PERIOD: PeriodState = { kind: '7d', from: '', to: '' };
 
 /** Seletor de período: Hoje, 7 dias, 30 dias ou datas livres (dias de São Paulo). */
 export function PeriodPicker({ value, onChange, width = 380, testId = 'period' }: { value: PeriodState; onChange: (v: PeriodState) => void; width?: number; testId?: string }) {
-  const check = value.kind === 'custom' && value.from && value.to ? customRange(value.from, value.to) : null;
+  const check = value.kind === 'custom' ? customRange(value.from, value.to) : null;
   const error = check && !check.ok ? check.error : undefined;
   const today = localDay();
   return (

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { PAYMENT_KIND, PAYMENT_METHOD, PAYMENT_STATUS } from '@/lib/labels';
@@ -49,8 +49,9 @@ export function PaymentsPanel() {
   const [kind, setKind] = useState<KindFilter>('');
   const [period, setPeriod] = useState<PeriodState>({ ...DEFAULT_PERIOD, kind: '30d' });
   const [open, setOpen] = useState<Payment | null>(null);
-  const range = periodRange(period.kind, period);
-  const { rows, loading, error, pager, refetch } = usePagedQuery<Payment>(['payments', status, kind, period.kind, range?.from, range?.to], (cursor) =>
+  // Estável entre renderizações: presets "até agora" usam `new Date()` e não podem recalcular a cada render.
+  const range = useMemo(() => periodRange(period.kind, period), [period]);
+  const { rows, loading, error, pager, refetch } = usePagedQuery<Payment>(['payments', status, kind, period.kind, period.from, period.to], (cursor) =>
     unwrap(api.GET('/payments', { params: { query: { limit: 15, cursor, status: status || undefined, kind: kind || undefined, from: range?.from, to: range?.to } } })), !!range);
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

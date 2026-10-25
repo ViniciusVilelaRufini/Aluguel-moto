@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
@@ -8,7 +8,7 @@ import { PLAN_LABEL } from '@/lib/labels';
 import { formatCompactBRL, moneyDelta, percentDelta, pointsDelta, previousRange } from '@/lib/finance-delta';
 import { formatBRL } from '@/lib/format';
 import { csvName, periodRange } from '@/lib/period';
-import { can } from '@/lib/permissions';
+import { allowedFinanceTabs, resolveFinanceTab, type FinanceTab } from '@/lib/finance-tabs';
 import { useAuth } from '@/lib/auth';
 import { Empty, ErrorNote, Page, PageHeader, Pill, DataTable, Skeleton, TabPanel, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
@@ -21,8 +21,7 @@ import { Card } from '@/ds/Card';
 import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
 
-type Tab = 'overview' | 'rentals' | 'payments' | 'deposits' | 'wallet';
-const TABS: Tab[] = ['overview', 'rentals', 'payments', 'deposits', 'wallet'];
+type Tab = FinanceTab;
 
 const WEEKDAY = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'short' });
 const DAYMONTH = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit' });
@@ -31,8 +30,12 @@ export default function FinancePage() {
   const params = useSearchParams();
   const router = useRouter();
   const { groups } = useAuth();
-  const initialTab = params.get('tab') as Tab;
-  const [tab, setTab] = useState<Tab>(TABS.includes(initialTab) ? initialTab : 'overview');
+  const [requestedTab, setTab] = useState<string | null>(params.get('tab'));
+  // Aba sem permissão (ex.: ?tab=wallet para suporte/operação) cai na primeira permitida.
+  const tab = resolveFinanceTab(requestedTab, groups);
+  useEffect(() => {
+    if (groups.length && requestedTab && requestedTab !== tab) router.replace(`/finance?tab=${tab}`, { scroll: false });
+  }, [groups, requestedTab, tab, router]);
   const [rental, setRental] = useState<string | null>(params.get('rental'));
   const [period, setPeriod] = useState<PeriodState>(DEFAULT_PERIOD);
   const toast = useToast();
@@ -85,10 +88,8 @@ export default function FinancePage() {
   };
 
   const f = fin.data;
-  const tabOptions: { value: Tab; label: string }[] = [
-    { value: 'overview', label: 'Visão geral' }, { value: 'rentals', label: 'Aluguéis' }, { value: 'payments', label: 'Pagamentos' }, { value: 'deposits', label: 'Cauções' },
-    ...(can(groups, 'wallet.adjust') ? [{ value: 'wallet' as Tab, label: 'Carteira' }] : []),
-  ];
+  const LABELS: Record<Tab, string> = { overview: 'Visão geral', rentals: 'Aluguéis', payments: 'Pagamentos', deposits: 'Cauções', wallet: 'Carteira' };
+  const tabOptions = allowedFinanceTabs(groups).map((value) => ({ value, label: LABELS[value] }));
   return (
     <Page>
       <PageHeader title="Financeiro" subtitle="Receita, planos, inadimplência e cauções">
@@ -100,7 +101,7 @@ export default function FinancePage() {
         <TabPanel k="deposits"><DepositsPanel /></TabPanel>
       ) : tab === 'payments' ? (
         <TabPanel k="payments"><PaymentsPanel /></TabPanel>
-      ) : tab === 'wallet' && can(groups, 'wallet.adjust') ? (
+      ) : tab === 'wallet' ? (
         <TabPanel k="wallet"><WalletPanel /></TabPanel>
       ) : tab === 'rentals' ? (
         <TabPanel k="rentals" style={{ flex: 1, minHeight: 0 }}><RentalsPanel selectedId={rental} onSelect={setRental} /></TabPanel>
