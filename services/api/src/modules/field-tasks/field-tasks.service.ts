@@ -311,6 +311,10 @@ export class FieldTasksService {
         throw conflict('conflict', `Bateria fora de uso (com defeito ou baixada): ${installedSerial}.`);
       }
       const prevRemoved = await tx.battery.findUnique({ where: { serial: removedSerial } });
+      // Fix 1 (M2): bateria fora de uso não estava numa moto — série errada ou registro inconsistente; não ressuscita.
+      if (prevRemoved && OUT_OF_SERVICE.includes(prevRemoved.status)) {
+        throw conflict('conflict', `A bateria retirada consta fora de uso (com defeito ou baixada): ${removedSerial}. Confira a série.`);
+      }
       const vehicle = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { batteryPct: true } });
       const removedPct = vehicle?.batteryPct ?? null;
       const removed = await tx.battery.upsert({

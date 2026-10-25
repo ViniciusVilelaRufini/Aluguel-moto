@@ -62,6 +62,17 @@ describe('Baterias no galpão (e2e)', () => {
     expect(b.body).toMatchObject({ status: 'charged', chargePct: 100 });
     await http().post('/batteries').set(bearer(admin)).send({ serial: serialA, status: 'charged', depotId }).expect(409);
     await http().post('/batteries').set(bearer(campo)).send({ serial: `${serialA}-X`, status: 'charged', depotId }).expect(403);
+    // Fix 1 (I2): galpão inativo → 422 depot-inactive, declarado no contrato.
+    const inactive = await prisma.depot.create({
+      data: { name: `Galpão inativo e2e ${tag}`, address: 'R. Teste, 11', lat: -23.56, lng: -46.69, active: false, openingHours: [{ weekday: 1, opensAt: '08:00', closesAt: '20:00' }] },
+    });
+    try {
+      const rejected = await http().post('/batteries').set(bearer(admin)).send({ serial: `${serialA}-I`, status: 'charged', depotId: inactive.id }).expect(422);
+      expect(rejected.body.code).toBe('depot-inactive');
+      expect(rejected).toSatisfyApiSpec();
+    } finally {
+      await prisma.depot.delete({ where: { id: inactive.id } });
+    }
 
     // Lista por galpão com contagem por status.
     const list = await http().get('/batteries').query({ depotId }).set(bearer(campo)).expect(200);

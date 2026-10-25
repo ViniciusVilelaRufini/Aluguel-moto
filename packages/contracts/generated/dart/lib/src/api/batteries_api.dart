@@ -28,7 +28,7 @@ class BatteriesApi {
   const BatteriesApi(this._dio, this._serializers);
 
   /// Cadastrar bateria no galpão
-  /// Cadastra uma bateria nova pelo número de série, no galpão &#x60;depotId&#x60;, como &#x60;charging&#x60; (carregando) ou &#x60;charged&#x60; (carregada, &#x60;chargePct&#x60; 100). Série já cadastrada → &#x60;409&#x60;. Grava a primeira movimentação (&#x60;fromStatus&#x60; ausente).
+  /// Cadastra uma bateria nova pelo número de série, no galpão &#x60;depotId&#x60;, como &#x60;charging&#x60; (carregando) ou &#x60;charged&#x60; (carregada, &#x60;chargePct&#x60; 100). Série já cadastrada → &#x60;409&#x60;; galpão inexistente → &#x60;404&#x60;; galpão inativo → &#x60;422&#x60; &#x60;depot-inactive&#x60;. Grava a primeira movimentação (&#x60;fromStatus&#x60; ausente).
   ///
   /// Parameters:
   /// * [batteryCreateRequest]
@@ -533,7 +533,7 @@ class BatteriesApi {
   }
 
   /// Marcar bateria como carregada
-  /// &#x60;charging&#x60; → &#x60;charged&#x60; com &#x60;chargePct&#x60; 100, no mesmo galpão. Outro status → &#x60;409&#x60;.
+  /// &#x60;charging&#x60; → &#x60;charged&#x60; com &#x60;chargePct&#x60; 100, no mesmo galpão. Bateria carregando numa estação de troca (devolvida por QR: &#x60;stationId&#x60; sem &#x60;depotId&#x60;) volta a &#x60;in_station&#x60; e conta de novo nas disponíveis da estação. Outro status → &#x60;409&#x60;.
   ///
   /// Parameters:
   /// * [id]

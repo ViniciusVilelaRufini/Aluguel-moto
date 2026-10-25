@@ -25,7 +25,7 @@ Method | HTTP request | Description
 
 Cadastrar bateria no galpão
 
-Cadastra uma bateria nova pelo número de série, no galpão `depotId`, como `charging` (carregando) ou `charged` (carregada, `chargePct` 100). Série já cadastrada → `409`. Grava a primeira movimentação (`fromStatus` ausente). 
+Cadastra uma bateria nova pelo número de série, no galpão `depotId`, como `charging` (carregando) ou `charged` (carregada, `chargePct` 100). Série já cadastrada → `409`; galpão inexistente → `404`; galpão inativo → `422` `depot-inactive`. Grava a primeira movimentação (`fromStatus` ausente). 
 
 ### Example
 ```dart
@@ -254,7 +254,7 @@ Name | Type | Description  | Notes
 
 Marcar bateria como carregada
 
-`charging` → `charged` com `chargePct` 100, no mesmo galpão. Outro status → `409`.
+`charging` → `charged` com `chargePct` 100, no mesmo galpão. Bateria carregando numa estação de troca (devolvida por QR: `stationId` sem `depotId`) volta a `in_station` e conta de novo nas disponíveis da estação. Outro status → `409`. 
 
 ### Example
 ```dart

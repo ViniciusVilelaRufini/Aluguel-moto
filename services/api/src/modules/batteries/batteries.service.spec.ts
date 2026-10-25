@@ -74,7 +74,7 @@ describe('BatteriesService — cadastro', () => {
 describe('BatteriesService — mark-charged', () => {
   it('`charging → charged` com carga 100, mantém o galpão, grava movimentação', async () => {
     const { service, prisma } = setup();
-    prisma.battery.findUnique.mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ status: 'charged', chargePct: 100 }));
+    prisma.battery.findUnique.mockResolvedValueOnce(row()).mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ status: 'charged', chargePct: 100 }));
     const b = await service.markCharged(campo, BAT);
     expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: BAT, status: 'charging' }, data: { status: 'charged', chargePct: 100 } });
     expect(b).toMatchObject({ status: 'charged', chargePct: 100 });
@@ -95,6 +95,37 @@ describe('BatteriesService — mark-charged', () => {
     expect(await problem(service.markCharged(campo, BAT))).toEqual({ status: 409, slug: 'conflict' });
     prisma.battery.findUnique.mockResolvedValue(null);
     expect(await problem(service.markCharged(campo, BAT))).toEqual({ status: 404, slug: 'not-found' });
+  });
+});
+
+describe('BatteriesService — fix 1: estação e checagem de estoque best-effort', () => {
+  it('mark-charged de bateria carregando na estação (sem galpão) → `in_station` e volta a contar como disponível', async () => {
+    const { service, prisma } = setup();
+    const atStation = row({ status: 'charging', depotId: null, stationId: STATION, chargePct: 15 });
+    prisma.battery.findUnique.mockResolvedValueOnce(atStation).mockResolvedValueOnce(atStation).mockResolvedValueOnce(row({ status: 'in_station', depotId: null, stationId: STATION, chargePct: 100 }));
+    const b = await service.markCharged(campo, BAT);
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: BAT, status: 'charging' }, data: { status: 'in_station', chargePct: 100 } });
+    expect(prisma.swapStation.update).toHaveBeenCalledWith({ where: { id: STATION }, data: { availableBatteries: { increment: 1 } } });
+    expect(movementsOf(prisma)).toEqual([expect.objectContaining({ fromStatus: 'charging', toStatus: 'in_station', stationId: STATION })]);
+    expect(b).toMatchObject({ status: 'in_station', chargePct: 100 });
+  });
+
+  it('falha na checagem do estoque depois do commit não vira erro: a transição responde com a bateria', async () => {
+    const { service, prisma, stock } = setup();
+    stock.check.mockRejectedValue(new Error('banco fora'));
+    prisma.battery.findUnique.mockResolvedValue(row({ status: 'charged' }));
+    await expect(service.reportDefect(campo, BAT, 'Inchada')).resolves.toMatchObject({ id: BAT });
+    await expect(service.retire(campo, BAT)).resolves.toMatchObject({ id: BAT });
+    expect(stock.check).toHaveBeenCalled();
+  });
+
+  it('falha na checagem do estoque depois do commit não vira erro: carregar a van responde com o estoque', async () => {
+    const { service, prisma, stock } = setup();
+    stock.check.mockRejectedValue(new Error('banco fora'));
+    prisma.battery.findMany.mockResolvedValueOnce([row({ serial: 'BT-A', status: 'charged' })]).mockResolvedValue([]);
+    prisma.battery.upsert.mockResolvedValue(row());
+    await expect(service.load(campo, ['BT-A'])).resolves.toMatchObject({ operatorId: campo.userId });
+    expect(stock.check).toHaveBeenCalledWith([DEPOT]);
   });
 });
 
@@ -159,7 +190,7 @@ describe('BatteriesService — baixa', () => {
     const { service, prisma, stock } = setup();
     prisma.battery.findUnique.mockResolvedValue(row({ status: 'charging' }));
     await service.retire(campo, BAT);
-    expect(stock.check).toHaveBeenCalledWith([]);
+    expect(stock.check).not.toHaveBeenCalled();
     prisma.battery.findUnique.mockResolvedValue(row({ status: 'charged' }));
     await service.retire(campo, BAT);
     expect(stock.check).toHaveBeenLastCalledWith([DEPOT]);

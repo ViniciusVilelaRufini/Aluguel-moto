@@ -2618,7 +2618,8 @@ export interface paths {
         /**
          * Cadastrar bateria no galpão
          * @description Cadastra uma bateria nova pelo número de série, no galpão `depotId`, como `charging` (carregando) ou `charged`
-         *     (carregada, `chargePct` 100). Série já cadastrada → `409`. Grava a primeira movimentação (`fromStatus` ausente).
+         *     (carregada, `chargePct` 100). Série já cadastrada → `409`; galpão inexistente → `404`; galpão inativo → `422`
+         *     `depot-inactive`. Grava a primeira movimentação (`fromStatus` ausente).
          */
         post: operations["createBattery"];
         delete?: never;
@@ -2638,7 +2639,8 @@ export interface paths {
         put?: never;
         /**
          * Marcar bateria como carregada
-         * @description `charging` → `charged` com `chargePct` 100, no mesmo galpão. Outro status → `409`.
+         * @description `charging` → `charged` com `chargePct` 100, no mesmo galpão. Bateria carregando numa estação de troca (devolvida
+         *     por QR: `stationId` sem `depotId`) volta a `in_station` e conta de novo nas disponíveis da estação. Outro status → `409`.
          */
         post: operations["markBatteryCharged"];
         delete?: never;
@@ -10695,6 +10697,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     markBatteryCharged: {

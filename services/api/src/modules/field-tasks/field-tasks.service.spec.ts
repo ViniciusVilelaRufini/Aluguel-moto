@@ -103,6 +103,14 @@ describe('Troca de bateria na tarefa: movimentações (2026-10-24)', () => {
     expect(prisma.battery.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: { in: ['b-stray'] } }), data: { vehicleId: null, status: 'charging' } }));
   });
 
+  it.each(['defective', 'retired'])('retirada registrada como `%s` (série errada ou registro inconsistente) → 409, nada gravado', async (status) => {
+    const { service, prisma } = swapSetup('in_van');
+    prisma.battery.findUnique.mockImplementation((async (a: any) => (a.where.serial === 'BAT-OLD' ? { ...BAT_OLD, status } : a.where.serial === 'BAT-NEW' ? { ...BAT_NEW, status: 'in_van' } : null)) as any);
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409 });
+    expect(prisma.battery.upsert).not.toHaveBeenCalled();
+    expect(prisma.batterySwap.create).not.toHaveBeenCalled();
+  });
+
   it.each(['defective', 'retired'])('instalar bateria `%s` → 409 (fora de uso), nada gravado', async (status) => {
     const { service, prisma } = swapSetup(status);
     await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409 });

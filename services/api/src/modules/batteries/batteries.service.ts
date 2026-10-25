@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import type { Battery, BatteryStatus, Prisma } from '@prisma/client';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, forbidden, notFound, unprocessable } from '../../common/problem';
@@ -36,6 +36,8 @@ export interface CreateBatteryInput {
 /** Baterias, estoque da van do operador e ciclo de vida no galpão (contrato v2 + 2026-10-24). */
 @Injectable()
 export class BatteriesService {
+  private readonly logger = new Logger('BatteriesService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly stock: BatteryStockService,
@@ -104,7 +106,7 @@ export class BatteriesService {
       }
       await recordMovements(tx, moves);
     });
-    await this.stock.check(depotsLeavingCharged(moves));
+    await this.checkStock(depotsLeavingCharged(moves));
     const stock: Awaited<ReturnType<BatteriesService['vanStock']>> & { loadedChargingSerials?: string[] } = await this.vanStock(user);
     if (chargingSerials.length) stock.loadedChargingSerials = chargingSerials;
     return stock;
@@ -124,7 +126,7 @@ export class BatteriesService {
       const notMine = rows.filter((r) => r.status !== 'in_van' || r.holderId !== user.userId);
       if (notMine.length) throw conflict('conflict', `Bateria fora da sua van: ${notMine.map((r) => r.serial).join(', ')}.`);
       // Galpão só depois de conferir a van (bateria fora da van → 409 antes do 422 `depot-required`).
-      const targetDepot = stationId ? null : await this.resolveUnloadDepot(depotId);
+      const targetDepot = stationId ? null : await this.resolveUnloadDepot(tx, depotId);
       const status: BatteryStatus = stationId ? 'in_station' : 'charging';
       const moved = await tx.battery.updateMany({
         where: { id: { in: rows.map((r) => r.id) }, status: 'in_van', holderId: user.userId },
@@ -141,15 +143,15 @@ export class BatteriesService {
     return this.vanStock(user);
   }
 
-  private async resolveUnloadDepot(depotId?: string): Promise<string> {
-    if (depotId) return (await this.activeDepot(depotId)).id;
-    const active = await this.prisma.depot.findMany({ where: { active: true }, select: { id: true }, take: 2 });
+  private async resolveUnloadDepot(db: Prisma.TransactionClient, depotId?: string): Promise<string> {
+    if (depotId) return (await this.activeDepot(depotId, db)).id;
+    const active = await db.depot.findMany({ where: { active: true }, select: { id: true }, take: 2 });
     if (active.length !== 1) throw unprocessable('depot-required', 'Informe o galpão (depotId) onde as baterias vão carregar.');
     return active[0].id;
   }
 
-  private async activeDepot(id: string) {
-    const d = await this.prisma.depot.findUnique({ where: { id }, select: { id: true, active: true } });
+  private async activeDepot(id: string, db: Prisma.TransactionClient = this.prisma) {
+    const d = await db.depot.findUnique({ where: { id }, select: { id: true, active: true } });
     if (!d) throw notFound('Galpão não encontrado.');
     if (!d.active) throw unprocessable('depot-inactive', 'Este galpão está inativo.');
     return d;
@@ -172,8 +174,19 @@ export class BatteriesService {
     return toBattery(created);
   }
 
-  /** `charging → charged` (carga 100, mesmo galpão). */
-  markCharged(user: Principal, id: string) {
+  /**
+   * `charging → charged` (carga 100, mesmo galpão). Fix 1 (M1): bateria carregando numa estação de troca (devolvida por QR,
+   * com `stationId` e sem galpão) volta a `in_station` e conta de novo em `availableBatteries` (senão a estação a liberaria
+   * como "fora do estoque").
+   */
+  async markCharged(user: Principal, id: string) {
+    const b = await this.prisma.battery.findUnique({ where: { id }, select: { stationId: true, depotId: true } });
+    if (b?.stationId && !b.depotId) {
+      const stationId = b.stationId;
+      return this.transition(user, id, ['charging'], 'in_station', { status: 'in_station', chargePct: 100 }, null, async (tx) => {
+        await tx.swapStation.update({ where: { id: stationId }, data: { availableBatteries: { increment: 1 } } });
+      });
+    }
     return this.transition(user, id, ['charging'], 'charged', { status: 'charged', chargePct: 100 });
   }
 
@@ -218,9 +231,22 @@ export class BatteriesService {
       await extra?.(tx, b);
       await recordMovements(tx, moves);
     });
-    await this.stock.check(depotsLeavingCharged(moves));
+    await this.checkStock(depotsLeavingCharged(moves));
     const updated = await this.prisma.battery.findUnique({ where: { id } });
     return toBattery(updated ?? b);
+  }
+
+  /**
+   * Fix 1 (I1): conferência do estoque mínimo depois do commit é best-effort — a operação já foi gravada, então uma falha
+   * aqui só é registrada (sem dado pessoal) e não vira 500.
+   */
+  private async checkStock(depotIds: string[]): Promise<void> {
+    if (!depotIds.length) return;
+    try {
+      await this.stock.check(depotIds);
+    } catch (err) {
+      this.logger.error({ msg: 'battery_stock_check_failed', depotIds, error: (err as Error).message });
+    }
   }
 
   /** Histórico de movimentação, mais recente primeiro. */
