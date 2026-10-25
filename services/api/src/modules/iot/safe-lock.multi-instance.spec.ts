@@ -39,9 +39,10 @@ class Bike {
 
 function instance(name: string, redis: MemoryRedisStore, bike: Bike, clock = new FakeClock(T0), probe?: (t: string) => Promise<SafeLockVehicleState | null>) {
   const outcomes: CommandOutcome[] = [];
+  const held: string[] = [];
   const store = new RedisSafeLockStore(redis);
-  const svc = new SafeLockService(clock, bike.transport(name), (o) => outcomes.push(o), { store, probe });
-  return { svc, clock, outcomes, store };
+  const svc = new SafeLockService(clock, bike.transport(name), (o) => outcomes.push(o), { store, probe, onHeld: (t) => held.push(t) });
+  return { svc, clock, outcomes, store, held };
 }
 
 const moving = (speedKmh: number | null): SafeLockVehicleState => ({ speedKmh, speedLimitKmh: 32, locked: false, online: true });
@@ -104,23 +105,51 @@ describe('Bloqueio seguro com estado compartilhado (várias instâncias)', () =>
     expect(bike.locked()).toBe(false);
   });
 
-  it('falha segura: estado perdido/expirado no Redis → nada é publicado (nem com velocidade 0), o desired fica no degrau reduzido', async () => {
+  it('falha segura: estado perdido no Redis → nunca trava; a varredura acha a órfã no índice e faz o mesmo que o timeout (travada:false, limite 0, hold, failed)', async () => {
     const redis = new MemoryRedisStore();
     const bike = new Bike();
     const clock = new FakeClock(T0);
     const a = instance('a', redis, bike, clock);
     const b = instance('b', redis, bike, clock);
     await a.svc.start({ commandId: 'cmd-1', thingName: T }, moving(25));
-    await redis.del('iot:safe-lock:moto-0001'); // TTL/flush
+    await redis.del('iot:safe-lock:moto-0001'); // expulsão/failover: o estado some, o índice (hash) fica
     bike.speed = 0;
     await b.svc.onSpeed(T, 0);
     await b.svc.onReported(T, { limite_kmh: 15, velocidade_kmh: 0 });
+    expect(bike.locked()).toBe(false); // sem estado, nada de travada
     await b.svc.sweep();
     await a.svc.sweep();
     await clock.advance(130_000);
     expect(bike.locked()).toBe(false);
-    expect(bike.limits()).toEqual([15]);
-    expect(a.svc.isActive(T)).toBe(false); // a varredura largou a rampa que não existe mais
+    expect(bike.limits()).toEqual([15, 0]);
+    expect(bike.desired[bike.desired.length - 1].d).toEqual({ travada: false, limite_kmh: 0 });
+    expect(b.held).toEqual([T]);
+    expect([...a.outcomes, ...b.outcomes]).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
+    expect(await redis.hgetall('iot:safe-lock:index')).toEqual({}); // órfã tratada uma vez só
+    expect(a.svc.isActive(T)).toBe(false);
+  });
+
+  it('órfã na fase locking (travada:true publicado, estado perdido) → o desired volta para travada:false com limite 0', async () => {
+    const redis = new MemoryRedisStore();
+    const bike = new Bike();
+    const clock = new FakeClock(T0);
+    const a = instance('a', redis, bike, clock);
+    bike.speed = 0;
+    await a.svc.start({ commandId: 'cmd-1', thingName: T }, moving(0));
+    expect(bike.locked()).toBe(true);
+    await redis.del('iot:safe-lock:moto-0001');
+    const b = instance('b', redis, bike, new FakeClock(T0 + 5_000));
+    await b.svc.sweep();
+    expect(bike.desired[bike.desired.length - 1].d).toEqual({ travada: false, limite_kmh: 0 });
+    expect(b.outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
+  });
+
+  it('estado da rampa gravado sem TTL (não é expulso por volatile-*)', async () => {
+    const redis = new MemoryRedisStore();
+    const setSpy = jest.spyOn(redis, 'set');
+    const a = instance('a', redis, new Bike());
+    await a.svc.start({ commandId: 'cmd-1', thingName: T }, moving(25));
+    for (const call of setSpy.mock.calls.filter((c) => c[0] === 'iot:safe-lock:moto-0001')) expect(call[2]).toBeUndefined();
   });
 
   it('falha segura: Redis fora do ar → a telemetria não trava (erro propaga, nada publicado)', async () => {

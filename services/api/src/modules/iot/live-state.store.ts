@@ -326,6 +326,19 @@ export class LiveStateStore {
     return v;
   }
 
+  /** Hold conhecido (`null` = ilegível: Redis fora e nada em memória). Para o teto da rampa, desconhecido não vira 0. */
+  async heldState(thingName: string): Promise<boolean | null> {
+    const mem = this.held.get(thingName);
+    if (mem !== undefined) return mem;
+    try {
+      const v = (await this.redis.get(`iot:held:${thingName}`)) === '1';
+      this.held.set(thingName, v);
+      return v;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Segurar vale na memória mesmo se a escrita falhar (falha fechada); soltar só depois de apagar no Redis.
    * Erros de escrita são propagados (o unlock falha em vez de soltar em silêncio).

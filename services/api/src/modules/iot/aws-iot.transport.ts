@@ -37,7 +37,7 @@ export class AwsIotTransport implements IotTransport {
       if (!m || typeof m !== 'object' || typeof m.thingName !== 'string') return;
       const { thingName, ingestedAt: _ingested, ...body } = m;
       if ('presence' in body) {
-        if (body.presence === 'connected' || body.presence === 'disconnected') await inbound.presence(thingName, body.presence === 'connected');
+        if (body.presence === 'connected' || body.presence === 'disconnected') await inbound.presence(thingName, body.presence === 'connected', presenceTime(body.timestamp));
         else this.logger.warn({ msg: 'presence_invalid', thingName });
         return;
       }
@@ -111,4 +111,10 @@ export class AwsIotTransport implements IotTransport {
       this.polling = false;
     }
   }
+}
+
+/** `timestamp` do evento de presença: ms (número, como no IoT Core) ou ISO 8601; inválido → desconhecido. */
+function presenceTime(v: unknown): number | undefined {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? (/^\d+$/.test(v) ? Number(v) : Date.parse(v)) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : undefined;
 }

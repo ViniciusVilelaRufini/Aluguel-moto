@@ -47,7 +47,8 @@ export interface InboundHandler {
   telemetry(thingName: string, raw: unknown): Promise<void>;
   deviceEvent(thingName: string, raw: unknown): Promise<void>;
   reported(thingName: string, reported: ReportedState, meta?: ReportedMeta): Promise<void>;
-  presence(thingName: string, online: boolean): Promise<void>;
+  /** `at`: horário do evento de presença (ms), quando conhecido — presença atrasada (fila sem ordem) é descartada. */
+  presence(thingName: string, online: boolean, at?: number): Promise<void>;
 }
 
 /** Transporte completo (local: Mosquitto; aws: IoT Data Plane + SQS). */

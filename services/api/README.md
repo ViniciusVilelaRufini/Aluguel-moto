@@ -191,7 +191,8 @@ Status: `in_vehicle`, `in_van`, `charging` (no galpão `depotId`, ou na estaçã
 A API roda com 2–10 tasks no ECS. Tudo o que precisa ser único ou compartilhado passa pelo Redis (`REDIS_URL`; com `memory`, o `MemoryRedisStore` faz o mesmo papel num processo só):
 
 - **Tempo real:** Socket.IO com `@socket.io/redis-adapter` (`src/modules/realtime/redis-io.adapter.ts`, ligado no `main.ts`). Evento processado numa instância chega aos sockets de todas.
-- **Bloqueio seguro:** estado da rampa em `RedisSafeLockStore` (`src/modules/iot/safe-lock.store.ts`), lock por moto e varredura de 1 s (`IotRuntime`). Falha fechada: sem estado, nada é publicado; `travada: true` só com velocidade fresca < 3 km/h.
+- **Bloqueio seguro:** estado da rampa em `RedisSafeLockStore` (`src/modules/iot/safe-lock.store.ts`, sem TTL, índice em hash), lock por moto e varredura de 1 s (`IotRuntime`). Falha fechada: sem estado, nada é publicado; `travada: true` só com velocidade fresca < 3 km/h; órfã do índice → `travada:false` + limite 0 + hold. Redis fora: lock usa rampa local em memória.
+- **Redis fora do ar:** limites de zona continuam valendo (cercas degradam para o estado local; reduções de limite sempre aceitas; só subidas recusadas).
 - **Cercas e "fora da área":** estado por moto e prazo no Redis, sob lock da moto (`geofence.service.ts`); varredura de prazos a cada 15 s; só uma instância dispara.
 - **Jobs:** `@ExclusiveJob(nome, ttl)` (`src/common/job-lock.ts`) — cada rodada de `@Interval`/`@Cron` roda numa instância só.
 - **Alertas:** a fila `alertas` aceita `CreateAlertInput` ou o evento cru do rastreador (`{ thingName, tipo, timestamp }`).

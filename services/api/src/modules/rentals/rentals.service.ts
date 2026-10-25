@@ -236,7 +236,7 @@ export class RentalsService {
 
   /** Sem resposta ao "você está bem?" em 60 s → alerta `customer_not_ok` (critical). */
   @Interval('wellbeing-timeout', 10_000)
-  @ExclusiveJob('wellbeing-timeout', jobLockTtl(10_000))
+  @ExclusiveJob('wellbeing-timeout', jobLockTtl(10_000), { runIfUnavailable: true })
   async wellbeingJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     const overdue = await this.prisma.rental.findMany({ where: { wellbeingCheckDueAt: { lt: new Date() } }, include: { vehicle: true }, take: 50 });

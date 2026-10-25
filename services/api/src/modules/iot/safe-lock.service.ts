@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { SAFE_LOCK_SPEED_KMH } from '../../common/enums';
 import type { CommandOutcome, CommandRequest } from '../../ports/iot-gateway.port';
 import type { Clock, TimerHandle } from './clock';
-import { MemorySafeLockStore, outsideLock, type RampState, type SafeLockStore } from './safe-lock.store';
+import { MemorySafeLockStore, outsideLock, type OrphanRamp, type RampState, type SafeLockStore } from './safe-lock.store';
 import type { ReportedState, ShadowTransport } from './shadow-transport';
 import { safeLockSteps } from './speed-limit';
 
@@ -37,6 +37,8 @@ export interface SafeLockOptions {
   probe?: (thingName: string) => Promise<SafeLockVehicleState | null>;
   /** Esta instância passou a acompanhar (ou largou) a rampa de uma moto — o gateway liga/desliga o polling do shadow. */
   onLocalActivity?: (thingName: string) => void;
+  /** Log estruturado de erro (sem dado pessoal). */
+  onError?: (entry: Record<string, unknown>) => void;
 }
 
 /**
@@ -200,7 +202,8 @@ export class SafeLockService {
    * acompanhar (polling do shadow) as rampas ativas. Cada moto é processada sob o lock dela.
    */
   async sweep(): Promise<void> {
-    const active = new Set(await this.store.active());
+    const { active: list, orphans } = await this.store.scan();
+    const active = new Set(list);
     for (const thingName of [...this.local]) {
       if (!active.has(thingName)) this.forget(thingName);
     }
@@ -211,6 +214,29 @@ export class SafeLockService {
       }
       await this.tick(thingName, true);
     }
+    for (const orphan of orphans) await this.recoverOrphan(orphan);
+  }
+
+  /**
+   * Rampa cujo estado sumiu sem `finish` (expulsão/failover): mesmo desfecho do timeout da fase `locking` — o desired volta para
+   * `travada: false` segurando `limite_kmh: 0` (nunca fica um `travada: true` órfão que um rastreador offline aplicaria ao
+   * reconectar), o limite fica segurado até um unlock explícito e os comandos terminam `failed`. Rampa ainda `waiting_online`
+   * (nada publicado) só encerra os comandos.
+   */
+  private async recoverOrphan(orphan: OrphanRamp): Promise<void> {
+    await this.store.withLock(orphan.thingName, async () => {
+      if ((await this.store.get(orphan.thingName)) !== null) return; // outra rampa começou nesse meio-tempo
+      if (orphan.phase !== 'waiting_online') {
+        this.opts.onHeld?.(orphan.thingName);
+        await this.transport.updateDesired(orphan.thingName, { travada: false, limite_kmh: 0 });
+      }
+      this.opts.onError?.({ msg: 'safe_lock_state_lost', thingName: orphan.thingName, phase: orphan.phase, commands: orphan.commandIds.length });
+      await this.store.clearOrphan(orphan.thingName, orphan.rampId);
+      this.forget(orphan.thingName);
+      outsideLock(() => {
+        for (const commandId of orphan.commandIds) this.sink({ commandId, status: 'failed', reason: 'timeout' });
+      });
+    });
   }
 
   /** Executa o que estiver vencido na rampa da moto (degrau, prazo; com `probe`, o início pendente). */

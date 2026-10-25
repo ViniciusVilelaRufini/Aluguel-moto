@@ -24,6 +24,12 @@ export interface RedisStore {
   setNx(key: string, value: string, ttlMs: number): Promise<boolean>;
   /** Apaga a chave só se ela ainda valer `expected` (liberar/consumir lock sem apagar o de outro dono). */
   delIfEquals(key: string, expected: string): Promise<boolean>;
+  /** Renova o TTL só se a chave ainda valer `expected` (lock estendido enquanto o dono trabalha). */
+  pexpireIfEquals(key: string, expected: string, ttlMs: number): Promise<boolean>;
+  /** Grava `key` (sem TTL) e o campo `field` do hash `indexKey` numa operação atômica. */
+  setWithIndex(key: string, value: string, indexKey: string, field: string, fieldValue: string): Promise<void>;
+  /** Apaga `key` e o campo `field` do hash `indexKey` numa operação atômica. */
+  delWithIndex(key: string, indexKey: string, field: string): Promise<void>;
   /** Conjuntos (índices de estado ao vivo: rampas e prazos ativos). */
   sadd(key: string, member: string): Promise<void>;
   srem(key: string, member: string): Promise<void>;
@@ -44,6 +50,9 @@ for _ = 1, n do redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1]) i = i + 2 end
 while i <= #ARGV do redis.call('HINCRBYFLOAT', KEYS[1], ARGV[i], ARGV[i + 1]) i = i + 2 end
 return 1`;
 const DEL_IF_EQUALS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end";
+const PEXPIRE_IF_EQUALS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end";
+const SET_WITH_INDEX_LUA = "redis.call('HSET', KEYS[2], ARGV[2], ARGV[3]) redis.call('SET', KEYS[1], ARGV[1]) return 1";
+const DEL_WITH_INDEX_LUA = "redis.call('DEL', KEYS[1]) redis.call('HDEL', KEYS[2], ARGV[1]) return 1";
 const INCR_WINDOW_LUA = "local c = redis.call('INCR', KEYS[1]) if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end return {c, redis.call('PTTL', KEYS[1])}";
 
 /** Incremento como texto decimal sem notação científica (o HINCRBYFLOAT não aceita `1e-7`). */
@@ -100,6 +109,15 @@ export class IoRedisStore implements RedisStore {
   }
   async delIfEquals(key: string, expected: string) {
     return Number(await this.client.eval(DEL_IF_EQUALS_LUA, 1, key, expected)) === 1;
+  }
+  async pexpireIfEquals(key: string, expected: string, ttlMs: number) {
+    return Number(await this.client.eval(PEXPIRE_IF_EQUALS_LUA, 1, key, expected, String(Math.max(1, Math.ceil(ttlMs))))) === 1;
+  }
+  async setWithIndex(key: string, value: string, indexKey: string, field: string, fieldValue: string) {
+    await this.client.eval(SET_WITH_INDEX_LUA, 2, key, indexKey, value, field, fieldValue);
+  }
+  async delWithIndex(key: string, indexKey: string, field: string) {
+    await this.client.eval(DEL_WITH_INDEX_LUA, 2, key, indexKey, field);
   }
   async sadd(key: string, member: string) {
     await this.client.sadd(key, member);
@@ -223,6 +241,23 @@ export class MemoryRedisStore implements RedisStore {
     if (this.peek(key) !== expected) return false;
     void this.del(key);
     return true;
+  }
+  async pexpireIfEquals(key: string, expected: string, ttlMs: number) {
+    if (this.peek(key) !== expected) return false;
+    void this.set(key, expected, Math.max(1, ttlMs));
+    return true;
+  }
+  async setWithIndex(key: string, value: string, indexKey: string, field: string, fieldValue: string) {
+    this.hashes.set(indexKey, { ...(this.hashes.get(indexKey) ?? {}), [field]: fieldValue });
+    void this.set(key, value);
+  }
+  async delWithIndex(key: string, indexKey: string, field: string) {
+    const h = { ...(this.hashes.get(indexKey) ?? {}) };
+    delete h[field];
+    this.hashes.set(indexKey, h);
+    const e = this.data.get(key);
+    if (e?.timer) clearTimeout(e.timer);
+    this.data.delete(key);
   }
   private peek(key: string): string | null {
     const e = this.data.get(key);

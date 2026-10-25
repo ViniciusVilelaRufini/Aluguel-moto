@@ -2,7 +2,7 @@ import { Logger } from '@nestjs/common';
 import type { EventEmitter2 } from '@nestjs/event-emitter';
 import { MAX_SPEED_KMH } from '../../../common/enums';
 import { EV, GeofenceTransitionEvent, ZoneChangedEvent } from '../../../common/events';
-import { outsideLock, RedisMutex } from '../../../redis/redis-mutex';
+import { LockUnavailableError, outsideLock, RedisMutex } from '../../../redis/redis-mutex';
 import type { RedisStore } from '../../../redis/redis-store';
 import type { Clock, TimerHandle } from '../clock';
 import { effectiveZoneLimit } from '../speed-limit';
@@ -199,7 +199,32 @@ export class GeofenceService {
         this.logger.warn({ msg: 'geofence_tracker_update_failed', vehicleId: p.vehicleId, error: (err as Error).message }),
       );
     }
-    await this.mutex.run(this.lockKey(p.vehicleId), () => this.evaluateLocked(p));
+    await this.withVehicleLock(p.vehicleId, () => this.evaluateLocked(p));
+  }
+
+  /**
+   * Lock da moto no Redis; se ele não puder ser obtido (Redis fora do ar, ou preso), degrada para a fila local e avalia com o
+   * estado local (lacunas T5, fix 1): limite de zona nunca deixa de ser aplicado por falta do Redis (falhar fechado numa
+   * redução seria falhar aberto). Erro dentro da avaliação propaga como veio.
+   */
+  private async withVehicleLock<T>(vehicleId: string, fn: () => Promise<T>): Promise<T> {
+    const key = this.lockKey(vehicleId);
+    try {
+      return await this.mutex.run(key, fn);
+    } catch (err) {
+      if (!(err instanceof LockUnavailableError)) throw err;
+      this.warnDegraded(err.message);
+      return this.mutex.runLocal(key, fn);
+    }
+  }
+
+  private degradedSince?: number;
+  /** Um aviso por minuto enquanto o lock do Redis estiver indisponível (sem inundar o log). */
+  private warnDegraded(error: string): void {
+    const now = Date.now();
+    if (this.degradedSince !== undefined && now - this.degradedSince < 60_000) return;
+    this.degradedSince = now;
+    this.logger.warn({ msg: 'geofence_lock_degraded_local', error });
   }
 
   private async evaluateLocked(p: PositionInput): Promise<void> {
@@ -218,10 +243,10 @@ export class GeofenceService {
 
     const reduced = zones.filter((z) => z.type === 'reduced_speed' && z.speedLimitKmh !== null);
     const limit = effectiveZoneLimit(reduced.map((z) => z.speedLimitKmh!));
-    if (this.limitByThing.get(p.thingName) !== limit || !prev) {
-      this.limitByThing.set(p.thingName, limit);
-      await this.redis.set(this.limitKey(p.thingName), String(limit)).catch(() => undefined);
-    }
+    // Sempre grava (sob o lock da moto): o valor compartilhado é a fonte da verdade do `unlock` e do teto dos comandos manuais.
+    // Comparar com a cópia desta instância deixava o Redis velho quando outra instância tinha gravado outro limite (revisão C1).
+    this.limitByThing.set(p.thingName, limit);
+    await this.redis.set(this.limitKey(p.thingName), String(limit)).catch(() => undefined);
 
     const state: VehicleZones = { zones, appliedLimit: prev?.appliedLimit, outOfArea: prev?.outOfArea };
     const zonesChanged = prevIds.size !== nowIds.size || [...nowIds].some((id) => !prevIds.has(id));
@@ -292,7 +317,7 @@ export class GeofenceService {
   /** `rental.changed` com o aluguel encerrado: desarma e apaga o prazo persistido. */
   async onRentalEnded(vehicleId: string): Promise<void> {
     this.rentals.invalidate(vehicleId);
-    await this.mutex.run(this.lockKey(vehicleId), async () => {
+    await this.withVehicleLock(vehicleId, async () => {
       const state = await this.load(vehicleId);
       if (state?.outOfArea) {
         await this.disarm(vehicleId, state, 'rental_ended');
@@ -350,9 +375,20 @@ export class GeofenceService {
    * Voltou para a área, aluguel trocado/encerrado, prazo rearmado ou já disparado por outra instância → nada.
    */
   private async fireOutOfAreaLock(vehicleId: string): Promise<void> {
+    const local = this.outOfArea.get(vehicleId);
     this.outOfArea.delete(vehicleId);
-    const armedRentalId = await this.mutex.run(this.lockKey(vehicleId), async (): Promise<string | null> => {
-      const raw = await this.redis.get(this.outOfAreaKey(vehicleId)).catch(() => null);
+    const armedRentalId = await this.withVehicleLock(vehicleId, async (): Promise<string | null> => {
+      let raw: string | null;
+      try {
+        raw = await this.redis.get(this.outOfAreaKey(vehicleId));
+      } catch {
+        // Redis fora: decide pelo estado local (o bloqueio seguro reduz a potência; outra instância que também dispare só repete o pedido).
+        const state = this.byVehicle.get(vehicleId);
+        if (!local || !state || state.zones.some((z) => z.type === 'operation')) return null;
+        if (state.outOfArea?.rentalId !== local.rentalId || state.outOfArea.deadline !== local.deadline) return null;
+        state.outOfArea = undefined;
+        return local.rentalId;
+      }
       const stored = raw ? parseDeadline(raw) : null;
       if (!raw || !stored) return null;
       if (stored.deadline > this.clock.now()) {

@@ -364,7 +364,7 @@ export class RentalEndService {
 
   /** Retentativa periódica dos aluguéis em `ending` (moto ainda andando, offline, timeout). */
   @Interval('rental-end-retry', 15_000)
-  @ExclusiveJob('rental-end-retry', jobLockTtl(15_000))
+  @ExclusiveJob('rental-end-retry', jobLockTtl(15_000), { runIfUnavailable: true })
   async retryJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.retryEnding().catch((err) => this.logger.error({ msg: 'rental_end_retry_failed', error: (err as Error).message }));

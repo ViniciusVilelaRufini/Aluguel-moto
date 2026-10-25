@@ -127,7 +127,11 @@ export class TelemetryService implements InboundHandler {
       // Fora de ordem (mais velha que a última recebida): fica só no trajeto, não volta a moto no mapa/frota.
       if (applied.newest) this.events.emit(EV.IOT_TELEMETRY, ev);
       // A rampa só vê amostra fresca, pós-reconexão e mais nova (telemetria velha da fila offline nunca trava).
-      if (applied.speedAccepted) await this.gateway.onSpeed(thingName, msg.velocidade_kmh);
+      // Erro aqui (Redis fora do ar) não pode abortar o resto: trajeto e cercas (limites de zona) seguem. A rampa sem a amostra
+      // nunca trava (falha segura).
+      if (applied.speedAccepted) {
+        await this.gateway.onSpeed(thingName, msg.velocidade_kmh).catch((err: Error) => this.logger.error({ msg: 'safe_lock_speed_failed', thingName, error: err.message }));
+      }
 
       // LGPD (QA-09): trajeto só com aluguel e consentimento de localização vigente; revogado no meio do aluguel, a posição
       // da moto continua no estado da frota (segurança), mas nada mais é ligado ao cliente.
@@ -189,10 +193,16 @@ export class TelemetryService implements InboundHandler {
     });
   }
 
-  presence(thingName: string, online: boolean): Promise<void> {
+  presence(thingName: string, online: boolean, at?: number): Promise<void> {
     return this.serial(thingName, async () => {
       const vehicleId = await this.vehicleIdOf(thingName);
-      await this.gateway.live.load(thingName);
+      const current = await this.gateway.live.load(thingName);
+      // Fila sem ordem (SQS padrão): presença mais velha que a última notícia da moto é atrasada — um `disconnected` velho não
+      // derruba uma moto que já mandou mensagens depois dele (revisão M2).
+      if (at !== undefined && current && at < Date.parse(current.lastSeenAt)) {
+        this.logger.log({ msg: 'presence_stale_ignored', thingName, online });
+        return;
+      }
       const wasOnline = this.gateway.live.isOnline(thingName);
       // Conexão nova: a velocidade de antes não vale (a moto pode ter sido levada); espera amostra fresca.
       if (online) {

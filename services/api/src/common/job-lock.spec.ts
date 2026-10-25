@@ -35,6 +35,17 @@ describe('JobLock (lock distribuído por job, SET NX PX)', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
+  it('fix 1 (M1): job de segurança com runIfUnavailable roda mesmo com o Redis fora (ocupado continua pulando)', async () => {
+    const redis = new MemoryRedisStore();
+    const fn = jest.fn();
+    jest.spyOn(redis, 'setNx').mockRejectedValueOnce(new Error('ECONNREFUSED'));
+    await expect(new JobLock(redis, 'a').run('wellbeing', 1000, fn, { runIfUnavailable: true })).resolves.toBe(true);
+    expect(fn).toHaveBeenCalledTimes(1);
+    await new JobLock(redis, 'b').tryAcquire('busy', 5000);
+    await expect(new JobLock(redis, 'c').run('busy', 1000, fn, { runIfUnavailable: true })).resolves.toBe(false);
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
+
   describe('@ExclusiveJob', () => {
     class Jobs {
       calls = 0;

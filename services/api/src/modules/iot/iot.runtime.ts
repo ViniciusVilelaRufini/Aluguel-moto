@@ -50,21 +50,38 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
     // Várias instâncias (lacunas T5): cada uma varre o estado compartilhado; cada moto é processada sob o lock dela no Redis.
     const gateway = this.gateway;
     let sweepingLocks = false;
+    const lockHealth = this.health('safe_lock_sweep');
     this.lockSweep = setInterval(() => {
       if (sweepingLocks) return;
       sweepingLocks = true;
       void gateway.safeLock
         .sweep()
-        .catch((err) => this.logger.warn({ msg: 'safe_lock_sweep_failed', error: (err as Error).message }))
+        .then(() => lockHealth.ok(), (err) => lockHealth.failed(err as Error))
         .finally(() => (sweepingLocks = false));
     }, SAFE_LOCK_SWEEP_MS);
     this.lockSweep.unref?.();
-    this.areaSweep = setInterval(() => void geofence.sweepOutOfArea().catch((err) => this.logger.warn({ msg: 'out_of_area_sweep_failed', error: (err as Error).message })), OUT_OF_AREA_SWEEP_MS);
+    const areaHealth = this.health('out_of_area_sweep');
+    this.areaSweep = setInterval(() => void geofence.sweepOutOfArea().then(() => areaHealth.ok(), (err) => areaHealth.failed(err as Error)), OUT_OF_AREA_SWEEP_MS);
     this.areaSweep.unref?.();
     if (this.cfg.geofenceMode === 'aws') {
       void this.engine.syncAll().catch((err) => this.logger.error({ msg: 'geofence_sync_all_failed', error: (err as Error).message }));
     }
     this.logger.log({ msg: 'iot_started', iotMode: this.cfg.iotMode, geofenceMode: this.cfg.geofenceMode });
+  }
+
+  /** Log só na mudança de estado (falhou / voltou), e não a cada rodada com o Redis fora (revisão M6). */
+  private health(name: string): { ok(): void; failed(err: Error): void } {
+    let failing = false;
+    return {
+      ok: () => {
+        if (failing) this.logger.log({ msg: `${name}_recovered` });
+        failing = false;
+      },
+      failed: (err) => {
+        if (!failing) this.logger.warn({ msg: `${name}_failed`, error: err.message });
+        failing = true;
+      },
+    };
   }
 
   async onModuleDestroy(): Promise<void> {

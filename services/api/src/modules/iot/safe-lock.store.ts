@@ -26,20 +26,33 @@ export interface RampState {
   deadlineAt?: number;
 }
 
+/**
+ * Rampa que está no índice mas cujo estado sumiu sem `finish` (expulsão de memória, failover que perdeu escritas): a varredura
+ * faz o mesmo que o timeout da fase `locking` — nunca deixa `travada: true` órfão no desired.
+ */
+export interface OrphanRamp {
+  thingName: string;
+  rampId: string;
+  phase: SafeLockPhase;
+  commandIds: string[];
+}
+
 /** Onde as rampas vivem. `withLock` serializa tudo o que mexe na rampa de uma moto (entre instâncias, no Redis). */
 export interface SafeLockStore {
   get(thingName: string): Promise<RampState | null>;
   put(ramp: RampState): Promise<void>;
   /** Remove só se a rampa guardada ainda for `rampId`. */
   remove(thingName: string, rampId: string): Promise<void>;
-  /** Motos com rampa (possivelmente) ativa — para a varredura. */
-  active(): Promise<string[]>;
+  /** Motos com rampa ativa e rampas órfãs (no índice, sem estado) — para a varredura. */
+  scan(): Promise<{ active: string[]; orphans: OrphanRamp[] }>;
+  /** Tira a órfã do índice (só se a entrada ainda for `rampId` e não houver estado). */
+  clearOrphan(thingName: string, rampId: string): Promise<void>;
   withLock<T>(thingName: string, fn: () => Promise<T>): Promise<T>;
 }
 
 export { outsideLock };
 
-/** Em memória (um processo; testes). Guarda a própria referência do objeto, como o `Map` original. */
+/** Em memória (um processo; testes). Guarda a própria referência do objeto, como o `Map` original. Nunca tem órfãs. */
 export class MemorySafeLockStore implements SafeLockStore {
   private readonly ramps = new Map<string, RampState>();
   private readonly mutex = new LocalMutex();
@@ -53,31 +66,32 @@ export class MemorySafeLockStore implements SafeLockStore {
   async remove(thingName: string, rampId: string) {
     if (this.ramps.get(thingName)?.id === rampId) this.ramps.delete(thingName);
   }
-  async active() {
-    return [...this.ramps.keys()];
+  async scan() {
+    return { active: [...this.ramps.keys()], orphans: [] };
   }
+  async clearOrphan() {}
   withLock<T>(thingName: string, fn: () => Promise<T>): Promise<T> {
     return this.mutex.run(thingName, fn);
   }
 }
 
 export interface RedisSafeLockStoreOptions {
-  /** TTL do lock distribuído (maior que a operação mais lenta: publicar no shadow). */
+  /** TTL do lock distribuído (renovado enquanto a operação roda). */
   lockTtlMs?: number;
-  /** Quanto esperar pelo lock de outra instância antes de desistir (`SafeLockBusyError`). */
+  /** Quanto esperar pelo lock de outra instância antes de desistir (`LockBusyError`). */
   lockWaitMs?: number;
-  /** TTL do estado da rampa: bem acima dos 120 s da rampa, para o estado nunca expirar no meio dela. */
-  stateTtlMs?: number;
   prefix?: string;
 }
 
 /**
- * Redis (várias instâncias): estado em `iot:safe-lock:{thing}` (JSON, TTL de horas), índice `iot:safe-lock:active` e lock por
- * moto `iot:safe-lock:lock:{thing}` (`RedisMutex`: `SET NX PX`, liberado só pelo dono, fila local na frente). Falha de Redis propaga o erro: quem chama não publica nada (falha fechada — nunca trava sem estado).
+ * Redis (várias instâncias): estado em `iot:safe-lock:{thing}` (JSON, **sem TTL**: só o `finish` apaga) e índice
+ * `iot:safe-lock:index` (hash `thing → { rampId, phase, commandIds }`), gravados e apagados juntos numa operação atômica; lock
+ * por moto `iot:safe-lock:lock:{thing}` (`RedisMutex`). O ElastiCache usa `maxmemory-policy noeviction` (infra), então o estado
+ * não é expulso; se mesmo assim sumir (failover), o índice revela a órfã. Falha de Redis propaga o erro: quem chama não publica
+ * nada (falha fechada — nunca trava sem estado).
  */
 export class RedisSafeLockStore implements SafeLockStore {
   private readonly mutex: RedisMutex;
-  private readonly stateTtlMs: number;
   private readonly prefix: string;
 
   constructor(
@@ -85,7 +99,6 @@ export class RedisSafeLockStore implements SafeLockStore {
     opts: RedisSafeLockStoreOptions = {},
   ) {
     this.mutex = new RedisMutex(redis, { ttlMs: opts.lockTtlMs ?? 15_000, waitMs: opts.lockWaitMs ?? 5_000 });
-    this.stateTtlMs = opts.stateTtlMs ?? 6 * 60 * 60_000;
     this.prefix = opts.prefix ?? 'iot:safe-lock';
   }
 
@@ -93,7 +106,7 @@ export class RedisSafeLockStore implements SafeLockStore {
     return `${this.prefix}:${thingName}`;
   }
   private get index() {
-    return `${this.prefix}:active`;
+    return `${this.prefix}:index`;
   }
 
   async get(thingName: string): Promise<RampState | null> {
@@ -107,25 +120,47 @@ export class RedisSafeLockStore implements SafeLockStore {
   }
 
   async put(ramp: RampState): Promise<void> {
-    await this.redis.set(this.key(ramp.thingName), JSON.stringify(ramp), this.stateTtlMs);
-    await this.redis.sadd(this.index, ramp.thingName);
+    const entry = JSON.stringify({ rampId: ramp.id, phase: ramp.phase, commandIds: ramp.commandIds });
+    await this.redis.setWithIndex(this.key(ramp.thingName), JSON.stringify(ramp), this.index, ramp.thingName, entry);
   }
 
   async remove(thingName: string, rampId: string): Promise<void> {
     const cur = await this.get(thingName);
     if (cur && cur.id !== rampId) return;
-    await this.redis.del(this.key(thingName));
-    await this.redis.srem(this.index, thingName);
+    await this.redis.delWithIndex(this.key(thingName), this.index, thingName);
   }
 
-  async active(): Promise<string[]> {
-    const members = await this.redis.smembers(this.index);
-    const out: string[] = [];
-    for (const m of members) {
-      if (await this.redis.exists(this.key(m))) out.push(m);
-      else await this.redis.srem(this.index, m); // estado expirado/apagado: limpa o índice
+  async scan(): Promise<{ active: string[]; orphans: OrphanRamp[] }> {
+    const entries = await this.redis.hgetall(this.index);
+    const active: string[] = [];
+    const orphans: OrphanRamp[] = [];
+    for (const [thingName, raw] of Object.entries(entries)) {
+      if (await this.redis.exists(this.key(thingName))) {
+        active.push(thingName);
+        continue;
+      }
+      try {
+        const e = JSON.parse(raw) as { rampId: string; phase: SafeLockPhase; commandIds?: string[] };
+        orphans.push({ thingName, rampId: e.rampId, phase: e.phase, commandIds: e.commandIds ?? [] });
+      } catch {
+        orphans.push({ thingName, rampId: '', phase: 'locking', commandIds: [] }); // entrada ilegível: trata como a pior fase
+      }
     }
-    return out;
+    return { active, orphans };
+  }
+
+  async clearOrphan(thingName: string, rampId: string): Promise<void> {
+    if (await this.redis.exists(this.key(thingName))) return;
+    const raw = (await this.redis.hgetall(this.index))[thingName];
+    if (raw === undefined) return;
+    let id = '';
+    try {
+      id = (JSON.parse(raw) as { rampId?: string }).rampId ?? '';
+    } catch {
+      id = '';
+    }
+    if (id !== rampId) return;
+    await this.redis.delWithIndex(this.key(thingName), this.index, thingName);
   }
 
   withLock<T>(thingName: string, fn: () => Promise<T>): Promise<T> {

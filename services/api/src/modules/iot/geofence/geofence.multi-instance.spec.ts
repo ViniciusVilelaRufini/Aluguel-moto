@@ -59,6 +59,21 @@ describe('GeofenceService com várias instâncias (estado e prazos no Redis)', (
     expect(await a.svc.effectiveLimit('moto-0001')).toBe(32);
   });
 
+  it('revisão C1: B dentro → A fora → B dentro de novo: o limite compartilhado volta a 6 (unlock/manual nunca põem 32 no calçadão)', async () => {
+    const c = cluster();
+    const a = c.make();
+    const b = c.make();
+    c.engine.zones = [OPERATION, PEDESTRIAN];
+    await b.svc.onPosition(pos()); // B: dentro (memória de B = 6)
+    c.engine.zones = [OPERATION];
+    await a.svc.onPosition(pos()); // A: fora (Redis = 32)
+    c.engine.zones = [OPERATION, PEDESTRIAN];
+    await b.svc.onPosition(pos()); // B: dentro de novo (memória de B já dizia 6)
+    expect(await a.svc.effectiveLimit('moto-0001')).toBe(6);
+    expect(await b.svc.effectiveLimit('moto-0001')).toBe(6);
+    expect(c.commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 6, expect.anything());
+  });
+
   it('fora da área armado em A; a volta para a área é processada em B → o timer de A não bloqueia', async () => {
     const c = cluster();
     const clock = new FakeClock(T0);

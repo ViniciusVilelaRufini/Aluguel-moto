@@ -29,14 +29,19 @@ export class JobLock {
     await this.redis.delIfEquals(KEY_PREFIX + name, this.owner);
   }
 
-  /** Executa `fn` se obtiver o lock da rodada; devolve se executou. */
-  async run(name: string, ttlMs: number, fn: () => Promise<unknown>): Promise<boolean> {
+  /**
+   * Executa `fn` se obtiver o lock da rodada; devolve se executou. Lock **indisponível** (Redis fora, não ocupado): pula, salvo
+   * `runIfUnavailable` — jobs de segurança/atendimento idempotentes (CAS no banco) rodam mesmo assim em cada instância.
+   */
+  async run(name: string, ttlMs: number, fn: () => Promise<unknown>, opts: { runIfUnavailable?: boolean } = {}): Promise<boolean> {
     let acquired: boolean;
     try {
       acquired = await this.tryAcquire(name, ttlMs);
     } catch (err) {
-      this.logger.warn({ msg: 'job_lock_unavailable', job: name, error: (err as Error).message });
-      return false;
+      this.logger.warn({ msg: 'job_lock_unavailable', job: name, runAnyway: !!opts.runIfUnavailable, error: (err as Error).message });
+      if (!opts.runIfUnavailable) return false;
+      await fn();
+      return true;
     }
     if (!acquired) return false;
     await fn();
@@ -59,16 +64,21 @@ export const jobLockTtl = (intervalMs: number) => Math.max(1_000, Math.floor(int
  * Coloque **abaixo** do `@Interval`/`@Cron`; os metadados do método original são copiados de qualquer forma. Sem `JobLock`
  * registrado (testes unitários que instanciam o serviço direto), executa como antes.
  */
-export function ExclusiveJob(name: string, ttlMs: number): MethodDecorator {
+export function ExclusiveJob(name: string, ttlMs: number, opts: { runIfUnavailable?: boolean } = {}): MethodDecorator {
   return (_target, _key, descriptor: PropertyDescriptor) => {
     const original = descriptor.value as (...args: unknown[]) => Promise<unknown>;
     const wrapped = async function (this: unknown, ...args: unknown[]): Promise<unknown> {
       const lock = current;
       if (!lock) return original.apply(this, args);
       let result: unknown;
-      await lock.run(name, ttlMs, async () => {
-        result = await original.apply(this, args);
-      });
+      await lock.run(
+        name,
+        ttlMs,
+        async () => {
+          result = await original.apply(this, args);
+        },
+        opts,
+      );
       return result;
     };
     for (const key of Reflect.getMetadataKeys(original)) Reflect.defineMetadata(key, Reflect.getMetadata(key, original), wrapped);

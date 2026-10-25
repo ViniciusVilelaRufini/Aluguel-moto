@@ -587,7 +587,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   // ───────────── prazos ─────────────
 
   @Interval('station-swap-timeouts', 15_000)
-  @ExclusiveJob('station-swap-timeouts', jobLockTtl(15_000))
+  @ExclusiveJob('station-swap-timeouts', jobLockTtl(15_000), { runIfUnavailable: true })
   async timeoutJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.expireOverdue().catch((err) => this.logger.error({ msg: 'station_swap_timeouts_failed', error: (err as Error).message }));

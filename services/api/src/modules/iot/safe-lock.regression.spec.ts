@@ -364,7 +364,7 @@ describe('Bloqueio seguro — regressões da revisão 2', () => {
     expect(live.knownSpeed(T)).toBe(25);
   });
 
-  it('isHeld falha fechada: erro no Redis recusa mudar o limite e não fica em cache', async () => {
+  it('hold ilegível (Redis fora): só reduções em relação ao teto conhecido passam; nada fica em cache', async () => {
     const clock = new FakeClock(T0);
     const redis = new MemoryRedisStore();
     const realGet = redis.get.bind(redis);
@@ -377,8 +377,14 @@ describe('Bloqueio seguro — regressões da revisão 2', () => {
     const live = new LiveStateStore(redis, clock);
     const gw = new GW(transport, live, clock, new EventEmitter2(), { confirmWaitMs: 100, commandTimeoutMs: 30_000 });
     await live.applyTelemetry(T, telemetry(0, iso(clock.now())));
-    expect((await gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 20)).status).toBe('failed');
+    await live.applyReported(T, { limite_kmh: 0 }); // o rastreador aplicou o limite segurado em 0
+    expect((await gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 20)).status).toBe('failed'); // subiria
     expect(transport.desired).toEqual([]);
+    const zero = gw.setSpeedLimit({ commandId: 'c0', thingName: T }, 0); // não sobe: passa mesmo sem ler o hold
+    await clock.advance(100);
+    expect((await zero).status).toBe('confirmed');
+    expect(transport.desired).toEqual([{ limite_kmh: 0 }]);
+    transport.desired = [];
     broken = false;
     const p = gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 20);
     await clock.advance(100);

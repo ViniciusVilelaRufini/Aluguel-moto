@@ -31,14 +31,26 @@ export class LocalMutex {
   }
 }
 
-export class LockBusyError extends Error {
-  constructor(readonly key: string) {
-    super(`lock ocupado em outra instância: ${key}`);
+/** O lock distribuído não pôde ser obtido (Redis fora do ar ou ocupado): `fn` **não** rodou. */
+export class LockUnavailableError extends Error {
+  constructor(
+    readonly key: string,
+    override readonly cause?: unknown,
+  ) {
+    super(`lock indisponível: ${key}${cause instanceof Error ? ` (${cause.message})` : ''}`);
+  }
+}
+
+/** Ocupado por outra instância além do tempo de espera. */
+export class LockBusyError extends LockUnavailableError {
+  constructor(key: string) {
+    super(key);
+    this.message = `lock ocupado em outra instância: ${key}`;
   }
 }
 
 export interface RedisMutexOptions {
-  /** TTL do lock (maior que a operação mais lenta protegida por ele). */
+  /** TTL do lock; enquanto `fn` roda, o dono renova a cada ~1/3 do TTL (sem fencing: a renovação cobre `fn` lenta). */
   ttlMs?: number;
   /** Quanto esperar pelo lock de outra instância antes de desistir (`LockBusyError`). */
   waitMs?: number;
@@ -46,10 +58,11 @@ export interface RedisMutexOptions {
 
 /**
  * Lock distribuído por chave (`SET {chave} {token} NX PX ttl`, liberado só pelo dono), com fila local na frente (a instância
- * não disputa o lock consigo mesma) e reentrância na mesma cadeia assíncrona. Erro do Redis propaga.
+ * não disputa o lock consigo mesma), reentrância na mesma cadeia assíncrona e renovação do TTL enquanto `fn` roda.
+ * Falha ao obter o lock → `LockUnavailableError` (quem chama decide se degrada); erro de `fn` propaga como veio.
  */
 export class RedisMutex {
-  private readonly local = new LocalMutex();
+  private readonly localMutex = new LocalMutex();
   private readonly ttlMs: number;
   private readonly waitMs: number;
 
@@ -61,18 +74,33 @@ export class RedisMutex {
     this.waitMs = opts.waitMs ?? 5_000;
   }
 
+  /** Só a fila local (degradação sem Redis): serializa dentro do processo. */
+  runLocal<T>(key: string, fn: () => Promise<T>): Promise<T> {
+    return this.localMutex.run(key, fn);
+  }
+
   run<T>(key: string, fn: () => Promise<T>): Promise<T> {
     if (held.getStore()?.has(key)) return fn();
-    return this.local.run(key, async () => {
+    return this.localMutex.run(key, async () => {
       const token = randomUUID();
       const until = Date.now() + this.waitMs;
-      while (!(await this.redis.setNx(key, token, this.ttlMs))) {
+      for (;;) {
+        let got: boolean;
+        try {
+          got = await this.redis.setNx(key, token, this.ttlMs);
+        } catch (err) {
+          throw new LockUnavailableError(key, err);
+        }
+        if (got) break;
         if (Date.now() >= until) throw new LockBusyError(key);
         await new Promise((r) => setTimeout(r, 25));
       }
+      const renew = setInterval(() => void this.redis.pexpireIfEquals(key, token, this.ttlMs).catch(() => undefined), Math.max(250, Math.floor(this.ttlMs / 3)));
+      renew.unref?.();
       try {
         return await fn();
       } finally {
+        clearInterval(renew);
         await this.redis.delIfEquals(key, token).catch(() => undefined);
       }
     });
