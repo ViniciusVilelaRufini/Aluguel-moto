@@ -68,14 +68,14 @@ export default function HandoversPage() {
             </div>
           )}
         </div>
-        <ErrorNote error={page.error} />
+        <ErrorNote error={page.error} onRetry={() => page.refetch()} />
         <HandoverTable rows={page.rows} loading={page.loading} pager={page.pager} selectedId={selected} onSelect={(h) => setSelected(h.id)}
           empty={view === 'disputes' ? 'Nenhuma disputa aberta' : undefined} />
       </Page>
       {selected && (
         <SidePanel width={400} testId="handover-panel" onClose={() => setSelected(null)}
           title={<div style={{ font: '700 18px/1.25 var(--font-sans)' }}>Entrega {shown?.vehicleCode ? `· ${shown.vehicleCode}` : ''}</div>}>
-          <ErrorNote error={detail.error} />
+          <ErrorNote error={detail.error} onRetry={() => detail.refetch()} />
           {shown ? (
             <HandoverDetail handover={shown} photosLoading={detail.isLoading} supportHref={supportHref(groups)} rentalHref={shown.rentalId ? rentalHref(groups, shown.rentalId) : null}
               onCancel={can(groups, 'handover.cancel') && canCancelHandover(shown) ? () => setCanceling(shown) : undefined} />

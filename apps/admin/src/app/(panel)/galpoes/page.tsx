@@ -264,7 +264,7 @@ export default function DepotsPage() {
         {!draft && (
           <Card variant="sunken" padding={4}>
             {depotsQ.isLoading && <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 12 }}>{[0, 1].map((i) => <Skeleton key={i} h={40} />)}</div>}
-            <ErrorNote error={depotsQ.error} />
+            <ErrorNote error={depotsQ.error} onRetry={() => depotsQ.refetch()} />
             {!depotsQ.isLoading && !depotsQ.error && depots.length === 0 && (
               <Empty compact icon="Warehouse" action={canEdit ? <Button size="sm" variant="ghost" icon="Plus" onClick={startNew}>Novo galpão</Button> : undefined}>Nenhum galpão cadastrado</Empty>
             )}
