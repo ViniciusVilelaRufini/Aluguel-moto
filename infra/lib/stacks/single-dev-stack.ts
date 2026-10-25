@@ -135,7 +135,7 @@ export class SingleDevStack extends Stack {
       allowAllOutbound: true,
     });
     this.securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP (ACME challenge and redirect to HTTPS)');
-    this.securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS (Caddy -> API)');
+    this.securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS (Caddy to API)');
 
     // No AWS managed policy: AmazonSSMManagedInstanceCore grants ssm:GetParameter(s) on every parameter of the account.
     this.instanceRole = new iam.Role(this, 'InstanceRole', {
