@@ -6,6 +6,7 @@ export const STAFF_FALLBACK_NAME = 'Equipe Volti';
  * no primeiro login, sem nome) ou com algo que pareça e-mail, "Equipe Volti".
  */
 export function staffFirstName(name?: string | null): string {
+  if (name?.trim() === STAFF_FALLBACK_NAME) return STAFF_FALLBACK_NAME;
   const first = name?.trim().split(/\s+/)[0];
   return first && !first.includes('@') ? first : STAFF_FALLBACK_NAME;
 }

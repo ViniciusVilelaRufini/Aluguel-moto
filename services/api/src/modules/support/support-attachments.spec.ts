@@ -57,7 +57,7 @@ describe('Chat de suporte: anexos e autor (Task 30)', () => {
     prisma.staffUser.findUnique.mockResolvedValue({ name: '' } as any);
     prisma.supportMessage.create.mockImplementation((async (args: any) => ({ ...message(), ...args.data, id: 'novo' })) as any);
     const out = await svc.sendMessage(staff, CONV_ID, { body: 'Olá' } as any);
-    expect((prisma.supportMessage.create.mock.calls[0][0] as any).data.authorName).toBe('Equipe Volti');
+    expect((prisma.supportMessage.create.mock.calls[0][0] as any).data.authorName).toBeUndefined();
     expect(out.authorName).toBe('Equipe Volti');
   });
 });

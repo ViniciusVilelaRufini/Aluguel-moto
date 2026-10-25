@@ -302,7 +302,7 @@ export class SupportService {
     const m = await this.prisma.$transaction(async (tx) => {
       const msg = await tx.supportMessage.create({
         data: {
-          conversationId: id, authorType: isStaff(user) ? 'staff' : 'customer', authorId: user.userId, authorName: isStaff(user) ? staffFirstName(staff?.name) : undefined,
+          conversationId: id, authorType: isStaff(user) ? 'staff' : 'customer', authorId: user.userId, authorName: isStaff(user) && staff?.name?.trim() ? staffFirstName(staff.name) : undefined,
           body: dto.body, attachmentObjectKeys: dto.attachmentObjectKeys ?? [],
         },
       });
