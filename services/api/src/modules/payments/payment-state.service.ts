@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Prisma, type Payment } from '@prisma/client';
 import { EV, type PaymentUpdatedEvent } from '../../common/events';
 import { PrismaService } from '../../prisma/prisma.service';
 import { assertTransition, type PaymentStatus } from './payment-state';
+import { signalNeedsReview, type PaymentNeedsReviewEvent } from './payment-review';
 
 export class ConcurrentPaymentUpdateError extends Error {}
 
@@ -15,6 +16,8 @@ type PaymentData = Omit<Prisma.PaymentUncheckedUpdateManyInput, 'status' | 'id'>
  */
 @Injectable()
 export class PaymentStateService {
+  private readonly logger = new Logger('PaymentStateService');
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly events: EventEmitter2,
@@ -45,6 +48,11 @@ export class PaymentStateService {
     assertTransition(read.status, to);
     const res = await tx.payment.updateMany({ where: { id: read.id, status: read.status, refundedCents: read.refundedCents }, data: { status: to, refundedCents } });
     return res.count === 1;
+  }
+
+  /** Task 14: revisão manual de pagamento (log `payment_needs_manual_review` + evento que vira alerta `payment_needs_review`). */
+  needsReview(ev: PaymentNeedsReviewEvent, extra: Record<string, unknown> = {}): void {
+    signalNeedsReview(this.logger, this.events, ev, extra);
   }
 
   emitUpdated(p: Payment): void {

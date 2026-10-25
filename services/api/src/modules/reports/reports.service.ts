@@ -1,8 +1,9 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { VEHICLE_STATUSES, type PlanCode } from '../../common/enums';
 import { badRequest } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
+import { DEBT_KINDS, DelinquencyService } from '../payments/delinquency.service';
 
 export type GroupBy = 'hour' | 'day' | 'week' | 'month';
 const TZ = 'America/Sao_Paulo';
@@ -26,19 +27,60 @@ export function startOfTodaySaoPaulo(now = new Date()): Date {
   return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) + 3 * 3600 * 1000);
 }
 
-/** CSV com `;`, UTF-8 com BOM, valores em centavos. */
-export function toCsv(rows: Array<Record<string, unknown>>, columns: string[]): string {
-  const esc = (v: unknown) => {
-    const s = v === undefined || v === null ? '' : String(v);
-    return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  return '﻿' + [columns.join(';'), ...rows.map((r) => columns.map((c) => esc(r[c])).join(';'))].join('\n') + '\n';
+/** Formato de uma coluna do CSV em pt-BR (QA-16). */
+export type CsvFormat = 'text' | 'int' | 'money' | 'date' | 'datetime' | 'pct' | 'plan';
+export interface CsvColumn {
+  key: string;
+  label: string;
+  format?: CsvFormat;
+}
+
+const PLAN_LABELS: Record<string, string> = { minute: 'Minuto', hour: 'Hora', day: 'Diária', weekly: 'Semanal', monthly: 'Mensal' };
+const SP_DATE = new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
+const SP_DATETIME = new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+
+/** Centavos → reais com vírgula e sem separador de milhar (`123456` → `1234,56`), para a planilha ler como número. */
+export function centsToBrl(cents: number): string {
+  const sign = cents < 0 ? '-' : '';
+  const abs = Math.abs(Math.round(cents));
+  return `${sign}${Math.floor(abs / 100)},${String(abs % 100).padStart(2, '0')}`;
+}
+
+function formatCell(v: unknown, format: CsvFormat = 'text'): string {
+  if (v === undefined || v === null || v === '') return '';
+  switch (format) {
+    case 'money':
+      return centsToBrl(Number(v));
+    case 'pct':
+      return String(v).replace('.', ',');
+    case 'date':
+      // `YYYY-MM-DD` (dia já no fuso de São Paulo) ou instante ISO.
+      if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)) return `${v.slice(8, 10)}/${v.slice(5, 7)}/${v.slice(0, 4)}`;
+      return SP_DATE.format(new Date(String(v)));
+    case 'datetime':
+      return SP_DATETIME.format(new Date(String(v))).replace(',', '');
+    case 'plan':
+      return PLAN_LABELS[String(v)] ?? String(v);
+    default:
+      return String(v);
+  }
+}
+
+/** CSV para planilha em pt-BR: `;`, UTF-8 com BOM, cabeçalhos em português, R$ com vírgula e datas em São Paulo. */
+export function toCsv(rows: Array<Record<string, unknown>>, columns: CsvColumn[]): string {
+  const esc = (s: string) => (/[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const header = columns.map((c) => esc(c.label)).join(';');
+  return '\uFEFF' + [header, ...rows.map((r) => columns.map((c) => esc(formatCell(r[c.key], c.format))).join(';'))].join('\n') + '\n';
 }
 
 /** Relatórios agregados (sem dados pessoais). Datas agrupadas no fuso America/Sao_Paulo. */
 @Injectable()
 export class ReportsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    /** Task 14: inadimplência pelo saldo devedor (valor − caução capturada), sem dívidas já quitadas. */
+    @Optional() private readonly delinquency?: DelinquencyService,
+  ) {}
 
   private window(fromIso: string, toIso: string, groupBy?: GroupBy) {
     const from = new Date(fromIso);
@@ -50,11 +92,12 @@ export class ReportsService {
     return { from, to };
   }
 
-  async dashboard(canSeeRevenue: boolean) {
+  /** `alertScope`: alertas que o perfil vê (Task 14: operação não conta os financeiros, financeiro só os dele). */
+  async dashboard(canSeeRevenue: boolean, alertScope: Prisma.AlertWhereInput | null = null) {
     const [byStatus, activeRentals, openAlerts, revenue] = await Promise.all([
       this.prisma.vehicle.groupBy({ by: ['status'], _count: { _all: true } }),
       this.prisma.rental.count({ where: { status: { in: ['active', 'paused', 'ending'] } } }),
-      this.prisma.alert.count({ where: { status: { not: 'resolved' } } }),
+      this.prisma.alert.count({ where: { status: { not: 'resolved' }, ...(alertScope ?? {}) } }),
       canSeeRevenue
         ? // Mesma definição do Financeiro: receita = custo dos aluguéis encerrados hoje (caução e recarga de carteira não entram).
           this.prisma.rental.aggregate({ where: { status: { in: ['ended', 'force_ended'] }, endedAt: { gte: startOfTodaySaoPaulo() } }, _sum: { costCents: true } })
@@ -94,6 +137,7 @@ export class ReportsService {
              coalesce(sum(("breakdown"->>'discountCents')::int), 0) AS "discountCents",
              coalesce(sum(("breakdown"->>'insuranceCents')::int), 0) AS "insuranceCents",
              coalesce(sum(("breakdown"->>'feesCents')::int), 0) AS "feesCents",
+             coalesce(sum(("breakdown"->>'walletAppliedCents')::int), 0) AS "walletCents",
              coalesce(sum("costCents"), 0) AS "netCents"
       FROM "Rental"
       WHERE "status" IN ('ended', 'force_ended') AND "endedAt" >= ${utcBound(from)} AND "endedAt" < ${utcBound(to)} ${planFilter}
@@ -106,6 +150,7 @@ export class ReportsService {
       discountCents: n(r.discountCents),
       insuranceCents: n(r.insuranceCents),
       feesCents: n(r.feesCents),
+      walletCents: n(r.walletCents),
       netCents: n(r.netCents),
     }));
     return { from: from.toISOString(), to: to.toISOString(), groupBy, rows: mapped, totalNetCents: mapped.reduce((a, r) => a + r.netCents, 0) };
@@ -163,7 +208,8 @@ export class ReportsService {
       this.prisma.rental.groupBy({ by: ['planCode'], where: ended, _count: { _all: true }, _sum: { costCents: true } }),
       this.prisma.deposit.aggregate({ where: { status: 'held' }, _count: { _all: true }, _sum: { amountCents: true } }),
       this.prisma.customer.count({ where: { delinquent: true } }),
-      this.prisma.payment.aggregate({ where: { status: 'failed', createdAt: { gte: from, lt: to } }, _sum: { amountCents: true } }),
+      // Task 14: só dívida de verdade (aluguel/assinatura `failed` ainda não quitada); caução Pix vencida e recarga recusada não são dívida.
+      this.prisma.payment.findMany({ where: { status: 'failed', kind: { in: [...DEBT_KINDS] }, debtSettledAt: null, createdAt: { gte: from, lt: to } } }),
       this.prisma.payment.aggregate({ where: { refundedCents: { gt: 0 }, updatedAt: { gte: from, lt: to } }, _sum: { refundedCents: true } }),
       this.prisma.payment.aggregate({ where: { kind: 'top_up', status: 'paid', createdAt: { gte: from, lt: to } }, _sum: { amountCents: true } }),
       this.prisma.insurancePolicy.aggregate({ where: { issuedAt: { gte: from, lt: to } }, _sum: { premiumCents: true } }),
@@ -178,11 +224,19 @@ export class ReportsService {
       depositsHeldCount: depositsHeld._count._all,
       depositsHeldCents: n(depositsHeld._sum.amountCents),
       delinquentCustomers,
-      delinquentAmountCents: n(failed._sum.amountCents),
+      delinquentAmountCents: await this.outstandingTotal(failed),
       refundsCents: n(refunds._sum.refundedCents),
       walletTopUpsCents: n(topUps._sum.amountCents),
       insurancePremiumsCents: n(premiums._sum.premiumCents),
       insurancePayoutsCents: n(payouts._sum.payoutCents),
     };
+  }
+
+  /** Saldo devedor somado (valor − caução capturada como garantia); sem o serviço, o valor cheio. */
+  private async outstandingTotal(payments: Array<{ id: string; amountCents: number }>): Promise<number> {
+    if (!payments?.length) return 0;
+    if (!this.delinquency) return payments.reduce((a, p) => a + p.amountCents, 0);
+    const map = await this.delinquency.outstandingMap(payments as Parameters<DelinquencyService['outstandingMap']>[0]);
+    return [...map.values()].reduce((a, b) => a + b, 0);
   }
 }

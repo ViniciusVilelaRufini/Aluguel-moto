@@ -9,6 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'payment_kind.g.dart';
 
+/// `debt_settlement`: quitação de uma dívida pelo cliente (`POST /payments/{id}/retry`), com `settlesPaymentId`.
 class PaymentKind extends EnumClass {
   @BuiltValueEnumConst(wireName: r'rental')
   static const PaymentKind rental = _$rental;
@@ -20,6 +21,8 @@ class PaymentKind extends EnumClass {
   static const PaymentKind subscription = _$subscription;
   @BuiltValueEnumConst(wireName: r'fee')
   static const PaymentKind fee = _$fee;
+  @BuiltValueEnumConst(wireName: r'debt_settlement')
+  static const PaymentKind debtSettlement = _$debtSettlement;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const PaymentKind unknownDefaultOpenApi = _$unknownDefaultOpenApi;
 

@@ -43,6 +43,8 @@ class _$LgpdExport extends LgpdExport {
   final BuiltList<Handover>? handovers;
   @override
   final BuiltList<StationSwap>? stationSwaps;
+  @override
+  final BuiltList<LgpdSupportConversation>? supportConversations;
 
   factory _$LgpdExport([void Function(LgpdExportBuilder)? updates]) =>
       (LgpdExportBuilder()..update(updates))._build();
@@ -65,7 +67,8 @@ class _$LgpdExport extends LgpdExport {
       this.maintenanceRequests,
       this.depotReservations,
       this.handovers,
-      this.stationSwaps})
+      this.stationSwaps,
+      this.supportConversations})
       : super._();
   @override
   LgpdExport rebuild(void Function(LgpdExportBuilder) updates) =>
@@ -95,7 +98,8 @@ class _$LgpdExport extends LgpdExport {
         maintenanceRequests == other.maintenanceRequests &&
         depotReservations == other.depotReservations &&
         handovers == other.handovers &&
-        stationSwaps == other.stationSwaps;
+        stationSwaps == other.stationSwaps &&
+        supportConversations == other.supportConversations;
   }
 
   @override
@@ -119,6 +123,7 @@ class _$LgpdExport extends LgpdExport {
     _$hash = $jc(_$hash, depotReservations.hashCode);
     _$hash = $jc(_$hash, handovers.hashCode);
     _$hash = $jc(_$hash, stationSwaps.hashCode);
+    _$hash = $jc(_$hash, supportConversations.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -143,7 +148,8 @@ class _$LgpdExport extends LgpdExport {
           ..add('maintenanceRequests', maintenanceRequests)
           ..add('depotReservations', depotReservations)
           ..add('handovers', handovers)
-          ..add('stationSwaps', stationSwaps))
+          ..add('stationSwaps', stationSwaps)
+          ..add('supportConversations', supportConversations))
         .toString();
   }
 }
@@ -244,6 +250,13 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
   set stationSwaps(ListBuilder<StationSwap>? stationSwaps) =>
       _$this._stationSwaps = stationSwaps;
 
+  ListBuilder<LgpdSupportConversation>? _supportConversations;
+  ListBuilder<LgpdSupportConversation> get supportConversations =>
+      _$this._supportConversations ??= ListBuilder<LgpdSupportConversation>();
+  set supportConversations(
+          ListBuilder<LgpdSupportConversation>? supportConversations) =>
+      _$this._supportConversations = supportConversations;
+
   LgpdExportBuilder() {
     LgpdExport._defaults(this);
   }
@@ -269,6 +282,7 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
       _depotReservations = $v.depotReservations?.toBuilder();
       _handovers = $v.handovers?.toBuilder();
       _stationSwaps = $v.stationSwaps?.toBuilder();
+      _supportConversations = $v.supportConversations?.toBuilder();
       _$v = null;
     }
     return this;
@@ -311,6 +325,7 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
             depotReservations: _depotReservations?.build(),
             handovers: _handovers?.build(),
             stationSwaps: _stationSwaps?.build(),
+            supportConversations: _supportConversations?.build(),
           );
     } catch (_) {
       late String _$failedField;
@@ -348,6 +363,8 @@ class LgpdExportBuilder implements Builder<LgpdExport, LgpdExportBuilder> {
         _handovers?.build();
         _$failedField = 'stationSwaps';
         _stationSwaps?.build();
+        _$failedField = 'supportConversations';
+        _supportConversations?.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'LgpdExport', _$failedField, e.toString());

@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import type { Payment, PaymentRefund, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
@@ -14,12 +14,13 @@ import { toDeposit } from '../rentals/rentals.mapper';
 import { appendWalletEntry } from '../wallet/wallet-ledger';
 import { canTransition } from './payment-state';
 import { PaymentStateService } from './payment-state.service';
-import type { ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto } from './payments.dto';
-import { toPayment, toPaymentCard } from './payments.mapper';
+import type { DebtPaymentDto, ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto } from './payments.dto';
+import { type PaymentExtras, toPayment, toPaymentCard } from './payments.mapper';
 import { ProviderCustomersService } from './provider-customers.service';
 import type { WebhookQueueMessage } from './provider/fake-pix-autoconfirm';
 import { CardDeclinedError, PAYMENT_PROVIDER, type PaymentProvider, RefundRejectedError } from './provider/payment-provider';
 import { SubscriptionsService } from './subscriptions.service';
+import { DelinquencyService } from './delinquency.service';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 /** Repetições de um estorno sem resultado antes de pedir revisão manual. */
@@ -42,7 +43,19 @@ export class PaymentsService {
     private readonly state: PaymentStateService,
     private readonly subscriptions: SubscriptionsService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
+    @Optional() private readonly delinquency?: DelinquencyService,
   ) {}
+
+  /** Task 14: nome do cliente (só staff, QA-17) e saldo devedor das dívidas em aberto. */
+  private async extras(user: Principal, rows: Payment[]): Promise<Map<string, PaymentExtras>> {
+    const outstanding = (await this.delinquency?.outstandingMap(rows)) ?? new Map<string, number>();
+    const names = new Map<string, string>();
+    if (isStaff(user) && rows.length) {
+      const customers = await this.prisma.customer.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.customerId))] } }, select: { id: true, name: true } });
+      for (const c of customers) if (c.name) names.set(c.id, c.name);
+    }
+    return new Map(rows.map((r) => [r.id, { customerName: names.get(r.customerId), outstandingCents: outstanding.get(r.id) }]));
+  }
 
   // ── cartões (só token do gateway) ──
   async listCards(customerId: string) {
@@ -113,14 +126,22 @@ export class PaymentsService {
     if (createdAt) where.createdAt = createdAt;
     const rows = await this.prisma.payment.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], ...pageArgs(q) });
     const links = await receiptLinks(this.prisma, this.storage, rows.map((r) => r.id));
-    return toPage(rows, q, (p: Payment) => toPayment(p, links.get(p.id)));
+    const extras = await this.extras(user, rows);
+    return toPage(rows, q, (p: Payment) => toPayment(p, links.get(p.id), extras.get(p.id)));
   }
 
   async getPayment(user: Principal, id: string) {
     const p = await this.prisma.payment.findUnique({ where: { id } });
     if (!p || (!isStaff(user) && p.customerId !== user.customerId)) throw notFound('Pagamento não encontrado.');
     const links = await receiptLinks(this.prisma, this.storage, [p.id]);
-    return toPayment(p, links.get(p.id));
+    return toPayment(p, links.get(p.id), (await this.extras(user, [p])).get(p.id));
+  }
+
+  /** Task 14: o cliente quita a dívida de um pagamento `failed` (cartão na hora ou Pix). */
+  async payDebt(user: Principal, id: string, dto: DebtPaymentDto) {
+    if (!this.delinquency) throw new Error('DelinquencyService indisponível.');
+    const p = await this.delinquency.payDebt(user.customerId!, id, dto);
+    return toPayment(p);
   }
 
   /**
@@ -222,7 +243,7 @@ export class PaymentsService {
       return res.count === 1;
     });
     if (undone) this.logger.warn({ msg: 'refund_rejected', paymentId: record.paymentId, refundId: record.id });
-    else this.logger.error({ msg: 'payment_needs_manual_review', paymentId: record.paymentId, refundId: record.id, reason: 'refund_rollback_mismatch' });
+    else this.state.needsReview({ paymentId: record.paymentId, reason: 'refund_rollback_mismatch' }, { refundId: record.id });
   }
 
   @Interval('payments-refund-reconcile', 5 * 60_000)
@@ -250,7 +271,7 @@ export class PaymentsService {
         }
         if (rec.attempts >= MAX_REFUND_ATTEMPTS) {
           await this.prisma.paymentRefund.update({ where: { id: rec.id }, data: { status: 'needs_review' } });
-          this.logger.error({ msg: 'payment_needs_manual_review', paymentId: rec.paymentId, refundId: rec.id });
+          this.state.needsReview({ paymentId: rec.paymentId, reason: 'refund_attempts_exhausted' }, { refundId: rec.id });
           continue;
         }
         await this.callGatewayRefund(rec);

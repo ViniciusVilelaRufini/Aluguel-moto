@@ -709,7 +709,7 @@ export class RentalBillingService implements RentalBillingPort {
     await this.state.transition(pay.id, 'paid', { method: data.method, providerPaymentId: data.providerPaymentId ?? null, cardLast4: data.cardLast4 ?? null, failureReason: null });
     await this.markFinished(pay.id);
     this.logger.log({ msg: 'rental_settled', paymentId: pay.id, rentalId: pay.rentalId, amountCents: pay.amountCents });
-    await this.maybeClearDelinquency(rental.customerId);
+    await this.clearDelinquencyIfSettled(rental.customerId);
     if (rental.insurancePolicyId) {
       await this.insurance.registerRemittance(rental.insurancePolicyId).catch((err) => this.logger.error({ msg: 'insurance_remittance_failed', paymentId: pay.id, error: (err as Error).message }));
     }
@@ -750,11 +750,14 @@ export class RentalBillingService implements RentalBillingPort {
     this.logger.warn({ msg: 'customer_delinquent', paymentId, reason });
   }
 
-  /** Dívida quitada (cobrança retentada com sucesso): sai da inadimplência se não houver outra em aberto. */
-  private async maybeClearDelinquency(customerId: string): Promise<void> {
+  /**
+   * Dívida quitada (cobrança retentada com sucesso ou quitação do cliente, Task 14): sai da inadimplência se não houver
+   * outra em aberto (`failed` sem `debtSettledAt`) nem liquidação ainda retentando.
+   */
+  async clearDelinquencyIfSettled(customerId: string): Promise<void> {
     const c = await this.prisma.customer.findUnique({ where: { id: customerId }, select: { delinquent: true } });
     if (!c?.delinquent) return;
-    const failed = await this.prisma.payment.count({ where: { customerId, kind: { in: ['rental', 'subscription'] }, status: 'failed' } });
+    const failed = await this.prisma.payment.count({ where: { customerId, kind: { in: ['rental', 'subscription'] }, status: 'failed', debtSettledAt: null } });
     if (failed > 0) return;
     const pendingIds = (await this.prisma.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } })).map((p) => p.id);
     const retrying = pendingIds.length ? await this.prisma.settlementProgress.count({ where: { paymentId: { in: pendingIds }, attempts: { gt: 0 } } }) : 0;

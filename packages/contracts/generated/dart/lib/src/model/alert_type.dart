@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'alert_type.g.dart';
 
-/// `battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`).
+/// `battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`). `payment_needs_review`: pagamento que exige revisão manual do financeiro (liquidação estacionada, estorno recusado em `needs_review`, cobrança tardia de assinatura sem estorno automático); `paymentId` aponta o pagamento (um aberto por pagamento).
 class AlertType extends EnumClass {
   @BuiltValueEnumConst(wireName: r'out_of_operation_area')
   static const AlertType outOfOperationArea = _$outOfOperationArea;
@@ -35,6 +35,8 @@ class AlertType extends EnumClass {
   static const AlertType speedLimiterNoncompliant = _$speedLimiterNoncompliant;
   @BuiltValueEnumConst(wireName: r'battery_stock_low')
   static const AlertType batteryStockLow = _$batteryStockLow;
+  @BuiltValueEnumConst(wireName: r'payment_needs_review')
+  static const AlertType paymentNeedsReview = _$paymentNeedsReview;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const AlertType unknownDefaultOpenApi = _$unknownDefaultOpenApi;
 

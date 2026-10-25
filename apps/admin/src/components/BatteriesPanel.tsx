@@ -29,13 +29,25 @@ function loadAllBatteries() {
  * Operação > Baterias: estoque por situação, estações (carregadas/vagas), van de cada operador de campo,
  * carregar/descarregar a van (transferência por série) e a lista com série, carga e ciclos.
  */
+/** Censo completo das baterias (todas as páginas), fora do prefixo 'batteries' das mutações (QA-18). */
+export const BATTERY_CENSUS_KEY = 'battery-census';
+
+/** QA-20: nos cartões, "Carregada" é a do galpão e "Na estação" é a do cadastro (a estação informa as vagas à parte). */
+export function countCardLabel(s: BatteryStatus): string {
+  if (s === 'charged') return 'Carregada no galpão';
+  if (s === 'in_station') return 'Na estação (cadastro)';
+  return BATTERY_STATUS[s][0];
+}
+
 export function BatteriesPanel() {
   const { groups } = useAuth();
   const canTransfer = can(groups, 'battery.transfer');
   const canSwaps = can(groups, 'station.swaps');
   const canCreate = can(groups, 'battery.create');
   const [swapsOf, setSwapsOf] = useState<S<'SwapStation'> | null>(null);
-  const all = useQuery({ queryKey: ['batteries', 'all'], queryFn: loadAllBatteries, refetchInterval: 120_000 });
+  // QA-18 (Task 14): o censo completo (todas as páginas) só alimenta "Cadastradas na estação". Fica fora do prefixo
+  // 'batteries' (as mutações da lista não o refazem), vale 1 min ao voltar para a aba e é refeito nas transferências.
+  const all = useQuery({ queryKey: [BATTERY_CENSUS_KEY], queryFn: loadAllBatteries, refetchInterval: 120_000, staleTime: 60_000 });
   const stations = useQuery({ queryKey: ['swap-stations'], queryFn: () => unwrap(api.GET('/swap-stations')) });
   const staff = useQuery({ queryKey: ['staff', 'campo'], queryFn: () => unwrap(api.GET('/staff', { params: { query: { group: 'campo', active: true, limit: 100 } } })) });
   const stationNames = useMemo(() => new Map((stations.data?.items ?? []).map((s) => [s.id, s.name])), [stations.data]);
@@ -69,7 +81,7 @@ export function BatteriesPanel() {
       <div data-testid="battery-counts" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         {BATTERY_STATUSES.map((s) => (
           <Card key={s} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{BATTERY_STATUS[s][0]}</span>
+            <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{countCardLabel(s)}</span>
             {summary.isLoading ? <Skeleton w={40} h={22} /> : <span style={{ font: '700 22px/1.1 var(--font-mono)' }}>{counts[s]}</span>}
           </Card>
         ))}
@@ -78,11 +90,15 @@ export function BatteriesPanel() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18, alignItems: 'start' }}>
         <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
           <SectionTitle>Estações de troca</SectionTitle>
+          {/* QA-20: duas fontes diferentes, com nomes diferentes (a estação informa as vagas; o cadastro conta as baterias). */}
+          <div data-testid="stations-legend" style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
+            Prontas para troca: baterias carregadas nas vagas, informadas pela própria estação. Cadastradas na estação: baterias com a situação “Na estação” no cadastro.
+          </div>
           <DataTable<S<'SwapStation'>> dense testId="stations-table" rows={stations.data?.items ?? []} loading={stations.isLoading} empty="Nenhuma estação cadastrada" emptyIcon="Warehouse"
             columns={[
               { key: 'name', label: 'Estação', render: (s) => <div><div style={{ fontWeight: 600 }}>{s.name}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'normal' }}>{s.address}</div></div> },
-              { key: 'available', label: 'Carregadas', align: 'right', render: (s) => <span style={{ fontFamily: 'var(--font-mono)' }}>{s.availableBatteries}/{s.totalSlots}</span> },
-              { key: 'stock', label: 'No estoque', align: 'right', render: (s) => inStation.get(s.id) ?? 0 },
+              { key: 'available', label: 'Prontas para troca', align: 'right', render: (s) => <span style={{ fontFamily: 'var(--font-mono)' }}>{s.availableBatteries}/{s.totalSlots}</span> },
+              { key: 'stock', label: 'Cadastradas na estação', align: 'right', render: (s) => inStation.get(s.id) ?? 0 },
               { key: 'hours', label: 'Horário', wrap: true, render: (s) => <span style={{ fontSize: 12 }}>{s.open24h ? '24 h' : s.openingHours}</span> },
               ...(canSwaps ? [{ key: 'swaps', label: '', align: 'right' as const, pin: true, render: (s: S<'SwapStation'>) => <Button size="sm" variant="ghost" icon="History" testId={`station-swaps-${s.id}`} onClick={() => setSwapsOf(s)}>Trocas</Button> }] : []),
             ]} />
@@ -160,7 +176,7 @@ function TransferModal({ mode, stations, depots, onClose }: { mode: 'load' | 'un
       if (mode === 'load') await unwrap(api.POST('/batteries/van-stock/load', { body: { serials, chargePct: pct } }));
       else await unwrap(api.POST('/batteries/van-stock/unload', { body: { serials, ...unloadDestination(dest) } }));
       toast(mode === 'load' ? `${serials.length} bateria(s) na van` : `${serials.length} bateria(s) descarregada(s)`);
-      for (const k of ['van-stock', 'batteries', 'swap-stations']) qc.invalidateQueries({ queryKey: [k] });
+      for (const k of ['van-stock', 'batteries', 'batteries-counts', 'swap-stations', BATTERY_CENSUS_KEY]) qc.invalidateQueries({ queryKey: [k] });
       onClose();
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
@@ -179,6 +195,7 @@ function TransferModal({ mode, stations, depots, onClose }: { mode: 'load' | 'un
   );
 }
 
+/** Mutações de uma bateria: a página atual da lista, as contagens, a van, as estações e os alertas (estoque mínimo). */
 const REFRESH_KEYS = ['batteries', 'batteries-counts', 'van-stock', 'swap-stations', 'alerts'];
 
 function CreateBatteryModal({ depots, defaultDepotId, onClose }: { depots: S<'Depot'>[]; defaultDepotId?: string; onClose: () => void }) {

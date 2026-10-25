@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, Headers, HttpCode, Param, ParseUUIDPipe,
 import { SkipThrottle } from '@nestjs/throttler';
 import { Idempotent } from '../../common/idempotency/idempotency.interceptor';
 import { CurrentUser, CustomerOnly, CustomerOrStaff, Principal, Public, StaffOnly } from '../auth/principal';
-import { ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto, SubscriptionPauseDto, SubscriptionVehicleDto } from './payments.dto';
+import { DebtPaymentDto, ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto, SubscriptionPauseDto, SubscriptionVehicleDto } from './payments.dto';
 import { PaymentsService } from './payments.service';
 import { SubscriptionsService } from './subscriptions.service';
 
@@ -110,6 +110,15 @@ export class PaymentsController {
   @Idempotent({ required: true })
   refund(@Param('id', ParseUUIDPipe) id: string, @Body() dto: RefundDto, @CurrentUser() u: Principal, @Headers('idempotency-key') idempotencyKey?: string) {
     return this.payments.refund(u, id, dto, idempotencyKey);
+  }
+
+  /** Task 14: o cliente quita a dívida (saldo devedor) de um pagamento `failed`. */
+  @Post('payments/:id/retry')
+  @HttpCode(201)
+  @CustomerOnly()
+  @Idempotent({ required: true })
+  payDebt(@Param('id', ParseUUIDPipe) id: string, @Body() dto: DebtPaymentDto, @CurrentUser() u: Principal) {
+    return this.payments.payDebt(u, id, dto);
   }
 
   /** Público; valida `x-signature` (HMAC-SHA256) antes de enfileirar. */

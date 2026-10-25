@@ -1,3 +1,4 @@
+import { FINANCIAL_ALERT_TYPES } from '../alerts/alerts.service';
 import { corsOptions } from '../../common/cors';
 import { Inject, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
@@ -15,6 +16,11 @@ import { PrincipalResolver } from '../auth/principal-resolver.service';
 import { toRental } from '../rentals/rentals.mapper';
 
 const FLEET_GROUPS = ['admin', 'operacao', 'suporte'];
+/** Salas de `alert.created` (Task 14): mesmo escopo de `alertScope` (alerts.service.ts). */
+const ALERT_OPS_GROUPS = ['admin', 'operacao', 'suporte'];
+const ALERT_FINANCE_GROUPS = ['admin', 'suporte', 'financeiro'];
+const ALERT_OPS_ROOM = 'alerts:ops';
+const ALERT_FINANCE_ROOM = 'alerts:finance';
 /** Staff que acompanha as entregas dos galpões (salas `depot:{id}`, todos os galpões). */
 const DEPOT_GROUPS = ['admin', 'operacao', 'campo'];
 /**
@@ -79,6 +85,10 @@ export class RealtimeGateway implements OnGatewayInit {
     await socket.join(`principal:${principal.pool}:${principal.userId}`);
     if (principal.pool === 'staff') {
       if (principal.groups.some((g) => FLEET_GROUPS.includes(g))) await socket.join('fleet');
+      // Task 14 (fix round 1, M3): alertas seguem o escopo de `GET /alerts` (alertScope): operacionais para admin/operação/
+      // suporte; de pagamento para admin/suporte/financeiro.
+      if (principal.groups.some((g) => ALERT_OPS_GROUPS.includes(g))) await socket.join(ALERT_OPS_ROOM);
+      if (principal.groups.some((g) => ALERT_FINANCE_GROUPS.includes(g))) await socket.join(ALERT_FINANCE_ROOM);
       if (principal.groups.some((g) => DEPOT_GROUPS.includes(g))) {
         const depots = await this.prisma.depot.findMany({ select: { id: true } });
         if (depots.length) await socket.join(depots.map((d) => `depot:${d.id}`));
@@ -139,7 +149,8 @@ export class RealtimeGateway implements OnGatewayInit {
 
   @OnEvent(EV.ALERT_CREATED)
   onAlert(ev: AlertCreatedEvent): void {
-    this.server?.to('fleet').emit('alert.created', JSON.parse(JSON.stringify(ev)));
+    const room = (FINANCIAL_ALERT_TYPES as readonly string[]).includes(ev.type) ? ALERT_FINANCE_ROOM : ALERT_OPS_ROOM;
+    this.server?.to(room).emit('alert.created', JSON.parse(JSON.stringify(ev)));
   }
 
   @OnEvent(EV.RENTAL_CHANGED)

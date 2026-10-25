@@ -57,7 +57,7 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 | `vehicle.position` | `fleet`, `rental:{id}` | `{ vehicleId, lat, lng, speedKmh, batteryPct, status: VehicleStatus, speedLimitKmh, ts }` |
 | `vehicle.status` | `fleet` | `{ vehicleId, status: VehicleStatus, ts }` |
 | `command.updated` | `fleet` | `{ commandId, vehicleId, type: CommandType, status: CommandStatus, reason? }` |
-| `alert.created` | `fleet` | `{ alertId, vehicleId?, rentalId?, type, priority: 'low' \| 'medium' \| 'high' \| 'critical', createdAt }` |
+| `alert.created` | `alerts:ops` (admin, operacao, suporte) ou, para `payment_needs_review`, `alerts:finance` (admin, suporte, financeiro) | `{ alertId, vehicleId?, rentalId?, type, priority: 'low' \| 'medium' \| 'high' \| 'critical', createdAt }` |
 | `rental.updated` | `rental:{id}` | `{ rentalId, status: RentalStatus, elapsedSeconds, costCents, ts }` |
 | `zone.notice` | `rental:{id}` | `{ rentalId, zoneType: ZoneType, speedLimitKmh?, transition: 'ENTER' \| 'EXIT', message }` |
 | `device.event` | `rental:{id}` | `{ rentalId, type: 'queda', ts }` (dispara o "você está bem?") |

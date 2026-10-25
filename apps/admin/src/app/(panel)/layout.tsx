@@ -8,7 +8,7 @@ import { Icon } from '@/ds/Icon';
 import { useAuth } from '@/lib/auth';
 import { useRealtime, useRealtimeEvent } from '@/lib/realtime';
 import { ALERT_TYPE } from '@/lib/labels';
-import { menuFor, MENU } from '@/lib/permissions';
+import { homeFor, menuFor, MENU } from '@/lib/permissions';
 import { Initials, useToast } from '@/components/ui';
 import { CommandPalette } from '@/components/CommandPalette';
 import type { StaffGroup } from '@/lib/types';
@@ -39,8 +39,8 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!ready) return;
     if (!token) router.replace('/login');
-    else if (me && !allowed) router.replace(menu[0]?.href ?? '/login');
-  }, [ready, token, me, allowed, menu, router]);
+    else if (me && !allowed) router.replace(homeFor(groups) ?? '/login');
+  }, [ready, token, me, allowed, groups, router]);
 
   if (!ready || !token || !me || !allowed) {
     return (

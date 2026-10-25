@@ -218,4 +218,21 @@ describe('MercadoPagoPaymentProvider (HTTP mockado com nock, nunca rede real)', 
     api().put('/preapproval/pre-3').reply(503, { message: 'indisponível' });
     await expect(mp.setSubscriptionPaused({ providerSubscriptionId: 'pre-3', paused: true })).rejects.toThrow();
   });
+
+  it('LGPD (Task 14): deleteCustomer apaga cada cartão e depois o cliente; 404 conta como já excluído', async () => {
+    api().delete('/v1/customers/cus-1/cards/card-1').reply(200, {});
+    api().delete('/v1/customers/cus-1/cards/card-2').reply(404, { message: 'not found' });
+    api().delete('/v1/customers/cus-1').reply(200, {});
+    await mp.deleteCustomer({ providerCustomerId: 'cus-1', providerCardIds: ['card-1', 'card-2'] });
+  });
+
+  it('LGPD (Task 14): deleteCustomer com 5xx lança PaymentProviderError (a API refaz pelo job)', async () => {
+    api().delete('/v1/customers/cus-1').reply(503, { message: 'indisponível' });
+    await expect(mp.deleteCustomer({ providerCustomerId: 'cus-1', providerCardIds: [] })).rejects.toBeInstanceOf(PaymentProviderError);
+  });
+
+  it('LGPD (Task 14): deleteCustomer com cliente já excluído (404) é sucesso', async () => {
+    api().delete('/v1/customers/cus-9').reply(404, { message: 'not found' });
+    await mp.deleteCustomer({ providerCustomerId: 'cus-9', providerCardIds: [] });
+  });
 });

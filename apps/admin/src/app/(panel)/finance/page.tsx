@@ -37,6 +37,7 @@ export default function FinancePage() {
     if (groups.length && requestedTab && requestedTab !== tab) router.replace(`/finance?tab=${tab}`, { scroll: false });
   }, [groups, requestedTab, tab, router]);
   const [rental, setRental] = useState<string | null>(params.get('rental'));
+  const [payment] = useState<string | null>(params.get('payment'));
   const [period, setPeriod] = useState<PeriodState>(DEFAULT_PERIOD);
   const toast = useToast();
   // Período livre incompleto ou inválido: `range` é nulo e as consultas esperam (o seletor mostra o erro).
@@ -100,7 +101,7 @@ export default function FinancePage() {
       {tab === 'deposits' ? (
         <TabPanel k="deposits"><DepositsPanel /></TabPanel>
       ) : tab === 'payments' ? (
-        <TabPanel k="payments"><PaymentsPanel /></TabPanel>
+        <TabPanel k="payments"><PaymentsPanel initialPaymentId={payment} onDetailClose={() => { if (params.get('payment')) router.replace('/finance?tab=payments', { scroll: false }); }} /></TabPanel>
       ) : tab === 'wallet' ? (
         <TabPanel k="wallet"><WalletPanel /></TabPanel>
       ) : tab === 'rentals' ? (

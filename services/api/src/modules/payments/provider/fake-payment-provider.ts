@@ -236,6 +236,20 @@ export class FakePaymentProvider implements PaymentProvider {
     if (this.subscriptions.has(input.providerSubscriptionId)) this.subscriptions.set(input.providerSubscriptionId, 'canceled');
   }
 
+  /** Teste (Task 14): faz a próxima exclusão de cliente falhar (a API registra e o job refaz). */
+  failNextDeleteCustomer = false;
+  /** Clientes excluídos no gateway (LGPD). */
+  readonly deletedCustomers = new Set<string>();
+
+  async deleteCustomer(input: { providerCustomerId: string; providerCardIds: string[] }): Promise<void> {
+    if (this.failNextDeleteCustomer) {
+      this.failNextDeleteCustomer = false;
+      throw new PaymentProviderError('fake_gateway_unavailable', 503);
+    }
+    for (const id of input.providerCardIds) this.cards.delete(id);
+    this.deletedCustomers.add(input.providerCustomerId);
+  }
+
   /** Datas da próxima cobrança por assinatura (o fake é a fonte da verdade nos testes). */
   private readonly nextCharges = new Map<string, Date>();
   /** Teste: faz a próxima chamada de pausa/retomada falhar. */

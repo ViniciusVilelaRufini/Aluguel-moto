@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { PAYMENT_KIND, PAYMENT_METHOD, PAYMENT_STATUS } from '@/lib/labels';
+import { paymentCustomerLabel, paymentDebtLines } from '@/lib/admin-forms';
 import { formatBRL, formatDateTime } from '@/lib/format';
 import { periodRange } from '@/lib/period';
 import { can } from '@/lib/permissions';
@@ -43,12 +44,13 @@ export function paymentColumns(): Column<Payment>[] {
  * Financeiro > Pagamentos (`GET /payments`, `GET /payments/{id}`; admin, financeiro e suporte).
  * O contrato não tem filtro por forma de pagamento nem CSV desta lista: a forma aparece só como coluna.
  */
-export function PaymentsPanel() {
+export function PaymentsPanel({ initialPaymentId, onDetailClose }: { initialPaymentId?: string | null; onDetailClose?: () => void } = {}) {
   const { groups } = useAuth();
   const [status, setStatus] = useState<StatusFilter>('');
   const [kind, setKind] = useState<KindFilter>('');
   const [period, setPeriod] = useState<PeriodState>({ ...DEFAULT_PERIOD, kind: '30d' });
-  const [open, setOpen] = useState<Payment | null>(null);
+  // Task 14: o alerta `payment_needs_review` abre direto o detalhe (`/finance?tab=payments&payment=<id>`).
+  const [openId, setOpenId] = useState<string | null>(initialPaymentId ?? null);
   // Estável entre renderizações: presets "até agora" usam `new Date()` e não podem recalcular a cada render.
   const range = useMemo(() => periodRange(period.kind, period), [period]);
   const { rows, loading, error, pager, refetch } = usePagedQuery<Payment>(['payments', status, kind, period.kind, period.from, period.to], (cursor) =>
@@ -61,9 +63,9 @@ export function PaymentsPanel() {
         <div style={{ paddingTop: 22 }}><PeriodPicker testId="payments-period" value={period} onChange={setPeriod} /></div>
       </div>
       <ErrorNote error={error} onRetry={() => refetch()} />
-      <DataTable<Payment> testId="payments-table" label="Pagamentos" sticky rows={rows} loading={loading && !!range} pager={pager} onRowClick={setOpen}
+      <DataTable<Payment> testId="payments-table" label="Pagamentos" sticky rows={rows} loading={loading && !!range} pager={pager} onRowClick={(p) => setOpenId(p.id)}
         empty="Nenhum pagamento neste filtro." emptyIcon="Wallet" columns={paymentColumns()} />
-      {open && <PaymentDetail id={open.id} canAdjust={can(groups, 'wallet.adjust')} onClose={() => setOpen(null)} />}
+      {openId && <PaymentDetail id={openId} canAdjust={can(groups, 'wallet.adjust')} onClose={() => { setOpenId(null); onDetailClose?.(); }} />}
     </div>
   );
 }
@@ -91,7 +93,8 @@ function PaymentDetail({ id, canAdjust, onClose }: { id: string; canAdjust: bool
             {p.failureReason && <KV k="Motivo da falha" v={p.failureReason} />}
             <KV k="Criado em" v={formatDateTime(p.createdAt)} />
             <KV k="Atualizado em" v={formatDateTime(p.updatedAt)} />
-            <KV k="Cliente" v={p.customerId.slice(0, 8)} mono />
+            <KV k="Cliente" v={<span data-testid="payment-customer">{paymentCustomerLabel(p)}</span>} mono={!p.customerName} />
+            {paymentDebtLines(p, formatDateTime).map(([k, v]) => <KV key={k} k={k} v={v} />)}
             {p.rentalId && <KV k="Aluguel" v={p.rentalId.slice(0, 8)} mono />}
             {p.providerPaymentId && <KV k="ID no gateway" v={p.providerPaymentId} mono />}
           </div>

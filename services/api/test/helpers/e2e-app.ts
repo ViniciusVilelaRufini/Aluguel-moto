@@ -29,6 +29,9 @@ export const HAND_WRITTEN_INDEXES = [
   'StationSwap_one_open_per_rental',
   // Ciclo de vida das baterias no galpão: um alerta `battery_stock_low` não resolvido por galpão.
   'Alert_one_open_stock_low_per_depot',
+  // Task 14 das lacunas: um alerta `payment_needs_review` não resolvido por pagamento; uma quitação pendente por dívida.
+  'Alert_one_open_per_payment',
+  'Payment_one_pending_debt_settlement',
 ];
 export const HAND_WRITTEN_CHECKS = ['Vehicle_speed_limit_range', 'Zone_speed_limit_range', 'Rental_speed_limit_range', 'Handover_battery_pct_range', 'Depot_windows_range', 'Handover_type_reference', 'StationSwap_returned_pct_range', 'StationSwap_fee_nonnegative'];
 

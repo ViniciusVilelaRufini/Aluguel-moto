@@ -32,6 +32,9 @@ part 'handover.g.dart';
 /// * [status]
 /// * [lastError] - Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo.
 /// * [disputeReason]
+/// * [cancelReason] - staff. Motivo do cancelamento (`POST /handovers/{id}/cancel`), lido do AuditLog.
+/// * [canceledAt] - staff. Quando foi cancelada.
+/// * [canceledByName] - staff. Nome de quem cancelou.
 /// * [createdAt]
 /// * [respondedAt] - Aceite ou disputa do cliente.
 @BuiltValue()
@@ -92,6 +95,18 @@ abstract class Handover implements Built<Handover, HandoverBuilder> {
 
   @BuiltValueField(wireName: r'disputeReason')
   String? get disputeReason;
+
+  /// staff. Motivo do cancelamento (`POST /handovers/{id}/cancel`), lido do AuditLog.
+  @BuiltValueField(wireName: r'cancelReason')
+  String? get cancelReason;
+
+  /// staff. Quando foi cancelada.
+  @BuiltValueField(wireName: r'canceledAt')
+  DateTime? get canceledAt;
+
+  /// staff. Nome de quem cancelou.
+  @BuiltValueField(wireName: r'canceledByName')
+  String? get canceledByName;
 
   @BuiltValueField(wireName: r'createdAt')
   DateTime get createdAt;
@@ -222,6 +237,27 @@ class _$HandoverSerializer implements PrimitiveSerializer<Handover> {
       yield r'disputeReason';
       yield serializers.serialize(
         object.disputeReason,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.cancelReason != null) {
+      yield r'cancelReason';
+      yield serializers.serialize(
+        object.cancelReason,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.canceledAt != null) {
+      yield r'canceledAt';
+      yield serializers.serialize(
+        object.canceledAt,
+        specifiedType: const FullType(DateTime),
+      );
+    }
+    if (object.canceledByName != null) {
+      yield r'canceledByName';
+      yield serializers.serialize(
+        object.canceledByName,
         specifiedType: const FullType(String),
       );
     }
@@ -390,6 +426,30 @@ class _$HandoverSerializer implements PrimitiveSerializer<Handover> {
           ) as String?;
           if (valueDes == null) continue;
           result.disputeReason = valueDes;
+          break;
+        case r'cancelReason':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.cancelReason = valueDes;
+          break;
+        case r'canceledAt':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DateTime),
+          ) as DateTime?;
+          if (valueDes == null) continue;
+          result.canceledAt = valueDes;
+          break;
+        case r'canceledByName':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.canceledByName = valueDes;
           break;
         case r'createdAt':
           final valueDes = serializers.deserialize(

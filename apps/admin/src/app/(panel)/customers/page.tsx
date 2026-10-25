@@ -15,6 +15,8 @@ import { RentalsPanel } from '@/components/RentalsPanel';
 import { SupportPanel } from '@/components/SupportPanel';
 import { SubscriptionVehicleDialog } from '@/components/SubscriptionVehicleDialog';
 import { WalletAdjustDialog } from '@/components/WalletAdjustDialog';
+import { DelinquencyClearDialog } from '@/components/DelinquencyClearDialog';
+import { delinquencySummary } from '@/lib/admin-forms';
 import { canSeeFullPixKey, displayPixKey } from '@/lib/pix';
 import { useRealtime } from '@/lib/realtime';
 import { SUBSCRIPTION_STATUS } from '@/lib/labels';
@@ -137,6 +139,7 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
 
   const [unblocking, setUnblocking] = useState(false);
   const [adjusting, setAdjusting] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   return (
     <SidePanel width={400} onClose={onClose} testId="customer-sheet" title={
@@ -171,6 +174,8 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
                 <KV k="Plano" v={c.activePlanCode ? PLAN_LABEL[c.activePlanCode] : 'Avulso'} />
                 <KV k="Chave Pix (estornos)" v={<span data-testid="pix-key" data-masked={!canSeeFullPixKey(groups) || undefined}>{displayPixKey(c.pixRefundKeyType, c.pixRefundKey, canSeeFullPixKey(groups))}</span>} />
                 {c.blockedReason && <KV k="Motivo do bloqueio" v={c.blockedReason} />}
+                {delinquencySummary(c) && <KV k="Pagamentos" v={<span data-testid="delinquency-summary" style={{ color: 'var(--danger-ink)', fontWeight: 600 }}>{delinquencySummary(c)}</span>} />}
+                {c.walletBalanceCents !== undefined && <KV k="Saldo da carteira" v={<span data-testid="wallet-balance-kv">{formatBRL(c.walletBalanceCents)}</span>} />}
                 {c.stats && <KV k="Contestações abertas" v={c.stats.openDisputes} />}
               </div>
               {c.activeSubscriptionId && <SubscriptionBox subscriptionId={c.activeSubscriptionId} planCode={c.activePlanCode} />}
@@ -187,6 +192,8 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
           <div style={{ flex: 1 }} />
           {can(groups, 'wallet.adjust') && <Button size="sm" variant="secondary" icon="Wallet" testId="wallet-adjust-open" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setAdjusting(true)}>Ajustar carteira</Button>}
           {adjusting && <WalletAdjustDialog customerId={id} onClose={() => setAdjusting(false)} />}
+          {c.delinquent && can(groups, 'delinquency.clear') && <Button size="sm" variant="secondary" icon="Check" testId="delinquency-clear-open" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setClearing(true)}>Registrar quitação</Button>}
+          {clearing && <DelinquencyClearDialog customerId={id} onClose={() => setClearing(false)} />}
           {can(groups, 'customer.block') && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
               {c.status === 'blocked'

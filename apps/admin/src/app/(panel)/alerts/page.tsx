@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can, canOpen } from '@/lib/permissions';
+import { can, canOpen, paymentHref } from '@/lib/permissions';
 import { PRIORITY_LABEL, PRIORITY_ORDER, priorityTone } from '@/lib/status';
 import { timeAgo } from '@/lib/format';
 import { ALERT_TYPE } from '@/lib/labels';
@@ -37,6 +37,8 @@ export default function AlertsPage() {
   const [resolving, setResolving] = useState<S<'Alert'> | null>(null);
   const [assigning, setAssigning] = useState<S<'Alert'> | null>(null);
   const canManage = can(groups, 'alert.manage');
+  // Task 14: o financeiro resolve os alertas de pagamento (atribuir exige a lista da equipe, que ele não lê).
+  const canResolve = can(groups, 'alert.resolve');
   const canSeeDepots = canOpen(groups, 'depots');
   // Alertas de estoque (`battery_stock_low`) vêm sem moto: o galpão é o contexto.
   const depotsQ = useQuery({ queryKey: ['depots', 'all'], queryFn: () => unwrap(api.GET('/depots', { params: { query: { includeInactive: true } } })) });
@@ -84,9 +86,13 @@ export default function AlertsPage() {
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'normal', maxWidth: 420 }}>{r.message}{r.assigneeName ? ` · ${r.assigneeName}` : ''}</div>
             </div>
           ) },
-          // Moto (alertas de rastreador) ou galpão (estoque de baterias) na mesma coluna: cabe em 1366 px com as ações.
-          { key: 'vehicleCode', label: 'Moto / galpão', render: (r) => {
+          // Moto (rastreador), galpão (estoque de baterias) ou pagamento (financeiro) na mesma coluna: cabe em 1366 px com as ações.
+          { key: 'vehicleCode', label: 'Referência', render: (r) => {
             if (r.vehicleCode) return <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{r.vehicleCode}</span>;
+            if (r.paymentId) {
+              const href = paymentHref(groups, r.paymentId);
+              return href ? <Link href={href} data-testid="alert-payment-link" style={{ color: 'var(--text-primary)', textDecoration: 'underline', textUnderlineOffset: 3 }}>Ver pagamento</Link> : 'Pagamento';
+            }
             if (!r.depotId) return '—';
             const name = depotNames.get(r.depotId) ?? 'Galpão';
             return canSeeDepots ? <Link href={`/galpoes?depot=${r.depotId}`} data-testid="alert-depot-link" style={{ color: 'var(--text-primary)', textDecoration: 'underline', textUnderlineOffset: 3 }}>{name}</Link> : name;
@@ -96,7 +102,7 @@ export default function AlertsPage() {
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
               {r.vehicleId && <Button size="sm" variant="secondary" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => router.push(`/fleet?vehicle=${r.vehicleId}`)}>Ver no mapa</Button>}
               {canManage && <Button size="sm" variant="secondary" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setAssigning(r)}>{r.assigneeId ? 'Reatribuir' : 'Atribuir'}</Button>}
-              {canManage && <Button size="sm" variant="dark" onClick={() => setResolving(r)}>Resolver</Button>}
+              {canResolve && <Button size="sm" variant="dark" onClick={() => setResolving(r)}>Resolver</Button>}
             </div>
           ) },
         ]}

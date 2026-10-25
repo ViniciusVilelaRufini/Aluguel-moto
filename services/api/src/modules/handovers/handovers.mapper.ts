@@ -13,10 +13,17 @@ export function firstName(name?: string | null): string | undefined {
   return first ? first : undefined;
 }
 
+/** QA-23 (Task 14): motivo, data e autor do cancelamento (do AuditLog `handover.cancel`), só para staff. */
+export interface HandoverCancelInfo {
+  reason?: string;
+  at: string;
+  byName?: string;
+}
+
 /** Prisma → `Handover` do contrato. `photoUrls` (assinados) na mesma ordem de `photoKeys`. */
 export function toHandover(
   h: Handover & { vehicle?: Pick<Vehicle, 'code'> | null },
-  extras: { operatorFirstName?: string; photoUrls?: string[] } = {},
+  extras: { operatorFirstName?: string; photoUrls?: string[]; cancel?: HandoverCancelInfo } = {},
 ) {
   return compact({
     id: h.id,
@@ -36,6 +43,9 @@ export function toHandover(
     status: h.status,
     lastError: h.lastError ?? undefined,
     disputeReason: h.disputeReason ?? undefined,
+    cancelReason: extras.cancel?.reason,
+    canceledAt: extras.cancel?.at,
+    canceledByName: extras.cancel?.byName,
     createdAt: h.createdAt.toISOString(),
     respondedAt: h.respondedAt?.toISOString(),
   });

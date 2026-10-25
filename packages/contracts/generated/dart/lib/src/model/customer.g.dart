@@ -48,6 +48,10 @@ class _$Customer extends Customer {
   @override
   final CustomerStats? stats;
   @override
+  final int? walletBalanceCents;
+  @override
+  final int? debtCents;
+  @override
   final DateTime createdAt;
 
   factory _$Customer([void Function(CustomerBuilder)? updates]) =>
@@ -74,6 +78,8 @@ class _$Customer extends Customer {
       this.activePlanCode,
       this.activeSubscriptionId,
       this.stats,
+      this.walletBalanceCents,
+      this.debtCents,
       required this.createdAt})
       : super._();
   @override
@@ -107,6 +113,8 @@ class _$Customer extends Customer {
         activePlanCode == other.activePlanCode &&
         activeSubscriptionId == other.activeSubscriptionId &&
         stats == other.stats &&
+        walletBalanceCents == other.walletBalanceCents &&
+        debtCents == other.debtCents &&
         createdAt == other.createdAt;
   }
 
@@ -133,6 +141,8 @@ class _$Customer extends Customer {
     _$hash = $jc(_$hash, activePlanCode.hashCode);
     _$hash = $jc(_$hash, activeSubscriptionId.hashCode);
     _$hash = $jc(_$hash, stats.hashCode);
+    _$hash = $jc(_$hash, walletBalanceCents.hashCode);
+    _$hash = $jc(_$hash, debtCents.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -161,6 +171,8 @@ class _$Customer extends Customer {
           ..add('activePlanCode', activePlanCode)
           ..add('activeSubscriptionId', activeSubscriptionId)
           ..add('stats', stats)
+          ..add('walletBalanceCents', walletBalanceCents)
+          ..add('debtCents', debtCents)
           ..add('createdAt', createdAt))
         .toString();
   }
@@ -256,6 +268,15 @@ class CustomerBuilder implements Builder<Customer, CustomerBuilder> {
   CustomerStatsBuilder get stats => _$this._stats ??= CustomerStatsBuilder();
   set stats(CustomerStatsBuilder? stats) => _$this._stats = stats;
 
+  int? _walletBalanceCents;
+  int? get walletBalanceCents => _$this._walletBalanceCents;
+  set walletBalanceCents(int? walletBalanceCents) =>
+      _$this._walletBalanceCents = walletBalanceCents;
+
+  int? _debtCents;
+  int? get debtCents => _$this._debtCents;
+  set debtCents(int? debtCents) => _$this._debtCents = debtCents;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -287,6 +308,8 @@ class CustomerBuilder implements Builder<Customer, CustomerBuilder> {
       _activePlanCode = $v.activePlanCode;
       _activeSubscriptionId = $v.activeSubscriptionId;
       _stats = $v.stats?.toBuilder();
+      _walletBalanceCents = $v.walletBalanceCents;
+      _debtCents = $v.debtCents;
       _createdAt = $v.createdAt;
       _$v = null;
     }
@@ -336,6 +359,8 @@ class CustomerBuilder implements Builder<Customer, CustomerBuilder> {
             activePlanCode: activePlanCode,
             activeSubscriptionId: activeSubscriptionId,
             stats: _stats?.build(),
+            walletBalanceCents: walletBalanceCents,
+            debtCents: debtCents,
             createdAt: BuiltValueNullFieldError.checkNotNull(
                 createdAt, r'Customer', 'createdAt'),
           );

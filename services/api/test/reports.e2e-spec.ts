@@ -82,6 +82,13 @@ describe('Relatórios (e2e, fuso America/Sao_Paulo)', () => {
     expect(fin.body.totalRevenueCents).toBe(2580);
     const csv = await http().get(`/reports/revenue?from=${from}&to=${to}&format=csv`).set('Authorization', `Bearer ${admin}`).expect(200);
     expect(csv.headers['content-type']).toMatch(/text\/csv/);
-    expect(csv.text.split('\n')[0]).toContain('periodStart;planCode');
+    // QA-16 (Task 14): CSV para planilha em pt-BR — cabeçalho em português, R$ com vírgula e dia de São Paulo.
+    const lines = csv.text.replace(/^\uFEFF/, '').trim().split('\n');
+    expect(lines[0]).toBe('Início do período;Plano;Aluguéis;Bruto (R$);Descontos (R$);Seguro (R$);Taxas (R$);Pago com carteira (R$);Líquido (R$)');
+    expect(lines).toContain('14/03/2020;Minuto;1;10,90;0,00;2,00;0,00;0,00;12,90');
+    expect(lines).toContain('15/03/2020;Minuto;1;10,90;0,00;2,00;0,00;0,00;12,90');
+    const finCsv = await http().get(`/reports/finance?from=${from}&to=${to}&format=csv`).set('Authorization', `Bearer ${admin}`).expect(200);
+    expect(finCsv.text.split('\n')[0]).toContain('Receita total (R$)');
+    expect(finCsv.text.split('\n')[1]).toContain(';25,80;');
   });
 });

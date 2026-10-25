@@ -19,6 +19,7 @@ import { VEHICLE_MODEL_SELECT } from '../catalog/catalog.service';
 import { UsageTracker } from '../maintenance/usage-tracker.service';
 import { VehicleAddressService } from './vehicle-address.service';
 import { toVehicle, toVehicleSummary } from './vehicles.mapper';
+import { movement, recordMovements } from '../batteries/battery-movements';
 
 /** Relações lidas junto com a moto (contrato v2: modelo do catálogo). */
 const VEHICLE_INCLUDE = { tracker: { select: { id: true } }, vehicleModel: { select: VEHICLE_MODEL_SELECT } } as const;
@@ -155,13 +156,27 @@ export class VehiclesService {
     const dup = await this.prisma.vehicle.findFirst({ where: { OR: [{ code: dto.code }, { thingName: dto.thingName }] } });
     if (dup) throw conflict('conflict', 'Já existe uma moto com este código ou rastreador.');
     const modelName = dto.vehicleModelId ? await this.modelName(dto.vehicleModelId) : undefined;
+    const serial = dto.batterySerial?.trim() || undefined;
+    // QA-19: a bateria informada no cadastro passa a existir no estoque (instalada nesta moto). Uma série já cadastrada
+    // (no galpão, na van, numa estação ou em outra moto) não é movida por aqui: a instalação é pela operação.
+    if (serial && (await this.prisma.battery.findUnique({ where: { serial }, select: { id: true } }))) {
+      throw conflict('conflict', `Bateria já cadastrada: ${serial}. Informe outra série ou instale pela operação.`);
+    }
     const v = await this.prisma.$transaction(async (tx) => {
       const created = await tx.vehicle.create({
-        data: { ...dto, model: modelName ?? dto.model, qrCode: dto.qrCode ?? `volti://v/${dto.code}`, status: 'maintenance' },
+        data: { ...dto, batterySerial: serial ?? null, model: modelName ?? dto.model, qrCode: dto.qrCode ?? `volti://v/${dto.code}`, status: 'maintenance' },
         include: VEHICLE_INCLUDE,
       });
+      if (serial) {
+        // `cycleCount` soma 1 a cada instalação numa moto (regra do contrato v2): nasce instalada, então 1; no galpão nasce 0.
+        const b = await tx.battery.create({ data: { serial, status: 'in_vehicle', vehicleId: created.id, chargePct: created.batteryPct, cycleCount: 1 } });
+        await recordMovements(tx, [movement(null, { status: 'in_vehicle', vehicleId: created.id }, actor.userId, 'Cadastrada com a moto', b.id)]);
+      }
       await this.audit.record({ actor, action: 'vehicle.create', entityType: 'Vehicle', entityId: created.id, metadata: { code: dto.code } }, tx as any);
       return created;
+    }).catch((err: unknown) => {
+      if ((err as { code?: string }).code === 'P2002') throw conflict('conflict', 'Já existe uma moto com este código ou rastreador, ou a bateria já está cadastrada.');
+      throw err;
     });
     return (await this.enrich([v], true))[0];
   }
