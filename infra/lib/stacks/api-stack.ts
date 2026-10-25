@@ -12,6 +12,7 @@ import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import { Construct } from 'constructs';
 import { EnvConfig } from '../config';
 import { publishParam } from '../ssm';
+import { apiSubnetType } from './network-stack';
 import { AuthStack } from './auth-stack';
 import { DataStack } from './data-stack';
 import { IotStack } from './iot-stack';
@@ -32,6 +33,8 @@ export interface ApiStackProps extends StackProps {
   desiredCount: number;
   /** API domain (e.g. api.volti.com.br) for the public SOS location-share link; unset = the ALB DNS name. */
   apiDomainName?: string;
+  /** RUN_SEED=true in the task (idempotent dev seed after the migrations). Refused in prod. */
+  runSeed?: boolean;
 }
 
 export const API_PORT = 3000;
@@ -52,14 +55,17 @@ export class ApiStack extends Stack {
     const { cfg, vpc, data, auth, messaging, iot, desiredCount } = props;
     // O link público do SOS vai para um contato de emergência: em prod, sem domínio (certificado) o link daria erro de TLS.
     if (cfg.name === 'prod' && !props.apiDomainName) throw new Error('prod exige -c domainName (PUBLIC_SHARE_BASE_URL = https://api.<domínio>/share).');
+    if (cfg.name === 'prod' && props.runSeed) throw new Error('apiRunSeed é só para dev: o seed cria dados de demonstração.');
     const env = cfg.name;
+    const spot = cfg.apiCapacityProvider === 'FARGATE_SPOT';
+    const publicTasks = apiSubnetType(cfg) === ec2.SubnetType.PUBLIC;
 
     this.repository = new ecr.Repository(this, 'ApiRepo', {
       repositoryName: `volti-${env}-api`,
       imageScanOnPush: true,
       removalPolicy: cfg.disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN,
       emptyOnDelete: cfg.disposable,
-      lifecycleRules: [{ maxImageCount: 30 }],
+      lifecycleRules: [{ maxImageCount: cfg.ecrMaxImages }],
     });
 
     // Third-party secrets. Values are filled by hand after the first deploy (placeholders only here).
@@ -102,6 +108,7 @@ export class ApiStack extends Stack {
       clusterName: `volti-${env}`,
       vpc,
       containerInsightsV2: cfg.disposable ? ecs.ContainerInsights.DISABLED : ecs.ContainerInsights.ENABLED,
+      ...(spot ? { enableFargateCapacityProviders: true } : {}),
     });
 
     const logGroup = new logs.LogGroup(this, 'ApiLogs', {
@@ -127,8 +134,11 @@ export class ApiStack extends Stack {
       sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
       redirectHTTP: true,
       circuitBreaker: { rollback: true },
-      assignPublicIp: false,
-      taskSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      // Without NAT (dev) the task sits in a public subnet with a public IP to reach ECR, Secrets Manager, SQS, IoT and
+      // Location; its security group only accepts the container port from the ALB security group (set by the pattern).
+      assignPublicIp: publicTasks,
+      taskSubnets: { subnetType: apiSubnetType(cfg) },
+      ...(spot ? { capacityProviderStrategies: [{ capacityProvider: 'FARGATE_SPOT', weight: 1 }] } : {}),
       taskImageOptions: {
         image: ecs.ContainerImage.fromEcrRepository(this.repository, props.imageTag),
         containerPort: API_PORT,
@@ -182,6 +192,7 @@ export class ApiStack extends Stack {
           TRACK_RETENTION_DAYS: '90',
           OUT_OF_AREA_LOCK_MINUTES: '5',
           AWS_REGION: cfg.region,
+          ...(props.runSeed ? { RUN_SEED: 'true' } : {}),
         },
         secrets: {
           DB_USER: ecs.Secret.fromSecretsManager(data.db.secret!, 'username'),
@@ -203,6 +214,9 @@ export class ApiStack extends Stack {
       'PUBLIC_SHARE_BASE_URL',
       `https://${props.apiDomainName ?? this.service.loadBalancer.loadBalancerDnsName}/share`,
     );
+
+    // The service must be created after the cluster's capacity provider association (FARGATE_SPOT), or CloudFormation may race.
+    if (spot) this.service.service.node.addDependency(cluster);
 
     (this.service.service.node.defaultChild as ecs.CfnService).desiredCount = desiredCount;
     this.minHealthyTasks = desiredCount === 0 ? 0 : Math.min(cfg.apiMinTasks, desiredCount);
@@ -302,6 +316,14 @@ export class ApiStack extends Stack {
       }),
     );
 
+    if (cfg.wafEnabled) this.createAlbWaf(cfg);
+
+    publishParam(this, env, 'api/load-balancer-dns', this.service.loadBalancer.loadBalancerDnsName);
+    publishParam(this, env, 'api/ecr-repository', this.repository.repositoryUri);
+  }
+
+  private createAlbWaf(cfg: EnvConfig): void {
+    const env = cfg.name;
     // QA-18: WAF regional no ALB: limite por IP (por ambiente, em 5 minutos) e regras gerenciadas da AWS.
     const vis = (name: string) => ({ cloudWatchMetricsEnabled: true, sampledRequestsEnabled: true, metricName: name });
     const managed = (name: string, priority: number, countOnly: string[] = []): wafv2.CfnWebACL.RuleProperty => ({
@@ -340,8 +362,5 @@ export class ApiStack extends Stack {
       resourceArn: this.service.loadBalancer.loadBalancerArn,
       webAclArn: albAcl.attrArn,
     });
-
-    publishParam(this, env, 'api/load-balancer-dns', this.service.loadBalancer.loadBalancerDnsName);
-    publishParam(this, env, 'api/ecr-repository', this.repository.repositoryUri);
   }
 }

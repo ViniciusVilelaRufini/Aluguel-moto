@@ -19,6 +19,8 @@ const { app } = createVoltiApp({
   apiDomainName: domain ? `api.${domain}` : undefined,
   adminCertificateArn: get('adminCertificateArn'),
   alarmEmail: get('alarmEmail'),
+  budgetEmail: get('budgetEmail'),
+  apiRunSeed: get('apiRunSeed') === 'true',
   overrides: {
     sesFromEmail: get('sesFromEmail'),
     sesVerifiedDomain: get('sesVerifiedDomain'),

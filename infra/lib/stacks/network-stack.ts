@@ -4,6 +4,16 @@ import { Construct } from 'constructs';
 import { EnvConfig } from '../config';
 import { publishParam } from '../ssm';
 
+/** Subnets of RDS and Redis: private with NAT egress, or isolated (no route to the internet) when there is no NAT. */
+export function dataSubnetType(cfg: EnvConfig): ec2.SubnetType {
+  return cfg.natGateways > 0 ? ec2.SubnetType.PRIVATE_WITH_EGRESS : ec2.SubnetType.PRIVATE_ISOLATED;
+}
+
+/** Subnets of the API tasks: private behind the NAT, or public with a public IP when there is no NAT (dev). */
+export function apiSubnetType(cfg: EnvConfig): ec2.SubnetType {
+  return cfg.natGateways > 0 ? ec2.SubnetType.PRIVATE_WITH_EGRESS : ec2.SubnetType.PUBLIC;
+}
+
 export interface NetworkStackProps extends StackProps {
   cfg: EnvConfig;
 }
@@ -30,9 +40,12 @@ export class NetworkStack extends Stack {
       natGateways: cfg.natGateways,
       subnetConfiguration: [
         { name: 'public', subnetType: ec2.SubnetType.PUBLIC, cidrMask: 24 },
-        { name: 'private', subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS, cidrMask: 22 },
+        cfg.natGateways > 0
+          ? { name: 'private', subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS, cidrMask: 22 }
+          : { name: 'isolated', subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 22 },
       ],
-      // Gateway endpoint is free and keeps S3 traffic off the NAT gateway.
+      // Gateway endpoint is free and keeps S3 traffic off the NAT gateway. No paid interface endpoints: without NAT the
+      // API task reaches Secrets Manager, SQS, IoT, Location and Cognito through its public IP.
       gatewayEndpoints: { S3: { service: ec2.GatewayVpcEndpointAwsService.S3 } },
     });
 

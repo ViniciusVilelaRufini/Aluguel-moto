@@ -82,8 +82,10 @@ describe('IotStack', () => {
     expect(JSON.stringify(stmts)).not.toMatch(/AlertsQueue/);
   });
 
-  it('station events keep per-station order: rule → Kinesis (partition key = thing) → ordered event source mapping → FIFO', () => {
-    const r = rule('volti_dev_station_events');
+  it('prod: station events keep per-station order: rule → Kinesis (partition key = thing) → ordered event source mapping → FIFO', () => {
+    const t = () => templateOf(stacksFor('prod').iot);
+    const r = (Object.values(t().findResources('AWS::IoT::TopicRule')) as any[]).find((x) => x.Properties.RuleName === 'volti_prod_station_events')
+      .Properties.TopicRulePayload;
     expect(r.Sql).toBe(STATION_EVENTS_SQL);
     expect(r.Sql).toBe("SELECT *, topic(2) AS thing FROM 'estacoes/+/eventos'");
     expect(r.Actions).toHaveLength(1);
@@ -93,7 +95,7 @@ describe('IotStack', () => {
     expect(JSON.stringify(r.Actions[0].Kinesis.StreamName)).toMatch(/StationEventsStream/);
     expect(r.ErrorAction.CloudwatchLogs).toBeDefined();
     t().hasResourceProperties('AWS::Kinesis::Stream', {
-      Name: 'volti-dev-station-events',
+      Name: 'volti-prod-station-events',
       ShardCount: 1,
       RetentionPeriodHours: 24,
       StreamEncryption: { EncryptionType: 'KMS', KeyId: 'alias/aws/kinesis' },

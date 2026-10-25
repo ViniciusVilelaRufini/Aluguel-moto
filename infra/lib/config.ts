@@ -4,13 +4,20 @@ export interface EnvConfig {
   name: EnvName;
   region: 'sa-east-1';
   availabilityZones: string[];
+  /**
+   * NAT gateways. 0 = minimum-cost profile (dev): the VPC has public + isolated subnets only, the API tasks run in the
+   * public subnets with a public IP (security group open only to the ALB) and RDS/Redis sit in isolated subnets (no internet).
+   */
   natGateways: number;
   dbInstanceClass: string;
   dbAllocatedGb: number;
-  dbMaxAllocatedGb: number;
+  /** Storage autoscaling ceiling; unset = no autoscaling (the volume stays at dbAllocatedGb). */
+  dbMaxAllocatedGb?: number;
   dbMultiAz: boolean;
   dbBackupDays: number;
   dbDeletionProtection: boolean;
+  /** false = explicitly off (dev). Unset = CloudFormation default (off), template unchanged. */
+  dbPerformanceInsights?: boolean;
   redisNodeType: string;
   redisNodes: number;
   apiCpu: number;
@@ -18,10 +25,20 @@ export interface EnvConfig {
   apiMinTasks: number;
   apiMaxTasks: number;
   apiCpuTargetPercent: number;
+  /** FARGATE_SPOT (dev): up to ~70% cheaper, task can be interrupted with 2 min notice and ECS starts another one. */
+  apiCapacityProvider: 'FARGATE' | 'FARGATE_SPOT';
+  /** Images kept in the ECR repository. */
+  ecrMaxImages: number;
   paymentProvider: 'fake' | 'mercadopago';
   logRetentionDays: number;
   dlqRetentionDays: number;
   budgetUsd: number;
+  /** Budget e-mail/SNS alerts on actual spend at these percentages (plus one at 100% of the forecast). */
+  budgetAlertPercents: number[];
+  /** 'essential' (dev): only API 5xx and DLQ alarms (inside the 10 free alarms). 'full': every alarm. */
+  alarms: 'full' | 'essential';
+  /** WAF on the ALB (regional) and on CloudFront (us-east-1 stack). Off in dev (US$ 5/ACL + US$ 1/rule per month). */
+  wafEnabled: boolean;
   cloudFrontPriceClass: 'PriceClass_100' | 'PriceClass_200' | 'PriceClass_All';
   /** true: resources are destroyed with the stack where safe; false: retained. */
   disposable: boolean;
@@ -36,6 +53,12 @@ export interface EnvConfig {
   placeIndexDataSource: 'Esri' | 'Here';
   /** Shards of the station events Kinesis stream (1 shard = 1,000 records/s; order is per station within a shard). */
   stationStreamShards: number;
+  /**
+   * Station events path. 'kinesis' (prod): ordered per station (rule → Kinesis → ordered Lambda → FIFO).
+   * 'lambda' (dev, stations are simulated): rule → async Lambda → the same FIFO; order between two events of the same
+   * station published close together is NOT guaranteed (parallel invocations, retries). Saves the shard (~US$ 22/month).
+   */
+  stationEventsTransport: 'kinesis' | 'lambda';
   auth: AuthConfig;
 }
 
@@ -74,13 +97,14 @@ export const CONFIGS: Record<EnvName, EnvConfig> = {
     name: 'dev',
     region: 'sa-east-1',
     availabilityZones: AZS,
-    natGateways: 1,
+    // Minimum-cost profile (docs/decisoes.md): no NAT, no WAF, no Kinesis, Fargate Spot, essential alarms only.
+    natGateways: 0,
     dbInstanceClass: 't4g.micro',
     dbAllocatedGb: 20,
-    dbMaxAllocatedGb: 50,
     dbMultiAz: false,
-    dbBackupDays: 7,
+    dbBackupDays: 1,
     dbDeletionProtection: false,
+    dbPerformanceInsights: false,
     redisNodeType: 'cache.t4g.micro',
     redisNodes: 1,
     apiCpu: 256,
@@ -88,10 +112,15 @@ export const CONFIGS: Record<EnvName, EnvConfig> = {
     apiMinTasks: 1,
     apiMaxTasks: 2,
     apiCpuTargetPercent: 60,
+    apiCapacityProvider: 'FARGATE_SPOT',
+    ecrMaxImages: 10,
     paymentProvider: 'fake',
-    logRetentionDays: 14,
+    logRetentionDays: 3,
     dlqRetentionDays: 14,
-    budgetUsd: 100,
+    budgetUsd: 20,
+    budgetAlertPercents: [50, 80, 100],
+    alarms: 'essential',
+    wafEnabled: false,
     cloudFrontPriceClass: 'PriceClass_100',
     disposable: true,
     apiRateLimitPer5Min: 2000,
@@ -101,6 +130,7 @@ export const CONFIGS: Record<EnvName, EnvConfig> = {
     stationsQueueAgeAlarmSeconds: 60,
     placeIndexDataSource: 'Esri',
     stationStreamShards: 1,
+    stationEventsTransport: 'lambda',
     auth: {
       customerDomainPrefix: 'volti-dev-clientes',
       staffDomainPrefix: 'volti-dev-equipe',
@@ -128,10 +158,15 @@ export const CONFIGS: Record<EnvName, EnvConfig> = {
     apiMinTasks: 2,
     apiMaxTasks: 10,
     apiCpuTargetPercent: 60,
+    apiCapacityProvider: 'FARGATE',
+    ecrMaxImages: 30,
     paymentProvider: 'mercadopago',
     logRetentionDays: 90,
     dlqRetentionDays: 14,
     budgetUsd: 1500,
+    budgetAlertPercents: [80, 100],
+    alarms: 'full',
+    wafEnabled: true,
     cloudFrontPriceClass: 'PriceClass_200',
     disposable: false,
     apiRateLimitPer5Min: 3000,
@@ -140,6 +175,7 @@ export const CONFIGS: Record<EnvName, EnvConfig> = {
     stationsQueueAgeAlarmSeconds: 30,
     placeIndexDataSource: 'Esri',
     stationStreamShards: 1,
+    stationEventsTransport: 'kinesis',
     auth: {
       customerDomainPrefix: 'volti-clientes',
       staffDomainPrefix: 'volti-equipe',

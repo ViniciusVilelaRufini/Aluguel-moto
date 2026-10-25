@@ -20,6 +20,8 @@ export interface ObservabilityStackProps extends StackProps {
   messaging: MessagingStack;
   iot: IotStack;
   alarmEmail?: string;
+  /** Budget alerts e-mail (-c budgetEmail); falls back to alarmEmail, then to the SNS topic. */
+  budgetEmail?: string;
 }
 
 export class ObservabilityStack extends Stack {
@@ -28,6 +30,8 @@ export class ObservabilityStack extends Stack {
   constructor(scope: Construct, id: string, props: ObservabilityStackProps) {
     super(scope, id, props);
     const { cfg, api, data, messaging, iot, alarmEmail } = props;
+    // 'essential' (dev): only API 5xx and the DLQs (6 alarms, inside the 10 free ones).
+    const full = cfg.alarms === 'full';
 
     this.alarmTopic = new sns.Topic(this, 'Alarms', { topicName: `volti-${cfg.name}-alarms`, enforceSSL: true });
     if (alarmEmail) this.alarmTopic.addSubscription(new subs.EmailSubscription(alarmEmail));
@@ -54,8 +58,6 @@ export class ObservabilityStack extends Stack {
       a.addAlarmAction(action);
       return a;
     };
-    const below = cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD;
-
     alarm(
       'Api5xx',
       api.service.loadBalancer.metrics.httpCodeTarget(elbv2.HttpCodeTarget.TARGET_5XX_COUNT, {
@@ -66,7 +68,7 @@ export class ObservabilityStack extends Stack {
       2,
       'API is returning 5xx responses',
     );
-    alarm('RdsCpu', data.db.metricCPUUtilization({ period: Duration.minutes(5) }), 80, 3, 'RDS CPU above 80%');
+    if (full) alarm('RdsCpu', data.db.metricCPUUtilization({ period: Duration.minutes(5) }), 80, 3, 'RDS CPU above 80%');
     const dlqs: [string, sqsLike][] = [
       ['TelemetryDlq', messaging.telemetry.dlq],
       ['PaymentsWebhookDlq', messaging.paymentsWebhook.dlq],
@@ -84,6 +86,13 @@ export class ObservabilityStack extends Stack {
       );
     }
 
+    if (full) this.extraAlarms(cfg, api, data, messaging, iot, alarm);
+
+    this.budget(cfg, props.budgetEmail ?? alarmEmail);
+  }
+
+  private extraAlarms(cfg: EnvConfig, api: ApiStack, data: DataStack, messaging: MessagingStack, iot: IotStack, alarm: AlarmFn): void {
+    const below = cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD;
     // Queue lag: the API is not keeping up (or is down) with tracker telemetry / station events.
     const oldest = (q: typeof messaging.telemetry.queue) =>
       q.metricApproximateAgeOfOldestMessage({ period: Duration.minutes(1), statistic: 'Maximum' });
@@ -99,7 +108,7 @@ export class ObservabilityStack extends Stack {
       'IoT rule actions are failing (see /volti/<env>/iot/rule-errors)',
     );
     // Station stream consumer falling behind (records waiting in Kinesis = station events not yet in the FIFO queue).
-    alarm(
+    if (iot.stationStream) alarm(
       'StationStreamIteratorAge',
       iot.stationForwarder.metric('IteratorAge', { period: Duration.minutes(1), statistic: 'Maximum' }),
       cfg.stationsQueueAgeAlarmSeconds * 1000,
@@ -149,7 +158,10 @@ export class ObservabilityStack extends Stack {
       );
     }
 
-    // Budget. Sends to the e-mail when given, otherwise to the alarm topic.
+  }
+
+  /** Budget. Sends to the e-mail when given, otherwise to the alarm topic. */
+  private budget(cfg: EnvConfig, email?: string): void {
     this.alarmTopic.addToResourcePolicy(
       new iam.PolicyStatement({
         principals: [new iam.ServicePrincipal('budgets.amazonaws.com')],
@@ -157,8 +169,8 @@ export class ObservabilityStack extends Stack {
         resources: [this.alarmTopic.topicArn],
       }),
     );
-    const subscribers: budgets.CfnBudget.SubscriberProperty[] = alarmEmail
-      ? [{ subscriptionType: 'EMAIL', address: alarmEmail }]
+    const subscribers: budgets.CfnBudget.SubscriberProperty[] = email
+      ? [{ subscriptionType: 'EMAIL', address: email }]
       : [{ subscriptionType: 'SNS', address: this.alarmTopic.topicArn }];
     const notification = (threshold: number, type: 'ACTUAL' | 'FORECASTED'): budgets.CfnBudget.NotificationWithSubscribersProperty => ({
       notification: {
@@ -176,9 +188,18 @@ export class ObservabilityStack extends Stack {
         timeUnit: 'MONTHLY',
         budgetLimit: { amount: cfg.budgetUsd, unit: 'USD' },
       },
-      notificationsWithSubscribers: [notification(80, 'ACTUAL'), notification(100, 'ACTUAL'), notification(100, 'FORECASTED')],
+      notificationsWithSubscribers: [...cfg.budgetAlertPercents.map((p) => notification(p, 'ACTUAL')), notification(100, 'FORECASTED')],
     });
   }
 }
+
+type AlarmFn = (
+  id: string,
+  metric: cloudwatch.IMetric,
+  threshold: number,
+  evaluationPeriods: number,
+  description: string,
+  opts?: { comparisonOperator?: cloudwatch.ComparisonOperator; treatMissingData?: cloudwatch.TreatMissingData; actionsEnabled?: boolean },
+) => cloudwatch.Alarm;
 
 type sqsLike = { metricApproximateNumberOfMessagesVisible(o?: cloudwatch.MetricOptions): cloudwatch.Metric };

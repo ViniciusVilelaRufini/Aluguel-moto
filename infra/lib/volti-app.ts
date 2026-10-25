@@ -30,6 +30,10 @@ export interface VoltiAppOptions {
   /** API domain (e.g. api.volti.com.br) used in the public SOS location-share link. */
   apiDomainName?: string;
   alarmEmail?: string;
+  /** Budget alerts e-mail (falls back to alarmEmail). Never committed: -c budgetEmail=... */
+  budgetEmail?: string;
+  /** Dev only: RUN_SEED=true in the API task (idempotent seed after the migrations). */
+  apiRunSeed?: boolean;
   /** Account-specific values (SES identity, IdP secret names, Cognito domain prefixes, WAF limit). */
   overrides?: ConfigOverrides;
   outdir?: string;
@@ -43,7 +47,8 @@ export interface VoltiStacks {
   messaging: MessagingStack;
   iot: IotStack;
   api: ApiStack;
-  waf: WafStack;
+  /** Only when cfg.wafEnabled (not in dev). */
+  waf?: WafStack;
   adminWeb: AdminWebStack;
   observability: ObservabilityStack;
 }
@@ -57,17 +62,19 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
   const common = { env, terminationProtection: !cfg.disposable };
 
   const network = new NetworkStack(app, `${prefix}-network`, { ...common, cfg });
-  const waf = new WafStack(app, `${prefix}-waf`, {
-    ...common,
-    env: { account, region: 'us-east-1' },
-    crossRegionReferences: true,
-    cfg,
-  });
+  const waf = cfg.wafEnabled
+    ? new WafStack(app, `${prefix}-waf`, {
+        ...common,
+        env: { account, region: 'us-east-1' },
+        crossRegionReferences: true,
+        cfg,
+      })
+    : undefined;
   const adminWeb = new AdminWebStack(app, `${prefix}-admin-web`, {
     ...common,
     crossRegionReferences: true,
     cfg,
-    webAclArn: waf.webAclArn,
+    webAclArn: waf?.webAclArn,
     adminDomainName: opts.adminDomainName,
     adminCertificateArn: opts.adminCertificateArn,
   });
@@ -89,6 +96,7 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     imageTag: opts.apiImageTag ?? 'latest',
     desiredCount: opts.apiDesiredCount ?? 0,
     apiDomainName: opts.apiDomainName,
+    runSeed: opts.apiRunSeed,
   });
   const observability = new ObservabilityStack(app, `${prefix}-observability`, {
     ...common,
@@ -98,6 +106,7 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     messaging,
     iot,
     alarmEmail: opts.alarmEmail,
+    budgetEmail: opts.budgetEmail,
   });
 
   Tags.of(app).add('projeto', 'volti');

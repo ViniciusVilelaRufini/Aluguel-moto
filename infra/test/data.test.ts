@@ -4,7 +4,7 @@ import { stacksFor, templateOf } from './helpers';
 describe.each(['dev', 'prod'] as const)('DataStack (%s)', (env) => {
   const t = () => templateOf(stacksFor(env).data);
 
-  it('RDS is Postgres 16, encrypted, private, with >= 7 days of backups', () => {
+  it('RDS is Postgres 16, encrypted, private, with backups (prod >= 7 days, dev 1 day)', () => {
     t().hasResourceProperties('AWS::RDS::DBInstance', {
       Engine: 'postgres',
       EngineVersion: Match.stringLikeRegexp('^16'),
@@ -14,7 +14,7 @@ describe.each(['dev', 'prod'] as const)('DataStack (%s)', (env) => {
       KmsKeyId: Match.anyValue(),
     });
     const db = Object.values(t().findResources('AWS::RDS::DBInstance'))[0] as any;
-    expect(db.Properties.BackupRetentionPeriod).toBeGreaterThanOrEqual(7);
+    expect(db.Properties.BackupRetentionPeriod).toBeGreaterThanOrEqual(env === 'prod' ? 7 : 1);
   });
 
   it('all buckets block public access and are encrypted; KYC uses KMS', () => {
