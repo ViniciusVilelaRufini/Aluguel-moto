@@ -74,20 +74,15 @@ jobs:
             --dart-define=COGNITO_DOMAIN='${{ vars.CLIENTE_COGNITO_DOMAIN }}' \
             --dart-define=COGNITO_REDIRECT_URI=volti://auth/callback
 
-      - name: arquivar (assinatura automática)
-        env:
-          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
-          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      # Arquivo sem assinatura: a assinatura automática do archive pediria um perfil de desenvolvimento
+      # (exige iPhone cadastrado). Quem assina é o export, com o certificado de distribuição gerenciado pela Apple.
+      - name: arquivar (sem assinatura)
         run: |
           xcodebuild archive \
             -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
-            -allowProvisioningUpdates \
-            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
-            -authenticationKeyID "$ASC_KEY_ID" \
-            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
-            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO
 
       - name: exportar e enviar ao TestFlight
         env:
