@@ -201,12 +201,20 @@ Status: `in_vehicle`, `in_van`, `charging` (no galpão `depotId`, ou na estaçã
 ## Inadimplência e alerta de pagamento (`src/modules/payments/delinquency.service.ts`, Task 14)
 
 - Dívida = pagamento de aluguel/assinatura `failed` sem `debtSettledAt`; saldo devedor (`outstandingCents`) = valor − caução capturada como garantia.
-- `POST /payments/{id}/retry` (cliente): cobra o saldo no cartão (na hora) ou por Pix (quita no webhook) num `Payment` `debt_settlement`; `409 debt-in-collection` enquanto a liquidação ainda retenta no gateway.
+- `POST /payments/{id}/retry` (cliente): cobra o saldo no cartão (na hora) ou por Pix (quita no webhook) num `Payment` `debt_settlement`. `409 debt-in-collection` enquanto a cobrança automática ainda corre: aluguel com a liquidação retentando no cartão, ou assinatura **desta dívida** `past_due` (o gateway retenta a recorrência) ou com o cancelamento no gateway pendente. `503 gateway-unavailable` quando o resultado de uma tentativa não pode ser conferido (ela fica `pending`).
+- Quitação manual: bloqueada só pela liquidação de aluguel em retentativa ou pela assinatura ligada a uma das dívidas. `onLatePaid` (Pix pago depois de virar `failed`) é idempotente por pagamento.
 - `POST /customers/{id}/delinquency/clear` (admin/financeiro): quitação manual com motivo no AuditLog.
 - `payment.needs-review` vira o alerta `payment_needs_review` (um aberto por pagamento). Financeiro vê só esses alertas; operação não os vê.
 - `GET /customers/{id}` traz `walletBalanceCents` e `debtCents` para admin/financeiro.
 - CSV dos relatórios em pt-BR (cabeçalhos, R$ com vírgula, datas de São Paulo); a receita tem `walletCents` (pago com carteira).
 - Testes: `delinquency.service.spec.ts`, `alerts.service.spec.ts`, `lgpd-completa.spec.ts`, `reports-csv.spec.ts`, e2e `test/lacunas-t14.e2e-spec.ts` e o caso 13 do contrato.
+
+## Fechamento sem cartão (R2-01, lacunas Task 16)
+
+- Ordem no fechamento: **carteira → caução → cartão salvo → dívida**. A carteira é debitada (`rental_charge`) na transação que fecha o aluguel (cliente travado com `FOR UPDATE`), aparece como linha `wallet` no `breakdown` e só o restante vai para a liquidação; carteira cobrindo tudo → pagamento `method: wallet` e caução liberada. A caução Pix abate e devolve só o saldo; sem cartão, o restante vira dívida (`outstandingCents`), paga no app por Pix (`POST /payments/{id}/retry`).
+- Dívida em aberto (ou flag `delinquent`) → reservas recusadas com `409 payment-pending` ("Pague o valor pendente para alugar de novo."); `POST /rentals` segue `403 customer-delinquent`.
+- `GET /rentals/{id}/receipt`: `paymentStatus` (`paid`/`pending`/`processing`), `paymentId`, `depositUsedCents`, `depositReleasedCents`, `amountDueCents`; `pdfUrl` só pago. Quitada a dívida (Pix, cartão, webhook tardio ou manual), o recibo (PDF + NFS-e) é emitido.
+- Testes: bloco "Task 16" em `rental-billing.service.spec.ts` (cada ordem de liquidação), `rental-end.service.spec.ts` (carteira no fechamento), `delinquency.service.spec.ts`, `eligibility.spec.ts`, reservas; e2e `test/lacunas-t16.e2e-spec.ts` (QA sem cartão → dívida → 409 → Pix pago → recibo com PDF; carteira total; carteira parcial; caução + cartão) e o caso 14 do contrato.
 
 ## Várias instâncias e integrações (lacunas T5, `docs/decisoes.md` 2026-10-24)
 

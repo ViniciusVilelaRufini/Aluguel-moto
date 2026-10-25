@@ -205,7 +205,7 @@ Se já existe aluguel com a caução, o pedido é ignorado. Pix pago depois da l
 
 - **Recarga no cartão:** cobra na hora. Se recusada → `402 payment-failed` e nenhum lançamento.
 - **Recarga Pix:** o lançamento só entra quando o webhook confirma o pagamento.
-- `useWalletCredits` no início do aluguel ainda não é consumido na liquidação (ver a proposta em `docs/decisoes.md`).
+- **Fechamento (R2-01, lacunas Task 16):** o saldo da carteira sempre abate primeiro (`rental_charge` gravado na transação que fecha o aluguel, linha `wallet` no `breakdown`); depois caução, cartão salvo e, sem cartão, dívida paga por Pix no app. `useWalletCredits` está `deprecated` e é ignorado.
 
 ## Seguro
 
