@@ -9,16 +9,16 @@ Nome no CloudFormation: `volti-<env>-<stack>`.
 | Stack | Conteúdo |
 |---|---|
 | `network` | VPC 10.20.0.0/16, 2 AZs, subnets públicas e privadas, NAT (dev 1, prod 2), endpoint S3 |
-| `data` | RDS PostgreSQL 16 (KMS, privado, backup, segredo no Secrets Manager `volti/<env>/rds`), Redis (ElastiCache, criptografado), buckets `documentos-kyc` (KMS próprio), `fotos-devolucao`, `relatorios` |
-| `auth` | Cognito de clientes (MFA opcional) e interno (MFA obrigatório TOTP, grupos `admin`, `operacao`, `financeiro`, `suporte`, `campo`) |
-| `messaging` | SQS `telemetry`, `payments-webhook`, `alerts`, cada uma com DLQ; EventBridge bus `volti-<env>` |
-| `iot` | Thing type `moto`, política de menor privilégio, regras IoT (telemetria e eventos para SQS, presença para EventBridge), Amazon Location (tracker e geofence collection) |
-| `api` | ECR, ECS Fargate, ALB HTTPS 443 (ACM), health check `/health`, auto scaling por CPU, segredos via Secrets Manager |
+| `data` | RDS PostgreSQL 16 (KMS, privado, backup, segredo no Secrets Manager `volti/<env>/rds`), Redis (ElastiCache, criptografado), buckets `documentos-kyc` (KMS próprio), `fotos-devolucao`, `relatorios`, `anexos`, `catalogo` (CORS só para a origem do painel) |
+| `auth` | Cognito de clientes (sem senha: `USER_AUTH` com OTP por SMS e, com SES, por e-mail; Google/Apple opcionais; MFA opcional) e interno (MFA obrigatório TOTP, grupos `admin`, `operacao`, `financeiro`, `suporte`, `campo`); domínio do Hosted UI nos dois pools; clients do app do cliente, do painel e do app do operador |
+| `messaging` | SQS `telemetry`, `payments-webhook`, `alerts` e `stations.fifo` (FIFO), cada uma com DLQ; EventBridge bus `volti-<env>` com a regra de presença → `telemetry` |
+| `iot` | Thing types `moto` e `estacao`, políticas de menor privilégio, regras IoT (telemetria e eventos do rastreador para a fila de telemetria, eventos das estações para a fila FIFO via Lambda, presença para o EventBridge), Amazon Location (tracker, geofence collection e place index) |
+| `api` | ECR, ECS Fargate, ALB HTTPS 443 (ACM), health check `/health`, auto scaling por CPU, segredos via Secrets Manager (inclusive as chaves HMAC geradas pelo CDK), WAF regional (regras gerenciadas AWS + limite por IP por ambiente) |
 | `waf` | Web ACL do CloudFront (precisa estar em `us-east-1`): regras gerenciadas AWS + limite por IP |
 | `admin-web` | S3 privado + CloudFront com OAC e o WAF |
-| `observability` | SNS, alarmes (5xx da API, DLQs, CPU do RDS) e AWS Budget (dev US$ 100/mês) |
+| `observability` | SNS, alarmes (5xx da API, DLQs, CPU/armazenamento/conexões do RDS, memória do Redis, idade da fila de telemetria e da de estações, erros das regras IoT e das Lambdas, tarefas saudáveis da API) e AWS Budget (dev US$ 100/mês) |
 
-Configuração por ambiente (tamanhos, NAT, retenção, orçamento) em `lib/config.ts`.
+Configuração por ambiente (tamanhos, NAT, retenção, orçamento, limite do WAF, limiares de alarme, domínios e callbacks do Cognito) em `lib/config.ts`.
 
 ## Comandos
 
@@ -44,6 +44,11 @@ O synth offline usa conta `000000000000` e ARNs de certificado fictícios. Nenhu
 | `domainName` | vazio | Se definido junto com `adminCertificateArn`, o painel responde em `admin.<domainName>` |
 | `adminCertificateArn` | vazio | Certificado ACM em `us-east-1` (exigência do CloudFront) |
 | `alarmEmail` | vazio | E-mail de alarmes e do orçamento (sem ele, só o tópico SNS `volti-<env>-alarms`) |
+| `apiRateLimitPer5Min` | dev 2000, prod 3000 | Limite por IP do WAF da API (requisições em 5 minutos); inteiro >= 10 |
+| `sesFromEmail`, `sesVerifiedDomain` | vazio | Identidade SES verificada para os e-mails do pool de clientes; liga o `EMAIL_OTP`. Sem ela, só OTP por SMS e e-mails pelo remetente padrão do Cognito |
+| `googleIdpSecretName` | vazio | Nome do segredo do Google (`{"clientId","clientSecret"}`); vazio = IdP não criado |
+| `appleIdpSecretName` | vazio | Nome do segredo da Apple (`{"servicesId","teamId","keyId","privateKey"}`); vazio = IdP não criado |
+| `customerDomainPrefix`, `staffDomainPrefix` | `volti-<env>-clientes`, `volti-<env>-equipe` (prod sem `-<env>`) | Prefixo do domínio do Hosted UI (`<prefixo>.auth.sa-east-1.amazoncognito.com`); único por região, troque se já estiver em uso |
 
 DNS não é gerenciado aqui: aponte `api.<domínio>` para o ALB (`api/load-balancer-dns` no SSM) e `admin.<domínio>` para a distribuição.
 
@@ -55,8 +60,10 @@ O serviço da API nasce com 0 tarefas (`-c apiDesiredCount=0`, o padrão), porqu
 2. Crie o certificado ACM e rode `cdk deploy --all -c env=dev -c account=... -c certificateArn=...` (infra completa, serviço com 0 tarefas).
 3. Construa e publique a imagem de `services/api` no ECR (`api/ecr-repository` no SSM) com a tag que será usada em `-c apiImageTag`.
 4. Redeploy com a tarefa rodando: `cdk deploy --all ... -c apiImageTag=<tag> -c apiDesiredCount=1` (prod: 2 ou mais).
-5. Preencha `MERCADOPAGO_ACCESS_TOKEN` no segredo `volti/<env>/app` (nasce como `CHANGE_ME`). O `MERCADOPAGO_WEBHOOK_SECRET` já nasce aleatório (48 caracteres, gerado pelo Secrets Manager); veja "Rotação do segredo do webhook" abaixo.
-6. Habilite a extensão com `CREATE EXTENSION IF NOT EXISTS postgis;` na migração inicial.
+5. Preencha `MERCADOPAGO_ACCESS_TOKEN` no segredo `volti/<env>/app` (nasce como `CHANGE_ME`). O `MERCADOPAGO_WEBHOOK_SECRET` já nasce aleatório (48 caracteres, gerado pelo Secrets Manager); veja "Rotação do segredo do webhook" abaixo. `STATION_QR_SECRET`, `FRAUD_HASH_SECRET` e `PICKUP_CODE_SECRET` também nascem aleatórios (64 caracteres, segredos `volti/<env>/station-qr-secret`, `fraud-hash-secret`, `pickup-code-secret`; `RETAIN` em prod). Não rotacione à toa: trocar o do QR invalida todos os QRs colados nas estações (reemita com `pnpm --filter api stations:qr`), trocar o de fraude quebra a comparação dos CPFs já gravados.
+6. As migrações rodam na subida do container (`RUN_MIGRATIONS=true`, `scripts/start.mjs`); a migração inicial cria a extensão PostGIS.
+7. Cognito: para SMS fora do sandbox do SNS, peça a saída do sandbox e registre a origem para o Brasil. Para o OTP por e-mail, verifique a identidade no SES (e saia do sandbox do SES) e faça o deploy com `-c sesFromEmail=... -c sesVerifiedDomain=...`. Para Google/Apple, crie os segredos no Secrets Manager (formatos na tabela de contexto) e faça o deploy com `-c googleIdpSecretName=...`/`-c appleIdpSecretName=...`; no console do Google/Apple o redirect é `https://<customerDomainPrefix>.auth.sa-east-1.amazoncognito.com/oauth2/idpresponse`.
+8. Estações de troca: para cada estação cadastrada na API, `pnpm --filter infra exec ts-node scripts/provision-station.ts --station <id da SwapStation> --env <env>` (credenciais AWS do ambiente; certificado e chave em `~/.volti/certs/station-<id>`, fora do repositório).
 
 O workflow de deploy do dev faz 2 a 4 sozinho: deploy com 0 tarefas, build e push da imagem se existir `services/api/Dockerfile`, e novo deploy com 1 tarefa. Sem Dockerfile, o serviço permanece em 0 tarefas. Com 0 tarefas o auto scaling usa mínimo 0.
 
@@ -72,20 +79,26 @@ O workflow de deploy do dev faz 2 a 4 sozinho: deploy com 0 tarefas, build e pus
 | `s3/return-photos-bucket` | `S3_BUCKET_RETURN_PHOTOS` |
 | `s3/reports-bucket` | `S3_BUCKET_REPORTS` |
 | `s3/attachments-bucket` | `S3_BUCKET_ATTACHMENTS` |
+| `s3/catalog-bucket` | `S3_BUCKET_CATALOG` |
 | `cognito/customer-pool-id`, `cognito/customer-client-id` | `COGNITO_CUSTOMER_POOL_ID`, `COGNITO_CUSTOMER_CLIENT_ID` |
-| `cognito/staff-pool-id`, `cognito/staff-client-id` | `COGNITO_STAFF_POOL_ID`, `COGNITO_STAFF_CLIENT_ID` |
+| `cognito/staff-pool-id`, `cognito/staff-client-id` | `COGNITO_STAFF_POOL_ID`, `COGNITO_STAFF_CLIENT_ID` (client do painel) |
+| `cognito/operator-client-id` | `COGNITO_CLIENT_ID` do app do operador (pool interno) |
+| `cognito/customer-domain`, `cognito/staff-domain` | `COGNITO_DOMAIN` dos apps / `NEXT_PUBLIC_COGNITO_DOMAIN` do painel |
 | `iot/endpoint` | `IOT_ENDPOINT` (substitui `MQTT_URL` local) |
 | `iot/thing-type` | `moto` |
+| `iot/station-thing-type` | `estacao` |
+| `location/place-index` | `LOCATION_PLACE_INDEX` |
 | `location/tracker-name` | `LOCATION_TRACKER_NAME` |
 | `location/geofence-collection` | `LOCATION_GEOFENCE_COLLECTION` |
 | `sqs/telemetry-url` | `SQS_QUEUE_TELEMETRIA_URL` |
 | `sqs/payments-webhook-url` | `SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL` |
 | `sqs/alerts-url` | `SQS_QUEUE_ALERTAS_URL` |
+| `sqs/stations-url` | `SQS_QUEUE_ESTACOES_URL` (FIFO, termina em `.fifo`) |
 | `admin/distribution-domain` | domínio do CloudFront do painel |
 
 Extras: `api/load-balancer-dns`, `api/ecr-repository`, `admin/site-bucket`.
 
-O container da API recebe estas variáveis do `.env.example` já com os adaptadores AWS: `NODE_ENV=production`, `AUTH_MODE=cognito`, `IOT_MODE=aws`, `GEOFENCE_MODE=aws`, `QUEUE_MODE=sqs`, `STORAGE_MODE=s3`, `PAYMENT_PROVIDER` (dev `fake`, prod `mercadopago`), `INSURANCE_PROVIDER=mock`, `KYC_PROVIDER=mock`, `PUSH_MODE=log`, `TRACK_RETENTION_DAYS=90`, `OUT_OF_AREA_LOCK_MINUTES=5`. `DATABASE_URL` não é injetada: o entrypoint do container (`services/api/scripts/start.mjs`) monta a URL (com `sslmode=require`) com `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` (o Secrets Manager não compõe strings). Variáveis locais (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DEV_JWT_SECRET`, `MQTT_URL`) não existem na AWS: a task role acessa S3, SQS, IoT e Location.
+O container da API recebe estas variáveis do `.env.example` já com os adaptadores AWS: `NODE_ENV=production`, `AUTH_MODE=cognito`, `IOT_MODE=aws`, `GEOFENCE_MODE=aws`, `QUEUE_MODE=sqs`, `STORAGE_MODE=s3`, `PAYMENT_PROVIDER` (dev `fake`, prod `mercadopago`), `INSURANCE_PROVIDER=mock`, `KYC_PROVIDER=mock`, `PUSH_MODE=log`, `TRACK_RETENTION_DAYS=90`, `OUT_OF_AREA_LOCK_MINUTES=5`, `GEOCODER_MODE=aws` (com `LOCATION_PLACE_INDEX`), `RUN_MIGRATIONS=true`, `S3_BUCKET_CATALOG` e `SQS_QUEUE_ESTACOES_URL`; e os segredos `STATION_QR_SECRET`, `FRAUD_HASH_SECRET`, `PICKUP_CODE_SECRET` (gerados pelo CDK). O teste de deriva (`test/api.test.ts`) confere os dois sentidos: todo nome injetado é lido pela API, e toda variável citada nos erros de subida da API (`throw new Error('X é obrigatório em produção')`, `IOT_MODE=aws exige X`, em `src/config/*`, `pickup-code.ts`, `station-code.ts`, `station-gateways.ts`, `iot-config.ts`, `cognito-auth-verifier.ts`) está na task. `DATABASE_URL` não é injetada: o entrypoint do container (`services/api/scripts/start.mjs`) monta a URL (com `sslmode=require`) com `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` (o Secrets Manager não compõe strings). Variáveis locais (`S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `DEV_JWT_SECRET`, `MQTT_URL`) não existem na AWS: a task role acessa S3, SQS, IoT e Location.
 
 ## Contrato IoT
 
@@ -96,14 +109,53 @@ A política `volti-<env>-moto-policy` (anexada ao certificado de cada rastreador
 - Subscribe/Receive: `motos/<thing>/comandos`, shadow `update/accepted|rejected|delta|documents`, `get/accepted|rejected`.
 - Shadow: `GetThingShadow`, `UpdateThingShadow` só na própria thing.
 
-Regras: `motos/+/telemetria` vai para a fila de telemetria; `motos/+/eventos` vai para a fila de alertas; eventos de presença (`$aws/events/presence/+/+`) vão por uma Lambda mínima para o EventBridge (`source=volti.iot`, `detail-type=iot.presence`, sem logar o payload). Erros das regras ficam em `/volti/<env>/iot/rule-errors`. O backend publica comandos e shadow com a task role (`topic/motos/*` e `thing/*`).
+A política `volti-<env>-estacao-policy` (anexada ao certificado de cada estação por `scripts/provision-station.ts`, thing `station-<stationId>` do tipo `estacao`):
+
+- Connect: `client/<thing>`, só com certificado anexado à thing.
+- Publish: `estacoes/<thing>/eventos`.
+- Subscribe/Receive: `estacoes/<thing>/comandos`. Sem shadow.
+
+Regras (todas com a mesma ação de erro: `/volti/<env>/iot/rule-errors` + filtro de métrica `Volti/<env>/IotRuleErrors`, com alarme):
+
+- `motos/+/telemetria` → fila de telemetria (`SELECT *, topic(2) AS thingName, timestamp() AS ingestedAt`).
+- `motos/+/eventos` → **fila de telemetria** (mesmo SQL). A API (`AwsIotTransport`) separa pelo campo `tipo` e gera o alerta com moto, aluguel e posição. **Escolha registrada:** a correção foi feita na regra (destino), não com SQL de transformação para `CreateAlertInput`: esse formato exige o `vehicleId` (UUID do banco), o aluguel aberto e a posição, que o SQL do IoT não tem como buscar a partir do `thingName`. A fila `alerts` continua com o formato `CreateAlertInput`, para produtores que não sejam o rastreador. A Task 5 (API) pode tolerar os dois formatos no listener, mas nada cru do rastreador chega mais à fila `alerts`.
+- `estacoes/+/eventos` → Lambda `StationForwarder` → fila FIFO `stations.fifo` (`SELECT *, topic(2) AS thing`, `MessageGroupId` = thing, deduplicação por conteúdo). A ação SQS do IoT não envia para fila FIFO (não tem `MessageGroupId`), por isso a Lambda; ela descarta mensagem sem thing `station-<uuid>` e não loga o payload.
+- `$aws/events/presence/+/+` → Lambda mínima → EventBridge (`source=volti.iot`, `detail-type=iot.presence`, sem logar o payload) → regra `presence-to-telemetry` → fila de telemetria como `{ "thingName", "presence": "connected" | "disconnected", "timestamp" }` (só things `moto-*`; docs/decisoes.md, IoT item 12). **Pendência da API:** o `AwsIotTransport` ainda trata mensagem sem `tipo` como telemetria; até ganhar o ramo `presence` → `inbound.presence`, essas mensagens são descartadas como `telemetry_invalid` (sem efeito colateral).
+
+O backend publica comandos e shadow com a task role (`topic/motos/*/comandos`, `topic/estacoes/*/comandos`, shadow `update`/`get` e `thing/*`), consome as filas `telemetry`, `alerts` e `stations.fifo`, e consulta o place index (`geo:SearchPlaceIndexForPosition`).
+
+## Cognito
+
+| Pool | Client | Fluxos | Callback / logout |
+|---|---|---|---|
+| clientes (`volti-<env>-customers`, plano Essentials) | `customer-app` (público) | `ALLOW_USER_AUTH` (OTP por SMS; por e-mail com SES), Hosted UI `code` para Google/Apple, escopos `openid email phone profile`, revogação de token | `volti://auth/callback` |
+| interno (`volti-<env>-staff`, MFA TOTP) | `admin-panel` (público) | SRP e Hosted UI `code` + PKCE, escopos `openid email profile` | `<origem do painel>/auth/callback/` (e sem a barra), logout `<origem>/login/`; no dev também `http://localhost:3100` |
+| interno | `operator-app` (público) | só Hosted UI `code` + PKCE e refresh | `br.com.volti.operador://callback` |
+
+Callbacks em `lib/config.ts` (`auth.*CallbackUrls`, `auth.adminExtraOrigins`); a origem do painel vem da stack `admin-web` (domínio próprio ou CloudFront). Login por telefone ou e-mail (atributos de username), e-mail não obrigatório. O SMS sai pelo SNS com um papel criado pelo CDK (external id), sem credencial. O `PASSWORD` continua como primeiro fator porque o Cognito não permite removê-lo; o client do app só habilita `USER_AUTH`. **Pendência da API:** o verificador aceita um único `COGNITO_STAFF_CLIENT_ID` (o do painel); tokens do `operator-app` só serão aceitos quando a API aceitar mais de um client do pool interno.
+
+## Alarmes (`observability`)
+
+| Alarme | Métrica | Limiar |
+|---|---|---|
+| `Api5xx` | 5xx dos alvos do ALB | >= 10 em 5 min (2 períodos) |
+| `ApiHealthyTasks` | `HealthyHostCount` (mínimo) do target group | < tarefas mínimas por 3 min; sem dado conta como falha; notificação desligada enquanto o serviço roda com 0 tarefas |
+| `TelemetryQueueAge`, `StationsQueueAge` | `ApproximateAgeOfOldestMessage` | dev 120 s / 60 s, prod 60 s / 30 s |
+| `*Dlq` (4) | mensagens visíveis na DLQ | >= 1 |
+| `IotRuleErrors` | filtro de métrica no log de erros das regras | >= 1 em 5 min |
+| `StationForwarderErrors`, `PresenceForwarderErrors` | `Errors` das Lambdas | >= 1 em 5 min |
+| `RdsCpu`, `RdsFreeStorage`, `RdsConnections` | CPU, armazenamento livre, conexões | 80%, < 10% do alocado, dev 90 / prod 360 (cerca de 80% do `max_connections`) |
+| `RedisMemory00N` | `DatabaseMemoryUsagePercentage` por nó | >= 80% |
 
 ## Decisões
 
 - AZs fixas `sa-east-1a/b` e `env` explícito, sem lookups, para o synth rodar offline.
 - Certificado ACM importado por contexto (ARN fictício no synth). Imagem da API vem de um ECR criado pela stack e tag em contexto.
 - WAF do CloudFront em stack separada em `us-east-1` (`crossRegionReferences`); o `admin-web` fica em `sa-east-1`. O CDK cria um recurso auxiliar para ler o ARN entre regiões.
-- Regras IoT não têm ação nativa para EventBridge: usamos Lambda mínima para presença. Eventos de dispositivo (`eventos`) vão para SQS, que tem DLQ e já é o que a API consome.
+- Regras IoT não têm ação nativa para EventBridge nem enviam para SQS FIFO: Lambdas mínimas para presença e para os eventos das estações. Eventos do rastreador (`eventos`) vão para a fila de telemetria, que tem DLQ e já é o que a API consome.
+- WAF da API: `AWSManagedRulesAmazonIpReputationList`, `AWSManagedRulesKnownBadInputsRuleSet` e `AWSManagedRulesCommonRuleSet` (com `SizeRestrictions_BODY` só contando: polígonos de zona do painel passam de 8 KB; o Express limita em 100 KB) e o limite por IP de `lib/config.ts`.
+- Place index do Amazon Location com `IntendedUse=Storage`, porque a API guarda os endereços em cache no Redis (o uso `SingleUse` proíbe guardar resultados).
+- Pool de clientes: mudar os atributos de username (agora telefone e e-mail) recria o pool; nenhum ambiente está implantado, então não há migração. Num ambiente existente seria preciso exportar e reimportar os usuários.
 - Eventos de ciclo de vida (presença) do IoT Core são publicados automaticamente; nada a habilitar.
 - Dev e prod devem ficar em contas AWS separadas: o thing type `moto` e o nome do certificado são únicos por conta e região.
 - Segurança de rede: RDS e Redis aceitam tráfego do CIDR da VPC (evita dependência cíclica entre stacks); sem acesso público.
@@ -123,17 +175,19 @@ Regras: `motos/+/telemetria` vai para a fila de telemetria; `motos/+/eventos` va
 | RDS `db.t4g.micro` single-AZ, 20 GB gp3, backups | 25 |
 | ElastiCache `cache.t4g.micro` | 18 |
 | Fargate 0,25 vCPU / 0,5 GB, 1 tarefa | 14 |
-| WAF (web ACL + 4 regras) | 11 |
+| WAF (2 web ACLs, CloudFront e ALB, 4 regras cada) | 22 |
 | CloudFront, S3, SQS, Cognito (uso baixo) | 3 |
-| KMS (2 chaves), Secrets Manager (2), CloudWatch/logs, Location | 8 |
-| **Total** | **cerca de 150** |
+| KMS (2 chaves), Secrets Manager (5), CloudWatch/logs e alarmes, Location (inclui place index), Lambdas | 12 |
+| **Total** | **cerca de 165** |
 
 Atenção: o orçamento de US$ 100/mês do dev dispara alerta de previsão logo no primeiro mês com esta configuração. Para ficar abaixo, desligue o ambiente fora do expediente (`desiredCount` 0 e remover a NAT) ou ajuste `budgetUsd` em `lib/config.ts`. Valores aproximados: confirme na calculadora da AWS.
 
 ## CI/CD (`.github/workflows/infra.yml`)
 
-- Pull request: testes, `cdk synth` (dev e prod) e `cdk diff` do dev.
-- Push em `main`: `cdk deploy --all` no dev.
+- Dispara em mudanças de `infra/`, `services/api/`, `apps/admin/`, `packages/contracts/` e do lockfile.
+- Job `checks` (porta do deploy): `redocly lint` do contrato, lint e testes unitários de `services/api`, lint e vitest de `apps/admin`.
+- Pull request: `checks`, testes do CDK, `cdk synth` (dev e prod) e `cdk diff` do dev.
+- Push em `main`: `cdk deploy --all` no dev depois de `checks` e `synth`. A imagem da API é construída da raiz do repositório (`docker build -f services/api/Dockerfile .`), porque o Dockerfile copia o lockfile e o `tsconfig.base.json` do workspace.
 - Autenticação por OIDC (`aws-actions/configure-aws-credentials` com `role-to-assume`), sem chaves fixas. Configure no repositório as variáveis `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN_DEV` e `CERTIFICATE_ARN_DEV`, e um provedor OIDC do GitHub na conta AWS com uma role confiando no repositório.
 
 ## Rotação do segredo do webhook (Mercado Pago)

@@ -1,22 +1,36 @@
 import { Match } from 'aws-cdk-lib/assertions';
+import { PRESENCE_EVENT } from '../lib/stacks/messaging-stack';
+import { PRESENCE_FORWARDER, STATION_EVENTS_SQL, STATION_FORWARDER } from '../lib/stacks/iot-stack';
 import { stacksFor, templateOf } from './helpers';
 
 const THING = '${iot:Connection.Thing.ThingName}';
 
+/** Runs an inline Lambda source with a fake `require`, capturing what it sends to the AWS SDK. */
+function runInline(code: string, env: Record<string, string>, sdk: Record<string, unknown>): { handler: (e: unknown) => Promise<void>; logs: string[] } {
+  const exportsObj: { handler?: (e: unknown) => Promise<void> } = {};
+  const logs: string[] = [];
+  const fakeConsole = { log: (m: string) => logs.push(m) };
+  new Function('require', 'exports', 'process', 'console', code)(() => sdk, exportsObj, { env }, fakeConsole);
+  return { handler: exportsObj.handler!, logs };
+}
+
 describe('IotStack', () => {
   const t = () => templateOf(stacksFor('dev').iot);
+  const policy = (name: string) =>
+    (Object.values(t().findResources('AWS::IoT::Policy')).find((p: any) => p.Properties.PolicyName === name) as any).Properties.PolicyDocument;
+  const rules = () => Object.values(t().findResources('AWS::IoT::TopicRule')) as any[];
+  const rule = (name: string) => rules().find((r) => r.Properties.RuleName === name).Properties.TopicRulePayload;
 
-  it('has the "moto" thing type', () => {
+  it('has the "moto" and "estacao" thing types', () => {
     t().hasResourceProperties('AWS::IoT::ThingType', { ThingTypeName: 'moto' });
+    t().hasResourceProperties('AWS::IoT::ThingType', { ThingTypeName: 'estacao' });
+    t().resourceCountIs('AWS::IoT::Policy', 2);
   });
 
-  it('policy has no wildcard Resource on Publish/Subscribe/Receive and scopes to the thing name', () => {
-    const policies = Object.values(t().findResources('AWS::IoT::Policy')) as any[];
-    expect(policies).toHaveLength(1);
-    const doc = policies[0].Properties.PolicyDocument;
-    const stmts: any[] = doc.Statement;
+  it.each(['volti-dev-moto-policy', 'volti-dev-estacao-policy'])('%s has no wildcard Resource on Publish/Subscribe/Receive and scopes to the thing name', (name) => {
+    const doc = policy(name);
     const seen = new Set<string>();
-    for (const s of stmts) {
+    for (const s of doc.Statement as any[]) {
       const res: unknown[] = Array.isArray(s.Resource) ? s.Resource : [s.Resource];
       const actions: string[] = Array.isArray(s.Action) ? s.Action : [s.Action];
       for (const a of actions) {
@@ -31,33 +45,126 @@ describe('IotStack', () => {
       }
     }
     expect([...seen].sort()).toEqual(['iot:Publish', 'iot:Receive', 'iot:Subscribe']);
-    const all = JSON.stringify(doc);
+  });
+
+  it('moto policy covers the tracker topics and its shadow', () => {
+    const all = JSON.stringify(policy('volti-dev-moto-policy'));
     for (const topic of ['telemetria', 'eventos', 'comandos']) expect(all).toContain(`motos/${THING}/${topic}`);
     expect(all).toContain(`$aws/things/${THING}/shadow/update`);
     expect(all).toContain(`$aws/things/${THING}/shadow/get`);
+    expect(all).not.toContain('estacoes/');
   });
 
-  it('rules route telemetry and events to SQS; presence events go to EventBridge via Lambda', () => {
-    const rules = Object.values(t().findResources('AWS::IoT::TopicRule')) as any[];
-    const sqlOf = (r: any) => r.Properties.TopicRulePayload.Sql as string;
-    const action = (r: any) => r.Properties.TopicRulePayload.Actions[0];
-    expect(rules.some((r) => /motos\/\+\/telemetria/.test(sqlOf(r)) && action(r).Sqs)).toBe(true);
-    expect(rules.some((r) => /motos\/\+\/eventos/.test(sqlOf(r)) && action(r).Sqs)).toBe(true);
-    expect(rules.some((r) => /\$aws\/events\/presence/.test(sqlOf(r)) && action(r).Lambda)).toBe(true);
+  it('estacao policy: publish only its eventos, receive/subscribe only its comandos, no shadow, attached-thing connect', () => {
+    const doc = policy('volti-dev-estacao-policy');
+    const by = (a: string) => doc.Statement.find((s: any) => s.Action === a);
+    expect(JSON.stringify(by('iot:Publish').Resource)).toContain(`topic/estacoes/${THING}/eventos`);
+    expect(by('iot:Publish').Resource).toHaveLength(1);
+    expect(by('iot:Receive').Resource).toHaveLength(1);
+    expect(JSON.stringify(by('iot:Receive').Resource)).toContain(`topic/estacoes/${THING}/comandos`);
+    expect(JSON.stringify(by('iot:Subscribe').Resource)).toContain(`topicfilter/estacoes/${THING}/comandos`);
+    expect(by('iot:Connect').Condition).toEqual({ Bool: { 'iot:Connection.Thing.IsAttached': 'true' } });
+    const all = JSON.stringify(doc);
+    expect(all).not.toContain('shadow');
+    expect(all).not.toContain('motos/');
+  });
+
+  it('telemetry and tracker events go to the telemetry queue (the API splits them by `tipo`); nothing goes raw to alertas', () => {
+    for (const name of ['volti_dev_telemetry', 'volti_dev_device_events']) {
+      const r = rule(name);
+      expect(r.Sql).toMatch(/topic\(2\) AS thingName/);
+      expect(JSON.stringify(r.Actions[0].Sqs.QueueUrl)).toMatch(/TelemetryQueue/);
+      expect(r.ErrorAction.CloudwatchLogs).toBeDefined();
+    }
+    expect(rule('volti_dev_device_events').Sql).toMatch(/motos\/\+\/eventos/);
+    expect(JSON.stringify(rules())).not.toMatch(/AlertsQueue/);
+    const stmts = Object.values(t().findResources('AWS::IAM::Policy')).flatMap((p: any) => p.Properties.PolicyDocument.Statement) as any[];
+    expect(JSON.stringify(stmts)).not.toMatch(/AlertsQueue/);
+  });
+
+  it('station events: rule estacoes/+/eventos → Lambda → stations FIFO queue, with error action', () => {
+    const r = rule('volti_dev_station_events');
+    expect(r.Sql).toBe(STATION_EVENTS_SQL);
+    expect(r.Sql).toBe("SELECT *, topic(2) AS thing FROM 'estacoes/+/eventos'");
+    expect(r.Actions[0].Lambda).toBeDefined();
+    expect(r.ErrorAction.CloudwatchLogs).toBeDefined();
+    const fns = Object.values(t().findResources('AWS::Lambda::Function')) as any[];
+    const fwd = fns.find((f) => f.Properties.Environment?.Variables?.QUEUE_URL);
+    expect(JSON.stringify(fwd.Properties.Environment.Variables.QUEUE_URL)).toMatch(/StationsQueue/);
+    t().hasResourceProperties('AWS::Lambda::Permission', { Principal: 'iot.amazonaws.com', SourceArn: Match.anyValue() });
+    const stmts = Object.values(t().findResources('AWS::IAM::Policy')).flatMap((p: any) => p.Properties.PolicyDocument.Statement) as any[];
+    expect(stmts.some((s) => JSON.stringify(s.Action).includes('sqs:SendMessage') && JSON.stringify(s.Resource).includes('StationsQueue'))).toBe(true);
+  });
+
+  it('station forwarder sends each event with MessageGroupId = thing and drops events without a station thing', async () => {
+    const sent: any[] = [];
+    class SQSClient {
+      async send(cmd: { input: unknown }) {
+        sent.push(cmd.input);
+      }
+    }
+    class SendMessageCommand {
+      constructor(public input: unknown) {}
+    }
+    const { handler, logs } = runInline(STATION_FORWARDER, { QUEUE_URL: 'https://sqs/q.fifo' }, { SQSClient, SendMessageCommand });
+    const thing = 'station-5b0e7c1a-1111-4111-8111-111111111111';
+    const event = { type: 'slot_closed', swapId: '5b0e7c1a-1111-4111-8111-111111111111', ts: '2026-10-22T15:00:22.000Z', thing };
+    await handler(event);
+    expect(sent).toEqual([{ QueueUrl: 'https://sqs/q.fifo', MessageBody: JSON.stringify(event), MessageGroupId: thing }]);
+    await handler({ type: 'slot_closed', thing: 'moto-0001' });
+    await handler({ type: 'slot_closed' });
+    expect(sent).toHaveLength(1);
+    expect(logs.join(' ')).not.toMatch(/swapId|slot_closed/); // no payload in logs
+  });
+
+  it('presence forwarder puts the events with the source/detail-type the EventBridge rule matches', async () => {
+    const sent: any[] = [];
+    class EventBridgeClient {
+      async send(cmd: { input: unknown }) {
+        sent.push(cmd.input);
+      }
+    }
+    class PutEventsCommand {
+      constructor(public input: unknown) {}
+    }
+    const { handler } = runInline(PRESENCE_FORWARDER, { EVENT_BUS_NAME: 'volti-dev' }, { EventBridgeClient, PutEventsCommand });
+    await handler({ clientId: 'moto-0001', eventType: 'disconnected', timestamp: 1730000000000, ipAddress: '1.2.3.4' });
+    const entry = sent[0].Entries[0];
+    expect(entry.Source).toBe(PRESENCE_EVENT.source);
+    expect(entry.DetailType).toBe(PRESENCE_EVENT.detailType);
+    expect(JSON.parse(entry.Detail)).toEqual({ thingName: 'moto-0001', eventType: 'disconnected', timestamp: 1730000000000 });
+  });
+
+  it('presence events still go to EventBridge via Lambda', () => {
+    const r = rule('volti_dev_presence');
+    expect(r.Sql).toMatch(/\$aws\/events\/presence/);
+    expect(r.Actions[0].Lambda).toBeDefined();
     t().hasResourceProperties('AWS::Lambda::Function', { Runtime: Match.stringLikeRegexp('^nodejs') });
   });
 
-  it('creates Amazon Location tracker and geofence collection and publishes SSM params', () => {
+  it('every rule error is counted by a metric filter (alarmed in observability)', () => {
+    for (const r of rules()) expect(r.Properties.TopicRulePayload.ErrorAction.CloudwatchLogs).toBeDefined();
+    t().hasResourceProperties('AWS::Logs::MetricFilter', {
+      FilterPattern: '',
+      MetricTransformations: [Match.objectLike({ MetricNamespace: 'Volti/dev', MetricName: 'IotRuleErrors', MetricValue: '1' })],
+    });
+  });
+
+  it('creates Amazon Location tracker, geofence collection and place index (Storage) and publishes SSM params', () => {
     t().resourceCountIs('AWS::Location::Tracker', 1);
     t().resourceCountIs('AWS::Location::GeofenceCollection', 1);
-    for (const n of ['iot/endpoint', 'iot/thing-type', 'location/tracker-name', 'location/geofence-collection']) {
+    t().hasResourceProperties('AWS::Location::PlaceIndex', {
+      IndexName: 'volti-dev-places',
+      DataSource: 'Esri',
+      DataSourceConfiguration: { IntendedUse: 'Storage' },
+    });
+    for (const n of ['iot/endpoint', 'iot/thing-type', 'iot/station-thing-type', 'location/tracker-name', 'location/geofence-collection', 'location/place-index']) {
       t().hasResourceProperties('AWS::SSM::Parameter', { Name: `/volti/dev/${n}` });
     }
   });
 
   it('QA-16: iot:Connect requires the certificate to be attached to a thing', () => {
-    const doc = (Object.values(t().findResources('AWS::IoT::Policy'))[0] as any).Properties.PolicyDocument;
-    const connect = doc.Statement.find((s: any) => s.Action === 'iot:Connect');
+    const connect = policy('volti-dev-moto-policy').Statement.find((s: any) => s.Action === 'iot:Connect');
     expect(connect.Condition).toEqual({ Bool: { 'iot:Connection.Thing.IsAttached': 'true' } });
   });
 });

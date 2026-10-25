@@ -7,6 +7,6 @@
     "noUnusedLocals": true,
     "rootDir": "."
   },
-  "include": ["bin/**/*.ts", "lib/**/*.ts", "test/**/*.ts"],
+  "include": ["bin/**/*.ts", "lib/**/*.ts", "scripts/**/*.ts", "test/**/*.ts"],
   "exclude": ["node_modules", "cdk.out"]
 }

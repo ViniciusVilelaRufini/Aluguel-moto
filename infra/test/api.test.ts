@@ -1,7 +1,10 @@
 import { readFileSync, readdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { Match } from 'aws-cdk-lib/assertions';
+import { getConfig } from '../lib/config';
 import { stacksFor, templateOf } from './helpers';
+
+const API_ROOT = join(__dirname, '..', '..', 'services', 'api');
 
 describe('ApiStack', () => {
   const t = () => templateOf(stacksFor('dev').api);
@@ -56,13 +59,15 @@ describe('ApiStack', () => {
     const publish = stmts.filter((s) => toList(s.Action).includes('iot:Publish'));
     expect(publish).toHaveLength(1);
     const resources = toList(publish[0].Resource).map((r) => JSON.stringify(r));
-    expect(resources).toHaveLength(3);
+    expect(resources).toHaveLength(4);
     expect(resources.some((r) => r.includes('topic/motos/*/comandos'))).toBe(true);
+    expect(resources.some((r) => r.includes('topic/estacoes/*/comandos'))).toBe(true);
     expect(resources.some((r) => r.includes('shadow/update'))).toBe(true);
     expect(resources.some((r) => r.includes('shadow/get'))).toBe(true);
     for (const r of resources) {
       expect(r).not.toMatch(/telemetria|eventos/);
       expect(r).not.toMatch(/topic\/motos\/\*"/);
+      expect(r).not.toMatch(/topic\/estacoes\/\*"/);
       expect(r).not.toMatch(/shadow\/\*"/);
     }
     const data = stmts.find((s) => toList(s.Action).includes('iot:GetThingShadow'));
@@ -84,14 +89,17 @@ describe('ApiStack', () => {
     };
     const REQUIRED_ENV = [
       'NODE_ENV', 'PORT', 'DB_HOST', 'DB_PORT', 'DB_NAME', 'REDIS_URL',
-      'S3_BUCKET_KYC', 'S3_BUCKET_RETURN_PHOTOS', 'S3_BUCKET_REPORTS', 'S3_BUCKET_ATTACHMENTS',
+      'S3_BUCKET_KYC', 'S3_BUCKET_RETURN_PHOTOS', 'S3_BUCKET_REPORTS', 'S3_BUCKET_ATTACHMENTS', 'S3_BUCKET_CATALOG', 'RUN_MIGRATIONS',
       'CORS_ORIGINS', 'TRUST_PROXY', 'AUTH_MODE', 'COGNITO_CUSTOMER_POOL_ID', 'COGNITO_CUSTOMER_CLIENT_ID', 'COGNITO_STAFF_POOL_ID', 'COGNITO_STAFF_CLIENT_ID',
-      'IOT_MODE', 'GEOFENCE_MODE', 'LOCATION_TRACKER_NAME', 'LOCATION_GEOFENCE_COLLECTION',
-      'QUEUE_MODE', 'SQS_QUEUE_TELEMETRIA_URL', 'SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL', 'SQS_QUEUE_ALERTAS_URL',
+      'IOT_MODE', 'GEOFENCE_MODE', 'LOCATION_TRACKER_NAME', 'LOCATION_GEOFENCE_COLLECTION', 'GEOCODER_MODE', 'LOCATION_PLACE_INDEX',
+      'QUEUE_MODE', 'SQS_QUEUE_TELEMETRIA_URL', 'SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL', 'SQS_QUEUE_ALERTAS_URL', 'SQS_QUEUE_ESTACOES_URL',
       'STORAGE_MODE', 'PAYMENT_PROVIDER', 'INSURANCE_PROVIDER', 'KYC_PROVIDER', 'PUSH_MODE',
       'TRACK_RETENTION_DAYS', 'OUT_OF_AREA_LOCK_MINUTES', 'AWS_REGION',
     ];
-    const REQUIRED_SECRETS = ['DB_USER', 'DB_PASSWORD', 'IOT_ENDPOINT', 'MERCADOPAGO_ACCESS_TOKEN', 'MERCADOPAGO_WEBHOOK_SECRET'];
+    const REQUIRED_SECRETS = [
+      'DB_USER', 'DB_PASSWORD', 'IOT_ENDPOINT', 'MERCADOPAGO_ACCESS_TOKEN', 'MERCADOPAGO_WEBHOOK_SECRET',
+      'STATION_QR_SECRET', 'FRAUD_HASH_SECRET', 'PICKUP_CODE_SECRET',
+    ];
 
     it('has exactly the expected env vars and secrets', () => {
       expect(container().Environment.map((e: any) => e.Name).sort()).toEqual([...REQUIRED_ENV].sort());
@@ -105,10 +113,59 @@ describe('ApiStack', () => {
       expect(v('AUTH_MODE')).toBe('cognito');
       expect(v('IOT_MODE')).toBe('aws');
       expect(v('GEOFENCE_MODE')).toBe('aws');
+      expect(v('GEOCODER_MODE')).toBe('aws');
+      expect(v('RUN_MIGRATIONS')).toBe('true');
+      expect(v('LOCATION_PLACE_INDEX')).toBe('volti-dev-places');
+      expect(JSON.stringify(v('S3_BUCKET_CATALOG'))).toMatch(/CatalogBucket/);
+      // The API refuses a stations queue whose URL does not end in .fifo (station-gateways.ts).
+      expect(JSON.stringify(v('SQS_QUEUE_ESTACOES_URL'))).toMatch(/StationsQueue/);
+    });
+
+    /**
+     * API → infra: every variable the API names in a startup error (`throw new Error('X é obrigatório em produção')`,
+     * `IOT_MODE=aws exige X`, ...) in its config files must be in the task, so a new production requirement in services/api
+     * fails this test instead of failing the deploy.
+     */
+    it('every variable the API requires in production is in the task (API → infra)', () => {
+      const files = [
+        ...readdirSync(join(API_ROOT, 'src', 'config')).filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts')).map((f) => join('src', 'config', f)),
+        join('src', 'modules', 'reservations', 'pickup-code.ts'),
+        join('src', 'modules', 'station-swaps', 'station-code.ts'),
+        join('src', 'modules', 'station-swaps', 'station-gateways.ts'),
+        join('src', 'modules', 'iot', 'iot-config.ts'),
+        join('src', 'adapters', 'auth', 'cognito-auth-verifier.ts'),
+      ];
+      const NOT_VARIABLES = ['CHANGE_ME'];
+      const required = new Set<string>();
+      for (const f of files) {
+        const text = readFileSync(join(API_ROOT, f), 'utf8');
+        for (const m of text.matchAll(/throw new Error\((['"`])((?:(?!\1).)*)\1/g)) {
+          for (const name of m[2].match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g) ?? []) if (!NOT_VARIABLES.includes(name)) required.add(name);
+        }
+      }
+      // Guard against the scan silently matching nothing.
+      for (const known of ['STATION_QR_SECRET', 'FRAUD_HASH_SECRET', 'PICKUP_CODE_SECRET', 'SQS_QUEUE_ESTACOES_URL']) expect(required).toContain(known);
+      const inTask = new Set([...container().Environment.map((e: any) => e.Name), ...container().Secrets.map((e: any) => e.Name)]);
+      const missing = [...required].filter((n) => !inTask.has(n)).sort();
+      expect(missing).toEqual([]);
+    });
+
+    it('signing secrets are generated by Secrets Manager (never a literal) and injected whole', () => {
+      const secrets = Object.values(t().findResources('AWS::SecretsManager::Secret')) as any[];
+      for (const name of ['station-qr-secret', 'fraud-hash-secret', 'pickup-code-secret']) {
+        const s = secrets.find((r) => r.Properties.Name === `volti/dev/${name}`);
+        expect(s).toBeDefined();
+        expect(s.Properties.GenerateSecretString.PasswordLength).toBeGreaterThanOrEqual(32);
+        expect(s.Properties.SecretString).toBeUndefined();
+      }
+      for (const n of ['STATION_QR_SECRET', 'FRAUD_HASH_SECRET', 'PICKUP_CODE_SECRET']) {
+        const ref = container().Secrets.find((e: any) => e.Name === n);
+        expect(JSON.stringify(ref.ValueFrom)).not.toMatch(/::/); // whole secret string, no JSON key
+      }
     });
 
     it('every name is read somewhere in services/api (src or scripts)', () => {
-      const root = join(__dirname, '..', '..', 'services', 'api');
+      const root = API_ROOT;
       const files: string[] = [];
       const walk = (d: string) => {
         for (const f of readdirSync(d)) {
@@ -153,13 +210,46 @@ describe('ApiStack', () => {
     expect(JSON.stringify(customer.Resource)).not.toEqual(JSON.stringify(staff.Resource));
   });
 
-  it('QA-18: regional WAF with a per-IP rate rule is associated with the ALB', () => {
-    t().hasResourceProperties('AWS::WAFv2::WebACL', {
-      Scope: 'REGIONAL',
-      Rules: Match.arrayWith([
-        Match.objectLike({ Action: { Block: {} }, Statement: { RateBasedStatement: Match.objectLike({ Limit: 2000, AggregateKeyType: 'IP', EvaluationWindowSec: 300 }) } }),
-      ]),
-    });
+  it('QA-18: regional WAF with a per-IP rate rule (per environment) and AWS managed rules is associated with the ALB', () => {
+    for (const [env, limit] of [['dev', 2000], ['prod', 3000]] as const) {
+      templateOf(stacksFor(env).api).hasResourceProperties('AWS::WAFv2::WebACL', {
+        Scope: 'REGIONAL',
+        Rules: Match.arrayWith([
+          Match.objectLike({ Action: { Block: {} }, Statement: { RateBasedStatement: Match.objectLike({ Limit: limit, AggregateKeyType: 'IP', EvaluationWindowSec: 300 }) } }),
+        ]),
+      });
+    }
+    const acl = Object.values(t().findResources('AWS::WAFv2::WebACL'))[0] as any;
+    const managed = acl.Properties.Rules.filter((r: any) => r.Statement.ManagedRuleGroupStatement);
+    expect(managed.map((r: any) => r.Statement.ManagedRuleGroupStatement.Name).sort()).toEqual([
+      'AWSManagedRulesAmazonIpReputationList', 'AWSManagedRulesCommonRuleSet', 'AWSManagedRulesKnownBadInputsRuleSet',
+    ]);
+    for (const r of managed) {
+      expect(r.Statement.ManagedRuleGroupStatement.VendorName).toBe('AWS');
+      expect(r.OverrideAction).toEqual({ None: {} });
+    }
+    const common = managed.find((r: any) => r.Name === 'AWSManagedRulesCommonRuleSet');
+    expect(common.Statement.ManagedRuleGroupStatement.RuleActionOverrides).toEqual([{ Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } }]);
+    const priorities = acl.Properties.Rules.map((r: any) => r.Priority);
+    expect(new Set(priorities).size).toBe(priorities.length);
     t().resourceCountIs('AWS::WAFv2::WebACLAssociation', 1);
+  });
+
+  it('the WAF limit can be overridden per deploy and rejects nonsense', () => {
+    expect(getConfig('dev', { apiRateLimitPer5Min: 500 }).apiRateLimitPer5Min).toBe(500);
+    expect(() => getConfig('dev', { apiRateLimitPer5Min: 5 })).toThrow(/apiRateLimitPer5Min/);
+    expect(() => getConfig('dev', { apiRateLimitPer5Min: Number.NaN })).toThrow(/apiRateLimitPer5Min/);
+  });
+
+  it('task role: consumes the stations FIFO queue, reads/writes the catalog bucket, reverse-geocodes on one place index', () => {
+    const stmts = Object.values(t().findResources('AWS::IAM::Policy')).flatMap((p: any) => p.Properties.PolicyDocument.Statement) as any[];
+    const list = (x: unknown) => (Array.isArray(x) ? x : [x]);
+    const consume = stmts.find((s) => list(s.Action).includes('sqs:ReceiveMessage') && JSON.stringify(s.Resource).includes('StationsQueue'));
+    expect(consume).toBeDefined();
+    expect(stmts.some((s) => list(s.Action).includes('sqs:SendMessage') && JSON.stringify(s.Resource).includes('StationsQueue'))).toBe(false);
+    expect(stmts.some((s) => list(s.Action).some((a: string) => a.startsWith('s3:Put')) && JSON.stringify(s.Resource).includes('CatalogBucket'))).toBe(true);
+    const geo = stmts.find((s) => list(s.Action).includes('geo:SearchPlaceIndexForPosition'));
+    expect(list(geo.Action)).toEqual(['geo:SearchPlaceIndexForPosition']);
+    expect(JSON.stringify(geo.Resource)).toMatch(/place-index\/volti-dev-places/);
   });
 });

@@ -1,5 +1,6 @@
 import { App, Tags } from 'aws-cdk-lib';
 import {
+  ConfigOverrides,
   EnvName,
   FAKE_CERTIFICATE_ARN,
   getConfig,
@@ -27,6 +28,8 @@ export interface VoltiAppOptions {
   adminDomainName?: string;
   adminCertificateArn?: string;
   alarmEmail?: string;
+  /** Account-specific values (SES identity, IdP secret names, Cognito domain prefixes, WAF limit). */
+  overrides?: ConfigOverrides;
   outdir?: string;
 }
 
@@ -44,7 +47,7 @@ export interface VoltiStacks {
 }
 
 export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
-  const cfg = getConfig(opts.envName);
+  const cfg = getConfig(opts.envName, opts.overrides);
   const account = opts.account ?? '000000000000';
   const app = new App({ outdir: opts.outdir });
   const env = { account, region: cfg.region };
@@ -52,10 +55,6 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
   const common = { env, terminationProtection: !cfg.disposable };
 
   const network = new NetworkStack(app, `${prefix}-network`, { ...common, cfg });
-  const data = new DataStack(app, `${prefix}-data`, { ...common, cfg, vpc: network.vpc });
-  const auth = new AuthStack(app, `${prefix}-auth`, { ...common, cfg });
-  const messaging = new MessagingStack(app, `${prefix}-messaging`, { ...common, cfg });
-  const iot = new IotStack(app, `${prefix}-iot`, { ...common, cfg, messaging });
   const waf = new WafStack(app, `${prefix}-waf`, {
     ...common,
     env: { account, region: 'us-east-1' },
@@ -70,6 +69,11 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     adminDomainName: opts.adminDomainName,
     adminCertificateArn: opts.adminCertificateArn,
   });
+  // The panel origin feeds the Cognito callbacks and the CORS of the catalog bucket (browser uploads).
+  const data = new DataStack(app, `${prefix}-data`, { ...common, cfg, vpc: network.vpc, adminOrigin: adminWeb.origin });
+  const auth = new AuthStack(app, `${prefix}-auth`, { ...common, cfg, adminOrigin: adminWeb.origin });
+  const messaging = new MessagingStack(app, `${prefix}-messaging`, { ...common, cfg });
+  const iot = new IotStack(app, `${prefix}-iot`, { ...common, cfg, messaging });
   const api = new ApiStack(app, `${prefix}-api`, {
     ...common,
     cfg,
@@ -89,6 +93,7 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     api,
     data,
     messaging,
+    iot,
     alarmEmail: opts.alarmEmail,
   });
 

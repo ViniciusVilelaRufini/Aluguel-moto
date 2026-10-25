@@ -86,6 +86,9 @@ importers:
 
   infra:
     devDependencies:
+      '@aws-sdk/client-iot':
+        specifier: 3.709.0
+        version: 3.709.0
       '@eslint/js':
         specifier: ^9
         version: 9.17.0

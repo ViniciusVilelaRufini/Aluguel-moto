@@ -18,6 +18,15 @@ const { app } = createVoltiApp({
   adminDomainName: domain ? `admin.${domain}` : undefined,
   adminCertificateArn: get('adminCertificateArn'),
   alarmEmail: get('alarmEmail'),
+  overrides: {
+    sesFromEmail: get('sesFromEmail'),
+    sesVerifiedDomain: get('sesVerifiedDomain'),
+    googleIdpSecretName: get('googleIdpSecretName'),
+    appleIdpSecretName: get('appleIdpSecretName'),
+    customerDomainPrefix: get('customerDomainPrefix'),
+    staffDomainPrefix: get('staffDomainPrefix'),
+    apiRateLimitPer5Min: get('apiRateLimitPer5Min') === undefined ? undefined : Number(get('apiRateLimitPer5Min')),
+  },
   outdir: process.env.CDK_OUTDIR,
 });
 app.synth();

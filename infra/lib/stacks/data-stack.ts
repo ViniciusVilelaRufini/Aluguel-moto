@@ -11,6 +11,8 @@ import { publishParam } from '../ssm';
 export interface DataStackProps extends StackProps {
   cfg: EnvConfig;
   vpc: ec2.IVpc;
+  /** Admin panel origin (https://...): the only browser origin allowed to PUT catalog photos by presigned URL. */
+  adminOrigin: string;
 }
 
 export class DataStack extends Stack {
@@ -21,6 +23,7 @@ export class DataStack extends Stack {
   public readonly returnPhotosBucket: s3.Bucket;
   public readonly reportsBucket: s3.Bucket;
   public readonly attachmentsBucket: s3.Bucket;
+  public readonly catalogBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -155,6 +158,23 @@ export class DataStack extends Stack {
       ],
     });
 
+    // Contract v2: catalog model photos (S3_BUCKET_CATALOG). Private; read and upload only by presigned URL issued by the API.
+    // The panel uploads straight from the browser, so the bucket needs CORS for the panel origin(s).
+    this.catalogBucket = new s3.Bucket(this, 'CatalogBucket', {
+      ...common,
+      bucketName: name('catalogo'),
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.PUT, s3.HttpMethods.GET],
+          allowedOrigins: [props.adminOrigin, ...cfg.auth.adminExtraOrigins],
+          allowedHeaders: ['content-type'],
+          maxAge: 3000,
+        },
+      ],
+      lifecycleRules: [{ id: 'abort-multipart', abortIncompleteMultipartUploadAfter: Duration.days(7) }],
+    });
+
     publishParam(this, env, 'rds/endpoint', this.db.dbInstanceEndpointAddress);
     publishParam(this, env, 'rds/secret-arn', this.db.secret!.secretArn);
     publishParam(this, env, 'redis/endpoint', this.redis.attrPrimaryEndPointAddress);
@@ -162,5 +182,6 @@ export class DataStack extends Stack {
     publishParam(this, env, 's3/return-photos-bucket', this.returnPhotosBucket.bucketName);
     publishParam(this, env, 's3/reports-bucket', this.reportsBucket.bucketName);
     publishParam(this, env, 's3/attachments-bucket', this.attachmentsBucket.bucketName);
+    publishParam(this, env, 's3/catalog-bucket', this.catalogBucket.bucketName);
   }
 }
