@@ -15,7 +15,7 @@ part 'dashboard_summary.g.dart';
 /// * [generatedAt]
 /// * [occupancyPct]
 /// * [activeRentals]
-/// * [revenueTodayCents]
+/// * [revenueTodayCents] - Mesma definição de `FinanceReport.totalRevenueCents`, desde 00:00 de hoje (America/Sao_Paulo).
 /// * [openAlerts]
 /// * [vehiclesByStatus]
 @BuiltValue()
@@ -30,6 +30,7 @@ abstract class DashboardSummary
   @BuiltValueField(wireName: r'activeRentals')
   int get activeRentals;
 
+  /// Mesma definição de `FinanceReport.totalRevenueCents`, desde 00:00 de hoje (America/Sao_Paulo).
   @BuiltValueField(wireName: r'revenueTodayCents')
   int get revenueTodayCents;
 

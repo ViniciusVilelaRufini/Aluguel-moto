@@ -12,9 +12,10 @@ Name | Type | Description | Notes
 **conversationId** | **String** |  | 
 **authorType** | [**MessageAuthorType**](MessageAuthorType.md) |  | 
 **authorId** | **String** |  | [optional] 
-**authorName** | **String** | Primeiro nome do atendente (staff) ou \"Você\". | [optional] 
+**authorName** | **String** | Mensagem da equipe: primeiro nome cadastrado do atendente ou, sem nome cadastrado, \"Equipe Volti\" (nunca derivado do e-mail).  | [optional] 
 **body** | **String** |  | 
 **attachmentObjectKeys** | **BuiltList&lt;String&gt;** |  | [optional] 
+**attachmentUrls** | **BuiltList&lt;String&gt;** | Só nas respostas para a equipe: URLs pré-assinadas (GET, 15 minutos) dos anexos, na mesma ordem de `attachmentObjectKeys`. Só anexos enviados pelo próprio autor (`support/<authorId>/…`) ganham URL.  | [optional] 
 **status** | [**SupportMessageStatus**](SupportMessageStatus.md) |  | [optional] 
 **deliveredAt** | [**DateTime**](DateTime.md) | O outro lado buscou a mensagem. | [optional] 
 **readAt** | [**DateTime**](DateTime.md) | O outro lado marcou como lida. | [optional] 

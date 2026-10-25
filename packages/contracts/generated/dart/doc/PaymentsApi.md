@@ -25,6 +25,7 @@ Method | HTTP request | Description
 [**payDebt**](PaymentsApi.md#paydebt) | **POST** /payments/{id}/retry | Quitar dívida (cliente)
 [**refundPayment**](PaymentsApi.md#refundpayment) | **POST** /payments/{id}/refund | Estornar pagamento
 [**resumeSubscription**](PaymentsApi.md#resumesubscription) | **POST** /payments/subscriptions/{id}/resume | Retomar assinatura pausada
+[**setDefaultPaymentCard**](PaymentsApi.md#setdefaultpaymentcard) | **PUT** /payments/cards/{id}/default | Definir o cartão padrão
 
 
 # **addPaymentCard**
@@ -32,7 +33,7 @@ Method | HTTP request | Description
 
 Cadastrar cartão (token do gateway)
 
-Recebe **só** o token gerado no app pelo SDK do Mercado Pago. Número, CVV e validade nunca chegam ao backend.
+Recebe **só** o token gerado no app pelo SDK do Mercado Pago. Número, CVV e validade nunca chegam ao backend. O primeiro cartão ativo do cliente vira o padrão (`isDefault: true`); com `setDefault: true` o novo cartão passa a ser o padrão e o anterior deixa de ser. 
 
 ### Example
 ```dart
@@ -165,7 +166,7 @@ Name | Type | Description  | Notes
 
 Assinar plano semanal ou mensal
 
-Cobrança recorrente no cartão. Com assinatura ativa, aluguéis com o mesmo `planCode` não cobram tempo (só seguro e taxas). Uma assinatura ativa por cliente (`409`).
+Cobrança recorrente no cartão (`cardId` ou, sem ele, o cartão padrão). Com assinatura ativa, aluguéis com o mesmo `planCode` não cobram tempo (só seguro e taxas). Uma assinatura ativa por cliente (`409`). Sem nenhum cartão ativo → `422` `card-required` (\"Cadastre um cartão para assinar.\"); `cardId` inexistente → `402` `card-not-found`. 
 
 ### Example
 ```dart
@@ -210,7 +211,7 @@ Name | Type | Description  | Notes
 
 Remover cartão
 
-Não remove cartão com caução retida ou assinatura ativa (`409`).
+Não remove cartão com caução retida ou assinatura ativa (`409`). Ao remover o cartão padrão, o cartão ativo cadastrado mais recentemente vira o padrão (o cliente nunca fica com cartões e sem padrão). 
 
 ### Example
 ```dart
@@ -720,6 +721,49 @@ Name | Type | Description  | Notes
 ### Return type
 
 [**Subscription**](Subscription.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **setDefaultPaymentCard**
+> PaymentCard setDefaultPaymentCard(id)
+
+Definir o cartão padrão
+
+Torna o cartão o padrão do cliente (os demais ficam `isDefault: false`). Idempotente: repetir não muda nada. O cartão padrão é o usado quando `cardId` não é enviado (caução da reserva e do aluguel, assinatura, recarga, cobrança do fechamento e quitação de dívida). Cartão de outro cliente ou removido → `404`. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getPaymentsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+
+try {
+    final response = api.setDefaultPaymentCard(id);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling PaymentsApi->setDefaultPaymentCard: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+
+### Return type
+
+[**PaymentCard**](PaymentCard.md)
 
 ### Authorization
 

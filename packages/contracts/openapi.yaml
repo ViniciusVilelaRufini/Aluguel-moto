@@ -46,7 +46,7 @@ info:
     `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
     `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
     `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`,
-    `payment-pending`.
+    `payment-pending`, `card-required`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -1601,6 +1601,11 @@ paths:
         Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError`
         e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409`
         `rental-already-active`. `Idempotency-Key` ausente ou curta → `400`.
+
+        Moto sem conexão ou sem confirmar o destravamento → `409` `vehicle-offline` ("Não conseguimos falar com a moto
+        agora. Tente de novo em instantes ou fale com o operador."): nada é cobrado, nenhum aluguel é criado, a caução
+        **continua retida** com a reserva, a entrega continua `pending_customer` (com `lastError: vehicle-offline`) e o
+        cliente pode aceitar de novo.
       security:
         - customerAuth: []
       parameters:
@@ -1825,8 +1830,10 @@ paths:
         `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422`
         `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409`
         `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem
-        reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização,
-        recusa → `422` `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano
+        reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização
+        no `cardId` ou, sem ele, no cartão padrão; sem nenhum cartão ativo → `422` `card-required` ("Cadastre um cartão
+        ou pague a caução com Pix."), `cardId` inexistente → `422` `card-not-found`, recusa do emissor → `422`
+        `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano
         só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar
         (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva.
       security:
@@ -1918,7 +1925,8 @@ paths:
 
         Caução (`depositMethod`):
         - `card`: pré-autoriza 5000 no cartão (`cardId` ou o cartão padrão). Sucesso → `201` com
-          `outcome: started`, aluguel `active` e desbloqueio pedido ao módulo IoT.
+          `outcome: started`, aluguel `active` e desbloqueio pedido ao módulo IoT. Sem nenhum cartão ativo →
+          `422` `card-required`.
         - `pix`: gera a cobrança Pix → `202` com `outcome: awaiting_deposit` e `deposit.pix`. A resposta cria
           (ou estende) uma reserva do cliente para essa moto válida até `pix.expiresAt`, com as mesmas regras
           das reservas (uma por cliente, KYC aprovado, sem bloqueio) e no máximo o prazo do Pix. Depois do
@@ -2719,7 +2727,10 @@ paths:
       tags: [payments]
       operationId: addPaymentCard
       summary: Cadastrar cartão (token do gateway)
-      description: Recebe **só** o token gerado no app pelo SDK do Mercado Pago. Número, CVV e validade nunca chegam ao backend.
+      description: |
+        Recebe **só** o token gerado no app pelo SDK do Mercado Pago. Número, CVV e validade nunca chegam ao backend.
+        O primeiro cartão ativo do cliente vira o padrão (`isDefault: true`); com `setDefault: true` o novo cartão passa
+        a ser o padrão e o anterior deixa de ser.
       security:
         - customerAuth: []
       parameters:
@@ -2744,7 +2755,9 @@ paths:
       tags: [payments]
       operationId: deletePaymentCard
       summary: Remover cartão
-      description: Não remove cartão com caução retida ou assinatura ativa (`409`).
+      description: |
+        Não remove cartão com caução retida ou assinatura ativa (`409`). Ao remover o cartão padrão, o cartão ativo
+        cadastrado mais recentemente vira o padrão (o cliente nunca fica com cartões e sem padrão).
       security:
         - customerAuth: []
       parameters:
@@ -2755,6 +2768,27 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /payments/cards/{id}/default:
+    put:
+      tags: [payments]
+      operationId: setDefaultPaymentCard
+      summary: Definir o cartão padrão
+      description: |
+        Torna o cartão o padrão do cliente (os demais ficam `isDefault: false`). Idempotente: repetir não muda nada.
+        O cartão padrão é o usado quando `cardId` não é enviado (caução da reserva e do aluguel, assinatura, recarga,
+        cobrança do fechamento e quitação de dívida). Cartão de outro cliente ou removido → `404`.
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Cartão padrão.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PaymentCard' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /payments/deposits:
     get:
       tags: [payments]
@@ -2819,7 +2853,10 @@ paths:
       tags: [payments]
       operationId: createSubscription
       summary: Assinar plano semanal ou mensal
-      description: Cobrança recorrente no cartão. Com assinatura ativa, aluguéis com o mesmo `planCode` não cobram tempo (só seguro e taxas). Uma assinatura ativa por cliente (`409`).
+      description: |
+        Cobrança recorrente no cartão (`cardId` ou, sem ele, o cartão padrão). Com assinatura ativa, aluguéis com o mesmo
+        `planCode` não cobram tempo (só seguro e taxas). Uma assinatura ativa por cliente (`409`). Sem nenhum cartão
+        ativo → `422` `card-required` ("Cadastre um cartão para assinar."); `cardId` inexistente → `402` `card-not-found`.
       security:
         - customerAuth: []
       parameters:
@@ -2841,6 +2878,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   /payments/subscriptions/{id}:
     get:
@@ -5112,8 +5150,9 @@ paths:
       summary: Excluir minha conta
       description: |
         Anonimiza nome, CPF, e-mail e telefone, apaga trajetos e documentos de KYC e mantém pagamentos e
-        notas fiscais (obrigação legal). Bloqueado com aluguel em andamento ou débito pendente (`409`
-        `account-deletion-blocked`).
+        notas fiscais (obrigação legal). Bloqueado (`409` `account-deletion-blocked`, com `detail` em pt-BR dizendo o que
+        fazer) com: aluguel em andamento; reserva aberta (inclusive retirada em galpão `active` ou com a entrega em
+        andamento, `handover`); caução ainda retida ou aguardando Pix; débito pendente ou cobrança em curso.
       security:
         - customerAuth: []
       responses:
@@ -6831,11 +6870,21 @@ components:
         conversationId: { type: string, format: uuid }
         authorType: { $ref: '#/components/schemas/MessageAuthorType' }
         authorId: { type: string, format: uuid }
-        authorName: { type: string, description: 'Primeiro nome do atendente (staff) ou "Você".' }
+        authorName:
+          type: string
+          description: |
+            Mensagem da equipe: primeiro nome cadastrado do atendente ou, sem nome cadastrado, "Equipe Volti" (nunca
+            derivado do e-mail).
         body: { type: string }
         attachmentObjectKeys:
           type: array
           items: { type: string }
+        attachmentUrls:
+          type: array
+          items: { type: string, format: uri }
+          description: |
+            Só nas respostas para a equipe: URLs pré-assinadas (GET, 15 minutos) dos anexos, na mesma ordem de
+            `attachmentObjectKeys`. Só anexos enviados pelo próprio autor (`support/<authorId>/…`) ganham URL.
         status: { $ref: '#/components/schemas/SupportMessageStatus' }
         deliveredAt: { type: string, format: date-time, description: O outro lado buscou a mensagem. }
         readAt: { type: string, format: date-time, description: O outro lado marcou como lida. }
@@ -7080,7 +7129,7 @@ components:
         generatedAt: { type: string, format: date-time }
         occupancyPct: { type: number, format: double, minimum: 0, maximum: 100 }
         activeRentals: { type: integer, minimum: 0 }
-        revenueTodayCents: { type: integer, minimum: 0 }
+        revenueTodayCents: { type: integer, minimum: 0, description: 'Mesma definição de `FinanceReport.totalRevenueCents`, desde 00:00 de hoje (America/Sao_Paulo).' }
         openAlerts: { type: integer, minimum: 0 }
         vehiclesByStatus: { $ref: '#/components/schemas/VehicleStatusCounts' }
     HeatmapPoint:
@@ -7176,8 +7225,19 @@ components:
         to: { type: string, format: date-time }
         revenueByPlan:
           type: array
+          description: Receita de aluguéis encerrados no período, por plano (custo total do aluguel).
           items: { $ref: '#/components/schemas/PlanRevenue' }
-        totalRevenueCents: { type: integer }
+        rentalRevenueCents: { type: integer, minimum: 0, description: Soma de `revenueByPlan`. }
+        subscriptionRevenueCents:
+          type: integer
+          minimum: 0
+          description: Cobranças de assinatura (semanal/mensal, inclusive renovações) pagas, criadas no período.
+        totalRevenueCents:
+          type: integer
+          description: |
+            Receita = aluguéis encerrados (`rentalRevenueCents`) + assinaturas pagas (`subscriptionRevenueCents`).
+            Não entram: caução (garantia), recargas e pacotes de minutos da carteira (`walletTopUpsCents`, crédito
+            pré-pago que vira receita quando é usado num aluguel) e estornos (`refundsCents`, informados à parte).
         depositsHeldCount: { type: integer, minimum: 0, description: Cauções retidas agora. }
         depositsHeldCents: { type: integer, minimum: 0 }
         delinquentCustomers: { type: integer, minimum: 0 }
@@ -8131,7 +8191,7 @@ components:
         vehicleId: { type: string, format: uuid }
         vehicleCode: { type: string, examples: [VLT-0001] }
         operatorId: { type: string, format: uuid }
-        operatorFirstName: { type: string, description: 'Só o primeiro nome do operador ("Entregue por <nome>"), nunca o nome completo.', examples: [Rafael] }
+        operatorFirstName: { type: string, description: 'Só o primeiro nome cadastrado do operador ("Entregue por <nome>"), nunca o nome completo nem algo derivado do e-mail; sem nome cadastrado, "Equipe Volti".', examples: [Rafael] }
         checklist:
           type: array
           items: { $ref: '#/components/schemas/HandoverChecklistItem' }

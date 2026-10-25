@@ -20,7 +20,7 @@ Method | HTTP request | Description
 
 Excluir minha conta
 
-Anonimiza nome, CPF, e-mail e telefone, apaga trajetos e documentos de KYC e mantém pagamentos e notas fiscais (obrigação legal). Bloqueado com aluguel em andamento ou débito pendente (`409` `account-deletion-blocked`). 
+Anonimiza nome, CPF, e-mail e telefone, apaga trajetos e documentos de KYC e mantém pagamentos e notas fiscais (obrigação legal). Bloqueado (`409` `account-deletion-blocked`, com `detail` em pt-BR dizendo o que fazer) com: aluguel em andamento; reserva aberta (inclusive retirada em galpão `active` ou com a entrega em andamento, `handover`); caução ainda retida ou aguardando Pix; débito pendente ou cobrança em curso. 
 
 ### Example
 ```dart

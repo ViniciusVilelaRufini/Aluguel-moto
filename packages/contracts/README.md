@@ -4,7 +4,7 @@ Contrato da plataforma Volti: **fonte única da verdade** para a API, o painel e
 
 | Arquivo | Conteúdo |
 |---|---|
-| `openapi.yaml` | API REST (OpenAPI 3.1): 188 operações em 28 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
+| `openapi.yaml` | API REST (OpenAPI 3.1): 196 operações em 28 tags, erros RFC 7807, paginação por cursor, `Idempotency-Key`, grupos de staff (`x-required-groups`) |
 | `realtime.md` | Eventos do WebSocket (Socket.IO, namespace `/realtime`), salas e payloads |
 | `generated/ts/schema.d.ts` | Tipos TypeScript gerados com `openapi-typescript` (painel, com `openapi-fetch`) |
 | `generated/dart/` | Pacote Dart `volti_api` gerado com `openapi-generator` (`dart-dio` + `built_value`) para os apps Flutter |

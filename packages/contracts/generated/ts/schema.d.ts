@@ -990,6 +990,11 @@ export interface paths {
          *     Pagamento recusado → `422` `payment-declined`: nada muda, a entrega continua `pending_customer` com `lastError`
          *     e a moto não destrava. Gateway fora → `503` `gateway-unavailable`. Aluguel já ativo → `409`
          *     `rental-already-active`. `Idempotency-Key` ausente ou curta → `400`.
+         *
+         *     Moto sem conexão ou sem confirmar o destravamento → `409` `vehicle-offline` ("Não conseguimos falar com a moto
+         *     agora. Tente de novo em instantes ou fale com o operador."): nada é cobrado, nenhum aluguel é criado, a caução
+         *     **continua retida** com a reserva, a entrega continua `pending_customer` (com `lastError: vehicle-offline`) e o
+         *     cliente pode aceitar de novo.
          */
         post: operations["acceptHandover"];
         delete?: never;
@@ -1120,8 +1125,10 @@ export interface paths {
          *     `depositMethod`. Valida galpão ativo (`422` `depot-inactive`), horário dentro do funcionamento (`422`
          *     `pickup-outside-hours`) e de `maxScheduleDays` (`422` `pickup-too-far-ahead`), moto `free` no galpão (`409`
          *     `vehicle-unavailable`, inclusive quando outro cliente reservou no mesmo instante) e cliente sem aluguel nem
-         *     reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização,
-         *     recusa → `422` `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano
+         *     reserva aberta (`409` `rental-already-active` / `reservation-open`). Bloqueia a caução (cartão: pré-autorização
+         *     no `cardId` ou, sem ele, no cartão padrão; sem nenhum cartão ativo → `422` `card-required` ("Cadastre um cartão
+         *     ou pague a caução com Pix."), `cardId` inexistente → `422` `card-not-found`, recusa do emissor → `422`
+         *     `payment-declined`; Pix: `deposit.pix` com o QR) e separa a moto (`free` → `reserved`). O plano
          *     só é cobrado no aceite da entrega. A resposta traz `pickupCode` (QR de retirada). Cancelar
          *     (`DELETE /reservations/{id}`) é grátis e libera a caução; ao vencer `expiresAt`, um job expira a reserva.
          */
@@ -1200,7 +1207,8 @@ export interface paths {
          *
          *     Caução (`depositMethod`):
          *     - `card`: pré-autoriza 5000 no cartão (`cardId` ou o cartão padrão). Sucesso → `201` com
-         *       `outcome: started`, aluguel `active` e desbloqueio pedido ao módulo IoT.
+         *       `outcome: started`, aluguel `active` e desbloqueio pedido ao módulo IoT. Sem nenhum cartão ativo →
+         *       `422` `card-required`.
          *     - `pix`: gera a cobrança Pix → `202` com `outcome: awaiting_deposit` e `deposit.pix`. A resposta cria
          *       (ou estende) uma reserva do cliente para essa moto válida até `pix.expiresAt`, com as mesmas regras
          *       das reservas (uma por cliente, KYC aprovado, sem bloqueio) e no máximo o prazo do Pix. Depois do
@@ -1732,6 +1740,8 @@ export interface paths {
         /**
          * Cadastrar cartão (token do gateway)
          * @description Recebe **só** o token gerado no app pelo SDK do Mercado Pago. Número, CVV e validade nunca chegam ao backend.
+         *     O primeiro cartão ativo do cliente vira o padrão (`isDefault: true`); com `setDefault: true` o novo cartão passa
+         *     a ser o padrão e o anterior deixa de ser.
          */
         post: operations["addPaymentCard"];
         delete?: never;
@@ -1752,9 +1762,32 @@ export interface paths {
         post?: never;
         /**
          * Remover cartão
-         * @description Não remove cartão com caução retida ou assinatura ativa (`409`).
+         * @description Não remove cartão com caução retida ou assinatura ativa (`409`). Ao remover o cartão padrão, o cartão ativo
+         *     cadastrado mais recentemente vira o padrão (o cliente nunca fica com cartões e sem padrão).
          */
         delete: operations["deletePaymentCard"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/cards/{id}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Definir o cartão padrão
+         * @description Torna o cartão o padrão do cliente (os demais ficam `isDefault: false`). Idempotente: repetir não muda nada.
+         *     O cartão padrão é o usado quando `cardId` não é enviado (caução da reserva e do aluguel, assinatura, recarga,
+         *     cobrança do fechamento e quitação de dívida). Cartão de outro cliente ou removido → `404`.
+         */
+        put: operations["setDefaultPaymentCard"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1809,7 +1842,9 @@ export interface paths {
         put?: never;
         /**
          * Assinar plano semanal ou mensal
-         * @description Cobrança recorrente no cartão. Com assinatura ativa, aluguéis com o mesmo `planCode` não cobram tempo (só seguro e taxas). Uma assinatura ativa por cliente (`409`).
+         * @description Cobrança recorrente no cartão (`cardId` ou, sem ele, o cartão padrão). Com assinatura ativa, aluguéis com o mesmo
+         *     `planCode` não cobram tempo (só seguro e taxas). Uma assinatura ativa por cliente (`409`). Sem nenhum cartão
+         *     ativo → `422` `card-required` ("Cadastre um cartão para assinar."); `cardId` inexistente → `402` `card-not-found`.
          */
         post: operations["createSubscription"];
         delete?: never;
@@ -3293,8 +3328,9 @@ export interface paths {
         /**
          * Excluir minha conta
          * @description Anonimiza nome, CPF, e-mail e telefone, apaga trajetos e documentos de KYC e mantém pagamentos e
-         *     notas fiscais (obrigação legal). Bloqueado com aluguel em andamento ou débito pendente (`409`
-         *     `account-deletion-blocked`).
+         *     notas fiscais (obrigação legal). Bloqueado (`409` `account-deletion-blocked`, com `detail` em pt-BR dizendo o que
+         *     fazer) com: aluguel em andamento; reserva aberta (inclusive retirada em galpão `active` ou com a entrega em
+         *     andamento, `handover`); caução ainda retida ou aguardando Pix; débito pendente ou cobrança em curso.
          */
         delete: operations["deleteMyAccount"];
         options?: never;
@@ -4929,10 +4965,18 @@ export interface components {
             authorType: components["schemas"]["MessageAuthorType"];
             /** Format: uuid */
             authorId?: string;
-            /** @description Primeiro nome do atendente (staff) ou "Você". */
+            /**
+             * @description Mensagem da equipe: primeiro nome cadastrado do atendente ou, sem nome cadastrado, "Equipe Volti" (nunca
+             *     derivado do e-mail).
+             */
             authorName?: string;
             body: string;
             attachmentObjectKeys?: string[];
+            /**
+             * @description Só nas respostas para a equipe: URLs pré-assinadas (GET, 15 minutos) dos anexos, na mesma ordem de
+             *     `attachmentObjectKeys`. Só anexos enviados pelo próprio autor (`support/<authorId>/…`) ganham URL.
+             */
+            attachmentUrls?: string[];
             status?: components["schemas"]["SupportMessageStatus"];
             /**
              * Format: date-time
@@ -5218,6 +5262,7 @@ export interface components {
             /** Format: double */
             occupancyPct: number;
             activeRentals: number;
+            /** @description Mesma definição de `FinanceReport.totalRevenueCents`, desde 00:00 de hoje (America/Sao_Paulo). */
             revenueTodayCents: number;
             openAlerts: number;
             vehiclesByStatus: components["schemas"]["VehicleStatusCounts"];
@@ -5307,7 +5352,17 @@ export interface components {
             from: string;
             /** Format: date-time */
             to: string;
+            /** @description Receita de aluguéis encerrados no período, por plano (custo total do aluguel). */
             revenueByPlan: components["schemas"]["PlanRevenue"][];
+            /** @description Soma de `revenueByPlan`. */
+            rentalRevenueCents?: number;
+            /** @description Cobranças de assinatura (semanal/mensal, inclusive renovações) pagas, criadas no período. */
+            subscriptionRevenueCents?: number;
+            /**
+             * @description Receita = aluguéis encerrados (`rentalRevenueCents`) + assinaturas pagas (`subscriptionRevenueCents`).
+             *     Não entram: caução (garantia), recargas e pacotes de minutos da carteira (`walletTopUpsCents`, crédito
+             *     pré-pago que vira receita quando é usado num aluguel) e estornos (`refundsCents`, informados à parte).
+             */
             totalRevenueCents: number;
             /** @description Cauções retidas agora. */
             depositsHeldCount: number;
@@ -6337,7 +6392,7 @@ export interface components {
             /** Format: uuid */
             operatorId: string;
             /**
-             * @description Só o primeiro nome do operador ("Entregue por <nome>"), nunca o nome completo.
+             * @description Só o primeiro nome cadastrado do operador ("Entregue por <nome>"), nunca o nome completo nem algo derivado do e-mail; sem nome cadastrado, "Equipe Volti".
              * @example Rafael
              */
             operatorFirstName?: string;
@@ -9359,6 +9414,30 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    setDefaultPaymentCard: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cartão padrão. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentCard"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     listDeposits: {
         parameters: {
             query?: {
@@ -9465,6 +9544,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getSubscription: {

@@ -15,8 +15,10 @@ part 'finance_report.g.dart';
 /// Properties:
 /// * [from]
 /// * [to]
-/// * [revenueByPlan]
-/// * [totalRevenueCents]
+/// * [revenueByPlan] - Receita de aluguéis encerrados no período, por plano (custo total do aluguel).
+/// * [rentalRevenueCents] - Soma de `revenueByPlan`.
+/// * [subscriptionRevenueCents] - Cobranças de assinatura (semanal/mensal, inclusive renovações) pagas, criadas no período.
+/// * [totalRevenueCents] - Receita = aluguéis encerrados (`rentalRevenueCents`) + assinaturas pagas (`subscriptionRevenueCents`). Não entram: caução (garantia), recargas e pacotes de minutos da carteira (`walletTopUpsCents`, crédito pré-pago que vira receita quando é usado num aluguel) e estornos (`refundsCents`, informados à parte).
 /// * [depositsHeldCount] - Cauções retidas agora.
 /// * [depositsHeldCents]
 /// * [delinquentCustomers]
@@ -34,9 +36,19 @@ abstract class FinanceReport
   @BuiltValueField(wireName: r'to')
   DateTime get to;
 
+  /// Receita de aluguéis encerrados no período, por plano (custo total do aluguel).
   @BuiltValueField(wireName: r'revenueByPlan')
   BuiltList<PlanRevenue> get revenueByPlan;
 
+  /// Soma de `revenueByPlan`.
+  @BuiltValueField(wireName: r'rentalRevenueCents')
+  int? get rentalRevenueCents;
+
+  /// Cobranças de assinatura (semanal/mensal, inclusive renovações) pagas, criadas no período.
+  @BuiltValueField(wireName: r'subscriptionRevenueCents')
+  int? get subscriptionRevenueCents;
+
+  /// Receita = aluguéis encerrados (`rentalRevenueCents`) + assinaturas pagas (`subscriptionRevenueCents`). Não entram: caução (garantia), recargas e pacotes de minutos da carteira (`walletTopUpsCents`, crédito pré-pago que vira receita quando é usado num aluguel) e estornos (`refundsCents`, informados à parte).
   @BuiltValueField(wireName: r'totalRevenueCents')
   int get totalRevenueCents;
 
@@ -106,6 +118,20 @@ class _$FinanceReportSerializer implements PrimitiveSerializer<FinanceReport> {
       object.revenueByPlan,
       specifiedType: const FullType(BuiltList, [FullType(PlanRevenue)]),
     );
+    if (object.rentalRevenueCents != null) {
+      yield r'rentalRevenueCents';
+      yield serializers.serialize(
+        object.rentalRevenueCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.subscriptionRevenueCents != null) {
+      yield r'subscriptionRevenueCents';
+      yield serializers.serialize(
+        object.subscriptionRevenueCents,
+        specifiedType: const FullType(int),
+      );
+    }
     yield r'totalRevenueCents';
     yield serializers.serialize(
       object.totalRevenueCents,
@@ -198,6 +224,22 @@ class _$FinanceReportSerializer implements PrimitiveSerializer<FinanceReport> {
             specifiedType: const FullType(BuiltList, [FullType(PlanRevenue)]),
           ) as BuiltList<PlanRevenue>;
           result.revenueByPlan.replace(valueDes);
+          break;
+        case r'rentalRevenueCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.rentalRevenueCents = valueDes;
+          break;
+        case r'subscriptionRevenueCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.subscriptionRevenueCents = valueDes;
           break;
         case r'totalRevenueCents':
           final valueDes = serializers.deserialize(

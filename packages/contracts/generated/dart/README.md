@@ -41,7 +41,7 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
 `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
 `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`,
-`payment-pending`.
+`payment-pending`, `card-required`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -229,6 +229,7 @@ Class | Method | HTTP request | Description
 [*PaymentsApi*](doc/PaymentsApi.md) | [**payDebt**](doc/PaymentsApi.md#paydebt) | **POST** /payments/{id}/retry | Quitar dívida (cliente)
 [*PaymentsApi*](doc/PaymentsApi.md) | [**refundPayment**](doc/PaymentsApi.md#refundpayment) | **POST** /payments/{id}/refund | Estornar pagamento
 [*PaymentsApi*](doc/PaymentsApi.md) | [**resumeSubscription**](doc/PaymentsApi.md#resumesubscription) | **POST** /payments/subscriptions/{id}/resume | Retomar assinatura pausada
+[*PaymentsApi*](doc/PaymentsApi.md) | [**setDefaultPaymentCard**](doc/PaymentsApi.md#setdefaultpaymentcard) | **PUT** /payments/cards/{id}/default | Definir o cartão padrão
 [*PricingApi*](doc/PricingApi.md) | [**addMyCoupon**](doc/PricingApi.md#addmycoupon) | **POST** /me/coupons | Adicionar cupom à conta
 [*PricingApi*](doc/PricingApi.md) | [**createCoupon**](doc/PricingApi.md#createcoupon) | **POST** /pricing/coupons | Criar cupom
 [*PricingApi*](doc/PricingApi.md) | [**createFee**](doc/PricingApi.md#createfee) | **POST** /pricing/fees | Criar taxa

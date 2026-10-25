@@ -11,7 +11,7 @@ Name | Type | Description | Notes
 **generatedAt** | [**DateTime**](DateTime.md) |  | 
 **occupancyPct** | **double** |  | 
 **activeRentals** | **int** |  | 
-**revenueTodayCents** | **int** |  | 
+**revenueTodayCents** | **int** | Mesma definição de `FinanceReport.totalRevenueCents`, desde 00:00 de hoje (America/Sao_Paulo). | 
 **openAlerts** | **int** |  | 
 **vehiclesByStatus** | [**VehicleStatusCounts**](VehicleStatusCounts.md) |  | 
 

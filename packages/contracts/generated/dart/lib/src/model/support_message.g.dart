@@ -22,6 +22,8 @@ class _$SupportMessage extends SupportMessage {
   @override
   final BuiltList<String>? attachmentObjectKeys;
   @override
+  final BuiltList<String>? attachmentUrls;
+  @override
   final SupportMessageStatus? status;
   @override
   final DateTime? deliveredAt;
@@ -41,6 +43,7 @@ class _$SupportMessage extends SupportMessage {
       this.authorName,
       required this.body,
       this.attachmentObjectKeys,
+      this.attachmentUrls,
       this.status,
       this.deliveredAt,
       this.readAt,
@@ -64,6 +67,7 @@ class _$SupportMessage extends SupportMessage {
         authorName == other.authorName &&
         body == other.body &&
         attachmentObjectKeys == other.attachmentObjectKeys &&
+        attachmentUrls == other.attachmentUrls &&
         status == other.status &&
         deliveredAt == other.deliveredAt &&
         readAt == other.readAt &&
@@ -80,6 +84,7 @@ class _$SupportMessage extends SupportMessage {
     _$hash = $jc(_$hash, authorName.hashCode);
     _$hash = $jc(_$hash, body.hashCode);
     _$hash = $jc(_$hash, attachmentObjectKeys.hashCode);
+    _$hash = $jc(_$hash, attachmentUrls.hashCode);
     _$hash = $jc(_$hash, status.hashCode);
     _$hash = $jc(_$hash, deliveredAt.hashCode);
     _$hash = $jc(_$hash, readAt.hashCode);
@@ -98,6 +103,7 @@ class _$SupportMessage extends SupportMessage {
           ..add('authorName', authorName)
           ..add('body', body)
           ..add('attachmentObjectKeys', attachmentObjectKeys)
+          ..add('attachmentUrls', attachmentUrls)
           ..add('status', status)
           ..add('deliveredAt', deliveredAt)
           ..add('readAt', readAt)
@@ -142,6 +148,12 @@ class SupportMessageBuilder
   set attachmentObjectKeys(ListBuilder<String>? attachmentObjectKeys) =>
       _$this._attachmentObjectKeys = attachmentObjectKeys;
 
+  ListBuilder<String>? _attachmentUrls;
+  ListBuilder<String> get attachmentUrls =>
+      _$this._attachmentUrls ??= ListBuilder<String>();
+  set attachmentUrls(ListBuilder<String>? attachmentUrls) =>
+      _$this._attachmentUrls = attachmentUrls;
+
   SupportMessageStatus? _status;
   SupportMessageStatus? get status => _$this._status;
   set status(SupportMessageStatus? status) => _$this._status = status;
@@ -172,6 +184,7 @@ class SupportMessageBuilder
       _authorName = $v.authorName;
       _body = $v.body;
       _attachmentObjectKeys = $v.attachmentObjectKeys?.toBuilder();
+      _attachmentUrls = $v.attachmentUrls?.toBuilder();
       _status = $v.status;
       _deliveredAt = $v.deliveredAt;
       _readAt = $v.readAt;
@@ -210,6 +223,7 @@ class SupportMessageBuilder
             body: BuiltValueNullFieldError.checkNotNull(
                 body, r'SupportMessage', 'body'),
             attachmentObjectKeys: _attachmentObjectKeys?.build(),
+            attachmentUrls: _attachmentUrls?.build(),
             status: status,
             deliveredAt: deliveredAt,
             readAt: readAt,
@@ -221,6 +235,8 @@ class SupportMessageBuilder
       try {
         _$failedField = 'attachmentObjectKeys';
         _attachmentObjectKeys?.build();
+        _$failedField = 'attachmentUrls';
+        _attachmentUrls?.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'SupportMessage', _$failedField, e.toString());

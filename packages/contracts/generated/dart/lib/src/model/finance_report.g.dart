@@ -14,6 +14,10 @@ class _$FinanceReport extends FinanceReport {
   @override
   final BuiltList<PlanRevenue> revenueByPlan;
   @override
+  final int? rentalRevenueCents;
+  @override
+  final int? subscriptionRevenueCents;
+  @override
   final int totalRevenueCents;
   @override
   final int depositsHeldCount;
@@ -39,6 +43,8 @@ class _$FinanceReport extends FinanceReport {
       {required this.from,
       required this.to,
       required this.revenueByPlan,
+      this.rentalRevenueCents,
+      this.subscriptionRevenueCents,
       required this.totalRevenueCents,
       required this.depositsHeldCount,
       required this.depositsHeldCents,
@@ -63,6 +69,8 @@ class _$FinanceReport extends FinanceReport {
         from == other.from &&
         to == other.to &&
         revenueByPlan == other.revenueByPlan &&
+        rentalRevenueCents == other.rentalRevenueCents &&
+        subscriptionRevenueCents == other.subscriptionRevenueCents &&
         totalRevenueCents == other.totalRevenueCents &&
         depositsHeldCount == other.depositsHeldCount &&
         depositsHeldCents == other.depositsHeldCents &&
@@ -80,6 +88,8 @@ class _$FinanceReport extends FinanceReport {
     _$hash = $jc(_$hash, from.hashCode);
     _$hash = $jc(_$hash, to.hashCode);
     _$hash = $jc(_$hash, revenueByPlan.hashCode);
+    _$hash = $jc(_$hash, rentalRevenueCents.hashCode);
+    _$hash = $jc(_$hash, subscriptionRevenueCents.hashCode);
     _$hash = $jc(_$hash, totalRevenueCents.hashCode);
     _$hash = $jc(_$hash, depositsHeldCount.hashCode);
     _$hash = $jc(_$hash, depositsHeldCents.hashCode);
@@ -99,6 +109,8 @@ class _$FinanceReport extends FinanceReport {
           ..add('from', from)
           ..add('to', to)
           ..add('revenueByPlan', revenueByPlan)
+          ..add('rentalRevenueCents', rentalRevenueCents)
+          ..add('subscriptionRevenueCents', subscriptionRevenueCents)
           ..add('totalRevenueCents', totalRevenueCents)
           ..add('depositsHeldCount', depositsHeldCount)
           ..add('depositsHeldCents', depositsHeldCents)
@@ -129,6 +141,16 @@ class FinanceReportBuilder
       _$this._revenueByPlan ??= ListBuilder<PlanRevenue>();
   set revenueByPlan(ListBuilder<PlanRevenue>? revenueByPlan) =>
       _$this._revenueByPlan = revenueByPlan;
+
+  int? _rentalRevenueCents;
+  int? get rentalRevenueCents => _$this._rentalRevenueCents;
+  set rentalRevenueCents(int? rentalRevenueCents) =>
+      _$this._rentalRevenueCents = rentalRevenueCents;
+
+  int? _subscriptionRevenueCents;
+  int? get subscriptionRevenueCents => _$this._subscriptionRevenueCents;
+  set subscriptionRevenueCents(int? subscriptionRevenueCents) =>
+      _$this._subscriptionRevenueCents = subscriptionRevenueCents;
 
   int? _totalRevenueCents;
   int? get totalRevenueCents => _$this._totalRevenueCents;
@@ -184,6 +206,8 @@ class FinanceReportBuilder
       _from = $v.from;
       _to = $v.to;
       _revenueByPlan = $v.revenueByPlan.toBuilder();
+      _rentalRevenueCents = $v.rentalRevenueCents;
+      _subscriptionRevenueCents = $v.subscriptionRevenueCents;
       _totalRevenueCents = $v.totalRevenueCents;
       _depositsHeldCount = $v.depositsHeldCount;
       _depositsHeldCents = $v.depositsHeldCents;
@@ -221,6 +245,8 @@ class FinanceReportBuilder
             to: BuiltValueNullFieldError.checkNotNull(
                 to, r'FinanceReport', 'to'),
             revenueByPlan: revenueByPlan.build(),
+            rentalRevenueCents: rentalRevenueCents,
+            subscriptionRevenueCents: subscriptionRevenueCents,
             totalRevenueCents: BuiltValueNullFieldError.checkNotNull(
                 totalRevenueCents, r'FinanceReport', 'totalRevenueCents'),
             depositsHeldCount: BuiltValueNullFieldError.checkNotNull(

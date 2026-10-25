@@ -18,9 +18,10 @@ part 'support_message.g.dart';
 /// * [conversationId]
 /// * [authorType]
 /// * [authorId]
-/// * [authorName] - Primeiro nome do atendente (staff) ou \"Você\".
+/// * [authorName] - Mensagem da equipe: primeiro nome cadastrado do atendente ou, sem nome cadastrado, \"Equipe Volti\" (nunca derivado do e-mail).
 /// * [body]
 /// * [attachmentObjectKeys]
+/// * [attachmentUrls] - Só nas respostas para a equipe: URLs pré-assinadas (GET, 15 minutos) dos anexos, na mesma ordem de `attachmentObjectKeys`. Só anexos enviados pelo próprio autor (`support/<authorId>/…`) ganham URL.
 /// * [status]
 /// * [deliveredAt] - O outro lado buscou a mensagem.
 /// * [readAt] - O outro lado marcou como lida.
@@ -41,7 +42,7 @@ abstract class SupportMessage
   @BuiltValueField(wireName: r'authorId')
   String? get authorId;
 
-  /// Primeiro nome do atendente (staff) ou \"Você\".
+  /// Mensagem da equipe: primeiro nome cadastrado do atendente ou, sem nome cadastrado, \"Equipe Volti\" (nunca derivado do e-mail).
   @BuiltValueField(wireName: r'authorName')
   String? get authorName;
 
@@ -50,6 +51,10 @@ abstract class SupportMessage
 
   @BuiltValueField(wireName: r'attachmentObjectKeys')
   BuiltList<String>? get attachmentObjectKeys;
+
+  /// Só nas respostas para a equipe: URLs pré-assinadas (GET, 15 minutos) dos anexos, na mesma ordem de `attachmentObjectKeys`. Só anexos enviados pelo próprio autor (`support/<authorId>/…`) ganham URL.
+  @BuiltValueField(wireName: r'attachmentUrls')
+  BuiltList<String>? get attachmentUrls;
 
   @BuiltValueField(wireName: r'status')
   SupportMessageStatus? get status;
@@ -130,6 +135,13 @@ class _$SupportMessageSerializer
       yield r'attachmentObjectKeys';
       yield serializers.serialize(
         object.attachmentObjectKeys,
+        specifiedType: const FullType(BuiltList, [FullType(String)]),
+      );
+    }
+    if (object.attachmentUrls != null) {
+      yield r'attachmentUrls';
+      yield serializers.serialize(
+        object.attachmentUrls,
         specifiedType: const FullType(BuiltList, [FullType(String)]),
       );
     }
@@ -236,6 +248,15 @@ class _$SupportMessageSerializer
           ) as BuiltList<String>?;
           if (valueDes == null) continue;
           result.attachmentObjectKeys.replace(valueDes);
+          break;
+        case r'attachmentUrls':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(String)]),
+          ) as BuiltList<String>?;
+          if (valueDes == null) continue;
+          result.attachmentUrls.replace(valueDes);
           break;
         case r'status':
           final valueDes = serializers.deserialize(

@@ -36,7 +36,7 @@ class PaymentsApi {
   const PaymentsApi(this._dio, this._serializers);
 
   /// Cadastrar cartão (token do gateway)
-  /// Recebe **só** o token gerado no app pelo SDK do Mercado Pago. Número, CVV e validade nunca chegam ao backend.
+  /// Recebe **só** o token gerado no app pelo SDK do Mercado Pago. Número, CVV e validade nunca chegam ao backend. O primeiro cartão ativo do cliente vira o padrão (&#x60;isDefault: true&#x60;); com &#x60;setDefault: true&#x60; o novo cartão passa a ser o padrão e o anterior deixa de ser.
   ///
   /// Parameters:
   /// * [idempotencyKey] - Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
@@ -338,7 +338,7 @@ class PaymentsApi {
   }
 
   /// Assinar plano semanal ou mensal
-  /// Cobrança recorrente no cartão. Com assinatura ativa, aluguéis com o mesmo &#x60;planCode&#x60; não cobram tempo (só seguro e taxas). Uma assinatura ativa por cliente (&#x60;409&#x60;).
+  /// Cobrança recorrente no cartão (&#x60;cardId&#x60; ou, sem ele, o cartão padrão). Com assinatura ativa, aluguéis com o mesmo &#x60;planCode&#x60; não cobram tempo (só seguro e taxas). Uma assinatura ativa por cliente (&#x60;409&#x60;). Sem nenhum cartão ativo → &#x60;422&#x60; &#x60;card-required&#x60; (\&quot;Cadastre um cartão para assinar.\&quot;); &#x60;cardId&#x60; inexistente → &#x60;402&#x60; &#x60;card-not-found&#x60;.
   ///
   /// Parameters:
   /// * [idempotencyKey] - Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
@@ -443,7 +443,7 @@ class PaymentsApi {
   }
 
   /// Remover cartão
-  /// Não remove cartão com caução retida ou assinatura ativa (&#x60;409&#x60;).
+  /// Não remove cartão com caução retida ou assinatura ativa (&#x60;409&#x60;). Ao remover o cartão padrão, o cartão ativo cadastrado mais recentemente vira o padrão (o cliente nunca fica com cartões e sem padrão).
   ///
   /// Parameters:
   /// * [id]
@@ -1555,6 +1555,91 @@ class PaymentsApi {
     }
 
     return Response<Subscription>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Definir o cartão padrão
+  /// Torna o cartão o padrão do cliente (os demais ficam &#x60;isDefault: false&#x60;). Idempotente: repetir não muda nada. O cartão padrão é o usado quando &#x60;cardId&#x60; não é enviado (caução da reserva e do aluguel, assinatura, recarga, cobrança do fechamento e quitação de dívida). Cartão de outro cliente ou removido → &#x60;404&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [PaymentCard] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<PaymentCard>> setDefaultPaymentCard({
+    required String id,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/payments/cards/{id}/default'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'PUT',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    PaymentCard? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(PaymentCard),
+            ) as PaymentCard;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<PaymentCard>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

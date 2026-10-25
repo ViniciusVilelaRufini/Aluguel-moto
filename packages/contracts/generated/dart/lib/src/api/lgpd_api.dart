@@ -22,7 +22,7 @@ class LgpdApi {
   const LgpdApi(this._dio, this._serializers);
 
   /// Excluir minha conta
-  /// Anonimiza nome, CPF, e-mail e telefone, apaga trajetos e documentos de KYC e mantém pagamentos e notas fiscais (obrigação legal). Bloqueado com aluguel em andamento ou débito pendente (&#x60;409&#x60; &#x60;account-deletion-blocked&#x60;).
+  /// Anonimiza nome, CPF, e-mail e telefone, apaga trajetos e documentos de KYC e mantém pagamentos e notas fiscais (obrigação legal). Bloqueado (&#x60;409&#x60; &#x60;account-deletion-blocked&#x60;, com &#x60;detail&#x60; em pt-BR dizendo o que fazer) com: aluguel em andamento; reserva aberta (inclusive retirada em galpão &#x60;active&#x60; ou com a entrega em andamento, &#x60;handover&#x60;); caução ainda retida ou aguardando Pix; débito pendente ou cobrança em curso.
   ///
   /// Parameters:
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation

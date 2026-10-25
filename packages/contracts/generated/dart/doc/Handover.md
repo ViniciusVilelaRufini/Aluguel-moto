@@ -16,7 +16,7 @@ Name | Type | Description | Notes
 **vehicleId** | **String** |  | 
 **vehicleCode** | **String** |  | [optional] 
 **operatorId** | **String** |  | 
-**operatorFirstName** | **String** | Só o primeiro nome do operador (\"Entregue por <nome>\"), nunca o nome completo. | [optional] 
+**operatorFirstName** | **String** | Só o primeiro nome cadastrado do operador (\"Entregue por <nome>\"), nunca o nome completo nem algo derivado do e-mail; sem nome cadastrado, \"Equipe Volti\". | [optional] 
 **checklist** | [**BuiltList&lt;HandoverChecklistItem&gt;**](HandoverChecklistItem.md) |  | 
 **photoKeys** | **BuiltList&lt;String&gt;** |  | 
 **photoUrls** | **BuiltList&lt;String&gt;** | Links assinados (24 h), na mesma ordem de `photoKeys`. | [optional] 
