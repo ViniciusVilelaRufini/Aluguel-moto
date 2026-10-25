@@ -124,4 +124,21 @@ describe('VirtualMoto (modelo de movimento)', () => {
     expect(t.timestamp).toBe('2026-10-21T15:00:00.000Z');
     expect(Number.isInteger(t.sinal)).toBe(true);
   });
+
+  it('relocate: só com a moto travada e parada (rastreador nunca "salta" em movimento); conta o tempo parada', () => {
+    const m = riding(25);
+    run(m, 10);
+    expect(m.relocate([-21.1378, -48.9729])).toBe(false);
+    m.applyDesired({ limite_kmh: 0 });
+    m.applyDesired({ travada: true });
+    run(m, 20);
+    expect(m.state.locked).toBe(true);
+    const parked = m.parkedSec;
+    expect(parked).toBeGreaterThan(0);
+    expect(m.relocate([-21.1378, -48.9729])).toBe(true);
+    expect(m.position()).toEqual([-21.1378, -48.9729]);
+    run(m, 5);
+    expect(m.position()).toEqual([-21.1378, -48.9729]);
+    expect(m.parkedSec).toBe(parked + 5);
+  });
 });

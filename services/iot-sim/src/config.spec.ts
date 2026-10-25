@@ -36,4 +36,14 @@ describe('config do simulador', () => {
     expect(() => loadConfig({ SIM_VEHICLES: '0' })).toThrow();
     expect(() => loadConfig({ SIM_VEHICLES: 'muitas' })).toThrow();
   });
+
+  it('SIM_FLEET_SOURCE: routes por padrão; postgres exige DATABASE_URL; valor desconhecido é rejeitado', () => {
+    expect(loadConfig({}).fleetSource).toBe('routes');
+    expect(loadConfig({}).databaseUrl).toBeUndefined();
+    const c = loadConfig({ SIM_FLEET_SOURCE: 'postgres', DATABASE_URL: 'postgresql://u:p@db:5432/volti' });
+    expect(c).toMatchObject({ fleetSource: 'postgres', fleetRefreshSec: 60, relocateAfterSec: 180 });
+    expect(() => loadConfig({ SIM_FLEET_SOURCE: 'postgres' })).toThrow(/DATABASE_URL/);
+    expect(() => loadConfig({ SIM_FLEET_SOURCE: 'csv' })).toThrow(/SIM_FLEET_SOURCE/);
+    expect(() => loadConfig({ SIM_RELOCATE_AFTER_SEC: '5' })).toThrow();
+  });
 });

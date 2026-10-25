@@ -1,5 +1,5 @@
 import { distanceM, lerp, type LatLng } from './geo';
-import type { Route } from './routes';
+import { localLoop, type Route } from './routes';
 
 /** Contran 996/2023: autopropelido até 32 km/h. O firmware nunca passa disso. */
 export const MAX_SPEED_KMH = 32;
@@ -77,7 +77,9 @@ export interface StepResult {
  */
 export class VirtualMoto {
   readonly state: MotoState;
-  private readonly route: Route;
+  private route: Route;
+  /** Há quanto tempo está travada e parada (s): base para "a moto foi levada" (recolhimento/galpão). */
+  private parked = 0;
   private segment: number;
   private fraction: number;
   private criticalSent = false;
@@ -103,6 +105,23 @@ export class VirtualMoto {
       riding: init.riding ?? false,
       cruiseKmh: init.cruiseKmh ?? 22,
     };
+  }
+
+  get parkedSec(): number {
+    return this.parked;
+  }
+
+  /**
+   * A moto foi levada para outro lugar (van do recolhimento, chegada ao galpão): passa a estar em `at`, parada, num laço
+   * curto ao redor do novo ponto. Só com a moto travada e parada — um rastreador nunca "salta" com a moto andando.
+   */
+  relocate(at: LatLng): boolean {
+    const s = this.state;
+    if (!s.locked || s.speedKmh > 0) return false;
+    this.route = localLoop(at);
+    this.segment = 0;
+    this.fraction = 0;
+    return true;
   }
 
   position(): LatLng {
@@ -175,6 +194,7 @@ export class VirtualMoto {
     // Deslocamento (velocidade média do passo).
     const meters = (((before + s.speedKmh) / 2) * dtSec) / 3.6;
     if (!s.locked && meters > 0) this.advance(meters);
+    this.parked = s.locked && s.speedKmh === 0 ? this.parked + dtSec : 0;
     s.batteryPct = Math.max(0, s.batteryPct - (meters / 1000) * BATTERY_PCT_PER_KM);
 
     const events: DeviceEventType[] = [];

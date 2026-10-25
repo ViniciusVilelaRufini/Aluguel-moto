@@ -426,6 +426,28 @@ describe('profile=single (dev on one EC2 instance)', () => {
       expect(file('Caddyfile')).toMatch(/reverse_proxy api:3000/);
     });
 
+    it('tracker simulator: iot-sim (profile sim) reads the fleet from Postgres, gets only the DB password, update.sh toggles it by IOT_SIM', () => {
+      const c = file('compose.yml');
+      const sim = c.slice(c.indexOf('\n  iot-sim:'), c.indexOf('\nvolumes:'));
+      expect(sim).toContain('profiles: ["sim"]');
+      expect(sim).toContain('SIM_FLEET_SOURCE: postgres');
+      expect(sim).toContain('DATABASE_URL: postgresql://volti:${DB_PASSWORD}@postgres:5432/volti');
+      expect(sim).toContain('MQTT_URL: mqtt://mosquitto:1883');
+      expect(sim).not.toContain('env_file');
+      expect(sim).not.toMatch(/ports:/);
+      const update = file('update.sh');
+      expect(update).toMatch(/\^IOT_SIM=/);
+      expect(update).toMatch(/off\|false\|0\)/);
+      expect(update).toMatch(/--profile sim/);
+      expect(update).toMatch(/dc "\$\{sim\[@\]\}" up -d --remove-orphans/);
+      // Data fix: idempotent (only rows that differ), never touches vehicles in use, dry-run rolls back.
+      const fix = file('fix-depot-positions.sh');
+      expect(fix).toMatch(/"status" IN \('free', 'maintenance'\)/);
+      expect(fix).toMatch(/IS DISTINCT FROM d\."lat"/);
+      expect(fix).toMatch(/--dry-run\) finish=ROLLBACK/);
+      expect(fix).toMatch(/vehicle\.position_fix/);
+    });
+
     it('scripts: migrations in update.sh, secrets with alias/volti-dev, safe .env values, admin.sh without sourcing the .env', () => {
       expect(file('update.sh')).toMatch(/prisma migrate deploy/);
       expect(file('seed.sh')).toMatch(/dist-seed\/prisma\/seed\.js/);

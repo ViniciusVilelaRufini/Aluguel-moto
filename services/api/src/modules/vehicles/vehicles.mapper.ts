@@ -3,6 +3,7 @@ import { compact, estimatedRangeKm, iso } from '../../common/util';
 import { toBattery } from '../batteries/batteries.mapper';
 import type { VehicleModelRef } from '../catalog/catalog.service';
 import { computeServiceInfo, publicServiceInfo } from '../maintenance/service-due';
+import { DEFAULT_OFFLINE_AFTER_MS } from '../iot/live-state.store';
 
 type VehicleLike = Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct'> & {
   vehicleModelId?: string | null;
@@ -58,10 +59,36 @@ export function vehicleServiceInfo(v: Partial<VehicleRow>, defaults: ServiceDefa
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
+/** Janela do "online": a mesma da vigia de inatividade do módulo IoT (`IOT_OFFLINE_AFTER_MS`, padrão 180 s). */
+export function onlineWindowMs(env: Record<string, string | undefined> = process.env): number {
+  const v = Number(env.IOT_OFFLINE_AFTER_MS);
+  return env.IOT_OFFLINE_AFTER_MS && Number.isFinite(v) && v > 0 ? v : DEFAULT_OFFLINE_AFTER_MS;
+}
+
+/**
+ * `online` exibido: o rastreador mandou notícia (telemetria/heartbeat → `lastSeenAt`) dentro da janela e não caiu. O
+ * `online` do banco nasce `true` (padrão da coluna) e só a presença/vigia o desliga — moto que nunca teve rastreador
+ * conectado (ou cujo rastreador sumiu sem a vigia perceber, ex.: API reiniciada) não aparece como online.
+ */
+export function trackerOnline(v: Pick<Vehicle, 'online' | 'lastSeenAt'>, now = Date.now(), windowMs = onlineWindowMs()): boolean {
+  if (!v.online || !v.lastSeenAt) return false;
+  const seen = new Date(v.lastSeenAt).getTime();
+  return Number.isFinite(seen) && now - seen < windowMs;
+}
+
 /** Prisma → `Vehicle`. Clientes recebem só os campos públicos; staff recebe telemetria, rastreador, revisão e bateria. */
 export function toVehicle(
   v: VehicleRow,
-  opts: { staff: boolean; currentRentalId?: string; battery?: Battery | null; assignedSubscriptionId?: string; serviceDefaults?: ServiceDefaults; hideLocation?: boolean },
+  opts: {
+    staff: boolean;
+    currentRentalId?: string;
+    battery?: Battery | null;
+    assignedSubscriptionId?: string;
+    serviceDefaults?: ServiceDefaults;
+    hideLocation?: boolean;
+    /** Relógio do cálculo de `online` (testes). */
+    now?: number;
+  },
 ) {
   const base = {
     id: v.id,
@@ -87,7 +114,7 @@ export function toVehicle(
     thingName: v.thingName,
     trackerId: v.tracker?.id,
     batterySerial: v.batterySerial ?? undefined,
-    online: v.online,
+    online: trackerOnline(v, opts.now ?? Date.now()),
     locked: v.locked,
     ignition: v.ignition,
     speedKmh: v.speedKmh ?? undefined,

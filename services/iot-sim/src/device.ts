@@ -1,3 +1,4 @@
+import type { LatLng } from './geo';
 import type { DesiredDelta, DeviceEventType, ReportedChange, VirtualMoto } from './model';
 
 /** Subconjunto do cliente `mqtt` usado pelo rastreador simulado. */
@@ -102,6 +103,13 @@ export class SimDevice {
     else if (r.reportSpeed) this.report({});
     for (const e of r.events) this.injectEvent(e);
     if (this.opts.now().getTime() - this.lastTelemetry >= this.telemetryInterval()) this.publishTelemetry();
+  }
+
+  /** A moto foi levada (parada e travada) para `at`: passa a reportar a nova posição já na próxima telemetria (agora). */
+  relocate(at: LatLng): boolean {
+    if (!this.moto.relocate(at)) return false;
+    this.publishTelemetry();
+    return true;
   }
 
   injectEvent(type: DeviceEventType): void {
