@@ -12,6 +12,7 @@ import 'core/auth_store.dart';
 import 'core/cognito.dart';
 import 'core/cognito_auth.dart';
 import 'core/crash_reporting.dart';
+import 'core/app_channel.dart';
 import 'core/map_tiles.dart';
 import 'core/release_env.dart';
 import 'core/services.dart' show kMpPublicKey;
@@ -32,6 +33,7 @@ Future<void> _start() async {
     supportPhone: kSupportPhone,
     mpPublicKey: kMpPublicKey,
     cognito: CognitoConfig.fromEnvironment(),
+    channel: kAppChannel,
   );
   if (envProblems.isNotEmpty) {
     runApp(ConfigErrorApp(problems: envProblems));

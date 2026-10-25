@@ -32,6 +32,12 @@ O formulário de cartão (`features/payments/card_form_sheet.dart`) envia númer
 flutter build appbundle --release   --dart-define=API_BASE_URL=https://api.volti.com.br --dart-define=SUPPORT_PHONE=+5511999990000   --dart-define=MP_PUBLIC_KEY=APP_USR-...   --dart-define=COGNITO_REGION=sa-east-1 --dart-define=COGNITO_USER_POOL_ID=... --dart-define=COGNITO_CLIENT_ID=...   --dart-define=COGNITO_DOMAIN=... --dart-define=COGNITO_REDIRECT_URI=volti://auth/callback
 ```
 
+**Canal `beta` (só TestFlight/dev).** `--dart-define=APP_CHANNEL=beta` (padrão `store`; qualquer outro valor vira `store`, fail-safe, ver `lib/core/app_channel.dart`) relaxa o release para o TestFlight apontando para a API dev (`PAYMENT_PROVIDER=fake`): aceita o `SUPPORT_PHONE` de exemplo e funciona sem `MP_PUBLIC_KEY` (usa o `DevCardTokenizer`, que devolve só o token de teste `tok_visa_4242` e nunca coleta nem envia número de cartão; a caução vai por Pix). Telefone vazio ou inválido, `API_BASE_URL` e `COGNITO_*` continuam exigidos. Com `MP_PUBLIC_KEY` o Mercado Pago é usado normalmente. O app mostra o selo "Versão de teste" na tela de boas-vindas e, com o telefone de exemplo, o botão "Ligar para o suporte" do SOS avisa "Suporte indisponível na versão de teste" em vez de discar (192 e 190 seguem funcionando). **Nunca use `APP_CHANNEL=beta` em build da loja**: no canal `store` nada muda (placeholder e falta de chave continuam recusados e o tokenizador falso nunca é usado em release).
+
+```bash
+flutter build ipa --release --dart-define=APP_CHANNEL=beta --dart-define=API_BASE_URL=https://api.dev.volti.com.br --dart-define=COGNITO_REGION=sa-east-1 --dart-define=COGNITO_USER_POOL_ID=... --dart-define=COGNITO_CLIENT_ID=... --dart-define=COGNITO_DOMAIN=... --dart-define=COGNITO_REDIRECT_URI=volti://auth/callback
+```
+
 **iPad.** O app é retrato-only; por isso o `Info.plist` tem `UIRequiresFullScreen=true` (exigido pela App Store para iPad sem todas as orientações).
 
 **Assinatura Android.** O release lê `android/key.properties` (fora do git, como o keystore). Formato:

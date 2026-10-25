@@ -85,6 +85,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get callSupport => 'Ligar para o suporte';
 
   @override
+  String get callSupportUnavailableBeta =>
+      'Suporte indisponível na versão de teste';
+
+  @override
+  String get betaBadge => 'Versão de teste';
+
+  @override
   String get callSamu => 'Ligar 192 (SAMU)';
 
   @override

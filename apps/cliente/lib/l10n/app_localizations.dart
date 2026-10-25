@@ -238,6 +238,18 @@ abstract class AppLocalizations {
   /// **'Ligar para o suporte'**
   String get callSupport;
 
+  /// No description provided for @callSupportUnavailableBeta.
+  ///
+  /// In pt, this message translates to:
+  /// **'Suporte indisponível na versão de teste'**
+  String get callSupportUnavailableBeta;
+
+  /// No description provided for @betaBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Versão de teste'**
+  String get betaBadge;
+
   /// No description provided for @callSamu.
   ///
   /// In pt, this message translates to:

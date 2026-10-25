@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:volti_cliente/core/app_channel.dart';
 import 'package:volti_cliente/core/mercadopago_gateway.dart';
 import 'package:volti_cliente/core/services.dart';
 
@@ -114,6 +115,15 @@ void main() {
 
     test('sem chave em release falha alto, nunca usa token falso', () {
       expect(() => selectCardTokenizer(publicKey: '  ', isRelease: true), throwsStateError);
+    });
+
+    test('release + beta sem chave usa o tokenizador falso; com chave usa o Mercado Pago', () {
+      expect(selectCardTokenizer(publicKey: '', isRelease: true, channel: AppChannel.beta), isA<DevCardTokenizer>());
+      expect(selectCardTokenizer(publicKey: 'TEST-pub', isRelease: true, channel: AppChannel.beta), isA<MercadoPagoCardTokenizer>());
+    });
+
+    test('release + store sem chave nunca usa o tokenizador falso', () {
+      expect(() => selectCardTokenizer(publicKey: '', isRelease: true, channel: AppChannel.store), throwsStateError);
     });
 
     test('o provider padrao dos testes (sem define) e o de desenvolvimento', () {

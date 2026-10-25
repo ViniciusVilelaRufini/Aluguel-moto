@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import '../../core/app_channel.dart';
 import '../../core/cognito.dart';
 import '../../core/cognito_auth.dart';
 import '../../core/launcher.dart';
@@ -107,6 +108,10 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (ref.watch(appChannelProvider) == AppChannel.beta) ...[
+            Center(child: VoltiBadge(l.betaBadge, key: const Key('beta-badge'), tone: VoltiBadgeTone.warning, size: VoltiBadgeSize.sm)),
+            const SizedBox(height: VoltiSpacing.s6),
+          ],
           if (sheetFrom < statements.length) ...[
             // Texto grande: as tres afirmacoes saem do hero e escalam aqui (estaticas,
             // quebrando linha). Reduced motion: as que nao couberam no hero.

@@ -14,6 +14,7 @@ import 'package:volti_api/volti_api.dart' show DevicePlatform;
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../features/payments/card_form_sheet.dart';
+import 'app_channel.dart';
 import 'backend.dart';
 import 'mercadopago_gateway.dart';
 import 'push_routing.dart';
@@ -423,7 +424,8 @@ abstract class CardTokenizer {
 }
 
 /// Implementacao de desenvolvimento: devolve o token de teste do gateway falso (`PAYMENT_PROVIDER=fake`).
-/// So e usada fora de release e sem `MP_PUBLIC_KEY`.
+/// So e usada fora de release ou no canal `beta`, sempre sem `MP_PUBLIC_KEY`. Nao coleta nem envia
+/// numero de cartao: devolve uma constante.
 class DevCardTokenizer implements CardTokenizer {
   @override
   Future<String?> tokenize(BuildContext context) async => 'tok_visa_4242';
@@ -444,15 +446,21 @@ const kMpPublicKey = String.fromEnvironment('MP_PUBLIC_KEY');
 
 /// Com chave: tokenizador real. Sem chave: o de desenvolvimento; em release isso e
 /// erro de configuracao (o `main` ja barra antes), entao falha alto em vez de usar token falso.
-CardTokenizer selectCardTokenizer({required String publicKey, required bool isRelease, MercadoPagoGateway? gateway}) {
+CardTokenizer selectCardTokenizer({
+  required String publicKey,
+  required bool isRelease,
+  AppChannel channel = AppChannel.store,
+  MercadoPagoGateway? gateway,
+}) {
   final key = publicKey.trim();
   if (key.isNotEmpty) return MercadoPagoCardTokenizer(gateway ?? MercadoPagoGateway(publicKey: key));
-  if (isRelease) throw StateError('MP_PUBLIC_KEY ausente em release');
+  // Canal beta (TestFlight contra a API dev com PAYMENT_PROVIDER=fake): token de teste, nenhum dado de cartao.
+  if (isRelease && channel != AppChannel.beta) throw StateError('MP_PUBLIC_KEY ausente em release');
   return DevCardTokenizer();
 }
 
 final cardTokenizerProvider = Provider<CardTokenizer>(
-  (ref) => selectCardTokenizer(publicKey: kMpPublicKey, isRelease: kReleaseMode),
+  (ref) => selectCardTokenizer(publicKey: kMpPublicKey, isRelease: kReleaseMode, channel: ref.watch(appChannelProvider)),
 );
 
 // ---------------------------------------------------------------------------

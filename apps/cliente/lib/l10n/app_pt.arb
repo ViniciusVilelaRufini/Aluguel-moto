@@ -24,6 +24,8 @@
   "battery": "Bateria",
   "birthDate": "Data de nascimento",
   "callSupport": "Ligar para o suporte",
+  "callSupportUnavailableBeta": "Suporte indisponível na versão de teste",
+  "betaBadge": "Versão de teste",
   "callSamu": "Ligar 192 (SAMU)",
   "callSamuSemantics": "Ligar para o SAMU, telefone 192",
   "callPolice": "Ligar 190 (Polícia)",

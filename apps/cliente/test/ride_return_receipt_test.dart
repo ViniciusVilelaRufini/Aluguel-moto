@@ -6,10 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
+import 'package:volti_cliente/core/app_channel.dart';
 import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/errors.dart';
 import 'package:volti_cliente/core/geo.dart';
@@ -166,7 +168,7 @@ void main() {
     late _RideB backend;
     late _Opened opened;
 
-    Future<void> pumpRide(WidgetTester t, {bool contact = false, bool map = false, List<LatLng> track = const []}) async {
+    Future<void> pumpRide(WidgetTester t, {bool contact = false, bool map = false, List<LatLng> track = const [], List<Override> extra = const []}) async {
       tallScreen(t);
       rt = FakeRealtime();
       backend = _RideB(contact: contact);
@@ -181,6 +183,7 @@ void main() {
           return true;
         }),
         shareTextProvider.overrideWithValue((text) async => opened.shared.add(text)),
+        ...extra,
       ]));
       await t.pump();
       await t.pump(const Duration(milliseconds: 50));
@@ -313,6 +316,46 @@ void main() {
       expect(opened.uris.last.scheme, 'tel');
       expect(opened.uris.last.path, kSupportPhone);
       sem.dispose();
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('SOS no beta com telefone de exemplo: avisa e nao disca o suporte; 192/190 seguem', (t) async {
+      await pumpRide(t, extra: [
+        appChannelProvider.overrideWithValue(AppChannel.beta),
+        supportPhoneProvider.overrideWithValue(kSupportPhonePlaceholder),
+      ]);
+      await t.tap(find.byKey(const Key('sos-button')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      await t.tap(find.byKey(const Key('sos-call-support')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(opened.uris, isEmpty);
+      expect(find.text('Suporte indisponível na versão de teste'), findsOneWidget);
+      await t.pump(const Duration(seconds: 6));
+
+      await t.tap(find.byKey(const Key('sos-button')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      await t.tap(find.byKey(const Key('sos-call-samu')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(opened.uris.single.toString(), 'tel:192');
+      await t.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('SOS no beta com telefone real: disca o suporte', (t) async {
+      await pumpRide(t, extra: [
+        appChannelProvider.overrideWithValue(AppChannel.beta),
+        supportPhoneProvider.overrideWithValue('+5511999990000'),
+      ]);
+      await t.tap(find.byKey(const Key('sos-button')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      await t.tap(find.byKey(const Key('sos-call-support')));
+      await t.pump();
+      await t.pump(const Duration(milliseconds: 500));
+      expect(opened.uris.single.path, '+5511999990000');
       await t.pumpWidget(const SizedBox());
     });
 

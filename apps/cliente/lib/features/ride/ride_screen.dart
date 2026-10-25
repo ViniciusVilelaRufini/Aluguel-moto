@@ -10,6 +10,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import '../../core/app_channel.dart';
 import '../../core/backend.dart';
 import '../../core/clock.dart';
 import '../../core/errors.dart';
@@ -475,8 +476,15 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
           variant: VoltiButtonVariant.secondary,
           fullWidth: true,
           onPressed: () async {
+            final phone = ref.read(supportPhoneProvider);
+            final unavailable = isSupportPhoneUnavailable(channel: ref.read(appChannelProvider), phone: phone);
             Navigator.of(context).pop();
-            await ref.read(urlLauncherProvider)(Uri(scheme: 'tel', path: kSupportPhone));
+            if (unavailable) {
+              // Versao de teste (TestFlight): o telefone e o de exemplo, nao disca.
+              if (mounted) VoltiToast.show(context, l.callSupportUnavailableBeta, tone: VoltiToastTone.info);
+              return;
+            }
+            await ref.read(urlLauncherProvider)(Uri(scheme: 'tel', path: phone));
           },
         ),
         VoltiButton(

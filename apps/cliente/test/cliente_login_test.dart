@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
+import 'package:volti_cliente/core/app_channel.dart';
 import 'package:volti_cliente/core/auth_store.dart';
 import 'package:volti_cliente/core/backend.dart';
 import 'package:volti_cliente/core/clock.dart';
@@ -114,6 +115,7 @@ Future<GoRouter> _pumpWelcome(
   LegalLinks links = const LegalLinks(),
   _Session? session,
   bool settleAll = true,
+  AppChannel channel = AppChannel.store,
 }) async {
   _opened.clear();
   final router = GoRouter(initialLocation: '/welcome', routes: [
@@ -133,6 +135,7 @@ Future<GoRouter> _pumpWelcome(
         : CognitoCustomerAuthRepository(config: config, client: CognitoIdentityClient(config, FakeTransport()), store: MemoryCognitoTokenStore())),
     sessionProvider.overrideWith(() => session ?? _Session()),
     legalLinksProvider.overrideWithValue(links),
+    appChannelProvider.overrideWithValue(channel),
     urlLauncherProvider.overrideWithValue((uri) async {
       _opened.add(uri);
       return true;
@@ -158,6 +161,17 @@ Future<void> tapVisible(WidgetTester t, Finder f) async {
 }
 
 void main() {
+  testWidgets('selo "Versao de teste" aparece so no canal beta', (t) async {
+    await _pumpWelcome(t, channel: AppChannel.beta);
+    expect(find.byKey(const Key('beta-badge')), findsOneWidget);
+    expect(find.text('Versão de teste'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+    await _pumpWelcome(t);
+    expect(find.byKey(const Key('beta-badge')), findsNothing);
+    expect(find.text('Versão de teste'), findsNothing);
+    await t.pumpWidget(const SizedBox());
+  });
+
   setUpAll(_loadFonts);
   group('boas-vindas da referencia', () {
     testWidgets('mapa decorativo, selos, titulo, botoes, divisor e termos', (t) async {
