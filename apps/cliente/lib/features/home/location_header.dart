@@ -49,7 +49,7 @@ class LocationHeader extends ConsumerWidget {
       const SizedBox(width: VoltiSpacing.s12),
       // heightFactor 1: sem ele o Center ocupa a altura toda numa Stack e a barra desce ao meio da tela.
       // O espaco do antigo sino mantem a pilula centrada.
-      Expanded(child: Center(heightFactor: 1, child: _LocationPill(label: l.yourLocation, place: place))),
+      Expanded(child: Center(heightFactor: 1, child: _LocationPill(label: located ? l.yourLocation : l.pickupAtLabel, place: place))),
       const SizedBox(width: VoltiSpacing.s12 + 44),
     ]);
   }

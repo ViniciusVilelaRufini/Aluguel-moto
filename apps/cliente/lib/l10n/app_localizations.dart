@@ -106,6 +106,24 @@ abstract class AppLocalizations {
   /// **'Só rastreamos sua posição com um aluguel ativo. Você pode revogar quando quiser em Conta.'**
   String get acceptLocationHint;
 
+  /// No description provided for @acceptLocationHintHere.
+  ///
+  /// In pt, this message translates to:
+  /// **'Só rastreamos sua posição com um aluguel ativo. Você pode desligar aqui quando quiser.'**
+  String get acceptLocationHintHere;
+
+  /// No description provided for @privacyConsents.
+  ///
+  /// In pt, this message translates to:
+  /// **'Consentimentos'**
+  String get privacyConsents;
+
+  /// No description provided for @privacyDocuments.
+  ///
+  /// In pt, this message translates to:
+  /// **'Documentos'**
+  String get privacyDocuments;
+
   /// No description provided for @acceptMarketing.
   ///
   /// In pt, this message translates to:
@@ -436,6 +454,24 @@ abstract class AppLocalizations {
   /// **'Caução'**
   String get deposit;
 
+  /// No description provided for @blockedNow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bloqueado agora (caução)'**
+  String get blockedNow;
+
+  /// No description provided for @pickupWhenLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirada'**
+  String get pickupWhenLine;
+
+  /// No description provided for @pickupWhenValue.
+  ///
+  /// In pt, this message translates to:
+  /// **'{weekday} {date} às {time}'**
+  String pickupWhenValue(String weekday, String date, String time);
+
   /// No description provided for @depositAmount.
   ///
   /// In pt, this message translates to:
@@ -483,6 +519,30 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Foto do documento (RG ou CNH)'**
   String get documentPhoto;
+
+  /// No description provided for @documentPhotoCnh.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto da CNH'**
+  String get documentPhotoCnh;
+
+  /// No description provided for @documentPhotoRg.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto do RG'**
+  String get documentPhotoRg;
+
+  /// No description provided for @photoSent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviada'**
+  String get photoSent;
+
+  /// No description provided for @photoRetake.
+  ///
+  /// In pt, this message translates to:
+  /// **'Refazer'**
+  String get photoRetake;
 
   /// No description provided for @documentPhotoHint.
   ///
@@ -553,7 +613,7 @@ abstract class AppLocalizations {
   /// No description provided for @cardHolder.
   ///
   /// In pt, this message translates to:
-  /// **'Nome impresso no cartão'**
+  /// **'Nome no cartão'**
   String get cardHolder;
 
   /// No description provided for @cardExpiry.
@@ -1576,6 +1636,24 @@ abstract class AppLocalizations {
   /// **'Sua localização'**
   String get yourLocation;
 
+  /// No description provided for @pickupAtLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retire em'**
+  String get pickupAtLabel;
+
+  /// No description provided for @cardCvvInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'CVV com 3 ou 4 dígitos'**
+  String get cardCvvInvalid;
+
+  /// No description provided for @planDayDescription.
+  ///
+  /// In pt, this message translates to:
+  /// **'24 horas · devolva até o fim do dia'**
+  String get planDayDescription;
+
   /// No description provided for @zoneNotice.
   ///
   /// In pt, this message translates to:
@@ -2053,7 +2131,7 @@ abstract class AppLocalizations {
   /// No description provided for @promoPassTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Desbloqueie seu passe'**
+  /// **'Desbloqueie seu plano'**
   String get promoPassTitle;
 
   /// No description provided for @promoPassText.
@@ -2725,7 +2803,7 @@ abstract class AppLocalizations {
   /// No description provided for @helpFaq1Text.
   ///
   /// In pt, this message translates to:
-  /// **'No mapa, toque em Escanear para andar e aponte para o QR no guidão, ou digite o número da moto. Escolha o plano e o seguro e confirme.'**
+  /// **'Escolha uma moto na lista ou no mapa, o plano e o seguro e reserve. Mostre o QR da reserva no galpão para retirar a moto, confira as fotos e o estado dela e toque em Aceitar e destravar.'**
   String get helpFaq1Text;
 
   /// No description provided for @helpFaq2Title.
@@ -2749,7 +2827,7 @@ abstract class AppLocalizations {
   /// No description provided for @helpFaq3Text.
   ///
   /// In pt, this message translates to:
-  /// **'Pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar.'**
+  /// **'Devolva a moto no galpão, onde o operador confere a entrega, ou pare dentro de um ponto de devolução (área verde no mapa), fotografe a moto estacionada e toque em Travar e encerrar. Se a bateria estiver baixa, troque-a por QR numa estação, durante a corrida, em Trocar bateria.'**
   String get helpFaq3Text;
 
   /// No description provided for @helpFaq4Title.
@@ -2875,13 +2953,13 @@ abstract class AppLocalizations {
   /// No description provided for @planMonthlyDescription.
   ///
   /// In pt, this message translates to:
-  /// **'Cobrança recorrente no cartão todo mês'**
+  /// **'Renova automaticamente, cancele quando quiser'**
   String get planMonthlyDescription;
 
   /// No description provided for @planWeeklyDescription.
   ///
   /// In pt, this message translates to:
-  /// **'Para entregadores · cobrança toda semana'**
+  /// **'Renova automaticamente, cancele quando quiser'**
   String get planWeeklyDescription;
 
   /// No description provided for @remove.
@@ -4797,6 +4875,12 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Taxa {amount}'**
   String swapConfirmFeeAmount(String amount);
+
+  /// No description provided for @swapConfirmBatteryHigh.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua bateria está em {pct}%. Trocar mesmo assim?'**
+  String swapConfirmBatteryHigh(int pct);
 
   /// No description provided for @swapConfirmSteps.
   ///

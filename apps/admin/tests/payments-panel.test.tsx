@@ -43,7 +43,7 @@ describe('abas do Financeiro por grupo (I1)', () => {
     expect(allowedFinanceTabs(['operacao'])).not.toContain('wallet');
   });
   it('aba pedida sem permissão ou inválida cai na primeira permitida', () => {
-    expect(resolveFinanceTab('wallet', ['suporte'])).toBe('overview');
+    expect(resolveFinanceTab('wallet', ['suporte'])).toBe('payments');
     expect(resolveFinanceTab('nada', ['financeiro'])).toBe('overview');
     expect(resolveFinanceTab(null, ['financeiro'])).toBe('overview');
     expect(resolveFinanceTab('wallet', ['financeiro'])).toBe('wallet');

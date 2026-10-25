@@ -1,14 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can } from '@/lib/permissions';
+import { can, canOpen } from '@/lib/permissions';
 import { prefersReducedMotion } from '@/lib/motion';
 import {
-  draftFromStation, emptyStationDraft, STATION_LAYER, toggle24h, STATION_SRC, stationCreateBody, stationFeatures, stationSummary, stationUpdateBody, validateStation,
+  draftFromStation, emptyStationDraft, linkedDepotNames, STATION_LAYER, stationDepotHint, toggle24h, STATION_SRC, stationCreateBody, stationFeatures, stationSummary, stationUpdateBody, validateStation,
   type StationDraft, type StationErrors,
 } from '@/lib/stations';
 import type { S } from '@/lib/types';
@@ -34,6 +35,7 @@ export default function StationsPage() {
   const canEdit = can(groups, 'station.edit');
   const canQr = can(groups, 'station.qr');
   const canSwaps = can(groups, 'station.swaps');
+  const canDepots = canOpen(groups, 'depots');
   const mapRef = useRef<MlMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -157,8 +159,6 @@ export default function StationsPage() {
     if (Object.keys(e).length === 0) save.mutate(draft);
   };
 
-  const linkedDepots = (s: Station) => (s.depotIds.length ? s.depotIds.map((id) => depotName.get(id) ?? 'Galpão').join(', ') : 'Nenhum');
-
   return (
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, position: 'relative', minHeight: 320 }}>
@@ -233,7 +233,11 @@ export default function StationsPage() {
             <KV k="Carregadas" v={`${selected.availableBatteries} de ${selected.totalSlots} vagas`} />
             <KV k="Baterias na estação" v={String(selected.batteriesInStation)} />
             <KV k="Trocas em andamento" v={String(selected.openSwaps)} />
-            <KV k="Galpões ligados" v={linkedDepots(selected)} />
+            <KV k="Galpões ligados" v={linkedDepotNames(selected, depotName)} />
+            <div data-testid="station-depot-hint" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              {stationDepotHint(canDepots)}
+              {canDepots && <> <Link href="/galpoes" style={{ color: 'var(--text-primary)', textDecoration: 'underline', textUnderlineOffset: 3 }}>Abrir Galpões</Link></>}
+            </div>
             <KV k="Armário (thing)" v={selected.thingName} mono />
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {canQr && <Button size="sm" variant="dark" icon="Download" testId="station-qr" onClick={() => setQrOf(selected)}>QR para imprimir</Button>}

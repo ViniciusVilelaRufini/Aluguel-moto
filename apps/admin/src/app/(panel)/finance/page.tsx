@@ -10,6 +10,7 @@ import { formatBRL, formatBRLBar } from '@/lib/format';
 import { csvName, periodRange } from '@/lib/period';
 import { allowedFinanceTabs, resolveFinanceTab, type FinanceTab } from '@/lib/finance-tabs';
 import { useAuth } from '@/lib/auth';
+import { can } from '@/lib/permissions';
 import { Empty, ErrorNote, Page, PageHeader, Pill, DataTable, Skeleton, TabPanel, useToast } from '@/components/ui';
 import { RentalsPanel } from '@/components/RentalsPanel';
 import { DepositsPanel } from '@/components/DepositsPanel';
@@ -32,9 +33,10 @@ export default function FinancePage() {
   const { groups } = useAuth();
   const [requestedTab, setTab] = useState<string | null>(params.get('tab'));
   // Aba sem permissão (ex.: ?tab=wallet para suporte/operação) cai na primeira permitida.
+  // Enquanto os grupos carregam, `tab` é nulo: nada é mostrado (evita piscar a visão geral antes de ?tab=wallet).
   const tab = resolveFinanceTab(requestedTab, groups);
   useEffect(() => {
-    if (groups.length && requestedTab && requestedTab !== tab) router.replace(`/finance?tab=${tab}`, { scroll: false });
+    if (tab && requestedTab && requestedTab !== tab) router.replace(`/finance?tab=${tab}`, { scroll: false });
   }, [groups, requestedTab, tab, router]);
   const [rental, setRental] = useState<string | null>(params.get('rental'));
   const [payment] = useState<string | null>(params.get('payment'));
@@ -46,7 +48,8 @@ export default function FinancePage() {
   const spanDays = range ? Math.round((Date.parse(range.to) - Date.parse(range.from)) / 86400_000) : 0;
   const weekly = period.kind === '30d' || spanDays > 31;
   const pk = `${period.kind}|${r.from}|${r.to}`;
-  const on = !!range;
+  // Os relatórios são de admin/financeiro: suporte só abre Pagamentos e não deve disparar consultas que a API recusa.
+  const on = !!range && can(groups, 'finance.reports');
 
   const fin = useQuery({ queryKey: ['finance', pk], enabled: on, queryFn: () => unwrap(api.GET('/reports/finance', { params: { query: r } })).then(asJson) });
   const rev = useQuery({ queryKey: ['revenue', pk], enabled: on, queryFn: () => unwrap(api.GET('/reports/revenue', { params: { query: { ...r, groupBy: weekly ? 'week' : 'day' } } })).then(asJson) });
@@ -91,6 +94,7 @@ export default function FinancePage() {
   const f = fin.data;
   const LABELS: Record<Tab, string> = { overview: 'Visão geral', rentals: 'Aluguéis', payments: 'Pagamentos', deposits: 'Cauções', wallet: 'Carteira' };
   const tabOptions = allowedFinanceTabs(groups).map((value) => ({ value, label: LABELS[value] }));
+  if (!tab) return <Page><PageHeader title="Financeiro" subtitle="Receita, planos, inadimplência e cauções" /></Page>;
   return (
     <Page>
       <PageHeader title="Financeiro" subtitle="Receita, planos, inadimplência e cauções">

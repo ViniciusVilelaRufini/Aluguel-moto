@@ -131,7 +131,7 @@ class _DepotFleetPageState extends ConsumerState<DepotFleetPage> {
                       Padding(
                         padding: const EdgeInsets.only(top: VoltiSpacing.s24),
                         child: VoltiEmptyState(
-                            icon: LucideIcons.bike, title: t.depotFleetEmpty, compact: true),
+                            icon: LucideIcons.motorbike, title: t.depotFleetEmpty, compact: true),
                       ),
                     ])
                   : ListView.separated(

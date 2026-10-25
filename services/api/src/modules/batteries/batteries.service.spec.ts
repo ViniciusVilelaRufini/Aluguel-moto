@@ -35,17 +35,19 @@ function setup() {
   prisma.depot.findMany.mockResolvedValue([{ id: DEPOT }] as any);
   (prisma.battery.groupBy as any).mockResolvedValue([] as any);
   const stock = { check: jest.fn().mockResolvedValue(undefined) };
-  return { service: new BatteriesService(prisma as any, stock as any), prisma, stock };
+  const audit = { record: jest.fn().mockResolvedValue(undefined) };
+  return { service: new BatteriesService(prisma as any, stock as any, audit as any), prisma, stock, audit };
 }
 
 const movementsOf = (prisma: ReturnType<typeof setup>['prisma']) => prisma.batteryMovement.createMany.mock.calls.flatMap((c: any) => c[0].data);
 
 describe('BatteriesService — cadastro', () => {
   it('cadastra `charged` (carga 100) no galpão e grava a primeira movimentação sem origem', async () => {
-    const { service, prisma } = setup();
+    const { service, prisma, audit } = setup();
     prisma.battery.findUnique.mockResolvedValue(null);
     prisma.battery.create.mockImplementation((async (a: any) => row({ ...a.data, id: BAT })) as any);
     const b = await service.create(campo, { serial: ' BT-9 ', status: 'charged', depotId: DEPOT, chargePct: 30 });
+    expect(audit.record.mock.calls.map((c: any[]) => c[0])).toEqual([expect.objectContaining({ actor: campo, action: 'battery.create', entityType: 'Battery', entityId: BAT, metadata: expect.objectContaining({ serial: 'BT-9' }) })]);
     expect(prisma.battery.create).toHaveBeenCalledWith({ data: { serial: 'BT-9', status: 'charged', depotId: DEPOT, chargePct: 100 } });
     expect(b).toMatchObject({ status: 'charged', depotId: DEPOT, chargePct: 100 });
     expect(movementsOf(prisma)).toEqual([expect.objectContaining({ batteryId: BAT, fromStatus: null, toStatus: 'charged', depotId: DEPOT, actorId: campo.userId })]);
@@ -73,19 +75,21 @@ describe('BatteriesService — cadastro', () => {
 
 describe('BatteriesService — mark-charged', () => {
   it('`charging → charged` com carga 100, mantém o galpão, grava movimentação', async () => {
-    const { service, prisma } = setup();
+    const { service, prisma, audit } = setup();
     prisma.battery.findUnique.mockResolvedValueOnce(row()).mockResolvedValueOnce(row()).mockResolvedValueOnce(row({ status: 'charged', chargePct: 100 }));
     const b = await service.markCharged(campo, BAT);
+    expect(audit.record.mock.calls.map((c: any[]) => c[0])).toEqual([expect.objectContaining({ action: 'battery.mark_charged', entityType: 'Battery', entityId: BAT })]);
     expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: BAT, status: 'charging' }, data: { status: 'charged', chargePct: 100 } });
     expect(b).toMatchObject({ status: 'charged', chargePct: 100 });
     expect(movementsOf(prisma)).toEqual([expect.objectContaining({ fromStatus: 'charging', toStatus: 'charged', depotId: DEPOT })]);
   });
 
   it.each(['charged', 'in_van', 'in_vehicle', 'in_station', 'defective', 'retired'])('de `%s` → 409', async (status) => {
-    const { service, prisma } = setup();
+    const { service, prisma, audit } = setup();
     prisma.battery.findUnique.mockResolvedValue(row({ status }));
     expect(await problem(service.markCharged(campo, BAT))).toEqual({ status: 409, slug: 'conflict' });
     expect(prisma.batteryMovement.createMany).not.toHaveBeenCalled();
+    expect(audit.record).not.toHaveBeenCalled();
   });
 
   it('corrida (status mudou entre a leitura e a escrita) → 409; inexistente → 404', async () => {
@@ -136,9 +140,10 @@ describe('BatteriesService — defeito', () => {
     ['in_van', { holderId: campo.userId, depotId: null }],
     ['in_station', { stationId: STATION, depotId: null, chargePct: 30 }],
   ])('de `%s` → `defective` com motivo na movimentação', async (status, extra) => {
-    const { service, prisma } = setup();
+    const { service, prisma, audit } = setup();
     prisma.battery.findUnique.mockResolvedValueOnce(row({ status, ...extra })).mockResolvedValueOnce(row({ status: 'defective', ...extra }));
     await service.reportDefect(campo, BAT, 'Carcaça trincada');
+    expect(audit.record.mock.calls.map((c: any[]) => c[0])).toEqual([expect.objectContaining({ action: 'battery.defect', reason: 'Carcaça trincada', metadata: expect.objectContaining({ from: status, to: 'defective' }) })]);
     expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: BAT, status }, data: { status: 'defective' } });
     expect(movementsOf(prisma)).toEqual([expect.objectContaining({ fromStatus: status, toStatus: 'defective', reason: 'Carcaça trincada', actorId: campo.userId })]);
   });
@@ -173,9 +178,10 @@ describe('BatteriesService — defeito', () => {
 
 describe('BatteriesService — baixa', () => {
   it.each(['defective', 'charging', 'charged'])('de `%s` → `retired`, sai da van/estação e mantém o galpão', async (status) => {
-    const { service, prisma } = setup();
+    const { service, prisma, audit } = setup();
     prisma.battery.findUnique.mockResolvedValue(row({ status }));
     await service.retire(campo, BAT, 'Fim da vida útil');
+    expect(audit.record.mock.calls.map((c: any[]) => c[0])).toEqual([expect.objectContaining({ action: 'battery.retire', reason: 'Fim da vida útil', entityId: BAT })]);
     expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: BAT, status }, data: { status: 'retired', holderId: null, stationId: null } });
     expect(movementsOf(prisma)).toEqual([expect.objectContaining({ fromStatus: status, toStatus: 'retired', depotId: DEPOT, reason: 'Fim da vida útil' })]);
   });

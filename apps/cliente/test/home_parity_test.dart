@@ -1,3 +1,4 @@
+import 'package:built_collection/built_collection.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_api/volti_api.dart';
@@ -30,7 +31,9 @@ class ParityBackend extends GalpaoBackend {
 
   @override
   Future<List<SupportConversation>> conversations() async => [
-        $SupportConversation((b) => b
+        // SupportConversation agora e abstrata no contrato: usa a variante concreta.
+        LgpdSupportConversation((b) => b
+          ..messages = ListBuilder<SupportMessage>()
           ..id = 'c'
           ..customerId = 'c1'
           ..subject = 'Ajuda'
@@ -74,10 +77,10 @@ void main() {
     phone(t);
     await pump(t, ParityBackend());
     expect(find.text('AL'), findsOneWidget);
-    expect(find.text('Sua localização'), findsOneWidget);
+    expect(find.text('Retire em'), findsOneWidget);
     expect(find.text('Galpão Volti · Pinheiros'), findsOneWidget);
     expect(find.textContaining('Perto'), findsNothing);
-    expect(find.text('Desbloqueie seu passe'), findsOneWidget);
+    expect(find.text('Desbloqueie seu plano'), findsOneWidget);
     expect(find.text('1ª corrida grátis'), findsNothing);
     for (final f in ['Todas', 'Autonomia 10+ km', 'Pontos de retirada', 'Escanear para andar']) {
       expect(find.text(f), findsNothing);

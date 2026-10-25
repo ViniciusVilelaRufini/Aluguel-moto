@@ -194,7 +194,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
             success: true,
             title: l.handoverAcceptedTitle,
             text: l.handoverAcceptedText,
-            primary: VoltiButton(label: l.handoverGoToRide, icon: LucideIcons.bike, fullWidth: true, onPressed: () => context.go('/ride')),
+            primary: VoltiButton(label: l.handoverGoToRide, icon: LucideIcons.motorbike, fullWidth: true, onPressed: () => context.go('/ride')),
           ),
         _ => _Outcome(
             key: const Key('handover-canceled'),
@@ -271,16 +271,21 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
                     scrollDirection: Axis.horizontal,
                     itemCount: photos.length,
                     separatorBuilder: (_, _) => const SizedBox(width: VoltiSpacing.s8),
-                    itemBuilder: (_, i) => VehicleThumb(
-                      size: 132,
-                      semanticLabel: l.handoverPhotoLabel(i + 1, photos.length),
-                      image: Image.network(
-                        photos[i],
-                        width: 132,
-                        height: 132,
-                        fit: BoxFit.cover,
-                        excludeFromSemantics: true,
-                        errorBuilder: (_, _, _) => const Icon(LucideIcons.imageOff, color: VoltiColors.blue600),
+                    // Toque abre a foto em tela cheia com zoom (conferir um dano antes de aceitar).
+                    itemBuilder: (_, i) => VoltiPressable(
+                      key: Key('handover-photo-$i'),
+                      onTap: () => openHandoverPhoto(context, photos[i], l.handoverPhotoLabel(i + 1, photos.length)),
+                      child: VehicleThumb(
+                        size: 132,
+                        semanticLabel: l.handoverPhotoLabel(i + 1, photos.length),
+                        image: Image.network(
+                          photos[i],
+                          width: 132,
+                          height: 132,
+                          fit: BoxFit.cover,
+                          excludeFromSemantics: true,
+                          errorBuilder: (_, _, _) => const Icon(LucideIcons.imageOff, color: VoltiColors.blue600),
+                        ),
                       ),
                     ),
                   ),
@@ -535,4 +540,47 @@ class _HandoverDisputeSheetState extends ConsumerState<HandoverDisputeSheet> {
       ),
     );
   }
+}
+
+/// Foto da saida em tela cheia, com zoom por pinca ([InteractiveViewer]).
+/// Abre a foto da saida em tela cheia (visivel para teste).
+void openHandoverPhoto(BuildContext context, String url, String label) {
+  Navigator.of(context).push(MaterialPageRoute<void>(
+    fullscreenDialog: true,
+    builder: (ctx) => Scaffold(
+      key: const Key('handover-photo-viewer'),
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        automaticallyImplyLeading: false,
+        title: Text(label, style: VoltiTypography.label.copyWith(color: Colors.white)),
+        actions: [
+          IconButton(
+            tooltip: ctx.l.close,
+            icon: const Icon(LucideIcons.x),
+            onPressed: () => Navigator.of(ctx).pop(),
+          ),
+        ],
+      ),
+      body: SafeArea(
+        child: Semantics(
+          label: label,
+          image: true,
+          child: InteractiveViewer(
+            minScale: 1,
+            maxScale: 5,
+            child: Center(
+              child: Image.network(
+                url,
+                fit: BoxFit.contain,
+                excludeFromSemantics: true,
+                errorBuilder: (_, _, _) => const Icon(LucideIcons.imageOff, color: Colors.white, size: 48),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  ));
 }

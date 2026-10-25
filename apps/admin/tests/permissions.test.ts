@@ -30,10 +30,10 @@ describe('menu by group', () => {
     expect(k).not.toContain('fleet');
     expect(k).not.toContain('zones');
   });
-  it('suporte sees customers and alerts', () => {
+  it('suporte sees customers, alerts and payments', () => {
     const k = keys(['suporte']);
     expect(k).toEqual(expect.arrayContaining(['customers', 'alerts']));
-    expect(k).not.toContain('finance');
+    expect(k).toContain('finance'); // Task 18: só a lista de Pagamentos (ver finance-tabs)
     expect(k).not.toContain('zones');
   });
   it('merges multiple groups', () => {

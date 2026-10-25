@@ -99,43 +99,48 @@ class _PrivacyScreenState extends ConsumerState<PrivacyScreen> {
         padding: const EdgeInsets.all(VoltiSpacing.screenGutter),
         children: [
           Text(l.privacyIntro, style: VoltiTypography.body),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(l.consentLocationTitle),
-            subtitle: Text(l.acceptLocationHint),
-            value: s?.locationConsent ?? false,
-            onChanged: _busy
-                ? null
-                : (v) => _guard(() => ref
-                    .read(sessionProvider.notifier)
-                    .saveConsents(terms: s?.termsAccepted ?? true, location: v, marketing: consents?.marketing ?? false)),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: Text(l.acceptMarketing),
-            value: consents?.marketing ?? false,
-            onChanged: _busy
-                ? null
-                : (v) => _guard(() => ref
-                    .read(sessionProvider.notifier)
-                    .saveConsents(terms: s?.termsAccepted ?? true, location: s?.locationConsent ?? false, marketing: v)),
-          ),
-          const SizedBox(height: 4),
-          ListRow(
-            key: const Key('privacy-terms'),
-            icon: LucideIcons.fileText,
-            title: l.termsOfUse,
-            trailing: ListRowTrailing.chevron,
-            onTap: () => openLegalDocument(context, ref, ref.read(legalLinksProvider).terms),
-          ),
-          ListRow(
-            key: const Key('privacy-policy'),
-            icon: LucideIcons.shieldCheck,
-            title: l.privacyPolicy,
-            trailing: ListRowTrailing.chevron,
-            onTap: () => openLegalDocument(context, ref, ref.read(legalLinksProvider).privacy),
-          ),
-          const SizedBox(height: 12),
+          VoltiListGroup(title: l.privacyConsents, children: [
+            SwitchListTile(
+              key: const Key('privacy-location-switch'),
+              title: Text(l.consentLocationTitle),
+              subtitle: Text(l.acceptLocationHintHere),
+              value: s?.locationConsent ?? false,
+              onChanged: _busy
+                  ? null
+                  : (v) => _guard(() => ref
+                      .read(sessionProvider.notifier)
+                      .saveConsents(terms: s?.termsAccepted ?? true, location: v, marketing: consents?.marketing ?? false)),
+            ),
+            const Divider(height: 1),
+            SwitchListTile(
+              key: const Key('privacy-marketing-switch'),
+              title: Text(l.acceptMarketing),
+              value: consents?.marketing ?? false,
+              onChanged: _busy
+                  ? null
+                  : (v) => _guard(() => ref
+                      .read(sessionProvider.notifier)
+                      .saveConsents(terms: s?.termsAccepted ?? true, location: s?.locationConsent ?? false, marketing: v)),
+            ),
+          ]),
+          VoltiListGroup(title: l.privacyDocuments, children: [
+            ListRow(
+              key: const Key('privacy-terms'),
+              icon: LucideIcons.fileText,
+              title: l.termsOfUse,
+              trailing: ListRowTrailing.chevron,
+              onTap: () => openLegalDocument(context, ref, ref.read(legalLinksProvider).terms),
+            ),
+            const Divider(height: 1),
+            ListRow(
+              key: const Key('privacy-policy'),
+              icon: LucideIcons.shieldCheck,
+              title: l.privacyPolicy,
+              trailing: ListRowTrailing.chevron,
+              onTap: () => openLegalDocument(context, ref, ref.read(legalLinksProvider).privacy),
+            ),
+          ]),
+          const SizedBox(height: VoltiSpacing.s16),
           VoltiButton(
             label: l.exportData,
             icon: LucideIcons.download,
@@ -143,12 +148,13 @@ class _PrivacyScreenState extends ConsumerState<PrivacyScreen> {
             fullWidth: true,
             onPressed: _busy ? null : () => _guard(() => exportMyData(context, ref)),
           ),
-          const SizedBox(height: 8),
-          VoltiButton(
-            label: l.deleteAccount,
-            icon: LucideIcons.trash2,
-            variant: VoltiButtonVariant.danger,
-            fullWidth: true,
+          // Acao destrutiva: discreta e longe de Exportar.
+          const SizedBox(height: VoltiSpacing.s32),
+          TextButton.icon(
+            key: const Key('privacy-delete'),
+            style: TextButton.styleFrom(foregroundColor: VoltiColors.danger, minimumSize: const Size.fromHeight(VoltiSpacing.hitMin)),
+            icon: const Icon(LucideIcons.trash2, size: 18),
+            label: Text(l.deleteAccount, textAlign: TextAlign.center),
             onPressed: _busy ? null : () => confirmDeleteAccount(context, ref),
           ),
         ],

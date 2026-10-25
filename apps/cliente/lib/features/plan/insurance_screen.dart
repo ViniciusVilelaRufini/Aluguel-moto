@@ -112,7 +112,7 @@ class _InsuranceScreenState extends ConsumerState<InsuranceScreen> {
                       ],
                     ),
                   ),
-                ]),
+                ], animate: coverages.hasValue),
               ),
             ),
           ],

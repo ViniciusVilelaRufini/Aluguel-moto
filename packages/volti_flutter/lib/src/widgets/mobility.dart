@@ -275,7 +275,7 @@ class _VehicleMarkerState extends State<VehicleMarker>
                         : VoltiShadows.shadow1,
                   ),
                   child: Icon(
-                    LucideIcons.bike,
+                    LucideIcons.motorbike,
                     size: selected ? 22 : 17,
                     color: Colors.white,
                   ),
@@ -863,6 +863,8 @@ class PhotoCapture extends StatelessWidget {
     this.icon = LucideIcons.camera,
     this.height = 160,
     this.onTap,
+    this.doneLabel,
+    this.retakeLabel,
   });
 
   final String label;
@@ -872,6 +874,11 @@ class PhotoCapture extends StatelessWidget {
   final double height;
   final VoidCallback? onTap;
 
+  /// Com [doneLabel], a foto enviada mantem o [label] como titulo e mostra este
+  /// texto abaixo (ex.: "Enviada"); [retakeLabel] oferece refazer.
+  final String? doneLabel;
+  final String? retakeLabel;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -879,7 +886,7 @@ class PhotoCapture extends StatelessWidget {
     return VoltiPressable(
       onTap: onTap,
       scale: .99,
-      semanticLabel: done ? 'Foto enviada' : label,
+      semanticLabel: done ? (doneLabel != null ? '$label. $doneLabel' : 'Foto enviada') : label,
       child: CustomPaint(
         foregroundPainter: _DashedBorder(
           color: done ? VoltiColors.brand : scheme.outline,
@@ -917,10 +924,22 @@ class PhotoCapture extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                done ? 'Foto enviada' : label,
+                done && doneLabel == null ? 'Foto enviada' : label,
                 textAlign: TextAlign.center,
                 style: VoltiTypography.label.copyWith(color: fg),
               ),
+              if (done && doneLabel != null) ...[
+                const SizedBox(height: 2),
+                Text(doneLabel!, textAlign: TextAlign.center, style: VoltiTypography.caption.copyWith(color: fg)),
+                if (retakeLabel != null && onTap != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    retakeLabel!,
+                    textAlign: TextAlign.center,
+                    style: VoltiTypography.label.copyWith(color: scheme.onSurface, decoration: TextDecoration.underline),
+                  ),
+                ],
+              ],
               if (hint != null && !done) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -1083,7 +1102,7 @@ class VehicleThumb extends StatelessWidget {
           borderRadius: BorderRadius.circular(size >= 96 ? VoltiRadii.lg : VoltiRadii.md),
         ),
         alignment: Alignment.center,
-        child: image ?? Icon(LucideIcons.bike, size: size * .42, color: VoltiColors.blue600),
+        child: image ?? Icon(LucideIcons.motorbike, size: size * .42, color: VoltiColors.blue600),
       ),
     );
   }

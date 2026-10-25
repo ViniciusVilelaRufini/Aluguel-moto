@@ -221,21 +221,21 @@ void main() {
       expect(find.byKey(const Key('home-pick')), findsNothing);
       expect(find.text('Escolher moto'), findsNothing);
       expect(find.byKey(const Key('depot-picker')), findsNothing);
-      expect(find.text('Desbloqueie seu passe'), findsNothing);
+      expect(find.text('Desbloqueie seu plano'), findsNothing);
     });
 
     testWidgets('sem reserva o passe aparece; no modo estacoes some e volta ao sair', (t) async {
       phone(t);
       final b = GalpaoBackend();
       await pumpHome(t, b, clock: () => thu10);
-      expect(find.text('Desbloqueie seu passe'), findsOneWidget);
+      expect(find.text('Desbloqueie seu plano'), findsOneWidget);
       expect(find.byKey(const Key('home-pick')), findsOneWidget);
       await t.tap(find.byKey(const Key('home-stations-toggle')));
       await settle(t);
-      expect(find.text('Desbloqueie seu passe'), findsNothing);
+      expect(find.text('Desbloqueie seu plano'), findsNothing);
       await t.tap(find.byKey(const Key('home-stations-toggle')));
       await settle(t);
-      expect(find.text('Desbloqueie seu passe'), findsOneWidget);
+      expect(find.text('Desbloqueie seu plano'), findsOneWidget);
     });
 
     testWidgets('ao zerar, recarrega a reserva e volta o cartao do galpao', (t) async {
@@ -254,7 +254,7 @@ void main() {
       expect(card, findsNothing);
       expect(depotCard, findsOneWidget);
       expect(find.text('Escolher moto'), findsOneWidget);
-      expect(find.text('Desbloqueie seu passe'), findsOneWidget);
+      expect(find.text('Desbloqueie seu plano'), findsOneWidget);
     });
 
     testWidgets('zerou mas a API ainda devolve ativa: mostra o prazo encerrado (recarrega uma vez)', (t) async {

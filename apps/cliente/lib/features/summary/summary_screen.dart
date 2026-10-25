@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
@@ -152,6 +153,25 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     });
     return Scaffold(
       appBar: AppBar(automaticallyImplyLeading: false, title: Text(l.summaryTitle, style: VoltiTypography.heading)),
+      // Concluir fixo no rodape: os toasts (SnackBar) ficam acima dele, nunca sobre o botao.
+      bottomNavigationBar: receipt.hasValue
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, VoltiSpacing.s8, VoltiSpacing.screenGutter, VoltiSpacing.s12),
+                child: VoltiButton(
+                  key: const Key('summary-finish'),
+                  label: l.finishSummary,
+                  size: VoltiButtonSize.lg,
+                  fullWidth: true,
+                  onPressed: () {
+                    // O mapa mostra o agradecimento (design: toast no mapa, H8).
+                    ref.read(flashProvider.notifier).show(l.thanksForRiding);
+                    context.go('/home');
+                  },
+                ),
+              ),
+            )
+          : null,
       body: SafeArea(
         child: AsyncView<Receipt>(
           value: receipt,
@@ -175,20 +195,32 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   ),
                 ]),
                 const SizedBox(height: VoltiSpacing.s16),
-                if (mapOn && pts.length >= 2)
-                  ClipRRect(
-                    borderRadius: VoltiRadii.rLg,
-                    child: SizedBox(
-                      height: 200,
-                      child: VoltiMap(
-                        center: pts.first,
-                        zoom: 15,
-                        interactive: false,
-                        embedded: true,
-                        layers: [DrawnPolyline(points: pts, color: VoltiColors.brand)],
+                if (mapOn && pts.isNotEmpty)
+                  Builder(builder: (context) {
+                    // Trajeto enquadrado, com pins de inicio e fim; moto parada (< 20 m)
+                    // mostra so o pin, em zoom de rua.
+                    final cam = trackCamera(pts);
+                    return ClipRRect(
+                      borderRadius: VoltiRadii.rLg,
+                      child: SizedBox(
+                        key: const Key('receipt-map'),
+                        height: 200,
+                        child: VoltiMap(
+                          center: cam.center,
+                          zoom: cam.zoom,
+                          interactive: false,
+                          embedded: true,
+                          layers: [
+                            if (cam.path) DrawnPolyline(points: pts, color: VoltiColors.brand),
+                            MarkerLayer(markers: [
+                              if (cam.path) Marker(key: const Key('receipt-start'), point: pts.first, width: 20, height: 20, child: const _TrackPin(VoltiColors.brand)),
+                              Marker(key: const Key('receipt-end'), point: pts.last, width: 24, height: 24, child: const _TrackPin(VoltiColors.ink900)),
+                            ]),
+                          ],
+                        ),
                       ),
-                    ),
-                  ),
+                    );
+                  }),
                 const SizedBox(height: VoltiSpacing.s16),
                 Container(
                   padding: const EdgeInsets.all(VoltiSpacing.s16),
@@ -300,12 +332,6 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   ),
                 const SizedBox(height: VoltiSpacing.s16),
                 VoltiButton(label: l.disputeCharge, variant: VoltiButtonVariant.ghost, fullWidth: true, onPressed: _dispute),
-                const SizedBox(height: VoltiSpacing.s8),
-                VoltiButton(label: l.finishSummary, size: VoltiButtonSize.lg, fullWidth: true, onPressed: () {
-                  // O mapa mostra o agradecimento (design: toast no mapa, H8).
-                  ref.read(flashProvider.notifier).show(l.thanksForRiding);
-                  context.go('/home');
-                }),
               ]),
             );
           },
@@ -330,5 +356,15 @@ class _Line extends StatelessWidget {
           const SizedBox(width: VoltiSpacing.s12),
           value ?? Text(b, style: strong ? VoltiTypography.bodyStrong : VoltiTypography.body),
         ]),
+      );
+}
+
+/// Pino redondo de inicio/fim do trajeto no recibo.
+class _TrackPin extends StatelessWidget {
+  const _TrackPin(this.color);
+  final Color color;
+  @override
+  Widget build(BuildContext context) => Container(
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3), boxShadow: VoltiShadows.shadow2),
       );
 }

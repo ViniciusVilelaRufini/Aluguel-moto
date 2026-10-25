@@ -59,7 +59,7 @@ class ModelPhoto extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context);
-    const placeholder = Center(child: Icon(LucideIcons.bike, color: VoltiColors.ink500, size: 28));
+    const placeholder = Center(child: Icon(LucideIcons.motorbike, color: VoltiColors.ink500, size: 28));
     return Semantics(
       image: true,
       label: t.modelPhotoSemantics(name),

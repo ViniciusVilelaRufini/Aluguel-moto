@@ -304,18 +304,21 @@ class _VoltiMapState extends State<VoltiMap> with WidgetsBindingObserver {
 
 /// Cartao de aviso (zona, rede, etc.) com tom.
 class NoticeBanner extends StatelessWidget {
-  const NoticeBanner({super.key, required this.message, this.title, this.icon = LucideIcons.gauge, this.danger = false});
+  const NoticeBanner({super.key, required this.message, this.title, this.icon = LucideIcons.gauge, this.danger = false, this.info = false});
   final String message;
   final String? title;
   final IconData icon;
   final bool danger;
 
+  /// Tom informativo (azul) para avisos que nao sao alerta (ex.: privacidade).
+  final bool info;
+
   @override
   Widget build(BuildContext context) {
-    final bg = danger ? VoltiColors.dangerSoft : VoltiColors.warningSoft;
+    final bg = danger ? VoltiColors.dangerSoft : (info ? VoltiColors.infoSoft : VoltiColors.warningSoft);
     // Icone no tom da marca; texto no tom forte (>= 4,5:1 sobre o fundo suave).
-    final fg = danger ? VoltiColors.dangerInk : VoltiColors.warningInk;
-    final ink = danger ? VoltiColors.dangerInkStrong : VoltiColors.warningInkStrong;
+    final fg = danger ? VoltiColors.dangerInk : (info ? VoltiColors.infoInk : VoltiColors.warningInk);
+    final ink = danger ? VoltiColors.dangerInkStrong : (info ? VoltiColors.infoInk : VoltiColors.warningInkStrong);
     return Semantics(
       liveRegion: true,
       container: true,

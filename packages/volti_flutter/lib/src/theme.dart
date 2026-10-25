@@ -94,6 +94,12 @@ abstract final class VoltiTheme {
         shape: const RoundedRectangleBorder(borderRadius: VoltiRadii.rLg),
       ),
       dividerColor: scheme.outlineVariant,
+      // Sem o tint M3 ao rolar: a barra segue na cor da tela.
+      appBarTheme: AppBarTheme(
+        backgroundColor: scaffold,
+        surfaceTintColor: Colors.transparent,
+        scrolledUnderElevation: 0,
+      ),
       // Caixas Material (CheckboxListTile etc.) no padrao do kit:
       // marcado no tom de acao (E-12), sem halo de toque.
       checkboxTheme: CheckboxThemeData(

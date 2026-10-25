@@ -48,8 +48,22 @@ class HomeScreen extends ConsumerStatefulWidget {
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   final _map = MapController();
+
+  /// Rodape (botoes do mapa + cartao): o toast sobe acima dele, nao o cobre.
+  final _bottomKey = GlobalKey();
+
+  /// Faixa de promocoes (passe) no alto do mapa: o enquadramento a evita.
+  final _promosKey = GlobalKey();
+
+  /// A camera ja foi enquadrada com o galpao e as estacoes ao redor.
+  bool _framedStations = false;
+
+  double _toastOffset() {
+    final box = _bottomKey.currentContext?.findRenderObject();
+    return box is RenderBox && box.hasSize ? box.size.height : 0;
+  }
 
   /// Atualiza "Aberto até 20h" quando o horario vira.
   Timer? _tick;
@@ -81,13 +95,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     // Push: registra o token (no-op sem Firebase).
-    Future.microtask(() => ref.read(pushServiceProvider).register(
-          ref.read(backendProvider),
-          onForeground: _onPushForeground,
-          onOpen: _onPushOpen,
-        ));
+    Future.microtask(
+      () => ref.read(pushServiceProvider).register(ref.read(backendProvider), onForeground: _onPushForeground, onOpen: _onPushOpen),
+    );
+    WidgetsBinding.instance.addObserver(this);
+    var minutes = 0;
     _tick = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      // Horario do galpao pode mudar no servidor: relê de tempos em tempos.
+      if (++minutes % 5 == 0) ref.invalidate(depotsProvider);
+      setState(() {});
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showFlash();
@@ -95,10 +112,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     });
     // Fora do build: centra no galpao ao abrir e quando ele muda.
     ref.listenManual(currentDepotProvider, (_, next) => _focusDepot(next.value), fireImmediately: true);
+    // As estacoes chegam depois do galpao: enquadra de novo uma vez com elas.
+    ref.listenManual(swapStationsProvider, (_, next) {
+      final d = ref.read(currentDepotProvider).value;
+      if (!_framedStations && next.hasValue && d != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _frameIdle(d);
+        });
+      }
+    });
+  }
+
+  /// Volta do segundo plano: relê galpoes (horario/abertura) e o aluguel.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    ref.invalidate(depotsProvider);
+    ref.invalidate(currentRentalStateProvider);
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
     super.dispose();
   }
@@ -107,7 +142,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _onPushForeground(PushPayload m) {
     if (!mounted) return;
     final text = [m.title, m.body].whereType<String>().where((t) => t.isNotEmpty).join(': ');
-    if (text.isNotEmpty) VoltiToast.show(context, text, tone: VoltiToastTone.info);
+    if (text.isNotEmpty) VoltiToast.show(context, text, tone: VoltiToastTone.info, bottomOffset: _toastOffset());
   }
 
   /// Toque na notificacao: abre a tela do evento por cima do inicio.
@@ -120,7 +155,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _showFlash() {
     if (!mounted) return;
     final m = ref.read(flashProvider.notifier).take();
-    if (m != null) VoltiToast.show(context, m.text, tone: m.tone);
+    if (m != null) VoltiToast.show(context, m.text, tone: m.tone, bottomOffset: _toastOffset());
   }
 
   /// Explica para que serve a localizacao e so entao abre o dialogo do sistema.
@@ -163,9 +198,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _focusDepot(Depot? d) {
     if (d == null || d.id == _focusedDepotId || _userCentered) return;
     _focusedDepotId = d.id;
+    _framedStations = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _moveMap(LatLng(d.lat, d.lng));
+      if (mounted) _frameIdle(d);
     });
+  }
+
+  /// Home parada: enquadra o galpao e as estacoes proximas na faixa livre entre a
+  /// faixa do passe (alto) e o cartao do galpao (baixo), para nenhuma ficar atras
+  /// deles. Sem estacoes por perto, so centra o galpao.
+  void _frameIdle(Depot d) {
+    if (_userCentered || _stationsMode) return;
+    final here = LatLng(d.lat, d.lng);
+    final stations = ref.read(swapStationsProvider).asData?.value ?? const <SwapStation>[];
+    const dist = Distance();
+    final pts = [
+      here,
+      for (final s in stations)
+        if (dist(here, LatLng(s.lat, s.lng)) <= 1500) LatLng(s.lat, s.lng),
+    ];
+    if (pts.length < 2 || !ref.read(mapEnabledProvider)) {
+      _moveMap(here);
+      return;
+    }
+    final top = _promosKey.currentContext?.findRenderObject();
+    final bottom = _bottomKey.currentContext?.findRenderObject();
+    final media = MediaQuery.sizeOf(context);
+    var topPad = media.height * .18;
+    if (top is RenderBox && top.hasSize) topPad = top.localToGlobal(Offset.zero).dy + top.size.height + VoltiSpacing.s12;
+    var bottomPad = media.height * .45;
+    if (bottom is RenderBox && bottom.hasSize) bottomPad = bottom.size.height + VoltiSpacing.s12;
+    try {
+      _map.fitCamera(
+        CameraFit.coordinates(coordinates: pts, padding: EdgeInsets.fromLTRB(48, topPad, 48, bottomPad), maxZoom: 16, minZoom: 12),
+      );
+      _framedStations = true;
+    } catch (_) {
+      _moveMap(here);
+    }
   }
 
   /// Localizar: pede a posicao de novo e centra no cliente (nao no galpao).
@@ -285,6 +355,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             for (final d in depots.value ?? const <Depot>[])
                               Marker(
                                 key: ValueKey('depot-pin-${d.id}'),
+                                alignment: Alignment.center,
                                 point: LatLng(d.lat, d.lng),
                                 width: 56,
                                 height: 56,
@@ -299,7 +370,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     onTap: () => _selectDepot(d),
                                     child: StationBadgeOverlay(
                                       station: split.byDepot[d.id],
-                                      child: _MapBadge(icon: LucideIcons.warehouse, color: VoltiColors.brandAction, size: d.id == current?.id ? 52 : 40),
+                                      child: _MapBadge(
+                                        icon: LucideIcons.warehouse,
+                                        color: VoltiColors.brandAction,
+                                        size: d.id == current?.id ? 52 : 40,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -356,13 +431,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                 children: [
                                   const SizedBox(height: VoltiSpacing.s10),
                                   if (rental != null) ...[
-                                    _ActiveBanner(icon: LucideIcons.bike, text: l.rentalInProgress, action: l.backToRide, onTap: () => context.push('/ride')),
                                     if (openSwap != null) ...[
-                                      const SizedBox(height: VoltiSpacing.s8),
                                       SwapResumeCard(onResume: () => _openSwapFlow(openSwap)),
                                     ] else if (nearStation != null) ...[
-                                      const SizedBox(height: VoltiSpacing.s8),
-                                      SwapNearbyCard(station: nearStation, onSwap: () => _openSwapFlow(null, stationId: nearStation.id)),
+                                      SwapNearbyCard(
+                                        station: nearStation,
+                                        onSwap: () => _openSwapFlow(null, stationId: nearStation.id),
+                                      ),
                                     ],
                                   ] else if (reservation != null)
                                     // Entrega no galpao: abre "Confira sua moto" (evento ou app aberto depois).
@@ -373,7 +448,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       child: VoltiPressable(
                                         semanticLabel: '${l.kycPendingTitle}. ${l.kycHomeNotice}',
                                         onTap: () => context.push('/account/verification'),
-                                        child: NoticeBanner(icon: LucideIcons.shieldCheck, title: l.kycPendingTitle, message: l.kycHomeNotice),
+                                        child: NoticeBanner(
+                                          icon: LucideIcons.shieldCheck,
+                                          title: l.kycPendingTitle,
+                                          message: l.kycHomeNotice,
+                                        ),
                                       ),
                                     ),
                                   // R2-01: divida em aberto (fechamento sem cartao) com "Pagar agora".
@@ -383,26 +462,34 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             ),
                             // Promocoes (PassCard) numa faixa que rola na horizontal. Somem com
                             // reserva em aberto e no modo estacoes (cobriam um marcador).
-                            if (pending == null && !_stationsMode)
-                              SingleChildScrollView(
-                                key: const Key('home-promos'),
-                                scrollDirection: Axis.horizontal,
-                                clipBehavior: Clip.none,
-                                padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
-                                child: Row(
-                                  children: VoltiStagger.wrap([
-                                    PassCard(
-                                      title: l.promoPassTitle,
-                                      subtitle: l.promoPassText,
-                                      icon: LucideIcons.ticket,
-                                      tone: PassCardTone.sun,
-                                      onTap: () => context.push('/account/subscriptions'),
-                                    ),
-                                    if (promoFirstRide) ...[
-                                      const SizedBox(width: VoltiSpacing.s10),
-                                      PassCard(title: l.promoFirstRideTitle, subtitle: l.promoFirstRideText, icon: LucideIcons.gift, tone: PassCardTone.coral),
-                                    ],
-                                  ]),
+                            if (pending == null && rental == null && !_stationsMode)
+                              KeyedSubtree(
+                                key: _promosKey,
+                                child: SingleChildScrollView(
+                                  key: const Key('home-promos'),
+                                  scrollDirection: Axis.horizontal,
+                                  clipBehavior: Clip.none,
+                                  padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
+                                  child: Row(
+                                    children: VoltiStagger.wrap([
+                                      PassCard(
+                                        title: l.promoPassTitle,
+                                        subtitle: l.promoPassText,
+                                        icon: LucideIcons.ticket,
+                                        tone: PassCardTone.sun,
+                                        onTap: () => context.push('/account/subscriptions'),
+                                      ),
+                                      if (promoFirstRide) ...[
+                                        const SizedBox(width: VoltiSpacing.s10),
+                                        PassCard(
+                                          title: l.promoFirstRideTitle,
+                                          subtitle: l.promoFirstRideText,
+                                          icon: LucideIcons.gift,
+                                          tone: PassCardTone.coral,
+                                        ),
+                                      ],
+                                    ]),
+                                  ),
                                 ),
                               ),
                           ],
@@ -414,6 +501,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       flex: 3,
                       fit: FlexFit.loose,
                       child: Column(
+                        key: _bottomKey,
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
@@ -489,7 +577,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                   duration: VoltiMotion.scaled(context, VoltiMotion.durScreen),
                                   switchInCurve: VoltiMotion.easeScreen,
                                   switchOutCurve: VoltiMotion.easeScreen.flipped,
-                                  layoutBuilder: (current, previous) => Stack(alignment: Alignment.bottomCenter, children: [...previous, ?current]),
+                                  layoutBuilder: (current, previous) =>
+                                      Stack(alignment: Alignment.bottomCenter, children: [...previous, ?current]),
                                   transitionBuilder: (child, anim) => FadeTransition(
                                     opacity: anim,
                                     child: SlideTransition(
@@ -497,7 +586,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                       child: child,
                                     ),
                                   ),
-                                  child: pending != null
+                                  child: rental != null
+                                      ? _ActiveRideCard(
+                                          key: const Key('home-ride-card'),
+                                          rental: rental,
+                                          onTap: () => context.push('/ride'),
+                                        )
+                                      : pending != null
                                       ? HomeReservationCard(key: ValueKey('home-reservation-${pending.id}'), reservation: pending)
                                       : VoltiEnter(
                                           key: const Key('depot-card-enter'),
@@ -508,7 +603,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                             key: const Key('depot-card'),
                                             width: double.infinity,
                                             padding: const EdgeInsets.all(VoltiSpacing.s16),
-                                            decoration: BoxDecoration(color: surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
+                                            decoration: BoxDecoration(
+                                              color: surface,
+                                              borderRadius: VoltiRadii.rLg,
+                                              boxShadow: VoltiShadows.shadow2,
+                                            ),
                                             child: switch (depots) {
                                               AsyncValue(:final error?, hasValue: false) => ErrorState(
                                                 error: error,
@@ -599,7 +698,9 @@ class _DepotCardBody extends StatelessWidget {
                             KeyedSubtree(
                               key: Key('depot-option-${d.id}'),
                               child: VoltiChip(
-                                label: d.distanceM == null ? depotTitle(l, d) : '${depotTitle(l, d)} · ${walkingDistanceLabel(d.distanceM!)}',
+                                label: d.distanceM == null
+                                    ? depotTitle(l, d)
+                                    : '${depotTitle(l, d)} · ${walkingDistanceLabel(d.distanceM!)}',
                                 icon: LucideIcons.warehouse,
                                 selected: d.id == current.id,
                                 onTap: () {
@@ -714,35 +815,37 @@ class _MapBadge extends StatelessWidget {
   }
 }
 
-class _ActiveBanner extends StatelessWidget {
-  const _ActiveBanner({required this.icon, required this.text, required this.action, required this.onTap});
-  final IconData icon;
-  final String text, action;
+/// Corrida em andamento: ocupa o lugar do cartao do galpao (sem "Escolher moto").
+class _ActiveRideCard extends StatelessWidget {
+  const _ActiveRideCard({super.key, required this.rental, required this.onTap});
+  final Rental rental;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final l = context.l;
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-      decoration: BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
-      child: Row(
+      width: double.infinity,
+      padding: const EdgeInsets.all(VoltiSpacing.s16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: VoltiRadii.rLg,
+        boxShadow: VoltiShadows.shadow2,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Icon(icon, color: VoltiColors.white, size: 20),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(text, style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.white)),
-          ),
-          // Texto grande: a acao quebra linha em vez de empurrar a faixa para fora.
-          Flexible(
-            child: TextButton(
-              onPressed: onTap,
-              style: TextButton.styleFrom(minimumSize: const Size(48, VoltiSpacing.hitMin)),
-              child: Text(
-                action,
-                textAlign: TextAlign.end,
-                style: const TextStyle(color: VoltiColors.green400, fontWeight: FontWeight.w600),
-              ),
-            ),
+          Semantics(header: true, child: Text(l.rentalInProgress, style: VoltiTypography.title)),
+          const SizedBox(height: VoltiSpacing.s4),
+          Text(rental.vehicleCode, style: VoltiTypography.caption),
+          const SizedBox(height: VoltiSpacing.s12),
+          VoltiButton(
+            key: const Key('home-back-to-ride'),
+            label: l.backToRide,
+            icon: LucideIcons.motorbike,
+            fullWidth: true,
+            onPressed: onTap,
           ),
         ],
       ),
