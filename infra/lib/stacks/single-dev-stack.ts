@@ -199,17 +199,27 @@ export class SingleDevStack extends Stack {
         new iam.PolicyStatement({
           sid: 'KeyAdministrationByAccount',
           principals: [root],
+          // Explicit list: no kms:Create* (it includes kms:CreateGrant, which would let any IAM principal with
+          // CreateGrant grant itself Decrypt) and no Decrypt. Full IAM admins can still rewrite the policy (unavoidable).
           actions: [
-            'kms:Create*',
-            'kms:Describe*',
-            'kms:Enable*',
-            'kms:List*',
-            'kms:Put*',
-            'kms:Update*',
-            'kms:Revoke*',
-            'kms:Disable*',
-            'kms:Get*',
-            'kms:Delete*',
+            'kms:CreateAlias',
+            'kms:DescribeKey',
+            'kms:EnableKey',
+            'kms:EnableKeyRotation',
+            'kms:ListAliases',
+            'kms:ListGrants',
+            'kms:ListKeyPolicies',
+            'kms:ListResourceTags',
+            'kms:PutKeyPolicy',
+            'kms:UpdateAlias',
+            'kms:UpdateKeyDescription',
+            'kms:RevokeGrant',
+            'kms:RetireGrant',
+            'kms:DisableKey',
+            'kms:DisableKeyRotation',
+            'kms:GetKeyPolicy',
+            'kms:GetKeyRotationStatus',
+            'kms:DeleteAlias',
             'kms:TagResource',
             'kms:UntagResource',
             'kms:ScheduleKeyDeletion',
@@ -305,14 +315,23 @@ export class SingleDevStack extends Stack {
         notResources: [this.param(PARAM_ROOT), this.param(`${PARAM_ROOT}/*`)],
       }),
     );
-    // Secrets are generated on the instance at first boot (CloudFormation cannot create SecureString parameters); never
-    // overwritten (ssm:Overwrite=false keeps DB_PASSWORD and the manual tokens safe from the instance).
+    // Secrets are generated on the instance at first boot (CloudFormation cannot create SecureString parameters) and never
+    // overwritten: Deny when the request asks to overwrite (DB_PASSWORD and the manual tokens stay safe from the instance).
+    // render-env.sh sends --no-overwrite; a request without the key is still allowed (only creates).
     role.addToPolicy(
       new iam.PolicyStatement({
         sid: 'CreateGeneratedSecrets',
         actions: ['ssm:PutParameter'],
         resources: [this.param(`${SECRETS_PREFIX}/*`)],
-        conditions: { StringEquals: { 'ssm:Overwrite': 'false' } },
+      }),
+    );
+    role.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'DenyOverwriteSecrets',
+        effect: iam.Effect.DENY,
+        actions: ['ssm:PutParameter'],
+        resources: [this.param(`${PARAM_ROOT}/*`)],
+        conditions: { StringEquals: { 'ssm:Overwrite': 'true' } },
       }),
     );
     role.addToPolicy(
@@ -373,6 +392,7 @@ export class SingleDevStack extends Stack {
           'cognito-idp:AdminUserGlobalSignOut',
           'cognito-idp:AdminGetUser',
           'cognito-idp:AdminCreateUser',
+          'cognito-idp:AdminSetUserPassword',
         ],
         resources: [auth.customerPool.userPoolArn],
       }),
@@ -421,21 +441,27 @@ export class SingleDevStack extends Stack {
       'test -s /root/.ssh/volti_deploy',
       'chmod 600 /root/.ssh/volti_deploy',
       `if [ ! -d ${REPO_DIR}/.git ]; then GIT_SSH_COMMAND='ssh -i /root/.ssh/volti_deploy -o IdentitiesOnly=yes' git clone --depth 1 --branch ${props.branch} ${props.repoUrl} ${REPO_DIR}; fi`,
-      // Every boot (the schedule stops/starts the instance and the public IP changes): UPSERT the A record of apiDomain.
+      // DNS lifecycle (the schedule stops/starts the instance and the public IP is released on stop): at boot, as soon as the
+      // network is up, UPSERT the A record to the current IP; at shutdown (ExecStop, while the network is still up: units
+      // ordered After=network-online.target stop before it) UPSERT it to 192.0.2.1 (TEST-NET-1, unroutable), so the name
+      // never points at an IP that AWS hands to someone else.
       'cat > /etc/systemd/system/volti-dns.service <<EOF',
       '[Unit]',
-      'Description=Volti: A record of the API domain -> current public IPv4',
+      'Description=Volti: A record of the API domain (current IP at boot, 192.0.2.1 at shutdown)',
       'Wants=network-online.target',
       'After=network-online.target',
       '[Service]',
       'Type=oneshot',
-      `ExecStart=/bin/bash ${REPO_DIR}/deploy/single/dns.sh`,
+      'RemainAfterExit=yes',
+      `ExecStart=/bin/bash ${REPO_DIR}/deploy/single/dns.sh up`,
+      `ExecStop=/bin/bash ${REPO_DIR}/deploy/single/dns.sh down`,
+      'TimeoutStartSec=180',
+      'TimeoutStopSec=120',
       '[Install]',
       'WantedBy=multi-user.target',
       'EOF',
       'systemctl daemon-reload',
-      'systemctl enable volti-dns.service',
-      `bash ${REPO_DIR}/deploy/single/dns.sh`,
+      'systemctl enable --now volti-dns.service',
       `bash ${REPO_DIR}/deploy/single/update.sh`,
     ];
   }
@@ -483,6 +509,9 @@ export class SingleDevStack extends Stack {
       // '-' = none (SSM String parameters cannot be empty): render-env.sh falls back to <public-ip>.sslip.io.
       API_DOMAIN: props.dns?.apiDomain ?? '-',
       HOSTED_ZONE_ID: props.dns?.hostedZoneId ?? '-',
+      // create-customer (admin.sh): e-mail OTP pools get a random permanent password nobody knows (login by code);
+      // password-only pools get the Cognito invitation with a temporary password (default Cognito e-mail, no SNS).
+      CUSTOMER_LOGIN: cfg.auth.customerSes ? 'email-otp' : 'password',
       S3_BUCKET_KYC: this.buckets.KYC.bucketName,
       S3_BUCKET_RETURN_PHOTOS: this.buckets.RETURN_PHOTOS.bucketName,
       S3_BUCKET_REPORTS: this.buckets.REPORTS.bucketName,

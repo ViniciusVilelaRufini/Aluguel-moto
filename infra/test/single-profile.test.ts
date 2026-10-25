@@ -154,8 +154,13 @@ describe('profile=single (dev on one EC2 instance)', () => {
     expect(JSON.stringify(deny.NotResource)).toMatch(/parameter\/volti\/dev\/\*"/);
     const put = sid('CreateGeneratedSecrets');
     expect(put.Action).toBe('ssm:PutParameter');
-    expect(put.Condition).toEqual({ StringEquals: { 'ssm:Overwrite': 'false' } });
+    expect(put.Condition).toBeUndefined();
     expect(JSON.stringify(put.Resource)).toMatch(/volti\/dev\/secrets\/\*/);
+    // Never overwrite: explicit Deny when the request asks to overwrite (a request without the key only creates).
+    const noOverwrite = sid('DenyOverwriteSecrets');
+    expect(noOverwrite.Effect).toBe('Deny');
+    expect(noOverwrite.Action).toBe('ssm:PutParameter');
+    expect(noOverwrite.Condition).toEqual({ StringEquals: { 'ssm:Overwrite': 'true' } });
     // KMS: only the alias/volti-dev key, via SSM.
     const kms = sid('UseParamsKey');
     expect(JSON.stringify(kms.Resource)).toMatch(/ParamsKey/);
@@ -178,7 +183,15 @@ describe('profile=single (dev on one EC2 instance)', () => {
     expect(decrypters[0].Condition).toEqual({ StringEquals: { 'kms:ViaService': 'ssm.sa-east-1.amazonaws.com' } });
     const admin = stmts.find((x) => x.Sid === 'KeyAdministrationByAccount');
     expect(JSON.stringify(admin.Principal)).toMatch(/:root/);
-    expect(admin.Action).not.toContain('kms:Decrypt');
+    // No Decrypt and no way to grant it (CreateGrant, kms:Create*, kms:*); CreateAlias is listed explicitly.
+    for (const forbidden of ['kms:Decrypt', 'kms:CreateGrant', 'kms:Create*', 'kms:*', 'kms:ReEncrypt*', 'kms:ReEncryptFrom']) {
+      expect(admin.Action).not.toContain(forbidden);
+    }
+    for (const a of admin.Action as string[]) expect(a).not.toMatch(/\*/);
+    expect(admin.Action).toContain('kms:CreateAlias');
+    for (const st of stmts.filter((x) => JSON.stringify(x.Principal).includes(':root'))) {
+      expect(JSON.stringify(st.Action)).not.toMatch(/CreateGrant|Decrypt|"kms:\*"|Create\*/);
+    }
     const enc = stmts.find((x) => x.Sid === 'EncryptThroughSsm');
     expect(enc.Action.sort()).toEqual(['kms:Encrypt', 'kms:GenerateDataKey']);
     expect(enc.Condition).toEqual({ StringEquals: { 'kms:ViaService': 'ssm.sa-east-1.amazonaws.com' } });
@@ -212,15 +225,22 @@ describe('profile=single (dev on one EC2 instance)', () => {
     expect(() => createSingleDevApp({ apiDomain: 'bad domain' })).toThrow(/apiDomain/);
   });
 
-  it('every boot UPSERTs the record (systemd volti-dns.service runs deploy/single/dns.sh)', () => {
+  it('DNS lifecycle: current IP at boot, parked at 192.0.2.1 on shutdown (ExecStop while the network is up)', () => {
     const ud = userData();
     expect(ud).toContain('volti-dns.service');
-    expect(ud).toContain('systemctl enable volti-dns.service');
-    expect(ud).toContain('/opt/volti/src/deploy/single/dns.sh');
+    expect(ud).toContain('Wants=network-online.target');
+    expect(ud).toContain('After=network-online.target');
+    expect(ud).toContain('RemainAfterExit=yes');
+    expect(ud).toContain('ExecStart=/bin/bash /opt/volti/src/deploy/single/dns.sh up');
+    expect(ud).toContain('ExecStop=/bin/bash /opt/volti/src/deploy/single/dns.sh down');
+    expect(ud).toContain('systemctl enable --now volti-dns.service');
+    // The record is set before the first update.sh (the unit starts before it in the user data).
+    expect(ud.indexOf('systemctl enable --now volti-dns.service')).toBeLessThan(ud.indexOf('deploy/single/update.sh'));
     const dns = readFileSync(join(REPO, 'deploy', 'single', 'dns.sh'), 'utf8');
     expect(dns).toMatch(/"Action":"UPSERT"/);
     expect(dns).toMatch(/"Type":"A","TTL":60/);
-    expect(dns).not.toMatch(/DELETE|CREATE"/);
+    expect(dns).toMatch(/PARKED_IP=192\.0\.2\.1/);
+    expect(dns).not.toMatch(/"DELETE"|"CREATE"/);
     const names = resources(t, 'AWS::SSM::Parameter').map((p) => p.Properties);
     expect(names.find((p) => p.Name === '/volti/dev/config/API_DOMAIN').Value).toBe('api-volti-dev.prestarecondominios.com.br');
     expect(names.find((p) => p.Name === '/volti/dev/config/HOSTED_ZONE_ID').Value).toBe('Z04583703P20295WCJ8TF');
@@ -306,14 +326,23 @@ describe('profile=single (dev on one EC2 instance)', () => {
     expect(pool.Policies.SignInPolicy.AllowedFirstAuthFactors).not.toContain('SMS_OTP');
     expect(pool.AutoVerifiedAttributes).toEqual(['email']);
     expect(JSON.stringify(auth.toJSON())).not.toMatch(/sns:Publish/);
-    // With a verified SES identity, e-mail OTP is enabled.
-    const ses = createSingleDevApp({ overrides: { sesFromEmail: 'no-reply@exemplo.com', sesVerifiedDomain: 'exemplo.com' } });
+    const login = (tpl: Template) => resources(tpl, 'AWS::SSM::Parameter').find((p) => p.Properties.Name === '/volti/dev/config/CUSTOMER_LOGIN').Properties.Value;
+    expect(login(t)).toBe('password');
+    // With the verified DOMAIN identity voltz.prestarecondominios.com.br: e-mail OTP, sender "Volti (dev)".
+    const ses = createSingleDevApp({ overrides: { sesFromEmail: 'nao-responda@voltz.prestarecondominios.com.br' } });
     const sesPool = resources(Template.fromStack(ses.auth), 'AWS::Cognito::UserPool').find((p) => p.Properties.UserPoolName === 'volti-dev-customers');
     expect(sesPool.Properties.Policies.SignInPolicy.AllowedFirstAuthFactors).toContain('EMAIL_OTP');
+    expect(sesPool.Properties.EmailConfiguration.EmailSendingAccount).toBe('DEVELOPER');
+    // RFC 5322: the display name with parentheses is quoted by the CDK.
+    expect(sesPool.Properties.EmailConfiguration.From).toBe('"Volti (dev)" <nao-responda@voltz.prestarecondominios.com.br>');
+    expect(JSON.stringify(sesPool.Properties.EmailConfiguration.SourceArn)).toMatch(/:identity\/voltz\.prestarecondominios\.com\.br"/);
+    expect(login(Template.fromStack(ses.single))).toBe('email-otp');
+    expect(() => createSingleDevApp({ overrides: { sesFromEmail: 'x@outro.com', sesVerifiedDomain: 'voltz.prestarecondominios.com.br' } })).toThrow(/sesFromEmail/);
     // The instance may create test customers in the customer pool only.
     const { stmts } = roleStatements();
     const create = stmts.filter((x) => JSON.stringify(x.Action).includes('cognito-idp:AdminCreateUser'));
     expect(create.map((x) => x.Sid)).toEqual(['CognitoCustomers']);
+    expect(create[0].Action).toContain('cognito-idp:AdminSetUserPassword');
   });
 
   it('budget US$ 20/month ONLY for the tag Projeto=Volti (no account-wide budget), e-mail alerts at 50/80/100%', () => {
@@ -378,11 +407,15 @@ describe('profile=single (dev on one EC2 instance)', () => {
       expect(file('seed.sh')).toMatch(/dist-seed\/seed\.js/);
       const env = file('render-env.sh');
       expect(env).toMatch(/--type SecureString --key-id "\$VOLTI_KEY_ALIAS"/);
+      expect(env).toMatch(/--no-overwrite/);
+      expect(env).toMatch(/ParameterAlreadyExists/);
       expect(env).toMatch(/SAFE=/);
       const admin = file('admin.sh');
       expect(admin).not.toMatch(/^\s*(source|\.) \/opt\/volti\/\.env/m);
       expect(admin).toMatch(/create-customer/);
-      expect(admin).toMatch(/--message-action SUPPRESS/);
+      // OTP pool: no invitation + random permanent password; password pool: Cognito sends the temporary password by e-mail.
+      expect(admin).toMatch(/--message-action SUPPRESS[\s\S]*admin-set-user-password[\s\S]*--permanent/);
+      expect(admin).toMatch(/--desired-delivery-mediums EMAIL/);
       const shell = file('cloudshell.md');
       expect(shell).toMatch(/sudo n 24/);
       expect(shell).toMatch(/--store-dir \/tmp\/pnpm-store/);

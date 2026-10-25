@@ -157,7 +157,16 @@ export const SINGLE_QUALIFIER = 'volti';
  * are untouched.
  */
 export function createSingleDevApp(opts: SingleDevAppOptions): SingleDevStacks {
-  const cfg = getConfig('dev', opts.overrides);
+  const base = getConfig('dev', opts.overrides);
+  // SES of the customer pool (e-mail OTP): the from address must be inside the verified DOMAIN identity
+  // (-c sesFromEmail=nao-responda@voltz.prestarecondominios.com.br; domain derived from the address unless
+  // -c sesVerifiedDomain is given), sender name "Volti (dev)".
+  const ses = base.auth.customerSes;
+  const sesDomain = ses ? (ses.sesVerifiedDomain ?? ses.fromEmail.split('@')[1]) : undefined;
+  if (ses && (!sesDomain || !ses.fromEmail.toLowerCase().endsWith(`@${sesDomain.toLowerCase()}`))) {
+    throw new Error(`sesFromEmail (${ses.fromEmail}) precisa estar no domínio verificado ${sesDomain}.`);
+  }
+  const cfg = ses ? { ...base, auth: { ...base.auth, customerSes: { ...ses, fromName: 'Volti (dev)', sesVerifiedDomain: sesDomain } } } : base;
   const account = opts.account ?? '000000000000';
   const app = new App({ outdir: opts.outdir });
   const common = {

@@ -14,12 +14,19 @@ trap 'rm -f "$TMP"' EXIT
 
 # Segredos gerados (hex, 64 caracteres). Trocar STATION_QR_SECRET invalida os QRs das estações; FRAUD_HASH_SECRET quebra
 # a comparação dos CPFs já gravados; DB_PASSWORD precisa casar com o volume do Postgres (não troque depois do primeiro boot).
-# A role da instância só cria (ssm:Overwrite=false): nunca sobrescreve um segredo existente.
+# A role da instância só cria (Deny com ssm:Overwrite=true): nunca sobrescreve um segredo existente.
 for name in DB_PASSWORD STATION_QR_SECRET FRAUD_HASH_SECRET PICKUP_CODE_SECRET MERCADOPAGO_WEBHOOK_SECRET; do
   if ! aws ssm get-parameter --name "$VOLTI_SECRETS_PREFIX/$name" --query Parameter.Name --output text >/dev/null 2>&1; then
-    aws ssm put-parameter --name "$VOLTI_SECRETS_PREFIX/$name" --type SecureString --key-id "$VOLTI_KEY_ALIAS" \
-      --value "$(openssl rand -hex 32)" --tags Key=Projeto,Value=Volti >/dev/null
-    echo "segredo gerado: $name"
+    # --no-overwrite: só cria; se outro processo criou antes (ParameterAlreadyExists), está tudo certo.
+    if out="$(aws ssm put-parameter --name "$VOLTI_SECRETS_PREFIX/$name" --type SecureString --key-id "$VOLTI_KEY_ALIAS" \
+      --no-overwrite --value "$(openssl rand -hex 32)" --tags Key=Projeto,Value=Volti 2>&1 >/dev/null)"; then
+      echo "segredo gerado: $name"
+    elif [[ "$out" == *ParameterAlreadyExists* ]]; then
+      echo "segredo já existia: $name"
+    else
+      echo "falha ao criar $name: $out" >&2
+      exit 1
+    fi
   fi
 done
 

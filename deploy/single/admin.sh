@@ -34,9 +34,22 @@ case "$action" in
       echo "e-mail inválido" >&2
       exit 2
     fi
-    aws cognito-idp admin-create-user --user-pool-id "$(envval COGNITO_CUSTOMER_POOL_ID)" --username "$email" \
-      --user-attributes Name=email,Value="$email" Name=email_verified,Value=true --message-action SUPPRESS >/dev/null
-    echo "cliente de teste criado"
+    pool="$(envval COGNITO_CUSTOMER_POOL_ID)"
+    if [ "$(envval CUSTOMER_LOGIN)" = "email-otp" ]; then
+      # Pool com OTP por e-mail (SES): sem convite; senha permanente aleatória que ninguém conhece (conta CONFIRMED), o
+      # login é pelo código enviado ao e-mail.
+      aws cognito-idp admin-create-user --user-pool-id "$pool" --username "$email" \
+        --user-attributes Name=email,Value="$email" Name=email_verified,Value=true --message-action SUPPRESS >/dev/null
+      aws cognito-idp admin-set-user-password --user-pool-id "$pool" --username "$email" \
+        --password "Vt-$(openssl rand -hex 24)-A9" --permanent >/dev/null
+      echo "cliente de teste criado (login por código no e-mail)"
+    else
+      # Pool só com senha (sem SES): o Cognito envia o convite com a senha temporária pelo e-mail padrão dele (sem SNS);
+      # no primeiro login o app recebe o desafio NEW_PASSWORD_REQUIRED.
+      aws cognito-idp admin-create-user --user-pool-id "$pool" --username "$email" \
+        --user-attributes Name=email,Value="$email" Name=email_verified,Value=true --desired-delivery-mediums EMAIL >/dev/null
+      echo "cliente de teste criado (senha temporária enviada por e-mail pelo Cognito)"
+    fi
     ;;
   *)
     echo "ação inválida: $action" >&2

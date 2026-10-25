@@ -228,7 +228,10 @@ Os custos atuais estão nas seções do perfil `single` e do dev ECS enxuto, aba
 - Caddy, com HTTPS automático (Let's Encrypt) em `https://api-volti-dev.prestarecondominios.com.br`.
 
 **DNS** (zona `prestarecondominios.com.br`, de outro projeto)
-- A cada boot, o serviço systemd `volti-dns` roda `deploy/single/dns.sh`, que faz UPSERT do registro A `api-volti-dev...` → IP atual, com TTL 60.
+- Serviço systemd `volti-dns` (`deploy/single/dns.sh`):
+  - no boot, assim que a rede sobe, faz UPSERT do registro A `api-volti-dev...` → IP atual, com TTL 60;
+  - no desligamento (ExecStop, com a rede ainda no ar), estaciona o registro em `192.0.2.1` (TEST-NET-1), para o nome nunca apontar para um IP liberado.
+  - Risco residual: numa falha brusca o ExecStop não roda (ver `cloudshell.md`).
 - O IAM só permite UPSERT, só do tipo A e só desse nome (condições `route53:ChangeResourceRecordSets*`), além de `route53:GetChange`.
 - A stack **não** cria o registro, porque o CloudFormation não pode ser dono de nada na zona compartilhada. Ao desmontar, apague o registro à mão (comando em `deploy/single/cloudshell.md`).
 - `-c apiDomain=-` desliga o DNS; nesse caso a API usa `<ip-com-hifens>.sslip.io`.
@@ -240,8 +243,10 @@ Os custos atuais estão nas seções do perfil `single` e do dev ECS enxuto, aba
 
 **Segredos**
 - A chave KMS `alias/volti-dev` (gerenciada pelo cliente, com rotação anual) cifra todos os SecureString de `/volti/dev`.
-- A key policy dá à conta só a administração da chave (sem Decrypt) e permite a qualquer principal cifrar via SSM. Só a role da instância **decifra**.
-- A deploy key `/volti/dev/github-deploy-key` é criada à mão, com `--key-id alias/volti-dev`. Os segredos de `/volti/dev/secrets/*` são gerados no primeiro boot, e a instância nunca os sobrescreve (`ssm:Overwrite=false`).
+- A key policy dá à conta só a administração da chave, numa lista explícita, sem `kms:Create*`/`CreateGrant` e sem Decrypt, e permite a qualquer principal cifrar via SSM. Só a role da instância **decifra**.
+- Exceção inevitável: um administrador IAM pleno da conta pode reescrever a key policy (`kms:PutKeyPolicy`).
+- A deploy key `/volti/dev/github-deploy-key` é criada à mão, com `--key-id alias/volti-dev`.
+- Os segredos de `/volti/dev/secrets/*` são gerados no primeiro boot com `--no-overwrite`. A instância nunca os sobrescreve: há um `Deny` em `PutParameter` quando `ssm:Overwrite=true`.
 
 **Role da instância**
 - **Sem** `AmazonSSMManagedInstanceCore`, que daria `GetParameter` em toda a conta. Tem só as ações do agente SSM, mais leitura de `/volti/dev/*`.
@@ -251,7 +256,10 @@ Os custos atuais estão nas seções do perfil `single` e do dev ECS enxuto, aba
 **Cognito de clientes**
 - **Sem auto-cadastro e sem SMS.** A cota e o limite de gasto do SNS são da conta inteira, e o custo de SMS não leva tag.
 - Clientes de teste são criados pelo documento `volti-dev-admin` (`action=create-customer`). O fluxo "criar conta" do app só funciona para esses usuários no dev.
-- O login por código precisa de OTP por e-mail, e o Cognito exige uma identidade SES verificada para isso (`-c sesFromEmail`). Sem SES, o pool aceita só senha.
+- **Com SES** (`-c sesFromEmail=nao-responda@voltz.prestarecondominios.com.br`, domínio verificado `voltz.prestarecondominios.com.br`, remetente "Volti (dev)"):
+  - o login é por código no e-mail;
+  - o `create-customer` cria o usuário confirmado, com senha aleatória desconhecida.
+- **Sem SES:** o pool aceita só senha, e o Cognito manda a senha temporária pelo e-mail padrão dele.
 
 **Painel**
 - S3 + CloudFront no domínio padrão do CloudFront, sem WAF.
@@ -274,7 +282,7 @@ Os comandos exatos estão em [`deploy/single/cloudshell.md`](../deploy/single/cl
 1. Instale Node 24 e pnpm fora do home: `sudo npm install -g n && sudo n 24 && sudo npm install -g pnpm@9.15.9`.
 2. Gere a deploy key em `/tmp`, cadastre a parte pública no GitHub como somente leitura e clone em `/tmp/volti`. Depois: `pnpm install --frozen-lockfile --filter "infra..." --store-dir /tmp/pnpm-store`.
 3. Bootstrap: `pnpm exec cdk bootstrap aws://$ACCOUNT/sa-east-1 --qualifier volti --toolkit-stack-name volti-cdk-toolkit --tags Projeto=Volti`
-4. Deploy: `pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single -c account=$ACCOUNT -c branch=feat/galpao -c budgetEmail=<e-mail> -c hostedZoneId=Z04583703P20295WCJ8TF -c apiDomain=api-volti-dev.prestarecondominios.com.br`
+4. Deploy: `pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single -c account=$ACCOUNT -c branch=feat/galpao -c budgetEmail=<e-mail> -c hostedZoneId=Z04583703P20295WCJ8TF -c apiDomain=api-volti-dev.prestarecondominios.com.br -c sesFromEmail=nao-responda@voltz.prestarecondominios.com.br`
 5. Logo depois do deploy, grave a deploy key e apague a cópia local: `aws ssm put-parameter --name /volti/dev/github-deploy-key --type SecureString --key-id alias/volti-dev --value "$(cat /tmp/volti_deploy)" --tags Key=Projeto,Value=Volti`, depois `shred -u /tmp/volti_deploy*`.
 6. O primeiro boot é automático e leva cerca de 15 min:
    - espera a deploy key, clona o repositório e cria o registro DNS;

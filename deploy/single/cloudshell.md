@@ -19,6 +19,7 @@ export BRANCH=feat/galpao
 export BUDGET_EMAIL=voce@exemplo.com
 export API_DOMAIN=api-volti-dev.prestarecondominios.com.br
 export HOSTED_ZONE_ID=Z04583703P20295WCJ8TF
+export SES_FROM=nao-responda@voltz.prestarecondominios.com.br   # identidade de DOMÍNIO já verificada no SES (sa-east-1)
 ```
 
 ## 1. Node 24 e pnpm (fora do home)
@@ -64,8 +65,10 @@ pnpm exec cdk bootstrap aws://$ACCOUNT/sa-east-1 \
 ```bash
 pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit \
   -c env=dev -c profile=single -c account=$ACCOUNT -c branch=$BRANCH -c budgetEmail=$BUDGET_EMAIL \
-  -c hostedZoneId=$HOSTED_ZONE_ID -c apiDomain=$API_DOMAIN
+  -c hostedZoneId=$HOSTED_ZONE_ID -c apiDomain=$API_DOMAIN -c sesFromEmail=$SES_FROM
 ```
+
+Com `-c sesFromEmail`, o pool de clientes manda o código de login por e-mail pelo SES. O remetente é `"Volti (dev)" <nao-responda@voltz.prestarecondominios.com.br>`, usando a identidade do **domínio** verificado `voltz.prestarecondominios.com.br` (derivada do endereço; ou passe `-c sesVerifiedDomain=...`). A identidade precisa estar verificada em **sa-east-1**. Se a conta estiver no sandbox do SES, só destinatários verificados recebem o código.
 
 O deploy cria 3 stacks:
 
@@ -149,7 +152,10 @@ aws ssm get-parameter --name /volti/dev/config/ADMIN_ORIGIN --query Parameter.Va
 
 O primeiro usuário da equipe se cria no console do Cognito (pool `volti-dev-staff`): coloque-o no grupo `admin` e configure o TOTP no primeiro login.
 
-**Clientes no dev:** não há auto-cadastro, e o fluxo "criar conta" do app só funciona com usuários criados antes pelo `volti-dev-admin` (`create-customer`). Sem SMS, o login por código precisa do OTP por e-mail, e o Cognito só oferece OTP por e-mail com uma identidade SES verificada. Para isso, faça o deploy com `-c sesFromEmail=<remetente verificado> -c sesVerifiedDomain=<domínio>`. No sandbox do SES, só destinatários verificados recebem. Sem SES, o pool aceita só senha.
+**Clientes no dev:** não há auto-cadastro. O fluxo "criar conta" do app só funciona com usuários criados antes pelo `volti-dev-admin` (`create-customer`).
+
+- **Com `-c sesFromEmail` (o padrão deste passo a passo):** o usuário é criado confirmado, com uma senha aleatória que ninguém conhece. O login é pelo código enviado ao e-mail.
+- **Sem SES:** o pool aceita só senha. O Cognito envia o convite com uma senha temporária pelo e-mail padrão dele (não usa SNS), e no primeiro login o app recebe o desafio `NEW_PASSWORD_REQUIRED`.
 
 ## 8. (Opcional, ação do dono da conta) tag de alocação de custo
 
@@ -187,7 +193,8 @@ Depois, rode o update. Só entram no `.env` valores com `A-Z a-z 0-9 . _ : / , @
 
 - **API:** `https://api-volti-dev.prestarecondominios.com.br`, um nome fixo; o IP muda a cada partida e o DNS acompanha, com TTL de 60 s. Os apps Flutter usam `--dart-define=API_BASE_URL=https://api-volti-dev.prestarecondominios.com.br` e os IDs do Cognito de `/volti/dev/config/COGNITO_*`.
 - **Painel:** o `volti-dev-admin` embute a URL da API e o Hosted UI do pool interno.
-- **Horário:** fora do horário (23:00–07:00) a API fica fora do ar.
+- **Horário:** fora do horário (23:00–07:00) a API fica fora do ar. No desligamento, o `volti-dns` (ExecStop, ainda com rede) estaciona o registro em `192.0.2.1` (TEST-NET-1, não roteável); no boot, aponta de novo para o IP novo. Assim o nome nunca fica apontando para um IP liberado, que a AWS pode entregar a outra conta. A parada da agenda é um desligamento limpo, então o ExecStop roda.
+- **Risco residual:** numa falha brusca (pane do host, terminate forçado, desligamento sem systemd), o ExecStop não roda e o registro fica com o IP antigo até o próximo boot ou até alguém corrigir à mão. Na dúvida, rode `aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript --parameters commands='bash /opt/volti/src/deploy/single/dns.sh down'` antes de parar a instância manualmente, ou corrija o registro pelo console do Route 53 (só o `api-volti-dev`).
 
 ## Desmontar
 

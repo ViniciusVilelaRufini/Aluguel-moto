@@ -663,3 +663,15 @@ Perguntas para o dono:
   - A migração para o ECS manda criar um toolkit próprio, sem reaproveitar o do outro projeto.
   - O limite de pulls do Docker Hub está documentado.
   - Ficaram de fora: a guarda no workflow de CI (fora do escopo; o aviso está no README) e o bloqueio do IMDS para os containers que não são a API.
+
+### 2026-10-25 · perfil `single`: correções da re-revisão (N-1 a N-4) · status: decisões do coordenador aplicadas
+
+- **N-1 (CMK):** a raiz da conta recebe só administração da chave, numa lista explícita. Saiu o `kms:Create*`, que incluía `kms:CreateGrant`; o `kms:CreateAlias` entra nominalmente. Não há `CreateGrant` nem Decrypt, e um teste recusa os dois. Exceção inevitável: um admin IAM pleno pode reescrever a key policy.
+- **N-2 (DNS):** o `volti-dns.service` ganhou `ExecStop`. No desligamento, com a rede ainda no ar (`After=`/`Wants=network-online.target`; a ordem se inverte no shutdown), o registro A é estacionado em `192.0.2.1` (TEST-NET-1, não roteável), com TTL 60. No boot, a primeira coisa é apontar para o IP atual. O IAM continua igual: só UPSERT de A nesse nome. A parada da agenda é limpa, então o ExecStop roda. Risco residual documentado: numa falha brusca o registro fica com o IP antigo até o próximo boot.
+- **N-3 (segredos):** o `render-env.sh` usa `--no-overwrite` e trata `ParameterAlreadyExists` como sucesso. No IAM, o `PutParameter` em `/volti/dev/secrets/*` é permitido sem condição, e um `Deny` bloqueia quando `ssm:Overwrite=true`. Uma requisição sem a chave de condição não fica mais bloqueada.
+- **N-4 (clientes de teste):**
+  - O deploy usa `-c sesFromEmail=nao-responda@voltz.prestarecondominios.com.br`. O domínio verificado `voltz.prestarecondominios.com.br` é derivado do endereço, a identidade vira o `SourceArn` (`identity/<domínio>`), o remetente é "Volti (dev)", e o synth recusa um remetente fora do domínio.
+  - Com SES, o `create-customer` cria o usuário sem convite e define uma senha permanente aleatória (`AdminSetUserPassword`), então o login é por código no e-mail.
+  - Sem SES, o Cognito envia o convite com a senha temporária pelo e-mail padrão dele (sem SNS).
+  - O parâmetro `/volti/dev/config/CUSTOMER_LOGIN` (`email-otp`/`password`) escolhe o caminho.
+- **Hashes:** os sha256 do Compose v2.29.7 (`docker-compose-linux-aarch64`) e do buildx v0.17.1 (`linux-arm64`) foram reconferidos com os `checksums.txt` oficiais das releases.
