@@ -217,6 +217,12 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
     return d.day == today ? l.dayChipEnded(label) : l.dayChipUnavailable(label);
   }
 
+  /// "seg. 26/10 às 09:00" (horario de parede do galpao).
+  String _whenText(AppLocalizations l, DateTime wall) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return l.pickupWhenValue(l.weekdayShort('${wall.weekday % 7}'), '${two(wall.day)}/${two(wall.month)}', hhmm(wall));
+  }
+
   @override
   Widget build(BuildContext context) {
     final l = context.l;
@@ -284,7 +290,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
               VoltiButton(
               key: const Key('pickup-confirm'),
               label: mode == PickupMode.scheduled && slot == null ? l.pickupChooseTime : l.confirmReservation,
-              icon: LucideIcons.calendarCheck,
+              icon: mode == PickupMode.now ? LucideIcons.zap : LucideIcons.calendarCheck,
               size: VoltiButtonSize.lg,
               fullWidth: true,
               loading: _busy && !_done,
@@ -393,6 +399,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
                   _Summary(
                     selection: _sel,
                     quote: quote,
+                    pickupWhen: mode == PickupMode.scheduled && slot != null ? _whenText(l, hours.toLocal(slot)) : null,
                     coupon: _coupon.isEmpty ? null : ref.watch(pickupCouponProvider((_coupon, plan.code))),
                     onRetry: () => ref.invalidate(pickupQuoteProvider(quoteKey)),
                   ),
@@ -467,10 +474,13 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
 /// Resumo: plano (preco do periodo; no plano por minuto, o da moto), as linhas
 /// da cotacao sem repetir valores ([breakdownRows]) e a caucao que sera bloqueada.
 class _Summary extends StatelessWidget {
-  const _Summary({required this.selection, required this.quote, required this.onRetry, this.coupon});
+  const _Summary({required this.selection, required this.quote, required this.onRetry, this.coupon, this.pickupWhen});
   final DepotSelection selection;
   final AsyncValue<Quote> quote;
   final VoidCallback onRetry;
+
+  /// "seg. 26/10 às 09:00" quando a retirada e agendada.
+  final String? pickupWhen;
 
   /// Regra do cupom informado (null = sem cupom).
   final AsyncValue<CouponValidation>? coupon;
@@ -494,10 +504,10 @@ class _Summary extends StatelessWidget {
     final plan = selection.plan!;
     // Texto grande: rotulo em cima e valor embaixo, alinhado a direita (sem quebrar no meio da palavra).
     final big = MediaQuery.textScalerOf(context).scale(10) > 13;
-    Widget row(String a, String b, {bool strong = false, Key? key}) {
+    Widget row(String a, String b, {bool strong = false, Key? key, Color? color}) {
       final style = strong ? VoltiTypography.bodyStrong : VoltiTypography.body;
       final label = Text(a, style: style);
-      final value = Text(b, key: key, textAlign: TextAlign.end, style: style);
+      final value = Text(b, key: key, textAlign: TextAlign.end, style: color == null ? style : style.copyWith(color: color));
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.s6),
         child: big
@@ -534,20 +544,24 @@ class _Summary extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           row('${l.pickupPlan} · ${plan.name}', '${money(unitCents)}${l.perUnitShort(unitShortLabel(l, plan.unit))}', key: const Key('pickup-plan-price')),
-          if (couponLine != null) row(couponLine.description, couponValue!.$1, key: const Key('pickup-coupon-discount')),
+          if (pickupWhen != null) row(l.pickupWhenLine, pickupWhen!, key: const Key('pickup-when')),
           for (final r in rows) row(r.label, money(r.cents)),
+          if (couponLine != null) ...[
+            // Cupom por ultimo entre os itens, com o valor em verde e a nota logo abaixo dele.
+            row(couponLine.description, couponValue!.$1, key: const Key('pickup-coupon-discount'), color: VoltiColors.successInk),
+            if (!couponValue.$2)
+              Padding(
+                padding: const EdgeInsets.only(bottom: VoltiSpacing.s6),
+                child: Text(l.couponClosingNote, key: const Key('pickup-coupon-note'), style: VoltiTypography.caption),
+              ),
+          ],
           const Divider(),
           if (quote.hasError && q == null)
             ErrorState(error: quote.error!, onRetry: onRetry)
           else if (q == null)
             VoltiSkeleton.card(height: 24, label: l.loading)
           else
-            row(l.deposit, money(q.depositCents), strong: true, key: const Key('pickup-deposit')),
-          if (couponValue != null && !couponValue.$2)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(l.couponClosingNote, key: const Key('pickup-coupon-note'), style: VoltiTypography.caption),
-            ),
+            row(l.blockedNow, money(q.depositCents), strong: true, key: const Key('pickup-deposit')),
           if (plan.recurring)
             Padding(
               padding: const EdgeInsets.only(top: 4),

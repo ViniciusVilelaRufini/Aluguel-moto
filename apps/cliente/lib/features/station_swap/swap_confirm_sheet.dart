@@ -14,6 +14,9 @@ import '../../core/session.dart';
 import '../../core/widgets.dart';
 import 'swap_logic.dart';
 
+/// Acima disso a folha avisa "sua bateria esta em N%. Trocar mesmo assim?".
+const kSwapBatteryWarnPct = 80;
+
 /// Confirmacao da troca: `Trocar a bateria da <codigo> aqui?`, baterias
 /// disponiveis e, nos planos por minuto/hora, a taxa. "Abrir compartimento"
 /// cria a troca (`POST /swap-stations/{id}/swaps`) e fecha com ela.
@@ -60,6 +63,24 @@ class _SwapConfirmSheetState extends ConsumerState<SwapConfirmSheet> {
   bool _busy = false;
   String? _error;
   bool _openConflict = false;
+
+  /// Bateria da moto agora (so para avisar quando ainda esta cheia).
+  int? _battery;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBattery();
+  }
+
+  Future<void> _loadBattery() async {
+    try {
+      final v = await ref.read(backendProvider).vehicleByCode(widget.rental.vehicleCode);
+      if (mounted) setState(() => _battery = v.batteryPct);
+    } catch (_) {
+      // sem o aviso: a troca segue normal
+    }
+  }
 
   Future<void> _confirm() async {
     if (_busy) return;
@@ -165,6 +186,8 @@ class _SwapConfirmSheetState extends ConsumerState<SwapConfirmSheet> {
               _Line(key: const Key('swap-confirm-available'), icon: LucideIcons.batteryCharging, text: l.swapConfirmAvailable(station.availableBatteries)),
             if (feeText != null) _Line(key: const Key('swap-confirm-fee'), icon: LucideIcons.receipt, text: feeText),
             _Line(icon: LucideIcons.info, text: l.swapConfirmSteps),
+            if (_battery != null && _battery! >= kSwapBatteryWarnPct)
+              _Line(key: const Key('swap-confirm-full'), icon: LucideIcons.batteryFull, text: l.swapConfirmBatteryHigh(_battery!)),
             if (_error != null) ...[
               const SizedBox(height: VoltiSpacing.s4),
               KeyedSubtree(

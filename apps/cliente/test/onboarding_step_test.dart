@@ -92,7 +92,7 @@ void main() {
         ],
       ));
       await t.pumpAndSettle();
-      await t.tap(find.text('Foto do documento (RG ou CNH)'));
+      await t.tap(find.text('Foto da CNH'));
       await t.pump();
       await t.tap(find.text('Selfie com prova de vida'));
       await t.pump();

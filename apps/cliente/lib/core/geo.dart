@@ -186,3 +186,23 @@ class DrawnPolyline extends StatelessWidget {
     );
   }
 }
+
+/// Enquadramento de um trajeto num mapa pequeno (recibo): centro e zoom que
+/// cobrem o trajeto. Trajeto degenerado (< [degenerateMeters], moto parada) vira
+/// um ponto com zoom de rua e [path] falso (so os pins).
+({LatLng center, double zoom, bool path}) trackCamera(List<LatLng> pts, {double degenerateMeters = 20}) {
+  assert(pts.isNotEmpty);
+  var minLat = pts.first.latitude, maxLat = minLat, minLng = pts.first.longitude, maxLng = minLng;
+  for (final p in pts) {
+    minLat = math.min(minLat, p.latitude);
+    maxLat = math.max(maxLat, p.latitude);
+    minLng = math.min(minLng, p.longitude);
+    maxLng = math.max(maxLng, p.longitude);
+  }
+  final center = LatLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+  final meters = const Distance()(LatLng(minLat, minLng), LatLng(maxLat, maxLng));
+  if (meters < degenerateMeters) return (center: center, zoom: 17, path: false);
+  final span = math.max(maxLat - minLat, (maxLng - minLng) * math.cos(center.latitudeInRad)).clamp(1e-6, 360.0);
+  final zoom = (math.log(360 * 1.4 / span) / math.ln2 - .6).clamp(12.0, 17.0);
+  return (center: center, zoom: zoom, path: true);
+}

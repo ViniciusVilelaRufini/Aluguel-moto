@@ -1178,7 +1178,7 @@ class _BikePin extends StatelessWidget {
           border: Border.all(color: VoltiColors.white, width: 2),
           boxShadow: VoltiShadows.shadow2,
         ),
-        child: const Icon(LucideIcons.bike, color: VoltiColors.white, size: 15),
+        child: const Icon(LucideIcons.motorbike, color: VoltiColors.white, size: 15),
       ),
       const SizedBox(height: 3),
       Container(

@@ -17,6 +17,16 @@ class AppLocalizationsPt extends AppLocalizations {
       'Só rastreamos sua posição com um aluguel ativo. Você pode revogar quando quiser em Conta.';
 
   @override
+  String get acceptLocationHintHere =>
+      'Só rastreamos sua posição com um aluguel ativo. Você pode desligar aqui quando quiser.';
+
+  @override
+  String get privacyConsents => 'Consentimentos';
+
+  @override
+  String get privacyDocuments => 'Documentos';
+
+  @override
   String get acceptMarketing => 'Quero receber novidades e ofertas';
 
   @override
@@ -186,6 +196,17 @@ class AppLocalizationsPt extends AppLocalizations {
   String get deposit => 'Caução';
 
   @override
+  String get blockedNow => 'Bloqueado agora (caução)';
+
+  @override
+  String get pickupWhenLine => 'Retirada';
+
+  @override
+  String pickupWhenValue(String weekday, String date, String time) {
+    return '$weekday $date às $time';
+  }
+
+  @override
   String get depositAmount => 'Caução (devolvida)';
 
   @override
@@ -209,6 +230,18 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get documentPhoto => 'Foto do documento (RG ou CNH)';
+
+  @override
+  String get documentPhotoCnh => 'Foto da CNH';
+
+  @override
+  String get documentPhotoRg => 'Foto do RG';
+
+  @override
+  String get photoSent => 'Enviada';
+
+  @override
+  String get photoRetake => 'Refazer';
 
   @override
   String get documentPhotoHint => 'Frente, sem reflexo';
@@ -1120,7 +1153,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get filterPickupPoints => 'Pontos de retirada';
 
   @override
-  String get promoPassTitle => 'Desbloqueie seu passe';
+  String get promoPassTitle => 'Desbloqueie seu plano';
 
   @override
   String get promoPassText => 'Ande mais, pague menos';
@@ -1616,11 +1649,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get pixQrLabel => 'QR code do Pix';
 
   @override
-  String get planMonthlyDescription => 'Cobrança recorrente no cartão todo mês';
+  String get planMonthlyDescription =>
+      'Renova automaticamente, cancele quando quiser';
 
   @override
   String get planWeeklyDescription =>
-      'Para entregadores · cobrança toda semana';
+      'Renova automaticamente, cancele quando quiser';
 
   @override
   String get remove => 'Remover';
@@ -2800,6 +2834,11 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String swapConfirmFeeAmount(String amount) {
     return 'Taxa $amount';
+  }
+
+  @override
+  String swapConfirmBatteryHigh(int pct) {
+    return 'Sua bateria está em $pct%. Trocar mesmo assim?';
   }
 
   @override

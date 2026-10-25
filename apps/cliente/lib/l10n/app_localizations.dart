@@ -106,6 +106,24 @@ abstract class AppLocalizations {
   /// **'Só rastreamos sua posição com um aluguel ativo. Você pode revogar quando quiser em Conta.'**
   String get acceptLocationHint;
 
+  /// No description provided for @acceptLocationHintHere.
+  ///
+  /// In pt, this message translates to:
+  /// **'Só rastreamos sua posição com um aluguel ativo. Você pode desligar aqui quando quiser.'**
+  String get acceptLocationHintHere;
+
+  /// No description provided for @privacyConsents.
+  ///
+  /// In pt, this message translates to:
+  /// **'Consentimentos'**
+  String get privacyConsents;
+
+  /// No description provided for @privacyDocuments.
+  ///
+  /// In pt, this message translates to:
+  /// **'Documentos'**
+  String get privacyDocuments;
+
   /// No description provided for @acceptMarketing.
   ///
   /// In pt, this message translates to:
@@ -436,6 +454,24 @@ abstract class AppLocalizations {
   /// **'Caução'**
   String get deposit;
 
+  /// No description provided for @blockedNow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Bloqueado agora (caução)'**
+  String get blockedNow;
+
+  /// No description provided for @pickupWhenLine.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirada'**
+  String get pickupWhenLine;
+
+  /// No description provided for @pickupWhenValue.
+  ///
+  /// In pt, this message translates to:
+  /// **'{weekday} {date} às {time}'**
+  String pickupWhenValue(String weekday, String date, String time);
+
   /// No description provided for @depositAmount.
   ///
   /// In pt, this message translates to:
@@ -483,6 +519,30 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Foto do documento (RG ou CNH)'**
   String get documentPhoto;
+
+  /// No description provided for @documentPhotoCnh.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto da CNH'**
+  String get documentPhotoCnh;
+
+  /// No description provided for @documentPhotoRg.
+  ///
+  /// In pt, this message translates to:
+  /// **'Foto do RG'**
+  String get documentPhotoRg;
+
+  /// No description provided for @photoSent.
+  ///
+  /// In pt, this message translates to:
+  /// **'Enviada'**
+  String get photoSent;
+
+  /// No description provided for @photoRetake.
+  ///
+  /// In pt, this message translates to:
+  /// **'Refazer'**
+  String get photoRetake;
 
   /// No description provided for @documentPhotoHint.
   ///
@@ -2071,7 +2131,7 @@ abstract class AppLocalizations {
   /// No description provided for @promoPassTitle.
   ///
   /// In pt, this message translates to:
-  /// **'Desbloqueie seu passe'**
+  /// **'Desbloqueie seu plano'**
   String get promoPassTitle;
 
   /// No description provided for @promoPassText.
@@ -2893,13 +2953,13 @@ abstract class AppLocalizations {
   /// No description provided for @planMonthlyDescription.
   ///
   /// In pt, this message translates to:
-  /// **'Cobrança recorrente no cartão todo mês'**
+  /// **'Renova automaticamente, cancele quando quiser'**
   String get planMonthlyDescription;
 
   /// No description provided for @planWeeklyDescription.
   ///
   /// In pt, this message translates to:
-  /// **'Para entregadores · cobrança toda semana'**
+  /// **'Renova automaticamente, cancele quando quiser'**
   String get planWeeklyDescription;
 
   /// No description provided for @remove.
@@ -4815,6 +4875,12 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Taxa {amount}'**
   String swapConfirmFeeAmount(String amount);
+
+  /// No description provided for @swapConfirmBatteryHigh.
+  ///
+  /// In pt, this message translates to:
+  /// **'Sua bateria está em {pct}%. Trocar mesmo assim?'**
+  String swapConfirmBatteryHigh(int pct);
 
   /// No description provided for @swapConfirmSteps.
   ///

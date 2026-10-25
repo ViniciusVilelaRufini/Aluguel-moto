@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
@@ -129,7 +131,9 @@ class VoltiButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (h, px, fs, ic) = _dims(size);
+    final (h0, px, fs, ic) = _dims(size);
+    // Texto grande (200%): a altura fixa cresce com o rotulo (folga de 8 px em cima e embaixo).
+    final h = math.max(h0, MediaQuery.textScalerOf(context).scale(fs) + 16);
     final scheme = Theme.of(context).colorScheme;
     final (bg, fg, bd, sh) = switch (variant) {
       // Fundo no tom de acao (E-12): texto branco >= 4,5:1.

@@ -188,7 +188,7 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
           if (snap.hasData && !rentalAllowsSwap(snap.data!.rental)) {
             return VoltiEmptyState(
               key: const Key('swap-scan-no-rental'),
-              icon: LucideIcons.bike,
+              icon: LucideIcons.motorbike,
               title: l.swapNoRental,
             );
           }

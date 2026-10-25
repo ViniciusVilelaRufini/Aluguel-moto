@@ -160,7 +160,7 @@ class _PlanScreenState extends ConsumerState<PlanScreen> {
                   Text(l.planChargedAtPickup, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
                   const SizedBox(height: VoltiSpacing.s8),
                   Text(l.noKmNotice, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant)),
-                ]),
+                ], animate: plans.hasValue),
               ),
             ),
           ],

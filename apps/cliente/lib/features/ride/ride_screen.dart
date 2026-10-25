@@ -777,8 +777,11 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
             constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .62),
             child: SafeArea(
               top: false,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 16, VoltiSpacing.screenGutter, 16),
+              // Pausar/Devolver ficam fixos no rodape da folha; so o resto rola (200%).
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                Flexible(
+                  child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 16, VoltiSpacing.screenGutter, 0),
                 child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                   if (_openSwap != null) ...[
                     SwapResumeCard(onResume: _openSwapFlow),
@@ -829,13 +832,20 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                   ),
                   const SizedBox(height: 12),
                   Wrap(spacing: 8, runSpacing: 8, children: [
-                    VoltiChip(icon: LucideIcons.batteryCharging, label: l.swapBattery, onTap: () => BatterySwapSheet.show(context, r.id)),
+                    VoltiChip(icon: LucideIcons.batteryCharging, label: l.swapBattery, onTap: () async {
+                      final scan = await BatterySwapSheet.show(context, r.id);
+                      if (scan == true && mounted) _openSwapFlow();
+                    }),
                     VoltiChip(icon: LucideIcons.circleAlert, label: l.reportProblem, onTap: _report),
                     VoltiChip(icon: LucideIcons.share2, label: l.shareTrip, onTap: _shareLocation),
                   ]),
-                  const SizedBox(height: 12),
+                ]),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 12, VoltiSpacing.screenGutter, 16),
                   // Proporcao do design (1 : 1,3); se o rotulo nao cabe inteiro, ajusta ou empilha.
-                  VoltiButtonPair(
+                  child: VoltiButtonPair(
                     first: VoltiButton(
                       label: paused ? l.unpauseRide : l.pause,
                       icon: paused ? LucideIcons.circlePlay : LucideIcons.pause,
@@ -852,8 +862,8 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                       onPressed: () => context.push('/return/${r.id}'),
                     ),
                   ),
-                ]),
-              ),
+                ),
+              ]),
             ),
           ),
         ),

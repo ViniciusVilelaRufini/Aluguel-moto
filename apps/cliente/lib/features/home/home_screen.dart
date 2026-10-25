@@ -41,14 +41,23 @@ import 'stations/stations_sheet.dart';
 /// cartao do galpao, que cobre a metade de baixo).
 const homeMapFocusShift = 0.12;
 
+
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
   @override
   ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends ConsumerState<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObserver {
   final _map = MapController();
+
+  /// Rodape (botoes do mapa + cartao): o toast sobe acima dele, nao o cobre.
+  final _bottomKey = GlobalKey();
+
+  double _toastOffset() {
+    final box = _bottomKey.currentContext?.findRenderObject();
+    return box is RenderBox && box.hasSize ? box.size.height : 0;
+  }
 
   /// Atualiza "Aberto até 20h" quando o horario vira.
   Timer? _tick;
@@ -85,8 +94,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           onForeground: _onPushForeground,
           onOpen: _onPushOpen,
         ));
+    WidgetsBinding.instance.addObserver(this);
+    var minutes = 0;
     _tick = Timer.periodic(const Duration(minutes: 1), (_) {
-      if (mounted) setState(() {});
+      if (!mounted) return;
+      // Horario do galpao pode mudar no servidor: relê de tempos em tempos.
+      if (++minutes % 5 == 0) ref.invalidate(depotsProvider);
+      setState(() {});
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _showFlash();
@@ -96,8 +110,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.listenManual(currentDepotProvider, (_, next) => _focusDepot(next.value), fireImmediately: true);
   }
 
+  /// Volta do segundo plano: relê galpoes (horario/abertura) e o aluguel.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    ref.invalidate(depotsProvider);
+    ref.invalidate(currentRentalStateProvider);
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tick?.cancel();
     super.dispose();
   }
@@ -106,7 +129,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _onPushForeground(PushPayload m) {
     if (!mounted) return;
     final text = [m.title, m.body].whereType<String>().where((t) => t.isNotEmpty).join(': ');
-    if (text.isNotEmpty) VoltiToast.show(context, text, tone: VoltiToastTone.info);
+    if (text.isNotEmpty) VoltiToast.show(context, text, tone: VoltiToastTone.info, bottomOffset: _toastOffset());
   }
 
   /// Toque na notificacao: abre a tela do evento por cima do inicio.
@@ -119,7 +142,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void _showFlash() {
     if (!mounted) return;
     final m = ref.read(flashProvider.notifier).take();
-    if (m != null) VoltiToast.show(context, m.text, tone: m.tone);
+    if (m != null) VoltiToast.show(context, m.text, tone: m.tone, bottomOffset: _toastOffset());
   }
 
   /// Explica para que serve a localizacao e so entao abre o dialogo do sistema.
@@ -284,6 +307,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             for (final d in depots.value ?? const <Depot>[])
                               Marker(
                                 key: ValueKey('depot-pin-${d.id}'),
+                                alignment: Alignment.center,
                                 point: LatLng(d.lat, d.lng),
                                 width: 56,
                                 height: 56,
@@ -408,6 +432,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       flex: 3,
                       fit: FlexFit.loose,
                       child: Column(
+                        key: _bottomKey,
                         mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
@@ -731,7 +756,7 @@ class _ActiveRideCard extends StatelessWidget {
           const SizedBox(height: VoltiSpacing.s4),
           Text(rental.vehicleCode, style: VoltiTypography.caption),
           const SizedBox(height: VoltiSpacing.s12),
-          VoltiButton(key: const Key('home-back-to-ride'), label: l.backToRide, icon: LucideIcons.bike, fullWidth: true, onPressed: onTap),
+          VoltiButton(key: const Key('home-back-to-ride'), label: l.backToRide, icon: LucideIcons.motorbike, fullWidth: true, onPressed: onTap),
         ],
       ),
     );

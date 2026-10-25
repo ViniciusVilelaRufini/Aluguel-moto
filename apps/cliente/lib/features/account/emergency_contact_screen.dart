@@ -30,6 +30,27 @@ String? toE164(String input) {
   return _e164.hasMatch(candidate) ? candidate : null;
 }
 
+/// Mascara do celular enquanto digita: "(11) 98765-4321" para numero nacional;
+/// quem comeca com "+" (outro pais) digita livre.
+class PhoneInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final t = newValue.text;
+    if (t.trimLeft().startsWith('+')) return newValue;
+    final d = t.replaceAll(RegExp(r'\D'), '');
+    final digits = d.length > 11 ? d.substring(0, 11) : d;
+    final b = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i == 0) b.write('(');
+      if (i == 2) b.write(') ');
+      if (i == (digits.length > 10 ? 7 : 6)) b.write('-');
+      b.write(digits[i]);
+    }
+    final out = b.toString();
+    return TextEditingValue(text: out, selection: TextSelection.collapsed(offset: out.length));
+  }
+}
+
 /// "+5511987654321" -> "(11) 98765-4321". Outros paises ficam em E.164.
 String formatPhoneBr(String e164) {
   if (!e164.startsWith('+55')) return e164;
@@ -63,7 +84,9 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
     _phone = TextEditingController();
     _fill(ref.read(sessionProvider).value?.customer);
     // Sessao ainda carregando: preenche quando chegar, se o cliente nao digitou nada.
-    ref.listenManual(sessionProvider, (_, next) => _fill(next.value?.customer));
+    ref.listenManual(sessionProvider, (_, next) {
+      if (mounted) setState(() => _fill(next.value?.customer));
+    });
   }
 
   void _fill(Customer? c) {
@@ -71,6 +94,8 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
     _name.text = c.emergencyContactName ?? '';
     final p = c.emergencyContactPhone;
     _phone.text = p == null || p.isEmpty ? '' : formatPhoneBr(p);
+    // Contato ja salvo: a autorizacao foi dada na gravacao anterior.
+    if (_name.text.isNotEmpty && _phone.text.isNotEmpty) _authorized = true;
   }
 
   @override
@@ -133,7 +158,7 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
             autofillHints: const [AutofillHints.name],
             maxLength: 120,
             onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(labelText: l.emergencyName, errorText: _touched ? _nameError : null),
+            decoration: InputDecoration(labelText: l.emergencyName, prefixIcon: const Icon(LucideIcons.user), errorText: _touched ? _nameError : null),
           ),
           const SizedBox(height: VoltiSpacing.s8),
           TextField(
@@ -141,11 +166,12 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
             controller: _phone,
             keyboardType: TextInputType.phone,
             autofillHints: const [AutofillHints.telephoneNumber],
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+()\- ]'))],
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d+()\- ]')), PhoneInputFormatter()],
             onChanged: (_) => setState(() {}),
             onSubmitted: (_) => _save(),
             decoration: InputDecoration(
               labelText: l.emergencyPhone,
+              prefixIcon: const Icon(LucideIcons.phone),
               hintText: '(11) 98765-4321',
               helperText: l.emergencyPhoneHint,
               helperMaxLines: 3,

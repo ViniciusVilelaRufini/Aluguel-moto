@@ -45,6 +45,11 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
   int? _from;
   String _name = '', _cpf = '', _birth = '';
 
+  /// Fotos do KYC guardadas no fluxo: "Corrigir CPF" volta aos dados e o passo
+  /// das fotos nao pode descarta-las.
+  DocumentType _docType = DocumentType.cnh;
+  Uint8List? _docPhoto, _selfiePhoto;
+
   /// CPF que o KYC recusou (409): o passo de dados mostra o aviso no campo.
   String? _cpfRejected;
 
@@ -95,6 +100,14 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen> {
             name: _name,
             cpf: _cpf,
             birth: _birth,
+            initialType: _docType,
+            initialDoc: _docPhoto,
+            initialSelfie: _selfiePhoto,
+            onPhotosChanged: (type, doc, selfie) {
+              _docType = type;
+              _docPhoto = doc;
+              _selfiePhoto = selfie;
+            },
             alreadySubmitted: session.kyc == KycStatus.pending || session.kyc == KycStatus.approved,
             onBack: () => _go(onboardingDataStep),
             onSubmitted: () => _go(onboardingPaymentStep),
@@ -336,7 +349,16 @@ class DocumentsStep extends ConsumerStatefulWidget {
     required this.onSubmitted,
     this.onCpfRejected,
     this.alreadySubmitted = false,
+    this.initialType = DocumentType.cnh,
+    this.initialDoc,
+    this.initialSelfie,
+    this.onPhotosChanged,
   });
+  final DocumentType initialType;
+  final Uint8List? initialDoc, initialSelfie;
+
+  /// Avisa o fluxo das fotos/tipo escolhidos (sobrevivem a volta ao passo de dados).
+  final void Function(DocumentType type, Uint8List? doc, Uint8List? selfie)? onPhotosChanged;
   final String name, cpf, birth;
 
   /// KYC ja enviado (voltando do passo de pagamento): nada a reenviar.
@@ -351,8 +373,8 @@ class DocumentsStep extends ConsumerStatefulWidget {
 }
 
 class _DocumentsStepState extends ConsumerState<DocumentsStep> {
-  DocumentType _type = DocumentType.cnh;
-  Uint8List? _doc, _selfie;
+  late DocumentType _type = widget.initialType;
+  late Uint8List? _doc = widget.initialDoc, _selfie = widget.initialSelfie;
   bool _busy = false;
   Object? _error;
 
@@ -363,6 +385,12 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
     final bytes = await ref.read(photoPickerProvider).take(front: selfie);
     if (bytes == null || !mounted) return;
     setState(() => selfie ? _selfie = bytes : _doc = bytes);
+    widget.onPhotosChanged?.call(_type, _doc, _selfie);
+  }
+
+  void _setType(DocumentType t) {
+    setState(() => _type = t);
+    widget.onPhotosChanged?.call(_type, _doc, _selfie);
   }
 
   String _isoBirth() {
@@ -469,22 +497,36 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
         Row(children: [
           Expanded(
             child: OptionCard(
-                title: 'CNH', icon: LucideIcons.idCard, selected: _type == DocumentType.cnh, onTap: () => setState(() => _type = DocumentType.cnh)),
+                title: 'CNH', icon: LucideIcons.idCard, selected: _type == DocumentType.cnh, onTap: () => _setType(DocumentType.cnh)),
           ),
           const SizedBox(width: VoltiSpacing.s12),
           Expanded(
             child: OptionCard(
-                title: 'RG', icon: LucideIcons.idCard, selected: _type == DocumentType.rg, onTap: () => setState(() => _type = DocumentType.rg)),
+                title: 'RG', icon: LucideIcons.idCard, selected: _type == DocumentType.rg, onTap: () => _setType(DocumentType.rg)),
           ),
         ]),
         const SizedBox(height: VoltiSpacing.s14),
         PhotoCapture(
-            label: l.documentPhoto, hint: l.documentPhotoHint, icon: LucideIcons.idCard, height: 140, done: _doc != null, onTap: () => _pick(false)),
+            label: _type == DocumentType.cnh ? l.documentPhotoCnh : l.documentPhotoRg,
+            hint: l.documentPhotoHint,
+            icon: LucideIcons.idCard,
+            height: 140,
+            done: _doc != null,
+            doneLabel: l.photoSent,
+            retakeLabel: l.photoRetake,
+            onTap: () => _pick(false)),
         const SizedBox(height: VoltiSpacing.s14),
         PhotoCapture(
-            label: l.selfiePhoto, hint: l.selfiePhotoHint, icon: LucideIcons.scanFace, height: 140, done: _selfie != null, onTap: () => _pick(true)),
+            label: l.selfiePhoto,
+            hint: l.selfiePhotoHint,
+            icon: LucideIcons.scanFace,
+            height: 140,
+            done: _selfie != null,
+            doneLabel: l.photoSent,
+            retakeLabel: l.photoRetake,
+            onTap: () => _pick(true)),
         const SizedBox(height: VoltiSpacing.s14),
-        NoticeBanner(message: l.kycPrivacy, icon: LucideIcons.shieldCheck),
+        NoticeBanner(message: l.kycPrivacy, icon: LucideIcons.shieldCheck, info: true),
       ],
     );
   }
