@@ -1,0 +1,11 @@
+{
+  "volti-prod-network": "b2ee30e4c8938bd8f308b201af8c57926fc7de79f434db5dbfacd630043fee82",
+  "volti-prod-waf": "e4b12f943fa3198f25cedb267a359148aa5f4f07b5c4d10eb388c90ba0810162",
+  "volti-prod-admin-web": "91ab0a971293aead7b0b2b65e6ad68a6edd85eb568394f8ce370702e172bdc28",
+  "volti-prod-data": "b608760d021d0c4e71b1cfe0c4d170f210182c16a31fb3d048913f398db160b1",
+  "volti-prod-auth": "16689ed6d1602fa52bc814cc3f0c5e2b037466ac80f5569c98f0d2249321c525",
+  "volti-prod-messaging": "14a965b51d6442a855680874229aa2064ccc2440d0bb2665d3611091aee835ac",
+  "volti-prod-iot": "8ec15006679931003dbc7cde36085e3135a69f64711b960da8c8163bf133ea52",
+  "volti-prod-api": "05dc46f21e20c0892e2d700f4dba94a92c5b4bff5b916c5857d701358741a255",
+  "volti-prod-observability": "cbc54d923a495f2344abb40ced44906a96e17caed890ac6df0af1bee8245f2c0"
+}

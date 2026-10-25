@@ -1,13 +1,14 @@
 import { stacksFor, templateOf } from './helpers';
 
 describe('NetworkStack', () => {
-  it('dev has exactly 1 NAT gateway, prod has 2', () => {
-    templateOf(stacksFor('dev').network).resourceCountIs('AWS::EC2::NatGateway', 1);
+  it('dev has no NAT gateway, prod has 2', () => {
+    templateOf(stacksFor('dev').network).resourceCountIs('AWS::EC2::NatGateway', 0);
     templateOf(stacksFor('prod').network).resourceCountIs('AWS::EC2::NatGateway', 2);
   });
 
   it('uses 2 AZs with public and private subnets (4 subnets)', () => {
     templateOf(stacksFor('dev').network).resourceCountIs('AWS::EC2::Subnet', 4);
+    templateOf(stacksFor('prod').network).resourceCountIs('AWS::EC2::Subnet', 4);
   });
 
   it('publishes vpc/id to SSM under /volti/<env>/', () => {
@@ -26,7 +27,7 @@ describe('tags', () => {
     ]);
     const checks: [any, string][] = [
       [s.network, 'AWS::EC2::VPC'],
-      [s.network, 'AWS::EC2::NatGateway'],
+      ...(env === 'prod' ? ([[s.network, 'AWS::EC2::NatGateway']] as [any, string][]) : []),
       [s.data, 'AWS::RDS::DBInstance'],
       [s.data, 'AWS::S3::Bucket'],
       [s.data, 'AWS::ElastiCache::ReplicationGroup'],
@@ -36,7 +37,7 @@ describe('tags', () => {
       [s.api, 'AWS::ElasticLoadBalancingV2::LoadBalancer'],
       [s.adminWeb, 'AWS::S3::Bucket'],
       [s.adminWeb, 'AWS::CloudFront::Distribution'],
-      [s.waf, 'AWS::WAFv2::WebACL'],
+      ...(s.waf ? ([[s.waf, 'AWS::WAFv2::WebACL']] as [any, string][]) : []),
     ];
     for (const [stack, type] of checks) {
       const resources = templateOf(stack).findResources(type);

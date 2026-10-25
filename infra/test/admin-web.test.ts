@@ -5,10 +5,13 @@ import { stacksFor, templateOf } from './helpers';
 describe('AdminWebStack', () => {
   const t = () => templateOf(stacksFor('dev').adminWeb);
 
-  it('CloudFront uses OAC (no OAI) and has a WebACLId', () => {
+  it('CloudFront uses OAC (no OAI); prod has a WebACLId, dev none (WAF off)', () => {
     t().resourceCountIs('AWS::CloudFront::OriginAccessControl', 1);
     t().resourceCountIs('AWS::CloudFront::CloudFrontOriginAccessIdentity', 0);
     t().hasResourceProperties('AWS::CloudFront::Distribution', {
+      DistributionConfig: Match.objectLike({ WebACLId: Match.absent() }),
+    });
+    templateOf(stacksFor('prod').adminWeb).hasResourceProperties('AWS::CloudFront::Distribution', {
       DistributionConfig: Match.objectLike({ WebACLId: Match.anyValue() }),
     });
   });
@@ -42,14 +45,15 @@ describe('AdminWebStack', () => {
   });
 
   it('WAF is a CLOUDFRONT-scoped web ACL with managed rule groups in us-east-1', () => {
-    const waf = templateOf(stacksFor('dev').waf);
+    expect(stacksFor('dev').waf).toBeUndefined();
+    const waf = templateOf(stacksFor('prod').waf!);
     waf.hasResourceProperties('AWS::WAFv2::WebACL', {
       Scope: 'CLOUDFRONT',
       Rules: Match.arrayWith([
         Match.objectLike({ Statement: { ManagedRuleGroupStatement: Match.objectLike({ VendorName: 'AWS' }) } }),
       ]),
     });
-    expect(stacksFor('dev').waf.region).toBe('us-east-1');
+    expect(stacksFor('prod').waf!.region).toBe('us-east-1');
     expect(stacksFor('dev').adminWeb.region).toBe('sa-east-1');
   });
 

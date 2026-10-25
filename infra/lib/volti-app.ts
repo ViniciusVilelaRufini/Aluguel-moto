@@ -1,4 +1,4 @@
-import { App, Tags } from 'aws-cdk-lib';
+import { App, DefaultStackSynthesizer, Tags } from 'aws-cdk-lib';
 import {
   ConfigOverrides,
   EnvName,
@@ -13,6 +13,14 @@ import { IotStack } from './stacks/iot-stack';
 import { MessagingStack } from './stacks/messaging-stack';
 import { NetworkStack } from './stacks/network-stack';
 import { ObservabilityStack } from './stacks/observability-stack';
+import {
+  DEFAULT_API_DOMAIN,
+  DEFAULT_BRANCH,
+  DEFAULT_HOSTED_ZONE_ID,
+  DEFAULT_REPO,
+  SINGLE_TAG,
+  SingleDevStack,
+} from './stacks/single-dev-stack';
 import { WafStack } from './stacks/waf-stack';
 
 export interface VoltiAppOptions {
@@ -30,6 +38,10 @@ export interface VoltiAppOptions {
   /** API domain (e.g. api.volti.com.br) used in the public SOS location-share link. */
   apiDomainName?: string;
   alarmEmail?: string;
+  /** Budget alerts e-mail (falls back to alarmEmail). Never committed: -c budgetEmail=... */
+  budgetEmail?: string;
+  /** Dev only: RUN_SEED=true in the API task (idempotent seed after the migrations). */
+  apiRunSeed?: boolean;
   /** Account-specific values (SES identity, IdP secret names, Cognito domain prefixes, WAF limit). */
   overrides?: ConfigOverrides;
   outdir?: string;
@@ -43,7 +55,8 @@ export interface VoltiStacks {
   messaging: MessagingStack;
   iot: IotStack;
   api: ApiStack;
-  waf: WafStack;
+  /** Only when cfg.wafEnabled (not in dev). */
+  waf?: WafStack;
   adminWeb: AdminWebStack;
   observability: ObservabilityStack;
 }
@@ -57,17 +70,19 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
   const common = { env, terminationProtection: !cfg.disposable };
 
   const network = new NetworkStack(app, `${prefix}-network`, { ...common, cfg });
-  const waf = new WafStack(app, `${prefix}-waf`, {
-    ...common,
-    env: { account, region: 'us-east-1' },
-    crossRegionReferences: true,
-    cfg,
-  });
+  const waf = cfg.wafEnabled
+    ? new WafStack(app, `${prefix}-waf`, {
+        ...common,
+        env: { account, region: 'us-east-1' },
+        crossRegionReferences: true,
+        cfg,
+      })
+    : undefined;
   const adminWeb = new AdminWebStack(app, `${prefix}-admin-web`, {
     ...common,
     crossRegionReferences: true,
     cfg,
-    webAclArn: waf.webAclArn,
+    webAclArn: waf?.webAclArn,
     adminDomainName: opts.adminDomainName,
     adminCertificateArn: opts.adminCertificateArn,
   });
@@ -89,6 +104,7 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     imageTag: opts.apiImageTag ?? 'latest',
     desiredCount: opts.apiDesiredCount ?? 0,
     apiDomainName: opts.apiDomainName,
+    runSeed: opts.apiRunSeed,
   });
   const observability = new ObservabilityStack(app, `${prefix}-observability`, {
     ...common,
@@ -98,10 +114,93 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     messaging,
     iot,
     alarmEmail: opts.alarmEmail,
+    budgetEmail: opts.budgetEmail,
   });
 
   Tags.of(app).add('projeto', 'volti');
   Tags.of(app).add('ambiente', cfg.name);
 
   return { app, network, data, auth, messaging, iot, api, waf, adminWeb, observability };
+}
+
+export interface SingleDevAppOptions {
+  /** AWS account id; synth uses a placeholder (no lookup, no credentials needed). */
+  account?: string;
+  repoUrl?: string;
+  branch?: string;
+  instanceType?: string;
+  rootVolumeGb?: number;
+  /** Route 53 zone (shared with another project) where the instance UPSERTs the A record of apiDomain at every boot. */
+  hostedZoneId?: string;
+  /** API name; '-' disables the DNS record (fallback <public-ip>.sslip.io). */
+  apiDomain?: string;
+  /** EventBridge Scheduler start 07:00 / stop 23:00 America/Sao_Paulo (default on). */
+  schedule?: boolean;
+  budgetEmail?: string;
+  overrides?: ConfigOverrides;
+  outdir?: string;
+}
+
+export interface SingleDevStacks {
+  app: App;
+  adminWeb: AdminWebStack;
+  auth: AuthStack;
+  single: SingleDevStack;
+}
+
+/** Bootstrap qualifier of the single profile: its own CDK toolkit stack (volti-cdk-toolkit), apart from the other project's. */
+export const SINGLE_QUALIFIER = 'volti';
+
+/**
+ * `-c env=dev -c profile=single`: the cheapest dev (docs/decisoes.md). One EC2 instance with Docker Compose + S3, Cognito and
+ * the panel on S3/CloudFront (default domain). No Docker-built asset (deployable from AWS CloudShell). Prod and the full dev
+ * are untouched.
+ */
+export function createSingleDevApp(opts: SingleDevAppOptions): SingleDevStacks {
+  const base = getConfig('dev', opts.overrides);
+  // SES of the customer pool (e-mail OTP): the from address must be inside the verified DOMAIN identity
+  // (-c sesFromEmail=nao-responda@voltz.prestarecondominios.com.br; domain derived from the address unless
+  // -c sesVerifiedDomain is given), sender name "Volti (dev)".
+  const ses = base.auth.customerSes;
+  const sesDomain = ses ? (ses.sesVerifiedDomain ?? ses.fromEmail.split('@')[1]) : undefined;
+  if (ses && (!sesDomain || !ses.fromEmail.toLowerCase().endsWith(`@${sesDomain.toLowerCase()}`))) {
+    throw new Error(`sesFromEmail (${ses.fromEmail}) precisa estar no domínio verificado ${sesDomain}.`);
+  }
+  const cfg = ses ? { ...base, auth: { ...base.auth, customerSes: { ...ses, fromName: 'Volti (dev)', sesVerifiedDomain: sesDomain } } } : base;
+  const account = opts.account ?? '000000000000';
+  const app = new App({ outdir: opts.outdir });
+  const common = {
+    env: { account, region: cfg.region },
+    synthesizer: new DefaultStackSynthesizer({ qualifier: SINGLE_QUALIFIER }),
+  };
+  const apiDomain = opts.apiDomain ?? DEFAULT_API_DOMAIN;
+  const hostedZoneId = opts.hostedZoneId ?? DEFAULT_HOSTED_ZONE_ID;
+  const dns = apiDomain === '-' || hostedZoneId === '-' ? undefined : { hostedZoneId, apiDomain: apiDomain.toLowerCase() };
+  if (dns && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(dns.apiDomain)) {
+    throw new Error(`apiDomain inválido: ${dns.apiDomain}`);
+  }
+  if (dns && !/^Z[A-Z0-9]{5,31}$/.test(dns.hostedZoneId)) throw new Error(`hostedZoneId inválido: ${dns.hostedZoneId}`);
+
+  // The panel stays on the CloudFront default domain (no custom domain / ACM).
+  const adminWeb = new AdminWebStack(app, 'volti-dev-admin-web', { ...common, cfg });
+  // Shared account: no self sign-up and no SMS in the customer pool (test customers come from the volti-dev-admin document).
+  const auth = new AuthStack(app, 'volti-dev-auth', { ...common, cfg, adminOrigin: adminWeb.origin, restrictedCustomers: true });
+  const single = new SingleDevStack(app, 'volti-dev-single', {
+    ...common,
+    cfg,
+    auth,
+    adminWeb,
+    adminOrigin: adminWeb.origin,
+    repoUrl: opts.repoUrl ?? DEFAULT_REPO,
+    branch: opts.branch ?? DEFAULT_BRANCH,
+    instanceType: opts.instanceType ?? 't4g.small',
+    rootVolumeGb: opts.rootVolumeGb ?? 25,
+    dns,
+    schedule: opts.schedule ?? true,
+    budgetEmail: opts.budgetEmail,
+  });
+
+  Tags.of(app).add(SINGLE_TAG.key, SINGLE_TAG.value);
+  Tags.of(app).add('ambiente', 'dev');
+  return { app, adminWeb, auth, single };
 }

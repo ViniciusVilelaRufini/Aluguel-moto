@@ -24,7 +24,8 @@ export const SPA_REWRITE_FUNCTION_CODE = `function handler(event) {
 
 export interface AdminWebStackProps extends StackProps {
   cfg: EnvConfig;
-  webAclArn: string;
+  /** CloudFront web ACL (us-east-1); unset when the WAF is disabled (dev). */
+  webAclArn?: string;
   /** Optional custom domain for the panel; needs adminCertificateArn (ACM in us-east-1). */
   adminDomainName?: string;
   adminCertificateArn?: string;

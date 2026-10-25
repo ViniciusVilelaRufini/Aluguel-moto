@@ -23,7 +23,8 @@ describe('ApiStack', () => {
   });
 
   it('runs on Fargate with CPU auto scaling and secrets from Secrets Manager', () => {
-    t().hasResourceProperties('AWS::ECS::Service', { LaunchType: 'FARGATE' });
+    templateOf(stacksFor('prod').api).hasResourceProperties('AWS::ECS::Service', { LaunchType: 'FARGATE' });
+    t().hasResourceProperties('AWS::ECS::Service', { CapacityProviderStrategy: [{ CapacityProvider: 'FARGATE_SPOT', Weight: 1 }] });
     t().hasResourceProperties('AWS::ApplicationAutoScaling::ScalingPolicy', {
       TargetTrackingScalingPolicyConfiguration: Match.objectLike({
         PredefinedMetricSpecification: { PredefinedMetricType: 'ECSServiceAverageCPUUtilization' },
@@ -235,15 +236,17 @@ describe('ApiStack', () => {
   });
 
   it('QA-18: regional WAF with a per-IP rate rule (per environment) and AWS managed rules is associated with the ALB', () => {
-    for (const [env, limit] of [['dev', 2000], ['prod', 3000]] as const) {
-      templateOf(stacksFor(env).api).hasResourceProperties('AWS::WAFv2::WebACL', {
-        Scope: 'REGIONAL',
-        Rules: Match.arrayWith([
-          Match.objectLike({ Action: { Block: {} }, Statement: { RateBasedStatement: Match.objectLike({ Limit: limit, AggregateKeyType: 'IP', EvaluationWindowSec: 300 }) } }),
-        ]),
-      });
-    }
-    const acl = Object.values(t().findResources('AWS::WAFv2::WebACL'))[0] as any;
+    // Dev has no WAF (minimum-cost profile); the limit is still validated per environment (lib/config.ts).
+    templateOf(stacksFor('dev').api).resourceCountIs('AWS::WAFv2::WebACL', 0);
+    const p = () => templateOf(stacksFor('prod').api);
+    p().hasResourceProperties('AWS::WAFv2::WebACL', {
+      Scope: 'REGIONAL',
+      Rules: Match.arrayWith([
+        Match.objectLike({ Action: { Block: {} }, Statement: { RateBasedStatement: Match.objectLike({ Limit: 3000, AggregateKeyType: 'IP', EvaluationWindowSec: 300 }) } }),
+      ]),
+    });
+    expect(getConfig('dev').apiRateLimitPer5Min).toBe(2000);
+    const acl = Object.values(p().findResources('AWS::WAFv2::WebACL'))[0] as any;
     const managed = acl.Properties.Rules.filter((r: any) => r.Statement.ManagedRuleGroupStatement);
     expect(managed.map((r: any) => r.Statement.ManagedRuleGroupStatement.Name).sort()).toEqual([
       'AWSManagedRulesAmazonIpReputationList', 'AWSManagedRulesCommonRuleSet', 'AWSManagedRulesKnownBadInputsRuleSet',
@@ -256,7 +259,7 @@ describe('ApiStack', () => {
     expect(common.Statement.ManagedRuleGroupStatement.RuleActionOverrides).toEqual([{ Name: 'SizeRestrictions_BODY', ActionToUse: { Count: {} } }]);
     const priorities = acl.Properties.Rules.map((r: any) => r.Priority);
     expect(new Set(priorities).size).toBe(priorities.length);
-    t().resourceCountIs('AWS::WAFv2::WebACLAssociation', 1);
+    p().resourceCountIs('AWS::WAFv2::WebACLAssociation', 1);
   });
 
   it('the WAF limit can be overridden per deploy and rejects nonsense', () => {

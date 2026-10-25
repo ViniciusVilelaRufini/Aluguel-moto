@@ -7,6 +7,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import { EnvConfig } from '../config';
 import { publishParam } from '../ssm';
+import { dataSubnetType } from './network-stack';
 
 export interface DataStackProps extends StackProps {
   cfg: EnvConfig;
@@ -52,7 +53,7 @@ export class DataStack extends Stack {
       engine: rds.DatabaseInstanceEngine.postgres({ version: rds.PostgresEngineVersion.VER_16 }),
       instanceType: new ec2.InstanceType(cfg.dbInstanceClass),
       vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      vpcSubnets: { subnetType: dataSubnetType(cfg) },
       securityGroups: [dbSg],
       publiclyAccessible: false,
       multiAz: cfg.dbMultiAz,
@@ -67,6 +68,8 @@ export class DataStack extends Stack {
       deletionProtection: cfg.dbDeletionProtection,
       removalPolicy: cfg.disposable ? RemovalPolicy.SNAPSHOT : RemovalPolicy.RETAIN,
       autoMinorVersionUpgrade: true,
+      // Dev: Performance Insights explicitly off (no enhanced monitoring either: monitoringInterval unset).
+      ...(cfg.dbPerformanceInsights === false ? { enablePerformanceInsights: false } : {}),
     });
 
     // Redis replication group: 1 node in dev, 2 with failover in prod.
@@ -75,7 +78,7 @@ export class DataStack extends Stack {
     redisSg.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(6379), 'Redis from inside the VPC');
     const subnetGroup = new elasticache.CfnSubnetGroup(this, 'RedisSubnets', {
       description: `Volti ${env} Redis subnets`,
-      subnetIds: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }).subnetIds,
+      subnetIds: vpc.selectSubnets({ subnetType: dataSubnetType(cfg) }).subnetIds,
     });
     const ha = cfg.redisNodes > 1;
     // noeviction (lacunas T5, revisão I2): a API guarda estado de segurança no Redis (rampa do bloqueio seguro, prazos de cerca)

@@ -3,6 +3,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as iot from 'aws-cdk-lib/aws-iot';
 import * as kinesis from 'aws-cdk-lib/aws-kinesis';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as destinations from 'aws-cdk-lib/aws-lambda-destinations';
 import * as sources from 'aws-cdk-lib/aws-lambda-event-sources';
 import * as location from 'aws-cdk-lib/aws-location';
 import * as logs from 'aws-cdk-lib/aws-logs';
@@ -130,6 +131,31 @@ exports.handler = async (event) => {
 };
 `;
 
+/**
+ * Dev only (stationEventsTransport 'lambda', stations are simulated): the IoT rule invokes this Lambda asynchronously with
+ * the rule output (the event itself, with `thing`) and it sends it to stations.fifo with MessageGroupId = thing.
+ * ORDER CAVEAT: async invocations run in parallel and are retried minutes later, so two events of the same station published
+ * close together may reach the FIFO inverted. A failed send throws (Lambda retries, then the on-failure destination sends the
+ * event to stations-forwarder-dlq). Logs no payload.
+ */
+export const STATION_DIRECT_FORWARDER = `
+const { SQSClient, SendMessageCommand } = require('@aws-sdk/client-sqs');
+const client = new SQSClient({});
+const THING = /^station-[0-9a-fA-F-]{36}$/;
+exports.handler = async (event) => {
+  const thing = event && event.thing;
+  if (typeof thing !== 'string' || !THING.test(thing)) {
+    console.log(JSON.stringify({ level: 'warn', msg: 'station_event_without_thing' }));
+    return;
+  }
+  await client.send(new SendMessageCommand({
+    QueueUrl: process.env.QUEUE_URL,
+    MessageBody: JSON.stringify(event),
+    MessageGroupId: thing,
+  }));
+};
+`;
+
 export const PRESENCE_FORWARDER = `
 const { EventBridgeClient, PutEventsCommand } = require('@aws-sdk/client-eventbridge');
 const client = new EventBridgeClient({});
@@ -162,7 +188,8 @@ export class IotStack extends Stack {
   public readonly placeIndexName: string;
   public readonly presenceForwarder: lambda.Function;
   public readonly stationForwarder: lambda.Function;
-  public readonly stationStream: kinesis.Stream;
+  /** Only with stationEventsTransport 'kinesis' (prod). */
+  public readonly stationStream?: kinesis.Stream;
 
   constructor(scope: Construct, id: string, props: IotStackProps) {
     super(scope, id, props);
@@ -227,55 +254,13 @@ export class IotStack extends Stack {
       },
     });
 
-    // Station events, ordered per station: rule → Kinesis (partition key = thing) → Lambda (event source mapping, one
-    // batch per shard at a time) → stations FIFO queue (MessageGroupId = thing). See STATION_FORWARDER.
-    this.stationStream = new kinesis.Stream(this, 'StationEventsStream', {
-      streamName: `volti-${env}-station-events`,
-      streamMode: kinesis.StreamMode.PROVISIONED,
-      shardCount: cfg.stationStreamShards,
-      // 24 h (no extended-retention cost): the window to replay a record reported in the forwarder DLQ.
-      retentionPeriod: Duration.hours(24),
-      encryption: kinesis.StreamEncryption.MANAGED,
-    });
-    const kinesisRole = new iam.Role(this, 'RuleKinesisRole', { assumedBy: new iam.ServicePrincipal('iot.amazonaws.com') });
-    this.stationStream.grantWrite(kinesisRole);
-    new iot.CfnTopicRule(this, 'StationEventsRule', {
-      ruleName: `volti_${env}_station_events`,
-      topicRulePayload: {
-        sql: STATION_EVENTS_SQL,
-        awsIotSqlVersion: '2016-03-23',
-        ruleDisabled: false,
-        actions: [{ kinesis: { streamName: this.stationStream.streamName, partitionKey: STATION_PARTITION_KEY, roleArn: kinesisRole.roleArn } }],
-        errorAction,
-      },
-    });
-
-    const stationForwarderLogs = new logs.LogGroup(this, 'StationForwarderLogs', {
-      retention: cfg.logRetentionDays as logs.RetentionDays,
-    });
-    this.stationForwarder = new lambda.Function(this, 'StationForwarder', {
-      runtime: lambda.Runtime.NODEJS_22_X,
-      handler: 'index.handler',
-      code: lambda.Code.fromInline(STATION_FORWARDER),
-      environment: { QUEUE_URL: messaging.stations.queue.queueUrl },
-      logGroup: stationForwarderLogs,
-      timeout: Duration.seconds(30),
-    });
-    messaging.stations.queue.grantSendMessages(this.stationForwarder);
-    this.stationForwarder.addEventSource(
-      new sources.KinesisEventSource(this.stationStream, {
-        startingPosition: lambda.StartingPosition.TRIM_HORIZON,
-        batchSize: 10,
-        // Order: one concurrent batch per shard, retries from the failed record (never skipping ahead).
-        parallelizationFactor: 1,
-        bisectBatchOnError: false,
-        reportBatchItemFailures: true,
-        retryAttempts: 50,
-        // Past this a swap has long timed out; the record goes to the DLQ (metadata: shard + sequence numbers).
-        maxRecordAge: Duration.hours(1),
-        onFailure: new sources.SqsDlq(messaging.stationsForwarderDlq),
-      }),
-    );
+    if (cfg.stationEventsTransport === 'kinesis') {
+      const ordered = this.createOrderedStationPath(cfg, messaging, errorAction);
+      this.stationStream = ordered.stream;
+      this.stationForwarder = ordered.forwarder;
+    } else {
+      this.stationForwarder = this.createDirectStationPath(cfg, messaging, errorAction);
+    }
 
     // IoT rules have no native EventBridge action, so a tiny Lambda forwards presence events to the bus; an EventBridge
     // rule (messaging stack) delivers the trackers' ones to the telemetry queue.
@@ -343,5 +328,99 @@ export class IotStack extends Stack {
     publishParam(this, env, 'location/tracker-name', this.trackerName);
     publishParam(this, env, 'location/geofence-collection', this.geofenceCollectionName);
     publishParam(this, env, 'location/place-index', this.placeIndexName);
+  }
+
+  /** Prod: rule → Kinesis (partition key = thing) → Lambda (event source mapping, one batch per shard) → stations FIFO. See STATION_FORWARDER. */
+  private createOrderedStationPath(
+    cfg: EnvConfig,
+    messaging: MessagingStack,
+    errorAction: iot.CfnTopicRule.ActionProperty,
+  ): { stream: kinesis.Stream; forwarder: lambda.Function } {
+    const env = cfg.name;
+    // Station events, ordered per station: rule → Kinesis (partition key = thing) → Lambda (event source mapping, one
+    // batch per shard at a time) → stations FIFO queue (MessageGroupId = thing). See STATION_FORWARDER.
+    const stream = new kinesis.Stream(this, 'StationEventsStream', {
+      streamName: `volti-${env}-station-events`,
+      streamMode: kinesis.StreamMode.PROVISIONED,
+      shardCount: cfg.stationStreamShards,
+      // 24 h (no extended-retention cost): the window to replay a record reported in the forwarder DLQ.
+      retentionPeriod: Duration.hours(24),
+      encryption: kinesis.StreamEncryption.MANAGED,
+    });
+    const kinesisRole = new iam.Role(this, 'RuleKinesisRole', { assumedBy: new iam.ServicePrincipal('iot.amazonaws.com') });
+    stream.grantWrite(kinesisRole);
+    new iot.CfnTopicRule(this, 'StationEventsRule', {
+      ruleName: `volti_${env}_station_events`,
+      topicRulePayload: {
+        sql: STATION_EVENTS_SQL,
+        awsIotSqlVersion: '2016-03-23',
+        ruleDisabled: false,
+        actions: [{ kinesis: { streamName: stream.streamName, partitionKey: STATION_PARTITION_KEY, roleArn: kinesisRole.roleArn } }],
+        errorAction,
+      },
+    });
+
+    const stationForwarderLogs = new logs.LogGroup(this, 'StationForwarderLogs', {
+      retention: cfg.logRetentionDays as logs.RetentionDays,
+    });
+    const forwarder = new lambda.Function(this, 'StationForwarder', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromInline(STATION_FORWARDER),
+      environment: { QUEUE_URL: messaging.stations.queue.queueUrl },
+      logGroup: stationForwarderLogs,
+      timeout: Duration.seconds(30),
+    });
+    messaging.stations.queue.grantSendMessages(forwarder);
+    forwarder.addEventSource(
+      new sources.KinesisEventSource(stream, {
+        startingPosition: lambda.StartingPosition.TRIM_HORIZON,
+        batchSize: 10,
+        // Order: one concurrent batch per shard, retries from the failed record (never skipping ahead).
+        parallelizationFactor: 1,
+        bisectBatchOnError: false,
+        reportBatchItemFailures: true,
+        retryAttempts: 50,
+        // Past this a swap has long timed out; the record goes to the DLQ (metadata: shard + sequence numbers).
+        maxRecordAge: Duration.hours(1),
+        onFailure: new sources.SqsDlq(messaging.stationsForwarderDlq),
+      }),
+    );
+    return { stream, forwarder };
+  }
+
+  /** Dev: rule → async Lambda → stations FIFO (no Kinesis shard; order not guaranteed, see STATION_DIRECT_FORWARDER). */
+  private createDirectStationPath(cfg: EnvConfig, messaging: MessagingStack, errorAction: iot.CfnTopicRule.ActionProperty): lambda.Function {
+    const env = cfg.name;
+    const logGroup = new logs.LogGroup(this, 'StationForwarderLogs', {
+      retention: cfg.logRetentionDays as logs.RetentionDays,
+    });
+    const forwarder = new lambda.Function(this, 'StationForwarder', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromInline(STATION_DIRECT_FORWARDER),
+      environment: { QUEUE_URL: messaging.stations.queue.queueUrl },
+      logGroup,
+      timeout: Duration.seconds(30),
+      retryAttempts: 2,
+      maxEventAge: Duration.hours(1),
+      onFailure: new destinations.SqsDestination(messaging.stationsForwarderDlq),
+    });
+    messaging.stations.queue.grantSendMessages(forwarder);
+    const rule = new iot.CfnTopicRule(this, 'StationEventsRule', {
+      ruleName: `volti_${env}_station_events`,
+      topicRulePayload: {
+        sql: STATION_EVENTS_SQL,
+        awsIotSqlVersion: '2016-03-23',
+        ruleDisabled: false,
+        actions: [{ lambda: { functionArn: forwarder.functionArn } }],
+        errorAction,
+      },
+    });
+    forwarder.addPermission('InvokeFromIot', {
+      principal: new iam.ServicePrincipal('iot.amazonaws.com'),
+      sourceArn: rule.attrArn,
+    });
+    return forwarder;
   }
 }
