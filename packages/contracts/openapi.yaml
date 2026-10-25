@@ -44,7 +44,7 @@ info:
     `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`, `gateway-unavailable`,
     `subscription-vehicle-cooldown`, `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`,
     `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
-    `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`.
+    `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -4146,6 +4146,9 @@ paths:
       tags: [batteries]
       operationId: listBatteries
       summary: Baterias (série, carga, ciclos, onde estão)
+      description: |
+        `statusCounts` traz a contagem por status de todas as baterias que passam nos filtros `depotId`, `holderId` e `q`
+        (ignora `status` e a paginação), para o resumo do inventário.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -4155,6 +4158,10 @@ paths:
         - name: status
           in: query
           schema: { $ref: '#/components/schemas/BatteryStatus' }
+        - name: depotId
+          in: query
+          description: Galpão onde a bateria está (`charging`, `charged` ou `defective`).
+          schema: { type: string, format: uuid }
         - name: holderId
           in: query
           description: Operador que leva a bateria na van (`me` = o próprio usuário).
@@ -4172,6 +4179,137 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [batteries]
+      operationId: createBattery
+      summary: Cadastrar bateria no galpão
+      description: |
+        Cadastra uma bateria nova pelo número de série, no galpão `depotId`, como `charging` (carregando) ou `charged`
+        (carregada, `chargePct` 100). Série já cadastrada → `409`; galpão inexistente → `404`; galpão inativo → `422`
+        `depot-inactive`. Grava a primeira movimentação (`fromStatus` ausente).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatteryCreateRequest' }
+      responses:
+        '201':
+          description: Bateria cadastrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Battery' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /batteries/{id}/mark-charged:
+    post:
+      tags: [batteries]
+      operationId: markBatteryCharged
+      summary: Marcar bateria como carregada
+      description: |
+        `charging` → `charged` com `chargePct` 100, no mesmo galpão. Bateria carregando numa estação de troca (devolvida
+        por QR: `stationId` sem `depotId`) volta a `in_station` e conta de novo nas disponíveis da estação. Outro status → `409`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '200':
+          description: Bateria carregada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Battery' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /batteries/{id}/report-defect:
+    post:
+      tags: [batteries]
+      operationId: reportBatteryDefect
+      summary: Registrar defeito na bateria
+      description: |
+        De `charging`, `charged`, `in_van` ou `in_station` → `defective` (fora de uso). Bateria instalada numa moto → `409`
+        (retire-a da moto antes); já `defective` ou `retired` → `409`. Na estação, uma bateria carregada deixa de contar
+        como disponível.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatteryDefectRequest' }
+      responses:
+        '200':
+          description: Bateria com defeito.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Battery' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /batteries/{id}/retire:
+    post:
+      tags: [batteries]
+      operationId: retireBattery
+      summary: Dar baixa na bateria
+      description: De `defective`, `charging` ou `charged` → `retired` (definitivo). Outro status → `409`.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BatteryRetireRequest' }
+      responses:
+        '200':
+          description: Bateria baixada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Battery' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /batteries/{id}/movements:
+    get:
+      tags: [batteries]
+      operationId: listBatteryMovements
+      summary: Histórico de movimentação da bateria
+      description: Cada mudança de status (cadastro, van, galpão, moto, estação, troca por QR, defeito, baixa), mais recente primeiro.
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao, suporte, campo]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Página de movimentações.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BatteryMovementPage' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /batteries/van-stock:
     get:
       tags: [batteries]
@@ -4201,7 +4339,11 @@ paths:
       tags: [batteries]
       operationId: loadVanBatteries
       summary: Carregar baterias na van
-      description: Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada numa moto → `409`.
+      description: |
+        Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada
+        numa moto, com defeito (`defective`) ou baixada (`retired`) → `409`. Prefira as `charged` do galpão
+        (`GET /batteries?depotId=…&status=charged`); carregar uma `charging` continua permitido: ela vai com a carga
+        conhecida (`items[].chargePct`) e a série volta em `loadedChargingSerials`.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -4225,7 +4367,10 @@ paths:
       tags: [batteries]
       operationId: unloadVanBatteries
       summary: Descarregar baterias da van
-      description: Tira da van do usuário (para `charging`, ou `in_station` com `stationId`). Bateria fora da van do usuário → `409`.
+      description: |
+        Tira da van do usuário: para uma estação (`in_station`, com `stationId`) ou para carregar no galpão (`charging`
+        com `depotId`). Sem `stationId` e sem `depotId`, usa o único galpão ativo; com mais de um (ou nenhum) → `422`
+        `depot-required`. Bateria fora da van do usuário → `409`.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -4245,6 +4390,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   # ───────────────────────────── reports ─────────────────────────────
   /reports/dashboard:
@@ -5025,7 +5171,8 @@ components:
       enum: [active, canceled, expired]
     AlertType:
       type: string
-      enum: [out_of_operation_area, forbidden_zone_entered, fall_detected, tamper, battery_critical, movement_without_rental, vehicle_offline, command_failed, customer_not_ok, incident_reported, speed_limiter_noncompliant]
+      enum: [out_of_operation_area, forbidden_zone_entered, fall_detected, tamper, battery_critical, movement_without_rental, vehicle_offline, command_failed, customer_not_ok, incident_reported, speed_limiter_noncompliant, battery_stock_low]
+      description: '`battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`).'
     AlertPriority:
       type: string
       enum: [low, medium, high, critical]
@@ -6194,6 +6341,7 @@ components:
         vehicleId: { type: string, format: uuid }
         vehicleCode: { type: string }
         rentalId: { type: string, format: uuid }
+        depotId: { type: string, format: uuid, description: 'Galpão do alerta (`battery_stock_low`).' }
         message: { type: string, description: Texto pt-BR. }
         lat: { type: number, format: double }
         lng: { type: number, format: double }
@@ -7013,7 +7161,11 @@ components:
       description: Situação da revisão preventiva (Em dia / Próxima / Vencida).
     BatteryStatus:
       type: string
-      enum: [in_vehicle, in_van, charging, in_station, retired]
+      enum: [in_vehicle, in_van, charging, in_station, retired, charged, defective]
+      description: |
+        `in_vehicle` instalada numa moto; `in_van` na van de um operador; `charging` carregando (no galpão `depotId` ou na
+        estação `stationId`); `charged` carregada e pronta no galpão; `in_station` na estação de troca; `defective` com
+        defeito, fora de uso; `retired` baixada.
     MaintenanceSource:
       type: string
       enum: [staff, customer, system]
@@ -7371,14 +7523,71 @@ components:
         vehicleCode: { type: string }
         holderId: { type: string, format: uuid, description: Operador com a bateria na van. }
         stationId: { type: string, format: uuid }
+        depotId: { type: string, format: uuid, description: 'Galpão onde está (`charging`, `charged` ou `defective`).' }
         updatedAt: { type: string, format: date-time }
+    BatteryStatusCounts:
+      type: object
+      description: Quantidade de baterias por status.
+      required: [in_vehicle, in_van, charging, charged, in_station, defective, retired]
+      properties:
+        in_vehicle: { type: integer, minimum: 0 }
+        in_van: { type: integer, minimum: 0 }
+        charging: { type: integer, minimum: 0 }
+        charged: { type: integer, minimum: 0 }
+        in_station: { type: integer, minimum: 0 }
+        defective: { type: integer, minimum: 0 }
+        retired: { type: integer, minimum: 0 }
     BatteryPage:
+      type: object
+      required: [items, statusCounts]
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/Battery' }
+        nextCursor: { type: string }
+        statusCounts: { $ref: '#/components/schemas/BatteryStatusCounts' }
+    BatteryInitialStatus:
+      type: string
+      enum: [charging, charged]
+    BatteryCreateRequest:
+      type: object
+      required: [serial, status, depotId]
+      properties:
+        serial: { type: string, minLength: 3, maxLength: 64, examples: [BT-200001] }
+        status: { $ref: '#/components/schemas/BatteryInitialStatus' }
+        depotId: { type: string, format: uuid }
+        chargePct: { type: integer, minimum: 0, maximum: 100, description: 'Só com `charging` (padrão 0); `charged` grava 100.' }
+    BatteryDefectRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500, examples: [Carcaça trincada] }
+    BatteryRetireRequest:
+      type: object
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500 }
+    BatteryMovement:
+      type: object
+      description: Uma mudança de status da bateria. `fromStatus` ausente = cadastro.
+      required: [id, batteryId, toStatus, actorId, at]
+      properties:
+        id: { type: string, format: uuid }
+        batteryId: { type: string, format: uuid }
+        fromStatus: { $ref: '#/components/schemas/BatteryStatus' }
+        toStatus: { $ref: '#/components/schemas/BatteryStatus' }
+        depotId: { type: string, format: uuid }
+        stationId: { type: string, format: uuid }
+        vehicleId: { type: string, format: uuid }
+        actorId: { type: string, format: uuid, description: Staff que fez a movimentação (cliente na troca por QR). }
+        reason: { type: string }
+        at: { type: string, format: date-time }
+    BatteryMovementPage:
       type: object
       required: [items]
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/Battery' }
+          items: { $ref: '#/components/schemas/BatteryMovement' }
         nextCursor: { type: string }
     VanStock:
       type: object
@@ -7391,6 +7600,10 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/Battery' }
+        loadedChargingSerials:
+          type: array
+          description: 'Só em `load`: séries que ainda estavam em `charging` (não prontas); a carga está em `items[].chargePct`.'
+          items: { type: string }
     BatteryTransferRequest:
       type: object
       required: [serials]
@@ -7400,7 +7613,8 @@ components:
           minItems: 1
           maxItems: 50
           items: { type: string, minLength: 3, maxLength: 64 }
-        stationId: { type: string, format: uuid, description: Só em `unload`; ausente = `charging`. }
+        stationId: { type: string, format: uuid, description: Só em `unload`; ausente = `charging` no galpão. }
+        depotId: { type: string, format: uuid, description: 'Só em `unload` sem `stationId`: galpão onde as baterias vão carregar (padrão: o único galpão ativo).' }
         chargePct: { type: integer, minimum: 0, maximum: 100, description: Só em `load`; carga informada (padrão 100). }
 
     # ───────────── galpões (retirada em galpão) ─────────────
@@ -7437,6 +7651,7 @@ components:
         maxScheduleDays: { type: integer, minimum: 0, maximum: 30, default: 7, description: Quantos dias à frente o cliente pode agendar. }
         scheduledGraceMinutes: { type: integer, minimum: 0, maximum: 120, default: 30, description: Tolerância depois do horário agendado. }
         swapStationId: { type: string, format: uuid, description: Estação de troca de bateria do próprio galpão (`GET /swap-stations`). }
+        minChargedBatteries: { type: integer, minimum: 0, maximum: 1000, description: 'Só para staff. Mínimo de baterias `charged` no galpão; abaixo dele abre o alerta `battery_stock_low`. Ausente ou 0 = sem alerta.' }
         active: { type: boolean }
         availableVehicleCount: { type: integer, minimum: 0, description: 'Motos `free` neste galpão.', examples: [12] }
         distanceM: { type: integer, minimum: 0, description: 'Só com `lat`/`lng` em `GET /depots`.' }
@@ -7460,6 +7675,7 @@ components:
         maxScheduleDays: { type: integer, minimum: 0, maximum: 30, default: 7 }
         scheduledGraceMinutes: { type: integer, minimum: 0, maximum: 120, default: 30 }
         swapStationId: { type: string, format: uuid }
+        minChargedBatteries: { type: integer, minimum: 0, maximum: 1000, description: 'Ausente ou 0 = sem alerta de estoque.' }
         active: { type: boolean, default: true }
     DepotUpdate:
       type: object
@@ -7479,6 +7695,7 @@ components:
         maxScheduleDays: { type: integer, minimum: 0, maximum: 30 }
         scheduledGraceMinutes: { type: integer, minimum: 0, maximum: 120 }
         swapStationId: { type: string, format: uuid }
+        minChargedBatteries: { type: integer, minimum: 0, maximum: 1000, description: '0 desliga o alerta de estoque.' }
         active: { type: boolean }
     DepotList:
       type: object

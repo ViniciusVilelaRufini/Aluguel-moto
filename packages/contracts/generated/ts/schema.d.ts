@@ -2608,8 +2608,101 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Baterias (série, carga, ciclos, onde estão) */
+        /**
+         * Baterias (série, carga, ciclos, onde estão)
+         * @description `statusCounts` traz a contagem por status de todas as baterias que passam nos filtros `depotId`, `holderId` e `q`
+         *     (ignora `status` e a paginação), para o resumo do inventário.
+         */
         get: operations["listBatteries"];
+        put?: never;
+        /**
+         * Cadastrar bateria no galpão
+         * @description Cadastra uma bateria nova pelo número de série, no galpão `depotId`, como `charging` (carregando) ou `charged`
+         *     (carregada, `chargePct` 100). Série já cadastrada → `409`; galpão inexistente → `404`; galpão inativo → `422`
+         *     `depot-inactive`. Grava a primeira movimentação (`fromStatus` ausente).
+         */
+        post: operations["createBattery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/batteries/{id}/mark-charged": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Marcar bateria como carregada
+         * @description `charging` → `charged` com `chargePct` 100, no mesmo galpão. Bateria carregando numa estação de troca (devolvida
+         *     por QR: `stationId` sem `depotId`) volta a `in_station` e conta de novo nas disponíveis da estação. Outro status → `409`.
+         */
+        post: operations["markBatteryCharged"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/batteries/{id}/report-defect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Registrar defeito na bateria
+         * @description De `charging`, `charged`, `in_van` ou `in_station` → `defective` (fora de uso). Bateria instalada numa moto → `409`
+         *     (retire-a da moto antes); já `defective` ou `retired` → `409`. Na estação, uma bateria carregada deixa de contar
+         *     como disponível.
+         */
+        post: operations["reportBatteryDefect"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/batteries/{id}/retire": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Dar baixa na bateria
+         * @description De `defective`, `charging` ou `charged` → `retired` (definitivo). Outro status → `409`.
+         */
+        post: operations["retireBattery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/batteries/{id}/movements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Histórico de movimentação da bateria
+         * @description Cada mudança de status (cadastro, van, galpão, moto, estação, troca por QR, defeito, baixa), mais recente primeiro.
+         */
+        get: operations["listBatteryMovements"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2650,7 +2743,10 @@ export interface paths {
         put?: never;
         /**
          * Carregar baterias na van
-         * @description Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada numa moto → `409`.
+         * @description Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada
+         *     numa moto, com defeito (`defective`) ou baixada (`retired`) → `409`. Prefira as `charged` do galpão
+         *     (`GET /batteries?depotId=…&status=charged`); carregar uma `charging` continua permitido: ela vai com a carga
+         *     conhecida (`items[].chargePct`) e a série volta em `loadedChargingSerials`.
          */
         post: operations["loadVanBatteries"];
         delete?: never;
@@ -2670,7 +2766,9 @@ export interface paths {
         put?: never;
         /**
          * Descarregar baterias da van
-         * @description Tira da van do usuário (para `charging`, ou `in_station` com `stationId`). Bateria fora da van do usuário → `409`.
+         * @description Tira da van do usuário: para uma estação (`in_station`, com `stationId`) ou para carregar no galpão (`charging`
+         *     com `depotId`). Sem `stationId` e sem `depotId`, usa o único galpão ativo; com mais de um (ou nenhum) → `422`
+         *     `depot-required`. Bateria fora da van do usuário → `409`.
          */
         post: operations["unloadVanBatteries"];
         delete?: never;
@@ -3136,8 +3234,11 @@ export interface components {
         WalletEntryType: "top_up" | "minute_package" | "rental_charge" | "refund" | "adjustment" | "bonus";
         /** @enum {string} */
         PolicyStatus: "active" | "canceled" | "expired";
-        /** @enum {string} */
-        AlertType: "out_of_operation_area" | "forbidden_zone_entered" | "fall_detected" | "tamper" | "battery_critical" | "movement_without_rental" | "vehicle_offline" | "command_failed" | "customer_not_ok" | "incident_reported" | "speed_limiter_noncompliant";
+        /**
+         * @description `battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`).
+         * @enum {string}
+         */
+        AlertType: "out_of_operation_area" | "forbidden_zone_entered" | "fall_detected" | "tamper" | "battery_critical" | "movement_without_rental" | "vehicle_offline" | "command_failed" | "customer_not_ok" | "incident_reported" | "speed_limiter_noncompliant" | "battery_stock_low";
         /** @enum {string} */
         AlertPriority: "low" | "medium" | "high" | "critical";
         /** @enum {string} */
@@ -4365,6 +4466,11 @@ export interface components {
             vehicleCode?: string;
             /** Format: uuid */
             rentalId?: string;
+            /**
+             * Format: uuid
+             * @description Galpão do alerta (`battery_stock_low`).
+             */
+            depotId?: string;
             /** @description Texto pt-BR. */
             message: string;
             /** Format: double */
@@ -5158,8 +5264,13 @@ export interface components {
          * @enum {string}
          */
         VehicleServiceStatus: "ok" | "due_soon" | "overdue";
-        /** @enum {string} */
-        BatteryStatus: "in_vehicle" | "in_van" | "charging" | "in_station" | "retired";
+        /**
+         * @description `in_vehicle` instalada numa moto; `in_van` na van de um operador; `charging` carregando (no galpão `depotId` ou na
+         *     estação `stationId`); `charged` carregada e pronta no galpão; `in_station` na estação de troca; `defective` com
+         *     defeito, fora de uso; `retired` baixada.
+         * @enum {string}
+         */
+        BatteryStatus: "in_vehicle" | "in_van" | "charging" | "in_station" | "retired" | "charged" | "defective";
         /**
          * @description Quem abriu a manutenção (painel, cliente do plano semanal/mensal ou regra automática).
          * @enum {string}
@@ -5588,11 +5699,72 @@ export interface components {
             holderId?: string;
             /** Format: uuid */
             stationId?: string;
+            /**
+             * Format: uuid
+             * @description Galpão onde está (`charging`, `charged` ou `defective`).
+             */
+            depotId?: string;
             /** Format: date-time */
             updatedAt: string;
         };
+        /** @description Quantidade de baterias por status. */
+        BatteryStatusCounts: {
+            in_vehicle: number;
+            in_van: number;
+            charging: number;
+            charged: number;
+            in_station: number;
+            defective: number;
+            retired: number;
+        };
         BatteryPage: {
             items: components["schemas"]["Battery"][];
+            nextCursor?: string;
+            statusCounts: components["schemas"]["BatteryStatusCounts"];
+        };
+        /** @enum {string} */
+        BatteryInitialStatus: "charging" | "charged";
+        BatteryCreateRequest: {
+            /** @example BT-200001 */
+            serial: string;
+            status: components["schemas"]["BatteryInitialStatus"];
+            /** Format: uuid */
+            depotId: string;
+            /** @description Só com `charging` (padrão 0); `charged` grava 100. */
+            chargePct?: number;
+        };
+        BatteryDefectRequest: {
+            /** @example Carcaça trincada */
+            reason: string;
+        };
+        BatteryRetireRequest: {
+            reason?: string;
+        };
+        /** @description Uma mudança de status da bateria. `fromStatus` ausente = cadastro. */
+        BatteryMovement: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            batteryId: string;
+            fromStatus?: components["schemas"]["BatteryStatus"];
+            toStatus: components["schemas"]["BatteryStatus"];
+            /** Format: uuid */
+            depotId?: string;
+            /** Format: uuid */
+            stationId?: string;
+            /** Format: uuid */
+            vehicleId?: string;
+            /**
+             * Format: uuid
+             * @description Staff que fez a movimentação (cliente na troca por QR).
+             */
+            actorId: string;
+            reason?: string;
+            /** Format: date-time */
+            at: string;
+        };
+        BatteryMovementPage: {
+            items: components["schemas"]["BatteryMovement"][];
             nextCursor?: string;
         };
         VanStock: {
@@ -5603,14 +5775,21 @@ export interface components {
             chargedCount: number;
             depletedCount: number;
             items: components["schemas"]["Battery"][];
+            /** @description Só em `load`: séries que ainda estavam em `charging` (não prontas); a carga está em `items[].chargePct`. */
+            loadedChargingSerials?: string[];
         };
         BatteryTransferRequest: {
             serials: string[];
             /**
              * Format: uuid
-             * @description Só em `unload`; ausente = `charging`.
+             * @description Só em `unload`; ausente = `charging` no galpão.
              */
             stationId?: string;
+            /**
+             * Format: uuid
+             * @description Só em `unload` sem `stationId`: galpão onde as baterias vão carregar (padrão: o único galpão ativo).
+             */
+            depotId?: string;
             /** @description Só em `load`; carga informada (padrão 100). */
             chargePct?: number;
         };
@@ -5681,6 +5860,8 @@ export interface components {
              * @description Estação de troca de bateria do próprio galpão (`GET /swap-stations`).
              */
             swapStationId?: string;
+            /** @description Só para staff. Mínimo de baterias `charged` no galpão; abaixo dele abre o alerta `battery_stock_low`. Ausente ou 0 = sem alerta. */
+            minChargedBatteries?: number;
             active: boolean;
             /**
              * @description Motos `free` neste galpão.
@@ -5713,6 +5894,8 @@ export interface components {
             scheduledGraceMinutes?: number;
             /** Format: uuid */
             swapStationId?: string;
+            /** @description Ausente ou 0 = sem alerta de estoque. */
+            minChargedBatteries?: number;
             /** @default true */
             active?: boolean;
         };
@@ -5732,6 +5915,8 @@ export interface components {
             scheduledGraceMinutes?: number;
             /** Format: uuid */
             swapStationId?: string;
+            /** @description 0 desliga o alerta de estoque. */
+            minChargedBatteries?: number;
             active?: boolean;
         };
         DepotList: {
@@ -10458,6 +10643,8 @@ export interface operations {
                 /** @description Itens por página. */
                 limit?: components["parameters"]["Limit"];
                 status?: components["schemas"]["BatteryStatus"];
+                /** @description Galpão onde a bateria está (`charging`, `charged` ou `defective`). */
+                depotId?: string;
                 /** @description Operador que leva a bateria na van (`me` = o próprio usuário). */
                 holderId?: string;
                 /** @description Busca por número de série. */
@@ -10481,6 +10668,155 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    createBattery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatteryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Bateria cadastrada. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Battery"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    markBatteryCharged: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Bateria carregada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Battery"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    reportBatteryDefect: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatteryDefectRequest"];
+            };
+        };
+        responses: {
+            /** @description Bateria com defeito. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Battery"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    retireBattery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["BatteryRetireRequest"];
+            };
+        };
+        responses: {
+            /** @description Bateria baixada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Battery"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listBatteryMovements: {
+        parameters: {
+            query?: {
+                /** @description Cursor opaco devolvido em `nextCursor` da página anterior. */
+                cursor?: components["parameters"]["Cursor"];
+                /** @description Itens por página. */
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Página de movimentações. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatteryMovementPage"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
         };
     };
     getVanStock: {
@@ -10563,6 +10899,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getDashboardSummary: {

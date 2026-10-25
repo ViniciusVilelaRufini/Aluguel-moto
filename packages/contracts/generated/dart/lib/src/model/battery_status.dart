@@ -9,6 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'battery_status.g.dart';
 
+/// `in_vehicle` instalada numa moto; `in_van` na van de um operador; `charging` carregando (no galpão `depotId` ou na estação `stationId`); `charged` carregada e pronta no galpão; `in_station` na estação de troca; `defective` com defeito, fora de uso; `retired` baixada.
 class BatteryStatus extends EnumClass {
   @BuiltValueEnumConst(wireName: r'in_vehicle')
   static const BatteryStatus inVehicle = _$inVehicle;
@@ -20,6 +21,10 @@ class BatteryStatus extends EnumClass {
   static const BatteryStatus inStation = _$inStation;
   @BuiltValueEnumConst(wireName: r'retired')
   static const BatteryStatus retired = _$retired;
+  @BuiltValueEnumConst(wireName: r'charged')
+  static const BatteryStatus charged = _$charged;
+  @BuiltValueEnumConst(wireName: r'defective')
+  static const BatteryStatus defective = _$defective;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const BatteryStatus unknownDefaultOpenApi = _$unknownDefaultOpenApi;
 

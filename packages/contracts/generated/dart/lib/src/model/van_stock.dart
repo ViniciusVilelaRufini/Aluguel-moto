@@ -18,6 +18,7 @@ part 'van_stock.g.dart';
 /// * [chargedCount] - `chargePct >= 90`.
 /// * [depletedCount]
 /// * [items]
+/// * [loadedChargingSerials] - Só em `load`: séries que ainda estavam em `charging` (não prontas); a carga está em `items[].chargePct`.
 @BuiltValue()
 abstract class VanStock implements Built<VanStock, VanStockBuilder> {
   @BuiltValueField(wireName: r'operatorId')
@@ -35,6 +36,10 @@ abstract class VanStock implements Built<VanStock, VanStockBuilder> {
 
   @BuiltValueField(wireName: r'items')
   BuiltList<Battery> get items;
+
+  /// Só em `load`: séries que ainda estavam em `charging` (não prontas); a carga está em `items[].chargePct`.
+  @BuiltValueField(wireName: r'loadedChargingSerials')
+  BuiltList<String>? get loadedChargingSerials;
 
   VanStock._();
 
@@ -84,6 +89,13 @@ class _$VanStockSerializer implements PrimitiveSerializer<VanStock> {
       object.items,
       specifiedType: const FullType(BuiltList, [FullType(Battery)]),
     );
+    if (object.loadedChargingSerials != null) {
+      yield r'loadedChargingSerials';
+      yield serializers.serialize(
+        object.loadedChargingSerials,
+        specifiedType: const FullType(BuiltList, [FullType(String)]),
+      );
+    }
   }
 
   @override
@@ -143,6 +155,15 @@ class _$VanStockSerializer implements PrimitiveSerializer<VanStock> {
             specifiedType: const FullType(BuiltList, [FullType(Battery)]),
           ) as BuiltList<Battery>;
           result.items.replace(valueDes);
+          break;
+        case r'loadedChargingSerials':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType:
+                const FullType.nullable(BuiltList, [FullType(String)]),
+          ) as BuiltList<String>?;
+          if (valueDes == null) continue;
+          result.loadedChargingSerials.replace(valueDes);
           break;
         default:
           unhandled.add(key);

@@ -2,7 +2,7 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Battery, BatterySwap, FieldTask, Inspection, Prisma, StaffUser, Vehicle } from '@prisma/client';
 import { MAX_SPEED_KMH } from '../../common/enums';
-import { EV, VehicleStatusChangedEvent } from '../../common/events';
+import { type BatteryChargedStockDecreasedEvent, EV, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, forbidden, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
@@ -13,6 +13,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
 import { hasGroup, type Principal } from '../auth/principal';
+import { OUT_OF_SERVICE } from '../batteries/batteries.service';
+import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
 import { BUDGET_MS, CALL_TIMEOUT_MS, VehicleAddressService } from '../vehicles/vehicle-address.service';
 import type { BatterySwapDto, FieldTaskCompleteDto, FieldTaskCreateDto, FieldTaskUpdateDto, InspectionDto, ListFieldTasksQuery } from './field-tasks.dto';
 
@@ -299,24 +301,42 @@ export class FieldTasksService {
     }
     const removedSerial = dto.removedBatterySerial.trim();
     const installedSerial = dto.installedBatterySerial.trim();
+    const moves: MovementInput[] = [];
     const swap = await this.prisma.$transaction(async (tx) => {
       // Contrato v2: inventário de baterias. A retirada vai para a van do operador com a última carga lida da moto;
-      // a instalada sai da van (ou de onde estiver), entra na moto e conta mais um ciclo.
+      // a instalada sai da van (ou de onde estiver), entra na moto e conta mais um ciclo. 2026-10-24: cada mudança grava
+      // uma movimentação; bateria com defeito ou baixada não entra numa moto (409).
+      const prevInstalled = await tx.battery.findUnique({ where: { serial: installedSerial } });
+      if (prevInstalled && OUT_OF_SERVICE.includes(prevInstalled.status)) {
+        throw conflict('conflict', `Bateria fora de uso (com defeito ou baixada): ${installedSerial}.`);
+      }
+      const prevRemoved = await tx.battery.findUnique({ where: { serial: removedSerial } });
+      // Fix 1 (M2): bateria fora de uso não estava numa moto — série errada ou registro inconsistente; não ressuscita.
+      if (prevRemoved && OUT_OF_SERVICE.includes(prevRemoved.status)) {
+        throw conflict('conflict', `A bateria retirada consta fora de uso (com defeito ou baixada): ${removedSerial}. Confira a série.`);
+      }
       const vehicle = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { batteryPct: true } });
       const removedPct = vehicle?.batteryPct ?? null;
       const removed = await tx.battery.upsert({
         where: { serial: removedSerial },
         create: { serial: removedSerial, chargePct: removedPct ?? 0, status: 'in_van', holderId: user.userId },
-        update: { status: 'in_van', holderId: user.userId, vehicleId: null, stationId: null, ...(removedPct !== null ? { chargePct: removedPct } : {}) },
+        update: { status: 'in_van', holderId: user.userId, vehicleId: null, stationId: null, depotId: null, ...(removedPct !== null ? { chargePct: removedPct } : {}) },
       });
+      moves.push(movement(prevRemoved, { status: 'in_van', vehicleId: prevRemoved ? undefined : t.vehicleId }, user.userId, null, removed.id));
       const installedPct = dto.installedBatteryPct;
       const installed = await tx.battery.upsert({
         where: { serial: installedSerial },
         create: { serial: installedSerial, chargePct: installedPct ?? 100, status: 'in_vehicle', vehicleId: t.vehicleId, cycleCount: 1 },
-        update: { status: 'in_vehicle', vehicleId: t.vehicleId, holderId: null, stationId: null, cycleCount: { increment: 1 }, ...(installedPct !== undefined ? { chargePct: installedPct } : {}) },
+        update: { status: 'in_vehicle', vehicleId: t.vehicleId, holderId: null, stationId: null, depotId: null, cycleCount: { increment: 1 }, ...(installedPct !== undefined ? { chargePct: installedPct } : {}) },
       });
+      moves.push(movement(prevInstalled, { status: 'in_vehicle', vehicleId: t.vehicleId }, user.userId, null, installed.id));
       // Outra bateria registrada nesta moto (série divergente da retirada) deixa de constar como instalada.
-      await tx.battery.updateMany({ where: { vehicleId: t.vehicleId, status: 'in_vehicle', NOT: { id: installed.id } }, data: { vehicleId: null, status: 'charging' } });
+      const stray = await tx.battery.findMany({ where: { vehicleId: t.vehicleId, status: 'in_vehicle', NOT: { id: { in: [installed.id, removed.id] } } } });
+      if (stray.length) {
+        await tx.battery.updateMany({ where: { id: { in: stray.map((b) => b.id) }, status: 'in_vehicle' }, data: { vehicleId: null, status: 'charging' } });
+        for (const b of stray) moves.push(movement(b, { status: 'charging' }, user.userId));
+      }
+      await recordMovements(tx, moves);
       const s = await tx.batterySwap.create({
         data: {
           fieldTaskId: id, vehicleId: t.vehicleId, operatorId: user.userId, removedBatterySerial: dto.removedBatterySerial, installedBatterySerial: dto.installedBatterySerial,
@@ -330,6 +350,8 @@ export class FieldTasksService {
       });
       return s;
     });
+    const depotIds = depotsLeavingCharged(moves);
+    if (depotIds.length) this.events.emit(EV.BATTERY_CHARGED_STOCK_DECREASED, { depotIds } satisfies BatteryChargedStockDecreasedEvent);
     return toBatterySwap(swap);
   }
 

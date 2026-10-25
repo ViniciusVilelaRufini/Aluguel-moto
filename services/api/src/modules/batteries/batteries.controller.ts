@@ -1,10 +1,8 @@
-import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PageQuery } from '../../common/pagination';
 import { CurrentUser, Principal, StaffOnly } from '../auth/principal';
-import { BatteriesService } from './batteries.service';
-
-const BATTERY_STATUSES = ['in_vehicle', 'in_van', 'charging', 'in_station', 'retired'] as const;
+import { BATTERY_STATUSES, BatteriesService } from './batteries.service';
 
 export class ListBatteriesQuery extends PageQuery {
   @IsOptional()
@@ -20,6 +18,46 @@ export class ListBatteriesQuery extends PageQuery {
   @IsString()
   @MaxLength(64)
   q?: string;
+
+  @IsOptional()
+  @IsUUID()
+  depotId?: string;
+}
+
+const INITIAL_STATUSES = ['charging', 'charged'] as const;
+
+export class BatteryCreateDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(64)
+  serial: string;
+
+  @IsIn(INITIAL_STATUSES)
+  status: (typeof INITIAL_STATUSES)[number];
+
+  @IsUUID()
+  depotId: string;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  chargePct?: number;
+}
+
+export class BatteryDefectDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason: string;
+}
+
+export class BatteryRetireDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason?: string;
 }
 
 export class VanStockQuery {
@@ -42,6 +80,10 @@ export class BatteryTransferDto {
   stationId?: string;
 
   @IsOptional()
+  @IsUUID()
+  depotId?: string;
+
+  @IsOptional()
   @IsInt()
   @Min(0)
   @Max(100)
@@ -57,6 +99,39 @@ export class BatteriesController {
   @StaffOnly('admin', 'operacao', 'campo')
   list(@Query() q: ListBatteriesQuery, @CurrentUser() u: Principal) {
     return this.batteries.list(u, q);
+  }
+
+  @Post()
+  @StaffOnly('admin', 'operacao')
+  create(@Body() dto: BatteryCreateDto, @CurrentUser() u: Principal) {
+    return this.batteries.create(u, dto);
+  }
+
+  @Post(':id/mark-charged')
+  @HttpCode(200)
+  @StaffOnly('admin', 'operacao', 'campo')
+  markCharged(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: Principal) {
+    return this.batteries.markCharged(u, id);
+  }
+
+  @Post(':id/report-defect')
+  @HttpCode(200)
+  @StaffOnly('admin', 'operacao', 'campo')
+  reportDefect(@Param('id', ParseUUIDPipe) id: string, @Body() dto: BatteryDefectDto, @CurrentUser() u: Principal) {
+    return this.batteries.reportDefect(u, id, dto.reason);
+  }
+
+  @Post(':id/retire')
+  @HttpCode(200)
+  @StaffOnly('admin', 'operacao')
+  retire(@Param('id', ParseUUIDPipe) id: string, @Body() dto: BatteryRetireDto, @CurrentUser() u: Principal) {
+    return this.batteries.retire(u, id, dto?.reason);
+  }
+
+  @Get(':id/movements')
+  @StaffOnly('admin', 'operacao', 'suporte', 'campo')
+  movements(@Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {
+    return this.batteries.movements(id, q);
   }
 
   @Get('van-stock')
@@ -76,6 +151,6 @@ export class BatteriesController {
   @HttpCode(200)
   @StaffOnly('admin', 'operacao', 'campo')
   unload(@Body() dto: BatteryTransferDto, @CurrentUser() u: Principal) {
-    return this.batteries.unload(u, dto.serials, dto.stationId);
+    return this.batteries.unload(u, dto.serials, dto.stationId, dto.depotId);
   }
 }

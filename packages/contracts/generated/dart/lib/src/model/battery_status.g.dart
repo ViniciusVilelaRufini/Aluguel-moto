@@ -11,6 +11,8 @@ const BatteryStatus _$inVan = const BatteryStatus._('inVan');
 const BatteryStatus _$charging = const BatteryStatus._('charging');
 const BatteryStatus _$inStation = const BatteryStatus._('inStation');
 const BatteryStatus _$retired = const BatteryStatus._('retired');
+const BatteryStatus _$charged = const BatteryStatus._('charged');
+const BatteryStatus _$defective = const BatteryStatus._('defective');
 const BatteryStatus _$unknownDefaultOpenApi =
     const BatteryStatus._('unknownDefaultOpenApi');
 
@@ -26,6 +28,10 @@ BatteryStatus _$valueOf(String name) {
       return _$inStation;
     case 'retired':
       return _$retired;
+    case 'charged':
+      return _$charged;
+    case 'defective':
+      return _$defective;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -40,6 +46,8 @@ final BuiltSet<BatteryStatus> _$values =
   _$charging,
   _$inStation,
   _$retired,
+  _$charged,
+  _$defective,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -50,6 +58,8 @@ class _$BatteryStatusMeta {
   BatteryStatus get charging => _$charging;
   BatteryStatus get inStation => _$inStation;
   BatteryStatus get retired => _$retired;
+  BatteryStatus get charged => _$charged;
+  BatteryStatus get defective => _$defective;
   BatteryStatus get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   BatteryStatus valueOf(String name) => _$valueOf(name);
   BuiltSet<BatteryStatus> get values => _$values;
@@ -70,6 +80,8 @@ class _$BatteryStatusSerializer implements PrimitiveSerializer<BatteryStatus> {
     'charging': 'charging',
     'inStation': 'in_station',
     'retired': 'retired',
+    'charged': 'charged',
+    'defective': 'defective',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -78,6 +90,8 @@ class _$BatteryStatusSerializer implements PrimitiveSerializer<BatteryStatus> {
     'charging': 'charging',
     'in_station': 'inStation',
     'retired': 'retired',
+    'charged': 'charged',
+    'defective': 'defective',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

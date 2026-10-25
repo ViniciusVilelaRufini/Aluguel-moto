@@ -71,6 +71,13 @@ class DepotCommonFields {
   @IsUUID()
   swapStationId?: string;
 
+  /** Mínimo de baterias `charged`; abaixo dele abre `battery_stock_low` (0 = sem alerta). */
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(1000)
+  minChargedBatteries?: number;
+
   @IsOptional()
   @IsBoolean()
   active?: boolean;

@@ -17,6 +17,7 @@ Name | Type | Description | Notes
 **vehicleCode** | **String** |  | [optional] 
 **holderId** | **String** | Operador com a bateria na van. | [optional] 
 **stationId** | **String** |  | [optional] 
+**depotId** | **String** | Galpão onde está (`charging`, `charged` ou `defective`). | [optional] 
 **updatedAt** | [**DateTime**](DateTime.md) |  | 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

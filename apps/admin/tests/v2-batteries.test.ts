@@ -28,7 +28,7 @@ describe('baterias', () => {
 
   it('contagem por situação inclui zeros', () => {
     const c = countByStatus([b({ status: 'in_van' }), b({ status: 'in_van' }), b({ status: 'in_vehicle' })]);
-    expect(c).toEqual({ in_vehicle: 1, in_van: 2, in_station: 0, charging: 0, retired: 0 });
+    expect(c).toEqual({ in_vehicle: 1, in_van: 2, in_station: 0, charging: 0, charged: 0, defective: 0, retired: 0 });
   });
 
   it('carregada a partir de 90%', () => {

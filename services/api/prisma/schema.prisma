@@ -232,6 +232,8 @@ enum AlertType {
   customer_not_ok
   incident_reported
   speed_limiter_noncompliant
+  /// Baterias `charged` do galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão).
+  battery_stock_low
 }
 
 enum AlertPriority {
@@ -352,6 +354,9 @@ enum BatteryStatus {
   charging
   in_station
   retired
+  /// Ciclo de vida no galpão (docs/decisoes.md, 2026-10-24): carregada e pronta / com defeito, fora de uso.
+  charged
+  defective
 }
 
 enum MaintenanceSource {
@@ -585,11 +590,35 @@ model Battery {
   status     BatteryStatus @default(charging)
   holderId   String?       @db.Uuid
   stationId  String?       @db.Uuid
+  /// Galpão onde a bateria está quando `charging`, `charged` ou `defective` (nulo nas linhas antigas).
+  depotId    String?       @db.Uuid
+  depot      Depot?        @relation(fields: [depotId], references: [id])
   createdAt  DateTime      @default(now())
   updatedAt  DateTime      @updatedAt
 
+  movements BatteryMovement[]
+
   @@index([vehicleId])
   @@index([holderId, status])
+  @@index([depotId, status])
+}
+
+/// Histórico de movimentação: uma linha por mudança de status (ou de lugar) da bateria. `fromStatus` nulo = cadastro.
+/// `actorId`: staff (ou o cliente, na troca por QR); sem FK porque pode ser de qualquer um dos dois.
+model BatteryMovement {
+  id         String         @id @default(uuid()) @db.Uuid
+  batteryId  String         @db.Uuid
+  battery    Battery        @relation(fields: [batteryId], references: [id], onDelete: Cascade)
+  fromStatus BatteryStatus?
+  toStatus   BatteryStatus
+  depotId    String?        @db.Uuid
+  stationId  String?        @db.Uuid
+  vehicleId  String?        @db.Uuid
+  actorId    String         @db.Uuid
+  reason     String?
+  at         DateTime       @default(now())
+
+  @@index([batteryId, at])
 }
 
 /// Cerca. `geom` (PostGIS) é a fonte para ST_Contains; `geometry` guarda o GeoJSON devolvido pela API.
@@ -989,6 +1018,8 @@ model Alert {
   status     AlertStatus   @default(open)
   vehicleId  String?       @db.Uuid
   rentalId   String?       @db.Uuid
+  /// Galpão do alerta (`battery_stock_low`; índice parcial `Alert_one_open_stock_low_per_depot`, escrito à mão).
+  depotId    String?       @db.Uuid
   message    String
   lat        Float?
   lng        Float?
@@ -1499,6 +1530,8 @@ model Depot {
   maxScheduleDays        Int      @default(7)
   scheduledGraceMinutes  Int      @default(30)
   swapStationId          String?  @db.Uuid
+  /// Mínimo de baterias `charged`; abaixo dele abre `battery_stock_low`. Nulo ou 0 = sem alerta.
+  minChargedBatteries    Int?
   active                 Boolean  @default(true)
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
@@ -1506,6 +1539,7 @@ model Depot {
   vehicles     Vehicle[]
   reservations Reservation[]
   handovers    Handover[]
+  batteries    Battery[]
 
   @@index([active])
 }

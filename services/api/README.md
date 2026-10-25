@@ -1,6 +1,6 @@
 # API Volti (`services/api`)
 
-NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as 183 operações de `packages/contracts/openapi.yaml` e o WebSocket de `packages/contracts/realtime.md` (Socket.IO, namespace `/realtime`).
+NestJS 10 + Prisma 5 + PostgreSQL 16/PostGIS + Redis 7. Implementa as 188 operações de `packages/contracts/openapi.yaml` e o WebSocket de `packages/contracts/realtime.md` (Socket.IO, namespace `/realtime`).
 
 ## Como rodar localmente
 
@@ -88,7 +88,7 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 | Chat | `support/support.service.ts` | `sent` → `delivered` (o outro lado buscou) → `read` (`POST .../read`); `unreadCount` real |
 | Endereço da moto | `vehicles/vehicle-address.service.ts`, `adapters/geocoding/` | gravado na moto e recalculado quando ela anda > 50 m; cache Redis por célula de ~11 m |
 | Revisão por km/horas | `maintenance/service-due.ts`, `usage-accumulator.ts`, `usage-tracker.service.ts` | odômetro/horas somados da telemetria (descarta saltos > 45 km/h, ruído < 5 m e lacunas > 10 min); `due_soon` a 90% do intervalo; preventiva concluída = revisão |
-| Baterias | `batteries/`, troca em `field-tasks.service.ts` | retirada vai para a van do operador com a última carga; instalada +1 ciclo; carregar/descarregar a van |
+| Baterias | `batteries/`, troca em `field-tasks.service.ts` | retirada vai para a van do operador com a última carga; instalada +1 ciclo; carregar/descarregar a van; ciclo de vida no galpão (seção abaixo) |
 | Catálogo | `catalog/`, `PricingService.snapshotFrom` | preço por minuto do modelo vale no plano `minute` (aluguel e cotação com `vehicleId`); foto em bucket `catalogo` com link assinado de 24 h |
 | Entregas no galpão | `handovers/` (`POST/GET /handovers`, `POST /handovers/uploads`, `GET /handovers/{id}`, `/accept`, `/dispute`, `/cancel`) | ver "Retirada em galpão — entrega" abaixo |
 | Galpões | `depots/` (`GET/POST /depots`, `GET/PATCH /depots/{id}`, `/vehicles`, `/pickups`) | cliente só vê galpão ativo (inativo → `404`) e, nas motos, só `free` com o `depotId` (nunca `reserved`/`awaiting_pickup`) e sem moto fixa de assinatura vigente de outro cliente, bateria desc; `availableVehicleCount` exclui toda moto fixa vigente; staff vê todas com filtro de `status`; `openingHours` HH:MM, `opensAt < closesAt`, um intervalo por dia (`400`); `distanceM` só com `lat`/`lng`; agenda = todas as reservas do dia no fuso do galpão (agendada por `pickupAt`, agora por `createdAt`), só `customerFirstName`, nunca `pickupCode`, data impossível → `400`; `DepotsService.requireActive` → `422 depot-inactive`; AuditLog `depot.create`/`depot.update` |
@@ -151,6 +151,25 @@ QR das estações do seed com o segredo de dev (`volti-dev-station-qr-secret`), 
 ```bash
 curl -X POST localhost:3000/swap-stations/d0000000-0000-4000-8000-000000000001/swaps   -H "Authorization: Bearer $TOKEN" -H "Idempotency-Key: $(uuidgen)" -H 'content-type: application/json'   -d '{"stationCode":"vst1.d0000000-0000-4000-8000-000000000001.lMyoiWvb5xuRTHIzBFoxEQ","rentalId":"<aluguel>","lat":-23.5672,"lng":-46.6930}'
 ```
+
+## Ciclo de vida das baterias no galpão (`src/modules/batteries`, `docs/decisoes.md` 2026-10-24)
+
+Status: `in_vehicle`, `in_van`, `charging` (no galpão `depotId`, ou na estação `stationId` depois da troca por QR), `charged` (carregada e pronta no galpão, carga 100 até sair), `in_station`, `defective` (fora de uso) e `retired` (baixa).
+
+| Rota | Grupos | Regra |
+|---|---|---|
+| `POST /batteries` | admin, operacao | cadastra por série no galpão ativo, `charging` (carga informada, padrão 0) ou `charged` (100); série duplicada → `409`; galpão inexistente → `404`, inativo → `422 depot-inactive` |
+| `POST /batteries/{id}/mark-charged` | admin, operacao, campo | `charging → charged` (carga 100, mesmo galpão); carregando numa estação (sem galpão) → `in_station` e `availableBatteries + 1`; outro status → `409` |
+| `POST /batteries/{id}/report-defect` | admin, operacao, campo | `{ reason }`; de `charging`/`charged`/`in_van`/`in_station` → `defective`; instalada numa moto → `409` (retire antes). Na estação, carregada sai do `availableBatteries`; na van, `holderId` é mantido (quem está com ela) e ela some do estoque da van |
+| `POST /batteries/{id}/retire` | admin, operacao | `{ reason? }`; de `defective`/`charging`/`charged` → `retired` (limpa galpão, van e estação) |
+| `GET /batteries/{id}/movements` | admin, operacao, suporte, campo | cursor, mais recente primeiro |
+| `GET /batteries?depotId=&status=` | admin, operacao, campo | `statusCounts` com os 7 status (filtros `depotId`/`holderId`/`q`, sem `status` nem paginação) |
+
+- **Van:** `load` recusa `defective`/`retired` (`409`), tira a bateria do galpão (`depotId` nulo) e mantém a carga conhecida; séries que ainda estavam `charging` voltam em `loadedChargingSerials`. `unload` sem `stationId` grava `charging` com o `depotId` do corpo, ou do único galpão ativo; com mais de um (ou nenhum) → `422 depot-required`.
+- **Movimentações (`BatteryMovement`):** uma linha por transição, na mesma transação — cadastro (`fromStatus` nulo), van (carregar/descarregar no galpão ou na estação), mark-charged, defeito, baixa, troca na tarefa de campo (retirada → van, instalada → moto, outra registrada na moto → `charging`) e troca na estação por QR (devolvida → `charging` na estação, liberada → moto; ator = cliente). Galpão/estação/moto da linha: o destino, senão a origem. A troca na tarefa também recusa instalar, ou registrar como retirada, bateria `defective`/`retired` (`409`).
+- **Alerta `battery_stock_low`:** `Depot.minChargedBatteries` (nulo ou 0 = sem alerta; `PATCH /depots/{id}`; só staff vê no `Depot`). Quando uma bateria sai de `charged` e o galpão fica abaixo do mínimo, `BatteryStockService` abre um alerta `medium` com `depotId` — um não resolvido por galpão (checagem + índice parcial `Alert_one_open_stock_low_per_depot`; `P2002` numa corrida é ignorado). Na própria API de baterias (van, defeito, baixa) a checagem roda depois do commit e é best-effort (falha só vira log `battery_stock_check_failed`, a operação responde normalmente); nas trocas (tarefa e estação), pelo evento interno `battery.charged-stock-decreased`.
+- **Migrações:** `20261024130000_baterias_galpao_enums` (só `ADD VALUE`) e `20261024131000_baterias_galpao` (colunas anuláveis `Battery.depotId`, `Depot.minChargedBatteries`, `Alert.depotId`, tabela `BatteryMovement` com FK em cascata — a API nunca apaga bateria, só os testes —, índice parcial). Linhas antigas em `charging` sem galpão continuam válidas.
+- **Testes:** `batteries.service.spec.ts`, `battery-movements.spec.ts`, `battery-stock.service.spec.ts`, movimentações em `field-tasks.service.spec.ts` e `station-swaps.service.spec.ts`, `contract-schemas-baterias.spec.ts`; e2e `test/baterias-galpao.e2e-spec.ts` (cadastrar → van → galpão → mark-charged → van → defeito → baixa, histórico paginado, alerta deduplicado, grupos).
 
 ## Segurança e LGPD (correções do QA, `docs/relatorio-qa.md`)
 

@@ -20,6 +20,7 @@ Name | Type | Description | Notes
 **maxScheduleDays** | **int** | Quantos dias à frente o cliente pode agendar. | [default to 7]
 **scheduledGraceMinutes** | **int** | Tolerância depois do horário agendado. | [default to 30]
 **swapStationId** | **String** | Estação de troca de bateria do próprio galpão (`GET /swap-stations`). | [optional] 
+**minChargedBatteries** | **int** | Só para staff. Mínimo de baterias `charged` no galpão; abaixo dele abre o alerta `battery_stock_low`. Ausente ou 0 = sem alerta. | [optional] 
 **active** | **bool** |  | 
 **availableVehicleCount** | **int** | Motos `free` neste galpão. | [optional] 
 **distanceM** | **int** | Só com `lat`/`lng` em `GET /depots`. | [optional] 

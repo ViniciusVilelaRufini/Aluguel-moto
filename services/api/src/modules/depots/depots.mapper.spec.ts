@@ -54,6 +54,13 @@ describe('depots.mapper', () => {
     expect(toDepot(depot as any, { availableVehicleCount: 0 })).not.toHaveProperty('distanceM');
   });
 
+  it('toDepot: estoque mínimo de baterias só para staff (2026-10-24)', () => {
+    const withMin = { ...depot, minChargedBatteries: 6 } as any;
+    expect(toDepot(withMin, { availableVehicleCount: 0, staff: true })).toMatchObject({ minChargedBatteries: 6 });
+    expect(toDepot(withMin, { availableVehicleCount: 0 })).not.toHaveProperty('minChargedBatteries');
+    expect(toDepot({ ...depot, minChargedBatteries: null } as any, { availableVehicleCount: 0, staff: true })).not.toHaveProperty('minChargedBatteries');
+  });
+
   it('toDepotPickup: só o primeiro nome do cliente e nunca pickupCode', () => {
     const item = toDepotPickup({ ...reservation, pickupCode: 'v1.segredo', customer: { name: 'Ana Maria Souza', email: 'ana@example.com', cpf: '12345678900' } } as any);
     expect(item).toMatchObject({ customerFirstName: 'Ana', depotId: DEPOT_ID, pickupMode: 'now', handoverId: '77777777-7777-4777-8777-777777777777', expiresAt: '2026-10-22T15:00:00.000Z' });

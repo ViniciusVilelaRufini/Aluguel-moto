@@ -20,6 +20,7 @@ const AlertType _$customerNotOk = const AlertType._('customerNotOk');
 const AlertType _$incidentReported = const AlertType._('incidentReported');
 const AlertType _$speedLimiterNoncompliant =
     const AlertType._('speedLimiterNoncompliant');
+const AlertType _$batteryStockLow = const AlertType._('batteryStockLow');
 const AlertType _$unknownDefaultOpenApi =
     const AlertType._('unknownDefaultOpenApi');
 
@@ -47,6 +48,8 @@ AlertType _$valueOf(String name) {
       return _$incidentReported;
     case 'speedLimiterNoncompliant':
       return _$speedLimiterNoncompliant;
+    case 'batteryStockLow':
+      return _$batteryStockLow;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -66,6 +69,7 @@ final BuiltSet<AlertType> _$values = BuiltSet<AlertType>(const <AlertType>[
   _$customerNotOk,
   _$incidentReported,
   _$speedLimiterNoncompliant,
+  _$batteryStockLow,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -82,6 +86,7 @@ class _$AlertTypeMeta {
   AlertType get customerNotOk => _$customerNotOk;
   AlertType get incidentReported => _$incidentReported;
   AlertType get speedLimiterNoncompliant => _$speedLimiterNoncompliant;
+  AlertType get batteryStockLow => _$batteryStockLow;
   AlertType get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   AlertType valueOf(String name) => _$valueOf(name);
   BuiltSet<AlertType> get values => _$values;
@@ -107,6 +112,7 @@ class _$AlertTypeSerializer implements PrimitiveSerializer<AlertType> {
     'customerNotOk': 'customer_not_ok',
     'incidentReported': 'incident_reported',
     'speedLimiterNoncompliant': 'speed_limiter_noncompliant',
+    'batteryStockLow': 'battery_stock_low',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -121,6 +127,7 @@ class _$AlertTypeSerializer implements PrimitiveSerializer<AlertType> {
     'customer_not_ok': 'customerNotOk',
     'incident_reported': 'incidentReported',
     'speed_limiter_noncompliant': 'speedLimiterNoncompliant',
+    'battery_stock_low': 'batteryStockLow',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

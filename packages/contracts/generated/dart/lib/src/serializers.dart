@@ -28,8 +28,15 @@ import 'package:volti_api/src/model/audit_log.dart';
 import 'package:volti_api/src/model/audit_log_page.dart';
 import 'package:volti_api/src/model/auth_pool.dart';
 import 'package:volti_api/src/model/battery.dart';
+import 'package:volti_api/src/model/battery_create_request.dart';
+import 'package:volti_api/src/model/battery_defect_request.dart';
+import 'package:volti_api/src/model/battery_initial_status.dart';
+import 'package:volti_api/src/model/battery_movement.dart';
+import 'package:volti_api/src/model/battery_movement_page.dart';
 import 'package:volti_api/src/model/battery_page.dart';
+import 'package:volti_api/src/model/battery_retire_request.dart';
 import 'package:volti_api/src/model/battery_status.dart';
+import 'package:volti_api/src/model/battery_status_counts.dart';
 import 'package:volti_api/src/model/battery_swap.dart';
 import 'package:volti_api/src/model/battery_swap_request.dart';
 import 'package:volti_api/src/model/battery_transfer_request.dart';
@@ -307,8 +314,15 @@ part 'serializers.g.dart';
   AuditLogPage,
   AuthPool,
   Battery,
+  BatteryCreateRequest,
+  BatteryDefectRequest,
+  BatteryInitialStatus,
+  BatteryMovement,
+  BatteryMovementPage,
   BatteryPage,
+  BatteryRetireRequest,
   BatteryStatus,
+  BatteryStatusCounts,
   BatterySwap,
   BatterySwapRequest,
   BatteryTransferRequest,
@@ -669,6 +683,10 @@ Serializers serializers = (_$serializers.toBuilder()
       ..addBuilderFactory(
         const FullType(BuiltList, [FullType(Vehicle)]),
         () => ListBuilder<Vehicle>(),
+      )
+      ..addBuilderFactory(
+        const FullType(BuiltList, [FullType(BatteryMovement)]),
+        () => ListBuilder<BatteryMovement>(),
       )
       ..addBuilderFactory(
         const FullType(BuiltList, [

@@ -21,6 +21,7 @@ part 'alert.g.dart';
 /// * [vehicleId]
 /// * [vehicleCode]
 /// * [rentalId]
+/// * [depotId] - Galpão do alerta (`battery_stock_low`).
 /// * [message] - Texto pt-BR.
 /// * [lat]
 /// * [lng]
@@ -37,7 +38,7 @@ abstract class Alert implements Built<Alert, AlertBuilder> {
 
   @BuiltValueField(wireName: r'type')
   AlertType get type;
-  // enum typeEnum {  out_of_operation_area,  forbidden_zone_entered,  fall_detected,  tamper,  battery_critical,  movement_without_rental,  vehicle_offline,  command_failed,  customer_not_ok,  incident_reported,  speed_limiter_noncompliant,  };
+  // enum typeEnum {  out_of_operation_area,  forbidden_zone_entered,  fall_detected,  tamper,  battery_critical,  movement_without_rental,  vehicle_offline,  command_failed,  customer_not_ok,  incident_reported,  speed_limiter_noncompliant,  battery_stock_low,  };
 
   @BuiltValueField(wireName: r'priority')
   AlertPriority get priority;
@@ -55,6 +56,10 @@ abstract class Alert implements Built<Alert, AlertBuilder> {
 
   @BuiltValueField(wireName: r'rentalId')
   String? get rentalId;
+
+  /// Galpão do alerta (`battery_stock_low`).
+  @BuiltValueField(wireName: r'depotId')
+  String? get depotId;
 
   /// Texto pt-BR.
   @BuiltValueField(wireName: r'message')
@@ -145,6 +150,13 @@ class _$AlertSerializer implements PrimitiveSerializer<Alert> {
       yield r'rentalId';
       yield serializers.serialize(
         object.rentalId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.depotId != null) {
+      yield r'depotId';
+      yield serializers.serialize(
+        object.depotId,
         specifiedType: const FullType(String),
       );
     }
@@ -283,6 +295,14 @@ class _$AlertSerializer implements PrimitiveSerializer<Alert> {
           ) as String?;
           if (valueDes == null) continue;
           result.rentalId = valueDes;
+          break;
+        case r'depotId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.depotId = valueDes;
           break;
         case r'message':
           final valueDes = serializers.deserialize(

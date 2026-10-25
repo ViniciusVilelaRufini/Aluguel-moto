@@ -5,6 +5,7 @@
 // ignore_for_file: unused_element
 import 'package:volti_api/src/model/battery.dart';
 import 'package:built_collection/built_collection.dart';
+import 'package:volti_api/src/model/battery_status_counts.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
 
@@ -15,6 +16,7 @@ part 'battery_page.g.dart';
 /// Properties:
 /// * [items]
 /// * [nextCursor]
+/// * [statusCounts]
 @BuiltValue()
 abstract class BatteryPage implements Built<BatteryPage, BatteryPageBuilder> {
   @BuiltValueField(wireName: r'items')
@@ -22,6 +24,9 @@ abstract class BatteryPage implements Built<BatteryPage, BatteryPageBuilder> {
 
   @BuiltValueField(wireName: r'nextCursor')
   String? get nextCursor;
+
+  @BuiltValueField(wireName: r'statusCounts')
+  BatteryStatusCounts get statusCounts;
 
   BatteryPage._();
 
@@ -58,6 +63,11 @@ class _$BatteryPageSerializer implements PrimitiveSerializer<BatteryPage> {
         specifiedType: const FullType(String),
       );
     }
+    yield r'statusCounts';
+    yield serializers.serialize(
+      object.statusCounts,
+      specifiedType: const FullType(BatteryStatusCounts),
+    );
   }
 
   @override
@@ -97,6 +107,13 @@ class _$BatteryPageSerializer implements PrimitiveSerializer<BatteryPage> {
           ) as String?;
           if (valueDes == null) continue;
           result.nextCursor = valueDes;
+          break;
+        case r'statusCounts':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType(BatteryStatusCounts),
+          ) as BatteryStatusCounts;
+          result.statusCounts.replace(valueDes);
           break;
         default:
           unhandled.add(key);

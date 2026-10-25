@@ -25,6 +25,7 @@ part 'depot.g.dart';
 /// * [maxScheduleDays] - Quantos dias à frente o cliente pode agendar.
 /// * [scheduledGraceMinutes] - Tolerância depois do horário agendado.
 /// * [swapStationId] - Estação de troca de bateria do próprio galpão (`GET /swap-stations`).
+/// * [minChargedBatteries] - Só para staff. Mínimo de baterias `charged` no galpão; abaixo dele abre o alerta `battery_stock_low`. Ausente ou 0 = sem alerta.
 /// * [active]
 /// * [availableVehicleCount] - Motos `free` neste galpão.
 /// * [distanceM] - Só com `lat`/`lng` em `GET /depots`.
@@ -73,6 +74,10 @@ abstract class Depot implements Built<Depot, DepotBuilder> {
   /// Estação de troca de bateria do próprio galpão (`GET /swap-stations`).
   @BuiltValueField(wireName: r'swapStationId')
   String? get swapStationId;
+
+  /// Só para staff. Mínimo de baterias `charged` no galpão; abaixo dele abre o alerta `battery_stock_low`. Ausente ou 0 = sem alerta.
+  @BuiltValueField(wireName: r'minChargedBatteries')
+  int? get minChargedBatteries;
 
   @BuiltValueField(wireName: r'active')
   bool get active;
@@ -180,6 +185,13 @@ class _$DepotSerializer implements PrimitiveSerializer<Depot> {
       yield serializers.serialize(
         object.swapStationId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.minChargedBatteries != null) {
+      yield r'minChargedBatteries';
+      yield serializers.serialize(
+        object.minChargedBatteries,
+        specifiedType: const FullType(int),
       );
     }
     yield r'active';
@@ -326,6 +338,14 @@ class _$DepotSerializer implements PrimitiveSerializer<Depot> {
           ) as String?;
           if (valueDes == null) continue;
           result.swapStationId = valueDes;
+          break;
+        case r'minChargedBatteries':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.minChargedBatteries = valueDes;
           break;
         case r'active':
           final valueDes = serializers.deserialize(

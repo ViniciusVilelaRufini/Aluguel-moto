@@ -17,6 +17,8 @@ class _$VanStock extends VanStock {
   final int depletedCount;
   @override
   final BuiltList<Battery> items;
+  @override
+  final BuiltList<String>? loadedChargingSerials;
 
   factory _$VanStock([void Function(VanStockBuilder)? updates]) =>
       (VanStockBuilder()..update(updates))._build();
@@ -26,7 +28,8 @@ class _$VanStock extends VanStock {
       required this.total,
       required this.chargedCount,
       required this.depletedCount,
-      required this.items})
+      required this.items,
+      this.loadedChargingSerials})
       : super._();
   @override
   VanStock rebuild(void Function(VanStockBuilder) updates) =>
@@ -43,7 +46,8 @@ class _$VanStock extends VanStock {
         total == other.total &&
         chargedCount == other.chargedCount &&
         depletedCount == other.depletedCount &&
-        items == other.items;
+        items == other.items &&
+        loadedChargingSerials == other.loadedChargingSerials;
   }
 
   @override
@@ -54,6 +58,7 @@ class _$VanStock extends VanStock {
     _$hash = $jc(_$hash, chargedCount.hashCode);
     _$hash = $jc(_$hash, depletedCount.hashCode);
     _$hash = $jc(_$hash, items.hashCode);
+    _$hash = $jc(_$hash, loadedChargingSerials.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
   }
@@ -65,7 +70,8 @@ class _$VanStock extends VanStock {
           ..add('total', total)
           ..add('chargedCount', chargedCount)
           ..add('depletedCount', depletedCount)
-          ..add('items', items))
+          ..add('items', items)
+          ..add('loadedChargingSerials', loadedChargingSerials))
         .toString();
   }
 }
@@ -94,6 +100,12 @@ class VanStockBuilder implements Builder<VanStock, VanStockBuilder> {
   ListBuilder<Battery> get items => _$this._items ??= ListBuilder<Battery>();
   set items(ListBuilder<Battery>? items) => _$this._items = items;
 
+  ListBuilder<String>? _loadedChargingSerials;
+  ListBuilder<String> get loadedChargingSerials =>
+      _$this._loadedChargingSerials ??= ListBuilder<String>();
+  set loadedChargingSerials(ListBuilder<String>? loadedChargingSerials) =>
+      _$this._loadedChargingSerials = loadedChargingSerials;
+
   VanStockBuilder() {
     VanStock._defaults(this);
   }
@@ -106,6 +118,7 @@ class VanStockBuilder implements Builder<VanStock, VanStockBuilder> {
       _chargedCount = $v.chargedCount;
       _depletedCount = $v.depletedCount;
       _items = $v.items.toBuilder();
+      _loadedChargingSerials = $v.loadedChargingSerials?.toBuilder();
       _$v = null;
     }
     return this;
@@ -138,12 +151,15 @@ class VanStockBuilder implements Builder<VanStock, VanStockBuilder> {
             depletedCount: BuiltValueNullFieldError.checkNotNull(
                 depletedCount, r'VanStock', 'depletedCount'),
             items: items.build(),
+            loadedChargingSerials: _loadedChargingSerials?.build(),
           );
     } catch (_) {
       late String _$failedField;
       try {
         _$failedField = 'items';
         items.build();
+        _$failedField = 'loadedChargingSerials';
+        _loadedChargingSerials?.build();
       } catch (e) {
         throw BuiltValueNestedFieldError(
             r'VanStock', _$failedField, e.toString());
