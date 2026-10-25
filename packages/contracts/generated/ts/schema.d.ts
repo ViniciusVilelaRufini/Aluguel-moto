@@ -610,15 +610,76 @@ export interface paths {
          *     Leitura aberta a qualquer cliente autenticado (`customerAuth`, sem grupo: o mapa e a folha "Troca de bateria"
          *     do app). `x-required-groups` vale só para `staffAuth`. A resposta traz apenas os campos públicos de
          *     `SwapStation` (identificador, nome, endereço, posição, baterias, vagas, horário e distância); dados internos
-         *     da estação (ativa/inativa, datas de cadastro) não saem da API, para nenhum pool.
+         *     da estação (ativa/inativa, datas de cadastro) não saem desta rota, para nenhum pool; o painel lê o cadastro em
+         *     `GET /swap-stations/registry` (admin/operacao).
          */
         get: operations["listSwapStations"];
+        put?: never;
+        /**
+         * Cadastrar estação de troca (painel)
+         * @description Nome, endereço, posição, horário (`openingHours`, texto livre como "Seg a sáb, 7h às 22h", obrigatório sem
+         *     `open24h`; com `open24h` e sem texto vale "Todos os dias, 24 h"), `totalSlots` (≥ 1) e a *thing* do armário no IoT
+         *     Core (`thingName`, padrão `station-{id}`; formato `station-<uuid>`, o mesmo do provisionamento e da regra IoT).
+         *     `thingName` já usado por outra estação → `409` `thing-name-taken`. A estação nasce com o QR fixo emitido (o mesmo
+         *     código do script `stations:qr`, lido em `GET /swap-stations/{id}/qr`) e sem baterias (`availableBatteries` = 0;
+         *     o estoque entra pela van, `POST /batteries/van-stock/unload`). Grava AuditLog (`swap_station.create`, sem o QR).
+         */
+        post: operations["createSwapStation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/swap-stations/registry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cadastro das estações (painel)
+         * @description Todas as estações, ativas e inativas, em ordem alfabética, com os campos de cadastro (`SwapStationAdmin`: ativa,
+         *     `thingName`, baterias na estação, trocas em andamento e galpões ligados). Nunca traz o QR (`stationCode`).
+         */
+        get: operations["listSwapStationRegistry"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/swap-stations/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Editar ou desativar estação de troca (painel)
+         * @description Campos ausentes não mudam. Validações:
+         *     - `totalSlots` menor que as baterias na estação (o maior entre `availableBatteries` e as baterias `in_station`
+         *       dela) → `422` `slots-below-stock`;
+         *     - `thingName` de outra estação → `409` `thing-name-taken`;
+         *     - desativar (`active: false`) ou trocar o `thingName` com troca por QR em andamento na estação → `409`
+         *       `station-swap-in-progress` (espere terminar; a desativação e a criação de troca se serializam pela linha da
+         *       estação).
+         *     Estação inativa some de `GET /swap-stations` e recusa troca nova (`422` `station-unavailable`). O QR não muda.
+         *     Grava AuditLog (`swap_station.update`, nomes dos campos).
+         */
+        patch: operations["updateSwapStation"];
         trace?: never;
     };
     "/swap-stations/{id}/swaps": {
@@ -681,10 +742,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * QR da estação (admin)
-         * @description Conteúdo do QR fixo da estação (`stationCode`) para imprimir o adesivo. Estação ainda sem código → emitido agora
-         *     com o segredo atual. Grava AuditLog (sem o código). Reemissão em massa (troca do segredo) é pelo script de operação
-         *     `stations:qr --reissue` (ver `services/api/README.md`). O código nunca sai em `SwapStation`.
+         * QR da estação (admin e operação)
+         * @description Conteúdo do QR fixo da estação (`stationCode`, o mesmo código que o script `stations:qr` grava) para imprimir o
+         *     adesivo pelo painel. Estação ainda sem código → emitido agora com o segredo atual. Grava AuditLog (sem o código).
+         *     Reemissão em massa (troca do segredo) é pelo script de operação `stations:qr --reissue` (ver
+         *     `services/api/README.md`). O código nunca sai em `SwapStation`, em `SwapStationAdmin` nem para o cliente.
          */
         get: operations["getSwapStationQr"];
         put?: never;
@@ -5373,6 +5435,77 @@ export interface components {
         SwapStationList: {
             items: components["schemas"]["SwapStation"][];
         };
+        /** @description Estação com os campos de cadastro (só staff admin/operacao). Nunca traz o QR (`stationCode`). */
+        SwapStationAdmin: {
+            /** Format: uuid */
+            id: string;
+            /** @example Estação Largo da Batata */
+            name: string;
+            address: string;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+            /** @description Baterias carregadas prontas para troca. */
+            availableBatteries: number;
+            totalSlots: number;
+            /** @example Seg a sáb, 7h às 22h */
+            openingHours: string;
+            open24h: boolean;
+            active: boolean;
+            /**
+             * @description *Thing* do armário no IoT Core (tópicos `estacoes/{thing}/comandos` e `/eventos`).
+             * @example station-d0000000-0000-4000-8000-000000000001
+             */
+            thingName: string;
+            /** @description Baterias `in_station` registradas nesta estação (carregadas ou não). */
+            batteriesInStation: number;
+            /** @description Trocas por QR em andamento. */
+            openSwaps: number;
+            /** @description Galpões ligados a esta estação (`Depot.swapStationId`). */
+            depotIds: string[];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SwapStationAdminList: {
+            items: components["schemas"]["SwapStationAdmin"][];
+        };
+        SwapStationInput: {
+            name: string;
+            address: string;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+            /**
+             * @description Obrigatório sem `open24h` (`400`).
+             * @example Seg a sáb, 7h às 22h
+             */
+            openingHours?: string;
+            /** @default false */
+            open24h?: boolean;
+            totalSlots: number;
+            /** @description Padrão `station-{id}`. */
+            thingName?: string;
+            /** @default true */
+            active?: boolean;
+        };
+        /** @description Campos ausentes não mudam. `openingHours` vazio só com `open24h` (`400`). */
+        SwapStationUpdate: {
+            name?: string;
+            address?: string;
+            /** Format: double */
+            lat?: number;
+            /** Format: double */
+            lng?: number;
+            openingHours?: string;
+            open24h?: boolean;
+            totalSlots?: number;
+            thingName?: string;
+            active?: boolean;
+        };
         /**
          * @description `opening_slot` (estação abrindo uma vaga vazia) → `awaiting_return` (vaga aberta, devolva a bateria) → `returned`
          *     (devolvida) → `releasing` (vaga fechada, liberando a carregada) → `completed`. Finais: `completed`, `canceled`,
@@ -5913,8 +6046,13 @@ export interface components {
             pickupNowWindowMinutes?: number;
             maxScheduleDays?: number;
             scheduledGraceMinutes?: number;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description Liga o galpão à estação de troca (inexistente → `400`).
+             */
             swapStationId?: string;
+            /** @description `true` desliga o galpão da estação de troca (o contrato não usa `null`). Junto com `swapStationId` → `400`. */
+            clearSwapStation?: boolean;
             /** @description 0 desliga o alerta de estoque. */
             minChargedBatteries?: number;
             active?: boolean;
@@ -7155,6 +7293,88 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    createSwapStation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwapStationInput"];
+            };
+        };
+        responses: {
+            /** @description Estação criada. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapStationAdmin"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listSwapStationRegistry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Estações. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapStationAdminList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    updateSwapStation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SwapStationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Estação atualizada. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SwapStationAdmin"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listStationSwaps: {

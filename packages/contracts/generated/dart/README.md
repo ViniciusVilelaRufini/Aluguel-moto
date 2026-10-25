@@ -39,7 +39,8 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `maintenance-slot-unavailable`, `referral-code-invalid`, `referral-not-eligible`, `gateway-unavailable`,
 `subscription-vehicle-cooldown`, `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`,
 `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
-`station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`.
+`station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
+`thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -277,10 +278,13 @@ Class | Method | HTTP request | Description
 [*StaffApi*](doc/StaffApi.md) | [**updateStaffUser**](doc/StaffApi.md#updatestaffuser) | **PATCH** /staff/{id} | Alterar grupos ou desativar usuário interno
 [*StationsApi*](doc/StationsApi.md) | [**cancelStationSwap**](doc/StationsApi.md#cancelstationswap) | **POST** /swap-stations/{id}/swaps/{swapId}/cancel | Cancelar troca na estação
 [*StationsApi*](doc/StationsApi.md) | [**createStationSwap**](doc/StationsApi.md#createstationswap) | **POST** /swap-stations/{id}/swaps | Iniciar troca de bateria na estação (QR)
+[*StationsApi*](doc/StationsApi.md) | [**createSwapStation**](doc/StationsApi.md#createswapstation) | **POST** /swap-stations | Cadastrar estação de troca (painel)
 [*StationsApi*](doc/StationsApi.md) | [**getStationSwap**](doc/StationsApi.md#getstationswap) | **GET** /swap-stations/{id}/swaps/{swapId} | Consultar troca na estação
-[*StationsApi*](doc/StationsApi.md) | [**getSwapStationQr**](doc/StationsApi.md#getswapstationqr) | **GET** /swap-stations/{id}/qr | QR da estação (admin)
+[*StationsApi*](doc/StationsApi.md) | [**getSwapStationQr**](doc/StationsApi.md#getswapstationqr) | **GET** /swap-stations/{id}/qr | QR da estação (admin e operação)
 [*StationsApi*](doc/StationsApi.md) | [**listStationSwaps**](doc/StationsApi.md#liststationswaps) | **GET** /swap-stations/{id}/swaps | Trocas da estação (painel)
+[*StationsApi*](doc/StationsApi.md) | [**listSwapStationRegistry**](doc/StationsApi.md#listswapstationregistry) | **GET** /swap-stations/registry | Cadastro das estações (painel)
 [*StationsApi*](doc/StationsApi.md) | [**listSwapStations**](doc/StationsApi.md#listswapstations) | **GET** /swap-stations | Estações de troca de bateria (mapa)
+[*StationsApi*](doc/StationsApi.md) | [**updateSwapStation**](doc/StationsApi.md#updateswapstation) | **PATCH** /swap-stations/{id} | Editar ou desativar estação de troca (painel)
 [*SupportApi*](doc/SupportApi.md) | [**createClaim**](doc/SupportApi.md#createclaim) | **POST** /support/claims | Abrir sinistro
 [*SupportApi*](doc/SupportApi.md) | [**createDispute**](doc/SupportApi.md#createdispute) | **POST** /support/disputes | Contestar cobrança
 [*SupportApi*](doc/SupportApi.md) | [**createIncident**](doc/SupportApi.md#createincident) | **POST** /support/incidents | Reportar problema
@@ -565,8 +569,12 @@ Class | Method | HTTP request | Description
  - [SupportMessageStatus](doc/SupportMessageStatus.md)
  - [SupportReadRequest](doc/SupportReadRequest.md)
  - [SwapStation](doc/SwapStation.md)
+ - [SwapStationAdmin](doc/SwapStationAdmin.md)
+ - [SwapStationAdminList](doc/SwapStationAdminList.md)
+ - [SwapStationInput](doc/SwapStationInput.md)
  - [SwapStationList](doc/SwapStationList.md)
  - [SwapStationQr](doc/SwapStationQr.md)
+ - [SwapStationUpdate](doc/SwapStationUpdate.md)
  - [SwapVehicleRequest](doc/SwapVehicleRequest.md)
  - [TaskPriority](doc/TaskPriority.md)
  - [TopUp](doc/TopUp.md)

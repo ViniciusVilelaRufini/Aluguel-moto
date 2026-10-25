@@ -76,10 +76,39 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     await this.station.stop();
   }
 
-  /** Trava a linha da estação até o fim da transação e devolve as carregadas disponíveis. */
-  private async lockStation(tx: Prisma.TransactionClient, stationId: string): Promise<number> {
-    const rows = await tx.$queryRaw<Array<{ availableBatteries: number }>>`SELECT "availableBatteries" FROM "SwapStation" WHERE "id" = ${stationId}::uuid FOR UPDATE`;
+  /**
+   * Trava a linha da estação até o fim da transação e devolve as carregadas disponíveis. Com `requireActive` (só a criação de
+   * troca pelo cliente, Task 12 das lacunas) relê `active` sob o lock: a desativação pelo painel trava a mesma linha, então
+   * nenhuma troca nasce numa estação recém-desativada. Eventos de trocas já em curso (devolução atrasada etc.) nunca usam a
+   * checagem: a bateria já está no armário e precisa ser registrada, e um erro aqui envenenaria o grupo FIFO da estação.
+   */
+  private async lockStation(tx: Prisma.TransactionClient, stationId: string, opts: { requireActive?: boolean } = {}): Promise<number> {
+    const rows = await tx.$queryRaw<Array<{ availableBatteries: number; active?: boolean }>>`SELECT "availableBatteries", "active" FROM "SwapStation" WHERE "id" = ${stationId}::uuid FOR UPDATE`;
+    if (opts.requireActive && rows?.[0]?.active === false) throw unprocessable('station-unavailable', 'Esta estação está desativada.');
     return Number(rows?.[0]?.availableBatteries ?? 0);
+  }
+
+  /**
+   * *Thing* do armário da estação: a do cadastro (`thingName`) ou a convenção `station-{id}`. Falha de leitura propaga (quem
+   * envia loga e não manda nada): cair na convenção mandaria o comando, em silêncio, para o armário errado.
+   */
+  private async thingOf(stationId: string): Promise<string> {
+    const s = await this.prisma.swapStation.findUnique({ where: { id: stationId }, select: { id: true, thingName: true } });
+    return s?.thingName ?? stationThingName(stationId);
+  }
+
+  /**
+   * Estação de um evento pela *thing*: a que tem esse `thingName` no cadastro ou, sem nenhuma, a `station-{id}` cujo cadastro
+   * não aponta para outro armário. Thing desconhecida → `null` (evento ignorado).
+   */
+  private async stationOfThing(thing: string): Promise<string | null> {
+    const parsed = stationIdFromThing(thing);
+    const s = await this.prisma.swapStation.findFirst({
+      where: { OR: [{ thingName: thing }, ...(parsed ? [{ id: parsed, thingName: null }] : [])] },
+      select: { id: true, thingName: true },
+      orderBy: { thingName: { sort: 'asc', nulls: 'last' } },
+    });
+    return s?.id ?? null;
   }
 
   /**
@@ -168,7 +197,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
       // Fix 1 (C1): estoque e inserção serializados por estação (SELECT … FOR UPDATE na estação). Duas requisições pela última
       // bateria: a segunda espera o commit da primeira, recontagem já inclui a troca nova → 422.
       swap = await this.prisma.$transaction(async (tx) => {
-        const available = await this.lockStation(tx, stationId);
+        const available = await this.lockStation(tx, stationId, { requireActive: true });
         // Fix 2 (M-3): aluguel travado (mesma linha que o encerramento trava) e relido: encerramento e criação se serializam.
         const status = await this.lockRental(tx, rental.id);
         if (status !== 'active' && status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
@@ -195,7 +224,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     this.logger.log({ msg: 'station_swap_created', swapId: swap.id, stationId, rentalId: rental.id, feeCents });
     this.emit(swap);
     await this.station
-      .send(stationThingName(stationId), { commandId: `${swap.id}:open_slot`, swapId: swap.id, action: 'open_slot', expectedSerial: rental.vehicle.batterySerial ?? undefined })
+      .send(station.thingName ?? stationThingName(stationId), { commandId: `${swap.id}:open_slot`, swapId: swap.id, action: 'open_slot', expectedSerial: rental.vehicle.batterySerial ?? undefined })
       .catch((err) => this.logger.error({ msg: 'station_open_slot_failed', swapId: swap.id, stationId, error: (err as Error).message }));
     return toStationSwap(swap, { staff: false });
   }
@@ -304,8 +333,11 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   }
 
   private async handleStationEvent(thing: string, ev: StationEvent): Promise<void> {
-    const stationId = stationIdFromThing(thing);
-    if (!stationId) return;
+    const stationId = await this.stationOfThing(thing);
+    if (!stationId) {
+      this.logger.warn({ msg: 'station_event_unknown_thing', swapId: ev.swapId, type: ev.type });
+      return;
+    }
     const swap = await this.prisma.stationSwap.findUnique({ where: { id: ev.swapId } });
     if (!swap || swap.stationId !== stationId) {
       this.logger.warn({ msg: 'station_event_unknown_swap', stationId, swapId: ev.swapId, type: ev.type });
@@ -331,15 +363,15 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
       orderBy: [{ chargePct: 'desc' }, { cycleCount: 'asc' }],
       select: { serial: true },
     });
-    await this.station
-      .send(stationThingName(swap.stationId), { commandId: `${swap.id}:release_battery`, swapId: swap.id, action: 'release_battery', serialHint: hint?.serial })
+    await this.thingOf(swap.stationId)
+      .then((thing) => this.station.send(thing, { commandId: `${swap.id}:release_battery`, swapId: swap.id, action: 'release_battery', serialHint: hint?.serial }))
       .catch((err) => this.logger.error({ msg: 'station_release_failed', swapId: swap.id, stationId: swap.stationId, error: (err as Error).message }));
   }
 
   /** Fix 1 (I2): cancelamento ou prazo vencido → a estação fecha a vaga (se aberta) e confirma com `slot_closed`. */
   private async sendAbort(swap: StationSwap): Promise<void> {
-    await this.station
-      .send(stationThingName(swap.stationId), { commandId: `${swap.id}:abort_swap`, swapId: swap.id, action: 'abort_swap', slotNumber: swap.slotNumber ?? undefined })
+    await this.thingOf(swap.stationId)
+      .then((thing) => this.station.send(thing, { commandId: `${swap.id}:abort_swap`, swapId: swap.id, action: 'abort_swap', slotNumber: swap.slotNumber ?? undefined }))
       .catch((err) => this.logger.error({ msg: 'station_abort_failed', swapId: swap.id, stationId: swap.stationId, error: (err as Error).message }));
   }
 

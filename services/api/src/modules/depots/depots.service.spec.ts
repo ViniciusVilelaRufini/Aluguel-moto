@@ -182,6 +182,26 @@ describe('DepotsService', () => {
       prisma.depot.findUnique.mockResolvedValue(null);
       expect((await problemOf(service.update(operacao, DEPOT_ID, { active: true } as any))).getStatus()).toBe(404);
     });
+
+    it('liga à estação (existente) e desliga com clearSwapStation; os dois juntos → 400 (Task 12 das lacunas)', async () => {
+      const { service, prisma } = setup();
+      const STATION = 'd0000000-0000-4000-8000-000000000001';
+      prisma.swapStation.findUnique.mockResolvedValue({ id: STATION } as any);
+      prisma.depot.update.mockResolvedValue(depotRow({ swapStationId: STATION }) as any);
+      expect((await service.update(operacao, DEPOT_ID, { swapStationId: STATION } as any)).swapStationId).toBe(STATION);
+      expect(prisma.depot.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ swapStationId: STATION }) }));
+
+      prisma.depot.update.mockResolvedValue(depotRow() as any);
+      await service.update(operacao, DEPOT_ID, { clearSwapStation: true } as any);
+      const data = prisma.depot.update.mock.calls.at(-1)![0].data as Record<string, unknown>;
+      expect(data.swapStationId).toBeNull();
+      expect(data).not.toHaveProperty('clearSwapStation');
+
+      const both = await problemOf(service.update(operacao, DEPOT_ID, { clearSwapStation: true, swapStationId: STATION } as any));
+      expect(both.getStatus()).toBe(400);
+      prisma.swapStation.findUnique.mockResolvedValue(null);
+      expect((await problemOf(service.update(operacao, DEPOT_ID, { swapStationId: STATION } as any))).getStatus()).toBe(400);
+    });
   });
 
   describe('requireActive()', () => {

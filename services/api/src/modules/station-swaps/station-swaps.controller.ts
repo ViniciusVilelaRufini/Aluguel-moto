@@ -23,9 +23,9 @@ export class StationSwapsController {
     return this.swaps.create(user, id, dto, key);
   }
 
-  /** Fix 1 (I6): conteúdo do QR fixo da estação, só admin (impressão e reposição do adesivo). */
+  /** Fix 1 (I6) + Task 12 das lacunas: conteúdo do QR fixo da estação, admin e operação (impressão pelo painel). */
   @Get(':id/qr')
-  @StaffOnly('admin')
+  @StaffOnly('admin', 'operacao')
   qr(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: Principal) {
     return this.swaps.qr(user, id);
   }

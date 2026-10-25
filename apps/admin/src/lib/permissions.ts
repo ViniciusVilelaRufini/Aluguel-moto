@@ -1,6 +1,6 @@
 import type { StaffGroup } from './types';
 
-export type MenuKey = 'fleet' | 'alerts' | 'zones' | 'customers' | 'tasks' | 'finance' | 'settings' | 'depots' | 'pickups' | 'handovers' | 'team';
+export type MenuKey = 'fleet' | 'alerts' | 'zones' | 'customers' | 'tasks' | 'finance' | 'settings' | 'depots' | 'stations' | 'pickups' | 'handovers' | 'team';
 
 export interface MenuItem {
   key: MenuKey;
@@ -22,6 +22,8 @@ export const MENU: MenuItem[] = [
   // Retirada em galpão (spec 2026-10-22 §6). `campo` não usa o painel; financeiro só lê o cadastro (GET /depots).
   // Depois de Financeiro/Preços: a primeira seção de cada grupo é a tela inicial (financeiro continua em /finance).
   { key: 'depots', label: 'Galpões', href: '/galpoes', icon: 'Warehouse', groups: ['admin', 'operacao', 'financeiro'] },
+  // Cadastro de estações de troca (Task 12 das lacunas): GET /swap-stations/registry é admin/operacao.
+  { key: 'stations', label: 'Estações', href: '/estacoes', icon: 'BatteryCharging', groups: ['admin', 'operacao'] },
   { key: 'pickups', label: 'Retiradas', href: '/retiradas', icon: 'CalendarClock', groups: ['admin', 'operacao'] },
   { key: 'handovers', label: 'Entregas', href: '/entregas', icon: 'PackageCheck', groups: ['admin', 'operacao', 'suporte'] },
   { key: 'team', label: 'Equipe e acessos', href: '/team', icon: 'KeyRound', groups: ['admin'] },
@@ -65,6 +67,8 @@ export type Action =
   | 'depot.deactivate'
   | 'handover.cancel'
   | 'station.swaps'
+  | 'station.edit'
+  | 'station.qr'
   | 'wallet.adjust'
   | 'deposit.view';
 
@@ -101,6 +105,9 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   // Rotas que já existiam no contrato (x-required-groups; `campo` não usa o painel).
   'handover.cancel': ['admin', 'operacao'], // POST /handovers/{id}/cancel (contrato: admin, operacao, campo)
   'station.swaps': ['admin', 'operacao', 'suporte'], // GET /swap-stations/{id}/swaps
+  // Task 12 das lacunas: POST /swap-stations, PATCH /swap-stations/{id} (inclui desativar) e GET /swap-stations/{id}/qr.
+  'station.edit': ['admin', 'operacao'],
+  'station.qr': ['admin', 'operacao'],
   'wallet.adjust': ['admin', 'financeiro'], // POST /customers/{id}/wallet/adjustments
   'deposit.view': ['admin', 'financeiro'], // GET /payments/deposits
 };
