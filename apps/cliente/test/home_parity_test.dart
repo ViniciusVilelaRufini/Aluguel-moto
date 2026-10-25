@@ -1,3 +1,4 @@
+import 'package:built_collection/built_collection.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_api/volti_api.dart';
@@ -30,7 +31,9 @@ class ParityBackend extends GalpaoBackend {
 
   @override
   Future<List<SupportConversation>> conversations() async => [
-        SupportConversation((b) => b
+        // SupportConversation agora e abstrata no contrato: usa a variante concreta.
+        LgpdSupportConversation((b) => b
+          ..messages = ListBuilder<SupportMessage>()
           ..id = 'c'
           ..customerId = 'c1'
           ..subject = 'Ajuda'
