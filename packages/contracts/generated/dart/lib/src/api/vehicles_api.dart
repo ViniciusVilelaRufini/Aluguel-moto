@@ -15,6 +15,7 @@ import 'package:volti_api/src/model/track.dart';
 import 'package:volti_api/src/model/vehicle.dart';
 import 'package:volti_api/src/model/vehicle_command.dart';
 import 'package:volti_api/src/model/vehicle_create.dart';
+import 'package:volti_api/src/model/vehicle_depot_transfer.dart';
 import 'package:volti_api/src/model/vehicle_page.dart';
 import 'package:volti_api/src/model/vehicle_status.dart';
 import 'package:volti_api/src/model/vehicle_status_change.dart';
@@ -28,7 +29,7 @@ class VehiclesApi {
   const VehiclesApi(this._dio, this._serializers);
 
   /// Cadastrar moto
-  ///
+  /// Sem &#x60;depotId&#x60; a moto nasce &#x60;maintenance&#x60; na posição padrão. Com &#x60;depotId&#x60; (galpão existente e ativo) nasce &#x60;free&#x60; no galpão, com &#x60;lat&#x60;/&#x60;lng&#x60; do galpão — disponível para retirada. Galpão inexistente → &#x60;404&#x60;; inativo → &#x60;422&#x60; &#x60;depot-inactive&#x60;. &#x60;qrCode&#x60; vazio vira &#x60;volti://v/{code}&#x60;.  &#x60;batterySerial&#x60;: série nova é cadastrada instalada nesta moto; série de uma bateria &#x60;charged&#x60; e livre (no galpão, sem moto) é instalada nesta moto (movimentação gravada); bateria em qualquer outra situação → &#x60;409&#x60;.
   ///
   /// Parameters:
   /// * [vehicleCreate]
@@ -516,7 +517,9 @@ class VehiclesApi {
   /// * [cursor] - Cursor opaco devolvido em `nextCursor` da página anterior.
   /// * [limit] - Itens por página.
   /// * [status]
-  /// * [q] - Busca por código ou thingName.
+  /// * [q] - Busca por código, thingName, QR ou nome do modelo.
+  /// * [depotId] - Só motos deste galpão (`depotId` da moto).
+  /// * [vehicleModelId] - Só motos deste modelo do catálogo.
   /// * [maxBatteryPct] - Só motos com bateria até este valor (fila de troca de bateria).
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
@@ -532,6 +535,8 @@ class VehiclesApi {
     int? limit = 20,
     VehicleStatus? status,
     String? q,
+    String? depotId,
+    String? vehicleModelId,
     int? maxBatteryPct,
     CancelToken? cancelToken,
     Map<String, dynamic>? headers,
@@ -571,6 +576,12 @@ class VehiclesApi {
             _serializers, status, const FullType(VehicleStatus)),
       if (q != null)
         r'q': encodeQueryParameter(_serializers, q, const FullType(String)),
+      if (depotId != null)
+        r'depotId':
+            encodeQueryParameter(_serializers, depotId, const FullType(String)),
+      if (vehicleModelId != null)
+        r'vehicleModelId': encodeQueryParameter(
+            _serializers, vehicleModelId, const FullType(String)),
       if (maxBatteryPct != null)
         r'maxBatteryPct': encodeQueryParameter(
             _serializers, maxBatteryPct, const FullType(int)),
@@ -756,6 +767,113 @@ class VehiclesApi {
       const _type = FullType(VehicleStatusChange);
       _bodyData =
           _serializers.serialize(vehicleStatusChange, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Vehicle? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Vehicle),
+            ) as Vehicle;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Vehicle>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Transferir a moto de galpão
+  /// Move a moto para outro galpão (existente e ativo): &#x60;depotId&#x60; e &#x60;lat&#x60;/&#x60;lng&#x60; passam a ser os do galpão. Só moto &#x60;free&#x60; ou &#x60;maintenance&#x60;, sem aluguel aberto nem reserva ativa (senão &#x60;409&#x60; &#x60;vehicle-unavailable&#x60;); já no mesmo galpão → &#x60;409&#x60;. Galpão inexistente → &#x60;404&#x60;; inativo → &#x60;422&#x60; &#x60;depot-inactive&#x60;. Grava AuditLog (&#x60;vehicle.transfer_depot&#x60;, com o motivo e os galpões de origem e destino).
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [vehicleDepotTransfer]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Vehicle] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Vehicle>> transferVehicleDepot({
+    required String id,
+    required VehicleDepotTransfer vehicleDepotTransfer,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/vehicles/{id}/transfer-depot'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'staffAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(VehicleDepotTransfer);
+      _bodyData =
+          _serializers.serialize(vehicleDepotTransfer, specifiedType: _type);
     } catch (error, stackTrace) {
       throw DioException(
         requestOptions: _options.compose(

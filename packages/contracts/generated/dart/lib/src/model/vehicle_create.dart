@@ -15,8 +15,9 @@ part 'vehicle_create.g.dart';
 /// * [model]
 /// * [thingName]
 /// * [qrCode]
-/// * [batterySerial]
+/// * [batterySerial] - Série nova (cadastrada instalada) ou de uma bateria `charged` livre no galpão.
 /// * [vehicleModelId] - Define também `model` (nome do modelo).
+/// * [depotId] - Galpão onde a moto entra. Com ele a moto nasce `free` na posição do galpão (disponível para retirada); sem ele, `maintenance`.
 @BuiltValue()
 abstract class VehicleCreate
     implements Built<VehicleCreate, VehicleCreateBuilder> {
@@ -32,12 +33,17 @@ abstract class VehicleCreate
   @BuiltValueField(wireName: r'qrCode')
   String? get qrCode;
 
+  /// Série nova (cadastrada instalada) ou de uma bateria `charged` livre no galpão.
   @BuiltValueField(wireName: r'batterySerial')
   String? get batterySerial;
 
   /// Define também `model` (nome do modelo).
   @BuiltValueField(wireName: r'vehicleModelId')
   String? get vehicleModelId;
+
+  /// Galpão onde a moto entra. Com ele a moto nasce `free` na posição do galpão (disponível para retirada); sem ele, `maintenance`.
+  @BuiltValueField(wireName: r'depotId')
+  String? get depotId;
 
   VehicleCreate._();
 
@@ -97,6 +103,13 @@ class _$VehicleCreateSerializer implements PrimitiveSerializer<VehicleCreate> {
       yield r'vehicleModelId';
       yield serializers.serialize(
         object.vehicleModelId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.depotId != null) {
+      yield r'depotId';
+      yield serializers.serialize(
+        object.depotId,
         specifiedType: const FullType(String),
       );
     }
@@ -169,6 +182,14 @@ class _$VehicleCreateSerializer implements PrimitiveSerializer<VehicleCreate> {
           ) as String?;
           if (valueDes == null) continue;
           result.vehicleModelId = valueDes;
+          break;
+        case r'depotId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.depotId = valueDes;
           break;
         default:
           unhandled.add(key);

@@ -293,6 +293,7 @@ doc/Vehicle.md
 doc/VehicleCommand.md
 doc/VehicleCommandPage.md
 doc/VehicleCreate.md
+doc/VehicleDepotTransfer.md
 doc/VehicleModel.md
 doc/VehicleModelInput.md
 doc/VehicleModelList.md
@@ -627,6 +628,7 @@ lib/src/model/vehicle.dart
 lib/src/model/vehicle_command.dart
 lib/src/model/vehicle_command_page.dart
 lib/src/model/vehicle_create.dart
+lib/src/model/vehicle_depot_transfer.dart
 lib/src/model/vehicle_model.dart
 lib/src/model/vehicle_model_input.dart
 lib/src/model/vehicle_model_list.dart

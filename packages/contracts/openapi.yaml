@@ -691,8 +691,16 @@ paths:
           schema: { $ref: '#/components/schemas/VehicleStatus' }
         - name: q
           in: query
-          description: Busca por código ou thingName.
+          description: Busca por código, thingName, QR ou nome do modelo.
           schema: { type: string, maxLength: 64 }
+        - name: depotId
+          in: query
+          description: Só motos deste galpão (`depotId` da moto).
+          schema: { type: string, format: uuid }
+        - name: vehicleModelId
+          in: query
+          description: Só motos deste modelo do catálogo.
+          schema: { type: string, format: uuid }
         - name: maxBatteryPct
           in: query
           description: Só motos com bateria até este valor (fila de troca de bateria).
@@ -710,6 +718,13 @@ paths:
       tags: [vehicles]
       operationId: createVehicle
       summary: Cadastrar moto
+      description: |
+        Sem `depotId` a moto nasce `maintenance` na posição padrão. Com `depotId` (galpão existente e ativo) nasce `free`
+        no galpão, com `lat`/`lng` do galpão — disponível para retirada. Galpão inexistente → `404`; inativo → `422`
+        `depot-inactive`. `qrCode` vazio vira `volti://v/{code}`.
+
+        `batterySerial`: série nova é cadastrada instalada nesta moto; série de uma bateria `charged` e livre (no galpão,
+        sem moto) é instalada nesta moto (movimentação gravada); bateria em qualquer outra situação → `409`.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao]
@@ -729,6 +744,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /vehicles/{id}:
     get:
       tags: [vehicles]
@@ -801,6 +817,38 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /vehicles/{id}/transfer-depot:
+    post:
+      tags: [vehicles]
+      operationId: transferVehicleDepot
+      summary: Transferir a moto de galpão
+      description: |
+        Move a moto para outro galpão (existente e ativo): `depotId` e `lat`/`lng` passam a ser os do galpão. Só moto
+        `free` ou `maintenance`, sem aluguel aberto nem reserva ativa (senão `409` `vehicle-unavailable`); já no mesmo
+        galpão → `409`. Galpão inexistente → `404`; inativo → `422` `depot-inactive`. Grava AuditLog
+        (`vehicle.transfer_depot`, com o motivo e os galpões de origem e destino).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, operacao]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VehicleDepotTransfer' }
+      responses:
+        '200':
+          description: Moto transferida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Vehicle' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /vehicles/{id}/track:
     get:
       tags: [vehicles]
@@ -5770,8 +5818,18 @@ components:
         model: { type: string, minLength: 1, maxLength: 60 }
         thingName: { type: string, pattern: '^[a-zA-Z0-9:_-]{1,128}$', examples: [moto-0061] }
         qrCode: { type: string, maxLength: 200 }
-        batterySerial: { type: string, maxLength: 64 }
+        batterySerial: { type: string, maxLength: 64, description: 'Série nova (cadastrada instalada) ou de uma bateria `charged` livre no galpão.' }
         vehicleModelId: { type: string, format: uuid, description: Define também `model` (nome do modelo). }
+        depotId:
+          type: string
+          format: uuid
+          description: Galpão onde a moto entra. Com ele a moto nasce `free` na posição do galpão (disponível para retirada); sem ele, `maintenance`.
+    VehicleDepotTransfer:
+      type: object
+      required: [depotId, reason]
+      properties:
+        depotId: { type: string, format: uuid, description: Galpão de destino (existente e ativo). }
+        reason: { type: string, minLength: 3, maxLength: 500, description: Motivo (vai para o AuditLog). }
     VehicleUpdate:
       type: object
       properties:

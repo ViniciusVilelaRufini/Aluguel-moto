@@ -401,7 +401,15 @@ export interface paths {
         /** Listar frota */
         get: operations["listVehicles"];
         put?: never;
-        /** Cadastrar moto */
+        /**
+         * Cadastrar moto
+         * @description Sem `depotId` a moto nasce `maintenance` na posição padrão. Com `depotId` (galpão existente e ativo) nasce `free`
+         *     no galpão, com `lat`/`lng` do galpão — disponível para retirada. Galpão inexistente → `404`; inativo → `422`
+         *     `depot-inactive`. `qrCode` vazio vira `volti://v/{code}`.
+         *
+         *     `batterySerial`: série nova é cadastrada instalada nesta moto; série de uma bateria `charged` e livre (no galpão,
+         *     sem moto) é instalada nesta moto (movimentação gravada); bateria em qualquer outra situação → `409`.
+         */
         post: operations["createVehicle"];
         delete?: never;
         options?: never;
@@ -444,6 +452,29 @@ export interface paths {
          * @description Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Grava AuditLog.
          */
         post: operations["setVehicleStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vehicles/{id}/transfer-depot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transferir a moto de galpão
+         * @description Move a moto para outro galpão (existente e ativo): `depotId` e `lat`/`lng` passam a ser os do galpão. Só moto
+         *     `free` ou `maintenance`, sem aluguel aberto nem reserva ativa (senão `409` `vehicle-unavailable`); já no mesmo
+         *     galpão → `409`. Galpão inexistente → `404`; inativo → `422` `depot-inactive`. Grava AuditLog
+         *     (`vehicle.transfer_depot`, com o motivo e os galpões de origem e destino).
+         */
+        post: operations["transferVehicleDepot"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3808,12 +3839,27 @@ export interface components {
             /** @example moto-0061 */
             thingName: string;
             qrCode?: string;
+            /** @description Série nova (cadastrada instalada) ou de uma bateria `charged` livre no galpão. */
             batterySerial?: string;
             /**
              * Format: uuid
              * @description Define também `model` (nome do modelo).
              */
             vehicleModelId?: string;
+            /**
+             * Format: uuid
+             * @description Galpão onde a moto entra. Com ele a moto nasce `free` na posição do galpão (disponível para retirada); sem ele, `maintenance`.
+             */
+            depotId?: string;
+        };
+        VehicleDepotTransfer: {
+            /**
+             * Format: uuid
+             * @description Galpão de destino (existente e ativo).
+             */
+            depotId: string;
+            /** @description Motivo (vai para o AuditLog). */
+            reason: string;
         };
         VehicleUpdate: {
             model?: string;
@@ -7142,8 +7188,12 @@ export interface operations {
                 /** @description Itens por página. */
                 limit?: components["parameters"]["Limit"];
                 status?: components["schemas"]["VehicleStatus"];
-                /** @description Busca por código ou thingName. */
+                /** @description Busca por código, thingName, QR ou nome do modelo. */
                 q?: string;
+                /** @description Só motos deste galpão (`depotId` da moto). */
+                depotId?: string;
+                /** @description Só motos deste modelo do catálogo. */
+                vehicleModelId?: string;
                 /** @description Só motos com bateria até este valor (fila de troca de bateria). */
                 maxBatteryPct?: number;
             };
@@ -7194,6 +7244,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getVehicle: {
@@ -7280,6 +7331,38 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+        };
+    };
+    transferVehicleDepot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VehicleDepotTransfer"];
+            };
+        };
+        responses: {
+            /** @description Moto transferida. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Vehicle"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getVehicleTrack: {

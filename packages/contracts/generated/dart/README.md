@@ -318,6 +318,7 @@ Class | Method | HTTP request | Description
 [*VehiclesApi*](doc/VehiclesApi.md) | [**listVehicles**](doc/VehiclesApi.md#listvehicles) | **GET** /vehicles | Listar frota
 [*VehiclesApi*](doc/VehiclesApi.md) | [**ringVehicle**](doc/VehiclesApi.md#ringvehicle) | **POST** /vehicles/{id}/ring | Buzinar e piscar (cliente)
 [*VehiclesApi*](doc/VehiclesApi.md) | [**setVehicleStatus**](doc/VehiclesApi.md#setvehiclestatus) | **POST** /vehicles/{id}/status | Mudar status operacional (manutenção ou disponível)
+[*VehiclesApi*](doc/VehiclesApi.md) | [**transferVehicleDepot**](doc/VehiclesApi.md#transfervehicledepot) | **POST** /vehicles/{id}/transfer-depot | Transferir a moto de galpão
 [*VehiclesApi*](doc/VehiclesApi.md) | [**updateVehicle**](doc/VehiclesApi.md#updatevehicle) | **PATCH** /vehicles/{id} | Editar moto
 [*WalletApi*](doc/WalletApi.md) | [**createWalletAdjustment**](doc/WalletApi.md#createwalletadjustment) | **POST** /customers/{id}/wallet/adjustments | Ajuste manual da carteira (lançamento)
 [*WalletApi*](doc/WalletApi.md) | [**createWalletTopUp**](doc/WalletApi.md#createwallettopup) | **POST** /wallet/top-ups | Recarregar carteira
@@ -603,6 +604,7 @@ Class | Method | HTTP request | Description
  - [VehicleCommand](doc/VehicleCommand.md)
  - [VehicleCommandPage](doc/VehicleCommandPage.md)
  - [VehicleCreate](doc/VehicleCreate.md)
+ - [VehicleDepotTransfer](doc/VehicleDepotTransfer.md)
  - [VehicleModel](doc/VehicleModel.md)
  - [VehicleModelInput](doc/VehicleModelInput.md)
  - [VehicleModelList](doc/VehicleModelList.md)

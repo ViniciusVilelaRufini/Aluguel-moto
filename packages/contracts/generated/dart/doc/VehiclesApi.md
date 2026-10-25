@@ -17,6 +17,7 @@ Method | HTTP request | Description
 [**listVehicles**](VehiclesApi.md#listvehicles) | **GET** /vehicles | Listar frota
 [**ringVehicle**](VehiclesApi.md#ringvehicle) | **POST** /vehicles/{id}/ring | Buzinar e piscar (cliente)
 [**setVehicleStatus**](VehiclesApi.md#setvehiclestatus) | **POST** /vehicles/{id}/status | Mudar status operacional (manutenção ou disponível)
+[**transferVehicleDepot**](VehiclesApi.md#transfervehicledepot) | **POST** /vehicles/{id}/transfer-depot | Transferir a moto de galpão
 [**updateVehicle**](VehiclesApi.md#updatevehicle) | **PATCH** /vehicles/{id} | Editar moto
 
 
@@ -24,6 +25,8 @@ Method | HTTP request | Description
 > Vehicle createVehicle(vehicleCreate)
 
 Cadastrar moto
+
+Sem `depotId` a moto nasce `maintenance` na posição padrão. Com `depotId` (galpão existente e ativo) nasce `free` no galpão, com `lat`/`lng` do galpão — disponível para retirada. Galpão inexistente → `404`; inativo → `422` `depot-inactive`. `qrCode` vazio vira `volti://v/{code}`.  `batterySerial`: série nova é cadastrada instalada nesta moto; série de uma bateria `charged` e livre (no galpão, sem moto) é instalada nesta moto (movimentação gravada); bateria em qualquer outra situação → `409`. 
 
 ### Example
 ```dart
@@ -244,7 +247,7 @@ Name | Type | Description  | Notes
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **listVehicles**
-> VehiclePage listVehicles(cursor, limit, status, q, maxBatteryPct)
+> VehiclePage listVehicles(cursor, limit, status, q, depotId, vehicleModelId, maxBatteryPct)
 
 Listar frota
 
@@ -256,11 +259,13 @@ final api = VoltiApi().getVehiclesApi();
 final String cursor = cursor_example; // String | Cursor opaco devolvido em `nextCursor` da página anterior.
 final int limit = 56; // int | Itens por página.
 final VehicleStatus status = ; // VehicleStatus | 
-final String q = q_example; // String | Busca por código ou thingName.
+final String q = q_example; // String | Busca por código, thingName, QR ou nome do modelo.
+final String depotId = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | Só motos deste galpão (`depotId` da moto).
+final String vehicleModelId = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | Só motos deste modelo do catálogo.
 final int maxBatteryPct = 56; // int | Só motos com bateria até este valor (fila de troca de bateria).
 
 try {
-    final response = api.listVehicles(cursor, limit, status, q, maxBatteryPct);
+    final response = api.listVehicles(cursor, limit, status, q, depotId, vehicleModelId, maxBatteryPct);
     print(response);
 } on DioException catch (e) {
     print('Exception when calling VehiclesApi->listVehicles: $e\n');
@@ -274,7 +279,9 @@ Name | Type | Description  | Notes
  **cursor** | **String**| Cursor opaco devolvido em `nextCursor` da página anterior. | [optional] 
  **limit** | **int**| Itens por página. | [optional] [default to 20]
  **status** | [**VehicleStatus**](.md)|  | [optional] 
- **q** | **String**| Busca por código ou thingName. | [optional] 
+ **q** | **String**| Busca por código, thingName, QR ou nome do modelo. | [optional] 
+ **depotId** | **String**| Só motos deste galpão (`depotId` da moto). | [optional] 
+ **vehicleModelId** | **String**| Só motos deste modelo do catálogo. | [optional] 
  **maxBatteryPct** | **int**| Só motos com bateria até este valor (fila de troca de bateria). | [optional] 
 
 ### Return type
@@ -364,6 +371,51 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **String**|  | 
  **vehicleStatusChange** | [**VehicleStatusChange**](VehicleStatusChange.md)|  | 
+
+### Return type
+
+[**Vehicle**](Vehicle.md)
+
+### Authorization
+
+[staffAuth](../README.md#staffAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **transferVehicleDepot**
+> Vehicle transferVehicleDepot(id, vehicleDepotTransfer)
+
+Transferir a moto de galpão
+
+Move a moto para outro galpão (existente e ativo): `depotId` e `lat`/`lng` passam a ser os do galpão. Só moto `free` ou `maintenance`, sem aluguel aberto nem reserva ativa (senão `409` `vehicle-unavailable`); já no mesmo galpão → `409`. Galpão inexistente → `404`; inativo → `422` `depot-inactive`. Grava AuditLog (`vehicle.transfer_depot`, com o motivo e os galpões de origem e destino). 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getVehiclesApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final VehicleDepotTransfer vehicleDepotTransfer = ; // VehicleDepotTransfer | 
+
+try {
+    final response = api.transferVehicleDepot(id, vehicleDepotTransfer);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling VehiclesApi->transferVehicleDepot: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **vehicleDepotTransfer** | [**VehicleDepotTransfer**](VehicleDepotTransfer.md)|  | 
 
 ### Return type
 

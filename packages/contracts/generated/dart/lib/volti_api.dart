@@ -308,6 +308,7 @@ export 'package:volti_api/src/model/vehicle.dart';
 export 'package:volti_api/src/model/vehicle_command.dart';
 export 'package:volti_api/src/model/vehicle_command_page.dart';
 export 'package:volti_api/src/model/vehicle_create.dart';
+export 'package:volti_api/src/model/vehicle_depot_transfer.dart';
 export 'package:volti_api/src/model/vehicle_model.dart';
 export 'package:volti_api/src/model/vehicle_model_input.dart';
 export 'package:volti_api/src/model/vehicle_model_list.dart';

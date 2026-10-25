@@ -282,6 +282,7 @@ import 'package:volti_api/src/model/vehicle.dart';
 import 'package:volti_api/src/model/vehicle_command.dart';
 import 'package:volti_api/src/model/vehicle_command_page.dart';
 import 'package:volti_api/src/model/vehicle_create.dart';
+import 'package:volti_api/src/model/vehicle_depot_transfer.dart';
 import 'package:volti_api/src/model/vehicle_model.dart';
 import 'package:volti_api/src/model/vehicle_model_input.dart';
 import 'package:volti_api/src/model/vehicle_model_list.dart';
@@ -579,6 +580,7 @@ part 'serializers.g.dart';
   VehicleCommand,
   VehicleCommandPage,
   VehicleCreate,
+  VehicleDepotTransfer,
   VehicleModel,
   VehicleModelInput,
   VehicleModelList,
