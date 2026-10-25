@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } f
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import { Prisma, type StationSwap, type StationSwapEndReason, type StationSwapStatus } from '@prisma/client';
-import { EV, type StationSwapUpdatedEvent } from '../../common/events';
+import { type BatteryChargedStockDecreasedEvent, EV, type StationSwapUpdatedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
@@ -11,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CHARGED_PCT } from '../batteries/batteries.mapper';
+import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
 import { PricingService } from '../pricing/pricing.service';
 import { AuditService } from '../audit/audit.service';
 import { signStationCode, verifyStationCode } from './station-code';
@@ -403,11 +404,14 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   private async recordReturn(tx: Prisma.TransactionClient, swap: StationSwap, serial: string, pct: number): Promise<boolean> {
     const claimed = await tx.stationSwap.updateMany({ where: { id: swap.id, returnedSerial: null }, data: { returnedSerial: serial, returnedPct: pct } });
     if (!claimed.count) return false;
-    await tx.battery.upsert({
+    const prev = await tx.battery.findUnique({ where: { serial } });
+    const saved = await tx.battery.upsert({
       where: { serial },
       create: { serial, chargePct: pct, status: 'charging', stationId: swap.stationId },
-      update: { status: 'charging', stationId: swap.stationId, vehicleId: null, holderId: null, chargePct: pct },
+      update: { status: 'charging', stationId: swap.stationId, vehicleId: null, holderId: null, depotId: null, chargePct: pct },
     });
+    // 2026-10-24: movimentação com o cliente como ator (a moto de onde saiu fica registrada).
+    await recordMovements(tx, [movement(prev, { status: 'charging', stationId: swap.stationId, vehicleId: prev ? undefined : swap.vehicleId }, swap.customerId, null, saved.id)]);
     return true;
   }
 
@@ -493,6 +497,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
       await this.alert(swap, 'Troca na estação: a bateria liberada não constava no estoque desta estação.', 'station_release_serial_mismatch');
     }
     let rentalClosed = false;
+    const moves: MovementInput[] = [];
     const done = await this.prisma.$transaction(async (tx) => {
       const moved = await tx.stationSwap.updateMany({
         where: { id: swap.id, status: swap.status, releasedSerial: null },
@@ -507,16 +512,25 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
         rentalClosed = true;
         return true;
       }
+      const prev = await tx.battery.findUnique({ where: { serial } });
       const installed = await tx.battery.upsert({
         where: { serial },
         create: { serial, chargePct: 100, status: 'in_vehicle', vehicleId: swap.vehicleId, cycleCount: 1 },
-        update: { status: 'in_vehicle', vehicleId: swap.vehicleId, holderId: null, stationId: null, cycleCount: { increment: 1 } },
+        update: { status: 'in_vehicle', vehicleId: swap.vehicleId, holderId: null, stationId: null, depotId: null, cycleCount: { increment: 1 } },
       });
-      await tx.battery.updateMany({ where: { vehicleId: swap.vehicleId, status: 'in_vehicle', NOT: { id: installed.id } }, data: { vehicleId: null, status: 'charging' } });
+      moves.push(movement(prev, { status: 'in_vehicle', vehicleId: swap.vehicleId, stationId: prev ? undefined : swap.stationId }, swap.customerId, null, installed.id));
+      const stray = await tx.battery.findMany({ where: { vehicleId: swap.vehicleId, status: 'in_vehicle', NOT: { id: installed.id } } });
+      if (stray.length) {
+        await tx.battery.updateMany({ where: { id: { in: stray.map((b) => b.id) }, status: 'in_vehicle' }, data: { vehicleId: null, status: 'charging' } });
+        for (const b of stray) moves.push(movement(b, { status: 'charging' }, swap.customerId));
+      }
+      await recordMovements(tx, moves);
       await tx.vehicle.update({ where: { id: swap.vehicleId }, data: { batterySerial: serial, batteryPct: installed.chargePct } });
       return true;
     });
     if (done) {
+      const depotIds = depotsLeavingCharged(moves);
+      if (depotIds.length) this.events.emit(EV.BATTERY_CHARGED_STOCK_DECREASED, { depotIds } satisfies BatteryChargedStockDecreasedEvent);
       this.logger.log({ msg: 'station_swap_completed', swapId: swap.id, stationId: swap.stationId, vehicleId: swap.vehicleId });
       this.emit({ ...swap, status: 'completed' });
       if (rentalClosed) {

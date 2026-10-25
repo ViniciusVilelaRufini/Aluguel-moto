@@ -54,6 +54,8 @@ const DEFAULT_TITLES: Record<string, string> = {
   'referral-not-eligible': 'Indicação não permitida',
   // retirada em galpão
   'depot-inactive': 'Galpão inativo',
+  // ciclo de vida das baterias no galpão
+  'depot-required': 'Informe o galpão',
   // troca de bateria na estação via QR
   'station-not-found': 'Estação não encontrada',
   'station-unavailable': 'Estação indisponível',

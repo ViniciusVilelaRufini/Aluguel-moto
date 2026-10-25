@@ -58,8 +58,8 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     }
   }
 
-  it('cobre as 183 operações do contrato, sem rotas extras', () => {
-    expect(ops).toHaveLength(183);
+  it('cobre as 188 operações do contrato, sem rotas extras', () => {
+    expect(ops).toHaveLength(188);
     const missing = ops.map(([k]) => k).filter((k) => !routes.has(k));
     const extra = [...routes.keys()].filter((k) => !ops.some(([o]) => o === k));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });
@@ -77,6 +77,22 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     expect(pools).toEqual(schemes);
     if (schemes.includes('staffAuth')) {
       expect([...(route.requirement?.groups ?? [])].sort()).toEqual([...(op['x-required-groups'] ?? [])].sort());
+    }
+  });
+
+  it('ciclo de vida das baterias (2026-10-24): rotas novas só de staff, com os grupos do contrato', () => {
+    const groups = (key: string) => [...(routes.get(key)?.requirement?.groups ?? [])].sort();
+    const pools = (key: string) => [...(routes.get(key)?.requirement?.pools ?? [])];
+    const expected: Record<string, string[]> = {
+      'POST /batteries': ['admin', 'operacao'],
+      'POST /batteries/:id/mark-charged': ['admin', 'campo', 'operacao'],
+      'POST /batteries/:id/report-defect': ['admin', 'campo', 'operacao'],
+      'POST /batteries/:id/retire': ['admin', 'operacao'],
+      'GET /batteries/:id/movements': ['admin', 'campo', 'operacao', 'suporte'],
+    };
+    for (const [key, g] of Object.entries(expected)) {
+      expect(pools(key)).toEqual(['staff']);
+      expect(groups(key)).toEqual(g);
     }
   });
 

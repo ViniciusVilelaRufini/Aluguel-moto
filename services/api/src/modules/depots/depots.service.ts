@@ -110,9 +110,9 @@ export class DepotsService {
     return new Map(rows.map((r) => [r.depotId as string, r._count._all]));
   }
 
-  private async withCount(d: Depot) {
+  private async withCount(d: Depot, staff: boolean) {
     const counts = await this.freeCounts([d.id]);
-    return toDepot(d, { availableVehicleCount: counts.get(d.id) ?? 0 });
+    return toDepot(d, { availableVehicleCount: counts.get(d.id) ?? 0, staff });
   }
 
   /** Galpão visível para o principal: cliente só vê ativo (inativo → 404). */
@@ -140,17 +140,17 @@ export class DepotsService {
     const rows = await this.prisma.depot.findMany({ where: staff && q.includeInactive ? {} : { active: true }, orderBy: { name: 'asc' } });
     const counts = await this.freeCounts(rows.map((d) => d.id));
     const count = (d: Depot) => counts.get(d.id) ?? 0;
-    if (q.lat === undefined || q.lng === undefined) return { items: rows.map((d) => toDepot(d, { availableVehicleCount: count(d) })) };
+    if (q.lat === undefined || q.lng === undefined) return { items: rows.map((d) => toDepot(d, { availableVehicleCount: count(d), staff })) };
     const origin = { lat: q.lat, lng: q.lng };
     const items = rows
       .map((d) => ({ d, m: distanceM(origin, d) }))
       .sort((a, b) => a.m - b.m)
-      .map(({ d, m }) => toDepot(d, { availableVehicleCount: count(d), distanceM: m }));
+      .map(({ d, m }) => toDepot(d, { availableVehicleCount: count(d), distanceM: m, staff }));
     return { items };
   }
 
   async get(id: string, principal: Principal) {
-    return this.withCount(await this.findVisible(id, principal));
+    return this.withCount(await this.findVisible(id, principal), isStaff(principal));
   }
 
   /** Galpão ativo para reservar (Task 5): inexistente → 404; inativo → 422 `depot-inactive`. */
@@ -168,7 +168,7 @@ export class DepotsService {
       await this.audit.record({ actor, action: 'depot.create', entityType: 'Depot', entityId: created.id, metadata: { name: created.name } }, tx as any);
       return created;
     }).catch(mapUniqueName);
-    return toDepot(d, { availableVehicleCount: 0 });
+    return toDepot(d, { availableVehicleCount: 0, staff: true });
   }
 
   async update(actor: Principal, id: string, dto: DepotUpdateDto) {
@@ -187,7 +187,7 @@ export class DepotsService {
       );
       return updated;
     }).catch(mapUniqueName);
-    return this.withCount(d);
+    return this.withCount(d, true);
   }
 
   /** Cliente: só `free` com este `depotId` (nunca `reserved`/`awaiting_pickup`), bateria desc. Staff: todas, com filtros. */

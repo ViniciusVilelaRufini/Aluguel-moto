@@ -3,8 +3,8 @@ import { compact, iso } from '../../common/util';
 import { toVehicleSummary } from '../vehicles/vehicles.mapper';
 import type { OpeningHours } from './depot-rules';
 
-/** Prisma → `Depot`. `distanceM` só quando o chamador mandou `lat`/`lng`. */
-export function toDepot(d: Depot, opts: { availableVehicleCount: number; distanceM?: number }) {
+/** Prisma → `Depot`. `distanceM` só quando o chamador mandou `lat`/`lng`; `minChargedBatteries` só para staff. */
+export function toDepot(d: Depot, opts: { availableVehicleCount: number; distanceM?: number; staff?: boolean }) {
   return compact({
     id: d.id,
     name: d.name,
@@ -18,6 +18,7 @@ export function toDepot(d: Depot, opts: { availableVehicleCount: number; distanc
     maxScheduleDays: d.maxScheduleDays,
     scheduledGraceMinutes: d.scheduledGraceMinutes,
     swapStationId: d.swapStationId ?? undefined,
+    minChargedBatteries: opts.staff ? (d.minChargedBatteries ?? undefined) : undefined,
     active: d.active,
     availableVehicleCount: opts.availableVehicleCount,
     distanceM: opts.distanceM === undefined ? undefined : Math.max(0, Math.round(opts.distanceM)),

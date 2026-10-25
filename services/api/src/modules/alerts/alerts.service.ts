@@ -14,6 +14,8 @@ export interface CreateAlertInput {
   message: string;
   vehicleId?: string;
   rentalId?: string;
+  /** Galpão do alerta (`battery_stock_low`). */
+  depotId?: string;
   lat?: number;
   lng?: number;
 }
@@ -29,6 +31,7 @@ export function toAlert(a: AlertRow) {
     vehicleId: a.vehicleId ?? undefined,
     vehicleCode: a.vehicle?.code,
     rentalId: a.rentalId ?? undefined,
+    depotId: a.depotId ?? undefined,
     message: a.message,
     lat: a.lat ?? undefined,
     lng: a.lng ?? undefined,

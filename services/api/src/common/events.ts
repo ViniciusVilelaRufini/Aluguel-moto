@@ -24,7 +24,14 @@ export const EV = {
   HANDOVER_UPDATED: 'handover.updated',
   // Troca de bateria na estação via QR: mudança de status → `station_swap.updated` na sala `customer:{customerId}`.
   STATION_SWAP_UPDATED: 'station-swap.updated',
+  // Ciclo de vida das baterias no galpão: bateria saiu de `charged` (confere o estoque mínimo do galpão).
+  BATTERY_CHARGED_STOCK_DECREASED: 'battery.charged-stock-decreased',
 } as const;
+
+/** Galpões que perderam baterias `charged` numa transação já confirmada. */
+export interface BatteryChargedStockDecreasedEvent {
+  depotIds: string[];
+}
 
 /** Troca na estação mudou de status (WS `station_swap.updated { swapId, status }`, só para o dono). */
 export interface StationSwapUpdatedEvent {
