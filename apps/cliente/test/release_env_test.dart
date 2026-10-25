@@ -36,4 +36,11 @@ void main() {
       expect(releaseEnvironmentProblems(isRelease: true, apiBaseUrl: '', supportPhone: kSupportPhonePlaceholder, mpPublicKey: ''), hasLength(3));
     });
   });
+
+  test('SUPPORT_PHONE que nao parece telefone e recusado', () {
+    for (final bad in ['abc', '12', '+55 (11) 9999']) {
+      expect(releaseEnvironmentProblems(isRelease: true, apiBaseUrl: 'https://a', supportPhone: bad, mpPublicKey: _key).single, contains('invalido'), reason: bad);
+    }
+    expect(releaseEnvironmentProblems(isRelease: true, apiBaseUrl: 'https://a', supportPhone: '1133334444', mpPublicKey: _key), isEmpty);
+  });
 }

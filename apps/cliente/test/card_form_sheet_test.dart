@@ -95,6 +95,24 @@ void main() {
     expect(calls, 2);
   });
 
+  testWidgets('texto a 200%: validade e CVV empilhados, sem estourar', (t) async {
+    await t.pumpWidget(MediaQuery(
+      data: const MediaQueryData(textScaler: TextScaler.linear(2.0), size: Size(420, 1400)),
+      child: MaterialApp(
+        theme: VoltiTheme.light(),
+        localizationsDelegates: const [AppLocalizations.delegate, GlobalMaterialLocalizations.delegate, GlobalWidgetsLocalizations.delegate, GlobalCupertinoLocalizations.delegate],
+        supportedLocales: const [Locale('pt')],
+        locale: const Locale('pt'),
+        home: Scaffold(body: CardFormSheet(submit: (_) async => 'tok')),
+      ),
+    ));
+    await t.pump();
+    final exp = t.getTopLeft(find.byType(TextField).at(2));
+    final cvv = t.getTopLeft(find.byType(TextField).at(3));
+    expect(cvv.dy, greaterThan(exp.dy));
+    expect(cvv.dx, exp.dx);
+  });
+
   test('cada erro tem texto em pt-BR', () async {
     final l = await AppLocalizations.delegate.load(const Locale('pt'));
     for (final e in CardTokenError.values) {

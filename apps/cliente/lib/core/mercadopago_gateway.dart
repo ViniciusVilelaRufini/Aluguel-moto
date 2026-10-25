@@ -101,7 +101,7 @@ class MercadoPagoGateway {
           .timeout(timeout);
     } on TimeoutException {
       throw const CardTokenException(CardTokenError.timeout);
-    } catch (_) {
+    } on Exception {
       // Sem rede / DNS / TLS. Nao propaga o erro original: pode citar a URL com a chave.
       throw const CardTokenException(CardTokenError.network);
     }

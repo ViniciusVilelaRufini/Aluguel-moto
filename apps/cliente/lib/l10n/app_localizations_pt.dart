@@ -253,6 +253,9 @@ class AppLocalizationsPt extends AppLocalizations {
   String get cardExpiry => 'Validade (MM/AA)';
 
   @override
+  String get cardExpiryHint => 'MM/AA';
+
+  @override
   String get cardCvv => 'CVV';
 
   @override

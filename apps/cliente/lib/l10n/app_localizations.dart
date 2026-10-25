@@ -562,6 +562,12 @@ abstract class AppLocalizations {
   /// **'Validade (MM/AA)'**
   String get cardExpiry;
 
+  /// No description provided for @cardExpiryHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'MM/AA'**
+  String get cardExpiryHint;
+
   /// No description provided for @cardCvv.
   ///
   /// In pt, this message translates to:

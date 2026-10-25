@@ -110,7 +110,34 @@ class _CardFormSheetState extends State<CardFormSheet> {
   @override
   Widget build(BuildContext context) {
     final l = AppLocalizations.of(context);
-    final numberDone = _number.text.replaceAll(RegExp(r'\D'), '').length >= 13;
+    final numberDone = _number.text.replaceAll(RegExp(r'\D'), '').length >= 16;
+    // Texto grande (200%): validade e CVV empilhados, sem truncar o rotulo.
+    final stacked = MediaQuery.textScalerOf(context).scale(10) > 13;
+    final expiryField = TextField(
+      controller: _expiry,
+      onChanged: (_) => setState(() {}),
+      keyboardType: TextInputType.number,
+      inputFormatters: [MaskFormatter('##/##')],
+      autocorrect: false,
+      enableSuggestions: false,
+      autofillHints: const [AutofillHints.creditCardExpirationDate],
+      decoration: InputDecoration(
+        labelText: l.cardExpiry,
+        hintText: l.cardExpiryHint,
+        errorText: _expiry.text.length == 5 && !_expiryOk ? l.cardExpiryInvalid : null,
+      ),
+    );
+    final cvvField = TextField(
+      controller: _cvv,
+      onChanged: (_) => setState(() {}),
+      keyboardType: TextInputType.number,
+      obscureText: true,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(4)],
+      autocorrect: false,
+      enableSuggestions: false,
+      autofillHints: const [AutofillHints.creditCardSecurityCode],
+      decoration: InputDecoration(labelText: l.cardCvv),
+    );
     final cpfDone = _cpf.text.replaceAll(RegExp(r'\D'), '').length == 11;
     return SingleChildScrollView(
       padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
@@ -149,41 +176,19 @@ class _CardFormSheetState extends State<CardFormSheet> {
               decoration: InputDecoration(labelText: l.cardHolder, prefixIcon: const Icon(LucideIcons.user)),
             ),
             const SizedBox(height: VoltiSpacing.s12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _expiry,
-                    onChanged: (_) => setState(() {}),
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [MaskFormatter('##/##')],
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    autofillHints: const [AutofillHints.creditCardExpirationDate],
-                    decoration: InputDecoration(
-                      labelText: l.cardExpiry,
-                      hintText: 'MM/AA',
-                      errorText: _expiry.text.length == 5 && !_expiryOk ? l.cardExpiryInvalid : null,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: VoltiSpacing.s12),
-                Expanded(
-                  child: TextField(
-                    controller: _cvv,
-                    onChanged: (_) => setState(() {}),
-                    keyboardType: TextInputType.number,
-                    obscureText: true,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(4)],
-                    autocorrect: false,
-                    enableSuggestions: false,
-                    autofillHints: const [AutofillHints.creditCardSecurityCode],
-                    decoration: InputDecoration(labelText: l.cardCvv),
-                  ),
-                ),
-              ],
-            ),
+            if (stacked) ...[
+              expiryField,
+              const SizedBox(height: VoltiSpacing.s12),
+              cvvField,
+            ] else
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: expiryField),
+                  const SizedBox(width: VoltiSpacing.s12),
+                  Expanded(child: cvvField),
+                ],
+              ),
             const SizedBox(height: VoltiSpacing.s12),
             TextField(
               controller: _cpf,
@@ -201,7 +206,10 @@ class _CardFormSheetState extends State<CardFormSheet> {
             ),
             if (_error != null) ...[
               const SizedBox(height: VoltiSpacing.s12),
-              NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: cardTokenErrorText(l, _error!)),
+              Semantics(
+                liveRegion: true,
+                child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: cardTokenErrorText(l, _error!)),
+              ),
             ],
             const SizedBox(height: VoltiSpacing.s16),
             VoltiButton(
