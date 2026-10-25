@@ -81,7 +81,7 @@ export default function PickupsPage() {
 
       {dayQ.data && (
         <div data-testid="pickups-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10, maxWidth: 720 }}>
-          <StatTile icon="CalendarClock" label="Reservas no dia (todas)" numeric={all.length} />
+          <StatTile icon="CalendarClock" label="Reservas do dia" numeric={all.length} />
           <StatTile icon="Hourglass" label="Aguardando" numeric={waiting} />
           <StatTile icon="PackageCheck" label="Em entrega" numeric={inHandover} />
           <StatTile icon="Bike" label="Retiradas" numeric={done} />

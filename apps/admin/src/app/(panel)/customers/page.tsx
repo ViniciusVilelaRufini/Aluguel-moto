@@ -190,9 +190,9 @@ function CustomerSheet({ id, onClose, onRentals, onChat }: { id: string; onClose
           {tab === 'support' && <CustomerTickets customerId={id} onChat={() => onChat(id)} />}
           {tab === 'history' && <CustomerHistory customerId={id} onRentals={onRentals} />}
           <div style={{ flex: 1 }} />
-          {can(groups, 'wallet.adjust') && <Button size="sm" variant="secondary" icon="Wallet" testId="wallet-adjust-open" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setAdjusting(true)}>Ajustar carteira</Button>}
+          {can(groups, 'wallet.adjust') && <Button size="sm" variant="secondary" icon="Wallet" testId="wallet-adjust-open" style={{ flexShrink: 0, minHeight: 36, color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setAdjusting(true)}>Ajustar carteira</Button>}
           {adjusting && <WalletAdjustDialog customerId={id} onClose={() => setAdjusting(false)} />}
-          {c.delinquent && can(groups, 'delinquency.clear') && <Button size="sm" variant="secondary" icon="Check" testId="delinquency-clear-open" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setClearing(true)}>Registrar quitação</Button>}
+          {c.delinquent && can(groups, 'delinquency.clear') && <Button size="sm" variant="secondary" icon="Check" testId="delinquency-clear-open" style={{ flexShrink: 0, minHeight: 36, color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setClearing(true)}>Registrar quitação</Button>}
           {clearing && <DelinquencyClearDialog customerId={id} onClose={() => setClearing(false)} />}
           {can(groups, 'customer.block') && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingTop: 8, borderTop: '1px solid var(--border-subtle)' }}>
