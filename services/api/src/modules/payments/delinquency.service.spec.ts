@@ -364,6 +364,16 @@ describe('Task 16: recibo depois da quitação e menores da re-revisão da Task 
     expect(ctx.receipts.issueForPayment).toHaveBeenCalledTimes(1);
   });
 
+  it('onLatePaid repetido depois de uma queda entre a anotação e a quitação: conclui a quitação (sem perder o dinheiro recebido)', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    await ctx.state.transition(pix.id, 'failed', { failureReason: 'paid_after_failed' });
+    await ctx.svc.onLatePaid((await ctx.db.payment.findUnique({ where: { id: pix.id } }))!, 'pp');
+    expect(await ctx.db.payment.findUnique({ where: { id: d.id } })).toMatchObject({ debtSettlement: 'payment' });
+    expect(ctx.reviews).toEqual([{ paymentId: pix.id, reason: 'debt_settlement_paid_after_failed' }]);
+  });
+
   it('quitação manual só é bloqueada pela assinatura ligada à dívida, não por outra assinatura do cliente', async () => {
     const ctx = await setup();
     // Outra assinatura do cliente em past_due, sem dívida registrada aqui.

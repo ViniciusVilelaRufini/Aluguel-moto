@@ -201,14 +201,16 @@ export class DelinquencyService {
    */
   async onLatePaid(pay: Payment, providerPaymentId: string): Promise<void> {
     if (pay.kind !== 'debt_settlement' || !pay.settlesPaymentId) return;
-    // Idempotente por pagamento: notificações repetidas do Mercado Pago (eventos diferentes do mesmo pagamento) não abrem
-    // um segundo alerta (`debt_settlement_after_settled` falso).
-    if (pay.failureReason === 'paid_after_failed') return;
-    await this.state.annotate(pay.id, { providerPaymentId: pay.providerPaymentId ?? providerPaymentId, failureReason: 'paid_after_failed' });
+    // Idempotente por pagamento (Task 16): notificações repetidas do Mercado Pago (eventos diferentes do mesmo pagamento)
+    // não abrem um segundo alerta (`debt_settlement_after_settled` falso). Já tratado → só conclui uma quitação que tenha
+    // ficado pela metade (queda entre a anotação e a quitação); nada de alerta novo.
+    const repeated = pay.failureReason === 'paid_after_failed';
+    if (!repeated) await this.state.annotate(pay.id, { providerPaymentId: pay.providerPaymentId ?? providerPaymentId, failureReason: 'paid_after_failed' });
     const res = await this.prisma.payment.updateMany({
       where: { id: pay.settlesPaymentId, customerId: pay.customerId, status: 'failed', debtSettledAt: null },
       data: { debtSettledAt: new Date(), debtSettlement: 'payment' },
     });
+    if (repeated && res.count === 0) return;
     if (res.count === 1) {
       this.logger.warn({ msg: 'debt_settled_by_late_payment', paymentId: pay.settlesPaymentId, settlementPaymentId: pay.id });
       await this.billing.clearDelinquencyIfSettled(pay.customerId);
