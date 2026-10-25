@@ -35,6 +35,7 @@ const DEFAULT_TITLES: Record<string, string> = {
   'deposit-not-held': 'Caução não retida',
   'payment-failed': 'Pagamento recusado',
   'card-not-found': 'Cartão não encontrado',
+  'card-required': 'Cartão necessário',
   'zone-invalid-geometry': 'Geometria da zona inválida',
   'zone-speed-limit-required': 'Limite de velocidade obrigatório',
   'zone-speed-limit-invalid': 'Limite de velocidade inválido para a zona',

@@ -15,6 +15,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { assertCustomerEligible } from '../customers/eligibility';
 import { type DepotRulesInput, type OpeningHours, pickupExpiry, type PickupErrorCode, type PickupMode, validatePickup } from '../depots/depot-rules';
 import { isUniqueViolation } from '../payments/payment-state.service';
+import { assertDepositCard } from '../payments/card-required';
 import { PICKUP_CODE_SECRET, signPickupCode } from './pickup-code';
 import { ReservationsService, toReservation } from './reservations.service';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
@@ -98,6 +99,8 @@ export class DepotReservationsService {
     // Contrato v2: moto fixa de outro plano vigente.
     await assertNotFixedForOther(this.prisma, vehicle.id, customerId);
 
+    // Task 30 (item 12): sem cartão para a caução, erro claro antes de criar qualquer cobrança.
+    if (dto.depositMethod === 'card') await assertDepositCard(this.prisma, customerId, dto.cardId);
     const deposit = await this.holdDeposit(customerId, dto, idempotencyKey);
     const expiresAt = pickupExpiry(rules, dto.pickupMode, now, pickupAt);
     let reservation;

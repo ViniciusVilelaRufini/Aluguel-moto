@@ -58,6 +58,7 @@ function setup() {
   prisma.subscription.findFirst.mockResolvedValue(null);
   prisma.deposit.findUnique.mockResolvedValue(deposit() as any);
   prisma.depositRelease.findUnique.mockResolvedValue(null);
+  prisma.paymentCard.findFirst.mockResolvedValue({ id: 'card-default', customerId: CUSTOMER_ID, isDefault: true, deletedAt: null } as any);
   prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
   prisma.reservation.create.mockImplementation((async (args: any) => ({
     id: RES_ID, status: 'active', createdAt: new Date(), updatedAt: new Date(), endedAt: null, reminderSentAt: null,
@@ -117,6 +118,23 @@ describe('DepotReservationsService.create', () => {
     await expect(service.create(CUSTOMER_ID, input(), 'k-debt')).rejects.toMatchObject({ status: 409, slug: 'payment-pending', detail: 'Pague o valor pendente para alugar de novo.' });
     expect(billing.holdDeposit).not.toHaveBeenCalled();
     expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('Task 30: caução no cartão sem nenhum cartão ativo → 422 card-required (antes de criar caução); Pix segue sem cartão', async () => {
+    const { service, billing, prisma } = setup();
+    prisma.paymentCard.findFirst.mockResolvedValue(null);
+    await expect(service.create(CUSTOMER_ID, input(), 'k-nocard')).rejects.toMatchObject({ status: 422, slug: 'card-required', detail: 'Cadastre um cartão ou pague a caução com Pix.' });
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    await service.create(CUSTOMER_ID, input({ depositMethod: 'pix' }), 'k-pix');
+    expect(billing.holdDeposit).toHaveBeenCalledTimes(1);
+  });
+
+  it('Task 30: cardId que não é do cliente (ou removido) → 422 card-not-found, sem caução', async () => {
+    const { service, billing, prisma } = setup();
+    prisma.paymentCard.findFirst.mockResolvedValue(null);
+    await expect(service.create(CUSTOMER_ID, input({ cardId: '77777777-7777-4777-8777-777777777777' }), 'k-badcard')).rejects.toMatchObject({ status: 422, slug: 'card-not-found' });
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
   });
 
   it('galpão inativo → 422 depot-inactive; inexistente → 404', async () => {

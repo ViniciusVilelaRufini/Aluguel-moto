@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { assertDepositCard } from '../payments/card-required';
 import { assertNotFixedForOther } from '../../common/fixed-vehicle';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Coupon, Deposit, Prisma } from '@prisma/client';
@@ -253,6 +254,8 @@ export class RentalStartService {
       heldDepositId = d.id;
       rentalId = d.rentalId ?? randomUUID();
     } else {
+      // Task 30 (item 12): sem cartão ativo para a caução, erro claro antes de criar a cobrança.
+      if (dto.depositMethod === 'card') await assertDepositCard(this.prisma, customerId);
       rentalId = randomUUID();
       const held = await this.billing.holdDeposit({ customerId, rentalId, method: dto.depositMethod, idempotencyKey: `deposit:${customerId}:${idempotencyKey}` });
       const d = await this.prisma.deposit.findUnique({ where: { id: held.depositId } });

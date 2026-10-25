@@ -34,6 +34,14 @@ export class PaymentsController {
     await this.payments.deleteCard(u.customerId!, id);
   }
 
+  /** Task 30 (item 12): define o cartão padrão (idempotente). */
+  @Put('payments/cards/:id/default')
+  @HttpCode(200)
+  @CustomerOnly()
+  setDefaultCard(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: Principal) {
+    return this.payments.setDefaultCard(u.customerId!, id);
+  }
+
   @Get('payments/deposits')
   @StaffOnly('admin', 'financeiro')
   listDeposits(@Query() q: ListDepositsQuery) {

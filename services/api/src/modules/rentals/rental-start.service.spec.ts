@@ -77,6 +77,7 @@ describe('Início do aluguel (POST /rentals)', () => {
     commands.dispatch.mockResolvedValue({ id: 'cmd-1', status: 'confirmed' });
     iot.getLiveState.mockResolvedValue(null);
     p.rentalStart.deleteMany.mockResolvedValue({ count: 1 });
+    p.paymentCard.findFirst.mockResolvedValue({ id: 'card-default', customerId: CUSTOMER_ID, isDefault: true, deletedAt: null } as any);
   });
 
   const post = async (key: string | null, b: object = body) => {
@@ -84,6 +85,15 @@ describe('Início do aluguel (POST /rentals)', () => {
     if (key) req.set('Idempotency-Key', key);
     return req.send(b);
   };
+
+  it('Task 30: caução no cartão sem nenhum cartão ativo → 422 card-required, sem caução nem moto reivindicada', async () => {
+    h.prisma.paymentCard.findFirst.mockResolvedValue(null);
+    const res = await post('chave-sem-cartao-1');
+    expect(res.status).toBe(422);
+    expect(res.body.type).toBe('https://api.volti.com.br/problems/card-required');
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
+    expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
 
   it('KYC não aprovado → 403 kyc-not-approved', async () => {
     h.prisma.customer.findUnique.mockResolvedValue({ ...customer, kycStatus: 'pending' } as any);

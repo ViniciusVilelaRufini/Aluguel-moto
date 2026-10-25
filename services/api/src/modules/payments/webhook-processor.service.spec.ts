@@ -116,6 +116,17 @@ describe('WebhookProcessor (fila pagamentos-webhook, dedup por eventId)', () => 
     expect((await db.customer.findUnique({ where: { id: CUSTOMER } })).delinquent).toBe(true);
   });
 
+  it('Task 30: assinatura sem cardId usa o cartão ativo mesmo sem padrão marcado (dado antigo); sem cartão → 422 card-required', async () => {
+    const { db, provider, subscriptions } = await setup();
+    await db.pricingPlan.create({ data: { code: 'weekly', name: 'Semanal', unit: 'week', unitPriceCents: 24900, active: true } });
+    await expect(subscriptions.create(CUSTOMER, { planCode: 'weekly' })).rejects.toMatchObject({ status: 422, slug: 'card-required', detail: 'Cadastre um cartão para assinar.' });
+    const card = await new ProviderCustomersService(db as any, provider).addCard(CUSTOMER, 'tok_visa_4242');
+    await db.paymentCard.update({ where: { id: card.id }, data: { isDefault: false } });
+    const sub = await subscriptions.create(CUSTOMER, { planCode: 'weekly' });
+    expect(sub.status).toBe('active');
+    expect((await db.subscription.findUnique({ where: { id: sub.id } })).cardId).toBe(card.id);
+  });
+
   it('fix round 1: renovação vista primeiro pendente e depois aprovada → um Payment, período renovado uma vez', async () => {
     const { db, provider, subscriptions, processor } = await setup();
     await new ProviderCustomersService(db as any, provider).addCard(CUSTOMER, 'tok_visa_4242', true);

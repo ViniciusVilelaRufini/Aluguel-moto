@@ -80,7 +80,24 @@ export class PaymentsService {
       this.prisma.subscription.count({ where: { cardId: id, status: 'active' } }),
     ]);
     if (held || sub) throw conflict('conflict', 'Este cartão tem caução retida ou assinatura ativa.');
-    await this.prisma.paymentCard.update({ where: { id }, data: { deletedAt: new Date(), isDefault: false } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.paymentCard.update({ where: { id }, data: { deletedAt: new Date(), isDefault: false } });
+      // Task 30 (item 12): removido o padrão, o cartão ativo mais recente vira o padrão (nunca cartões sem padrão).
+      if (!card.isDefault) return;
+      const next = await tx.paymentCard.findFirst({ where: { customerId, deletedAt: null }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] });
+      if (next) await tx.paymentCard.update({ where: { id: next.id }, data: { isDefault: true } });
+    });
+  }
+
+  /** Task 30 (item 12): `PUT /payments/cards/{id}/default` — um padrão por cliente; repetir não muda nada. */
+  async setDefaultCard(customerId: string, id: string) {
+    const card = await this.prisma.paymentCard.findFirst({ where: { id, customerId, deletedAt: null } });
+    if (!card) throw notFound('Cartão não encontrado.');
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.paymentCard.updateMany({ where: { customerId, isDefault: true, id: { not: id } }, data: { isDefault: false } });
+      return tx.paymentCard.update({ where: { id }, data: { isDefault: true } });
+    });
+    return toPaymentCard(updated);
   }
 
   // ── cauções ──

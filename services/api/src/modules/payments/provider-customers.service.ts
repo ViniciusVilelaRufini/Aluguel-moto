@@ -46,8 +46,9 @@ export class ProviderCustomersService {
   async addCard(customerId: string, cardToken: string, setDefault?: boolean): Promise<PaymentCard> {
     const providerCustomerId = await this.ensureCustomer(customerId);
     const card = await this.provider.attachCard({ providerCustomerId, cardToken });
-    const count = await this.prisma.paymentCard.count({ where: { customerId, deletedAt: null } });
-    const makeDefault = setDefault === true || count === 0;
+    // Task 30: sem padrão ativo (primeiro cartão ou dado antigo sem padrão), o novo cartão vira o padrão.
+    const defaults = await this.prisma.paymentCard.count({ where: { customerId, deletedAt: null, isDefault: true } });
+    const makeDefault = setDefault === true || defaults === 0;
     return this.prisma.$transaction(async (tx) => {
       if (makeDefault) await tx.paymentCard.updateMany({ where: { customerId }, data: { isDefault: false } });
       return tx.paymentCard.create({
@@ -56,9 +57,22 @@ export class ProviderCustomersService {
     });
   }
 
+  /** Cartão informado ou, sem `cardId`, o padrão (ver `resolveCustomerCard`). */
   async card(customerId: string, cardId?: string | null): Promise<PaymentCard | null> {
-    return cardId
-      ? this.prisma.paymentCard.findFirst({ where: { id: cardId, customerId, deletedAt: null } })
-      : this.prisma.paymentCard.findFirst({ where: { customerId, isDefault: true, deletedAt: null } });
+    return resolveCustomerCard(this.prisma, customerId, cardId);
   }
+}
+
+type CardReader = { paymentCard: Pick<PrismaService['paymentCard'], 'findFirst'> };
+
+/**
+ * Task 30 (item 12): cartão de uma cobrança. Com `cardId`, só esse cartão ativo do cliente. Sem ele, o padrão; se nenhum
+ * ativo estiver marcado como padrão (dado anterior à promoção automática), o ativo mais recente. Sem cartão ativo → null.
+ */
+export async function resolveCustomerCard(prisma: CardReader, customerId: string, cardId?: string | null): Promise<PaymentCard | null> {
+  if (cardId) return prisma.paymentCard.findFirst({ where: { id: cardId, customerId, deletedAt: null } });
+  return (
+    (await prisma.paymentCard.findFirst({ where: { customerId, isDefault: true, deletedAt: null } })) ??
+    prisma.paymentCard.findFirst({ where: { customerId, deletedAt: null }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] })
+  );
 }

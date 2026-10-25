@@ -14,6 +14,7 @@ import { canTransition } from './payment-state';
 import { isUniqueViolation, PaymentStateService } from './payment-state.service';
 import { toSubscription } from './payments.mapper';
 import { ProviderCustomersService } from './provider-customers.service';
+import { cardRequired } from './card-required';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderPayment, RefundRejectedError } from './provider/payment-provider';
 import { RentalBillingService } from './rental-billing.service';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
@@ -321,7 +322,9 @@ export class SubscriptionsService {
     // I2: a moto fixa é validada antes de cobrar.
     if (dto.vehicleId) await this.assertAssignableByCustomer(customerId, dto.vehicleId);
     const card = await this.customers.card(customerId, dto.cardId);
-    if (!card) throw new ProblemException(402, 'card-not-found', 'Cadastre um cartão para assinar.');
+    // Task 30 (item 12): sem cardId vale o padrão; sem nenhum cartão ativo → 422 card-required.
+    if (!card && !dto.cardId) throw cardRequired('Cadastre um cartão para assinar.');
+    if (!card) throw new ProblemException(402, 'card-not-found', 'Cartão não encontrado. Escolha outro cartão.');
     const plan = await this.prisma.pricingPlan.findFirst({ where: { code: dto.planCode, active: true } });
     if (!plan) throw notFound('Plano indisponível.');
 
