@@ -283,6 +283,8 @@ export class ApiStack extends Stack {
           'cognito-idp:AdminDisableUser',
           'cognito-idp:AdminDeleteUser',
           'cognito-idp:AdminUserGlobalSignOut',
+          // M7: e-mail verificado pelo sub no primeiro login (liga o convite do painel ao usuário do pool).
+          'cognito-idp:AdminGetUser',
         ],
         resources: [auth.staffPool.userPoolArn],
       }),

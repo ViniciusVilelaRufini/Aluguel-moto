@@ -9,20 +9,51 @@ const kSentryDsn = String.fromEnvironment('SENTRY_DSN');
 /// Crash reporting so liga com DSN e em build release/profile (nunca em debug).
 bool crashReportingEnabled({required String dsn, required bool isDebug}) => dsn.trim().isNotEmpty && !isDebug;
 
-final _redactions = <RegExp, String>{
-  RegExp(r'Bearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false): 'Bearer [token]',
-  RegExp(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*'): '[jwt]',
-  RegExp(r'[\w.+-]+@[\w-]+(\.[\w-]+)+'): '[email]',
-  RegExp(r'\d{3}\.?\d{3}\.?\d{3}-?\d{2}'): '[cpf]',
-  RegExp(r'[-+]?\d{1,3}\.\d{4,},\s*[-+]?\d{1,3}\.\d{4,}'): '[coords]',
-};
+/// Redações em ordem: a de cartão roda antes da de CPF e da de telefone (um PAN contém sequências que as duas pegariam
+/// pela metade), e as de coordenada antes da de telefone (revisão final, I2).
+final List<(RegExp, String Function(Match))> _redactions = [
+  (RegExp(r'Bearer\s+[A-Za-z0-9._~+/=-]+', caseSensitive: false), (_) => 'Bearer [token]'),
+  (RegExp(r'eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*'), (_) => '[jwt]'),
+  (RegExp(r'[\w.+-]+@[\w-]+(\.[\w-]+)+'), (_) => '[email]'),
+  // Coordenada com chave: lat=-23.56, "lng": -46.65, longitude: -46 (JSON, query string, toString de mapa).
+  (
+    RegExp(r'''\b(lat|latitude|lng|lon|long|longitude)\b(["']?\s*[:=]\s*["']?)[-+]?\d{1,3}(?:\.\d+)?''', caseSensitive: false),
+    (m) => '${m[1]}${m[2]}[coord]',
+  ),
+  // Par de coordenadas com 2+ decimais e qualquer separador (vírgula, ponto e vírgula, barra ou espaço).
+  (RegExp(r'[-+]?\d{1,3}\.\d{2,}\s*[,;/ ]\s*[-+]?\d{1,3}\.\d{2,}'), (_) => '[coords]'),
+  // Número de cartão (PAN): 13 a 19 dígitos, com ou sem espaço/hífen entre eles.
+  (RegExp(r'(?<![\w])(?:\d[ -]?){12,18}\d(?![\w])'), (_) => '[card]'),
+  (RegExp(r'(?<![\w])\d{3}\.?\d{3}\.?\d{3}-?\d{2}(?![\w])'), (_) => '[cpf]'),
+  // Telefone BR: +55 opcional, DDD com ou sem parênteses, 8 ou 9 dígitos, com espaço, ponto ou hífen opcionais.
+  (RegExp(r'(?<![\w+])(?:\+?55[\s.-]?)?(?:\(\d{2}\)|\d{2})[\s.-]?9?\d{4}[\s.-]?\d{4}(?![\w])'), (_) => '[phone]'),
+];
 
-/// Tira de um texto livre o que identifica pessoa (token, e-mail, CPF, coordenadas).
+/// Tira de um texto livre o que identifica pessoa (token, e-mail, coordenadas, cartão, CPF, telefone).
 String scrubText(String input) {
   var out = input;
-  _redactions.forEach((re, to) => out = out.replaceAll(re, to));
+  for (final (re, to) in _redactions) {
+    out = out.replaceAllMapped(re, to);
+  }
   return out;
 }
+
+/// De `contexts` ficam só sistema, aparelho (modelo, sem nome dado pelo dono) e app (versão), sem campos livres.
+Contexts _safeContexts(Contexts c) {
+  final d = c.device;
+  final os = c.operatingSystem;
+  final app = c.app;
+  return Contexts(
+    device: d == null ? null : SentryDevice(family: d.family, model: d.model, modelId: d.modelId, arch: d.arch, manufacturer: d.manufacturer, brand: d.brand, simulator: d.simulator),
+    operatingSystem: os == null ? null : SentryOperatingSystem(name: os.name, version: os.version, build: os.build),
+    app: app == null ? null : SentryApp(name: app.name, version: app.version, identifier: app.identifier, build: app.build, buildType: app.buildType),
+    runtimes: c.runtimes,
+  );
+}
+
+/// Trilha de ações nunca é enviada (`maxBreadcrumbs = 0`); se algum caminho a reativar, o texto passa pelo scrub e os
+/// dados (URLs, posição) saem.
+Breadcrumb? scrubBreadcrumb(Breadcrumb? b) => null;
 
 /// Remove dados pessoais do evento antes do envio: usuario, requisicao (URL,
 /// cabecalhos, cookies, corpo), trilha de acoes (URLs e posicao), dados extras,
@@ -49,10 +80,9 @@ SentryEvent? scrubEvent(SentryEvent event) {
     throwable: event.throwable,
     level: event.level,
     fingerprint: event.fingerprint,
-    contexts: event.contexts,
+    contexts: _safeContexts(event.contexts),
     sdk: event.sdk,
     debugMeta: event.debugMeta,
-    threads: event.threads,
     type: event.type,
     exceptions: exceptions,
     message: message == null ? null : SentryMessage(scrubText(message.formatted)),
@@ -68,7 +98,14 @@ void configureSentry(SentryFlutterOptions o, {required String dsn}) {
   o.enableAutoNativeBreadcrumbs = false;
   o.tracesSampleRate = null;
   o.beforeSend = (event, hint) => scrubEvent(event);
-  o.beforeBreadcrumb = (_, _) => null;
+  o.beforeBreadcrumb = (b, _) => scrubBreadcrumb(b);
+  // ignore: experimental_member_use
+  o.attachViewHierarchy = false;
+  o.enableAutoPerformanceTracing = false;
+  // Crash nativo (NDK/Android, KSCrash/iOS) é montado e enviado pelo SDK nativo sem passar pelo `beforeSend` do Dart,
+  // então não teria o scrub acima. Até existir scrub nativo, fica desligado (revisão final, I2; docs/decisoes.md).
+  o.enableNativeCrashHandling = false;
+  o.enableNdkScopeSync = false;
 }
 
 /// Roda [app] sob o Sentry quando habilitado; sem DSN (ou em debug) so executa [app].

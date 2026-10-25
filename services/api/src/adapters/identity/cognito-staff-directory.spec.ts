@@ -1,4 +1,4 @@
-import { AdminAddUserToGroupCommand, AdminDisableUserCommand, AdminRemoveUserFromGroupCommand, AdminUserGlobalSignOutCommand } from '@aws-sdk/client-cognito-identity-provider';
+import { AdminAddUserToGroupCommand, AdminGetUserCommand, AdminDisableUserCommand, AdminRemoveUserFromGroupCommand, AdminUserGlobalSignOutCommand } from '@aws-sdk/client-cognito-identity-provider';
 import { CognitoStaffDirectory } from './cognito-staff-directory';
 
 describe('CognitoStaffDirectory (QA-04)', () => {
@@ -22,5 +22,14 @@ describe('CognitoStaffDirectory (QA-04)', () => {
     expect(cmds[0]).toBeInstanceOf(AdminDisableUserCommand);
     expect(cmds[0].input.Username).toBe('op@volti.dev');
     expect(cmds[1]).toBeInstanceOf(AdminUserGlobalSignOutCommand);
+  });
+
+  it('M7: e-mail verificado pelo sub (AdminGetUser); não verificado → null', async () => {
+    send.mockResolvedValueOnce({ UserAttributes: [{ Name: 'email', Value: 'Ana@Volti.com.br' }, { Name: 'email_verified', Value: 'true' }] });
+    await expect(dir.verifiedEmail('sub-1')).resolves.toBe('ana@volti.com.br');
+    expect(send.mock.calls[0][0]).toBeInstanceOf(AdminGetUserCommand);
+    expect(send.mock.calls[0][0].input).toEqual({ UserPoolId: 'sa-east-1_staff', Username: 'sub-1' });
+    send.mockResolvedValueOnce({ UserAttributes: [{ Name: 'email', Value: 'x@volti.dev' }, { Name: 'email_verified', Value: 'false' }] });
+    await expect(dir.verifiedEmail('sub-2')).resolves.toBeNull();
   });
 });

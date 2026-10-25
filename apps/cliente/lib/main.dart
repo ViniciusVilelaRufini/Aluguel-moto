@@ -25,12 +25,13 @@ Future<void> main() => runWithCrashReporting(_start);
 
 Future<void> _start() async {
   WidgetsFlutterBinding.ensureInitialized();
-  // Release sem API_BASE_URL / SUPPORT_PHONE reais: falha aqui, com mensagem clara.
+  // Release sem API_BASE_URL / SUPPORT_PHONE / MP_PUBLIC_KEY / COGNITO_* reais: falha aqui, com mensagem clara.
   final envProblems = releaseEnvironmentProblems(
     isRelease: kReleaseMode,
     apiBaseUrl: const String.fromEnvironment('API_BASE_URL'),
     supportPhone: kSupportPhone,
     mpPublicKey: kMpPublicKey,
+    cognito: CognitoConfig.fromEnvironment(),
   );
   if (envProblems.isNotEmpty) {
     runApp(ConfigErrorApp(problems: envProblems));

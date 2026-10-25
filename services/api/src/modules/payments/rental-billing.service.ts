@@ -16,6 +16,7 @@ import { ProviderCustomersService } from './provider-customers.service';
 import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError, type ProviderPayment } from './provider/payment-provider';
 import { ReceiptService } from './receipts/receipt.service';
+import { hasOpenDebt, rentalSettlementRetrying } from './open-debt';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const DEPOSIT_CENTS = 5000;
@@ -757,11 +758,9 @@ export class RentalBillingService implements RentalBillingPort {
   async clearDelinquencyIfSettled(customerId: string): Promise<void> {
     const c = await this.prisma.customer.findUnique({ where: { id: customerId }, select: { delinquent: true } });
     if (!c?.delinquent) return;
-    const failed = await this.prisma.payment.count({ where: { customerId, kind: { in: ['rental', 'subscription'] }, status: 'failed', debtSettledAt: null } });
-    if (failed > 0) return;
-    const pendingIds = (await this.prisma.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } })).map((p) => p.id);
-    const retrying = pendingIds.length ? await this.prisma.settlementProgress.count({ where: { paymentId: { in: pendingIds }, attempts: { gt: 0 } } }) : 0;
-    if (retrying > 0) return;
+    // Revisão final (I1): mesma definição de dívida da inadimplência e da LGPD (`open-debt.ts`).
+    if (await hasOpenDebt(this.prisma, customerId)) return;
+    if (await rentalSettlementRetrying(this.prisma, customerId, { onlyLive: false })) return;
     await this.prisma.customer.update({ where: { id: customerId }, data: { delinquent: false } });
     this.logger.log({ msg: 'customer_delinquency_cleared' });
   }
