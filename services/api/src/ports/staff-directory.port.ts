@@ -17,4 +17,10 @@ export interface StaffIdentity {
 export interface StaffDirectory {
   updateGroups(user: StaffIdentity, change: { add: StaffGroup[]; remove: StaffGroup[] }): Promise<void>;
   setActive(user: StaffIdentity, active: boolean): Promise<void>;
+  /**
+   * M7 (revisão final): e-mail **verificado** do usuário do pool pelo `sub` (o access token do Cognito não traz e-mail).
+   * Usado só no primeiro login, para ligar o convite feito pelo painel (`POST /staff`, cadastro sem `sub`) ao usuário real.
+   * local: null (o token dev já traz e-mail). aws: AdminGetUser (Username = sub).
+   */
+  verifiedEmail(sub: string): Promise<string | null>;
 }

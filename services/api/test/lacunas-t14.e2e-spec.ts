@@ -138,6 +138,24 @@ describe('Lacunas T14 (e2e)', () => {
     expect((await prisma.supportConversation.findUniqueOrThrow({ where: { id: conv.id } })).subject).toBe('Conversa removida');
   });
 
+  it('I1 (revisão final): mensalidade failed não quitada bloqueia a exclusão da conta com 409; quitada libera', async () => {
+    const { token, customerId } = await approvedCustomer(app, prisma, 'final-i1-sub');
+    const now = new Date();
+    const sub = await prisma.subscription.create({
+      data: { customerId, planCode: 'monthly', status: 'canceled', priceCents: 49900, currentPeriodStart: now, currentPeriodEnd: new Date(now.getTime() + 86_400_000), canceledAt: now },
+    });
+    const debt = await prisma.payment.create({ data: { customerId, kind: 'subscription', subscriptionId: sub.id, method: 'card', status: 'failed', amountCents: 49900, failureReason: 'cc_rejected' } });
+
+    const res = await http().delete('/lgpd/account').set(bearer(token)).expect(409);
+    expect(res.body.type).toMatch(/account-deletion-blocked$/);
+    expect(res.body.detail).toContain('Quite as pendências');
+    const still = await prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
+    expect(still.name).not.toBe('Cliente removido');
+
+    await prisma.payment.update({ where: { id: debt.id }, data: { debtSettledAt: new Date(), debtSettlement: 'manual' } });
+    await http().delete('/lgpd/account').set(bearer(token)).expect(202);
+  });
+
   it('QA-17: pagamento no painel traz o nome do cliente (só staff)', async () => {
     const { token, customerId } = await approvedCustomer(app, prisma, 't14-name');
     const p = await prisma.payment.create({ data: { customerId, kind: 'fee', method: 'card', status: 'paid', amountCents: 100 } });

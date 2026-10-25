@@ -217,7 +217,7 @@ describe('ApiStack', () => {
     expect(env.find((e: any) => e.Name === 'TRUST_PROXY').Value).toBe('1');
   });
 
-  it('QA-04/QA-07: Cognito admin actions are scoped to the two pools', () => {
+  it('QA-04/QA-07/M7: Cognito admin actions are scoped to the two pools', () => {
     const stmts = Object.values(t().findResources('AWS::IAM::Policy')).flatMap((p: any) => p.Properties.PolicyDocument.Statement) as any[];
     const list = (x: unknown) => (Array.isArray(x) ? x : [x]);
     const cog = stmts.filter((s) => list(s.Action).some((a: string) => a.startsWith('cognito-idp:')));
@@ -225,7 +225,7 @@ describe('ApiStack', () => {
     const staff = cog.find((s) => list(s.Action).includes('cognito-idp:AdminAddUserToGroup'));
     expect(list(staff.Action).sort()).toEqual([
       'cognito-idp:AdminAddUserToGroup', 'cognito-idp:AdminDeleteUser', 'cognito-idp:AdminDisableUser',
-      'cognito-idp:AdminEnableUser', 'cognito-idp:AdminRemoveUserFromGroup', 'cognito-idp:AdminUserGlobalSignOut',
+      'cognito-idp:AdminEnableUser', 'cognito-idp:AdminGetUser', 'cognito-idp:AdminRemoveUserFromGroup', 'cognito-idp:AdminUserGlobalSignOut',
     ]);
     expect(list(staff.Resource)).toHaveLength(1);
     const customer = cog.find((s) => list(s.Action).length === 3);

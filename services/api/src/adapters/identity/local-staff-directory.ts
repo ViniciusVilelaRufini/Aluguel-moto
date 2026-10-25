@@ -13,4 +13,8 @@ export class LocalStaffDirectory implements StaffDirectory {
   async setActive(_user: StaffIdentity, active: boolean): Promise<void> {
     this.logger.log({ msg: 'staff_directory_active_noop', active });
   }
+
+  async verifiedEmail(_sub: string): Promise<string | null> {
+    return null;
+  }
 }

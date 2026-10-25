@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { cpfHash } from '../../common/fraud-hash';
 import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { SubscriptionsService } from '../payments/subscriptions.service';
+import { blocksAccountDeletion } from '../payments/open-debt';
 import { Cron, Interval } from '@nestjs/schedule';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EV, type CustomerConsentChangedEvent, type LgpdIdentityDeletionFailedEvent, type PrincipalRevokedEvent } from '../../common/events';
@@ -214,10 +215,11 @@ export class LgpdService {
     const requestedAt = new Date();
     const customer = await this.customer(customerId);
     const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
-    // Task 14: dívida quitada (pelo cliente ou manualmente) não bloqueia mais.
-    const pendingDebts = await this.prisma.payment.count({ where: { customerId, status: { in: ['failed', 'pending'] }, kind: { in: ['rental', 'fee'] }, debtSettledAt: null } });
-    if (open || customer.delinquent || pendingDebts > 0) {
-      throw conflict('account-deletion-blocked', 'Encerre o aluguel e regularize os pagamentos antes de excluir a conta.');
+    if (open) throw conflict('account-deletion-blocked', 'Encerre o aluguel antes de excluir a conta.');
+    // Revisão final (I1): mesma definição de dívida da inadimplência (aluguel e assinatura, `open-debt.ts`); dívida
+    // quitada (pelo cliente ou manualmente) não bloqueia. Cobrança ainda em curso no gateway também bloqueia.
+    if (customer.delinquent || (await blocksAccountDeletion(this.prisma, customerId))) {
+      throw conflict('account-deletion-blocked', 'Você tem pagamentos pendentes. Quite as pendências (aluguel ou assinatura) antes de excluir a conta.');
     }
 
     // M10: fecha a assinatura aberta e libera a moto fixa; o cancelamento no gateway fica pendente e retentável se falhar.

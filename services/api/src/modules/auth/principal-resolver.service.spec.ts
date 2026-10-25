@@ -103,9 +103,47 @@ describe('PrincipalResolver (staff, QA-04)', () => {
     prisma.staffUser.findFirst.mockResolvedValue({ id: 's2', active: true, groups: ['operacao'], cognitoSub: null, lastLoginAt: null });
     const p = await new PrincipalResolver(prisma as any).resolve(token);
     expect(prisma.staffUser.findUnique).toHaveBeenCalledWith(expect.objectContaining({ where: { cognitoSub: 'sub-op' } }));
-    expect(prisma.staffUser.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { email: 'operacao@volti.dev', cognitoSub: null } }));
+    expect(prisma.staffUser.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { email: { equals: 'operacao@volti.dev', mode: 'insensitive' }, cognitoSub: null } }));
     expect(p).toMatchObject({ staffId: 's2', groups: ['operacao'] });
     expect(prisma.staffUser.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 's2' }, data: expect.objectContaining({ cognitoSub: 'sub-op' }) }));
+  });
+});
+
+/** M7 (revisão final): access token do Cognito sem e-mail → e-mail verificado do pool pelo sub liga o convite do painel. */
+describe('PrincipalResolver (convite do painel no Cognito, M7)', () => {
+  const cognitoToken = { sub: 'sub-cog', email: '', groups: ['operacao' as const], pool: 'staff' as const };
+  const invite = { id: 'inv-1', active: true, groups: ['operacao'], cognitoSub: null, lastLoginAt: null };
+  const mkPrisma = () => ({
+    staffUser: { findUnique: jest.fn().mockResolvedValue(null), findFirst: jest.fn().mockResolvedValue(invite), create: jest.fn(), update: jest.fn() },
+  });
+
+  it('primeiro login sem e-mail no token: busca o e-mail verificado pelo sub e liga o cadastro do convite (grava o sub)', async () => {
+    const prisma = mkPrisma();
+    const directory = { verifiedEmail: jest.fn().mockResolvedValue('ana@volti.com.br') };
+    const p = await new PrincipalResolver(prisma as any, directory as any).resolve(cognitoToken);
+    expect(directory.verifiedEmail).toHaveBeenCalledWith('sub-cog');
+    expect(prisma.staffUser.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { email: { equals: 'ana@volti.com.br', mode: 'insensitive' }, cognitoSub: null } }));
+    expect(prisma.staffUser.create).not.toHaveBeenCalled();
+    expect(prisma.staffUser.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'inv-1' }, data: expect.objectContaining({ cognitoSub: 'sub-cog' }) }));
+    expect(p).toMatchObject({ staffId: 'inv-1', groups: ['operacao'] });
+  });
+
+  it('sub já ligado: não consulta o diretório', async () => {
+    const prisma = mkPrisma();
+    prisma.staffUser.findUnique.mockResolvedValue({ ...invite, cognitoSub: 'sub-cog', lastLoginAt: new Date() });
+    const directory = { verifiedEmail: jest.fn() };
+    await new PrincipalResolver(prisma as any, directory as any).resolve(cognitoToken);
+    expect(directory.verifiedEmail).not.toHaveBeenCalled();
+  });
+
+  it('diretório fora ou e-mail não verificado: entra como cadastro novo com os grupos do token (comportamento anterior)', async () => {
+    for (const directory of [{ verifiedEmail: jest.fn().mockRejectedValue(new Error('throttled')) }, { verifiedEmail: jest.fn().mockResolvedValue(null) }]) {
+      const prisma = mkPrisma();
+      prisma.staffUser.create.mockResolvedValue({ id: 'novo' });
+      const p = await new PrincipalResolver(prisma as any, directory as any).resolve(cognitoToken);
+      expect(prisma.staffUser.findFirst).not.toHaveBeenCalled();
+      expect(p).toMatchObject({ staffId: 'novo', groups: ['operacao'] });
+    }
   });
 });
 

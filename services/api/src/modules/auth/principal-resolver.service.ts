@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { VerifiedToken } from '../../ports/auth-verifier.port';
 import type { Principal } from './principal';
 import { ProblemException } from '../../common/problem';
 import { deletedSubMarker } from './deleted-identity';
+import { STAFF_DIRECTORY, type StaffDirectory } from '../../ports/staff-directory.port';
 
 /** Login do staff gravado no máximo a cada 5 min (o staff é resolvido a cada requisição). */
 const STAFF_LOGIN_TOUCH_MS = 5 * 60_000;
@@ -17,7 +18,12 @@ const STAFF_LOGIN_TOUCH_MS = 5 * 60_000;
  */
 @Injectable()
 export class PrincipalResolver {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger('PrincipalResolver');
+
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() @Inject(STAFF_DIRECTORY) private readonly directory?: StaffDirectory,
+  ) {}
 
   async resolve(token: VerifiedToken): Promise<Principal> {
     if (token.pool === 'staff') return this.resolveStaff(token);
@@ -41,16 +47,21 @@ export class PrincipalResolver {
     const select = { id: true, active: true, groups: true, cognitoSub: true, lastLoginAt: true } as const;
     // QA-17: casa pelo sub. O e-mail só liga um cadastro ainda sem sub (criado pelo painel antes do primeiro login) e só
     // existe em tokens dev; o access token do Cognito não traz e-mail, e o `username` nunca é usado como e-mail.
-    let existing =
-      (await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select })) ??
-      (token.email ? await this.prisma.staffUser.findFirst({ where: { email: token.email, cognitoSub: null }, select }) : null);
+    // M7 (revisão final): sem e-mail no token (Cognito), o e-mail verificado vem do pool pelo sub (AdminGetUser), só
+    // quando o sub ainda não tem cadastro — uma vez por usuário, no primeiro login.
+    let existing = await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select });
+    let email = token.email;
+    if (!existing) {
+      if (!email) email = (await this.directoryEmail(token.sub)) ?? '';
+      if (email) existing = await this.prisma.staffUser.findFirst({ where: { email: { equals: email, mode: 'insensitive' }, cognitoSub: null }, select });
+    }
     if (!existing) {
       try {
         const created = await this.prisma.staffUser.create({
           data: {
             cognitoSub: token.sub,
-            email: token.email || `${token.sub}@staff.volti.invalid`,
-            name: token.email ? token.email.split('@')[0] : token.sub,
+            email: email || `${token.sub}@staff.volti.invalid`,
+            name: email ? email.split('@')[0] : token.sub,
             groups: token.groups,
             lastLoginAt: new Date(),
           },
@@ -71,6 +82,17 @@ export class PrincipalResolver {
     }
     const groups = existing.groups.filter((g) => token.groups.includes(g));
     return { pool: 'staff', sub: token.sub, email: token.email, groups, userId: existing.id, staffId: existing.id };
+  }
+
+  /** Falha do diretório não impede o login: o usuário entra como cadastro novo com os grupos do token (como antes). */
+  private async directoryEmail(sub: string): Promise<string | null> {
+    if (!this.directory) return null;
+    try {
+      return await this.directory.verifiedEmail(sub);
+    } catch (err) {
+      this.logger.warn({ msg: 'staff_directory_lookup_failed', error: (err as Error).message });
+      return null;
+    }
   }
 
   /**

@@ -241,6 +241,35 @@ describe('LgpdService', () => {
     await expect(service.deleteAccount(ME)).rejects.toMatchObject({ slug: 'account-deletion-blocked' });
   });
 
+  it('I1: dívida de assinatura failed não quitada bloqueia a exclusão (mesma regra da inadimplência)', async () => {
+    const { service, prisma, subscriptions } = setup();
+    prisma.payment.count.mockImplementation((async (args: any) => {
+      const w = args.where;
+      return w.status === 'failed' && w.kind?.in?.includes('subscription') && w.debtSettledAt === null ? 1 : 0;
+    }) as any);
+    await expect(service.deleteAccount(ME)).rejects.toMatchObject({ status: 409, slug: 'account-deletion-blocked', detail: expect.stringContaining('assinatura') });
+    expect(subscriptions.closeForAccountDeletion).not.toHaveBeenCalled();
+    expect(prisma.customer.update).not.toHaveBeenCalled();
+    const where = (prisma.payment.count.mock.calls[0][0] as any).where;
+    expect(where.kind.in).toEqual(['rental', 'subscription']);
+    expect(where.kind.in).not.toContain('fee');
+  });
+
+  it('I1: assinatura past_due (gateway ainda cobrando) bloqueia a exclusão', async () => {
+    const { service, prisma } = setup();
+    prisma.subscription.count.mockResolvedValue(1);
+    await expect(service.deleteAccount(ME)).rejects.toMatchObject({ status: 409, slug: 'account-deletion-blocked' });
+    expect(prisma.customer.update).not.toHaveBeenCalled();
+  });
+
+  it('I1: dívida quitada não bloqueia (a contagem filtra debtSettledAt null)', async () => {
+    const { service, prisma } = setup();
+    prisma.subscription.count.mockResolvedValue(0);
+    prisma.settlementProgress.count.mockResolvedValue(0);
+    await service.deleteAccount(ME);
+    expect(prisma.customer.update).toHaveBeenCalled();
+  });
+
   it('QA-12: exclusão anula a posição de início dos aluguéis do titular', async () => {
     const { service, prisma } = setup();
     prisma.rental.findMany.mockResolvedValue([{ id: 'r1' }] as any);
