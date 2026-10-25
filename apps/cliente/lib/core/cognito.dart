@@ -236,7 +236,12 @@ class DioCognitoTransport implements CognitoTransport {
         m = jsonDecode(data) as Map<String, dynamic>;
       } catch (_) {}
     }
-    if (m == null) return const CognitoException(CognitoException.network);
+    if (m == null) {
+      // Resposta HTTP sem JSON do Cognito (proxy, 5xx, corpo vazio) nao e falta de rede.
+      return e.response == null
+          ? const CognitoException(CognitoException.network)
+          : CognitoException('HttpError${e.response?.statusCode ?? ''}');
+    }
     // `__type` pode vir como "com.amazonaws...#CodeMismatchException".
     final type = ((m['__type'] ?? m['error'] ?? 'Unknown') as String).split('#').last;
     return CognitoException(type, (m['message'] ?? m['error_description'] ?? '') as String);

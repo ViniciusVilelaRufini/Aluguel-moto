@@ -31,7 +31,14 @@ class OtpChallenge {
     required this.signUp,
     this.challengeName = 'SMS_OTP',
     this.session,
+    this.codeLength = defaultCodeLength,
   });
+
+  /// Confirmacao de cadastro (`ConfirmSignUp`) e o modo dev: 6 digitos.
+  static const defaultCodeLength = 6;
+
+  /// Codigo de login (`SMS_OTP`/`EMAIL_OTP` do Cognito): 8 digitos.
+  static const loginCodeLength = 8;
 
   final OtpChannel channel;
 
@@ -42,6 +49,9 @@ class OtpChallenge {
   final bool signUp;
   final String challengeName;
   final String? session;
+
+  /// Quantos digitos o codigo enviado tem (define as caixas e a validacao).
+  final int codeLength;
 }
 
 /// Fronteira do login por codigo. [verify] conclui o login (grava a sessao) e
@@ -70,7 +80,8 @@ OtpError otpErrorOf(Object e) {
       _ => OtpError.unknown,
     };
   }
-  if (e is DioException) return OtpError.network;
+  // So timeout/sem resposta e rede; resposta HTTP (4xx/5xx) e erro do servidor.
+  if (e is DioException) return e.response == null ? OtpError.network : OtpError.unknown;
   if (e is AppFailure) return e.isNetwork ? OtpError.network : OtpError.unknown;
   return OtpError.unknown;
 }
@@ -116,6 +127,7 @@ class CognitoOtpClient implements OtpAuthClient {
         signUp: false,
         challengeName: (r['ChallengeName'] as String?) ?? challengeFor(channel),
         session: r['Session'] as String?,
+        codeLength: OtpChallenge.loginCodeLength,
       );
     } on CognitoException catch (e) {
       if (e.type == 'UserNotConfirmedException') {
@@ -132,7 +144,7 @@ class CognitoOtpClient implements OtpAuthClient {
     if (c.signUp) {
       await _guard(() => api.resendConfirmationCode(username: c.destination));
       // A Session do SignUp nao vale para o codigo reenviado: confirma sem ela.
-      return OtpChallenge(channel: c.channel, destination: c.destination, signUp: true, challengeName: c.challengeName);
+      return OtpChallenge(channel: c.channel, destination: c.destination, signUp: true, challengeName: c.challengeName, codeLength: c.codeLength);
     }
     return _initiate(c.channel, c.destination);
   }
@@ -164,7 +176,8 @@ class CognitoOtpClient implements OtpAuthClient {
     final name = result['ChallengeName'] as String?;
     final next = result['Session'] as String?;
     if (name == challengeFor(c.channel) && next != null) {
-      return OtpChallenge(channel: c.channel, destination: c.destination, signUp: false, challengeName: name!, session: next);
+      return OtpChallenge(channel: c.channel, destination: c.destination, signUp: false,
+          challengeName: name!, session: next, codeLength: OtpChallenge.loginCodeLength);
     }
     if (c.signUp) return _initiate(c.channel, c.destination);
     throw const OtpException(OtpError.unknown);
@@ -239,14 +252,12 @@ class OtpFlowController extends ChangeNotifier {
     required this.client,
     required this.channel,
     this.resendCooldown = const Duration(seconds: 60),
-    this.codeLength = 6,
     Timer Function(Duration, void Function(Timer))? periodic,
   }) : _periodic = periodic ?? Timer.periodic;
 
   final OtpAuthClient client;
   final OtpChannel channel;
   final Duration resendCooldown;
-  final int codeLength;
   final Timer Function(Duration, void Function(Timer)) _periodic;
 
   OtpPhase _phase = OtpPhase.enterDestination;
@@ -305,7 +316,7 @@ class OtpFlowController extends ChangeNotifier {
   /// `true` quando o login foi concluido.
   Future<bool> verify(String code) async {
     final c = _challenge;
-    if (c == null || code.length != codeLength || busy) return false;
+    if (c == null || code.length != c.codeLength || busy) return false;
     _set(phase: OtpPhase.verifying, error: null);
     try {
       final next = await client.verify(c, code);

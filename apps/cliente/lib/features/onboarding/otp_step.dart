@@ -24,7 +24,7 @@ String otpErrorText(AppLocalizations l, OtpError e) => switch (e) {
 String formatCountdown(int seconds) => '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
 
 /// Passo 1 de 4 do cadastro (Onboarding.jsx step 1): informa o celular (ou e-mail),
-/// recebe o codigo de 6 digitos e confirma. Conta nova ou existente, o fluxo e o mesmo.
+/// recebe o codigo (6 ou 8 digitos, conforme o desafio) e confirma. Conta nova ou existente, o fluxo e o mesmo.
 class OtpStep extends ConsumerStatefulWidget {
   const OtpStep({super.key, required this.channel, required this.onExit, this.showDevHint = false});
   final OtpChannel channel;
@@ -170,7 +170,7 @@ class _OtpStepState extends ConsumerState<OtpStep> {
     return OnboardingStepShell(
       step: 0,
       title: l.otpCodeTitle,
-      subtitle: _sms ? l.otpCodeSentSms(shown) : l.otpCodeSentEmail(shown),
+      subtitle: _sms ? l.otpCodeSentSms(c.codeLength, shown) : l.otpCodeSentEmail(c.codeLength, shown),
       onBack: verifying ? null : _back,
       cta: VoltiButton(
         key: const Key('otp-confirm'),
@@ -178,7 +178,7 @@ class _OtpStepState extends ConsumerState<OtpStep> {
         size: VoltiButtonSize.lg,
         fullWidth: true,
         loading: verifying,
-        onPressed: _code.length == 6 && !verifying ? _verify : null,
+        onPressed: _code.length == c.codeLength && !verifying ? _verify : null,
       ),
       children: [
         if (_flow.accountConfirmed) ...[
@@ -190,9 +190,10 @@ class _OtpStepState extends ConsumerState<OtpStep> {
           const SizedBox(height: VoltiSpacing.s12),
         ],
         Semantics(
-          label: l.otpCodeLabel,
+          label: l.otpCodeLabel(c.codeLength),
           textField: true,
           child: OtpInput(
+            length: c.codeLength,
             value: _code,
             autofocus: true,
             error: codeError,

@@ -1048,23 +1048,36 @@
   "otpEmailInvalid": "Informe um e-mail válido.",
   "otpSend": "Enviar código",
   "otpCodeTitle": "Digite o código",
-  "otpCodeSentSms": "Enviamos 6 dígitos por SMS para {destination}.",
+  "otpCodeSentSms": "Enviamos {count} dígitos por SMS para {destination}.",
   "@otpCodeSentSms": {
     "placeholders": {
+      "count": {
+        "type": "int"
+      },
       "destination": {
         "type": "String"
       }
     }
   },
-  "otpCodeSentEmail": "Enviamos 6 dígitos por e-mail para {destination}.",
+  "otpCodeSentEmail": "Enviamos {count} dígitos por e-mail para {destination}.",
   "@otpCodeSentEmail": {
     "placeholders": {
+      "count": {
+        "type": "int"
+      },
       "destination": {
         "type": "String"
       }
     }
   },
-  "otpCodeLabel": "Código de 6 dígitos",
+  "otpCodeLabel": "Código de {count} dígitos",
+  "@otpCodeLabel": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "otpNotReceived": "Não chegou?",
   "otpResendIn": "Reenviar em {time}",
   "@otpResendIn": {

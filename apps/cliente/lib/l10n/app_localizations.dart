@@ -3427,20 +3427,20 @@ abstract class AppLocalizations {
   /// No description provided for @otpCodeSentSms.
   ///
   /// In pt, this message translates to:
-  /// **'Enviamos 6 dígitos por SMS para {destination}.'**
-  String otpCodeSentSms(String destination);
+  /// **'Enviamos {count} dígitos por SMS para {destination}.'**
+  String otpCodeSentSms(int count, String destination);
 
   /// No description provided for @otpCodeSentEmail.
   ///
   /// In pt, this message translates to:
-  /// **'Enviamos 6 dígitos por e-mail para {destination}.'**
-  String otpCodeSentEmail(String destination);
+  /// **'Enviamos {count} dígitos por e-mail para {destination}.'**
+  String otpCodeSentEmail(int count, String destination);
 
   /// No description provided for @otpCodeLabel.
   ///
   /// In pt, this message translates to:
-  /// **'Código de 6 dígitos'**
-  String get otpCodeLabel;
+  /// **'Código de {count} dígitos'**
+  String otpCodeLabel(int count);
 
   /// No description provided for @otpNotReceived.
   ///

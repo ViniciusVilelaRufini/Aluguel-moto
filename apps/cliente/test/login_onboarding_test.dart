@@ -315,6 +315,32 @@ void main() {
       expect(s.completed, ['+5511987654321']);
     });
 
+    testWidgets('codigo de login de 8 digitos: 8 caixas, texto com 8 e so libera com 8', (t) async {
+      final (client, s) = await pumpPhone(t);
+      client
+        ..codeLength = 8
+        ..good = '86938554';
+      await t.enterText(find.byKey(const Key('otp-destination')), '11987654321');
+      await t.pump();
+      await t.tap(find.byKey(const Key('otp-send')));
+      await t.pump();
+      expect(find.text('Enviamos 8 dígitos por SMS para (11) 98765-4321.'), findsOneWidget);
+      expect(find.byKey(const Key('otp-box-7')), findsOneWidget);
+      expect(find.byKey(const Key('otp-box-8')), findsNothing);
+
+      VoltiButton confirm() => t.widget<VoltiButton>(find.byKey(const Key('otp-confirm')));
+      await t.enterText(find.byKey(const Key('otp-field')), '123456');
+      await t.pump();
+      expect(confirm().onPressed, isNull);
+      // Colar mais que 8 digitos corta em 8.
+      await t.enterText(find.byKey(const Key('otp-field')), '869385541234');
+      await t.pump();
+      expect(t.widget<TextField>(find.byKey(const Key('otp-field'))).controller!.text, '86938554');
+      await t.tap(find.byKey(const Key('otp-confirm')));
+      await t.pump();
+      expect(s.completed, ['+5511987654321']);
+    });
+
     testWidgets('voltar no codigo volta para o numero', (t) async {
       await pumpPhone(t);
       await t.enterText(find.byKey(const Key('otp-destination')), '11987654321');

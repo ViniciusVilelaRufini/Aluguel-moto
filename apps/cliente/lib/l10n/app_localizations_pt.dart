@@ -1929,17 +1929,19 @@ class AppLocalizationsPt extends AppLocalizations {
   String get otpCodeTitle => 'Digite o código';
 
   @override
-  String otpCodeSentSms(String destination) {
-    return 'Enviamos 6 dígitos por SMS para $destination.';
+  String otpCodeSentSms(int count, String destination) {
+    return 'Enviamos $count dígitos por SMS para $destination.';
   }
 
   @override
-  String otpCodeSentEmail(String destination) {
-    return 'Enviamos 6 dígitos por e-mail para $destination.';
+  String otpCodeSentEmail(int count, String destination) {
+    return 'Enviamos $count dígitos por e-mail para $destination.';
   }
 
   @override
-  String get otpCodeLabel => 'Código de 6 dígitos';
+  String otpCodeLabel(int count) {
+    return 'Código de $count dígitos';
+  }
 
   @override
   String get otpNotReceived => 'Não chegou?';

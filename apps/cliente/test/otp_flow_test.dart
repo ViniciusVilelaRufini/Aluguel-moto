@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:volti_cliente/core/cognito.dart';
 import 'package:volti_cliente/features/onboarding/otp_flow.dart';
@@ -42,6 +43,7 @@ class FakeOtpClient implements OtpAuthClient {
   final verified = <String>[];
   Object? startError;
   String good = '123456';
+  int codeLength = 6;
 
   /// Se definido, o 1o codigo certo confirma a conta e pede outro (I-3).
   OtpChallenge? nextChallenge;
@@ -50,7 +52,7 @@ class FakeOtpClient implements OtpAuthClient {
   Future<OtpChallenge> start(OtpChannel channel, String destination) async {
     starts++;
     if (startError != null) throw startError!;
-    return OtpChallenge(channel: channel, destination: destination, signUp: false, session: 's$starts');
+    return OtpChallenge(channel: channel, destination: destination, signUp: false, session: 's$starts', codeLength: codeLength);
   }
 
   @override
@@ -126,6 +128,17 @@ void main() {
       expect(c.error, OtpError.network);
     });
 
+    test('codigo de 8 digitos: so aceita 8; 6 nem chama o cliente', () async {
+      client.codeLength = 8;
+      client.good = '12345678';
+      await c.send('+5511987654321');
+      expect(c.challenge!.codeLength, 8);
+      expect(await c.verify('123456'), isFalse);
+      expect(client.verified, isEmpty);
+      expect(c.error, isNull);
+      expect(await c.verify('12345678'), isTrue);
+    });
+
     test('corrigir o numero limpa o desafio mas mantem a contagem (sem SMS ilimitado)', () async {
       await c.send('+5511987654321');
       c.editDestination();
@@ -161,6 +174,24 @@ void main() {
     });
   });
 
+  group('otpErrorOf', () {
+    DioException dio(int? status) => DioException(
+          requestOptions: RequestOptions(path: '/'),
+          response: status == null ? null : Response(requestOptions: RequestOptions(path: '/'), statusCode: status),
+        );
+
+    test('Dio com resposta HTTP nao e rede; sem resposta e', () {
+      expect(otpErrorOf(dio(400)), OtpError.unknown);
+      expect(otpErrorOf(dio(502)), OtpError.unknown);
+      expect(otpErrorOf(dio(null)), OtpError.network);
+    });
+
+    test('CognitoException desconhecida continua unknown; network e rede', () {
+      expect(otpErrorOf(const CognitoException('Qualquer')), OtpError.unknown);
+      expect(otpErrorOf(const CognitoException(CognitoException.network)), OtpError.network);
+    });
+  });
+
   group('CognitoOtpClient com Cognito falso', () {
     late FakeTransport t;
     late List<CognitoTokens> adopted;
@@ -188,6 +219,50 @@ void main() {
       expect(t.calls[1].$2, {'ClientId': 'client123', 'Username': '+5511987654321', 'ConfirmationCode': '111111', 'Session': 'su'});
       expect(t.calls[2].$2['Session'], 'cs');
       expect(adopted.single.accessToken, 'novo');
+    });
+
+    test('cadastro: codigo de confirmacao tem 6 digitos e entra com tokens', () async {
+      t.on('SignUp', {'UserConfirmed': false, 'Session': 'su'});
+      t.on('ConfirmSignUp', {'Session': 'cs'});
+      t.on('InitiateAuth', authResult('novo'));
+      final ch = await client.start(OtpChannel.sms, '+5511987654321');
+      expect(ch.codeLength, 6);
+      expect(await client.verify(ch, '111111'), isNull);
+      expect(adopted.single.accessToken, 'novo');
+    });
+
+    test('cadastro → confirmacao → desafio SMS_OTP: novo codigo tem 8 digitos e entra com tokens', () async {
+      t.on('SignUp', {'UserConfirmed': false, 'Session': 'su'});
+      t.on('ConfirmSignUp', {'Session': 'cs'});
+      t.on('InitiateAuth', {'ChallengeName': 'SMS_OTP', 'Session': 'ch2'});
+      t.on('RespondToAuthChallenge', authResult('ok8'));
+      final ch = await client.start(OtpChannel.sms, '+5511987654321');
+      expect(ch.codeLength, 6);
+      final next = await client.verify(ch, '111111');
+      expect(next!.codeLength, 8);
+      expect(await client.verify(next, '86938554'), isNull);
+      expect(adopted.single.accessToken, 'ok8');
+    });
+
+    test('login de conta existente usa codigo de 8 digitos (SMS e e-mail)', () async {
+      t.on('SignUp', const CognitoException('UsernameExistsException'));
+      t.on('InitiateAuth', {'ChallengeName': 'SMS_OTP', 'Session': 'ia'});
+      final sms = await client.start(OtpChannel.sms, '+5511987654321');
+      expect(sms.codeLength, 8);
+      expect((await client.resend(sms)).codeLength, 8);
+
+      final t2 = FakeTransport()
+        ..on('SignUp', const CognitoException('UsernameExistsException'))
+        ..on('InitiateAuth', {'ChallengeName': 'EMAIL_OTP', 'Session': 'e'});
+      final mail = await CognitoOtpClient(CognitoIdentityClient(config, t2), onTokens: (_) async {})
+          .start(OtpChannel.email, 'ana@x.com');
+      expect(mail.codeLength, 8);
+    });
+
+    test('reenviar o codigo de confirmacao continua com 6 digitos', () async {
+      t.on('SignUp', {'UserConfirmed': false, 'Session': 'su'});
+      final ch = await client.start(OtpChannel.sms, '+5511987654321');
+      expect((await client.resend(ch)).codeLength, 6);
     });
 
     test('conta existente: UsernameExists → InitiateAuth SMS_OTP → RespondToAuthChallenge', () async {
