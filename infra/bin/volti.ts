@@ -24,6 +24,11 @@ const overrides = {
 if (profile !== undefined && profile !== 'single') throw new Error(`profile inválido: "${profile}" (único valor aceito: single)`);
 if (profile === 'single' && envName !== 'dev') throw new Error('profile=single só existe com env=dev.');
 
+const parseSignup = (v: string | undefined): 'open' | 'closed' | undefined => {
+  if (v === undefined || v === 'open' || v === 'closed') return v;
+  throw new Error(`customerSignup inválido: "${v}" (valores aceitos: open, closed)`);
+};
+
 const { app } =
   profile === 'single'
     ? createSingleDevApp({
@@ -36,6 +41,7 @@ const { app } =
         apiDomain: get('apiDomain'),
         schedule: get('schedule') !== 'false',
         budgetEmail: get('budgetEmail'),
+        customerSignup: parseSignup(get('customerSignup')),
         overrides,
         outdir: process.env.CDK_OUTDIR,
       })

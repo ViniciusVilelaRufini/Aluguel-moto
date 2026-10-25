@@ -137,6 +137,11 @@ export interface SingleDevAppOptions {
   /** EventBridge Scheduler start 07:00 / stop 23:00 America/Sao_Paulo (default on). */
   schedule?: boolean;
   budgetEmail?: string;
+  /**
+   * Customer pool sign-up: 'closed' (default) = no self sign-up and no SMS (accounts come from the volti-dev-admin document);
+   * 'open' = self sign-up by phone (SMS through SNS) and e-mail, like the regular profile. SNS spend is per account.
+   */
+  customerSignup?: 'open' | 'closed';
   overrides?: ConfigOverrides;
   outdir?: string;
 }
@@ -183,8 +188,11 @@ export function createSingleDevApp(opts: SingleDevAppOptions): SingleDevStacks {
 
   // The panel stays on the CloudFront default domain (no custom domain / ACM).
   const adminWeb = new AdminWebStack(app, 'volti-dev-admin-web', { ...common, cfg });
-  // Shared account: no self sign-up and no SMS in the customer pool (test customers come from the volti-dev-admin document).
-  const auth = new AuthStack(app, 'volti-dev-auth', { ...common, cfg, adminOrigin: adminWeb.origin, restrictedCustomers: true });
+  // Shared account: by default no self sign-up and no SMS in the customer pool (test customers come from the volti-dev-admin
+  // document). -c customerSignup=open enables phone (SMS/SNS) and e-mail sign-up; create-customer keeps working either way.
+  const signup = opts.customerSignup ?? 'closed';
+  if (signup !== 'open' && signup !== 'closed') throw new Error(`customerSignup inválido: "${String(signup)}" (valores aceitos: open, closed)`);
+  const auth = new AuthStack(app, 'volti-dev-auth', { ...common, cfg, adminOrigin: adminWeb.origin, restrictedCustomers: signup !== 'open' });
   const single = new SingleDevStack(app, 'volti-dev-single', {
     ...common,
     cfg,

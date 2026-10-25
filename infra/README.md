@@ -63,6 +63,7 @@ O synth offline usa conta `000000000000` e ARNs de certificado fictícios. Nenhu
 | `branch`, `repoUrl` | `feat/galpao`, `git@github.com:ViniciusVilelaRufini/Aluguel-moto.git` | `profile=single`: o que a instância clona |
 | `instanceType`, `rootVolumeGb` | `t4g.small`, `25` | `profile=single`: tamanho da instância (ARM) e do disco gp3 |
 | `apiRateLimitPer5Min` | dev 2000, prod 3000 | Limite por IP do WAF da API (requisições em 5 minutos); inteiro >= 10 |
+| `customerSignup` (só `profile=single`) | `closed` | `open` libera o auto-cadastro por celular (SMS/SNS) e e-mail no pool de clientes; `closed` mantém só e-mail e criação pelo `volti-dev-admin` |
 | `sesFromEmail`, `sesVerifiedDomain` | vazio | Identidade SES verificada para os e-mails do pool de clientes; liga o `EMAIL_OTP`. Sem ela, só OTP por SMS e e-mails pelo remetente padrão do Cognito |
 | `googleIdpSecretName` | vazio | Nome do segredo do Google (`{"clientId","clientSecret"}`); vazio = IdP não criado. O segredo precisa **existir antes** do deploy com este `-c` (o synth é offline e não confere; o CloudFormation falha na resolução dinâmica se ele não existir) |
 | `appleIdpSecretName` | vazio | Nome do segredo da Apple (`{"servicesId","teamId","keyId","privateKey"}`); vazio = IdP não criado |
@@ -254,7 +255,8 @@ Os custos atuais estão nas seções do perfil `single` e do dev ECS enxuto, aba
 - Acesso aos 5 buckets, ao Cognito (inclusive criar cliente de teste), ao bucket e à invalidação do painel, e ao Route 53 nos limites acima.
 
 **Cognito de clientes**
-- **Sem auto-cadastro e sem SMS.** A cota e o limite de gasto do SNS são da conta inteira, e o custo de SMS não leva tag.
+- **Padrão (`-c customerSignup=closed`): sem auto-cadastro e sem SMS.** A cota e o limite de gasto do SNS são da conta inteira, e o custo de SMS não leva tag.
+- **Com `-c customerSignup=open`:** auto-cadastro por celular e e-mail, `SMS_OTP` nos fatores de login, `autoVerify` de telefone e e-mail, recuperação por telefone e e-mail e papel do SNS (ExternalId, `sa-east-1`). O SNS da conta fica em sandbox com limite de US$ 1/mês: só números verificados recebem SMS (SNS > Mensagens de texto > Números de telefone da sandbox). O pool interno (staff) não muda. O parâmetro `CUSTOMER_LOGIN` continua dependendo só do SES e só afeta o `create-customer`, que segue válido nos dois modos.
 - Clientes de teste são criados pelo documento `volti-dev-admin` (`action=create-customer`). O fluxo "criar conta" do app só funciona para esses usuários no dev.
 - **Com SES** (`-c sesFromEmail=nao-responda@voltz.prestarecondominios.com.br`, domínio verificado `voltz.prestarecondominios.com.br`, remetente "Volti (dev)"):
   - o login é por código no e-mail;
@@ -282,7 +284,7 @@ Os comandos exatos estão em [`deploy/single/cloudshell.md`](../deploy/single/cl
 1. Instale Node 24 e pnpm fora do home: `sudo npm install -g n && sudo n 24 && sudo npm install -g pnpm@9.15.9`.
 2. Gere a deploy key em `/tmp`, cadastre a parte pública no GitHub como somente leitura e clone em `/tmp/volti`. Depois: `pnpm install --frozen-lockfile --filter "infra..." --store-dir /tmp/pnpm-store`.
 3. Bootstrap: `pnpm exec cdk bootstrap aws://$ACCOUNT/sa-east-1 --qualifier volti --toolkit-stack-name volti-cdk-toolkit --tags Projeto=Volti`
-4. Deploy: `pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single -c account=$ACCOUNT -c branch=feat/galpao -c budgetEmail=<e-mail> -c hostedZoneId=Z04583703P20295WCJ8TF -c apiDomain=api-volti-dev.prestarecondominios.com.br -c sesFromEmail=nao-responda@voltz.prestarecondominios.com.br`
+4. Deploy: `pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single -c account=$ACCOUNT -c branch=feat/galpao -c budgetEmail=<e-mail> -c hostedZoneId=Z04583703P20295WCJ8TF -c apiDomain=api-volti-dev.prestarecondominios.com.br -c sesFromEmail=nao-responda@voltz.prestarecondominios.com.br -c customerSignup=open`
 5. Logo depois do deploy, grave a deploy key e apague a cópia local: `aws ssm put-parameter --name /volti/dev/github-deploy-key --type SecureString --key-id alias/volti-dev --value "$(cat /tmp/volti_deploy)" --tags Key=Projeto,Value=Volti`, depois `shred -u /tmp/volti_deploy*`.
 6. O primeiro boot é automático e leva cerca de 15 min:
    - espera a deploy key, clona o repositório e cria o registro DNS;
@@ -307,7 +309,7 @@ Para atualizar depois: Systems Manager → Run Command → `volti-dev-update` �
 | EventBridge Scheduler (2 invocações/dia, dentro das 14 milhões grátis), Route 53 (consultas desprezíveis; a zona já é paga pelo outro projeto), S3, CloudFront, Cognito (até 10 mil MAU), Parameter Store padrão, DLM, AWS Budgets (2 grátis), tráfego (100 GB grátis) | uso de dev | ~0–1 |
 | **Total** | | **≈ 21** |
 
-Com a instância 24 h (`-c schedule=false`), o total fica em cerca de US$ 29. Se a conta ainda tiver o teste gratuito do `t4g.small` (750 h/mês, oferta por tempo limitado), a EC2 sai de graça e o total cai para cerca de US$ 8. Savings Plan e instância reservada não compensam com a instância desligada 8 h por dia. O SMS do Cognito está desligado neste perfil. Valores de lista: confirme na calculadora da AWS.
+Com a instância 24 h (`-c schedule=false`), o total fica em cerca de US$ 29. Se a conta ainda tiver o teste gratuito do `t4g.small` (750 h/mês, oferta por tempo limitado), a EC2 sai de graça e o total cai para cerca de US$ 8. Savings Plan e instância reservada não compensam com a instância desligada 8 h por dia. O SMS do Cognito está desligado neste perfil, salvo com `-c customerSignup=open` (SNS em sandbox, limite de US$ 1/mês na conta). Valores de lista: confirme na calculadora da AWS.
 
 **Limite do Docker Hub:** são 10 pulls por hora por IP anônimo, e o primeiro boot puxa cerca de 7 imagens. Rebuilds seguidos podem esbarrar no limite; se acontecer, espere uma hora e rode o update de novo.
 

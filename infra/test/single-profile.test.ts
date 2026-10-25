@@ -345,6 +345,30 @@ describe('profile=single (dev on one EC2 instance)', () => {
     expect(create[0].Action).toContain('cognito-idp:AdminSetUserPassword');
   });
 
+  it('customerSignup=open: self sign-up by phone and e-mail, SMS OTP through an SNS role in sa-east-1; staff pool untouched', () => {
+    const open = createSingleDevApp({ customerSignup: 'open' });
+    const auth = Template.fromStack(open.auth);
+    const pool = resources(auth, 'AWS::Cognito::UserPool').find((p) => p.Properties.UserPoolName === 'volti-dev-customers').Properties;
+    expect(pool.AdminCreateUserConfig.AllowAdminCreateUserOnly).toBe(false);
+    expect(pool.SmsConfiguration.SnsCallerArn).toBeDefined();
+    expect(pool.SmsConfiguration.ExternalId).toBeDefined();
+    expect(pool.SmsConfiguration.SnsRegion).toBe('sa-east-1');
+    expect(pool.Policies.SignInPolicy.AllowedFirstAuthFactors).toEqual(expect.arrayContaining(['PASSWORD', 'SMS_OTP']));
+    expect([...pool.AutoVerifiedAttributes].sort()).toEqual(['email', 'phone_number']);
+    // PHONE_AND_EMAIL is the CDK default (no AccountRecoverySetting emitted); the closed pool pins e-mail only.
+    expect(pool.AccountRecoverySetting).toBeUndefined();
+    const staff = resources(auth, 'AWS::Cognito::UserPool').find((p) => p.Properties.UserPoolName === 'volti-dev-staff').Properties;
+    expect(staff.AdminCreateUserConfig.AllowAdminCreateUserOnly).toBe(true);
+    expect(staff.SmsConfiguration).toBeUndefined();
+    // create-customer (volti-dev-admin) keeps working: CUSTOMER_LOGIN still follows SES only.
+    const login = resources(Template.fromStack(open.single), 'AWS::SSM::Parameter').find((p) => p.Properties.Name === '/volti/dev/config/CUSTOMER_LOGIN').Properties.Value;
+    expect(login).toBe('password');
+    // explicit closed equals the default; anything else is refused.
+    const closed = resources(Template.fromStack(createSingleDevApp({ customerSignup: 'closed' }).auth), 'AWS::Cognito::UserPool').find((p) => p.Properties.UserPoolName === 'volti-dev-customers').Properties;
+    expect(closed.AdminCreateUserConfig.AllowAdminCreateUserOnly).toBe(true);
+    expect(() => createSingleDevApp({ customerSignup: 'aberto' as any })).toThrow(/customerSignup/);
+  });
+
   it('budget US$ 20/month ONLY for the tag Projeto=Volti (no account-wide budget), e-mail alerts at 50/80/100%', () => {
     const budgets = all.flatMap((tpl) => resources(tpl, 'AWS::Budgets::Budget'));
     expect(budgets).toHaveLength(1);
@@ -404,7 +428,7 @@ describe('profile=single (dev on one EC2 instance)', () => {
 
     it('scripts: migrations in update.sh, secrets with alias/volti-dev, safe .env values, admin.sh without sourcing the .env', () => {
       expect(file('update.sh')).toMatch(/prisma migrate deploy/);
-      expect(file('seed.sh')).toMatch(/dist-seed\/seed\.js/);
+      expect(file('seed.sh')).toMatch(/dist-seed\/prisma\/seed\.js/);
       const env = file('render-env.sh');
       expect(env).toMatch(/--type SecureString --key-id "\$VOLTI_KEY_ALIAS"/);
       expect(env).toMatch(/--no-overwrite/);

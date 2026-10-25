@@ -65,15 +65,19 @@ pnpm exec cdk bootstrap aws://$ACCOUNT/sa-east-1 \
 ```bash
 pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit \
   -c env=dev -c profile=single -c account=$ACCOUNT -c branch=$BRANCH -c budgetEmail=$BUDGET_EMAIL \
-  -c hostedZoneId=$HOSTED_ZONE_ID -c apiDomain=$API_DOMAIN -c sesFromEmail=$SES_FROM
+  -c hostedZoneId=$HOSTED_ZONE_ID -c apiDomain=$API_DOMAIN -c sesFromEmail=$SES_FROM   -c customerSignup=open
 ```
+
+`-c customerSignup=open` libera o cadastro pelo app com celular (SMS pelo SNS) e e-mail. Sem ela (padrão `closed`), o pool de clientes não tem auto-cadastro nem SMS e os clientes de teste vêm do documento `volti-dev-admin`.
+
+**Sandbox do SNS (conta compartilhada):** o SMS está em sandbox e com limite de gasto de US$ 1/mês para a conta inteira. Só números verificados recebem SMS. Para testar com um celular, cadastre o número em **SNS > Mensagens de texto (SMS) > Números de telefone da sandbox** (região sa-east-1) e confirme o código recebido. Acompanhe o gasto mensal nessa mesma tela; ao atingir o limite, o SMS para de ser enviado até o mês seguinte. Isso é configuração da conta, não do deploy.
 
 Com `-c sesFromEmail`, o pool de clientes manda o código de login por e-mail pelo SES. O remetente é `"Volti (dev)" <nao-responda@voltz.prestarecondominios.com.br>`, usando a identidade do **domínio** verificado `voltz.prestarecondominios.com.br` (derivada do endereço; ou passe `-c sesVerifiedDomain=...`). A identidade precisa estar verificada em **sa-east-1**. Se a conta estiver no sandbox do SES, só destinatários verificados recebem o código.
 
 O deploy cria 3 stacks:
 
 - `volti-dev-admin-web`: S3 + CloudFront do painel, no domínio padrão do CloudFront.
-- `volti-dev-auth`: Cognito. O pool de clientes **não tem auto-cadastro nem SMS**.
+- `volti-dev-auth`: Cognito. O pool de clientes **não tem auto-cadastro nem SMS**, a menos que o deploy use `-c customerSignup=open`.
 - `volti-dev-single`: VPC própria, instância, chave KMS `alias/volti-dev`, buckets, parâmetros, documentos SSM, agenda, snapshots e orçamento.
 
 Confirme a inscrição no e-mail que a AWS Budgets enviar.
@@ -81,6 +85,7 @@ Confirme a inscrição no e-mail que a AWS Budgets enviar.
 Opções de `-c`:
 
 - `-c schedule=false`: a instância fica ligada 24 h. Por padrão ela liga às 07:00 e desliga às 23:00, horário de São Paulo.
+- `-c customerSignup=open|closed` (padrão `closed`): `open` liga o auto-cadastro por celular (SMS/SNS) e e-mail no pool de clientes. Valor diferente de `open`/`closed` aborta o synth. O pool interno (staff) não muda.
 - `-c apiDomain=-`: sem DNS. A API fica em `https://<ip-com-hifens>.sslip.io`.
 - `-c instanceType=t4g.small`, `-c rootVolumeGb=25`, `-c repoUrl=...`.
 

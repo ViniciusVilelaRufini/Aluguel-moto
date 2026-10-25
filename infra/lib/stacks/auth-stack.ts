@@ -11,7 +11,8 @@ export interface AuthStackProps extends StackProps {
   /** Deployed admin panel origin (https://...): Hosted UI callback <origin>/auth/callback/ and logout <origin>/login/. */
   adminOrigin: string;
   /**
-   * profile=single (dev in a shared account): no self sign-up and no SMS (the SNS SMS quota/spend limit is per account).
+   * profile=single (dev in a shared account), default: no self sign-up and no SMS (the SNS SMS quota/spend limit is per account).
+   * Opt out with -c customerSignup=open (restrictedCustomers=false): phone/e-mail sign-up and SMS OTP through SNS.
    * Customers are created by the volti-dev-admin SSM document; e-mail OTP only with a verified SES identity (-c sesFromEmail).
    */
   restrictedCustomers?: boolean;
