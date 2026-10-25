@@ -15,12 +15,11 @@ abstract final class VoltiShadows {
   static const shadowSheet = <BoxShadow>[
     BoxShadow(color: Color(0x1F15181A), offset: Offset(0, -8), blurRadius: 32),
   ];
+  // Botoes e pecas de marca/SOS: sombra neutra discreta, sem brilho colorido (decisao do dono, 2026-10-25).
   static const shadowBrand = <BoxShadow>[
-    BoxShadow(color: Color(0x5934C25C), offset: Offset(0, 8), blurRadius: 20),
+    BoxShadow(color: Color(0x1A15181A), offset: Offset(0, 2), blurRadius: 6),
   ];
-  static const shadowCoral = <BoxShadow>[
-    BoxShadow(color: Color(0x59F2665A), offset: Offset(0, 10), blurRadius: 24),
-  ];
+  static const shadowCoral = shadowBrand;
 
   /// Blur do vidro (`blur(16px)`); use com `ImageFilter.blur`.
   static const double glassBlur = 16;
