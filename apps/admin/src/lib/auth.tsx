@@ -2,9 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { api, unwrap } from './api';
-import { AUTH_MODE } from './config';
+import { AUTH_MODE, COGNITO } from './config';
 import { cognitoLogoutUrl } from './cognito';
-import { getToken, setToken } from './token-store';
+import { revokeRefreshToken } from './cognito-revoke';
+import type { StaffTokens } from './cognito-login';
+import { getRefreshToken, getToken, setRefreshToken, setToken } from './token-store';
 import type { S, StaffGroup } from './types';
 
 export const DEV_USERS: Record<'admin' | 'operacao' | 'financeiro' | 'suporte', { sub: string; email: string }> = {
@@ -21,6 +23,8 @@ interface AuthState {
   groups: StaffGroup[];
   loginDev: (group: keyof typeof DEV_USERS) => Promise<void>;
   loginWithToken: (token: string) => Promise<void>;
+  /** Login com e-mail e senha (SRP): guarda o access token (como o Hosted UI) e o refresh token para revogar no logout. */
+  loginWithTokens: (tokens: StaffTokens) => Promise<void>;
   logout: () => void;
 }
 
@@ -60,17 +64,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [loadMe],
   );
 
+  const loginWithTokens = useCallback(
+    async (tokens: StaffTokens) => {
+      try {
+        await loadMe(tokens.accessToken);
+        setRefreshToken(tokens.refreshToken);
+      } catch (e) {
+        setToken(null);
+        await revokeRefreshToken(COGNITO, tokens.refreshToken);
+        throw e;
+      }
+    },
+    [loadMe],
+  );
+
   const logout = useCallback(() => {
+    const refresh = getRefreshToken();
     setToken(null);
     setTokenState(null);
     setMe(null);
-    if (AUTH_MODE === 'cognito') window.location.assign(cognitoLogoutUrl());
-    else window.location.assign('/login/');
+    if (AUTH_MODE !== 'cognito') {
+      window.location.assign('/login/');
+    } else if (refresh) {
+      // Login próprio (SRP): revoga o refresh token (e os access tokens dele) e volta para a tela de login.
+      void revokeRefreshToken(COGNITO, refresh).finally(() => window.location.assign('/login/'));
+    } else if (COGNITO.domain) {
+      // Sessão aberta pelo Hosted UI: encerra também o cookie do domínio do Cognito.
+      window.location.assign(cognitoLogoutUrl());
+    } else {
+      window.location.assign('/login/');
+    }
   }, []);
 
   const value = useMemo<AuthState>(
-    () => ({ ready, token, me, groups: me?.groups ?? [], loginDev, loginWithToken: loadMe, logout }),
-    [ready, token, me, loginDev, loadMe, logout],
+    () => ({ ready, token, me, groups: me?.groups ?? [], loginDev, loginWithToken: loadMe, loginWithTokens, logout }),
+    [ready, token, me, loginDev, loadMe, loginWithTokens, logout],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

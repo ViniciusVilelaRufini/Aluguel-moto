@@ -27,7 +27,16 @@ function Callback() {
       .catch((e) => setError(errorText(e)));
   }, [params, router, loginWithToken]);
 
-  return <div style={{ padding: 48, textAlign: 'center' }}>{error ?? 'Concluindo o login...'}</div>;
+  return (
+    <div style={{ padding: 48, textAlign: 'center' }}>
+      {error ?? 'Concluindo o login...'}
+      {error && (
+        <div style={{ marginTop: 16 }}>
+          <a href="/login/">Voltar para o login</a>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function CallbackPage() {

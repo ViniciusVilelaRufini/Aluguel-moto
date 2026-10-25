@@ -1,38 +1,11 @@
 import { COGNITO } from './config';
 
+/**
+ * Hosted UI do pool interno (OAuth code + PKCE). O painel entra pelo formulário próprio (`cognito-login.ts`); isto fica
+ * só para concluir um login que já estava em andamento no Hosted UI (`/auth/callback/`) e para o logout dessas sessões.
+ */
+
 const VERIFIER_KEY = 'volti.admin.pkce';
-
-function base64Url(bytes: ArrayBuffer | Uint8Array): string {
-  const arr = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  let s = '';
-  arr.forEach((b) => (s += String.fromCharCode(b)));
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-export function randomVerifier(): string {
-  return base64Url(crypto.getRandomValues(new Uint8Array(48)));
-}
-
-export async function challengeFor(verifier: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
-  return base64Url(digest);
-}
-
-/** Redireciona para a hosted UI do pool interno (OAuth code + PKCE). O MFA é exigido pelo pool. */
-export async function startCognitoLogin(): Promise<void> {
-  const verifier = randomVerifier();
-  window.sessionStorage.setItem(VERIFIER_KEY, verifier);
-  const url = new URL(`https://${COGNITO.domain}/oauth2/authorize`);
-  url.search = new URLSearchParams({
-    response_type: 'code',
-    client_id: COGNITO.clientId,
-    redirect_uri: COGNITO.redirectUri,
-    scope: 'openid email profile',
-    code_challenge_method: 'S256',
-    code_challenge: await challengeFor(verifier),
-  }).toString();
-  window.location.assign(url.toString());
-}
 
 /** Troca o `code` por tokens e devolve o access token (traz `cognito:groups`). */
 export async function exchangeCode(code: string): Promise<string> {

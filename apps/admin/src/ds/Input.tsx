@@ -2,7 +2,7 @@
 'use client';
 import React from 'react';
 import { Icon } from './Icon';
-export function Input({ label, value, defaultValue, placeholder, onChange, icon, hint, error, type = 'text', inputMode, testId, name, style }: any) {
+export function Input({ label, value, defaultValue, placeholder, onChange, icon, hint, error, type = 'text', inputMode, testId, name, style, autoComplete, autoFocus, required, readOnly }: any) {
   const [f, setF] = React.useState(false);
   const bd = error ? 'var(--danger)' : f ? 'var(--border-focus)' : 'transparent';
   return (
@@ -11,7 +11,7 @@ export function Input({ label, value, defaultValue, placeholder, onChange, icon,
       <span style={{ display: 'flex', alignItems: 'center', gap: 10, height: 52, padding: '0 16px', borderRadius: 'var(--radius-md)', background: f ? 'var(--surface-card)' : 'var(--surface-sunken)',
         border: '1.5px solid ' + bd, transition: 'border-color var(--dur-base), background var(--dur-base)' }}>
         {icon && <Icon name={icon} size={20} color="var(--text-tertiary)" />}
-        <input data-testid={testId} name={name} type={type} inputMode={inputMode} value={value} defaultValue={defaultValue} placeholder={placeholder} onChange={onChange}
+        <input data-testid={testId} name={name} type={type} inputMode={inputMode} autoComplete={autoComplete} autoFocus={autoFocus} required={required} readOnly={readOnly} aria-invalid={error ? true : undefined} value={value} defaultValue={defaultValue} placeholder={placeholder} onChange={onChange}
           onFocus={() => setF(true)} onBlur={() => setF(false)}
           style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', font: 'var(--type-body)', color: 'var(--text-primary)' }} />
       </span>

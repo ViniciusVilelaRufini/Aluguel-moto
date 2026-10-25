@@ -22,6 +22,7 @@ case "$action" in
       -e NEXT_PUBLIC_API_BASE_URL="https://$host" \
       -e NEXT_PUBLIC_AUTH_MODE=cognito \
       -e NEXT_PUBLIC_COGNITO_DOMAIN="$(envval ADMIN_COGNITO_DOMAIN)" \
+      -e NEXT_PUBLIC_COGNITO_USER_POOL_ID="$(envval COGNITO_STAFF_POOL_ID)" \
       -e NEXT_PUBLIC_COGNITO_CLIENT_ID="$(envval COGNITO_STAFF_CLIENT_ID)" \
       -e NEXT_PUBLIC_COGNITO_REDIRECT_URI="$origin/auth/callback/" \
       node:24-alpine sh -c 'corepack enable && corepack prepare pnpm@9.15.9 --activate && pnpm install --frozen-lockfile --filter admin... && pnpm --filter admin build'

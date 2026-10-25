@@ -185,7 +185,35 @@ a:hover{color:var(--brand-press)}
 .nav-logout:hover { color: #fff !important; background: rgba(255,255,255,.08) !important; }
 .nav-item:focus-visible { outline: 2px solid var(--green-400); outline-offset: -2px; }
 .nav-badge { animation: vt-pop-in var(--dur-spring) var(--ease-spring) both; }
-@media (max-width: 900px) { .login-brand { display: none !important; } }
+/* ---------- Login (UI kit admin, LoginView) ---------- */
+.login-screen { min-height: 100vh; display: flex; color: var(--text-primary); background: var(--surface-app); --login-brand-bg: var(--ink-900); }
+.login-brand { width: 42%; background: var(--login-brand-bg); color: #fff; padding: 56px; display: flex; flex-direction: column; }
+.login-main { flex: 1; min-width: 0; display: flex; align-items: center; justify-content: center; padding: 24px 16px; background: var(--surface-app); }
+.login-column { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 24px; }
+.login-form { display: flex; flex-direction: column; gap: 16px; }
+.login-mobile-brand { display: none; }
+.login-link { border: 0; background: transparent; padding: 4px 2px; color: var(--text-link); font: var(--type-label); cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.login-link:hover { color: var(--brand-press); }
+.login-rules { list-style: none; margin: -6px 0 0; padding: 0; display: grid; gap: 6px; font: var(--type-caption); }
+.login-rules li { display: flex; align-items: center; gap: 8px; }
+.login-steps { margin: 0; padding-left: 20px; list-style: decimal; font: var(--type-body); color: var(--text-secondary); display: grid; gap: 4px; }
+@media (max-width: 900px) { .login-brand { display: none !important; } .login-mobile-brand { display: flex; } }
+/* Escuro: segue o aparelho (paleta escura do volti_flutter). Só a tela de login tem tema escuro por enquanto. */
+@media (prefers-color-scheme: dark) {
+  .login-screen {
+    color-scheme: dark;
+    --login-brand-bg: #0E1012;
+    --surface-app: var(--ink-900); --surface-card: var(--ink-800); --surface-sunken: #2A2F33;
+    --text-primary: var(--ink-50); --text-secondary: var(--ink-400); --text-tertiary: #80868D; --text-brand: var(--green-300); --text-link: var(--green-300);
+    --border-subtle: #3A3F44; --border-strong: var(--ink-600); --brand-press: var(--green-200);
+    --success-soft: #15361F; --success-ink: var(--green-300);
+    --info-soft: #16283E; --info-ink: #8FC0F5;
+    --danger-soft: #3E1F1C; --danger-ink: #F7867C;
+    /* O Alert do DS escreve o corpo em --ink-700; no escuro ele precisa ser claro. */
+    --ink-700: var(--ink-300);
+  }
+  .login-brand { border-right: 1px solid #2A2F33; }
+}
 
 /* ---------- Motion (design-system/tokens/motion.css, presets vt-*) ---------- */
 /* Volti motion presets — keyframes used by components and UI kits. Keyframes define only "from" where possible so elements settle into their own inline transform. */

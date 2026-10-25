@@ -34,9 +34,16 @@ API local (ver `services/api/README.md`): `API_PORT=3001` se a 3000 estiver ocup
 ### Autenticação
 
 - `NEXT_PUBLIC_AUTH_MODE=dev` (padrão): tela de login com seletor de grupo, chama `POST /dev/token` (a API precisa de `AUTH_MODE=dev`). O passo de 2FA do layout é só visual neste modo.
-- `NEXT_PUBLIC_AUTH_MODE=cognito`: hosted UI do pool interno (OAuth code + PKCE). Variáveis: `NEXT_PUBLIC_COGNITO_DOMAIN`, `NEXT_PUBLIC_COGNITO_CLIENT_ID`, `NEXT_PUBLIC_COGNITO_REDIRECT_URI` (`<origem>/auth/callback/`). O MFA é imposto pelo pool.
+- `NEXT_PUBLIC_AUTH_MODE=cognito`: **login próprio com e-mail e senha** na tela do painel, direto no pool interno do Cognito (`InitiateAuth`/`RespondToAuthChallenge` em `cognito-idp.<região>.amazonaws.com`, fluxo `USER_SRP_AUTH` com `amazon-cognito-identity-js`: a senha nunca sai do navegador, só a prova SRP). Não há endpoint novo na API. Variáveis: `NEXT_PUBLIC_COGNITO_USER_POOL_ID` (a região sai do prefixo) e `NEXT_PUBLIC_COGNITO_CLIENT_ID` (client `admin-panel`, sem segredo, com `userSrp` no CDK). `NEXT_PUBLIC_COGNITO_DOMAIN` e `NEXT_PUBLIC_COGNITO_REDIRECT_URI` (`<origem>/auth/callback/`) ficam só para concluir um login que já estava no Hosted UI e para o logout dessas sessões; o botão do Hosted UI saiu da tela.
 
-O token fica só em `sessionStorage`.
+Como entra (modo cognito, código em `src/lib/cognito-login.ts` e `src/components/login/`):
+
+1. **E-mail e senha** → entra. Erros em pt-BR, com mensagem única para senha errada ou e-mail inexistente; também usuário desativado, muitas tentativas, código inválido/expirado, senha fraca e sem conexão. Nada é logado.
+2. **Primeiro acesso** (convite com senha temporária, desafio `NEW_PASSWORD_REQUIRED`): tela "Crie sua senha" com as regras da política do pool interno (12 caracteres, maiúscula, minúscula, número e símbolo, espelhando `infra/lib/stacks/auth-stack.ts`), conferidas enquanto digita.
+3. **2FA**: com TOTP cadastrado (`SOFTWARE_TOKEN_MFA`) pede o código de 6 dígitos do app autenticador; a dica de 2FA só aparece nesse passo. Sem TOTP num pool com MFA obrigatório (`MFA_SETUP`), mostra o QR code (`AssociateSoftwareToken`, `otpauth://totp/Volti:<e-mail>`) e a chave em texto, e conclui com `VerifySoftwareToken`.
+4. **Esqueci minha senha**: `ForgotPassword` manda o código por e-mail (a tela não diz se o e-mail existe) → `ConfirmForgotPassword` com o código e a senha nova → volta para "Entrar" com o aviso de senha alterada.
+
+O access token fica só em `sessionStorage` (o mesmo de antes); o login próprio guarda também o refresh token ali, só para o logout chamar `RevokeToken` (o client tem revogação habilitada). Não há renovação automática: com o access token vencido (1 h) a API responde 401 e o painel volta ao login. A tela de login segue o tema claro/escuro do aparelho (as outras telas do painel ainda só têm o claro).
 
 ## Testes
 
@@ -50,7 +57,9 @@ pnpm --filter admin test        # Vitest: status->cor, menu por grupo, máscara 
                                 # e permissões novas; galpão (horários, agenda, entregas;
                                 # componentes .tsx renderizados com react-dom/server sobre respostas simuladas do contrato);
                                 # Task 14 (tests/lacunas-t14.test.tsx): débito até o saldo, quitação, alerta de pagamento,
-                                # escopo do contador de alertas, motivo do cancelamento e rótulos das baterias
+                                # escopo do contador de alertas, motivo do cancelamento e rótulos das baterias;
+                                # login próprio (tests/cognito-login.test.ts com o Cognito simulado no fetch: SRP, senha nova,
+                                # TOTP, MFA_SETUP, esqueci a senha, erros, RevokeToken; tests/login-views.test.tsx: telas)
 pnpm --filter admin test:e2e    # Playwright contra a API real (sobe `next dev` em :3100)
 ```
 
