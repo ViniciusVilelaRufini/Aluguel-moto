@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Prisma } from '@prisma/client';
+import type { Prisma, SupportMessage } from '@prisma/client';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
@@ -17,6 +17,8 @@ import { toClaim, toConversation, toDispute, toIncident, toMessage } from './sup
 import { staffFirstName } from '../../common/staff-display-name';
 
 const byNewest = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
+/** Task 30 (item 31): validade das URLs dos anexos do chat para a equipe. */
+export const ATTACHMENT_URL_TTL_SECONDS = 15 * 60;
 
 /** Incidentes, contestações, sinistros e chat de suporte (polling). Cliente só vê os próprios registros. */
 @Injectable()
@@ -271,7 +273,26 @@ export class SupportService {
       await this.prisma.supportMessage.updateMany({ where: { id: { in: undelivered }, deliveredAt: null }, data: { deliveredAt: now } });
       for (const r of rows) if (undelivered.includes(r.id)) r.deliveredAt = now;
     }
-    return toPage(rows, q, toMessage);
+    const urls = await this.attachmentUrls(user, rows);
+    return toPage(rows, q, (m: SupportMessage) => toMessage(m, urls.get(m.id)));
+  }
+
+  /**
+   * Task 30 (item 31): a equipe vê os anexos por URLs pré-assinadas. Só chaves enviadas pelo próprio autor
+   * (`support/<authorId>/…`, o prefixo do `POST /support/uploads`) ganham URL: uma chave alheia nunca é assinada.
+   */
+  private async attachmentUrls(user: Principal, rows: SupportMessage[]): Promise<Map<string, string[]>> {
+    const out = new Map<string, string[]>();
+    if (!isStaff(user)) return out;
+    for (const m of rows) {
+      const own = m.authorId ? m.attachmentObjectKeys.filter((k) => k.startsWith(`support/${m.authorId}/`)) : [];
+      if (!own.length) continue;
+      const signed = await Promise.all(
+        own.map((key) => this.storage.presignGet({ bucket: this.cfg.buckets.attachments, key, expiresInSeconds: ATTACHMENT_URL_TTL_SECONDS })),
+      );
+      out.set(m.id, signed.map((s) => s.url));
+    }
+    return out;
   }
 
   async sendMessage(user: Principal, id: string, dto: MessageCreateDto) {
@@ -288,6 +309,6 @@ export class SupportService {
       await tx.supportConversation.update({ where: { id }, data: { lastMessageAt: msg.createdAt } });
       return msg;
     });
-    return toMessage(m);
+    return toMessage(m, (await this.attachmentUrls(user, [m])).get(m.id));
   }
 }

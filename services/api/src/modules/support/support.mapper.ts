@@ -75,7 +75,8 @@ export function toConversation(c: SupportConversation & { customer?: { name: str
   });
 }
 
-export function toMessage(m: SupportMessage) {
+/** Task 30 (item 31): só a equipe recebe `attachmentUrls` (URLs GET pré-assinadas, na ordem das chaves). */
+export function toMessage(m: SupportMessage, attachmentUrls?: string[]) {
   return compact({
     id: m.id,
     conversationId: m.conversationId,
@@ -85,6 +86,7 @@ export function toMessage(m: SupportMessage) {
     authorName: m.authorType === 'staff' ? staffFirstName(m.authorName) : m.authorName ?? undefined,
     body: m.body,
     attachmentObjectKeys: m.attachmentObjectKeys.length ? m.attachmentObjectKeys : undefined,
+    attachmentUrls: attachmentUrls?.length ? attachmentUrls : undefined,
     // Contrato v2: sent → delivered (o outro lado buscou) → read (o outro lado marcou como lida).
     status: m.readAt ? 'read' : m.deliveredAt ? 'delivered' : 'sent',
     deliveredAt: iso(m.deliveredAt),
