@@ -299,7 +299,7 @@ void main() {
       await _settle(tester);
       await _tap(tester, find.byKey(const Key('van-unload-BT-2')));
       await tester.pumpAndSettle();
-      await _tap(tester, find.byKey(const Key('unload-warehouse')));
+      await _tap(tester, find.byKey(const Key('unload-depot-depot-1')));
       await tester.pumpAndSettle();
       expect(repo.unloads.single, ['BT-2']);
       expect(repo.unloadStationIds.single, isNull);

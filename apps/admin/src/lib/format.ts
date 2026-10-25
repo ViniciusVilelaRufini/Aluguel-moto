@@ -9,6 +9,17 @@ export function formatDateTime(iso?: string | null): string {
   return new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
 }
 
+/** Data e hora no fuso informado (o do galpão, por exemplo); inválido ou ausente cai em São Paulo. */
+export function formatDateTimeIn(iso: string | null | undefined, timeZone?: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  try {
+    return new Intl.DateTimeFormat('pt-BR', { timeZone: timeZone || TZ, dateStyle: 'short', timeStyle: 'short' }).format(d);
+  } catch {
+    return new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' }).format(d);
+  }
+}
+
 export function formatDate(iso?: string | null): string {
   if (!iso) return '—';
   return new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, dateStyle: 'short' }).format(new Date(iso));

@@ -53,6 +53,11 @@ export type Action =
   | 'maintenance.update'
   | 'battery.view'
   | 'battery.transfer'
+  | 'battery.create'
+  | 'battery.markCharged'
+  | 'battery.reportDefect'
+  | 'battery.retire'
+  | 'battery.movements'
   | 'catalog.edit'
   | 'subscription.assignVehicle'
   | 'vehicle.edit'
@@ -82,6 +87,11 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'maintenance.update': ['admin', 'operacao'], // PATCH /maintenance/tasks/{id}
   'battery.view': ['admin', 'operacao'], // GET /batteries, /batteries/van-stock
   'battery.transfer': ['admin', 'operacao'], // POST /batteries/van-stock/load|unload
+  'battery.create': ['admin', 'operacao'], // POST /batteries
+  'battery.markCharged': ['admin', 'operacao', 'campo'], // POST /batteries/{id}/mark-charged
+  'battery.reportDefect': ['admin', 'operacao', 'campo'], // POST /batteries/{id}/report-defect
+  'battery.retire': ['admin', 'operacao'], // POST /batteries/{id}/retire
+  'battery.movements': ['admin', 'operacao', 'suporte', 'campo'], // GET /batteries/{id}/movements
   'catalog.edit': ['admin'], // POST/PATCH /vehicle-models, POST /vehicle-models/uploads
   'subscription.assignVehicle': ['admin', 'operacao'], // PUT /payments/subscriptions/{id}/vehicle
   'vehicle.edit': ['admin', 'operacao'], // PATCH /vehicles/{id}

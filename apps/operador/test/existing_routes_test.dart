@@ -206,7 +206,7 @@ void main() {
       expect(vehicleStatusBadge(t, VehicleStatus.unknownDefaultOpenApi).$1, 'Outro status');
       expect(vehicleStatusBadge(t, VehicleStatus.awaitingPickup).$1, 'Para recolher');
       expect(batteryStatusLabel(t, BatteryStatus.unknownDefaultOpenApi), 'Outro status');
-      expect(batteryStatusLabel(t, BatteryStatus.charging), 'Galpão (recarga)');
+      expect(batteryStatusLabel(t, BatteryStatus.charging), 'Carregando');
     });
   });
 
@@ -219,7 +219,8 @@ void main() {
       await h.pump(tester, const VanStockPage());
       await _settle(tester);
       await _tap(tester, 'van-unload-BT-2');
-      expect(find.text('Galpão (recarga)'), findsOneWidget);
+      expect(find.text('Carregar no galpão'), findsOneWidget);
+      expect(find.text('Galpão Pinheiros'), findsOneWidget);
       expect(find.text('Largo da Batata'), findsOneWidget);
       await _tap(tester, 'unload-station-st-2');
       expect(repo.unloads.single, ['BT-2']);
@@ -235,7 +236,7 @@ void main() {
       await h.pump(tester, const VanStockPage());
       await _settle(tester);
       await _tap(tester, 'van-unload-BT-2');
-      await _tap(tester, 'unload-warehouse');
+      await _tap(tester, 'unload-depot-depot-1');
       expect(repo.unloadStationIds.single, isNull);
     });
 
@@ -248,7 +249,7 @@ void main() {
       await _settle(tester);
       await _tap(tester, 'van-unload-BT-2');
       expect(find.byKey(const Key('unload-stations-error')), findsOneWidget);
-      await _tap(tester, 'unload-warehouse');
+      await _tap(tester, 'unload-depot-depot-1');
       expect(repo.unloads.single, ['BT-2']);
     });
 
@@ -277,7 +278,7 @@ void main() {
       final h = Harness(repo: repo);
       await h.pump(tester, const BatteryStockPage());
       await _settle(tester);
-      expect(find.bySemanticsLabel('Galpão (recarga): 2'), findsOneWidget);
+      expect(find.bySemanticsLabel('Carregando: 2'), findsOneWidget);
       expect(find.bySemanticsLabel('Na estação: 1'), findsOneWidget);
       expect(find.bySemanticsLabel('Na van: 1'), findsOneWidget);
       expect(find.bySemanticsLabel('Na moto: 0'), findsOneWidget);
@@ -318,6 +319,7 @@ void main() {
       repo.online = true;
       await tester.tap(find.text('Tentar de novo'));
       await _settle(tester);
+      await tester.scrollUntilVisible(find.text('BT-1'), 200);
       expect(find.text('BT-1'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
