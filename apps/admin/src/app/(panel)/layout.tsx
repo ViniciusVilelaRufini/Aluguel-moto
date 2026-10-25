@@ -53,7 +53,7 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
 
   const items = menu.map((m) => ({ value: m.href, label: m.label, icon: m.icon, badge: m.key === 'alerts' && openAlerts > 0 ? openAlerts : undefined }));
   const offline = vehicles.filter((v) => v.status === 'offline').length;
-  const name = me.staff?.name ?? me.email;
+  const name = me.staff?.name?.trim() || me.email;
   const groupLabel = groups.map((g) => GROUP_LABEL[g]).join(', ');
 
   const canLive = groups.some((g) => g === 'admin' || g === 'operacao' || g === 'suporte');
