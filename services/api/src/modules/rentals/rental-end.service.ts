@@ -49,6 +49,14 @@ export type ReturnTo = 'street' | 'depot';
 export interface DepotPlacement {
   depotId: string;
   targetStatus: 'free' | 'maintenance';
+  /** Posição do galpão: a moto passa a estar lá (como na chegada do recolhimento); o rastreador confirma na telemetria. */
+  lat?: number;
+  lng?: number;
+}
+
+/** `lat`/`lng` do galpão para gravar junto com a chegada (só quando os dois vieram). */
+export function depotPosition(p: { lat?: number | null; lng?: number | null } | null | undefined): { lat: number; lng: number } | Record<string, never> {
+  return p && typeof p.lat === 'number' && typeof p.lng === 'number' && Number.isFinite(p.lat) && Number.isFinite(p.lng) ? { lat: p.lat, lng: p.lng } : {};
 }
 export interface FinalizeOptions {
   fees?: FeeCharge[];
@@ -286,7 +294,7 @@ export class RentalEndService {
       // (moto offline, por exemplo) não emite nada: quem chama grava o `statusBeforeOffline`.
       const placed = await this.prisma.vehicle.updateMany({
         where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } },
-        data: { status: opts.depot.targetStatus, depotId: opts.depot.depotId },
+        data: { status: opts.depot.targetStatus, depotId: opts.depot.depotId, ...depotPosition(opts.depot) },
       });
       vehicleStatus = placed.count ? opts.depot.targetStatus : null;
     } else await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: 'free' } });

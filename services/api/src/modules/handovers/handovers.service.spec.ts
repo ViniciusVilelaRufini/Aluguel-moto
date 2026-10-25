@@ -315,12 +315,14 @@ describe('HandoversService — disputa', () => {
 });
 
 describe('HandoversService — chegada (return_depot)', () => {
+  /** Galpão de Catanduva: a moto que chega passa a ter esta posição. */
+  const DEPOT_POS = { lat: -21.1378, lng: -48.9729 };
   const returnBody = (over: Record<string, unknown> = {}) =>
     ({ type: 'return_depot', rentalId: RENTAL_ID, depotId: DEPOT_ID, checklist: [{ code: 'freios', ok: true }], photoKeys: [], batteryPct: 40, ...over }) as any;
 
   function forReturn(checklist: Array<{ code: string; ok: boolean }>) {
     const s = setup();
-    s.prisma.depot.findUnique.mockResolvedValue({ id: DEPOT_ID } as any);
+    s.prisma.depot.findUnique.mockResolvedValue({ id: DEPOT_ID, ...DEPOT_POS } as any);
     s.prisma.handover.findFirst.mockResolvedValue(null);
     s.prisma.rental.findUnique.mockResolvedValue({ id: RENTAL_ID, status: 'active', vehicleId: VEHICLE_ID, customerId: CUSTOMER_ID } as any);
     s.prisma.rental.findFirst.mockResolvedValue(null);
@@ -336,7 +338,7 @@ describe('HandoversService — chegada (return_depot)', () => {
     const out = await svc.createReturn(operator, returnBody({ checklist: [{ code: 'freios', ok: false, note: 'Freio traseiro fraco' }] }));
     expect(out.status).toBe(201);
     expect(prisma.handover.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ type: 'return_depot', status: 'accepted', rentalId: RENTAL_ID, depotId: DEPOT_ID }) }));
-    expect(ender.endAtDepot).toHaveBeenCalledWith(operator, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'maintenance' });
+    expect(ender.endAtDepot).toHaveBeenCalledWith(operator, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'maintenance', ...DEPOT_POS });
     expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
     expect(prisma.fieldTask.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ vehicleId: VEHICLE_ID, type: 'collect' }), data: { status: 'canceled' } }));
   });
@@ -345,7 +347,7 @@ describe('HandoversService — chegada (return_depot)', () => {
     const { prisma, ender, svc } = forReturn([{ code: 'freios', ok: true }]);
     prisma.vehicle.findUnique.mockResolvedValue({ status: 'free', depotId: DEPOT_ID } as any);
     await svc.createReturn(operator, returnBody());
-    expect(ender.endAtDepot).toHaveBeenCalledWith(operator, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'free' });
+    expect(ender.endAtDepot).toHaveBeenCalledWith(operator, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'free', ...DEPOT_POS });
     expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
   });
 
@@ -354,7 +356,20 @@ describe('HandoversService — chegada (return_depot)', () => {
     prisma.vehicle.findUnique.mockResolvedValue({ status: 'offline', depotId: null } as any);
     prisma.vehicle.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
     await svc.createReturn(operator, returnBody());
-    expect(prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'offline' }, data: { depotId: DEPOT_ID, statusBeforeOffline: 'maintenance' } });
+    expect(prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'offline' }, data: { depotId: DEPOT_ID, statusBeforeOffline: 'maintenance', ...DEPOT_POS } });
+  });
+
+  it('repetição com a moto ainda fora do galpão → a colocação grava status, depotId e a posição do galpão', async () => {
+    const { prisma, svc } = forReturn([{ code: 'freios', ok: true }]);
+    prisma.handover.findFirst.mockResolvedValue({ ...handover, type: 'return_depot', status: 'accepted', rentalId: RENTAL_ID } as any);
+    prisma.rental.findUnique.mockResolvedValue({ status: 'ended', customerId: CUSTOMER_ID } as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'free', depotId: null } as any);
+    await svc.createReturn(operator, returnBody());
+    expect(prisma.depot.findUnique).toHaveBeenCalledWith({ where: { id: DEPOT_ID }, select: { lat: true, lng: true } });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({
+      where: { id: VEHICLE_ID, status: { in: ['free', 'awaiting_pickup', 'maintenance'] } },
+      data: { status: 'free', depotId: DEPOT_ID, ...DEPOT_POS },
+    });
   });
 
   it('repetição (fila offline): chegada não cancelada já existe → 200 com a mesma entrega, sem criar outra', async () => {

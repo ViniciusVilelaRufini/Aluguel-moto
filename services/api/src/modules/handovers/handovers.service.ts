@@ -13,7 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { isUniqueViolation } from '../payments/payment-state.service';
-import { RentalEndService } from '../rentals/rental-end.service';
+import { depotPosition, RentalEndService } from '../rentals/rental-end.service';
 import { RentalStartService } from '../rentals/rental-start.service';
 import { toRental } from '../rentals/rentals.mapper';
 import { PICKUP_CODE_SECRET, verifyPickupCode } from '../reservations/pickup-code';
@@ -274,11 +274,13 @@ export class HandoversService {
    */
   private async finishReturn(operator: Principal, h: HandoverRow, fresh: boolean) {
     const target = targetStatusOf(h);
+    // A moto chega ao galpão: a posição registrada passa a ser a do galpão (como no recolhimento `collect`).
+    const position = depotPosition(await this.prisma.depot.findUnique({ where: { id: h.depotId }, select: { lat: true, lng: true } }));
     const rental = await this.prisma.rental.findUnique({ where: { id: h.rentalId! }, select: { status: true, customerId: true } });
     let completed = fresh;
     // O fechamento grava status final + depotId numa transição só (sem janela `free` sem galpão).
     if (rental && OPEN_RENTAL_STATUSES.includes(rental.status)) {
-      await this.ender.endAtDepot(operator, h.rentalId!, { depotId: h.depotId, targetStatus: target });
+      await this.ender.endAtDepot(operator, h.rentalId!, { depotId: h.depotId, targetStatus: target, ...position });
       completed = true;
     }
     // Recolhimento aberto da moto deixa de valer (ela está no galpão).
@@ -286,7 +288,7 @@ export class HandoversService {
     // Só repetição ou moto offline (sem transição no fechamento) precisam da colocação à parte.
     const vehicle = await this.prisma.vehicle.findUnique({ where: { id: h.vehicleId }, select: { depotId: true, status: true } });
     if (vehicle?.depotId !== h.depotId || vehicle.status === 'offline' || vehicle.status === 'awaiting_pickup') {
-      await this.placeAtDepot(h, target);
+      await this.placeAtDepot(h, target, position);
       completed = true;
     }
     if (completed) this.emitUpdated({ handoverId: h.id, status: 'accepted', customerId: rental?.customerId, depotId: h.depotId });
@@ -294,17 +296,17 @@ export class HandoversService {
   }
 
   /** Repetição/offline: `free` (ou `maintenance` com item problemático) + `depotId`, sem passar por `free` sem galpão. */
-  private async placeAtDepot(h: HandoverRow, target: 'free' | 'maintenance'): Promise<void> {
+  private async placeAtDepot(h: HandoverRow, target: 'free' | 'maintenance', position: ReturnType<typeof depotPosition> = {}): Promise<void> {
     const busy = await this.prisma.rental.findFirst({ where: { vehicleId: h.vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
     if (busy) return;
     const moved = await this.prisma.$transaction(async (tx) => {
       const placed = await tx.vehicle.updateMany({
         where: { id: h.vehicleId, status: { in: ['free', 'awaiting_pickup', 'maintenance'] } },
-        data: { status: target, depotId: h.depotId },
+        data: { status: target, depotId: h.depotId, ...position },
       });
       if (placed.count === 0) {
         // Offline: volta ao status certo quando reconectar.
-        await tx.vehicle.updateMany({ where: { id: h.vehicleId, status: 'offline' }, data: { depotId: h.depotId, statusBeforeOffline: target } });
+        await tx.vehicle.updateMany({ where: { id: h.vehicleId, status: 'offline' }, data: { depotId: h.depotId, statusBeforeOffline: target, ...position } });
       }
       return placed.count > 0;
     });

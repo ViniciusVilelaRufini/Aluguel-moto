@@ -435,6 +435,13 @@ describe('Devolução em ponto verde (retirada em galpão)', () => {
     expect(prisma.fieldTask.create).not.toHaveBeenCalled();
   });
 
+  it('chegada no galpão com a posição do galpão: lat/lng gravados na mesma transição (a moto está no galpão)', async () => {
+    const { service, prisma } = setup({ depotId: null });
+    await service.endAtDepot(admin, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'free', lat: -21.1378, lng: -48.9729 });
+    const calls = prisma.vehicle.updateMany.mock.calls.map((c: any) => c[0]);
+    expect(calls).toEqual([{ where: { id: VEHICLE_ID, status: { in: ['rented', 'paused'] } }, data: { status: 'free', depotId: DEPOT_ID, lat: -21.1378, lng: -48.9729 } }]);
+  });
+
   it('fix 1 (Task 6): chegada com a moto offline (sem transição) não emite status; quem chama acerta o statusBeforeOffline', async () => {
     const { service, prisma, events } = setup({ depotId: null });
     prisma.vehicle.updateMany.mockResolvedValue({ count: 0 });
