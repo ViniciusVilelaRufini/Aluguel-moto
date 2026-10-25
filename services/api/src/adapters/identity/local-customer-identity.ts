@@ -8,4 +8,9 @@ export class LocalCustomerIdentityDirectory implements CustomerIdentityDirectory
   async deleteIdentity(): Promise<void> {
     this.logger.log({ msg: 'customer_identity_delete_noop' });
   }
+
+  /** O token dev já traz o e-mail (mesmas claims do Cognito); não há diretório para consultar. */
+  async contactInfo(): Promise<null> {
+    return null;
+  }
 }

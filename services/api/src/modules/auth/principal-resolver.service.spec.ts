@@ -166,3 +166,56 @@ describe('PrincipalResolver (staff novo em paralelo)', () => {
     expect(p).toMatchObject({ staffId: 's9', groups: ['campo'] });
   });
 });
+
+/** Task 30 (item 39): o access token do Cognito não traz e-mail; o contato verificado vem do diretório de clientes. */
+describe('PrincipalResolver (e-mail do cliente, Task 30)', () => {
+  const cognitoToken = { sub: 'sub-c', email: undefined as unknown as string, groups: [], pool: 'customer' as const };
+
+  it('primeiro acesso sem e-mail no token: grava o e-mail e o telefone verificados do diretório', async () => {
+    const prisma = { customer: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn().mockResolvedValue({ id: 'c1', status: 'active' }) } };
+    const directory = { contactInfo: jest.fn().mockResolvedValue({ email: 'maria@exemplo.com', phone: '+5511999990000' }), deleteIdentity: jest.fn() };
+    await new PrincipalResolver(prisma as any, undefined, directory as any).resolve(cognitoToken);
+    expect(directory.contactInfo).toHaveBeenCalledWith('sub-c');
+    expect(prisma.customer.upsert.mock.calls[0][0].create).toEqual({ cognitoSub: 'sub-c', email: 'maria@exemplo.com', phone: '+5511999990000' });
+  });
+
+  it('diretório fora: entra com o e-mail provisório (o login não falha)', async () => {
+    const prisma = { customer: { findUnique: jest.fn().mockResolvedValue(null), upsert: jest.fn().mockResolvedValue({ id: 'c1', status: 'active' }) } };
+    const directory = { contactInfo: jest.fn().mockRejectedValue(Object.assign(new Error('x'), { name: 'TooManyRequestsException' })), deleteIdentity: jest.fn() };
+    await expect(new PrincipalResolver(prisma as any, undefined, directory as any).resolve(cognitoToken)).resolves.toMatchObject({ customerId: 'c1' });
+    expect(prisma.customer.upsert.mock.calls[0][0].create.email).toBe('sub-c@sem-email.volti.invalid');
+  });
+
+  it('cadastro com e-mail provisório é completado (telefone só se vazio); depois de achar, não consulta mais', async () => {
+    const row = { id: 'c1', status: 'active', email: 'sub-c@sem-email.volti.invalid', phone: '+5511888880000' };
+    const prisma = {
+      customer: {
+        findUnique: jest.fn().mockImplementation(async () => ({ ...row })),
+        update: jest.fn().mockImplementation(async ({ data }: any) => Object.assign(row, data)),
+      },
+    };
+    const directory = { contactInfo: jest.fn().mockResolvedValue({ email: 'maria@exemplo.com', phone: '+5511999990000' }), deleteIdentity: jest.fn() };
+    const r = new PrincipalResolver(prisma as any, undefined, directory as any);
+    await r.resolve(cognitoToken);
+    expect(prisma.customer.update).toHaveBeenCalledWith({ where: { id: 'c1' }, data: { email: 'maria@exemplo.com' } });
+    await r.resolve(cognitoToken);
+    expect(directory.contactInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it('diretório sem e-mail verificado: no máximo uma consulta a cada 10 min por cliente', async () => {
+    const prisma = { customer: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', status: 'active', email: 'sub-c@sem-email.volti.invalid', phone: null }), update: jest.fn() } };
+    const directory = { contactInfo: jest.fn().mockResolvedValue(null), deleteIdentity: jest.fn() };
+    const r = new PrincipalResolver(prisma as any, undefined, directory as any);
+    await r.resolve(cognitoToken);
+    await r.resolve(cognitoToken);
+    expect(directory.contactInfo).toHaveBeenCalledTimes(1);
+    expect(prisma.customer.update).not.toHaveBeenCalled();
+  });
+
+  it('cadastro com e-mail real: não consulta o diretório', async () => {
+    const prisma = { customer: { findUnique: jest.fn().mockResolvedValue({ id: 'c1', status: 'active', email: 'maria@exemplo.com', phone: null }), update: jest.fn() } };
+    const directory = { contactInfo: jest.fn(), deleteIdentity: jest.fn() };
+    await new PrincipalResolver(prisma as any, undefined, directory as any).resolve(cognitoToken);
+    expect(directory.contactInfo).not.toHaveBeenCalled();
+  });
+});

@@ -8,4 +8,15 @@ export const CUSTOMER_IDENTITY = Symbol('CUSTOMER_IDENTITY');
  */
 export interface CustomerIdentityDirectory {
   deleteIdentity(sub: string): Promise<void>;
+  /**
+   * Task 30 (item 39): e-mail e telefone **verificados** do titular pelo `sub` (o access token do Cognito não traz
+   * e-mail). Só o que estiver verificado volta. local: null (o token dev já traz e-mail). aws: AdminGetUser (Username = sub).
+   */
+  contactInfo(sub: string): Promise<CustomerContact | null>;
+}
+
+export interface CustomerContact {
+  email?: string;
+  /** E.164 (`+5511…`), como o Cognito guarda. */
+  phone?: string;
 }
