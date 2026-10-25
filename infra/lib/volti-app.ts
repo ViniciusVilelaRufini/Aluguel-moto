@@ -1,4 +1,4 @@
-import { App, Tags } from 'aws-cdk-lib';
+import { App, DefaultStackSynthesizer, Tags } from 'aws-cdk-lib';
 import {
   ConfigOverrides,
   EnvName,
@@ -13,6 +13,7 @@ import { IotStack } from './stacks/iot-stack';
 import { MessagingStack } from './stacks/messaging-stack';
 import { NetworkStack } from './stacks/network-stack';
 import { ObservabilityStack } from './stacks/observability-stack';
+import { DEFAULT_BRANCH, DEFAULT_REPO, SINGLE_TAG, SingleDevStack } from './stacks/single-dev-stack';
 import { WafStack } from './stacks/waf-stack';
 
 export interface VoltiAppOptions {
@@ -113,4 +114,73 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
   Tags.of(app).add('ambiente', cfg.name);
 
   return { app, network, data, auth, messaging, iot, api, waf, adminWeb, observability };
+}
+
+export interface SingleDevAppOptions {
+  /** AWS account id; synth uses a placeholder (with vpcId + subnetId, no lookup and no credentials). */
+  account?: string;
+  repoUrl?: string;
+  branch?: string;
+  instanceType?: string;
+  rootVolumeGb?: number;
+  /** api.<domain> for the API (Caddy certificate); admin.<domain> for the panel when adminCertificateArn is given. */
+  domainName?: string;
+  adminCertificateArn?: string;
+  vpcId?: string;
+  subnetId?: string;
+  budgetEmail?: string;
+  overrides?: ConfigOverrides;
+  outdir?: string;
+}
+
+export interface SingleDevStacks {
+  app: App;
+  adminWeb: AdminWebStack;
+  auth: AuthStack;
+  single: SingleDevStack;
+}
+
+/** Bootstrap qualifier of the single profile: its own CDK toolkit stack (volti-cdk-toolkit), apart from the other project's. */
+export const SINGLE_QUALIFIER = 'volti';
+
+/**
+ * `-c env=dev -c profile=single`: the cheapest dev (docs/decisoes.md). One EC2 instance with Docker Compose + S3, Cognito and
+ * the panel on S3/CloudFront. No Docker-built asset (deployable from AWS CloudShell). Prod and the full dev are untouched.
+ */
+export function createSingleDevApp(opts: SingleDevAppOptions): SingleDevStacks {
+  const cfg = getConfig('dev', opts.overrides);
+  const account = opts.account ?? '000000000000';
+  const app = new App({ outdir: opts.outdir });
+  const common = {
+    env: { account, region: cfg.region },
+    synthesizer: new DefaultStackSynthesizer({ qualifier: SINGLE_QUALIFIER }),
+  };
+  const domain = opts.domainName;
+
+  const adminWeb = new AdminWebStack(app, 'volti-dev-admin-web', {
+    ...common,
+    cfg,
+    adminDomainName: domain ? `admin.${domain}` : undefined,
+    adminCertificateArn: opts.adminCertificateArn,
+  });
+  const auth = new AuthStack(app, 'volti-dev-auth', { ...common, cfg, adminOrigin: adminWeb.origin });
+  const single = new SingleDevStack(app, 'volti-dev-single', {
+    ...common,
+    cfg,
+    auth,
+    adminWeb,
+    adminOrigin: adminWeb.origin,
+    repoUrl: opts.repoUrl ?? DEFAULT_REPO,
+    branch: opts.branch ?? DEFAULT_BRANCH,
+    instanceType: opts.instanceType ?? 't4g.small',
+    rootVolumeGb: opts.rootVolumeGb ?? 25,
+    apiDomainName: domain ? `api.${domain}` : undefined,
+    vpcId: opts.vpcId,
+    subnetId: opts.subnetId,
+    budgetEmail: opts.budgetEmail,
+  });
+
+  Tags.of(app).add(SINGLE_TAG.key, SINGLE_TAG.value);
+  Tags.of(app).add('ambiente', 'dev');
+  return { app, adminWeb, auth, single };
 }

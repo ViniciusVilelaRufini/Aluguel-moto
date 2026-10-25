@@ -1,0 +1,103 @@
+# Volti dev em UMA instância EC2 (profile=single, infra/lib/stacks/single-dev-stack.ts).
+# Rodado por deploy/single/update.sh com: docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env ...
+# /opt/volti/.env é gerado por render-env.sh a partir do SSM (/volti/dev/config/* e /volti/dev/secrets/*); nada secreto aqui.
+name: volti
+
+services:
+  postgres:
+    build: ./postgis
+    image: volti/postgis:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: volti
+      POSTGRES_DB: volti
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD ausente (rode render-env.sh)}
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U volti -d volti"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # noeviction: a API guarda estado de segurança sem TTL (mesma política do ElastiCache do prod); AOF para sobreviver a reboot.
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
+    volumes: ["redisdata:/data"]
+
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    # Só na rede interna do Compose (porta não publicada): IOT_MODE=local, rastreadores simulados.
+    volumes: ["../../infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"]
+
+  api:
+    build:
+      context: ../..
+      dockerfile: services/api/Dockerfile
+    image: volti/api:dev
+    restart: unless-stopped
+    env_file: [/opt/volti/.env]
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      VOLTI_ENV: dev
+      DATABASE_URL: postgresql://volti:${DB_PASSWORD}@postgres:5432/volti
+      REDIS_URL: redis://redis:6379
+      # As migrações rodam no update.sh (prisma migrate deploy) antes de subir a nova imagem.
+      RUN_MIGRATIONS: "false"
+      AUTH_MODE: cognito
+      STORAGE_MODE: s3
+      IOT_MODE: local
+      MQTT_URL: mqtt://mosquitto:1883
+      GEOFENCE_MODE: local
+      GEOCODER_MODE: local
+      QUEUE_MODE: local
+      PAYMENT_PROVIDER: fake
+      ALLOW_FAKE_PAYMENTS: "true"
+      INSURANCE_PROVIDER: mock
+      INVOICE_ISSUER: mock
+      KYC_PROVIDER: mock
+      PUSH_MODE: log
+      TRACK_RETENTION_DAYS: "90"
+      OUT_OF_AREA_LOCK_MINUTES: "5"
+      TRUST_PROXY: "1"
+      PUBLIC_SHARE_BASE_URL: https://${PUBLIC_HOST}/share
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      mosquitto:
+        condition: service_started
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on: [api]
+
+  # Simulador de rastreadores (opcional): docker compose ... --profile sim up -d iot-sim
+  iot-sim:
+    profiles: ["sim"]
+    build:
+      context: ../..
+      dockerfile: services/iot-sim/Dockerfile
+    restart: unless-stopped
+    environment:
+      MQTT_URL: mqtt://mosquitto:1883
+      SIM_VEHICLES: ${SIM_VEHICLES:-5}
+    depends_on: [mosquitto]
+
+volumes:
+  pgdata:
+  redisdata:
+  caddydata:
+  caddyconfig:

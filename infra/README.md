@@ -1,6 +1,14 @@
 # Volti: infraestrutura AWS (CDK)
 
-AWS CDK v2 (TypeScript), região `sa-east-1`, dois ambientes (`dev`, `prod`). Tags em todos os recursos: `projeto=volti`, `ambiente=<dev|prod>`.
+AWS CDK v2 (TypeScript), região `sa-east-1`, dois ambientes (`dev`, `prod`). Tags em todos os recursos: `projeto=volti`, `ambiente=<dev|prod>` (no perfil `single`: `Projeto=Volti`, `ambiente=dev`).
+
+Três formas de subir:
+
+| Comando | O que sobe | Custo estimado/mês |
+|---|---|---|
+| `-c env=dev -c profile=single` | **Dev em uma instância EC2** (Docker Compose: API, PostGIS, Redis, Mosquitto, Caddy) + S3, Cognito e painel no CloudFront. É o dev atual. Ver "Perfil `single`" abaixo | ≈ US$ 28 (≈ US$ 20 com Savings Plan) |
+| `-c env=dev` | Dev com a arquitetura completa, enxuto (sem NAT, sem WAF, sem Kinesis, Fargate Spot). Ver "Dev ECS enxuto" | ≈ US$ 100 |
+| `-c env=prod -c domainName=...` | Produção (inalterada) | ver `lib/config.ts` |
 
 ## Stacks
 
@@ -8,17 +16,19 @@ Nome no CloudFormation: `volti-<env>-<stack>`.
 
 | Stack | Conteúdo |
 |---|---|
-| `network` | VPC 10.20.0.0/16, 2 AZs, subnets públicas e privadas, NAT (dev 1, prod 2), endpoint S3 |
+| `network` | VPC 10.20.0.0/16, 2 AZs, subnets públicas e privadas, endpoint S3 (gateway, grátis). Prod: 2 NAT e subnets privadas com saída. Dev: **sem NAT**, subnets públicas + isoladas (RDS e Redis sem internet; as tasks da API ficam nas públicas com IP público) |
 | `data` | RDS PostgreSQL 16 (KMS, privado, backup, segredo no Secrets Manager `volti/<env>/rds`), Redis (ElastiCache, criptografado), buckets `documentos-kyc` (KMS próprio), `fotos-devolucao`, `relatorios`, `anexos`, `catalogo` (CORS só para a origem do painel) |
 | `auth` | Cognito de clientes (sem senha: `USER_AUTH` com OTP por SMS e, com SES, por e-mail; Google/Apple opcionais; MFA opcional) e interno (MFA obrigatório TOTP, grupos `admin`, `operacao`, `financeiro`, `suporte`, `campo`); domínio do Hosted UI nos dois pools; clients do app do cliente, do painel e do app do operador |
 | `messaging` | SQS `telemetry`, `payments-webhook`, `alerts` e `stations.fifo` (FIFO), cada uma com DLQ, e `stations-forwarder-dlq` (falhas do encaminhador das estações); EventBridge bus `volti-<env>` com a regra de presença → `telemetry` |
 | `iot` | Thing types `moto` e `estacao`, políticas de menor privilégio, regras IoT (telemetria e eventos do rastreador para a fila de telemetria, eventos das estações em ordem via Kinesis → Lambda → fila FIFO, presença para o EventBridge), Amazon Location (tracker, geofence collection e place index) |
-| `api` | ECR, ECS Fargate, ALB HTTPS 443 (ACM), health check `/health`, auto scaling por CPU, segredos via Secrets Manager (inclusive as chaves HMAC geradas pelo CDK), WAF regional (regras gerenciadas AWS + limite por IP por ambiente) |
-| `waf` | Web ACL do CloudFront (precisa estar em `us-east-1`): regras gerenciadas AWS + limite por IP |
-| `admin-web` | S3 privado + CloudFront com OAC e o WAF |
-| `observability` | SNS, alarmes (5xx da API, DLQs, CPU/armazenamento/conexões do RDS, memória do Redis, idade da fila de telemetria e da de estações, erros das regras IoT e das Lambdas, tarefas saudáveis da API) e AWS Budget (dev US$ 100/mês) |
+| `api` | ECR, ECS Fargate, ALB HTTPS 443 (ACM), health check `/health`, auto scaling por CPU, segredos via Secrets Manager (inclusive as chaves HMAC geradas pelo CDK), WAF regional (só prod). Dev: Fargate Spot, 0,25 vCPU / 0,5 GB, 1 a 2 tarefas, task em subnet pública com IP público e security group que só aceita o ALB |
+| `waf` | Web ACL do CloudFront (precisa estar em `us-east-1`): regras gerenciadas AWS + limite por IP. **Só prod** (no dev a stack não existe) |
+| `admin-web` | S3 privado + CloudFront com OAC (e o WAF no prod) |
+| `observability` | SNS, alarmes e AWS Budget. Prod: todos os alarmes da tabela abaixo, orçamento US$ 1.500 (80/100% + previsão). Dev: só 5xx da API e as 5 DLQs (dentro dos 10 alarmes grátis), orçamento US$ 20 (50/80/100% + previsão) |
 
-Configuração por ambiente (tamanhos, NAT, retenção, orçamento, limite do WAF, limiares de alarme, domínios e callbacks do Cognito) em `lib/config.ts`.
+Configuração por ambiente (tamanhos, NAT, retenção, orçamento, WAF ligado/desligado, transporte dos eventos das estações, conjunto de alarmes, Fargate Spot, domínios e callbacks do Cognito) em `lib/config.ts`.
+
+**Prod idêntico byte a byte:** `test/prod-fingerprint.test.ts` compara o SHA-256 de cada template do prod com `test/fixtures/prod-templates.sha256.json`. Uma mudança deliberada no prod (ou upgrade do CDK) regenera a impressão digital com `UPDATE_PROD_FINGERPRINT=1 pnpm --filter infra test -- prod-fingerprint`, e o diff do JSON entra na revisão.
 
 ## Comandos
 
@@ -26,6 +36,7 @@ Configuração por ambiente (tamanhos, NAT, retenção, orçamento, limite do WA
 pnpm install                       # na raiz do monorepo
 pnpm --filter infra test           # assertions do CDK (jest)
 pnpm --filter infra exec cdk synth -c env=dev     # sem credenciais AWS
+pnpm --filter infra exec cdk synth -c env=dev -c profile=single -c vpcId=vpc-0123456789abcdef0 -c subnetId=subnet-0123456789abcdef0  # offline (no CloudShell a VPC padrão é buscada)
 pnpm --filter infra exec cdk synth -c env=prod -c domainName=volti.com.br
 pnpm --filter infra exec cdk diff --all -c env=dev -c account=<id> -c certificateArn=<arn>
 ```
@@ -44,6 +55,12 @@ O synth offline usa conta `000000000000` e ARNs de certificado fictícios. Nenhu
 | `domainName` | vazio | Se definido junto com `adminCertificateArn`, o painel responde em `admin.<domainName>`; a API usa `api.<domainName>` no link público do SOS. **Obrigatório em prod** (sem ele o synth falha) |
 | `adminCertificateArn` | vazio | Certificado ACM em `us-east-1` (exigência do CloudFront) |
 | `alarmEmail` | vazio | E-mail de alarmes e do orçamento (sem ele, só o tópico SNS `volti-<env>-alarms`) |
+| `budgetEmail` | vazio | E-mail dos alertas do orçamento (tem precedência sobre `alarmEmail`). No `profile=single` é o único destino dos alertas |
+| `apiRunSeed` | vazio | `true` põe `RUN_SEED=true` na task (seed idempotente depois das migrações). Só dev; o prod recusa |
+| `profile` | vazio | `single` = dev em uma instância EC2 (só com `env=dev`) |
+| `branch`, `repoUrl` | `feat/galpao`, `git@github.com:ViniciusVilelaRufini/Aluguel-moto.git` | `profile=single`: o que a instância clona |
+| `instanceType`, `rootVolumeGb` | `t4g.small`, `25` | `profile=single`: tamanho da instância (ARM) e do disco gp3 |
+| `vpcId`, `subnetId` | vazio (busca a VPC padrão) | `profile=single`: só para synth offline/testes; no CloudShell deixe vazio (com eles, a subnet precisa estar em `sa-east-1a`) |
 | `apiRateLimitPer5Min` | dev 2000, prod 3000 | Limite por IP do WAF da API (requisições em 5 minutos); inteiro >= 10 |
 | `sesFromEmail`, `sesVerifiedDomain` | vazio | Identidade SES verificada para os e-mails do pool de clientes; liga o `EMAIL_OTP`. Sem ela, só OTP por SMS e e-mails pelo remetente padrão do Cognito |
 | `googleIdpSecretName` | vazio | Nome do segredo do Google (`{"clientId","clientSecret"}`); vazio = IdP não criado. O segredo precisa **existir antes** do deploy com este `-c` (o synth é offline e não confere; o CloudFormation falha na resolução dinâmica se ele não existir) |
@@ -56,7 +73,7 @@ DNS não é gerenciado aqui: aponte `api.<domínio>` para o ALB (`api/load-balan
 
 O serviço da API nasce com 0 tarefas (`-c apiDesiredCount=0`, o padrão), porque o repositório ECR é criado pela própria stack e ainda está vazio. Sem isso o Fargate não consegue baixar a imagem e o circuit breaker faz rollback.
 
-1. `cdk bootstrap aws://<conta>/sa-east-1` e `aws://<conta>/us-east-1` (a stack `waf` fica em us-east-1).
+1. `cdk bootstrap aws://<conta>/sa-east-1`; no prod também `aws://<conta>/us-east-1` (a stack `waf` fica em us-east-1; no dev ela não existe).
 2. Crie o certificado ACM e rode `cdk deploy --all -c env=dev -c account=... -c certificateArn=...` (infra completa, serviço com 0 tarefas).
 3. Construa e publique a imagem de `services/api` no ECR (`api/ecr-repository` no SSM) com a tag que será usada em `-c apiImageTag`.
 4. Redeploy com a tarefa rodando: `cdk deploy --all ... -c apiImageTag=<tag> -c apiDesiredCount=1` (prod: 2 ou mais).
@@ -120,6 +137,7 @@ Regras (todas com a mesma ação de erro: `/volti/<env>/iot/rule-errors` + filtr
 
 - `motos/+/telemetria` → fila de telemetria (`SELECT *, topic(2) AS thingName, timestamp() AS ingestedAt`).
 - `motos/+/eventos` → **fila de telemetria** (mesmo SQL). A API (`AwsIotTransport`) separa pelo campo `tipo` e gera o alerta com moto, aluguel e posição. **Escolha registrada:** a correção foi feita na regra (destino), não com SQL de transformação para `CreateAlertInput`: esse formato exige o `vehicleId` (UUID do banco), o aluguel aberto e a posição, que o SQL do IoT não tem como buscar a partir do `thingName`. A fila `alerts` continua com o formato `CreateAlertInput`, para produtores que não sejam o rastreador. A Task 5 (API) pode tolerar os dois formatos no listener, mas nada cru do rastreador chega mais à fila `alerts`.
+- **Dev:** `estacoes/+/eventos` → Lambda assíncrona `StationForwarder` (`STATION_DIRECT_FORWARDER`, 2 retentativas, idade máxima 1 h, falha → `stations-forwarder-dlq` com o evento) → `stations.fifo`. Sem Kinesis (economiza ~US$ 22/mês); a ordem por estação **não** é garantida (estações do dev são simuladas). O texto abaixo vale para o prod.
 - `estacoes/+/eventos` (`SELECT *, topic(2) AS thing`) → **Kinesis** `volti-<env>-station-events` (chave de partição `${topic(2)}` = thing, 1 shard, 24 h) → Lambda `StationForwarder` por event source mapping (paralelização 1, um lote por shard de cada vez, `ReportBatchItemFailures`, sem bisseção, 50 retentativas, idade máxima 1 h) → fila FIFO `stations.fifo` (`MessageGroupId` = thing, deduplicação por conteúdo, `maxReceiveCount` 3).
   - **Por que não SQS direto nem Lambda direto:** a ação SQS do IoT não envia para fila FIFO (sem `MessageGroupId`), e a ação Lambda do IoT é assíncrona (invocações em paralelo, retentativa minutos depois), o que inverte a ordem; a API depende da ordem por estação (`station-swaps.service.ts`: um `slot_closed` antes do `battery_returned` cancela a troca com a bateria do cliente na vaga).
   - **Ordem garantida daqui em diante:** a ordem de chegada no Kinesis é preservada por chave de partição até a fila FIFO. A Lambda envia um registro por vez, na ordem do shard; no primeiro envio que falha ela para e devolve aquele registro como falha, então a retentativa recomeça dele (o shard fica bloqueado, nunca pula adiante). Registros reenviados numa retentativa são absorvidos pela deduplicação por conteúdo da fila (5 min). Um evento que a API não consegue processar segura o grupo da estação por no máximo 3 recebimentos (cerca de 3 min) e vai para `stations-dlq.fifo`.
@@ -145,11 +163,11 @@ Callbacks em `lib/config.ts` (`auth.*CallbackUrls`, `auth.adminExtraOrigins`); a
 
 | Alarme | Métrica | Limiar |
 |---|---|---|
-| `Api5xx` | 5xx dos alvos do ALB | >= 10 em 5 min (2 períodos) |
+| `Api5xx` | 5xx dos alvos do ALB (também no dev) | >= 10 em 5 min (2 períodos) |
 | `ApiHealthyTasks` | `HealthyHostCount` (mínimo) do target group | < tarefas mínimas por 3 min; sem dado conta como falha; notificação desligada enquanto o serviço roda com 0 tarefas |
 | `TelemetryQueueAge`, `StationsQueueAge` | `ApproximateAgeOfOldestMessage` | dev 120 s / 60 s, prod 60 s / 30 s |
 | `StationStreamIteratorAge` | `IteratorAge` da Lambda das estações (eventos parados no Kinesis) | mesmo limiar da fila de estações |
-| `*Dlq` (5) | mensagens visíveis na DLQ (inclui `StationsForwarderDlq`) | >= 1 |
+| `*Dlq` (5) | mensagens visíveis na DLQ (inclui `StationsForwarderDlq`; também no dev) | >= 1 |
 | `IotRuleErrors` | filtro de métrica no log de erros das regras | >= 1 em 5 min |
 | `StationForwarderErrors`, `PresenceForwarderErrors` | `Errors` das Lambdas | >= 1 em 5 min |
 | `RdsCpu`, `RdsFreeStorage`, `RdsConnections` | CPU, armazenamento livre, conexões | 80%, < 10% do alocado, dev 65 / prod 360 (cerca de 80% do `max_connections`: ~80 no `db.t4g.micro`, ~450 no `db.t4g.medium`; confira com `SHOW max_connections`) |
@@ -171,10 +189,10 @@ Callbacks em `lib/config.ts` (`auth.*CallbackUrls`, `auth.adminExtraOrigins`); a
 - Segredos: DB gerado pelo RDS; credenciais do Mercado Pago em `volti/<env>/app` (o access token começa como `CHANGE_ME` e o segredo do webhook é gerado aleatoriamente).
 - Buckets sempre com `RETAIN`; KYC com versionamento e expiração de versões antigas em 90 dias (retenção legal dos documentos fica com o jurídico). Fotos: IA aos 90 dias, expiram em 365. Relatórios: IA aos 30, expiram em 730.
 - `dev`: RDS com snapshot na remoção, sem deletion protection, sem Container Insights. `prod`: Multi-AZ, deletion protection, termination protection nas stacks.
-- Budget: sem filtro por tag (requer ativar tags de alocação de custo); notifica em 80% e 100% do gasto real e 100% da previsão. Com `alarmEmail` envia por e-mail, senão para o SNS.
+- Budget (dev completo e prod): sem filtro por tag; prod notifica em 80% e 100% do gasto real e 100% da previsão, dev em 50/80/100% + previsão. Com `budgetEmail` (ou `alarmEmail`) envia por e-mail, senão para o SNS. O orçamento do `profile=single` é filtrado pela tag `Projeto=Volti`.
 - `lint` roda ESLint (typescript-eslint, flat config); `build` roda `tsc --noEmit`.
 
-## Custo mensal aproximado (dev, sa-east-1, valores de lista, sem free tier)
+## Custo mensal aproximado (dev ECS antigo, com NAT e WAF; substituído, mantido para comparação)
 
 | Item | US$/mês |
 |---|---|
@@ -189,14 +207,79 @@ Callbacks em `lib/config.ts` (`auth.*CallbackUrls`, `auth.adminExtraOrigins`); a
 | Kinesis (1 shard provisionado, eventos das estações) | 15 |
 | **Total** | **cerca de 180** |
 
-Atenção: o orçamento de US$ 100/mês do dev dispara alerta de previsão logo no primeiro mês com esta configuração. Para ficar abaixo, desligue o ambiente fora do expediente (`desiredCount` 0 e remover a NAT) ou ajuste `budgetUsd` em `lib/config.ts`. Valores aproximados: confirme na calculadora da AWS.
+Os custos atuais estão nas seções do perfil `single` e do dev ECS enxuto, abaixo.
+
+## Perfil `single`: dev em uma instância EC2
+
+`-c env=dev -c profile=single` (`lib/stacks/single-dev-stack.ts`, `deploy/single/`). Decisão em `docs/decisoes.md` (2026-10-25, lacunas T20). Três stacks: `volti-dev-admin-web` (S3 + CloudFront, sem WAF), `volti-dev-auth` (Cognito, igual ao dev completo) e `volti-dev-single`:
+
+- EC2 `t4g.small` (ARM, Amazon Linux 2023) na VPC **padrão**, subnet pública, IP público (sem Elastic IP), IMDSv2 obrigatório (2 saltos, para o container usar a role), sem chave SSH, acesso pelo **SSM Session Manager**, security group só 80/443, gp3 25 GB criptografado, 2 GB de swap.
+- Docker Compose (`deploy/single/compose.yml`): API (`NODE_ENV=production`, `AUTH_MODE=cognito`, `STORAGE_MODE=s3`, `IOT_MODE`/`QUEUE_MODE`/`GEOFENCE_MODE`/`GEOCODER_MODE` locais, pagamento `fake` liberado), PostgreSQL 16 + PostGIS (imagem multi-arch construída na instância), Redis (`noeviction`, AOF), Mosquitto (interno) e Caddy (HTTPS automático em `api.<domínio>` ou `<ip-com-hifens>.sslip.io`). Simulador opcional: perfil `sim` do Compose.
+- 5 buckets S3 de upload (SSE-S3, privados). Role da instância: S3, Cognito admin, leitura de `/volti/dev/config/*` e `/volti/dev/secrets/*`, escrita só em `/volti/dev/secrets/*` (segredos gerados no primeiro boot), publicação do painel (bucket + invalidação) e `ssm:GetParameter` + `kms:Decrypt` (via SSM, contexto `PARAMETER_ARN`) para a deploy key `/volti/dev/github-deploy-key`, que **não** é criada pela stack.
+- Documentos SSM `volti-dev-update` (git pull + rebuild + `prisma migrate deploy` + restart), `volti-dev-seed` (seed, uma vez) e `volti-dev-admin` (build do painel na instância + `s3 sync` + invalidação).
+- Snapshot diário do volume (Data Lifecycle Manager, tag `volti-backup=daily`), mantendo 3.
+- Orçamento US$ 20/mês **só da tag `Projeto=Volti`** (nenhum orçamento da conta inteira), e-mail via `-c budgetEmail`, alertas em 50/80/100% do real e 100% da previsão. Sem alarmes do CloudWatch.
+- Tags `Projeto=Volti` e `ambiente=dev` em tudo; nomes `volti-dev-*`. Bootstrap com qualifier `volti` (toolkit `volti-cdk-toolkit`), separado do outro projeto da conta. Sem asset Docker nem Lambda: o deploy roda no AWS CloudShell.
+
+### Primeiro deploy (AWS CloudShell)
+
+Passo a passo com os comandos exatos: [`deploy/single/cloudshell.md`](../deploy/single/cloudshell.md). Resumo:
+
+1. Gerar a deploy key (`ssh-keygen -t ed25519`), cadastrar a pública no GitHub como somente leitura e gravar a privada: `aws ssm put-parameter --name /volti/dev/github-deploy-key --type SecureString --value "$(cat ~/.ssh/volti_deploy)" --tags Key=Projeto,Value=Volti`.
+2. Clonar a branch no CloudShell, `sudo npm install -g pnpm@9.15.9` e `pnpm install --frozen-lockfile --filter infra`.
+3. `pnpm exec cdk bootstrap aws://$ACCOUNT/sa-east-1 --qualifier volti --toolkit-stack-name volti-cdk-toolkit --tags Projeto=Volti`
+4. `pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single -c account=$ACCOUNT -c branch=feat/galpao -c budgetEmail=<e-mail>`
+5. Primeiro boot automático (~15 min): instala Docker, clona, gera os segredos, constrói e roda `prisma migrate deploy` (log em `/var/log/volti-boot.log`, pelo Session Manager).
+6. Seed uma vez e painel: `aws ssm send-command --instance-ids <id> --document-name volti-dev-seed` e o mesmo com `volti-dev-admin`.
+7. Em até 24 h: `aws ce update-cost-allocation-tags-status --cost-allocation-tags-status TagKey=Projeto,Status=Active` (sem isso o orçamento por tag não enxerga gasto).
+8. Apontar os apps: `API_BASE_URL=https://<ip-com-hifens>.sslip.io` (ou `https://api.<domínio>`), IDs do Cognito em `/volti/dev/config/COGNITO_*`. O IP muda se a instância for parada e iniciada: rode o `volti-dev-update` e reaponte.
+
+Atualizar depois: Systems Manager → Run Command → `volti-dev-update` → a instância → Run.
+
+### Custo mensal estimado (sa-east-1, preços de lista de outubro/2026)
+
+| Item | Cálculo | US$/mês |
+|---|---|---|
+| EC2 `t4g.small` sob demanda | US$ 0,0268/h × 730 h | 19,56 |
+| EBS gp3 25 GB | US$ 0,152/GB | 3,80 |
+| IPv4 público (a AWS cobra todo IPv4 público) | US$ 0,005/h × 730 h | 3,65 |
+| Snapshots (3 diários, incrementais, ~5–8 GB armazenados) | US$ 0,068/GB | ~0,50 |
+| S3 (uploads e painel), CloudFront, Cognito (até 10 mil MAU), Parameter Store padrão, Data Lifecycle Manager, AWS Budgets (2 grátis), tráfego de saída (100 GB grátis) | uso de dev | ~0–1 |
+| **Total sob demanda** | | **≈ 28** |
+
+Para ficar entre US$ 10 e 20: Compute Savings Plan ou instância reservada de 1 ano sem entrada (t4g.small a US$ 0,0154/h → EC2 US$ 11,24, total ≈ 20); parar a instância fora do horário de uso (12 h/dia → total ≈ 18; o IP muda a cada partida); e, se a conta ainda tiver o teste gratuito do `t4g.small` (750 h/mês, oferta por tempo limitado da AWS), a EC2 sai de graça (total ≈ 8). `t4g.micro` (1 GB) custa metade, mas o build da API e o Postgres não cabem com folga. SMS do Cognito (OTP) é cobrado por mensagem, à parte. Valores de lista: confirme na calculadora da AWS.
+
+### Migrar para ECS/RDS depois
+
+1. Suba o dev completo (`-c env=dev`, sem `profile`). As stacks têm nomes diferentes (`volti-dev-network`, `-data`, `-api`...) e convivem com `volti-dev-single`; `volti-dev-auth` e `volti-dev-admin-web` têm o mesmo nome nos dois perfis (o Cognito e o painel continuam os mesmos). O app completo usa o bootstrap padrão do CDK (qualifier `hnb659fds`, stack `CDKToolkit`), que pode já existir na conta por causa do outro projeto: é compartilhável, não precisa recriar.
+2. Dados: na instância, `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env exec -T postgres pg_dump -U volti -Fc volti > /tmp/volti.dump`, `aws s3 cp` para um bucket, e `pg_restore` no RDS a partir de algo dentro da VPC (as migrações do Prisma são as mesmas). Arquivos: os buckets do `single` (`volti-dev-<conta>-single-*`) têm nomes próprios para conviver com os do dev completo; copie com `aws s3 sync s3://volti-dev-<conta>-single-<x> s3://volti-dev-<conta>-<x>` (ambos `RETAIN`).
+3. Usuários do Cognito não mudam (mesmo pool) se a stack `auth` for mantida.
+4. Rastreadores reais exigem IoT Core (`IOT_MODE=aws`, perfil completo): o Mosquitto do `single` é só para o simulador.
+5. Aponte os apps para o ALB/`api.<domínio>` e destrua `volti-dev-single` (`cdk destroy volti-dev-single --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single`; os buckets ficam por `RETAIN`).
+
+## Dev ECS enxuto (`-c env=dev`)
+
+Mantém a arquitetura e os contratos do prod e corta o custo fixo: sem NAT (endpoint S3 gateway grátis e nenhum endpoint de interface pago; a task alcança Secrets Manager, SQS, IoT, Location e Cognito pelo IP público), Fargate Spot, RDS `db.t4g.micro` single-AZ 20 GB gp3 sem autoscaling, backup de 1 dia, sem Performance Insights nem monitoramento avançado, sem deletion protection, snapshot na remoção, `cache.t4g.micro` 1 nó, sem WAF, sem Kinesis (eventos das estações: regra IoT → Lambda assíncrona → `stations.fifo`, falhas na `stations-forwarder-dlq`; **a ordem por estação não é garantida**, aceitável porque as estações do dev são simuladas), logs 3 dias, sem Container Insights, só alarmes de 5xx e DLQs, ECR com 10 imagens, orçamento US$ 20 (50/80/100%). Ordem de deploy: seção "Ordem de deploy" acima (o serviço nasce com 0 tarefas; depois `-c apiDesiredCount=1`; seed com `-c apiRunSeed=true` num deploy e sem ele no seguinte). Precisa de certificado ACM (domínio) para o listener HTTPS do ALB.
+
+| Item (sa-east-1, lista, 730 h) | US$/mês |
+|---|---|
+| ALB (US$ 0,034/h + ~0,1 LCU) | 26 |
+| IPv4 público: 2 do ALB + 1 da task (US$ 0,005/h cada) | 11 |
+| Fargate Spot 0,25 vCPU / 0,5 GB (sob demanda seria US$ 15,50) | ~5 |
+| RDS `db.t4g.micro` (US$ 0,034/h) + 20 GB gp3 (US$ 0,219/GB) | 29 |
+| ElastiCache `cache.t4g.micro` Redis (US$ 0,030/h) | 22 |
+| KMS (2 chaves) + Secrets Manager (6 × US$ 0,40) | 4,40 |
+| IoT Core, Location, S3, CloudFront, SQS, Lambda, CloudWatch (6 alarmes, dentro dos 10 grátis) | ~3 |
+| **Total** | **≈ 100** |
+
+Cortado em relação ao dev anterior: NAT (US$ 0,093/h ≈ 68 + tráfego), WAF (2 ACLs, ~US$ 18), Kinesis (US$ 22), alarmes extras.
 
 ## CI/CD (`.github/workflows/infra.yml`)
 
 - Dispara em mudanças de `infra/`, `services/api/`, `apps/admin/`, `packages/contracts/` e do lockfile.
 - Job `checks` (porta do deploy): `redocly lint` do contrato, lint e testes unitários de `services/api`, lint e vitest de `apps/admin`.
 - Pull request: `checks`, testes do CDK, `cdk synth` (dev e prod) e `cdk diff` do dev.
-- Push em `main`: `cdk deploy --all` no dev depois de `checks` e `synth`. A imagem da API é construída da raiz do repositório (`docker build -f services/api/Dockerfile .`), porque o Dockerfile copia o lockfile e o `tsconfig.base.json` do workspace.
+- Push em `main`: `cdk deploy --all` no dev **completo (ECS, ~US$ 100/mês)** depois de `checks` e `synth`. Enquanto o dev for o perfil `single`, não configure as variáveis `AWS_DEPLOY_ROLE_ARN_DEV`/`CERTIFICATE_ARN_DEV` (o job falha sem elas e nada é criado); a atualização do `single` é o documento SSM `volti-dev-update`. A imagem da API é construída da raiz do repositório (`docker build -f services/api/Dockerfile .`), porque o Dockerfile copia o lockfile e o `tsconfig.base.json` do workspace.
 - Autenticação por OIDC (`aws-actions/configure-aws-credentials` com `role-to-assume`), sem chaves fixas. Configure no repositório as variáveis `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN_DEV` e `CERTIFICATE_ARN_DEV`, e um provedor OIDC do GitHub na conta AWS com uma role confiando no repositório.
 
 ## Rotação do segredo do webhook (Mercado Pago)

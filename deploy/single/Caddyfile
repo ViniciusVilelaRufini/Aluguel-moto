@@ -1,0 +1,6 @@
+# HTTPS automático (Let's Encrypt) para PUBLIC_HOST: api.<domínio> ou, sem domínio, <ip-publico-com-hifens>.sslip.io.
+# Os certificados ficam no volume caddydata (não reemite a cada rebuild). WebSocket passa pelo reverse_proxy.
+{$PUBLIC_HOST} {
+	encode gzip
+	reverse_proxy api:3000
+}
