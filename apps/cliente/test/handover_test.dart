@@ -471,7 +471,7 @@ void main() {
       final router = await pumpApp(t, b, RtHub(), initial: '/handover/h1');
       await tapKey(t, 'handover-accept');
       expect(where(router), '/handover/h1');
-      expect(find.text('Tente de novo em instantes ou fale com o operador. Nada foi cobrado.'), findsOneWidget);
+      expect(find.text('Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador. Nada foi cobrado.'), findsOneWidget);
       expect(find.textContaining('Escolha outra moto'), findsNothing);
     });
 

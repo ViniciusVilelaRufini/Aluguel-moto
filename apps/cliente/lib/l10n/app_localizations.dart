@@ -4165,7 +4165,7 @@ abstract class AppLocalizations {
   /// No description provided for @handoverVehicleOffline.
   ///
   /// In pt, this message translates to:
-  /// **'Tente de novo em instantes ou fale com o operador. Nada foi cobrado.'**
+  /// **'Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador. Nada foi cobrado.'**
   String get handoverVehicleOffline;
 
   /// No description provided for @reservationNoCode.
@@ -5463,6 +5463,102 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Como chegar ao {name}'**
   String depotDirectionsSemantics(String name);
+
+  /// No description provided for @cardsTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cartões'**
+  String get cardsTitle;
+
+  /// No description provided for @cardsRowSubtitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Padrão: {card}'**
+  String cardsRowSubtitle(String card);
+
+  /// No description provided for @cardsRowEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhum cartão salvo'**
+  String get cardsRowEmpty;
+
+  /// No description provided for @cardsDefaultHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'O cartão padrão é usado na caução, no plano e nas recargas quando você não escolhe outro.'**
+  String get cardsDefaultHint;
+
+  /// No description provided for @cardsDefaultBadge.
+  ///
+  /// In pt, this message translates to:
+  /// **'Padrão'**
+  String get cardsDefaultBadge;
+
+  /// No description provided for @cardsMakeDefault.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tornar padrão'**
+  String get cardsMakeDefault;
+
+  /// No description provided for @cardsMakeDefaultSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Tornar o cartão {card} padrão'**
+  String cardsMakeDefaultSemantics(String card);
+
+  /// No description provided for @cardsRemove.
+  ///
+  /// In pt, this message translates to:
+  /// **'Remover'**
+  String get cardsRemove;
+
+  /// No description provided for @cardsRemoveSemantics.
+  ///
+  /// In pt, this message translates to:
+  /// **'Remover o cartão {card}'**
+  String cardsRemoveSemantics(String card);
+
+  /// No description provided for @cardsRemoveTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Remover este cartão?'**
+  String get cardsRemoveTitle;
+
+  /// No description provided for @cardsRemoveText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Se ele for o padrão, o cartão salvo mais recente passa a ser o padrão.'**
+  String get cardsRemoveText;
+
+  /// No description provided for @cardsEmpty.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nenhum cartão salvo. Adicione um para pagar a caução e o plano no cartão.'**
+  String get cardsEmpty;
+
+  /// No description provided for @cardsDefaultChanged.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cartão padrão atualizado.'**
+  String get cardsDefaultChanged;
+
+  /// No description provided for @cardsRemoved.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cartão removido.'**
+  String get cardsRemoved;
+
+  /// No description provided for @cardsExpiry.
+  ///
+  /// In pt, this message translates to:
+  /// **'Validade {month}/{year}'**
+  String cardsExpiry(String month, String year);
+
+  /// No description provided for @deleteAccountBlockedTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não dá para excluir a conta agora'**
+  String get deleteAccountBlockedTitle;
 }
 
 class _AppLocalizationsDelegate

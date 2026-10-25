@@ -2395,7 +2395,7 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get handoverVehicleOffline =>
-      'Tente de novo em instantes ou fale com o operador. Nada foi cobrado.';
+      'Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador. Nada foi cobrado.';
 
   @override
   String get reservationNoCode =>
@@ -3217,4 +3217,63 @@ class AppLocalizationsPt extends AppLocalizations {
   String depotDirectionsSemantics(String name) {
     return 'Como chegar ao $name';
   }
+
+  @override
+  String get cardsTitle => 'Cartões';
+
+  @override
+  String cardsRowSubtitle(String card) {
+    return 'Padrão: $card';
+  }
+
+  @override
+  String get cardsRowEmpty => 'Nenhum cartão salvo';
+
+  @override
+  String get cardsDefaultHint =>
+      'O cartão padrão é usado na caução, no plano e nas recargas quando você não escolhe outro.';
+
+  @override
+  String get cardsDefaultBadge => 'Padrão';
+
+  @override
+  String get cardsMakeDefault => 'Tornar padrão';
+
+  @override
+  String cardsMakeDefaultSemantics(String card) {
+    return 'Tornar o cartão $card padrão';
+  }
+
+  @override
+  String get cardsRemove => 'Remover';
+
+  @override
+  String cardsRemoveSemantics(String card) {
+    return 'Remover o cartão $card';
+  }
+
+  @override
+  String get cardsRemoveTitle => 'Remover este cartão?';
+
+  @override
+  String get cardsRemoveText =>
+      'Se ele for o padrão, o cartão salvo mais recente passa a ser o padrão.';
+
+  @override
+  String get cardsEmpty =>
+      'Nenhum cartão salvo. Adicione um para pagar a caução e o plano no cartão.';
+
+  @override
+  String get cardsDefaultChanged => 'Cartão padrão atualizado.';
+
+  @override
+  String get cardsRemoved => 'Cartão removido.';
+
+  @override
+  String cardsExpiry(String month, String year) {
+    return 'Validade $month/$year';
+  }
+
+  @override
+  String get deleteAccountBlockedTitle => 'Não dá para excluir a conta agora';
 }

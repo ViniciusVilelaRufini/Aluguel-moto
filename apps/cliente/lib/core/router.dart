@@ -103,6 +103,7 @@ List<RouteBase> appRoutes() => [
             pageBuilder: (c, state) => voltiPage(c, state, HistoryScreen(pick: state.uri.queryParameters['pick'] == '1')),
           ),
           GoRoute(path: 'wallet', pageBuilder: (c, state) => voltiPage(c, state, const WalletScreen())),
+          GoRoute(path: 'cards', pageBuilder: (c, state) => voltiPage(c, state, const CardsScreen())),
           GoRoute(path: 'subscriptions', pageBuilder: (c, state) => voltiPage(c, state, const SubscriptionsScreen())),
           GoRoute(path: 'support', pageBuilder: (c, state) => voltiPage(c, state, const SupportScreen())),
           GoRoute(path: 'support/:id', pageBuilder: (c, state) => voltiPage(c, state, SupportChatScreen(conversationId: state.pathParameters['id']!))),

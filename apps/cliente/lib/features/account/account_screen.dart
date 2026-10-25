@@ -11,6 +11,7 @@ import '../../core/legal.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import 'account_common.dart';
+import 'cards_screen.dart';
 import 'privacy_screen.dart';
 import 'subscriptions_screen.dart';
 import 'wallet_screen.dart';
@@ -33,6 +34,8 @@ class AccountScreen extends ConsumerWidget {
     final history = ref.watch(historyProvider);
     final active = subs.value == null ? null : activeSubscription(subs.value!);
     final emergency = c?.emergencyContactName;
+    final cards = ref.watch(accountCardsProvider).value;
+    final defaultCard = cards?.where((x) => x.isDefault).firstOrNull ?? cards?.firstOrNull;
 
     return VoltiScaffold(
       title: l.accountTitle,
@@ -86,6 +89,14 @@ class AccountScreen extends ConsumerWidget {
               title: l.walletAndPackages,
               trailing: ListRowTrailing.chevron,
               onTap: () => context.push('/account/wallet'),
+            ),
+            ListRow(
+              key: const Key('account-cards'),
+              icon: LucideIcons.creditCard,
+              title: l.cardsTitle,
+              subtitle: cards == null ? null : (defaultCard == null ? l.cardsRowEmpty : l.cardsRowSubtitle(cardLabel(defaultCard))),
+              trailing: ListRowTrailing.chevron,
+              onTap: () => context.push('/account/cards'),
             ),
           ]),
           VoltiListGroup(title: l.groupTrips, children: [

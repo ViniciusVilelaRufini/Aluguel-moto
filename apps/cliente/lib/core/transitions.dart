@@ -31,6 +31,7 @@ const routeTransitions = <String, VoltiScreenTransition>{
   '/account': VoltiScreenTransition.push,
   '/account/history': VoltiScreenTransition.push,
   '/account/wallet': VoltiScreenTransition.push,
+  '/account/cards': VoltiScreenTransition.push,
   '/account/subscriptions': VoltiScreenTransition.push,
   '/account/support': VoltiScreenTransition.push,
   '/account/support/:id': VoltiScreenTransition.push,

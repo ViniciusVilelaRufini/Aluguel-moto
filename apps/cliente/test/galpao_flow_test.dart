@@ -581,6 +581,16 @@ void main() {
       expect(router.state.uri.path, '/home');
     });
 
+    testWidgets('Task 30: 422 card-required na confirmacao mostra o motivo e fica na retirada', (t) async {
+      phone(t);
+      final b = GalpaoBackend()
+        ..createError = AppFailure(kind: FailureKind.api, status: 422, slug: 'card-required', detail: 'Cadastre um cartão ou pague a caução com Pix.');
+      final router = await pumpApp(t, b, initial: '/pickup', extra: selection(p: dayPlan));
+      await tapText(t, 'Confirmar reserva');
+      expect(find.text('Cadastre um cartão ou pague a caução com Pix.'), findsOneWidget);
+      expect(router.state.uri.path, '/pickup');
+    });
+
     testWidgets('caucao Pix: a folha abre com reservation.deposit (QR do copia e cola) e segue para a reserva', (t) async {
       phone(t);
       final b = GalpaoBackend(withCard: false)..pixDeposit = true;

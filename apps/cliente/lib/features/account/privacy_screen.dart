@@ -59,7 +59,22 @@ Future<void> confirmDeleteAccount(BuildContext context, WidgetRef ref) async {
     await ref.read(sessionProvider.notifier).signOut();
     if (context.mounted) context.go('/welcome');
   } catch (e) {
-    if (context.mounted) VoltiToast.show(context, failureText(l, e), tone: VoltiToastTone.danger);
+    if (!context.mounted) return;
+    final f = toFailure(e);
+    if (f.status == 409 && f.slug == 'account-deletion-blocked') {
+      // Task 30: o motivo (reserva, entrega, caucao, aluguel ou pendencia) e o que fazer vem da API; fica num
+      // dialogo para o cliente ler com calma em vez de um toast que some.
+      await VoltiDialog.show<void>(
+        context,
+        title: l.deleteAccountBlockedTitle,
+        message: Text(f.message(l), key: const Key('delete-account-blocked')),
+        actions: [
+          VoltiButton(label: l.close, variant: VoltiButtonVariant.secondary, fullWidth: true, onPressed: () => Navigator.of(context).pop()),
+        ],
+      );
+      return;
+    }
+    VoltiToast.show(context, f.message(l), tone: VoltiToastTone.danger);
   }
 }
 

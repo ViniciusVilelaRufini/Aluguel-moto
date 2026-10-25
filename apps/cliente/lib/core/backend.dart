@@ -94,6 +94,10 @@ abstract class Backend {
   Future<CouponValidation> validateCoupon(String code, {PlanCode? plan});
   Future<List<PaymentCard>> cards();
   Future<PaymentCard> addCard(String token);
+  /// `PUT /payments/cards/{id}/default`: cartao usado quando a cobranca nao escolhe um.
+  Future<PaymentCard> setDefaultCard(String id);
+  /// `DELETE /payments/cards/{id}`: `409` com caucao retida ou assinatura ativa; o padrao removido passa ao mais recente.
+  Future<void> deleteCard(String id);
   Future<Wallet> wallet();
   Future<List<MinutePackage>> minutePackages();
   /// Recarga Pix: valor livre em reais ([amountCents], R$ 10 a R$ 1.000) ou pacote ([packageId]); um dos dois.
@@ -368,6 +372,15 @@ class ApiBackend implements Backend {
           ..setDefault = true),
       ))
           .data!);
+
+  @override
+  Future<PaymentCard> setDefaultCard(String id) =>
+      _run(() async => (await _api.getPaymentsApi().setDefaultPaymentCard(id: id)).data!);
+
+  @override
+  Future<void> deleteCard(String id) => _run(() async {
+        await _api.getPaymentsApi().deletePaymentCard(id: id);
+      });
 
   @override
   Future<Wallet> wallet() => _run(() async => (await _api.getWalletApi().getWallet()).data!);

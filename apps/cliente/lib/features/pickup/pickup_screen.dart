@@ -209,6 +209,13 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
         ref.invalidate(openDebtsProvider);
         VoltiToast.show(context, l.paymentPendingBlock, tone: VoltiToastTone.warning);
         context.go('/home');
+      } else if (f.status == 422 && (f.slug == 'card-required' || f.slug == 'card-not-found')) {
+        // Task 30: o cartao escolhido nao existe mais (ou nao ha nenhum): recarrega a lista e pede outro cartao ou Pix.
+        ref.invalidate(cardsProvider);
+        setState(() {
+          _cardId = null;
+          _error = f.message(l);
+        });
       } else if (f.status == 409 && f.slug == 'reservation-already-active') {
         ref.invalidate(currentReservationProvider);
         VoltiToast.show(context, l.blockActiveReservation, tone: VoltiToastTone.warning);

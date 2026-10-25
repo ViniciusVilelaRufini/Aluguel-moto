@@ -237,7 +237,7 @@ void main() {
 
   test('E-05 moto sem conexao em "Confira sua moto" nao manda escolher outra', () {
     final l = AppLocalizationsPt();
-    expect(l.handoverVehicleOffline, 'Tente de novo em instantes ou fale com o operador. Nada foi cobrado.');
+    expect(l.handoverVehicleOffline, 'Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador. Nada foi cobrado.');
     expect(l.handoverVehicleOffline, isNot(contains('outra moto')));
   });
 
