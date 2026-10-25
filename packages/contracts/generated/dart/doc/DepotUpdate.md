@@ -18,7 +18,8 @@ Name | Type | Description | Notes
 **pickupNowWindowMinutes** | **int** |  | [optional] 
 **maxScheduleDays** | **int** |  | [optional] 
 **scheduledGraceMinutes** | **int** |  | [optional] 
-**swapStationId** | **String** |  | [optional] 
+**swapStationId** | **String** | Liga o galpão à estação de troca (inexistente → `400`). | [optional] 
+**clearSwapStation** | **bool** | `true` desliga o galpão da estação de troca (o contrato não usa `null`). Junto com `swapStationId` → `400`. | [optional] 
 **minChargedBatteries** | **int** | 0 desliga o alerta de estoque. | [optional] 
 **active** | **bool** |  | [optional] 
 
