@@ -138,7 +138,7 @@ describe('LgpdService', () => {
     (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
     prisma.customer.findUnique.mockResolvedValue(me as any);
     prisma.rental.findMany.mockResolvedValue([]);
-    const identity = { deleteIdentity: jest.fn().mockResolvedValue(undefined) };
+    const identity = { deleteIdentity: jest.fn().mockResolvedValue(undefined), contactInfo: jest.fn() };
     const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
     await new LgpdService(prisma as any, storage, loadConfig(), subs() as any, identity).deleteAccount(ME);
     expect(identity.deleteIdentity).toHaveBeenCalledWith('sub-me');
@@ -152,7 +152,7 @@ describe('LgpdService', () => {
     (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
     prisma.customer.findUnique.mockResolvedValue(me as any);
     prisma.rental.findMany.mockResolvedValue([]);
-    const identity = { deleteIdentity: jest.fn().mockRejectedValue(new Error('cognito fora')) };
+    const identity = { deleteIdentity: jest.fn().mockRejectedValue(new Error('cognito fora')), contactInfo: jest.fn() };
     const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
     const out = await new LgpdService(prisma as any, storage, loadConfig(), subs() as any, identity).deleteAccount(ME);
     expect(out.status).toBe('completed');
@@ -177,7 +177,7 @@ describe('LgpdService', () => {
   it('fix round 1: retentativa da exclusão no Cognito — sucesso apaga a pendência; esgotada → alerta (evento + log)', async () => {
     const prisma = mockDeep<PrismaClient>();
     const events = { emit: jest.fn() };
-    const identity = { deleteIdentity: jest.fn().mockResolvedValueOnce(undefined).mockRejectedValue(new Error('cognito fora')) };
+    const identity = { deleteIdentity: jest.fn().mockResolvedValueOnce(undefined).mockRejectedValue(new Error('cognito fora')), contactInfo: jest.fn() };
     const storage = { deleteObject: jest.fn(), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
     prisma.customerIdentityDeletion.findMany.mockResolvedValue([
       { customerId: 'c-ok', sub: 'sub-ok', attempts: 1 },
