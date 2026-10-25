@@ -189,6 +189,8 @@ void main() {
         expect(find.byKey(const Key('pickup-coupon-discount')), findsOneWidget);
         expect(t.widget<Text>(find.byKey(const Key('pickup-coupon-discount'))).data, 'até -R\$ 10,00');
         expect(find.text('-R\$ 3,99'), findsNothing);
+        expect(find.text('Desconto'), findsNothing, reason: 'uma unica linha de cupom');
+        expect(find.text('Cupom BEMVINDO10'), findsOneWidget);
         expect(find.byKey(const Key('pickup-coupon-note')), findsOneWidget);
         expect(t.takeException(), isNull);
       });
@@ -432,6 +434,7 @@ class _CouponBackend extends GalpaoBackend {
     final base = await super.quote(plan, coverage, coupon: coupon, vehicleId: vehicleId);
     return base.rebuild((b) {
       b.couponApplied = true;
+      b.breakdown.discountCents = quotedDiscount; // a API devolve o total junto com a linha
       b.breakdown.lines.add(PriceLine((l) => l
         ..code = 'coupon'
         ..description = 'Cupom $coupon'

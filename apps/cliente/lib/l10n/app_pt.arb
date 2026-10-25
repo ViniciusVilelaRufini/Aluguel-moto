@@ -542,8 +542,6 @@
     }
   },
   "nearYou": "Perto de você",
-  "notifications": "Notificações",
-  "notificationsUnread": "Notificações, há mensagens novas",
   "batterySemantics": "bateria {pct} por cento",
   "@batterySemantics": {
     "placeholders": {

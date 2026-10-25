@@ -2086,18 +2086,6 @@ abstract class AppLocalizations {
   /// **'Perto de você'**
   String get nearYou;
 
-  /// No description provided for @notifications.
-  ///
-  /// In pt, this message translates to:
-  /// **'Notificações'**
-  String get notifications;
-
-  /// No description provided for @notificationsUnread.
-  ///
-  /// In pt, this message translates to:
-  /// **'Notificações, há mensagens novas'**
-  String get notificationsUnread;
-
   /// No description provided for @batterySemantics.
   ///
   /// In pt, this message translates to:

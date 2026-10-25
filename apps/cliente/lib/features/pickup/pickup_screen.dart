@@ -518,7 +518,11 @@ class _Summary extends StatelessWidget {
     final rows = q == null
         ? const <BreakdownRow>[]
         : breakdownRows(
-            q.breakdown.rebuild((b) => b.lines.removeWhere((x) => x.code == 'time' || x.code == 'coupon')),
+            q.breakdown.rebuild((b) {
+              b.lines.removeWhere((x) => x.code == 'time' || x.code == 'coupon');
+              // O cupom ja e a linha propria acima: sem o total, nao vira uma segunda linha "Desconto".
+              b.discountCents = 0;
+            }),
             insuranceLabel: l.insurance,
             feesLabel: l.fees,
             discountLabel: l.discount,

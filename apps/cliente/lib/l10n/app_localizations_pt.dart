@@ -1131,12 +1131,6 @@ class AppLocalizationsPt extends AppLocalizations {
   String get nearYou => 'Perto de você';
 
   @override
-  String get notifications => 'Notificações';
-
-  @override
-  String get notificationsUnread => 'Notificações, há mensagens novas';
-
-  @override
   String batterySemantics(int pct) {
     return 'bateria $pct por cento';
   }
