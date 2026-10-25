@@ -41,7 +41,6 @@ import 'stations/stations_sheet.dart';
 /// cartao do galpao, que cobre a metade de baixo).
 const homeMapFocusShift = 0.12;
 
-
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
   @override
@@ -53,6 +52,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   /// Rodape (botoes do mapa + cartao): o toast sobe acima dele, nao o cobre.
   final _bottomKey = GlobalKey();
+
+  /// Faixa de promocoes (passe) no alto do mapa: o enquadramento a evita.
+  final _promosKey = GlobalKey();
+
+  /// A camera ja foi enquadrada com o galpao e as estacoes ao redor.
+  bool _framedStations = false;
 
   double _toastOffset() {
     final box = _bottomKey.currentContext?.findRenderObject();
@@ -89,11 +94,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   void initState() {
     super.initState();
     // Push: registra o token (no-op sem Firebase).
-    Future.microtask(() => ref.read(pushServiceProvider).register(
-          ref.read(backendProvider),
-          onForeground: _onPushForeground,
-          onOpen: _onPushOpen,
-        ));
+    Future.microtask(
+      () => ref.read(pushServiceProvider).register(ref.read(backendProvider), onForeground: _onPushForeground, onOpen: _onPushOpen),
+    );
     WidgetsBinding.instance.addObserver(this);
     var minutes = 0;
     _tick = Timer.periodic(const Duration(minutes: 1), (_) {
@@ -108,6 +111,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     });
     // Fora do build: centra no galpao ao abrir e quando ele muda.
     ref.listenManual(currentDepotProvider, (_, next) => _focusDepot(next.value), fireImmediately: true);
+    // As estacoes chegam depois do galpao: enquadra de novo uma vez com elas.
+    ref.listenManual(swapStationsProvider, (_, next) {
+      final d = ref.read(currentDepotProvider).value;
+      if (!_framedStations && next.hasValue && d != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _frameIdle(d);
+        });
+      }
+    });
   }
 
   /// Volta do segundo plano: relê galpoes (horario/abertura) e o aluguel.
@@ -185,9 +197,44 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   void _focusDepot(Depot? d) {
     if (d == null || d.id == _focusedDepotId || _userCentered) return;
     _focusedDepotId = d.id;
+    _framedStations = false;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _moveMap(LatLng(d.lat, d.lng));
+      if (mounted) _frameIdle(d);
     });
+  }
+
+  /// Home parada: enquadra o galpao e as estacoes proximas na faixa livre entre a
+  /// faixa do passe (alto) e o cartao do galpao (baixo), para nenhuma ficar atras
+  /// deles. Sem estacoes por perto, so centra o galpao.
+  void _frameIdle(Depot d) {
+    if (_userCentered || _stationsMode) return;
+    final here = LatLng(d.lat, d.lng);
+    final stations = ref.read(swapStationsProvider).asData?.value ?? const <SwapStation>[];
+    const dist = Distance();
+    final pts = [
+      here,
+      for (final s in stations)
+        if (dist(here, LatLng(s.lat, s.lng)) <= 1500) LatLng(s.lat, s.lng),
+    ];
+    if (pts.length < 2 || !ref.read(mapEnabledProvider)) {
+      _moveMap(here);
+      return;
+    }
+    final top = _promosKey.currentContext?.findRenderObject();
+    final bottom = _bottomKey.currentContext?.findRenderObject();
+    final media = MediaQuery.sizeOf(context);
+    var topPad = media.height * .18;
+    if (top is RenderBox && top.hasSize) topPad = top.localToGlobal(Offset.zero).dy + top.size.height + VoltiSpacing.s12;
+    var bottomPad = media.height * .45;
+    if (bottom is RenderBox && bottom.hasSize) bottomPad = bottom.size.height + VoltiSpacing.s12;
+    try {
+      _map.fitCamera(
+        CameraFit.coordinates(coordinates: pts, padding: EdgeInsets.fromLTRB(48, topPad, 48, bottomPad), maxZoom: 16, minZoom: 12),
+      );
+      _framedStations = true;
+    } catch (_) {
+      _moveMap(here);
+    }
   }
 
   /// Localizar: pede a posicao de novo e centra no cliente (nao no galpao).
@@ -322,7 +369,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                     onTap: () => _selectDepot(d),
                                     child: StationBadgeOverlay(
                                       station: split.byDepot[d.id],
-                                      child: _MapBadge(icon: LucideIcons.warehouse, color: VoltiColors.brandAction, size: d.id == current?.id ? 52 : 40),
+                                      child: _MapBadge(
+                                        icon: LucideIcons.warehouse,
+                                        color: VoltiColors.brandAction,
+                                        size: d.id == current?.id ? 52 : 40,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -382,7 +433,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                     if (openSwap != null) ...[
                                       SwapResumeCard(onResume: () => _openSwapFlow(openSwap)),
                                     ] else if (nearStation != null) ...[
-                                      SwapNearbyCard(station: nearStation, onSwap: () => _openSwapFlow(null, stationId: nearStation.id)),
+                                      SwapNearbyCard(
+                                        station: nearStation,
+                                        onSwap: () => _openSwapFlow(null, stationId: nearStation.id),
+                                      ),
                                     ],
                                   ] else if (reservation != null)
                                     // Entrega no galpao: abre "Confira sua moto" (evento ou app aberto depois).
@@ -393,7 +447,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                       child: VoltiPressable(
                                         semanticLabel: '${l.kycPendingTitle}. ${l.kycHomeNotice}',
                                         onTap: () => context.push('/account/verification'),
-                                        child: NoticeBanner(icon: LucideIcons.shieldCheck, title: l.kycPendingTitle, message: l.kycHomeNotice),
+                                        child: NoticeBanner(
+                                          icon: LucideIcons.shieldCheck,
+                                          title: l.kycPendingTitle,
+                                          message: l.kycHomeNotice,
+                                        ),
                                       ),
                                     ),
                                 ],
@@ -402,25 +460,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                             // Promocoes (PassCard) numa faixa que rola na horizontal. Somem com
                             // reserva em aberto e no modo estacoes (cobriam um marcador).
                             if (pending == null && rental == null && !_stationsMode)
-                              SingleChildScrollView(
-                                key: const Key('home-promos'),
-                                scrollDirection: Axis.horizontal,
-                                clipBehavior: Clip.none,
-                                padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
-                                child: Row(
-                                  children: VoltiStagger.wrap([
-                                    PassCard(
-                                      title: l.promoPassTitle,
-                                      subtitle: l.promoPassText,
-                                      icon: LucideIcons.ticket,
-                                      tone: PassCardTone.sun,
-                                      onTap: () => context.push('/account/subscriptions'),
-                                    ),
-                                    if (promoFirstRide) ...[
-                                      const SizedBox(width: VoltiSpacing.s10),
-                                      PassCard(title: l.promoFirstRideTitle, subtitle: l.promoFirstRideText, icon: LucideIcons.gift, tone: PassCardTone.coral),
-                                    ],
-                                  ]),
+                              KeyedSubtree(
+                                key: _promosKey,
+                                child: SingleChildScrollView(
+                                  key: const Key('home-promos'),
+                                  scrollDirection: Axis.horizontal,
+                                  clipBehavior: Clip.none,
+                                  padding: const EdgeInsets.fromLTRB(VoltiSpacing.screenGutter, 4, VoltiSpacing.screenGutter, 4),
+                                  child: Row(
+                                    children: VoltiStagger.wrap([
+                                      PassCard(
+                                        title: l.promoPassTitle,
+                                        subtitle: l.promoPassText,
+                                        icon: LucideIcons.ticket,
+                                        tone: PassCardTone.sun,
+                                        onTap: () => context.push('/account/subscriptions'),
+                                      ),
+                                      if (promoFirstRide) ...[
+                                        const SizedBox(width: VoltiSpacing.s10),
+                                        PassCard(
+                                          title: l.promoFirstRideTitle,
+                                          subtitle: l.promoFirstRideText,
+                                          icon: LucideIcons.gift,
+                                          tone: PassCardTone.coral,
+                                        ),
+                                      ],
+                                    ]),
+                                  ),
                                 ),
                               ),
                           ],
@@ -508,7 +574,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                   duration: VoltiMotion.scaled(context, VoltiMotion.durScreen),
                                   switchInCurve: VoltiMotion.easeScreen,
                                   switchOutCurve: VoltiMotion.easeScreen.flipped,
-                                  layoutBuilder: (current, previous) => Stack(alignment: Alignment.bottomCenter, children: [...previous, ?current]),
+                                  layoutBuilder: (current, previous) =>
+                                      Stack(alignment: Alignment.bottomCenter, children: [...previous, ?current]),
                                   transitionBuilder: (child, anim) => FadeTransition(
                                     opacity: anim,
                                     child: SlideTransition(
@@ -517,7 +584,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                     ),
                                   ),
                                   child: rental != null
-                                      ? _ActiveRideCard(key: const Key('home-ride-card'), rental: rental, onTap: () => context.push('/ride'))
+                                      ? _ActiveRideCard(
+                                          key: const Key('home-ride-card'),
+                                          rental: rental,
+                                          onTap: () => context.push('/ride'),
+                                        )
                                       : pending != null
                                       ? HomeReservationCard(key: ValueKey('home-reservation-${pending.id}'), reservation: pending)
                                       : VoltiEnter(
@@ -529,7 +600,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
                                             key: const Key('depot-card'),
                                             width: double.infinity,
                                             padding: const EdgeInsets.all(VoltiSpacing.s16),
-                                            decoration: BoxDecoration(color: surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
+                                            decoration: BoxDecoration(
+                                              color: surface,
+                                              borderRadius: VoltiRadii.rLg,
+                                              boxShadow: VoltiShadows.shadow2,
+                                            ),
                                             child: switch (depots) {
                                               AsyncValue(:final error?, hasValue: false) => ErrorState(
                                                 error: error,
@@ -620,7 +695,9 @@ class _DepotCardBody extends StatelessWidget {
                             KeyedSubtree(
                               key: Key('depot-option-${d.id}'),
                               child: VoltiChip(
-                                label: d.distanceM == null ? depotTitle(l, d) : '${depotTitle(l, d)} · ${walkingDistanceLabel(d.distanceM!)}',
+                                label: d.distanceM == null
+                                    ? depotTitle(l, d)
+                                    : '${depotTitle(l, d)} · ${walkingDistanceLabel(d.distanceM!)}',
                                 icon: LucideIcons.warehouse,
                                 selected: d.id == current.id,
                                 onTap: () {
@@ -747,7 +824,11 @@ class _ActiveRideCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(VoltiSpacing.s16),
-      decoration: BoxDecoration(color: Theme.of(context).colorScheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: VoltiRadii.rLg,
+        boxShadow: VoltiShadows.shadow2,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -756,7 +837,13 @@ class _ActiveRideCard extends StatelessWidget {
           const SizedBox(height: VoltiSpacing.s4),
           Text(rental.vehicleCode, style: VoltiTypography.caption),
           const SizedBox(height: VoltiSpacing.s12),
-          VoltiButton(key: const Key('home-back-to-ride'), label: l.backToRide, icon: LucideIcons.motorbike, fullWidth: true, onPressed: onTap),
+          VoltiButton(
+            key: const Key('home-back-to-ride'),
+            label: l.backToRide,
+            icon: LucideIcons.motorbike,
+            fullWidth: true,
+            onPressed: onTap,
+          ),
         ],
       ),
     );
