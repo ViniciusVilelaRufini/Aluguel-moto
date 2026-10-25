@@ -6,7 +6,7 @@ Três formas de subir:
 
 | Comando | O que sobe | Custo estimado/mês |
 |---|---|---|
-| `-c env=dev -c profile=single` | **Dev em uma instância EC2** (Docker Compose: API, PostGIS, Redis, Mosquitto, Caddy) + S3, Cognito e painel no CloudFront. É o dev atual. Ver "Perfil `single`" abaixo | ≈ US$ 28 (≈ US$ 20 com Savings Plan) |
+| `-c env=dev -c profile=single` | **Dev em uma instância EC2** (Docker Compose: API, PostGIS, Redis, Mosquitto, Caddy) + S3, Cognito e painel no CloudFront, ligada das 07:00 às 23:00. É o dev atual. Ver "Perfil `single`" abaixo | ≈ US$ 21 |
 | `-c env=dev` | Dev com a arquitetura completa, enxuto (sem NAT, sem WAF, sem Kinesis, Fargate Spot). Ver "Dev ECS enxuto" | ≈ US$ 100 |
 | `-c env=prod -c domainName=...` | Produção (inalterada) | ver `lib/config.ts` |
 
@@ -36,7 +36,7 @@ Configuração por ambiente (tamanhos, NAT, retenção, orçamento, WAF ligado/d
 pnpm install                       # na raiz do monorepo
 pnpm --filter infra test           # assertions do CDK (jest)
 pnpm --filter infra exec cdk synth -c env=dev     # sem credenciais AWS
-pnpm --filter infra exec cdk synth -c env=dev -c profile=single -c vpcId=vpc-0123456789abcdef0 -c subnetId=subnet-0123456789abcdef0  # offline (no CloudShell a VPC padrão é buscada)
+pnpm --filter infra exec cdk synth -c env=dev -c profile=single   # sem credenciais (VPC própria, sem lookup)
 pnpm --filter infra exec cdk synth -c env=prod -c domainName=volti.com.br
 pnpm --filter infra exec cdk diff --all -c env=dev -c account=<id> -c certificateArn=<arn>
 ```
@@ -58,9 +58,10 @@ O synth offline usa conta `000000000000` e ARNs de certificado fictícios. Nenhu
 | `budgetEmail` | vazio | E-mail dos alertas do orçamento (tem precedência sobre `alarmEmail`). No `profile=single` é o único destino dos alertas |
 | `apiRunSeed` | vazio | `true` põe `RUN_SEED=true` na task (seed idempotente depois das migrações). Só dev; o prod recusa |
 | `profile` | vazio | `single` = dev em uma instância EC2 (só com `env=dev`) |
+| `hostedZoneId`, `apiDomain` | `Z04583703P20295WCJ8TF`, `api-volti-dev.prestarecondominios.com.br` | `profile=single`: zona Route 53 (de outro projeto) onde a instância faz UPSERT do registro A da API a cada boot; `apiDomain=-` usa `<ip>.sslip.io` |
+| `schedule` | `true` | `profile=single`: liga 07:00 e desliga 23:00 (America/Sao_Paulo); `false` = 24 h |
 | `branch`, `repoUrl` | `feat/galpao`, `git@github.com:ViniciusVilelaRufini/Aluguel-moto.git` | `profile=single`: o que a instância clona |
 | `instanceType`, `rootVolumeGb` | `t4g.small`, `25` | `profile=single`: tamanho da instância (ARM) e do disco gp3 |
-| `vpcId`, `subnetId` | vazio (busca a VPC padrão) | `profile=single`: só para synth offline/testes; no CloudShell deixe vazio (com eles, a subnet precisa estar em `sa-east-1a`) |
 | `apiRateLimitPer5Min` | dev 2000, prod 3000 | Limite por IP do WAF da API (requisições em 5 minutos); inteiro >= 10 |
 | `sesFromEmail`, `sesVerifiedDomain` | vazio | Identidade SES verificada para os e-mails do pool de clientes; liga o `EMAIL_OTP`. Sem ela, só OTP por SMS e e-mails pelo remetente padrão do Cognito |
 | `googleIdpSecretName` | vazio | Nome do segredo do Google (`{"clientId","clientSecret"}`); vazio = IdP não criado. O segredo precisa **existir antes** do deploy com este `-c` (o synth é offline e não confere; o CloudFormation falha na resolução dinâmica se ele não existir) |
@@ -211,51 +212,113 @@ Os custos atuais estão nas seções do perfil `single` e do dev ECS enxuto, aba
 
 ## Perfil `single`: dev em uma instância EC2
 
-`-c env=dev -c profile=single` (`lib/stacks/single-dev-stack.ts`, `deploy/single/`). Decisão em `docs/decisoes.md` (2026-10-25, lacunas T20). Três stacks: `volti-dev-admin-web` (S3 + CloudFront, sem WAF), `volti-dev-auth` (Cognito, igual ao dev completo) e `volti-dev-single`:
+`-c env=dev -c profile=single` (`lib/stacks/single-dev-stack.ts`, `deploy/single/`). A decisão está em `docs/decisoes.md` (2026-10-25, lacunas T20). A conta é **compartilhada com outro projeto**, então nada do Volti toca no que é dele. São três stacks: `volti-dev-admin-web`, `volti-dev-auth` e `volti-dev-single`.
 
-- EC2 `t4g.small` (ARM, Amazon Linux 2023) na VPC **padrão**, subnet pública, IP público (sem Elastic IP), IMDSv2 obrigatório (2 saltos, para o container usar a role), sem chave SSH, acesso pelo **SSM Session Manager**, security group só 80/443, gp3 25 GB criptografado, 2 GB de swap.
-- Docker Compose (`deploy/single/compose.yml`): API (`NODE_ENV=production`, `AUTH_MODE=cognito`, `STORAGE_MODE=s3`, `IOT_MODE`/`QUEUE_MODE`/`GEOFENCE_MODE`/`GEOCODER_MODE` locais, pagamento `fake` liberado), PostgreSQL 16 + PostGIS (imagem multi-arch construída na instância), Redis (`noeviction`, AOF), Mosquitto (interno) e Caddy (HTTPS automático em `api.<domínio>` ou `<ip-com-hifens>.sslip.io`). Simulador opcional: perfil `sim` do Compose.
-- 5 buckets S3 de upload (SSE-S3, privados). Role da instância: S3, Cognito admin, leitura de `/volti/dev/config/*` e `/volti/dev/secrets/*`, escrita só em `/volti/dev/secrets/*` (segredos gerados no primeiro boot), publicação do painel (bucket + invalidação) e `ssm:GetParameter` + `kms:Decrypt` (via SSM, contexto `PARAMETER_ARN`) para a deploy key `/volti/dev/github-deploy-key`, que **não** é criada pela stack.
-- Documentos SSM `volti-dev-update` (git pull + rebuild + `prisma migrate deploy` + restart), `volti-dev-seed` (seed, uma vez) e `volti-dev-admin` (build do painel na instância + `s3 sync` + invalidação).
-- Snapshot diário do volume (Data Lifecycle Manager, tag `volti-backup=daily`), mantendo 3.
-- Orçamento US$ 20/mês **só da tag `Projeto=Volti`** (nenhum orçamento da conta inteira), e-mail via `-c budgetEmail`, alertas em 50/80/100% do real e 100% da previsão. Sem alarmes do CloudWatch.
-- Tags `Projeto=Volti` e `ambiente=dev` em tudo; nomes `volti-dev-*`. Bootstrap com qualifier `volti` (toolkit `volti-cdk-toolkit`), separado do outro projeto da conta. Sem asset Docker nem Lambda: o deploy roda no AWS CloudShell.
+**Rede e instância**
+- VPC **própria** `volti-dev-single` (10.40.0.0/24): uma AZ (`sa-east-1a`), uma subnet pública, internet gateway, sem NAT, sem flow logs, sem endpoints.
+- EC2 `t4g.small` (ARM, Amazon Linux 2023) com IP público e sem Elastic IP. IMDSv2 obrigatório, com 2 saltos para o container da API usar a role.
+- Sem chave SSH. O acesso é pelo **SSM Session Manager**, e o security group só abre 80 e 443.
+- Disco gp3 de 25 GB criptografado, 2 GB de swap e rotação de log do Docker (10 MB × 3 por container).
+
+**Containers** (Docker Compose, `deploy/single/compose.yml`)
+- API com `NODE_ENV=production`, `AUTH_MODE=cognito` e `STORAGE_MODE=s3`. IoT, fila, cerca e geocodificação rodam no modo local, e o pagamento `fake` está liberado.
+- PostgreSQL 16 + PostGIS, numa imagem multi-arch construída na própria instância.
+- Redis com `noeviction` e AOF.
+- Mosquitto, só na rede interna.
+- Caddy, com HTTPS automático (Let's Encrypt) em `https://api-volti-dev.prestarecondominios.com.br`.
+
+**DNS** (zona `prestarecondominios.com.br`, de outro projeto)
+- A cada boot, o serviço systemd `volti-dns` roda `deploy/single/dns.sh`, que faz UPSERT do registro A `api-volti-dev...` → IP atual, com TTL 60.
+- O IAM só permite UPSERT, só do tipo A e só desse nome (condições `route53:ChangeResourceRecordSets*`), além de `route53:GetChange`.
+- A stack **não** cria o registro, porque o CloudFormation não pode ser dono de nada na zona compartilhada. Ao desmontar, apague o registro à mão (comando em `deploy/single/cloudshell.md`).
+- `-c apiDomain=-` desliga o DNS; nesse caso a API usa `<ip-com-hifens>.sslip.io`.
+
+**Horário**
+- O EventBridge Scheduler liga a instância às 07:00 e desliga às 23:00 (`America/Sao_Paulo`), todos os dias.
+- A role do Scheduler só tem `ec2:StartInstances`/`ec2:StopInstances` no ARN **desta** instância.
+- `-c schedule=false` deixa a instância ligada 24 h.
+
+**Segredos**
+- A chave KMS `alias/volti-dev` (gerenciada pelo cliente, com rotação anual) cifra todos os SecureString de `/volti/dev`.
+- A key policy dá à conta só a administração da chave (sem Decrypt) e permite a qualquer principal cifrar via SSM. Só a role da instância **decifra**.
+- A deploy key `/volti/dev/github-deploy-key` é criada à mão, com `--key-id alias/volti-dev`. Os segredos de `/volti/dev/secrets/*` são gerados no primeiro boot, e a instância nunca os sobrescreve (`ssm:Overwrite=false`).
+
+**Role da instância**
+- **Sem** `AmazonSSMManagedInstanceCore`, que daria `GetParameter` em toda a conta. Tem só as ações do agente SSM, mais leitura de `/volti/dev/*`.
+- `Deny` explícito em qualquer parâmetro fora de `/volti/dev`.
+- Acesso aos 5 buckets, ao Cognito (inclusive criar cliente de teste), ao bucket e à invalidação do painel, e ao Route 53 nos limites acima.
+
+**Cognito de clientes**
+- **Sem auto-cadastro e sem SMS.** A cota e o limite de gasto do SNS são da conta inteira, e o custo de SMS não leva tag.
+- Clientes de teste são criados pelo documento `volti-dev-admin` (`action=create-customer`). O fluxo "criar conta" do app só funciona para esses usuários no dev.
+- O login por código precisa de OTP por e-mail, e o Cognito exige uma identidade SES verificada para isso (`-c sesFromEmail`). Sem SES, o pool aceita só senha.
+
+**Painel**
+- S3 + CloudFront no domínio padrão do CloudFront, sem WAF.
+- A instância constrói e publica o painel (`volti-dev-admin`, `action=publish-panel`), já apontando para `https://api-volti-dev...`.
+
+**Operação**
+- Documentos SSM: `volti-dev-update` (git pull, rebuild, `prisma migrate deploy` e restart), `volti-dev-seed` (rodar uma vez) e `volti-dev-admin`.
+- Snapshot diário do volume às 12:00 UTC, com a instância ligada (Data Lifecycle Manager), mantendo 3.
+
+**Custo**
+- Orçamento de US$ 20/mês **só da tag `Projeto=Volti`** (nenhum orçamento da conta inteira), com e-mail via `-c budgetEmail` em 50/80/100% do gasto real e 100% da previsão.
+- Ativar a tag de alocação de custo é ação opcional do dono da conta.
+- Tags `Projeto=Volti` e `ambiente=dev` em tudo, e nomes `volti-*`.
+- Bootstrap com qualifier `volti` (toolkit `volti-cdk-toolkit`). Sem asset Docker nem Lambda: o deploy roda no AWS CloudShell.
 
 ### Primeiro deploy (AWS CloudShell)
 
-Passo a passo com os comandos exatos: [`deploy/single/cloudshell.md`](../deploy/single/cloudshell.md). Resumo:
+Os comandos exatos estão em [`deploy/single/cloudshell.md`](../deploy/single/cloudshell.md). Resumo:
 
-1. Gerar a deploy key (`ssh-keygen -t ed25519`), cadastrar a pública no GitHub como somente leitura e gravar a privada: `aws ssm put-parameter --name /volti/dev/github-deploy-key --type SecureString --value "$(cat ~/.ssh/volti_deploy)" --tags Key=Projeto,Value=Volti`.
-2. Clonar a branch no CloudShell, `sudo npm install -g pnpm@9.15.9` e `pnpm install --frozen-lockfile --filter infra`.
-3. `pnpm exec cdk bootstrap aws://$ACCOUNT/sa-east-1 --qualifier volti --toolkit-stack-name volti-cdk-toolkit --tags Projeto=Volti`
-4. `pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single -c account=$ACCOUNT -c branch=feat/galpao -c budgetEmail=<e-mail>`
-5. Primeiro boot automático (~15 min): instala Docker, clona, gera os segredos, constrói e roda `prisma migrate deploy` (log em `/var/log/volti-boot.log`, pelo Session Manager).
-6. Seed uma vez e painel: `aws ssm send-command --instance-ids <id> --document-name volti-dev-seed` e o mesmo com `volti-dev-admin`.
-7. Em até 24 h: `aws ce update-cost-allocation-tags-status --cost-allocation-tags-status TagKey=Projeto,Status=Active` (sem isso o orçamento por tag não enxerga gasto).
-8. Apontar os apps: `API_BASE_URL=https://<ip-com-hifens>.sslip.io` (ou `https://api.<domínio>`), IDs do Cognito em `/volti/dev/config/COGNITO_*`. O IP muda se a instância for parada e iniciada: rode o `volti-dev-update` e reaponte.
+1. Instale Node 24 e pnpm fora do home: `sudo npm install -g n && sudo n 24 && sudo npm install -g pnpm@9.15.9`.
+2. Gere a deploy key em `/tmp`, cadastre a parte pública no GitHub como somente leitura e clone em `/tmp/volti`. Depois: `pnpm install --frozen-lockfile --filter "infra..." --store-dir /tmp/pnpm-store`.
+3. Bootstrap: `pnpm exec cdk bootstrap aws://$ACCOUNT/sa-east-1 --qualifier volti --toolkit-stack-name volti-cdk-toolkit --tags Projeto=Volti`
+4. Deploy: `pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single -c account=$ACCOUNT -c branch=feat/galpao -c budgetEmail=<e-mail> -c hostedZoneId=Z04583703P20295WCJ8TF -c apiDomain=api-volti-dev.prestarecondominios.com.br`
+5. Logo depois do deploy, grave a deploy key e apague a cópia local: `aws ssm put-parameter --name /volti/dev/github-deploy-key --type SecureString --key-id alias/volti-dev --value "$(cat /tmp/volti_deploy)" --tags Key=Projeto,Value=Volti`, depois `shred -u /tmp/volti_deploy*`.
+6. O primeiro boot é automático e leva cerca de 15 min:
+   - espera a deploy key, clona o repositório e cria o registro DNS;
+   - gera os segredos e constrói as imagens;
+   - roda `prisma migrate deploy` e sobe os containers.
+   O log fica em `/var/log/volti-boot.log`. Se falhar antes do clone, rode de novo com `sudo bash /var/lib/cloud/instance/scripts/part-001`.
+7. Rode o seed uma vez, publique o painel e crie os clientes de teste: `aws ssm send-command --document-name volti-dev-seed`, depois `volti-dev-admin` com `action=publish-panel` e com `action=create-customer,email=...`.
+8. Aponte os apps para `API_BASE_URL=https://api-volti-dev.prestarecondominios.com.br`, com os IDs do Cognito de `/volti/dev/config/COGNITO_*`.
+9. (Opcional, dono da conta) ative a tag de alocação de custo `Projeto` para o orçamento enxergar o gasto.
 
-Atualizar depois: Systems Manager → Run Command → `volti-dev-update` → a instância → Run.
+Para atualizar depois: Systems Manager → Run Command → `volti-dev-update` → a instância → Run.
 
-### Custo mensal estimado (sa-east-1, preços de lista de outubro/2026)
+### Custo mensal estimado (sa-east-1, preços de lista de outubro/2026; instância 16 h/dia)
 
 | Item | Cálculo | US$/mês |
 |---|---|---|
-| EC2 `t4g.small` sob demanda | US$ 0,0268/h × 730 h | 19,56 |
-| EBS gp3 25 GB | US$ 0,152/GB | 3,80 |
-| IPv4 público (a AWS cobra todo IPv4 público) | US$ 0,005/h × 730 h | 3,65 |
-| Snapshots (3 diários, incrementais, ~5–8 GB armazenados) | US$ 0,068/GB | ~0,50 |
-| S3 (uploads e painel), CloudFront, Cognito (até 10 mil MAU), Parameter Store padrão, Data Lifecycle Manager, AWS Budgets (2 grátis), tráfego de saída (100 GB grátis) | uso de dev | ~0–1 |
-| **Total sob demanda** | | **≈ 28** |
+| EC2 `t4g.small` (07:00–23:00) | US$ 0,0268/h × 16 h × 30,4 dias | 13,04 |
+| EBS gp3 25 GB (cobrado mesmo com a instância parada) | US$ 0,152/GB | 3,80 |
+| IPv4 público (cobrado só enquanto associado; liberado ao parar) | US$ 0,005/h × 16 h × 30,4 | 2,43 |
+| KMS `alias/volti-dev` (1 chave; requisições desprezíveis) | US$ 1/chave | 1,00 |
+| Snapshots (3 diários, incrementais, ~5–8 GB) | US$ 0,068/GB | ~0,50 |
+| EventBridge Scheduler (2 invocações/dia, dentro das 14 milhões grátis), Route 53 (consultas desprezíveis; a zona já é paga pelo outro projeto), S3, CloudFront, Cognito (até 10 mil MAU), Parameter Store padrão, DLM, AWS Budgets (2 grátis), tráfego (100 GB grátis) | uso de dev | ~0–1 |
+| **Total** | | **≈ 21** |
 
-Para ficar entre US$ 10 e 20: Compute Savings Plan ou instância reservada de 1 ano sem entrada (t4g.small a US$ 0,0154/h → EC2 US$ 11,24, total ≈ 20); parar a instância fora do horário de uso (12 h/dia → total ≈ 18; o IP muda a cada partida); e, se a conta ainda tiver o teste gratuito do `t4g.small` (750 h/mês, oferta por tempo limitado da AWS), a EC2 sai de graça (total ≈ 8). `t4g.micro` (1 GB) custa metade, mas o build da API e o Postgres não cabem com folga. SMS do Cognito (OTP) é cobrado por mensagem, à parte. Valores de lista: confirme na calculadora da AWS.
+Com a instância 24 h (`-c schedule=false`), o total fica em cerca de US$ 29. Se a conta ainda tiver o teste gratuito do `t4g.small` (750 h/mês, oferta por tempo limitado), a EC2 sai de graça e o total cai para cerca de US$ 8. Savings Plan e instância reservada não compensam com a instância desligada 8 h por dia. O SMS do Cognito está desligado neste perfil. Valores de lista: confirme na calculadora da AWS.
+
+**Limite do Docker Hub:** são 10 pulls por hora por IP anônimo, e o primeiro boot puxa cerca de 7 imagens. Rebuilds seguidos podem esbarrar no limite; se acontecer, espere uma hora e rode o update de novo.
 
 ### Migrar para ECS/RDS depois
 
-1. Suba o dev completo (`-c env=dev`, sem `profile`). As stacks têm nomes diferentes (`volti-dev-network`, `-data`, `-api`...) e convivem com `volti-dev-single`; `volti-dev-auth` e `volti-dev-admin-web` têm o mesmo nome nos dois perfis (o Cognito e o painel continuam os mesmos). O app completo usa o bootstrap padrão do CDK (qualifier `hnb659fds`, stack `CDKToolkit`), que pode já existir na conta por causa do outro projeto: é compartilhável, não precisa recriar.
-2. Dados: na instância, `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env exec -T postgres pg_dump -U volti -Fc volti > /tmp/volti.dump`, `aws s3 cp` para um bucket, e `pg_restore` no RDS a partir de algo dentro da VPC (as migrações do Prisma são as mesmas). Arquivos: os buckets do `single` (`volti-dev-<conta>-single-*`) têm nomes próprios para conviver com os do dev completo; copie com `aws s3 sync s3://volti-dev-<conta>-single-<x> s3://volti-dev-<conta>-<x>` (ambos `RETAIN`).
-3. Usuários do Cognito não mudam (mesmo pool) se a stack `auth` for mantida.
-4. Rastreadores reais exigem IoT Core (`IOT_MODE=aws`, perfil completo): o Mosquitto do `single` é só para o simulador.
-5. Aponte os apps para o ALB/`api.<domínio>` e destrua `volti-dev-single` (`cdk destroy volti-dev-single --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single`; os buckets ficam por `RETAIN`).
+1. Suba o dev completo (`-c env=dev`, sem `profile`) **com um toolkit próprio também**: `cdk bootstrap --qualifier voltifull --toolkit-stack-name volti-cdk-toolkit-full --tags Projeto=Volti` e o synthesizer com esse qualifier. Não reaproveite o `CDKToolkit` do outro projeto.
+   - As stacks do dev completo (`volti-dev-network`, `-data`, `-api`...) convivem com a `volti-dev-single`.
+   - `volti-dev-auth` e `volti-dev-admin-web` têm o mesmo nome nos dois perfis; o Cognito e o painel continuam os mesmos.
+   - O orçamento do dev completo já é filtrado pela tag `projeto=volti`.
+2. Dados:
+   - Na instância, gere o dump: `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env exec -T postgres pg_dump -U volti -Fc volti > /tmp/volti.dump`.
+   - Mande para um bucket com `aws s3 cp` e restaure no RDS com `pg_restore`, a partir de algo dentro da VPC. As migrações do Prisma são as mesmas.
+   - Arquivos: os buckets do `single` (`volti-dev-<conta>-single-*`) têm nomes próprios. Copie com `aws s3 sync s3://volti-dev-<conta>-single-<x> s3://volti-dev-<conta>-<x>`.
+3. Usuários do Cognito não mudam (mesmo pool), desde que a stack `auth` seja mantida.
+4. Rastreadores reais exigem IoT Core (`IOT_MODE=aws`, perfil completo). O Mosquitto do `single` serve só para o simulador.
+5. Por último:
+   - aponte os apps para o ALB;
+   - destrua a `volti-dev-single`;
+   - apague o registro A `api-volti-dev` (comando em `cloudshell.md`).
 
 ## Dev ECS enxuto (`-c env=dev`)
 

@@ -187,6 +187,7 @@ export class ObservabilityStack extends Stack {
         budgetType: 'COST',
         timeUnit: 'MONTHLY',
         budgetLimit: { amount: cfg.budgetUsd, unit: 'USD' },
+        ...(cfg.budgetTagFilter ? { costFilters: { TagKeyValue: [cfg.budgetTagFilter] } } : {}),
       },
       notificationsWithSubscribers: [...cfg.budgetAlertPercents.map((p) => notification(p, 'ACTUAL')), notification(100, 'FORECASTED')],
     });

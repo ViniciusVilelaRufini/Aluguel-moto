@@ -13,7 +13,14 @@ import { IotStack } from './stacks/iot-stack';
 import { MessagingStack } from './stacks/messaging-stack';
 import { NetworkStack } from './stacks/network-stack';
 import { ObservabilityStack } from './stacks/observability-stack';
-import { DEFAULT_BRANCH, DEFAULT_REPO, SINGLE_TAG, SingleDevStack } from './stacks/single-dev-stack';
+import {
+  DEFAULT_API_DOMAIN,
+  DEFAULT_BRANCH,
+  DEFAULT_HOSTED_ZONE_ID,
+  DEFAULT_REPO,
+  SINGLE_TAG,
+  SingleDevStack,
+} from './stacks/single-dev-stack';
 import { WafStack } from './stacks/waf-stack';
 
 export interface VoltiAppOptions {
@@ -117,17 +124,18 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
 }
 
 export interface SingleDevAppOptions {
-  /** AWS account id; synth uses a placeholder (with vpcId + subnetId, no lookup and no credentials). */
+  /** AWS account id; synth uses a placeholder (no lookup, no credentials needed). */
   account?: string;
   repoUrl?: string;
   branch?: string;
   instanceType?: string;
   rootVolumeGb?: number;
-  /** api.<domain> for the API (Caddy certificate); admin.<domain> for the panel when adminCertificateArn is given. */
-  domainName?: string;
-  adminCertificateArn?: string;
-  vpcId?: string;
-  subnetId?: string;
+  /** Route 53 zone (shared with another project) where the instance UPSERTs the A record of apiDomain at every boot. */
+  hostedZoneId?: string;
+  /** API name; '-' disables the DNS record (fallback <public-ip>.sslip.io). */
+  apiDomain?: string;
+  /** EventBridge Scheduler start 07:00 / stop 23:00 America/Sao_Paulo (default on). */
+  schedule?: boolean;
   budgetEmail?: string;
   overrides?: ConfigOverrides;
   outdir?: string;
@@ -145,7 +153,8 @@ export const SINGLE_QUALIFIER = 'volti';
 
 /**
  * `-c env=dev -c profile=single`: the cheapest dev (docs/decisoes.md). One EC2 instance with Docker Compose + S3, Cognito and
- * the panel on S3/CloudFront. No Docker-built asset (deployable from AWS CloudShell). Prod and the full dev are untouched.
+ * the panel on S3/CloudFront (default domain). No Docker-built asset (deployable from AWS CloudShell). Prod and the full dev
+ * are untouched.
  */
 export function createSingleDevApp(opts: SingleDevAppOptions): SingleDevStacks {
   const cfg = getConfig('dev', opts.overrides);
@@ -155,15 +164,18 @@ export function createSingleDevApp(opts: SingleDevAppOptions): SingleDevStacks {
     env: { account, region: cfg.region },
     synthesizer: new DefaultStackSynthesizer({ qualifier: SINGLE_QUALIFIER }),
   };
-  const domain = opts.domainName;
+  const apiDomain = opts.apiDomain ?? DEFAULT_API_DOMAIN;
+  const hostedZoneId = opts.hostedZoneId ?? DEFAULT_HOSTED_ZONE_ID;
+  const dns = apiDomain === '-' || hostedZoneId === '-' ? undefined : { hostedZoneId, apiDomain: apiDomain.toLowerCase() };
+  if (dns && !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(dns.apiDomain)) {
+    throw new Error(`apiDomain inválido: ${dns.apiDomain}`);
+  }
+  if (dns && !/^Z[A-Z0-9]{5,31}$/.test(dns.hostedZoneId)) throw new Error(`hostedZoneId inválido: ${dns.hostedZoneId}`);
 
-  const adminWeb = new AdminWebStack(app, 'volti-dev-admin-web', {
-    ...common,
-    cfg,
-    adminDomainName: domain ? `admin.${domain}` : undefined,
-    adminCertificateArn: opts.adminCertificateArn,
-  });
-  const auth = new AuthStack(app, 'volti-dev-auth', { ...common, cfg, adminOrigin: adminWeb.origin });
+  // The panel stays on the CloudFront default domain (no custom domain / ACM).
+  const adminWeb = new AdminWebStack(app, 'volti-dev-admin-web', { ...common, cfg });
+  // Shared account: no self sign-up and no SMS in the customer pool (test customers come from the volti-dev-admin document).
+  const auth = new AuthStack(app, 'volti-dev-auth', { ...common, cfg, adminOrigin: adminWeb.origin, restrictedCustomers: true });
   const single = new SingleDevStack(app, 'volti-dev-single', {
     ...common,
     cfg,
@@ -174,9 +186,8 @@ export function createSingleDevApp(opts: SingleDevAppOptions): SingleDevStacks {
     branch: opts.branch ?? DEFAULT_BRANCH,
     instanceType: opts.instanceType ?? 't4g.small',
     rootVolumeGb: opts.rootVolumeGb ?? 25,
-    apiDomainName: domain ? `api.${domain}` : undefined,
-    vpcId: opts.vpcId,
-    subnetId: opts.subnetId,
+    dns,
+    schedule: opts.schedule ?? true,
     budgetEmail: opts.budgetEmail,
   });
 

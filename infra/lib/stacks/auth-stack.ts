@@ -10,6 +10,11 @@ export interface AuthStackProps extends StackProps {
   cfg: EnvConfig;
   /** Deployed admin panel origin (https://...): Hosted UI callback <origin>/auth/callback/ and logout <origin>/login/. */
   adminOrigin: string;
+  /**
+   * profile=single (dev in a shared account): no self sign-up and no SMS (the SNS SMS quota/spend limit is per account).
+   * Customers are created by the volti-dev-admin SSM document; e-mail OTP only with a verified SES identity (-c sesFromEmail).
+   */
+  restrictedCustomers?: boolean;
 }
 
 /** Admin panel Hosted UI URLs for one origin (the static export uses trailing slashes; both forms are registered). */
@@ -43,16 +48,17 @@ export class AuthStack extends Stack {
     // Customers: passwordless (USER_AUTH with SMS_OTP, plus EMAIL_OTP when SES is configured), phone or e-mail as username,
     // MFA optional. Cognito always keeps PASSWORD as a first factor; the app client only enables USER_AUTH.
     const ses = auth.customerSes;
+    const restricted = props.restrictedCustomers === true;
     this.customerPool = new cognito.UserPool(this, 'CustomerPool', {
       userPoolName: `volti-${cfg.name}-customers`,
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
-      selfSignUpEnabled: true,
+      selfSignUpEnabled: !restricted,
       signInAliases: { phone: true, email: true },
-      autoVerify: { phone: true, email: true },
+      autoVerify: restricted ? { email: true } : { phone: true, email: true },
       standardAttributes: { email: { required: false, mutable: true }, phoneNumber: { required: false, mutable: true } },
-      signInPolicy: { allowedFirstAuthFactors: { password: true, smsOtp: true, emailOtp: Boolean(ses) } },
+      signInPolicy: { allowedFirstAuthFactors: { password: true, smsOtp: !restricted, emailOtp: Boolean(ses) } },
       // SMS through SNS: the CDK creates the role Cognito assumes (with an external id); no credentials anywhere.
-      snsRegion: auth.snsRegion,
+      ...(restricted ? { enableSmsRole: false } : { snsRegion: auth.snsRegion }),
       email: ses
         ? cognito.UserPoolEmail.withSES({
             fromEmail: ses.fromEmail,
@@ -66,7 +72,7 @@ export class AuthStack extends Stack {
       mfa: cognito.Mfa.OPTIONAL,
       mfaSecondFactor: { sms: false, otp: true },
       passwordPolicy: password,
-      accountRecovery: cognito.AccountRecovery.PHONE_AND_EMAIL,
+      accountRecovery: restricted ? cognito.AccountRecovery.EMAIL_ONLY : cognito.AccountRecovery.PHONE_AND_EMAIL,
       deletionProtection: !cfg.disposable,
       removalPolicy,
     });

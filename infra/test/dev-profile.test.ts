@@ -183,6 +183,8 @@ describe('dev profile (minimum cost)', () => {
     const budget = (t: Template) => resources(t, 'AWS::Budgets::Budget')[0].Properties;
     const b = budget(Template.fromStack(running.observability));
     expect(b.Budget.BudgetLimit).toEqual({ Amount: 20, Unit: 'USD' });
+    // Shared account: only the resources tagged projeto=volti.
+    expect(b.Budget.CostFilters).toEqual({ TagKeyValue: ['user:projeto$volti'] });
     expect(b.NotificationsWithSubscribers.map((n: any) => [n.Notification.NotificationType, n.Notification.Threshold])).toEqual([
       ['ACTUAL', 50],
       ['ACTUAL', 80],

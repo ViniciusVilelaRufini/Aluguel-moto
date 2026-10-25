@@ -631,3 +631,35 @@ Perguntas para o dono:
 - **O que se perde em relação ao prod (aceito no dev):** sem alta disponibilidade (uma instância, uma AZ), sem IoT Core/Amazon Location/SQS reais (rastreadores reais não conectam; só o simulador), backup diário (RPO 24 h), sem WAF, sem alarmes do CloudWatch (só o orçamento). Migração para a arquitetura completa: `infra/README.md`, seção "Migrar para ECS/RDS".
 - **Dev ECS enxuto (`-c env=dev` sem `profile`) também ficou mais barato** para quando o dev voltar à arquitetura completa: sem NAT (tasks Fargate Spot em subnet pública com IP público, SG só do ALB; RDS e Redis em subnets isoladas; endpoint S3 gateway), 1 tarefa (mín. 1, máx. 2) de 0,25 vCPU / 0,5 GB, RDS `db.t4g.micro` single-AZ 20 GB sem autoscaling, backup 1 dia, sem Performance Insights, `cache.t4g.micro` 1 nó, sem WAF, sem Kinesis (eventos das estações por Lambda assíncrona → `stations.fifo`: **a ordem por estação não é garantida**; aceitável porque as estações do dev são simuladas), logs 3 dias, só alarmes de 5xx e DLQs, orçamento US$ 20 (50/80/100%). ≈ US$ 100/mês.
 - **Prod idêntico byte a byte:** `infra/test/prod-fingerprint.test.ts` compara o SHA-256 de cada template do prod com `infra/test/fixtures/prod-templates.sha256.json` (mudança deliberada no prod ou upgrade do CDK: regenerar com `UPDATE_PROD_FINGERPRINT=1` e revisar).
+
+### 2026-10-25 · perfil `single`: agenda, DNS fixo e correções da revisão de segurança (branch `feat/lacunas-t20`) · status: decisões do dono e do coordenador aplicadas (substitui os itens correspondentes acima)
+
+- **Agenda:** o EventBridge Scheduler liga a instância às 07:00 e desliga às 23:00 (`America/Sao_Paulo`), todos os dias. A role é própria e só tem `ec2:StartInstances`/`StopInstances` no ARN desta instância. Com `-c schedule=false` a instância fica ligada 24 h. Custo estimado: ≈ US$ 21/mês, contra ≈ US$ 29 ligada 24 h.
+- **Endereço fixo:** `api-volti-dev.prestarecondominios.com.br`, na zona Route 53 `Z04583703P20295WCJ8TF`, que é de **outro projeto**.
+  - A cada boot, a própria instância faz UPSERT do registro A → IP atual, com TTL 60 (serviço systemd `volti-dns`).
+  - O IAM permite só `ChangeResourceRecordSets` nessa zona, com as condições nome normalizado = `apiDomain`, tipo = `A` e ação = `UPSERT`, e mais `route53:GetChange`.
+  - A stack **não** cria o registro (nenhum `AWS::Route53::RecordSet`): o CloudFormation não pode ser dono de nada na zona compartilhada. Ao desmontar, o registro é apagado à mão (comando em `deploy/single/cloudshell.md`).
+  - O sslip.io fica só como alternativa, com `-c apiDomain=-`.
+  - O painel continua no domínio padrão do CloudFront.
+- **C-1:** a role da instância deixou de usar a `AmazonSSMManagedInstanceCore`, que dava `ssm:GetParameter*` em `*`. Agora tem só as ações do agente SSM (Session Manager/Run Command) e um `Deny` explícito em `ssm:GetParameter*`/`GetParametersByPath` fora de `parameter/volti/dev/*`. O teste confere que a role não tem nenhuma managed policy.
+- **I-1:** CMK `alias/volti-dev` (US$ 1/mês, aceito).
+  - A key policy dá à conta só a administração da chave (sem Decrypt), deixa qualquer principal cifrar via SSM (para o dono gravar a deploy key) e reserva o **Decrypt via SSM só para a role da instância**.
+  - Todos os SecureString de `/volti/dev` usam essa chave. A deploy key é recriada pelo dono com `--key-id alias/volti-dev`, e a instância espera até 60 min por ela no primeiro boot.
+- **I-2:** o CloudShell instala o Node 24 (`n`) e o pnpm fora do home, clona em `/tmp` e usa `--store-dir /tmp/pnpm-store`.
+- **I-3:** VPC própria `volti-dev-single`: 1 AZ, 1 subnet pública, IGW, sem NAT, sem flow logs e sem custo. Saiu o passo `create-default-vpc` e o lookup da VPC padrão.
+- **I-4:** o pool de clientes do `single` não tem auto-cadastro nem SMS (sem role do SNS), e a recuperação de conta é por e-mail.
+  - Clientes de teste são criados pelo documento `volti-dev-admin` (`action=create-customer`, e-mail validado pelo SSM e de novo no script). O fluxo de cadastro do app só funciona com usuários criados antes.
+  - **Limite:** o Cognito só oferece OTP por e-mail com uma identidade SES verificada (`-c sesFromEmail`). Sem SES, o pool de clientes do dev aceita só senha.
+- **Tag de alocação de custo:** ativar é configuração da conta inteira. Ficou como passo manual **opcional** do dono da conta, não automatizado.
+- **Menores:**
+  - Docker com rotação de log (10 MB × 3).
+  - Compose e buildx conferidos por sha256.
+  - `ssm:Overwrite=false` na criação dos segredos.
+  - `.env` só com valores de caracteres seguros, e o `admin.sh` não faz mais `source` dele.
+  - A instância depende dos parâmetros de config.
+  - Deploy key apagada do CloudShell com `shred`.
+  - Reexecução do user data documentada.
+  - O orçamento do dev ECS passou a ser filtrado pela tag `projeto=volti`.
+  - A migração para o ECS manda criar um toolkit próprio, sem reaproveitar o do outro projeto.
+  - O limite de pulls do Docker Hub está documentado.
+  - Ficaram de fora: a guarda no workflow de CI (fora do escopo; o aviso está no README) e o bloqueio do IMDS para os containers que não são a API.

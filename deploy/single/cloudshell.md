@@ -1,47 +1,56 @@
 # Volti dev em uma instância: primeiro deploy pelo AWS CloudShell
 
-Nada roda no seu PC: tudo é feito no **AWS CloudShell** (console da AWS, região **São Paulo / sa-east-1**, ícone `>_` no topo). O CloudShell já tem `aws`, `git`, `node` e `npm` com as suas credenciais do console. O deploy não usa Docker (a imagem da API é construída na própria instância).
+Nada roda no seu PC. Tudo é feito no **AWS CloudShell**: no console da AWS, troque a região para **São Paulo (sa-east-1)** e clique no ícone `>_` no topo. O CloudShell já vem com `aws`, `git` e `npm`, usando as suas credenciais do console. O deploy não usa Docker: a imagem da API é construída na própria instância.
 
-Tudo o que a stack cria leva a tag `Projeto=Volti` e nomes começando por `volti-` (a conta também roda outro projeto). O bootstrap do CDK usa um toolkit próprio (`volti-cdk-toolkit`, qualifier `volti`), separado do que o outro projeto possa ter.
+Tudo o que a stack cria recebe a tag `Projeto=Volti` e tem nome começando por `volti-`, porque a conta também roda outro projeto. Três cuidados com o que é do outro projeto:
+
+- **Bootstrap:** o Volti usa um toolkit do CDK próprio (`volti-cdk-toolkit`, qualifier `volti`).
+- **Rede:** a instância fica numa **VPC própria** (`volti-dev-single`), não na VPC padrão.
+- **DNS:** na zona `prestarecondominios.com.br`, a instância só faz UPSERT do registro A `api-volti-dev`. Nenhum outro registro é tocado.
+
+O CloudShell guarda só 1 GB no home. Por isso o Node, o código e o store do pnpm ficam em `/tmp` e em `/usr/local`, que somem ao fechar a sessão. Não tem problema: o código fica no GitHub e basta repetir os passos 1 e 2 numa sessão nova.
 
 ## 0. Variáveis da sessão
 
 ```bash
 export AWS_REGION=sa-east-1 AWS_DEFAULT_REGION=sa-east-1
 export ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
-export BRANCH=feat/galpao                    # branch que a instância vai rodar
-export BUDGET_EMAIL=voce@exemplo.com         # e-mail dos alertas do orçamento
+export BRANCH=feat/galpao
+export BUDGET_EMAIL=voce@exemplo.com
+export API_DOMAIN=api-volti-dev.prestarecondominios.com.br
+export HOSTED_ZONE_ID=Z04583703P20295WCJ8TF
 ```
 
-## 1. Chave de deploy do GitHub (somente leitura)
+## 1. Node 24 e pnpm (fora do home)
+
+O `package.json` do monorepo exige Node >= 24, e o CloudShell traz uma versão anterior.
 
 ```bash
-ssh-keygen -t ed25519 -f ~/.ssh/volti_deploy -N "" -C volti-dev-deploy
-cat ~/.ssh/volti_deploy.pub
-```
-
-No GitHub: repositório `ViniciusVilelaRufini/Aluguel-moto` → Settings → Deploy keys → Add deploy key → cole a chave pública, **sem** marcar "Allow write access".
-
-Guarde a parte privada no Parameter Store (SecureString, chave `aws/ssm`, grátis). A instância lê só este parâmetro; a stack nunca o cria:
-
-```bash
-aws ssm put-parameter --name /volti/dev/github-deploy-key --type SecureString \
-  --value "$(cat ~/.ssh/volti_deploy)" --tags Key=Projeto,Value=Volti
-```
-
-## 2. Código e dependências do `infra` (só ele)
-
-```bash
-cd ~
-GIT_SSH_COMMAND="ssh -i ~/.ssh/volti_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
-  git clone --depth 1 --branch "$BRANCH" git@github.com:ViniciusVilelaRufini/Aluguel-moto.git volti
-cd ~/volti
+sudo npm install -g n
+sudo n 24
+hash -r
+node -v
 sudo npm install -g pnpm@9.15.9
-pnpm install --frozen-lockfile --filter infra
-cd infra
 ```
 
-O home do CloudShell tem 1 GB persistente. Se faltar espaço, clone em `/tmp` (some ao fechar a sessão, sem problema: o código fica no GitHub).
+## 2. Deploy key do GitHub (somente leitura) e código
+
+A chave fica em `/tmp` e é apagada no passo 5.
+
+```bash
+ssh-keygen -t ed25519 -f /tmp/volti_deploy -N "" -C volti-dev-deploy
+cat /tmp/volti_deploy.pub
+```
+
+No GitHub, vá no repositório `ViniciusVilelaRufini/Aluguel-moto` → Settings → Deploy keys → Add deploy key. Cole a chave pública e **não** marque "Allow write access". Depois:
+
+```bash
+GIT_SSH_COMMAND="ssh -i /tmp/volti_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new" \
+  git clone --depth 1 --branch "$BRANCH" git@github.com:ViniciusVilelaRufini/Aluguel-moto.git /tmp/volti
+cd /tmp/volti
+pnpm install --frozen-lockfile --filter "infra..." --store-dir /tmp/pnpm-store
+cd /tmp/volti/infra
+```
 
 ## 3. Bootstrap do CDK (uma vez por conta/região)
 
@@ -52,76 +61,147 @@ pnpm exec cdk bootstrap aws://$ACCOUNT/sa-east-1 \
 
 ## 4. Deploy
 
-Confira antes que existe a VPC padrão em sa-east-1 (`aws ec2 describe-vpcs --filters Name=isDefault,Values=true`; se não existir: `aws ec2 create-default-vpc`).
-
 ```bash
 pnpm exec cdk deploy --all --require-approval never --toolkit-stack-name volti-cdk-toolkit \
-  -c env=dev -c profile=single -c account=$ACCOUNT \
-  -c branch=$BRANCH -c budgetEmail=$BUDGET_EMAIL
+  -c env=dev -c profile=single -c account=$ACCOUNT -c branch=$BRANCH -c budgetEmail=$BUDGET_EMAIL \
+  -c hostedZoneId=$HOSTED_ZONE_ID -c apiDomain=$API_DOMAIN
 ```
 
-Contexto opcional: `-c domainName=seudominio.com.br` (a API passa a responder em `api.<domínio>`; crie o registro DNS `A api` → IP público da instância antes do update), `-c adminCertificateArn=<ACM us-east-1>` (painel em `admin.<domínio>`), `-c instanceType=t4g.small`, `-c rootVolumeGb=25`, `-c repoUrl=...`.
+O deploy cria 3 stacks:
 
-Cria 3 stacks: `volti-dev-admin-web` (S3 + CloudFront do painel), `volti-dev-auth` (Cognito) e `volti-dev-single` (instância, buckets, parâmetros, documentos SSM, snapshots e orçamento). Confirme a inscrição no e-mail que a AWS Budgets enviar.
+- `volti-dev-admin-web`: S3 + CloudFront do painel, no domínio padrão do CloudFront.
+- `volti-dev-auth`: Cognito. O pool de clientes **não tem auto-cadastro nem SMS**.
+- `volti-dev-single`: VPC própria, instância, chave KMS `alias/volti-dev`, buckets, parâmetros, documentos SSM, agenda, snapshots e orçamento.
 
-## 5. Primeiro boot (automático, ~15 min)
+Confirme a inscrição no e-mail que a AWS Budgets enviar.
 
-O user data instala Docker + Compose + git, cria 2 GB de swap, lê a chave do SSM, clona a branch e roda `deploy/single/update.sh` (gera os segredos em `/volti/dev/secrets/*`, monta `/opt/volti/.env`, constrói a API e o PostGIS, roda `prisma migrate deploy` e sobe tudo). Acompanhe pelo Session Manager (EC2 → instância `volti-dev-single` → Connect → Session Manager):
+Opções de `-c`:
+
+- `-c schedule=false`: a instância fica ligada 24 h. Por padrão ela liga às 07:00 e desliga às 23:00, horário de São Paulo.
+- `-c apiDomain=-`: sem DNS. A API fica em `https://<ip-com-hifens>.sslip.io`.
+- `-c instanceType=t4g.small`, `-c rootVolumeGb=25`, `-c repoUrl=...`.
+
+## 5. Gravar a deploy key no Parameter Store (logo depois do deploy)
+
+A chave privada vai cifrada com a chave KMS `alias/volti-dev`, que **só a role da instância decifra**. A instância espera por ela até 60 minutos no primeiro boot.
+
+```bash
+aws ssm put-parameter --name /volti/dev/github-deploy-key --type SecureString --key-id alias/volti-dev \
+  --value "$(cat /tmp/volti_deploy)" --tags Key=Projeto,Value=Volti
+shred -u /tmp/volti_deploy /tmp/volti_deploy.pub
+```
+
+Se o parâmetro já existir (por exemplo, criado antes com a chave `aws/ssm`), apague e crie de novo. O `--overwrite` não aceita `--tags`. Gere outra chave no passo 2 se a anterior já tiver sido apagada.
+
+```bash
+aws ssm delete-parameter --name /volti/dev/github-deploy-key
+aws ssm put-parameter --name /volti/dev/github-deploy-key --type SecureString --key-id alias/volti-dev \
+  --value "$(cat /tmp/volti_deploy)" --tags Key=Projeto,Value=Volti
+```
+
+Depois disso, nem você consegue ler o valor: o `get-parameter --with-decryption` dá `AccessDenied`. É esperado.
+
+## 6. Primeiro boot (automático, cerca de 15 min)
+
+O user data faz, nesta ordem:
+
+1. Instala Docker (com rotação de log), Compose e buildx (binários conferidos por sha256) e git.
+2. Cria 2 GB de swap.
+3. Espera a deploy key e clona a branch.
+4. Registra o serviço `volti-dns`, que faz o UPSERT de `api-volti-dev...` → IP atual a cada boot.
+5. Roda `deploy/single/update.sh`: gera os segredos em `/volti/dev/secrets/*`, monta `/opt/volti/.env`, constrói a API e o PostGIS, roda `prisma migrate deploy` e sobe tudo.
+
+Para acompanhar, abra o Session Manager (EC2 → `volti-dev-single` → Connect → Session Manager) e rode:
 
 ```bash
 sudo tail -f /var/log/volti-boot.log
 ```
 
-No fim aparece `API em https://<ip-com-hifens>.sslip.io`. Teste: `curl https://<host>/health`.
+Teste no CloudShell:
 
-Ou pelo CloudShell:
+```bash
+curl -fsS https://$API_DOMAIN/health
+```
+
+Se o boot falhar antes do clone (por exemplo, a deploy key não apareceu em 60 minutos), crie o parâmetro e rode de novo pelo Session Manager:
+
+```bash
+sudo bash /var/lib/cloud/instance/scripts/part-001
+```
+
+## 7. Seed, painel e clientes de teste
 
 ```bash
 IID=$(aws ec2 describe-instances --filters Name=tag:Name,Values=volti-dev-single Name=instance-state-name,Values=running \
   --query 'Reservations[0].Instances[0].InstanceId' --output text)
-aws ec2 describe-instances --instance-ids $IID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text
-```
-
-## 6. Seed (uma vez) e painel
-
-```bash
 aws ssm send-command --instance-ids $IID --document-name volti-dev-seed --query Command.CommandId --output text
-aws ssm send-command --instance-ids $IID --document-name volti-dev-admin --query Command.CommandId --output text
+aws ssm send-command --instance-ids $IID --document-name volti-dev-admin --parameters action=publish-panel --query Command.CommandId --output text
+aws ssm send-command --instance-ids $IID --document-name volti-dev-admin \
+  --parameters action=create-customer,email=cliente.teste@exemplo.com --query Command.CommandId --output text
 # resultado: aws ssm list-command-invocations --command-id <id> --details --query 'CommandInvocations[0].Status'
 ```
 
-O painel fica em `https://<distribuição>.cloudfront.net` (`aws ssm get-parameter --name /volti/dev/config/ADMIN_ORIGIN --query Parameter.Value --output text`). Crie o primeiro usuário do pool interno (`volti-dev-staff`) no console do Cognito, coloque-o no grupo `admin` e configure o TOTP no primeiro login.
+O painel fica em `https://<distribuição>.cloudfront.net`. O endereço está no parâmetro de config:
 
-## 7. Tag de alocação de custo (para o orçamento filtrar)
+```bash
+aws ssm get-parameter --name /volti/dev/config/ADMIN_ORIGIN --query Parameter.Value --output text
+```
 
-A tag `Projeto` só aparece no Billing até 24 h depois de existir em algum recurso. Depois disso:
+O primeiro usuário da equipe se cria no console do Cognito (pool `volti-dev-staff`): coloque-o no grupo `admin` e configure o TOTP no primeiro login.
+
+**Clientes no dev:** não há auto-cadastro, e o fluxo "criar conta" do app só funciona com usuários criados antes pelo `volti-dev-admin` (`create-customer`). Sem SMS, o login por código precisa do OTP por e-mail, e o Cognito só oferece OTP por e-mail com uma identidade SES verificada. Para isso, faça o deploy com `-c sesFromEmail=<remetente verificado> -c sesVerifiedDomain=<domínio>`. No sandbox do SES, só destinatários verificados recebem. Sem SES, o pool aceita só senha.
+
+## 8. (Opcional, ação do dono da conta) tag de alocação de custo
+
+O orçamento `volti-dev-single-monthly` filtra pela tag `Projeto`. Ativar uma tag de alocação de custo é uma configuração de **billing da conta inteira**: numa conta-membro de Organization, só a conta de gerenciamento pode fazer isso. A tag aparece no Billing até 24 h depois de existir em algum recurso. Se você decidir ativar:
 
 ```bash
 aws ce update-cost-allocation-tags-status --cost-allocation-tags-status TagKey=Projeto,Status=Active
 ```
 
-Até ativar, o orçamento `volti-dev-single-monthly` fica em US$ 0 (o filtro não casa com nada).
+Sem isso, o orçamento fica em US$ 0 (o filtro não enxerga gasto).
 
 ## Atualizações depois
 
-Console → Systems Manager → Run Command → `volti-dev-update` → alvo: a instância `volti-dev-single` → Run. Ou:
+Atualizar o código: Systems Manager → Run Command → `volti-dev-update` → alvo `volti-dev-single` → Run. Ou, no CloudShell:
 
 ```bash
 aws ssm send-command --instance-ids $IID --document-name volti-dev-update
 ```
 
-Para o painel, `volti-dev-admin`. Para mudar a infra (outra branch, outro tipo de instância), repita o passo 4 com os novos `-c`. O user data só roda no primeiro boot: trocar de branch numa instância já criada = editar `VOLTI_BRANCH` em `/etc/volti/instance.env` pelo Session Manager e rodar o update.
+- Painel: `volti-dev-admin` com `action=publish-panel`.
+- Mudanças de infra: repita o passo 4 com os novos `-c`. O user data só roda no primeiro boot; para trocar a branch de uma instância já criada, edite `VOLTI_BRANCH` em `/etc/volti/instance.env` e rode o update.
 
 ## Segredos manuais (opcionais)
 
 ```bash
-aws ssm put-parameter --name /volti/dev/secrets/MERCADOPAGO_ACCESS_TOKEN --type SecureString --value '<token>' --tags Key=Projeto,Value=Volti
+aws ssm put-parameter --name /volti/dev/secrets/MERCADOPAGO_ACCESS_TOKEN --type SecureString --key-id alias/volti-dev \
+  --value '<token>' --tags Key=Projeto,Value=Volti
 ```
 
-Rode o update depois. `DB_PASSWORD`, `STATION_QR_SECRET`, `FRAUD_HASH_SECRET`, `PICKUP_CODE_SECRET` e `MERCADOPAGO_WEBHOOK_SECRET` nascem sozinhos no primeiro boot; não troque `DB_PASSWORD` (o volume do Postgres já foi criado com ela).
+Depois, rode o update. Só entram no `.env` valores com `A-Z a-z 0-9 . _ : / , @ + = -`; os outros são ignorados com aviso.
+
+`DB_PASSWORD`, `STATION_QR_SECRET`, `FRAUD_HASH_SECRET`, `PICKUP_CODE_SECRET` e `MERCADOPAGO_WEBHOOK_SECRET` nascem sozinhos no primeiro boot, e a instância nunca os sobrescreve. Não troque o `DB_PASSWORD`: o volume do Postgres já foi criado com ele.
 
 ## Apontar os apps
 
-- API: `https://<ip-com-hifens>.sslip.io` (ou `https://api.<domínio>`). O IP muda se a instância for **parada e iniciada** (reboot não muda): rode o update, que reemite o certificado para o novo nome, e reaponte os apps. Para um endereço fixo, use um domínio (`-c domainName`) ou um Elastic IP (custa o mesmo que o IP público, US$ 3,65/mês, e não está na stack).
-- App do cliente/operador (Flutter): `--dart-define=API_BASE_URL=https://<host>` e os IDs do Cognito (`/volti/dev/config/COGNITO_*` e `/volti/dev/cognito/*`).
-- Painel: o `volti-dev-admin` já embute a URL da API e o Hosted UI do pool interno.
+- **API:** `https://api-volti-dev.prestarecondominios.com.br`, um nome fixo; o IP muda a cada partida e o DNS acompanha, com TTL de 60 s. Os apps Flutter usam `--dart-define=API_BASE_URL=https://api-volti-dev.prestarecondominios.com.br` e os IDs do Cognito de `/volti/dev/config/COGNITO_*`.
+- **Painel:** o `volti-dev-admin` embute a URL da API e o Hosted UI do pool interno.
+- **Horário:** fora do horário (23:00–07:00) a API fica fora do ar.
+
+## Desmontar
+
+```bash
+pnpm exec cdk destroy --all --toolkit-stack-name volti-cdk-toolkit -c env=dev -c profile=single -c account=$ACCOUNT
+```
+
+Ficam para trás, por `RETAIN`: os buckets, a chave KMS e o pool de staff.
+
+O registro DNS foi criado pela instância e **não** pelo CloudFormation. Apague só ele, informando o IP que estiver no registro:
+
+```bash
+aws route53 list-resource-record-sets --hosted-zone-id $HOSTED_ZONE_ID \
+  --query "ResourceRecordSets[?Name=='$API_DOMAIN.' && Type=='A']"
+aws route53 change-resource-record-sets --hosted-zone-id $HOSTED_ZONE_ID --change-batch \
+  '{"Changes":[{"Action":"DELETE","ResourceRecordSet":{"Name":"'$API_DOMAIN'","Type":"A","TTL":60,"ResourceRecords":[{"Value":"<IP do registro>"}]}}]}'
+```

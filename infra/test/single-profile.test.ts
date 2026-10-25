@@ -7,35 +7,46 @@ import { createSingleDevApp } from '../lib/volti-app';
 /** `-c env=dev -c profile=single` (lacunas T20, docs/decisoes.md): one EC2 instance with Docker Compose. */
 describe('profile=single (dev on one EC2 instance)', () => {
   const outdir = mkdtempSync(join(tmpdir(), 'volti-single-'));
-  const s = createSingleDevApp({
-    vpcId: 'vpc-0123456789abcdef0',
-    subnetId: 'subnet-0123456789abcdef0',
-    budgetEmail: 'orcamento@example.com',
-    outdir,
-  });
+  const s = createSingleDevApp({ budgetEmail: 'orcamento@example.com', outdir });
   const stacks = [s.adminWeb, s.auth, s.single];
   const t = Template.fromStack(s.single);
   const all = stacks.map((st) => Template.fromStack(st));
   const resources = (tpl: Template, type: string) => Object.values(tpl.findResources(type)) as any[];
   const instance = () => resources(t, 'AWS::EC2::Instance')[0].Properties;
   const userData = () => JSON.stringify(instance().UserData);
+  const instanceLogicalId = Object.keys(t.findResources('AWS::EC2::Instance'))[0];
+  const roleStatements = () => {
+    const role = Object.entries(t.findResources('AWS::IAM::Role')).find(([, r]: any) => JSON.stringify(r.Properties.AssumeRolePolicyDocument).includes('ec2.amazonaws.com'))!;
+    const policies = resources(t, 'AWS::IAM::Policy').filter((p) => JSON.stringify(p.Properties.Roles).includes(role[0]));
+    return { role: role[1] as any, stmts: policies.flatMap((p) => p.Properties.PolicyDocument.Statement) as any[] };
+  };
   const REPO = join(__dirname, '..', '..');
 
   it('creates exactly 3 stacks with names prefixed volti-dev-, bootstrapped with the "volti" qualifier', () => {
     expect(stacks.map((x) => x.stackName).sort()).toEqual(['volti-dev-admin-web', 'volti-dev-auth', 'volti-dev-single']);
     const assembly = s.app.synth();
-    expect(assembly.stacks.map((x) => x.stackName).sort()).toEqual(['volti-dev-admin-web', 'volti-dev-auth', 'volti-dev-single']);
     for (const st of assembly.stacks) expect(st.assumeRoleArn).toMatch(/cdk-volti-deploy-role/);
   });
 
-  it('no Docker-built asset (deployable from CloudShell): asset manifests list no docker images', () => {
+  it('no Docker-built asset nor Lambda (deployable from CloudShell): only templates in the asset manifests', () => {
     const assembly = s.app.synth();
     for (const st of assembly.stacks) {
       const manifest = JSON.parse(readFileSync(join(assembly.directory, `${st.stackName}.assets.json`), 'utf8'));
       expect(manifest.dockerImages ?? {}).toEqual({});
-      // Only CloudFormation templates as file assets (no Lambda bundles, no custom resource providers).
       for (const f of Object.values(manifest.files ?? {}) as any[]) expect(f.source.path).toMatch(/^volti-dev-[a-z-]+\.template\.json$/);
     }
+  });
+
+  it('own VPC: 1 AZ, 1 public subnet, internet gateway, no NAT, no flow logs, no endpoints', () => {
+    t.resourceCountIs('AWS::EC2::VPC', 1);
+    t.hasResourceProperties('AWS::EC2::VPC', { CidrBlock: '10.40.0.0/24' });
+    const subnets = resources(t, 'AWS::EC2::Subnet');
+    expect(subnets).toHaveLength(1);
+    expect(subnets[0].Properties.AvailabilityZone).toBe('sa-east-1a');
+    expect(subnets[0].Properties.MapPublicIpOnLaunch).toBe(true);
+    t.resourceCountIs('AWS::EC2::InternetGateway', 1);
+    for (const type of ['AWS::EC2::NatGateway', 'AWS::EC2::FlowLog', 'AWS::EC2::VPCEndpoint', 'AWS::EC2::EIP']) t.resourceCountIs(type, 0);
+    expect(JSON.stringify(instance().NetworkInterfaces[0].SubnetId)).toMatch(/Vpcpublic/);
   });
 
   it('one t4g.small Amazon Linux 2023 ARM instance: IMDSv2 required (2 hops for the containers), encrypted gp3 root, public IP, no SSH key', () => {
@@ -46,28 +57,29 @@ describe('profile=single (dev on one EC2 instance)', () => {
     expect(p.MetadataOptions).toEqual({ HttpEndpoint: 'enabled', HttpTokens: 'required', HttpPutResponseHopLimit: 2 });
     expect(p.BlockDeviceMappings).toEqual([{ DeviceName: '/dev/xvda', Ebs: { Encrypted: true, VolumeSize: 25, VolumeType: 'gp3' } }]);
     expect(p.NetworkInterfaces[0].AssociatePublicIpAddress).toBe(true);
-    expect(p.NetworkInterfaces[0].SubnetId).toBe('subnet-0123456789abcdef0');
     expect(p.KeyName).toBeUndefined();
-    expect(p.PropagateTagsToVolumeOnCreation).toBe(true);
+    // The instance waits for the /volti/dev/config parameters (render-env.sh reads them on the first boot).
+    const deps = t.toJSON().Resources[instanceLogicalId].DependsOn as string[];
+    expect(deps.filter((d) => d.startsWith('Config')).length).toBeGreaterThanOrEqual(15);
   });
 
-  it('none of ALB, RDS, ElastiCache, NAT, new VPC, ECS, Kinesis, WAF, SQS, Lambda, KMS keys or Secrets Manager', () => {
+  it('none of ALB, RDS, ElastiCache, NAT, ECS, Kinesis, WAF, SQS, Lambda, Secrets Manager, Route 53 records or alarms', () => {
     for (const tpl of all) {
       for (const type of [
         'AWS::ElasticLoadBalancingV2::LoadBalancer',
         'AWS::RDS::DBInstance',
         'AWS::ElastiCache::ReplicationGroup',
         'AWS::EC2::NatGateway',
-        'AWS::EC2::VPC',
-        'AWS::EC2::EIP',
         'AWS::ECS::Cluster',
         'AWS::Kinesis::Stream',
         'AWS::WAFv2::WebACL',
         'AWS::SQS::Queue',
         'AWS::Lambda::Function',
-        'AWS::KMS::Key',
         'AWS::SecretsManager::Secret',
         'AWS::CloudWatch::Alarm',
+        'AWS::Route53::RecordSet',
+        'AWS::Route53::RecordSetGroup',
+        'AWS::Route53::HostedZone',
       ]) {
         tpl.resourceCountIs(type, 0);
       }
@@ -86,7 +98,20 @@ describe('profile=single (dev on one EC2 instance)', () => {
   });
 
   it('every taggable resource carries Projeto=Volti (cost-allocation tag)', () => {
-    const types = ['AWS::EC2::Instance', 'AWS::EC2::SecurityGroup', 'AWS::S3::Bucket', 'AWS::IAM::Role', 'AWS::DLM::LifecyclePolicy', 'AWS::SSM::Parameter', 'AWS::Cognito::UserPool', 'AWS::CloudFront::Distribution'];
+    const types = [
+      'AWS::EC2::VPC',
+      'AWS::EC2::Subnet',
+      'AWS::EC2::InternetGateway',
+      'AWS::EC2::Instance',
+      'AWS::EC2::SecurityGroup',
+      'AWS::S3::Bucket',
+      'AWS::IAM::Role',
+      'AWS::KMS::Key',
+      'AWS::DLM::LifecyclePolicy',
+      'AWS::SSM::Parameter',
+      'AWS::Cognito::UserPool',
+      'AWS::CloudFront::Distribution',
+    ];
     let checked = 0;
     for (const tpl of all) {
       for (const type of types) {
@@ -98,89 +123,197 @@ describe('profile=single (dev on one EC2 instance)', () => {
         }
       }
     }
-    expect(checked).toBeGreaterThan(20);
-    // SSM documents are tagged through the stack tags (CloudFormation propagates them).
+    expect(checked).toBeGreaterThan(25);
     expect(s.single.tags.tagValues()).toEqual(expect.objectContaining({ Projeto: 'Volti' }));
   });
 
-  it('S3 buckets for uploads (5, private, SSE-S3), names prefixed volti-dev-', () => {
+  it('S3 buckets for uploads (5, private, SSE-S3), names volti-dev-<account>-single-*', () => {
     const buckets = resources(t, 'AWS::S3::Bucket');
     expect(buckets).toHaveLength(5);
     for (const b of buckets) {
-      expect(JSON.stringify(b.Properties.BucketName)).toMatch(/volti-dev-/);
+      expect(JSON.stringify(b.Properties.BucketName)).toMatch(/volti-dev-.*-single-/);
       expect(b.Properties.PublicAccessBlockConfiguration.RestrictPublicBuckets).toBe(true);
       expect(b.Properties.BucketEncryption.ServerSideEncryptionConfiguration[0].ServerSideEncryptionByDefault.SSEAlgorithm).toBe('AES256');
     }
   });
 
-  it('instance role: SSM Session Manager, deploy key read only for its parameter, KMS decrypt scoped to Volti parameters', () => {
-    const role = resources(t, 'AWS::IAM::Role').find((r) => JSON.stringify(r.Properties.AssumeRolePolicyDocument).includes('ec2.amazonaws.com'));
-    expect(JSON.stringify(role.Properties.ManagedPolicyArns)).toMatch(/AmazonSSMManagedInstanceCore/);
-    const stmts = resources(t, 'AWS::IAM::Policy').flatMap((p) => p.Properties.PolicyDocument.Statement) as any[];
-    const key = stmts.find((x) => x.Sid === 'DeployKey');
-    expect(key.Action).toBe('ssm:GetParameter');
-    expect(JSON.stringify(key.Resource)).toMatch(/parameter\/volti\/dev\/github-deploy-key"/);
-    const decrypt = stmts.find((x) => x.Sid === 'DecryptVoltiParameters');
-    expect(decrypt.Action).toBe('kms:Decrypt');
-    expect(JSON.stringify(decrypt.Condition)).toMatch(/kms:ViaService/);
-    expect(JSON.stringify(decrypt.Condition)).toMatch(/github-deploy-key/);
-    expect(JSON.stringify(decrypt.Condition)).toMatch(/volti\/dev\/secrets\/\*/);
-    const put = stmts.find((x) => x.Sid === 'CreateGeneratedSecrets');
+  it('instance role: no managed policies; SSM agent only; parameters only under /volti/dev with an explicit Deny elsewhere', () => {
+    const { role, stmts } = roleStatements();
+    expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+    const sid = (id: string) => stmts.find((x) => x.Sid === id);
+    // SSM agent actions are the only wildcard-resource statement, and they grant no parameter or KMS access.
+    const wildcard = stmts.filter((x) => x.Effect === 'Allow' && JSON.stringify(x.Resource) === '"*"');
+    expect(wildcard.map((x) => x.Sid)).toEqual(['SsmAgent']);
+    for (const a of sid('SsmAgent').Action as string[]) expect(a).toMatch(/^(ssm:(UpdateInstanceInformation|ListInstanceAssociations|DescribeAssociation|GetDocument|DescribeDocument|UpdateAssociationStatus|UpdateInstanceAssociationStatus)|ssmmessages:|ec2messages:)/);
+    const read = sid('ReadVoltiParameters');
+    for (const r of read.Resource) expect(JSON.stringify(r)).toMatch(/parameter\/volti\/dev/);
+    const deny = sid('DenyOtherParameters');
+    expect(deny.Effect).toBe('Deny');
+    expect(deny.Action).toEqual(expect.arrayContaining(['ssm:GetParameter', 'ssm:GetParameters', 'ssm:GetParametersByPath']));
+    expect(JSON.stringify(deny.NotResource)).toMatch(/parameter\/volti\/dev"/);
+    expect(JSON.stringify(deny.NotResource)).toMatch(/parameter\/volti\/dev\/\*"/);
+    const put = sid('CreateGeneratedSecrets');
+    expect(put.Action).toBe('ssm:PutParameter');
+    expect(put.Condition).toEqual({ StringEquals: { 'ssm:Overwrite': 'false' } });
     expect(JSON.stringify(put.Resource)).toMatch(/volti\/dev\/secrets\/\*/);
-    expect(JSON.stringify(put.Resource)).not.toMatch(/github-deploy-key/);
-    // No wildcard SSM or S3 access.
-    for (const st of stmts) expect(JSON.stringify(st.Resource)).not.toMatch(/"\*"/);
+    // KMS: only the alias/volti-dev key, via SSM.
+    const kms = sid('UseParamsKey');
+    expect(JSON.stringify(kms.Resource)).toMatch(/ParamsKey/);
+    expect(stmts.filter((x) => JSON.stringify(x.Action).includes('kms:')).map((x) => x.Sid)).toEqual(['UseParamsKey']);
+    // No S3/SSM wildcard anywhere else.
+    for (const st of stmts.filter((x) => x.Sid !== 'SsmAgent' && x.Effect === 'Allow')) expect(JSON.stringify(st.Resource)).not.toMatch(/"\*"/);
     // The stack never creates the deploy key nor any secret parameter.
     for (const p of resources(t, 'AWS::SSM::Parameter')) expect(p.Properties.Name).toMatch(/^\/volti\/dev\/config\//);
   });
 
-  it('config parameters for the API (Cognito, buckets, CORS, panel) and nothing secret', () => {
+  it('customer-managed key alias/volti-dev: root administers (no Decrypt), only the instance role decrypts', () => {
+    t.hasResourceProperties('AWS::KMS::Alias', { AliasName: 'alias/volti-dev' });
+    const key = resources(t, 'AWS::KMS::Key')[0];
+    expect(key.Properties.EnableKeyRotation).toBe(true);
+    expect(key.DeletionPolicy).toBe('Retain');
+    const stmts = key.Properties.KeyPolicy.Statement as any[];
+    const decrypters = stmts.filter((x) => JSON.stringify(x.Action).includes('kms:Decrypt') || JSON.stringify(x.Action) === '"kms:*"');
+    expect(decrypters).toHaveLength(1);
+    expect(JSON.stringify(decrypters[0].Principal)).toMatch(/InstanceRole/);
+    expect(decrypters[0].Condition).toEqual({ StringEquals: { 'kms:ViaService': 'ssm.sa-east-1.amazonaws.com' } });
+    const admin = stmts.find((x) => x.Sid === 'KeyAdministrationByAccount');
+    expect(JSON.stringify(admin.Principal)).toMatch(/:root/);
+    expect(admin.Action).not.toContain('kms:Decrypt');
+    const enc = stmts.find((x) => x.Sid === 'EncryptThroughSsm');
+    expect(enc.Action.sort()).toEqual(['kms:Encrypt', 'kms:GenerateDataKey']);
+    expect(enc.Condition).toEqual({ StringEquals: { 'kms:ViaService': 'ssm.sa-east-1.amazonaws.com' } });
+  });
+
+  it('Route 53: only UPSERT of the A record of apiDomain in the shared zone, plus GetChange; the stack owns no record', () => {
+    const { stmts } = roleStatements();
+    const upsert = stmts.find((x) => x.Sid === 'UpsertApiRecord');
+    expect(upsert).toEqual({
+      Sid: 'UpsertApiRecord',
+      Effect: 'Allow',
+      Action: 'route53:ChangeResourceRecordSets',
+      Resource: 'arn:aws:route53:::hostedzone/Z04583703P20295WCJ8TF',
+      Condition: {
+        'ForAllValues:StringEquals': {
+          'route53:ChangeResourceRecordSetsNormalizedRecordNames': ['api-volti-dev.prestarecondominios.com.br'],
+          'route53:ChangeResourceRecordSetsRecordTypes': ['A'],
+          'route53:ChangeResourceRecordSetsActions': ['UPSERT'],
+        },
+      },
+    });
+    expect(stmts.find((x) => x.Sid === 'WaitRecordChange')).toEqual(
+      expect.objectContaining({ Action: 'route53:GetChange', Resource: 'arn:aws:route53:::change/*' }),
+    );
+    expect(stmts.filter((x) => JSON.stringify(x.Action).includes('route53:')).map((x) => x.Sid).sort()).toEqual(['UpsertApiRecord', 'WaitRecordChange']);
+    for (const tpl of all) tpl.resourceCountIs('AWS::Route53::RecordSet', 0);
+    // Without a domain: no Route 53 permission at all (fallback <ip>.sslip.io).
+    const noDns = createSingleDevApp({ apiDomain: '-' });
+    const json = JSON.stringify(Template.fromStack(noDns.single).toJSON());
+    expect(json).not.toMatch(/route53:/);
+    expect(() => createSingleDevApp({ apiDomain: 'bad domain' })).toThrow(/apiDomain/);
+  });
+
+  it('every boot UPSERTs the record (systemd volti-dns.service runs deploy/single/dns.sh)', () => {
+    const ud = userData();
+    expect(ud).toContain('volti-dns.service');
+    expect(ud).toContain('systemctl enable volti-dns.service');
+    expect(ud).toContain('/opt/volti/src/deploy/single/dns.sh');
+    const dns = readFileSync(join(REPO, 'deploy', 'single', 'dns.sh'), 'utf8');
+    expect(dns).toMatch(/"Action":"UPSERT"/);
+    expect(dns).toMatch(/"Type":"A","TTL":60/);
+    expect(dns).not.toMatch(/DELETE|CREATE"/);
+    const names = resources(t, 'AWS::SSM::Parameter').map((p) => p.Properties);
+    expect(names.find((p) => p.Name === '/volti/dev/config/API_DOMAIN').Value).toBe('api-volti-dev.prestarecondominios.com.br');
+    expect(names.find((p) => p.Name === '/volti/dev/config/HOSTED_ZONE_ID').Value).toBe('Z04583703P20295WCJ8TF');
+  });
+
+  it('EventBridge Scheduler: start 07:00 and stop 23:00 America/Sao_Paulo, role limited to THIS instance', () => {
+    const schedules = resources(t, 'AWS::Scheduler::Schedule').map((x) => x.Properties);
+    expect(schedules.map((x) => [x.Name, x.ScheduleExpression, x.ScheduleExpressionTimezone, x.Target.Arn]).sort()).toEqual([
+      ['volti-dev-single-start', 'cron(0 7 * * ? *)', 'America/Sao_Paulo', 'arn:aws:scheduler:::aws-sdk:ec2:startInstances'],
+      ['volti-dev-single-stop', 'cron(0 23 * * ? *)', 'America/Sao_Paulo', 'arn:aws:scheduler:::aws-sdk:ec2:stopInstances'],
+    ]);
+    for (const x of schedules) expect(JSON.stringify(x.Target.Input)).toContain(instanceLogicalId);
+    const roleId = schedules[0].Target.RoleArn['Fn::GetAtt'][0];
+    const role = t.toJSON().Resources[roleId];
+    expect(JSON.stringify(role.Properties.AssumeRolePolicyDocument)).toMatch(/scheduler\.amazonaws\.com/);
+    expect(role.Properties.ManagedPolicyArns).toBeUndefined();
+    const stmts = resources(t, 'AWS::IAM::Policy')
+      .filter((p) => JSON.stringify(p.Properties.Roles).includes(roleId))
+      .flatMap((p) => p.Properties.PolicyDocument.Statement);
+    expect(stmts).toHaveLength(1);
+    expect(stmts[0].Action).toEqual(['ec2:StartInstances', 'ec2:StopInstances']);
+    const resource = JSON.stringify(stmts[0].Resource);
+    expect(resource).toMatch(/:instance\//);
+    expect(resource).toContain(instanceLogicalId);
+    expect(resource).not.toMatch(/instance\/\*/);
+    // -c schedule=false: no schedules nor scheduler role.
+    Template.fromStack(createSingleDevApp({ schedule: false }).single).resourceCountIs('AWS::Scheduler::Schedule', 0);
+  });
+
+  it('config parameters for the API (Cognito, buckets, CORS, panel, DNS) and nothing secret', () => {
     const names = resources(t, 'AWS::SSM::Parameter').map((p) => p.Properties.Name.replace('/volti/dev/config/', ''));
     expect(names).toEqual(
-      expect.arrayContaining([
-        'COGNITO_CUSTOMER_POOL_ID',
-        'COGNITO_STAFF_CLIENT_IDS',
-        'S3_BUCKET_KYC',
-        'S3_BUCKET_CATALOG',
-        'CORS_ORIGINS',
-        'API_DOMAIN',
-        'ADMIN_BUCKET',
-        'ADMIN_DISTRIBUTION_ID',
-      ]),
+      expect.arrayContaining(['COGNITO_CUSTOMER_POOL_ID', 'COGNITO_STAFF_CLIENT_IDS', 'S3_BUCKET_KYC', 'S3_BUCKET_CATALOG', 'CORS_ORIGINS', 'API_DOMAIN', 'HOSTED_ZONE_ID', 'ADMIN_BUCKET', 'ADMIN_DISTRIBUTION_ID']),
     );
     expect(names.join(' ')).not.toMatch(/SECRET|PASSWORD|TOKEN/);
   });
 
-  it('user data clones the configured repo/branch with the SSM deploy key and runs update.sh; no secret inside', () => {
+  it('user data: pinned binaries (sha256), Docker log rotation, waits for the deploy key, clones and runs update.sh; no secret inside', () => {
     const ud = userData();
     expect(ud).toContain('git@github.com:ViniciusVilelaRufini/Aluguel-moto.git');
     expect(ud).toContain('--branch feat/galpao');
     expect(ud).toContain('--name /volti/dev/github-deploy-key --with-decryption');
     expect(ud).toContain('/opt/volti/src/deploy/single/update.sh');
     expect(ud).toContain('github.com ssh-ed25519');
+    expect(ud.match(/sha256sum -c -/g)).toHaveLength(2);
+    expect(ud).toContain('max-size');
+    expect(ud).toContain('VOLTI_KEY_ALIAS=alias/volti-dev');
     expect(ud).not.toMatch(/PRIVATE KEY|password=|ssh-keyscan/i);
-    const other = createSingleDevApp({ vpcId: 'vpc-1', subnetId: 'subnet-1', branch: 'main', instanceType: 't4g.medium', rootVolumeGb: 30 });
+    const other = createSingleDevApp({ branch: 'main', instanceType: 't4g.medium', rootVolumeGb: 30 });
     const p = (Object.values(Template.fromStack(other.single).findResources('AWS::EC2::Instance'))[0] as any).Properties;
     expect(JSON.stringify(p.UserData)).toContain('--branch main');
     expect(p.InstanceType).toBe('t4g.medium');
     expect(p.BlockDeviceMappings[0].Ebs.VolumeSize).toBe(30);
   });
 
-  it('daily EBS snapshot by Data Lifecycle Manager, keeping 3, targeting the instance volume tag', () => {
+  it('daily EBS snapshot by Data Lifecycle Manager while the instance runs, keeping 3', () => {
     const policy = resources(t, 'AWS::DLM::LifecyclePolicy')[0].Properties.PolicyDetails;
     expect(policy.TargetTags).toEqual([{ Key: 'volti-backup', Value: 'daily' }]);
     expect(policy.Schedules[0].RetainRule).toEqual({ Count: 3 });
-    expect(policy.Schedules[0].CreateRule.Interval).toBe(24);
+    expect(policy.Schedules[0].CreateRule).toEqual({ Interval: 24, IntervalUnit: 'HOURS', Times: ['12:00'] });
     expect(instance().Tags).toEqual(expect.arrayContaining([{ Key: 'volti-backup', Value: 'daily' }]));
   });
 
-  it('SSM Run Command documents for update, seed and the panel', () => {
-    const docs = resources(t, 'AWS::SSM::Document');
-    const byName = Object.fromEntries(docs.map((d) => [d.Properties.Name, d.Properties]));
+  it('SSM Run Command documents: update, seed and admin (panel or test customer, parameters validated by SSM)', () => {
+    const byName = Object.fromEntries(resources(t, 'AWS::SSM::Document').map((d) => [d.Properties.Name, d.Properties]));
     expect(Object.keys(byName).sort()).toEqual(['volti-dev-admin', 'volti-dev-seed', 'volti-dev-update']);
-    expect(byName['volti-dev-update'].DocumentType).toBe('Command');
     expect(byName['volti-dev-update'].Content.mainSteps[0].inputs.runCommand).toEqual(['bash /opt/volti/src/deploy/single/update.sh']);
     expect(byName['volti-dev-seed'].Content.mainSteps[0].inputs.runCommand).toEqual(['bash /opt/volti/src/deploy/single/seed.sh']);
+    const admin = byName['volti-dev-admin'].Content;
+    expect(admin.mainSteps[0].inputs.runCommand).toEqual(['bash /opt/volti/src/deploy/single/admin.sh {{action}} {{email}}']);
+    expect(admin.parameters.action.allowedValues).toEqual(['publish-panel', 'create-customer']);
+    const pattern = new RegExp(admin.parameters.email.allowedPattern);
+    expect(pattern.test('cliente.teste@exemplo.com')).toBe(true);
+    expect(pattern.test('-')).toBe(true);
+    for (const bad of ['a@b.com; rm -rf /', '$(id)@x.com', 'a b@c.com', '`x`@y.com']) expect(pattern.test(bad)).toBe(false);
+  });
+
+  it('customer pool in the shared account: no self sign-up, no SMS (no SNS role), e-mail recovery', () => {
+    const auth = Template.fromStack(s.auth);
+    const pool = resources(auth, 'AWS::Cognito::UserPool').find((p) => p.Properties.UserPoolName === 'volti-dev-customers').Properties;
+    expect(pool.AdminCreateUserConfig.AllowAdminCreateUserOnly).toBe(true);
+    expect(pool.SmsConfiguration).toBeUndefined();
+    expect(pool.Policies.SignInPolicy.AllowedFirstAuthFactors).not.toContain('SMS_OTP');
+    expect(pool.AutoVerifiedAttributes).toEqual(['email']);
+    expect(JSON.stringify(auth.toJSON())).not.toMatch(/sns:Publish/);
+    // With a verified SES identity, e-mail OTP is enabled.
+    const ses = createSingleDevApp({ overrides: { sesFromEmail: 'no-reply@exemplo.com', sesVerifiedDomain: 'exemplo.com' } });
+    const sesPool = resources(Template.fromStack(ses.auth), 'AWS::Cognito::UserPool').find((p) => p.Properties.UserPoolName === 'volti-dev-customers');
+    expect(sesPool.Properties.Policies.SignInPolicy.AllowedFirstAuthFactors).toContain('EMAIL_OTP');
+    // The instance may create test customers in the customer pool only.
+    const { stmts } = roleStatements();
+    const create = stmts.filter((x) => JSON.stringify(x.Action).includes('cognito-idp:AdminCreateUser'));
+    expect(create.map((x) => x.Sid)).toEqual(['CognitoCustomers']);
   });
 
   it('budget US$ 20/month ONLY for the tag Projeto=Volti (no account-wide budget), e-mail alerts at 50/80/100%', () => {
@@ -198,11 +331,13 @@ describe('profile=single (dev on one EC2 instance)', () => {
     for (const n of b.NotificationsWithSubscribers) expect(n.Subscribers).toEqual([{ SubscriptionType: 'EMAIL', Address: 'orcamento@example.com' }]);
   });
 
-  it('panel: S3 + CloudFront without WAF; the instance may publish it (bucket write + invalidation)', () => {
+  it('panel on the CloudFront default domain (no alias/ACM, no WAF); the instance may publish it', () => {
     const cf = Template.fromStack(s.adminWeb);
-    cf.resourceCountIs('AWS::CloudFront::Distribution', 1);
-    expect(JSON.stringify(resources(cf, 'AWS::CloudFront::Distribution')[0].Properties.DistributionConfig.WebACLId)).toBeUndefined();
-    const stmts = resources(t, 'AWS::IAM::Policy').flatMap((p) => p.Properties.PolicyDocument.Statement) as any[];
+    const dist = resources(cf, 'AWS::CloudFront::Distribution')[0].Properties.DistributionConfig;
+    expect(dist.Aliases).toBeUndefined();
+    expect(dist.ViewerCertificate).toBeUndefined();
+    expect(dist.WebACLId).toBeUndefined();
+    const { stmts } = roleStatements();
     expect(stmts.some((x) => x.Action === 'cloudfront:CreateInvalidation')).toBe(true);
   });
 
@@ -229,24 +364,32 @@ describe('profile=single (dev on one EC2 instance)', () => {
         'eclipse-mosquitto',
         'caddy:2',
         '"80:80", "443:443"',
+        'PUBLIC_SHARE_BASE_URL: https://${PUBLIC_HOST}/share',
       ]) {
         expect(c).toContain(needle);
       }
-      // Only Caddy publishes ports.
       expect(c.match(/^\s+ports:/gm)).toHaveLength(1);
       expect(file('postgis/Dockerfile')).toMatch(/postgresql-16-postgis-3/);
       expect(file('Caddyfile')).toMatch(/reverse_proxy api:3000/);
     });
 
-    it('update.sh pulls, renders the env from SSM, rebuilds and runs prisma migrate deploy; seed.sh runs the seed once', () => {
-      const u = file('update.sh');
-      expect(u).toMatch(/git fetch --depth 1 origin "\$VOLTI_BRANCH"/);
-      expect(u).toMatch(/render-env\.sh/);
-      expect(u).toMatch(/prisma migrate deploy/);
+    it('scripts: migrations in update.sh, secrets with alias/volti-dev, safe .env values, admin.sh without sourcing the .env', () => {
+      expect(file('update.sh')).toMatch(/prisma migrate deploy/);
       expect(file('seed.sh')).toMatch(/dist-seed\/seed\.js/);
-      expect(file('render-env.sh')).toMatch(/--type SecureString/);
-      expect(existsSync(join(REPO, 'deploy', 'single', 'cloudshell.md'))).toBe(true);
-      expect(existsSync(join(REPO, 'deploy', 'single', 'admin.sh'))).toBe(true);
+      const env = file('render-env.sh');
+      expect(env).toMatch(/--type SecureString --key-id "\$VOLTI_KEY_ALIAS"/);
+      expect(env).toMatch(/SAFE=/);
+      const admin = file('admin.sh');
+      expect(admin).not.toMatch(/^\s*(source|\.) \/opt\/volti\/\.env/m);
+      expect(admin).toMatch(/create-customer/);
+      expect(admin).toMatch(/--message-action SUPPRESS/);
+      const shell = file('cloudshell.md');
+      expect(shell).toMatch(/sudo n 24/);
+      expect(shell).toMatch(/--store-dir \/tmp\/pnpm-store/);
+      expect(shell).toMatch(/--key-id alias\/volti-dev/);
+      expect(shell).toMatch(/shred -u \/tmp\/volti_deploy/);
+      expect(shell).not.toMatch(/create-default-vpc/);
+      expect(existsSync(join(REPO, 'deploy', 'single', 'dns.sh'))).toBe(true);
     });
   });
 });

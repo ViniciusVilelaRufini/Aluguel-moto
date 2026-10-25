@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Gera /opt/volti/.env (chmod 600) a partir do SSM Parameter Store:
 #   /volti/dev/config/*  (String, escritos pela stack volti-dev-single)
-#   /volti/dev/secrets/* (SecureString; os gerados nascem aqui na primeira execução, os manuais são opcionais)
+#   /volti/dev/secrets/* (SecureString com a chave alias/volti-dev; os gerados nascem aqui na primeira execução)
 # Nunca imprime valores.
 set -euo pipefail
 source /etc/volti/instance.env
@@ -10,29 +10,38 @@ OUT=/opt/volti/.env
 mkdir -p /opt/volti
 TMP="$(mktemp /opt/volti/.env.XXXXXX)"
 chmod 600 "$TMP"
+trap 'rm -f "$TMP"' EXIT
 
 # Segredos gerados (hex, 64 caracteres). Trocar STATION_QR_SECRET invalida os QRs das estações; FRAUD_HASH_SECRET quebra
 # a comparação dos CPFs já gravados; DB_PASSWORD precisa casar com o volume do Postgres (não troque depois do primeiro boot).
+# A role da instância só cria (ssm:Overwrite=false): nunca sobrescreve um segredo existente.
 for name in DB_PASSWORD STATION_QR_SECRET FRAUD_HASH_SECRET PICKUP_CODE_SECRET MERCADOPAGO_WEBHOOK_SECRET; do
   if ! aws ssm get-parameter --name "$VOLTI_SECRETS_PREFIX/$name" --query Parameter.Name --output text >/dev/null 2>&1; then
-    aws ssm put-parameter --name "$VOLTI_SECRETS_PREFIX/$name" --type SecureString \
+    aws ssm put-parameter --name "$VOLTI_SECRETS_PREFIX/$name" --type SecureString --key-id "$VOLTI_KEY_ALIAS" \
       --value "$(openssl rand -hex 32)" --tags Key=Projeto,Value=Volti >/dev/null
     echo "segredo gerado: $name"
   fi
 done
 
+# Só valores com caracteres seguros entram no .env (o Compose interpola $ e o arquivo nunca é executado como shell).
+SAFE='^[A-Za-z0-9._:/,@+=-]*$'
 dump() {
   aws ssm get-parameters-by-path --path "$1" --with-decryption --recursive \
     --query 'Parameters[].[Name,Value]' --output text |
     while IFS=$'\t' read -r key value; do
-      printf '%s=%s\n' "${key##*/}" "$value"
+      name="${key##*/}"
+      if [[ ! "$name" =~ ^[A-Z][A-Z0-9_]*$ ]] || [[ ! "$value" =~ $SAFE ]]; then
+        echo "ignorado (nome ou valor com caracteres não permitidos): $name" >&2
+        continue
+      fi
+      printf '%s=%s\n' "$name" "$value"
     done
 }
 dump "$VOLTI_CONFIG_PREFIX" >>"$TMP"
 dump "$VOLTI_SECRETS_PREFIX" >>"$TMP"
 
-# Endereço público: api.<domínio> se configurado; senão <ip>.sslip.io (DNS público que resolve para o próprio IP e que o
-# Let's Encrypt aceita). Sem Elastic IP o IP muda ao parar/iniciar a instância: rode o update de novo e reaponte os apps.
+# Endereço público: API_DOMAIN (registro A mantido por dns.sh) ou, sem domínio, <ip>.sslip.io (DNS público que resolve
+# para o próprio IP e que o Let's Encrypt aceita).
 domain="$(grep '^API_DOMAIN=' "$TMP" | cut -d= -f2- || true)"
 if [ -n "$domain" ] && [ "$domain" != "-" ]; then
   host="$domain"
@@ -44,4 +53,5 @@ fi
 echo "PUBLIC_HOST=$host" >>"$TMP"
 
 mv "$TMP" "$OUT"
+trap - EXIT
 echo "env pronto ($(wc -l <"$OUT") variáveis); API em https://$host"

@@ -35,6 +35,8 @@ export interface EnvConfig {
   budgetUsd: number;
   /** Budget e-mail/SNS alerts on actual spend at these percentages (plus one at 100% of the forecast). */
   budgetAlertPercents: number[];
+  /** Cost-allocation tag filter of the budget (dev: shared account, only the tagged resources). Unset = whole account. */
+  budgetTagFilter?: string;
   /** 'essential' (dev): only API 5xx and DLQ alarms (inside the 10 free alarms). 'full': every alarm. */
   alarms: 'full' | 'essential';
   /** WAF on the ALB (regional) and on CloudFront (us-east-1 stack). Off in dev (US$ 5/ACL + US$ 1/rule per month). */
@@ -119,6 +121,7 @@ export const CONFIGS: Record<EnvName, EnvConfig> = {
     dlqRetentionDays: 14,
     budgetUsd: 20,
     budgetAlertPercents: [50, 80, 100],
+    budgetTagFilter: 'user:projeto$volti',
     alarms: 'essential',
     wafEnabled: false,
     cloudFrontPriceClass: 'PriceClass_100',
