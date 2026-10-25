@@ -19,7 +19,7 @@ export function SideNav({ items = [], value, onChange, footer, brand = 'volti', 
         const on = it.value === value;
         const name = it.badge != null ? `${it.label}, ${it.badge} ${it.badge === 1 ? 'pendente' : 'pendentes'}` : it.label;
         return (
-          <button key={it.value} type="button" className="nav-item" data-on={on || undefined} aria-current={on ? 'page' : undefined} aria-label={name} title={it.label}
+          <button key={it.value} type="button" className="nav-item" data-on={on || undefined} aria-current={on ? 'page' : undefined} aria-label={name} title={name}
             onClick={() => onChange && onChange(it.value)}
             style={{ display: 'flex', alignItems: 'center', gap: 12, height: 42, padding: '0 12px', borderRadius: 'var(--radius-sm)', border: 0, cursor: 'pointer', textAlign: 'left',
               font: 'var(--fw-semibold) 14px/1 var(--font-sans)' }}>

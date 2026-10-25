@@ -76,15 +76,15 @@ export function BatteriesPanel() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18, alignItems: 'start' }}>
-        <div>
+        <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
           <SectionTitle>Estações de troca</SectionTitle>
           <DataTable<S<'SwapStation'>> dense testId="stations-table" rows={stations.data?.items ?? []} loading={stations.isLoading} empty="Nenhuma estação cadastrada" emptyIcon="Warehouse"
             columns={[
               { key: 'name', label: 'Estação', render: (s) => <div><div style={{ fontWeight: 600 }}>{s.name}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'normal' }}>{s.address}</div></div> },
               { key: 'available', label: 'Carregadas', align: 'right', render: (s) => <span style={{ fontFamily: 'var(--font-mono)' }}>{s.availableBatteries}/{s.totalSlots}</span> },
               { key: 'stock', label: 'No estoque', align: 'right', render: (s) => inStation.get(s.id) ?? 0 },
-              { key: 'hours', label: 'Horário', render: (s) => <span style={{ fontSize: 12 }}>{s.open24h ? '24 h' : s.openingHours}</span> },
-              ...(canSwaps ? [{ key: 'swaps', label: '', align: 'right' as const, render: (s: S<'SwapStation'>) => <Button size="sm" variant="ghost" icon="History" testId={`station-swaps-${s.id}`} onClick={() => setSwapsOf(s)}>Trocas</Button> }] : []),
+              { key: 'hours', label: 'Horário', wrap: true, render: (s) => <span style={{ fontSize: 12 }}>{s.open24h ? '24 h' : s.openingHours}</span> },
+              ...(canSwaps ? [{ key: 'swaps', label: '', align: 'right' as const, pin: true, render: (s: S<'SwapStation'>) => <Button size="sm" variant="ghost" icon="History" testId={`station-swaps-${s.id}`} onClick={() => setSwapsOf(s)}>Trocas</Button> }] : []),
             ]} />
         </div>
         <VanStock staff={staff.data?.items ?? []} stations={stations.data?.items ?? []} depots={(depots.data?.items ?? []).filter((d) => d.active)} canTransfer={canTransfer} />
@@ -251,14 +251,14 @@ function MovementsModal({ battery, depotNames, depots, onClose }: { battery: Bat
   const { rows, loading, error, pager, refetch } = usePagedQuery<S<'BatteryMovement'>>(['battery-movements', battery.id], (cursor) =>
     unwrap(api.GET('/batteries/{id}/movements', { params: { path: { id: battery.id }, query: { cursor, limit: 10 } } })));
   return (
-    <Modal open title={`Movimentações · ${battery.serial}`} onClose={onClose} width={640} testId="battery-movements-dialog" actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
+    <Modal open title={`Movimentações · ${battery.serial}`} onClose={onClose} width={820} testId="battery-movements-dialog" actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
       <ErrorNote error={error} onRetry={() => refetch()} />
       <DataTable<S<'BatteryMovement'>> dense testId="battery-movements-table" rows={rows} loading={loading} pager={pager} empty="Nenhuma movimentação registrada" emptyIcon="History"
         columns={[
           { key: 'at', label: 'Quando', render: (m) => formatDateTimeIn(m.at, m.depotId ? zones.get(m.depotId) : undefined) },
           { key: 'to', label: 'Mudança', render: (m) => movementTitle(m) },
           { key: 'depotId', label: 'Galpão', render: (m) => (m.depotId && depotNames.get(m.depotId)) || '—' },
-          { key: 'reason', label: 'Motivo', render: (m) => <span style={{ whiteSpace: 'normal' }}>{m.reason ?? '—'}</span> },
+          { key: 'reason', label: 'Motivo', wrap: true, render: (m) => m.reason ?? '—' },
         ]} />
     </Modal>
   );
@@ -307,10 +307,10 @@ function BatteryList({ stationNames, staffNames, depotNames, depots, depotId }: 
           { key: 'where', label: 'Onde', render: (b) => batteryLocation(b, { stations: stationNames, staff: staffNames, depots: depotNames }) },
           { key: 'updatedAt', label: 'Atualizada', render: (b) => timeAgo(b.updatedAt) },
           ...(hasActions ? [{
-            key: 'actions', label: '', align: 'right' as const, render: (b: Battery) => {
+            key: 'actions', label: '', align: 'right' as const, pin: true, render: (b: Battery) => {
               const a = batteryActions(b.status);
               return (
-                <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'nowrap', whiteSpace: 'nowrap' }}>
                   {canMark && a.markCharged && <Button size="sm" variant="ghost" icon="BatteryCharging" testId={`battery-charged-${b.id}`} onClick={() => markCharged(b)}>Carregada</Button>}
                   {canDefect && a.reportDefect && <Button size="sm" variant="ghost" icon="TriangleAlert" testId={`battery-defect-${b.id}`} onClick={() => setReasonFor({ battery: b, kind: 'defect' })}>Defeito</Button>}
                   {canRetire && a.retire && <Button size="sm" variant="ghost" icon="Trash2" testId={`battery-retire-${b.id}`} style={{ color: 'var(--danger-ink)' }} onClick={() => setReasonFor({ battery: b, kind: 'retire' })}>Dar baixa</Button>}

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, unwrap } from '@/lib/api';
+import { api, ApiError, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { PLAN_LABEL } from '@/lib/labels';
@@ -17,7 +17,7 @@ import { toCents, toReais, validMoney } from '@/lib/money';
 import { ModelsSection } from '@/components/ModelsSection';
 import { couponLimitsError } from '@/lib/coupon';
 import { formatDate, dayEndIso, dayStartIso } from '@/lib/format';
-import { buildFeeCreate, buildPlanCreate, EMPTY_FEE_FORM, EMPTY_PLAN_FORM, PLAN_UNIT_BY_CODE, type FeeForm, type PlanForm } from '@/lib/admin-forms';
+import { activePlanForCode, buildFeeCreate, buildPlanCreate, firstFreePlanCode, EMPTY_FEE_FORM, EMPTY_PLAN_FORM, PLAN_UNIT_BY_CODE, type FeeForm, type PlanForm } from '@/lib/admin-forms';
 
 const UNIT_SUFFIX: Record<S<'PlanUnit'>, string> = { minute: '/min', hour: '/hora', day: '/dia', week: '/semana', month: '/mês' };
 
@@ -107,8 +107,8 @@ export default function SettingsPage() {
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
 
-  const sec = (t: string, d: string, c: React.ReactNode) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+  const sec = (t: string, d: string, c: React.ReactNode, wide = false) => (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0, ...(wide ? { gridColumn: '1 / -1' } : null) }}>
       <div><div style={{ font: '700 18px/1.25 var(--font-sans)' }}>{t}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{d}</div></div>
       {c}
     </div>
@@ -130,15 +130,14 @@ export default function SettingsPage() {
           <DataTable<S<'PricingPlan'>> loading={plans.isLoading} rows={plans.data?.items ?? []}
             columns={[
               { key: 'name', label: 'Plano', render: (p) => PLAN_LABEL[p.code] ?? p.name },
-              { key: 'unit', label: 'Preço', align: 'right', render: (p) => canEdit ? <MiniInput label={`Preço ${p.name}`} width={84} value={planEdit[p.id]?.unit ?? toReais(p.unitPriceCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], unit: v } }))} /> : toReais(p.unitPriceCents) },
-              { key: 'unitLabel', label: 'Unidade', render: (p) => <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{UNIT_SUFFIX[p.unit]}</span> },
+              { key: 'unit', label: 'Preço (por unidade)', align: 'right', render: (p) => <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>{canEdit ? <MiniInput label={`Preço ${p.name}`} width={84} value={planEdit[p.id]?.unit ?? toReais(p.unitPriceCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], unit: v } }))} /> : toReais(p.unitPriceCents)}<span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{UNIT_SUFFIX[p.unit]}</span></span> },
               { key: 'unlock', label: 'Desbloqueio', align: 'right', render: (p) => canEdit ? <MiniInput label={`Desbloqueio ${p.name}`} width={76} value={planEdit[p.id]?.unlock ?? toReais(p.unlockFeeCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], unlock: v } }))} /> : toReais(p.unlockFeeCents) },
               { key: 'pause', label: 'Pausa/min', align: 'right', render: (p) => canEdit ? <MiniInput label={`Pausa ${p.name}`} width={76} value={planEdit[p.id]?.pause ?? toReais(p.pausePerMinuteCents)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], pause: v } }))} /> : toReais(p.pausePerMinuteCents) },
-              { key: 'active', label: 'Ativo', align: 'right', render: (p) => <Switch label="" disabled={!canEdit} checked={planEdit[p.id]?.active ?? p.active} onChange={(v: boolean) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], active: v } }))} /> },
+              { key: 'active', label: 'Ativo', align: 'right', pin: true, render: (p) => <Switch label="" ariaLabel={`Plano ${PLAN_LABEL[p.code] ?? p.name} ativo`} disabled={!canEdit} checked={planEdit[p.id]?.active ?? p.active} onChange={(v: boolean) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], active: v } }))} /> },
             ]} />
           {canEdit && <div><Button size="sm" variant="secondary" icon="Plus" testId="new-plan" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setNewPlan(true)}>Novo plano</Button></div>}
           </>
-        ))}
+        ), true)}
         {sec('Taxas', 'Cobranças fixas', (
           <>
           <Card padding={6}>
@@ -174,14 +173,18 @@ export default function SettingsPage() {
                 { key: 'discount', label: 'Desconto', render: (c) => (c.discountType === 'percent' ? `${c.percentOff}%` : `R$ ${toReais(c.amountOffCents ?? 0)}`) + (c.planCodes?.length ? ` · ${c.planCodes.map((p) => PLAN_LABEL[p]).join(', ')}` : '') },
                 { key: 'validUntil', label: 'Validade', render: (c) => <span style={{ fontSize: 12 }}>{c.validUntil ? `até ${formatDate(c.validUntil)}` : 'Sem prazo'}</span> },
                 { key: 'redemptions', label: 'Usos', align: 'right', render: (c) => <span style={{ fontFamily: 'var(--font-mono)' }}>{c.redemptions.toLocaleString('pt-BR')}{c.maxRedemptions ? ` / ${c.maxRedemptions.toLocaleString('pt-BR')}` : ''}</span> },
-                { key: 'active', label: 'Ativo', align: 'right', render: (c) => <Switch label="" disabled={!canEdit} checked={couponEdit[c.id] ?? c.active} onChange={(v: boolean) => setCouponEdit((m) => ({ ...m, [c.id]: v }))} /> },
+                { key: 'active', label: 'Ativo', align: 'right', pin: true, render: (c) => <Switch label="" ariaLabel={`Cupom ${c.code} ativo`} disabled={!canEdit} checked={couponEdit[c.id] ?? c.active} onChange={(v: boolean) => setCouponEdit((m) => ({ ...m, [c.id]: v }))} /> },
               ]} />
             {canEdit && <div><Button size="sm" variant="secondary" icon="Plus" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setNewCoupon(true)}>Novo cupom</Button></div>}
           </>
-        ))}
+        ), true)}
       </div>
       {newCoupon && <CouponModal onClose={() => setNewCoupon(false)} />}
-      {newPlan && <PlanModal onClose={() => setNewPlan(false)} />}
+      {newPlan && (
+        <PlanModal plans={plans.data?.items ?? []} onClose={() => setNewPlan(false)}
+          onEdit={() => { setNewPlan(false); toast('Edite o preço do plano na tabela e salve as alterações'); }}
+          onDeactivate={(p) => { setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], active: false } })); setNewPlan(false); toast(`Plano ${PLAN_LABEL[p.code] ?? p.name} marcado como inativo. Salve as alterações e crie o novo plano.`); }} />
+      )}
       {newFee && <FeeModal onClose={() => setNewFee(false)} />}
     </Page>
   );
@@ -250,29 +253,46 @@ function CouponModal({ onClose }: { onClose: () => void }) {
 }
 
 /** Criar plano (`POST /pricing/plans`, só admin): valores em reais, enviados em centavos. Um plano ativo por código. */
-function PlanModal({ onClose }: { onClose: () => void }) {
+function PlanModal({ plans, onClose, onEdit, onDeactivate }: { plans: S<'PricingPlan'>[]; onClose: () => void; onEdit: () => void; onDeactivate: (p: S<'PricingPlan'>) => void }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const [f, setF] = useState<PlanForm>(EMPTY_PLAN_FORM);
+  const free = firstFreePlanCode(plans, Object.keys(PLAN_LABEL) as S<'PlanCode'>[]);
+  const [f, setF] = useState<PlanForm>(() => (free ? { ...EMPTY_PLAN_FORM, code: free, unit: PLAN_UNIT_BY_CODE[free], recurring: free === 'weekly' || free === 'monthly' } : EMPTY_PLAN_FORM));
+  const existing = activePlanForCode(plans, f.code);
   const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const submit = async () => {
     setErr(null);
+    if (existing) return;
     const built = buildPlanCreate(f);
     if (!built.ok) { setErr(new Error(built.error)); return; }
     setBusy(true);
     try {
       await unwrap(api.POST('/pricing/plans', { body: built.body }));
       toast('Plano criado · log de auditoria atualizado'); qc.invalidateQueries({ queryKey: ['plans'] }); onClose();
-    } catch (e) { setErr(e); } finally { setBusy(false); }
+    } catch (e) {
+      // 409: outro admin criou o plano nesse meio-tempo; a mensagem do servidor traz o código interno, então usamos o nome em pt-BR.
+      setErr(e instanceof ApiError && e.status === 409 ? new Error(`Já existe um plano ativo para ${PLAN_LABEL[f.code]}. Atualize a página e edite ou desative o existente.`) : e);
+    } finally { setBusy(false); }
   };
   return (
     <Modal open title="Novo plano" onClose={onClose} testId="plan-form"
-      actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" testId="plan-save" disabled={busy} onClick={submit}>Criar plano</Button></>}>
+      actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" testId="plan-save" disabled={busy || !!existing} onClick={submit}>Criar plano</Button></>}>
       <Field label="Código" hint="Só pode haver um plano ativo por código.">
         <Select<S<'PlanCode'>> testId="plan-code" value={f.code} onChange={(code) => setF((x) => ({ ...x, code, unit: PLAN_UNIT_BY_CODE[code], recurring: code === 'weekly' || code === 'monthly' }))}
           options={(Object.keys(PLAN_LABEL) as S<'PlanCode'>[]).map((c) => ({ value: c, label: PLAN_LABEL[c] }))} />
       </Field>
+      {existing && (
+        <Alert tone="warning" icon="Info">
+          <div data-testid="plan-conflict" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span>Já existe um plano ativo para {PLAN_LABEL[f.code]} ({existing.name}). Só pode haver um por código: edite o preço dele ou desative-o antes de criar outro.</span>
+            <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Button size="sm" variant="secondary" testId="plan-conflict-edit" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={onEdit}>Editar o existente</Button>
+              <Button size="sm" variant="secondary" testId="plan-conflict-deactivate" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => onDeactivate(existing)}>Desativar o existente</Button>
+            </span>
+          </div>
+        </Alert>
+      )}
       <Field label="Nome"><TextInput testId="plan-name" value={f.name} onChange={(name) => setF((x) => ({ ...x, name }))} placeholder="Diária" /></Field>
       <Field label="Descrição (opcional)"><TextInput value={f.description} onChange={(description) => setF((x) => ({ ...x, description }))} /></Field>
       <Field label="Unidade de cobrança"><Select<S<'PlanUnit'>> testId="plan-unit" value={f.unit} onChange={(unit) => setF((x) => ({ ...x, unit }))} options={(Object.keys(UNIT_SUFFIX) as S<'PlanUnit'>[]).map((u) => ({ value: u, label: UNIT_SUFFIX[u].slice(1) }))} /></Field>

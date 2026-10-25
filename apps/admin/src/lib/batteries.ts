@@ -41,7 +41,7 @@ export function batteryLocation(b: Battery, names: { stations?: Map<string, stri
     case 'charging': return depot ? `Carregador · ${depot}` : 'Carregador';
     case 'charged': return depot ?? 'Galpão';
     case 'defective': return depot ? `Fora de uso · ${depot}` : 'Fora de uso';
-    case 'retired': return '—';
+    case 'retired': return depot ? `Descartada · ${depot}` : '—';
   }
 }
 

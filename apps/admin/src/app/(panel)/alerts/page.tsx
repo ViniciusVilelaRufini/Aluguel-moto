@@ -1,11 +1,12 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can } from '@/lib/permissions';
+import { can, canOpen } from '@/lib/permissions';
 import { PRIORITY_LABEL, PRIORITY_ORDER, priorityTone } from '@/lib/status';
 import { timeAgo } from '@/lib/format';
 import { ALERT_TYPE } from '@/lib/labels';
@@ -36,6 +37,10 @@ export default function AlertsPage() {
   const [resolving, setResolving] = useState<S<'Alert'> | null>(null);
   const [assigning, setAssigning] = useState<S<'Alert'> | null>(null);
   const canManage = can(groups, 'alert.manage');
+  const canSeeDepots = canOpen(groups, 'depots');
+  // Alertas de estoque (`battery_stock_low`) vêm sem moto: o galpão é o contexto.
+  const depotsQ = useQuery({ queryKey: ['depots', 'all'], queryFn: () => unwrap(api.GET('/depots', { params: { query: { includeInactive: true } } })) });
+  const depotNames = useMemo(() => new Map((depotsQ.data?.items ?? []).map((d) => [d.id, d.name])), [depotsQ.data]);
   // Alertas que chegaram pelo tempo real nesta visita piscam em coral ao entrar na fila.
   const [fresh, setFresh] = useState<Set<string>>(() => new Set());
   useRealtimeEvent('alert.created', (p) => setFresh((s) => new Set(s).add(p.alertId)));
@@ -79,7 +84,13 @@ export default function AlertsPage() {
               <div style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'normal', maxWidth: 420 }}>{r.message}{r.assigneeName ? ` · ${r.assigneeName}` : ''}</div>
             </div>
           ) },
-          { key: 'vehicleCode', label: 'Moto', mono: true, render: (r) => r.vehicleCode ?? '—' },
+          // Moto (alertas de rastreador) ou galpão (estoque de baterias) na mesma coluna: cabe em 1366 px com as ações.
+          { key: 'vehicleCode', label: 'Moto / galpão', render: (r) => {
+            if (r.vehicleCode) return <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}>{r.vehicleCode}</span>;
+            if (!r.depotId) return '—';
+            const name = depotNames.get(r.depotId) ?? 'Galpão';
+            return canSeeDepots ? <Link href={`/galpoes?depot=${r.depotId}`} data-testid="alert-depot-link" style={{ color: 'var(--text-primary)', textDecoration: 'underline', textUnderlineOffset: 3 }}>{name}</Link> : name;
+          } },
           { key: 'createdAt', label: 'Quando', align: 'right', render: (r) => timeAgo(r.createdAt) },
           { key: 'a', label: '', align: 'right', render: (r) => r.status === 'resolved' ? <Pill>Resolvido</Pill> : (
             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
@@ -94,7 +105,7 @@ export default function AlertsPage() {
       <ReasonDialog
         open={!!resolving}
         title="Resolver alerta"
-        description={resolving ? `${TYPE_INFO[resolving.type]?.[0] ?? resolving.type}${resolving.vehicleCode ? ` · ${resolving.vehicleCode}` : ''}` : undefined}
+        description={resolving ? `${TYPE_INFO[resolving.type]?.[0] ?? resolving.type}${resolving.vehicleCode ? ` · ${resolving.vehicleCode}` : ''}${resolving.depotId && depotNames.get(resolving.depotId) ? ` · ${depotNames.get(resolving.depotId)}` : ''}` : undefined}
         confirmLabel="Resolver"
         onClose={() => setResolving(null)}
         onConfirm={async (resolution) => {

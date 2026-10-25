@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
-import { buildWalletAdjustment, type AdjustDirection } from '@/lib/admin-forms';
+import { buildWalletAdjustment, walletAdjustFeedback, type AdjustDirection } from '@/lib/admin-forms';
 import { Button } from '@/ds/Button';
 import { ErrorNote, Field, Modal, Select, TextArea, TextInput, useToast } from './ui';
 
@@ -24,8 +24,9 @@ export function WalletAdjustDialog({ customerId, onClose }: { customerId: string
     if (!built.ok) { setErr(new Error(built.error)); return; }
     setBusy(true);
     try {
-      await unwrap(api.POST('/customers/{id}/wallet/adjustments', { params: { path: { id: customerId }, header: { 'Idempotency-Key': key.current } }, body: built.body }));
-      toast('Ajuste lançado na carteira');
+      const entry = await unwrap(api.POST('/customers/{id}/wallet/adjustments', { params: { path: { id: customerId }, header: { 'Idempotency-Key': key.current } }, body: built.body }));
+      const fb = walletAdjustFeedback(entry);
+      toast(fb.message, fb.tone);
       qc.invalidateQueries({ queryKey: ['customer', customerId] });
       onClose();
     } catch (e) { setErr(e); } finally { setBusy(false); }
@@ -36,7 +37,7 @@ export function WalletAdjustDialog({ customerId, onClose }: { customerId: string
       <Field label="Tipo">
         <Select<AdjustDirection> testId="wallet-direction" value={direction} onChange={setDirection} options={[{ value: 'credit', label: 'Crédito (soma ao saldo)' }, { value: 'debit', label: 'Débito (subtrai do saldo)' }]} />
       </Field>
-      <Field label="Valor (R$)" hint="Até R$ 1.000,00 por lançamento">
+      <Field label="Valor (R$)" hint={direction === 'debit' ? 'Até R$ 1.000,00 por lançamento. Débito não deve passar do saldo da carteira: o saldo resultante aparece ao lançar.' : 'Até R$ 1.000,00 por lançamento'}>
         <TextInput testId="wallet-amount" value={amount} onChange={setAmount} placeholder="10,00" />
       </Field>
       <Field label="Motivo" hint="Fica registrado na auditoria.">

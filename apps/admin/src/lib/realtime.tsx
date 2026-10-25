@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { io, type Socket } from 'socket.io-client';
 import { api, unwrap } from './api';
 import { API_BASE_URL } from './config';
+import { pendingAlertCount } from './fleet-copy';
 import { useAuth } from './auth';
 import { getToken } from './token-store';
 import type { RealtimeEvents, S } from './types';
@@ -53,8 +54,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const aq = useQuery({
     queryKey: ['alerts', 'open-count'],
     queryFn: async () => {
-      const r = await unwrap(api.GET('/alerts', { params: { query: { status: 'open', limit: 100 } } }));
-      return r.items.length;
+      // Pendentes = abertos + atribuídos. Total real do servidor (não o tamanho da primeira página de /alerts).
+      const r = await unwrap(api.GET('/reports/dashboard'));
+      return r.openAlerts;
     },
     enabled: !!token && canFleet,
   });
@@ -120,7 +122,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<RealtimeState>(
-    () => ({ connected, vehicles, vehiclesReady: vq.isSuccess, openAlerts: (aq.data ?? 0) + alertDelta, on }),
+    () => ({ connected, vehicles, vehiclesReady: vq.isSuccess, openAlerts: pendingAlertCount(aq.data, alertDelta), on }),
     [connected, vehicles, vq.isSuccess, aq.data, alertDelta, on],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/labels';
 import { formatCompactBRL, moneyDelta, percentDelta, pointsDelta, previousRange } from '@/lib/finance-delta';
-import { formatBRL } from '@/lib/format';
+import { formatBRL, formatBRLBar } from '@/lib/format';
 import { csvName, periodRange } from '@/lib/period';
 import { allowedFinanceTabs, resolveFinanceTab, type FinanceTab } from '@/lib/finance-tabs';
 import { useAuth } from '@/lib/auth';
@@ -113,7 +113,7 @@ export default function FinancePage() {
               <StatTile icon="Wallet" label="Receita" numeric={f ? f.totalRevenueCents : null} format={formatCompactBRL} delta={dRevenue?.text} trend={dRevenue?.trend} />
               <StatTile icon="Gauge" label="Taxa de ocupação" numeric={occAvg === null ? null : Math.round(occAvg)} format={(n) => `${n}%`} delta={dOcc?.text} trend={dOcc?.trend} />
               <StatTile icon="Bike" label="Receita/moto/dia" numeric={perVehicleDay} format={formatBRL} delta={dPerVehicle?.text} trend={dPerVehicle?.trend} />
-              <StatTile icon="CircleAlert" label="Inadimplência" numeric={f ? f.delinquentAmountCents : null} format={formatBRL} goodWhen="down" delta={dDelinquent?.text} trend={dDelinquent ? (dDelinquent.trend === 'up' ? 'down' : 'up') : undefined}
+              <StatTile icon="CircleAlert" label="Inadimplência" numeric={f ? f.delinquentAmountCents : null} format={formatBRL} goodWhen="down" delta={dDelinquent?.text} trend={dDelinquent ? (dDelinquent.trend === 'flat' ? 'flat' : dDelinquent.trend === 'up' ? 'down' : 'up') : undefined}
                 caption={f ? `${f.delinquentCustomers} ${f.delinquentCustomers === 1 ? 'cliente' : 'clientes'}` : undefined} />
             </>}
           </div>
@@ -123,15 +123,15 @@ export default function FinancePage() {
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 10, height: 180 }}>
                 {barList.map(([d, v], i) => (
                   <div key={d} style={{ flex: 1, maxWidth: 72, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, height: '100%', justifyContent: 'flex-end', minWidth: 0, margin: '0 auto' }}>
-                    <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{(v / 100000).toFixed(1).replace('.', ',')}</span>
+                    <span style={{ font: '600 11px/1 var(--font-mono)', color: 'var(--text-secondary)' }}>{formatBRLBar(v)}</span>
                     <div title={formatBRL(v)} style={{ width: '100%', height: `${(v / max) * 130}px`, minHeight: 2, borderRadius: 8, background: v === max ? 'var(--brand)' : 'var(--green-200)', transformOrigin: 'bottom', animation: `vt-bar-grow 520ms var(--ease-out) ${i * 40}ms backwards` }} />
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{weekly || spanDays > 7 ? DAYMONTH.format(new Date(d)) : WEEKDAY.format(new Date(d)).replace('.', '')}</span>
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{weekly || spanDays > 7 ? DAYMONTH.format(new Date(d)) : `${WEEKDAY.format(new Date(d)).replace('.', '')} ${DAYMONTH.format(new Date(d))}`}</span>
                   </div>
                 ))}
                 {on && rev.isLoading && [40, 70, 55, 90, 65, 80, 50].map((h, i) => <Skeleton key={i} h={h + '%'} r={8} style={{ flex: 1, alignSelf: 'flex-end' }} />)}
                 {(!on || !rev.isLoading) && barList.length === 0 && <div style={{ margin: 'auto' }}><Empty compact icon="ChartColumn">{on ? 'Sem receita no período' : 'Informe um período válido'}</Empty></div>}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8 }}>Valores em R$ mil.</div>
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 8 }}>Valores líquidos em R$.</div>
             </Card>
             <DataTable dense rows={(f?.revenueByPlan ?? []).map((p) => ({ id: p.planCode, ...p }))} loading={fin.isLoading} empty="Sem aluguéis no período."
               columns={[
