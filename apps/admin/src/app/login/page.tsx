@@ -10,7 +10,7 @@ import { Field, Select, ErrorNote } from '@/components/ui';
 import { DEV_USERS, useAuth } from '@/lib/auth';
 import { AUTH_MODE } from '@/lib/config';
 import { startCognitoLogin } from '@/lib/cognito';
-import { menuFor } from '@/lib/permissions';
+import { homeFor } from '@/lib/permissions';
 import { errorText } from '@/lib/api';
 
 type DevGroup = keyof typeof DEV_USERS;
@@ -36,7 +36,7 @@ export default function LoginPage() {
     setError(null);
     try {
       await loginDev(group);
-      router.replace(menuFor([group])[0]?.href ?? '/');
+      router.replace(homeFor([group]) ?? '/');
     } catch (e) {
       setError(errorText(e));
     } finally {

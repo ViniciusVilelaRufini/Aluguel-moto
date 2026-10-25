@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { can, menuFor, canSeeFullCpf } from '@/lib/permissions';
+import { can, menuFor, canSeeFullCpf, homeFor } from '@/lib/permissions';
 
 const keys = (g: string[]) => menuFor(g as never).map((m) => m.key);
 
@@ -50,8 +50,8 @@ describe('menu by group', () => {
     expect(fin).toContain('depots');
     expect(fin).not.toContain('pickups');
     expect(fin).not.toContain('handovers');
-    // A primeira seção é a tela inicial: financeiro continua abrindo em Financeiro.
-    expect(fin[0]).toBe('finance');
+    // Tela inicial: financeiro continua abrindo em Financeiro (Alertas entrou no menu dele na Task 14, mas não é início).
+    expect(homeFor(['financeiro'])).toBe('/finance');
   });
   it('campo has no panel menu', () => {
     expect(keys(['campo'])).toEqual([]);

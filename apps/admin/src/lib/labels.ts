@@ -36,7 +36,9 @@ export const PAYMENT_STATUS: Record<S<'PaymentStatus'>, [string, Tone]> = {
   failed: ['Falhou', 'danger'],
 };
 
-export const PAYMENT_KIND: Record<S<'PaymentKind'>, string> = { rental: 'Aluguel', deposit: 'Caução', top_up: 'Recarga', subscription: 'Assinatura', fee: 'Taxa' };
+export const PAYMENT_KIND: Record<S<'PaymentKind'>, string> = { rental: 'Aluguel', deposit: 'Caução', top_up: 'Recarga', subscription: 'Assinatura', fee: 'Taxa', debt_settlement: 'Quitação de dívida' };
+/** Como a dívida de um pagamento recusado foi quitada (Task 14). */
+export const DEBT_SETTLEMENT: Record<S<'DebtSettlementKind'>, string> = { payment: 'Paga pelo cliente', manual: 'Quitação registrada pelo financeiro' };
 export const PAYMENT_METHOD: Record<S<'PaymentMethod'>, string> = { card: 'Cartão', pix: 'Pix', wallet: 'Carteira' };
 
 export const RENTAL_EVENT: Record<S<'RentalEventType'>, string> = {
@@ -81,6 +83,7 @@ export const ALERT_TYPE: Record<S<'AlertType'>, [string, string]> = {
   incident_reported: ['Ocorrência registrada', 'FileText'],
   speed_limiter_noncompliant: ['Limitador de velocidade acima de 32 km/h', 'Gauge'],
   battery_stock_low: ['Poucas baterias carregadas no galpão', 'BatteryWarning'],
+  payment_needs_review: ['Pagamento precisa de revisão', 'Wallet'],
 };
 
 /** Ações de auditoria da moto (`/audit-logs?entityId=`), no vocabulário do log do design. */

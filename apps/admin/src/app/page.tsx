@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { menuFor } from '@/lib/permissions';
+import { homeFor } from '@/lib/permissions';
 
 export default function Home() {
   const { ready, token, groups } = useAuth();
@@ -11,7 +11,7 @@ export default function Home() {
   useEffect(() => {
     if (!ready) return;
     if (!token) router.replace('/login');
-    else router.replace(menuFor(groups)[0]?.href ?? '/login');
+    else router.replace(homeFor(groups) ?? '/login');
   }, [ready, token, groups, router]);
   return null;
 }

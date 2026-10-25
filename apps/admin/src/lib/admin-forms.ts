@@ -179,13 +179,42 @@ export function walletAdjustFeedback(entry: { amountCents: number; balanceAfterC
   return { message: `Ajuste lançado. Saldo atual: ${saldo}`, tone: 'success' };
 }
 
-/** POST /customers/{id}/wallet/adjustments: valor em reais (positivo) + sentido; o contrato aceita de -R$ 1.000 a R$ 1.000, nunca zero. */
-export function buildWalletAdjustment(amount: string, direction: AdjustDirection, reason: string): Built<S<'WalletAdjustmentRequest'>> {
+/**
+ * POST /customers/{id}/wallet/adjustments: valor em reais (positivo) + sentido; o contrato aceita de -R$ 1.000 a R$ 1.000,
+ * nunca zero. QA-04 (Task 14): com o saldo conhecido (`Customer.walletBalanceCents`), o débito não passa do saldo.
+ */
+export function buildWalletAdjustment(amount: string, direction: AdjustDirection, reason: string, balanceCents?: number): Built<S<'WalletAdjustmentRequest'>> {
   const reais = parseReais(amount);
   if (reais === null || reais <= 0) return fail('Informe o valor em reais, por exemplo 10,00');
   const cents = toCents(amount);
   if (cents > WALLET_ADJUST_MAX_CENTS) return fail('O ajuste vai até R$ 1.000,00 por lançamento');
+  if (direction === 'debit' && balanceCents !== undefined && cents > balanceCents) {
+    return fail(balanceCents <= 0 ? `A carteira não tem saldo para débito (saldo: ${formatBRL(balanceCents)}).` : `O débito passa do saldo da carteira. Debite no máximo ${formatBRL(balanceCents)}.`);
+  }
   const e = reasonError(reason);
   if (e) return fail(e);
   return { ok: true, body: { amountCents: direction === 'debit' ? -cents : cents, reason: reason.trim() } };
+}
+
+// ---------- Inadimplência (Task 14) ----------
+
+/** Linha da ficha: "Inadimplente · R$ 70,00 em aberto" (valor só para quem vê `debtCents`). Em dia → null. */
+export function delinquencySummary(c: Pick<S<'Customer'>, 'delinquent' | 'debtCents'>): string | null {
+  if (!c.delinquent && !c.debtCents) return null;
+  if (c.debtCents && c.debtCents > 0) return `Inadimplente · ${formatBRL(c.debtCents)} em aberto`;
+  return 'Inadimplente';
+}
+
+/** Linhas do detalhe do pagamento sobre dívida: saldo devedor, quitação e o pagamento que a quitação cobre. */
+export function paymentDebtLines(p: Pick<S<'Payment'>, 'outstandingCents' | 'debtSettledAt' | 'debtSettlement' | 'settlesPaymentId'>, fmtDateTime: (iso: string) => string): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  if (p.outstandingCents !== undefined) out.push(['Saldo devedor', formatBRL(p.outstandingCents)]);
+  if (p.debtSettledAt) out.push(['Dívida quitada', `${p.debtSettlement === 'manual' ? 'Registrada pelo financeiro' : 'Paga pelo cliente'} em ${fmtDateTime(p.debtSettledAt)}`]);
+  if (p.settlesPaymentId) out.push(['Quita o pagamento', p.settlesPaymentId.slice(0, 8)]);
+  return out;
+}
+
+/** Cliente no detalhe do pagamento (QA-17): nome quando a API manda; senão o início do id. */
+export function paymentCustomerLabel(p: Pick<S<'Payment'>, 'customerId' | 'customerName'>): string {
+  return p.customerName?.trim() || p.customerId.slice(0, 8);
 }
