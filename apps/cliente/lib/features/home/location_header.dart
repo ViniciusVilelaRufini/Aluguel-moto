@@ -37,32 +37,30 @@ class LocationHeader extends ConsumerWidget {
     final located = ref.watch(userLocationProvider).value != null;
     final nearest = ref.watch(depotsProvider).value?.firstOrNull;
     final place = locationPlaceLabel(l, ref.watch(currentDepotProvider).value, located: located, nearest: nearest);
+    // Sem central de notificacoes no contrato, nao ha sino: o suporte tem entrada
+    // na Conta, e o ponto de mensagem nova fica no avatar que leva a ela.
     return Row(children: [
       _Avatar(
         initials: initialsOf(session?.customer?.name),
-        label: l.account,
+        label: unread ? l.accountUnread : l.account,
+        unread: unread,
         onTap: () => context.push('/account'),
       ),
       const SizedBox(width: VoltiSpacing.s12),
       // heightFactor 1: sem ele o Center ocupa a altura toda numa Stack e a barra desce ao meio da tela.
+      // O espaco do antigo sino mantem a pilula centrada.
       Expanded(child: Center(heightFactor: 1, child: _LocationPill(label: l.yourLocation, place: place))),
-      const SizedBox(width: VoltiSpacing.s12),
-      VoltiIconButton(
-        key: const Key('home-bell'),
-        icon: LucideIcons.bell,
-        dot: unread,
-        label: unread ? l.notificationsUnread : l.notifications,
-        onPressed: () => context.push('/account/support'),
-      ),
+      const SizedBox(width: VoltiSpacing.s12 + 44),
     ]);
   }
 }
 
 /// Avatar com as iniciais (design `LocationHeader`): abre a conta.
 class _Avatar extends StatelessWidget {
-  const _Avatar({required this.initials, required this.label, required this.onTap});
+  const _Avatar({required this.initials, required this.label, required this.onTap, this.unread = false});
   final String? initials;
   final String label;
+  final bool unread;
   final VoidCallback onTap;
 
   @override
@@ -71,7 +69,8 @@ class _Avatar extends StatelessWidget {
       onTap: onTap,
       scale: VoltiMotion.iconPressScale,
       semanticLabel: label,
-      child: Container(
+      child: Stack(clipBehavior: Clip.none, children: [
+        Container(
         key: const Key('home-avatar'),
         width: 44,
         height: 44,
@@ -96,7 +95,19 @@ class _Avatar extends StatelessWidget {
                   color: VoltiColors.ink900,
                 ),
               ),
-      ),
+        ),
+        if (unread)
+          Positioned(
+            top: 0,
+            right: 0,
+            child: Container(
+              key: const Key('home-avatar-dot'),
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(color: VoltiColors.danger, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+            ),
+          ),
+      ]),
     );
   }
 }
@@ -132,7 +143,9 @@ class _LocationPill extends StatelessWidget {
             ]),
             Text(
               place,
-              maxLines: 1,
+              // Fonte grande: o nome do galpao quebra em ate 2 linhas em vez de cortar.
+              maxLines: 2,
+              textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
               style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.ink900),
             ),

@@ -199,7 +199,7 @@ class VoltiMap extends StatefulWidget {
   State<VoltiMap> createState() => _VoltiMapState();
 }
 
-class _VoltiMapState extends State<VoltiMap> {
+class _VoltiMapState extends State<VoltiMap> with WidgetsBindingObserver {
   // Um provedor por camada durante a vida do mapa (reconstruir a tela nao troca de
   // provedor). Todos usam o cliente HTTP compartilhado de `map_tiles.dart`, que o
   // descarte do provedor (TileLayer ao sair) nao fecha.
@@ -210,7 +210,27 @@ class _VoltiMapState extends State<VoltiMap> {
   Timer? _settle;
   int _retries = 0;
 
+  /// Algum tile falhou desde a ultima recarga (ex.: rede caiu com o app em segundo plano).
+  bool _failedTiles = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Ao reabrir o app, tiles que falharam (faixa cinza no mapa) sao pedidos de novo,
+  /// mesmo depois de esgotadas as tentativas automaticas.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !_failedTiles || _reset.isClosed) return;
+    _failedTiles = false;
+    _retries = 0;
+    _reset.add(null);
+  }
+
   void _onError() {
+    _failedTiles = true;
     widget.onTileError?.call();
     // Erro depois de uma nova tentativa: o ciclo nao terminou limpo.
     _settle?.cancel();
@@ -228,6 +248,7 @@ class _VoltiMapState extends State<VoltiMap> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _retry?.cancel();
     _settle?.cancel();
     _reset.close();

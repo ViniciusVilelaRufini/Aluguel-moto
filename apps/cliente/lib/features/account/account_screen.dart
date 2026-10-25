@@ -6,6 +6,8 @@ import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
 import '../../core/geo.dart';
+import '../../core/launcher.dart';
+import '../../core/legal.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import 'account_common.dart';
@@ -142,6 +144,20 @@ class AccountScreen extends ConsumerWidget {
               title: l.consentsRow,
               trailing: ListRowTrailing.chevron,
               onTap: () => context.push('/account/privacy'),
+            ),
+            ListRow(
+              key: const Key('account-terms'),
+              icon: LucideIcons.fileText,
+              title: l.termsOfUse,
+              trailing: ListRowTrailing.chevron,
+              onTap: () => openLegalDocument(context, ref, ref.read(legalLinksProvider).terms),
+            ),
+            ListRow(
+              key: const Key('account-privacy-policy'),
+              icon: LucideIcons.shieldCheck,
+              title: l.privacyPolicy,
+              trailing: ListRowTrailing.chevron,
+              onTap: () => openLegalDocument(context, ref, ref.read(legalLinksProvider).privacy),
             ),
             ListRow(
               icon: LucideIcons.trash2,

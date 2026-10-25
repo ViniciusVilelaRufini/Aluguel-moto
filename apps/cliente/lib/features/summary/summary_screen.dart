@@ -83,7 +83,7 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     }
     var ok = false;
     try {
-      ok = await ref.read(urlLauncherProvider)(Uri.parse(url));
+      ok = await ref.read(inAppUrlLauncherProvider)(Uri.parse(url));
     } catch (_) {
       // URL invalida ou nenhum app para abrir: cai no aviso abaixo.
     }

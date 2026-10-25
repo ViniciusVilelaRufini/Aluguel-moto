@@ -481,7 +481,7 @@ void main() {
       final opened = _Opened();
       await t.pumpWidget(testApp(const SummaryScreen(rentalId: 'r1'), overrides: [
         backendProvider.overrideWithValue(_ReceiptB()),
-        urlLauncherProvider.overrideWithValue((uri) async {
+        inAppUrlLauncherProvider.overrideWithValue((uri) async {
           opened.uris.add(uri);
           return true;
         }),
@@ -509,7 +509,7 @@ void main() {
       tallScreen(t);
       await t.pumpWidget(testApp(const SummaryScreen(rentalId: 'r1'), overrides: [
         backendProvider.overrideWithValue(_ReceiptB()),
-        urlLauncherProvider.overrideWithValue((uri) async => throw Exception('sem app')),
+        inAppUrlLauncherProvider.overrideWithValue((uri) async => throw Exception('sem app')),
       ]));
       await t.pump();
       await t.pump(const Duration(seconds: 2));
