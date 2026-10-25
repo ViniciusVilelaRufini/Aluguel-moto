@@ -473,6 +473,11 @@ export class HandoversService {
  * `deposit-not-held` numa corrida com a liberação da caução) vira `422` com o mesmo slug.
  */
 function acceptError(err: ProblemException): ProblemException {
+  // Task 30 (item 40): o texto do start() de rua ("a caução foi liberada", "escolha outra moto") não vale no aceite:
+  // aqui a caução continua retida com a reserva e a entrega continua pendente para um novo aceite.
+  if (err.slug === 'vehicle-offline') {
+    return new ProblemException(409, 'vehicle-offline', 'Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador. Nada foi cobrado.', undefined, 'Moto sem conexão');
+  }
   if (err.getStatus() !== 402) return err;
   return new ProblemException(422, err.slug, err.detail, err.errors, err.title);
 }

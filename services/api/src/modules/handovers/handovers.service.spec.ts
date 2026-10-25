@@ -161,6 +161,15 @@ describe('HandoversService — aceite', () => {
     await expect(svc.accept(customer, HO_ID)).resolves.toMatchObject({ id: RENTAL_ID });
   });
 
+  it('Task 30: moto sem conexão no aceite → 409 vehicle-offline com mensagem verdadeira (sem prometer a liberação da caução)', async () => {
+    const { prisma, starter, svc } = setup();
+    starter.start.mockRejectedValue(conflict('vehicle-offline', 'A moto não respondeu ao desbloqueio. Nada foi cobrado e a caução foi liberada.'));
+    const err = await svc.accept(customer, HO_ID).catch((e) => e);
+    expect(err).toMatchObject({ status: 409, slug: 'vehicle-offline', detail: 'Não conseguimos falar com a moto agora. Tente de novo em instantes ou fale com o operador. Nada foi cobrado.' });
+    expect(err.detail).not.toContain('liberada');
+    expect(prisma.handover.updateMany).toHaveBeenCalledWith({ where: { id: HO_ID, status: 'pending_customer' }, data: { lastError: 'vehicle-offline' } });
+  });
+
   it('fix 1/2: 402 que não é recusa de pagamento (deposit-not-held) mantém o slug e vira 422 (o aceite não tem 402 no contrato)', async () => {
     const { prisma, starter, svc } = setup();
     starter.start.mockRejectedValue(new ProblemException(402, 'deposit-not-held', 'em liberação'));
