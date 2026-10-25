@@ -21,6 +21,11 @@ export interface SafeLockVehicleState {
   online: boolean;
   /** Hold confirmado (limite segurado em 0 lido do estado compartilhado): só então a rampa começa em 0. */
   held?: boolean;
+  /**
+   * Limite que o rastreador reportou, só quando confirmado (lido do Redis agora). ≤ degrau publicado = o degrau já está aplicado:
+   * vale como ack (com desired igual ao reported o shadow não gera `/delta` e o rastreador não reporta de novo).
+   */
+  reportedLimitKmh?: number;
 }
 
 export type OutcomeSink = (outcome: CommandOutcome) => void;
@@ -157,12 +162,12 @@ export class SafeLockService {
     return this.store.withLock(req.thingName, async () => {
       const existing = await this.store.get(req.thingName);
       if (existing) {
-        existing.commandIds.push(req.commandId);
-        // Rampa retomada depois de um prazo (sem prazo próprio): o comando novo tem os 120 s dele.
-        if (existing.deadlineAt === undefined && existing.phase !== 'waiting_online') {
+        // Rampa retomada (prazo vencido ou órfã: os comandos dela já terminaram) → o comando novo tem os 120 s dele inteiros.
+        if (existing.commandIds.length === 0 && existing.phase !== 'waiting_online') {
           existing.deadlineAt = this.clock.now() + this.timeoutMs;
           this.schedule(existing, 'deadline', existing.deadlineAt);
         }
+        existing.commandIds.push(req.commandId);
         await this.save(existing);
         return existing.phase === 'waiting_online'
           ? { commandId: req.commandId, status: 'pending', reason: 'offline' }
@@ -407,6 +412,26 @@ export class SafeLockService {
     ramp.steps = rampSteps(state.speedKmh, state.speedLimitKmh, state.held === true);
     ramp.stepIdx = 0;
     await this.publishStep(ramp);
+    await this.ackIfAlreadyApplied(ramp, state.reportedLimitKmh);
+  }
+
+  /**
+   * Degrau já aplicado pelo rastreador (reported confirmado ≤ degrau): conta como ack e o próximo degrau sai no intervalo
+   * normal. Sem isso, um degrau igual ao reported (limite manual 8/15 já aplicado, degrau herdado de uma órfã) esperaria para
+   * sempre: desired == reported não gera `/delta` e o rastreador não reporta de novo.
+   */
+  private async ackIfAlreadyApplied(ramp: RampState, reportedLimitKmh: number | undefined): Promise<void> {
+    if (reportedLimitKmh === undefined || ramp.phase !== 'ramping' || !ramp.awaitingAck) return;
+    const published = rampCurrentLimit(ramp);
+    if (published === undefined || reportedLimitKmh > published) return;
+    ramp.awaitingAck = false;
+    if (ramp.stepIdx < ramp.steps.length - 1) {
+      ramp.nextStepAt = this.clock.now() + this.stepIntervalMs;
+      await this.save(ramp);
+      this.schedule(ramp, 'step', ramp.nextStepAt);
+    } else {
+      await this.save(ramp);
+    }
   }
 
   /** Grava o estado **antes** de publicar (outra instância, ou um reported imediato, já vê o degrau publicado). */
@@ -447,7 +472,8 @@ export class SafeLockService {
   /**
    * Prazo de 120 s vencido. Os comandos terminam `failed` (`did_not_stop` na rampa → alerta `command_failed`; `timeout` na trava),
    * o limite fica segurado (hold: nada sobe até um unlock) e — fix 3 — **nada de limite 0 de uma vez**: a rampa continua pela
-   * velocidade medida agora, nunca acima do limite que já impõe, sem prazo novo; trava só com velocidade fresca < 3.
+   * velocidade medida agora, nunca acima do limite que já impõe, com um prazo novo de 120 s (no qual o degrau sem ack é
+   * republicado, sem novo desfecho); trava só com velocidade fresca < 3. Um lock novo que entra nela ganha 120 s próprios.
    */
   private async onTimeout(ramp: RampState): Promise<void> {
     if (ramp.phase !== 'ramping' && ramp.phase !== 'locking') return;
@@ -537,8 +563,10 @@ export class SafeLockService {
       }
       return;
     }
-    // Novo degrau, ou o atual sem ack (o desired pode ter sido sobrescrito, ou é herdado de uma órfã): (re)publica e espera.
+    // Novo degrau, ou o atual sem ack (o desired pode ter sido sobrescrito, ou é herdado de uma órfã): (re)publica e espera —
+    // salvo se o rastreador já reporta um limite ≤ degrau (vale como ack).
     await this.publishStep(ramp);
+    await this.ackIfAlreadyApplied(ramp, state?.reportedLimitKmh);
   }
 
   private async finish(ramp: RampState, outcome: Omit<CommandOutcome, 'commandId'>): Promise<void> {

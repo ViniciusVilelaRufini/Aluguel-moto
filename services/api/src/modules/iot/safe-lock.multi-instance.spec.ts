@@ -109,27 +109,34 @@ describe('Bloqueio seguro com estado compartilhado (várias instâncias)', () =>
     const redis = new MemoryRedisStore();
     const bike = new Bike();
     const clock = new FakeClock(T0);
-    const a = instance('a', redis, bike, clock);
-    const b = instance('b', redis, bike, clock);
+    // O rastreador já aplicou o 15 (reported confirmado no Redis, lido pelo probe do gateway) e segue a 25 km/h.
+    const probe = async () => ({ speedKmh: bike.speed, speedLimitKmh: 32, locked: false, online: true, reportedLimitKmh: reported });
+    let reported = 15;
+    const a = instance('a', redis, bike, clock, probe);
+    const b = instance('b', redis, bike, clock, probe);
     await a.svc.start({ commandId: 'cmd-1', thingName: T }, moving(25));
     await redis.del('iot:safe-lock:moto-0001'); // expulsão/failover: o estado some, o índice (hash) fica
-    bike.speed = 0;
-    await b.svc.onSpeed(T, 0);
-    await b.svc.onReported(T, { limite_kmh: 15, velocidade_kmh: 0 });
+    await b.svc.onSpeed(T, 25);
     expect(bike.locked()).toBe(false); // sem estado, nada de travada
     await b.svc.sweep();
     await a.svc.sweep();
-    await clock.advance(130_000);
-    expect(bike.locked()).toBe(false);
-    // Retomada a partir do 15 que a rampa perdida impunha: republicado e esperando o ack (M1), republicado de novo no prazo
-    // seguinte (M2); nunca 8 sem o ack do 15, nunca 0.
-    expect(bike.limits()).toEqual([15, 15, 15]);
+    // Retomada pelo 15 herdado (republicado, M1); como o reported confirmado já é 15, conta como ack (re-revisão 4, I1) e a
+    // escada segue: 8 depois do intervalo, 3 depois do ack do 8 — nunca preso republicando 15, nunca 0 direto.
+    expect(bike.limits()).toEqual([15, 15]);
+    await clock.advance(2_000);
+    expect(bike.limits()).toEqual([15, 15, 8]);
+    reported = 8;
+    bike.speed = 9;
+    await b.svc.onReported(T, { limite_kmh: 8, velocidade_kmh: 9 });
+    await clock.advance(2_000);
+    expect(bike.limits()).toEqual([15, 15, 8, 3]);
     expect(b.held).toEqual([T]);
     expect([...a.outcomes, ...b.outcomes]).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
     const index = await redis.hgetall('iot:safe-lock:index');
     expect(Object.keys(index)).toEqual([T]); // a rampa retomada (outro rampId) — a órfã foi tratada uma vez só
     // Velocidade fresca < 3 → a rampa retomada trava.
-    await b.svc.onSpeed(T, 0);
+    bike.speed = 1;
+    await b.svc.onSpeed(T, 1);
     expect(bike.locked()).toBe(true);
     expect(bike.violations).toEqual([]);
   });

@@ -561,4 +561,5 @@ Lacuna: estações só entravam pelo seed; o painel não criava nem editava e o 
 - **M3:** com rampa, o `setSpeedLimit` publica sob o lock da moto (`publishIfAllowed`), reconferindo contra o degrau atual.
 - **M4:** desfecho `failed` e alerta saem num `finally`, mesmo se a publicação da retomada falhar.
 - **M5:** a retomada sem degrau próprio respeita um teto confirmado < 3 (não sobe para 3).
+- **Re-revisão 4 (I1):** um reported **confirmado** (lido do Redis agora) ≤ degrau publicado vale como ack, no `begin` e no `resume` — desired igual ao reported não gera `/delta` e o rastreador não reporta de novo (antes, degrau herdado igual ao reported, ou limite manual 8/15 já aplicado, esperava para sempre). **M6:** um lock novo que entra numa rampa retomada (sem comandos) ganha 120 s próprios.
 

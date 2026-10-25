@@ -292,4 +292,33 @@ describe('SafeLockService (bloqueio seguro)', () => {
       expect(transport.limits()).toEqual([15]);
     });
   });
+
+  describe('re-revisão 4', () => {
+    it('I1: primeiro degrau igual ao limite já reportado (limite manual 15 aplicado) → conta como ack e a escada segue', async () => {
+      const { clock, transport, svc } = setup();
+      await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 15, locked: false, online: true, reportedLimitKmh: 15 });
+      expect(transport.limits()).toEqual([15]);
+      await clock.advance(2_000); // nenhum reported novo (desired == reported não gera /delta)
+      expect(transport.limits()).toEqual([15, 8]);
+    });
+
+    it('I1: reported acima do degrau não vale como ack (espera o reported do degrau)', async () => {
+      const { clock, transport, svc } = setup();
+      await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true, reportedLimitKmh: 32 });
+      await clock.advance(10_000);
+      expect(transport.limits()).toEqual([15]);
+    });
+
+    it('M6: lock novo numa rampa retomada ganha os próprios 120 s (não só o resto do prazo da retomada)', async () => {
+      const { clock, outcomes, svc } = setup();
+      await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
+      await clock.advance(120_000); // did_not_stop → retomada com prazo novo (até 240 s)
+      await clock.advance(100_000); // 220 s: faltam 20 s do prazo da retomada
+      await svc.start({ commandId: 'cmd-2', thingName: T }, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
+      await clock.advance(119_000);
+      expect(outcomes.filter((o) => o.commandId === 'cmd-2')).toEqual([]);
+      await clock.advance(1_000);
+      expect(outcomes.filter((o) => o.commandId === 'cmd-2')).toEqual([{ commandId: 'cmd-2', status: 'failed', reason: 'did_not_stop' }]);
+    });
+  });
 });

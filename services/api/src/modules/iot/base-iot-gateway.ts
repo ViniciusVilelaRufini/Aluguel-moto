@@ -138,10 +138,12 @@ export abstract class BaseIotGateway implements IotGateway {
     const online = this.live.isOnline(thingName);
     const ceiling = await this.confirmedCeiling(thingName);
     // O reported só limita a rampa se veio do Redis agora (fix 3): a cópia em memória com o Redis fora pode estar velha para baixo.
-    const reported = s && this.live.isConfirmed(thingName) ? s.speedLimitKmh : MAX_SPEED_KMH;
+    const confirmed = s && this.live.isConfirmed(thingName) ? s.speedLimitKmh : undefined;
+    const reported = confirmed ?? MAX_SPEED_KMH;
     return {
       speedKmh: this.live.knownSpeed(thingName),
       speedLimitKmh: Math.min(reported, ceiling ?? MAX_SPEED_KMH),
+      ...(confirmed !== undefined ? { reportedLimitKmh: confirmed } : {}),
       held: (await this.live.heldState(thingName)) === true,
       locked: s?.locked === true && online,
       online,
