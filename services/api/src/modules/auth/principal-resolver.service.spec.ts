@@ -143,6 +143,8 @@ describe('PrincipalResolver (convite do painel no Cognito, M7)', () => {
       const p = await new PrincipalResolver(prisma as any, directory as any).resolve(cognitoToken);
       expect(prisma.staffUser.findFirst).not.toHaveBeenCalled();
       expect(p).toMatchObject({ staffId: 'novo', groups: ['operacao'] });
+      // Task 30 (item 38): o nome não vem do e-mail nem do sub.
+      expect(prisma.staffUser.create.mock.calls[0][0].data.name).toBe('');
     }
   });
 });

@@ -1,4 +1,5 @@
 import type { Claim, Dispute, Incident, SupportConversation, SupportMessage } from '@prisma/client';
+import { staffFirstName } from '../../common/staff-display-name';
 import { compact, iso } from '../../common/util';
 
 export function toIncident(i: Incident) {
@@ -80,7 +81,8 @@ export function toMessage(m: SupportMessage) {
     conversationId: m.conversationId,
     authorType: m.authorType,
     authorId: m.authorId ?? undefined,
-    authorName: m.authorName ?? undefined,
+    // Task 30 (item 38): equipe → primeiro nome cadastrado ou "Equipe Volti"; nunca derivado do e-mail.
+    authorName: m.authorType === 'staff' ? staffFirstName(m.authorName) : m.authorName ?? undefined,
     body: m.body,
     attachmentObjectKeys: m.attachmentObjectKeys.length ? m.attachmentObjectKeys : undefined,
     // Contrato v2: sent → delivered (o outro lado buscou) → read (o outro lado marcou como lida).

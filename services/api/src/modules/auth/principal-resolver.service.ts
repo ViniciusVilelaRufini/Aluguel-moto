@@ -61,7 +61,8 @@ export class PrincipalResolver {
           data: {
             cognitoSub: token.sub,
             email: email || `${token.sub}@staff.volti.invalid`,
-            name: email ? email.split('@')[0] : token.sub,
+            // Task 30 (item 38): nada derivado do e-mail ou do sub (o cliente veria); o nome é cadastrado no painel.
+            name: '',
             groups: token.groups,
             lastLoginAt: new Date(),
           },

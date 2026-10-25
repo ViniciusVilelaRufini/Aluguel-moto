@@ -20,7 +20,8 @@ import { PICKUP_CODE_SECRET, verifyPickupCode } from '../reservations/pickup-cod
 import { ReservationsService } from '../reservations/reservations.service';
 import { SupportService } from '../support/support.service';
 import type { HandoverCreateDto, ListHandoversQuery } from './handovers.dto';
-import { type ChecklistItem, firstName, type HandoverCancelInfo, toHandover } from './handovers.mapper';
+import { type ChecklistItem, type HandoverCancelInfo, toHandover } from './handovers.mapper';
+import { STAFF_FALLBACK_NAME, staffFirstName } from '../../common/staff-display-name';
 
 /** Links das fotos da entrega: 24 h (contrato). */
 const PHOTO_URL_TTL_SECONDS = 24 * 60 * 60;
@@ -446,11 +447,12 @@ export class HandoversService {
     const unique = [...new Set(ids)];
     if (!unique.length) return new Map();
     const staff = await this.prisma.staffUser.findMany({ where: { id: { in: unique } }, select: { id: true, name: true } });
-    return new Map(staff.map((s) => [s.id, firstName(s.name)]));
+    return new Map(staff.map((s) => [s.id, staffFirstName(s.name)]));
   }
 
   private async view(h: HandoverRow, names?: Map<string, string | undefined>, canceled?: Map<string, HandoverCancelInfo>) {
-    const operatorFirstName = names ? names.get(h.operatorId) : (await this.operatorNames([h.operatorId])).get(h.operatorId);
+    // Task 30 (item 38): primeiro nome cadastrado ou "Equipe Volti" (nunca o e-mail).
+    const operatorFirstName = (names ? names.get(h.operatorId) : (await this.operatorNames([h.operatorId])).get(h.operatorId)) ?? STAFF_FALLBACK_NAME;
     const photoUrls = await Promise.all(
       h.photoKeys.map(async (key) => (await this.storage.presignGet({ bucket: this.cfg.buckets.returnPhotos, key, expiresInSeconds: PHOTO_URL_TTL_SECONDS })).url),
     );

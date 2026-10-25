@@ -90,6 +90,17 @@ describe('HandoversService — saída (pickup)', () => {
     expect(out.body).toMatchObject({ id: HO_ID, operatorFirstName: 'Rafael', vehicleCode: 'VLT-0011', photoUrls: ['https://s3/handovers/a.jpg?sig'] });
   });
 
+  it('Task 30: operador sem nome cadastrado (ou cadastro ausente) → "Equipe Volti", nunca o e-mail', async () => {
+    const { prisma, svc } = setup();
+    prisma.reservation.findUnique.mockResolvedValue({ ...reservation, status: 'active', vehicle: { id: VEHICLE_ID, status: 'reserved' } } as any);
+    prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+    prisma.handover.create.mockResolvedValue(handover as any);
+    prisma.staffUser.findMany.mockResolvedValue([{ id: STAFF_ID, name: '' }] as any);
+    expect((await svc.createPickup(operator, pickupBody(validCode()))).body).toMatchObject({ operatorFirstName: 'Equipe Volti' });
+    prisma.staffUser.findMany.mockResolvedValue([] as any);
+    expect((await svc.createPickup(operator, pickupBody(validCode()))).body).toMatchObject({ operatorFirstName: 'Equipe Volti' });
+  });
+
   it('depotId diferente do da reserva → 422; moto que não está reserved → 409; reserva encerrada → 409', async () => {
     const { prisma, svc } = setup();
     prisma.reservation.findUnique.mockResolvedValue({ ...reservation, status: 'active', vehicle: { status: 'reserved' } } as any);

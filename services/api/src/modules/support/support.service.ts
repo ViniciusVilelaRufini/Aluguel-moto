@@ -14,6 +14,7 @@ import type {
   ListClaimsQuery, ListConversationsQuery, ListDisputesQuery, ListIncidentsQuery, ListMessagesQuery, MessageCreateDto,
 } from './support.dto';
 import { toClaim, toConversation, toDispute, toIncident, toMessage } from './support.mapper';
+import { staffFirstName } from '../../common/staff-display-name';
 
 const byNewest = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
 
@@ -280,7 +281,7 @@ export class SupportService {
     const m = await this.prisma.$transaction(async (tx) => {
       const msg = await tx.supportMessage.create({
         data: {
-          conversationId: id, authorType: isStaff(user) ? 'staff' : 'customer', authorId: user.userId, authorName: staff?.name,
+          conversationId: id, authorType: isStaff(user) ? 'staff' : 'customer', authorId: user.userId, authorName: isStaff(user) ? staffFirstName(staff?.name) : undefined,
           body: dto.body, attachmentObjectKeys: dto.attachmentObjectKeys ?? [],
         },
       });
