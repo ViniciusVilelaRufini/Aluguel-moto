@@ -74,6 +74,10 @@ export interface DepotDraft {
   scheduledGraceMinutes: string;
   /** Estoque mínimo de baterias carregadas; vazio = sem alerta. */
   minChargedBatteries: string;
+  /** Estação de troca do galpão (`Depot.swapStationId`); vazio = nenhuma. */
+  swapStationId: string;
+  /** O galpão já tinha estação ao abrir o formulário (vazio no PATCH → `clearSwapStation`). */
+  hadSwapStation: boolean;
   active: boolean;
 }
 
@@ -86,6 +90,8 @@ export function emptyDepotDraft(): DepotDraft {
     maxScheduleDays: String(DEFAULT_WINDOWS.maxScheduleDays),
     scheduledGraceMinutes: String(DEFAULT_WINDOWS.scheduledGraceMinutes),
     minChargedBatteries: '',
+    swapStationId: '',
+    hadSwapStation: false,
     active: true,
   };
 }
@@ -98,6 +104,8 @@ export function draftFromDepot(d: Depot): DepotDraft {
     maxScheduleDays: String(d.maxScheduleDays),
     scheduledGraceMinutes: String(d.scheduledGraceMinutes),
     minChargedBatteries: d.minChargedBatteries ? String(d.minChargedBatteries) : '',
+    swapStationId: d.swapStationId ?? '',
+    hadSwapStation: !!d.swapStationId,
     active: d.active,
   };
 }
@@ -148,7 +156,7 @@ function editableFields(d: DepotDraft) {
 /** `POST /depots`: o galpão nasce no fuso de São Paulo e com o `active` do rascunho. */
 export function depotCreateBody(d: DepotDraft): S<'DepotInput'> {
   const min = d.minChargedBatteries.trim();
-  return { ...editableFields(d), ...(min ? { minChargedBatteries: Number(min) } : {}), timezone: DEPOT_TIMEZONE, active: d.active };
+  return { ...editableFields(d), ...(min ? { minChargedBatteries: Number(min) } : {}), ...(d.swapStationId ? { swapStationId: d.swapStationId } : {}), timezone: DEPOT_TIMEZONE, active: d.active };
 }
 
 /**
@@ -156,6 +164,8 @@ export function depotCreateBody(d: DepotDraft): S<'DepotInput'> {
  * editável aqui, então nenhum dos dois vai no corpo (um rascunho antigo não desfaz uma desativação).
  */
 export function depotUpdateBody(d: DepotDraft): S<'DepotUpdate'> {
-  // Ausente não muda no PATCH; vazio no formulário = desligar o alerta (0).
-  return { ...editableFields(d), minChargedBatteries: Number(d.minChargedBatteries.trim() || 0) };
+  // Ausente não muda no PATCH; vazio no formulário = desligar o alerta (0). Estação: escolhida → liga; "Nenhuma" num galpão
+  // que tinha estação → `clearSwapStation` (o contrato não usa `null`).
+  const station = d.swapStationId ? { swapStationId: d.swapStationId } : d.hadSwapStation ? { clearSwapStation: true } : {};
+  return { ...editableFields(d), minChargedBatteries: Number(d.minChargedBatteries.trim() || 0), ...station };
 }

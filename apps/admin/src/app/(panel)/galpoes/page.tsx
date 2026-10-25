@@ -16,7 +16,7 @@ import { prefersReducedMotion } from '@/lib/motion';
 import type { S } from '@/lib/types';
 import { MapView } from '@/components/MapView';
 import { OpeningHoursEditor } from '@/components/depots/OpeningHoursEditor';
-import { Empty, ErrorNote, Field, KV, Modal, SectionTitle, SidePanel, Skeleton, TextInput, useToast } from '@/components/ui';
+import { Empty, ErrorNote, Field, KV, Modal, SectionTitle, Select, SidePanel, Skeleton, TextInput, useToast } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
@@ -47,6 +47,9 @@ export default function DepotsPage() {
   const depotsQ = useQuery({ queryKey: ['depots', 'all'], queryFn: () => unwrap(api.GET('/depots', { params: { query: { includeInactive: true } } })) });
   const depots = useMemo(() => depotsQ.data?.items ?? [], [depotsQ.data]);
   const selected = depots.find((d) => d.id === selectedId) ?? null;
+  // Estação de troca do galpão (Task 12 das lacunas): o cadastro das estações é admin/operacao, os mesmos que editam o galpão.
+  const stationsQ = useQuery({ queryKey: ['swap-stations', 'registry'], enabled: canEdit, queryFn: () => unwrap(api.GET('/swap-stations/registry')) });
+  const stations = useMemo(() => stationsQ.data?.items ?? [], [stationsQ.data]);
 
   const vehiclesQ = useQuery({
     queryKey: ['depot-vehicles', selectedId],
@@ -133,6 +136,7 @@ export default function DepotsPage() {
     onSuccess: (saved, d) => {
       toast(d.id ? 'Galpão atualizado' : 'Galpão criado');
       qc.invalidateQueries({ queryKey: ['depots'] });
+      qc.invalidateQueries({ queryKey: ['swap-stations'] });
       setSelectedId(saved.id);
       setDraft(draftFromDepot(saved));
     },
@@ -221,6 +225,13 @@ export default function DepotsPage() {
               <SectionTitle>Estoque de baterias</SectionTitle>
               <Field label="Mínimo de baterias carregadas" error={errors.minChargedBatteries} hint="Abaixo desse número abre o alerta de poucas baterias carregadas. Vazio = sem alerta.">
                 <TextInput testId="depot-min-charged" type="number" value={draft.minChargedBatteries} onChange={(v) => patch({ minChargedBatteries: v })} placeholder="Sem alerta" />
+              </Field>
+            </div>
+            <div>
+              <SectionTitle>Estação de troca</SectionTitle>
+              <Field label="Estação de troca do galpão" hint="Onde os clientes trocam a bateria por QR perto deste galpão. Cadastre em Estações.">
+                <Select testId="depot-station" value={draft.swapStationId} onChange={(v) => patch({ swapStationId: v })}
+                  options={[{ value: '', label: 'Nenhuma' }, ...stations.map((s) => ({ value: s.id, label: s.active ? s.name : `${s.name} (inativa)` }))]} />
               </Field>
             </div>
             <ErrorNote error={save.error} />
