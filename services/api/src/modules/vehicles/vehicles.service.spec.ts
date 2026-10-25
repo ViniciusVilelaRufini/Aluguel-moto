@@ -57,3 +57,40 @@ describe('Retirada em galpão: moto fora da rua', () => {
     expect(toVehicle({ ...row, depotId: null }, { staff: false })).not.toHaveProperty('depotId');
   });
 });
+
+describe('QA-19 (Task 14): bateria informada no cadastro da moto', () => {
+  const admin: Principal = { ...operacao, groups: ['admin'] };
+  function forCreate() {
+    const s = setup();
+    (s.prisma.$transaction as any).mockImplementation(async (fn: any) => fn(s.prisma));
+    s.prisma.vehicle.findFirst.mockResolvedValue(null);
+    s.prisma.vehicle.create.mockResolvedValue({ id: VEHICLE_ID, code: 'VLT-9001', batteryPct: 100 } as any);
+    s.prisma.battery.create.mockResolvedValue({ id: 'b1' } as any);
+    jest.spyOn(s.service as any, 'enrich').mockResolvedValue([{ id: VEHICLE_ID }]);
+    return s;
+  }
+
+  it('cria a bateria instalada na moto (in_vehicle, 1 ciclo) e a movimentação de cadastro', async () => {
+    const { prisma, service } = forCreate();
+    prisma.battery.findUnique.mockResolvedValue(null);
+    await service.create(admin, { code: 'VLT-9001', model: 'Volti S1', thingName: 'vlt-9001', batterySerial: ' QA-BAT-9001 ' } as any);
+    expect((prisma.vehicle.create.mock.calls[0][0] as any).data.batterySerial).toBe('QA-BAT-9001');
+    expect(prisma.battery.create).toHaveBeenCalledWith({ data: { serial: 'QA-BAT-9001', status: 'in_vehicle', vehicleId: VEHICLE_ID, chargePct: 100, cycleCount: 1 } });
+    expect(prisma.batteryMovement.createMany).toHaveBeenCalledWith({
+      data: [expect.objectContaining({ batteryId: 'b1', fromStatus: null, toStatus: 'in_vehicle', vehicleId: VEHICLE_ID, reason: 'Cadastrada com a moto' })],
+    });
+  });
+
+  it('série já cadastrada (estoque, van, estação ou outra moto) → 409 sem criar a moto', async () => {
+    const { prisma, service } = forCreate();
+    prisma.battery.findUnique.mockResolvedValue({ id: 'b0' } as any);
+    await expect(service.create(admin, { code: 'VLT-9001', model: 'Volti S1', thingName: 'vlt-9001', batterySerial: 'QA-BAT-9001' } as any)).rejects.toMatchObject({ status: 409 });
+    expect(prisma.vehicle.create).not.toHaveBeenCalled();
+  });
+
+  it('sem série: nenhuma bateria criada', async () => {
+    const { prisma, service } = forCreate();
+    await service.create(admin, { code: 'VLT-9001', model: 'Volti S1', thingName: 'vlt-9001' } as any);
+    expect(prisma.battery.create).not.toHaveBeenCalled();
+  });
+});

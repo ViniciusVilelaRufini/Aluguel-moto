@@ -20,7 +20,7 @@ import { PICKUP_CODE_SECRET, verifyPickupCode } from '../reservations/pickup-cod
 import { ReservationsService } from '../reservations/reservations.service';
 import { SupportService } from '../support/support.service';
 import type { HandoverCreateDto, ListHandoversQuery } from './handovers.dto';
-import { type ChecklistItem, firstName, toHandover } from './handovers.mapper';
+import { type ChecklistItem, firstName, type HandoverCancelInfo, toHandover } from './handovers.mapper';
 
 /** Links das fotos da entrega: 24 h (contrato). */
 const PHOTO_URL_TTL_SECONDS = 24 * 60 * 60;
@@ -375,7 +375,7 @@ export class HandoversService {
       await this.locks.abort(ACCEPT_LOCK_SCOPE, id).catch(() => undefined);
     }
     const updated = await this.prisma.handover.findUniqueOrThrow({ where: { id }, include: { vehicle: { select: { code: true } } } });
-    return this.view(updated);
+    return this.view(updated, undefined, await this.cancelInfo([updated]));
   }
 
   /** Conversa de suporte da disputa: uma nova tentativa; o log leva só o nome/código do erro (sem a mensagem). */
@@ -409,7 +409,20 @@ export class HandoversService {
       if (!owner && h.rentalId) owner = (await this.prisma.rental.findUnique({ where: { id: h.rentalId }, select: { customerId: true } }))?.customerId;
       if (!owner || owner !== user.customerId) throw handoverNotFound();
     }
-    return this.view(h);
+    return this.view(h, undefined, isStaff(user) ? await this.cancelInfo([h]) : undefined);
+  }
+
+  /** QA-23: entregas canceladas → motivo e autor gravados no AuditLog do cancelamento (só staff). */
+  private async cancelInfo(rows: HandoverRow[]): Promise<Map<string, HandoverCancelInfo>> {
+    const ids = rows.filter((r) => r.status === 'canceled').map((r) => r.id);
+    if (!ids.length) return new Map();
+    const logs = await this.prisma.auditLog.findMany({ where: { action: 'handover.cancel', entityType: 'Handover', entityId: { in: ids } }, orderBy: { createdAt: 'asc' } });
+    const actorIds = [...new Set(logs.map((l) => l.actorId).filter((x): x is string => !!x))];
+    const staff = actorIds.length ? await this.prisma.staffUser.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
+    const names = new Map(staff.map((s) => [s.id, s.name]));
+    return new Map(
+      logs.map((l) => [l.entityId, { reason: l.reason ?? undefined, at: l.createdAt.toISOString(), byName: (l.actorId ? names.get(l.actorId) : undefined) ?? l.actorName ?? undefined }]),
+    );
   }
 
   async list(q: ListHandoversQuery) {
@@ -425,7 +438,8 @@ export class HandoversService {
     });
     const page = toPage(rows, q, (r) => r);
     const names = await this.operatorNames(page.items.map((r) => r.operatorId));
-    return { ...page, items: await Promise.all(page.items.map((r) => this.view(r, names))) };
+    const canceled = await this.cancelInfo(page.items);
+    return { ...page, items: await Promise.all(page.items.map((r) => this.view(r, names, canceled))) };
   }
 
   private async operatorNames(ids: string[]): Promise<Map<string, string | undefined>> {
@@ -435,12 +449,12 @@ export class HandoversService {
     return new Map(staff.map((s) => [s.id, firstName(s.name)]));
   }
 
-  private async view(h: HandoverRow, names?: Map<string, string | undefined>) {
+  private async view(h: HandoverRow, names?: Map<string, string | undefined>, canceled?: Map<string, HandoverCancelInfo>) {
     const operatorFirstName = names ? names.get(h.operatorId) : (await this.operatorNames([h.operatorId])).get(h.operatorId);
     const photoUrls = await Promise.all(
       h.photoKeys.map(async (key) => (await this.storage.presignGet({ bucket: this.cfg.buckets.returnPhotos, key, expiresInSeconds: PHOTO_URL_TTL_SECONDS })).url),
     );
-    return toHandover(h, { operatorFirstName, photoUrls });
+    return toHandover(h, { operatorFirstName, photoUrls, cancel: canceled?.get(h.id) });
   }
 
   private async rentalOf(rentalId: string) {
