@@ -15,12 +15,21 @@ flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000
 
 Variáveis `--dart-define`: `API_BASE_URL`, `AUTH_MODE=dev|cognito` (padrão `dev`; build release sempre usa cognito), `SUPPORT_PHONE` (telefone do botão SOS), no modo cognito `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`, `COGNITO_REDIRECT_URI` (ver Login), `FIRST_RIDE_PROMO=true` (liga o cartão "1ª corrida grátis" da home e o selo "1ª grátis" da lista para clientes sem aluguéis; padrão desligado, porque o contrato ainda não diz se a promoção existe; a boas-vindas não mostra promoção), `MAP_TILE_URL`, `MAP_TILE_REFERENCE_URL` e `MAP_TILE_ATTRIBUTION` (tiles dos mapas, ver abaixo), `TERMS_URL` e `PRIVACY_URL` (links dos termos de uso e da política de privacidade no rodapé da boas-vindas; sem eles, o link avisa que o documento não está publicado neste ambiente).
 
+### Cartão de crédito (Mercado Pago)
+
+O formulário de cartão (`features/payments/card_form_sheet.dart`) envia número, validade, CVV, nome e CPF do titular **direto ao Mercado Pago** (`POST https://api.mercadopago.com/v1/card_tokens?public_key=...`, `core/mercadopago_gateway.dart`). Só o token volta e segue para `POST /payments/cards` (`cardToken`); o backend resolve bandeira e últimos 4 dígitos pelo próprio Mercado Pago. Dados de cartão nunca passam pela API nem vão para log.
+
+- `--dart-define=MP_PUBLIC_KEY=<chave pública>`: **obrigatória em release** (sem ela o app abre em "Configuração inválida do app"). Em debug/profile sem a chave continua o `DevCardTokenizer` (token falso `tok_visa_4242`, para `PAYMENT_PROVIDER=fake`).
+- Chave de teste: painel do Mercado Pago Developers → *Suas integrações* → sua aplicação → *Credenciais de teste* → **Public Key** (`TEST-...`). Use a *Public Key*, nunca o *Access Token*. Cartões de teste e CPF/nome do titular (ex.: `APRO` para aprovar) estão na documentação *Cartões de teste* do Mercado Pago. Combine com a API em `PAYMENT_PROVIDER=mercadopago` e o Access Token de teste correspondente.
+- Exemplo: `flutter run --dart-define=API_BASE_URL=http://10.0.2.2:3000 --dart-define=MP_PUBLIC_KEY=TEST-xxxxxxxx-xxxx`.
+
+
 ## Build de release (prontidão)
 
 **Obrigatórios em release** (`flutter build apk/appbundle/ipa --release`): `API_BASE_URL` (URL https da API), `SUPPORT_PHONE` (telefone real do suporte, só dígitos com + opcional, ex.: `+5511999990000`; o valor de exemplo `+551100000000` também é recusado) e, como o release usa Cognito, `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN` e `COGNITO_REDIRECT_URI`. Recomendados: `MAP_TILE_URL` (provedor licenciado), `TERMS_URL` e `PRIVACY_URL`. Sem `API_BASE_URL` ou `SUPPORT_PHONE`, o app mostra a tela "Configuração inválida do app" (pt-BR) com a lista do que falta, em vez de abrir (`lib/core/release_env.dart`, testado em `test/release_env_test.dart`); em debug e profile nada disso é exigido (a API cai em `10.0.2.2:3000` no Android e `localhost:3000` no resto).
 
 ```bash
-flutter build appbundle --release   --dart-define=API_BASE_URL=https://api.volti.com.br --dart-define=SUPPORT_PHONE=+5511999990000   --dart-define=COGNITO_REGION=sa-east-1 --dart-define=COGNITO_USER_POOL_ID=... --dart-define=COGNITO_CLIENT_ID=...   --dart-define=COGNITO_DOMAIN=... --dart-define=COGNITO_REDIRECT_URI=volti://auth/callback
+flutter build appbundle --release   --dart-define=API_BASE_URL=https://api.volti.com.br --dart-define=SUPPORT_PHONE=+5511999990000   --dart-define=MP_PUBLIC_KEY=APP_USR-...   --dart-define=COGNITO_REGION=sa-east-1 --dart-define=COGNITO_USER_POOL_ID=... --dart-define=COGNITO_CLIENT_ID=...   --dart-define=COGNITO_DOMAIN=... --dart-define=COGNITO_REDIRECT_URI=volti://auth/callback
 ```
 
 **iPad.** O app é retrato-only; por isso o `Info.plist` tem `UIRequiresFullScreen=true` (exigido pela App Store para iPad sem todas as orientações).

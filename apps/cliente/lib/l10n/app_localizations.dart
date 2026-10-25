@@ -532,6 +532,120 @@ abstract class AppLocalizations {
   /// **'Sem conexão com a internet. Confira sua rede e tente de novo.'**
   String get errorNetwork;
 
+  /// No description provided for @cardFormTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Novo cartão'**
+  String get cardFormTitle;
+
+  /// No description provided for @cardFormHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Os dados vão direto ao Mercado Pago. A Volti guarda só um código do cartão.'**
+  String get cardFormHint;
+
+  /// No description provided for @cardNumber.
+  ///
+  /// In pt, this message translates to:
+  /// **'Número do cartão'**
+  String get cardNumber;
+
+  /// No description provided for @cardHolder.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nome impresso no cartão'**
+  String get cardHolder;
+
+  /// No description provided for @cardExpiry.
+  ///
+  /// In pt, this message translates to:
+  /// **'Validade (MM/AA)'**
+  String get cardExpiry;
+
+  /// No description provided for @cardExpiryHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'MM/AA'**
+  String get cardExpiryHint;
+
+  /// No description provided for @cardCvv.
+  ///
+  /// In pt, this message translates to:
+  /// **'CVV'**
+  String get cardCvv;
+
+  /// No description provided for @cardHolderCpf.
+  ///
+  /// In pt, this message translates to:
+  /// **'CPF do titular'**
+  String get cardHolderCpf;
+
+  /// No description provided for @cardSave.
+  ///
+  /// In pt, this message translates to:
+  /// **'Salvar cartão'**
+  String get cardSave;
+
+  /// No description provided for @cardNumberInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Número de cartão inválido. Confira os dígitos.'**
+  String get cardNumberInvalid;
+
+  /// No description provided for @cardExpiryInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'Validade inválida ou vencida.'**
+  String get cardExpiryInvalid;
+
+  /// No description provided for @cardErrorInvalidCard.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cartão inválido. Confira o número.'**
+  String get cardErrorInvalidCard;
+
+  /// No description provided for @cardErrorInvalidCvv.
+  ///
+  /// In pt, this message translates to:
+  /// **'CVV inválido. Confira o código de segurança.'**
+  String get cardErrorInvalidCvv;
+
+  /// No description provided for @cardErrorInvalidExpiry.
+  ///
+  /// In pt, this message translates to:
+  /// **'Validade inválida. Confira o mês e o ano.'**
+  String get cardErrorInvalidExpiry;
+
+  /// No description provided for @cardErrorInvalidHolder.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nome do titular inválido. Use o nome como está no cartão.'**
+  String get cardErrorInvalidHolder;
+
+  /// No description provided for @cardErrorInvalidDocument.
+  ///
+  /// In pt, this message translates to:
+  /// **'CPF do titular inválido.'**
+  String get cardErrorInvalidDocument;
+
+  /// No description provided for @cardErrorTimeout.
+  ///
+  /// In pt, this message translates to:
+  /// **'O Mercado Pago demorou para responder. Tente de novo.'**
+  String get cardErrorTimeout;
+
+  /// No description provided for @cardErrorUnavailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'O Mercado Pago está indisponível agora. Tente em instantes.'**
+  String get cardErrorUnavailable;
+
+  /// No description provided for @cardErrorGeneric.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível validar o cartão. Tente de novo.'**
+  String get cardErrorGeneric;
+
   /// No description provided for @errorUnauthorized.
   ///
   /// In pt, this message translates to:

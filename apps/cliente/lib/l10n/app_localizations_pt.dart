@@ -237,6 +237,71 @@ class AppLocalizationsPt extends AppLocalizations {
       'Sem conexão com a internet. Confira sua rede e tente de novo.';
 
   @override
+  String get cardFormTitle => 'Novo cartão';
+
+  @override
+  String get cardFormHint =>
+      'Os dados vão direto ao Mercado Pago. A Volti guarda só um código do cartão.';
+
+  @override
+  String get cardNumber => 'Número do cartão';
+
+  @override
+  String get cardHolder => 'Nome impresso no cartão';
+
+  @override
+  String get cardExpiry => 'Validade (MM/AA)';
+
+  @override
+  String get cardExpiryHint => 'MM/AA';
+
+  @override
+  String get cardCvv => 'CVV';
+
+  @override
+  String get cardHolderCpf => 'CPF do titular';
+
+  @override
+  String get cardSave => 'Salvar cartão';
+
+  @override
+  String get cardNumberInvalid =>
+      'Número de cartão inválido. Confira os dígitos.';
+
+  @override
+  String get cardExpiryInvalid => 'Validade inválida ou vencida.';
+
+  @override
+  String get cardErrorInvalidCard => 'Cartão inválido. Confira o número.';
+
+  @override
+  String get cardErrorInvalidCvv =>
+      'CVV inválido. Confira o código de segurança.';
+
+  @override
+  String get cardErrorInvalidExpiry =>
+      'Validade inválida. Confira o mês e o ano.';
+
+  @override
+  String get cardErrorInvalidHolder =>
+      'Nome do titular inválido. Use o nome como está no cartão.';
+
+  @override
+  String get cardErrorInvalidDocument => 'CPF do titular inválido.';
+
+  @override
+  String get cardErrorTimeout =>
+      'O Mercado Pago demorou para responder. Tente de novo.';
+
+  @override
+  String get cardErrorUnavailable =>
+      'O Mercado Pago está indisponível agora. Tente em instantes.';
+
+  @override
+  String get cardErrorGeneric =>
+      'Não foi possível validar o cartão. Tente de novo.';
+
+  @override
   String get errorUnauthorized => 'Sua sessão expirou. Entre de novo.';
 
   @override
