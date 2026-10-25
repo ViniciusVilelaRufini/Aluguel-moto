@@ -186,6 +186,24 @@ Status: `in_vehicle`, `in_van`, `charging` (no galpão `depotId`, ou na estaçã
 - `POST /rentals`: moto offline ou desbloqueio não confirmado → `409 vehicle-offline`, sem aluguel nem cobrança; o relógio começa no desbloqueio confirmado.
 - Rate limit no Redis (compartilhado entre instâncias); cabeçalhos `helmet`; exportação LGPD com `Cache-Control: no-store`; link do recibo assinado na leitura (15 min).
 
+## Várias instâncias e integrações (lacunas T5, `docs/decisoes.md` 2026-10-24)
+
+A API roda com 2–10 tasks no ECS. Tudo o que precisa ser único ou compartilhado passa pelo Redis (`REDIS_URL`; com `memory`, o `MemoryRedisStore` faz o mesmo papel num processo só):
+
+- **Tempo real:** Socket.IO com `@socket.io/redis-adapter` (`src/modules/realtime/redis-io.adapter.ts`, ligado no `main.ts`). Evento processado numa instância chega aos sockets de todas.
+- **Bloqueio seguro:** estado da rampa em `RedisSafeLockStore` (`src/modules/iot/safe-lock.store.ts`), lock por moto e varredura de 1 s (`IotRuntime`). Falha fechada: sem estado, nada é publicado; `travada: true` só com velocidade fresca < 3 km/h.
+- **Cercas e "fora da área":** estado por moto e prazo no Redis, sob lock da moto (`geofence.service.ts`); varredura de prazos a cada 15 s; só uma instância dispara.
+- **Jobs:** `@ExclusiveJob(nome, ttl)` (`src/common/job-lock.ts`) — cada rodada de `@Interval`/`@Cron` roda numa instância só.
+- **Alertas:** a fila `alertas` aceita `CreateAlertInput` ou o evento cru do rastreador (`{ thingName, tipo, timestamp }`).
+- **Presença:** `{ thingName, presence }` da fila de telemetria → `inbound.presence`.
+- **Push:** `PUSH_MODE=fcm` + `FCM_SERVICE_ACCOUNT_JSON` (firebase-admin); `log` em dev. `data.type` segue o roteamento do app (`reservation.reminder`, `kyc`, …).
+- **Produção recusa:** `PAYMENT_PROVIDER=fake` (salvo `ALLOW_FAKE_PAYMENTS=true`, só o dev da infra), `PUBLIC_SHARE_BASE_URL` ausente ou sem https, `PUSH_MODE=fcm` sem credencial válida.
+- **Cognito:** `COGNITO_STAFF_CLIENT_IDS` (painel + app do operador).
+- **SOS:** `GET /public/location-shares/{token}` (JSON, sem auth, 30/min por IP) e `GET /share/{token}` (página). Só posição + horário, com link válido, aluguel aberto e consentimento.
+- **Estações:** `slot_closed` sem devolução espera 5 s (`STATION_SLOT_CLOSED_GRACE_MS`) por um `battery_returned` atrasado antes de cancelar.
+
+Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (suítes do bloqueio seguro de novo com o estado serializado no "Redis"), `geofence.multi-instance.spec.ts`, `live-state.multi-instance.spec.ts`, `job-lock.spec.ts`; e2e `realtime-multi-instance`, `multi-instance-redis` (Redis real) e `location-share-public`.
+
 ## Regras que nunca mudam
 
 - Nenhum `speedLimitKmh` fora de 0..32 é aceito (DTO → 400 `speed-limit-out-of-range`; serviço de comandos revalida; `CHECK` no banco).

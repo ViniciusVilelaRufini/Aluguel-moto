@@ -13,6 +13,9 @@ describe('Localização compartilhada (link público do SOS)', () => {
   let prisma: PrismaClient;
   let admin: string;
   const http = () => request(app.getHttpServer());
+  // IP próprio desta execução (TRUST_PROXY=1): o contador do rate limit no Redis não depende de execuções anteriores.
+  const runIp = `203.0.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`;
+  const pub = (path: string) => request(app.getHttpServer()).get(path).set('X-Forwarded-For', runIp);
   const bearer = (t: string) => ({ Authorization: `Bearer ${t}` });
 
   const savedTrustProxy = process.env.TRUST_PROXY;
@@ -47,7 +50,7 @@ describe('Localização compartilhada (link público do SOS)', () => {
   it('link criado aponta para a página pública; a rota JSON devolve só posição, horário e validade (sem dado pessoal)', async () => {
     const s = await rentalWithShare('share-ok');
     expect(s.url.startsWith(`${(process.env.PUBLIC_SHARE_BASE_URL ?? 'http://localhost:3000/share').replace(/\/$/, '')}/`)).toBe(true);
-    const res = await http().get(`/public/location-shares/${s.token}`).expect(200);
+    const res = await pub(`/public/location-shares/${s.token}`).expect(200);
     expect(Object.keys(res.body).sort()).toEqual(['expiresAt', 'lat', 'lng', 'recordedAt']);
     expect(res.body).toMatchObject({ lat: -23.5614, lng: -46.6559, recordedAt: s.seenAt.toISOString() });
     expect(JSON.stringify(res.body)).not.toMatch(/Cliente E2E|@example\.com|E2E-|e2e-thing/);
@@ -58,7 +61,7 @@ describe('Localização compartilhada (link público do SOS)', () => {
 
   it('página HTML: pt-BR, script só com nonce (CSP), sem cache, lê a rota JSON relativa', async () => {
     const s = await rentalWithShare('share-page');
-    const res = await http().get(`/share/${s.token}`).expect(200);
+    const res = await pub(`/share/${s.token}`).expect(200);
     expect(res.headers['content-type']).toMatch(/text\/html/);
     const csp = res.headers['content-security-policy'] as string;
     const nonce = /script-src 'nonce-([^']+)'/.exec(csp)?.[1];
@@ -75,18 +78,18 @@ describe('Localização compartilhada (link público do SOS)', () => {
   it('aluguel encerrado, consentimento revogado, link expirado ou desconhecido → o mesmo 404', async () => {
     const ended = await rentalWithShare('share-ended');
     await http().post(`/rentals/${ended.rentalId}/force-end`).set(bearer(admin)).send({ reason: 'Teste do link público' }).expect(200);
-    const r1 = await http().get(`/public/location-shares/${ended.token}`).expect(404);
+    const r1 = await pub(`/public/location-shares/${ended.token}`).expect(404);
 
     const revoked = await rentalWithShare('share-revoked');
     await prisma.customer.update({ where: { id: revoked.customerId }, data: { locationConsent: false } });
-    const r2 = await http().get(`/public/location-shares/${revoked.token}`).expect(404);
+    const r2 = await pub(`/public/location-shares/${revoked.token}`).expect(404);
 
     const expired = await rentalWithShare('share-expired');
     await prisma.locationShare.update({ where: { token: expired.token }, data: { expiresAt: new Date(Date.now() - 1000) } });
-    const r3 = await http().get(`/public/location-shares/${expired.token}`).expect(404);
+    const r3 = await pub(`/public/location-shares/${expired.token}`).expect(404);
 
-    const r4 = await http().get(`/public/location-shares/${'x'.repeat(32)}`).expect(404);
-    const r5 = await http().get('/public/location-shares/curto').expect(404);
+    const r4 = await pub(`/public/location-shares/${'x'.repeat(32)}`).expect(404);
+    const r5 = await pub('/public/location-shares/curto').expect(404);
     for (const r of [r2, r3, r4, r5]) expect(r.body.detail).toBe(r1.body.detail);
   });
 
@@ -94,7 +97,7 @@ describe('Localização compartilhada (link público do SOS)', () => {
     const s = await rentalWithShare('share-rate');
     const ip = `198.51.${Math.floor(Math.random() * 250)}.${Math.floor(Math.random() * 250) + 1}`;
     let last = 0;
-    for (let i = 0; i < 31; i++) last = (await http().get(`/public/location-shares/${s.token}`).set('X-Forwarded-For', ip)).status;
+    for (let i = 0; i < 31; i++) last = (await pub(`/public/location-shares/${s.token}`).set('X-Forwarded-For', ip)).status;
     expect(last).toBe(429);
   });
 });
