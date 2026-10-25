@@ -30,7 +30,7 @@ class ParityBackend extends GalpaoBackend {
 
   @override
   Future<List<SupportConversation>> conversations() async => [
-        SupportConversation((b) => b
+        $SupportConversation((b) => b
           ..id = 'c'
           ..customerId = 'c1'
           ..subject = 'Ajuda'

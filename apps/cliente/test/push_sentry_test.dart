@@ -167,6 +167,87 @@ void main() {
       expect(out, isNot(contains('-23.561414')));
     });
 
+    group('scrubText (revisao final, I2)', () {
+      void redacts(String sample, String leaked, String tag) {
+        final out = scrubText('erro: $sample fim');
+        expect(out, isNot(contains(leaked)), reason: '"$sample" virou "$out"');
+        expect(out, contains(tag), reason: '"$sample" virou "$out"');
+        expect(out, startsWith('erro: '));
+        expect(out, endsWith(' fim'));
+      }
+
+      test('telefone BR em varios formatos', () {
+        for (final p in [
+          '+55 11 91234-5678', '+5511912345678', '55 (11) 91234-5678', '(11) 91234-5678', '(11)91234-5678',
+          '11 91234 5678', '11912345678', '11 3456-7890', '(21) 3456.7890', '+55 (11) 3456-7890',
+        ]) {
+          final out = scrubText('ligar $p agora');
+          expect(out, isNot(contains('5678')), reason: '"$p" virou "$out"');
+          expect(out, isNot(contains('7890')), reason: '"$p" virou "$out"');
+        }
+        redacts('(11) 91234-5678', '91234', '[phone]');
+      });
+
+      test('numero de cartao (13 a 19 digitos, com separadores)', () {
+        redacts('4111111111111111', '4111111111111111', '[card]');
+        redacts('4111 1111 1111 1111', '1111 1111', '[card]');
+        redacts('4111-1111-1111-1111', '1111-1111', '[card]');
+        redacts('378282246310005', '378282246310005', '[card]');
+        redacts('6011000990139424123', '6011000990139424123', '[card]');
+        expect(scrubText('FormatException: Invalid card 5555 5555 5555 4444'), isNot(contains('4444')));
+      });
+
+      test('CPF com e sem pontuacao', () {
+        redacts('123.456.789-09', '456', '[cpf]');
+        redacts('12345678909', '12345678909', '[cpf]');
+      });
+
+      test('e-mail', () => redacts('Ana.Silva+app@mail.com.br', 'Ana.Silva', '[email]'));
+
+      test('coordenadas: pares em qualquer separador e chaves lat/lng', () {
+        for (final c in ['-23.56, -46.65', '-23.561414,-46.655881', '-23.56 -46.65', '-23.5614;-46.6558', '-23.56/-46.65']) {
+          final out = scrubText('pos $c');
+          expect(out, isNot(contains('23.56')), reason: '"$c" virou "$out"');
+          expect(out, isNot(contains('46.65')), reason: '"$c" virou "$out"');
+        }
+        for (final c in ['lat=-23.56 lng=-46.65', '{"lat": -23.5614, "lng": -46.6558}', "latitude: -23.5, longitude: -46.6", 'lon=-46.65&lat=-23']) {
+          final out = scrubText(c);
+          expect(out, isNot(contains('23.5')), reason: '"$c" virou "$out"');
+          expect(out, isNot(contains('46.6')), reason: '"$c" virou "$out"');
+          expect(out, contains('[coord]'));
+        }
+      });
+
+      test('mantem texto tecnico util (codigos HTTP, versoes, ids curtos)', () {
+        const s = 'HTTP 409 em /rentals v1.2.3 tentativa 3 de 5';
+        expect(scrubText(s), s);
+      });
+    });
+
+    test('scrubEvent redige excecao e mensagem com telefone, cartao e coordenadas; contexts sem nome do aparelho', () {
+      final event = SentryEvent(
+        exceptions: [SentryException(type: 'FormatException', value: 'cartao 4111 1111 1111 1111 de +55 11 91234-5678 em lat=-23.56 lng=-46.65')],
+        message: SentryMessage('pos -23.5614 -46.6558'),
+        contexts: Contexts(
+          device: SentryDevice(name: 'iPhone da Ana', model: 'iPhone15,2'),
+          operatingSystem: SentryOperatingSystem(name: 'iOS', version: '17.4', rawDescription: 'host ana-mbp'),
+          app: SentryApp(name: 'Volti', version: '1.0.0', viewNames: ['/account']),
+        ),
+        threads: [SentryThread(id: 1, name: 'main')],
+      );
+      final out = scrubEvent(event)!;
+      final v = out.exceptions!.single.value!;
+      for (final leak in ['1111 1111', '91234', '-23.56', '-46.65']) {
+        expect(v, isNot(contains(leak)));
+      }
+      expect(out.message!.formatted, isNot(contains('23.56')));
+      expect(out.contexts.device!.name, isNull);
+      expect(out.contexts.device!.model, 'iPhone15,2');
+      expect(out.contexts.operatingSystem!.rawDescription, isNull);
+      expect(out.contexts.app!.viewNames, isNull);
+      expect(out.threads, isNull);
+    });
+
     test('scrubEvent tira usuario, requisicao, trilha e extras', () {
       final event = SentryEvent(
         user: SentryUser(id: 'u1', email: 'ana@x.com', ipAddress: '1.2.3.4'),
@@ -199,6 +280,11 @@ void main() {
       expect(o.maxBreadcrumbs, 0);
       expect(o.tracesSampleRate, isNull);
       expect(o.beforeBreadcrumb!(Breadcrumb(message: 'x'), Hint()), isNull);
+      // ignore: experimental_member_use
+      expect(o.attachViewHierarchy, isFalse);
+      // Crash nativo nao passa pelo beforeSend do Dart: desligado ate existir scrub nativo (I2).
+      expect(o.enableNativeCrashHandling, isFalse);
+      expect(o.enableNdkScopeSync, isFalse);
     });
   });
 }
