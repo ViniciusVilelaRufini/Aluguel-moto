@@ -5,7 +5,7 @@ function LoginView({ onDone }){
   const [code,setCode]=React.useState('');
   return <div style={{height:'100vh',display:'flex',fontFamily:'var(--font-sans)',color:'var(--text-primary)'}}>
     <div style={{width:'42%',background:'var(--ink-900)',color:'#fff',padding:56,display:'flex',flexDirection:'column'}}>
-      <div style={{font:'800 32px/1 var(--font-sans)',letterSpacing:'-.04em',color:'var(--green-400)'}}>volti</div>
+      <div style={{display:'flex',alignItems:'center',gap:10,font:'800 32px/1 var(--font-sans)',letterSpacing:'-.04em',color:'var(--green-400)'}}><img src="../../assets/logo/logo-mark.svg" width="40" height="40" alt=""/>volti</div>
       <div style={{flex:1}}/>
       <div style={{font:'800 48px/1.05 var(--font-sans)',letterSpacing:'-.03em',maxWidth:420}}>Painel de operação</div>
       <div style={{font:'var(--type-body)',color:'rgba(255,255,255,.6)',marginTop:12,maxWidth:380}}>Frota, clientes e finanças em tempo real. Acesso restrito à equipe.</div>

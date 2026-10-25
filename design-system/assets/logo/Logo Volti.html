@@ -1,0 +1,25 @@
+<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="design_doc_mode" content="canvas"><title>Logo Volti — opções</title><link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0;font-family:var(--font-sans);color:var(--ink-900)}a{color:var(--text-link)}a:hover{color:var(--brand-press)}.f{position:absolute;top:40px;width:560px;background:#fff;border-radius:28px;padding:28px;box-sizing:border-box;box-shadow:var(--shadow-2);display:flex;flex-direction:column;gap:18px}.b{display:inline-flex;align-items:center;height:26px;padding:0 10px;border-radius:8px;background:var(--ink-900);color:#fff;font:700 13px/1 var(--font-mono)}.h{display:flex;align-items:center;gap:12px}.t{font:800 24px/1 var(--font-sans);letter-spacing:-.02em}.d{font:500 14px/1.45 var(--font-sans);color:var(--ink-500);margin:0}.g{display:grid;grid-template-columns:1fr 1fr;gap:14px}.tile{height:220px;border-radius:24px;display:flex;align-items:center;justify-content:center}.icon{width:150px;height:150px;border-radius:36px;display:flex;align-items:center;justify-content:center;box-shadow:0 14px 30px rgba(21,24,26,.18)}.lock{height:110px;border-radius:20px;display:flex;align-items:center;justify-content:center;gap:12px;font:800 54px/1 var(--font-sans);letter-spacing:-.045em}.sm{display:flex;align-items:flex-end;gap:18px;padding:14px 18px;border-radius:18px;background:var(--ink-50)}.sm span{font:500 11px/1 var(--font-mono);color:var(--ink-400)}</style></head><body>
+<div id="c"></div>
+<script>
+const G='#34C25C',D='#15181A',W='#FFFFFF';
+const M={
+ pin:(c,bg)=>`<path d="M90 22a54 54 0 0 1 54 54c0 38-54 84-54 84S36 114 36 76a54 54 0 0 1 54-54z" fill="${c}"/><polygon points="62,54 80,54 90,84 100,54 118,54 98,108 82,108" fill="${bg}"/>`,
+ roda:(c)=>`<g fill="none" stroke="${c}" stroke-linecap="round" stroke-linejoin="round"><circle cx="40" cy="132" r="22" stroke-width="12"/><circle cx="140" cy="132" r="22" stroke-width="12"/><polyline points="62,64 90,124 120,52" stroke-width="16"/><line x1="40" y1="132" x2="70" y2="82" stroke-width="11"/><line x1="120" y1="52" x2="140" y2="132" stroke-width="11"/><line x1="46" y1="62" x2="78" y2="62" stroke-width="12"/><line x1="108" y1="44" x2="138" y2="44" stroke-width="12"/></g>`,
+ raio:(c)=>`<polyline points="38,34 88,146 114,88 92,88 142,30" fill="none" stroke="${c}" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>`
+};
+const svg=(k,s,c,bg)=>`<svg width="${s}" height="${s}" viewBox="0 0 180 180" aria-hidden="true">${M[k](c,bg)}</svg>`;
+const O=[
+ ['1a','pin','Pin','Um pino de mapa com o V vazado. Fala de localização: achar a moto perto de você.'],
+ ['1b','roda','Roda','Duas rodas unidas por um V que vira o quadro da moto. O mais ilustrativo e simpático.'],
+ ['1c','raio','Raio','Um V cujo braço direito é um raio. Elétrico e rápido, o mais ousado dos três.']
+];
+document.getElementById('c').innerHTML=O.map(([id,k,t,d],i)=>`<section id="${id}" class="f" style="left:${40+i*600}px">
+<div class="h"><span class="b">${id}</span><span class="t">${t}</span></div><p class="d">${d}</p>
+<div class="g"><div class="tile" style="background:var(--ink-100)"><div class="icon" style="background:${G}">${svg(k,112,W,G)}</div></div>
+<div class="tile" style="background:${D}"><div class="icon" style="background:${D};box-shadow:0 0 0 1.5px rgba(255,255,255,.12)">${svg(k,112,G,D)}</div></div></div>
+<div class="lock" style="background:#fff;outline:1.5px solid var(--ink-200)">${svg(k,64,G,W)}<span>volti</span></div>
+<div class="lock" style="background:${G};color:#fff">${svg(k,64,W,G)}<span>volti</span></div>
+<div class="sm">${[48,32,20].map(s=>`<div style="display:flex;flex-direction:column;align-items:center;gap:6px"><div style="width:${s}px;height:${s}px;border-radius:${s*.24}px;background:${G};display:flex;align-items:center;justify-content:center">${svg(k,s*.74,W,G)}</div><span>${s}</span></div>`).join('')}<div style="flex:1"></div><div style="display:flex;align-items:center;gap:6px;font:800 22px/1 var(--font-sans);letter-spacing:-.045em">${svg(k,26,G,W)}volti</div></div>
+</section>`).join('');
+</script></body></html>

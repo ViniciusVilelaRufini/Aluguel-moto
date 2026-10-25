@@ -1,14 +1,14 @@
 
 const MAP_Z=15, MAP_CX=12137.1, MAP_CY=18592.6;
-function MapView({ children, dim=false, offsetY=0 }) {
-  const W=402, H=874, tiles=[];
+function MapView({ children, dim=false, offsetY=0, tiles='rastertiles/voyager' }) {
+  const W=402, H=874, imgs=[];
   const cx=MAP_CX*256, cy=MAP_CY*256 + offsetY;
   for (let x=12135;x<=12139;x++) for (let y=18589;y<=18596;y++) {
     const l=x*256-cx+W/2, t=y*256-cy+H/2;
-    if (l>-256&&l<W&&t>-256&&t<H) tiles.push(<img key={x+'-'+y} src={'https://tile.openstreetmap.org/'+MAP_Z+'/'+x+'/'+y+'.png'} width="256" height="256" draggable="false" style={{position:'absolute',left:l,top:t,display:'block',filter:'saturate(.55) brightness(1.06) contrast(.92)'}}/>);
+    if (l>-256&&l<W&&t>-256&&t<H) imgs.push(<img key={x+'-'+y} src={tiles==='rastertiles/voyager'?'https://tile.openstreetmap.org/'+MAP_Z+'/'+x+'/'+y+'.png':'https://a.basemaps.cartocdn.com/'+tiles+'/'+MAP_Z+'/'+x+'/'+y+'@2x.png'} width="256" height="256" draggable="false" style={{position:'absolute',left:l,top:t,display:'block',filter:'saturate(.55) brightness(1.06) contrast(.92)'}}/>);
   }
   return <div style={{position:'absolute',inset:0,overflow:'hidden',background:'var(--map-land)'}}>
-    {tiles}
+    {imgs}
     {dim && <div style={{position:'absolute',inset:0,background:'rgba(255,255,255,.25)'}}/>}
     {children}
   </div>;

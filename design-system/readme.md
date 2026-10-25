@@ -8,7 +8,7 @@
 ## Fontes
 - Referência visual: `uploads/8f26498453a8dd40398598c025cf4411.jpg` — mockup estilo Dribbble ("Fastgo Scooty") com mapa, bottom sheet do veículo e contagem de reserva. Usada como guia de alto nível (não há código nem Figma).
 - Funções e arquitetura: `uploads/infra_file-1792592492426-iuah.docx` ("Aluguel de motos elétricas — funções e arquitetura AWS", Vinicius Vilela Rufini, 21/10/2026). Também referenciado como artifact `https://claude.ai/artifact/3YXZV9GSQLCFKSm8L6hjz8#eea4b31b-920f.mn7fmk476vv.4801` (não acessível).
-- **Sem logo fornecido.** A marca é renderizada como texto puro "volti" em Plus Jakarta Sans 800. Não há símbolo.
+- **Logo:** símbolo "Roda" (moto de lado — duas rodas, quadro em V, banco e guidão) + nome "volti" em Plus Jakarta Sans 800, tracking −4,5%. Criado neste projeto e escolhido pelo usuário (opção 1b em `assets/logo/Logo Volti.html`). Arquivos em `assets/logo/`: `logo-mark.svg` (verde), `logo-mark-white.svg`, `logo-mark-dark.svg`, `app-icon.svg`, `app-icon-dark.svg`. O nome é sempre texto vivo ao lado do símbolo; não há versão vetorizada do nome.
 
 ## Índice
 - `styles.css` — ponto de entrada (só `@import`)
