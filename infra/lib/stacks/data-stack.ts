@@ -78,7 +78,15 @@ export class DataStack extends Stack {
       subnetIds: vpc.selectSubnets({ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }).subnetIds,
     });
     const ha = cfg.redisNodes > 1;
+    // noeviction (lacunas T5, revisão I2): a API guarda estado de segurança no Redis (rampa do bloqueio seguro, prazos de cerca)
+    // sem TTL; o padrão volatile-lru expulsaria chaves sob pressão de memória. Cheio → as escritas falham (alarme), nada some.
+    const redisParams = new elasticache.CfnParameterGroup(this, 'RedisParams', {
+      cacheParameterGroupFamily: 'redis7',
+      description: `Volti ${env} Redis (noeviction)`,
+      properties: { 'maxmemory-policy': 'noeviction' },
+    });
     this.redis = new elasticache.CfnReplicationGroup(this, 'Redis', {
+      cacheParameterGroupName: redisParams.ref,
       replicationGroupDescription: `Volti ${env} Redis`,
       engine: 'redis',
       engineVersion: '7.1',

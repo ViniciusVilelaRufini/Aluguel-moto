@@ -26,7 +26,7 @@ Configuração por ambiente (tamanhos, NAT, retenção, orçamento, limite do WA
 pnpm install                       # na raiz do monorepo
 pnpm --filter infra test           # assertions do CDK (jest)
 pnpm --filter infra exec cdk synth -c env=dev     # sem credenciais AWS
-pnpm --filter infra exec cdk synth -c env=prod
+pnpm --filter infra exec cdk synth -c env=prod -c domainName=volti.com.br
 pnpm --filter infra exec cdk diff --all -c env=dev -c account=<id> -c certificateArn=<arn>
 ```
 
@@ -41,7 +41,7 @@ O synth offline usa conta `000000000000` e ARNs de certificado fictícios. Nenhu
 | `certificateArn` | ARN fictício | Certificado ACM em `sa-east-1` para o ALB (obrigatório no deploy real) |
 | `apiDesiredCount` | `0` | Tarefas Fargate; use 0 até existir imagem no ECR, depois 1 (dev) ou mais |
 | `apiImageTag` | `latest` | Tag da imagem no ECR `volti-<env>-api` (o CI usa o SHA do commit) |
-| `domainName` | vazio | Se definido junto com `adminCertificateArn`, o painel responde em `admin.<domainName>` |
+| `domainName` | vazio | Se definido junto com `adminCertificateArn`, o painel responde em `admin.<domainName>`; a API usa `api.<domainName>` no link público do SOS. **Obrigatório em prod** (sem ele o synth falha) |
 | `adminCertificateArn` | vazio | Certificado ACM em `us-east-1` (exigência do CloudFront) |
 | `alarmEmail` | vazio | E-mail de alarmes e do orçamento (sem ele, só o tópico SNS `volti-<env>-alarms`) |
 | `apiRateLimitPer5Min` | dev 2000, prod 3000 | Limite por IP do WAF da API (requisições em 5 minutos); inteiro >= 10 |
@@ -139,7 +139,7 @@ O backend publica comandos e shadow com a task role (`topic/motos/*/comandos`, `
 
 Callbacks em `lib/config.ts` (`auth.*CallbackUrls`, `auth.adminExtraOrigins`); a origem do painel vem da stack `admin-web` (domínio próprio ou CloudFront). Login por telefone ou e-mail (atributos de username), e-mail não obrigatório. O SMS sai pelo SNS com um papel criado pelo CDK (external id), sem credencial. O `PASSWORD` continua como primeiro fator porque o Cognito não permite removê-lo; o client do app só habilita `USER_AUTH`. A API aceita a lista `COGNITO_STAFF_CLIENT_IDS` (painel + `operator-app`), definida na task ECS (lacunas T5).
 
-**API com várias tasks (lacunas T5):** o dev roda `PAYMENT_PROVIDER=fake` com `NODE_ENV=production` e por isso a task do dev recebe `ALLOW_FAKE_PAYMENTS=true` (só quando `paymentProvider` é `fake`; prod usa `mercadopago` e não recebe a variável — a API recusa subir com fake em produção sem ela). `PUBLIC_SHARE_BASE_URL` = `https://api.<domainName>/share` (`-c domainName=...`) ou, sem domínio, o DNS do ALB (o certificado precisa cobrir o nome usado no link). O segredo `volti/<env>/fcm-service-account` vai para `FCM_SERVICE_ACCOUNT_JSON`: cole o JSON da conta de serviço do Firebase e só então troque `PUSH_MODE` para `fcm` (a API valida o JSON ao subir).
+**API com várias tasks (lacunas T5):** o dev roda `PAYMENT_PROVIDER=fake` com `NODE_ENV=production` e por isso a task do dev recebe `ALLOW_FAKE_PAYMENTS=true` (só quando `paymentProvider` é `fake`; prod usa `mercadopago` e não recebe a variável — a API recusa subir com fake em produção sem ela). `PUBLIC_SHARE_BASE_URL` = `https://api.<domainName>/share` (`-c domainName=...`) ou, sem domínio (só dev), o DNS do ALB; prod exige `domainName`. O Redis usa um parameter group com `maxmemory-policy noeviction` (estado de segurança sem TTL nunca é expulso; memória cheia = escritas falham). O segredo `volti/<env>/fcm-service-account` vai para `FCM_SERVICE_ACCOUNT_JSON`: cole o JSON da conta de serviço do Firebase e só então troque `PUSH_MODE` para `fcm` (a API valida o JSON ao subir).
 
 ## Alarmes (`observability`)
 

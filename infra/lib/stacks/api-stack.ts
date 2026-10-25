@@ -50,6 +50,8 @@ export class ApiStack extends Stack {
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
     const { cfg, vpc, data, auth, messaging, iot, desiredCount } = props;
+    // O link público do SOS vai para um contato de emergência: em prod, sem domínio (certificado) o link daria erro de TLS.
+    if (cfg.name === 'prod' && !props.apiDomainName) throw new Error('prod exige -c domainName (PUBLIC_SHARE_BASE_URL = https://api.<domínio>/share).');
     const env = cfg.name;
 
     this.repository = new ecr.Repository(this, 'ApiRepo', {
