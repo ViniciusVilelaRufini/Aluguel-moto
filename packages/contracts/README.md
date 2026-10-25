@@ -156,6 +156,17 @@ Slugs novos: `reservation-open`, `reservation-in-handover`, `pickup-outside-hour
 
 Regra: moto com `depotId` (ou separada por reserva de galpão) só sai pela entrega — `409 vehicle-unavailable` em `POST /rentals` e na reserva de rua; o `nearby` do cliente não mostra motos de galpão nem `awaiting_pickup`.
 
+## Inadimplência, alerta de pagamento e LGPD completa (2026-10-24, Task 14 das lacunas)
+
+- `POST /payments/{id}/retry` (`payDebt`, cliente): quita o saldo devedor por cartão ou Pix num pagamento `debt_settlement`.
+- `POST /customers/{id}/delinquency/clear` (`clearCustomerDelinquency`, admin/financeiro): quitação manual com motivo.
+- `Payment`: `customerName` (staff), `outstandingCents`, `debtSettledAt`, `debtSettlement`, `settlesPaymentId`, `pix`.
+- `AlertType.payment_needs_review` e `Alert.paymentId`; alertas abertos ao `financeiro` (só os de pagamento).
+- `Customer.walletBalanceCents` e `debtCents` (admin/financeiro, detalhe); `Handover.cancelReason`/`canceledAt`/`canceledByName`.
+- `LgpdExport.supportConversations`; `RevenueRow.walletCents`; CSV dos relatórios em pt-BR.
+
+Slugs novos: `debt-not-payable`, `debt-in-collection`.
+
 ## Regras que o contrato garante
 
 - `speedLimitKmh` configurável sempre `0..32` (comandos, zonas, ficha da moto); acima disso → 400.
