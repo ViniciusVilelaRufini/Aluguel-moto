@@ -10,17 +10,12 @@ import { isUniqueViolation, PaymentStateService } from './payment-state.service'
 import { ProviderCustomersService } from './provider-customers.service';
 import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError } from './provider/payment-provider';
+import { debtInCollection, isOpenDebt, openDebtWhere } from './open-debt';
 import { BILLING_OPTIONS, type BillingOptions, RentalBillingService } from './rental-billing.service';
 
-/** Pagamentos que geram dívida quando terminam `failed` (decisão #7: recarga recusada não gera dívida). */
-export const DEBT_KINDS = ['rental', 'subscription'] as const;
+export { DEBT_KINDS, isOpenDebt, openDebtWhere } from './open-debt';
 /** Quitação no cartão sem resposta conclusiva há mais que isto: o gateway é consultado e, sem cobrança, a tentativa morre. */
 const STALE_CARD_SETTLEMENT_MS = 10 * 60_000;
-
-export const openDebtWhere = (customerId: string): Prisma.PaymentWhereInput => ({ customerId, kind: { in: [...DEBT_KINDS] }, status: 'failed', debtSettledAt: null });
-
-export const isOpenDebt = (p: Pick<Payment, 'kind' | 'status' | 'debtSettledAt'>): boolean =>
-  (DEBT_KINDS as readonly string[]).includes(p.kind) && p.status === 'failed' && !p.debtSettledAt;
 
 export interface DebtPaymentInput {
   method: 'card' | 'pix';
@@ -72,27 +67,9 @@ export class DelinquencyService {
     return total;
   }
 
-  /**
-   * Cobrança automática ainda em curso no gateway para a dívida (ou, sem `debt`, para qualquer dívida do cliente):
-   * - aluguel: liquidação `pending` com recusa e tentativas restantes (nem estacionada nem concluída);
-   * - assinatura (fix round 1, I-2): `past_due` (o gateway ainda retenta a recorrência) ou fechada com o cancelamento no
-   *   gateway ainda não confirmado (`gatewayCancelPendingAt`). Pagar por fora agora cobraria o mesmo ciclo duas vezes.
-   */
-  private async inCollection(customerId: string, debt?: Pick<Payment, 'kind' | 'subscriptionId'>): Promise<boolean> {
-    if (!debt || debt.kind === 'rental') {
-      const pending = await this.prisma.payment.findMany({ where: { customerId, kind: 'rental', status: 'pending' }, select: { id: true } });
-      if (pending.length) {
-        const n = await this.prisma.settlementProgress.count({ where: { paymentId: { in: pending.map((p) => p.id) }, attempts: { gt: 0 }, parkedAt: null, finishedAt: null } });
-        if (n > 0) return true;
-      }
-    }
-    if (!debt || debt.kind === 'subscription') {
-      const n = await this.prisma.subscription.count({
-        where: { customerId, ...(debt?.subscriptionId ? { id: debt.subscriptionId } : {}), OR: [{ status: 'past_due' }, { gatewayCancelPendingAt: { not: null } }] },
-      });
-      if (n > 0) return true;
-    }
-    return false;
+  /** Cobrança automática ainda em curso (regra única em `open-debt.ts`). */
+  private inCollection(customerId: string, debt?: Pick<Payment, 'kind' | 'subscriptionId'>): Promise<boolean> {
+    return debtInCollection(this.prisma, customerId, debt);
   }
 
   private gatewayUnavailable(): ProblemException {
