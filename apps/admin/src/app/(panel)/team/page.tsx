@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
-import { AUDIT_ACTION_OPTIONS, AUDIT_ENTITY_OPTIONS, auditActionLabel, auditEntityLabel } from '@/lib/audit-labels';
+import { AUDIT_ACTION_OPTIONS, AUDIT_ENTITY_OPTIONS, AUDIT_OTHER, auditActionLabel, auditEntityLabel, auditFilterValue } from '@/lib/audit-labels';
 import { GROUP_LABEL } from '@/lib/labels';
 import { dayEndIso, dayStartIso, formatDateTime, timeAgo } from '@/lib/format';
 import type { S, StaffGroup } from '@/lib/types';
@@ -117,16 +117,22 @@ function AuditCell({ label, detail }: { label: string; detail: string }) {
 function Audit() {
   const [action, setAction] = useState('');
   const [entity, setEntity] = useState('');
+  const [actionCustom, setActionCustom] = useState('');
+  const [entityCustom, setEntityCustom] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', action, entity, from, to], (cursor) =>
-    unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: action || undefined, entityType: entity || undefined, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
+  const actionFilter = auditFilterValue(action, actionCustom);
+  const entityFilter = auditFilterValue(entity, entityCustom);
+  const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', actionFilter, entityFilter, from, to], (cursor) =>
+    unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: actionFilter || undefined, entityType: entityFilter || undefined, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
   );
   return (
     <>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ width: 200 }}><Field label="Ação"><Select testId="audit-action" value={action} onChange={setAction} options={AUDIT_ACTION_OPTIONS} /></Field></div>
+        {action === AUDIT_OTHER && <div style={{ width: 220 }}><Field label="Ação (identificador)"><TextInput testId="audit-action-custom" value={actionCustom} onChange={setActionCustom} placeholder="ex.: vehicle.updated" /></Field></div>}
         <div style={{ width: 200 }}><Field label="Entidade"><Select testId="audit-entity" value={entity} onChange={setEntity} options={AUDIT_ENTITY_OPTIONS} /></Field></div>
+        {entity === AUDIT_OTHER && <div style={{ width: 220 }}><Field label="Entidade (identificador)"><TextInput testId="audit-entity-custom" value={entityCustom} onChange={setEntityCustom} placeholder="ex.: Vehicle" /></Field></div>}
         <div style={{ width: 170 }}><Field label="De"><TextInput type="date" value={from} onChange={setFrom} /></Field></div>
         <div style={{ width: 170 }}><Field label="Até"><TextInput type="date" value={to} onChange={setTo} /></Field></div>
       </div>

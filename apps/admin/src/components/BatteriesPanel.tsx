@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
-import { BATTERY_STATUS, BATTERY_STATUSES, batteryActions, batteryLocation, buildBatteryCreate, chargeTone, countsFromPage, movementTitle, parseSerials, validateReason, type Battery, type BatteryStatus } from '@/lib/batteries';
+import { BATTERY_STATUS, BATTERY_STATUSES, batteryActions, batteryLocation, buildBatteryCreate, chargeTone, countsFromPage, movementTitle, parseSerials, unloadDestination, validateReason, type Battery, type BatteryStatus } from '@/lib/batteries';
 import { formatDateTimeIn, timeAgo } from '@/lib/format';
 import { loadAllPages } from '@/lib/paging';
 import type { S } from '@/lib/types';
@@ -151,12 +151,6 @@ function VanStock({ staff, stations, depots, canTransfer }: { staff: S<'StaffUse
   );
 }
 
-/** Destino do descarregamento: `depot:<id>` → carregar no galpão; outro valor → estação; `charging` = padrão da API. */
-function unloadDestination(dest: string): { stationId?: string; depotId?: string } {
-  if (dest.startsWith('depot:')) return { depotId: dest.slice(6) };
-  return dest === 'charging' ? {} : { stationId: dest };
-}
-
 function TransferModal({ mode, stations, depots, onClose }: { mode: 'load' | 'unload'; stations: S<'SwapStation'>[]; depots: S<'Depot'>[]; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -170,11 +164,13 @@ function TransferModal({ mode, stations, depots, onClose }: { mode: 'load' | 'un
     const { serials, error } = parseSerials(text);
     if (error) { setErr(new Error(error)); return; }
     const pct = Number(charge);
+    const unload = mode === 'unload' ? unloadDestination(dest, depots.length) : null;
+    if (unload && 'error' in unload) { setErr(new Error(unload.error)); return; }
     if (mode === 'load' && (!/^\d+$/.test(charge.trim()) || pct < 0 || pct > 100)) { setErr(new Error('Carga de 0 a 100%')); return; }
     setBusy(true);
     try {
       if (mode === 'load') await unwrap(api.POST('/batteries/van-stock/load', { body: { serials, chargePct: pct } }));
-      else await unwrap(api.POST('/batteries/van-stock/unload', { body: { serials, ...unloadDestination(dest) } }));
+      else await unwrap(api.POST('/batteries/van-stock/unload', { body: { serials, ...unload!.body } }));
       toast(mode === 'load' ? `${serials.length} bateria(s) na van` : `${serials.length} bateria(s) descarregada(s)`);
       for (const k of ['van-stock', 'batteries', 'batteries-counts', 'swap-stations', BATTERY_CENSUS_KEY]) qc.invalidateQueries({ queryKey: [k] });
       onClose();
