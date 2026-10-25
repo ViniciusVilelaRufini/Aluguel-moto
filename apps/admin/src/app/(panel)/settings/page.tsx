@@ -286,7 +286,7 @@ function PlanModal({ plans, onClose, onEdit, onDeactivate }: { plans: S<'Pricing
         <Alert tone="warning" icon="Info">
           <div data-testid="plan-conflict" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span>Já existe um plano ativo para {PLAN_LABEL[f.code]} ({existing.name}). Só pode haver um por código: edite o preço dele ou desative-o antes de criar outro.</span>
-            <span style={{ display: 'flex', gap: 8 }}>
+            <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Button size="sm" variant="secondary" testId="plan-conflict-edit" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={onEdit}>Editar o existente</Button>
               <Button size="sm" variant="secondary" testId="plan-conflict-deactivate" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => onDeactivate(existing)}>Desativar o existente</Button>
             </span>

@@ -75,3 +75,11 @@ export function pickAssignee(people: { id: string }[], meId: string | undefined,
 export function assignToast(assigneeId: string, meId: string | undefined, name?: string): string {
   return assigneeId === meId ? 'Alerta atribuído a você' : `Alerta atribuído a ${name ?? 'outra pessoa'}`;
 }
+
+/**
+ * Alertas pendentes = não resolvidos (abertos + atribuídos): total do servidor (`/reports/dashboard`) somado às
+ * variações do tempo real desde a última consulta. Nunca negativo.
+ */
+export function pendingAlertCount(serverTotal: number | undefined, delta: number): number {
+  return Math.max(0, (serverTotal ?? 0) + delta);
+}

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { GeoJSONSource, Map as MlMap } from 'maplibre-gl';
+import { useSearchParams } from 'next/navigation';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
@@ -35,7 +36,8 @@ export default function DepotsPage() {
   const canDeactivate = can(groups, 'depot.deactivate');
   const mapRef = useRef<MlMap | null>(null);
   const [mapReady, setMapReady] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const params = useSearchParams();
+  const [selectedId, setSelectedId] = useState<string | null>(params.get('depot'));
   const [draft, setDraft] = useState<DepotDraft | null>(null);
   const [errors, setErrors] = useState<DepotErrors>({});
   const [confirmToggle, setConfirmToggle] = useState(false);

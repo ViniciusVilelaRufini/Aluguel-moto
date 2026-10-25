@@ -273,7 +273,7 @@ export default function FleetPage() {
               {/* A API zera a receita para quem não é admin/financeiro: melhor ocultar do que mostrar R$ 0,00. */}
               {groups.some((g) => REVENUE_GROUPS.includes(g)) && <StatTile icon="Wallet" label="Receita do dia" numeric={dash.data.revenueTodayCents} format={formatBRL} />}
               {/* Alertas vêm do tempo real (alert.created), não só do refresh de 30 s do dashboard. */}
-              <StatTile icon="Siren" label="Alertas abertos" numeric={openAlerts} goodWhen="down" />
+              <StatTile icon="Siren" label="Alertas pendentes" numeric={openAlerts} goodWhen="down" />
             </div>
           ) : dash.isLoading ? (
             <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, maxWidth: 760 }}>

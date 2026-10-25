@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignToast, pickAssignee, auditWhat, commandSentMessage, criticalBanner, rentalWindow, signalLabel, toAuditRows } from '@/lib/fleet-copy';
+import { pendingAlertCount, assignToast, pickAssignee, auditWhat, commandSentMessage, criticalBanner, rentalWindow, signalLabel, toAuditRows } from '@/lib/fleet-copy';
 import { allLayers, filterByLayers, toggleLayer, visibleCount, zoneTooltip } from '@/lib/zone-layers';
 import { clusterDiameter, clusterImageId, parseClusterImageId } from '@/lib/map-icons';
 
@@ -87,5 +87,16 @@ describe('assign modal logic', () => {
     expect(assignToast('me', 'me', 'Eu')).toBe('Alerta atribuído a você');
     expect(assignToast('c', 'me', 'Campo Dev')).toBe('Alerta atribuído a Campo Dev');
     expect(assignToast('c', 'me')).toBe('Alerta atribuído a outra pessoa');
+  });
+});
+
+describe('pendingAlertCount (QA-02)', () => {
+  it('usa o total do servidor, sem o teto de 100 da página', () => {
+    expect(pendingAlertCount(636, 0)).toBe(636);
+    expect(pendingAlertCount(636, 2)).toBe(638);
+  });
+  it('sem dado ainda é 0 e nunca fica negativo', () => {
+    expect(pendingAlertCount(undefined, 0)).toBe(0);
+    expect(pendingAlertCount(1, -3)).toBe(0);
   });
 });
