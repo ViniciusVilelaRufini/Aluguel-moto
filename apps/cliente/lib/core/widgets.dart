@@ -156,7 +156,7 @@ class VoltiMap extends StatefulWidget {
     this.interactive = true,
     this.showAttribution = true,
     this.attributionAlignment = Alignment.centerLeft,
-    this.backgroundColor = VoltiColors.mapLand,
+    this.backgroundColor,
     this.embedded = false,
     this.onTileError,
     this.onTileLoaded,
@@ -178,7 +178,8 @@ class VoltiMap extends StatefulWidget {
   final bool interactive;
   final bool showAttribution;
   final Alignment attributionAlignment;
-  final Color backgroundColor;
+  /// Fundo enquanto os tiles nao chegam; padrao = `VoltiPalette.mapLand` do tema.
+  final Color? backgroundColor;
 
   // saturate(.55) brightness(1.06) contrast(.92) aproximado em matriz de cor.
   static const colorFilter = ColorFilter.matrix(<double>[
@@ -187,6 +188,22 @@ class VoltiMap extends StatefulWidget {
     0.17, 0.30, 0.56, 0, 8, //
     0, 0, 0, 1, 0,
   ]);
+
+  /// Tema escuro (decisao de tema escuro, docs/decisoes.md): os tiles raster sao
+  /// claros (Esri Light Gray em dev; o provedor de producao vem por define), entao
+  /// em vez de um segundo provedor escuro o app inverte a luminancia dos tiles e a
+  /// comprime para a faixa das superficies ink (terra ~#26292C, rotulos claros),
+  /// com um leve tom frio. Vale para qualquer provedor e mantem pins, rotas e
+  /// cercas nas cores vivas da marca.
+  static const darkColorFilter = ColorFilter.matrix(<double>[
+    -0.2041, -0.6866, -0.0693, 0, 266, //
+    -0.2041, -0.6866, -0.0693, 0, 270, //
+    -0.2041, -0.6866, -0.0693, 0, 276, //
+    0, 0, 0, 1, 0,
+  ]);
+
+  /// Filtro dos tiles para o brilho do tema.
+  static ColorFilter colorFilterFor(Brightness b) => b == Brightness.dark ? darkColorFilter : colorFilter;
 
   /// Novas tentativas automaticas depois de tiles com erro (rede instavel na
   /// abertura): ate 3 seguidas, espacadas; um tile carregado zera a contagem. A
@@ -264,7 +281,7 @@ class _VoltiMapState extends State<VoltiMap> with WidgetsBindingObserver {
         initialZoom: widget.zoom,
         minZoom: 3,
         maxZoom: kMapMaxZoom,
-        backgroundColor: widget.backgroundColor,
+        backgroundColor: widget.backgroundColor ?? context.palette.mapLand,
         interactionOptions: InteractionOptions(
           flags: widget.interactive ? InteractiveFlag.all & ~InteractiveFlag.rotate : InteractiveFlag.none,
         ),
@@ -278,12 +295,22 @@ class _VoltiMapState extends State<VoltiMap> with WidgetsBindingObserver {
           tileBuilder: (context, tile, image) {
             if (kMapDebug) debugPrint('VOLTI_DBG tile ${image.coordinates.z}/${image.coordinates.x}/${image.coordinates.y} ready=${image.readyToDisplay} err=${image.loadError}');
             if (image.readyToDisplay && widget.onTileLoaded != null) widget.onTileLoaded!();
-            return ColorFiltered(colorFilter: VoltiMap.colorFilter, child: tile);
+            return ColorFiltered(colorFilter: VoltiMap.colorFilterFor(Theme.of(context).brightness), child: tile);
           },
         ),
-        // Rotulos das ruas por cima da base (sem filtro de cor).
+        // Rotulos das ruas por cima da base (sem filtro no claro; no escuro, a
+        // mesma inversao da base: texto claro com halo escuro).
         if (_reference != null)
-          voltiTileLayer(context, template: kMapReferenceUrl, provider: _reference, onError: _onError, reset: _reset.stream),
+          voltiTileLayer(
+            context,
+            template: kMapReferenceUrl,
+            provider: _reference,
+            onError: _onError,
+            reset: _reset.stream,
+            tileBuilder: Theme.of(context).brightness == Brightness.dark
+                ? (context, tile, image) => ColorFiltered(colorFilter: VoltiMap.darkColorFilter, child: tile)
+                : null,
+          ),
         ...widget.layers,
         if (kMapDebug) const _CameraLogger(),
         if (widget.showAttribution)
@@ -315,10 +342,11 @@ class NoticeBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = danger ? VoltiColors.dangerSoft : (info ? VoltiColors.infoSoft : VoltiColors.warningSoft);
+    final p = context.palette;
+    final bg = danger ? p.dangerSoft : (info ? p.infoSoft : p.warningSoft);
     // Icone no tom da marca; texto no tom forte (>= 4,5:1 sobre o fundo suave).
-    final fg = danger ? VoltiColors.dangerInk : (info ? VoltiColors.infoInk : VoltiColors.warningInk);
-    final ink = danger ? VoltiColors.dangerInkStrong : (info ? VoltiColors.infoInk : VoltiColors.warningInkStrong);
+    final fg = danger ? p.dangerInk : (info ? p.infoInk : p.warningInk);
+    final ink = danger ? p.dangerInkStrong : (info ? p.infoInk : p.warningInkStrong);
     return Semantics(
       liveRegion: true,
       container: true,

@@ -402,7 +402,7 @@ class _StepView extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final (Widget art, String title, String text) = switch (swap.status) {
       StationSwapStatus.openingSlot => (
-          const _Art(icon: LucideIcons.packageOpen, bg: VoltiColors.infoSoft, fg: VoltiColors.infoInk),
+          const _Art(icon: LucideIcons.packageOpen, tone: _ArtTone.info),
           l.swapStepOpening,
           l.swapStepOpeningText,
         ),
@@ -412,12 +412,12 @@ class _StepView extends StatelessWidget {
           l.swapStepAwaitingText,
         ),
       StationSwapStatus.returned => (
-          const _Art(icon: LucideIcons.circleCheck, bg: VoltiColors.successSoft, fg: VoltiColors.successInk),
+          const _Art(icon: LucideIcons.circleCheck, tone: _ArtTone.success),
           l.swapStepReturned,
           l.swapStepReturnedText,
         ),
       StationSwapStatus.releasing => (
-          const _Art(icon: LucideIcons.batteryCharging, bg: VoltiColors.successSoft, fg: VoltiColors.successInk),
+          const _Art(icon: LucideIcons.batteryCharging, tone: _ArtTone.success),
           l.swapStepReleasing,
           l.swapStepReleasingText,
         ),
@@ -427,12 +427,12 @@ class _StepView extends StatelessWidget {
           l.swapDoneText,
         ),
       StationSwapStatus.canceled || StationSwapStatus.failed => (
-          const _Art(icon: LucideIcons.triangleAlert, bg: VoltiColors.warningSoft, fg: VoltiColors.warningInk),
+          const _Art(icon: LucideIcons.triangleAlert, tone: _ArtTone.warning),
           swapEndTitle(l, swap),
           swapEndMessage(l, swap),
         ),
       _ => (
-          const _Art(icon: LucideIcons.batteryCharging, bg: VoltiColors.infoSoft, fg: VoltiColors.infoInk),
+          const _Art(icon: LucideIcons.batteryCharging, tone: _ArtTone.info),
           l.swapProgressTitle,
           l.swapEndGeneric,
         ),
@@ -457,21 +457,27 @@ class _StepView extends StatelessWidget {
 const _artSize = VoltiSpacing.s48 + VoltiSpacing.s24;
 const _slotSize = VoltiSpacing.s48 + VoltiSpacing.s40;
 
-/// Fundo suave e icone no tema: no escuro, o tom do icone a 22% sobre a
-/// superficie e o icone clareado (os fundos "soft" claros ofuscavam).
-(Color, Color) _artColors(BuildContext context, Color bg, Color fg) {
-  if (Theme.of(context).brightness != Brightness.dark) return (bg, fg);
-  return (fg.withValues(alpha: .22), Color.lerp(fg, VoltiColors.white, .45)!);
+/// Tom da arte do passo: fundo suave e icone da `VoltiPalette` do tema.
+enum _ArtTone { info, success, warning, brand }
+
+(Color, Color) _artColors(BuildContext context, _ArtTone tone) {
+  final p = context.palette;
+  return switch (tone) {
+    _ArtTone.info => (p.infoSoft, p.infoInk),
+    _ArtTone.success => (p.successSoft, p.successInk),
+    _ArtTone.warning => (p.warningSoft, p.warningInk),
+    _ArtTone.brand => (p.brandSoft, p.textBrand),
+  };
 }
 
 class _Art extends StatelessWidget {
-  const _Art({required this.icon, required this.bg, required this.fg});
+  const _Art({required this.icon, required this.tone});
   final IconData icon;
-  final Color bg, fg;
+  final _ArtTone tone;
 
   @override
   Widget build(BuildContext context) {
-    final (b, f) = _artColors(context, bg, fg);
+    final (b, f) = _artColors(context, tone);
     return Container(
       width: _artSize,
       height: _artSize,
@@ -488,7 +494,7 @@ class _SlotArt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (bg, fg) = _artColors(context, VoltiColors.brandSoft, VoltiColors.brandAction);
+    final (bg, fg) = _artColors(context, _ArtTone.brand);
     return ExcludeSemantics(
       child: Container(
         key: const Key('swap-slot'),

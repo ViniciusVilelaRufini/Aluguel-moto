@@ -145,7 +145,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
                   // Verde 600 em texto de 34 px negrito: >= 3:1 (texto grande).
                   TextSpan(
                     text: l.welcomeTitleAccent,
-                    style: const TextStyle(color: VoltiColors.textLink),
+                    // Destaque grande do titulo: green-600 do design no claro (texto grande, >= 3:1). tema: fixo
+                    style: TextStyle(color: context.palette.isDark ? context.palette.textBrand : VoltiColors.textLink),
                   ),
                 ],
               ),
@@ -214,9 +215,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
               TextSpan(
                 children: [
                   TextSpan(text: l.welcomeTermsPrefix),
-                  TextSpan(text: l.welcomeTermsLink, style: _linkStyle, recognizer: _termsTap),
+                  TextSpan(text: l.welcomeTermsLink, style: _linkStyle(context), recognizer: _termsTap),
                   TextSpan(text: l.welcomeTermsMiddle),
-                  TextSpan(text: l.welcomePrivacyLink, style: _linkStyle, recognizer: _privacyTap),
+                  TextSpan(text: l.welcomePrivacyLink, style: _linkStyle(context), recognizer: _privacyTap),
                   TextSpan(text: l.welcomeTermsSuffix),
                 ],
               ),
@@ -231,7 +232,7 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
               l.welcomeDevHint,
               key: const Key('welcome-dev-hint'),
               textAlign: TextAlign.center,
-              style: VoltiTypography.caption.copyWith(fontSize: 11, color: VoltiColors.textTertiary),
+              style: VoltiTypography.caption.copyWith(fontSize: 11, color: context.palette.textTertiary),
             ),
           ],
         ],
@@ -308,7 +309,8 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen> {
   }
 
   /// Link no tom de acao (E-12): >= 4,5:1 sobre branco em texto pequeno.
-  static const _linkStyle = TextStyle(color: VoltiColors.brandAction, fontWeight: VoltiTypography.fwSemibold);
+  static TextStyle _linkStyle(BuildContext context) =>
+      TextStyle(color: context.palette.isDark ? context.palette.textBrand : VoltiColors.brandAction, fontWeight: VoltiTypography.fwSemibold);
 }
 
 /// Badge `tone="success"` do DS (components/core/Badge.jsx): 26 px, raio xs,
@@ -322,20 +324,20 @@ class SuccessBadge extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minHeight: 26),
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-    decoration: const BoxDecoration(color: VoltiColors.successSoft, borderRadius: VoltiRadii.rXs),
+    decoration: BoxDecoration(color: context.palette.successSoft, borderRadius: VoltiRadii.rXs),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (icon != null) ...[Icon(icon, size: 14, color: VoltiColors.successInk), const SizedBox(width: 5)],
+        if (icon != null) ...[Icon(icon, size: 14, color: context.palette.successInk), const SizedBox(width: 5)],
         Flexible(
           child: Text(
             label,
-            style: const TextStyle(
+            style: TextStyle(
               fontFamily: VoltiTypography.fontSans,
               fontWeight: VoltiTypography.fwSemibold,
               fontSize: 12,
               height: 1.4,
-              color: VoltiColors.successInk,
+              color: context.palette.successInk,
             ),
           ),
         ),
@@ -352,12 +354,12 @@ class _OrDivider extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Row(
     children: [
-      const Expanded(child: Divider(color: VoltiColors.borderSubtle, height: 1)),
+      Expanded(child: Divider(color: context.palette.borderSubtle, height: 1)),
       Padding(
         padding: const EdgeInsets.symmetric(horizontal: VoltiSpacing.s12),
-        child: Text(label, style: VoltiTypography.caption.copyWith(color: VoltiColors.ink500)),
+        child: Text(label, style: VoltiTypography.caption.copyWith(color: context.palette.textSecondary)),
       ),
-      const Expanded(child: Divider(color: VoltiColors.borderSubtle, height: 1)),
+      Expanded(child: Divider(color: context.palette.borderSubtle, height: 1)),
     ],
   );
 }

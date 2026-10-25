@@ -132,6 +132,14 @@ Os testes de sobreposição fixam esses valores com tolerância de 0,02. Com 200
 
 Testes em `test/cliente_login_test.dart`.
 
+## Tema escuro (acompanha o aparelho)
+
+O app usa `themeMode: ThemeMode.system`: com o iPhone/Android no modo escuro, tudo troca. Regra: **cor que muda com o tema vem de `context.palette` (`VoltiPalette` do `volti_flutter`)**, nunca de `VoltiColors.white/ink900/brandSoft/successInk/...` direto. O teste `test/dark_theme_test.dart` renderiza home, conta, carteira, avisos, cartão do hero, folha e diálogo no `VoltiTheme.dark()` e falha se achar fundo de superfície clara; o mesmo arquivo tem um lint por grep em `lib/` que barra tokens claros fixos (marque a linha com `tema: fixo` quando for de propósito, ex.: fundo branco do QR, foto de produto em quadro branco).
+
+- **Barra de status/navegação:** `AnnotatedRegion` com `VoltiTheme.overlayStyle(brightness)` no `builder` do app (vale também nas telas sem AppBar, como a home sobre o mapa).
+- **Mapa:** os tiles raster são claros (Esri Light Gray em dev; o de produção vem por `MAP_TILE_URL`). No escuro o `VoltiMap` aplica `VoltiMap.darkColorFilter` (inverte a luminância e comprime para a faixa ink, leve tom frio) na base e nos rótulos; funciona com qualquer provedor sem pedir um segundo estilo. Pins, rotas, cercas e o galpão continuam nas cores vivas. O fundo enquanto carrega é `palette.mapLand`; a ilustração de fallback da boas-vindas também tem versão escura.
+- **Fixos de propósito:** verde de ação com texto branco, SOS coral, pins com borda branca, visualizador de foto e câmera (preto), QR em cartão branco, avatar amarelo.
+
 ## Marca, ícone e splash
 
 A logo é o símbolo "Roda" + o nome "volti" (fonte da verdade: `design-system/assets/logo/`). No app, o logo é o widget `VoltiLogo`/`VoltiLogoMark` do `volti_flutter` (boas-vindas e tela de configuração inválida); nada de PNG da marca dentro do Flutter.

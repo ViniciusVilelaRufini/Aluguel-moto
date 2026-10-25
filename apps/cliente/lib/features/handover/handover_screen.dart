@@ -285,7 +285,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
                           height: 132,
                           fit: BoxFit.cover,
                           excludeFromSemantics: true,
-                          errorBuilder: (_, _, _) => const Icon(LucideIcons.imageOff, color: VoltiColors.blue600),
+                          errorBuilder: (_, _, _) => Icon(LucideIcons.imageOff, color: context.palette.onSurfaceMedia),
                         ),
                       ),
                     ),
@@ -297,7 +297,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
                 padding: const EdgeInsets.all(VoltiSpacing.s16),
                 decoration: BoxDecoration(color: scheme.surface, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
                 child: Row(children: [
-                  const Icon(LucideIcons.batteryCharging, size: 22, color: VoltiColors.brandAction),
+                  Icon(LucideIcons.batteryCharging, size: 22, color: context.palette.textBrand),
                   const SizedBox(width: VoltiSpacing.s12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -316,7 +316,7 @@ class _HandoverScreenState extends ConsumerState<HandoverScreen> {
               ),
               const SizedBox(height: VoltiSpacing.s16),
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Icon(LucideIcons.info, size: 18, color: VoltiColors.brandAction),
+                Icon(LucideIcons.info, size: 18, color: context.palette.textBrand),
                 const SizedBox(width: VoltiSpacing.s8),
                 Expanded(child: Text(l.handoverStartsNow, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant))),
               ]),
@@ -375,8 +375,8 @@ class _ChecklistRow extends StatelessWidget {
             Container(
               width: 28,
               height: 28,
-              decoration: BoxDecoration(color: item.ok ? VoltiColors.brandSoft : VoltiColors.dangerSoft, shape: BoxShape.circle),
-              child: Icon(item.ok ? LucideIcons.check : LucideIcons.x, size: 16, color: item.ok ? VoltiColors.successInk : VoltiColors.dangerInk),
+              decoration: BoxDecoration(color: item.ok ? context.palette.brandSoft : context.palette.dangerSoft, shape: BoxShape.circle),
+              child: Icon(item.ok ? LucideIcons.check : LucideIcons.x, size: 16, color: item.ok ? context.palette.successInk : context.palette.dangerInk),
             ),
             const SizedBox(width: VoltiSpacing.s12),
             Expanded(
@@ -389,7 +389,7 @@ class _ChecklistRow extends StatelessWidget {
             ExcludeSemantics(
               child: Text(
                 state,
-                style: VoltiTypography.label.copyWith(color: item.ok ? VoltiColors.successInk : VoltiColors.dangerInkStrong),
+                style: VoltiTypography.label.copyWith(color: item.ok ? context.palette.successInk : context.palette.dangerInkStrong),
               ),
             ),
           ]),
@@ -432,8 +432,8 @@ class _Outcome extends StatelessWidget {
               child: Container(
                 width: 72,
                 height: 72,
-                decoration: BoxDecoration(color: success ? VoltiColors.brandSoft : VoltiColors.warningSoft, shape: BoxShape.circle),
-                child: Icon(icon, size: 32, color: success ? VoltiColors.successInk : VoltiColors.warningInk),
+                decoration: BoxDecoration(color: success ? context.palette.brandSoft : context.palette.warningSoft, shape: BoxShape.circle),
+                child: Icon(icon, size: 32, color: success ? context.palette.successInk : context.palette.warningInk),
               ),
             ),
           ),

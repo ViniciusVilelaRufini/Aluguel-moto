@@ -195,7 +195,7 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
                   Container(
                     key: const Key('reservation-qr'),
                     padding: const EdgeInsets.all(VoltiSpacing.s16),
-                    decoration: BoxDecoration(color: VoltiColors.white, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
+                    decoration: BoxDecoration(color: VoltiColors.white, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1), // tema: fixo (cartao do QR)
                     child: Column(children: [
                       if (code == null || code.isEmpty) ...[
                         Semantics(
@@ -220,7 +220,7 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
                               data: code,
                               size: 200,
                               padding: EdgeInsets.zero,
-                              backgroundColor: VoltiColors.white,
+                              backgroundColor: VoltiColors.white, // tema: fixo (QR)
                               eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: VoltiColors.ink900),
                               dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: VoltiColors.ink900),
                             ),
@@ -245,7 +245,7 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
                           ]),
                         if (v != null) const SizedBox(height: VoltiSpacing.s12),
                         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          const Icon(LucideIcons.clock, size: 18, color: VoltiColors.brandAction),
+                          Icon(LucideIcons.clock, size: 18, color: context.palette.textBrand),
                           const SizedBox(width: VoltiSpacing.s8),
                           Expanded(
                             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -266,7 +266,7 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                            const Icon(LucideIcons.warehouse, size: 18, color: VoltiColors.brandAction),
+                            Icon(LucideIcons.warehouse, size: 18, color: context.palette.textBrand),
                             const SizedBox(width: VoltiSpacing.s8),
                             Expanded(
                               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

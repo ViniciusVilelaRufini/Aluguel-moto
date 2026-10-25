@@ -141,10 +141,10 @@ class StationRow extends StatelessWidget {
                     Container(
                       width: 40,
                       height: 40,
-                      decoration: BoxDecoration(color: depot != null ? VoltiColors.brandSoft : VoltiColors.infoSoft, borderRadius: VoltiRadii.rMd),
+                      decoration: BoxDecoration(color: depot != null ? context.palette.brandSoft : context.palette.infoSoft, borderRadius: VoltiRadii.rMd),
                       child: Icon(
                         depot != null ? LucideIcons.warehouse : LucideIcons.batteryCharging,
-                        color: depot != null ? VoltiColors.brandAction : VoltiColors.infoInk,
+                        color: depot != null ? VoltiColors.brandAction : context.palette.infoInk,
                         size: 20,
                       ),
                     ),
@@ -214,8 +214,9 @@ class StationAvailabilityPill extends StatelessWidget {
   final SwapStation station;
 
   static Color iconColor(StationAvailability a, {bool dark = false}) => switch (a) {
-    StationAvailability.many => dark ? VoltiColors.green400 : VoltiColors.successInk,
-    StationAvailability.few => dark ? VoltiColors.sun400 : VoltiColors.warningInk,
+    // Ramo claro em tokens fixos de proposito (funcao estatica; o escuro tem os vivos). tema: fixo
+    StationAvailability.many => dark ? VoltiColors.green400 : VoltiColors.successInk, // tema: fixo
+    StationAvailability.few => dark ? VoltiColors.sun400 : VoltiColors.warningInk, // tema: fixo
     StationAvailability.none => dark ? VoltiColors.ink400 : VoltiColors.ink500,
   };
 

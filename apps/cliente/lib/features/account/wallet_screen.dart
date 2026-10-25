@@ -152,7 +152,7 @@ class _WalletScreenState extends ConsumerState<WalletScreen> {
                 child: Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(VoltiSpacing.s16),
-                  decoration: BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rLg),
+                  decoration: BoxDecoration(color: context.palette.pill, borderRadius: VoltiRadii.rLg),
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(l.walletBalanceTitle, style: VoltiTypography.caption.copyWith(color: Colors.white70)),
                     VoltiCountUp(value: w.balanceCents, format: money, style: VoltiTypography.title.copyWith(color: Colors.white)),

@@ -110,7 +110,7 @@ class _OtpStepState extends ConsumerState<OtpStep> {
         padding: const EdgeInsets.only(top: VoltiSpacing.s8),
         child: Semantics(
           liveRegion: true,
-          child: Text(text, key: const Key('otp-error'), style: VoltiTypography.caption.copyWith(color: VoltiColors.dangerInk)),
+          child: Text(text, key: const Key('otp-error'), style: VoltiTypography.caption.copyWith(color: context.palette.dangerInk)),
         ),
       );
 
@@ -185,7 +185,7 @@ class _OtpStepState extends ConsumerState<OtpStep> {
           Semantics(
             liveRegion: true,
             child: Text(l.otpAccountConfirmed,
-                key: const Key('otp-confirmed'), style: VoltiTypography.caption.copyWith(color: VoltiColors.successInk)),
+                key: const Key('otp-confirmed'), style: VoltiTypography.caption.copyWith(color: context.palette.successInk)),
           ),
           const SizedBox(height: VoltiSpacing.s12),
         ],

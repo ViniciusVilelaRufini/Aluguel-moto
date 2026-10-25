@@ -58,7 +58,6 @@ class SwapNearbyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l = context.l;
     final scheme = Theme.of(context).colorScheme;
-    final dark = Theme.of(context).brightness == Brightness.dark;
     return VoltiEnter(
       duration: VoltiMotion.durScreen,
       curve: VoltiMotion.easeScreen,
@@ -71,8 +70,8 @@ class SwapNearbyCard extends StatelessWidget {
             Container(
               width: VoltiSpacing.s40,
               height: VoltiSpacing.s40,
-              decoration: BoxDecoration(color: dark ? VoltiColors.infoInk.withValues(alpha: .22) : VoltiColors.infoSoft, borderRadius: VoltiRadii.rMd),
-              child: Icon(LucideIcons.batteryCharging, color: dark ? VoltiColors.blue50 : VoltiColors.infoInk, size: VoltiSpacing.s20),
+              decoration: BoxDecoration(color: context.palette.infoSoft, borderRadius: VoltiRadii.rMd),
+              child: Icon(LucideIcons.batteryCharging, color: context.palette.infoInk, size: VoltiSpacing.s20),
             ),
             const SizedBox(width: VoltiSpacing.s10),
             Expanded(
@@ -111,7 +110,7 @@ class SwapResumeCard extends StatelessWidget {
       onTap: onResume,
       child: Container(
         padding: const EdgeInsets.fromLTRB(VoltiSpacing.s12, VoltiSpacing.s10, VoltiSpacing.s8, VoltiSpacing.s10),
-        decoration: BoxDecoration(color: VoltiColors.ink900, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
+        decoration: BoxDecoration(color: context.palette.pill, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow2),
         child: Row(
           children: [
             const Icon(LucideIcons.batteryCharging, color: VoltiColors.green400, size: 20),

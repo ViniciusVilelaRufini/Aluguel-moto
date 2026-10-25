@@ -51,7 +51,7 @@ class PixQrCode extends StatelessWidget {
           data: pix.copyPaste,
           size: size,
           padding: const EdgeInsets.all(8),
-          backgroundColor: Colors.white,
+          backgroundColor: Colors.white, // tema: fixo (QR precisa de fundo branco para a leitura)
           errorCorrectionLevel: QrErrorCorrectLevel.M,
         );
 }

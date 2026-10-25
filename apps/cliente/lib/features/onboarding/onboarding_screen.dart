@@ -263,7 +263,7 @@ class _ConsentStepState extends ConsumerState<ConsentStep> {
       onBack: _busy ? null : widget.onBack,
       subtitle: l.dataSubtitle,
       cta: Column(mainAxisSize: MainAxisSize.min, children: [
-        if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(failureText(l, _error!), style: const TextStyle(color: VoltiColors.danger))),
+        if (_error != null) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text(failureText(l, _error!), style: TextStyle(color: context.palette.dangerInkStrong))),
         if (_busy) const Padding(padding: EdgeInsets.only(bottom: 8), child: LinearProgressIndicator()),
         VoltiButton(
           label: _busy ? l.sending : l.continueLabel,
@@ -475,7 +475,7 @@ class _DocumentsStepState extends ConsumerState<DocumentsStep> {
         if (_error != null)
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(_cpfTaken ? l.cpfAlreadyUsed : failureText(l, _error!), style: const TextStyle(color: VoltiColors.danger)),
+            child: Text(_cpfTaken ? l.cpfAlreadyUsed : failureText(l, _error!), style: TextStyle(color: context.palette.dangerInkStrong)),
           ),
         if (_cpfTaken)
           VoltiButton(

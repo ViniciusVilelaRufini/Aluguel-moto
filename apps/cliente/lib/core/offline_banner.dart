@@ -69,8 +69,8 @@ class _OfflinePill extends StatelessWidget {
           child: Container(
             margin: const EdgeInsets.only(top: VoltiSpacing.s4),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: const BoxDecoration(
-              color: VoltiColors.surfaceInverse,
+            decoration: BoxDecoration(
+              color: context.palette.pill,
               borderRadius: VoltiRadii.rPill,
               boxShadow: VoltiShadows.shadow2,
             ),

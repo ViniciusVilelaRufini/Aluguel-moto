@@ -242,15 +242,15 @@ class _Thumbs extends StatelessWidget {
               if (items[i].failed)
                 Positioned.fill(
                   child: Material(
-                    color: VoltiColors.dangerSoft.withValues(alpha: .9),
+                    color: context.palette.dangerSoft.withValues(alpha: .9),
                     borderRadius: VoltiRadii.rMd,
                     child: InkWell(
                       borderRadius: VoltiRadii.rMd,
                       onTap: () => onRetry(items[i]),
                       child: Center(
                         child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          const Icon(LucideIcons.refreshCw, size: 18, color: VoltiColors.dangerInkStrong),
-                          Text(l.retryShort, style: VoltiTypography.caption.copyWith(color: VoltiColors.dangerInkStrong)),
+                          Icon(LucideIcons.refreshCw, size: 18, color: context.palette.dangerInkStrong),
+                          Text(l.retryShort, style: VoltiTypography.caption.copyWith(color: context.palette.dangerInkStrong)),
                         ]),
                       ),
                     ),

@@ -431,7 +431,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
       context,
       barrierDismissible: false,
       title: l.wellbeingTitle,
-      icon: const _RoundIcon(icon: LucideIcons.activity, bg: VoltiColors.coral50, fg: VoltiColors.coral600),
+      icon: _RoundIcon(icon: LucideIcons.activity, bg: context.palette.dangerSoft, fg: context.palette.dangerInk),
       // Prazo do contrato (60 s), contando na tela. Sem resposta, o servidor aciona o suporte.
       message: const _FallCountdown(seconds: 60),
       actions: [
@@ -592,7 +592,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
     String? picked;
     final send = await showDialog<bool>(
       context: context,
-      barrierColor: VoltiColors.surfaceScrim,
+      barrierColor: context.palette.scrim,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => VoltiDialog(
           title: l.reportTitle,
@@ -699,7 +699,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                     ]),
                   ],
                 )
-              : Container(color: VoltiColors.sky100),
+              : Container(color: context.palette.surfaceMedia),
         ),
         SafeArea(
           child: Padding(
@@ -709,7 +709,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                 Expanded(
                   child: Container(
                     padding: const EdgeInsets.fromLTRB(12, 10, 14, 10),
-                    decoration: BoxDecoration(color: VoltiColors.glassBg, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
+                    decoration: BoxDecoration(color: context.palette.glassBg, borderRadius: VoltiRadii.rLg, boxShadow: VoltiShadows.shadow1),
                     child: Row(children: [
                       VoltiSpeedGauge(
                         key: const Key('ride-gauge'),
@@ -721,7 +721,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
                       const SizedBox(width: 12),
                       Expanded(
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                          Text(l.speedUnit(_limit), style: VoltiTypography.caption.copyWith(color: VoltiColors.ink600)),
+                          Text(l.speedUnit(_limit), style: VoltiTypography.caption.copyWith(color: context.palette.onGlass)),
                           const SizedBox(height: 6),
                           FittedBox(
                             fit: BoxFit.scaleDown,
@@ -916,8 +916,8 @@ class _StateBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bg = paused ? VoltiColors.sun300.withValues(alpha: .35) : VoltiColors.brandSoft;
-    final fg = paused ? VoltiColors.ink900 : VoltiColors.successInk;
+    final bg = paused ? context.palette.sunSoft : context.palette.brandSoft;
+    final fg = paused ? context.palette.sunInk : context.palette.successInk;
     return AnimatedSwitcher(
       duration: VoltiMotion.scaled(context, VoltiMotion.durBase),
       child: Container(

@@ -309,8 +309,8 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                   child: Container(
                     width: 72,
                     height: 72,
-                    decoration: const BoxDecoration(color: VoltiColors.dangerSoft, shape: BoxShape.circle),
-                    child: const Icon(LucideIcons.lockOpen, size: 32, color: VoltiColors.dangerInk),
+                    decoration: BoxDecoration(color: context.palette.dangerSoft, shape: BoxShape.circle),
+                    child: Icon(LucideIcons.lockOpen, size: 32, color: context.palette.dangerInk),
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -353,8 +353,8 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                     child: Container(
                       width: 72,
                       height: 72,
-                      decoration: const BoxDecoration(color: VoltiColors.brandSoft, shape: BoxShape.circle),
-                      child: const Icon(LucideIcons.lock, size: 32, color: VoltiColors.successInk),
+                      decoration: BoxDecoration(color: context.palette.brandSoft, shape: BoxShape.circle),
+                      child: Icon(LucideIcons.lock, size: 32, color: context.palette.successInk),
                     ),
                   ),
                 ),
@@ -437,7 +437,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                       ],
                     ),
                   )
-                : Container(color: VoltiColors.sky100),
+                : Container(color: context.palette.surfaceMedia),
           ),
           Positioned(
             top: 0,
@@ -454,7 +454,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         decoration: BoxDecoration(
-                          color: VoltiColors.glassBg,
+                          color: context.palette.glassBg,
                           borderRadius: VoltiRadii.rLg,
                           boxShadow: VoltiShadows.shadow1,
                         ),
@@ -467,16 +467,16 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                             children: [
                               Semantics(
                                 header: true,
-                                child: Text(atDepot ? l.returnDepotTitle : l.returnPointTitle, style: VoltiTypography.label.copyWith(color: VoltiColors.ink900)),
+                                child: Text(atDepot ? l.returnDepotTitle : l.returnPointTitle, style: VoltiTypography.label.copyWith(color: context.palette.textPrimary)),
                               ),
                               if (atDepot)
-                                Text(depot != null ? depotTitle(l, depot) : l.loading, style: VoltiTypography.caption.copyWith(color: VoltiColors.ink600))
+                                Text(depot != null ? depotTitle(l, depot) : l.loading, style: VoltiTypography.caption.copyWith(color: context.palette.onGlass))
                               else
                                 Text(switch (inZone) {
                                   true => l.returnInsideZone(rc!.inside!.name),
                                   false => l.returnOutsideShort,
                                   null => ctx.isLoading ? l.returnCheckingShort : l.checkReturnText,
-                                }, style: VoltiTypography.caption.copyWith(color: outside ? VoltiColors.dangerInk : VoltiColors.ink600)),
+                                }, style: VoltiTypography.caption.copyWith(color: outside ? context.palette.dangerInk : context.palette.onGlass)),
                             ],
                           ),
                         ),
@@ -709,7 +709,7 @@ class _DepotReturnPanelState extends ConsumerState<_DepotReturnPanel> {
             decoration: BoxDecoration(color: scheme.surfaceContainerHighest, borderRadius: VoltiRadii.rLg),
             child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const Icon(LucideIcons.warehouse, size: 18, color: VoltiColors.brandAction),
+                Icon(LucideIcons.warehouse, size: 18, color: context.palette.textBrand),
                 const SizedBox(width: VoltiSpacing.s8),
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -755,9 +755,9 @@ class _DepotReturnPanelState extends ConsumerState<_DepotReturnPanel> {
           child: Row(children: [
             // Reduced motion: icone fixo no lugar do spinner.
             if (VoltiMotion.reduced(context))
-              const Icon(LucideIcons.hourglass, key: Key('return-depot-waiting-icon'), size: 18, color: VoltiColors.brandAction)
+              Icon(LucideIcons.hourglass, key: Key('return-depot-waiting-icon'), size: 18, color: context.palette.textBrand)
             else
-              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: VoltiColors.brandAction)),
+              SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.palette.textBrand)),
             const SizedBox(width: VoltiSpacing.s10),
             Expanded(child: Text(l.returnDepotWaiting, style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant))),
           ]),
@@ -799,14 +799,14 @@ class _RuleNote extends StatelessWidget {
     container: true,
     child: Container(
       padding: const EdgeInsets.all(VoltiSpacing.s12),
-      decoration: BoxDecoration(color: VoltiColors.brandSoft, borderRadius: VoltiRadii.rMd),
+      decoration: BoxDecoration(color: context.palette.brandSoft, borderRadius: VoltiRadii.rMd),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(LucideIcons.mapPin, size: 20, color: VoltiColors.successInk),
+          Icon(LucideIcons.mapPin, size: 20, color: context.palette.successInk),
           const SizedBox(width: VoltiSpacing.s10),
           Expanded(
-            child: Text(text, style: VoltiTypography.caption.copyWith(color: VoltiColors.successInk)),
+            child: Text(text, style: VoltiTypography.caption.copyWith(color: context.palette.successInk)),
           ),
         ],
       ),

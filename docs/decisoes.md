@@ -675,3 +675,10 @@ Perguntas para o dono:
   - Sem SES, o Cognito envia o convite com a senha temporária pelo e-mail padrão dele (sem SNS).
   - O parâmetro `/volti/dev/config/CUSTOMER_LOGIN` (`email-otp`/`password`) escolhe o caminho.
 - **Hashes:** os sha256 do Compose v2.29.7 (`docker-compose-linux-aarch64`) e do buildx v0.17.1 (`linux-arm64`) foram reconferidos com os `checksums.txt` oficiais das releases.
+
+### 2026-10-25 · tema escuro dos apps Flutter · status: aplicado (task 25)
+
+- **Paleta semântica:** o `colors.css` só descreve o tema claro. O `volti_flutter` ganhou a extensão de tema `VoltiPalette` (`VoltiPalette.of(context)` / `context.palette`), registrada em `VoltiTheme.light()/dark()`, com superfícies, texto, bordas, pares soft+ink, vidro, mapa e skeleton. Valores escuros: ink-900 (tela), ink-800 (cartão), `#2A2F33` (afundado/campos) e tons soft profundos com ink claro. Todo par texto/fundo ≥ 4,5:1 nos dois temas (teste). No claro, o texto verde sobre fundo suave passou a `#176B2F` (o green-700 dava 4,0:1 no green-50) e badges de aviso/perigo usam o ink forte.
+- **Mapa no escuro:** em vez de um segundo provedor de tiles escuros (o de produção vem por `MAP_TILE_URL` e nem todo provedor tem estilo escuro), o `VoltiMap` aplica um filtro de cor que inverte a luminância e a comprime para a faixa ink, na base e nos rótulos. Vale para qualquer provedor; pins, rotas, cercas e galpão continuam nas cores vivas. Alternativa descartada: manter o mapa claro com moldura (cartões escuros sobre mapa claro ficavam com contraste de "buraco" e o vidro claro destoava).
+- **Fixos de propósito:** verde de ação com texto branco, SOS coral, cores de status/bateria, bordas brancas de pins, visualizador de foto/câmera (preto) e QR em cartão branco (leitura). Marcados com `tema: fixo` no código; o lint de `apps/cliente/test/dark_theme_test.dart` barra o resto.
+- **Barra do sistema:** `VoltiTheme.overlayStyle(brightness)` no `AppBarTheme` e num `AnnotatedRegion` no `builder` do app do cliente.

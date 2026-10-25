@@ -103,7 +103,7 @@ class _InsuranceScreenState extends ConsumerState<InsuranceScreen> {
                                             child: Row(
                                               crossAxisAlignment: CrossAxisAlignment.start,
                                               children: [
-                                                const Padding(padding: EdgeInsets.only(top: 2), child: Icon(LucideIcons.check, size: 14, color: VoltiColors.successInk)),
+                                                Padding(padding: EdgeInsets.only(top: 2), child: Icon(LucideIcons.check, size: 14, color: context.palette.successInk)),
                                                 const SizedBox(width: 6),
                                                 Expanded(child: Text(i.description, style: VoltiTypography.caption)),
                                               ],

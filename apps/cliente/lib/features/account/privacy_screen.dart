@@ -152,7 +152,7 @@ class _PrivacyScreenState extends ConsumerState<PrivacyScreen> {
           const SizedBox(height: VoltiSpacing.s32),
           TextButton.icon(
             key: const Key('privacy-delete'),
-            style: TextButton.styleFrom(foregroundColor: VoltiColors.danger, minimumSize: const Size.fromHeight(VoltiSpacing.hitMin)),
+            style: TextButton.styleFrom(foregroundColor: context.palette.dangerInkStrong, minimumSize: const Size.fromHeight(VoltiSpacing.hitMin)),
             icon: const Icon(LucideIcons.trash2, size: 18),
             label: Text(l.deleteAccount, textAlign: TextAlign.center),
             onPressed: _busy ? null : () => confirmDeleteAccount(context, ref),

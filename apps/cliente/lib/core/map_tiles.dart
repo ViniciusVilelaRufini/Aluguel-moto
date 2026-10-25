@@ -235,17 +235,17 @@ class MapAttribution extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: const BoxDecoration(color: VoltiColors.glassBg, borderRadius: VoltiRadii.rPill),
+            decoration: BoxDecoration(color: context.palette.glassBg, borderRadius: VoltiRadii.rPill),
             child: MediaQuery.withClampedTextScaling(
               maxScaleFactor: 1.3,
-              child: const Text(
+              child: Text(
                 kMapAttribution,
                 style: TextStyle(
                   fontFamily: VoltiTypography.fontSans,
                   fontWeight: VoltiTypography.fwMedium,
                   fontSize: 10,
                   height: 1.3,
-                  color: VoltiColors.ink600,
+                  color: context.palette.onGlass,
                 ),
               ),
             ),

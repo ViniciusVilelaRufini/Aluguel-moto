@@ -406,8 +406,8 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
               clipBehavior: Clip.none,
               children: [
                 if (!mapVisible)
-                  const Positioned.fill(
-                    child: CustomPaint(key: Key('welcome-map-fallback'), painter: HeroFallbackPainter()),
+                  Positioned.fill(
+                    child: CustomPaint(key: Key('welcome-map-fallback'), painter: HeroFallbackPainter(dark: context.palette.isDark)),
                   ),
                 // Criado uma vez, depois do primeiro layout (a area livre define o
                 // centro); maior que o hero para a deriva nunca mostrar a borda.
@@ -424,7 +424,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
                       zoom: kHeroZoom,
                       interactive: false,
                       showAttribution: false,
-                      backgroundColor: kHeroMapLoading,
+                      backgroundColor: context.palette.isDark ? context.palette.mapLand : kHeroMapLoading,
                       onTileError: reportTileError,
                       onTileLoaded: _tileLoaded,
                     ),
@@ -447,7 +447,7 @@ class WelcomeHeroState extends State<WelcomeHero> with TickerProviderStateMixin,
           child: Stack(
             clipBehavior: Clip.hardEdge,
             children: [
-              Positioned.fill(child: ColoredBox(color: mapVisible ? kHeroMapLoading : VoltiColors.mapLand)),
+              Positioned.fill(child: ColoredBox(color: mapVisible && !context.palette.isDark ? kHeroMapLoading : context.palette.mapLand)),
               Positioned.fill(
                 child: RepaintBoundary(
                   child: AnimatedBuilder(
@@ -820,16 +820,20 @@ class _HeroBike extends StatelessWidget {
 /// Fundo sem mapa (sem rede ou tiles falhando): terreno e ruas diagonais no tom
 /// do DS. Nunca uma tela cinza.
 class HeroFallbackPainter extends CustomPainter {
-  const HeroFallbackPainter();
+  const HeroFallbackPainter({this.dark = false});
+
+  /// Tema escuro: terreno e ruas nos tons de mapa escuros (`VoltiPalette.mapLand`).
+  final bool dark;
 
   @override
   void paint(Canvas canvas, Size size) {
-    canvas.drawRect(Offset.zero & size, Paint()..color = VoltiColors.mapLand);
+    final road = dark ? VoltiColors.ink700 : VoltiColors.mapRoad;
+    canvas.drawRect(Offset.zero & size, Paint()..color = dark ? VoltiPalette.dark.mapLand : VoltiColors.mapLand); // tema: fixo (ramo claro)
     final minor = Paint()
-      ..color = VoltiColors.mapRoad
+      ..color = road
       ..strokeWidth = 5;
     final major = Paint()
-      ..color = VoltiColors.mapRoad
+      ..color = road
       ..strokeWidth = 11;
     for (var i = -6; i < 12; i++) {
       final x = i * 70.0;
@@ -844,7 +848,7 @@ class HeroFallbackPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant HeroFallbackPainter oldDelegate) => oldDelegate.dark != dark;
 }
 
 /// Galpao com anel pulsando.
@@ -913,21 +917,22 @@ class HeroStatementCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final text = Text(data.text, style: VoltiTypography.caption.copyWith(color: VoltiColors.ink500));
+    final p = context.palette;
+    final text = Text(data.text, style: VoltiTypography.caption.copyWith(color: p.textSecondary));
     // Na folha, um no so com titulo e texto (no hero a camada e decorativa).
     return Semantics(
       container: true,
       label: data.label,
       excludeSemantics: true,
-      child: _card(text),
+      child: _card(p, text),
     );
   }
 
-  Widget _card(Widget text) {
+  Widget _card(VoltiPalette p, Widget text) {
     return Container(
       key: Key('hero-statement-$index'),
       padding: const EdgeInsets.fromLTRB(10, 10, 14, 10),
-      decoration: const BoxDecoration(color: VoltiColors.surfaceCard, borderRadius: VoltiRadii.rMd, boxShadow: VoltiShadows.shadow1),
+      decoration: BoxDecoration(color: p.surfaceCard, borderRadius: VoltiRadii.rMd, boxShadow: VoltiShadows.shadow1),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -935,8 +940,8 @@ class HeroStatementCard extends StatelessWidget {
             key: const Key('hero-statement-icon'),
             width: 36,
             height: 36,
-            decoration: const BoxDecoration(color: VoltiColors.brandSoft, borderRadius: VoltiRadii.rSm),
-            child: Icon(data.icon, size: 18, color: VoltiColors.brandAction),
+            decoration: BoxDecoration(color: p.brandSoft, borderRadius: VoltiRadii.rSm),
+            child: Icon(data.icon, size: 18, color: p.textBrand),
           ),
           const SizedBox(width: 10),
           Flexible(
@@ -944,14 +949,14 @@ class HeroStatementCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(data.title, style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.ink900)),
+                Text(data.title, style: VoltiTypography.bodyStrong.copyWith(color: p.textPrimary)),
                 if (data.textIcon == null)
                   text
                 else
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(data.textIcon, size: 13, color: VoltiColors.brandAction),
+                      Icon(data.textIcon, size: 13, color: p.textBrand),
                       const SizedBox(width: 4),
                       Flexible(child: text),
                     ],

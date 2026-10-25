@@ -476,7 +476,7 @@ class _PickCardState extends State<_PickCard> {
               curve: VoltiMotion.easeOut,
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: on ? VoltiColors.brandSoft : scheme.surface,
+                color: on ? context.palette.brandSoft : scheme.surface,
                 borderRadius: VoltiRadii.rLg,
                 border: Border.all(color: on ? VoltiColors.brand : Colors.transparent, width: 1.5),
                 boxShadow: on ? null : VoltiShadows.shadow1,
@@ -536,12 +536,12 @@ class _PickCardState extends State<_PickCard> {
                               const SizedBox(height: 6),
                               Text(
                                 category,
-                                style: const TextStyle(
+                                style: TextStyle(
                                   fontFamily: VoltiTypography.fontSans,
                                   fontWeight: VoltiTypography.fwSemibold,
                                   fontSize: 12,
                                   // Laranja escuro: contraste AA sobre branco e sobre o verde suave.
-                                  color: VoltiColors.warningInkStrong,
+                                  color: context.palette.warningInkStrong,
                                 ),
                               ),
                             ],

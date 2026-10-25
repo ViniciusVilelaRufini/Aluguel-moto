@@ -133,11 +133,11 @@ Rental sampleRental({RentalStatus status = RentalStatus.active}) => Rental((b) =
   ..createdAt = DateTime.utc(2026, 10, 21)
   ..updatedAt = DateTime.utc(2026, 10, 21));
 
-Widget testApp(Widget child, {List<Override> overrides = const []}) => ProviderScope(
+Widget testApp(Widget child, {List<Override> overrides = const [], ThemeData? theme}) => ProviderScope(
       retry: (_, _) => null,
       overrides: [mapEnabledProvider.overrideWithValue(false), ...overrides],
       child: MaterialApp(
-        theme: VoltiTheme.light(),
+        theme: theme ?? VoltiTheme.light(),
         locale: const Locale('pt', 'BR'),
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: const [
@@ -151,11 +151,11 @@ Widget testApp(Widget child, {List<Override> overrides = const []}) => ProviderS
     );
 
 /// Como [testApp], mas com rotas (telas que navegam com go_router).
-Widget testRouterApp(GoRouter router, {List<Override> overrides = const []}) => ProviderScope(
+Widget testRouterApp(GoRouter router, {List<Override> overrides = const [], ThemeData? theme}) => ProviderScope(
       retry: (_, _) => null,
       overrides: [mapEnabledProvider.overrideWithValue(false), ...overrides],
       child: MaterialApp.router(
-        theme: VoltiTheme.light(),
+        theme: theme ?? VoltiTheme.light(),
         locale: const Locale('pt', 'BR'),
         supportedLocales: AppLocalizations.supportedLocales,
         localizationsDelegates: const [

@@ -436,7 +436,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
                         q.couponApplied ? l.couponApplied : (q.couponMessage ?? l.couponInvalid),
-                        style: VoltiTypography.caption.copyWith(color: q.couponApplied ? VoltiColors.successInk : VoltiColors.dangerInkStrong),
+                        style: VoltiTypography.caption.copyWith(color: q.couponApplied ? context.palette.successInk : context.palette.dangerInkStrong),
                       ),
                     ),
                   SectionTitle(l.deposit),
@@ -562,7 +562,7 @@ class _Summary extends StatelessWidget {
           for (final r in rows) row(r.label, money(r.cents)),
           if (couponLine != null) ...[
             // Cupom por ultimo entre os itens, com o valor em verde e a nota logo abaixo dele.
-            row(couponLine.description, couponValue!.$1, key: const Key('pickup-coupon-discount'), color: VoltiColors.successInk),
+            row(couponLine.description, couponValue!.$1, key: const Key('pickup-coupon-discount'), color: context.palette.successInk),
             if (!couponValue.$2)
               Padding(
                 padding: const EdgeInsets.only(bottom: VoltiSpacing.s6),

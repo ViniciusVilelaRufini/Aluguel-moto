@@ -324,9 +324,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   Center(
                     child: VoltiEnter.pop(
                       child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        const Icon(LucideIcons.circleCheck, size: 18, color: VoltiColors.successInk),
+                        Icon(LucideIcons.circleCheck, size: 18, color: context.palette.successInk),
                         const SizedBox(width: 6),
-                        Flexible(child: Text(l.thanksRating, style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.successInk))),
+                        Flexible(child: Text(l.thanksRating, style: VoltiTypography.bodyStrong.copyWith(color: context.palette.successInk))),
                       ]),
                     ),
                   ),

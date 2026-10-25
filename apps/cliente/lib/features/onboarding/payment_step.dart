@@ -127,13 +127,13 @@ class _InfoAlert extends StatelessWidget {
         liveRegion: true,
         child: Container(
           padding: const EdgeInsets.all(VoltiSpacing.s12),
-          decoration: const BoxDecoration(color: VoltiColors.infoSoft, borderRadius: VoltiRadii.rMd),
+          decoration: BoxDecoration(color: context.palette.infoSoft, borderRadius: VoltiRadii.rMd),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(LucideIcons.info, size: 18, color: VoltiColors.infoInk),
+              Icon(LucideIcons.info, size: 18, color: context.palette.infoInk),
               const SizedBox(width: VoltiSpacing.s10),
-              Expanded(child: Text(message, style: VoltiTypography.caption.copyWith(color: VoltiColors.infoInk))),
+              Expanded(child: Text(message, style: VoltiTypography.caption.copyWith(color: context.palette.infoInk))),
             ],
           ),
         ),

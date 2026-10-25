@@ -30,4 +30,4 @@ RectTween voltiHeroRectTween(Rect? begin, Rect? end) => VoltiHeroRectTween(begin
 /// cabecalho do fluxo, entao o Hero voa foto -> foto); sem URL, `null` (icone).
 Widget? vehiclePhoto(String? url, {double iconSize = 32}) => url == null || url.isEmpty
     ? null
-    : Image.network(url, fit: BoxFit.contain, errorBuilder: (_, _, _) => Icon(LucideIcons.motorbike, size: iconSize, color: VoltiColors.blue600));
+    : Image.network(url, fit: BoxFit.contain, errorBuilder: (c, _, _) => Icon(LucideIcons.motorbike, size: iconSize, color: c.palette.onSurfaceMedia));

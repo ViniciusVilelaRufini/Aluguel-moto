@@ -174,29 +174,29 @@ class _HomeReservationCardState extends ConsumerState<HomeReservationCard> with 
       status = l.homeReservationHandover;
       a11y = l.homeReservationA11yHandover(vehicle);
       statusIcon = LucideIcons.packageCheck;
-      statusBg = VoltiColors.infoSoft;
-      statusInk = VoltiColors.infoInk;
+      statusBg = context.palette.infoSoft;
+      statusInk = context.palette.infoInk;
     } else if (expired) {
       status = l.homeReservationExpired;
       a11y = l.homeReservationA11yExpired(vehicle);
       statusIcon = LucideIcons.circleAlert;
-      statusBg = VoltiColors.dangerSoft;
-      statusInk = VoltiColors.dangerInkStrong;
+      statusBg = context.palette.dangerSoft;
+      statusInk = context.palette.dangerInkStrong;
     } else if (scheduled) {
       final at = wall(r.pickupAt!);
       final day = dayInSentence(l, LocalDay.of(at), LocalDay.of(wall(now)));
       status = l.homeReservationScheduled(day, hhmm(at));
       a11y = l.homeReservationA11yScheduled(vehicle, day, hhmm(at));
       statusIcon = LucideIcons.calendarClock;
-      statusBg = VoltiColors.brandSoft;
-      statusInk = VoltiColors.successInk;
+      statusBg = context.palette.brandSoft;
+      statusInk = context.palette.successInk;
     } else {
       final until = hhmm(wall(r.expiresAt));
       status = l.reservationPickupUntil(until);
       a11y = l.homeReservationA11yNow(vehicle, until);
       statusIcon = LucideIcons.clock;
-      statusBg = VoltiColors.brandSoft;
-      statusInk = VoltiColors.successInk;
+      statusBg = context.palette.brandSoft;
+      statusInk = context.palette.successInk;
     }
 
     final handoverId = r.handoverId;
@@ -232,7 +232,7 @@ class _HomeReservationCardState extends ConsumerState<HomeReservationCard> with 
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(l.homeReservationTitle, style: VoltiTypography.overline.copyWith(color: VoltiColors.brandAction)),
+                                Text(l.homeReservationTitle, style: VoltiTypography.overline.copyWith(color: context.palette.textBrand)),
                                 const SizedBox(height: 2),
                                 Text(name, style: VoltiTypography.heading.copyWith(color: scheme.onSurface)),
                                 if (v != null)
@@ -297,9 +297,9 @@ class _HomeReservationCardState extends ConsumerState<HomeReservationCard> with 
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Padding(
+                            Padding(
                               padding: EdgeInsets.only(top: 2),
-                              child: Icon(LucideIcons.warehouse, size: 18, color: VoltiColors.brandAction),
+                              child: Icon(LucideIcons.warehouse, size: 18, color: context.palette.textBrand),
                             ),
                             const SizedBox(width: VoltiSpacing.s8),
                             Expanded(

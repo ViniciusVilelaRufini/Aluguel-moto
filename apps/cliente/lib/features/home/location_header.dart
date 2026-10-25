@@ -127,7 +127,7 @@ class _LocationPill extends StatelessWidget {
         child: Container(
           key: const Key('home-location'),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: const BoxDecoration(color: VoltiColors.glassBg, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
+          decoration: BoxDecoration(color: context.palette.glassBg, borderRadius: VoltiRadii.rPill, boxShadow: VoltiShadows.shadow1),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
               const Icon(LucideIcons.navigation, size: 12, color: VoltiColors.brand),
@@ -147,7 +147,7 @@ class _LocationPill extends StatelessWidget {
               maxLines: 2,
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
-              style: VoltiTypography.bodyStrong.copyWith(color: VoltiColors.ink900),
+              style: VoltiTypography.bodyStrong.copyWith(color: context.palette.textPrimary),
             ),
           ]),
         ),

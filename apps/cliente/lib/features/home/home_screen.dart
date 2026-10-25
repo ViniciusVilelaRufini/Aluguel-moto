@@ -318,7 +318,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
           children: [
             Positioned.fill(
               child: !ref.watch(mapEnabledProvider)
-                  ? const ColoredBox(color: VoltiColors.mapLand)
+                  ? ColoredBox(color: context.palette.mapLand)
                   : VoltiMap(
                       key: const Key('home-map'),
                       controller: _map,
@@ -722,8 +722,8 @@ class _DepotCardBody extends StatelessWidget {
                     Container(
                       width: 44,
                       height: 44,
-                      decoration: const BoxDecoration(color: VoltiColors.brandSoft, borderRadius: VoltiRadii.rMd),
-                      child: const Icon(LucideIcons.warehouse, color: VoltiColors.brandAction, size: 22),
+                      decoration: BoxDecoration(color: context.palette.brandSoft, borderRadius: VoltiRadii.rMd),
+                      child: Icon(LucideIcons.warehouse, color: context.palette.textBrand, size: 22),
                     ),
                     const SizedBox(width: VoltiSpacing.s12),
                     Expanded(
@@ -754,7 +754,7 @@ class _DepotCardBody extends StatelessWidget {
                                     open,
                                     key: const Key('depot-open'),
                                     style: VoltiTypography.caption.copyWith(
-                                      color: isOpen ? VoltiColors.successInk : VoltiColors.dangerInkStrong,
+                                      color: isOpen ? context.palette.successInk : context.palette.dangerInkStrong,
                                       fontWeight: VoltiTypography.fwSemibold,
                                     ),
                                   ),
