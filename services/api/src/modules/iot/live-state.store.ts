@@ -82,6 +82,8 @@ export class LiveStateStore {
    */
   private readonly jumpCandidate = new Map<string, { arrival: number; deviceTs: number }>();
   private readonly held = new Map<string, boolean>();
+  /** Carimbo (`_at`) da última versão do hash no Redis que esta instância gravou ou leu: versão mais nova = outra instância. */
+  private readonly syncedAt = new Map<string, number>();
 
   constructor(
     private readonly redis: RedisStore,
@@ -115,12 +117,28 @@ export class LiveStateStore {
     return this.states.get(thingName) ?? null;
   }
 
+  /**
+   * Estado da moto. Lê o hash do Redis e, se ele for mais novo que a cópia em memória (outra instância processou uma mensagem
+   * desta moto — com várias tasks, a fila de telemetria distribui as mensagens entre elas), atualiza a memória. Redis fora do
+   * ar → a memória.
+   */
   async load(thingName: string): Promise<VehicleLiveState | null> {
+    return this.refresh(thingName);
+  }
+
+  /** Relê o Redis agora (varreduras: inatividade, rampa pendente). */
+  async refresh(thingName: string): Promise<VehicleLiveState | null> {
     const mem = this.states.get(thingName);
-    if (mem) return mem;
-    const h = await this.redis.hgetall(this.key(thingName)).catch(() => ({}) as Record<string, string>);
-    if (!h || !h.lastSeenAt) return null;
-    const s: VehicleLiveState = {
+    let h: Record<string, string>;
+    try {
+      h = await this.redis.hgetall(this.key(thingName));
+    } catch {
+      return mem ?? null;
+    }
+    if (!h || !h.lastSeenAt) return mem ?? null;
+    const at = Number(h._at) || 0;
+    if (mem && at <= (this.syncedAt.get(thingName) ?? 0)) return mem;
+    const fromRedis: VehicleLiveState = {
       thingName,
       lat: Number(h.lat),
       lng: Number(h.lng),
@@ -134,8 +152,24 @@ export class LiveStateStore {
       online: h.online === 'true',
       lastSeenAt: h.lastSeenAt,
     };
-    this.states.set(thingName, s);
-    return s;
+    this.syncedAt.set(thingName, at);
+    if (mem) {
+      Object.assign(mem, fromRedis);
+      return mem;
+    }
+    this.states.set(thingName, fromRedis);
+    return fromRedis;
+  }
+
+  /** Último `limite_kmh` gravado no desired por qualquer instância (teto da rampa). Erro de leitura → desconhecido. */
+  async desiredLimit(thingName: string): Promise<number | null> {
+    const raw = await this.redis.get(`iot:desired-limit:${thingName}`).catch(() => null);
+    const n = raw === null ? NaN : Number(raw);
+    return Number.isInteger(n) && n >= 0 && n <= MAX_SPEED_KMH ? n : null;
+  }
+
+  async setDesiredLimit(thingName: string, kmh: number): Promise<void> {
+    await this.redis.set(`iot:desired-limit:${thingName}`, String(kmh));
   }
 
   /** Online = marcado online e visto há menos de `offlineAfterMs`. */
@@ -375,6 +409,10 @@ export class LiveStateStore {
   private async persist(s: VehicleLiveState): Promise<void> {
     const values: Record<string, string> = {};
     for (const [k, v] of Object.entries(s)) values[k] = String(v);
+    // Carimbo monotônico desta escrita (para as outras instâncias saberem que a cópia delas ficou velha).
+    const at = Math.max(this.clock.now(), (this.syncedAt.get(s.thingName) ?? 0) + 1);
+    values._at = String(at);
+    this.syncedAt.set(s.thingName, at);
     await this.redis.hset(this.key(s.thingName), values).catch(() => undefined);
   }
 }

@@ -213,6 +213,8 @@ export class TelemetryService implements InboundHandler {
   async sweepStale(): Promise<void> {
     for (const thingName of this.gateway.live.stale()) {
       await this.serial(thingName, async () => {
+        // Várias instâncias: outra pode ter recebido mensagens desta moto há pouco (relê o Redis antes de marcar offline).
+        await this.gateway.live.refresh(thingName);
         if (!this.gateway.live.stale().includes(thingName)) return;
         await this.gateway.live.setOnline(thingName, false);
         const vehicleId = await this.vehicleIdOf(thingName);

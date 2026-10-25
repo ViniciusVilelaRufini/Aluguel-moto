@@ -11,6 +11,9 @@ import { TelemetryService } from './telemetry.service';
 
 /** Intervalo da vigia de inatividade (rastreadores sem notícia → offline). */
 const STALE_SWEEP_MS = 30_000;
+/** Varredura das rampas do bloqueio seguro e dos prazos de "fora da área" guardados no Redis (timers perdidos num deploy). */
+export const SAFE_LOCK_SWEEP_MS = 1_000;
+export const OUT_OF_AREA_SWEEP_MS = 15_000;
 
 /**
  * Ciclo de vida do módulo IoT: liga o transporte (MQTT local ou SQS/IoT Data Plane) à ingestão, registra o limite das zonas
@@ -20,6 +23,8 @@ const STALE_SWEEP_MS = 30_000;
 export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger('IotRuntime');
   private sweep?: NodeJS.Timeout;
+  private lockSweep?: NodeJS.Timeout;
+  private areaSweep?: NodeJS.Timeout;
 
   constructor(
     @Inject(IOT_GATEWAY) private readonly gateway: IotGateway,
@@ -42,6 +47,20 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
     const telemetry = this.telemetry;
     this.sweep = setInterval(() => void telemetry.sweepStale().catch(() => undefined), STALE_SWEEP_MS);
     this.sweep.unref?.();
+    // Várias instâncias (lacunas T5): cada uma varre o estado compartilhado; cada moto é processada sob o lock dela no Redis.
+    const gateway = this.gateway;
+    let sweepingLocks = false;
+    this.lockSweep = setInterval(() => {
+      if (sweepingLocks) return;
+      sweepingLocks = true;
+      void gateway.safeLock
+        .sweep()
+        .catch((err) => this.logger.warn({ msg: 'safe_lock_sweep_failed', error: (err as Error).message }))
+        .finally(() => (sweepingLocks = false));
+    }, SAFE_LOCK_SWEEP_MS);
+    this.lockSweep.unref?.();
+    this.areaSweep = setInterval(() => void geofence.sweepOutOfArea().catch((err) => this.logger.warn({ msg: 'out_of_area_sweep_failed', error: (err as Error).message })), OUT_OF_AREA_SWEEP_MS);
+    this.areaSweep.unref?.();
     if (this.cfg.geofenceMode === 'aws') {
       void this.engine.syncAll().catch((err) => this.logger.error({ msg: 'geofence_sync_all_failed', error: (err as Error).message }));
     }
@@ -50,6 +69,8 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
 
   async onModuleDestroy(): Promise<void> {
     if (this.sweep) clearInterval(this.sweep);
+    if (this.lockSweep) clearInterval(this.lockSweep);
+    if (this.areaSweep) clearInterval(this.areaSweep);
     this.geofence?.stop();
     if (this.gateway instanceof BaseIotGateway) await this.gateway.transport.stop();
     if (this.clock instanceof SystemClock) this.clock.clearAll();

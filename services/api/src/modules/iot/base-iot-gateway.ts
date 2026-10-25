@@ -5,7 +5,8 @@ import { EV, IotCommandUpdatedEvent } from '../../common/events';
 import type { CommandOutcome, CommandRequest, IotGateway, VehicleLiveState } from '../../ports/iot-gateway.port';
 import type { Clock, TimerHandle } from './clock';
 import type { LiveStateStore } from './live-state.store';
-import { SafeLockService } from './safe-lock.service';
+import { SafeLockService, type SafeLockVehicleState } from './safe-lock.service';
+import type { SafeLockStore } from './safe-lock.store';
 import type { DesiredState, IotTransport, ReportedMeta, ReportedState } from './shadow-transport';
 import { assertSpeedLimit } from './speed-limit';
 
@@ -16,6 +17,8 @@ export interface GatewayOptions {
   commandTimeoutMs: number;
   stepIntervalMs?: number;
   safeLockTimeoutMs?: number;
+  /** Estado das rampas do bloqueio seguro (produção: Redis, compartilhado entre as instâncias; padrão: memória). */
+  safeLockStore?: SafeLockStore;
 }
 
 /**
@@ -48,7 +51,7 @@ export abstract class BaseIotGateway implements IotGateway {
   private readonly returnedAt = new Map<string, number>();
   /** Último `limite_kmh` gravado no desired por este processo (a rampa nunca começa acima dele). */
   private readonly desiredLimit = new Map<string, number>();
-  private limitResolver: (thingName: string) => number = () => MAX_SPEED_KMH;
+  private limitResolver: (thingName: string) => number | Promise<number> = () => MAX_SPEED_KMH;
 
   constructor(
     readonly transport: IotTransport,
@@ -62,10 +65,34 @@ export abstract class BaseIotGateway implements IotGateway {
     this.safeLock = new SafeLockService(clock, recording, (o) => this.settle(o), {
       stepIntervalMs: opts.stepIntervalMs,
       timeoutMs: opts.safeLockTimeoutMs,
+      store: opts.safeLockStore,
       // Em memória na hora (falha fechada); a escrita no Redis que falhar é registrada.
       onHeld: (thingName) =>
         void this.live.setHeld(thingName, true).catch((err: Error) => this.logger.error({ msg: 'safe_lock_hold_persist_failed', thingName, error: err.message })),
+      // Varredura: rampa pendente cuja reconexão foi vista por outra instância começa com o estado relido do Redis.
+      probe: (thingName) => this.safeLockState(thingName, true),
+      onLocalActivity: (thingName) => this.watch(thingName),
     });
+  }
+
+  /**
+   * Estado usado pela rampa: só velocidade fresca (desconhecida = `null`, em movimento) e o teto do limite — o menor entre o
+   * reported, o último desired (deste processo ou gravado no Redis por outra instância) e o hold (0). Nunca sobe o que já foi pedido.
+   */
+  private async safeLockState(thingName: string, refresh = false): Promise<SafeLockVehicleState> {
+    const s = refresh ? await this.live.refresh(thingName) : await this.live.load(thingName);
+    const online = this.live.isOnline(thingName);
+    return {
+      speedKmh: this.live.knownSpeed(thingName),
+      speedLimitKmh: Math.min(
+        s?.speedLimitKmh ?? MAX_SPEED_KMH,
+        this.desiredLimit.get(thingName) ?? MAX_SPEED_KMH,
+        (await this.live.desiredLimit(thingName)) ?? MAX_SPEED_KMH,
+        (await this.live.isHeld(thingName)) ? 0 : MAX_SPEED_KMH,
+      ),
+      locked: s?.locked === true && online,
+      online,
+    };
   }
 
   /**
@@ -74,11 +101,17 @@ export abstract class BaseIotGateway implements IotGateway {
    */
   private async publishDesired(thingName: string, desired: DesiredState): Promise<void> {
     await this.transport.updateDesired(thingName, desired);
-    if (desired.limite_kmh !== undefined) this.desiredLimit.set(thingName, desired.limite_kmh);
+    if (desired.limite_kmh !== undefined) {
+      this.desiredLimit.set(thingName, desired.limite_kmh);
+      // Outras instâncias também usam este teto (rampa começada lá nunca publica um degrau acima dele).
+      await this.live
+        .setDesiredLimit(thingName, desired.limite_kmh)
+        .catch((err: Error) => this.logger.warn({ msg: 'desired_limit_persist_failed', thingName, error: err.message }));
+    }
   }
 
   /** Limite em vigor para a moto (zonas de velocidade reduzida), usado ao destravar. Registrado pelo motor de cercas. */
-  setLimitResolver(fn: (thingName: string) => number): void {
+  setLimitResolver(fn: (thingName: string) => number | Promise<number>): void {
     this.limitResolver = fn;
   }
 
@@ -86,19 +119,8 @@ export abstract class BaseIotGateway implements IotGateway {
 
   async lock(req: CommandRequest): Promise<CommandOutcome> {
     this.supersede(req.thingName, ['travada']);
-    const s = await this.live.load(req.thingName);
-    const state = {
-      // Só velocidade fresca; desconhecida = null (a rampa trata como em movimento). Nunca 0 por padrão.
-      speedKmh: this.live.knownSpeed(req.thingName),
-      // Teto da rampa: o menor entre o reported, o último desired e o hold (0). Nunca sobe acima do que já foi pedido.
-      speedLimitKmh: Math.min(
-        s?.speedLimitKmh ?? MAX_SPEED_KMH,
-        this.desiredLimit.get(req.thingName) ?? MAX_SPEED_KMH,
-        (await this.live.isHeld(req.thingName)) ? 0 : MAX_SPEED_KMH,
-      ),
-      locked: s?.locked === true && this.live.isOnline(req.thingName),
-      online: this.live.isOnline(req.thingName),
-    };
+    // Só velocidade fresca; desconhecida = null (a rampa trata como em movimento). Nunca 0 por padrão.
+    const state = await this.safeLockState(req.thingName);
     const wait = this.registerWaiter(req.commandId);
     const initial = await this.safeLock.start(req, state);
     this.watch(req.thingName);
@@ -116,9 +138,9 @@ export abstract class BaseIotGateway implements IotGateway {
   }
 
   async unlock(req: CommandRequest): Promise<CommandOutcome> {
-    this.safeLock.cancel(req.thingName);
+    await this.safeLock.cancel(req.thingName);
     await this.live.setHeld(req.thingName, false);
-    const limit = assertSpeedLimit(this.limitResolver(req.thingName));
+    const limit = assertSpeedLimit(await this.limitResolver(req.thingName));
     return this.desiredCommand(req, { travada: false }, { limite_kmh: limit });
   }
 
@@ -126,13 +148,13 @@ export abstract class BaseIotGateway implements IotGateway {
     assertSpeedLimit(kmh);
     // Durante o bloqueio seguro, a rampa é dona do limite: nada (zona, operador) pode subir ou mexer nos degraus.
     // Depois de `did_not_stop`, o limite fica segurado em 0 até um unlock explícito.
-    if (this.safeLock.isActive(req.thingName) || (await this.live.isHeld(req.thingName))) {
+    if ((await this.safeLock.isActiveAnywhere(req.thingName)) || (await this.live.isHeld(req.thingName))) {
       this.logger.warn({ msg: 'speed_limit_refused_during_safe_lock', thingName: req.thingName, commandId: req.commandId });
       return { commandId: req.commandId, status: 'failed' };
     }
     // QA-01: nenhum limite (operador/admin) acima do limite da zona em que a moto está (6 calçadão, 20 ciclovia).
     // O motor de cercas manda exatamente o limite em vigor, então só comandos manuais acima dele são recusados (nunca truncar).
-    const zoneLimit = this.limitResolver(req.thingName);
+    const zoneLimit = await this.limitResolver(req.thingName);
     if (kmh > zoneLimit) {
       this.logger.warn({ msg: 'speed_limit_refused_above_zone_limit', thingName: req.thingName, commandId: req.commandId, kmh, zoneLimit });
       return { commandId: req.commandId, status: 'failed', reason: 'invalid_limit' };
@@ -184,7 +206,9 @@ export abstract class BaseIotGateway implements IotGateway {
     for (const t of this.tracked.values()) {
       if (t.thingName === thingName && !t.timer) t.timer = this.clock.setTimeout(() => this.onTrackedTimeout(t.commandId), this.opts.commandTimeoutMs);
     }
-    await this.safeLock.onConnectivity(thingName, true, { speedKmh: this.live.knownSpeed(thingName), speedLimitKmh: s.speedLimitKmh, locked: s.locked, online: true });
+    // Mesmo teto do lock (reported, desired gravado e hold): a rampa pendente nunca começa acima do que já foi pedido.
+    const state = await this.safeLockState(thingName);
+    await this.safeLock.onConnectivity(thingName, true, { ...state, speedLimitKmh: Math.min(state.speedLimitKmh, s.speedLimitKmh), locked: s.locked, online: true });
   }
 
   /** Há algo aguardando `reported` desta moto? (o modo aws consulta o shadow enquanto houver). */
