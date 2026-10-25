@@ -172,11 +172,11 @@ describe('BatteriesService — defeito', () => {
 });
 
 describe('BatteriesService — baixa', () => {
-  it.each(['defective', 'charging', 'charged'])('de `%s` → `retired`, sai do galpão/van/estação', async (status) => {
+  it.each(['defective', 'charging', 'charged'])('de `%s` → `retired`, sai da van/estação e mantém o galpão', async (status) => {
     const { service, prisma } = setup();
     prisma.battery.findUnique.mockResolvedValue(row({ status }));
     await service.retire(campo, BAT, 'Fim da vida útil');
-    expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: BAT, status }, data: { status: 'retired', depotId: null, holderId: null, stationId: null } });
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: BAT, status }, data: { status: 'retired', holderId: null, stationId: null } });
     expect(movementsOf(prisma)).toEqual([expect.objectContaining({ fromStatus: status, toStatus: 'retired', depotId: DEPOT, reason: 'Fim da vida útil' })]);
   });
 

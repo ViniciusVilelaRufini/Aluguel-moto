@@ -200,9 +200,9 @@ export class BatteriesService {
     });
   }
 
-  /** Baixa definitiva: de `defective|charging|charged` → `retired`. */
+  /** Baixa definitiva: de `defective|charging|charged` → `retired`. Mantém o `depotId` (histórico por galpão); `retired` não conta como estoque. */
   retire(user: Principal, id: string, reason?: string) {
-    return this.transition(user, id, RETIRE_FROM, 'retired', { status: 'retired', depotId: null, holderId: null, stationId: null }, reason?.trim() || null);
+    return this.transition(user, id, RETIRE_FROM, 'retired', { status: 'retired', holderId: null, stationId: null }, reason?.trim() || null);
   }
 
   /**

@@ -56,7 +56,8 @@ export class ReportsService {
       this.prisma.rental.count({ where: { status: { in: ['active', 'paused', 'ending'] } } }),
       this.prisma.alert.count({ where: { status: { not: 'resolved' } } }),
       canSeeRevenue
-        ? this.prisma.payment.aggregate({ where: { status: { in: ['paid', 'captured', 'partially_refunded'] }, createdAt: { gte: startOfTodaySaoPaulo() } }, _sum: { amountCents: true, refundedCents: true } })
+        ? // Mesma definição do Financeiro: receita = custo dos aluguéis encerrados hoje (caução e recarga de carteira não entram).
+          this.prisma.rental.aggregate({ where: { status: { in: ['ended', 'force_ended'] }, endedAt: { gte: startOfTodaySaoPaulo() } }, _sum: { costCents: true } })
         : null,
     ]);
     const counts = Object.fromEntries(VEHICLE_STATUSES.map((s) => [s, 0])) as Record<string, number>;
@@ -67,7 +68,7 @@ export class ReportsService {
       generatedAt: new Date().toISOString(),
       occupancyPct: total ? Math.round((inUse / total) * 1000) / 10 : 0,
       activeRentals,
-      revenueTodayCents: revenue ? Math.max(0, n(revenue._sum.amountCents) - n(revenue._sum.refundedCents)) : 0,
+      revenueTodayCents: revenue ? Math.max(0, n(revenue._sum.costCents)) : 0,
       openAlerts,
       vehiclesByStatus: counts,
     };
