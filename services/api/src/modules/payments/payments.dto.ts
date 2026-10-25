@@ -58,7 +58,7 @@ export class ListPaymentsQuery extends PageQuery {
   status?: string;
 
   @IsOptional()
-  @IsIn(['rental', 'deposit', 'top_up', 'subscription', 'fee'])
+  @IsIn(['rental', 'deposit', 'top_up', 'subscription', 'fee', 'debt_settlement'])
   kind?: string;
 
   @IsOptional()
@@ -76,6 +76,16 @@ export class ListPaymentsQuery extends PageQuery {
   @IsOptional()
   @IsDateString()
   to?: string;
+}
+
+/** Task 14: quitação da dívida pelo cliente (`POST /payments/{id}/retry`). */
+export class DebtPaymentDto {
+  @IsIn(['card', 'pix'])
+  method: 'card' | 'pix';
+
+  @IsOptional()
+  @IsUUID()
+  cardId?: string;
 }
 
 export class RefundDto {

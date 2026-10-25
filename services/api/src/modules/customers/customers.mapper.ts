@@ -21,7 +21,15 @@ export interface ActiveSubscriptionRef {
  */
 export function toCustomer(
   c: Customer,
-  opts: { fullCpf: boolean; restricted?: boolean; stats?: CustomerStats; fullPixKey?: boolean; activeSubscription?: ActiveSubscriptionRef | null },
+  opts: {
+    fullCpf: boolean;
+    restricted?: boolean;
+    stats?: CustomerStats;
+    fullPixKey?: boolean;
+    activeSubscription?: ActiveSubscriptionRef | null;
+    /** Task 14: só `admin`/`financeiro`, no detalhe. */
+    money?: { walletBalanceCents: number; debtCents: number };
+  },
 ) {
   const pixFull = opts.fullPixKey ?? opts.fullCpf;
   return compact({
@@ -45,6 +53,8 @@ export function toCustomer(
     activePlanCode: opts.activeSubscription ? (opts.activeSubscription.planCode as 'weekly' | 'monthly') : undefined,
     activeSubscriptionId: opts.activeSubscription?.id,
     stats: opts.stats,
+    walletBalanceCents: opts.money?.walletBalanceCents,
+    debtCents: opts.money?.debtCents,
     createdAt: c.createdAt.toISOString(),
   });
 }

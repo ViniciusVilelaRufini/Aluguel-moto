@@ -453,7 +453,7 @@ export class SubscriptionsService {
     const amount = p.amountCents - p.refundedCents;
     if (amount <= 0) return;
     if (!p.providerPaymentId) {
-      this.logger.error({ msg: 'payment_needs_manual_review', paymentId: p.id, reason: 'subscription_late_charge_without_provider_id' });
+      this.state.needsReview({ paymentId: p.id, reason: 'subscription_late_charge_without_provider_id' });
       return;
     }
     let record;
@@ -480,7 +480,7 @@ export class SubscriptionsService {
           await tx.payment.updateMany({ where: { id: p.id, status: 'refunded', refundedCents: p.amountCents }, data: { status: p.status, refundedCents: p.refundedCents } });
           await tx.paymentRefund.update({ where: { id: record.id }, data: { status: 'needs_review', lastError: message, attempts: { increment: 1 } } });
         });
-        this.logger.error({ msg: 'payment_needs_manual_review', paymentId: p.id, refundId: record.id, reason: 'subscription_late_charge_refund_rejected' });
+        this.state.needsReview({ paymentId: p.id, reason: 'subscription_late_charge_refund_rejected' }, { refundId: record.id });
         return;
       }
       await this.prisma.paymentRefund.update({ where: { id: record.id }, data: { status: 'pending', attempts: { increment: 1 }, lastError: message } });

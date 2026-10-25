@@ -3,8 +3,14 @@ import { compact, iso } from '../../common/util';
 import type { PixCharge } from '../../ports/rental-billing.port';
 import { nextCharge, pausePolicy, pausesRemaining } from './subscription-rules';
 
+/** Campos calculados na leitura (Task 14): nome do cliente (só staff) e saldo devedor da dívida em aberto. */
+export interface PaymentExtras {
+  customerName?: string;
+  outstandingCents?: number;
+}
+
 /** `receiptUrl`: link assinado gerado na leitura (QA-11); o valor gravado em `Payment.receiptUrl` é legado e ignorado. */
-export function toPayment(p: Payment, receiptUrl?: string) {
+export function toPayment(p: Payment, receiptUrl?: string, extras: PaymentExtras = {}) {
   return compact({
     id: p.id,
     customerId: p.customerId,
@@ -20,6 +26,13 @@ export function toPayment(p: Payment, receiptUrl?: string) {
     failureReason: p.failureReason ?? undefined,
     providerPaymentId: p.providerPaymentId ?? undefined,
     receiptUrl,
+    customerName: extras.customerName,
+    outstandingCents: extras.outstandingCents,
+    debtSettledAt: iso(p.debtSettledAt),
+    debtSettlement: p.debtSettlement ?? undefined,
+    settlesPaymentId: p.settlesPaymentId ?? undefined,
+    // Pix da quitação só enquanto aguarda pagamento (o QR não serve depois).
+    pix: p.kind === 'debt_settlement' && p.status === 'pending' && p.pix ? (p.pix as unknown as PixCharge) : undefined,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   });

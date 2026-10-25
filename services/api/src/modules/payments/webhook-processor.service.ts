@@ -1,7 +1,8 @@
-import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { WalletService } from '../wallet/wallet.service';
+import { DelinquencyService } from './delinquency.service';
 import { isUniqueViolation } from './payment-state.service';
 import type { WebhookQueueMessage } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider } from './provider/payment-provider';
@@ -26,6 +27,7 @@ export class WebhookProcessor implements OnModuleInit {
     private readonly wallet: WalletService,
     private readonly subscriptions: SubscriptionsService,
     @Inject(QUEUE_BUS) private readonly queue: QueueBus,
+    @Optional() private readonly delinquency?: DelinquencyService,
   ) {}
 
   onModuleInit(): void {
@@ -63,6 +65,9 @@ export class WebhookProcessor implements OnModuleInit {
         await this.wallet.onTopUpPayment(applied.payment);
       } else if (applied.changed && applied.payment.kind === 'subscription') {
         await this.subscriptions.onSubscriptionPaymentChanged(applied.payment);
+      } else if (applied.changed && applied.payment.kind === 'debt_settlement' && applied.payment.status === 'paid') {
+        // Task 14: quitação por Pix (ou cartão que estava em análise) confirmada pelo gateway.
+        await this.delinquency?.onSettlementPaid(applied.payment);
       }
       this.logger.log({ msg: 'webhook_processed', eventId: msg.eventId, status: pp.status });
       return 'processed';

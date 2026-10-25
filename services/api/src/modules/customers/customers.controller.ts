@@ -9,6 +9,8 @@ import { conflict, notFound } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { CurrentUser, hasGroup, isAdmin, Principal, StaffOnly } from '../auth/principal';
+import { DelinquencyService } from '../payments/delinquency.service';
+import { walletBalance } from '../wallet/wallet-ledger';
 import { toCustomer } from './customers.mapper';
 
 class ListCustomersQuery extends PageQuery {
@@ -35,6 +37,7 @@ export class CustomersController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly delinquency: DelinquencyService,
   ) {}
 
   private async restrictedSet(cpfs: Array<string | null>): Promise<Set<string>> {
@@ -62,7 +65,11 @@ export class CustomersController {
   private async full(c: Customer, user: Principal) {
     const restricted = (await this.restrictedSet([c.cpf])).size > 0;
     const activeSubscription = await this.prisma.subscription.findFirst({ where: { customerId: c.id, ...currentSubscriptionWhere() }, select: { id: true, planCode: true } });
-    return toCustomer(c, { fullCpf: isAdmin(user), fullPixKey: hasGroup(user, 'admin', 'financeiro'), restricted, stats: await this.stats(c.id), activeSubscription });
+    // Task 14 (QA-04): saldo da carteira e dívida só para quem ajusta carteira / registra quitação.
+    const money = hasGroup(user, 'admin', 'financeiro')
+      ? { walletBalanceCents: (await walletBalance(this.prisma, c.id)).balanceCents, debtCents: await this.delinquency.debtCents(c.id) }
+      : undefined;
+    return toCustomer(c, { fullCpf: isAdmin(user), fullPixKey: hasGroup(user, 'admin', 'financeiro'), restricted, stats: await this.stats(c.id), activeSubscription, money });
   }
 
   @Get('customers')
@@ -142,6 +149,15 @@ export class CustomersController {
       return upd;
     });
     return this.full(updated, u);
+  }
+
+  /** Task 14: o financeiro registra a quitação da inadimplência paga fora do app (AuditLog com o motivo). */
+  @Post('customers/:id/delinquency/clear')
+  @HttpCode(200)
+  @StaffOnly('admin', 'financeiro')
+  async clearDelinquency(@Param('id', ParseUUIDPipe) id: string, @Body() dto: ReasonDto, @CurrentUser() u: Principal) {
+    await this.delinquency.clearManually(u, id, dto.reason.trim());
+    return this.full((await this.prisma.customer.findUnique({ where: { id } }))!, u);
   }
 
   @Post('customers/:id/unblock')

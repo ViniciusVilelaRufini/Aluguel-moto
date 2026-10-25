@@ -1,5 +1,6 @@
 import { Global, Module } from '@nestjs/common';
 import { RENTAL_BILLING } from '../../ports/rental-billing.port';
+import { DelinquencyService } from './delinquency.service';
 import { PaymentStateService } from './payment-state.service';
 import { loadPaymentsConfig, PAYMENTS_CONFIG, type PaymentsConfig } from './payments.config';
 import { PaymentsController } from './payments.controller';
@@ -42,7 +43,8 @@ import { WebhookProcessor } from './webhook-processor.service';
     SubscriptionsService,
     WebhookProcessor,
     PaymentsService,
+    DelinquencyService,
   ],
-  exports: [RENTAL_BILLING, PAYMENT_PROVIDER, BILLING_OPTIONS, PaymentStateService, ProviderCustomersService, RentalBillingService, SubscriptionsService],
+  exports: [RENTAL_BILLING, PAYMENT_PROVIDER, BILLING_OPTIONS, PaymentStateService, ProviderCustomersService, RentalBillingService, SubscriptionsService, DelinquencyService],
 })
 export class PaymentsModule {}

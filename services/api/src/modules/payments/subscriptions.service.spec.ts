@@ -86,10 +86,11 @@ function setup(sub: Row, opts: { vehicles?: Row[]; others?: Row[]; payments?: Ro
       return res.count === 1;
     }),
     emitUpdated: jest.fn(),
+    needsReview: jest.fn(),
   };
   const billing: any = { markDelinquent: jest.fn(async () => undefined) };
   const svc = new SubscriptionsService(prisma, provider, state, customers, billing, { record: jest.fn() } as any, loadV2Config());
-  return { svc, prisma, provider, billing, customers, row: subscription.rows[0] };
+  return { svc, prisma, provider, billing, customers, state, row: subscription.rows[0] };
 }
 
 async function problem(p: Promise<unknown>) {
@@ -281,6 +282,8 @@ describe('SubscriptionsService — assinatura fechada não reabre (fix round 2, 
     await b.svc.onSubscriptionPaymentChanged(renewal() as any);
     expect(b.prisma.paymentRefund.rows[0]).toMatchObject({ status: 'needs_review' });
     expect(b.prisma.payment.rows[0]).toMatchObject({ status: 'paid', refundedCents: 0 });
+    // Task 14: a revisão vira alerta payment_needs_review (evento do PaymentStateService).
+    expect(b.state.needsReview).toHaveBeenCalledWith({ paymentId: 'p2', reason: 'subscription_late_charge_refund_rejected' }, expect.objectContaining({ refundId: expect.any(String) }));
   });
 
   it('expirar cancela no gateway; falha fica pendente e o job tenta de novo até cancelar', async () => {

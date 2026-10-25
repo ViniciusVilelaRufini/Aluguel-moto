@@ -362,6 +362,24 @@ export class MercadoPagoPaymentProvider implements PaymentProvider {
     }
   }
 
+  /** LGPD (Task 14): `DELETE /v1/customers/{id}/cards/{card}` e `DELETE /v1/customers/{id}`; 404 = já excluído. */
+  async deleteCustomer(input: { providerCustomerId: string; providerCardIds: string[] }): Promise<void> {
+    const customer = `/v1/customers/${encodeURIComponent(input.providerCustomerId)}`;
+    const gone = (err: unknown) => err instanceof HttpError && err.status === 404;
+    for (const card of input.providerCardIds) {
+      try {
+        await this.request('DELETE', `${customer}/cards/${encodeURIComponent(card)}`);
+      } catch (err) {
+        if (!gone(err)) this.rethrow(err, 'deleteCard');
+      }
+    }
+    try {
+      await this.request('DELETE', customer);
+    } catch (err) {
+      if (!gone(err)) this.rethrow(err, 'deleteCustomer');
+    }
+  }
+
   async setSubscriptionPaused(input: { providerSubscriptionId: string; paused: boolean; nextChargeAt?: Date }): Promise<void> {
     try {
       const body: Record<string, unknown> = { status: input.paused ? 'paused' : 'authorized' };
