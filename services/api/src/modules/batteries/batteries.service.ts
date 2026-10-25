@@ -117,13 +117,14 @@ export class BatteriesService {
   async unload(user: Principal, serials: string[], stationId?: string, depotId?: string) {
     const unique = [...new Set(serials.map((s) => s.trim()))];
     if (stationId && !(await this.prisma.swapStation.findUnique({ where: { id: stationId }, select: { id: true } }))) throw notFound('Estação não encontrada.');
-    const targetDepot = stationId ? null : await this.resolveUnloadDepot(depotId);
     await this.prisma.$transaction(async (tx) => {
       const rows = await tx.battery.findMany({ where: { serial: { in: unique } } });
       const missing = unique.filter((s) => !rows.some((r) => r.serial === s));
       if (missing.length) throw notFound(`Bateria não encontrada: ${missing.join(', ')}.`);
       const notMine = rows.filter((r) => r.status !== 'in_van' || r.holderId !== user.userId);
       if (notMine.length) throw conflict('conflict', `Bateria fora da sua van: ${notMine.map((r) => r.serial).join(', ')}.`);
+      // Galpão só depois de conferir a van (bateria fora da van → 409 antes do 422 `depot-required`).
+      const targetDepot = stationId ? null : await this.resolveUnloadDepot(depotId);
       const status: BatteryStatus = stationId ? 'in_station' : 'charging';
       const moved = await tx.battery.updateMany({
         where: { id: { in: rows.map((r) => r.id) }, status: 'in_van', holderId: user.userId },

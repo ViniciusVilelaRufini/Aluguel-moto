@@ -182,7 +182,7 @@ describe('BatteriesService — van', () => {
 
   it('com `depotId` no corpo usa esse galpão (inexistente → 404, inativo → 422)', async () => {
     const { service, prisma } = setup();
-    prisma.battery.findMany.mockResolvedValueOnce([row({ status: 'in_van', holderId: campo.userId, depotId: null })]).mockResolvedValue([]);
+    prisma.battery.findMany.mockResolvedValue([row({ status: 'in_van', holderId: campo.userId, depotId: null })]);
     prisma.depot.findUnique.mockResolvedValue({ id: DEPOT2, active: true } as any);
     await service.unload(campo, ['BT-1'], undefined, DEPOT2);
     expect(prisma.battery.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ depotId: DEPOT2 }) }));
@@ -194,10 +194,19 @@ describe('BatteriesService — van', () => {
 
   it('sem `depotId` e com mais de um (ou nenhum) galpão ativo → 422 `depot-required`', async () => {
     const { service, prisma } = setup();
+    prisma.battery.findMany.mockResolvedValue([row({ status: 'in_van', holderId: campo.userId, depotId: null })]);
     prisma.depot.findMany.mockResolvedValue([{ id: DEPOT }, { id: DEPOT2 }] as any);
     expect(await problem(service.unload(campo, ['BT-1']))).toEqual({ status: 422, slug: 'depot-required' });
     prisma.depot.findMany.mockResolvedValue([]);
     expect(await problem(service.unload(campo, ['BT-1']))).toEqual({ status: 422, slug: 'depot-required' });
+    expect(prisma.battery.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('bateria fora da van do usuário → 409 antes de escolher o galpão (compatível com o contrato v2)', async () => {
+    const { service, prisma } = setup();
+    prisma.battery.findMany.mockResolvedValue([row({ status: 'in_station', stationId: STATION, depotId: null })]);
+    prisma.depot.findMany.mockResolvedValue([{ id: DEPOT }, { id: DEPOT2 }] as any);
+    expect(await problem(service.unload(campo, ['BT-1']))).toEqual({ status: 409, slug: 'conflict' });
   });
 
   it('descarregar na estação: `in_station` sem galpão, movimentação com a estação', async () => {

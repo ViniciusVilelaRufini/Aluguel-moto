@@ -608,7 +608,7 @@ model Battery {
 model BatteryMovement {
   id         String         @id @default(uuid()) @db.Uuid
   batteryId  String         @db.Uuid
-  battery    Battery        @relation(fields: [batteryId], references: [id])
+  battery    Battery        @relation(fields: [batteryId], references: [id], onDelete: Cascade)
   fromStatus BatteryStatus?
   toStatus   BatteryStatus
   depotId    String?        @db.Uuid
