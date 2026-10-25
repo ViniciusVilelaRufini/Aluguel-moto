@@ -4,6 +4,12 @@ export function formatBRL(cents: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(cents / 100);
 }
 
+/** Rótulo de barra de gráfico: R$ com centavos; a partir de R$ 10 mil abrevia ("R$ 12,3 mil"). */
+export function formatBRLBar(cents: number): string {
+  if (Math.abs(cents) < 1_000_000) return formatBRL(cents);
+  return `R$ ${(cents / 100_000).toFixed(1).replace('.', ',')} mil`;
+}
+
 export function formatDateTime(iso?: string | null): string {
   if (!iso) return '—';
   return new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' }).format(new Date(iso));
@@ -20,9 +26,23 @@ export function formatDateTimeIn(iso: string | null | undefined, timeZone?: stri
   }
 }
 
+/** Data "só dia" (`YYYY-MM-DD`, sem horário): formatada em UTC para não recuar um dia no fuso de São Paulo. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Telefone brasileiro: "+5511990000001" vira "(11) 99000-0001"; formatos desconhecidos voltam como vieram. */
+export function formatPhone(raw?: string | null): string {
+  if (!raw) return '—';
+  const d = raw.replace(/\D/g, '');
+  const n = d.startsWith('55') && d.length >= 12 ? d.slice(2) : d;
+  if (n.length === 11) return `(${n.slice(0, 2)}) ${n.slice(2, 7)}-${n.slice(7)}`;
+  if (n.length === 10) return `(${n.slice(0, 2)}) ${n.slice(2, 6)}-${n.slice(6)}`;
+  return raw;
+}
+
 export function formatDate(iso?: string | null): string {
   if (!iso) return '—';
-  return new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, dateStyle: 'short' }).format(new Date(iso));
+  const timeZone = DATE_ONLY.test(iso) ? 'UTC' : TZ;
+  return new Intl.DateTimeFormat('pt-BR', { timeZone, dateStyle: 'short' }).format(new Date(iso));
 }
 
 export function formatTime(iso?: string | null): string {

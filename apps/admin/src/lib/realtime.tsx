@@ -53,8 +53,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const aq = useQuery({
     queryKey: ['alerts', 'open-count'],
     queryFn: async () => {
-      const r = await unwrap(api.GET('/alerts', { params: { query: { status: 'open', limit: 100 } } }));
-      return r.items.length;
+      // Total real do servidor (não o tamanho da primeira página de /alerts).
+      const r = await unwrap(api.GET('/reports/dashboard'));
+      return r.openAlerts;
     },
     enabled: !!token && canFleet,
   });

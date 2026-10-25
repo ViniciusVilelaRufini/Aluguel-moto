@@ -3,9 +3,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
-  buildFeeCreate, buildHandoverCancel, buildPlanCreate, buildVehicleCreate, buildVehicleUpdate, buildWalletAdjustment, canCancelHandover,
+  buildFeeCreate, buildHandoverCancel, buildPlanCreate, buildVehicleCreate, buildVehicleUpdate, buildWalletAdjustment, walletAdjustFeedback, activePlanForCode, firstFreePlanCode, canCancelHandover,
   EMPTY_FEE_FORM, EMPTY_PLAN_FORM, EMPTY_VEHICLE_FORM, PLAN_UNIT_BY_CODE, reasonError, vehicleFormFrom,
 } from '@/lib/admin-forms';
+import { formatBRLBar, formatDate, formatPhone } from '@/lib/format';
 import { can } from '@/lib/permissions';
 import { DEPOSIT_STATUS, STATION_SWAP_STATUS } from '@/lib/labels';
 import { DEPOSIT_STATUS_OPTIONS } from '@/components/DepositsPanel';
@@ -178,4 +179,48 @@ describe('permissões por grupo (iguais ao x-required-groups do contrato)', () =
       expect(panelGroups(action)).toEqual(groupsOf(op));
     });
   }
+});
+
+describe('carteira: retorno do ajuste (QA-04)', () => {
+  it('mostra o saldo resultante', () => {
+    expect(walletAdjustFeedback({ amountCents: 2550, balanceAfterCents: 2550 })).toEqual({ message: expect.stringContaining('Saldo atual: R$'), tone: 'success' });
+  });
+  it('avisa quando o débito deixa o saldo negativo', () => {
+    const r = walletAdjustFeedback({ amountCents: -10000, balanceAfterCents: -7450 });
+    expect(r.tone).toBe('danger');
+    expect(r.message).toContain('negativo');
+  });
+});
+
+describe('formatDate: data só dia (QA-05)', () => {
+  it('não recua um dia para YYYY-MM-DD', () => {
+    expect(formatDate('1992-03-15')).toBe('15/03/1992');
+  });
+  it('instante com horário segue em São Paulo', () => {
+    expect(formatDate('2026-10-25T01:27:00Z')).toBe('24/10/2026');
+  });
+});
+
+describe('planos: código já ocupado (QA-06)', () => {
+  const plans = [{ code: 'day', active: true }, { code: 'hour', active: false }, { code: 'minute', active: true }];
+  it('acha o plano ativo do código', () => {
+    expect(activePlanForCode(plans, 'day')).toBe(plans[0]);
+    expect(activePlanForCode(plans, 'hour')).toBeUndefined();
+  });
+  it('sugere o primeiro código livre', () => {
+    expect(firstFreePlanCode(plans, ['minute', 'hour', 'day'])).toBe('hour');
+    expect(firstFreePlanCode(plans, ['minute', 'day'])).toBeUndefined();
+  });
+});
+
+describe('formatadores do painel (QA-09, QA-22)', () => {
+  it('barra do gráfico em R$ com centavos e abreviação só acima de R$ 10 mil', () => {
+    expect(formatBRLBar(4395).replace(/\s/g, ' ')).toBe('R$ 43,95');
+    expect(formatBRLBar(1_234_500)).toBe('R$ 12,3 mil');
+  });
+  it('telefone com máscara', () => {
+    expect(formatPhone('+5511990000001')).toBe('(11) 99000-0001');
+    expect(formatPhone('1133334444')).toBe('(11) 3333-4444');
+    expect(formatPhone(undefined)).toBe('—');
+  });
 });
