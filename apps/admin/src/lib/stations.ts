@@ -160,3 +160,15 @@ export function stationFeatures(stations: Pick<Station, 'id' | 'name' | 'lat' | 
 export function stationSummary(s: Pick<Station, 'availableBatteries' | 'totalSlots' | 'open24h' | 'openingHours'>): string {
   return `${s.availableBatteries}/${s.totalSlots} carregadas · ${s.open24h ? '24 h' : s.openingHours}`;
 }
+
+/** Galpões ligados à estação, pelo nome (id sem nome conhecido vira "Galpão"); "Nenhum" sem vínculo. */
+export function linkedDepotNames(s: Pick<Station, 'depotIds'>, names: Map<string, string>): string {
+  return s.depotIds.length ? s.depotIds.map((id) => names.get(id) ?? 'Galpão').join(', ') : 'Nenhum';
+}
+
+/** Texto do vínculo estação ↔ galpão: o campo fica no cadastro do galpão; quem não abre Galpões é avisado de com quem falar. */
+export function stationDepotHint(canOpenDepots: boolean): string {
+  return canOpenDepots
+    ? 'O vínculo é feito no cadastro do galpão (campo “Estação de troca do galpão”).'
+    : 'O vínculo é feito no cadastro do galpão, por quem tem acesso a Galpões.';
+}

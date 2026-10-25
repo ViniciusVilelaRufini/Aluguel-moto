@@ -108,3 +108,13 @@ export function movementTitle(m: S<'BatteryMovement'>): string {
   const to = BATTERY_STATUS[m.toStatus][0];
   return m.fromStatus ? `${BATTERY_STATUS[m.fromStatus][0]} → ${to}` : `Cadastrada · ${to}`;
 }
+
+/**
+ * Corpo do descarregamento da van: `depot:<id>` → carregar no galpão; outro valor → estação; `charging` = padrão da API
+ * (carregador do galpão), que só é inequívoco com um galpão: com vários a API responde 422 `depot-required`, então o painel pede a escolha.
+ */
+export function unloadDestination(dest: string, depotCount: number): { body: { stationId?: string; depotId?: string } } | { error: string } {
+  if (dest.startsWith('depot:')) return { body: { depotId: dest.slice(6) } };
+  if (dest === 'charging') return depotCount > 1 ? { error: 'Escolha o galpão ou a estação de destino' } : { body: {} };
+  return { body: { stationId: dest } };
+}

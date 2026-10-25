@@ -20,7 +20,8 @@ export const MENU: MenuItem[] = [
   { key: 'zones', label: 'Cercas e regras', href: '/zones', icon: 'Hexagon', groups: ['admin', 'operacao'] },
   { key: 'customers', label: 'Clientes', href: '/customers', icon: 'Users', groups: ['admin', 'suporte'] },
   { key: 'tasks', label: 'Operação', href: '/tasks', icon: 'ClipboardList', groups: ['admin', 'operacao'] },
-  { key: 'finance', label: 'Financeiro', href: '/finance', icon: 'ChartColumn', groups: ['admin', 'financeiro'] },
+  // Suporte entra só para a lista de Pagamentos (GET /payments permite admin, financeiro, suporte); as outras abas seguem fechadas (ver finance-tabs).
+  { key: 'finance', label: 'Financeiro', href: '/finance', icon: 'ChartColumn', groups: ['admin', 'financeiro', 'suporte'], homeGroups: ['admin', 'financeiro'] },
   { key: 'settings', label: 'Preços e planos', href: '/settings', icon: 'SlidersHorizontal', groups: ['admin', 'financeiro'] },
   // Retirada em galpão (spec 2026-10-22 §6). `campo` não usa o painel; financeiro só lê o cadastro (GET /depots).
   // Depois de Financeiro/Preços: a primeira seção de cada grupo é a tela inicial (financeiro continua em /finance).
@@ -80,7 +81,9 @@ export type Action =
   | 'station.edit'
   | 'station.qr'
   | 'wallet.adjust'
-  | 'deposit.view';
+  | 'deposit.view'
+  | 'payment.view'
+  | 'finance.reports';
 
 const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'vehicle.command': ['admin', 'operacao'],
@@ -123,6 +126,8 @@ const ACTION_GROUPS: Record<Action, StaffGroup[]> = {
   'station.qr': ['admin', 'operacao'],
   'wallet.adjust': ['admin', 'financeiro'], // POST /customers/{id}/wallet/adjustments
   'deposit.view': ['admin', 'financeiro'], // GET /payments/deposits
+  'payment.view': ['admin', 'financeiro', 'suporte'], // GET /payments, GET /payments/{id}
+  'finance.reports': ['admin', 'financeiro'], // GET /reports/finance|revenue|occupancy…; abas Visão geral e Aluguéis
 };
 
 export function can(groups: StaffGroup[], action: Action): boolean {

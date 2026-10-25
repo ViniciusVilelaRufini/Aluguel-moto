@@ -97,3 +97,10 @@ Auditoria e evoluções em `docs/design/auditoria-admin.md` e `docs/design/evolu
 - **Ciclo de vida das baterias** (Operação > Baterias): as contagens por situação vêm de `statusCounts` (inclui Carregada e Com defeito) e respeitam o filtro de **galpão** (`depotId`); a tabela mostra o galpão de cada bateria. **Cadastrar bateria** (`POST /batteries`: série, galpão, carregando com carga opcional ou carregada) só para `admin` e `operacao`; por linha, **Carregada** (`charging`), **Defeito** (motivo obrigatório, 3 a 500 caracteres) e **Dar baixa** (motivo opcional, só `admin`/`operacao`), sempre conforme a situação (as demais voltariam `409`), e **Histórico** (`GET /batteries/{id}/movements`, paginado, horário no fuso do galpão). Descarregar a van agora escolhe o galpão (`depotId`) ou a estação. Testes: `tests/battery-lifecycle.test.ts`.
 - Rotas de ficha usam query string (`/fleet?vehicle=`, `/customers?tab=rentals&rental=`), pois o CloudFront devolve `index.html` para rotas desconhecidas.
 - Pontos de atenção em `docs/superpowers/plans/2026-10-21-admin.md`.
+
+## Limpeza da Task 18 (lacunas)
+
+- Auditoria: os filtros de Ação e Entidade têm a opção "Outra…" (texto livre com o identificador técnico) para valores fora do mapa de rótulos.
+- Financeiro: o grupo `suporte` abre a seção só para a lista de Pagamentos (`GET /payments`); a Visão geral, Aluguéis, Cauções e Carteira seguem fechadas. Com `?tab=` e grupos ainda carregando, a página não mostra aba nenhuma (sem piscar a visão geral).
+- Baterias: descarregar a van com mais de um galpão exige escolher o destino no painel (antes a API respondia 422).
+- Estações: textos e vínculos extraídos para `src/lib/stations.ts` e cobertos em `tests/t18-painel.test.ts`.

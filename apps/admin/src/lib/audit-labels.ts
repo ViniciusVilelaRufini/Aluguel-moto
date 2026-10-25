@@ -92,5 +92,13 @@ export function auditEntityLabel(entityType: string): string {
 }
 
 const byLabel = (a: { label: string }, b: { label: string }) => a.label.localeCompare(b.label, 'pt-BR');
-export const AUDIT_ACTION_OPTIONS = [{ value: '', label: 'Todas as ações' }, ...Object.entries(AUDIT_ACTION_LABEL).map(([value, label]) => ({ value, label })).sort(byLabel)];
-export const AUDIT_ENTITY_OPTIONS = [{ value: '', label: 'Todas as entidades' }, ...Object.entries(AUDIT_ENTITY_LABEL).map(([value, label]) => ({ value, label })).sort(byLabel)];
+/** Opção do filtro para ações/entidades fora do mapa de rótulos: libera um campo de texto com o identificador técnico. */
+export const AUDIT_OTHER = '__other__';
+const OTHER_OPTION = { value: AUDIT_OTHER, label: 'Outra…' };
+export const AUDIT_ACTION_OPTIONS = [{ value: '', label: 'Todas as ações' }, ...Object.entries(AUDIT_ACTION_LABEL).map(([value, label]) => ({ value, label })).sort(byLabel), OTHER_OPTION];
+export const AUDIT_ENTITY_OPTIONS = [{ value: '', label: 'Todas as entidades' }, ...Object.entries(AUDIT_ENTITY_LABEL).map(([value, label]) => ({ value, label })).sort(byLabel), OTHER_OPTION];
+
+/** Valor enviado à API: o do seletor, ou o texto digitado quando "Outra…" está escolhida (vazio = sem filtro). */
+export function auditFilterValue(selected: string, custom: string): string {
+  return selected === AUDIT_OTHER ? custom.trim() : selected;
+}

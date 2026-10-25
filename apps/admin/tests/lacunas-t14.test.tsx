@@ -91,7 +91,7 @@ describe('Alerta payment_needs_review (Task 14)', () => {
     expect(ALERT_TYPE.payment_needs_review[0]).toBe('Pagamento precisa de revisão');
     expect(paymentHref(['financeiro'], 'p1')).toBe('/finance?tab=payments&payment=p1');
     expect(paymentHref(['admin'], 'p1')).toBe('/finance?tab=payments&payment=p1');
-    expect(paymentHref(['suporte'], 'p1')).toBeNull();
+    expect(paymentHref(['suporte'], 'p1')).toBe('/finance?tab=payments&payment=p1'); // Task 18: suporte lê Pagamentos (GET /payments)
   });
   it('financeiro abre Alertas (só os de pagamento) e resolve, mas começa no Financeiro', () => {
     expect(canOpen(['financeiro'], 'alerts')).toBe(true);
