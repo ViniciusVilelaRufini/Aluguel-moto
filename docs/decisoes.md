@@ -514,3 +514,14 @@ Lacuna: bateria em `charging` nunca voltava a ficar disponível; não havia vín
 - **M4:** o `RedisMutex` renova o TTL do lock a cada ~1/3 enquanto a operação roda (sem fencing; a renovação cobre operação lenta).
 - **M5 (registrado, sem mudança):** toda instância faz polling do shadow de toda rampa ativa (N× `GetThingShadow`, aceitável até 10 tasks).
 - **M6:** as varreduras logam só na mudança de estado (falhou/voltou).
+
+### 2026-10-24 · API várias instâncias — fix round 2 da re-revisão (branch `feat/lacunas-t5`) · status: decisão (coordenador)
+
+- **Sem cópia por instância do desired (N1/I1 + segurança):** o mapa `desiredLimit` por processo saiu. Teto confirmado = `iot:desired-limit` (gravado a cada publicação, por qualquer instância) → documento do shadow (`readShadow`: `GetThingShadow` no aws; emulação local no dev) → desconhecido.
+- **Reduções sempre aceitas:** com rampa ativa, hold ou estado ilegível, hold **confirmado** aceita só 0; senão o limite precisa ser ≤ teto confirmado; teto desconhecido → ≤ limite reportado; nada conhecido → aceito. Só subidas são recusadas.
+- **Primeiro degrau da rampa pela velocidade medida** (`rampSteps`): menor degrau da escada 15/8 que não fica abaixo da velocidade fresca (sem velocidade ou acima de 15: 15), limitado pelo teto confirmado (zona) mas **nunca abaixo de 3**; só hold confirmado começa em 0. O wrapper de publicação também nunca puxa um degrau para baixo de 3 por causa de um teto guardado; valores < 3 só saem como o degrau 0 da escada (depois do 3 confirmado), na trava com velocidade < 3 ou no hold. Interpretação registrada: o degrau 0 depois do 3 confirmado continua (é o fim da rampa gradual; sem ele uma moto a 3 km/h nunca para).
+- **Hold lido do Redis a cada vez** (a cópia em memória ficava velha depois de um unlock em outra instância); ilegível = desconhecido, exceto um hold desta instância cuja gravação falhou.
+- **N2:** `recoverOrphan` confere, sob o lock da moto, que a entrada do índice ainda é a mesma órfã (`isOrphan`: mesmo `rampId`, sem estado) antes de publicar.
+- **N3:** unlock e teto dos comandos manuais usam `GeofenceService.verifiedLimit(thing, posição)`: a zona é reavaliada pela posição atual (PostGIS); sem posição, o valor gravado.
+- Registrado (não alterado): o did_not_stop (120 s sem parar) continua segurando o limite em 0 por desenho.
+

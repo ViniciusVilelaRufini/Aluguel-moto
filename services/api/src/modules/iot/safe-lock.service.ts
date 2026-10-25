@@ -4,7 +4,7 @@ import type { CommandOutcome, CommandRequest } from '../../ports/iot-gateway.por
 import type { Clock, TimerHandle } from './clock';
 import { MemorySafeLockStore, outsideLock, type OrphanRamp, type RampState, type SafeLockStore } from './safe-lock.store';
 import type { ReportedState, ShadowTransport } from './shadow-transport';
-import { safeLockSteps } from './speed-limit';
+import { rampSteps } from './speed-limit';
 
 /** Intervalo entre degraus, contado a partir do `reported` do degrau anterior. */
 export const SAFE_LOCK_STEP_INTERVAL_MS = 2_000;
@@ -14,9 +14,12 @@ export const SAFE_LOCK_TIMEOUT_MS = 120_000;
 export interface SafeLockVehicleState {
   /** Última velocidade reportada **fresca**; `null` = desconhecida/velha → tratada como em movimento (nunca 0 por padrão). */
   speedKmh: number | null;
+  /** Teto confirmado (zona/desired gravado); só limita o primeiro degrau, nunca abaixo de 3. */
   speedLimitKmh: number;
   locked: boolean;
   online: boolean;
+  /** Hold confirmado (limite segurado em 0 lido do estado compartilhado): só então a rampa começa em 0. */
+  held?: boolean;
 }
 
 export type OutcomeSink = (outcome: CommandOutcome) => void;
@@ -225,7 +228,10 @@ export class SafeLockService {
    */
   private async recoverOrphan(orphan: OrphanRamp): Promise<void> {
     await this.store.withLock(orphan.thingName, async () => {
-      if ((await this.store.get(orphan.thingName)) !== null) return; // outra rampa começou nesse meio-tempo
+      // Sob o lock da moto (fix 2, N2): só segue se a entrada do índice ainda for esta órfã e não houver estado — outra varredura
+      // já tratou, ou um lock novo começou/terminou entre o scan e aqui → nada (nunca desfaz uma trava recém-confirmada).
+      if ((await this.store.get(orphan.thingName)) !== null) return;
+      if (!(await this.store.isOrphan(orphan.thingName, orphan.rampId))) return;
       if (orphan.phase !== 'waiting_online') {
         this.opts.onHeld?.(orphan.thingName);
         await this.transport.updateDesired(orphan.thingName, { travada: false, limite_kmh: 0 });
@@ -317,7 +323,7 @@ export class SafeLockService {
       return;
     }
     ramp.phase = 'ramping';
-    ramp.steps = safeLockSteps(state.speedLimitKmh);
+    ramp.steps = rampSteps(state.speedKmh, state.speedLimitKmh, state.held === true);
     ramp.stepIdx = 0;
     await this.publishStep(ramp);
   }

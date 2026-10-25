@@ -149,6 +149,18 @@ export class GeofenceService {
     if (candidates.size) this.logger.log({ msg: 'zone_change_reevaluated', zoneId: ev.zoneId, vehicles: candidates.size });
   }
 
+  /**
+   * Limite das zonas para subir o limite (unlock, teto dos comandos manuais) — fix 2, N3: com a posição atual, reavalia a zona
+   * (PostGIS) em vez de confiar só em `geofence:limit` (que pode ter perdido uma escrita durante uma falha do Redis). Sem posição
+   * ou com o motor indisponível, o valor gravado.
+   */
+  async verifiedLimit(thingName: string, position?: { lat: number; lng: number }): Promise<number> {
+    if (!position) return this.effectiveLimit(thingName);
+    const zones = await this.engine.containing(position.lat, position.lng).catch(() => null);
+    if (!zones) return this.effectiveLimit(thingName);
+    return effectiveZoneLimit(zones.filter((z) => z.type === 'reduced_speed' && z.speedLimitKmh !== null).map((z) => z.speedLimitKmh!));
+  }
+
   private key(vehicleId: string): string {
     return `geofence:inside:${vehicleId}`;
   }

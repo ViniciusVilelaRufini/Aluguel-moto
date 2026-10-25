@@ -63,6 +63,13 @@ export class AwsIotTransport implements IotTransport {
     await this.client.send(new UpdateThingShadowCommand({ thingName, payload: new TextEncoder().encode(JSON.stringify({ state: { desired } })) }));
   }
 
+  async readShadow(thingName: string): Promise<{ desired: DesiredState; reported: ReportedState } | null> {
+    const res = await this.client.send(new GetThingShadowCommand({ thingName }));
+    if (!res.payload) return null;
+    const doc = JSON.parse(new TextDecoder().decode(res.payload)) as { state?: { desired?: Record<string, unknown>; reported?: Record<string, unknown> } };
+    return { desired: sanitizeReported(doc.state?.desired ?? {}), reported: sanitizeReported(doc.state?.reported ?? {}) };
+  }
+
   async publishCommand(thingName: string, command: MomentaryCommand): Promise<void> {
     await this.client.send(new PublishCommand({ topic: TOPICS.commands(thingName), qos: 1, payload: new TextEncoder().encode(JSON.stringify(command)) }));
   }

@@ -47,6 +47,8 @@ export interface SafeLockStore {
   scan(): Promise<{ active: string[]; orphans: OrphanRamp[] }>;
   /** Tira a órfã do índice (só se a entrada ainda for `rampId` e não houver estado). */
   clearOrphan(thingName: string, rampId: string): Promise<void>;
+  /** A entrada do índice ainda é esta órfã (mesmo `rampId`, sem estado)? Consultado sob o lock da moto. */
+  isOrphan(thingName: string, rampId: string): Promise<boolean>;
   withLock<T>(thingName: string, fn: () => Promise<T>): Promise<T>;
 }
 
@@ -70,6 +72,9 @@ export class MemorySafeLockStore implements SafeLockStore {
     return { active: [...this.ramps.keys()], orphans: [] };
   }
   async clearOrphan() {}
+  async isOrphan() {
+    return false;
+  }
   withLock<T>(thingName: string, fn: () => Promise<T>): Promise<T> {
     return this.mutex.run(thingName, fn);
   }
@@ -149,17 +154,21 @@ export class RedisSafeLockStore implements SafeLockStore {
     return { active, orphans };
   }
 
-  async clearOrphan(thingName: string, rampId: string): Promise<void> {
-    if (await this.redis.exists(this.key(thingName))) return;
+  async isOrphan(thingName: string, rampId: string): Promise<boolean> {
+    if (await this.redis.exists(this.key(thingName))) return false;
     const raw = (await this.redis.hgetall(this.index))[thingName];
-    if (raw === undefined) return;
+    if (raw === undefined) return false;
     let id = '';
     try {
       id = (JSON.parse(raw) as { rampId?: string }).rampId ?? '';
     } catch {
       id = '';
     }
-    if (id !== rampId) return;
+    return id === rampId;
+  }
+
+  async clearOrphan(thingName: string, rampId: string): Promise<void> {
+    if (!(await this.isOrphan(thingName, rampId))) return;
     await this.redis.delWithIndex(this.key(thingName), this.index, thingName);
   }
 

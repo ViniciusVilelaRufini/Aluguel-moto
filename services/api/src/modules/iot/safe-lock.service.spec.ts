@@ -105,7 +105,8 @@ describe('SafeLockService (bloqueio seguro)', () => {
     const { transport, svc } = setup();
     await svc.start(REQ, { speedKmh: 3, speedLimitKmh: 32, locked: false, online: true });
     expect(transport.lockPublished()).toBe(false);
-    expect(transport.limits()).toEqual([15]);
+    // Fix 2: o primeiro degrau sai da velocidade medida (menor degrau ≥ velocidade, nunca 3 com a moto andando).
+    expect(transport.limits()).toEqual([8]);
   });
 
   it('120 s sem parar → failed/did_not_stop, mantém limite_kmh 0 e não trava', async () => {

@@ -57,4 +57,6 @@ export interface IotTransport extends ShadowTransport {
   stop(): Promise<void>;
   /** Avisa que há comandos aguardando `reported` (o modo aws consulta o shadow enquanto houver). */
   watch?(thingName: string, active: boolean): void;
+  /** Documento do shadow (desired/reported) direto da fonte — teto do limite quando o Redis não responde. */
+  readShadow?(thingName: string): Promise<{ desired: DesiredState; reported: ReportedState } | null>;
 }

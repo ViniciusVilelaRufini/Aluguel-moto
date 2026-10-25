@@ -42,7 +42,7 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
       return;
     }
     const geofence = this.geofence;
-    this.gateway.setLimitResolver((thingName) => geofence.effectiveLimit(thingName));
+    this.gateway.setLimitResolver((thingName, position) => geofence.verifiedLimit(thingName, position));
     await this.gateway.transport.start(this.telemetry).catch((err) => this.logger.error({ msg: 'iot_transport_start_failed', error: (err as Error).message }));
     const telemetry = this.telemetry;
     this.sweep = setInterval(() => void telemetry.sweepStale().catch(() => undefined), STALE_SWEEP_MS);

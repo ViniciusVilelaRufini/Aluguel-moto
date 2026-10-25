@@ -81,7 +81,8 @@ export class LiveStateStore {
    * Uma única mensagem velha reordenada nunca troca a referência.
    */
   private readonly jumpCandidate = new Map<string, { arrival: number; deviceTs: number }>();
-  private readonly held = new Map<string, boolean>();
+  /** Hold gravado por esta instância cuja escrita no Redis falhou (vale até gravar ou um unlock). */
+  private readonly heldUnpersisted = new Set<string>();
   /** Carimbo (`_at`) da última versão do hash no Redis que esta instância gravou ou leu: versão mais nova = outra instância. */
   private readonly syncedAt = new Map<string, number>();
 
@@ -163,7 +164,18 @@ export class LiveStateStore {
 
   /** Último `limite_kmh` gravado no desired por qualquer instância (teto da rampa). Erro de leitura → desconhecido. */
   async desiredLimit(thingName: string): Promise<number | null> {
-    const raw = await this.redis.get(`iot:desired-limit:${thingName}`).catch(() => null);
+    const v = await this.readDesiredLimit(thingName);
+    return v ?? null;
+  }
+
+  /** `number` = gravado; `null` = nunca gravado; `undefined` = Redis ilegível. */
+  async readDesiredLimit(thingName: string): Promise<number | null | undefined> {
+    let raw: string | null;
+    try {
+      raw = await this.redis.get(`iot:desired-limit:${thingName}`);
+    } catch {
+      return undefined;
+    }
     const n = raw === null ? NaN : Number(raw);
     return Number.isInteger(n) && n >= 0 && n <= MAX_SPEED_KMH ? n : null;
   }
@@ -313,30 +325,23 @@ export class LiveStateStore {
   /** "Limite segurado em 0" depois de `did_not_stop`: persiste até um unlock explícito. */
   /** Falha fechada: erro ao ler o Redis = segurado (recusa mudar o limite) e nada vai para o cache. */
   async isHeld(thingName: string): Promise<boolean> {
-    const mem = this.held.get(thingName);
-    if (mem !== undefined) return mem;
+    const v = await this.heldState(thingName);
+    return v ?? true; // ilegível → segurado (falha fechada para subir limite)
+  }
+
+  /**
+   * Hold confirmado (fix 2): lido do Redis a cada vez (outra instância pode ter soltado com um unlock — a cópia da memória fica
+   * velha). Um hold desta instância cuja gravação falhou continua valendo. Ilegível → `null` (desconhecido): para a rampa,
+   * desconhecido nunca vira teto 0.
+   */
+  async heldState(thingName: string): Promise<boolean | null> {
     let raw: string | null;
     try {
       raw = await this.redis.get(`iot:held:${thingName}`);
     } catch {
-      return true;
+      return this.heldUnpersisted.has(thingName) ? true : null;
     }
-    const v = raw === '1';
-    this.held.set(thingName, v);
-    return v;
-  }
-
-  /** Hold conhecido (`null` = ilegível: Redis fora e nada em memória). Para o teto da rampa, desconhecido não vira 0. */
-  async heldState(thingName: string): Promise<boolean | null> {
-    const mem = this.held.get(thingName);
-    if (mem !== undefined) return mem;
-    try {
-      const v = (await this.redis.get(`iot:held:${thingName}`)) === '1';
-      this.held.set(thingName, v);
-      return v;
-    } catch {
-      return null;
-    }
+    return raw === '1' || this.heldUnpersisted.has(thingName);
   }
 
   /**
@@ -345,12 +350,13 @@ export class LiveStateStore {
    */
   async setHeld(thingName: string, on: boolean): Promise<void> {
     if (on) {
-      this.held.set(thingName, true);
+      this.heldUnpersisted.add(thingName);
       await this.redis.set(`iot:held:${thingName}`, '1');
+      this.heldUnpersisted.delete(thingName);
       return;
     }
     await this.redis.del(`iot:held:${thingName}`);
-    this.held.set(thingName, false);
+    this.heldUnpersisted.delete(thingName);
   }
 
   /**

@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { LocalShadowStore, OutboundMessage } from './local-shadow';
 import { parseReported, SERVER_SUBSCRIPTIONS, thingFromTopic, TOPICS } from './mqtt-contract';
-import type { DesiredState, InboundHandler, IotTransport, MomentaryCommand } from './shadow-transport';
+import type { DesiredState, InboundHandler, IotTransport, MomentaryCommand, ReportedState } from './shadow-transport';
 
 /** Subconjunto do cliente `mqtt` (v5) usado aqui (facilita testes com cliente falso). */
 export interface MqttClientLike {
@@ -52,6 +52,11 @@ export class LocalMqttTransport implements IotTransport {
 
   async updateDesired(thingName: string, desired: DesiredState): Promise<void> {
     await this.publishAll(await this.shadow.applyDesired(thingName, desired));
+  }
+
+  async readShadow(thingName: string): Promise<{ desired: DesiredState; reported: ReportedState } | null> {
+    const doc = await this.shadow.load(thingName);
+    return { desired: { ...doc.desired }, reported: { ...doc.reported } };
   }
 
   async publishCommand(thingName: string, command: MomentaryCommand): Promise<void> {
