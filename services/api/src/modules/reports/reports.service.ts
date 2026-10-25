@@ -94,14 +94,16 @@ export class ReportsService {
 
   /** `alertScope`: alertas que o perfil vê (Task 14: operação não conta os financeiros, financeiro só os dele). */
   async dashboard(canSeeRevenue: boolean, alertScope: Prisma.AlertWhereInput | null = null) {
-    const [byStatus, activeRentals, openAlerts, revenue] = await Promise.all([
+    const today = startOfTodaySaoPaulo();
+    const [byStatus, activeRentals, openAlerts, revenue, subscriptions] = await Promise.all([
       this.prisma.vehicle.groupBy({ by: ['status'], _count: { _all: true } }),
       this.prisma.rental.count({ where: { status: { in: ['active', 'paused', 'ending'] } } }),
       this.prisma.alert.count({ where: { status: { not: 'resolved' }, ...(alertScope ?? {}) } }),
       canSeeRevenue
-        ? // Mesma definição do Financeiro: receita = custo dos aluguéis encerrados hoje (caução e recarga de carteira não entram).
-          this.prisma.rental.aggregate({ where: { status: { in: ['ended', 'force_ended'] }, endedAt: { gte: startOfTodaySaoPaulo() } }, _sum: { costCents: true } })
+        ? // Mesma definição do Financeiro: aluguéis encerrados + assinaturas pagas hoje (caução e recarga de carteira não entram).
+          this.prisma.rental.aggregate({ where: { status: { in: ['ended', 'force_ended'] }, endedAt: { gte: today } }, _sum: { costCents: true } })
         : null,
+      canSeeRevenue ? this.subscriptionRevenue(today) : null,
     ]);
     const counts = Object.fromEntries(VEHICLE_STATUSES.map((s) => [s, 0])) as Record<string, number>;
     for (const row of byStatus) counts[row.status] = row._count._all;
@@ -111,7 +113,7 @@ export class ReportsService {
       generatedAt: new Date().toISOString(),
       occupancyPct: total ? Math.round((inUse / total) * 1000) / 10 : 0,
       activeRentals,
-      revenueTodayCents: revenue ? Math.max(0, n(revenue._sum.costCents)) : 0,
+      revenueTodayCents: revenue ? Math.max(0, n(revenue._sum.costCents)) + n(subscriptions) : 0,
       openAlerts,
       vehiclesByStatus: counts,
     };
@@ -204,7 +206,7 @@ export class ReportsService {
   async finance(fromIso: string, toIso: string) {
     const { from, to } = this.window(fromIso, toIso);
     const ended = { status: { in: ['ended', 'force_ended'] as Array<'ended' | 'force_ended'> }, endedAt: { gte: from, lt: to } };
-    const [byPlan, depositsHeld, delinquentCustomers, failed, refunds, topUps, premiums, payouts] = await Promise.all([
+    const [byPlan, depositsHeld, delinquentCustomers, failed, refunds, topUps, premiums, payouts, subscriptionRevenueCents] = await Promise.all([
       this.prisma.rental.groupBy({ by: ['planCode'], where: ended, _count: { _all: true }, _sum: { costCents: true } }),
       this.prisma.deposit.aggregate({ where: { status: 'held' }, _count: { _all: true }, _sum: { amountCents: true } }),
       this.prisma.customer.count({ where: { delinquent: true } }),
@@ -214,13 +216,19 @@ export class ReportsService {
       this.prisma.payment.aggregate({ where: { kind: 'top_up', status: 'paid', createdAt: { gte: from, lt: to } }, _sum: { amountCents: true } }),
       this.prisma.insurancePolicy.aggregate({ where: { issuedAt: { gte: from, lt: to } }, _sum: { premiumCents: true } }),
       this.prisma.insurancePolicy.aggregate({ where: { issuedAt: { gte: from, lt: to } }, _sum: { payoutCents: true } }),
+      this.subscriptionRevenue(from, to),
     ]);
     const revenueByPlan = byPlan.map((r) => ({ planCode: r.planCode, rentals: r._count._all, revenueCents: n(r._sum.costCents) }));
+    const rentalRevenueCents = revenueByPlan.reduce((a, r) => a + r.revenueCents, 0);
     return {
       from: from.toISOString(),
       to: to.toISOString(),
       revenueByPlan,
-      totalRevenueCents: revenueByPlan.reduce((a, r) => a + r.revenueCents, 0),
+      // Task 30 (item 33): receita = aluguéis encerrados + assinaturas pagas. Recargas/pacotes (crédito pré-pago, vira
+      // receita no aluguel), caução e estornos ficam de fora do total.
+      rentalRevenueCents,
+      subscriptionRevenueCents,
+      totalRevenueCents: rentalRevenueCents + subscriptionRevenueCents,
       depositsHeldCount: depositsHeld._count._all,
       depositsHeldCents: n(depositsHeld._sum.amountCents),
       delinquentCustomers,
@@ -230,6 +238,18 @@ export class ReportsService {
       insurancePremiumsCents: n(premiums._sum.premiumCents),
       insurancePayoutsCents: n(payouts._sum.payoutCents),
     };
+  }
+
+  /**
+   * Task 30: cobranças de assinatura (inclusive renovações) pagas, criadas no intervalo. Valor bruto: as estornadas depois
+   * continuam contando aqui e o estorno aparece em `refundsCents` (como no aluguel).
+   */
+  private async subscriptionRevenue(from: Date, to?: Date): Promise<number> {
+    const agg = await this.prisma.payment.aggregate({
+      where: { kind: 'subscription', status: { in: ['paid', 'partially_refunded', 'refunded'] }, createdAt: { gte: from, ...(to ? { lt: to } : {}) } },
+      _sum: { amountCents: true },
+    });
+    return n(agg?._sum?.amountCents);
   }
 
   /** Saldo devedor somado (valor − caução capturada como garantia); sem o serviço, o valor cheio. */

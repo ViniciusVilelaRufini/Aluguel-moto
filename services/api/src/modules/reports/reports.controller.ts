@@ -50,6 +50,8 @@ const FINANCE_COLUMNS: CsvColumn[] = [
   { key: 'from', label: 'De', format: 'datetime' },
   { key: 'to', label: 'Até', format: 'datetime' },
   { key: 'totalRevenueCents', label: 'Receita total (R$)', format: 'money' },
+  { key: 'rentalRevenueCents', label: 'Receita de aluguéis (R$)', format: 'money' },
+  { key: 'subscriptionRevenueCents', label: 'Receita de assinaturas (R$)', format: 'money' },
   { key: 'depositsHeldCount', label: 'Cauções retidas', format: 'int' },
   { key: 'depositsHeldCents', label: 'Cauções retidas (R$)', format: 'money' },
   { key: 'delinquentCustomers', label: 'Clientes inadimplentes', format: 'int' },
