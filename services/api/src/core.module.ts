@@ -8,7 +8,7 @@ import { LocalCustomerIdentityDirectory } from './adapters/identity/local-custom
 import { CUSTOMER_IDENTITY, type CustomerIdentityDirectory } from './ports/customer-identity.port';
 import { DevAuthVerifier } from './adapters/auth/dev-auth-verifier';
 import { MockKycProvider } from './adapters/kyc/mock-kyc-provider';
-import { LogPushNotifier } from './adapters/push/log-push-notifier';
+import { createPushNotifier } from './adapters/push/fcm-push-notifier';
 import { InProcessQueueBus } from './adapters/queue/in-process-queue-bus';
 import { SqsQueueBus } from './adapters/queue/sqs-queue-bus';
 import { S3ObjectStorage } from './adapters/storage/s3-object-storage';
@@ -67,7 +67,12 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
       useFactory: (cfg: AppConfig) => (cfg.queueMode === 'sqs' ? new SqsQueueBus(cfg) : new InProcessQueueBus()),
     },
     { provide: KYC_PROVIDER, useFactory: () => new MockKycProvider() },
-    { provide: PUSH_NOTIFIER, useFactory: () => new LogPushNotifier() },
+    {
+      // PUSH_MODE=fcm: Firebase Cloud Messaging (credencial validada no loadConfig); log: só registra (dev).
+      provide: PUSH_NOTIFIER,
+      inject: [APP_CONFIG, PrismaService],
+      useFactory: (cfg: AppConfig, prisma: PrismaService) => createPushNotifier(cfg, prisma),
+    },
     {
       provide: CUSTOMER_IDENTITY,
       inject: [APP_CONFIG],

@@ -5,17 +5,19 @@ import { AuthPool, AuthVerifier, InvalidTokenError, VerifiedToken } from '../../
 
 /** `AUTH_MODE=cognito`: valida pelo JWKS de cada User Pool; o pool é identificado pelo `iss`. */
 export class CognitoAuthVerifier implements AuthVerifier {
-  private readonly pools: Array<{ pool: AuthPool; issuer: string; clientId?: string; jwks: JWTVerifyGetKey }> = [];
+  /** `clientIds` vazio = qualquer client do pool; senão o `client_id` do token tem de estar na lista. */
+  private readonly pools: Array<{ pool: AuthPool; issuer: string; clientIds: string[]; jwks: JWTVerifyGetKey }> = [];
 
   /** `jwksFor` permite injetar as chaves em testes (padrão: JWKS remoto do pool). */
   constructor(cfg: AppConfig, jwksFor: (issuer: string) => JWTVerifyGetKey = (iss) => createRemoteJWKSet(new URL(`${iss}/.well-known/jwks.json`))) {
-    const add = (pool: AuthPool, poolId?: string, clientId?: string) => {
+    const add = (pool: AuthPool, poolId: string | undefined, clientIds: string[]) => {
       if (!poolId) return;
       const issuer = `https://cognito-idp.${cfg.cognito.region}.amazonaws.com/${poolId}`;
-      this.pools.push({ pool, issuer, clientId, jwks: jwksFor(issuer) });
+      this.pools.push({ pool, issuer, clientIds, jwks: jwksFor(issuer) });
     };
-    add('customer', cfg.cognito.customerPoolId, cfg.cognito.customerClientId);
-    add('staff', cfg.cognito.staffPoolId, cfg.cognito.staffClientId);
+    add('customer', cfg.cognito.customerPoolId, cfg.cognito.customerClientId ? [cfg.cognito.customerClientId] : []);
+    // Pool interno: painel e app do operador (COGNITO_STAFF_CLIENT_IDS, mais o legado COGNITO_STAFF_CLIENT_ID).
+    add('staff', cfg.cognito.staffPoolId, cfg.cognito.staffClientIds);
     if (this.pools.length === 0) throw new Error('COGNITO_CUSTOMER_POOL_ID/COGNITO_STAFF_POOL_ID não configurados.');
   }
 
@@ -32,7 +34,7 @@ export class CognitoAuthVerifier implements AuthVerifier {
       const { payload } = await jwtVerify(token, entry.jwks, { issuer: entry.issuer });
       // QA-17: só access token autoriza a API (o id token é para o app, e o `aud` dele não prova o escopo de acesso).
       if (payload.token_use !== 'access') throw new InvalidTokenError('token_use inválido (só access token)');
-      if (entry.clientId && payload.client_id !== entry.clientId) throw new InvalidTokenError('client_id não pertence ao app do pool');
+      if (entry.clientIds.length && !entry.clientIds.includes(String(payload.client_id))) throw new InvalidTokenError('client_id não pertence ao app do pool');
       const groups = ((payload['cognito:groups'] as string[] | undefined) ?? []).filter((g): g is StaffGroup =>
         (STAFF_GROUPS as string[]).includes(g),
       );

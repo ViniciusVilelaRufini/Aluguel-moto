@@ -1,3 +1,5 @@
+import { assertFakePaymentsAllowed } from '../../config/env';
+
 /**
  * Configuração da área de pagamentos lida do ambiente (nenhum segredo no código; na AWS os segredos vêm do Secrets Manager
  * injetados como variáveis no container).
@@ -31,6 +33,8 @@ export function loadPaymentsConfig(): PaymentsConfig {
   const provider = env('PAYMENT_PROVIDER') ?? (nodeEnv === 'development' || nodeEnv === 'test' ? 'fake' : undefined);
   if (!provider) throw new Error(`PAYMENT_PROVIDER não definido (NODE_ENV=${nodeEnv ?? 'indefinido'}): defina fake ou mercadopago explicitamente.`);
   if (provider !== 'fake' && provider !== 'mercadopago') throw new Error(`PAYMENT_PROVIDER inválido: ${provider} (use fake ou mercadopago).`);
+  // Lacunas T5: fake em produção só com ALLOW_FAKE_PAYMENTS=true (ambiente dev da infra); mesma regra do assertSafeConfig.
+  assertFakePaymentsAllowed(nodeEnv, provider, env('ALLOW_FAKE_PAYMENTS') === 'true');
   const insurance = env('INSURANCE_PROVIDER') ?? 'mock';
   if (insurance !== 'mock') throw new Error(`INSURANCE_PROVIDER inválido: ${insurance} (só mock nesta versão).`);
   const invoice = env('INVOICE_ISSUER') ?? 'mock';

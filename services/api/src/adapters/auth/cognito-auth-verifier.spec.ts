@@ -13,7 +13,7 @@ describe('CognitoAuthVerifier', () => {
   beforeAll(async () => {
     const { publicKey, privateKey } = await generateKeyPair('RS256');
     const jwk = { ...(await exportJWK(publicKey)), kid: 'k1', alg: 'RS256' };
-    const cfg = { ...loadConfig(), cognito: { region: REGION, customerPoolId: POOL, customerClientId: 'app-cliente' } };
+    const cfg = { ...loadConfig(), cognito: { region: REGION, customerPoolId: POOL, customerClientId: 'app-cliente', staffClientIds: [] } };
     verifier = new CognitoAuthVerifier(cfg, () => createLocalJWKSet({ keys: [jwk] }));
     sign = (claims, iss = ISS) =>
       new SignJWT(claims).setProtectedHeader({ alg: 'RS256', kid: 'k1' }).setIssuer(iss).setSubject('sub-1').setIssuedAt().setExpirationTime('5m').sign(privateKey);
@@ -36,5 +36,24 @@ describe('CognitoAuthVerifier', () => {
 
   it('recusa emissor desconhecido', async () => {
     await expect(verifier.verify(await sign({ token_use: 'access', client_id: 'app-cliente' }, 'https://evil.example.com/pool'))).rejects.toThrow(/emissor/);
+  });
+
+  it('lacunas T5: pool interno aceita os clients de COGNITO_STAFF_CLIENT_IDS (painel e app do operador) e recusa os demais', async () => {
+    const { publicKey, privateKey } = await generateKeyPair('RS256');
+    const jwk = { ...(await exportJWK(publicKey)), kid: 'k2', alg: 'RS256' };
+    const staffIss = `https://cognito-idp.${REGION}.amazonaws.com/sa-east-1_STAFF`;
+    const cfg = { ...loadConfig(), cognito: { region: REGION, staffPoolId: 'sa-east-1_STAFF', staffClientIds: ['painel', 'operador'] } };
+    const staff = new CognitoAuthVerifier(cfg, () => createLocalJWKSet({ keys: [jwk] }));
+    const signStaff = (clientId: string) =>
+      new SignJWT({ token_use: 'access', client_id: clientId, 'cognito:groups': ['campo'] })
+        .setProtectedHeader({ alg: 'RS256', kid: 'k2' })
+        .setIssuer(staffIss)
+        .setSubject('staff-1')
+        .setIssuedAt()
+        .setExpirationTime('5m')
+        .sign(privateKey);
+    await expect(staff.verify(await signStaff('painel'))).resolves.toEqual(expect.objectContaining({ pool: 'staff', groups: ['campo'] }));
+    await expect(staff.verify(await signStaff('operador'))).resolves.toEqual(expect.objectContaining({ pool: 'staff', sub: 'staff-1' }));
+    await expect(staff.verify(await signStaff('app-cliente'))).rejects.toThrow(/client_id/);
   });
 });
