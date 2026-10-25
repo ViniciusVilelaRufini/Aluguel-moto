@@ -37,6 +37,8 @@ part 'customer.g.dart';
 /// * [activePlanCode]
 /// * [activeSubscriptionId] - Assinatura semanal/mensal ativa ou pausada.
 /// * [stats]
+/// * [walletBalanceCents] - Só `admin` e `financeiro`, no detalhe (`GET /customers/{id}`): saldo da carteira (soma do ledger; pode ser negativo depois de um ajuste antigo).
+/// * [debtCents] - Só `admin` e `financeiro`, no detalhe: soma do saldo devedor (`outstandingCents`) das dívidas em aberto.
 /// * [createdAt]
 @BuiltValue()
 abstract class Customer implements Built<Customer, CustomerBuilder> {
@@ -109,6 +111,14 @@ abstract class Customer implements Built<Customer, CustomerBuilder> {
 
   @BuiltValueField(wireName: r'stats')
   CustomerStats? get stats;
+
+  /// Só `admin` e `financeiro`, no detalhe (`GET /customers/{id}`): saldo da carteira (soma do ledger; pode ser negativo depois de um ajuste antigo).
+  @BuiltValueField(wireName: r'walletBalanceCents')
+  int? get walletBalanceCents;
+
+  /// Só `admin` e `financeiro`, no detalhe: soma do saldo devedor (`outstandingCents`) das dívidas em aberto.
+  @BuiltValueField(wireName: r'debtCents')
+  int? get debtCents;
 
   @BuiltValueField(wireName: r'createdAt')
   DateTime get createdAt;
@@ -262,6 +272,20 @@ class _$CustomerSerializer implements PrimitiveSerializer<Customer> {
       yield serializers.serialize(
         object.stats,
         specifiedType: const FullType(CustomerStats),
+      );
+    }
+    if (object.walletBalanceCents != null) {
+      yield r'walletBalanceCents';
+      yield serializers.serialize(
+        object.walletBalanceCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.debtCents != null) {
+      yield r'debtCents';
+      yield serializers.serialize(
+        object.debtCents,
+        specifiedType: const FullType(int),
       );
     }
     yield r'createdAt';
@@ -447,6 +471,22 @@ class _$CustomerSerializer implements PrimitiveSerializer<Customer> {
           ) as CustomerStats?;
           if (valueDes == null) continue;
           result.stats.replace(valueDes);
+          break;
+        case r'walletBalanceCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.walletBalanceCents = valueDes;
+          break;
+        case r'debtCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.debtCents = valueDes;
           break;
         case r'createdAt':
           final valueDes = serializers.deserialize(

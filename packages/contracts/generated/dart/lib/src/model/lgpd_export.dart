@@ -18,6 +18,7 @@ import 'package:volti_api/src/model/customer.dart';
 import 'package:volti_api/src/model/incident.dart';
 import 'package:volti_api/src/model/referral_reward.dart';
 import 'package:volti_api/src/model/track.dart';
+import 'package:volti_api/src/model/lgpd_support_conversation.dart';
 import 'package:volti_api/src/model/claim.dart';
 import 'package:volti_api/src/model/wallet_entry.dart';
 import 'package:built_value/built_value.dart';
@@ -46,6 +47,7 @@ part 'lgpd_export.g.dart';
 /// * [depotReservations] - Reservas de retirada no galpão (sem `pickupCode`).
 /// * [handovers] - Entregas do titular (fotos só como chaves, sem links).
 /// * [stationSwaps] - Trocas de bateria na estação feitas pelo titular (sem posição).
+/// * [supportConversations] - Conversas do chat de suporte com as mensagens (anexos só como chaves; atendente só pelo primeiro nome).
 @BuiltValue()
 abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
   @BuiltValueField(wireName: r'generatedAt')
@@ -105,6 +107,10 @@ abstract class LgpdExport implements Built<LgpdExport, LgpdExportBuilder> {
   /// Trocas de bateria na estação feitas pelo titular (sem posição).
   @BuiltValueField(wireName: r'stationSwaps')
   BuiltList<StationSwap>? get stationSwaps;
+
+  /// Conversas do chat de suporte com as mensagens (anexos só como chaves; atendente só pelo primeiro nome).
+  @BuiltValueField(wireName: r'supportConversations')
+  BuiltList<LgpdSupportConversation>? get supportConversations;
 
   LgpdExport._();
 
@@ -234,6 +240,14 @@ class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
       yield serializers.serialize(
         object.stationSwaps,
         specifiedType: const FullType(BuiltList, [FullType(StationSwap)]),
+      );
+    }
+    if (object.supportConversations != null) {
+      yield r'supportConversations';
+      yield serializers.serialize(
+        object.supportConversations,
+        specifiedType:
+            const FullType(BuiltList, [FullType(LgpdSupportConversation)]),
       );
     }
   }
@@ -401,6 +415,15 @@ class _$LgpdExportSerializer implements PrimitiveSerializer<LgpdExport> {
           ) as BuiltList<StationSwap>?;
           if (valueDes == null) continue;
           result.stationSwaps.replace(valueDes);
+          break;
+        case r'supportConversations':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(
+                BuiltList, [FullType(LgpdSupportConversation)]),
+          ) as BuiltList<LgpdSupportConversation>?;
+          if (valueDes == null) continue;
+          result.supportConversations.replace(valueDes);
           break;
         default:
           unhandled.add(key);

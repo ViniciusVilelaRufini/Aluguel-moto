@@ -67,6 +67,9 @@ doc/CustomerStats.md
 doc/CustomerStatus.md
 doc/CustomersApi.md
 doc/DashboardSummary.md
+doc/DebtPaymentRequest.md
+doc/DebtSettlementKind.md
+doc/DelinquencyClearRequest.md
 doc/DemandHeatmap.md
 doc/Deposit.md
 doc/DepositMethod.md
@@ -149,6 +152,7 @@ doc/KycUploadRequest.md
 doc/KycUploads.md
 doc/LgpdApi.md
 doc/LgpdExport.md
+doc/LgpdSupportConversation.md
 doc/LocationShare.md
 doc/LocationShareRequest.md
 doc/MaintenanceApi.md
@@ -414,6 +418,9 @@ lib/src/model/customer_stats.dart
 lib/src/model/customer_status.dart
 lib/src/model/dashboard_summary.dart
 lib/src/model/date.dart
+lib/src/model/debt_payment_request.dart
+lib/src/model/debt_settlement_kind.dart
+lib/src/model/delinquency_clear_request.dart
 lib/src/model/demand_heatmap.dart
 lib/src/model/deposit.dart
 lib/src/model/deposit_method.dart
@@ -489,6 +496,7 @@ lib/src/model/kyc_submit_request.dart
 lib/src/model/kyc_upload_request.dart
 lib/src/model/kyc_uploads.dart
 lib/src/model/lgpd_export.dart
+lib/src/model/lgpd_support_conversation.dart
 lib/src/model/location_share.dart
 lib/src/model/location_share_request.dart
 lib/src/model/maintenance_kind.dart

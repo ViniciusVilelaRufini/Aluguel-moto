@@ -78,6 +78,15 @@ export function HandoverDetail({ handover: h, supportHref, rentalHref, photosLoa
           {h.respondedAt && <span style={{ display: 'block', marginTop: 4 }}>Em {formatDateTime(h.respondedAt)}</span>}
         </Alert>
       )}
+      {h.status === 'canceled' && (h.cancelReason || h.canceledAt) && (
+        // QA-23 (Task 14): motivo, quando e quem cancelou (do AuditLog), para a operação e o suporte.
+        <Alert tone="info" title="Entrega cancelada">
+          <span data-testid="cancel-reason">{h.cancelReason ?? 'Sem motivo informado.'}</span>
+          {(h.canceledAt || h.canceledByName) && (
+            <span style={{ display: 'block', marginTop: 4 }}>{[h.canceledAt ? `Em ${formatDateTime(h.canceledAt)}` : null, h.canceledByName ? `por ${h.canceledByName}` : null].filter(Boolean).join(' ')}</span>
+          )}
+        </Alert>
+      )}
       {h.status === 'disputed' && supportHref && (
         // Link do Next com a forma do Button "dark" sm (um <button> dentro de <a> seria interativo aninhado).
         <Link href={supportHref} data-testid="open-support"

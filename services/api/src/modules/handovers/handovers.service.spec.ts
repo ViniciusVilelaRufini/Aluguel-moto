@@ -410,6 +410,8 @@ describe('HandoversService — cancelamento (operação)', () => {
     s.prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
     s.prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
     s.prisma.handover.findUniqueOrThrow.mockResolvedValue({ ...handover, status: 'canceled' } as any);
+    // QA-23 (Task 14): o motivo do cancelamento volta na resposta, lido do AuditLog.
+    s.prisma.auditLog.findMany.mockResolvedValue([{ entityId: HO_ID, reason: 'Moto trocada', actorId: STAFF_ID, actorName: null, createdAt: now }] as any);
     return s;
   }
 
@@ -417,6 +419,8 @@ describe('HandoversService — cancelamento (operação)', () => {
     const { prisma, audit, reservations, events, svc } = forCancel({}, { expiresAt: ahead });
     const out = await svc.cancel(operator, HO_ID, 'Moto trocada');
     expect(out.status).toBe('canceled');
+    expect(out).toMatchObject({ cancelReason: 'Moto trocada', canceledAt: now.toISOString(), canceledByName: 'Rafael Souza Lima' });
+    expect(prisma.auditLog.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { action: 'handover.cancel', entityType: 'Handover', entityId: { in: [HO_ID] } } }));
     expect(prisma.handover.updateMany).toHaveBeenCalledWith({ where: { id: HO_ID, status: { in: ['pending_customer', 'disputed'] } }, data: { status: 'canceled' } });
     expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'handover' }, data: { status: 'active' } });
     expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();

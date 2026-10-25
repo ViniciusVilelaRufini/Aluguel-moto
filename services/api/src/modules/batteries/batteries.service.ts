@@ -3,6 +3,7 @@ import type { Battery, BatteryStatus, Prisma } from '@prisma/client';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, forbidden, notFound, unprocessable } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { hasGroup, type Principal } from '../auth/principal';
 import { CHARGED_PCT, toBattery, toBatteryMovement } from './batteries.mapper';
 import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from './battery-movements';
@@ -41,6 +42,7 @@ export class BatteriesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly stock: BatteryStockService,
+    private readonly audit: AuditService,
   ) {}
 
   private async vehicleCodes(ids: Array<string | null>): Promise<Map<string, string>> {
@@ -166,6 +168,7 @@ export class BatteriesService {
     const created = await this.prisma.$transaction(async (tx) => {
       const b = await tx.battery.create({ data: { serial, status: dto.status, depotId: dto.depotId, chargePct } });
       await recordMovements(tx, [movement(null, { status: dto.status, depotId: dto.depotId }, user.userId, null, b.id)]);
+      await this.audit.record({ actor: user, action: 'battery.create', entityType: 'Battery', entityId: b.id, metadata: { serial, status: dto.status, depotId: dto.depotId } }, tx as any);
       return b;
     }).catch((err: unknown) => {
       if ((err as { code?: string }).code === 'P2002') throw conflict('conflict', `Bateria já cadastrada: ${serial}.`);
@@ -183,16 +186,16 @@ export class BatteriesService {
     const b = await this.prisma.battery.findUnique({ where: { id }, select: { stationId: true, depotId: true } });
     if (b?.stationId && !b.depotId) {
       const stationId = b.stationId;
-      return this.transition(user, id, ['charging'], 'in_station', { status: 'in_station', chargePct: 100 }, null, async (tx) => {
+      return this.transition(user, id, ['charging'], 'in_station', { status: 'in_station', chargePct: 100 }, null, 'battery.mark_charged', async (tx) => {
         await tx.swapStation.update({ where: { id: stationId }, data: { availableBatteries: { increment: 1 } } });
       });
     }
-    return this.transition(user, id, ['charging'], 'charged', { status: 'charged', chargePct: 100 });
+    return this.transition(user, id, ['charging'], 'charged', { status: 'charged', chargePct: 100 }, null, 'battery.mark_charged');
   }
 
   /** De `charging|charged|in_van|in_station` → `defective`. Instalada numa moto → 409 (retirar antes). */
   reportDefect(user: Principal, id: string, reason: string) {
-    return this.transition(user, id, DEFECT_FROM, 'defective', { status: 'defective' }, reason.trim(), async (tx, b) => {
+    return this.transition(user, id, DEFECT_FROM, 'defective', { status: 'defective' }, reason.trim(), 'battery.defect', async (tx, b) => {
       // Carregada na estação deixa de contar como disponível para troca.
       if (b.status === 'in_station' && b.stationId && b.chargePct >= CHARGED_PCT) {
         await tx.swapStation.updateMany({ where: { id: b.stationId, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
@@ -202,7 +205,7 @@ export class BatteriesService {
 
   /** Baixa definitiva: de `defective|charging|charged` → `retired`. Mantém o `depotId` (histórico por galpão); `retired` não conta como estoque. */
   retire(user: Principal, id: string, reason?: string) {
-    return this.transition(user, id, RETIRE_FROM, 'retired', { status: 'retired', holderId: null, stationId: null }, reason?.trim() || null);
+    return this.transition(user, id, RETIRE_FROM, 'retired', { status: 'retired', holderId: null, stationId: null }, reason?.trim() || null, 'battery.retire');
   }
 
   /**
@@ -216,6 +219,7 @@ export class BatteriesService {
     to: BatteryStatus,
     data: Prisma.BatteryUncheckedUpdateManyInput,
     reason: string | null = null,
+    auditAction?: string,
     extra?: (tx: Prisma.TransactionClient, b: Battery) => Promise<void>,
   ) {
     const b = await this.prisma.battery.findUnique({ where: { id } });
@@ -230,6 +234,12 @@ export class BatteriesService {
       if (!changed.count) throw conflict('conflict', 'A bateria mudou de situação durante a operação. Atualize e tente de novo.');
       await extra?.(tx, b);
       await recordMovements(tx, moves);
+      if (auditAction) {
+        await this.audit.record(
+          { actor: user, action: auditAction, entityType: 'Battery', entityId: id, reason: reason ?? undefined, metadata: { serial: b.serial, from: b.status, to } },
+          tx as any,
+        );
+      }
     });
     await this.checkStock(depotsLeavingCharged(moves));
     const updated = await this.prisma.battery.findUnique({ where: { id } });

@@ -42,6 +42,12 @@ class _$Handover extends Handover {
   @override
   final String? disputeReason;
   @override
+  final String? cancelReason;
+  @override
+  final DateTime? canceledAt;
+  @override
+  final String? canceledByName;
+  @override
   final DateTime createdAt;
   @override
   final DateTime? respondedAt;
@@ -67,6 +73,9 @@ class _$Handover extends Handover {
       required this.status,
       this.lastError,
       this.disputeReason,
+      this.cancelReason,
+      this.canceledAt,
+      this.canceledByName,
       required this.createdAt,
       this.respondedAt})
       : super._();
@@ -98,6 +107,9 @@ class _$Handover extends Handover {
         status == other.status &&
         lastError == other.lastError &&
         disputeReason == other.disputeReason &&
+        cancelReason == other.cancelReason &&
+        canceledAt == other.canceledAt &&
+        canceledByName == other.canceledByName &&
         createdAt == other.createdAt &&
         respondedAt == other.respondedAt;
   }
@@ -122,6 +134,9 @@ class _$Handover extends Handover {
     _$hash = $jc(_$hash, status.hashCode);
     _$hash = $jc(_$hash, lastError.hashCode);
     _$hash = $jc(_$hash, disputeReason.hashCode);
+    _$hash = $jc(_$hash, cancelReason.hashCode);
+    _$hash = $jc(_$hash, canceledAt.hashCode);
+    _$hash = $jc(_$hash, canceledByName.hashCode);
     _$hash = $jc(_$hash, createdAt.hashCode);
     _$hash = $jc(_$hash, respondedAt.hashCode);
     _$hash = $jf(_$hash);
@@ -148,6 +163,9 @@ class _$Handover extends Handover {
           ..add('status', status)
           ..add('lastError', lastError)
           ..add('disputeReason', disputeReason)
+          ..add('cancelReason', cancelReason)
+          ..add('canceledAt', canceledAt)
+          ..add('canceledByName', canceledByName)
           ..add('createdAt', createdAt)
           ..add('respondedAt', respondedAt))
         .toString();
@@ -235,6 +253,19 @@ class HandoverBuilder implements Builder<Handover, HandoverBuilder> {
   set disputeReason(String? disputeReason) =>
       _$this._disputeReason = disputeReason;
 
+  String? _cancelReason;
+  String? get cancelReason => _$this._cancelReason;
+  set cancelReason(String? cancelReason) => _$this._cancelReason = cancelReason;
+
+  DateTime? _canceledAt;
+  DateTime? get canceledAt => _$this._canceledAt;
+  set canceledAt(DateTime? canceledAt) => _$this._canceledAt = canceledAt;
+
+  String? _canceledByName;
+  String? get canceledByName => _$this._canceledByName;
+  set canceledByName(String? canceledByName) =>
+      _$this._canceledByName = canceledByName;
+
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
   set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
@@ -267,6 +298,9 @@ class HandoverBuilder implements Builder<Handover, HandoverBuilder> {
       _status = $v.status;
       _lastError = $v.lastError;
       _disputeReason = $v.disputeReason;
+      _cancelReason = $v.cancelReason;
+      _canceledAt = $v.canceledAt;
+      _canceledByName = $v.canceledByName;
       _createdAt = $v.createdAt;
       _respondedAt = $v.respondedAt;
       _$v = null;
@@ -315,6 +349,9 @@ class HandoverBuilder implements Builder<Handover, HandoverBuilder> {
                 status, r'Handover', 'status'),
             lastError: lastError,
             disputeReason: disputeReason,
+            cancelReason: cancelReason,
+            canceledAt: canceledAt,
+            canceledByName: canceledByName,
             createdAt: BuiltValueNullFieldError.checkNotNull(
                 createdAt, r'Handover', 'createdAt'),
             respondedAt: respondedAt,

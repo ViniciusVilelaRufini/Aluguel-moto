@@ -28,6 +28,8 @@ Name | Type | Description | Notes
 **activePlanCode** | [**SubscriptionPlanCode**](SubscriptionPlanCode.md) |  | [optional] 
 **activeSubscriptionId** | **String** | Assinatura semanal/mensal ativa ou pausada. | [optional] 
 **stats** | [**CustomerStats**](CustomerStats.md) |  | [optional] 
+**walletBalanceCents** | **int** | Só `admin` e `financeiro`, no detalhe (`GET /customers/{id}`): saldo da carteira (soma do ledger; pode ser negativo depois de um ajuste antigo). | [optional] 
+**debtCents** | **int** | Só `admin` e `financeiro`, no detalhe: soma do saldo devedor (`outstandingCents`) das dívidas em aberto. | [optional] 
 **createdAt** | [**DateTime**](DateTime.md) |  | 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
+import { AUDIT_ACTION_OPTIONS, AUDIT_ENTITY_OPTIONS, AUDIT_OTHER, auditActionLabel, auditEntityLabel, auditFilterValue } from '@/lib/audit-labels';
 import { GROUP_LABEL } from '@/lib/labels';
 import { dayEndIso, dayStartIso, formatDateTime, timeAgo } from '@/lib/format';
 import type { S, StaffGroup } from '@/lib/types';
-import { DataTable, ErrorNote, Field, Modal, Page, PageHeader, Pill, TabPanel, TextInput, usePagedQuery, useToast } from '@/components/ui';
+import { DataTable, ErrorNote, Field, Modal, Page, PageHeader, Pill, Select, TabPanel, TextInput, usePagedQuery, useToast } from '@/components/ui';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { SegmentedControl } from '@/ds/SegmentedControl';
@@ -19,6 +20,7 @@ const ROLE_CARDS: [StaffGroup, string][] = [
   ['operacao', 'Frota, cercas, alertas, tarefas'],
   ['financeiro', 'Receita, preços, estornos'],
   ['suporte', 'Clientes, chat, sinistros'],
+  ['campo', 'App do operador: tarefas, baterias, vans'],
 ];
 
 export default function TeamPage() {
@@ -102,19 +104,35 @@ function StaffModal({ user, onClose, onSaved }: { user?: S<'StaffUser'>; onClose
   );
 }
 
+/** Rótulo em pt-BR com o identificador técnico como detalhe secundário. */
+function AuditCell({ label, detail }: { label: string; detail: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <span>{label}</span>
+      <span style={{ font: '500 11px/1.2 var(--font-mono)', color: 'var(--text-tertiary)' }}>{detail}</span>
+    </div>
+  );
+}
+
 function Audit() {
   const [action, setAction] = useState('');
   const [entity, setEntity] = useState('');
+  const [actionCustom, setActionCustom] = useState('');
+  const [entityCustom, setEntityCustom] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', action, entity, from, to], (cursor) =>
-    unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: action || undefined, entityType: entity || undefined, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
+  const actionFilter = auditFilterValue(action, actionCustom);
+  const entityFilter = auditFilterValue(entity, entityCustom);
+  const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', actionFilter, entityFilter, from, to], (cursor) =>
+    unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: actionFilter || undefined, entityType: entityFilter || undefined, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
   );
   return (
     <>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ width: 200 }}><Field label="Ação"><TextInput value={action} onChange={setAction} placeholder="Ex.: vehicle.command" /></Field></div>
-        <div style={{ width: 200 }}><Field label="Entidade"><TextInput value={entity} onChange={setEntity} placeholder="Ex.: vehicle" /></Field></div>
+        <div style={{ width: 200 }}><Field label="Ação"><Select testId="audit-action" value={action} onChange={setAction} options={AUDIT_ACTION_OPTIONS} /></Field></div>
+        {action === AUDIT_OTHER && <div style={{ width: 220 }}><Field label="Ação (identificador)"><TextInput testId="audit-action-custom" value={actionCustom} onChange={setActionCustom} placeholder="ex.: vehicle.updated" /></Field></div>}
+        <div style={{ width: 200 }}><Field label="Entidade"><Select testId="audit-entity" value={entity} onChange={setEntity} options={AUDIT_ENTITY_OPTIONS} /></Field></div>
+        {entity === AUDIT_OTHER && <div style={{ width: 220 }}><Field label="Entidade (identificador)"><TextInput testId="audit-entity-custom" value={entityCustom} onChange={setEntityCustom} placeholder="ex.: Vehicle" /></Field></div>}
         <div style={{ width: 170 }}><Field label="De"><TextInput type="date" value={from} onChange={setFrom} /></Field></div>
         <div style={{ width: 170 }}><Field label="Até"><TextInput type="date" value={to} onChange={setTo} /></Field></div>
       </div>
@@ -123,8 +141,8 @@ function Audit() {
         columns={[
           { key: 'createdAt', label: 'Quando', render: (r) => formatDateTime(r.createdAt) },
           { key: 'actorName', label: 'Quem', render: (r) => r.actorName ?? (r.actorType === 'system' ? 'Sistema' : '—') },
-          { key: 'action', label: 'Ação', mono: true },
-          { key: 'entityType', label: 'Entidade', render: (r) => `${r.entityType} · ${r.entityId.slice(0, 8)}` },
+          { key: 'action', label: 'Ação', render: (r) => <AuditCell label={auditActionLabel(r.action)} detail={r.action} /> },
+          { key: 'entityType', label: 'Entidade', render: (r) => <AuditCell label={auditEntityLabel(r.entityType)} detail={`${r.entityType} · ${r.entityId.slice(0, 8)}`} /> },
           { key: 'reason', label: 'Motivo', render: (r) => <span style={{ whiteSpace: 'normal' }}>{r.reason ?? '—'}</span> },
         ]} />
     </>

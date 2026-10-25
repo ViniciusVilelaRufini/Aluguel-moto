@@ -45,7 +45,7 @@ info:
     `subscription-vehicle-cooldown`, `reservation-open`, `pickup-outside-hours`, `pickup-too-far-ahead`,
     `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
     `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
-    `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`.
+    `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -3043,6 +3043,39 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/Unprocessable' }
+  /payments/{id}/retry:
+    post:
+      tags: [payments]
+      operationId: payDebt
+      summary: Quitar dívida (cliente)
+      description: |
+        O cliente paga o saldo devedor (`outstandingCents`) de um pagamento de aluguel ou assinatura que terminou `failed`
+        (inadimplência). Cria um pagamento `debt_settlement` com `settlesPaymentId` = este id. Cartão: cobrança na hora
+        (`201` `paid`; recusa → `402` `payment-failed`; sem cartão → `402` `card-not-found`). Pix: `201` `pending` com `pix`;
+        a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha `debtSettledAt` e a flag
+        `delinquent` sai quando não restar outra dívida. Não é dívida (ou já quitada) → `409` `debt-not-payable`; cobrança
+        ainda em retentativa automática → `409` `debt-in-collection`. Uma quitação Pix pendente e ainda válida é reaproveitada.
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DebtPaymentRequest' }
+      responses:
+        '201':
+          description: Pagamento da quitação.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Payment' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '402': { $ref: '#/components/responses/PaymentRequired' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────────── webhooks ─────────────────────────────
   /webhooks/mercadopago:
@@ -3303,10 +3336,12 @@ paths:
       tags: [alerts]
       operationId: listAlerts
       summary: Fila de alertas
-      description: Ordenados por prioridade (critical primeiro) e depois por criação. Novos alertas chegam por `alert.created` (sala `fleet`).
+      description: |
+        Ordenados por prioridade (critical primeiro) e depois por criação. Novos alertas chegam por `alert.created` (sala `alerts:ops`; os de pagamento na `alerts:finance`).
+        `financeiro` vê (e atribui/resolve) só alertas `payment_needs_review`; `operacao` não vê esses alertas financeiros (`404`).
       security:
         - staffAuth: []
-      x-required-groups: [admin, operacao, suporte]
+      x-required-groups: [admin, operacao, suporte, financeiro]
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
@@ -3341,7 +3376,7 @@ paths:
       summary: Detalhe do alerta
       security:
         - staffAuth: []
-      x-required-groups: [admin, operacao, suporte]
+      x-required-groups: [admin, operacao, suporte, financeiro]
       parameters:
         - $ref: '#/components/parameters/PathId'
       responses:
@@ -3360,7 +3395,7 @@ paths:
       summary: Atribuir alerta
       security:
         - staffAuth: []
-      x-required-groups: [admin, operacao, suporte]
+      x-required-groups: [admin, operacao, suporte, financeiro]
       parameters:
         - $ref: '#/components/parameters/PathId'
       requestBody:
@@ -3386,7 +3421,7 @@ paths:
       summary: Resolver alerta
       security:
         - staffAuth: []
-      x-required-groups: [admin, operacao, suporte]
+      x-required-groups: [admin, operacao, suporte, financeiro]
       parameters:
         - $ref: '#/components/parameters/PathId'
       requestBody:
@@ -4835,6 +4870,38 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /customers/{id}/delinquency/clear:
+    post:
+      tags: [customers]
+      operationId: clearCustomerDelinquency
+      summary: Registrar quitação manual da inadimplência
+      description: |
+        O financeiro registra que a dívida foi paga fora do app (ex.: transferência, acordo). Marca como quitados
+        (`debtSettledAt`, `debtSettlement: manual`) todos os pagamentos `failed` de aluguel/assinatura ainda em aberto e
+        tira a flag `delinquent`. Grava AuditLog com o motivo e o valor quitado. Cliente sem inadimplência → `409`
+        `debt-not-payable`; cobrança ainda em retentativa automática no gateway → `409` `debt-in-collection` (evita cobrar
+        de novo o que foi pago fora).
+      security:
+        - staffAuth: []
+      x-required-groups: [admin, financeiro]
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DelinquencyClearRequest' }
+      responses:
+        '200':
+          description: Inadimplência quitada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Customer' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────────── staff ─────────────────────────────
   /staff:
@@ -5103,7 +5170,7 @@ components:
     ReportFormat:
       name: format
       in: query
-      description: '`csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).'
+      description: '`csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.'
       schema: { $ref: '#/components/schemas/ReportFormat' }
     IdempotencyKey:
       name: Idempotency-Key
@@ -5284,7 +5351,8 @@ components:
       description: '`pending → authorized → captured | canceled`; `pending → paid`; `paid | captured → refunded | partially_refunded`; `* → failed`.'
     PaymentKind:
       type: string
-      enum: [rental, deposit, top_up, subscription, fee]
+      enum: [rental, deposit, top_up, subscription, fee, debt_settlement]
+      description: '`debt_settlement`: quitação de uma dívida pelo cliente (`POST /payments/{id}/retry`), com `settlesPaymentId`.'
     PaymentMethod:
       type: string
       enum: [card, pix, wallet]
@@ -5310,8 +5378,11 @@ components:
       enum: [active, canceled, expired]
     AlertType:
       type: string
-      enum: [out_of_operation_area, forbidden_zone_entered, fall_detected, tamper, battery_critical, movement_without_rental, vehicle_offline, command_failed, customer_not_ok, incident_reported, speed_limiter_noncompliant, battery_stock_low]
-      description: '`battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`).'
+      enum: [out_of_operation_area, forbidden_zone_entered, fall_detected, tamper, battery_critical, movement_without_rental, vehicle_offline, command_failed, customer_not_ok, incident_reported, speed_limiter_noncompliant, battery_stock_low, payment_needs_review]
+      description: |
+        `battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`).
+        `payment_needs_review`: pagamento que exige revisão manual do financeiro (liquidação estacionada, estorno recusado em
+        `needs_review`, cobrança tardia de assinatura sem estorno automático); `paymentId` aponta o pagamento (um aberto por pagamento).
     AlertPriority:
       type: string
       enum: [low, medium, high, critical]
@@ -6255,8 +6326,34 @@ components:
         failureReason: { type: string }
         providerPaymentId: { type: string, description: staff. ID no gateway. }
         receiptUrl: { type: string, format: uri }
+        customerName: { type: string, description: staff. Nome do cliente (detalhe e listas do painel). }
+        outstandingCents:
+          type: integer
+          minimum: 0
+          description: Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
+        debtSettledAt: { type: string, format: date-time, description: Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro). }
+        debtSettlement: { $ref: '#/components/schemas/DebtSettlementKind' }
+        settlesPaymentId: { type: string, format: uuid, description: 'Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.' }
+        pix: { $ref: '#/components/schemas/PixCharge' }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+    DebtSettlementKind:
+      type: string
+      enum: [payment, manual]
+      description: '`payment`: o cliente pagou (`debt_settlement`); `manual`: o financeiro registrou a quitação (AuditLog com o motivo).'
+    DebtPaymentRequest:
+      type: object
+      required: [method]
+      properties:
+        method:
+          type: string
+          enum: [card, pix]
+        cardId: { type: string, format: uuid, description: 'Cartão salvo (padrão: o cartão padrão). Só `card`.' }
+    DelinquencyClearRequest:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string, minLength: 3, maxLength: 500, description: 'Como a dívida foi paga (ex.: "Transferência recebida em 20/10").' }
     PaymentPage:
       type: object
       required: [items]
@@ -6490,6 +6587,7 @@ components:
         vehicleCode: { type: string }
         rentalId: { type: string, format: uuid }
         depotId: { type: string, format: uuid, description: 'Galpão do alerta (`battery_stock_low`).' }
+        paymentId: { type: string, format: uuid, description: 'Pagamento do alerta (`payment_needs_review`).' }
         message: { type: string, description: Texto pt-BR. }
         lat: { type: number, format: double }
         lng: { type: number, format: double }
@@ -6979,6 +7077,7 @@ components:
         discountCents: { type: integer }
         insuranceCents: { type: integer }
         feesCents: { type: integer }
+        walletCents: { type: integer, description: 'Créditos da carteira usados nos aluguéis. `netCents` = `grossCents` − `discountCents` + `insuranceCents` + `feesCents` − `walletCents`.' }
         refundsCents: { type: integer }
         netCents: { type: integer }
     RevenueReport:
@@ -7092,6 +7191,8 @@ components:
         activePlanCode: { $ref: '#/components/schemas/SubscriptionPlanCode' }
         activeSubscriptionId: { type: string, format: uuid, description: Assinatura semanal/mensal ativa ou pausada. }
         stats: { $ref: '#/components/schemas/CustomerStats' }
+        walletBalanceCents: { type: integer, description: 'Só `admin` e `financeiro`, no detalhe (`GET /customers/{id}`): saldo da carteira (soma do ledger; pode ser negativo depois de um ajuste antigo).' }
+        debtCents: { type: integer, minimum: 0, description: 'Só `admin` e `financeiro`, no detalhe: soma do saldo devedor (`outstandingCents`) das dívidas em aberto.' }
         createdAt: { type: string, format: date-time }
     CustomerPage:
       type: object
@@ -7277,6 +7378,19 @@ components:
           type: array
           description: Trocas de bateria na estação feitas pelo titular (sem posição).
           items: { $ref: '#/components/schemas/StationSwap' }
+        supportConversations:
+          type: array
+          description: Conversas do chat de suporte com as mensagens (anexos só como chaves; atendente só pelo primeiro nome).
+          items: { $ref: '#/components/schemas/LgpdSupportConversation' }
+    LgpdSupportConversation:
+      allOf:
+        - $ref: '#/components/schemas/SupportConversation'
+        - type: object
+          required: [messages]
+          properties:
+            messages:
+              type: array
+              items: { $ref: '#/components/schemas/SupportMessage' }
     AccountDeletion:
       type: object
       required: [status, requestedAt]
@@ -8000,6 +8114,9 @@ components:
         status: { $ref: '#/components/schemas/HandoverStatus' }
         lastError: { type: string, description: 'Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo.', examples: [payment-declined] }
         disputeReason: { type: string }
+        cancelReason: { type: string, description: 'staff. Motivo do cancelamento (`POST /handovers/{id}/cancel`), lido do AuditLog.' }
+        canceledAt: { type: string, format: date-time, description: staff. Quando foi cancelada. }
+        canceledByName: { type: string, description: staff. Nome de quem cancelou. }
         createdAt: { type: string, format: date-time }
         respondedAt: { type: string, format: date-time, description: Aceite ou disputa do cliente. }
     HandoverPage:

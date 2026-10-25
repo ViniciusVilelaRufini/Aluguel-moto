@@ -24,6 +24,8 @@ class _$Alert extends Alert {
   @override
   final String? depotId;
   @override
+  final String? paymentId;
+  @override
   final String message;
   @override
   final double? lat;
@@ -54,6 +56,7 @@ class _$Alert extends Alert {
       this.vehicleCode,
       this.rentalId,
       this.depotId,
+      this.paymentId,
       required this.message,
       this.lat,
       this.lng,
@@ -83,6 +86,7 @@ class _$Alert extends Alert {
         vehicleCode == other.vehicleCode &&
         rentalId == other.rentalId &&
         depotId == other.depotId &&
+        paymentId == other.paymentId &&
         message == other.message &&
         lat == other.lat &&
         lng == other.lng &&
@@ -105,6 +109,7 @@ class _$Alert extends Alert {
     _$hash = $jc(_$hash, vehicleCode.hashCode);
     _$hash = $jc(_$hash, rentalId.hashCode);
     _$hash = $jc(_$hash, depotId.hashCode);
+    _$hash = $jc(_$hash, paymentId.hashCode);
     _$hash = $jc(_$hash, message.hashCode);
     _$hash = $jc(_$hash, lat.hashCode);
     _$hash = $jc(_$hash, lng.hashCode);
@@ -129,6 +134,7 @@ class _$Alert extends Alert {
           ..add('vehicleCode', vehicleCode)
           ..add('rentalId', rentalId)
           ..add('depotId', depotId)
+          ..add('paymentId', paymentId)
           ..add('message', message)
           ..add('lat', lat)
           ..add('lng', lng)
@@ -176,6 +182,10 @@ class AlertBuilder implements Builder<Alert, AlertBuilder> {
   String? _depotId;
   String? get depotId => _$this._depotId;
   set depotId(String? depotId) => _$this._depotId = depotId;
+
+  String? _paymentId;
+  String? get paymentId => _$this._paymentId;
+  set paymentId(String? paymentId) => _$this._paymentId = paymentId;
 
   String? _message;
   String? get message => _$this._message;
@@ -228,6 +238,7 @@ class AlertBuilder implements Builder<Alert, AlertBuilder> {
       _vehicleCode = $v.vehicleCode;
       _rentalId = $v.rentalId;
       _depotId = $v.depotId;
+      _paymentId = $v.paymentId;
       _message = $v.message;
       _lat = $v.lat;
       _lng = $v.lng;
@@ -268,6 +279,7 @@ class AlertBuilder implements Builder<Alert, AlertBuilder> {
           vehicleCode: vehicleCode,
           rentalId: rentalId,
           depotId: depotId,
+          paymentId: paymentId,
           message: BuiltValueNullFieldError.checkNotNull(
               message, r'Alert', 'message'),
           lat: lat,

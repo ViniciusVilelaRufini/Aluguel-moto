@@ -15,6 +15,7 @@ Name | Type | Description | Notes
 **discountCents** | **int** |  | 
 **insuranceCents** | **int** |  | 
 **feesCents** | **int** |  | 
+**walletCents** | **int** | Créditos da carteira usados nos aluguéis. `netCents` = `grossCents` − `discountCents` + `insuranceCents` + `feesCents` − `walletCents`. | [optional] 
 **refundsCents** | **int** |  | [optional] 
 **netCents** | **int** |  | 
 

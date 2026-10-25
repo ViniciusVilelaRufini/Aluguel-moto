@@ -9,6 +9,7 @@ import 'package:built_value/serializer.dart';
 import 'package:dio/dio.dart';
 
 import 'package:volti_api/src/api_util.dart';
+import 'package:volti_api/src/model/debt_payment_request.dart';
 import 'package:volti_api/src/model/deposit.dart';
 import 'package:volti_api/src/model/deposit_page.dart';
 import 'package:volti_api/src/model/deposit_status.dart';
@@ -1250,6 +1251,116 @@ class PaymentsApi {
     }
 
     return Response<Subscription>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Quitar dívida (cliente)
+  /// O cliente paga o saldo devedor (&#x60;outstandingCents&#x60;) de um pagamento de aluguel ou assinatura que terminou &#x60;failed&#x60; (inadimplência). Cria um pagamento &#x60;debt_settlement&#x60; com &#x60;settlesPaymentId&#x60; &#x3D; este id. Cartão: cobrança na hora (&#x60;201&#x60; &#x60;paid&#x60;; recusa → &#x60;402&#x60; &#x60;payment-failed&#x60;; sem cartão → &#x60;402&#x60; &#x60;card-not-found&#x60;). Pix: &#x60;201&#x60; &#x60;pending&#x60; com &#x60;pix&#x60;; a quitação acontece quando o gateway confirma (webhook). Quitado, o pagamento original ganha &#x60;debtSettledAt&#x60; e a flag &#x60;delinquent&#x60; sai quando não restar outra dívida. Não é dívida (ou já quitada) → &#x60;409&#x60; &#x60;debt-not-payable&#x60;; cobrança ainda em retentativa automática → &#x60;409&#x60; &#x60;debt-in-collection&#x60;. Uma quitação Pix pendente e ainda válida é reaproveitada.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [idempotencyKey] - Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
+  /// * [debtPaymentRequest]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Payment] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Payment>> payDebt({
+    required String id,
+    required String idempotencyKey,
+    required DebtPaymentRequest debtPaymentRequest,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/payments/{id}/retry'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        r'Idempotency-Key': idempotencyKey,
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(DebtPaymentRequest);
+      _bodyData =
+          _serializers.serialize(debtPaymentRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Payment? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Payment),
+            ) as Payment;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Payment>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

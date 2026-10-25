@@ -11,6 +11,7 @@ const PaymentKind _$deposit = const PaymentKind._('deposit');
 const PaymentKind _$topUp = const PaymentKind._('topUp');
 const PaymentKind _$subscription = const PaymentKind._('subscription');
 const PaymentKind _$fee = const PaymentKind._('fee');
+const PaymentKind _$debtSettlement = const PaymentKind._('debtSettlement');
 const PaymentKind _$unknownDefaultOpenApi =
     const PaymentKind._('unknownDefaultOpenApi');
 
@@ -26,6 +27,8 @@ PaymentKind _$valueOf(String name) {
       return _$subscription;
     case 'fee':
       return _$fee;
+    case 'debtSettlement':
+      return _$debtSettlement;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -40,6 +43,7 @@ final BuiltSet<PaymentKind> _$values =
   _$topUp,
   _$subscription,
   _$fee,
+  _$debtSettlement,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -50,6 +54,7 @@ class _$PaymentKindMeta {
   PaymentKind get topUp => _$topUp;
   PaymentKind get subscription => _$subscription;
   PaymentKind get fee => _$fee;
+  PaymentKind get debtSettlement => _$debtSettlement;
   PaymentKind get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   PaymentKind valueOf(String name) => _$valueOf(name);
   BuiltSet<PaymentKind> get values => _$values;
@@ -69,6 +74,7 @@ class _$PaymentKindSerializer implements PrimitiveSerializer<PaymentKind> {
     'topUp': 'top_up',
     'subscription': 'subscription',
     'fee': 'fee',
+    'debtSettlement': 'debt_settlement',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -77,6 +83,7 @@ class _$PaymentKindSerializer implements PrimitiveSerializer<PaymentKind> {
     'top_up': 'topUp',
     'subscription': 'subscription',
     'fee': 'fee',
+    'debt_settlement': 'debtSettlement',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

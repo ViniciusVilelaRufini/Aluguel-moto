@@ -25,6 +25,9 @@ Name | Type | Description | Notes
 **status** | [**HandoverStatus**](HandoverStatus.md) |  | 
 **lastError** | **String** | Slug do último erro do aceite (ex.: `payment-declined`); some quando o aceite dá certo. | [optional] 
 **disputeReason** | **String** |  | [optional] 
+**cancelReason** | **String** | staff. Motivo do cancelamento (`POST /handovers/{id}/cancel`), lido do AuditLog. | [optional] 
+**canceledAt** | [**DateTime**](DateTime.md) | staff. Quando foi cancelada. | [optional] 
+**canceledByName** | **String** | staff. Nome de quem cancelou. | [optional] 
 **createdAt** | [**DateTime**](DateTime.md) |  | 
 **respondedAt** | [**DateTime**](DateTime.md) | Aceite ou disputa do cliente. | [optional] 
 

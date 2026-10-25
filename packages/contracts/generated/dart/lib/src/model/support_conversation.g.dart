@@ -6,7 +6,38 @@ part of 'support_conversation.dart';
 // BuiltValueGenerator
 // **************************************************************************
 
-class _$SupportConversation extends SupportConversation {
+abstract class SupportConversationBuilder {
+  void replace(SupportConversation other);
+  void update(void Function(SupportConversationBuilder) updates);
+  String? get id;
+  set id(String? id);
+
+  String? get customerId;
+  set customerId(String? customerId);
+
+  String? get customerName;
+  set customerName(String? customerName);
+
+  String? get rentalId;
+  set rentalId(String? rentalId);
+
+  String? get subject;
+  set subject(String? subject);
+
+  ConversationStatus? get status;
+  set status(ConversationStatus? status);
+
+  int? get unreadCount;
+  set unreadCount(int? unreadCount);
+
+  DateTime? get createdAt;
+  set createdAt(DateTime? createdAt);
+
+  DateTime? get lastMessageAt;
+  set lastMessageAt(DateTime? lastMessageAt);
+}
+
+class _$$SupportConversation extends $SupportConversation {
   @override
   final String id;
   @override
@@ -26,11 +57,11 @@ class _$SupportConversation extends SupportConversation {
   @override
   final DateTime lastMessageAt;
 
-  factory _$SupportConversation(
-          [void Function(SupportConversationBuilder)? updates]) =>
-      (SupportConversationBuilder()..update(updates))._build();
+  factory _$$SupportConversation(
+          [void Function($SupportConversationBuilder)? updates]) =>
+      ($SupportConversationBuilder()..update(updates))._build();
 
-  _$SupportConversation._(
+  _$$SupportConversation._(
       {required this.id,
       required this.customerId,
       this.customerName,
@@ -42,18 +73,18 @@ class _$SupportConversation extends SupportConversation {
       required this.lastMessageAt})
       : super._();
   @override
-  SupportConversation rebuild(
-          void Function(SupportConversationBuilder) updates) =>
+  $SupportConversation rebuild(
+          void Function($SupportConversationBuilder) updates) =>
       (toBuilder()..update(updates)).build();
 
   @override
-  SupportConversationBuilder toBuilder() =>
-      SupportConversationBuilder()..replace(this);
+  $SupportConversationBuilder toBuilder() =>
+      $SupportConversationBuilder()..replace(this);
 
   @override
   bool operator ==(Object other) {
     if (identical(other, this)) return true;
-    return other is SupportConversation &&
+    return other is $SupportConversation &&
         id == other.id &&
         customerId == other.customerId &&
         customerName == other.customerName &&
@@ -83,7 +114,7 @@ class _$SupportConversation extends SupportConversation {
 
   @override
   String toString() {
-    return (newBuiltValueToStringHelper(r'SupportConversation')
+    return (newBuiltValueToStringHelper(r'$SupportConversation')
           ..add('id', id)
           ..add('customerId', customerId)
           ..add('customerName', customerName)
@@ -97,52 +128,57 @@ class _$SupportConversation extends SupportConversation {
   }
 }
 
-class SupportConversationBuilder
-    implements Builder<SupportConversation, SupportConversationBuilder> {
-  _$SupportConversation? _$v;
+class $SupportConversationBuilder
+    implements
+        Builder<$SupportConversation, $SupportConversationBuilder>,
+        SupportConversationBuilder {
+  _$$SupportConversation? _$v;
 
   String? _id;
   String? get id => _$this._id;
-  set id(String? id) => _$this._id = id;
+  set id(covariant String? id) => _$this._id = id;
 
   String? _customerId;
   String? get customerId => _$this._customerId;
-  set customerId(String? customerId) => _$this._customerId = customerId;
+  set customerId(covariant String? customerId) =>
+      _$this._customerId = customerId;
 
   String? _customerName;
   String? get customerName => _$this._customerName;
-  set customerName(String? customerName) => _$this._customerName = customerName;
+  set customerName(covariant String? customerName) =>
+      _$this._customerName = customerName;
 
   String? _rentalId;
   String? get rentalId => _$this._rentalId;
-  set rentalId(String? rentalId) => _$this._rentalId = rentalId;
+  set rentalId(covariant String? rentalId) => _$this._rentalId = rentalId;
 
   String? _subject;
   String? get subject => _$this._subject;
-  set subject(String? subject) => _$this._subject = subject;
+  set subject(covariant String? subject) => _$this._subject = subject;
 
   ConversationStatus? _status;
   ConversationStatus? get status => _$this._status;
-  set status(ConversationStatus? status) => _$this._status = status;
+  set status(covariant ConversationStatus? status) => _$this._status = status;
 
   int? _unreadCount;
   int? get unreadCount => _$this._unreadCount;
-  set unreadCount(int? unreadCount) => _$this._unreadCount = unreadCount;
+  set unreadCount(covariant int? unreadCount) =>
+      _$this._unreadCount = unreadCount;
 
   DateTime? _createdAt;
   DateTime? get createdAt => _$this._createdAt;
-  set createdAt(DateTime? createdAt) => _$this._createdAt = createdAt;
+  set createdAt(covariant DateTime? createdAt) => _$this._createdAt = createdAt;
 
   DateTime? _lastMessageAt;
   DateTime? get lastMessageAt => _$this._lastMessageAt;
-  set lastMessageAt(DateTime? lastMessageAt) =>
+  set lastMessageAt(covariant DateTime? lastMessageAt) =>
       _$this._lastMessageAt = lastMessageAt;
 
-  SupportConversationBuilder() {
-    SupportConversation._defaults(this);
+  $SupportConversationBuilder() {
+    $SupportConversation._defaults(this);
   }
 
-  SupportConversationBuilder get _$this {
+  $SupportConversationBuilder get _$this {
     final $v = _$v;
     if ($v != null) {
       _id = $v.id;
@@ -160,36 +196,36 @@ class SupportConversationBuilder
   }
 
   @override
-  void replace(SupportConversation other) {
-    _$v = other as _$SupportConversation;
+  void replace(covariant $SupportConversation other) {
+    _$v = other as _$$SupportConversation;
   }
 
   @override
-  void update(void Function(SupportConversationBuilder)? updates) {
+  void update(void Function($SupportConversationBuilder)? updates) {
     if (updates != null) updates(this);
   }
 
   @override
-  SupportConversation build() => _build();
+  $SupportConversation build() => _build();
 
-  _$SupportConversation _build() {
+  _$$SupportConversation _build() {
     final _$result = _$v ??
-        _$SupportConversation._(
+        _$$SupportConversation._(
           id: BuiltValueNullFieldError.checkNotNull(
-              id, r'SupportConversation', 'id'),
+              id, r'$SupportConversation', 'id'),
           customerId: BuiltValueNullFieldError.checkNotNull(
-              customerId, r'SupportConversation', 'customerId'),
+              customerId, r'$SupportConversation', 'customerId'),
           customerName: customerName,
           rentalId: rentalId,
           subject: BuiltValueNullFieldError.checkNotNull(
-              subject, r'SupportConversation', 'subject'),
+              subject, r'$SupportConversation', 'subject'),
           status: BuiltValueNullFieldError.checkNotNull(
-              status, r'SupportConversation', 'status'),
+              status, r'$SupportConversation', 'status'),
           unreadCount: unreadCount,
           createdAt: BuiltValueNullFieldError.checkNotNull(
-              createdAt, r'SupportConversation', 'createdAt'),
+              createdAt, r'$SupportConversation', 'createdAt'),
           lastMessageAt: BuiltValueNullFieldError.checkNotNull(
-              lastMessageAt, r'SupportConversation', 'lastMessageAt'),
+              lastMessageAt, r'$SupportConversation', 'lastMessageAt'),
         );
     replace(_$result);
     return _$result;

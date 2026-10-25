@@ -67,6 +67,9 @@ const DEFAULT_TITLES: Record<string, string> = {
   'thing-name-taken': 'Armário (thing) já usado por outra estação',
   'station-swap-in-progress': 'Troca em andamento na estação',
   'slots-below-stock': 'Vagas abaixo das baterias na estação',
+  // inadimplência (Task 14 das lacunas)
+  'debt-not-payable': 'Não há dívida a quitar',
+  'debt-in-collection': 'Cobrança em andamento',
   'internal-error': 'Erro interno',
 };
 

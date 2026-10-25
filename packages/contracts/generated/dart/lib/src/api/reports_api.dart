@@ -204,7 +204,7 @@ class ReportsApi {
   /// Parameters:
   /// * [from] - Início do período (inclusive), UTC.
   /// * [to] - Fim do período (exclusivo), UTC.
-  /// * [format] - `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).
+  /// * [format] - `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -301,7 +301,7 @@ class ReportsApi {
   /// * [from] - Início do período (inclusive), UTC.
   /// * [to] - Fim do período (exclusivo), UTC.
   /// * [groupBy]
-  /// * [format] - `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).
+  /// * [format] - `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -402,7 +402,7 @@ class ReportsApi {
   /// * [from] - Início do período (inclusive), UTC.
   /// * [to] - Fim do período (exclusivo), UTC.
   /// * [vehicleId]
-  /// * [format] - `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).
+  /// * [format] - `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request
@@ -504,7 +504,7 @@ class ReportsApi {
   /// * [to] - Fim do período (exclusivo), UTC.
   /// * [groupBy]
   /// * [planCode]
-  /// * [format] - `csv` devolve `text/csv` (separador `;`, UTF-8 com BOM, valores em centavos).
+  /// * [format] - `csv` devolve `text/csv` para planilha em pt-BR: separador `;`, UTF-8 com BOM, cabeçalhos em português, valores em reais com vírgula (`1234,56`) e datas no fuso America/Sao_Paulo (`dd/mm/aaaa`, com hora no agrupamento por hora). O JSON continua em centavos e UTC.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
   /// * [extras] - Can be used to add flags to the request

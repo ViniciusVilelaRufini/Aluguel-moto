@@ -139,4 +139,34 @@ describe('Contrato: respostas reais × openapi.yaml', () => {
     expect(await http().get('/lgpd/consents').set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();
     expect(await http().get('/lgpd/export').set('Authorization', `Bearer ${customer}`)).toSatisfyApiSpec();
   });
+
+  it('13. Task 14: quitação da dívida, quitação manual, saldo no detalhe do cliente, alerta de pagamento e chat na exportação', async () => {
+    const c = await approvedCustomer(app, prisma, 'contract-t14');
+    await prisma.customer.update({ where: { id: c.customerId }, data: { delinquent: true } });
+    const debt = await prisma.payment.create({ data: { customerId: c.customerId, kind: 'rental', method: 'card', status: 'failed', amountCents: 3000 } });
+    const conv = await prisma.supportConversation.create({ data: { customerId: c.customerId, subject: 'Ajuda' } });
+    await prisma.supportMessage.create({ data: { conversationId: conv.id, authorType: 'staff', authorName: 'Ana Lima', body: 'Oi', attachmentObjectKeys: [] } });
+    const auth = { Authorization: `Bearer ${c.token}` };
+
+    const failed = await http().get('/payments?status=failed').set(auth);
+    expect(failed.body.items[0].outstandingCents).toBe(3000);
+    expect(failed).toSatisfyApiSpec();
+    const pix = await http().post(`/payments/${debt.id}/retry`).set(auth).set('Idempotency-Key', randomUUID()).send({ method: 'pix' });
+    expect(pix.status).toBe(201);
+    expect(pix).toSatisfyApiSpec();
+    expect(await http().get('/lgpd/export').set(auth)).toSatisfyApiSpec();
+
+    const detail = await http().get(`/customers/${c.customerId}`).set('Authorization', `Bearer ${admin}`);
+    expect(detail.body).toMatchObject({ walletBalanceCents: 0, debtCents: 3000 });
+    expect(detail).toSatisfyApiSpec();
+    const cleared = await http().post(`/customers/${c.customerId}/delinquency/clear`).set('Authorization', `Bearer ${admin}`).send({ reason: 'Pago por transferência' });
+    expect(cleared.status).toBe(200);
+    expect(cleared).toSatisfyApiSpec();
+    expect(await http().get(`/payments/${debt.id}`).set('Authorization', `Bearer ${admin}`)).toSatisfyApiSpec();
+
+    await prisma.alert.create({ data: { type: 'payment_needs_review', priority: 'high', message: 'Revisar', paymentId: debt.id } });
+    const alerts = await http().get('/alerts?type=payment_needs_review&limit=5').set('Authorization', `Bearer ${admin}`);
+    expect(alerts.status).toBe(200);
+    expect(alerts).toSatisfyApiSpec();
+  });
 });

@@ -7,6 +7,7 @@ part of 'serializers.dart';
 // **************************************************************************
 
 Serializers _$serializers = (Serializers().toBuilder()
+      ..add($SupportConversation.serializer)
       ..add(AccountDeletion.serializer)
       ..add(AccountDeletionStatus.serializer)
       ..add(ActorType.serializer)
@@ -67,6 +68,10 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(CustomerStats.serializer)
       ..add(CustomerStatus.serializer)
       ..add(DashboardSummary.serializer)
+      ..add(DebtPaymentRequest.serializer)
+      ..add(DebtPaymentRequestMethodEnum.serializer)
+      ..add(DebtSettlementKind.serializer)
+      ..add(DelinquencyClearRequest.serializer)
       ..add(DemandHeatmap.serializer)
       ..add(Deposit.serializer)
       ..add(DepositMethod.serializer)
@@ -143,6 +148,7 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(KycUploadRequest.serializer)
       ..add(KycUploads.serializer)
       ..add(LgpdExport.serializer)
+      ..add(LgpdSupportConversation.serializer)
       ..add(LocationShare.serializer)
       ..add(LocationShareRequest.serializer)
       ..add(MaintenanceKind.serializer)
@@ -240,7 +246,6 @@ Serializers _$serializers = (Serializers().toBuilder()
       ..add(SubscriptionPlanCode.serializer)
       ..add(SubscriptionStatus.serializer)
       ..add(SubscriptionVehicleAssignment.serializer)
-      ..add(SupportConversation.serializer)
       ..add(SupportConversationCreate.serializer)
       ..add(SupportConversationPage.serializer)
       ..add(SupportConversationUpdate.serializer)
@@ -492,6 +497,10 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(BuiltList, const [const FullType(StationSwap)]),
           () => ListBuilder<StationSwap>())
       ..addBuilderFactory(
+          const FullType(
+              BuiltList, const [const FullType(LgpdSupportConversation)]),
+          () => ListBuilder<LgpdSupportConversation>())
+      ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(RentalEvent)]),
           () => ListBuilder<RentalEvent>())
       ..addBuilderFactory(
@@ -561,6 +570,9 @@ Serializers _$serializers = (Serializers().toBuilder()
           const FullType(
               BuiltList, const [const FullType(SupportConversation)]),
           () => ListBuilder<SupportConversation>())
+      ..addBuilderFactory(
+          const FullType(BuiltList, const [const FullType(SupportMessage)]),
+          () => ListBuilder<SupportMessage>())
       ..addBuilderFactory(
           const FullType(BuiltList, const [const FullType(SupportMessage)]),
           () => ListBuilder<SupportMessage>())

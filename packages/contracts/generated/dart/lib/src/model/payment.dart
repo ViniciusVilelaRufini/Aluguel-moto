@@ -4,7 +4,9 @@
 
 // ignore_for_file: unused_element
 import 'package:volti_api/src/model/payment_method.dart';
+import 'package:volti_api/src/model/debt_settlement_kind.dart';
 import 'package:volti_api/src/model/payment_status.dart';
+import 'package:volti_api/src/model/pix_charge.dart';
 import 'package:volti_api/src/model/payment_kind.dart';
 import 'package:built_value/built_value.dart';
 import 'package:built_value/serializer.dart';
@@ -28,6 +30,12 @@ part 'payment.g.dart';
 /// * [failureReason]
 /// * [providerPaymentId] - staff. ID no gateway.
 /// * [receiptUrl]
+/// * [customerName] - staff. Nome do cliente (detalhe e listas do painel).
+/// * [outstandingCents] - Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
+/// * [debtSettledAt] - Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro).
+/// * [debtSettlement]
+/// * [settlesPaymentId] - Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.
+/// * [pix]
 /// * [createdAt]
 /// * [updatedAt]
 @BuiltValue()
@@ -49,7 +57,7 @@ abstract class Payment implements Built<Payment, PaymentBuilder> {
 
   @BuiltValueField(wireName: r'kind')
   PaymentKind get kind;
-  // enum kindEnum {  rental,  deposit,  top_up,  subscription,  fee,  };
+  // enum kindEnum {  rental,  deposit,  top_up,  subscription,  fee,  debt_settlement,  };
 
   @BuiltValueField(wireName: r'method')
   PaymentMethod get method;
@@ -77,6 +85,29 @@ abstract class Payment implements Built<Payment, PaymentBuilder> {
 
   @BuiltValueField(wireName: r'receiptUrl')
   String? get receiptUrl;
+
+  /// staff. Nome do cliente (detalhe e listas do painel).
+  @BuiltValueField(wireName: r'customerName')
+  String? get customerName;
+
+  /// Saldo devedor de um pagamento `failed` de aluguel/assinatura ainda não quitado (valor − caução capturada como garantia). Ausente quando não há dívida.
+  @BuiltValueField(wireName: r'outstandingCents')
+  int? get outstandingCents;
+
+  /// Dívida deste pagamento quitada (pelo cliente ou manualmente pelo financeiro).
+  @BuiltValueField(wireName: r'debtSettledAt')
+  DateTime? get debtSettledAt;
+
+  @BuiltValueField(wireName: r'debtSettlement')
+  DebtSettlementKind? get debtSettlement;
+  // enum debtSettlementEnum {  payment,  manual,  };
+
+  /// Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.
+  @BuiltValueField(wireName: r'settlesPaymentId')
+  String? get settlesPaymentId;
+
+  @BuiltValueField(wireName: r'pix')
+  PixCharge? get pix;
 
   @BuiltValueField(wireName: r'createdAt')
   DateTime get createdAt;
@@ -189,6 +220,48 @@ class _$PaymentSerializer implements PrimitiveSerializer<Payment> {
       yield serializers.serialize(
         object.receiptUrl,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.customerName != null) {
+      yield r'customerName';
+      yield serializers.serialize(
+        object.customerName,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.outstandingCents != null) {
+      yield r'outstandingCents';
+      yield serializers.serialize(
+        object.outstandingCents,
+        specifiedType: const FullType(int),
+      );
+    }
+    if (object.debtSettledAt != null) {
+      yield r'debtSettledAt';
+      yield serializers.serialize(
+        object.debtSettledAt,
+        specifiedType: const FullType(DateTime),
+      );
+    }
+    if (object.debtSettlement != null) {
+      yield r'debtSettlement';
+      yield serializers.serialize(
+        object.debtSettlement,
+        specifiedType: const FullType(DebtSettlementKind),
+      );
+    }
+    if (object.settlesPaymentId != null) {
+      yield r'settlesPaymentId';
+      yield serializers.serialize(
+        object.settlesPaymentId,
+        specifiedType: const FullType(String),
+      );
+    }
+    if (object.pix != null) {
+      yield r'pix';
+      yield serializers.serialize(
+        object.pix,
+        specifiedType: const FullType(PixCharge),
       );
     }
     yield r'createdAt';
@@ -330,6 +403,54 @@ class _$PaymentSerializer implements PrimitiveSerializer<Payment> {
           ) as String?;
           if (valueDes == null) continue;
           result.receiptUrl = valueDes;
+          break;
+        case r'customerName':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.customerName = valueDes;
+          break;
+        case r'outstandingCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.outstandingCents = valueDes;
+          break;
+        case r'debtSettledAt':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DateTime),
+          ) as DateTime?;
+          if (valueDes == null) continue;
+          result.debtSettledAt = valueDes;
+          break;
+        case r'debtSettlement':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(DebtSettlementKind),
+          ) as DebtSettlementKind?;
+          if (valueDes == null) continue;
+          result.debtSettlement = valueDes;
+          break;
+        case r'settlesPaymentId':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(String),
+          ) as String?;
+          if (valueDes == null) continue;
+          result.settlesPaymentId = valueDes;
+          break;
+        case r'pix':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(PixCharge),
+          ) as PixCharge?;
+          if (valueDes == null) continue;
+          result.pix.replace(valueDes);
           break;
         case r'createdAt':
           final valueDes = serializers.deserialize(

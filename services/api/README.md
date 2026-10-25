@@ -88,7 +88,7 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 | Chat | `support/support.service.ts` | `sent` → `delivered` (o outro lado buscou) → `read` (`POST .../read`); `unreadCount` real |
 | Endereço da moto | `vehicles/vehicle-address.service.ts`, `adapters/geocoding/` | gravado na moto e recalculado quando ela anda > 50 m; cache Redis por célula de ~11 m |
 | Revisão por km/horas | `maintenance/service-due.ts`, `usage-accumulator.ts`, `usage-tracker.service.ts` | odômetro/horas somados da telemetria (descarta saltos > 45 km/h, ruído < 5 m e lacunas > 10 min); `due_soon` a 90% do intervalo; preventiva concluída = revisão |
-| Baterias | `batteries/`, troca em `field-tasks.service.ts` | retirada vai para a van do operador com a última carga; instalada +1 ciclo; carregar/descarregar a van; ciclo de vida no galpão (seção abaixo) |
+| Baterias | `batteries/`, troca em `field-tasks.service.ts` | retirada vai para a van do operador com a última carga; instalada +1 ciclo; carregar/descarregar a van; ciclo de vida no galpão (seção abaixo); cadastro, defeito, baixa e marcar carregada gravam `AuditLog` (`battery.create|defect|retire|mark_charged`, entidade `Battery`) na mesma transação |
 | Catálogo | `catalog/`, `PricingService.snapshotFrom` | preço por minuto do modelo vale no plano `minute` (aluguel e cotação com `vehicleId`); foto em bucket `catalogo` com link assinado de 24 h |
 | Entregas no galpão | `handovers/` (`POST/GET /handovers`, `POST /handovers/uploads`, `GET /handovers/{id}`, `/accept`, `/dispute`, `/cancel`) | ver "Retirada em galpão — entrega" abaixo |
 | Galpões | `depots/` (`GET/POST /depots`, `GET/PATCH /depots/{id}`, `/vehicles`, `/pickups`) | cliente só vê galpão ativo (inativo → `404`) e, nas motos, só `free` com o `depotId` (nunca `reserved`/`awaiting_pickup`) e sem moto fixa de assinatura vigente de outro cliente, bateria desc; `availableVehicleCount` exclui toda moto fixa vigente; staff vê todas com filtro de `status`; `openingHours` HH:MM, `opensAt < closesAt`, um intervalo por dia (`400`); `distanceM` só com `lat`/`lng`; agenda = todas as reservas do dia no fuso do galpão (agendada por `pickupAt`, agora por `createdAt`), só `customerFirstName`, nunca `pickupCode`, data impossível → `400`; `DepotsService.requireActive` → `422 depot-inactive`; AuditLog `depot.create`/`depot.update` |
@@ -193,10 +193,20 @@ Status: `in_vehicle`, `in_van`, `charging` (no galpão `depotId`, ou na estaçã
 
 - Produção (`NODE_ENV=production`) recusa `AUTH_MODE=dev` e `MERCADOPAGO_WEBHOOK_SECRET=CHANGE_ME`.
 - Autorização: grupos do staff = cadastro ∩ token, lidos a cada requisição (`PATCH /staff/{id}` vale na hora e é espelhado no pool pelo `StaffDirectory`). Cognito: só access token; staff casado pelo `sub`.
-- Exclusão de conta: identidade excluída no pool de clientes, `cognitoSub` vira `deleted:<sha256(sub)>` e o token antigo recebe 401; trajetos, posição de início, fotos de devolução e documentos de KYC são apagados.
+- Exclusão de conta: identidade excluída no pool de clientes, `cognitoSub` vira `deleted:<sha256(sub)>` e o token antigo recebe 401; trajetos, posição de início, fotos de devolução e documentos de KYC são apagados. Task 14: também mensagens e anexos do chat, fotos das entregas, ocorrências e sinistros encerrados (em andamento ficam até o desfecho; o job diário limpa depois) e o cliente com os cartões no gateway (`ProviderCustomerDeletion`, job `lgpd-gateway-deletion-retry` a cada 5 min, até 10 tentativas). A exportação inclui o chat (`supportConversations`).
 - Consentimento de localização revogado durante o aluguel: o trajeto para de ser gravado na hora.
 - `POST /rentals`: moto offline ou desbloqueio não confirmado → `409 vehicle-offline`, sem aluguel nem cobrança; o relógio começa no desbloqueio confirmado.
 - Rate limit no Redis (compartilhado entre instâncias); cabeçalhos `helmet`; exportação LGPD com `Cache-Control: no-store`; link do recibo assinado na leitura (15 min).
+
+## Inadimplência e alerta de pagamento (`src/modules/payments/delinquency.service.ts`, Task 14)
+
+- Dívida = pagamento de aluguel/assinatura `failed` sem `debtSettledAt`; saldo devedor (`outstandingCents`) = valor − caução capturada como garantia.
+- `POST /payments/{id}/retry` (cliente): cobra o saldo no cartão (na hora) ou por Pix (quita no webhook) num `Payment` `debt_settlement`; `409 debt-in-collection` enquanto a liquidação ainda retenta no gateway.
+- `POST /customers/{id}/delinquency/clear` (admin/financeiro): quitação manual com motivo no AuditLog.
+- `payment.needs-review` vira o alerta `payment_needs_review` (um aberto por pagamento). Financeiro vê só esses alertas; operação não os vê.
+- `GET /customers/{id}` traz `walletBalanceCents` e `debtCents` para admin/financeiro.
+- CSV dos relatórios em pt-BR (cabeçalhos, R$ com vírgula, datas de São Paulo); a receita tem `walletCents` (pago com carteira).
+- Testes: `delinquency.service.spec.ts`, `alerts.service.spec.ts`, `lgpd-completa.spec.ts`, `reports-csv.spec.ts`, e2e `test/lacunas-t14.e2e-spec.ts` e o caso 13 do contrato.
 
 ## Várias instâncias e integrações (lacunas T5, `docs/decisoes.md` 2026-10-24)
 

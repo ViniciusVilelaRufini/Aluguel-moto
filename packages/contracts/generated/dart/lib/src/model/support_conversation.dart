@@ -21,9 +21,8 @@ part 'support_conversation.g.dart';
 /// * [unreadCount] - Mensagens não lidas por quem consulta.
 /// * [createdAt]
 /// * [lastMessageAt]
-@BuiltValue()
-abstract class SupportConversation
-    implements Built<SupportConversation, SupportConversationBuilder> {
+@BuiltValue(instantiable: false)
+abstract class SupportConversation {
   @BuiltValueField(wireName: r'id')
   String get id;
 
@@ -54,14 +53,6 @@ abstract class SupportConversation
   @BuiltValueField(wireName: r'lastMessageAt')
   DateTime get lastMessageAt;
 
-  SupportConversation._();
-
-  factory SupportConversation([void updates(SupportConversationBuilder b)]) =
-      _$SupportConversation;
-
-  @BuiltValueHook(initializeBuilder: true)
-  static void _defaults(SupportConversationBuilder b) => b;
-
   @BuiltValueSerializer(custom: true)
   static Serializer<SupportConversation> get serializer =>
       _$SupportConversationSerializer();
@@ -70,10 +61,7 @@ abstract class SupportConversation
 class _$SupportConversationSerializer
     implements PrimitiveSerializer<SupportConversation> {
   @override
-  final Iterable<Type> types = const [
-    SupportConversation,
-    _$SupportConversation
-  ];
+  final Iterable<Type> types = const [SupportConversation];
 
   @override
   final String wireName = r'SupportConversation';
@@ -145,6 +133,58 @@ class _$SupportConversationSerializer
     return _serializeProperties(serializers, object,
             specifiedType: specifiedType)
         .toList();
+  }
+
+  @override
+  SupportConversation deserialize(
+    Serializers serializers,
+    Object serialized, {
+    FullType specifiedType = FullType.unspecified,
+  }) {
+    return serializers.deserialize(serialized,
+        specifiedType: FullType($SupportConversation)) as $SupportConversation;
+  }
+}
+
+/// a concrete implementation of [SupportConversation], since [SupportConversation] is not instantiable
+@BuiltValue(instantiable: true)
+abstract class $SupportConversation
+    implements
+        SupportConversation,
+        Built<$SupportConversation, $SupportConversationBuilder> {
+  $SupportConversation._();
+
+  factory $SupportConversation(
+          [void Function($SupportConversationBuilder)? updates]) =
+      _$$SupportConversation;
+
+  @BuiltValueHook(initializeBuilder: true)
+  static void _defaults($SupportConversationBuilder b) => b;
+
+  @BuiltValueSerializer(custom: true)
+  static Serializer<$SupportConversation> get serializer =>
+      _$$SupportConversationSerializer();
+}
+
+class _$$SupportConversationSerializer
+    implements PrimitiveSerializer<$SupportConversation> {
+  @override
+  final Iterable<Type> types = const [
+    $SupportConversation,
+    _$$SupportConversation
+  ];
+
+  @override
+  final String wireName = r'$SupportConversation';
+
+  @override
+  Object serialize(
+    Serializers serializers,
+    $SupportConversation object, {
+    FullType specifiedType = FullType.unspecified,
+  }) {
+    return serializers.serialize(object,
+        specifiedType: FullType(SupportConversation))!;
   }
 
   void _deserializeProperties(
@@ -234,12 +274,12 @@ class _$SupportConversationSerializer
   }
 
   @override
-  SupportConversation deserialize(
+  $SupportConversation deserialize(
     Serializers serializers,
     Object serialized, {
     FullType specifiedType = FullType.unspecified,
   }) {
-    final result = SupportConversationBuilder();
+    final result = $SupportConversationBuilder();
     final serializedList = (serialized as Iterable<Object?>).toList();
     final unhandled = <Object?>[];
     _deserializeProperties(

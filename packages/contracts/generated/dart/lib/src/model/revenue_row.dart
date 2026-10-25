@@ -19,6 +19,7 @@ part 'revenue_row.g.dart';
 /// * [discountCents]
 /// * [insuranceCents]
 /// * [feesCents]
+/// * [walletCents] - Créditos da carteira usados nos aluguéis. `netCents` = `grossCents` − `discountCents` + `insuranceCents` + `feesCents` − `walletCents`.
 /// * [refundsCents]
 /// * [netCents]
 @BuiltValue()
@@ -44,6 +45,10 @@ abstract class RevenueRow implements Built<RevenueRow, RevenueRowBuilder> {
 
   @BuiltValueField(wireName: r'feesCents')
   int get feesCents;
+
+  /// Créditos da carteira usados nos aluguéis. `netCents` = `grossCents` − `discountCents` + `insuranceCents` + `feesCents` − `walletCents`.
+  @BuiltValueField(wireName: r'walletCents')
+  int? get walletCents;
 
   @BuiltValueField(wireName: r'refundsCents')
   int? get refundsCents;
@@ -111,6 +116,13 @@ class _$RevenueRowSerializer implements PrimitiveSerializer<RevenueRow> {
       object.feesCents,
       specifiedType: const FullType(int),
     );
+    if (object.walletCents != null) {
+      yield r'walletCents';
+      yield serializers.serialize(
+        object.walletCents,
+        specifiedType: const FullType(int),
+      );
+    }
     if (object.refundsCents != null) {
       yield r'refundsCents';
       yield serializers.serialize(
@@ -197,6 +209,14 @@ class _$RevenueRowSerializer implements PrimitiveSerializer<RevenueRow> {
             specifiedType: const FullType(int),
           ) as int;
           result.feesCents = valueDes;
+          break;
+        case r'walletCents':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(int),
+          ) as int?;
+          if (valueDes == null) continue;
+          result.walletCents = valueDes;
           break;
         case r'refundsCents':
           final valueDes = serializers.deserialize(

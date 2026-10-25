@@ -16,6 +16,7 @@ import { rentalWindow } from '@/lib/fleet-copy';
 import { BIKE_ICON, registerFleetImages } from '@/lib/map-icons';
 import { addDepotLayer, DEPOT_LAYER, setDepots } from '@/lib/depot-layer';
 import { MapView } from '@/components/MapView';
+import { fitPoints } from '@/lib/fleet-fit';
 import { VehicleSheet } from '@/components/VehicleSheet';
 import { FleetList } from '@/components/FleetList';
 import { SegmentedControl } from '@/ds/SegmentedControl';
@@ -52,7 +53,7 @@ export default function FleetPage() {
   const params = useSearchParams();
   const router = useRouter();
   const { groups } = useAuth();
-  const { vehicles, openAlerts } = useRealtime();
+  const { vehicles, vehiclesReady, openAlerts } = useRealtime();
   const [filter, setFilter] = useState<VehicleStatus | null>(null);
   const [selected, setSelected] = useState<string | null>(params.get('vehicle'));
   const [mapReady, setMapReady] = useState(false);
@@ -209,8 +210,9 @@ export default function FleetPage() {
     const map = mapRef.current;
     if (!mapReady || !map || fitted.current || vehicles.length === 0 || selectedRef.current) return;
     fitted.current = true;
-    const lngs = vehicles.map((v) => v.lng);
-    const lats = vehicles.map((v) => v.lat);
+    const pts = fitPoints(vehicles);
+    const lngs = pts.map((v) => v.lng);
+    const lats = pts.map((v) => v.lat);
     map.fitBounds([[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]], { padding: 80, maxZoom: 15, duration: 0 });
   }, [vehicles, mapReady]);
 
@@ -264,10 +266,10 @@ export default function FleetPage() {
       <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 320 }}>
         <MapView onReady={onReady} onDestroy={() => { imagesOff.current(); imagesOff.current = () => {}; pulseRef.current?.remove(); pulseRef.current = null; mapRef.current = null; drawn.current = new Map(); setMapReady(false); }} />
         <div data-view={view} style={view === 'list'
-          ? { position: 'absolute', inset: 0, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', background: 'var(--surface-app)', zIndex: 1 }
+          ? { position: 'absolute', inset: 0, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', background: 'var(--surface-app)', zIndex: 3 }
           : { position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
           {dash.data ? (
-            <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
+            <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 880 }}>
               <StatTile icon="Gauge" label="Ocupação" numeric={Math.round(dash.data.occupancyPct)} format={pct} />
               <StatTile icon="Bike" label="Aluguéis ativos" numeric={dash.data.activeRentals} />
               {/* A API zera a receita para quem não é admin/financeiro: melhor ocultar do que mostrar R$ 0,00. */}
@@ -276,13 +278,13 @@ export default function FleetPage() {
               <StatTile icon="Siren" label="Alertas pendentes" numeric={openAlerts} goodWhen="down" />
             </div>
           ) : dash.isLoading ? (
-            <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, maxWidth: 760 }}>
+            <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, maxWidth: 880 }}>
               {[0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />)}
             </div>
           ) : null}
           <div role="group" aria-label="Filtrar motos por status" style={{ display: 'flex', gap: 6, flexWrap: 'wrap', pointerEvents: 'auto' }}>
             {VEHICLE_STATUSES.map((s) => (
-              <FleetStatus key={s} status={s} count={counts[s] ?? 0} selected={filter === s} onClick={() => setFilter(filter === s ? null : s)} style={{ boxShadow: 'var(--shadow-1)' }} />
+              <FleetStatus key={s} status={s} count={vehiclesReady ? (counts[s] ?? 0) : '—'} selected={filter === s} onClick={() => setFilter(filter === s ? null : s)} style={{ boxShadow: 'var(--shadow-1)' }} />
             ))}
             {filter && (
               <button type="button" className="chip-clear" onClick={() => setFilter(null)} aria-label="Limpar filtro de status">Limpar filtro</button>
