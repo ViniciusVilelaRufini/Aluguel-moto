@@ -16,6 +16,7 @@ import { ProviderCustomersService } from './provider-customers.service';
 import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError, type ProviderPayment } from './provider/payment-provider';
 import { ReceiptService } from './receipts/receipt.service';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const DEPOSIT_CENTS = 5000;
 
@@ -287,6 +288,7 @@ export class RentalBillingService implements RentalBillingPort {
   }
 
   @Interval('payments-deposit-release-retry', 5 * 60_000)
+  @ExclusiveJob('payments-deposit-release-retry', jobLockTtl(5 * 60_000))
   async releaseRetryJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.retryDepositReleases().catch((err) => this.logger.error({ msg: 'deposit_release_retry_failed', error: (err as Error).message }));
@@ -771,6 +773,7 @@ export class RentalBillingService implements RentalBillingPort {
 
   /** Liquidações `pending` (erro do gateway ou cobrança recusada) são retomadas pelo plano gravado, sem cobrar duas vezes. */
   @Interval('payments-settlement-retry', 5 * 60_000)
+  @ExclusiveJob('payments-settlement-retry', jobLockTtl(5 * 60_000))
   async retryJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.retryPendingSettlements(2 * 60_000).catch((err) => this.logger.error({ msg: 'settlement_retry_failed', error: (err as Error).message }));

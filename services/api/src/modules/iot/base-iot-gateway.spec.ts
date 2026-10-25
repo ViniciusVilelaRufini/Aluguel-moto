@@ -172,15 +172,25 @@ describe('BaseIotGateway', () => {
     expect(b.transport.commands).toEqual([]);
   });
 
-  it('durante a rampa do bloqueio seguro, setSpeedLimit (ex.: saída de zona → 32) é recusado sem publicar', async () => {
+  it('durante a rampa do bloqueio seguro: subir (saída de zona → 32) é recusado; reduzir abaixo do degrau (calçadão → 6) passa e o degrau seguinte não sobe', async () => {
     const { gw, clock, transport } = await setup({ speed: 25 });
     const p = gw.lock({ commandId: 'c1', thingName: T });
     await clock.advance(3_000);
     await p;
     const before = transport.desired.length;
     expect(await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 32)).toEqual({ commandId: 'c2', status: 'failed' });
-    expect(await gw.setSpeedLimit({ commandId: 'c3', thingName: T }, 6)).toEqual({ commandId: 'c3', status: 'failed' });
     expect(transport.desired.length).toBe(before);
+    // Lacunas T5 (fix 1): reduzir nunca é recusado.
+    const red = gw.setSpeedLimit({ commandId: 'c3', thingName: T }, 6);
+    await clock.advance(3_000);
+    expect((await red).status).toBe('in_progress');
+    expect(transport.desired[transport.desired.length - 1].desired).toEqual({ limite_kmh: 6 });
+    // Ack do degrau 15 (o rastreador aplicou 6): o próximo degrau (8) sai limitado a 6, nunca acima.
+    await gw.onReported(T, { limite_kmh: 6 });
+    await clock.advance(2_000);
+    const limits = transport.desired.filter((d) => d.desired.limite_kmh !== undefined).map((d) => d.desired.limite_kmh!);
+    const afterReduction = limits.slice(limits.lastIndexOf(6));
+    expect(afterReduction.every((l) => l <= 6)).toBe(true);
   });
 
   it('desfecho logo depois de a chamada responder in_progress é emitido com atraso (evita sobrescrever confirmed com in_progress)', async () => {

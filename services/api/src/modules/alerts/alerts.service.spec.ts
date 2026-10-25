@@ -68,7 +68,7 @@ describe('AlertsService — alerta de pagamento', () => {
 describe('AlertsListeners — payment.needs-review vira alerta (Task 14)', () => {
   it('cria payment_needs_review com paymentId, prioridade alta e texto pt-BR', async () => {
     const alerts = { create: jest.fn().mockResolvedValue({}) };
-    const listeners = new AlertsListeners(alerts as any, {} as any, { subscribe: jest.fn() } as any);
+    const listeners = new AlertsListeners(alerts as any, {} as any, { subscribe: jest.fn() } as any, new EventEmitter2());
     await listeners.onPaymentNeedsReview({ paymentId: PAYMENT, rentalId: 'r1', reason: 'review_timeout' });
     expect(alerts.create).toHaveBeenCalledWith(
       { type: 'payment_needs_review', priority: 'high', message: 'Cobrança em análise no gateway além do prazo: revisar o pagamento.', paymentId: PAYMENT, rentalId: 'r1' },
@@ -78,7 +78,7 @@ describe('AlertsListeners — payment.needs-review vira alerta (Task 14)', () =>
 
   it('falha ao criar o alerta não propaga (quem sinalizou não pode cair)', async () => {
     const alerts = { create: jest.fn().mockRejectedValue(new Error('db fora')) };
-    const listeners = new AlertsListeners(alerts as any, {} as any, { subscribe: jest.fn() } as any);
+    const listeners = new AlertsListeners(alerts as any, {} as any, { subscribe: jest.fn() } as any, new EventEmitter2());
     await expect(listeners.onPaymentNeedsReview({ paymentId: PAYMENT, reason: 'x' })).resolves.toBeUndefined();
   });
 

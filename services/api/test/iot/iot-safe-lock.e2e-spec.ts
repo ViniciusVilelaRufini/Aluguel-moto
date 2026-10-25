@@ -58,7 +58,9 @@ describe('IoT (integração com Mosquitto)', () => {
     process.env.IOT_CONFIRM_WAIT_MS = '1000';
     redis = new Redis(process.env.REDIS_URL!);
     const vehicles = await new PrismaClient().vehicle.findMany({ where: { code: { in: [LOCK_CODE, ZONE_CODE] } }, select: { id: true } });
-    for (const t of [LOCK_THING, ZONE_THING]) await redis.del(`iot:shadow:${t}`, `iot:live:${t}`);
+    // O shadow é zerado: zera também o que a API guarda a partir dele (teto do desired, hold, rampa — lacunas T5).
+    for (const t of [LOCK_THING, ZONE_THING]) await redis.del(`iot:shadow:${t}`, `iot:live:${t}`, `iot:desired-limit:${t}`, `iot:held:${t}`, `iot:safe-lock:${t}`, `geofence:limit:${t}`);
+    for (const t of [LOCK_THING, ZONE_THING]) await redis.hdel('iot:safe-lock:index', t);
     for (const v of vehicles) await redis.del(`geofence:inside:${v.id}`);
     ({ app, prisma } = await bootE2eApp());
     gateway = app.get(IOT_GATEWAY);

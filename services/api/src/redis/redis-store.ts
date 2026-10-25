@@ -20,6 +20,20 @@ export interface RedisStore {
   hcas(key: string, guardField: string, expected: string | null, values: Record<string, string>, increments?: Record<string, number>): Promise<boolean>;
   /** Contador de janela fixa: INCR e, no primeiro hit, expira em `ttlMs`. Devolve a contagem e o tempo restante (ms). */
   incrWindow(key: string, ttlMs: number): Promise<{ count: number; ttlMs: number }>;
+  /** `SET key value NX PX ttl`: grava só se a chave não existir. `true` = gravou (lock obtido). */
+  setNx(key: string, value: string, ttlMs: number): Promise<boolean>;
+  /** Apaga a chave só se ela ainda valer `expected` (liberar/consumir lock sem apagar o de outro dono). */
+  delIfEquals(key: string, expected: string): Promise<boolean>;
+  /** Renova o TTL só se a chave ainda valer `expected` (lock estendido enquanto o dono trabalha). */
+  pexpireIfEquals(key: string, expected: string, ttlMs: number): Promise<boolean>;
+  /** Grava `key` (sem TTL) e o campo `field` do hash `indexKey` numa operação atômica. */
+  setWithIndex(key: string, value: string, indexKey: string, field: string, fieldValue: string): Promise<void>;
+  /** Apaga `key` e o campo `field` do hash `indexKey` numa operação atômica. */
+  delWithIndex(key: string, indexKey: string, field: string): Promise<void>;
+  /** Conjuntos (índices de estado ao vivo: rampas e prazos ativos). */
+  sadd(key: string, member: string): Promise<void>;
+  srem(key: string, member: string): Promise<void>;
+  smembers(key: string): Promise<string[]>;
   /** Chamado quando uma chave expira por TTL (keyspace notifications `Ex`). */
   onExpired(handler: (key: string) => void): void;
   ping(): Promise<boolean>;
@@ -35,6 +49,10 @@ local i = 4
 for _ = 1, n do redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1]) i = i + 2 end
 while i <= #ARGV do redis.call('HINCRBYFLOAT', KEYS[1], ARGV[i], ARGV[i + 1]) i = i + 2 end
 return 1`;
+const DEL_IF_EQUALS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) else return 0 end";
+const PEXPIRE_IF_EQUALS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end";
+const SET_WITH_INDEX_LUA = "redis.call('HSET', KEYS[2], ARGV[2], ARGV[3]) redis.call('SET', KEYS[1], ARGV[1]) return 1";
+const DEL_WITH_INDEX_LUA = "redis.call('DEL', KEYS[1]) redis.call('HDEL', KEYS[2], ARGV[1]) return 1";
 const INCR_WINDOW_LUA = "local c = redis.call('INCR', KEYS[1]) if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end return {c, redis.call('PTTL', KEYS[1])}";
 
 /** Incremento como texto decimal sem notação científica (o HINCRBYFLOAT não aceita `1e-7`). */
@@ -86,6 +104,31 @@ export class IoRedisStore implements RedisStore {
     return { count: Number(count), ttlMs: Number(pttl) > 0 ? Number(pttl) : ttlMs };
   }
 
+  async setNx(key: string, value: string, ttlMs: number) {
+    return (await this.client.set(key, value, 'PX', Math.max(1, Math.ceil(ttlMs)), 'NX')) === 'OK';
+  }
+  async delIfEquals(key: string, expected: string) {
+    return Number(await this.client.eval(DEL_IF_EQUALS_LUA, 1, key, expected)) === 1;
+  }
+  async pexpireIfEquals(key: string, expected: string, ttlMs: number) {
+    return Number(await this.client.eval(PEXPIRE_IF_EQUALS_LUA, 1, key, expected, String(Math.max(1, Math.ceil(ttlMs))))) === 1;
+  }
+  async setWithIndex(key: string, value: string, indexKey: string, field: string, fieldValue: string) {
+    await this.client.eval(SET_WITH_INDEX_LUA, 2, key, indexKey, value, field, fieldValue);
+  }
+  async delWithIndex(key: string, indexKey: string, field: string) {
+    await this.client.eval(DEL_WITH_INDEX_LUA, 2, key, indexKey, field);
+  }
+  async sadd(key: string, member: string) {
+    await this.client.sadd(key, member);
+  }
+  async srem(key: string, member: string) {
+    await this.client.srem(key, member);
+  }
+  async smembers(key: string) {
+    return this.client.smembers(key);
+  }
+
   onExpired(handler: (key: string) => void): void {
     this.handlers.push(handler);
     if (this.subscriber) return;
@@ -121,6 +164,7 @@ export class IoRedisStore implements RedisStore {
 export class MemoryRedisStore implements RedisStore {
   private readonly data = new Map<string, { value: string; expiresAt?: number; timer?: NodeJS.Timeout }>();
   private readonly hashes = new Map<string, Record<string, string>>();
+  private readonly sets = new Map<string, Set<string>>();
   private readonly handlers: Array<(key: string) => void> = [];
 
   async set(key: string, value: string, ttlMs?: number) {
@@ -151,6 +195,7 @@ export class MemoryRedisStore implements RedisStore {
     if (e?.timer) clearTimeout(e.timer);
     this.data.delete(key);
     this.hashes.delete(key);
+    this.sets.delete(key);
   }
   async exists(key: string) {
     return (await this.get(key)) !== null || this.hashes.has(key);
@@ -185,6 +230,50 @@ export class MemoryRedisStore implements RedisStore {
     const count = Number(e.value) + 1;
     e.value = String(count);
     return { count, ttlMs: e.expiresAt !== undefined ? e.expiresAt - now : ttlMs };
+  }
+  /** Sem `await` entre a leitura e a escrita: atômico dentro do processo, como o `SET NX` do Redis. */
+  async setNx(key: string, value: string, ttlMs: number) {
+    if (this.peek(key) !== null) return false;
+    void this.set(key, value, Math.max(1, ttlMs));
+    return true;
+  }
+  async delIfEquals(key: string, expected: string) {
+    if (this.peek(key) !== expected) return false;
+    void this.del(key);
+    return true;
+  }
+  async pexpireIfEquals(key: string, expected: string, ttlMs: number) {
+    if (this.peek(key) !== expected) return false;
+    void this.set(key, expected, Math.max(1, ttlMs));
+    return true;
+  }
+  async setWithIndex(key: string, value: string, indexKey: string, field: string, fieldValue: string) {
+    this.hashes.set(indexKey, { ...(this.hashes.get(indexKey) ?? {}), [field]: fieldValue });
+    void this.set(key, value);
+  }
+  async delWithIndex(key: string, indexKey: string, field: string) {
+    const h = { ...(this.hashes.get(indexKey) ?? {}) };
+    delete h[field];
+    this.hashes.set(indexKey, h);
+    const e = this.data.get(key);
+    if (e?.timer) clearTimeout(e.timer);
+    this.data.delete(key);
+  }
+  private peek(key: string): string | null {
+    const e = this.data.get(key);
+    if (!e || (e.expiresAt !== undefined && e.expiresAt <= Date.now())) return null;
+    return e.value;
+  }
+  async sadd(key: string, member: string) {
+    const set = this.sets.get(key) ?? new Set<string>();
+    set.add(member);
+    this.sets.set(key, set);
+  }
+  async srem(key: string, member: string) {
+    this.sets.get(key)?.delete(member);
+  }
+  async smembers(key: string) {
+    return [...(this.sets.get(key) ?? [])];
   }
   onExpired(handler: (key: string) => void) {
     this.handlers.push(handler);

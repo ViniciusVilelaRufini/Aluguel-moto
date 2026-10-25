@@ -83,7 +83,7 @@
   "cardHolderCpf": "CPF do titular",
   "cardSave": "Salvar cartão",
   "cardNumberInvalid": "Número de cartão inválido. Confira os dígitos.",
-  "cardExpiryInvalid": "Validade inválida ou vencida.",
+  "cardExpiryInvalid": "Data inválida",
   "cardErrorInvalidCard": "Cartão inválido. Confira o número.",
   "cardErrorInvalidCvv": "CVV inválido. Confira o código de segurança.",
   "cardErrorInvalidExpiry": "Validade inválida. Confira o mês e o ano.",
@@ -542,8 +542,6 @@
     }
   },
   "nearYou": "Perto de você",
-  "notifications": "Notificações",
-  "notificationsUnread": "Notificações, há mensagens novas",
   "batterySemantics": "bateria {pct} por cento",
   "@batterySemantics": {
     "placeholders": {
@@ -961,7 +959,7 @@
   "subscriptionPastDue": "Pagamento pendente",
   "subscriptionsPast": "Planos anteriores",
   "supportChat": "Chat com o suporte",
-  "topUpAmountError": "Escolha um valor entre R$ 10 e R$ 1.000",
+  "topUpAmountError": "Escolha um valor entre R$ 10,00 e R$ 1.000,00",
   "topUpAmountHint": "O crédito entra na carteira assim que o Pix for confirmado.",
   "topUpAmountLabel": "Valor",
   "topUpDone": "Carteira recarregada",
@@ -1796,5 +1794,19 @@
       }
     }
   },
-  "returnSwapOpenAction": "Continuar troca"
+  "returnSwapOpenAction": "Continuar troca",
+  "termsOfUse": "Termos de uso",
+  "privacyPolicy": "Política de privacidade",
+  "couponUpTo": "até {amount}",
+  "@couponUpTo": {"placeholders": {"amount": {"type": "String"}}},
+  "couponPercentOfTime": "-{percent}% do tempo",
+  "@couponPercentOfTime": {"placeholders": {"percent": {"type": "int"}}},
+  "couponClosingNote": "O desconto é aplicado no fechamento do aluguel, limitado ao valor do tempo de uso.",
+  "fixCpf": "Corrigir CPF",
+  "cpfAlreadyUsed": "Este CPF já está cadastrado em outra conta.",
+  "dayChipEnded": "{label} · Encerrado",
+  "@dayChipEnded": {"placeholders": {"label": {"type": "String"}}},
+  "dayChipUnavailable": "{label} · Indisponível",
+  "@dayChipUnavailable": {"placeholders": {"label": {"type": "String"}}},
+  "accountUnread": "Conta, mensagens novas do suporte"
 }

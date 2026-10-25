@@ -121,6 +121,8 @@ tags:
     description: Usuários internos e grupos.
   - name: audit
     description: Log de auditoria de comandos e alterações sensíveis.
+  - name: public
+    description: Rotas públicas sem autenticação (link de localização compartilhada do SOS).
   - name: lgpd
     description: Consentimentos, exportação e exclusão de dados pessoais.
   - name: webhooks
@@ -2302,6 +2304,46 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /public/location-shares/{token}:
+    get:
+      tags: [public]
+      operationId: getSharedLocation
+      summary: Localização compartilhada (link público do SOS)
+      description: |
+        Sem autenticação: quem tem o link vê **só** a última posição da moto e o horário dela, enquanto o compartilhamento
+        estiver dentro da validade e o aluguel continuar aberto. Nenhum dado pessoal (nome, telefone, moto, trajeto).
+        Token desconhecido, expirado ou aluguel encerrado → 404 (mesma resposta, sem revelar qual). Rate limit por IP.
+        `Cache-Control: no-store`, `Referrer-Policy: no-referrer`, `X-Robots-Tag: noindex`.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ShareToken'
+      responses:
+        '200':
+          description: Última posição conhecida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SharedLocation' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
+  /share/{token}:
+    get:
+      tags: [public]
+      operationId: getSharedLocationPage
+      summary: Página da localização compartilhada
+      description: |
+        Página HTML mínima (pt-BR) aberta pelo link de `POST /rentals/{id}/location-share` (`PUBLIC_SHARE_BASE_URL/{token}`):
+        mostra a última posição e o horário (fuso America/Sao_Paulo), com link para abrir no mapa, e se atualiza sozinha a cada
+        15 s lendo `GET /public/location-shares/{token}`. Sem autenticação, sem cookies e sem scripts de terceiros.
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/ShareToken'
+      responses:
+        '200':
+          description: Página HTML (o estado "link expirado" também é uma página 200; os dados vêm da rota JSON).
+          content:
+            text/html:
+              schema: { type: string }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /rentals/{id}/wellbeing:
     post:
       tags: [rentals]
@@ -5143,6 +5185,13 @@ components:
       description: Recomendado para reenvios da fila offline. Válida por 24 h.
       schema: { type: string, minLength: 8, maxLength: 128 }
 
+    ShareToken:
+      name: token
+      in: path
+      required: true
+      description: Token do link de localização compartilhada (base64url, 32 caracteres).
+      schema: { type: string, minLength: 16, maxLength: 64, pattern: '^[A-Za-z0-9_-]+$' }
+
   responses:
     BadRequest:
       description: Requisição inválida (validação de entrada).
@@ -6056,6 +6105,15 @@ components:
       properties:
         url: { type: string, format: uri }
         expiresAt: { type: string, format: date-time }
+    SharedLocation:
+      type: object
+      description: Só a posição e o horário — nenhum dado pessoal nem da moto.
+      required: [lat, lng, recordedAt, expiresAt]
+      properties:
+        lat: { type: number, minimum: -90, maximum: 90 }
+        lng: { type: number, minimum: -180, maximum: 180 }
+        recordedAt: { type: string, format: date-time, description: Horário da última posição conhecida (UTC). }
+        expiresAt: { type: string, format: date-time, description: Fim da validade do link (UTC); o fim do aluguel encerra antes. }
     WellbeingResponse:
       type: object
       required: [ok]

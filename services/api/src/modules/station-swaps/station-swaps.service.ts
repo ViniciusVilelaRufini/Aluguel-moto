@@ -21,13 +21,22 @@ import {
 } from './station-swap.rules';
 import type { CreateStationSwapDto, ListStationSwapsQuery } from './station-swaps.dto';
 import { toStationSwap } from './station-swaps.mapper';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const STATION_SWAP_CONFIG = Symbol('STATION_SWAP_CONFIG');
 export interface StationSwapConfig {
   /** Prazo de cada etapa (padrão 3 min). */
   stepTimeoutMs: number;
   qrSecret: string;
+  /**
+   * Folga antes de cancelar por `slot_closed` sem devolução (lacunas T5; padrão 5 s, `STATION_SLOT_CLOSED_GRACE_MS`): o IoT Core
+   * não garante a ordem entre mensagens publicadas a ms de distância, e o `battery_returned` pode chegar depois do fechamento.
+   * 0 = cancela na hora (comportamento antigo).
+   */
+  slotClosedGraceMs?: number;
 }
+
+export const SLOT_CLOSED_GRACE_MS = 5_000;
 
 /** Depois de um `release_timeout`, por quanto tempo a bateria ainda conta como prometida (a estação pode liberar atrasada). */
 export const RELEASE_LATE_WINDOW_MS = 30 * 60 * 1000;
@@ -54,6 +63,8 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   private readonly logger = new Logger('StationSwapsService');
   /** Fila por troca: eventos da mesma troca são processados um de cada vez, na ordem de chegada. */
   private readonly eventChains = new Map<string, Promise<void>>();
+  /** Timers locais da folga do `slot_closed` (o job de prazos cobre os perdidos num deploy). */
+  private readonly graceTimers = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -73,7 +84,13 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   }
 
   async onModuleDestroy(): Promise<void> {
+    for (const t of this.graceTimers.values()) clearTimeout(t);
+    this.graceTimers.clear();
     await this.station.stop();
+  }
+
+  private get slotClosedGraceMs(): number {
+    return this.cfg.slotClosedGraceMs ?? SLOT_CLOSED_GRACE_MS;
   }
 
   /**
@@ -419,6 +436,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     const advanced = await this.prisma.$transaction(async (tx) => {
       if (!(await this.recordReturn(tx, swap, serial, pct))) return false;
       recorded = true;
+      // A folga do `slot_closed` (se houver) deixa de valer: a próxima etapa tem o prazo normal.
       return next ? this.transition(swap, next, { expiresAt: this.deadline() }, tx) : false;
     });
     // Fix 2 (M-4): troca encerrada por outro motivo (fora de LATE_RETURN_REASONS): a bateria está na estação, a troca não
@@ -429,6 +447,12 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     if (advanced && next) {
       this.logger.log({ msg: 'station_swap_returned', swapId: swap.id, stationId: swap.stationId });
       this.emit({ ...swap, status: next });
+      // Lacunas T5: o `slot_closed` chegou antes desta devolução (ordem invertida no IoT Core): aplica-o agora (libera).
+      if (swap.slotClosedAt) {
+        this.clearGrace(swap.id);
+        this.logger.log({ msg: 'station_events_reordered', swapId: swap.id, stationId: swap.stationId });
+        await this.onSlotClosed({ ...swap, status: next, slotClosedAt: null });
+      }
     }
   }
 
@@ -497,7 +521,28 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     const next = nextStepAfter(swap.status, 'slot_closed');
     if (!next) return;
     if (next === 'canceled') {
-      if (await this.transition(swap, 'canceled', { endReason: 'slot_closed_without_return' })) this.emit({ ...swap, status: 'canceled' });
+      const grace = this.slotClosedGraceMs;
+      if (grace <= 0) {
+        if (await this.transition(swap, 'canceled', { endReason: 'slot_closed_without_return' })) this.emit({ ...swap, status: 'canceled' });
+        return;
+      }
+      // Lacunas T5: espera `grace` por um `battery_returned` atrasado antes de cancelar. Fica gravado (`slotClosedAt` + prazo):
+      // qualquer instância (job de prazos) cancela se o timer local se perder.
+      if (swap.slotClosedAt) return;
+      const marked = await this.prisma.stationSwap.updateMany({
+        where: { id: swap.id, status: swap.status, slotClosedAt: null },
+        data: { slotClosedAt: new Date(), expiresAt: new Date(Date.now() + grace) },
+      });
+      if (!marked.count) return;
+      this.clearGrace(swap.id);
+      const t = setTimeout(() => {
+        this.graceTimers.delete(swap.id);
+        void this.enqueue(swap.id, () => this.expireOne(swap.id, new Date())).catch((err) =>
+          this.logger.error({ msg: 'station_slot_closed_grace_failed', swapId: swap.id, error: (err as Error).message }),
+        );
+      }, grace + 10);
+      t.unref?.();
+      this.graceTimers.set(swap.id, t);
       return;
     }
     // releasing: só depois da devolução registrada (returned).
@@ -574,6 +619,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   // ───────────── prazos ─────────────
 
   @Interval('station-swap-timeouts', 15_000)
+  @ExclusiveJob('station-swap-timeouts', jobLockTtl(15_000), { runIfUnavailable: true })
   async timeoutJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.expireOverdue().catch((err) => this.logger.error({ msg: 'station_swap_timeouts_failed', error: (err as Error).message }));
@@ -589,9 +635,26 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     return results.filter(Boolean).length;
   }
 
+  private clearGrace(swapId: string): void {
+    const t = this.graceTimers.get(swapId);
+    if (t) clearTimeout(t);
+    this.graceTimers.delete(swapId);
+  }
+
   private async expireOne(swapId: string, now: Date): Promise<boolean> {
     const s = await this.prisma.stationSwap.findUnique({ where: { id: swapId } });
     if (!s || !(s.expiresAt < now)) return false;
+    // Vaga fechada sem devolução e a folga de reordenação venceu: cancela pelo fechamento (a vaga já está fechada: sem abort).
+    if (s.slotClosedAt && (s.status === 'opening_slot' || s.status === 'awaiting_return')) {
+      const closed = await this.prisma.stationSwap.updateMany({
+        where: { id: s.id, status: s.status, expiresAt: { lt: now } },
+        data: { status: 'canceled', endReason: 'slot_closed_without_return' },
+      });
+      if (!closed.count) return false;
+      this.logger.log({ msg: 'station_swap_slot_closed_without_return', swapId: s.id, stationId: s.stationId });
+      this.emit({ ...s, status: 'canceled' });
+      return true;
+    }
     const target = TIMEOUT_TARGET[s.status];
     if (!target) return false;
     const moved = await this.prisma.stationSwap.updateMany({ where: { id: s.id, status: s.status, expiresAt: { lt: now } }, data: { status: target.status, endReason: target.reason } });

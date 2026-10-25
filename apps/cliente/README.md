@@ -315,3 +315,17 @@ Cobrem login (dev × cognito), código por SMS com reenvio e limite de 60 s, pas
 - O Pix da caução diz "para confirmar a reserva"; a moto é liberada na entrega no galpão.
 - O cabeçalho "Sua localização" mostra "Perto do Galpão Volti · <bairro>" (ou "Perto de você"), nunca o nome de uma zona de devolução.
 - O mapa da home centra o galpão ao abrir e quando ele muda (`MapController.move` com deslocamento para a faixa livre acima do cartão). Recriar o `FlutterMap` com outro `initialCenter` não movia a câmera (o controller guarda a câmera), e o pin ficava fora da tela.
+
+## Correções do QA exploratório (Task 13)
+
+Testes em `test/qa_cliente_test.dart` (100% e 200% de fonte), mais `card_form_sheet_test.dart`, `home_parity_test.dart` e `packages/volti_flutter/test/segmented_badge_test.dart`.
+
+- **Tarifa da corrida:** o card "Tarifa" lê o preço unitário da linha `time` do `breakdown` do aluguel (o preço congelado na largada, o mesmo da cobrança, inclusive o preço do modelo no plano por minuto). Sem `breakdown`, cai no preço do plano.
+- **Cupom no resumo da retirada:** a cotação só cobre o mínimo estimado, então o resumo consulta a regra (`POST /me/coupons/validate`, `Backend.validateCoupon`) e mostra "até -R$ 10,00" (valor fixo) ou "-10% do tempo" (percentual) com a nota "aplicado no fechamento, limitado ao valor do tempo de uso". Se o desconto cotado já é o valor inteiro do cupom, mostra o valor exato sem nota. Sem a regra (falha), mostra o mínimo cotado com a nota.
+- **KYC com CPF já usado (409):** o erro troca "Tentar de novo" por "Corrigir CPF", que volta ao passo de dados com o CPF preenchido e o erro no campo (o mesmo CPF não segue). A API não tem validação de CPF antes do envio, então a recusa só vem no envio.
+- **Termos e Política de privacidade:** linhas em Conta (grupo LGPD) e em Conta > Privacidade, com os mesmos links do rodapé (`legalLinksProvider`, `core/legal.dart`).
+- **Home sem sino:** não há central de notificações no contrato; o suporte tem entrada na Conta e a bolinha de mensagem nova do suporte passa para o avatar.
+- **Recibo em PDF** abre numa aba dentro do app (`inAppUrlLauncherProvider`, `LaunchMode.inAppBrowserView`).
+- **Fonte 200%:** corrida (métricas empilhadas, plano e seguro em chips), resumo da retirada (rótulo acima do valor), seguro (`OptionCard`/`VoltiBadge` com altura mínima que cresce com o texto), erros do cartão (`errorMaxLines: 3`, "Data inválida"), pílula de localização (2 linhas), filtros de modelo (quebram linha) e descrição da moto sem reticências.
+- **Menores:** "Hoje · Encerrado" na agenda sem horários; "Estação X" sem prefixo duplicado no leitor de QR; histórico com "4 min 9 s"; limites da recarga em "R$ 10,00 e R$ 1.000,00".
+- **Mapa:** `VoltiMap` pede de novo os tiles que falharam quando o app volta do segundo plano (faixa cinza da home); mitigação sem reprodução em emulador.

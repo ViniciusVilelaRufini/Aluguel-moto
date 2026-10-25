@@ -229,6 +229,7 @@ import 'package:volti_api/src/model/revenue_row.dart';
 import 'package:volti_api/src/model/send_command_request.dart';
 import 'package:volti_api/src/model/service_unlock_request.dart';
 import 'package:volti_api/src/model/service_vehicle_status.dart';
+import 'package:volti_api/src/model/shared_location.dart';
 import 'package:volti_api/src/model/speed_limiter_check.dart';
 import 'package:volti_api/src/model/staff_group.dart';
 import 'package:volti_api/src/model/staff_user.dart';
@@ -523,6 +524,7 @@ part 'serializers.g.dart';
   SendCommandRequest,
   ServiceUnlockRequest,
   ServiceVehicleStatus,
+  SharedLocation,
   SpeedLimiterCheck,
   StaffGroup,
   StaffUser,

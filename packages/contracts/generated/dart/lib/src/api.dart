@@ -26,6 +26,7 @@ import 'package:volti_api/src/api/lgpd_api.dart';
 import 'package:volti_api/src/api/maintenance_api.dart';
 import 'package:volti_api/src/api/payments_api.dart';
 import 'package:volti_api/src/api/pricing_api.dart';
+import 'package:volti_api/src/api/public_api.dart';
 import 'package:volti_api/src/api/referrals_api.dart';
 import 'package:volti_api/src/api/rentals_api.dart';
 import 'package:volti_api/src/api/reports_api.dart';
@@ -258,6 +259,12 @@ class VoltiApi {
   /// by doing that all interceptors will not be executed
   PricingApi getPricingApi() {
     return PricingApi(dio, serializers);
+  }
+
+  /// Get PublicApi instance, base route and serializer can be overridden by a given but be careful,
+  /// by doing that all interceptors will not be executed
+  PublicApi getPublicApi() {
+    return PublicApi(dio, serializers);
   }
 
   /// Get ReferralsApi instance, base route and serializer can be overridden by a given but be careful,

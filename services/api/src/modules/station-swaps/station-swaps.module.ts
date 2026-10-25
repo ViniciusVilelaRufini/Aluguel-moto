@@ -12,7 +12,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { loadStationQrSecret } from './station-code';
 import { assertFifoQueueUrl, AwsStationGateway, MqttStationGateway, StubStationGateway } from './station-gateways';
 import { StationSwapsController } from './station-swaps.controller';
-import { STATION_SWAP_CONFIG, StationSwapsService, type StationSwapConfig } from './station-swaps.service';
+import { SLOT_CLOSED_GRACE_MS, STATION_SWAP_CONFIG, StationSwapsService, type StationSwapConfig } from './station-swaps.service';
 import { SWAP_STEP_TIMEOUT_MS } from './station-swap.rules';
 
 const num = (name: string, fallback: number): number => {
@@ -31,7 +31,11 @@ const num = (name: string, fallback: number): number => {
   providers: [
     {
       provide: STATION_SWAP_CONFIG,
-      useFactory: (): StationSwapConfig => ({ stepTimeoutMs: num('STATION_SWAP_STEP_TIMEOUT_MS', SWAP_STEP_TIMEOUT_MS), qrSecret: loadStationQrSecret() }),
+      useFactory: (): StationSwapConfig => ({
+        stepTimeoutMs: num('STATION_SWAP_STEP_TIMEOUT_MS', SWAP_STEP_TIMEOUT_MS),
+        qrSecret: loadStationQrSecret(),
+        slotClosedGraceMs: process.env.STATION_SLOT_CLOSED_GRACE_MS === '0' ? 0 : num('STATION_SLOT_CLOSED_GRACE_MS', SLOT_CLOSED_GRACE_MS),
+      }),
     },
     {
       provide: STATION_GATEWAY,

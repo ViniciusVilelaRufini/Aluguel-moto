@@ -198,7 +198,7 @@ class _SwapScanScreenState extends ConsumerState<SwapScanScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (_hintName != null) ...[
-                  Text(l.swapScanStation(_hintName!), key: const Key('swap-scan-station'), style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface)),
+                  Text(_hintName!.toLowerCase().startsWith('estação') ? _hintName! : l.swapScanStation(_hintName!), key: const Key('swap-scan-station'), style: VoltiTypography.bodyStrong.copyWith(color: scheme.onSurface)),
                   const SizedBox(height: VoltiSpacing.s4),
                 ],
                 Text(l.swapScanHint, style: VoltiTypography.body.copyWith(color: scheme.onSurfaceVariant)),

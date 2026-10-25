@@ -595,7 +595,7 @@ abstract class AppLocalizations {
   /// No description provided for @cardExpiryInvalid.
   ///
   /// In pt, this message translates to:
-  /// **'Validade inválida ou vencida.'**
+  /// **'Data inválida'**
   String get cardExpiryInvalid;
 
   /// No description provided for @cardErrorInvalidCard.
@@ -2086,18 +2086,6 @@ abstract class AppLocalizations {
   /// **'Perto de você'**
   String get nearYou;
 
-  /// No description provided for @notifications.
-  ///
-  /// In pt, this message translates to:
-  /// **'Notificações'**
-  String get notifications;
-
-  /// No description provided for @notificationsUnread.
-  ///
-  /// In pt, this message translates to:
-  /// **'Notificações, há mensagens novas'**
-  String get notificationsUnread;
-
   /// No description provided for @batterySemantics.
   ///
   /// In pt, this message translates to:
@@ -3121,7 +3109,7 @@ abstract class AppLocalizations {
   /// No description provided for @topUpAmountError.
   ///
   /// In pt, this message translates to:
-  /// **'Escolha um valor entre R\$ 10 e R\$ 1.000'**
+  /// **'Escolha um valor entre R\$ 10,00 e R\$ 1.000,00'**
   String get topUpAmountError;
 
   /// No description provided for @topUpAmountHint.
@@ -5109,6 +5097,66 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Continuar troca'**
   String get returnSwapOpenAction;
+
+  /// No description provided for @termsOfUse.
+  ///
+  /// In pt, this message translates to:
+  /// **'Termos de uso'**
+  String get termsOfUse;
+
+  /// No description provided for @privacyPolicy.
+  ///
+  /// In pt, this message translates to:
+  /// **'Política de privacidade'**
+  String get privacyPolicy;
+
+  /// No description provided for @couponUpTo.
+  ///
+  /// In pt, this message translates to:
+  /// **'até {amount}'**
+  String couponUpTo(String amount);
+
+  /// No description provided for @couponPercentOfTime.
+  ///
+  /// In pt, this message translates to:
+  /// **'-{percent}% do tempo'**
+  String couponPercentOfTime(int percent);
+
+  /// No description provided for @couponClosingNote.
+  ///
+  /// In pt, this message translates to:
+  /// **'O desconto é aplicado no fechamento do aluguel, limitado ao valor do tempo de uso.'**
+  String get couponClosingNote;
+
+  /// No description provided for @fixCpf.
+  ///
+  /// In pt, this message translates to:
+  /// **'Corrigir CPF'**
+  String get fixCpf;
+
+  /// No description provided for @cpfAlreadyUsed.
+  ///
+  /// In pt, this message translates to:
+  /// **'Este CPF já está cadastrado em outra conta.'**
+  String get cpfAlreadyUsed;
+
+  /// No description provided for @dayChipEnded.
+  ///
+  /// In pt, this message translates to:
+  /// **'{label} · Encerrado'**
+  String dayChipEnded(String label);
+
+  /// No description provided for @dayChipUnavailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'{label} · Indisponível'**
+  String dayChipUnavailable(String label);
+
+  /// No description provided for @accountUnread.
+  ///
+  /// In pt, this message translates to:
+  /// **'Conta, mensagens novas do suporte'**
+  String get accountUnread;
 }
 
 class _AppLocalizationsDelegate

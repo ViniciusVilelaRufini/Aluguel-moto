@@ -105,10 +105,11 @@ describe('SafeLockService (bloqueio seguro)', () => {
     const { transport, svc } = setup();
     await svc.start(REQ, { speedKmh: 3, speedLimitKmh: 32, locked: false, online: true });
     expect(transport.lockPublished()).toBe(false);
-    expect(transport.limits()).toEqual([15]);
+    // Fix 2: o primeiro degrau sai da velocidade medida (menor degrau ≥ velocidade, nunca 3 com a moto andando).
+    expect(transport.limits()).toEqual([8]);
   });
 
-  it('120 s sem parar → failed/did_not_stop, mantém limite_kmh 0 e não trava', async () => {
+  it('120 s sem parar → failed/did_not_stop; a rampa segue no 0 (já confirmado) e só trava quando a velocidade cair abaixo de 3', async () => {
     const { clock, transport, outcomes, svc } = setup();
     await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
     for (const step of [15, 8, 3, 0]) {
@@ -121,10 +122,12 @@ describe('SafeLockService (bloqueio seguro)', () => {
     expect(transport.lockPublished()).toBe(false);
     const last = transport.desired[transport.desired.length - 1];
     expect(last.desired.limite_kmh).toBe(0);
-    // Depois da falha a rampa acabou: velocidade baixa não trava sem novo comando.
-    await svc.onSpeed(T, 0);
+    // Fix 3: a rampa continua (segurando o limite); ainda andando não trava; parou → trava.
+    expect(svc.isActive(T)).toBe(true);
+    await svc.onSpeed(T, 5);
     expect(transport.lockPublished()).toBe(false);
-    expect(svc.isActive(T)).toBe(false);
+    await svc.onSpeed(T, 0);
+    expect(transport.lockPublished()).toBe(true);
   });
 
   it('timeout de 120 s conta desde o início (não reinicia a cada degrau)', async () => {
@@ -136,12 +139,16 @@ describe('SafeLockService (bloqueio seguro)', () => {
     expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'did_not_stop' }]);
   });
 
-  it('timeout sem nenhum reported → did_not_stop e garante limite 0 publicado', async () => {
+  it('timeout sem nenhum reported → did_not_stop; fix 3: nada de limite 0 de uma vez (fica no degrau publicado, esperando o ack)', async () => {
     const { clock, transport, outcomes, svc } = setup();
     await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
     await clock.advance(120_000);
     expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'did_not_stop' }]);
-    expect(transport.limits()).toEqual([15, 0]);
+    expect(transport.limits()).toEqual([15, 15]); // M2: o degrau sem ack é republicado (nunca fica preso), nada de 0
+    // O ack chega depois: a escada continua normalmente.
+    await svc.onReported(T, { limite_kmh: 15 });
+    await clock.advance(2_000);
+    expect(transport.limits()).toEqual([15, 15, 8]);
   });
 
   it('já travada → confirmed sem publicar nada', async () => {
@@ -208,12 +215,25 @@ describe('SafeLockService (bloqueio seguro)', () => {
     expect(transport.limits()).toEqual([6, 3, 0]);
   });
 
-  it('travada enviada mas sem confirmação em 120 s → failed/timeout e o desired volta a travada:false com limite 0 (um lock futuro refaz a rampa)', async () => {
+  it('travada enviada mas sem confirmação em 120 s → failed/timeout; sem velocidade fresca < 3: travada:false e rampa gradual (nunca limite 0 de uma vez)', async () => {
     const { clock, outcomes, svc, transport } = setup();
     await svc.start(REQ, { speedKmh: 0, speedLimitKmh: 32, locked: false, online: true });
     await clock.advance(120_000);
     expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
-    expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: false, limite_kmh: 0 });
+    expect(transport.desired.slice(-2).map((d) => d.desired)).toEqual([{ travada: false }, { limite_kmh: 15 }]);
+  });
+
+  it('fix 3: trava sem confirmação em 120 s com velocidade fresca < 3 (probe) → continua esperando a confirmação, sem desfazer', async () => {
+    const clock = new FakeClock(Date.parse('2026-10-21T15:00:00Z'));
+    const transport = new FakeTransport(clock);
+    const outcomes: CommandOutcome[] = [];
+    const svc = new SafeLockService(clock, transport, (o) => outcomes.push(o), { probe: async () => ({ speedKmh: 0, speedLimitKmh: 32, locked: false, online: true }) });
+    await svc.start(REQ, { speedKmh: 0, speedLimitKmh: 32, locked: false, online: true });
+    await clock.advance(120_000);
+    expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
+    expect(transport.desired.map((d) => d.desired)).toEqual([{ travada: true }]);
+    await svc.onReported(T, { travada: true });
+    expect(svc.isActive(T)).toBe(false);
   });
 
   it('eventos de outra moto não afetam a rampa', async () => {
@@ -222,5 +242,83 @@ describe('SafeLockService (bloqueio seguro)', () => {
     await svc.onSpeed('moto-0002', 0);
     await svc.onReported('moto-0002', { limite_kmh: 15, velocidade_kmh: 0 });
     expect(transport.lockPublished()).toBe(false);
+  });
+
+  describe('menores da re-revisão 3 (merge)', () => {
+    it('M2: rampa retomada esperando um ack que não vem (desired sobrescrito) republica o degrau a cada prazo; desfecho uma vez só', async () => {
+      const { clock, transport, outcomes, svc } = setup();
+      await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
+      await svc.onReported(T, { limite_kmh: 15 });
+      await clock.advance(2_000); // publica 8; o ack nunca vem (alguém sobrescreveu o desired para 20)
+      await clock.advance(118_000);
+      expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'did_not_stop' }]);
+      expect(transport.limits()).toEqual([15, 8, 8]);
+      await clock.advance(120_000);
+      expect(transport.limits()).toEqual([15, 8, 8, 8]);
+      expect(outcomes).toHaveLength(1);
+      expect(transport.lockPublished()).toBe(false);
+    });
+
+    it('M4: publicação da retomada falha (IoT fora) → o desfecho (e o alerta) sai mesmo assim', async () => {
+      for (const [speed, reason] of [[25, 'did_not_stop'], [0, 'timeout']] as const) {
+        const { clock, transport, outcomes, svc } = setup();
+        await svc.start(REQ, { speedKmh: speed, speedLimitKmh: 32, locked: false, online: true });
+        transport.updateDesired = async () => {
+          throw new Error('iot fora');
+        };
+        await clock.advance(120_000);
+        expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason }]);
+      }
+    });
+
+    it('M5: trava direta não confirmada, velocidade desconhecida e teto confirmado 0 → travada:false sem subir o limite para 3', async () => {
+      const clock = new FakeClock(Date.parse('2026-10-21T15:00:00Z'));
+      const transport = new FakeTransport(clock);
+      const outcomes: CommandOutcome[] = [];
+      const svc = new SafeLockService(clock, transport, (o) => outcomes.push(o), { probe: async () => ({ speedKmh: null, speedLimitKmh: 0, locked: false, online: true }) });
+      await svc.start(REQ, { speedKmh: 0, speedLimitKmh: 0, locked: false, online: true });
+      await clock.advance(120_000);
+      expect(outcomes).toEqual([{ commandId: 'cmd-1', status: 'failed', reason: 'timeout' }]);
+      expect(transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: false }]);
+    });
+
+    it('M3: publishIfAllowed reconfere sob o lock — limite acima do degrau atual não é publicado', async () => {
+      const { transport, svc } = setup();
+      await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
+      const published: number[] = [];
+      expect(await svc.publishIfAllowed(T, 20, async () => void published.push(20))).toBe(false);
+      expect(await svc.publishIfAllowed(T, 6, async () => void published.push(6))).toBe(true);
+      expect(published).toEqual([6]);
+      expect(transport.limits()).toEqual([15]);
+    });
+  });
+
+  describe('re-revisão 4', () => {
+    it('I1: primeiro degrau igual ao limite já reportado (limite manual 15 aplicado) → conta como ack e a escada segue', async () => {
+      const { clock, transport, svc } = setup();
+      await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 15, locked: false, online: true, reportedLimitKmh: 15 });
+      expect(transport.limits()).toEqual([15]);
+      await clock.advance(2_000); // nenhum reported novo (desired == reported não gera /delta)
+      expect(transport.limits()).toEqual([15, 8]);
+    });
+
+    it('I1: reported acima do degrau não vale como ack (espera o reported do degrau)', async () => {
+      const { clock, transport, svc } = setup();
+      await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true, reportedLimitKmh: 32 });
+      await clock.advance(10_000);
+      expect(transport.limits()).toEqual([15]);
+    });
+
+    it('M6: lock novo numa rampa retomada ganha os próprios 120 s (não só o resto do prazo da retomada)', async () => {
+      const { clock, outcomes, svc } = setup();
+      await svc.start(REQ, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
+      await clock.advance(120_000); // did_not_stop → retomada com prazo novo (até 240 s)
+      await clock.advance(100_000); // 220 s: faltam 20 s do prazo da retomada
+      await svc.start({ commandId: 'cmd-2', thingName: T }, { speedKmh: 25, speedLimitKmh: 32, locked: false, online: true });
+      await clock.advance(119_000);
+      expect(outcomes.filter((o) => o.commandId === 'cmd-2')).toEqual([]);
+      await clock.advance(1_000);
+      expect(outcomes.filter((o) => o.commandId === 'cmd-2')).toEqual([{ commandId: 'cmd-2', status: 'failed', reason: 'did_not_stop' }]);
+    });
   });
 });

@@ -21,6 +21,7 @@ import type { WebhookQueueMessage } from './provider/fake-pix-autoconfirm';
 import { CardDeclinedError, PAYMENT_PROVIDER, type PaymentProvider, RefundRejectedError } from './provider/payment-provider';
 import { SubscriptionsService } from './subscriptions.service';
 import { DelinquencyService } from './delinquency.service';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 /** Repetições de um estorno sem resultado antes de pedir revisão manual. */
 export const MAX_REFUND_ATTEMPTS = 10;
@@ -246,6 +247,7 @@ export class PaymentsService {
   }
 
   @Interval('payments-refund-reconcile', 5 * 60_000)
+  @ExclusiveJob('payments-refund-reconcile', jobLockTtl(5 * 60_000))
   async refundReconcileJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.reconcileRefunds(2 * 60_000).catch((err) => this.logger.error({ msg: 'refund_reconcile_failed', error: (err as Error).message }));

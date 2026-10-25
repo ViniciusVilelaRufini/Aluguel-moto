@@ -5,9 +5,10 @@ import { EV, IotCommandUpdatedEvent } from '../../common/events';
 import type { CommandOutcome, CommandRequest, IotGateway, VehicleLiveState } from '../../ports/iot-gateway.port';
 import type { Clock, TimerHandle } from './clock';
 import type { LiveStateStore } from './live-state.store';
-import { SafeLockService } from './safe-lock.service';
+import { SafeLockService, type SafeLockVehicleState } from './safe-lock.service';
+import { assertSpeedLimit, SAFE_LOCK_MIN_START_KMH } from './speed-limit';
+import { MemorySafeLockStore, type SafeLockStore } from './safe-lock.store';
 import type { DesiredState, IotTransport, ReportedMeta, ReportedState } from './shadow-transport';
-import { assertSpeedLimit } from './speed-limit';
 
 export interface GatewayOptions {
   /** Quanto a chamada espera o `reported` antes de responder `in_progress`. */
@@ -16,6 +17,8 @@ export interface GatewayOptions {
   commandTimeoutMs: number;
   stepIntervalMs?: number;
   safeLockTimeoutMs?: number;
+  /** Estado das rampas do bloqueio seguro (produção: Redis, compartilhado entre as instâncias; padrão: memória). */
+  safeLockStore?: SafeLockStore;
 }
 
 /**
@@ -43,12 +46,19 @@ interface Tracked {
 export abstract class BaseIotGateway implements IotGateway {
   protected readonly logger = new Logger(this.constructor.name);
   readonly safeLock: SafeLockService;
+  /**
+   * Rampa degradada (lacunas T5, fix 1): com o Redis fora do ar, um lock ainda reduz a potência — a rampa roda só nesta instância,
+   * em memória (como antes da T5), com o mesmo invariante (`travada: true` só com velocidade fresca < 3).
+   */
+  readonly safeLockLocal: SafeLockService;
   private readonly waiters = new Map<string, (o: CommandOutcome) => void>();
   private readonly tracked = new Map<string, Tracked>();
   private readonly returnedAt = new Map<string, number>();
-  /** Último `limite_kmh` gravado no desired por este processo (a rampa nunca começa acima dele). */
-  private readonly desiredLimit = new Map<string, number>();
-  private limitResolver: (thingName: string) => number = () => MAX_SPEED_KMH;
+  /**
+   * Limite das zonas em vigor para a moto (unlock e teto dos comandos manuais). Recebe a posição atual: o motor de cercas
+   * reavalia a zona por ela (PostGIS) em vez de confiar só no valor gravado (fix 2, N3).
+   */
+  private limitResolver: (thingName: string, position?: { lat: number; lng: number }) => number | Promise<number> = () => MAX_SPEED_KMH;
 
   constructor(
     readonly transport: IotTransport,
@@ -57,28 +67,142 @@ export abstract class BaseIotGateway implements IotGateway {
     protected readonly events: EventEmitter2,
     protected readonly opts: GatewayOptions,
   ) {
-    // A rampa publica pelo mesmo caminho que registra o último limite desejado.
-    const recording = { updateDesired: (t: string, d: DesiredState) => this.publishDesired(t, d), publishCommand: transport.publishCommand.bind(transport) };
-    this.safeLock = new SafeLockService(clock, recording, (o) => this.settle(o), {
+    // A rampa publica pelo mesmo caminho que grava o desired compartilhado, e um degrau nunca sai acima do teto confirmado (uma
+    // redução aceita durante a rampa não é desfeita pelo degrau seguinte) — mas o teto nunca puxa um degrau para baixo de 3:
+    // um valor < 3 só sai como degrau da própria escada (depois do 3 confirmado), nunca por um teto guardado (fix 2).
+    const recording = {
+      updateDesired: async (t: string, d: DesiredState) => {
+        // Fix 3: só um teto ≥ 3 limita o degrau (um teto guardado nunca produz < 3, e um degrau nunca sobe por causa dele);
+        // reduções aceitas durante a rampa entram pelo `capKmh` da própria rampa.
+        if (d.limite_kmh !== undefined && d.limite_kmh > 0) {
+          const cap = await this.confirmedCeiling(t);
+          if (cap !== null && cap >= SAFE_LOCK_MIN_START_KMH && d.limite_kmh > cap) d = { ...d, limite_kmh: cap };
+        }
+        return this.publishDesired(t, d);
+      },
+      publishCommand: transport.publishCommand.bind(transport),
+    };
+    const common = {
       stepIntervalMs: opts.stepIntervalMs,
       timeoutMs: opts.safeLockTimeoutMs,
       // Em memória na hora (falha fechada); a escrita no Redis que falhar é registrada.
-      onHeld: (thingName) =>
+      onHeld: (thingName: string) =>
         void this.live.setHeld(thingName, true).catch((err: Error) => this.logger.error({ msg: 'safe_lock_hold_persist_failed', thingName, error: err.message })),
+      onLocalActivity: (thingName: string) => this.watch(thingName),
+      onError: (entry: Record<string, unknown>) => this.logger.error(entry),
+    };
+    this.safeLock = new SafeLockService(clock, recording, (o) => this.settle(o), {
+      ...common,
+      store: opts.safeLockStore,
+      // Varredura: rampa pendente cuja reconexão foi vista por outra instância começa com o estado relido do Redis.
+      probe: (thingName) => this.safeLockState(thingName, true),
     });
+    this.safeLockLocal = new SafeLockService(clock, recording, (o) => this.settle(o), { ...common, store: new MemorySafeLockStore() });
+  }
+
+  /** O estado compartilhado (Redis) está legível agora? */
+  private async sharedReadable(thingName: string): Promise<boolean> {
+    return this.safeLock.isActiveAnywhere(thingName).then(
+      () => true,
+      () => false,
+    );
   }
 
   /**
-   * Publica o desired e só então registra o limite como teto (publicação que falhou não deixa teto acima do shadow real).
-   * Sem registro (processo novo), o teto é o `reported` — `Math.min` com `MAX_SPEED_KMH` no lock — e o hold persistido.
+   * Teto confirmado do desired (fix 2): o `iot:desired-limit` gravado a cada publicação por qualquer instância; sem ele (Redis
+   * fora ou nunca gravado), o documento do shadow (desired, senão reported) lido direto da fonte; senão desconhecido (`null`).
+   * Nenhuma cópia por instância: ela fica velha assim que outra instância publica.
+   */
+  private async confirmedCeiling(thingName: string): Promise<number | null> {
+    // Fix 3: uma publicação desta instância cuja gravação no Redis falhou deixa o valor do Redis sem confiança (pode ser de antes
+    // dela) até a gravação passar: vale o documento do shadow e, sem ele, o que foi publicado.
+    const pending = this.pendingDesired.get(thingName);
+    if (pending !== undefined && !(await this.flushPendingDesiredFor(thingName))) {
+      const doc = this.transport.readShadow ? await this.transport.readShadow(thingName).catch(() => null) : null;
+      const v = doc?.desired.limite_kmh;
+      return typeof v === 'number' ? v : pending;
+    }
+    const shared = await this.live.readDesiredLimit(thingName);
+    if (typeof shared === 'number') return shared;
+    const doc = this.transport.readShadow ? await this.transport.readShadow(thingName).catch(() => null) : null;
+    const v = doc?.desired.limite_kmh ?? doc?.reported.limite_kmh;
+    return typeof v === 'number' ? v : null;
+  }
+
+  /**
+   * Estado usado pela rampa: velocidade fresca (desconhecida = `null`, em movimento), teto confirmado (só limita o 1º degrau e
+   * nunca abaixo de 3) e hold **confirmado** (só ele começa a rampa em 0). Ver `rampSteps`.
+   */
+  private async safeLockState(thingName: string, refresh = false): Promise<SafeLockVehicleState> {
+    const s = refresh ? await this.live.refresh(thingName) : await this.live.load(thingName);
+    const online = this.live.isOnline(thingName);
+    const ceiling = await this.confirmedCeiling(thingName);
+    // O reported só limita a rampa se veio do Redis agora (fix 3): a cópia em memória com o Redis fora pode estar velha para baixo.
+    const confirmed = s && this.live.isConfirmed(thingName) ? s.speedLimitKmh : undefined;
+    const reported = confirmed ?? MAX_SPEED_KMH;
+    return {
+      speedKmh: this.live.knownSpeed(thingName),
+      speedLimitKmh: Math.min(reported, ceiling ?? MAX_SPEED_KMH),
+      ...(confirmed !== undefined ? { reportedLimitKmh: confirmed } : {}),
+      held: (await this.live.heldState(thingName)) === true,
+      locked: s?.locked === true && online,
+      online,
+    };
+  }
+
+  /** Posição conhecida da moto (estado ao vivo), para reavaliar a zona antes de subir limite. */
+  private async positionOf(thingName: string): Promise<{ lat: number; lng: number } | undefined> {
+    const s = await this.live.load(thingName);
+    return s && !(s.lat === 0 && s.lng === 0) ? { lat: s.lat, lng: s.lng } : undefined;
+  }
+
+  /**
+   * Publica o desired e só então grava o limite como teto compartilhado (publicação que falhou não deixa teto acima do shadow
+   * real). Redis fora: o teto vem do documento do shadow (`confirmedCeiling`).
    */
   private async publishDesired(thingName: string, desired: DesiredState): Promise<void> {
     await this.transport.updateDesired(thingName, desired);
-    if (desired.limite_kmh !== undefined) this.desiredLimit.set(thingName, desired.limite_kmh);
+    if (desired.limite_kmh !== undefined) {
+      this.pendingDesired.set(thingName, desired.limite_kmh);
+      if (!(await this.flushPendingDesiredFor(thingName))) this.logger.warn({ msg: 'desired_limit_persist_failed', thingName });
+    }
+  }
+
+  /** Publicações cujo teto não chegou ao Redis (fix 3): o Redis não é confiável para essas motos até gravar. */
+  private readonly pendingDesired = new Map<string, number>();
+
+  private async flushPendingDesiredFor(thingName: string): Promise<boolean> {
+    const v = this.pendingDesired.get(thingName);
+    if (v === undefined) return true;
+    try {
+      await this.live.setDesiredLimit(thingName, v);
+    } catch {
+      return false;
+    }
+    if (this.pendingDesired.get(thingName) === v) this.pendingDesired.delete(thingName);
+    return true;
+  }
+
+  /**
+   * Varredura do bloqueio seguro (a cada 1 s, `IotRuntime`): grava os tetos pendentes, migra as rampas degradadas (memória)
+   * para o Redis quando ele volta — daí em diante todas as instâncias as veem e respeitam — e varre as rampas compartilhadas.
+   */
+  async sweepSafeLock(): Promise<void> {
+    for (const thingName of [...this.pendingDesired.keys()]) await this.flushPendingDesiredFor(thingName);
+    for (const ramp of await this.safeLockLocal.snapshot()) {
+      try {
+        await this.safeLock.adopt(ramp);
+      } catch {
+        continue; // Redis ainda fora
+      }
+      await this.safeLockLocal.drop(ramp.thingName, ramp.id);
+      this.logger.log({ msg: 'safe_lock_local_ramp_migrated', thingName: ramp.thingName });
+    }
+    await this.safeLock.sweep();
   }
 
   /** Limite em vigor para a moto (zonas de velocidade reduzida), usado ao destravar. Registrado pelo motor de cercas. */
-  setLimitResolver(fn: (thingName: string) => number): void {
+  setLimitResolver(fn: (thingName: string, position?: { lat: number; lng: number }) => number | Promise<number>): void {
     this.limitResolver = fn;
   }
 
@@ -86,21 +210,21 @@ export abstract class BaseIotGateway implements IotGateway {
 
   async lock(req: CommandRequest): Promise<CommandOutcome> {
     this.supersede(req.thingName, ['travada']);
-    const s = await this.live.load(req.thingName);
-    const state = {
-      // Só velocidade fresca; desconhecida = null (a rampa trata como em movimento). Nunca 0 por padrão.
-      speedKmh: this.live.knownSpeed(req.thingName),
-      // Teto da rampa: o menor entre o reported, o último desired e o hold (0). Nunca sobe acima do que já foi pedido.
-      speedLimitKmh: Math.min(
-        s?.speedLimitKmh ?? MAX_SPEED_KMH,
-        this.desiredLimit.get(req.thingName) ?? MAX_SPEED_KMH,
-        (await this.live.isHeld(req.thingName)) ? 0 : MAX_SPEED_KMH,
-      ),
-      locked: s?.locked === true && this.live.isOnline(req.thingName),
-      online: this.live.isOnline(req.thingName),
-    };
+    // Só velocidade fresca; desconhecida = null (a rampa trata como em movimento). Nunca 0 por padrão.
+    const state = await this.safeLockState(req.thingName);
     const wait = this.registerWaiter(req.commandId);
-    const initial = await this.safeLock.start(req, state);
+    let initial: CommandOutcome;
+    try {
+      initial = await this.safeLock.start(req, state);
+    } catch (err) {
+      // Redis fora do ar: o lock reduz a potência mesmo assim, pela rampa local (mesmo invariante). Outro erro (IoT) propaga.
+      if (await this.sharedReadable(req.thingName)) {
+        this.waiters.delete(req.commandId);
+        throw err;
+      }
+      this.logger.error({ msg: 'safe_lock_degraded_local', thingName: req.thingName, commandId: req.commandId, error: (err as Error).message });
+      initial = await this.safeLockLocal.start(req, state);
+    }
     this.watch(req.thingName);
     if (initial.status !== 'in_progress') {
       this.waiters.delete(req.commandId);
@@ -116,26 +240,66 @@ export abstract class BaseIotGateway implements IotGateway {
   }
 
   async unlock(req: CommandRequest): Promise<CommandOutcome> {
-    this.safeLock.cancel(req.thingName);
+    // A rampa local (degradada) sai sempre; a compartilhada exige o Redis (unlock sobe o limite: falha fechada).
+    await this.safeLockLocal.cancel(req.thingName);
+    await this.safeLock.cancel(req.thingName);
     await this.live.setHeld(req.thingName, false);
-    const limit = assertSpeedLimit(this.limitResolver(req.thingName));
+    // Sobe o limite: a zona é reavaliada pela posição atual (não só pelo valor gravado, que pode estar velho — fix 2, N3).
+    const limit = assertSpeedLimit(await this.limitResolver(req.thingName, await this.positionOf(req.thingName)));
     return this.desiredCommand(req, { travada: false }, { limite_kmh: limit });
   }
 
   async setSpeedLimit(req: CommandRequest, kmh: number): Promise<CommandOutcome> {
     assertSpeedLimit(kmh);
     // Durante o bloqueio seguro, a rampa é dona do limite: nada (zona, operador) pode subir ou mexer nos degraus.
-    // Depois de `did_not_stop`, o limite fica segurado em 0 até um unlock explícito.
-    if (this.safeLock.isActive(req.thingName) || (await this.live.isHeld(req.thingName))) {
-      this.logger.warn({ msg: 'speed_limit_refused_during_safe_lock', thingName: req.thingName, commandId: req.commandId });
-      return { commandId: req.commandId, status: 'failed' };
-    }
-    // QA-01: nenhum limite (operador/admin) acima do limite da zona em que a moto está (6 calçadão, 20 ciclovia).
-    // O motor de cercas manda exatamente o limite em vigor, então só comandos manuais acima dele são recusados (nunca truncar).
-    const zoneLimit = this.limitResolver(req.thingName);
+    // Depois de `did_not_stop`, o limite fica segurado (hold) no degrau em que a rampa retomada está, até um unlock explícito.
+    // QA-01: nenhum limite (operador/admin) acima do limite da zona em que a moto está (6 calçadão, 20 ciclovia), reavaliada pela
+    // posição atual. O motor de cercas manda exatamente o limite em vigor, então só comandos manuais acima dele são recusados.
+    const zoneLimit = await this.limitResolver(req.thingName, await this.positionOf(req.thingName));
     if (kmh > zoneLimit) {
       this.logger.warn({ msg: 'speed_limit_refused_above_zone_limit', thingName: req.thingName, commandId: req.commandId, kmh, zoneLimit });
       return { commandId: req.commandId, status: 'failed', reason: 'invalid_limit' };
+    }
+    const refuse = (ceiling: number | string) => {
+      this.logger.warn({ msg: 'speed_limit_refused_during_safe_lock', thingName: req.thingName, commandId: req.commandId, kmh, ceiling });
+      return { commandId: req.commandId, status: 'failed' as const };
+    };
+    // Fix 3: com rampa ativa (degradada ou compartilhada, conferida sob o lock da moto), ela é dona do limite — qualquer subida em
+    // relação ao limite que ela impõe é recusada, seja qual for o teto lido; a redução aceita vira teto dos próximos degraus.
+    const local = await this.safeLockLocal.claimLimit(req.thingName, kmh);
+    if (local === 'refused') return refuse('ramp');
+    let shared: 'no_ramp' | 'refused' | 'accepted' | 'unknown';
+    try {
+      shared = await this.safeLock.claimLimit(req.thingName, kmh);
+    } catch {
+      shared = 'unknown';
+    }
+    if (shared === 'refused') return refuse('ramp');
+    if (local === 'accepted' || shared === 'accepted') {
+      // M3: com rampa, a publicação sai sob o lock da moto e reconfere contra o degrau atual.
+      const underLocal = (pub: () => Promise<void>) => (local === 'accepted' ? this.safeLockLocal.publishIfAllowed(req.thingName, kmh, pub) : pub().then(() => true));
+      const publish = (d: DesiredState) =>
+        shared === 'accepted'
+          ? this.safeLock.publishIfAllowed(req.thingName, kmh, async () => {
+              if (!(await underLocal(() => this.publishDesired(req.thingName, d)))) throw new RampRefusedError();
+            })
+          : underLocal(() => this.publishDesired(req.thingName, d));
+      try {
+        return await this.desiredCommand(req, { limite_kmh: kmh }, {}, publish);
+      } catch (err) {
+        if (err instanceof RampRefusedError) return refuse('ramp');
+        throw err;
+      }
+    }
+    // Sem rampa conhecida: hold confirmado → só 0; hold ilegível ou estado do Redis ilegível → só reduções em relação ao teto
+    // confirmado (Redis confiável ou documento do shadow); teto desconhecido → aceito (reduzir nunca é recusado).
+    const held = await this.live.heldState(req.thingName);
+    if (held === true && kmh > 0) return refuse(0);
+    if (held === null || shared === 'unknown') {
+      // Teto desconhecido: o reported só conta se veio do Redis agora (a cópia em memória pode estar velha para baixo).
+      const s = await this.live.load(req.thingName);
+      const ceiling = (await this.confirmedCeiling(req.thingName)) ?? (s && this.live.isConfirmed(req.thingName) ? s.speedLimitKmh : null);
+      if (ceiling !== null && kmh > ceiling) return refuse(ceiling);
     }
     return this.desiredCommand(req, { limite_kmh: kmh });
   }
@@ -164,7 +328,9 @@ export abstract class BaseIotGateway implements IotGateway {
     // A rampa só vê velocidade que é amostra fresca e mais nova (reported velho replayed pelo polling não trava ninguém).
     const forLock: ReportedState = { ...reported };
     if (!speedAccepted) delete forLock.velocidade_kmh;
-    await this.safeLock.onReported(thingName, forLock, meta.timestamps ?? {});
+    await this.safeLockLocal.onReported(thingName, forLock, meta.timestamps ?? {});
+    // Redis fora: a rampa compartilhada não avança, mas os comandos que esperam este reported (ex.: redução de limite) confirmam.
+    await this.safeLock.onReported(thingName, forLock, meta.timestamps ?? {}).catch((err: Error) => this.logger.error({ msg: 'safe_lock_reported_failed', thingName, error: err.message }));
     const s = this.live.get(thingName);
     for (const t of [...this.tracked.values()]) {
       if (t.thingName !== thingName) continue;
@@ -174,6 +340,7 @@ export abstract class BaseIotGateway implements IotGateway {
   }
 
   async onSpeed(thingName: string, speedKmh: number): Promise<void> {
+    await this.safeLockLocal.onSpeed(thingName, speedKmh);
     await this.safeLock.onSpeed(thingName, speedKmh);
   }
 
@@ -184,12 +351,16 @@ export abstract class BaseIotGateway implements IotGateway {
     for (const t of this.tracked.values()) {
       if (t.thingName === thingName && !t.timer) t.timer = this.clock.setTimeout(() => this.onTrackedTimeout(t.commandId), this.opts.commandTimeoutMs);
     }
-    await this.safeLock.onConnectivity(thingName, true, { speedKmh: this.live.knownSpeed(thingName), speedLimitKmh: s.speedLimitKmh, locked: s.locked, online: true });
+    // Mesmo teto do lock (reported, desired gravado e hold): a rampa pendente nunca começa acima do que já foi pedido.
+    const state = await this.safeLockState(thingName);
+    const pending = { ...state, speedLimitKmh: Math.min(state.speedLimitKmh, s.speedLimitKmh), locked: s.locked, online: true };
+    await this.safeLockLocal.onConnectivity(thingName, true, pending);
+    await this.safeLock.onConnectivity(thingName, true, pending).catch((err: Error) => this.logger.error({ msg: 'safe_lock_connectivity_failed', thingName, error: err.message }));
   }
 
   /** Há algo aguardando `reported` desta moto? (o modo aws consulta o shadow enquanto houver). */
   isWatching(thingName: string): boolean {
-    if (this.safeLock.isActive(thingName)) return true;
+    if (this.safeLock.isActive(thingName) || this.safeLockLocal.isActive(thingName)) return true;
     for (const t of this.tracked.values()) if (t.thingName === thingName) return true;
     return false;
   }
@@ -200,7 +371,12 @@ export abstract class BaseIotGateway implements IotGateway {
     this.transport.watch?.(thingName, this.isWatching(thingName));
   }
 
-  private async desiredCommand(req: CommandRequest, expect: DesiredState, extra: DesiredState = {}): Promise<CommandOutcome> {
+  private async desiredCommand(
+    req: CommandRequest,
+    expect: DesiredState,
+    extra: DesiredState = {},
+    publish?: (desired: DesiredState) => Promise<boolean>,
+  ): Promise<CommandOutcome> {
     await this.live.load(req.thingName);
     const online = this.live.isOnline(req.thingName);
     this.supersede(req.thingName, Object.keys(expect) as Array<keyof ReportedState>);
@@ -209,7 +385,8 @@ export abstract class BaseIotGateway implements IotGateway {
     if (online) tracked.timer = this.clock.setTimeout(() => this.onTrackedTimeout(req.commandId), this.opts.commandTimeoutMs);
     this.tracked.set(req.commandId, tracked);
     try {
-      await this.publishDesired(req.thingName, { ...expect, ...extra });
+      const ok = publish ? await publish({ ...expect, ...extra }) : (await this.publishDesired(req.thingName, { ...expect, ...extra }), true);
+      if (!ok) throw new RampRefusedError();
     } catch (err) {
       this.untrack(tracked);
       this.waiters.delete(req.commandId);
@@ -294,3 +471,6 @@ function matches(s: VehicleLiveState | null, expect: Partial<ReportedState>): bo
   if (expect.modo_roubada !== undefined && s.stolenMode !== expect.modo_roubada) return false;
   return true;
 }
+
+/** O limite pedido subiria acima do degrau atual da rampa (reconferido sob o lock da moto). */
+class RampRefusedError extends Error {}

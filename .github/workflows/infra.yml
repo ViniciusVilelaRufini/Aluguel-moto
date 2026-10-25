@@ -68,7 +68,8 @@ jobs:
       - run: pnpm --filter infra test
         if: matrix.env == 'dev'
       - name: cdk synth
-        run: pnpm --filter infra exec cdk synth -c env=${{ matrix.env }} -c account=${{ vars.AWS_ACCOUNT_ID || '000000000000' }} -q
+        # prod exige domainName (link público do SOS em https://api.<domínio>/share).
+        run: pnpm --filter infra exec cdk synth -c env=${{ matrix.env }} -c account=${{ vars.AWS_ACCOUNT_ID || '000000000000' }} -c domainName=${{ vars.DOMAIN_NAME || 'volti.example' }} -q
 
   diff:
     name: cdk diff (dev)
