@@ -886,22 +886,19 @@ class _DepotPulse extends StatelessWidget {
   );
 }
 
+/// Logo branco (simbolo "Roda" + "volti") sobre o mapa escurecido no topo. O
+/// simbolo se desenha na entrada (rodas, quadro, banco e guidao); com reduced
+/// motion aparece pronto. A semantica fica no no estatico do hero.
 class _Logo extends StatelessWidget {
   const _Logo();
 
   @override
-  Widget build(BuildContext context) => Text(
-    'volti',
+  Widget build(BuildContext context) => VoltiLogo.animated(
     key: const Key('welcome-logo'),
-    style: TextStyle(
-      fontFamily: VoltiTypography.fontSans,
-      fontWeight: FontWeight.w800,
-      fontSize: 30,
-      height: 1,
-      letterSpacing: -1.2,
-      color: VoltiColors.white,
-      shadows: [Shadow(color: VoltiColors.ink900.withValues(alpha: .35), blurRadius: 8)],
-    ),
+    variant: VoltiLogoVariant.white,
+    fontSize: 30,
+    semanticLabel: null,
+    shadows: [Shadow(color: VoltiColors.ink900.withValues(alpha: .35), blurRadius: 8)],
   );
 }
 

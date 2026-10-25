@@ -97,7 +97,7 @@ O hero ocupa a faixa livre acima da folha. A altura da folha é medida e o layou
 - **Galpão** com anel pulsando.
 - **Quatro motos andando** por trechos reais (Rua dos Pinheiros, Teodoro Sampaio, Faria Lima e Fradique Coutinho), com velocidades e defasagens diferentes, aparecendo e sumindo nas pontas. Ficam recortadas 16 px acima da folha.
 - **Moto em destaque** (`assets/images/volti_moto_hero.webp`, fundo transparente), centrada embaixo com até 70% da largura. Sobe e cresce de 0,92 a 1 em cerca de 600 ms, depois flutua 2,5 px num ciclo de 3 s, com uma sombra elíptica que acompanha a flutuação.
-- **Logo** em cima, à esquerda.
+- **Logo** em cima, à esquerda: `VoltiLogo.animated` branco (símbolo "Roda" + "volti"). O traço do símbolo se desenha na entrada (rodas, quadro em V, banco e guidão, ~900 ms) dentro da cascata do logo; com reduced motion aparece pronto.
 - **Carrossel das afirmações**, embaixo do logo, de ponta a ponta. São afirmações verdadeiras do serviço, sem números inventados, em três cartões brancos iguais (`HeroStatementCard`: superfície, raio md, `shadow1`, ícone verde num quadrado brand-soft, texto escuro):
   - "Retire no galpão" / "Escolha no app, retire no galpão" (galpão);
   - "Planos diário, semanal e mensal" / "ou por minuto e hora" (calendário);
@@ -131,6 +131,28 @@ Com texto acima de 100%, os três cartões das afirmações descem para a folha 
 Os testes de sobreposição fixam esses valores com tolerância de 0,02. Com 200%, os botões quebram linha, Apple/Google/E-mail empilham e a folha rola por cima do hero.
 
 Testes em `test/cliente_login_test.dart`.
+
+## Marca, ícone e splash
+
+A logo é o símbolo "Roda" + o nome "volti" (fonte da verdade: `design-system/assets/logo/`). No app, o logo é o widget `VoltiLogo`/`VoltiLogoMark` do `volti_flutter` (boas-vindas e tela de configuração inválida); nada de PNG da marca dentro do Flutter.
+
+Imagens-fonte em `assets/brand/`, geradas da geometria do `app-icon.svg` / `logo-mark.svg` com o Chrome headless por `python tool/render_brand.py assets/brand` (saída determinística):
+
+| Arquivo | Conteúdo |
+|---|---|
+| `icon.png` | 1024×1024, RGB sem alfa, fundo #34C25C quadrado (a Apple e o launcher arredondam) com o símbolo branco na escala/posição do `app-icon.svg`. Usado no iOS, no ícone legado do Android e no web. |
+| `icon_foreground.png` | 1024×1024 transparente, símbolo branco: o ícone de 180 unidades ocupa os 72 dp visíveis do canvas de 108 dp (centro de 66,7%), dentro do círculo seguro de 66 dp. Fundo do adaptativo: #34C25C. |
+| `splash.png`, `splash_dark.png` | 1152×1152 transparente, símbolo verde (#34C25C) centrado pelo contorno; fundo branco no claro e #15181A no escuro (contraste do verde ≈ 7,8:1). |
+| `splash_android12.png`, `splash_android12_dark.png` | Mesmo desenho; o contorno cabe no círculo de 768 px exigido pelo Android 12. |
+
+Para regenerar os arquivos nativos depois de trocar as imagens:
+
+```bash
+dart run flutter_launcher_icons
+dart run flutter_native_splash:create
+```
+
+O `flutter_native_splash` reescreve o `AndroidManifest.xml` (formatação e remove `screenOrientation="portrait"`): descarte essa mudança (`git checkout -- android/app/src/main/AndroidManifest.xml`).
 
 ## Estrutura
 

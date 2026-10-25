@@ -174,6 +174,36 @@ void main() {
 
   setUpAll(_loadFonts);
   group('boas-vindas da referencia', () {
+    testWidgets('logo da marca: simbolo Roda branco que se desenha na entrada', (t) async {
+      screen(t, size: const Size(402, 874));
+      await _pumpWelcome(t, settleAll: false);
+      final logo = t.widget<VoltiLogo>(find.byKey(const Key('welcome-logo')));
+      expect(logo.variant, VoltiLogoVariant.white);
+      expect(logo.animate, isTrue);
+      VoltiLogoMarkPainter painter() => t
+          .widgetList<CustomPaint>(find.descendant(of: find.byKey(const Key('welcome-logo')), matching: find.byType(CustomPaint)))
+          .map((c) => c.painter)
+          .whereType<VoltiLogoMarkPainter>()
+          .single;
+      expect(painter().progress, lessThan(1));
+      for (var i = 0; i < 10; i++) {
+        await t.pump(const Duration(milliseconds: 200));
+      }
+      expect(painter().progress, 1);
+      expect(painter().color, VoltiColors.white);
+    });
+
+    testWidgets('logo com reduced motion: pronto no primeiro quadro', (t) async {
+      screen(t, size: const Size(402, 874));
+      await _pumpWelcome(t, reduceMotion: true, settleAll: false);
+      final painter = t
+          .widgetList<CustomPaint>(find.descendant(of: find.byKey(const Key('welcome-logo')), matching: find.byType(CustomPaint)))
+          .map((c) => c.painter)
+          .whereType<VoltiLogoMarkPainter>()
+          .single;
+      expect(painter.progress, 1);
+    });
+
     testWidgets('mapa decorativo, selos, titulo, botoes, divisor e termos', (t) async {
       screen(t, size: const Size(402, 874));
       await _pumpWelcome(t);
