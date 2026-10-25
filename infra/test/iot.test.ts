@@ -1,6 +1,6 @@
 import { Match } from 'aws-cdk-lib/assertions';
 import { PRESENCE_EVENT } from '../lib/stacks/messaging-stack';
-import { PRESENCE_FORWARDER, STATION_EVENTS_SQL, STATION_FORWARDER } from '../lib/stacks/iot-stack';
+import { PRESENCE_FORWARDER, STATION_EVENTS_SQL, STATION_FORWARDER, STATION_PARTITION_KEY } from '../lib/stacks/iot-stack';
 import { stacksFor, templateOf } from './helpers';
 
 const THING = '${iot:Connection.Thing.ThingName}';
@@ -82,39 +82,84 @@ describe('IotStack', () => {
     expect(JSON.stringify(stmts)).not.toMatch(/AlertsQueue/);
   });
 
-  it('station events: rule estacoes/+/eventos → Lambda → stations FIFO queue, with error action', () => {
+  it('station events keep per-station order: rule → Kinesis (partition key = thing) → ordered event source mapping → FIFO', () => {
     const r = rule('volti_dev_station_events');
     expect(r.Sql).toBe(STATION_EVENTS_SQL);
     expect(r.Sql).toBe("SELECT *, topic(2) AS thing FROM 'estacoes/+/eventos'");
-    expect(r.Actions[0].Lambda).toBeDefined();
+    expect(r.Actions).toHaveLength(1);
+    expect(r.Actions[0].Lambda).toBeUndefined(); // the async Lambda action reorders (parallel invocations, late retries)
+    expect(r.Actions[0].Kinesis.PartitionKey).toBe(STATION_PARTITION_KEY);
+    expect(STATION_PARTITION_KEY).toBe('${topic(2)}');
+    expect(JSON.stringify(r.Actions[0].Kinesis.StreamName)).toMatch(/StationEventsStream/);
     expect(r.ErrorAction.CloudwatchLogs).toBeDefined();
+    t().hasResourceProperties('AWS::Kinesis::Stream', {
+      Name: 'volti-dev-station-events',
+      ShardCount: 1,
+      RetentionPeriodHours: 24,
+      StreamEncryption: { EncryptionType: 'KMS', KeyId: 'alias/aws/kinesis' },
+    });
+    const esm = Object.values(t().findResources('AWS::Lambda::EventSourceMapping')) as any[];
+    expect(esm).toHaveLength(1);
+    const m = esm[0].Properties;
+    expect(JSON.stringify(m.EventSourceArn)).toMatch(/StationEventsStream/);
+    expect(m.ParallelizationFactor).toBe(1);
+    expect(m.BisectBatchOnFunctionError).toBe(false);
+    expect(m.FunctionResponseTypes).toEqual(['ReportBatchItemFailures']);
+    expect(m.StartingPosition).toBe('TRIM_HORIZON');
+    expect(m.MaximumRetryAttempts).toBeGreaterThanOrEqual(10);
+    expect(m.MaximumRecordAgeInSeconds).toBe(3600);
+    // I2: what the forwarder cannot deliver goes to a DLQ (alarmed in observability).
+    expect(JSON.stringify(m.DestinationConfig.OnFailure.Destination)).toMatch(/StationsForwarderDlq/);
     const fns = Object.values(t().findResources('AWS::Lambda::Function')) as any[];
     const fwd = fns.find((f) => f.Properties.Environment?.Variables?.QUEUE_URL);
     expect(JSON.stringify(fwd.Properties.Environment.Variables.QUEUE_URL)).toMatch(/StationsQueue/);
-    t().hasResourceProperties('AWS::Lambda::Permission', { Principal: 'iot.amazonaws.com', SourceArn: Match.anyValue() });
+    // Only the IoT role writes to the stream; the forwarder sends to the FIFO and to its DLQ.
     const stmts = Object.values(t().findResources('AWS::IAM::Policy')).flatMap((p: any) => p.Properties.PolicyDocument.Statement) as any[];
+    expect(stmts.some((s) => JSON.stringify(s.Action).includes('kinesis:PutRecord') && JSON.stringify(s.Resource).includes('StationEventsStream'))).toBe(true);
     expect(stmts.some((s) => JSON.stringify(s.Action).includes('sqs:SendMessage') && JSON.stringify(s.Resource).includes('StationsQueue'))).toBe(true);
+    expect(stmts.some((s) => JSON.stringify(s.Action).includes('sqs:SendMessage') && JSON.stringify(s.Resource).includes('StationsForwarderDlq'))).toBe(true);
+    // No IoT → Lambda permission for the stations path any more (only presence).
+    const perms = Object.values(t().findResources('AWS::Lambda::Permission')) as any[];
+    expect(perms).toHaveLength(1);
   });
 
-  it('station forwarder sends each event with MessageGroupId = thing and drops events without a station thing', async () => {
-    const sent: any[] = [];
-    class SQSClient {
-      async send(cmd: { input: unknown }) {
-        sent.push(cmd.input);
-      }
-    }
-    class SendMessageCommand {
-      constructor(public input: unknown) {}
-    }
-    const { handler, logs } = runInline(STATION_FORWARDER, { QUEUE_URL: 'https://sqs/q.fifo' }, { SQSClient, SendMessageCommand });
+  describe('station forwarder (Kinesis batch → FIFO)', () => {
     const thing = 'station-5b0e7c1a-1111-4111-8111-111111111111';
-    const event = { type: 'slot_closed', swapId: '5b0e7c1a-1111-4111-8111-111111111111', ts: '2026-10-22T15:00:22.000Z', thing };
-    await handler(event);
-    expect(sent).toEqual([{ QueueUrl: 'https://sqs/q.fifo', MessageBody: JSON.stringify(event), MessageGroupId: thing }]);
-    await handler({ type: 'slot_closed', thing: 'moto-0001' });
-    await handler({ type: 'slot_closed' });
-    expect(sent).toHaveLength(1);
-    expect(logs.join(' ')).not.toMatch(/swapId|slot_closed/); // no payload in logs
+    const ev = (type: string, extra: Record<string, unknown> = {}) => ({ type, swapId: '5b0e7c1a-1111-4111-8111-111111111111', ts: '2026-10-22T15:00:22.000Z', thing, ...extra });
+    const rec = (body: unknown, seq: string) => ({
+      kinesis: { data: Buffer.from(typeof body === 'string' ? body : JSON.stringify(body)).toString('base64'), sequenceNumber: seq },
+    });
+    const forwarder = (failOn?: (input: any) => boolean) => {
+      const sent: any[] = [];
+      class SQSClient {
+        async send(cmd: { input: any }) {
+          if (failOn?.(cmd.input)) throw Object.assign(new Error('throttled'), { name: 'ThrottlingException' });
+          sent.push(cmd.input);
+        }
+      }
+      class SendMessageCommand {
+        constructor(public input: unknown) {}
+      }
+      return { sent, ...runInline(STATION_FORWARDER, { QUEUE_URL: 'https://sqs/q.fifo' }, { SQSClient, SendMessageCommand }) };
+    };
+
+    it('sends the records in stream order with MessageGroupId = thing, skipping malformed ones without logging payloads', async () => {
+      const { handler, sent, logs } = forwarder();
+      const a = ev('slot_opened', { slotNumber: 3 });
+      const b = ev('battery_returned', { serial: 'BAT-1', pct: 14 });
+      const c = ev('slot_closed');
+      const res = await handler({ Records: [rec(a, '1'), rec('{not json', '2'), rec({ type: 'x', thing: 'moto-0001' }, '3'), rec(b, '4'), rec(c, '5')] });
+      expect(res).toEqual({ batchItemFailures: [] });
+      expect(sent).toEqual([a, b, c].map((e) => ({ QueueUrl: 'https://sqs/q.fifo', MessageBody: JSON.stringify(e), MessageGroupId: thing })));
+      expect(logs.join(' ')).not.toMatch(/swapId|slot_|BAT-1/);
+    });
+
+    it('stops at the first failed send and reports that record, so the retry resumes from it (never skipping ahead)', async () => {
+      const { handler, sent } = forwarder((input) => JSON.parse(input.MessageBody).type === 'battery_returned');
+      const res = await handler({ Records: [rec(ev('slot_opened', { slotNumber: 3 }), '1'), rec(ev('battery_returned', { serial: 'B', pct: 1 }), '2'), rec(ev('slot_closed'), '3')] });
+      expect(res).toEqual({ batchItemFailures: [{ itemIdentifier: '2' }] });
+      expect(sent.map((s) => JSON.parse(s.MessageBody).type)).toEqual(['slot_opened']); // slot_closed NOT sent before battery_returned
+    });
   });
 
   it('presence forwarder puts the events with the source/detail-type the EventBridge rule matches', async () => {

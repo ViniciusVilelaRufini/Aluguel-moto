@@ -157,6 +157,7 @@ export class ApiStack extends Stack {
           STORAGE_MODE: 's3',
           PAYMENT_PROVIDER: cfg.paymentProvider,
           INSURANCE_PROVIDER: 'mock',
+          INVOICE_ISSUER: 'mock',
           KYC_PROVIDER: 'mock',
           PUSH_MODE: 'log',
           TRACK_RETENTION_DAYS: '90',

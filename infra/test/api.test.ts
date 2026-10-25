@@ -93,7 +93,7 @@ describe('ApiStack', () => {
       'CORS_ORIGINS', 'TRUST_PROXY', 'AUTH_MODE', 'COGNITO_CUSTOMER_POOL_ID', 'COGNITO_CUSTOMER_CLIENT_ID', 'COGNITO_STAFF_POOL_ID', 'COGNITO_STAFF_CLIENT_ID',
       'IOT_MODE', 'GEOFENCE_MODE', 'LOCATION_TRACKER_NAME', 'LOCATION_GEOFENCE_COLLECTION', 'GEOCODER_MODE', 'LOCATION_PLACE_INDEX',
       'QUEUE_MODE', 'SQS_QUEUE_TELEMETRIA_URL', 'SQS_QUEUE_PAGAMENTOS_WEBHOOK_URL', 'SQS_QUEUE_ALERTAS_URL', 'SQS_QUEUE_ESTACOES_URL',
-      'STORAGE_MODE', 'PAYMENT_PROVIDER', 'INSURANCE_PROVIDER', 'KYC_PROVIDER', 'PUSH_MODE',
+      'STORAGE_MODE', 'PAYMENT_PROVIDER', 'INSURANCE_PROVIDER', 'INVOICE_ISSUER', 'KYC_PROVIDER', 'PUSH_MODE',
       'TRACK_RETENTION_DAYS', 'OUT_OF_AREA_LOCK_MINUTES', 'AWS_REGION',
     ];
     const REQUIRED_SECRETS = [
@@ -122,29 +122,33 @@ describe('ApiStack', () => {
     });
 
     /**
-     * API → infra: every variable the API names in a startup error (`throw new Error('X é obrigatório em produção')`,
-     * `IOT_MODE=aws exige X`, ...) in its config files must be in the task, so a new production requirement in services/api
-     * fails this test instead of failing the deploy.
+     * API → infra: every variable the API names in an error message anywhere in services/api/src (`X é obrigatório em
+     * produção`, `IOT_MODE=aws exige X`, `X não configurado`, ...) must be in the task, so a new production requirement in
+     * services/api fails this test instead of failing the deploy.
      */
     it('every variable the API requires in production is in the task (API → infra)', () => {
-      const files = [
-        ...readdirSync(join(API_ROOT, 'src', 'config')).filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts')).map((f) => join('src', 'config', f)),
-        join('src', 'modules', 'reservations', 'pickup-code.ts'),
-        join('src', 'modules', 'station-swaps', 'station-code.ts'),
-        join('src', 'modules', 'station-swaps', 'station-gateways.ts'),
-        join('src', 'modules', 'iot', 'iot-config.ts'),
-        join('src', 'adapters', 'auth', 'cognito-auth-verifier.ts'),
-      ];
-      const NOT_VARIABLES = ['CHANGE_ME'];
+      const files: string[] = [];
+      const walk = (d: string) => {
+        for (const f of readdirSync(d)) {
+          const p = join(d, f);
+          if (statSync(p).isDirectory()) walk(p);
+          else if (f.endsWith('.ts') && !f.endsWith('.spec.ts')) files.push(p);
+        }
+      };
+      walk(join(API_ROOT, 'src'));
+      // Not task variables: CHANGE_ME is the placeholder value; DEV_JWT_SECRET only exists with AUTH_MODE=dev (refused in production).
+      const NOT_VARIABLES = ['CHANGE_ME', 'DEV_JWT_SECRET'];
       const required = new Set<string>();
       for (const f of files) {
-        const text = readFileSync(join(API_ROOT, f), 'utf8');
-        for (const m of text.matchAll(/throw new Error\((['"`])((?:(?!\1).)*)\1/g)) {
+        const text = readFileSync(f, 'utf8');
+        for (const m of text.matchAll(/new Error\((['"`])((?:(?!\1).)*)\1/g)) {
           for (const name of m[2].match(/\b[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+\b/g) ?? []) if (!NOT_VARIABLES.includes(name)) required.add(name);
         }
       }
-      // Guard against the scan silently matching nothing.
-      for (const known of ['STATION_QR_SECRET', 'FRAUD_HASH_SECRET', 'PICKUP_CODE_SECRET', 'SQS_QUEUE_ESTACOES_URL']) expect(required).toContain(known);
+      // Guard against the scan silently matching nothing (and covering files outside src/config: core.module, payments).
+      for (const known of ['STATION_QR_SECRET', 'FRAUD_HASH_SECRET', 'PICKUP_CODE_SECRET', 'SQS_QUEUE_ESTACOES_URL', 'LOCATION_PLACE_INDEX', 'MERCADOPAGO_ACCESS_TOKEN']) {
+        expect(required).toContain(known);
+      }
       const inTask = new Set([...container().Environment.map((e: any) => e.Name), ...container().Secrets.map((e: any) => e.Name)]);
       const missing = [...required].filter((n) => !inTask.has(n)).sort();
       expect(missing).toEqual([]);

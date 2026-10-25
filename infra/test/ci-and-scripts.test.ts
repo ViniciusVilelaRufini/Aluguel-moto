@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, statSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { planFromArgs, provision } from '../scripts/provision-station';
@@ -104,6 +104,7 @@ describe('scripts/provision-station.ts', () => {
     await expect(provision(iot, planFromArgs(['--station', STATION, '--out', out]))).rejects.toThrow('boom');
     const names = calls.map((c) => c.name);
     expect(names.slice(-3)).toEqual(['DetachPolicyCommand', 'UpdateCertificateCommand', 'DeleteCertificateCommand']);
+    expect(existsSync(join(out, `station-${STATION}`))).toBe(false); // key files removed with the certificate
     spy.mockRestore();
   });
 });

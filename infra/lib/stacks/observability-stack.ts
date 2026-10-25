@@ -72,6 +72,7 @@ export class ObservabilityStack extends Stack {
       ['PaymentsWebhookDlq', messaging.paymentsWebhook.dlq],
       ['AlertsDlq', messaging.alerts.dlq],
       ['StationsDlq', messaging.stations.dlq],
+      ['StationsForwarderDlq', messaging.stationsForwarderDlq],
     ];
     for (const [name, dlq] of dlqs) {
       alarm(
@@ -96,6 +97,14 @@ export class ObservabilityStack extends Stack {
       1,
       1,
       'IoT rule actions are failing (see /volti/<env>/iot/rule-errors)',
+    );
+    // Station stream consumer falling behind (records waiting in Kinesis = station events not yet in the FIFO queue).
+    alarm(
+      'StationStreamIteratorAge',
+      iot.stationForwarder.metric('IteratorAge', { period: Duration.minutes(1), statistic: 'Maximum' }),
+      cfg.stationsQueueAgeAlarmSeconds * 1000,
+      2,
+      'Station events are waiting in the Kinesis stream (forwarder behind or failing)',
     );
     alarm('StationForwarderErrors', iot.stationForwarder.metricErrors({ period: Duration.minutes(5), statistic: 'Sum' }), 1, 1, 'Station events are not reaching the FIFO queue');
     alarm('PresenceForwarderErrors', iot.presenceForwarder.metricErrors({ period: Duration.minutes(5), statistic: 'Sum' }), 1, 1, 'Tracker presence events are not reaching EventBridge');

@@ -70,13 +70,12 @@ describe('AuthStack', () => {
     expect(c.EnableTokenRevocation).toBe(true);
   });
 
-  it('customer app: Hosted UI code flow with volti://auth/callback and no social IdP unless configured', () => {
+  it('customer app without social IdPs: no Hosted UI at all (no way to sign up with a password around USER_AUTH)', () => {
     const c = clientNamed(t(), 'customer-app').Properties;
-    expect(c.AllowedOAuthFlows).toEqual(['code']);
-    expect(c.AllowedOAuthScopes.sort()).toEqual(['email', 'openid', 'phone', 'profile']);
-    expect(c.CallbackURLs).toEqual(['volti://auth/callback']);
-    expect(c.LogoutURLs).toEqual(['volti://auth/callback']);
-    expect(c.SupportedIdentityProviders).toEqual(['COGNITO']);
+    expect(c.AllowedOAuthFlowsUserPoolClient).toBe(false);
+    expect(c.AllowedOAuthFlows).toBeUndefined();
+    expect(c.CallbackURLs).toBeUndefined();
+    expect(c.SupportedIdentityProviders ?? []).not.toContain('COGNITO');
     t().resourceCountIs('AWS::Cognito::UserPoolIdentityProvider', 0);
   });
 
@@ -120,7 +119,12 @@ describe('AuthStack', () => {
     const apple = idps.find((i) => i.Properties.ProviderName === 'SignInWithApple').Properties.ProviderDetails;
     expect(JSON.stringify(apple.private_key)).toContain('{{resolve:secretsmanager:volti/dev/idp-apple:SecretString:privateKey');
     const c = clientNamed(at, 'customer-app');
-    expect(c.Properties.SupportedIdentityProviders.sort()).toEqual(['COGNITO', 'Google', 'SignInWithApple']);
+    // Hosted UI only for the social IdPs (COGNITO, i.e. username/password, is never offered there).
+    expect(c.Properties.SupportedIdentityProviders.sort()).toEqual(['Google', 'SignInWithApple']);
+    expect(c.Properties.AllowedOAuthFlows).toEqual(['code']);
+    expect(c.Properties.AllowedOAuthScopes.sort()).toEqual(['email', 'openid', 'phone', 'profile']);
+    expect(c.Properties.CallbackURLs).toEqual(['volti://auth/callback']);
+    expect(c.Properties.LogoutURLs).toEqual(['volti://auth/callback']);
     expect(c.DependsOn.length).toBe(2);
     // Only one of them configured → only that one.
     const onlyApple = authWith({ appleIdpSecretName: 'volti/dev/idp-apple' });

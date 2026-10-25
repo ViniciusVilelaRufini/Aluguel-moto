@@ -10,10 +10,13 @@
  *   4. AttachThingPrincipal.
  *
  * Idempotente: thing existente é reaproveitada; se ela já tiver certificado anexado, nenhum certificado novo é emitido.
+ * Falha no anexo: o certificado é desativado e apagado e os arquivos locais são removidos. Se o processo for interrompido entre
+ * a emissão e o anexo, o `certificateId` já está no log (`certificate_issued`): desative e apague esse certificado à mão
+ * (`aws iot update-certificate --new-status INACTIVE` + `aws iot delete-certificate`) antes de rodar de novo.
  * Não grava no banco: a estação (`SwapStation`) é cadastrada pela API e o QR é emitido com `pnpm --filter api stations:qr`.
  * Credenciais AWS vêm do ambiente (perfil/SSO/role); nada é guardado aqui.
  */
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
@@ -118,6 +121,8 @@ export async function provision(iot: Pick<IoTClient, 'send'>, plan: StationPlan)
     await iot.send(new DeleteCertificateCommand({ certificateId: cert.certificateId, forceDelete: true })).catch((e) =>
       log({ level: 'error', msg: 'certificate_cleanup_failed', certificateId: cert.certificateId, error: (e as Error).message }),
     );
+    // The key files of a deleted certificate are useless (and a key should not linger on disk).
+    rmSync(plan.outDir, { recursive: true, force: true });
     throw err;
   }
   log({ msg: 'certificate_attached', thingName, policyName });

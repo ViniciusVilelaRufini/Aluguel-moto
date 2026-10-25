@@ -24,13 +24,15 @@ export class MessagingStack extends Stack {
   public readonly alerts: QueueWithDlq;
   /** FIFO (MessageGroupId = station thing): the API refuses a stations queue whose URL does not end in .fifo. */
   public readonly stations: QueueWithDlq;
+  /** On-failure destination of the station forwarder (Kinesis → FIFO): metadata of records it could not deliver. Standard queue: Lambda destinations do not accept FIFO. */
+  public readonly stationsForwarderDlq: sqs.Queue;
   public readonly eventBus: events.EventBus;
 
   constructor(scope: Construct, id: string, props: MessagingStackProps) {
     super(scope, id, props);
     const { cfg } = props;
 
-    const make = (key: string, name: string, visibilitySeconds: number, fifo = false): QueueWithDlq => {
+    const make = (key: string, name: string, visibilitySeconds: number, fifo = false, maxReceiveCount = 5): QueueWithDlq => {
       const suffix = fifo ? '.fifo' : '';
       const fifoProps = fifo ? { fifo: true, contentBasedDeduplication: true } : {};
       const dlq = new sqs.Queue(this, `${key}Dlq`, {
@@ -46,7 +48,7 @@ export class MessagingStack extends Stack {
         retentionPeriod: Duration.days(4),
         encryption: sqs.QueueEncryption.SQS_MANAGED,
         enforceSSL: true,
-        deadLetterQueue: { queue: dlq, maxReceiveCount: 5 },
+        deadLetterQueue: { queue: dlq, maxReceiveCount },
         ...fifoProps,
       });
       return { queue, dlq };
@@ -56,7 +58,14 @@ export class MessagingStack extends Stack {
     this.paymentsWebhook = make('PaymentsWebhook', 'payments-webhook', 120);
     this.alerts = make('Alerts', 'alerts', 60);
     // Content-based dedup also absorbs QoS 1 redeliveries of the same station event (same type, swapId and ts).
-    this.stations = make('Stations', 'stations', 60, true);
+    // maxReceiveCount 3: a poison event blocks its station's FIFO group for at most ~3 min (3 × 60 s) before going to the DLQ.
+    this.stations = make('Stations', 'stations', 60, true, 3);
+    this.stationsForwarderDlq = new sqs.Queue(this, 'StationsForwarderDlq', {
+      queueName: `volti-${cfg.name}-stations-forwarder-dlq`,
+      retentionPeriod: Duration.days(cfg.dlqRetentionDays),
+      encryption: sqs.QueueEncryption.SQS_MANAGED,
+      enforceSSL: true,
+    });
 
     this.eventBus = new events.EventBus(this, 'Bus', { eventBusName: `volti-${cfg.name}` });
 

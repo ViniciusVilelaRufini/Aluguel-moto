@@ -34,6 +34,8 @@ export interface EnvConfig {
   stationsQueueAgeAlarmSeconds: number;
   /** Amazon Location place index (reverse geocoding of the vehicle address; results are cached, hence IntendedUse=Storage). */
   placeIndexDataSource: 'Esri' | 'Here';
+  /** Shards of the station events Kinesis stream (1 shard = 1,000 records/s; order is per station within a shard). */
+  stationStreamShards: number;
   auth: AuthConfig;
 }
 
@@ -93,10 +95,12 @@ export const CONFIGS: Record<EnvName, EnvConfig> = {
     cloudFrontPriceClass: 'PriceClass_100',
     disposable: true,
     apiRateLimitPer5Min: 2000,
-    dbConnectionsAlarm: 90,
+    // db.t4g.micro: max_connections ≈ 80 (1 GiB minus reserved memory / 9531392); alarm at ~80%.
+    dbConnectionsAlarm: 65,
     telemetryQueueAgeAlarmSeconds: 120,
     stationsQueueAgeAlarmSeconds: 60,
     placeIndexDataSource: 'Esri',
+    stationStreamShards: 1,
     auth: {
       customerDomainPrefix: 'volti-dev-clientes',
       staffDomainPrefix: 'volti-dev-equipe',
@@ -135,6 +139,7 @@ export const CONFIGS: Record<EnvName, EnvConfig> = {
     telemetryQueueAgeAlarmSeconds: 60,
     stationsQueueAgeAlarmSeconds: 30,
     placeIndexDataSource: 'Esri',
+    stationStreamShards: 1,
     auth: {
       customerDomainPrefix: 'volti-clientes',
       staffDomainPrefix: 'volti-equipe',

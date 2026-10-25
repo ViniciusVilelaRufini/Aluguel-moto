@@ -18,12 +18,13 @@ describe('ObservabilityStack', () => {
     });
   });
 
-  it('has alarms for API 5xx, DLQ messages (4 queues) and RDS CPU', () => {
+  it('has alarms for API 5xx, DLQ messages (5 queues) and RDS CPU', () => {
     t().hasResourceProperties('AWS::CloudWatch::Alarm', { MetricName: 'HTTPCode_Target_5XX_Count' });
     t().hasResourceProperties('AWS::CloudWatch::Alarm', { MetricName: 'CPUUtilization', Namespace: 'AWS/RDS' });
     const dlq = alarms(t()).filter((a) => a.Properties.MetricName === 'ApproximateNumberOfMessagesVisible');
-    expect(dlq).toHaveLength(4);
+    expect(dlq).toHaveLength(5);
     expect(named(t(), 'dev', 'StationsDlq')).toBeDefined();
+    expect(JSON.stringify(named(t(), 'dev', 'StationsForwarderDlq').Dimensions)).toMatch(/StationsForwarderDlq/);
   });
 
   it('age of the oldest message on the telemetry and stations queues', () => {
@@ -44,6 +45,8 @@ describe('ObservabilityStack', () => {
   it('IoT rule errors (metric filter) and forwarder Lambda errors', () => {
     const rule = named(t(), 'dev', 'IotRuleErrors');
     expect(rule).toEqual(expect.objectContaining({ Namespace: 'Volti/dev', MetricName: 'IotRuleErrors', Statistic: 'Sum', Threshold: 1 }));
+    const iterator = named(t(), 'dev', 'StationStreamIteratorAge');
+    expect(iterator).toEqual(expect.objectContaining({ Namespace: 'AWS/Lambda', MetricName: 'IteratorAge', Statistic: 'Maximum', Threshold: 60000 }));
     for (const id of ['StationForwarderErrors', 'PresenceForwarderErrors']) {
       const a = named(t(), 'dev', id);
       expect(a.Namespace).toBe('AWS/Lambda');
@@ -74,7 +77,7 @@ describe('ObservabilityStack', () => {
     expect(storage.Threshold).toBe(2 * 1024 ** 3); // 10% of 20 GB
     const conns = named(t(), 'dev', 'RdsConnections');
     expect(conns.MetricName).toBe('DatabaseConnections');
-    expect(conns.Threshold).toBe(90);
+    expect(conns.Threshold).toBe(65);
     expect(named(templateOf(stacksFor('prod').observability), 'prod', 'RdsConnections').Threshold).toBe(360);
   });
 

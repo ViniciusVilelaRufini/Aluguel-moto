@@ -15,7 +15,11 @@ describe('MessagingStack', () => {
       expect(all[dlqLogicalId].Properties.FifoQueue).toEqual(q.Properties.FifoQueue);
       expect(q.Properties.RedrivePolicy.maxReceiveCount).toBeGreaterThan(0);
     }
-    expect(Object.keys(all)).toHaveLength(8);
+    // + the standard on-failure queue of the station forwarder (Lambda destinations do not accept FIFO).
+    expect(Object.keys(all)).toHaveLength(9);
+    const [, fwd] = Object.entries(all).find(([id]) => id.startsWith('StationsForwarderDlq'))!;
+    expect(fwd.Properties.QueueName).toBe('volti-dev-stations-forwarder-dlq');
+    expect(fwd.Properties.FifoQueue).toBeUndefined();
   });
 
   it('stations queue is FIFO (.fifo, content-based dedup) with a FIFO DLQ', () => {
@@ -24,6 +28,8 @@ describe('MessagingStack', () => {
     expect(q.Properties.QueueName).toBe('volti-dev-stations.fifo');
     expect(q.Properties.FifoQueue).toBe(true);
     expect(q.Properties.ContentBasedDeduplication).toBe(true);
+    // A poison event blocks its station's group for at most 3 receives before the DLQ.
+    expect(q.Properties.RedrivePolicy.maxReceiveCount).toBe(3);
     const dlq = all[q.Properties.RedrivePolicy.deadLetterTargetArn['Fn::GetAtt'][0]];
     expect(dlq.Properties.QueueName).toBe('volti-dev-stations-dlq.fifo');
     expect(dlq.Properties.FifoQueue).toBe(true);

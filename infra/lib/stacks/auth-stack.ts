@@ -73,7 +73,9 @@ export class AuthStack extends Stack {
     this.customerDomain = this.customerPool.addDomain('CustomerDomain', { cognitoDomain: { domainPrefix: auth.customerDomainPrefix } });
 
     // Social IdPs only when their secret name is configured (values resolved by CloudFormation from Secrets Manager).
-    const idps: cognito.UserPoolClientIdentityProvider[] = [cognito.UserPoolClientIdentityProvider.COGNITO];
+    // Hosted UI of the customer pool is only for the social IdPs: COGNITO (username/password) is never offered there, so the
+    // Hosted UI cannot be used to sign up with a password around the passwordless flow (USER_AUTH goes through the API, not OAuth).
+    const idps: cognito.UserPoolClientIdentityProvider[] = [];
     const idpConstructs: Construct[] = [];
     if (auth.googleSecretName) {
       const field = (f: string) => SecretValue.secretsManager(auth.googleSecretName!, { jsonField: f });
@@ -110,13 +112,17 @@ export class AuthStack extends Stack {
       authFlows: { user: true },
       enableTokenRevocation: true,
       preventUserExistenceErrors: true,
-      supportedIdentityProviders: idps,
-      oAuth: {
-        flows: { authorizationCodeGrant: true },
-        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PHONE, cognito.OAuthScope.PROFILE],
-        callbackUrls: auth.customerCallbackUrls,
-        logoutUrls: auth.customerCallbackUrls,
-      },
+      ...(idps.length
+        ? {
+            supportedIdentityProviders: idps,
+            oAuth: {
+              flows: { authorizationCodeGrant: true },
+              scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PHONE, cognito.OAuthScope.PROFILE],
+              callbackUrls: auth.customerCallbackUrls,
+              logoutUrls: auth.customerCallbackUrls,
+            },
+          }
+        : { disableOAuth: true, supportedIdentityProviders: [] }),
       accessTokenValidity: Duration.hours(1),
       refreshTokenValidity: Duration.days(30),
     });
