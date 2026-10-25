@@ -76,7 +76,7 @@
   "cardFormTitle": "Novo cartão",
   "cardFormHint": "Os dados vão direto ao Mercado Pago. A Volti guarda só um código do cartão.",
   "cardNumber": "Número do cartão",
-  "cardHolder": "Nome impresso no cartão",
+  "cardHolder": "Nome no cartão",
   "cardExpiry": "Validade (MM/AA)",
   "cardExpiryHint": "MM/AA",
   "cardCvv": "CVV",
@@ -247,6 +247,9 @@
   "wellbeingText": "Detectamos uma possível queda. Sem resposta em 60 segundos, acionamos o suporte.",
   "wellbeingTitle": "Você está bem?",
   "yourLocation": "Sua localização",
+  "pickupAtLabel": "Retire em",
+  "cardCvvInvalid": "CVV com 3 ou 4 dígitos",
+  "planDayDescription": "24 horas · devolva até o fim do dia",
   "zoneNotice": "Aviso de zona",
   "greeting": "Olá, {name}",
   "@greeting": {

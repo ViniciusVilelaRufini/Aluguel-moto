@@ -553,7 +553,7 @@ abstract class AppLocalizations {
   /// No description provided for @cardHolder.
   ///
   /// In pt, this message translates to:
-  /// **'Nome impresso no cartão'**
+  /// **'Nome no cartão'**
   String get cardHolder;
 
   /// No description provided for @cardExpiry.
@@ -1575,6 +1575,24 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Sua localização'**
   String get yourLocation;
+
+  /// No description provided for @pickupAtLabel.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retire em'**
+  String get pickupAtLabel;
+
+  /// No description provided for @cardCvvInvalid.
+  ///
+  /// In pt, this message translates to:
+  /// **'CVV com 3 ou 4 dígitos'**
+  String get cardCvvInvalid;
+
+  /// No description provided for @planDayDescription.
+  ///
+  /// In pt, this message translates to:
+  /// **'24 horas · devolva até o fim do dia'**
+  String get planDayDescription;
 
   /// No description provided for @zoneNotice.
   ///

@@ -74,7 +74,7 @@ void main() {
     phone(t);
     await pump(t, ParityBackend());
     expect(find.text('AL'), findsOneWidget);
-    expect(find.text('Sua localização'), findsOneWidget);
+    expect(find.text('Retire em'), findsOneWidget);
     expect(find.text('Galpão Volti · Pinheiros'), findsOneWidget);
     expect(find.textContaining('Perto'), findsNothing);
     expect(find.text('Desbloqueie seu passe'), findsOneWidget);

@@ -148,6 +148,7 @@ class _EmergencyContactScreenState extends ConsumerState<EmergencyContactScreen>
               labelText: l.emergencyPhone,
               hintText: '(11) 98765-4321',
               helperText: l.emergencyPhoneHint,
+              helperMaxLines: 3,
               errorText: _touched ? _phoneError : null,
             ),
           ),

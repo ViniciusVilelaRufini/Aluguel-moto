@@ -472,7 +472,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
           key: const Key('sos-call-support'),
           label: l.callSupport,
           icon: LucideIcons.phoneCall,
-          variant: VoltiButtonVariant.danger,
+          variant: VoltiButtonVariant.secondary,
           fullWidth: true,
           onPressed: () async {
             Navigator.of(context).pop();
@@ -484,7 +484,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
           label: l.callSamu,
           semanticLabel: l.callSamuSemantics,
           icon: LucideIcons.siren,
-          variant: VoltiButtonVariant.secondary,
+          variant: VoltiButtonVariant.danger,
           fullWidth: true,
           wrap: true,
           onPressed: () async {
@@ -497,7 +497,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
           label: l.callPolice,
           semanticLabel: l.callPoliceSemantics,
           icon: LucideIcons.shield,
-          variant: VoltiButtonVariant.secondary,
+          variant: VoltiButtonVariant.danger,
           fullWidth: true,
           wrap: true,
           onPressed: () async {
@@ -511,6 +511,7 @@ class _RideScreenState extends ConsumerState<RideScreen> with WidgetsBindingObse
           icon: LucideIcons.share2,
           variant: VoltiButtonVariant.secondary,
           fullWidth: true,
+          wrap: true,
           onPressed: () async {
             Navigator.of(context).pop();
             await _shareLocation(contact: contact);

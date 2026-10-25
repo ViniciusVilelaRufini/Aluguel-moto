@@ -11,6 +11,7 @@ import 'package:volti_cliente/core/router.dart';
 import 'package:volti_cliente/core/services.dart';
 import 'package:volti_cliente/core/session.dart';
 import 'package:volti_cliente/features/account/help_screens.dart';
+import 'package:volti_cliente/features/payments/card_form_sheet.dart';
 import 'package:volti_cliente/features/ride/ride_screen.dart' show RideScreen;
 import 'package:volti_flutter/volti_flutter.dart';
 
@@ -43,6 +44,51 @@ String clockText(WidgetTester t) => t.widget<VoltiTicker>(find.byKey(const Key('
 void main() {
   for (final scale in [1.0, 2.0]) {
     final pct = (scale * 100).round();
+
+
+    testWidgets('R2-26 Aplicar so habilita com 3+ caracteres a $pct%', (t) async {
+      phone(t, scale: scale);
+      await t.pumpWidget(testApp(const Scaffold(
+        body: CodeEntrySheet(title: 'Cupom', actionLabel: 'Aplicar', fieldKey: Key('f'), actionKey: Key('a')),
+      )));
+      await settle(t);
+      expect(t.widget<VoltiButton>(find.byKey(const Key('a'))).onPressed, isNull);
+      await t.enterText(find.byKey(const Key('f')), 'AB');
+      await t.pump();
+      expect(t.widget<VoltiButton>(find.byKey(const Key('a'))).onPressed, isNull);
+      await t.enterText(find.byKey(const Key('f')), 'ABC');
+      await t.pump();
+      expect(t.widget<VoltiButton>(find.byKey(const Key('a'))).onPressed, isNotNull);
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('R2-07 selo do OptionCard abraca o texto, nao a coluna a $pct%', (t) async {
+      phone(t, scale: scale);
+      await t.pumpWidget(testApp(const Scaffold(
+        body: Padding(
+          padding: EdgeInsets.all(16),
+          child: OptionCard(title: 'Seguro básico', badge: 'Obrigatório', description: 'Danos a terceiros', selected: true),
+        ),
+      )));
+      await settle(t);
+      final badge = t.getSize(find.ancestor(of: find.text('Obrigatório'), matching: find.byType(Container)).first);
+      final text = t.getSize(find.text('Obrigatório'));
+      expect(badge.width, lessThanOrEqualTo(text.width + 12 * (scale > 1 ? scale : 1) + 1));
+      expect(t.takeException(), isNull);
+    });
+
+    testWidgets('R2-29 CVV curto explica o erro a $pct%', (t) async {
+      phone(t, scale: scale, size: const Size(412, 1800));
+      await t.pumpWidget(testApp(Scaffold(body: CardFormSheet(submit: (_) async => 'tok'))));
+      await settle(t);
+      final cvv = find.widgetWithText(TextField, 'CVV');
+      await t.enterText(cvv, '12');
+      await t.pump();
+      expect(find.text('CVV com 3 ou 4 dígitos'), findsOneWidget);
+      await t.enterText(cvv, '123');
+      await t.pump();
+      expect(find.text('CVV com 3 ou 4 dígitos'), findsNothing);
+    });
 
     group('R2-02 folha do cupom acompanha o teclado a $pct%', () {
       testWidgets('o campo e o botao ficam acima do teclado', (t) async {

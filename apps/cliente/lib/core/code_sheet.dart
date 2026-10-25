@@ -38,6 +38,9 @@ class _CodeEntrySheetState extends State<CodeEntrySheet> {
     super.dispose();
   }
 
+  /// Cupom curto demais nao vale uma ida a API: Aplicar espera 3+ caracteres.
+  bool get _valid => _ctrl.text.trim().length >= 3;
+
   void _done() => Navigator.of(context).pop(_ctrl.text.trim().toUpperCase());
 
   @override
@@ -54,11 +57,14 @@ class _CodeEntrySheetState extends State<CodeEntrySheet> {
         maxLength: 32,
         textCapitalization: TextCapitalization.characters,
         decoration: InputDecoration(hintText: l.couponHint, prefixIcon: const Icon(LucideIcons.ticket)),
-        onSubmitted: (_) => _done(),
+        onChanged: (_) => setState(() {}),
+        onSubmitted: (_) {
+          if (_valid) _done();
+        },
       ),
       ?widget.extra,
       const SizedBox(height: 12),
-      VoltiButton(key: widget.actionKey, label: widget.actionLabel, fullWidth: true, onPressed: _done),
+      VoltiButton(key: widget.actionKey, label: widget.actionLabel, fullWidth: true, onPressed: _valid ? _done : null),
       if (widget.removeLabel != null)
         VoltiButton(
           label: widget.removeLabel!,

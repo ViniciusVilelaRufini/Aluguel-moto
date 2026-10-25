@@ -247,7 +247,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get cardNumber => 'Número do cartão';
 
   @override
-  String get cardHolder => 'Nome impresso no cartão';
+  String get cardHolder => 'Nome no cartão';
 
   @override
   String get cardExpiry => 'Validade (MM/AA)';
@@ -791,6 +791,15 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get yourLocation => 'Sua localização';
+
+  @override
+  String get pickupAtLabel => 'Retire em';
+
+  @override
+  String get cardCvvInvalid => 'CVV com 3 ou 4 dígitos';
+
+  @override
+  String get planDayDescription => '24 horas · devolva até o fim do dia';
 
   @override
   String get zoneNotice => 'Aviso de zona';
