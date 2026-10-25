@@ -16,6 +16,7 @@ import { OPEN_SWAP_STATUSES } from '../station-swaps/station-swap.rules';
 import { StationSwapsService } from '../station-swaps/station-swaps.service';
 import { ZonesService } from '../zones/zones.service';
 import { rentalTimes, toRental } from './rentals.mapper';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const FORCE_END_FEE_CODE = 'force_end_outside_return_zone';
 export const FORCE_END_FEE_DEFAULT_CENTS = 1500;
@@ -363,6 +364,7 @@ export class RentalEndService {
 
   /** Retentativa periódica dos aluguéis em `ending` (moto ainda andando, offline, timeout). */
   @Interval('rental-end-retry', 15_000)
+  @ExclusiveJob('rental-end-retry', jobLockTtl(15_000))
   async retryJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.retryEnding().catch((err) => this.logger.error({ msg: 'rental_end_retry_failed', error: (err as Error).message }));

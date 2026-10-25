@@ -17,6 +17,11 @@ import { toRental } from '../rentals/rentals.mapper';
 const FLEET_GROUPS = ['admin', 'operacao', 'suporte'];
 /** Staff que acompanha as entregas dos galpões (salas `depot:{id}`, todos os galpões). */
 const DEPOT_GROUPS = ['admin', 'operacao', 'campo'];
+/**
+ * Validade do cache de status/aluguel por moto. Com várias instâncias, a invalidação por `rental.changed` só acontece na
+ * instância que processou a mudança; nas outras o cache expira sozinho (15 s: posição do aluguel novo chega em até 15 s).
+ */
+const VEHICLE_CACHE_MS = 15_000;
 
 interface VehicleCache {
   status: VehicleStatus;
@@ -89,7 +94,7 @@ export class RealtimeGateway implements OnGatewayInit {
 
   private async vehicleInfo(vehicleId: string): Promise<VehicleCache | null> {
     const cached = this.vehicles.get(vehicleId);
-    if (cached && Date.now() - cached.at < 60_000) return cached;
+    if (cached && Date.now() - cached.at < VEHICLE_CACHE_MS) return cached;
     const v = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { status: true, speedLimitKmh: true } });
     if (!v) return null;
     const r = await this.prisma.rental.findFirst({ where: { vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true, speedLimitKmh: true } });
@@ -100,8 +105,8 @@ export class RealtimeGateway implements OnGatewayInit {
 
   /**
    * Fix round 1: acesso revogado → desconecta os sockets do usuário; o app reconecta e passa de novo pela autenticação
-   * (conta excluída → recusada; staff → salas pelos grupos atuais). Sem adaptador Redis no Socket.IO, vale para a instância
-   * que processou a revogação (ver decisões).
+   * (conta excluída → recusada; staff → salas pelos grupos atuais). Com o adaptador Redis (lacunas T5), vale para os sockets
+   * do usuário em todas as instâncias.
    */
   @OnEvent(EV.PRINCIPAL_REVOKED)
   onPrincipalRevoked(ev: PrincipalRevokedEvent): void {

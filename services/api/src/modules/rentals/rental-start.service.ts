@@ -24,6 +24,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import type { StartRentalDto } from './rentals.dto';
 import { toDeposit, toRental } from './rentals.mapper';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 /** Aceite da entrega de galpão (`POST /handovers/{id}/accept`): a única passagem de uma moto do galpão para o aluguel. */
 export interface StartOptions {
@@ -106,6 +107,7 @@ export class RentalStartService {
   }
 
   @Interval('rental-start-sweep', 60_000)
+  @ExclusiveJob('rental-start-sweep', jobLockTtl(60_000))
   async sweepJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.sweepStaleStarts().catch((err) => this.logger.error({ msg: 'rental_start_sweep_failed', error: (err as Error).message }));

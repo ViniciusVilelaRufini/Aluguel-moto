@@ -23,6 +23,7 @@ import { toCustomerCoupon, toReferralReward } from '../referrals/referrals.servi
 import { toRental } from '../rentals/rentals.mapper';
 import { toStationSwap } from '../station-swaps/station-swaps.mapper';
 import { toClaim, toDispute, toIncident } from '../support/support.mapper';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export interface ConsentsInput {
   termsVersion: string;
@@ -302,6 +303,7 @@ export class LgpdService {
   }
 
   @Interval('lgpd-identity-deletion-retry', 5 * 60_000)
+  @ExclusiveJob('lgpd-identity-deletion-retry', jobLockTtl(5 * 60_000))
   async identityRetryJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     await this.retryIdentityDeletions().catch((err) => this.logger.error({ msg: 'identity_deletion_retry_failed', error: (err as Error).message }));
@@ -322,6 +324,7 @@ export class LgpdService {
 
   /** Job diário (03:30 em São Paulo). */
   @Cron('30 3 * * *', { name: 'purge-expired-tracks', timeZone: 'America/Sao_Paulo' })
+  @ExclusiveJob('purge-expired-tracks', 10 * 60_000)
   async purgeJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     const count = await this.purgeExpiredTracks();

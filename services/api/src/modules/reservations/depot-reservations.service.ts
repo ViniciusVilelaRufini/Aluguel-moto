@@ -17,6 +17,7 @@ import { type DepotRulesInput, type OpeningHours, pickupExpiry, type PickupError
 import { isUniqueViolation } from '../payments/payment-state.service';
 import { PICKUP_CODE_SECRET, signPickupCode } from './pickup-code';
 import { ReservationsService, toReservation } from './reservations.service';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export interface DepotReservationInput {
   vehicleId: string;
@@ -179,6 +180,7 @@ export class DepotReservationsService {
   // ───────────────────────── caução órfã ─────────────────────────
 
   @Interval('depot-reservations-orphan-deposits', 5 * 60_000)
+  @ExclusiveJob('depot-reservations-orphan-deposits', jobLockTtl(5 * 60_000))
   async orphanDepositsJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     await this.releaseOrphanDeposits().catch((err) => this.logger.error({ msg: 'orphan_deposit_release_failed', error: (err as Error).message }));
@@ -214,6 +216,7 @@ export class DepotReservationsService {
   // ───────────────────────── lembrete ─────────────────────────
 
   @Interval('depot-reservations-remind', 60_000)
+  @ExclusiveJob('depot-reservations-remind', jobLockTtl(60_000))
   async remindJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     await this.remind().catch((err) => this.logger.error({ msg: 'depot_reservation_remind_failed', error: (err as Error).message }));

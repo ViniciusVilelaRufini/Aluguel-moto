@@ -14,6 +14,7 @@ import { assertCustomerEligible } from '../customers/eligibility';
 import { DEPOSIT_FAILED, type DepositFailedEvent } from '../payments/deposit-events';
 import { toDeposit } from '../rentals/rentals.mapper';
 import { toVehicleSummary } from '../vehicles/vehicles.mapper';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 const KEY_PREFIX = 'reservation:';
 const SWEEP_BATCH = 500;
@@ -223,6 +224,7 @@ export class ReservationsService implements OnModuleInit {
 
   /** Rede de segurança (rua e galpão; só `active`: `handover` não vence pelo prazo): expira reservas vencidas (Redis sem keyspace notifications, reinício da API…). */
   @Interval('reservations-sweep', 10_000)
+  @ExclusiveJob('reservations-sweep', jobLockTtl(10_000))
   async sweepJob(): Promise<void> {
     if (!this.cfg.jobsEnabled) return;
     await this.sweep().catch((err) => this.logger.error({ msg: 'reservation_sweep_failed', error: (err as Error).message }));

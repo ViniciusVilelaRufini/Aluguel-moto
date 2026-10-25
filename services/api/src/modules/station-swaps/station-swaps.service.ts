@@ -21,6 +21,7 @@ import {
 } from './station-swap.rules';
 import type { CreateStationSwapDto, ListStationSwapsQuery } from './station-swaps.dto';
 import { toStationSwap } from './station-swaps.mapper';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const STATION_SWAP_CONFIG = Symbol('STATION_SWAP_CONFIG');
 export interface StationSwapConfig {
@@ -542,6 +543,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   // ───────────── prazos ─────────────
 
   @Interval('station-swap-timeouts', 15_000)
+  @ExclusiveJob('station-swap-timeouts', jobLockTtl(15_000))
   async timeoutJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.expireOverdue().catch((err) => this.logger.error({ msg: 'station_swap_timeouts_failed', error: (err as Error).message }));

@@ -1,4 +1,4 @@
-import { Global, Inject, Logger, Module, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import { Global, Inject, Logger, Module, OnApplicationBootstrap, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { CognitoIdentityProviderClient } from '@aws-sdk/client-cognito-identity-provider';
 import { CognitoAuthVerifier } from './adapters/auth/cognito-auth-verifier';
 import { CognitoStaffDirectory } from './adapters/identity/cognito-staff-directory';
@@ -29,6 +29,7 @@ import { LocalReverseGeocoder } from './adapters/geocoding/local-reverse-geocode
 import { loadV2Config, V2_CONFIG, type V2Config } from './config/v2-config';
 import { REVERSE_GEOCODER } from './ports/reverse-geocoder.port';
 import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis/redis-store';
+import { JobLock, registerJobLock } from './common/job-lock';
 
 /** Infraestrutura compartilhada: implementação "local" ou "aws" de cada porta escolhida por variável de ambiente. */
 @Global()
@@ -108,7 +109,7 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
     CUSTOMER_IDENTITY,
   ],
 })
-export class CoreModule implements OnModuleDestroy, OnApplicationBootstrap {
+export class CoreModule implements OnModuleInit, OnModuleDestroy, OnApplicationBootstrap {
   private readonly logger = new Logger('CoreModule');
 
   constructor(
@@ -116,6 +117,11 @@ export class CoreModule implements OnModuleDestroy, OnApplicationBootstrap {
     @Inject(OBJECT_STORAGE) private readonly storage: S3ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
   ) {}
+
+  /** Lacunas T5: cada rodada dos jobs `@Interval`/`@Cron` (`@ExclusiveJob`) roda numa instância só, pelo Redis compartilhado. */
+  onModuleInit(): void {
+    registerJobLock(new JobLock(this.redis));
+  }
 
   /** Dev local: garante os buckets do MinIO (documentos-kyc, fotos-devolucao, relatorios, anexos). */
   async onApplicationBootstrap(): Promise<void> {
@@ -129,6 +135,7 @@ export class CoreModule implements OnModuleDestroy, OnApplicationBootstrap {
   }
 
   async onModuleDestroy(): Promise<void> {
+    registerJobLock(undefined);
     await this.redis.close();
   }
 }

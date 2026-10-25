@@ -16,6 +16,7 @@ import { toSubscription } from './payments.mapper';
 import { ProviderCustomersService } from './provider-customers.service';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderPayment, RefundRejectedError } from './provider/payment-provider';
 import { RentalBillingService } from './rental-billing.service';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 const DAY_MS = 86_400_000;
 /** Página do job de ciclo de vida. */
@@ -144,6 +145,7 @@ export class SubscriptionsService {
 
   /** Retomada automática das pausas vencidas e ciclo de vida (a cada minuto, `JOBS_ENABLED`). */
   @Interval('subscriptions-auto-resume', 60_000)
+  @ExclusiveJob('subscriptions-auto-resume', jobLockTtl(60_000))
   async autoResumeJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.autoResume(new Date());
@@ -301,6 +303,7 @@ export class SubscriptionsService {
   }
 
   @Interval('subscriptions-gateway-cancel-retry', 5 * 60_000)
+  @ExclusiveJob('subscriptions-gateway-cancel-retry', jobLockTtl(5 * 60_000))
   async gatewayCancelRetryJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.retryGatewayCancellations().catch((err) => this.logger.error({ msg: 'subscription_gateway_cancel_retry_failed', error: (err as Error).message }));
