@@ -72,6 +72,8 @@ export interface DepotDraft {
   pickupNowWindowMinutes: string;
   maxScheduleDays: string;
   scheduledGraceMinutes: string;
+  /** Estoque mínimo de baterias carregadas; vazio = sem alerta. */
+  minChargedBatteries: string;
   active: boolean;
 }
 
@@ -83,6 +85,7 @@ export function emptyDepotDraft(): DepotDraft {
     pickupNowWindowMinutes: String(DEFAULT_WINDOWS.pickupNowWindowMinutes),
     maxScheduleDays: String(DEFAULT_WINDOWS.maxScheduleDays),
     scheduledGraceMinutes: String(DEFAULT_WINDOWS.scheduledGraceMinutes),
+    minChargedBatteries: '',
     active: true,
   };
 }
@@ -94,12 +97,13 @@ export function draftFromDepot(d: Depot): DepotDraft {
     pickupNowWindowMinutes: String(d.pickupNowWindowMinutes),
     maxScheduleDays: String(d.maxScheduleDays),
     scheduledGraceMinutes: String(d.scheduledGraceMinutes),
+    minChargedBatteries: d.minChargedBatteries ? String(d.minChargedBatteries) : '',
     active: d.active,
   };
 }
 
 type WindowField = 'pickupNowWindowMinutes' | 'maxScheduleDays' | 'scheduledGraceMinutes';
-export type DepotErrors = Partial<Record<'name' | 'address' | 'point' | WindowField, string>> & { days?: Record<number, string> };
+export type DepotErrors = Partial<Record<'name' | 'address' | 'point' | 'minChargedBatteries' | WindowField, string>> & { days?: Record<number, string> };
 
 /** Limites de `DepotInput` no contrato. */
 const WINDOW_RULES: Record<WindowField, { min: number; max: number; msg: string }> = {
@@ -119,6 +123,7 @@ export function validateDepot(d: DepotDraft): DepotErrors {
     const r = WINDOW_RULES[f];
     if (!intIn(d[f], r.min, r.max)) e[f] = r.msg;
   }
+  if (d.minChargedBatteries.trim() && !intIn(d.minChargedBatteries, 0, 1000)) e.minChargedBatteries = 'Entre 0 e 1000 baterias (vazio = sem alerta)';
   const days = validateHours(d.hours);
   if (Object.keys(days).length > 0) e.days = days;
   return e;
@@ -142,7 +147,8 @@ function editableFields(d: DepotDraft) {
 
 /** `POST /depots`: o galpão nasce no fuso de São Paulo e com o `active` do rascunho. */
 export function depotCreateBody(d: DepotDraft): S<'DepotInput'> {
-  return { ...editableFields(d), timezone: DEPOT_TIMEZONE, active: d.active };
+  const min = d.minChargedBatteries.trim();
+  return { ...editableFields(d), ...(min ? { minChargedBatteries: Number(min) } : {}), timezone: DEPOT_TIMEZONE, active: d.active };
 }
 
 /**
@@ -150,5 +156,6 @@ export function depotCreateBody(d: DepotDraft): S<'DepotInput'> {
  * editável aqui, então nenhum dos dois vai no corpo (um rascunho antigo não desfaz uma desativação).
  */
 export function depotUpdateBody(d: DepotDraft): S<'DepotUpdate'> {
-  return editableFields(d);
+  // Ausente não muda no PATCH; vazio no formulário = desligar o alerta (0).
+  return { ...editableFields(d), minChargedBatteries: Number(d.minChargedBatteries.trim() || 0) };
 }

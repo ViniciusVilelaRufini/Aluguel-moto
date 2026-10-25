@@ -1245,7 +1245,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get bsInVan => 'Na van';
 
   @override
-  String get bsCharging => 'Galpão (recarga)';
+  String get bsCharging => 'Carregando';
+
+  @override
+  String get bsCharged => 'Carregada';
+
+  @override
+  String get bsDefective => 'Com defeito';
 
   @override
   String get bsInStation => 'Na estação';
@@ -1255,6 +1261,101 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get bsOther => 'Outro status';
+
+  @override
+  String get stockDepotFilter => 'Galpão';
+
+  @override
+  String get stockAllDepots => 'Todos os galpões';
+
+  @override
+  String get batMarkCharged => 'Marcar carregada';
+
+  @override
+  String batMarkChargedSemantics(String serial) {
+    return 'Marcar a bateria $serial como carregada';
+  }
+
+  @override
+  String batMarkedCharged(String serial) {
+    return 'Bateria $serial marcada como carregada.';
+  }
+
+  @override
+  String get batDefect => 'Apontar defeito';
+
+  @override
+  String batDefectSemantics(String serial) {
+    return 'Apontar defeito na bateria $serial';
+  }
+
+  @override
+  String batDefectTitle(String serial) {
+    return 'Defeito na bateria $serial';
+  }
+
+  @override
+  String get batDefectHint =>
+      'A bateria sai de uso até a operação dar baixa. Se ela estiver instalada numa moto, retire-a antes.';
+
+  @override
+  String get batDefectReason => 'Motivo do defeito';
+
+  @override
+  String get batDefectReasonInvalid => 'Escreva entre 3 e 500 caracteres.';
+
+  @override
+  String get batDefectConfirm => 'Registrar defeito';
+
+  @override
+  String batDefectDone(String serial) {
+    return 'Defeito registrado na bateria $serial.';
+  }
+
+  @override
+  String get batHistory => 'Histórico';
+
+  @override
+  String batHistorySemantics(String serial) {
+    return 'Histórico de movimentações da bateria $serial';
+  }
+
+  @override
+  String batHistoryTitle(String serial) {
+    return 'Movimentações de $serial';
+  }
+
+  @override
+  String get batHistoryEmpty => 'Nenhuma movimentação registrada.';
+
+  @override
+  String get batHistoryError => 'Não foi possível carregar o histórico.';
+
+  @override
+  String get batHistoryMore => 'Ver mais antigas';
+
+  @override
+  String batMovementCreated(String to) {
+    return 'Cadastrada · $to';
+  }
+
+  @override
+  String batMovementChange(String from, String to) {
+    return '$from → $to';
+  }
+
+  @override
+  String batMovementSemantics(String when, String change) {
+    return '$when: $change';
+  }
+
+  @override
+  String get unloadDepots => 'Carregar no galpão';
+
+  @override
+  String unloadedDepot(String name) {
+    return 'Bateria descarregada no galpão $name.';
+  }
 
   @override
   String unloadTitle(String serial) {

@@ -215,6 +215,12 @@ export default function DepotsPage() {
                 {windowField('scheduledGraceMinutes', 'Tolerância do agendamento (minutos)', 'Depois do horário agendado, antes de a reserva vencer.', 'depot-grace')}
               </div>
             </div>
+            <div>
+              <SectionTitle>Estoque de baterias</SectionTitle>
+              <Field label="Mínimo de baterias carregadas" error={errors.minChargedBatteries} hint="Abaixo desse número abre o alerta de poucas baterias carregadas. Vazio = sem alerta.">
+                <TextInput testId="depot-min-charged" type="number" value={draft.minChargedBatteries} onChange={(v) => patch({ minChargedBatteries: v })} placeholder="Sem alerta" />
+              </Field>
+            </div>
             <ErrorNote error={save.error} />
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Button size="sm" icon="Check" testId="depot-save" disabled={save.isPending} onClick={submit}>{save.isPending ? 'Salvando...' : 'Salvar galpão'}</Button>
@@ -236,6 +242,7 @@ export default function DepotsPage() {
             <KV k="Retirar agora" v={`${selected.pickupNowWindowMinutes} min`} />
             <KV k="Agendar até" v={`${selected.maxScheduleDays} dias`} />
             <KV k="Tolerância" v={`${selected.scheduledGraceMinutes} min`} />
+            <KV k="Mínimo de baterias carregadas" v={selected.minChargedBatteries ? String(selected.minChargedBatteries) : 'Sem alerta'} />
             <SectionTitle>Horário de funcionamento</SectionTitle>
             <OpeningHoursEditor value={draftFromDepot(selected).hours} onChange={() => {}} disabled />
           </Card>

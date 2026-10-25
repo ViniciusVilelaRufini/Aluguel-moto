@@ -32,14 +32,15 @@ export function parseSerials(text: string): { serials: string[]; error?: string 
 }
 
 /** Onde a bateria está, em texto curto para a tabela. */
-export function batteryLocation(b: Battery, names: { stations?: Map<string, string>; staff?: Map<string, string> } = {}): string {
+export function batteryLocation(b: Battery, names: { stations?: Map<string, string>; staff?: Map<string, string>; depots?: Map<string, string> } = {}): string {
+  const depot = b.depotId ? names.depots?.get(b.depotId) : undefined;
   switch (b.status) {
     case 'in_vehicle': return b.vehicleCode ?? 'Moto';
     case 'in_van': return b.holderId ? `Van · ${names.staff?.get(b.holderId) ?? 'operador'}` : 'Van';
     case 'in_station': return (b.stationId && names.stations?.get(b.stationId)) || 'Estação';
-    case 'charging': return 'Carregador';
-    case 'charged': return 'Galpão';
-    case 'defective': return 'Fora de uso';
+    case 'charging': return depot ? `Carregador · ${depot}` : 'Carregador';
+    case 'charged': return depot ?? 'Galpão';
+    case 'defective': return depot ? `Fora de uso · ${depot}` : 'Fora de uso';
     case 'retired': return '—';
   }
 }
@@ -55,4 +56,55 @@ export function chargeTone(pct: number): Tone {
   if (pct >= 90) return 'success';
   if (pct > 20) return 'warning';
   return 'danger';
+}
+
+export type BatteryStatusCounts = S<'BatteryStatusCounts'>;
+
+/** Contagens do resumo: `statusCounts` do servidor (já respeita o galpão), com zeros se ainda não chegou. */
+export function countsFromPage(c?: BatteryStatusCounts): Record<BatteryStatus, number> {
+  const out = Object.fromEntries(BATTERY_STATUSES.map((s) => [s, 0])) as Record<BatteryStatus, number>;
+  if (c) for (const s of BATTERY_STATUSES) out[s] = c[s] ?? 0;
+  return out;
+}
+
+/** Ações do ciclo de vida que a situação atual permite (espelha as regras de `409` do contrato). */
+export function batteryActions(status: BatteryStatus): { markCharged: boolean; reportDefect: boolean; retire: boolean } {
+  return {
+    markCharged: status === 'charging',
+    reportDefect: status === 'charging' || status === 'charged' || status === 'in_van' || status === 'in_station',
+    retire: status === 'defective' || status === 'charging' || status === 'charged',
+  };
+}
+
+export const REASON_MIN = 3;
+export const REASON_MAX = 500;
+
+/** Motivo do defeito: obrigatório, 3 a 500 caracteres (`BatteryDefectRequest`). */
+export function validateReason(text: string, required = true): { reason?: string; error?: string } {
+  const reason = text.trim();
+  if (!reason) return required ? { error: 'Informe o motivo' } : {};
+  if (reason.length < REASON_MIN) return { error: `O motivo precisa ter ao menos ${REASON_MIN} caracteres` };
+  if (reason.length > REASON_MAX) return { error: `O motivo pode ter no máximo ${REASON_MAX} caracteres` };
+  return { reason };
+}
+
+export interface BatteryCreateForm { serial: string; status: S<'BatteryInitialStatus'>; depotId: string; chargePct: string }
+
+/** `POST /batteries`: série em maiúsculas (3 a 64), galpão obrigatório; carga só vale com `charging`. */
+export function buildBatteryCreate(f: BatteryCreateForm): { ok: true; body: S<'BatteryCreateRequest'> } | { ok: false; error: string } {
+  const serial = f.serial.trim().toUpperCase();
+  if (serial.length < 3 || serial.length > 64) return { ok: false, error: 'A série precisa ter de 3 a 64 caracteres' };
+  if (/\s/.test(serial)) return { ok: false, error: 'A série não pode ter espaços' };
+  if (!f.depotId) return { ok: false, error: 'Escolha o galpão' };
+  if (f.status === 'charged') return { ok: true, body: { serial, status: 'charged', depotId: f.depotId } };
+  const raw = f.chargePct.trim();
+  if (!raw) return { ok: true, body: { serial, status: 'charging', depotId: f.depotId } };
+  if (!/^\d+$/.test(raw) || Number(raw) > 100) return { ok: false, error: 'Carga de 0 a 100%' };
+  return { ok: true, body: { serial, status: 'charging', depotId: f.depotId, chargePct: Number(raw) } };
+}
+
+/** Texto curto de uma movimentação: "Carregando → Carregada". Cadastro (sem origem) vira "Cadastrada · Carregando". */
+export function movementTitle(m: S<'BatteryMovement'>): string {
+  const to = BATTERY_STATUS[m.toStatus][0];
+  return m.fromStatus ? `${BATTERY_STATUS[m.fromStatus][0]} → ${to}` : `Cadastrada · ${to}`;
 }
