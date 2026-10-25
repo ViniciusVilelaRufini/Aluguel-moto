@@ -71,7 +71,9 @@ export class AuthStack extends Stack {
           })
         : undefined,
       mfa: cognito.Mfa.OPTIONAL,
-      mfaSecondFactor: { sms: false, otp: true },
+      // Cognito rejects an SMS configuration with optional MFA while SMS_MFA is off ("Can't turn off SMS_MFA when SMS
+      // configuration is set"), so SMS stays an (opt-in) second factor whenever the SMS role exists.
+      mfaSecondFactor: { sms: !restricted, otp: true },
       passwordPolicy: password,
       accountRecovery: restricted ? cognito.AccountRecovery.EMAIL_ONLY : cognito.AccountRecovery.PHONE_AND_EMAIL,
       deletionProtection: !cfg.disposable,
