@@ -192,3 +192,28 @@ describe('DelinquencyService — quitação manual (POST /customers/{id}/delinqu
     await expect(svc.clearManually(STAFF, '99999999-9999-4999-8999-999999999999', 'motivo')).rejects.toMatchObject({ status: 404 });
   });
 });
+
+describe('DelinquencyService — corrida entre duas quitações', () => {
+  it('índice de uma pendente por dívida (P2002) → 409, sem cobrar', async () => {
+    const { db, svc, state, provider } = await setup();
+    const d = await debt(db, 3000);
+    const { Prisma } = await import('@prisma/client');
+    jest.spyOn(state, 'create').mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }));
+    await expect(svc.payDebt(CUSTOMER, d.id, { method: 'card' })).rejects.toMatchObject({ status: 409, slug: 'conflict' });
+    expect(provider.operations('charge')).toBe(0);
+  });
+
+  it('dívida quitada entre a conferência e a criação → 409 debt-not-payable', async () => {
+    const { db, svc } = await setup();
+    const d = await debt(db, 3000);
+    const real = db.payment.findUnique.bind(db.payment);
+    let calls = 0;
+    jest.spyOn(db.payment, 'findUnique').mockImplementation(async (args: any) => {
+      const row = await real(args);
+      // 1ª leitura (payDebt) vê a dívida aberta; a releitura antes de criar a vê quitada.
+      if (args.where.id === d.id && ++calls === 2) return { ...row, debtSettledAt: new Date() };
+      return row;
+    });
+    await expect(svc.payDebt(CUSTOMER, d.id, { method: 'pix' })).rejects.toMatchObject({ slug: 'debt-not-payable' });
+  });
+});

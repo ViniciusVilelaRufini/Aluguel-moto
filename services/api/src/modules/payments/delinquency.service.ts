@@ -6,7 +6,7 @@ import type { PixCharge } from '../../ports/rental-billing.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
-import { PaymentStateService } from './payment-state.service';
+import { isUniqueViolation, PaymentStateService } from './payment-state.service';
 import { ProviderCustomersService } from './provider-customers.service';
 import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError } from './provider/payment-provider';
@@ -123,9 +123,21 @@ export class DelinquencyService {
     return null;
   }
 
-  private create(debt: Payment, method: 'card' | 'pix', amountCents: number, cardLast4?: string) {
-    // Sem `rentalId`/`subscriptionId`: o vínculo é só `settlesPaymentId` (a liquidação e a assinatura não enxergam esta cobrança).
-    return this.state.create({ customerId: debt.customerId, kind: 'debt_settlement', method, amountCents, settlesPaymentId: debt.id, cardLast4 });
+  /**
+   * Uma tentativa `pending` por dívida (índice parcial `Payment_one_pending_debt_settlement`): duas chamadas simultâneas →
+   * a segunda recebe 409 em vez de cobrar de novo. A dívida é relida logo antes (quitada no meio → 409). Se ainda assim uma
+   * segunda quitação for paga, `onSettlementPaid` pede revisão manual para devolver.
+   */
+  private async create(debt: Payment, method: 'card' | 'pix', amountCents: number, cardLast4?: string) {
+    const fresh = await this.prisma.payment.findUnique({ where: { id: debt.id } });
+    if (!fresh || !isOpenDebt(fresh)) throw conflict('debt-not-payable', 'Esta dívida já foi quitada.');
+    try {
+      // Sem `rentalId`/`subscriptionId`: o vínculo é só `settlesPaymentId` (a liquidação e a assinatura não enxergam esta cobrança).
+      return await this.state.create({ customerId: debt.customerId, kind: 'debt_settlement', method, amountCents, settlesPaymentId: debt.id, cardLast4 });
+    } catch (err) {
+      if (isUniqueViolation(err)) throw conflict('conflict', 'Já existe um pagamento desta dívida em andamento.');
+      throw err;
+    }
   }
 
   private async payWithCard(debt: Payment, amountCents: number, cardId?: string) {

@@ -910,7 +910,7 @@ model Payment {
   /// Dívida (pagamento `failed` de aluguel/assinatura) quitada: pelo cliente (`payment`) ou pelo financeiro (`manual`).
   debtSettledAt     DateTime?
   debtSettlement    DebtSettlementKind?
-  /// Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita.
+  /// Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita (índice parcial `Payment_one_pending_debt_settlement`: uma pendente por dívida, escrito à mão).
   settlesPaymentId  String?       @db.Uuid
   /// Só em `debt_settlement` por Pix: PixCharge { chargeId, qrCodeBase64, copyPaste, expiresAt } (reaproveitado enquanto vale).
   pix               Json?
