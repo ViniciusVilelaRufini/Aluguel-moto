@@ -18,7 +18,7 @@ export const DEPOSIT_STATUS_OPTIONS: { value: StatusFilter; label: string }[] = 
 /** Financeiro > Cauções (`GET /payments/deposits`) com filtro de status; admin e financeiro. */
 export function DepositsPanel() {
   const [status, setStatus] = useState<StatusFilter>('');
-  const { rows, loading, error, pager } = usePagedQuery<Deposit>(['deposits', status], (cursor) =>
+  const { rows, loading, error, pager, refetch } = usePagedQuery<Deposit>(['deposits', status], (cursor) =>
     unwrap(api.GET('/payments/deposits', { params: { query: { limit: 15, cursor, status: status || undefined } } })));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -27,7 +27,7 @@ export function DepositsPanel() {
           <Select<StatusFilter> testId="deposits-status" value={status} onChange={setStatus} options={DEPOSIT_STATUS_OPTIONS} />
         </Field>
       </div>
-      <ErrorNote error={error} />
+      <ErrorNote error={error} onRetry={() => refetch()} />
       <DataTable<Deposit> testId="deposits-table" label="Cauções" sticky rows={rows} loading={loading} pager={pager} empty="Nenhuma caução encontrada." emptyIcon="Wallet"
         columns={[
           { key: 'createdAt', label: 'Criada em', render: (d) => formatDateTime(d.createdAt) },

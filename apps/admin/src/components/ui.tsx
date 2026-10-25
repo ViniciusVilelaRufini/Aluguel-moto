@@ -101,11 +101,12 @@ export function PanelSkeleton({ rows = 6 }: { rows?: number }) {
   );
 }
 
-export function ErrorNote({ error }: { error: unknown }) {
+export function ErrorNote({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   if (!error) return null;
   return (
-    <div role="alert" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--danger-soft)', color: 'var(--danger-ink)', fontSize: 13, fontWeight: 600 }}>
-      {error instanceof Error ? error.message : 'Algo deu errado. Tente de novo.'}
+    <div role="alert" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--danger-soft)', color: 'var(--danger-ink)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <span style={{ flex: 1, minWidth: 0 }}>{error instanceof Error ? error.message : 'Algo deu errado. Tente de novo.'}</span>
+      {onRetry && <Button size="sm" variant="ghost" icon="RefreshCw" testId="retry" onClick={onRetry}>Tentar de novo</Button>}
     </div>
   );
 }

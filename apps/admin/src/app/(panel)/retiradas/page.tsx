@@ -88,7 +88,7 @@ export default function PickupsPage() {
         </div>
       )}
 
-      <ErrorNote error={depotsQ.error ?? pickupsQ.error} />
+      <ErrorNote error={depotsQ.error ?? pickupsQ.error} onRetry={() => { depotsQ.refetch(); pickupsQ.refetch(); }} />
       {!depotsQ.isLoading && depots.length === 0 ? (
         <Empty icon="Warehouse" hint="Cadastre um galpão em Galpões para ver a agenda.">Nenhum galpão cadastrado</Empty>
       ) : (

@@ -59,7 +59,7 @@ export function BatteriesPanel() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <ErrorNote error={all.error ?? stations.error ?? summary.error} />
+      <ErrorNote error={all.error ?? stations.error ?? summary.error} onRetry={() => { all.refetch(); stations.refetch(); summary.refetch(); }} />
       {all.data?.capped && <Alert tone="warning" icon="TriangleAlert">Mais de 2.000 baterias: o estoque por estação considera só as 2.000 primeiras. Use a lista filtrada para o restante.</Alert>}
       <div style={{ display: 'flex', gap: 10, alignItems: 'end', flexWrap: 'wrap' }}>
         <div style={{ width: 260 }}><Field label="Galpão"><Select testId="battery-depot" value={depotId} onChange={setDepotId} options={[{ value: ALL, label: 'Todos os galpões' }, ...(depots.data?.items ?? []).map((d) => ({ value: d.id, label: d.name }))]} /></Field></div>
@@ -110,7 +110,7 @@ function VanStock({ staff, stations, depots, canTransfer }: { staff: S<'StaffUse
       <SectionTitle>Estoque da van</SectionTitle>
       <Card padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <Field label="Van de"><Select testId="van-operator" value={operator} onChange={setOperator} options={[{ value: ME, label: 'Minha van' }, ...staff.map((s) => ({ value: s.id, label: s.name }))]} /></Field>
-        <ErrorNote error={van.error} />
+        <ErrorNote error={van.error} onRetry={() => van.refetch()} />
         <div data-testid="van-summary" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <Pill tone="neutral" icon="Package">{van.data ? `${van.data.total} no total` : '...'}</Pill>
           <Pill tone="success" icon="BatteryCharging">{van.data ? `${van.data.chargedCount} carregadas` : '...'}</Pill>
@@ -248,11 +248,11 @@ function ReasonModal({ battery, kind, onClose }: { battery: Battery; kind: 'defe
 /** Histórico de movimentações, mais recente primeiro, paginado; horário no fuso do galpão quando houver. */
 function MovementsModal({ battery, depotNames, depots, onClose }: { battery: Battery; depotNames: Map<string, string>; depots: S<'Depot'>[]; onClose: () => void }) {
   const zones = useMemo(() => new Map(depots.map((d) => [d.id, d.timezone])), [depots]);
-  const { rows, loading, error, pager } = usePagedQuery<S<'BatteryMovement'>>(['battery-movements', battery.id], (cursor) =>
+  const { rows, loading, error, pager, refetch } = usePagedQuery<S<'BatteryMovement'>>(['battery-movements', battery.id], (cursor) =>
     unwrap(api.GET('/batteries/{id}/movements', { params: { path: { id: battery.id }, query: { cursor, limit: 10 } } })));
   return (
     <Modal open title={`Movimentações · ${battery.serial}`} onClose={onClose} width={640} testId="battery-movements-dialog" actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
-      <ErrorNote error={error} />
+      <ErrorNote error={error} onRetry={() => refetch()} />
       <DataTable<S<'BatteryMovement'>> dense testId="battery-movements-table" rows={rows} loading={loading} pager={pager} empty="Nenhuma movimentação registrada" emptyIcon="History"
         columns={[
           { key: 'at', label: 'Quando', render: (m) => formatDateTimeIn(m.at, m.depotId ? zones.get(m.depotId) : undefined) },
@@ -279,7 +279,7 @@ function BatteryList({ stationNames, staffNames, depotNames, depots, depotId }: 
   const [historyOf, setHistoryOf] = useState<Battery | null>(null);
   const [actionErr, setActionErr] = useState<unknown>(null);
   useEffect(() => { const t = setTimeout(() => setDq(q), 300); return () => clearTimeout(t); }, [q]);
-  const { rows, loading, error, pager } = usePagedQuery<Battery>(['batteries', status, dq, depotId ?? ALL], (cursor) =>
+  const { rows, loading, error, pager, refetch } = usePagedQuery<Battery>(['batteries', status, dq, depotId ?? ALL], (cursor) =>
     unwrap(api.GET('/batteries', { params: { query: { cursor, limit: 20, status: status === 'all' ? undefined : status, depotId, q: dq.trim() || undefined } } })));
   const markCharged = async (b: Battery) => {
     setActionErr(null);
@@ -297,7 +297,7 @@ function BatteryList({ stationNames, staffNames, depotNames, depots, depotId }: 
         <div style={{ flex: 1, minWidth: 220 }}><Input placeholder="Buscar pelo número de série" icon="Search" value={q} testId="battery-search" onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)} /></div>
         <div style={{ width: 220 }}><Select testId="battery-status" value={status} onChange={setStatus} options={[{ value: 'all', label: 'Todas as situações' }, ...BATTERY_STATUSES.map((s) => ({ value: s, label: BATTERY_STATUS[s][0] }))]} /></div>
       </div>
-      <ErrorNote error={error ?? actionErr} />
+      <ErrorNote error={error ?? actionErr} onRetry={error ? () => refetch() : undefined} />
       <DataTable<Battery> testId="batteries-table" rows={rows} loading={loading} pager={pager} empty={dq ? `Nenhuma bateria com "${dq}"` : 'Nenhuma bateria nesta situação'} emptyIcon="Battery"
         columns={[
           { key: 'serial', label: 'Série', mono: true },
