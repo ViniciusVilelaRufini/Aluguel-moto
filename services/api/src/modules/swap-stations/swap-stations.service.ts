@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Prisma, type SwapStation } from '@prisma/client';
 import { badRequest, conflict, notFound, unprocessable, type ValidationIssue } from '../../common/problem';
-import { stationIdFromThing } from '../../ports/station-gateway.port';
+import { stationIdFromThing, stationThingName } from '../../ports/station-gateway.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
@@ -105,10 +105,11 @@ export class SwapStationsService {
     if (issues.length || 'issue' in hours) throw badRequest('Verifique os campos informados.', issues);
 
     const id = randomUUID();
-    const thing = dto.thingName ?? null;
+    // Fix M4: grava sempre a thing efetiva (padrão `station-{id}`): o índice único cobre a colisão com estações novas.
+    const thing = dto.thingName ?? stationThingName(id);
     const created = await this.prisma
       .$transaction(async (tx) => {
-        if (thing && (await this.thingInUse(tx, thing, id))) throw thingTaken();
+        if (await this.thingInUse(tx, thing, id)) throw thingTaken();
         const s = await tx.swapStation.create({
           data: {
             id, name, address, lat: dto.lat, lng: dto.lng, totalSlots: dto.totalSlots, openingHours: hours.value, open24h,
@@ -137,22 +138,24 @@ export class SwapStationsService {
     if (dto.openingHours !== undefined || dto.open24h !== undefined) {
       const hours = resolveOpeningHours(dto.openingHours ?? current.openingHours, open24h);
       if ('issue' in hours) issues.push(hours.issue);
+      // Fix M2: deixou de ser 24 h e o texto continua o padrão de 24 h → `isStationOpen` a trataria como aberta o dia todo.
+      else if (current.open24h && !open24h && hours.value === OPEN_24H_TEXT) issues.push({ field: 'openingHours', message: 'informe o novo horário (a estação deixou de ser 24 h)' });
       else if (hours.value !== current.openingHours) openingHours = hours.value;
     }
     if (issues.length) throw badRequest('Verifique os campos informados.', issues);
 
     // O DTO transformado traz todas as propriedades da classe (as ausentes como `undefined`): só as enviadas contam.
     const fields = Object.keys(dto).filter((k) => (dto as Record<string, unknown>)[k] !== undefined);
-    const currentThing = effectiveThingName(current);
-    const nextThing = dto.thingName ?? currentThing;
-    const thingChanges = nextThing !== currentThing;
-    const deactivating = dto.active === false && current.active;
-
     const updated = await this.prisma
       .$transaction(async (tx) => {
         // Serializa com a criação de troca (que trava a mesma linha e relê `active`): nenhuma troca nova entra entre a contagem e a gravação.
         await this.lock(tx, id);
         const locked = (await tx.swapStation.findUnique({ where: { id } }))!;
+        // Fix M6: estado relido sob o lock (não o lido antes da transação).
+        const currentThing = effectiveThingName(locked);
+        const nextThing = dto.thingName ?? currentThing;
+        const thingChanges = nextThing !== currentThing;
+        const deactivating = dto.active === false && locked.active;
         if (dto.totalSlots !== undefined) {
           const inStation = await tx.battery.count({ where: { stationId: id, status: 'in_station' } });
           const occupying = batteriesOccupying(locked.availableBatteries, inStation);

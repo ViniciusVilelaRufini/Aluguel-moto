@@ -49,6 +49,7 @@ export function validateStation(d: StationDraft): StationErrors {
   if (d.lat == null || d.lng == null) e.point = 'Clique no mapa para marcar o ponto da estação';
   else if (Math.abs(d.lat) > 90 || Math.abs(d.lng) > 180) e.point = 'Posição inválida';
   if (!d.open24h && !d.openingHours.trim()) e.openingHours = 'Informe o horário (ex.: Seg a sáb, 7h às 22h) ou marque 24 horas';
+  else if (!d.open24h && d.openingHours.trim() === OPEN_24H_TEXT) e.openingHours = 'A estação deixou de ser 24 h: informe o novo horário';
   else if (d.openingHours.trim().length > 120) e.openingHours = 'Até 120 caracteres';
   const slots = d.totalSlots.trim();
   if (!/^\d+$/.test(slots) || Number(slots) < 1 || Number(slots) > MAX_SLOTS) e.totalSlots = `Entre 1 e ${MAX_SLOTS} vagas`;
@@ -56,6 +57,11 @@ export function validateStation(d: StationDraft): StationErrors {
   const thing = d.thingName.trim();
   if (thing && !STATION_THING.test(thing)) e.thingName = 'Use station-<uuid> em minúsculas (ou deixe vazio para o padrão)';
   return e;
+}
+
+/** Desmarcar 24 h com o texto padrão de 24 h limpa o horário (senão a estação continuaria aberta o dia todo no app). */
+export function toggle24h(d: StationDraft, on: boolean): Partial<StationDraft> {
+  return { open24h: on, ...(!on && d.openingHours.trim() === OPEN_24H_TEXT ? { openingHours: '' } : {}) };
 }
 
 function fields(d: StationDraft) {

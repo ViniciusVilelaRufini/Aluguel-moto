@@ -498,3 +498,12 @@ Lacuna: estações só entravam pelo seed; o painel não criava nem editava e o 
 5. **Validações do PATCH:** `totalSlots` ≥ 1 e ≥ baterias na estação (maior entre `availableBatteries` e as `Battery` `in_station` dela) → senão `422 slots-below-stock`; desativar ou trocar a thing com troca por QR em andamento → `409 station-swap-in-progress`. O PATCH trava a linha da estação (`FOR UPDATE`) e a criação de troca passou a reler `active` sob o mesmo lock, então nenhuma troca nasce numa estação recém-desativada. `availableBatteries` não é editável (estoque vem das baterias/van).
 6. **Galpão ↔ estação:** `PATCH /depots/{id}` já aceitava `swapStationId`; acrescentado `DepotUpdate.clearSwapStation: boolean` para desligar (o contrato não usa `null`; junto com `swapStationId` → `400`). O formulário do galpão ganhou o seletor "Estação de troca".
 7. **Painel:** seção nova **Estações** (`/estacoes`, admin/operacao): mapa (MapView existente, camada de círculos), lista, criar/editar/desativar, QR e trocas. Permissões `station.edit` e `station.qr` em `permissions.ts`. Problem types novos: `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`. Clientes TS e Dart regenerados.
+
+### 2026-10-24 · cadastro de estações — fix round 1 da revisão · status: correção aplicada (sem mudança de contrato)
+
+- **I1:** a checagem de `active` sob o lock da estação vale só na criação de troca pelo cliente (`lockStation(..., { requireActive: true })`). Eventos de trocas já em curso (devolução atrasada, liberação, vaga fechada) seguem numa estação desativada: a bateria devolvida é registrada e o evento termina sem erro (sem mensagem envenenada no grupo FIFO).
+- **M1:** falha ao ler a thing da estação não cai mais na convenção `station-{id}` (que mandaria o comando ao armário errado): o envio é pulado e logado (`station_release_failed`/`station_abort_failed`); o prazo da etapa trata a troca.
+- **M2:** desmarcar 24 h mantendo o texto padrão "Todos os dias, 24 h" → `400` (API) e o painel limpa o texto ao desmarcar.
+- **M4:** a criação grava sempre a thing efetiva (`station-{id}` quando não informada), então o índice único cobre a colisão para estações novas; linhas antigas com `thingName` nulo continuam pela checagem na transação.
+- **M5:** removido o aviso "só visualiza" inalcançável da página Estações. **M6:** desativar/trocar thing decide pelo estado relido sob o lock.
+- Fica: **M3** (teste de componente da página Estações; regras cobertas em `lib/stations` e verificação manual).

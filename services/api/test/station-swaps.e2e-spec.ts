@@ -285,6 +285,31 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
     expect(await prisma.vehicle.findUnique({ where: { id: a.vehicle.id } })).toMatchObject({ batterySerial: released });
   });
 
+  it('Task 12 (fix I1): cancelou, o painel desativou a estação e a bateria chegou depois → devolução registrada, evento sem erro', async () => {
+    station.setAuto(false);
+    const a = await rideOn('minute');
+    const thing = stationThingName(st.id);
+    const s1 = (await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(a.token)).set('Idempotency-Key', randomUUID()).send(swapBody(a.rentalId)).expect(201)).body;
+    await station.emit(thing, { type: 'slot_opened', swapId: s1.id, slotNumber: 6, ts: new Date().toISOString() });
+    await http().post(`/swap-stations/${st.id}/swaps/${s1.id}/cancel`).set(bearer(a.token)).expect(200);
+    // Troca cancelada não conta como aberta: a desativação passa.
+    await http().patch(`/swap-stations/${st.id}`).set(bearer(admin)).send({ active: false }).expect(200);
+    try {
+      // O handler do evento termina sem exceção (no modo aws a mensagem é apagada da fila, sem envenenar o grupo FIFO).
+      await expect(station.emit(thing, { type: 'battery_returned', swapId: s1.id, serial: a.batterySerial, pct: 17, ts: new Date().toISOString() })).resolves.toBeUndefined();
+      const swap = await prisma.stationSwap.findUnique({ where: { id: s1.id } });
+      expect(swap).toMatchObject({ returnedSerial: a.batterySerial });
+      expect(['releasing', 'failed']).toContain(swap!.status);
+      expect(await prisma.battery.findUnique({ where: { serial: a.batterySerial } })).toMatchObject({ status: 'charging', stationId: st.id });
+      // Troca nova continua recusada na estação inativa.
+      const b = await rideOn('minute');
+      const refused = await http().post(`/swap-stations/${st.id}/swaps`).set(bearer(b.token)).set('Idempotency-Key', randomUUID()).send(swapBody(b.rentalId)).expect(422);
+      expect(refused.body.code).toBe('station-unavailable');
+    } finally {
+      await prisma.swapStation.update({ where: { id: st.id }, data: { active: true } });
+    }
+  });
+
   it('fix 1 (I1/I7): GET /rentals/current traz a troca aberta; encerrar e trocar de moto no meio dela → 409 swap-open', async () => {
     station.setAuto(false);
     const a = await rideOn('minute');

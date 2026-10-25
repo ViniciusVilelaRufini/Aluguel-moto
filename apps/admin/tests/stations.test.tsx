@@ -4,7 +4,7 @@ import { QrImage } from '@/components/StationQrModal';
 import { depotCreateBody, depotUpdateBody, draftFromDepot, emptyDepotDraft } from '@/lib/depot-hours';
 import {
   draftFromStation, emptyStationDraft, occupiedSlots, OPEN_24H_TEXT, qrFileName, qrMatrix, qrPrintHtml, qrSvg, stationCreateBody, stationFeatures, stationSummary,
-  stationUpdateBody, validateStation,
+  stationUpdateBody, toggle24h, validateStation,
 } from '@/lib/stations';
 import type { S } from '@/lib/types';
 
@@ -40,6 +40,14 @@ describe('formulário da estação', () => {
     expect(validateStation({ ...filled(), thingName: 'moto-0001' }).thingName).toBeDefined();
     expect(validateStation({ ...filled(), thingName: `station-${ID.toUpperCase()}` }).thingName).toBeDefined();
     expect(validateStation({ ...filled(), thingName: `station-${ID}` })).toEqual({});
+    // Fix M2: sem 24 h, o texto padrão de 24 h não vale como horário.
+    expect(validateStation({ ...filled(), openingHours: OPEN_24H_TEXT, open24h: false }).openingHours).toMatch(/deixou de ser 24 h/);
+  });
+
+  it('fix M2: desmarcar 24 h limpa o texto padrão; texto próprio é mantido', () => {
+    expect(toggle24h({ ...filled(), open24h: true, openingHours: OPEN_24H_TEXT }, false)).toEqual({ open24h: false, openingHours: '' });
+    expect(toggle24h({ ...filled(), open24h: true }, false)).toEqual({ open24h: false });
+    expect(toggle24h(filled(), true)).toEqual({ open24h: true });
   });
 
   it('corpo do POST: campos aparados, sem thing quando vazia, horário omitido em 24 h sem texto', () => {

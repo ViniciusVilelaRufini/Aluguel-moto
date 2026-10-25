@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { prefersReducedMotion } from '@/lib/motion';
 import {
-  draftFromStation, emptyStationDraft, STATION_LAYER, STATION_SRC, stationCreateBody, stationFeatures, stationSummary, stationUpdateBody, validateStation,
+  draftFromStation, emptyStationDraft, STATION_LAYER, toggle24h, STATION_SRC, stationCreateBody, stationFeatures, stationSummary, stationUpdateBody, validateStation,
   type StationDraft, type StationErrors,
 } from '@/lib/stations';
 import type { S } from '@/lib/types';
@@ -16,7 +16,6 @@ import { MapView } from '@/components/MapView';
 import { StationQrModal } from '@/components/StationQrModal';
 import { StationSwapsModal } from '@/components/StationSwapsModal';
 import { Empty, ErrorNote, Field, KV, Modal, SectionTitle, SidePanel, Skeleton, TextInput, useToast } from '@/components/ui';
-import { Alert } from '@/ds/Alert';
 import { Badge } from '@/ds/Badge';
 import { Button } from '@/ds/Button';
 import { Card } from '@/ds/Card';
@@ -203,7 +202,7 @@ export default function StationsPage() {
             <div>
               <SectionTitle>Horário de funcionamento</SectionTitle>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <Switch testId="station-24h" checked={draft.open24h} onChange={(v: boolean) => patch({ open24h: v })} label="Aberta 24 horas" />
+                <Switch testId="station-24h" checked={draft.open24h} onChange={(v: boolean) => patch(toggle24h(draft, v))} label="Aberta 24 horas" />
                 <Field label="Horário" error={errors.openingHours} hint='No fuso de São Paulo, como o app mostra. Ex.: "Seg a sáb, 7h às 22h".'>
                   <TextInput testId="station-hours" value={draft.openingHours} onChange={(v) => patch({ openingHours: v })} placeholder={draft.open24h ? 'Todos os dias, 24 h' : 'Seg a sáb, 7h às 22h'} />
                 </Field>
@@ -266,7 +265,6 @@ export default function StationsPage() {
           </Card>
         )}
 
-        {!canEdit && <Alert tone="info" icon="Info">Seu perfil só visualiza as estações.</Alert>}
       </SidePanel>
 
       <Modal open={confirmToggle && !!selected} title={selected?.active ? 'Desativar estação' : 'Reativar estação'} onClose={() => setConfirmToggle(false)} testId="station-toggle-dialog"

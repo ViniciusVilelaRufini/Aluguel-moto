@@ -74,7 +74,8 @@ describe('SwapStationsService.create', () => {
     const { service, prisma, audit } = setup();
     const out = await service.create(operacao, input() as any);
     const data = (prisma.swapStation.create.mock.calls[0][0] as any).data;
-    expect(data).toMatchObject({ name: 'Estação Nova', totalSlots: 8, availableBatteries: 0, active: true, open24h: false, thingName: null });
+    // Fix M4: thing efetiva gravada (padrão station-{id}), coberta pelo índice único.
+    expect(data).toMatchObject({ name: 'Estação Nova', totalSlots: 8, availableBatteries: 0, active: true, open24h: false, thingName: `station-${data.id}` });
     expect(verifyStationCode(data.stationCode, SECRET)).toEqual({ stationId: data.id });
     expect(out).toMatchObject({ id: data.id, thingName: `station-${data.id}`, totalSlots: 8 });
     expect(out).not.toHaveProperty('stationCode');
@@ -148,6 +149,22 @@ describe('SwapStationsService.update', () => {
     await same.service.update(operacao, ID, { thingName: `station-${ID}` } as any);
     expect(same.prisma.stationSwap.count).not.toHaveBeenCalled();
     expect((same.prisma.swapStation.update.mock.calls[0][0] as any).data).toEqual({});
+  });
+
+  it('fix M2: desmarcar 24 h mantendo o texto padrão de 24 h → 400; com horário novo → grava', async () => {
+    const h24 = { open24h: true, openingHours: OPEN_24H_TEXT };
+    expect(await problem(setup({ current: h24 }).service.update(operacao, ID, { open24h: false } as any))).toMatchObject({ status: 400, fields: ['openingHours'] });
+    expect(await problem(setup({ current: h24 }).service.update(operacao, ID, { open24h: false, openingHours: OPEN_24H_TEXT } as any))).toMatchObject({ status: 400 });
+    const ok = setup({ current: h24 });
+    await ok.service.update(operacao, ID, { open24h: false, openingHours: 'Seg a sex, 7h às 20h' } as any);
+    expect((ok.prisma.swapStation.update.mock.calls[0][0] as any).data).toEqual({ open24h: false, openingHours: 'Seg a sex, 7h às 20h' });
+  });
+
+  it('fix M6: desativar decide pelo estado relido sob o lock (já inativa sob o lock → não confere trocas)', async () => {
+    const ctx = setup({ openSwaps: 2 });
+    ctx.prisma.swapStation.findUnique.mockResolvedValueOnce(row() as any).mockResolvedValueOnce(row({ active: false }) as any);
+    await ctx.service.update(operacao, ID, { active: false } as any);
+    expect(ctx.prisma.stationSwap.count).not.toHaveBeenCalled();
   });
 
   it('horário: limpar sem 24 h → 400; ligar 24 h mantém o texto; 24 h com texto vazio → texto padrão', async () => {

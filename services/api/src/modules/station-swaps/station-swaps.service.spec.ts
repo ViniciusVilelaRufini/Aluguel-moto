@@ -390,6 +390,33 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     }
   });
 
+  it('Task 12 (fix I1): estação desativada depois do cancelamento — devolução atrasada é registrada, sem exceção, e a carregada é liberada', async () => {
+    const { service, swaps, prisma, gateway, station } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'canceled_by_customer', slotNumber: 3 });
+    // Painel desativou a estação (a troca cancelada não conta como aberta).
+    station.active = false;
+    station.lockedActive = false;
+    await expect(service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() })).resolves.toBeUndefined();
+    expect(prisma.battery.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { serial: 'BAT-00001' }, update: expect.objectContaining({ status: 'charging', stationId: STATION_ID }) }));
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'releasing', returnedSerial: 'BAT-00001' }));
+    expect(gateway.send).toHaveBeenCalledWith(THING, expect.objectContaining({ action: 'release_battery', swapId: SWAP_ID }));
+    // Eventos seguintes da mesma troca também seguem numa estação inativa.
+    await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-S1001', ts: ts() });
+    expect(swaps.get(SWAP_ID).status).toBe('completed');
+  });
+
+  it('Task 12 (fix M1): falha ao ler a thing não manda o comando para a convenção (armário errado); só loga', async () => {
+    const CUSTOM = 'station-aaaaaaaa-0000-4000-8000-000000000009';
+    const ctx = await created({ station: { thingName: CUSTOM } });
+    await ctx.service.onStationEvent(CUSTOM, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 2, ts: ts() });
+    await ctx.service.onStationEvent(CUSTOM, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 12, ts: ts() });
+    ctx.gateway.send.mockClear();
+    ctx.prisma.swapStation.findUnique.mockRejectedValueOnce(new Error('db down'));
+    await expect(ctx.service.onStationEvent(CUSTOM, { type: 'slot_closed', swapId: SWAP_ID, ts: ts() })).resolves.toBeUndefined();
+    expect(ctx.swaps.get(SWAP_ID).status).toBe('releasing');
+    expect(ctx.gateway.send).not.toHaveBeenCalled();
+  });
+
   it('fix 1 (I2): devolução atrasada sem carregada disponível → failed/no_battery_after_return + alerta só com ids, sem liberar', async () => {
     const { service, swaps, prisma, gateway, alerts } = await created({ station: { availableBatteries: 1 } });
     Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'canceled_by_customer' });
