@@ -8,11 +8,13 @@ const kSupportPhonePlaceholder = '+551100000000';
 final _phoneShape = RegExp(r'^\+?\d{8,15}$');
 
 /// Problemas do ambiente de build. Fora de release ([isRelease] falso) nao ha
-/// exigencias. Em release exige `API_BASE_URL` e um `SUPPORT_PHONE` real.
+/// exigencias. Em release exige `API_BASE_URL`, um `SUPPORT_PHONE` real e `MP_PUBLIC_KEY`
+/// (chave publica do Mercado Pago; sem ela o cartao nao pode ser tokenizado).
 List<String> releaseEnvironmentProblems({
   required bool isRelease,
   required String apiBaseUrl,
   required String supportPhone,
+  required String mpPublicKey,
 }) {
   if (!isRelease) return const [];
   final phone = supportPhone.trim();
@@ -24,6 +26,7 @@ List<String> releaseEnvironmentProblems({
       'SUPPORT_PHONE e o valor de exemplo $kSupportPhonePlaceholder'
     else if (!_phoneShape.hasMatch(phone))
       'SUPPORT_PHONE invalido (use so digitos, ex.: +5511999990000)',
+    if (mpPublicKey.trim().isEmpty) 'MP_PUBLIC_KEY ausente (--dart-define=MP_PUBLIC_KEY=APP_USR-...)',
   ];
 }
 

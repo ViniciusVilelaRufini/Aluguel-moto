@@ -13,11 +13,12 @@ import 'core/cognito.dart';
 import 'core/cognito_auth.dart';
 import 'core/map_tiles.dart';
 import 'core/release_env.dart';
+import 'core/services.dart' show kMpPublicKey;
 
 /// `--dart-define=API_BASE_URL=http://10.0.2.2:3000` (ou o Prism em :4010).
 /// `--dart-define=AUTH_MODE=dev|cognito` (padrao dev; release sempre cognito). No modo cognito:
 /// `COGNITO_REGION`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_DOMAIN`,
-/// `COGNITO_REDIRECT_URI` (ver README).
+/// `COGNITO_REDIRECT_URI` (ver README). `MP_PUBLIC_KEY` (chave publica do Mercado Pago; obrigatoria em release).
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // Release sem API_BASE_URL / SUPPORT_PHONE reais: falha aqui, com mensagem clara.
@@ -25,6 +26,7 @@ Future<void> main() async {
     isRelease: kReleaseMode,
     apiBaseUrl: const String.fromEnvironment('API_BASE_URL'),
     supportPhone: kSupportPhone,
+    mpPublicKey: kMpPublicKey,
   );
   if (envProblems.isNotEmpty) {
     runApp(ConfigErrorApp(problems: envProblems));

@@ -13,7 +13,9 @@ import 'package:socket_io_client/socket_io_client.dart' as io;
 import 'package:volti_api/volti_api.dart' show DevicePlatform;
 import 'package:volti_flutter/volti_flutter.dart';
 
+import '../features/payments/card_form_sheet.dart';
 import 'backend.dart';
+import 'mercadopago_gateway.dart';
 
 // ---------------------------------------------------------------------------
 // Tempo real (Socket.IO, namespace /realtime, sala rental:{id})
@@ -341,14 +343,37 @@ abstract class CardTokenizer {
 }
 
 /// Implementacao de desenvolvimento: devolve o token de teste do gateway falso (`PAYMENT_PROVIDER=fake`).
-/// Ponto de troca: implemente [CardTokenizer] com o SDK do Mercado Pago (CardForm) e
-/// sobrescreva [cardTokenizerProvider] no `main.dart`.
+/// So e usada fora de release e sem `MP_PUBLIC_KEY`.
 class DevCardTokenizer implements CardTokenizer {
   @override
   Future<String?> tokenize(BuildContext context) async => 'tok_visa_4242';
 }
 
-final cardTokenizerProvider = Provider<CardTokenizer>((ref) => DevCardTokenizer());
+/// Tokenizador real: abre o formulario de cartao e envia os dados DIRETO ao
+/// Mercado Pago (chave publica). So o token volta para o app e segue para a API.
+class MercadoPagoCardTokenizer implements CardTokenizer {
+  MercadoPagoCardTokenizer(this.gateway);
+  final MercadoPagoGateway gateway;
+
+  @override
+  Future<String?> tokenize(BuildContext context) => CardFormSheet.show(context, submit: gateway.createToken);
+}
+
+/// `--dart-define=MP_PUBLIC_KEY=TEST-...` (chave PUBLICA do Mercado Pago; nunca o access token).
+const kMpPublicKey = String.fromEnvironment('MP_PUBLIC_KEY');
+
+/// Com chave: tokenizador real. Sem chave: o de desenvolvimento; em release isso e
+/// erro de configuracao (o `main` ja barra antes), entao falha alto em vez de usar token falso.
+CardTokenizer selectCardTokenizer({required String publicKey, required bool isRelease, MercadoPagoGateway? gateway}) {
+  final key = publicKey.trim();
+  if (key.isNotEmpty) return MercadoPagoCardTokenizer(gateway ?? MercadoPagoGateway(publicKey: key));
+  if (isRelease) throw StateError('MP_PUBLIC_KEY ausente em release');
+  return DevCardTokenizer();
+}
+
+final cardTokenizerProvider = Provider<CardTokenizer>(
+  (ref) => selectCardTokenizer(publicKey: kMpPublicKey, isRelease: kReleaseMode),
+);
 
 // ---------------------------------------------------------------------------
 // Camera / galeria
