@@ -3021,4 +3021,84 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get accountUnread => 'Conta, mensagens novas do suporte';
+
+  @override
+  String get payNow => 'Pagar agora';
+
+  @override
+  String get paymentPendingTitle => 'Pagamento pendente';
+
+  @override
+  String paymentPendingHomeText(String amount) {
+    return '$amount em aberto. Pague para alugar de novo.';
+  }
+
+  @override
+  String get paymentPendingBlock =>
+      'Pague o valor pendente para alugar de novo.';
+
+  @override
+  String get receiptPaymentLabel => 'Pagamento';
+
+  @override
+  String get receiptStatusPaid => 'Pago';
+
+  @override
+  String get receiptStatusPending => 'Pendente';
+
+  @override
+  String get receiptStatusProcessing => 'Processando';
+
+  @override
+  String get receiptDepositUsed => 'Caução usada';
+
+  @override
+  String get receiptDepositReleased => 'Caução devolvida';
+
+  @override
+  String get receiptAmountDue => 'A pagar';
+
+  @override
+  String receiptPendingText(String amount) {
+    return 'Não conseguimos cobrar $amount. Pague com Pix para liberar o recibo e novos aluguéis.';
+  }
+
+  @override
+  String get receiptProcessingText =>
+      'Estamos confirmando o pagamento. O recibo fica pronto em seguida.';
+
+  @override
+  String get receiptAwaitingPayment => 'Aguardando pagamento';
+
+  @override
+  String get receiptPdfAfterPayment =>
+      'O recibo fica disponível depois do pagamento.';
+
+  @override
+  String rideFinishedDepositUsed(String amount) {
+    return 'Moto travada. Usamos $amount da caução.';
+  }
+
+  @override
+  String rideFinishedPending(String amount) {
+    return 'Moto travada. Falta pagar $amount.';
+  }
+
+  @override
+  String get rideFinishedProcessing =>
+      'Moto travada. Pagamento em processamento.';
+
+  @override
+  String get debtPixTitle => 'Pague a pendência com Pix';
+
+  @override
+  String debtPixText(String amount) {
+    return 'Pague $amount com o QR ou o código copia e cola no app do seu banco.';
+  }
+
+  @override
+  String get debtPaid => 'Pendência paga';
+
+  @override
+  String get debtPaidText => 'Pronto! Você já pode alugar de novo.';
 }

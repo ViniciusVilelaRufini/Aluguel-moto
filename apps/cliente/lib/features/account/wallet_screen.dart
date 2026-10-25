@@ -10,7 +10,7 @@ import 'package:volti_flutter/volti_flutter.dart';
 import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
-import '../../core/pix_qr.dart';
+import '../../core/pix_charge_panel.dart';
 import '../../core/widgets.dart';
 import 'account_common.dart';
 
@@ -442,81 +442,20 @@ class _TopUpPixSheetState extends ConsumerState<TopUpPixSheet> {
       _ => null,
     };
     if (_paid) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: VoltiSpacing.s24),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const VoltiSuccessCheck(delay: Duration.zero),
-          const SizedBox(height: VoltiSpacing.s16),
-          Semantics(liveRegion: true, child: Text(l.topUpPaid, style: VoltiTypography.title, textAlign: TextAlign.center)),
-          const SizedBox(height: VoltiSpacing.s8),
-          Text(
-            t.minutes != null && t.minutes! > 0 ? l.topUpPaidMinutes(t.minutes!) : l.topUpPaidAmount(money(t.amountCents)),
-            style: VoltiTypography.body,
-            textAlign: TextAlign.center,
-          ),
-        ]),
+      return PixPaidView(
+        title: l.topUpPaid,
+        text: t.minutes != null && t.minutes! > 0 ? l.topUpPaidMinutes(t.minutes!) : l.topUpPaidAmount(money(t.amountCents)),
       );
     }
-    return SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Semantics(header: true, child: Text(l.pixTitle, style: VoltiTypography.title)),
-          const SizedBox(height: VoltiSpacing.s8),
-          Text(l.topUpPixText(money(t.amountCents)), style: VoltiTypography.body),
-          const SizedBox(height: VoltiSpacing.s16),
-          if (pix != null) Center(child: PixQrCode(key: const Key('topup-qr'), pix: pix, semanticLabel: l.pixQrLabel)),
-          if (pix != null) ...[
-            const SizedBox(height: VoltiSpacing.s12),
-            Container(
-              padding: const EdgeInsets.all(VoltiSpacing.s12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: VoltiRadii.rMd,
-              ),
-              child: SelectableText(
-                pix.copyPaste,
-                key: const Key('topup-copy-paste'),
-                maxLines: 3,
-                style: VoltiTypography.caption.copyWith(fontFamily: VoltiTypography.fontMono),
-              ),
-            ),
-            const SizedBox(height: VoltiSpacing.s8),
-            VoltiButton(
-              label: l.copyPixCode,
-              icon: LucideIcons.copy,
-              variant: VoltiButtonVariant.secondary,
-              fullWidth: true,
-              onPressed: () async {
-                await Clipboard.setData(ClipboardData(text: pix.copyPaste));
-                VoltiHaptics.tap();
-                if (context.mounted) VoltiToast.show(context, l.pixCopied);
-              },
-            ),
-            const SizedBox(height: VoltiSpacing.s4),
-            Text(l.pixExpiresAt(formatDateTimeSp(pix.expiresAt)), style: VoltiTypography.caption),
-          ],
-          const SizedBox(height: VoltiSpacing.s16),
-          if (failed != null)
-            NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: failed)
-          else
-            Semantics(
-              liveRegion: true,
-              child: Row(children: [
-                const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                const SizedBox(width: 10),
-                Expanded(child: Text(l.pixWaiting, style: VoltiTypography.caption)),
-              ]),
-            ),
-          const SizedBox(height: VoltiSpacing.s12),
-          VoltiButton(
-              label: failed != null ? l.close : l.pixPayLater,
-              variant: VoltiButtonVariant.ghost,
-              fullWidth: true,
-              onPressed: () => Navigator.of(context).pop(false)),
-        ],
-      ),
+    return PixChargePanel(
+      title: l.pixTitle,
+      text: l.topUpPixText(money(t.amountCents)),
+      pix: pix,
+      failure: failed,
+      qrKey: const Key('topup-qr'),
+      copyPasteKey: const Key('topup-copy-paste'),
+      closeLabel: failed != null ? l.close : l.pixPayLater,
+      onClose: () => Navigator.of(context).pop(false),
     );
   }
 }

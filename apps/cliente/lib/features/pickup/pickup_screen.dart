@@ -19,6 +19,7 @@ import '../../core/widgets.dart';
 import '../../l10n/app_localizations.dart';
 import '../home/depot_providers.dart';
 import '../home/providers.dart';
+import '../payments/debt_pix_sheet.dart';
 import '../pick/depot_selection.dart';
 import '../plan/pix_sheet.dart';
 import '../plan/plan_screen.dart';
@@ -196,6 +197,11 @@ class _PickupScreenState extends ConsumerState<PickupScreen> {
         ref.invalidate(depotsProvider);
         VoltiToast.show(context, l.vehicleJustTaken, tone: VoltiToastTone.warning);
         context.go('/pick');
+      } else if ((f.status == 409 && f.slug == 'payment-pending') || (f.status == 403 && f.slug == 'customer-delinquent')) {
+        // R2-01: divida em aberto. A home mostra a pendencia com "Pagar agora".
+        ref.invalidate(openDebtsProvider);
+        VoltiToast.show(context, l.paymentPendingBlock, tone: VoltiToastTone.warning);
+        context.go('/home');
       } else if (f.status == 409 && f.slug == 'reservation-already-active') {
         ref.invalidate(currentReservationProvider);
         VoltiToast.show(context, l.blockActiveReservation, tone: VoltiToastTone.warning);

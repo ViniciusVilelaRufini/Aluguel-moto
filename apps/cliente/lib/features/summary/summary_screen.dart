@@ -13,6 +13,7 @@ import '../../core/geo.dart';
 import '../../core/flash.dart';
 import '../../core/launcher.dart';
 import '../../core/widgets.dart';
+import '../payments/debt_pix_sheet.dart';
 import '../ride/ride_screen.dart';
 
 final receiptProvider = FutureProvider.autoDispose.family<Receipt, String>((ref, id) => ref.watch(backendProvider).receipt(id));
@@ -73,6 +74,11 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
   /// O link do PDF expira em 15 min: busca um novo antes de abrir.
   Future<void> _openPdf(Receipt current) async {
     final l = context.l;
+    // R2-01: o PDF so existe com o pagamento recebido.
+    if (!_isPaid(current)) {
+      VoltiToast.show(context, l.receiptPdfAfterPayment);
+      return;
+    }
     var url = current.pdfUrl;
     try {
       url = (await ref.read(backendProvider).receipt(widget.rentalId)).pdfUrl ?? url;
@@ -90,9 +96,40 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
     if (!ok && mounted) VoltiToast.show(context, l.receiptOpenError, tone: VoltiToastTone.danger);
   }
 
+  /// Recibo pago (ou de uma API sem `paymentStatus`, que so devolvia recibo pago).
+  bool _isPaid(Receipt r) => r.paymentStatus == null || r.paymentStatus == ReceiptPaymentStatus.paid;
+
+  Future<void> _payNow(Receipt r) async {
+    final id = r.paymentId;
+    if (id == null) return;
+    final paid = await payDebtWithPix(context, ref, paymentId: id, amountCents: r.amountDueCents ?? 0);
+    if (paid && mounted) ref.invalidate(receiptProvider(widget.rentalId));
+  }
+
+  /// Texto sob "Corrida finalizada": caucao liberada, usada, pagamento pendente ou em processamento.
+  String _finishedText(Receipt r) {
+    final l = context.l;
+    return switch (r.paymentStatus) {
+      ReceiptPaymentStatus.pending => l.rideFinishedPending(money(r.amountDueCents ?? 0)),
+      ReceiptPaymentStatus.processing => l.rideFinishedProcessing,
+      _ => (r.depositUsedCents ?? 0) > 0 ? l.rideFinishedDepositUsed(money(r.depositUsedCents!)) : l.rideFinishedText,
+    };
+  }
+
+  Widget? _statusBadge(Receipt r) {
+    final l = context.l;
+    return switch (r.paymentStatus) {
+      ReceiptPaymentStatus.paid => VoltiBadge(l.receiptStatusPaid, key: const Key('receipt-status'), tone: VoltiBadgeTone.success),
+      ReceiptPaymentStatus.pending => VoltiBadge(l.receiptStatusPending, key: const Key('receipt-status'), tone: VoltiBadgeTone.danger),
+      ReceiptPaymentStatus.processing => VoltiBadge(l.receiptStatusProcessing, key: const Key('receipt-status'), tone: VoltiBadgeTone.warning),
+      _ => null,
+    };
+  }
+
   /// "Cartao •••• 4821 · NFS-e 2026-77" (ou o numero do recibo).
   String _paymentLine(Receipt r) {
     final l = context.l;
+    if (!_isPaid(r)) return '${l.receiptAwaitingPayment} · ${l.receiptNumber(r.number)}';
     final parts = <String>[
       if (r.cardLast4 != null)
         l.paidWithCard(r.cardLast4!)
@@ -131,7 +168,9 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Semantics(header: true, child: Text(l.rideFinished, style: VoltiTypography.title)),
-                      Text(l.rideFinishedText, style: VoltiTypography.body.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                      Text(_finishedText(r),
+                          key: const Key('receipt-finished-text'),
+                          style: VoltiTypography.body.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
                     ]),
                   ),
                 ]),
@@ -174,8 +213,32 @@ class _SummaryScreenState extends ConsumerState<SummaryScreen> {
                           delay: const Duration(milliseconds: 700),
                           style: VoltiTypography.bodyStrong,
                         )),
+                    // R2-01: como o total foi pago (caucao usada/devolvida, saldo a pagar e situacao).
+                    if ((r.depositUsedCents ?? 0) > 0) _Line(l.receiptDepositUsed, money(r.depositUsedCents!)),
+                    if (r.paymentStatus != null && r.paymentStatus != ReceiptPaymentStatus.pending && (r.depositReleasedCents ?? 0) > 0)
+                      _Line(l.receiptDepositReleased, money(r.depositReleasedCents!)),
+                    if (r.paymentStatus == ReceiptPaymentStatus.pending && r.amountDueCents != null)
+                      _Line(l.receiptAmountDue, money(r.amountDueCents!), strong: true),
+                    if (_statusBadge(r) case final badge?)
+                      _Line(l.receiptPaymentLabel, '', value: badge),
                   ]),
                 ),
+                if (r.paymentStatus == ReceiptPaymentStatus.pending) ...[
+                  const SizedBox(height: VoltiSpacing.s10),
+                  NoticeBanner(danger: true, icon: LucideIcons.circleAlert, title: l.paymentPendingTitle, message: l.receiptPendingText(money(r.amountDueCents ?? 0))),
+                  const SizedBox(height: VoltiSpacing.s8),
+                  VoltiButton(
+                    key: const Key('receipt-pay-now'),
+                    label: l.payNow,
+                    icon: LucideIcons.qrCode,
+                    size: VoltiButtonSize.lg,
+                    fullWidth: true,
+                    onPressed: r.paymentId == null ? null : () => _payNow(r),
+                  ),
+                ] else if (r.paymentStatus == ReceiptPaymentStatus.processing) ...[
+                  const SizedBox(height: VoltiSpacing.s10),
+                  NoticeBanner(icon: LucideIcons.clock, message: l.receiptProcessingText),
+                ],
                 const SizedBox(height: VoltiSpacing.s10),
                 Container(
                   decoration: BoxDecoration(borderRadius: VoltiRadii.rMd, boxShadow: VoltiShadows.shadow1),
