@@ -18,6 +18,9 @@
 			<key>NSAllowsLocalNetworking</key>
 			<true/>
 		</dict>
+		<!-- Só HTTPS/TLS padrão do sistema: isento de documentação de exportação (o TestFlight não pergunta a cada build). -->
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
 		<key>CADisableMinimumFrameDurationOnPhone</key>
 		<true/>
 		<key>CFBundleDevelopmentRegion</key>

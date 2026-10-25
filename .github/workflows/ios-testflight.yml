@@ -1,0 +1,122 @@
+name: ios-testflight
+
+# App do cliente (apps/cliente) no TestFlight, apontando para o ambiente dev da AWS.
+# Disparo manual (Actions > ios-testflight > Run workflow, depois que o arquivo estiver na main) ou por tag
+# `cliente-v*` em qualquer branch (ex.: git tag cliente-v0.1.0-3 && git push origin cliente-v0.1.0-3). Assinatura automática na nuvem da Apple
+# com a chave da App Store Connect API (papel Admin): sem certificado nem perfil guardados no repositório.
+#
+# Segredos: ASC_KEY_ID, ASC_ISSUER_ID, ASC_KEY_P8 (conteúdo do .p8).
+# Variáveis: APPLE_TEAM_ID, CLIENTE_API_BASE_URL, CLIENTE_COGNITO_REGION, CLIENTE_COGNITO_USER_POOL_ID,
+#            CLIENTE_COGNITO_CLIENT_ID, CLIENTE_COGNITO_DOMAIN.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['cliente-v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  testflight:
+    name: build + upload (TestFlight)
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: apps/cliente
+    env:
+      # Build number único e crescente: o TestFlight recusa números repetidos.
+      BUILD_NUMBER: ${{ github.run_number }}
+      TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          channel: stable
+          cache: true
+
+      - name: chave da App Store Connect API
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          printf '%s' "$ASC_KEY_P8" > "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+          chmod 600 "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8"
+
+      - run: flutter pub get
+
+      - name: testes
+        run: flutter test
+
+      # Gera a configuração do Xcode com os --dart-define (sem compilar nem assinar).
+      # APP_CHANNEL=beta: aceita o telefone de exemplo do suporte e o cartão de teste falso (sem Mercado Pago).
+      - name: configurar build (dev)
+        run: |
+          flutter build ios --release --config-only \
+            --build-name=0.1.0 --build-number="$BUILD_NUMBER" \
+            --dart-define=APP_CHANNEL=beta \
+            --dart-define=SUPPORT_PHONE=+551100000000 \
+            --dart-define=API_BASE_URL='${{ vars.CLIENTE_API_BASE_URL }}' \
+            --dart-define=COGNITO_REGION='${{ vars.CLIENTE_COGNITO_REGION }}' \
+            --dart-define=COGNITO_USER_POOL_ID='${{ vars.CLIENTE_COGNITO_USER_POOL_ID }}' \
+            --dart-define=COGNITO_CLIENT_ID='${{ vars.CLIENTE_COGNITO_CLIENT_ID }}' \
+            --dart-define=COGNITO_DOMAIN='${{ vars.CLIENTE_COGNITO_DOMAIN }}' \
+            --dart-define=COGNITO_REDIRECT_URI=volti://auth/callback
+
+      - name: arquivar (assinatura automática)
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          xcodebuild archive \
+            -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" CODE_SIGN_STYLE=Automatic
+
+      - name: exportar e enviar ao TestFlight
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+
+      - name: apagar a chave
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/asc"
