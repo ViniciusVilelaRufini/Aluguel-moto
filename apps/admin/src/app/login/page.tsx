@@ -22,7 +22,9 @@ const GROUP_OPTIONS: { value: DevGroup; label: string }[] = [
 ];
 
 export default function LoginPage() {
-  const { loginDev } = useAuth();
+  const { loginDev, token, me, groups, logout } = useAuth();
+  // Sessão válida de quem não tem nenhuma seção no painel (perfil de campo): explica em vez de repetir o login.
+  const noPanel = !!token && !!me && menuFor(groups).length === 0;
   const router = useRouter();
   const [step, setStep] = useState(0);
   const [code, setCode] = useState('');
@@ -57,6 +59,12 @@ export default function LoginPage() {
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-app)', padding: 24, minWidth: 0 }}>
         <form key={step} className="section-in" onSubmit={(e) => { e.preventDefault(); if (AUTH_MODE === 'cognito') return; if (step === 0) setStep(1); else if (!busy && code.length === 6) enter(); }}
           style={{ width: 380, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {noPanel && (
+            <>
+              <Alert tone="warning" icon="TriangleAlert">Seu perfil é de campo; use o app do operador.</Alert>
+              <Button variant="secondary" fullWidth testId="login-logout" onClick={logout}>Sair desta conta</Button>
+            </>
+          )}
           {AUTH_MODE === 'cognito' ? (
             <>
               <div style={title}>Entrar</div>
