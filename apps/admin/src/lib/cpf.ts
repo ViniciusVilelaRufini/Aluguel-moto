@@ -21,3 +21,16 @@ export function displayCpf(v: string | undefined | null, full: boolean): string 
   if (!v) return '—';
   return full ? formatCpf(v) : maskCpf(v);
 }
+
+/** CPF com 11 dígitos, não repetidos, e dígitos verificadores corretos. */
+export function isValidCpf(v: string): boolean {
+  const d = digits(v);
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const dv = (len: number) => {
+    let sum = 0;
+    for (let i = 0; i < len; i++) sum += Number(d[i]) * (len + 1 - i);
+    const r = (sum * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
+}
