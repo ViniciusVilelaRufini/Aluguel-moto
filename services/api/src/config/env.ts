@@ -29,8 +29,9 @@ export interface AppConfig {
   /** `ALLOW_FAKE_PAYMENTS=true`: libera o gateway fake com NODE_ENV=production (só o ambiente dev da infra). */
   allowFakePayments: boolean;
   /**
-   * `ALLOW_TEST_HANDOVER=true`: registra `POST /reservations/{id}/test-handover` (entrega simulada para o app de teste, sem a
-   * equipe do galpão). Em produção só junto com o pagamento fake liberado (o ambiente dev da infra).
+   * `ALLOW_TEST_HANDOVER=true`: registra os atalhos do app de teste — `POST /reservations/{id}/test-handover` (entrega simulada,
+   * sem a equipe do galpão) e `POST /rentals/{id}/test-end` (encerrar fora do ponto verde). Em produção só junto com o
+   * pagamento fake liberado (o ambiente dev da infra).
    */
   allowTestHandover: boolean;
   stubPixAutoConfirmSeconds: number;

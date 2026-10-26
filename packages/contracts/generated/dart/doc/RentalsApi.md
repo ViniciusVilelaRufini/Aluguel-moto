@@ -11,6 +11,7 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**createReturnPhotoUpload**](RentalsApi.md#createreturnphotoupload) | **POST** /rentals/{id}/return-photo | URL pré-assinada para a foto de devolução
 [**endRental**](RentalsApi.md#endrental) | **POST** /rentals/{id}/end | Encerrar aluguel
+[**endRentalTest**](RentalsApi.md#endrentaltest) | **POST** /rentals/{id}/test-end | Encerrar aluguel fora do ponto verde (só em ambiente de teste)
 [**forceEndRental**](RentalsApi.md#forceendrental) | **POST** /rentals/{id}/force-end | Encerramento forçado (staff)
 [**getCurrentRental**](RentalsApi.md#getcurrentrental) | **GET** /rentals/current | Aluguel em andamento do cliente
 [**getRental**](RentalsApi.md#getrental) | **GET** /rentals/{id} | Detalhe do aluguel
@@ -91,6 +92,53 @@ try {
     print(response);
 } on DioException catch (e) {
     print('Exception when calling RentalsApi->endRental: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+ **endRentalRequest** | [**EndRentalRequest**](EndRentalRequest.md)|  | 
+ **idempotencyKey** | **String**| Recomendado para reenvios da fila offline. Válida por 24 h. | [optional] 
+
+### Return type
+
+[**Rental**](Rental.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **endRentalTest**
+> Rental endRentalTest(id, endRentalRequest, idempotencyKey)
+
+Encerrar aluguel fora do ponto verde (só em ambiente de teste)
+
+**Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (a mesma flag dos atalhos de teste; em produção, só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso a rota não existe e responde `404`.  Igual a `POST /rentals/{id}/end`, pulando **apenas** a conferência da zona `return`: fora de qualquer ponto verde o encerramento segue sem zona (`endZoneId` nulo, evento `ending` marcado como teste) e sem taxa de encerramento forçado. Dentro de uma zona `return` se comporta exatamente como o encerramento normal. Todo o resto é o mesmo: aluguel de outro cliente → `404`; fora de andamento → `409` `rental-not-active`; troca na estação em andamento → `409` `swap-open`; sem a foto → `422` `return-photo-missing`; travamento pelo bloqueio seguro (redução gradual, trava só abaixo de 3 km/h) e encerramento só com a confirmação (`200` `ended` ou `202` `ending`); liquidação única por `rentalId`. 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getRentalsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+final EndRentalRequest endRentalRequest = ; // EndRentalRequest | 
+final String idempotencyKey = idempotencyKey_example; // String | Recomendado para reenvios da fila offline. Válida por 24 h.
+
+try {
+    final response = api.endRentalTest(id, endRentalRequest, idempotencyKey);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling RentalsApi->endRentalTest: $e\n');
 }
 ```
 

@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import request from 'supertest';
 import { mockDeep } from 'jest-mock-extended';
@@ -315,6 +316,90 @@ describe('Encerramento do aluguel', () => {
 });
 
 const DEPOT_ID = '77777777-7777-4777-8777-777777777777';
+
+describe('Encerramento de teste fora do ponto verde (allowOutsideZone, ALLOW_TEST_HANDOVER)', () => {
+  beforeEach(() => jest.useFakeTimers({ now: new Date('2026-10-21T15:00:00.000Z') }));
+  afterEach(() => jest.useRealTimers());
+  const OUT = { allowOutsideZone: true } as const;
+
+  it('fora de zona com a opção → segue: ending sem zona, evento marcado, trava pelo bloqueio seguro e só encerra com a confirmação', async () => {
+    const { service, prisma, rental, commands, billing } = setup({ inZone: false });
+    const log = jest.spyOn(Logger.prototype, 'log');
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT);
+    // Log estruturado só com ids.
+    expect(log).toHaveBeenCalledWith({ msg: 'rental_test_end_outside_zone', rentalId: RENTAL_ID, vehicleId: VEHICLE_ID });
+    log.mockRestore();
+    expect(r.status).toBe(200);
+    expect(r.rental.status).toBe('ended');
+    expect(rental.endZoneId).toBeNull();
+    expect(rental.returnPhotoObjectKey).toBe(PHOTO_KEY);
+    const endingUpdate = (prisma.rental.updateMany.mock.calls as any[]).find((c) => c[0].data.status === 'ending')[0];
+    expect(endingUpdate.data.endZoneId).toBeNull();
+    expect(prisma.rentalEvent.create).toHaveBeenCalledWith({
+      data: { rentalId: RENTAL_ID, type: 'ending', actorType: 'customer', actorId: CUSTOMER_ID, data: { zoneId: null, testOutsideZone: true } },
+    });
+    expect(commands.dispatch).toHaveBeenCalledTimes(1);
+    expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ vehicleId: VEHICLE_ID, type: 'lock', context: { rentalId: RENTAL_ID, purpose: 'rental_end' } }));
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+    // Sem taxa de encerramento forçado.
+    expect(JSON.stringify(rental.breakdown)).not.toContain('force_end_outside_return_zone');
+    expect(rental.forceEndReason).toBeNull();
+  });
+
+  it('fora de zona com a opção e a moto sem confirmar a trava → 202 ending (não encerra sem a confirmação)', async () => {
+    const { service, rental, billing } = setup({ inZone: false, lock: 'in_progress' });
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT);
+    expect(r.status).toBe(202);
+    expect(rental.status).toBe('ending');
+    expect(billing.settle).not.toHaveBeenCalled();
+    await service.onCommandChanged({ commandId: 'c', vehicleId: VEHICLE_ID, type: 'lock', status: 'confirmed', payload: { rentalId: RENTAL_ID, purpose: 'rental_end' } });
+    expect(rental.status).toBe('ended');
+    expect(billing.settle).toHaveBeenCalledTimes(1);
+  });
+
+  it('dentro de zona com a opção → igual ao encerramento normal (usa a zona, evento sem a marca)', async () => {
+    const { service, prisma, rental } = setup();
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT);
+    expect(rental.endZoneId).toBe(ZONE_ID);
+    expect(prisma.rentalEvent.create).toHaveBeenCalledWith({
+      data: { rentalId: RENTAL_ID, type: 'ending', actorType: 'customer', actorId: CUSTOMER_ID, data: { zoneId: ZONE_ID } },
+    });
+  });
+
+  it('sem a opção continua 422 rental-outside-return-zone (regressão)', async () => {
+    const { service, commands } = setup({ inZone: false });
+    await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, {})).rejects.toMatchObject({ status: 422, slug: 'rental-outside-return-zone' });
+    await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY })).rejects.toMatchObject({ status: 422, slug: 'rental-outside-return-zone' });
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('com a opção: aluguel de outro cliente → mesmo 404 do encerramento normal', async () => {
+    const { service, commands } = setup({ inZone: false });
+    await expect(service.end('outro', RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT)).rejects.toMatchObject({ status: 404, detail: 'Aluguel não encontrado.' });
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('com a opção: troca aberta na estação → 409 swap-open', async () => {
+    const { service, prisma, commands, rental } = setup({ inZone: false });
+    prisma.stationSwap.findFirst.mockResolvedValue({ id: 'swap-1' } as any);
+    await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT)).rejects.toMatchObject({ status: 409, slug: 'swap-open' });
+    expect(commands.dispatch).not.toHaveBeenCalled();
+    expect(rental.status).toBe('active');
+  });
+
+  it('com a opção: sem foto (ou chave diferente) → 422 return-photo-missing', async () => {
+    await expect(setup({ inZone: false, photo: false }).service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT))
+      .rejects.toMatchObject({ status: 422, slug: 'return-photo-missing' });
+    await expect(setup({ inZone: false }).service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: 'outra/chave.jpg' }, OUT))
+      .rejects.toMatchObject({ status: 422, slug: 'return-photo-missing' });
+  });
+
+  it('com a opção: aluguel já encerrado → 409 rental-not-active', async () => {
+    const { service, rental } = setup({ inZone: false });
+    rental.status = 'ended';
+    await expect(service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT)).rejects.toMatchObject({ status: 409, slug: 'rental-not-active' });
+  });
+});
 
 describe('Devolução em ponto verde (retirada em galpão)', () => {
   beforeEach(() => jest.useFakeTimers({ now: new Date('2026-10-21T15:00:00.000Z') }));

@@ -252,6 +252,116 @@ class RentalsApi {
     );
   }
 
+  /// Encerrar aluguel fora do ponto verde (só em ambiente de teste)
+  /// **Só existe em ambiente de teste**: a API registra esta rota apenas com &#x60;ALLOW_TEST_HANDOVER&#x3D;true&#x60; (a mesma flag dos atalhos de teste; em produção, só junto com &#x60;PAYMENT_PROVIDER&#x3D;fake&#x60; e &#x60;ALLOW_FAKE_PAYMENTS&#x3D;true&#x60;). Fora disso a rota não existe e responde &#x60;404&#x60;.  Igual a &#x60;POST /rentals/{id}/end&#x60;, pulando **apenas** a conferência da zona &#x60;return&#x60;: fora de qualquer ponto verde o encerramento segue sem zona (&#x60;endZoneId&#x60; nulo, evento &#x60;ending&#x60; marcado como teste) e sem taxa de encerramento forçado. Dentro de uma zona &#x60;return&#x60; se comporta exatamente como o encerramento normal. Todo o resto é o mesmo: aluguel de outro cliente → &#x60;404&#x60;; fora de andamento → &#x60;409&#x60; &#x60;rental-not-active&#x60;; troca na estação em andamento → &#x60;409&#x60; &#x60;swap-open&#x60;; sem a foto → &#x60;422&#x60; &#x60;return-photo-missing&#x60;; travamento pelo bloqueio seguro (redução gradual, trava só abaixo de 3 km/h) e encerramento só com a confirmação (&#x60;200&#x60; &#x60;ended&#x60; ou &#x60;202&#x60; &#x60;ending&#x60;); liquidação única por &#x60;rentalId&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [endRentalRequest]
+  /// * [idempotencyKey] - Recomendado para reenvios da fila offline. Válida por 24 h.
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Rental] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Rental>> endRentalTest({
+    required String id,
+    required EndRentalRequest endRentalRequest,
+    String? idempotencyKey,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/rentals/{id}/test-end'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        if (idempotencyKey != null) r'Idempotency-Key': idempotencyKey,
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(EndRentalRequest);
+      _bodyData =
+          _serializers.serialize(endRentalRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Rental? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Rental),
+            ) as Rental;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Rental>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
   /// Encerramento forçado (staff)
   /// &#x60;reason&#x60; obrigatório (&#x60;400&#x60; sem ele). Dispensa a foto. Status final &#x60;force_ended&#x60;; trava a moto com bloqueio seguro. Fora de uma zona &#x60;return&#x60;, só &#x60;admin&#x60; pode forçar (&#x60;403&#x60; &#x60;force-end-outside-zone-requires-admin&#x60;) e soma a taxa &#x60;force_end_outside_return_zone&#x60; (1500). Grava AuditLog. Liquidação idempotente por &#x60;rentalId&#x60; (no máximo uma por aluguel, mesmo com repetições); a &#x60;Idempotency-Key&#x60; opcional faz a repetição devolver a mesma resposta.
   ///

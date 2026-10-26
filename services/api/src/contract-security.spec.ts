@@ -20,7 +20,7 @@ function collectModules(mod: any, seen = new Set<any>()): any[] {
 }
 
 function collectRoutes() {
-  // A entrega simulada (createTestHandover) só é registrada com ALLOW_TEST_HANDOVER=true; o AppModule é carregado depois.
+  // A entrega simulada (createTestHandover) e o encerramento de teste (endRentalTest) só são registrados com ALLOW_TEST_HANDOVER=true; o AppModule é carregado depois.
   const prevFlag = process.env.ALLOW_TEST_HANDOVER;
   process.env.ALLOW_TEST_HANDOVER = 'true';
   let AppModule: typeof import('./app.module').AppModule;
@@ -68,8 +68,8 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     }
   }
 
-  it('cobre as 198 operações do contrato, sem rotas extras', () => {
-    expect(ops).toHaveLength(198);
+  it('cobre as 199 operações do contrato, sem rotas extras', () => {
+    expect(ops).toHaveLength(199);
     const missing = ops.map(([k]) => k).filter((k) => !routes.has(k));
     const extra = [...routes.keys()].filter((k) => !ops.some(([o]) => o === k));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });

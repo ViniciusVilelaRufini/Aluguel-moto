@@ -15,18 +15,21 @@ function controllersOf(root: any): any[] {
   return out;
 }
 
-function load(flag: string | undefined): { controllers: any[]; TestHandoverController: any } {
+type Loaded = { controllers: any[]; TestHandoverController: any; TestRentalEndController: any };
+
+function load(flag: string | undefined): Loaded {
   const prev = process.env.ALLOW_TEST_HANDOVER;
   if (flag === undefined) delete process.env.ALLOW_TEST_HANDOVER;
   else process.env.ALLOW_TEST_HANDOVER = flag;
   try {
-    let result!: { controllers: any[]; TestHandoverController: any };
+    let result!: Loaded;
     jest.isolateModules(() => {
       /* eslint-disable @typescript-eslint/no-require-imports */
       const { AppModule } = require('../../app.module') as typeof import('../../app.module');
       const { TestHandoverController } = require('./test-handover.controller') as typeof import('./test-handover.controller');
+      const { TestRentalEndController } = require('../rentals/test-rental-end.controller') as typeof import('../rentals/test-rental-end.controller');
       /* eslint-enable @typescript-eslint/no-require-imports */
-      result = { controllers: controllersOf(AppModule), TestHandoverController };
+      result = { controllers: controllersOf(AppModule), TestHandoverController, TestRentalEndController };
     });
     return result;
   } finally {
@@ -36,16 +39,18 @@ function load(flag: string | undefined): { controllers: any[]; TestHandoverContr
 }
 
 describe('AppModule × ALLOW_TEST_HANDOVER', () => {
-  it('sem a variável (e com "false") → nenhum TestHandoverController', () => {
+  it('sem a variável (e com "false") → nenhum TestHandoverController nem TestRentalEndController', () => {
     for (const flag of [undefined, 'false']) {
-      const { controllers, TestHandoverController } = load(flag);
+      const { controllers, TestHandoverController, TestRentalEndController } = load(flag);
       expect(controllers.length).toBeGreaterThan(10);
       expect(controllers).not.toContain(TestHandoverController);
+      expect(controllers).not.toContain(TestRentalEndController);
     }
   });
 
-  it('com ALLOW_TEST_HANDOVER=true → registra o TestHandoverController', () => {
-    const { controllers, TestHandoverController } = load('true');
+  it('com ALLOW_TEST_HANDOVER=true → registra o TestHandoverController e o TestRentalEndController', () => {
+    const { controllers, TestHandoverController, TestRentalEndController } = load('true');
     expect(controllers).toContain(TestHandoverController);
+    expect(controllers).toContain(TestRentalEndController);
   });
 });

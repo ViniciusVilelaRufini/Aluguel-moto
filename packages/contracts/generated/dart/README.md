@@ -255,6 +255,7 @@ Class | Method | HTTP request | Description
 [*ReferralsApi*](doc/ReferralsApi.md) | [**redeemReferralCode**](doc/ReferralsApi.md#redeemreferralcode) | **POST** /me/referral/redeem | Usar código de indicação de um amigo
 [*RentalsApi*](doc/RentalsApi.md) | [**createReturnPhotoUpload**](doc/RentalsApi.md#createreturnphotoupload) | **POST** /rentals/{id}/return-photo | URL pré-assinada para a foto de devolução
 [*RentalsApi*](doc/RentalsApi.md) | [**endRental**](doc/RentalsApi.md#endrental) | **POST** /rentals/{id}/end | Encerrar aluguel
+[*RentalsApi*](doc/RentalsApi.md) | [**endRentalTest**](doc/RentalsApi.md#endrentaltest) | **POST** /rentals/{id}/test-end | Encerrar aluguel fora do ponto verde (só em ambiente de teste)
 [*RentalsApi*](doc/RentalsApi.md) | [**forceEndRental**](doc/RentalsApi.md#forceendrental) | **POST** /rentals/{id}/force-end | Encerramento forçado (staff)
 [*RentalsApi*](doc/RentalsApi.md) | [**getCurrentRental**](doc/RentalsApi.md#getcurrentrental) | **GET** /rentals/current | Aluguel em andamento do cliente
 [*RentalsApi*](doc/RentalsApi.md) | [**getRental**](doc/RentalsApi.md#getrental) | **GET** /rentals/{id} | Detalhe do aluguel

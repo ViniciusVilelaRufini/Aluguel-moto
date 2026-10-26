@@ -1,5 +1,6 @@
 import { MODULE_METADATA } from '@nestjs/common/constants';
 import { verifyPickupCode } from '../reservations/pickup-code';
+import { TestRentalEndController } from '../rentals/test-rental-end.controller';
 import { TestHandoverController } from './test-handover.controller';
 import { TestHandoverModule } from './test-handover.module';
 import { TEST_HANDOVER_ACTOR_ID, TestHandoverService } from './test-handover.service';
@@ -44,10 +45,10 @@ describe('TestHandoverModule — registro condicional (ALLOW_TEST_HANDOVER)', ()
     expect(controllersOf(TestHandoverModule.register())).toEqual([]);
   });
 
-  it('flag ligada → registra o controller', () => {
-    expect(controllersOf(TestHandoverModule.register(true))).toEqual([TestHandoverController]);
+  it('flag ligada → registra os dois atalhos de teste (entrega simulada e encerramento fora do ponto verde)', () => {
+    expect(controllersOf(TestHandoverModule.register(true))).toEqual([TestHandoverController, TestRentalEndController]);
     process.env.ALLOW_TEST_HANDOVER = 'true';
-    expect(controllersOf(TestHandoverModule.register())).toEqual([TestHandoverController]);
+    expect(controllersOf(TestHandoverModule.register())).toEqual([TestHandoverController, TestRentalEndController]);
   });
 });
 
