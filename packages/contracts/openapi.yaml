@@ -720,7 +720,7 @@ paths:
       tags: [vehicles]
       operationId: setVehicleStatus
       summary: Mudar status operacional (manutenção ou disponível)
-      description: Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Grava AuditLog.
+      description: Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Moto com bloqueio da equipe ou do sistema (cerca, hold, modo roubada) não volta a `free` (`409` `vehicle-unavailable`, "A moto está bloqueada pela equipe; libere-a antes de devolver à frota."). Grava AuditLog.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -1366,7 +1366,10 @@ paths:
         ser a moto fixa do plano de outro cliente; senão `409` `vehicle-unavailable` ou `vehicle-offline`). O preço
         continua o do início do aluguel, então a nova moto precisa ter preço por minuto (modelo do catálogo) igual ou
         menor (`409`). Nova moto com bloqueio da equipe ou do sistema → `409` `vehicle-unavailable` ("A moto escolhida
-        está bloqueada pela equipe."), sem trocar nada. O aluguel continua o mesmo, com evento `vehicle_swapped`.
+        está bloqueada pela equipe."), sem trocar nada. Moto ATUAL com bloqueio da equipe ou do sistema (cerca, hold,
+        modo roubada) → `409` `vehicle-locked-by-staff` ("A moto foi bloqueada pela equipe. Fale com o suporte."),
+        mesmo com incidente, sem trocar nada. Se o aluguel mudar de status (pausa/retomada) durante a troca → `409`
+        `rental-not-active`. O aluguel continua o mesmo, com evento `vehicle_swapped`.
       security:
         - customerAuth: []
       parameters:
@@ -3264,7 +3267,7 @@ paths:
       tags: [field-tasks]
       operationId: completeFieldTask
       summary: Concluir tarefa
-      description: Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status (a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa; senão `409` `vehicle-unavailable` e nada muda).
+      description: Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status (a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa; senão `409` `vehicle-unavailable` e nada muda). Moto com bloqueio da equipe ou do sistema não volta a `free` por aqui (`409` `vehicle-unavailable`, "A moto está bloqueada pela equipe; libere-a antes de devolver à frota.").
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -4837,7 +4840,7 @@ components:
           type: integer
           minimum: 0
           maximum: 32
-          description: Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre <= 20).
+          description: Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre entre 6 e 20).
         geometry: { $ref: '#/components/schemas/GeoJsonPolygon' }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
@@ -4850,9 +4853,9 @@ components:
         type: { $ref: '#/components/schemas/ZoneType' }
         speedLimitKmh:
           type: integer
-          minimum: 0
+          minimum: 6
           maximum: 32
-          description: 'Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Acima de 32 → 400.'
+          description: 'Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Abaixo de 6 (menor limite de zona, área de pedestres) ou acima de 32 → 400.'
         geometry: { $ref: '#/components/schemas/GeoJsonPolygon' }
         active: { type: boolean, default: true }
     GeoZoneList:

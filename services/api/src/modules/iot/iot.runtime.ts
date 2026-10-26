@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { ClusterEventsBridge } from '../../common/cluster-events';
 import { EV, RentalChangedEvent, ZoneChangedEvent } from '../../common/events';
 import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
 import { BaseIotGateway } from './base-iot-gateway';
@@ -29,6 +30,7 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
     @Inject(RENTAL_LOOKUP) private readonly rentals: RentalLookup,
     @Optional() private readonly geofence?: GeofenceService,
     @Optional() private readonly telemetry?: TelemetryService,
+    @Optional() private readonly cluster?: ClusterEventsBridge,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -58,6 +60,12 @@ export class IotRuntime implements OnApplicationBootstrap, OnModuleDestroy {
   @OnEvent(EV.ZONE_CHANGED, { async: true, promisify: true })
   async onZoneChanged(ev: ZoneChangedEvent): Promise<void> {
     if (!this.geofence) return;
+    // Revisão final item 4: replicado de outra instância → só invalida a memória (a origem já ressincronizou, reavaliou e
+    // mandou os comandos, uma vez no cluster).
+    if (this.cluster?.isRemote(ev)) {
+      await this.geofence.onRemoteZoneChanged(ev).catch((err) => this.logger.error({ msg: 'geofence_remote_invalidate_failed', zoneId: ev.zoneId, error: (err as Error).message }));
+      return;
+    }
     await this.geofence.onZoneChanged(ev).catch((err) => this.logger.error({ msg: 'geofence_sync_failed', zoneId: ev.zoneId, error: (err as Error).message }));
   }
 

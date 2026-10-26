@@ -338,6 +338,21 @@ export class LiveStateStore {
     }
   }
 
+  /**
+   * Revisão final item 3: unlock de cliente/campo apaga a origem só se ela ainda for `customer` ou ausente, numa operação
+   * atômica (compare-and-delete). `false` = uma trava de equipe/sistema foi gravada no meio (ou não dá para confirmar:
+   * origem só neste processo, erro do Redis) — o unlock é recusado. Falha fechada.
+   */
+  async clearCustomerLockOrigin(thingName: string): Promise<boolean> {
+    if (this.unsyncedLockOrigin.has(thingName)) return false;
+    try {
+      return await this.redis.hdelIf(lockOriginKey(thingName), 'origin', ['customer', null]);
+    } catch (err) {
+      this.logger.error({ msg: 'lock_origin_clear_failed', thingName, error: (err as Error).message });
+      return false;
+    }
+  }
+
   /** Origem da trava em vigor; `null` = sem origem (trava comum ou destravada). Falha fechada: erro ao ler = `system`. */
   async getLockOrigin(thingName: string): Promise<LockOrigin | null> {
     const local = this.unsyncedLockOrigin.get(thingName);

@@ -18,6 +18,13 @@ export interface RedisStore {
    * `values` e soma `increments` (HINCRBYFLOAT), tudo numa operação. Devolve `false` se outro escritor mudou o campo antes.
    */
   hcas(key: string, guardField: string, expected: string | null, values: Record<string, string>, increments?: Record<string, number>): Promise<boolean>;
+  /**
+   * Compare-and-delete atômico no hash: apaga `key` só se `guardField` vale um de `allowed` (`null` = ausente). Devolve
+   * `false` (nada apagado) se outro escritor gravou outro valor antes.
+   */
+  hdelIf(key: string, guardField: string, allowed: Array<string | null>): Promise<boolean>;
+  /** Compare-and-delete atômico de texto: apaga `key` só se ela ainda vale `expected`. Devolve `false` se não valia. */
+  delIfEquals(key: string, expected: string): Promise<boolean>;
   /** Contador de janela fixa: INCR e, no primeiro hit, expira em `ttlMs`. Devolve a contagem e o tempo restante (ms). */
   incrWindow(key: string, ttlMs: number): Promise<{ count: number; ttlMs: number }>;
   /** Chamado quando uma chave expira por TTL (keyspace notifications `Ex`). */
@@ -38,6 +45,11 @@ local i = 4
 for _ = 1, n do redis.call('HSET', KEYS[1], ARGV[i], ARGV[i + 1]) i = i + 2 end
 while i <= #ARGV do redis.call('HINCRBYFLOAT', KEYS[1], ARGV[i], ARGV[i + 1]) i = i + 2 end
 return 1`;
+// ARGV: guardField, depois os valores aceitos ('' = ausente).
+const HDEL_IF_LUA = `local cur = redis.call('HGET', KEYS[1], ARGV[1]) or ''
+for i = 2, #ARGV do if cur == ARGV[i] then redis.call('DEL', KEYS[1]) return 1 end end
+return 0`;
+const DEL_IF_EQUALS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then redis.call('DEL', KEYS[1]) return 1 end return 0";
 const INCR_WINDOW_LUA = "local c = redis.call('INCR', KEYS[1]) if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end return {c, redis.call('PTTL', KEYS[1])}";
 
 /** Incremento como texto decimal sem notação científica (o HINCRBYFLOAT não aceita `1e-7`). */
@@ -85,6 +97,12 @@ export class IoRedisStore implements RedisStore {
     const incs = Object.entries(increments).filter(([, v]) => v !== 0);
     const args = [guardField, expected ?? '', String(sets.length), ...sets.flat(), ...incs.flatMap(([f, v]) => [f, floatArg(v)])];
     return Number(await this.client.eval(HCAS_LUA, 1, key, ...args)) === 1;
+  }
+  async hdelIf(key: string, guardField: string, allowed: Array<string | null>) {
+    return Number(await this.client.eval(HDEL_IF_LUA, 1, key, guardField, ...allowed.map((v) => v ?? ''))) === 1;
+  }
+  async delIfEquals(key: string, expected: string) {
+    return Number(await this.client.eval(DEL_IF_EQUALS_LUA, 1, key, expected)) === 1;
   }
   async incrWindow(key: string, ttlMs: number) {
     const [count, pttl] = (await this.client.eval(INCR_WINDOW_LUA, 1, key, String(Math.ceil(ttlMs)))) as [number, number];
@@ -197,6 +215,17 @@ export class MemoryRedisStore implements RedisStore {
     const next = { ...h, ...values };
     for (const [f, v] of Object.entries(increments)) if (v !== 0) next[f] = String((Number(next[f]) || 0) + Number(floatArg(v)));
     this.hashes.set(key, next);
+    return true;
+  }
+  async hdelIf(key: string, guardField: string, allowed: Array<string | null>) {
+    const cur = this.hashes.get(key)?.[guardField] ?? '';
+    if (!allowed.some((v) => (v ?? '') === cur)) return false;
+    this.hashes.delete(key);
+    return true;
+  }
+  async delIfEquals(key: string, expected: string) {
+    if ((await this.get(key)) !== expected) return false;
+    await this.del(key);
     return true;
   }
   async incrWindow(key: string, ttlMs: number) {

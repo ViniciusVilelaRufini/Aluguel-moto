@@ -53,7 +53,7 @@ describe('Troca de moto (POST /rentals/:id/swap)', () => {
     const { service, prisma, commands } = setup();
     await service.swap(customer, RENTAL_ID, { newVehicleId: V2, reason: 'pneu furado' });
     expect(prisma.rental.updateMany).toHaveBeenCalledWith({
-      where: { id: RENTAL_ID, status: { in: ['active', 'paused'] }, vehicleId: V1 },
+      where: { id: RENTAL_ID, status: 'active', vehicleId: V1 },
       data: { vehicleId: V2, speedLimitKmh: 32 },
     });
     expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ vehicleId: V2, type: 'unlock' }));
@@ -61,7 +61,7 @@ describe('Troca de moto (POST /rentals/:id/swap)', () => {
 
   it('auditoria item adiado 1: moto alvo com trava da equipe/sistema ou hold → 409 vehicle-unavailable, nada movido', async () => {
     const { service, prisma, commands } = setup();
-    commands.isLockedByStaff.mockResolvedValue(true);
+    commands.isLockedByStaff.mockImplementation(async (v: { id: string }) => v.id === V2);
     await expect(service.swap(customer, RENTAL_ID, { newVehicleId: V2, reason: 'pneu furado' })).rejects.toMatchObject({
       status: 409,
       slug: 'vehicle-unavailable',
@@ -71,6 +71,34 @@ describe('Troca de moto (POST /rentals/:id/swap)', () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(prisma.vehicle.update).not.toHaveBeenCalled();
     expectNoWrites(prisma, commands);
+  });
+
+  it('revisão final item 2: moto ATUAL com trava da equipe/sistema → 409 vehicle-locked-by-staff, nada movido', async () => {
+    const { service, prisma, commands } = setup();
+    commands.isLockedByStaff.mockImplementation(async (v: { id: string }) => v.id === V1);
+    await expect(service.swap(customer, RENTAL_ID, { newVehicleId: V2, reason: 'pneu furado', incidentId: 'inc-1' } as any)).rejects.toMatchObject({
+      status: 409,
+      slug: 'vehicle-locked-by-staff',
+      detail: 'A moto foi bloqueada pela equipe. Fale com o suporte.',
+    });
+    expect(commands.isLockedByStaff).toHaveBeenCalledWith(expect.objectContaining({ id: V1, thingName: v1.thingName }));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expectNoWrites(prisma, commands);
+  });
+
+  it('revisão final item 1: pausa concorrente entre a leitura e a escrita → 409, moto nova não é destravada', async () => {
+    const { service, prisma, commands } = setup();
+    // Lido como active; no banco o aluguel já foi pausado por outra requisição.
+    const dbStatus = 'paused';
+    prisma.rental.updateMany.mockImplementation((async ({ where }: any) => {
+      const st = where.status;
+      const matches = typeof st === 'string' ? st === dbStatus : Array.isArray(st?.in) ? st.in.includes(dbStatus) : true;
+      return { count: matches ? 1 : 0 };
+    }) as any);
+    await expect(service.swap(customer, RENTAL_ID, { newVehicleId: V2, reason: 'teste' })).rejects.toMatchObject({ status: 409, slug: 'rental-not-active' });
+    expect(prisma.rental.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: RENTAL_ID, status: 'active', vehicleId: V1 } }));
+    expect(commands.dispatch).not.toHaveBeenCalled();
   });
 
   it('item 11: moto fixa da assinatura de outro cliente → 409 vehicle-unavailable, sem escrita', async () => {

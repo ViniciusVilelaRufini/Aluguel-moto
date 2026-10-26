@@ -1,8 +1,11 @@
 import { Logger } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
+import { ClusterEventsBridge } from '../../../common/cluster-events';
+import { EV, type ZoneChangedEvent } from '../../../common/events';
 import { MemoryRedisStore } from '../../../redis/redis-store';
 import { BaseIotGateway } from '../base-iot-gateway';
 import { FakeClock } from '../clock';
+import { IotRuntime } from '../iot.runtime';
 import { LiveStateStore } from '../live-state.store';
 import type { DesiredState, IotTransport, MomentaryCommand } from '../shadow-transport';
 import type { GeofenceEngine, ZoneRef } from './geofence-engine';
@@ -267,4 +270,93 @@ describe('Limite de zona compartilhado entre tasks (auditoria, item 1)', () => {
       expect(limits).not.toContain(0);
     });
 });
+
+  describe('revisão final', () => {
+    const tick = () => new Promise((r) => setTimeout(r, 5));
+
+    it('item 4: zone.changed replicado → só a instância de origem reavalia e manda comandos; a outra só invalida a memória', async () => {
+      const c = cluster();
+      const parked = [{ vehicleId: 'veh-1', thingName: T, lat: -23.56, lng: -46.69 }];
+      const sync = jest.spyOn(c.engine, 'sync');
+      const node = () => {
+        const events = new EventEmitter2();
+        const live = new LiveStateStore(c.redis, c.clock);
+        const commander: jest.Mocked<GeofenceCommander> = { setSpeedLimit: jest.fn().mockResolvedValue(undefined), safeLock: jest.fn().mockResolvedValue(undefined) };
+        const positions = { vehiclesInZone: jest.fn().mockResolvedValue(parked) };
+        const geofence = new GeofenceService(c.engine, commander, c.rentals, events, c.clock, c.redis, { outOfAreaLockMinutes: 5 }, positions, live);
+        const bridge = new ClusterEventsBridge(events, c.redis);
+        bridge.onModuleInit();
+        const runtime = new IotRuntime({} as any, {} as any, c.clock, c.engine, c.rentals, geofence, undefined, bridge);
+        events.on(EV.ZONE_CHANGED, (ev: ZoneChangedEvent) => void runtime.onZoneChanged(ev));
+        return { events, commander, positions, geofence };
+      };
+      const a = node();
+      const b = node();
+      c.engine.zones = [OPERATION, BIKE_LANE];
+      await a.geofence.onPosition(pos());
+      await b.geofence.onPosition(pos('2026-10-21T15:00:01.000Z'));
+      a.commander.setSpeedLimit.mockClear();
+      b.commander.setSpeedLimit.mockClear();
+
+      c.engine.zones = [OPERATION, { ...BIKE_LANE, speedLimitKmh: 6 }];
+      a.events.emit(EV.ZONE_CHANGED, { zoneId: 'z-bike', action: 'updated', type: 'reduced_speed', speedLimitKmh: 6, active: true } satisfies ZoneChangedEvent);
+      await tick();
+      await tick();
+
+      expect(sync).toHaveBeenCalledTimes(1);
+      expect(a.commander.setSpeedLimit).toHaveBeenCalledTimes(1);
+      expect(a.commander.setSpeedLimit).toHaveBeenCalledWith('veh-1', 6, expect.objectContaining({ purpose: 'zone_speed_limit' }));
+      expect(b.commander.setSpeedLimit).not.toHaveBeenCalled();
+      // B relê do Redis: o limite novo vale e a próxima posição em B não reenvia (nem reemite transição).
+      expect(await b.geofence.effectiveLimit(T)).toBe(6);
+      await b.geofence.onPosition(pos('2026-10-21T15:00:02.000Z'));
+      expect(b.commander.setSpeedLimit).not.toHaveBeenCalled();
+    });
+
+    it('item 5: prazo "fora da área" armado em A; a moto volta e a posição cai em B → o timer de A não trava', async () => {
+      const c = cluster();
+      const a = c.task();
+      const b = c.task();
+      c.engine.zones = [];
+      await a.geofence.onPosition(pos());
+      expect(await c.redis.get('geofence:out-of-area:veh-1')).not.toBeNull();
+      c.engine.zones = [OPERATION];
+      await b.geofence.onPosition(pos('2026-10-21T15:01:00.000Z'));
+      expect(await c.redis.get('geofence:out-of-area:veh-1')).toBeNull();
+
+      await c.clock.advance(5 * 60_000);
+      expect(a.commander.safeLock).not.toHaveBeenCalled();
+      expect(b.commander.safeLock).not.toHaveBeenCalled();
+    });
+
+    it('item 5: prazo rearmado por B (novo prazo) → o timer velho de A não trava; o de B trava uma vez', async () => {
+      const c = cluster();
+      const a = c.task();
+      const b = c.task();
+      c.engine.zones = [];
+      await a.geofence.onPosition(pos());
+      c.engine.zones = [OPERATION];
+      await b.geofence.onPosition(pos('2026-10-21T15:01:00.000Z'));
+      await c.clock.advance(60_000);
+      c.engine.zones = [];
+      await b.geofence.onPosition(pos('2026-10-21T15:02:00.000Z'));
+
+      await c.clock.advance(3 * 60_000); // vence o prazo de A (15:05), não o de B (15:07)
+      expect(a.commander.safeLock).not.toHaveBeenCalled();
+      expect(b.commander.safeLock).not.toHaveBeenCalled();
+      await c.clock.advance(2 * 60_000);
+      expect(b.commander.safeLock).toHaveBeenCalledTimes(1);
+      expect(a.commander.safeLock).not.toHaveBeenCalled();
+    });
+
+    it('item 5: prazo vencido e a moto ainda fora → trava uma vez, decidindo pelo estado do Redis', async () => {
+      const c = cluster();
+      const a = c.task();
+      c.engine.zones = [];
+      await a.geofence.onPosition(pos());
+      await c.clock.advance(5 * 60_000);
+      expect(a.commander.safeLock).toHaveBeenCalledTimes(1);
+      expect(await c.redis.get('geofence:out-of-area:veh-1')).toBeNull();
+    });
+  });
 });

@@ -22,10 +22,18 @@ export class ClusterEventsBridge implements OnModuleInit {
     @Inject(REDIS_STORE) private readonly redis: RedisStore,
   ) {}
 
+  /**
+   * O payload chegou de outra instância (re-emitido por este bridge)? Usado por quem deve agir uma vez só no cluster
+   * (ex.: `zone.changed` — só a instância de origem reavalia e manda comandos; as outras só invalidam a memória).
+   */
+  isRemote(payload: unknown): boolean {
+    return typeof payload === 'object' && payload !== null && this.remote.has(payload);
+  }
+
   onModuleInit(): void {
     for (const event of REPLICATED) {
       this.emitter.on(event, (payload: unknown) => {
-        if (typeof payload === 'object' && payload !== null && this.remote.has(payload)) return;
+        if (this.isRemote(payload)) return;
         this.redis
           .publish(CLUSTER_EVENTS_CHANNEL, JSON.stringify({ origin: this.instanceId, event, payload }))
           .catch((err) => this.logger.warn({ msg: 'cluster_event_publish_failed', event, error: (err as Error).message }));

@@ -130,15 +130,19 @@ export abstract class BaseIotGateway implements IotGateway {
   async unlock(req: CommandRequest): Promise<CommandOutcome> {
     const authority = req.authority ?? 'customer';
     if (authority !== 'staff') {
-      const blockedBy = await this.unlockBlocker(req.thingName);
+      // Revisão final item 3: a origem é apagada por compare-and-delete (só se ainda for `customer`/ausente); uma trava de
+      // equipe/sistema gravada entre a verificação e a limpeza faz o unlock ser recusado, sem publicar nem cancelar a rampa.
+      const blockedBy = (await this.unlockBlocker(req.thingName)) ?? ((await this.live.clearCustomerLockOrigin(req.thingName)) ? null : 'origin');
       if (blockedBy) {
         // Nada é publicado e a rampa em curso segue (nunca cortar/soltar a potência por uma recusa).
         this.logger.warn({ msg: 'unlock_refused_locked_by_staff', thingName: req.thingName, commandId: req.commandId, authority, blockedBy });
         return { commandId: req.commandId, status: 'failed', reason: 'locked_by_staff' };
       }
+    } else {
+      // Origem apagada primeiro: se a escrita falhar, nada mudou (a rampa segue, o hold fica) e o unlock termina failed.
+      await this.live.setLockOrigin(req.thingName, null);
     }
-    // Origem apagada primeiro: se a escrita falhar, nada mudou (a rampa segue, o hold fica) e o unlock termina failed.
-    await this.live.setLockOrigin(req.thingName, null);
+    // A rampa só é cancelada depois de a origem ter sido apagada com sucesso.
     this.safeLock.cancel(req.thingName);
     await this.live.setHeld(req.thingName, false);
     const limit = assertSpeedLimit(await this.limitResolver(req.thingName));

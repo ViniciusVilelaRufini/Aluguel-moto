@@ -81,7 +81,8 @@ export class GeofenceService {
   private readonly limitByThing = new Map<string, number>();
   /** Última posição vista por este processo (só memória; depois de um reinício vale a posição gravada no Postgres). */
   private readonly lastPosition = new Map<string, VehiclePosition>();
-  private readonly outOfArea = new Map<string, { handle: TimerHandle; rentalId: string }>();
+  /** Prazo armado neste processo; `stored` = valor gravado no Redis (`null` se a escrita falhou: só a memória vale). */
+  private readonly outOfArea = new Map<string, { handle: TimerHandle; rentalId: string; stored: string | null }>();
   /** Motos cujo prazo persistido já foi conferido neste processo (evita um GET/DEL no Redis a cada posição). */
   private readonly outOfAreaChecked = new Set<string>();
   /** thingName → vehicleId já indexado no Redis por este processo. */
@@ -182,6 +183,33 @@ export class GeofenceService {
    */
   async onZoneChanged(ev: ZoneChangedEvent): Promise<void> {
     await this.engine.sync(ev);
+    const candidates = await this.zoneCandidates(ev);
+    const ts = new Date(this.clock.now()).toISOString();
+    for (const c of candidates.values()) {
+      await this.evaluate({ ...c, ts }, false).catch((err) =>
+        this.logger.error({ msg: 'zone_change_reevaluate_failed', vehicleId: c.vehicleId, zoneId: ev.zoneId, error: (err as Error).message }),
+      );
+    }
+    if (candidates.size) this.logger.log({ msg: 'zone_change_reevaluated', zoneId: ev.zoneId, vehicles: candidates.size });
+  }
+
+  /**
+   * Revisão final item 4: `zone.changed` vindo de outra instância. A origem já sincronizou o motor, reavaliou e mandou os
+   * comandos (uma vez no cluster); aqui só se descarta o estado em memória das motos afetadas, para a próxima avaliação e o
+   * `effectiveLimit` lerem o estado novo do Redis.
+   */
+  async onRemoteZoneChanged(ev: ZoneChangedEvent): Promise<void> {
+    const candidates = await this.zoneCandidates(ev);
+    for (const c of candidates.values()) {
+      this.byVehicle.delete(c.vehicleId);
+      this.limitByThing.delete(c.thingName);
+      this.unsyncedLimit.delete(c.thingName);
+    }
+    if (candidates.size) this.logger.log({ msg: 'zone_change_invalidated', zoneId: ev.zoneId, vehicles: candidates.size });
+  }
+
+  /** Motos afetadas por uma zona alterada: as vistas dentro dela por este processo e as que a posição conhecida põe dentro. */
+  private async zoneCandidates(ev: ZoneChangedEvent): Promise<Map<string, VehiclePosition>> {
     const candidates = new Map<string, VehiclePosition>();
     for (const [vehicleId, st] of this.byVehicle) {
       const last = this.lastPosition.get(vehicleId);
@@ -195,13 +223,7 @@ export class GeofenceService {
       // A posição vista ao vivo por este processo é mais nova que a gravada no Postgres (a cada 30 s).
       for (const v of inside) if (!candidates.has(v.vehicleId)) candidates.set(v.vehicleId, this.lastPosition.get(v.vehicleId) ?? v);
     }
-    const ts = new Date(this.clock.now()).toISOString();
-    for (const c of candidates.values()) {
-      await this.evaluate({ ...c, ts }, false).catch((err) =>
-        this.logger.error({ msg: 'zone_change_reevaluate_failed', vehicleId: c.vehicleId, zoneId: ev.zoneId, error: (err as Error).message }),
-      );
-    }
-    if (candidates.size) this.logger.log({ msg: 'zone_change_reevaluated', zoneId: ev.zoneId, vehicles: candidates.size });
+    return candidates;
   }
 
   private key(vehicleId: string): string {
@@ -220,6 +242,21 @@ export class GeofenceService {
     } catch {
       return undefined;
     }
+  }
+
+  /** Estado da cerca lido do Redis (atualiza a memória); erro ou ausência → o da memória. */
+  private async persistedState(vehicleId: string): Promise<VehicleZones | undefined> {
+    try {
+      const raw = await this.redis.get(this.key(vehicleId));
+      if (raw) {
+        const v = JSON.parse(raw) as VehicleZones;
+        this.byVehicle.set(vehicleId, v);
+        return v;
+      }
+    } catch {
+      /* Redis fora ou estado corrompido: vale a memória */
+    }
+    return this.byVehicle.get(vehicleId);
   }
 
   private async save(vehicleId: string, v: VehicleZones, thingName?: string): Promise<void> {
@@ -343,19 +380,27 @@ export class GeofenceService {
     const now = this.clock.now();
     const raw = await this.redis.get(this.outOfAreaKey(vehicleId)).catch(() => null);
     let deadline = NaN;
+    let stored: string | null = null;
     try {
-      const stored = raw ? (JSON.parse(raw) as { rentalId?: string; deadline?: number }) : null;
-      if (stored && stored.rentalId === rentalId && Number.isFinite(stored.deadline)) deadline = stored.deadline!;
+      const prev = raw ? (JSON.parse(raw) as { rentalId?: string; deadline?: number }) : null;
+      if (prev && prev.rentalId === rentalId && Number.isFinite(prev.deadline)) {
+        deadline = prev.deadline!;
+        stored = raw;
+      }
     } catch {
       /* formato antigo/corrompido: prazo novo */
     }
     if (!Number.isFinite(deadline)) {
       deadline = now + this.opts.outOfAreaLockMinutes * 60_000;
-      await this.redis.set(this.outOfAreaKey(vehicleId), JSON.stringify({ rentalId, deadline }), deadline - now + OUT_OF_AREA_KEY_GRACE_MS).catch(() => undefined);
+      const value = JSON.stringify({ rentalId, deadline });
+      stored = await this.redis
+        .set(this.outOfAreaKey(vehicleId), value, deadline - now + OUT_OF_AREA_KEY_GRACE_MS)
+        .then(() => value)
+        .catch(() => null);
     }
     this.outOfAreaChecked.add(vehicleId);
     const handle = this.clock.setTimeout(() => this.fireOutOfAreaLock(vehicleId, rentalId), Math.max(0, deadline - now));
-    this.outOfArea.set(vehicleId, { handle, rentalId });
+    this.outOfArea.set(vehicleId, { handle, rentalId, stored });
     this.logger.log({ msg: 'out_of_area_lock_armed', vehicleId, rentalId, inMs: Math.max(0, deadline - now) });
   }
 
@@ -372,11 +417,27 @@ export class GeofenceService {
     await this.redis.del(this.outOfAreaKey(vehicleId)).catch(() => undefined);
   }
 
+  /**
+   * Revisão final item 5: o timer é por processo, mas a posição "dentro" pode cair noutra task (que apaga ou rearma o prazo).
+   * Só trava quem consome atomicamente o **mesmo** prazo que armou (`delIfEquals`) e decide pelo estado da cerca lido do
+   * Redis, não da memória. Sem Redis (escrita do prazo ou consumo falhou) vale o estado deste processo.
+   */
   private async fireOutOfAreaLock(vehicleId: string, armedRentalId: string): Promise<void> {
-    if (this.outOfArea.get(vehicleId)?.rentalId !== armedRentalId) return;
+    const armed = this.outOfArea.get(vehicleId);
+    if (armed?.rentalId !== armedRentalId) return;
     this.outOfArea.delete(vehicleId);
-    await this.redis.del(this.outOfAreaKey(vehicleId)).catch(() => undefined);
-    const state = await this.load(vehicleId);
+    let state: VehicleZones | undefined;
+    const consumed = armed.stored === null ? null : await this.redis.delIfEquals(this.outOfAreaKey(vehicleId), armed.stored).catch(() => null);
+    if (consumed === false) {
+      this.logger.log({ msg: 'out_of_area_lock_superseded', vehicleId, rentalId: armedRentalId });
+      return;
+    }
+    if (consumed === true) {
+      state = await this.persistedState(vehicleId);
+    } else {
+      await this.redis.del(this.outOfAreaKey(vehicleId)).catch(() => undefined);
+      state = await this.load(vehicleId);
+    }
     if (state?.zones.some((z) => z.type === 'operation')) return;
     this.rentals.invalidate(vehicleId);
     const rentalId = await this.rentals.openRentalId(vehicleId);

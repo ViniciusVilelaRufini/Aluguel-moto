@@ -247,6 +247,9 @@ class SyncController extends Notifier<SyncState> {
       final results = Map<String, Object>.of(state.results);
       final owner = ref.read(ownerSubProvider);
       for (final job in await _queue.all()) {
+        // Troca de conta (ou logout) durante a rodada: para antes do proximo
+        // job, para nada do dono anterior sair com o token de outro operador.
+        if (ref.read(ownerSubProvider) != owner) break;
         // Fila de aparelho compartilhado: so envia o que e do operador atual.
         // Os demais ficam retidos ate o dono voltar (sem dono: so descarte).
         if (owner == null || job.ownerSub != owner) continue;
