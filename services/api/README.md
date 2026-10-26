@@ -272,6 +272,7 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - Busca de clientes por CPF: não-admin só por igualdade (11 dígitos). Cupom com teto atômico (`422 coupon-invalid`).
 - WebSocket exige `exp` no JWT e desconecta no vencimento; cache veículo→aluguel de 5 s. `rental.changed` replicado só invalida o cache (o adaptador Redis do Socket.IO já entrega o `rental.updated` da origem).
 - Galpão: chegada ao galpão (fim do aluguel ou `collect`) não deixa como `free` moto com trava de equipe/sistema (vai para `maintenance` no fim do aluguel; `409` no `collect`).
+- Run-2 — caução não é reaproveitada: `POST /rentals` com `depositId` de uma reserva `active`/`handover` → `409 deposit-in-use` antes de qualquer recusa que liberaria a caução (exceções: aceite da entrega da própria reserva e a 2ª chamada do Pix de rua na mesma moto). A liberação da caução (`onReleaseRequested`/retentativa) trata como "em uso" o marcador `RentalStart` em andamento, além do `Rental`. A transação final do `start()` relê a caução (`updateMany` condicional `held` + sem `DepositRelease`); senão `409 deposit-in-use` com o rollback do `vehicle-offline`.
 
 ## Regras que nunca mudam
 

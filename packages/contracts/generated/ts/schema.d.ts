@@ -1283,6 +1283,11 @@ export interface paths {
          *       **nova** `Idempotency-Key` e `depositId`, e recebe `201`. Caução paga cujo aluguel não chega a
          *       iniciar (reserva expirada, `409` na segunda chamada, cancelamento) é liberada/estornada
          *       automaticamente (`DepositStatus` → `released`).
+         *     - `depositId` de uma caução presa a uma reserva `active` ou `handover` → `409` `deposit-in-use` ("Essa caução
+         *       já está em uso em outra reserva."), antes de qualquer outra recusa e sem liberar a caução da reserva. Só a
+         *       segunda chamada do fluxo Pix acima (reserva de rua da mesma moto) e o aceite da entrega da própria reserva de
+         *       galpão usam essa caução. Caução liberada (ou com liberação pedida) durante o desbloqueio também responde
+         *       `409` `deposit-in-use`: nenhum aluguel é criado e a moto volta a travar.
          *
          *     Idempotência: a mesma `Idempotency-Key` devolve a mesma resposta e não cria outro aluguel.
          */

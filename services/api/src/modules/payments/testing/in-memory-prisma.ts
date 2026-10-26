@@ -40,6 +40,7 @@ const SPECS: Record<string, ModelSpec> = {
   paymentRefund: { unique: [['id'], ['idempotencyKey']], defaults: () => ({ attempts: 0, providerRefundId: null, lastError: null, createdById: null }), updatedAt: true },
   depositRelease: { id: 'depositId', unique: [['depositId']], defaults: () => ({ attempts: 0, lastError: null, confirmedAt: null }), updatedAt: true },
   paymentCapture: { id: 'paymentId', unique: [['paymentId']] },
+  rentalStart: { id: 'rentalId', unique: [['rentalId']], defaults: () => ({ depositId: null, policyId: null, createdAt: new Date() }) },
 };
 
 const OPS = new Set(['in', 'notIn', 'not', 'gt', 'gte', 'lt', 'lte', 'equals', 'startsWith', 'contains']);

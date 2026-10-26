@@ -19,6 +19,8 @@ const UNLOCK_WAIT_MARGIN_MS = 5_000;
 const STALE_START_MARGIN_MS = 60_000;
 /** Auditoria item adiado 1: moto com trava que o cliente não desfaz (equipe/sistema, hold, modo roubada). */
 const LOCKED_BY_STAFF_DETAIL = 'A moto está bloqueada pela equipe. Escolha outra.';
+/** Run-2: caução de outra reserva (ou liberada durante o desbloqueio) não sustenta este aluguel. */
+const depositInUse = () => conflict('deposit-in-use', 'Essa caução já está em uso em outra reserva.');
 import { RENTAL_BILLING, type RentalBillingPort } from '../../ports/rental-billing.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Principal } from '../auth/principal';
@@ -194,8 +196,10 @@ export class RentalStartService {
     const release = (depositId: string | undefined) => (fromHandover ? Promise.resolve() : this.requestDepositRelease(depositId, customerId));
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
     await assertCustomerEligible(customer, customerId, this.billing, { requireLocationConsent: true, requireTerms: true });
+    // Run-2: antes de qualquer liberação (as recusas abaixo liberam `dto.depositId`), para não soltar a caução de uma reserva.
+    if (dto.depositId) await this.assertDepositNotInUse(dto.depositId, dto.vehicleId, fromHandover);
 
-    const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
+    const open =await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
     if (open) {
       await release(dto.depositId);
       throw conflict('rental-already-active', 'Você já tem um aluguel em andamento.');
@@ -319,6 +323,10 @@ export class RentalStartService {
         compensatedBySweep = true;
         throw conflict('vehicle-offline', 'A moto não respondeu a tempo. Nada foi cobrado e a caução foi liberada.');
       }
+      // Run-2: relê a caução com bloqueio condicional (ainda `held` e sem pedido de liberação gravado durante o unlock);
+      // senão aborta e o catch desfaz como no `vehicle-offline`. `rentalId` já é o da caução quando ela tinha um.
+      const kept = await tx.deposit.updateMany({ where: { id: deposit.id, status: 'held' }, data: { rentalId } });
+      if (kept.count !== 1 || (await tx.depositRelease.findUnique({ where: { depositId: deposit.id } }))) throw depositInUse();
       if (ownReservation) await this.reservations.convert(tx, ownReservation.id);
       if (fromHandover) {
         // Aceite único: a entrega só passa a `accepted` se ainda estiver pendente (disputa/cancelamento concorrente desfaz tudo).
@@ -354,7 +362,6 @@ export class RentalStartService {
         });
         if (reserved.count !== 1) throw unprocessable('coupon-invalid', 'Cupom esgotado.');
       }
-      if (!deposit.rentalId) await tx.deposit.update({ where: { id: deposit.id }, data: { rentalId } });
       return created;
     });
     } catch (err) {
@@ -391,6 +398,23 @@ export class RentalStartService {
     } satisfies RentalChangedEvent);
     this.logger.log({ msg: 'rental_started', rentalId, planCode: dto.planCode });
     return { status: 201, body: { outcome: 'started', rental: mapped, deposit: toDeposit({ ...deposit, rentalId }) } };
+  }
+
+  /**
+   * Run-2: a caução de uma reserva `active`/`handover` não é reaproveitada por outro início (`409 deposit-in-use`).
+   * Exceções: o aceite da entrega da própria reserva dona da caução (`fromHandover`) e a segunda chamada do fluxo Pix de
+   * rua (reserva sem galpão, `active`, da mesma moto — o início converte essa reserva).
+   */
+  private async assertDepositNotInUse(depositId: string, vehicleId: string, fromHandover: StartOptions['fromHandover']): Promise<void> {
+    const owner = await this.prisma.reservation.findFirst({
+      where: { depositId, status: { in: ['active', 'handover'] } },
+      select: { id: true, vehicleId: true, depotId: true, status: true },
+    });
+    if (!owner) return;
+    const sameReservation = fromHandover
+      ? owner.id === fromHandover.reservationId
+      : !owner.depotId && owner.status === 'active' && owner.vehicleId === vehicleId;
+    if (!sameReservation) throw depositInUse();
   }
 
   /**

@@ -282,7 +282,10 @@ export class RentalBillingService implements RentalBillingPort {
     try {
       const deposit = await this.prisma.deposit.findUnique({ where: { id: ev.depositId } });
       if (!deposit || deposit.customerId !== ev.customerId) return;
-      if (await this.prisma.rental.findFirst({ where: { depositId: ev.depositId }, select: { id: true } })) return;
+      // Run-2: caução em uso = aluguel criado com ela ou início em andamento (marcador `RentalStart`). O marcador é lido
+      // antes do aluguel: a transação final do início troca um pelo outro, então ao menos um dos dois é visto.
+      // Se o início falhar, ele mesmo (ou a varredura) pede a liberação depois de apagar o marcador.
+      if (await this.depositInUse(ev.depositId)) return;
       await this.prisma.depositRelease.upsert({ where: { depositId: deposit.id }, create: { depositId: deposit.id, reason: ev.reason }, update: {} });
       await this.attemptRelease(deposit.id);
     } catch (err) {
@@ -290,10 +293,22 @@ export class RentalBillingService implements RentalBillingPort {
     }
   }
 
+  private async startInFlight(depositId: string): Promise<boolean> {
+    return !!(await this.prisma.rentalStart.findFirst({ where: { depositId }, select: { rentalId: true } }));
+  }
+
+  private async depositInUse(depositId: string): Promise<boolean> {
+    if (await this.startInFlight(depositId)) return true;
+    return !!(await this.prisma.rental.findFirst({ where: { depositId }, select: { id: true } }));
+  }
+
   private async attemptRelease(depositId: string): Promise<void> {
     const req = await this.prisma.depositRelease.findUnique({ where: { depositId } });
     if (!req || req.confirmedAt) return;
     try {
+      // Run-2: início em andamento com esta caução → adia (sem liberar nem confirmar). A transação final do início vê o
+      // `DepositRelease` e aborta; a retentativa libera depois que o marcador sumir.
+      if (await this.startInFlight(depositId)) return;
       if (await this.prisma.rental.findFirst({ where: { depositId }, select: { id: true } })) {
         await this.prisma.depositRelease.update({ where: { depositId }, data: { confirmedAt: new Date(), lastError: 'rental_started' } });
         return;

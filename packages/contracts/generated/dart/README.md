@@ -41,7 +41,7 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
 `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
 `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`,
-`payment-pending`, `card-required`, `vehicle-locked-by-staff`, `vehicle-not-at-depot`.
+`payment-pending`, `card-required`, `vehicle-locked-by-staff`, `vehicle-not-at-depot`, `deposit-in-use`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por

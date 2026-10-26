@@ -78,6 +78,8 @@ describe('Início do aluguel (POST /rentals)', () => {
     commands.isLockedByStaff.mockResolvedValue(false);
     iot.getLiveState.mockResolvedValue(null);
     p.rentalStart.deleteMany.mockResolvedValue({ count: 1 });
+    p.deposit.updateMany.mockResolvedValue({ count: 1 });
+    p.depositRelease.findUnique.mockResolvedValue(null);
     p.paymentCard.findFirst.mockResolvedValue({ id: 'card-default', customerId: CUSTOMER_ID, isDefault: true, deletedAt: null } as any);
   });
 
@@ -565,6 +567,104 @@ describe('Início do aluguel (POST /rentals)', () => {
       expect(await svc().sweepStaleStarts()).toBe(1);
       expect(h.prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
       expect(released).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Run-2: caução não é reaproveitada entre reserva e aluguel de rua', () => {
+    const DEPOT_ID = '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c';
+    const RES_ID = '44444444-4444-4444-8444-444444444444';
+    const HO_ID = '55555555-5555-4555-8555-555555555555';
+    const OTHER_VEHICLE = '88888888-8888-4888-8888-888888888888';
+    const user = { pool: 'customer', sub: 's', email: 'e@example.com', groups: [], userId: CUSTOMER_ID, customerId: CUSTOMER_ID } as any;
+    const depotRes = { id: RES_ID, customerId: CUSTOMER_ID, vehicleId: OTHER_VEHICLE, depotId: DEPOT_ID, status: 'active', depositId: DEPOSIT_ID, expiresAt: new Date(Date.now() + 60 * 60_000) };
+    let released: jest.Mock;
+    /** `reservation.findFirst` por `depositId` devolve `owner`; a busca pela reserva da moto devolve `byVehicle`. */
+    const reservationsBy = (owner: object | null, byVehicle: object | null = null) =>
+      h.prisma.reservation.findFirst.mockImplementation((async (args: any) => (args?.where?.depositId ? owner : byVehicle)) as any);
+
+    beforeEach(() => {
+      released = jest.fn();
+      h.app.get(EventEmitter2).removeAllListeners(EV.DEPOSIT_RELEASE_REQUESTED);
+      h.app.get(EventEmitter2).on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+    });
+
+    it.each([['active'], ['handover']])(
+      '(a) POST /rentals de rua com o depositId de uma reserva de galpão %s → 409 deposit-in-use, sem reivindicar a moto nem liberar a caução da reserva',
+      async (status) => {
+        reservationsBy({ ...depotRes, status });
+        const res = await post(`chave-reuso-${status}`, { ...body, depositMethod: 'card', depositId: DEPOSIT_ID });
+        expect(res.status).toBe(409);
+        expect(res.body.type).toBe('https://api.volti.com.br/problems/deposit-in-use');
+        expect(res.body.detail).toBe('Essa caução já está em uso em outra reserva.');
+        expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
+        expect(commands.dispatch).not.toHaveBeenCalled();
+        expect(insurance.issueForRental).not.toHaveBeenCalled();
+        expect(h.prisma.rental.create).not.toHaveBeenCalled();
+        expect(released).not.toHaveBeenCalled();
+      },
+    );
+
+    it('(a) recusa antes de qualquer liberação: moto offline com o depositId da reserva não libera a caução da reserva', async () => {
+      reservationsBy(depotRes);
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'offline', online: false } as any);
+      const res = await post('chave-reuso-off', { ...body, depositMethod: 'card', depositId: DEPOSIT_ID });
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/deposit-in-use');
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it('fluxo Pix de rua: a segunda chamada com o depositId da própria reserva da mesma moto continua começando (201)', async () => {
+      const pixRes = { id: 'res-pix', customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, depotId: null, status: 'active', depositId: DEPOSIT_ID, expiresAt: new Date(Date.now() + 60_000) };
+      reservationsBy(pixRes, pixRes);
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved' } as any);
+      const res = await post('chave-pix-2a-0001', { ...body, depositMethod: 'pix', depositId: DEPOSIT_ID });
+      expect(res.status).toBe(201);
+      expect(reservations.convert.mock.calls[0][1]).toBe('res-pix');
+    });
+
+    it('fluxo Pix de rua com o depositId da reserva em OUTRA moto → 409 deposit-in-use', async () => {
+      const pixRes = { id: 'res-pix', customerId: CUSTOMER_ID, vehicleId: OTHER_VEHICLE, depotId: null, status: 'active', depositId: DEPOSIT_ID, expiresAt: new Date(Date.now() + 60_000) };
+      reservationsBy(pixRes);
+      const res = await post('chave-pix-2a-0002', { ...body, depositMethod: 'pix', depositId: DEPOSIT_ID });
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/deposit-in-use');
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it('aceite da entrega da reserva dona da caução continua começando (exceção da regra)', async () => {
+      const handoverRes = { ...depotRes, vehicleId: VEHICLE_ID, status: 'handover' };
+      reservationsBy(handoverRes);
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved', depotId: DEPOT_ID } as any);
+      h.prisma.reservation.findUnique.mockResolvedValue(handoverRes as any);
+      h.prisma.handover.updateMany.mockResolvedValue({ count: 1 });
+      const r = await h.app.get(RentalStartService).start(user, { ...body, depositId: DEPOSIT_ID } as any, `handover:${HO_ID}`, { fromHandover: { reservationId: RES_ID, handoverId: HO_ID } });
+      expect(r.status).toBe(201);
+    });
+
+    it('aceite de entrega de OUTRA reserva com a caução de uma reserva ativa → 409 deposit-in-use', async () => {
+      reservationsBy({ ...depotRes, id: 'outra-reserva' });
+      const handoverRes = { ...depotRes, vehicleId: VEHICLE_ID, status: 'handover' };
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved', depotId: DEPOT_ID } as any);
+      h.prisma.reservation.findUnique.mockResolvedValue(handoverRes as any);
+      await expect(
+        h.app.get(RentalStartService).start(user, { ...body, depositId: DEPOSIT_ID } as any, `handover:${HO_ID}`, { fromHandover: { reservationId: RES_ID, handoverId: HO_ID } }),
+      ).rejects.toMatchObject({ slug: 'deposit-in-use' });
+      expect(commands.dispatch).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['caução já liberada (updateMany condicional count 0)', 'final-1', () => h.prisma.deposit.updateMany.mockResolvedValue({ count: 0 })],
+      ['DepositRelease gravado durante o unlock', 'final-2', () => h.prisma.depositRelease.findUnique.mockResolvedValueOnce(null).mockResolvedValue({ depositId: DEPOSIT_ID } as any)],
+    ])('(c) %s antes da transação final → 409 deposit-in-use, nenhum aluguel e a moto volta (rollback do vehicle-offline)', async (_n, key, arrange) => {
+      arrange();
+      const res = await post(`chave-${key}`);
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/deposit-in-use');
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(h.prisma.deposit.updateMany).toHaveBeenCalledWith({ where: { id: DEPOSIT_ID, status: 'held' }, data: { rentalId: expect.any(String) } });
+      expect(h.prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'free' } });
+      expect(commands.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'lock', actor: expect.objectContaining({ system: true }) }));
+      expect(insurance.cancel).toHaveBeenCalledWith(POLICY_ID);
     });
   });
 });

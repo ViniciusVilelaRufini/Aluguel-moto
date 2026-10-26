@@ -46,7 +46,7 @@ info:
     `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
     `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
     `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`,
-    `payment-pending`, `card-required`, `vehicle-locked-by-staff`, `vehicle-not-at-depot`.
+    `payment-pending`, `card-required`, `vehicle-locked-by-staff`, `vehicle-not-at-depot`, `deposit-in-use`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -2018,6 +2018,11 @@ paths:
           **nova** `Idempotency-Key` e `depositId`, e recebe `201`. Caução paga cujo aluguel não chega a
           iniciar (reserva expirada, `409` na segunda chamada, cancelamento) é liberada/estornada
           automaticamente (`DepositStatus` → `released`).
+        - `depositId` de uma caução presa a uma reserva `active` ou `handover` → `409` `deposit-in-use` ("Essa caução
+          já está em uso em outra reserva."), antes de qualquer outra recusa e sem liberar a caução da reserva. Só a
+          segunda chamada do fluxo Pix acima (reserva de rua da mesma moto) e o aceite da entrega da própria reserva de
+          galpão usam essa caução. Caução liberada (ou com liberação pedida) durante o desbloqueio também responde
+          `409` `deposit-in-use`: nenhum aluguel é criado e a moto volta a travar.
 
         Idempotência: a mesma `Idempotency-Key` devolve a mesma resposta e não cria outro aluguel.
       security:

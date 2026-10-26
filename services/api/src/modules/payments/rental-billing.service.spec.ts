@@ -335,6 +335,38 @@ describe('RentalBillingService: liberação da caução (deposit.release-request
     expect(refund).toHaveBeenCalledWith(expect.objectContaining({ providerPaymentId: dp.providerPaymentId, idempotencyKey: `late-pix-refund:${dp.id}` }));
   });
 
+  describe('Run-2: caução presa num início de aluguel em andamento (marcador RentalStart)', () => {
+    const START = '99999999-9999-4999-8999-999999999999';
+    const marker = (depositId: string) =>
+      ({ data: { rentalId: START, vehicleId: 'v', customerId: CUSTOMER, depositId, policyId: null, previousStatus: 'reserved' } });
+
+    it('(b) reserva cancelada durante o unlock lento de um start que usa a caução → a caução não é liberada', async () => {
+      const ctx = await setup();
+      const held = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });
+      await ctx.db.rentalStart.create(marker(held.depositId));
+      await ctx.svc.onReleaseRequested({ depositId: held.depositId, customerId: CUSTOMER, reason: 'reservation_canceled' });
+      expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('held');
+      expect(await ctx.db.depositRelease.findUnique({ where: { depositId: held.depositId } })).toBeNull();
+      expect(ctx.provider.operations('cancelPreAuthorization')).toBe(0);
+    });
+
+    it('liberação pendente (retentativa) com o início em andamento → adia sem liberar nem confirmar; sem o marcador, libera', async () => {
+      const ctx = await setup();
+      const held = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });
+      await ctx.db.depositRelease.create({ data: { depositId: held.depositId, reason: 'reservation_canceled' } });
+      await ctx.db.rentalStart.create(marker(held.depositId));
+      await ctx.svc.retryDepositReleases();
+      expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('held');
+      expect((await ctx.db.depositRelease.findUnique({ where: { depositId: held.depositId } })).confirmedAt).toBeNull();
+      expect(ctx.provider.operations('cancelPreAuthorization')).toBe(0);
+      // O início abortou (a transação final viu o DepositRelease) e apagou o marcador: a retentativa libera.
+      await ctx.db.rentalStart.deleteMany({ where: { rentalId: START } });
+      await ctx.svc.retryDepositReleases();
+      expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
+      expect(ctx.provider.operations('cancelPreAuthorization')).toBe(1);
+    });
+  });
+
   it('aluguel iniciado com a caução → ignora o pedido', async () => {
     const ctx = await setup();
     const { held } = await rentalWithDeposit(ctx);
