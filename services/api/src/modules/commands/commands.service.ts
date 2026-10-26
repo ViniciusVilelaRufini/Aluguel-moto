@@ -136,6 +136,20 @@ export class CommandsService {
     return this.present([updated]).then(([c]) => c);
   }
 
+  /**
+   * Verificação compartilhada (swap, início e fim do aluguel): a moto tem trava que cliente/campo não desfaz — origem
+   * `staff`/`system`, hold em 0 ou modo roubada (cadastro ou estado ao vivo). Erro = bloqueada (falha fechada).
+   */
+  async isLockedByStaff(vehicle: { id: string; thingName: string; stolenMode?: boolean | null }): Promise<boolean> {
+    if (vehicle.stolenMode) return true;
+    try {
+      return (await this.iot.lockedByStaff?.(vehicle.thingName)) ?? false;
+    } catch (err) {
+      this.logger.error({ msg: 'locked_by_staff_check_failed', vehicleId: vehicle.id, error: (err as Error).message });
+      return true;
+    }
+  }
+
   private async callGateway(commandId: string, thingName: string, input: DispatchInput, authority: CommandAuthority): Promise<CommandOutcome> {
     const req: CommandRequest = { commandId, thingName, authority };
     if (input.type === 'lock') req.lockOrigin = lockOriginOf(authority, input.context?.purpose);

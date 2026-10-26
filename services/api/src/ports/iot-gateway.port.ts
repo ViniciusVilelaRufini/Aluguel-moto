@@ -53,6 +53,11 @@ export interface IotGateway {
   setStolenMode(req: CommandRequest, on: boolean): Promise<CommandOutcome>;
   horn(req: CommandRequest): Promise<CommandOutcome>;
   getLiveState(thingName: string): Promise<VehicleLiveState | null>;
+  /**
+   * Trava que cliente/campo não desfaz: origem `staff`/`system`, limite segurado em 0 (hold) ou modo roubada no estado ao vivo.
+   * Opcional (o stub sem estado de trava não implementa). Erro de leitura = `true` (falha fechada).
+   */
+  lockedByStaff?(thingName: string): Promise<boolean>;
 }
 
 export class InvalidSpeedLimitError extends Error {}

@@ -28,7 +28,7 @@ describe('Início do aluguel (POST /rentals)', () => {
   const billing = { holdDeposit: jest.fn(), settle: jest.fn(), isDelinquent: jest.fn() };
   const insurance = { quote: jest.fn(), issueForRental: jest.fn(), cancel: jest.fn() };
   const reservations = { reserveForPix: jest.fn(), convert: jest.fn() };
-  const commands = { dispatch: jest.fn() };
+  const commands = { dispatch: jest.fn(), isLockedByStaff: jest.fn() };
   const iot = { getLiveState: jest.fn() };
 
   beforeAll(async () => {
@@ -74,6 +74,7 @@ describe('Início do aluguel (POST /rentals)', () => {
     billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'held' });
     insurance.issueForRental.mockResolvedValue({ policyId: POLICY_ID, premiumCents: 200 });
     commands.dispatch.mockResolvedValue({ id: 'cmd-1', status: 'confirmed' });
+    commands.isLockedByStaff.mockResolvedValue(false);
     iot.getLiveState.mockResolvedValue(null);
     p.rentalStart.deleteMany.mockResolvedValue({ count: 1 });
   });
@@ -258,6 +259,29 @@ describe('Início do aluguel (POST /rentals)', () => {
       expect(billing.holdDeposit).not.toHaveBeenCalled();
       expect(h.prisma.rental.create).not.toHaveBeenCalled();
       expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: DEPOSIT_ID }));
+    });
+
+    it('auditoria item adiado 1: moto com hold/trava da equipe → 409 vehicle-unavailable antes de reter caução', async () => {
+      commands.isLockedByStaff.mockResolvedValue(true);
+      const res = await post('chave-lock-0001', { ...body, depositMethod: 'pix', depositId: DEPOSIT_ID });
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
+      expect(res.body.detail).toBe('A moto está bloqueada pela equipe. Escolha outra.');
+      expect(commands.isLockedByStaff).toHaveBeenCalledWith(expect.objectContaining({ id: VEHICLE_ID }));
+      expect(billing.holdDeposit).not.toHaveBeenCalled();
+      expect(insurance.issueForRental).not.toHaveBeenCalled();
+      expect(commands.dispatch).not.toHaveBeenCalled();
+      expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: DEPOSIT_ID }));
+    });
+
+    it('auditoria item adiado 1: unlock recusado por trava da equipe (corrida) → 409 vehicle-unavailable, não "offline"', async () => {
+      commands.dispatch.mockImplementation(async (i: any) => (i.type === 'unlock' ? { id: 'cmd-u', status: 'failed', statusReason: 'locked_by_staff' } : { id: 'cmd-l', status: 'confirmed' }));
+      const res = await post('chave-lock-0002');
+      expect(res.status).toBe(409);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
+      expect(res.body.detail).toBe('A moto está bloqueada pela equipe. Escolha outra.');
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(released).toHaveBeenCalled();
     });
 
     it('rastreador sem notícia (estado ao vivo offline) → 409 vehicle-offline sem caução nem apólice', async () => {

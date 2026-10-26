@@ -145,6 +145,10 @@ export abstract class BaseIotGateway implements IotGateway {
     return this.desiredCommand(req, { travada: false }, { limite_kmh: limit });
   }
 
+  async lockedByStaff(thingName: string): Promise<boolean> {
+    return (await this.unlockBlocker(thingName)) !== null;
+  }
+
   async setSpeedLimit(req: CommandRequest, kmh: number): Promise<CommandOutcome> {
     assertSpeedLimit(kmh);
     // Durante o bloqueio seguro, a rampa é dona do limite: nada (zona, operador) pode subir ou mexer nos degraus.

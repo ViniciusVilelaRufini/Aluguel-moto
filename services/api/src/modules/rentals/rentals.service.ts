@@ -126,6 +126,8 @@ export class RentalsService {
     if (target.online === false || (await this.iot.getLiveState(target.thingName).catch(() => null))?.online === false) {
       throw conflict('vehicle-offline', 'A nova moto está sem conexão agora. Escolha outra moto.');
     }
+    // Auditoria item adiado 1: o unlock do cliente na moto nova seria recusado (trava da equipe/sistema, hold, modo roubada).
+    if (await this.commands.isLockedByStaff(target)) throw conflict('vehicle-unavailable', 'A moto escolhida está bloqueada pela equipe.');
     await this.assertSwapPrice(r, target.vehicleModel?.pricePerMinuteCents ?? null);
     const live = await this.iot.getLiveState(r.vehicle.thingName).catch(() => null);
     const here = live ? { lat: live.lat, lng: live.lng } : { lat: r.vehicle.lat, lng: r.vehicle.lng };
