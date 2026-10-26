@@ -111,6 +111,8 @@ test.describe('celular 390x844: fluxos profundos', () => {
     await loginMocked(page);
     await page.goto('/alerts');
     await expect(page.getByTestId('alerts-table').getByTestId('row').first()).toBeVisible();
+    // Abaixo de 640px o menu e uma gaveta aberta pelo botao do cabecalho (P3-16).
+    await page.getByRole('button', { name: 'Abrir menu' }).tap();
     const nav = page.getByRole('navigation');
     await expect(nav).toBeVisible();
     const box = (await nav.boundingBox())!;

@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { draftFromModel, modelInputFromDraft, modelPatchFromDraft, slugify, unlockFeeLabel, validateModelDraft, validatePhoto, type ModelDraft, type VehicleModel } from '@/lib/catalog';
@@ -61,6 +61,9 @@ function ModelModal({ model, minuteUnlockCents, onClose }: { model?: VehicleMode
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const file = useRef<HTMLInputElement>(null);
+  // Pré-visualização local (blob:): revogada ao trocar a foto e ao fechar o diálogo.
+  const blobUrl = useRef<string | null>(null);
+  useEffect(() => () => { if (blobUrl.current) URL.revokeObjectURL(blobUrl.current); }, []);
   const set = <K extends keyof ModelDraft>(k: K, v: ModelDraft[K]) => setD((x) => ({ ...x, [k]: v }));
 
   const pick = async (f?: File) => {
@@ -71,7 +74,10 @@ function ModelModal({ model, minuteUnlockCents, onClose }: { model?: VehicleMode
     try {
       const key = await uploadModelPhoto(f);
       set('photoObjectKey', key);
-      setPreview(URL.createObjectURL(f));
+      const next = URL.createObjectURL(f);
+      if (blobUrl.current) URL.revokeObjectURL(blobUrl.current);
+      blobUrl.current = next;
+      setPreview(next);
     } catch (e) { setErr(e); } finally { setUploading(false); if (file.current) file.current.value = ''; }
   };
 
@@ -102,7 +108,7 @@ function ModelModal({ model, minuteUnlockCents, onClose }: { model?: VehicleMode
           <span style={{ fontSize: 12, color: 'var(--text-secondary)' }} data-testid="model-photo-state">{d.photoObjectKey && d.photoObjectKey !== model?.photoObjectKey ? 'Foto nova enviada; salve para aplicar.' : 'JPG ou PNG, até 5 MB.'}</span>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-2col">
         <Field label="Nome"><TextInput testId="model-name" value={d.name} onChange={(v) => setD((x) => ({ ...x, name: v, ...(isNew && (x.slug === '' || x.slug === slugify(x.name)) ? { slug: slugify(v) } : {}) }))} /></Field>
         <Field label="Identificador" hint={isNew ? 'Letras minúsculas, números e hífen.' : 'Não pode ser alterado.'}>
           <TextInput testId="model-slug" value={d.slug} readOnly={!isNew} onChange={isNew ? (v) => set('slug', v) : undefined} />
@@ -111,14 +117,14 @@ function ModelModal({ model, minuteUnlockCents, onClose }: { model?: VehicleMode
         <Field label="Ordem no app"><TextInput type="number" value={d.sortOrder} onChange={(v) => set('sortOrder', v)} /></Field>
       </div>
       <Field label="Descrição"><TextArea value={d.description} onChange={(v) => set('description', v)} rows={2} /></Field>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-2col">
         <Field label="Preço por minuto (R$)" hint="Vale no plano por minuto para motos deste modelo."><TextInput testId="model-price" value={d.price} onChange={(v) => set('price', v)} /></Field>
         <Field label="Desbloqueio (R$)" hint={d.inheritUnlock ? `Usa o do plano por minuto${minuteUnlockCents !== undefined ? ` (${formatBRL(minuteUnlockCents)})` : ''}.` : 'Valor próprio do modelo.'}>
           {d.inheritUnlock ? <TextInput testId="model-unlock-inherited" readOnly value={minuteUnlockCents !== undefined ? formatBRL(minuteUnlockCents) : 'Do plano'} /> : <TextInput testId="model-unlock" value={d.unlock} onChange={(v) => set('unlock', v)} placeholder="3,00" />}
         </Field>
       </div>
       <Switch label="Usar o desbloqueio do plano" checked={d.inheritUnlock} onChange={(v: boolean) => setD((x) => ({ ...x, inheritUnlock: v, unlock: v ? x.unlock : x.unlock || (minuteUnlockCents !== undefined ? (minuteUnlockCents / 100).toFixed(2).replace('.', ',') : '') }))} />
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-2col">
         <Field label="Revisão a cada (km)"><TextInput type="number" value={d.intervalKm} onChange={(v) => set('intervalKm', v)} /></Field>
         <Field label="Revisão a cada (horas)"><TextInput type="number" value={d.intervalHours} onChange={(v) => set('intervalHours', v)} /></Field>
       </div>

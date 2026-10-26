@@ -152,7 +152,7 @@ export default function SettingsPage() {
             })}
           </div>
         ) : (
-          <DataTable<S<'PricingPlan'>> loading={plans.isLoading} rows={plans.data?.items ?? []}
+          <DataTable<S<'PricingPlan'>> dense loading={plans.isLoading} rows={plans.data?.items ?? []}
             columns={[
               { key: 'name', label: 'Plano', render: (p) => PLAN_LABEL[p.code] ?? p.name },
               { key: 'unit', label: 'Preço', align: 'right', render: (p) => canEdit ? <MiniInput label={`Preço ${p.name}`} width={84} value={planEdit[p.id]?.unit ?? toReais(p.unitPriceCents)} error={bad(planEdit[p.id]?.unit)} onChange={(v) => setPlanEdit((m) => ({ ...m, [p.id]: { ...m[p.id], unit: v } }))} /> : toReais(p.unitPriceCents) },
