@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { can } from '@/lib/permissions';
+import { can, canOpen } from '@/lib/permissions';
 import { PLAN_LABEL, RENTAL_EVENT, RENTAL_STATUS, COVERAGE_LABEL } from '@/lib/labels';
 import { dayEndIso, dayStartIso, formatBRL, formatDateTime, formatDuration } from '@/lib/format';
 import { toCents } from '@/lib/money';
@@ -91,7 +91,7 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
             <KV k="Seguro" v={COVERAGE_LABEL[r.coverage]} />
             <KV k="Cupom" v={r.couponCode ?? '—'} />
             <KV k="Valor" v={formatBRL(r.costCents)} />
-            <KV k="Cliente" v={<Link href={`/customers?customer=${r.customerId}`} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Abrir ficha</Link>} />
+            {canOpen(groups, 'customers') && <KV k="Cliente" v={<Link href={`/customers?customer=${r.customerId}`} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Abrir ficha</Link>} />}
             {r.forceEndReason && <KV k="Motivo do encerramento" v={r.forceEndReason} />}
           </div>
           {r.breakdown && (

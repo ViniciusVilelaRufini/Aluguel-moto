@@ -26,41 +26,10 @@ export async function openVehicle(page: Page, code: string) {
 export const calls = (mock: Mock, p: RegExp | string, method = 'POST') =>
   mock.calls.filter((c) => c.method === method && (typeof p === 'string' ? c.path === p : p.test(c.path)));
 
-/**
- * O mock-api.ts le o id em seg[1] ("plans" em /pricing/plans/{id}), entao PUT de precos devolve 404.
- * Este override (registrado depois, tem prioridade) aplica o PUT usando o ultimo segmento do caminho.
- */
-export async function fixPricingPut(page: Page, mock: Mock) {
-  await page.route('http://api.mock.local/pricing/**', async (route) => {
-    const req = route.request();
-    if (req.method() !== 'PUT') return route.fallback();
-    const id = new URL(req.url()).pathname.split('/').pop()!;
-    const kind = new URL(req.url()).pathname.split('/')[2] as 'plans' | 'fees' | 'coupons';
-    const body = JSON.parse(req.postData() ?? '{}');
-    mock.calls.push({ method: 'PUT', path: new URL(req.url()).pathname, query: new URL(req.url()).searchParams, body });
-    const list = mock.db[kind] as { id: string }[];
-    const item = list.find((x) => x.id === id);
-    const headers = { 'access-control-allow-origin': '*', 'content-type': 'application/json' };
-    if (!item) return route.fulfill({ status: 404, headers, body: JSON.stringify({ type: 'x/not-found', title: 'Nao encontrado', status: 404 }) });
-    Object.assign(item, body);
-    return route.fulfill({ status: 200, headers, body: JSON.stringify(item) });
-  });
-}
-
-/** Idem fixPricingPut para PATCH /maintenance/tasks/{id} (mock-api.ts usa seg[1] = "tasks"). */
-export async function fixMaintenancePatch(page: Page, mock: Mock) {
+/** Latencia de 200 ms no PATCH /maintenance/tasks/{id} (deixa o duplo clique acontecer antes da resposta). */
+export async function fixMaintenancePatch(page: Page, _mock?: Mock) {
   await page.route('http://api.mock.local/maintenance/tasks/*', async (route) => {
-    const req = route.request();
-    if (req.method() !== 'PATCH') return route.fallback();
-    const u = new URL(req.url());
-    const id = u.pathname.split('/').pop()!;
-    const body = JSON.parse(req.postData() ?? '{}');
-    mock.calls.push({ method: 'PATCH', path: u.pathname, query: u.searchParams, body });
-    await new Promise((r) => setTimeout(r, 200));
-    const item = (mock.db.maintenance as { id: string }[]).find((x) => x.id === id);
-    const headers = { 'access-control-allow-origin': '*', 'content-type': 'application/json' };
-    if (!item) return route.fulfill({ status: 404, headers, body: JSON.stringify({ type: 'x/not-found', title: 'Nao encontrado', status: 404 }) });
-    Object.assign(item, body);
-    return route.fulfill({ status: 200, headers, body: JSON.stringify(item) });
+    if (route.request().method() === 'PATCH') await new Promise((r) => setTimeout(r, 200));
+    return route.fallback();
   });
 }

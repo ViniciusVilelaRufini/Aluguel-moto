@@ -27,7 +27,7 @@ export default function TeamPage() {
   const [tab, setTab] = useState<'team' | 'audit'>('team');
   return (
     <Page>
-      <PageHeader title="Equipe e acessos" subtitle="Cada perfil vê só o que precisa · 2FA obrigatório">
+      <PageHeader subtitle="Cada perfil vê só o que precisa · 2FA obrigatório">
         <SegmentedControl options={[{ value: 'team', label: 'Equipe' }, { value: 'audit', label: 'Auditoria' }]} value={tab} onChange={setTab} style={{ width: 260 }} />
       </PageHeader>
       <TabPanel k={tab}>{tab === 'team' ? <Team /> : <Audit />}</TabPanel>

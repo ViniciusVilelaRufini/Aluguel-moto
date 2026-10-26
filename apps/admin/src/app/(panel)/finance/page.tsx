@@ -80,7 +80,7 @@ export default function FinancePage() {
   const f = fin.data;
   return (
     <Page>
-      <PageHeader title="Financeiro" subtitle="Receita, planos, inadimplência e cauções">
+      <PageHeader subtitle="Receita, planos, inadimplência e cauções">
         <SegmentedControl options={[{ value: 'overview', label: 'Visão geral' }, { value: 'rentals', label: 'Aluguéis' }]} value={tab} onChange={(t: Tab) => { setTab(t); router.replace(`/finance?tab=${t}`, { scroll: false }); }} style={{ width: 260 }} />
         {tab === 'overview' && <SegmentedControl options={[{ value: 'today', label: 'Hoje' }, { value: '7d', label: '7 dias' }, { value: '30d', label: '30 dias' }]} value={period} onChange={setPeriod} style={{ width: 280 }} />}
       </PageHeader>

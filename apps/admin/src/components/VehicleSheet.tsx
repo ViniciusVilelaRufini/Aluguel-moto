@@ -22,7 +22,7 @@ import { commandSentMessage, signalLabel, toAuditRows } from '@/lib/fleet-copy';
 import { MAINTENANCE_STATUS, RENTAL_STATUS } from '@/lib/labels';
 import { SERVICE_STATUS, formatHours, formatKm, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
 import { SubscriptionVehicleDialog } from './SubscriptionVehicleDialog';
-import { Field, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
+import { Field, FieldError, KV, Modal, PanelSkeleton, ReasonDialog, SectionTitle, SidePanel, Pill, TextInput, Select, DataTable, useToast } from './ui';
 
 interface ActiveCommand { id: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason }
 
@@ -102,12 +102,16 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         const c = await unwrap(api.GET('/commands/{id}', { params: { path: { id: pendingId } } }));
         setActive((a) => (a && a.id === c.id ? { ...a, status: c.status, reason: c.statusReason } : a));
         if (c.status === 'confirmed' || c.status === 'failed') qc.invalidateQueries({ queryKey: ['vehicle-commands', vehicleId] });
+        if (c.status === 'confirmed') {
+          qc.invalidateQueries({ queryKey: ['vehicle', vehicleId] });
+          qc.invalidateQueries({ queryKey: ['fleet'] });
+        }
       } catch { /* mantém o último estado */ }
     }, 2500);
     return () => clearInterval(t);
   }, [pendingId, qc, vehicleId]);
 
-  if (!v) return <SidePanel width={360} onClose={onClose}><PanelSkeleton rows={7} /></SidePanel>;
+  if (!v) return <SidePanel width={360} onClose={onClose} label="Ficha da moto"><PanelSkeleton rows={7} /></SidePanel>;
 
   const moving = (v.speedKmh ?? 0) >= 3;
   const send = async (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => {
@@ -263,7 +267,7 @@ function CommandDialog({ type, vehicle, moving, onClose, onSend }: {
         const extra: { speedLimitKmh?: number; on?: boolean } = {};
         if (type === 'speed_limit') {
           const n = limit.trim() === '' ? undefined : Number(limit);
-          try { assertSpeedLimit(n); } catch (e) { setLimitError((e as Error).message); throw e; }
+          try { assertSpeedLimit(n); } catch (e) { setLimitError((e as Error).message); throw new FieldError((e as Error).message); }
           extra.speedLimitKmh = n;
         }
         if (type === 'stolen_mode') extra.on = on === 'on';

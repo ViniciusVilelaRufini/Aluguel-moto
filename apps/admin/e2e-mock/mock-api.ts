@@ -121,7 +121,8 @@ const ok = (json: unknown, status = 200): Res => ({ status, json });
 function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: URLSearchParams, body: unknown): Res {
   const p = path.replace(/\/$/, '');
   const seg = p.split('/').filter(Boolean);
-  const id = seg[1];
+  // /pricing/plans/{id}, /insurance/coverages/{c} e /maintenance/tasks/{id} levam o id no 3o segmento
+  const id = ['pricing', 'insurance', 'maintenance'].includes(seg[0] ?? '') ? seg[2] : seg[1];
   const b = (body ?? {}) as Record<string, unknown>;
   const match = (re: RegExp) => re.test(p);
   const find = <T extends { id: string }>(list: T[], key = id) => list.find((x) => x.id === key);

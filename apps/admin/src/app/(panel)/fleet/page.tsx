@@ -231,7 +231,8 @@ export default function FleetPage() {
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 320 }}>
         <MapView onReady={onReady} onDestroy={() => { imagesOff.current(); imagesOff.current = () => {}; pulseRef.current?.remove(); pulseRef.current = null; mapRef.current = null; drawn.current = new Map(); setMapReady(false); }} />
-        <div data-view={view} style={view === 'list'
+        {/* No celular, com uma moto selecionada no mapa, KPIs e filtros recolhem para o pin não ficar escondido (ver .fleet-overlay em globals.css). */}
+        <div data-view={view} className="fleet-overlay" data-collapsed={(!!selected && view === 'map') || undefined} style={view === 'list'
           ? { position: 'absolute', inset: 0, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', background: 'var(--surface-app)', zIndex: 1 }
           : { position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
           {dash.data ? (

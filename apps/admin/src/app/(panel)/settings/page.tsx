@@ -118,7 +118,7 @@ export default function SettingsPage() {
 
   return (
     <Page style={{ gap: 26 }}>
-      <PageHeader title="Preços e planos" subtitle="Alterações valem para novos aluguéis">
+      <PageHeader subtitle="Alterações valem para novos aluguéis">
         {canEdit && <>
           <Button size="sm" variant="ghost" disabled={!dirty || busy} onClick={discard}>Descartar</Button>
           <Button size="sm" icon="Check" testId="save-settings" disabled={!dirty || busy} onClick={save}>Salvar alterações</Button>

@@ -30,6 +30,10 @@ describe('validateZone', () => {
       expect(validateZone({ name: 'A', type: 'reduced_speed', speedLimitKmh: v, geometry: poly }).speedLimitKmh).toBe('Mínimo de 6 km/h em zona de velocidade reduzida');
     }
   });
+  it('rejects non-integer limits (contract: integer km/h)', () => {
+    expect(validateZone({ name: 'A', type: 'reduced_speed', speedLimitKmh: 12.5, geometry: poly }).speedLimitKmh).toBe('O limite deve ser um número inteiro de km/h');
+    expect(validateZone({ name: 'A', type: 'operation', speedLimitKmh: 20.5, geometry: poly }).speedLimitKmh).toBeTruthy();
+  });
   it('accepts valid zones', () => {
     expect(validateZone({ name: 'A', type: 'reduced_speed', speedLimitKmh: 6, geometry: poly })).toEqual({});
     expect(validateZone({ name: 'A', type: 'reduced_speed', speedLimitKmh: 20, geometry: poly })).toEqual({});

@@ -95,13 +95,20 @@ a:hover{color:var(--brand-press)}
   .side-panel { width: 320px !important; }
 }
 @media (max-width: 820px) {
-  .shell-header { gap: 8px !important; padding: 0 12px !important; }
+  .shell-header { gap: 6px !important; padding: 0 10px !important; }
   .shell-title { font-size: 16px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .live-pill { padding: 0 8px !important; }
   .kpi-strip { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
   .kpi-strip .stat-tile { padding: 10px 12px !important; gap: 4px !important; }
+  .kpi-strip .stat-value { font-size: 20px !important; }
+  .fleet-overlay[data-collapsed] { display: none !important; }
+  .nav-logout { min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+  .fb-full { display: none !important; }
+  .fb-short { display: inline !important; }
   .split { flex-direction: column !important; }
   .side-panel { width: 100% !important; max-height: 50vh; border-left: 0 !important; border-top: 1px solid var(--border-subtle); }
 }
+@media (max-width: 480px) { .shell-title { font-size: 15px !important; } }
 .table-scroll { overflow-x: auto; }
 /* Celular: tabelas de preços viram uma pilha rótulo/valor por linha em vez de rolar escondidas dentro do cartão */
 @media (max-width: 640px) {
@@ -192,6 +199,7 @@ a:hover{color:var(--brand-press)}
 .nav-item { background: transparent; color: rgba(255,255,255,.62); transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out); }
 .nav-item:hover { background: rgba(255,255,255,.05); color: #fff; }
 .nav-item[data-on] { background: rgba(255,255,255,.08); color: #fff; }
+.fb-short { display: none; }
 .nav-logout:hover { color: #fff !important; background: rgba(255,255,255,.08) !important; }
 .nav-item:focus-visible { outline: 2px solid var(--green-400); outline-offset: -2px; }
 .nav-badge { animation: vt-pop-in var(--dur-spring) var(--ease-spring) both; }

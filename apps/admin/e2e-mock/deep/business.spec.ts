@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginMocked } from '../login';
-import { calls, dshot, fixPricingPut, watch } from './util';
+import { calls, dshot, watch } from './util';
 
 const cust = (page: Page, name: string) => page.getByTestId('customers-table').getByTestId('row').filter({ hasText: name });
 
@@ -148,7 +148,6 @@ test.describe('financeiro', () => {
 test.describe('precos e planos', () => {
   test('editar preco do plano em reais: PUT envia centavos inteiros', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     const input = page.getByLabel('Preço Por minuto');
     await expect(input).toHaveValue('1,20');
@@ -162,7 +161,6 @@ test.describe('precos e planos', () => {
 
   test('valores com milhar e ponto ("1.234,50" e "0.79") viram centavos corretos', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     await page.getByLabel('Preço Por hora').fill('1.234,50');
     await page.getByLabel('Preço Diária').fill('0.79');
@@ -175,7 +173,6 @@ test.describe('precos e planos', () => {
 
   test('valor invalido ("abc") nao grava nada e mostra mensagem em pt-BR', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     await page.getByLabel('Preço Por minuto').fill('abc');
     await page.getByTestId('save-settings').click();
@@ -196,7 +193,6 @@ test.describe('precos e planos', () => {
 
   test('preco negativo: "-5" e recusado', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     await page.getByLabel('Preço Por minuto').fill('-5');
     await page.getByTestId('save-settings').click();
@@ -217,7 +213,6 @@ test.describe('precos e planos', () => {
 
   test('salvar parcial: uma falha mantem o item com erro editavel e informa o que foi salvo', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.route('http://api.mock.local/pricing/fees/*', (r) => r.request().method() === 'PUT' ? r.fulfill({ status: 500, headers: { 'access-control-allow-origin': '*', 'content-type': 'application/json' }, body: JSON.stringify({ type: 'x', title: 'Falha', status: 500 }) }) : r.fallback());
     await page.goto('/settings');
     await page.getByLabel('Preço Por minuto').fill('1,30');
@@ -239,7 +234,6 @@ test.describe('precos e planos', () => {
 
   test('cupom: validacoes de formulario', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     await page.getByRole('button', { name: 'Novo cupom' }).click();
     const dlg = page.getByRole('dialog');
@@ -269,7 +263,6 @@ test.describe('precos e planos', () => {
 
   test('cupom de valor fixo: "7,50" vira 750 centavos', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     await page.getByRole('button', { name: 'Novo cupom' }).click();
     const dlg = page.getByRole('dialog');
@@ -283,7 +276,6 @@ test.describe('precos e planos', () => {
 
   test('[BUG P2-14] cupom de valor fixo aceita o mesmo formato de reais do restante ("1.234,50")', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     await page.getByRole('button', { name: 'Novo cupom' }).click();
     const dlg = page.getByRole('dialog');
@@ -299,7 +291,6 @@ test.describe('precos e planos', () => {
 
   test('[BUG P2-15] duplo clique em "Criar cupom" cria um unico cupom', async ({ page }) => {
     const mock = await loginMocked(page, { latencyMs: 400 });
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     await page.getByRole('button', { name: 'Novo cupom' }).click();
     const dlg = page.getByRole('dialog');
@@ -312,7 +303,6 @@ test.describe('precos e planos', () => {
 
   test('alternar cupom e salvar envia o PUT com active invertido', async ({ page }) => {
     const mock = await loginMocked(page);
-    await fixPricingPut(page, mock);
     await page.goto('/settings');
     const sw = page.getByRole('switch').last();
     await expect(sw).toBeVisible();

@@ -53,13 +53,13 @@ export function StatTile({ label, value, numeric, format, goodWhen = 'up', delta
       style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', padding: 16, boxShadow: 'var(--shadow-1)', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, ...style }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>
         {icon && <Icon name={icon} size={16} />}
-        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+        <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{label}</span>
         {live && (
           <span className="stat-delta" style={{ font: 'var(--fw-bold) 11px/1 var(--font-mono)', padding: '3px 6px', borderRadius: 'var(--radius-xs)',
             background: live.tone === 'success' ? 'var(--success-soft)' : 'var(--danger-soft)', color: live.tone === 'success' ? 'var(--success-ink)' : 'var(--danger-ink)' }}>{live.text}</span>
         )}
       </div>
-      <div aria-live="off" style={{ font: 'var(--fw-bold) 26px/1.1 var(--font-sans)', letterSpacing: 'var(--ls-tight)', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      <div aria-live="off" className="stat-value" style={{ font: 'var(--fw-bold) 26px/1.1 var(--font-sans)', letterSpacing: 'var(--ls-tight)', color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {numeric != null ? <AnimatedNumber value={numeric} format={format} /> : value ?? '—'}
       </div>
       {caption && <div style={{ font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>{caption}</div>}

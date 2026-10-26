@@ -23,12 +23,14 @@ function focusDestination(href: string) {
   const started = Date.now();
   const tick = () => {
     const here = norm(window.location.pathname) === norm(target.pathname) && window.location.search === target.search;
-    const el = here
-      ? (vehicle ? document.querySelector<HTMLElement>('[data-testid="vehicle-sheet"]') : null)
-        ?? document.querySelector<HTMLElement>('h1')
-        ?? document.getElementById('main-content')
-      : null;
+    const sheet = here && vehicle ? document.querySelector<HTMLElement>('[data-testid="vehicle-sheet"]') : null;
+    // Para uma moto, espera a ficha aparecer (ela carrega depois da página); só cai no título se demorar demais.
+    const waitSheet = !!vehicle && !sheet && Date.now() - started < 1500;
+    const el = here && !waitSheet ? sheet ?? document.querySelector<HTMLElement>('h1') ?? document.getElementById('main-content') : null;
     if (el) {
+      // O foco já foi para algum lugar útil (a própria ficha, um diálogo): não rouba.
+      const a = document.activeElement;
+      if (a && a !== document.body) return;
       if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
       el.focus({ preventScroll: true });
       return;
@@ -137,6 +139,9 @@ export function CommandPalette({ vehicles, menu }: { vehicles: VehicleLike[]; me
                 aria-label="Buscar moto, cliente ou aluguel" placeholder="Código ou endereço da moto, nome do cliente ou seção"
                 style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', font: 'var(--type-body)', color: 'var(--text-primary)' }} />
               <kbd className="kbd">Esc</kbd>
+            </div>
+            <div role="status" aria-live="polite" className="sr-only" data-testid="palette-count">
+              {q.trim() === '' ? '' : results.length === 0 ? 'Nenhum resultado' : `${results.length} ${results.length === 1 ? 'resultado' : 'resultados'}`}
             </div>
             <ul id={listId} role="listbox" aria-label="Resultados" style={{ listStyle: 'none', margin: 0, padding: 8, maxHeight: '52vh', overflow: 'auto' }}>
               {results.length === 0 && <li style={{ padding: '24px 12px', textAlign: 'center', font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>Nada encontrado. Tente o código da moto, ex.: VLT-0001.</li>}

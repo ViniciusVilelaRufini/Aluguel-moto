@@ -10,7 +10,7 @@ import { can } from '@/lib/permissions';
 import { allLayers, filterByLayers, toggleLayer, visibleCount, ZONE_TYPES, zoneTooltip } from '@/lib/zone-layers';
 import { formatBRL } from '@/lib/format';
 import { validateZone, type ZoneErrors } from '@/lib/zone-validation';
-import { MAX_REDUCED_SPEED_KMH, type S, type ZoneType } from '@/lib/types';
+import { MAX_REDUCED_SPEED_KMH, MIN_REDUCED_SPEED_KMH, type S, type ZoneType } from '@/lib/types';
 import { MapView } from '@/components/MapView';
 import { Empty, ErrorNote, Field, Modal, Select, SidePanel, SectionTitle, Skeleton, TextInput, useToast } from '@/components/ui';
 import { Alert } from '@/ds/Alert';
@@ -212,6 +212,23 @@ export default function ZonesPage() {
 
   useEffect(() => () => { drawRef.current = null; }, []);
 
+  // Esc durante o desenho cancela o polígono em andamento e fecha o rascunho (o Draw sozinho deixaria o formulário pedindo cliques).
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== 'Escape' || (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      const draw = drawRef.current;
+      const d = draftRef.current;
+      if (!draw || !d || d.id || d.geometry || draw.getMode() !== 'draw_polygon') return;
+      draw.changeMode('simple_select'); // o Draw descarta o polígono incompleto
+      draw.deleteAll();
+      setDraft(null);
+      setErrors({});
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
+
   const patch = (p: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...p } : d));
   const serverMsg = serverError instanceof ApiError ? serverError.message : serverError ? problemMessage(serverError, 0).message : null;
 
@@ -238,7 +255,7 @@ export default function ZonesPage() {
           </div>
         </div>
       </div>
-      <SidePanel width={360} testId="zones-panel">
+      <SidePanel width={360} testId="zones-panel" label="Cercas e zonas">
         {draft && canEdit && (
           <Card variant="outline" padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div data-testid="zone-form-title" style={{ fontWeight: 700 }}>{draft.id ? 'Editar cerca' : 'Nova cerca'}</div>
@@ -249,7 +266,7 @@ export default function ZonesPage() {
               <Select testId="zone-type" value={draft.type} onChange={(v) => { patch({ type: v }); setErrors((x) => ({ ...x, speedLimitKmh: undefined })); }} options={TYPE_OPTIONS} />
             </Field>
             {draft.type === 'reduced_speed' && (
-              <Field label="Limite de velocidade (km/h)" error={errors.speedLimitKmh} hint={`Até ${MAX_REDUCED_SPEED_KMH} km/h: 6 em áreas de pedestres, 20 em ciclovias.`}>
+              <Field label="Limite de velocidade (km/h)" error={errors.speedLimitKmh} hint={`De ${MIN_REDUCED_SPEED_KMH} a ${MAX_REDUCED_SPEED_KMH} km/h: 6 em áreas de pedestres, 20 em ciclovias.`}>
                 <TextInput testId="zone-limit" type="number" value={draft.limit} onChange={(v) => patch({ limit: v })} />
               </Field>
             )}
