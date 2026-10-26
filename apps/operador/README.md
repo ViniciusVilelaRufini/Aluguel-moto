@@ -62,6 +62,13 @@ Comportamento:
 - **Manutenção da tarefa:** com `maintenanceTaskId`, `GET /maintenance/tasks/{id}` → título, tipo, origem e data. Cliente só pelo primeiro nome (a API já manda só ele ao `campo`; o app corta de novo por garantia).
 - **Chat:** o app de campo não tem chat (o suporte é dos grupos `admin`/`suporte`), então `SupportMessage.status` não se aplica aqui.
 
+## Fila offline e conta (correção da auditoria)
+
+- Cada job da fila guarda `ownerSub` (o `sub` do token da sessão). Só o dono envia, vê, tenta de novo e descarta; jobs de outro operador ficam retidos no aparelho, sem expiração, e não bloqueiam as tarefas de quem entrou.
+- Jobs antigos sem dono (fila anterior à correção) aparecem como "Pendente de outro operador..." e só podem ser descartados.
+- O cache de tarefas é por operador (chave Hive `tasks:<sub>`), limpo no logout (inclusive saída forçada por 401: a consulta offline some até o próximo login online); a chave antiga `tasks` é apagada.
+- 403/409 da API viram falha terminal do job, visível só ao dono. A API só deixa o usuário de campo agir nas tarefas atribuídas a ele; concluir tarefa `pickup` em moto `offline`/`blocked` pode voltar 409.
+
 ## Testes
 
 ```

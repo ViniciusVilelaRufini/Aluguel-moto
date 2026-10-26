@@ -119,6 +119,25 @@ Fix round 2: assinatura `canceled`/`expired` nunca reabre. A cobrança tardia é
 - `POST /rentals`: moto offline ou desbloqueio não confirmado → `409 vehicle-offline`, sem aluguel nem cobrança; o relógio começa no desbloqueio confirmado.
 - Rate limit no Redis (compartilhado entre instâncias); cabeçalhos `helmet`; exportação LGPD com `Cache-Control: no-store`; link do recibo assinado na leitura (15 min).
 
+## Segurança da auditoria (2026-10, `docs/decisoes.md`)
+
+| Chave / canal Redis | Uso |
+|---|---|
+| `volti:cluster-events` (pub/sub) | replica `PRINCIPAL_REVOKED`, `RENTAL_CHANGED`, `ZONE_CHANGED` e `CUSTOMER_CONSENT_CHANGED` entre instâncias (`ClusterEventsBridge`); at-most-once, sem persistência |
+| `geofence:inside:{vehicleId}` (campo `zoneLimit`) e `geofence:thing:{thingName}` | limite das zonas da moto e índice por rastreador; lidos pelo `unlock` e pelo teto do limite manual em qualquer task |
+| `iot:desired-limit:{thingName}` | último `limite_kmh` publicado; se estiver acima da zona, o motor de cercas o corrige |
+| `iot:held:{thingName}` | hold em 0 km/h, lido a cada comando (erro de leitura = segurado) |
+| `iot:lock-origin:{thingName}` | origem da trava (`customer`, `staff`, `system`); leitura com erro = `system` |
+
+- Limite de zona em falha fechada: motor de cercas fora com posição conhecida = 6 km/h (nunca 0); 32 km/h só sem posição alguma (log `zone_limit_unknown`).
+- Destravar por cliente ou campo não desfaz trava de equipe/sistema nem hold: comando `failed/locked_by_staff`; `POST /rentals/{id}/resume` responde `409 vehicle-locked-by-staff`. Troca e início do aluguel recusam moto assim bloqueada (`409 vehicle-unavailable`); no fim do aluguel ela vai para `maintenance` com alerta. Só admin/operacao libera.
+- "Moto em uso" é uma regra só (`common/vehicle-in-use.ts`): aluguel aberto ou reserva ativa no banco, não `vehicle.status`.
+- Usuário só do grupo `campo` age só nas próprias tarefas. Troca de moto só para preço por minuto igual ou menor.
+- IoT: `thingName` e `channel` vêm só do tópico; o corpo do dispositivo chega aninhado em `payload`; eventos de dispositivo passam pela fila `telemetria`.
+- Estorno de contestação só via `POST /support/disputes/{id}/resolve` (chave `dispute:<id>`, reivindicação atômica); disputa presa em `under_review` após queda do processo exige ajuste manual.
+- Busca de clientes por CPF: não-admin só por igualdade (11 dígitos). Cupom com teto atômico (`422 coupon-invalid`).
+- WebSocket exige `exp` no JWT e desconecta no vencimento; cache veículo→aluguel de 5 s.
+
 ## Regras que nunca mudam
 
 - Nenhum `speedLimitKmh` fora de 0..32 é aceito (DTO → 400 `speed-limit-out-of-range`; serviço de comandos revalida; `CHECK` no banco).
