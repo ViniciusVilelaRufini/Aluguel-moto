@@ -5,7 +5,7 @@ import type { Coupon, Deposit, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { CommandChangedEvent, DepositReleaseRequestedEvent, EV, RentalChangedEvent, VehicleStatusChangedEvent } from '../../common/events';
-import { conflict, notFound, ProblemException } from '../../common/problem';
+import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { INSURANCE, type InsurancePort } from '../../ports/insurance.port';
 import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
 import { IOT_CONFIG, type IotConfig } from '../iot/iot-config';
@@ -287,7 +287,11 @@ export class RentalStartService {
       await tx.rentalEvent.create({ data: { rentalId, type: 'started', actorType: 'customer', actorId: customerId } });
       if (coupon) {
         await tx.couponRedemption.create({ data: { couponId: coupon.id, customerId, rentalId, cpfHash: await this.pricing.cpfHashFor(customerId) } });
-        await tx.coupon.update({ where: { id: coupon.id }, data: { redemptions: { increment: 1 } } });
+        const reserved = await tx.coupon.updateMany({
+          where: { id: coupon.id, OR: [{ maxRedemptions: null }, { redemptions: { lt: coupon.maxRedemptions ?? 0 } }] },
+          data: { redemptions: { increment: 1 } },
+        });
+        if (reserved.count !== 1) throw unprocessable('coupon-invalid', 'Cupom esgotado.');
       }
       if (!deposit.rentalId) await tx.deposit.update({ where: { id: deposit.id }, data: { rentalId } });
       return created;

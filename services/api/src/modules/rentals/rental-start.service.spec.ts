@@ -169,6 +169,32 @@ describe('Início do aluguel (POST /rentals)', () => {
     expect(h.prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['free', 'reserved'] } }, data: { status: 'rented' } });
   });
 
+  describe('cupom com limite de resgates', () => {
+    const coupon = { id: 'cc', code: 'PROMO', active: true, validFrom: null, validUntil: null, planCodes: [], maxRedemptions: 1, maxRedemptionsPerCustomer: null, redemptions: 0 };
+    beforeEach(() => {
+      h.prisma.coupon.findUnique.mockResolvedValue(coupon as any);
+      h.prisma.couponRedemption.create.mockResolvedValue({} as any);
+    });
+
+    it('incrementa de forma condicional ao limite e conclui quando reserva o resgate', async () => {
+      h.prisma.coupon.updateMany.mockResolvedValue({ count: 1 });
+      const res = await post('chave-cupom-0001', { ...body, couponCode: 'PROMO' });
+      expect(res.status).toBe(201);
+      expect(h.prisma.coupon.updateMany).toHaveBeenCalledWith({
+        where: { id: 'cc', OR: [{ maxRedemptions: null }, { redemptions: { lt: 1 } }] },
+        data: { redemptions: { increment: 1 } },
+      });
+    });
+
+    it('corrida pelo último resgate (updateMany count 0) → recusa "Cupom esgotado." e compensa', async () => {
+      h.prisma.coupon.updateMany.mockResolvedValue({ count: 0 });
+      const res = await post('chave-cupom-0002', { ...body, couponCode: 'PROMO' });
+      expect(res.status).toBe(422);
+      expect(JSON.stringify(res.body)).toContain('Cupom esgotado.');
+      expect(insurance.cancel).toHaveBeenCalledWith(POLICY_ID);
+    });
+  });
+
   it('caução Pix → 202 awaiting_deposit e reserva até o prazo do Pix', async () => {
     const pix = { chargeId: 'c1', qrCodeBase64: 'iVBOR', copyPaste: '000201', expiresAt: new Date(Date.now() + 600000).toISOString() };
     billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'awaiting_pix', pix });
