@@ -163,6 +163,7 @@
     }
   },
   "discard": "Descartar",
+  "pendingOtherOperator": "Pendente de outro operador. Não é enviado por esta conta; só pode ser descartado.",
   "loginCognitoAction": "Entrar com a conta Volti",
   "loginCognitoHint": "Você entra pela página segura da Volti. O código de verificação (MFA) é pedido lá.",
   "loginCampoRequired": "Sua conta não tem acesso ao app de campo. Fale com a operação.",

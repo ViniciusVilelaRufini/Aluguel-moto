@@ -5,7 +5,7 @@ import { MAX_SPEED_KMH, type CommandType } from '../../common/enums';
 import { CommandChangedEvent, EV, IotCommandUpdatedEvent } from '../../common/events';
 import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { badRequest, notFound, ProblemException } from '../../common/problem';
-import { CommandOutcome, InvalidSpeedLimitError, IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
+import { CommandOutcome, InvalidSpeedLimitError, IOT_GATEWAY, type CommandAuthority, type CommandRequest, type IotGateway, type LockOrigin } from '../../ports/iot-gateway.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService, type AuditActor } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
@@ -18,6 +18,27 @@ const PREDECESSORS: Record<CommandOutcome['status'], VehicleCommand['status'][]>
   confirmed: ['pending', 'in_progress', 'failed'],
   failed: ['pending', 'in_progress'],
 };
+
+/** Travas de sistema que são só "estacionar" (fim de aluguel, rollback do início): não gravam origem nem rebaixam uma existente. */
+const PARKING_LOCK_PURPOSES = new Set(['rental_end', 'rental_force_end', 'rental_start_rollback']);
+
+/**
+ * Autoridade do ator: cliente → `customer`; staff com admin/operacao → `staff`; demais staff (ex.: só `campo`) → `field`;
+ * ator de sistema (cercas, encerramento) → `system`.
+ */
+export function authorityOf(actor: AuditActor): CommandAuthority {
+  if ('system' in actor) return 'system';
+  if (actor.pool !== 'staff') return 'customer';
+  return actor.groups.some((g) => g === 'admin' || g === 'operacao') ? 'staff' : 'field';
+}
+
+/** Origem gravada por um `lock`: `null` = trava comum (campo, estacionar), que não grava origem. */
+export function lockOriginOf(authority: CommandAuthority, purpose?: string): LockOrigin | null {
+  if (authority === 'customer') return 'customer';
+  if (authority === 'staff') return 'staff';
+  if (authority === 'field') return null;
+  return purpose && PARKING_LOCK_PURPOSES.has(purpose) ? null : 'system';
+}
 
 export interface DispatchInput {
   vehicleId: string;
@@ -104,14 +125,34 @@ export class CommandsService {
       return created;
     });
 
-    const outcome = await this.callGateway(command.id, vehicle.thingName, input);
+    const authority = authorityOf(input.actor);
+    // Modo roubada no cadastro: unlock de cliente/campo recusado sem chamar o gateway (nada é publicado).
+    const outcome: CommandOutcome =
+      input.type === 'unlock' && authority !== 'staff' && vehicle.stolenMode
+        ? { commandId: command.id, status: 'failed', reason: 'locked_by_staff' }
+        : await this.callGateway(command.id, vehicle.thingName, input, authority);
     const updated = await this.applyOutcome(command, outcome);
     if (updated.status === 'confirmed') await this.reflectOnVehicle(vehicle.id, input);
     return this.present([updated]).then(([c]) => c);
   }
 
-  private async callGateway(commandId: string, thingName: string, input: DispatchInput): Promise<CommandOutcome> {
-    const req = { commandId, thingName };
+  /**
+   * Verificação compartilhada (swap, início e fim do aluguel): a moto tem trava que cliente/campo não desfaz — origem
+   * `staff`/`system`, hold em 0 ou modo roubada (cadastro ou estado ao vivo). Erro = bloqueada (falha fechada).
+   */
+  async isLockedByStaff(vehicle: { id: string; thingName: string; stolenMode?: boolean | null }): Promise<boolean> {
+    if (vehicle.stolenMode) return true;
+    try {
+      return (await this.iot.lockedByStaff?.(vehicle.thingName)) ?? false;
+    } catch (err) {
+      this.logger.error({ msg: 'locked_by_staff_check_failed', vehicleId: vehicle.id, error: (err as Error).message });
+      return true;
+    }
+  }
+
+  private async callGateway(commandId: string, thingName: string, input: DispatchInput, authority: CommandAuthority): Promise<CommandOutcome> {
+    const req: CommandRequest = { commandId, thingName, authority };
+    if (input.type === 'lock') req.lockOrigin = lockOriginOf(authority, input.context?.purpose);
     try {
       switch (input.type) {
         case 'lock':

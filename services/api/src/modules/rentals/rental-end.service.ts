@@ -286,18 +286,32 @@ export class RentalEndService {
     });
     if (claimed.count === 0) return toRental(await this.load(rentalId));
 
+    // Auditoria item adiado 1: moto com trava da equipe/sistema ou hold não volta à frota como `free` (todo aluguel seguinte
+    // seria recusado no desbloqueio); vai para `maintenance` com alerta para a operação liberar. Vale também para a chegada no
+    // galpão (status alvo `free` vira `maintenance`); no ponto verde ela fica `awaiting_pickup` (não alugável) com o alerta.
+    const lockedByStaff = await this.commands.isLockedByStaff(rental.vehicle);
     const awaitingPickup = opts.returnTo !== 'depot' && (await this.isDepotVehicle(rental));
-    let vehicleStatus: VehicleStatusChangedEvent['status'] | null = 'free';
+    const streetStatus = lockedByStaff ? 'maintenance' : 'free';
+    let vehicleStatus: VehicleStatusChangedEvent['status'] | null = streetStatus;
     if (awaitingPickup) vehicleStatus = await this.leaveForPickup(rental);
     else if (opts.returnTo === 'depot' && opts.depot) {
       // Chegada no galpão: status final + depotId juntos (sem janela `free` sem galpão, alugável na rua). Sem transição
       // (moto offline, por exemplo) não emite nada: quem chama grava o `statusBeforeOffline`.
+      const target = lockedByStaff ? 'maintenance' : opts.depot.targetStatus;
       const placed = await this.prisma.vehicle.updateMany({
         where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } },
-        data: { status: opts.depot.targetStatus, depotId: opts.depot.depotId, ...depotPosition(opts.depot) },
+        data: { status: target, depotId: opts.depot.depotId, ...depotPosition(opts.depot) },
       });
-      vehicleStatus = placed.count ? opts.depot.targetStatus : null;
-    } else await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: 'free' } });
+      vehicleStatus = placed.count ? target : null;
+    } else await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: streetStatus } });
+    if (lockedByStaff) {
+      await this.alerts
+        .create(
+          { type: 'command_failed', priority: 'high', message: 'Moto encerrada com bloqueio da equipe/sistema; liberar antes de voltar à frota.', vehicleId: rental.vehicleId, rentalId },
+          { dedupe: false },
+        )
+        .catch((err: Error) => this.logger.error({ msg: 'locked_vehicle_alert_failed', rentalId, error: err.message }));
+    }
     await this.prisma.rentalEvent.create({
       data: {
         rentalId,

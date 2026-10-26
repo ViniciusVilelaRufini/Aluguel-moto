@@ -353,7 +353,19 @@ Cortado em relação ao dev anterior: NAT (US$ 0,093/h ≈ 68 + tráfego), WAF (
 - Job `checks` (porta do deploy): `redocly lint` do contrato, lint e testes unitários de `services/api`, lint e vitest de `apps/admin`.
 - Pull request: `checks`, testes do CDK, `cdk synth` (dev e prod) e `cdk diff` do dev.
 - Push em `main`: `cdk deploy --all` no dev **completo (ECS, ~US$ 100/mês)** depois de `checks` e `synth`. Enquanto o dev for o perfil `single`, não configure as variáveis `AWS_DEPLOY_ROLE_ARN_DEV`/`CERTIFICATE_ARN_DEV` (o job falha sem elas e nada é criado); a atualização do `single` é o documento SSM `volti-dev-update`. A imagem da API é construída da raiz do repositório (`docker build -f services/api/Dockerfile .`), porque o Dockerfile copia o lockfile e o `tsconfig.base.json` do workspace.
-- Autenticação por OIDC (`aws-actions/configure-aws-credentials` com `role-to-assume`), sem chaves fixas. Configure no repositório as variáveis `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN_DEV` e `CERTIFICATE_ARN_DEV`, e um provedor OIDC do GitHub na conta AWS com uma role confiando no repositório.
+- Autenticação por OIDC (`aws-actions/configure-aws-credentials` com `role-to-assume`), sem chaves fixas. PRs usam `AWS_LOOKUP_ROLE_ARN_DEV` (papel só-leitura, confiança `repo:<owner>/<repo>:pull_request`, usado apenas no `cdk diff`; sem a variável o diff é pulado com aviso). O deploy usa `AWS_DEPLOY_ROLE_ARN_DEV` com `environment: dev`. Variáveis do repositório: `AWS_ACCOUNT_ID`, `AWS_LOOKUP_ROLE_ARN_DEV`, `AWS_DEPLOY_ROLE_ARN_DEV` e `CERTIFICATE_ARN_DEV`, e um provedor OIDC do GitHub na conta AWS.
+- `permissions` do topo é só `contents: read`; `id-token: write` fica apenas nos jobs `diff` e `deploy-dev`. Pendência: fixar as actions por SHA de commit.
+
+### Passos na AWS e no GitHub (feitos uma vez pelo dono)
+
+1. Crie o papel `volti-ci-cdk-lookup-dev` no IAM com confiança no provedor OIDC `token.actions.githubusercontent.com`, `aud = sts.amazonaws.com`, `sub = repo:<owner>/<repo>:pull_request`.
+2. Permissões: apenas `sts:AssumeRole` em `arn:aws:iam::<conta>:role/cdk-*-lookup-role-*` (**não** em `cdk-*-deploy-role`), mais leitura de CloudFormation (`cloudformation:DescribeStacks`, `GetTemplate`, `ListStacks`) e `ssm:GetParameter` em `/cdk-bootstrap/*`.
+3. No GitHub, crie a variável `AWS_LOOKUP_ROLE_ARN_DEV` com o ARN do papel.
+4. Restrinja a confiança do papel de deploy para `sub = repo:<owner>/<repo>:environment:dev`, removendo `pull_request` e `ref:refs/heads/*`.
+
+### Regras IoT
+
+As regras `motos/+/telemetria` e `motos/+/eventos` projetam `topic(2) AS thingName`, `topic(3) AS channel`, `timestamp() AS ingestedAt` e o corpo aninhado em `payload` (só os campos do contrato); as duas enviam à fila `telemetria` (o `channel` distingue eventos). O SQL ainda não foi validado na AWS: no primeiro deploy dev, confirme que campos ausentes ficam omitidos. Mensagens antigas na fila (sem `payload`) são descartadas.
 
 ## Rotação do segredo do webhook (Mercado Pago)
 

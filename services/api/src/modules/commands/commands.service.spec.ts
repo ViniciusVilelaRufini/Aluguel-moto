@@ -122,7 +122,7 @@ describe('Comandos remotos', () => {
   it('speed_limit 20 → 202, IoT chamado com 20 e resposta no formato VehicleCommand', async () => {
     const res = await post({ type: 'speed_limit', reason: 'Zona escolar', speedLimitKmh: 20 });
     expect(res.status).toBe(202);
-    expect(iot.setSpeedLimit).toHaveBeenCalledWith({ commandId: '44444444-4444-4444-8444-444444444444', thingName: 'moto-0001' }, 20);
+    expect(iot.setSpeedLimit).toHaveBeenCalledWith({ commandId: '44444444-4444-4444-8444-444444444444', thingName: 'moto-0001', authority: 'staff' }, 20);
     expect(res.body).toMatchObject({ vehicleId: VEHICLE_ID, type: 'speed_limit', status: 'confirmed', speedLimitKmh: 20 });
   });
 

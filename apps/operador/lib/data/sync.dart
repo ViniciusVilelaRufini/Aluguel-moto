@@ -48,24 +48,51 @@ final onlineProvider = StreamProvider<bool>((ref) async* {
 });
 
 class SyncState {
-  const SyncState({this.jobs = const [], this.syncing = false, this.results = const {}});
+  const SyncState({
+    this.allJobs = const [],
+    this.owner,
+    this.syncing = false,
+    this.results = const {},
+  });
 
-  final List<QueuedJob> jobs;
+  /// Tudo o que ha na fila do aparelho (de qualquer operador).
+  final List<QueuedJob> allJobs;
+
+  /// `sub` do operador logado.
+  final String? owner;
+
+  /// Pendencias do operador atual e jobs antigos sem dono (so descartaveis).
+  /// Jobs de outros operadores ficam retidos e invisiveis.
+  List<QueuedJob> get jobs =>
+      allJobs.where((j) => j.ownerSub == null || j.ownerSub == owner).toList();
+
+  /// Jobs antigos de dono desconhecido: "pendente de outro operador".
+  List<QueuedJob> get orphans => allJobs.where((j) => j.ownerSub == null).toList();
+
+  List<QueuedJob> get _mine =>
+      owner == null ? const [] : allJobs.where((j) => j.ownerSub == owner).toList();
   final bool syncing;
 
   /// Resultado da API por id de job ja sincronizado nesta sessao
   /// (`Inspection`, `BatterySwap` ou `FieldTask`).
   final Map<String, Object> results;
 
-  List<QueuedJob> get pending => jobs.where((j) => j.status == JobStatus.pending).toList();
-  List<QueuedJob> get failed => jobs.where((j) => j.status == JobStatus.failed).toList();
+  List<QueuedJob> get pending => _mine.where((j) => j.status == JobStatus.pending).toList();
+  List<QueuedJob> get failed => _mine.where((j) => j.status == JobStatus.failed).toList();
 
   bool hasPending(String taskId, [JobKind? kind]) => pending
       .any((j) => j.taskId == taskId && (kind == null || j.kind == kind));
 
-  SyncState copyWith({List<QueuedJob>? jobs, bool? syncing, Map<String, Object>? results}) =>
+  SyncState copyWith({
+    List<QueuedJob>? allJobs,
+    String? owner,
+    bool clearOwner = false,
+    bool? syncing,
+    Map<String, Object>? results,
+  }) =>
       SyncState(
-        jobs: jobs ?? this.jobs,
+        allJobs: allJobs ?? this.allJobs,
+        owner: clearOwner ? null : (owner ?? this.owner),
         syncing: syncing ?? this.syncing,
         results: results ?? this.results,
       );
@@ -99,17 +126,27 @@ class SyncController extends Notifier<SyncState> {
       if (online) unawaited(_safeSync());
     });
     // Entrar de novo (token expirado) drena a fila.
-    ref.listen(sessionProvider, (prev, next) {
+    ref.listen(ownerSubProvider, (prev, next) {
+      // Troca de conta: a lista mostrada passa a ser a do novo operador.
+      state = next == null ? state.copyWith(clearOwner: true) : state.copyWith(owner: next);
       if (next != null) unawaited(_safeSync());
     });
     // Partida a frio ja online: nao ha evento de conectividade, entao sincroniza agora.
     unawaited(load().then((_) => _safeSync()));
-    return const SyncState();
+    return SyncState(owner: ref.read(ownerSubProvider));
   }
 
   Future<void> load() async {
     final all = await _queue.all();
-    state = state.copyWith(jobs: all);
+    state = _withOwner(all);
+  }
+
+  /// Fila nova com o dono da sessao de agora.
+  SyncState _withOwner(List<QueuedJob> all) {
+    final owner = ref.read(ownerSubProvider);
+    return owner == null
+        ? state.copyWith(allJobs: all, clearOwner: true)
+        : state.copyWith(allJobs: all, owner: owner);
   }
 
   Future<SubmitOutcome> submitInspection(String taskId, InspectionDraft draft) =>
@@ -130,8 +167,11 @@ class SyncController extends Notifier<SyncState> {
 
   Future<SubmitOutcome> _enqueue(
       JobKind kind, String taskId, Map<String, dynamic> payload) async {
+    final owner = ref.read(ownerSubProvider);
+    if (owner == null) throw StateError('sem sessao: nada a enfileirar');
     final now = DateTime.now().toUtc();
     final job = QueuedJob(
+      ownerSub: owner,
       id: newUuid(),
       kind: kind,
       taskId: taskId,
@@ -141,24 +181,29 @@ class SyncController extends Notifier<SyncState> {
       recordedAt: now,
     );
     await _queue.put(job);
-    final all = await _queue.all();
-    state = state.copyWith(jobs: all);
+    state = _withOwner(await _queue.all());
     await sync();
     final result = state.results[job.id];
-    final current = state.jobs.where((j) => j.id == job.id);
+    final current = state.allJobs.where((j) => j.id == job.id);
     return SubmitOutcome(current.isEmpty ? job : current.first, result);
   }
 
   /// Descarta um job que a API recusou (visivel na tela de pendencias).
   Future<void> discard(String jobId) async {
+    // So o proprio operador (ou um job sem dono) pode descartar.
+    final job = state.jobs.where((j) => j.id == jobId);
+    if (job.isEmpty) return;
     await _queue.remove(jobId);
     await load();
   }
 
   /// Reenfileira um job que falhou para nova tentativa (mesma `Idempotency-Key`).
   Future<void> retry(String jobId) async {
-    final job = state.jobs.firstWhere((j) => j.id == jobId);
+    final mine = state.jobs.where((j) => j.id == jobId && j.ownerSub == state.owner);
+    if (mine.isEmpty) return; // job de outro operador ou sem dono: so descarta
+    final job = mine.first;
     await _queue.put(QueuedJob(
+      ownerSub: job.ownerSub,
       id: job.id,
       kind: job.kind,
       taskId: job.taskId,
@@ -208,7 +253,14 @@ class SyncController extends Notifier<SyncState> {
       var authExpired = false;
       final blockedTasks = <String>{};
       final results = Map<String, Object>.of(state.results);
+      final owner = ref.read(ownerSubProvider);
       for (final job in await _queue.all()) {
+        // Troca de conta (ou logout) durante a rodada: para antes do proximo
+        // job, para nada do dono anterior sair com o token de outro operador.
+        if (ref.read(ownerSubProvider) != owner) break;
+        // Fila de aparelho compartilhado: so envia o que e do operador atual.
+        // Os demais ficam retidos ate o dono voltar (sem dono: so descarte).
+        if (owner == null || job.ownerSub != owner) continue;
         if (job.status == JobStatus.failed) {
           blockedTasks.add(job.taskId);
           continue;
@@ -234,7 +286,7 @@ class SyncController extends Notifier<SyncState> {
         }
       }
       final latest = await _queue.all();
-      state = state.copyWith(jobs: latest, results: results);
+      state = _withOwner(latest).copyWith(results: results);
       if (authExpired) await ref.read(sessionProvider.notifier).signOut();
     } finally {
       state = state.copyWith(syncing: false);

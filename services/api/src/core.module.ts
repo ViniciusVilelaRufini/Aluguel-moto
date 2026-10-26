@@ -28,6 +28,7 @@ import { CachedReverseGeocoder } from './adapters/geocoding/cached-reverse-geoco
 import { LocalReverseGeocoder } from './adapters/geocoding/local-reverse-geocoder';
 import { loadV2Config, V2_CONFIG, type V2Config } from './config/v2-config';
 import { REVERSE_GEOCODER } from './ports/reverse-geocoder.port';
+import { ClusterEventsBridge } from './common/cluster-events';
 import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis/redis-store';
 import { JobLock, registerJobLock } from './common/job-lock';
 
@@ -50,6 +51,7 @@ import { JobLock, registerJobLock } from './common/job-lock';
     PrismaService,
     AuditService,
     PrincipalResolver,
+    ClusterEventsBridge,
     { provide: IDEMPOTENCY_STORE, useClass: PrismaIdempotencyStore },
     {
       provide: REDIS_STORE,
@@ -98,6 +100,7 @@ import { JobLock, registerJobLock } from './common/job-lock';
     PrismaService,
     AuditService,
     PrincipalResolver,
+    ClusterEventsBridge,
     IDEMPOTENCY_STORE,
     REDIS_STORE,
     AUTH_VERIFIER,

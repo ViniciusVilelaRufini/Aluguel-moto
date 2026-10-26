@@ -4,6 +4,8 @@ import { Interval } from '@nestjs/schedule';
 import type { Prisma, Rental, Vehicle } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
+import { assertNotFixedForOther } from '../../common/fixed-vehicle';
+import { assertVehicleNotInUse } from '../../common/vehicle-in-use';
 import { EV, RentalChangedEvent, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, unprocessable } from '../../common/problem';
@@ -16,7 +18,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
-import { PricingService, type PriceBreakdown } from '../pricing/pricing.service';
+import { PricingService, type PriceBreakdown, type PriceSnapshot } from '../pricing/pricing.service';
 import { OPEN_SWAP_STATUSES, SWAP_FEE_CODE, SWAP_FEE_DEFAULT_CENTS, swapFeeCents } from '../station-swaps/station-swap.rules';
 import { toStationSwap } from '../station-swaps/station-swaps.mapper';
 import { hasOpenStationSwap } from './rental-end.service';
@@ -113,7 +115,9 @@ export class RentalsService {
   async resume(user: Principal, id: string) {
     const r = await this.loadFor(user, id);
     if (r.status !== 'paused') throw conflict('rental-not-active', 'Só é possível retomar um aluguel pausado.');
-    await this.commands.dispatch({ vehicleId: r.vehicleId, type: 'unlock', reason: 'Retomada do aluguel', actor: user, context: { rentalId: id, purpose: 'rental_resume' }, auditAction: 'rental.resume' });
+    const cmd = await this.commands.dispatch({ vehicleId: r.vehicleId, type: 'unlock', reason: 'Retomada do aluguel', actor: user, context: { rentalId: id, purpose: 'rental_resume' }, auditAction: 'rental.resume' });
+    // Trava da equipe/sistema (cerca, hold, modo roubada): o cliente não desfaz; o aluguel continua pausado.
+    if (cmd.statusReason === 'locked_by_staff') throw conflict('vehicle-locked-by-staff', 'A moto foi bloqueada pela equipe. Fale com o suporte.');
     const pausedFor = r.pausedAt ? Math.floor((Date.now() - r.pausedAt.getTime()) / 1000) : 0;
     const moved = await this.prisma.rental.updateMany({
       where: { id, status: 'paused' },
@@ -130,10 +134,22 @@ export class RentalsService {
     if (r.status !== 'active' && r.status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
     // Fix 1 (I7): no meio de uma troca de bateria na estação a moto não muda.
     if (await hasOpenStationSwap(this.prisma, id)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de trocar de moto.');
-    const target = await this.prisma.vehicle.findUnique({ where: { id: dto.newVehicleId } });
+    // Revisão final item 2: a trava da equipe/sistema na moto ATUAL (cerca, hold, modo roubada) não se contorna com troca,
+    // nem com incidente aberto: o cliente fala com o suporte.
+    if (await this.commands.isLockedByStaff(r.vehicle)) throw conflict('vehicle-locked-by-staff', 'A moto foi bloqueada pela equipe. Fale com o suporte.');
+    const target = await this.prisma.vehicle.findUnique({ where: { id: dto.newVehicleId }, include: { vehicleModel: { select: { pricePerMinuteCents: true } } } });
     if (!target) throw notFound('Moto não encontrada.');
     // Retirada em galpão: moto do galpão (ou esperando recolhimento) só sai pela entrega, nunca pela troca.
     if (target.id === r.vehicleId || target.status !== 'free' || isDepotLocked(target)) throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
+    // Mesmas guardas do início do aluguel: sem aluguel/reserva, não fixa de outro plano (item 11) e online.
+    await assertVehicleNotInUse(this.prisma, target.id);
+    await assertNotFixedForOther(this.prisma, target.id, r.customerId);
+    if (target.online === false || (await this.iot.getLiveState(target.thingName).catch(() => null))?.online === false) {
+      throw conflict('vehicle-offline', 'A nova moto está sem conexão agora. Escolha outra moto.');
+    }
+    // Auditoria item adiado 1: o unlock do cliente na moto nova seria recusado (trava da equipe/sistema, hold, modo roubada).
+    if (await this.commands.isLockedByStaff(target)) throw conflict('vehicle-unavailable', 'A moto escolhida está bloqueada pela equipe.');
+    await this.assertSwapPrice(r, target.vehicleModel?.pricePerMinuteCents ?? null);
     const live = await this.iot.getLiveState(r.vehicle.thingName).catch(() => null);
     const here = live ? { lat: live.lat, lng: live.lng } : { lat: r.vehicle.lat, lng: r.vehicle.lng };
     if (distanceM(here, target) > SWAP_MAX_DISTANCE_M) {
@@ -146,8 +162,14 @@ export class RentalsService {
       if (await hasOpenStationSwap(tx, id)) throw conflict('swap-open', 'Termine a troca de bateria na estação antes de trocar de moto.');
       const claimed = await tx.vehicle.updateMany({ where: { id: target.id, status: 'free', depotId: null }, data: { status: r.status === 'paused' ? 'paused' : 'rented' } });
       if (claimed.count === 0) throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
+      // Só troca se o aluguel ainda estiver no MESMO status e na moto lida acima: o status da moto nova e a decisão de
+      // destravar dependem de r.status (revisão final item 1 — corrida com pausa/retomada).
+      const moved = await tx.rental.updateMany({
+        where: { id, status: r.status, vehicleId: r.vehicleId },
+        data: { vehicleId: target.id, speedLimitKmh: target.speedLimitKmh },
+      });
+      if (moved.count !== 1) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
       await tx.vehicle.update({ where: { id: r.vehicleId }, data: { status: 'maintenance' } });
-      await tx.rental.update({ where: { id }, data: { vehicleId: target.id, speedLimitKmh: target.speedLimitKmh } });
       await tx.rentalEvent.create({
         data: { rentalId: id, type: 'vehicle_swapped', actorType: 'customer', actorId: user.customerId, message: dto.reason, data: compact({ fromVehicleId: r.vehicleId, toVehicleId: target.id, incidentId: dto.incidentId }) },
       });
@@ -158,6 +180,32 @@ export class RentalsService {
     }
     this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: r.vehicleId, status: 'maintenance', ts: new Date().toISOString() } satisfies VehicleStatusChangedEvent);
     return this.afterChange(id, target.id, r.status === 'paused' ? 'paused' : 'rented');
+  }
+
+  /**
+   * Auditoria item 15: o preço do aluguel fica congelado no snapshot do início, então a troca só vale para moto de
+   * mesmo preço por minuto ou mais barata. Plano por minuto compara com o snapshot (moto sem modelo usaria o preço do
+   * plano); os demais planos comparam o modelo da moto alvo com o da moto atual.
+   */
+  private async assertSwapPrice(r: RentalWithVehicle, targetModelPrice: number | null): Promise<void> {
+    const snap = r.priceSnapshot as unknown as PriceSnapshot;
+    let reference: number | null;
+    let targetPrice: number | null = targetModelPrice;
+    if (snap.unit === 'minute') {
+      reference = snap.unitPriceCents;
+      if (targetPrice === null) {
+        const plan = await this.prisma.pricingPlan.findFirst({ where: { code: snap.planCode }, select: { unitPriceCents: true } });
+        targetPrice = plan?.unitPriceCents ?? Number.POSITIVE_INFINITY;
+      }
+    } else {
+      const current = r.vehicle.vehicleModelId
+        ? await this.prisma.vehicleModel.findUnique({ where: { id: r.vehicle.vehicleModelId }, select: { pricePerMinuteCents: true } })
+        : null;
+      reference = current?.pricePerMinuteCents ?? null;
+    }
+    if (reference !== null && targetPrice !== null && targetPrice > reference) {
+      throw conflict('vehicle-unavailable', 'Só é possível trocar por uma moto de mesmo preço ou mais barata.');
+    }
   }
 
   async returnPhotoUpload(user: Principal, id: string, contentType: string) {

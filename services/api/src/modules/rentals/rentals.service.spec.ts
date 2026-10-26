@@ -13,10 +13,15 @@ const here = { lat: -23.5614, lng: -46.6559 };
 function setup() {
   const prisma = mockDeep<PrismaClient>();
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
-  const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'c', status: 'confirmed' }) };
+  const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'c', status: 'confirmed' }), isLockedByStaff: jest.fn().mockResolvedValue(false) };
   const iot = { getLiveState: jest.fn().mockResolvedValue(null) };
   const svc = new RentalsService(prisma as any, commands as any, {} as any, { emit: jest.fn() } as any, {} as any, iot as any, {} as any);
-  prisma.rental.findUnique.mockResolvedValue({ id: RENTAL_ID, customerId: CUSTOMER_ID, status: 'active', vehicleId: OLD_ID, vehicle: { id: OLD_ID, thingName: 't', ...here } } as any);
+  prisma.rental.findUnique.mockResolvedValue({
+    id: RENTAL_ID, customerId: CUSTOMER_ID, status: 'active', vehicleId: OLD_ID, vehicle: { id: OLD_ID, thingName: 't', ...here },
+    priceSnapshot: { planCode: 'minute', unit: 'minute', unlockFeeCents: 0, unitPriceCents: 79, pausePerMinuteCents: 0, insurancePremiumCents: 0 },
+  } as any);
+  // Auditoria: a moto nova precisa ter preço por minuto igual ou menor (aqui, o mesmo modelo).
+  prisma.pricingPlan.findFirst.mockResolvedValue({ unitPriceCents: 79 } as any);
   return { prisma, commands, svc };
 }
 

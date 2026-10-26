@@ -240,7 +240,7 @@ A API roda com 2–10 tasks no ECS. Tudo o que precisa ser único ou compartilha
 - **Redis fora do ar:** limites de zona continuam valendo (cercas degradam para o estado local; reduções de limite sempre aceitas; só subidas recusadas).
 - **Cercas e "fora da área":** estado por moto e prazo no Redis, sob lock da moto (`geofence.service.ts`); varredura de prazos a cada 15 s; só uma instância dispara.
 - **Jobs:** `@ExclusiveJob(nome, ttl)` (`src/common/job-lock.ts`) — cada rodada de `@Interval`/`@Cron` roda numa instância só.
-- **Alertas:** a fila `alertas` aceita `CreateAlertInput` ou o evento cru do rastreador (`{ thingName, tipo, timestamp }`).
+- **Alertas:** a fila `alertas` aceita só `CreateAlertInput` validado; o evento cru do rastreador é descartado (identidade só do tópico, pela fila `telemetria` — auditoria, `docs/decisoes.md` 2026-10-26 item 15).
 - **Presença:** `{ thingName, presence }` da fila de telemetria → `inbound.presence`.
 - **Push:** `PUSH_MODE=fcm` + `FCM_SERVICE_ACCOUNT_JSON` (firebase-admin); `log` em dev. `data.type` segue o roteamento do app (`reservation.reminder`, `kyc`, …).
 - **Produção recusa:** `PAYMENT_PROVIDER=fake` (salvo `ALLOW_FAKE_PAYMENTS=true`, só o dev da infra), `PUBLIC_SHARE_BASE_URL` ausente ou sem https, `PUSH_MODE=fcm` sem credencial válida.
@@ -249,6 +249,27 @@ A API roda com 2–10 tasks no ECS. Tudo o que precisa ser único ou compartilha
 - **Estações:** `slot_closed` sem devolução espera 5 s (`STATION_SLOT_CLOSED_GRACE_MS`) por um `battery_returned` atrasado antes de cancelar.
 
 Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (suítes do bloqueio seguro de novo com o estado serializado no "Redis"), `geofence.multi-instance.spec.ts`, `live-state.multi-instance.spec.ts`, `job-lock.spec.ts`; e2e `realtime-multi-instance`, `multi-instance-redis` (Redis real) e `location-share-public`.
+## Segurança da auditoria (2026-10, `docs/decisoes.md`)
+
+| Chave / canal Redis | Uso |
+|---|---|
+| `volti:cluster-events` (pub/sub) | replica `PRINCIPAL_REVOKED`, `RENTAL_CHANGED`, `ZONE_CHANGED` e `CUSTOMER_CONSENT_CHANGED` entre instâncias (`ClusterEventsBridge`); at-most-once, sem persistência. `ZONE_CHANGED` remoto (`isRemote`) só invalida a memória do motor de cercas; a origem reavalia e manda os comandos |
+| `geofence:out-of-area:{vehicleId}` (índice `geofence:out-of-area:index`) | prazo do bloqueio "fora da área" (`{rentalId, deadline}`); quem trava consome o mesmo valor (compare-and-delete) e decide pelo estado da cerca no Redis |
+| `geofence:inside:{vehicleId}` e `geofence:limit:{thingName}` | estado da cerca da moto (zonas, limite aplicado, prazo fora da área) e limite das zonas em vigor; o limite é gravado antes do comando de zona e lido pelo `unlock` e pelo teto do limite manual em qualquer task |
+| `iot:desired-limit:{thingName}` | último `limite_kmh` publicado; se estiver acima da zona, o motor de cercas o corrige |
+| `iot:held:{thingName}` | hold em 0 km/h, lido a cada comando (erro de leitura = segurado) |
+| `iot:lock-origin:{thingName}` | origem da trava (`customer`, `staff`, `system`); leitura com erro = `system`; unlock de cliente/campo a apaga por compare-and-delete (só `customer`/ausente) |
+
+- Limite de zona em falha fechada: motor de cercas fora com posição conhecida = 6 km/h (nunca 0); 32 km/h só sem posição alguma (log `zone_limit_unknown`).
+- Destravar por cliente ou campo não desfaz trava de equipe/sistema nem hold: comando `failed/locked_by_staff`; `POST /rentals/{id}/resume` responde `409 vehicle-locked-by-staff`. Troca e início do aluguel recusam moto assim bloqueada (`409 vehicle-unavailable`; moto atual da troca → `409 vehicle-locked-by-staff`); no fim do aluguel ela vai para `maintenance` com alerta e não volta a `free` por tarefa nem por `POST /vehicles/{id}/status` (`409 vehicle-unavailable`). Só admin/operacao libera.
+- Zona `reduced_speed` exige `speedLimitKmh` entre 6 e 20.
+- "Moto em uso" é uma regra só (`common/vehicle-in-use.ts`): aluguel aberto ou reserva ativa no banco, não `vehicle.status`.
+- Usuário só do grupo `campo` age só nas próprias tarefas. Troca de moto só para preço por minuto igual ou menor.
+- IoT: `thingName` e `channel` vêm só do tópico; o corpo do dispositivo chega aninhado em `payload`; eventos de dispositivo passam pela fila `telemetria`.
+- Estorno de contestação só via `POST /support/disputes/{id}/resolve` (chave `dispute:<id>`, reivindicação atômica); disputa presa em `under_review` após queda do processo exige ajuste manual.
+- Busca de clientes por CPF: não-admin só por igualdade (11 dígitos). Cupom com teto atômico (`422 coupon-invalid`).
+- WebSocket exige `exp` no JWT e desconecta no vencimento; cache veículo→aluguel de 5 s. `rental.changed` replicado só invalida o cache (o adaptador Redis do Socket.IO já entrega o `rental.updated` da origem).
+- Galpão: chegada ao galpão (fim do aluguel ou `collect`) não deixa como `free` moto com trava de equipe/sistema (vai para `maintenance` no fim do aluguel; `409` no `collect`).
 
 ## Regras que nunca mudam
 

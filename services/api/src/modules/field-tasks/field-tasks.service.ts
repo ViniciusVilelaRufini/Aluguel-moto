@@ -1,21 +1,24 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Battery, BatterySwap, FieldTask, Inspection, Prisma, StaffUser, Vehicle } from '@prisma/client';
-import { MAX_SPEED_KMH } from '../../common/enums';
+import { MAX_SPEED_KMH, type VehicleStatus } from '../../common/enums';
 import { type BatteryChargedStockDecreasedEvent, EV, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
-import { conflict, forbidden, notFound, unprocessable } from '../../common/problem';
+import { conflict, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
 import { compact, iso } from '../../common/util';
+import { assertVehicleNotInUse, VEHICLE_LOCKED_BACK_TO_FLEET } from '../../common/vehicle-in-use';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
-import { hasGroup, type Principal } from '../auth/principal';
+import type { Principal } from '../auth/principal';
 import { OUT_OF_SERVICE } from '../batteries/batteries.service';
 import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
+import { CommandsService } from '../commands/commands.service';
 import { BUDGET_MS, CALL_TIMEOUT_MS, VehicleAddressService } from '../vehicles/vehicle-address.service';
+import { assertTaskActor, isFieldOnly } from './task-actor';
 import type { BatterySwapDto, FieldTaskCompleteDto, FieldTaskCreateDto, FieldTaskUpdateDto, InspectionDto, ListFieldTasksQuery } from './field-tasks.dto';
 
 type TaskVehicle = Pick<Vehicle, 'code' | 'lat' | 'lng' | 'batteryPct'> & Partial<Pick<Vehicle, 'status' | 'addressLabel' | 'batterySerial'>>;
@@ -28,6 +31,8 @@ type TaskRow = FieldTask & {
 };
 const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 } as const;
 const CLOSED = ['done', 'canceled'];
+/** Status de onde (e para onde) a conclusão da tarefa pode mudar a moto, como em `VehiclesService.setStatus`. */
+const VEHICLE_STATUS_SETTABLE: VehicleStatus[] = ['free', 'maintenance'];
 
 export function toFieldTask(t: TaskRow) {
   return compact({
@@ -99,6 +104,7 @@ export class FieldTasksService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     private readonly events: EventEmitter2,
+    private readonly commands: CommandsService,
     @Optional() private readonly addresses?: VehicleAddressService,
   ) {}
 
@@ -143,9 +149,8 @@ export class FieldTasksService {
 
   async list(user: Principal, q: ListFieldTasksQuery) {
     const where: Prisma.FieldTaskWhereInput = {};
-    const onlyCampo = hasGroup(user, 'campo') && !hasGroup(user, 'admin', 'operacao');
-    let assignee = q.assigneeId === 'me' ? user.userId : q.assigneeId;
-    if (!assignee && onlyCampo) assignee = user.userId;
+    // Auditoria item 13: usuário só-campo lista só as próprias tarefas (o `assigneeId` pedido é ignorado).
+    const assignee = isFieldOnly(user) ? user.userId : q.assigneeId === 'me' ? user.userId : q.assigneeId;
     if (assignee) where.assigneeId = assignee;
     if (q.status) where.status = q.status;
     if (q.type) where.type = q.type;
@@ -178,8 +183,10 @@ export class FieldTasksService {
     return presignedUpload(this.storage, this.cfg.buckets.attachments, `field/${user.userId}`, contentType);
   }
 
-  async get(id: string) {
-    return this.mapped(id);
+  async get(user: Principal, id: string) {
+    const t = await this.one(id);
+    assertTaskActor(user, t, { allowUnassigned: true });
+    return toFieldTask((await this.enrich([t]))[0]);
   }
 
   async update(id: string, dto: FieldTaskUpdateDto) {
@@ -201,13 +208,14 @@ export class FieldTasksService {
   async start(user: Principal, id: string) {
     const t = await this.one(id);
     if (t.status !== 'open' && t.status !== 'assigned') throw conflict('conflict', 'A tarefa não pode ser iniciada neste estado.');
-    if (t.assigneeId && t.assigneeId !== user.userId && !hasGroup(user, 'admin', 'operacao')) throw forbidden('Esta tarefa está atribuída a outro operador.');
+    assertTaskActor(user, t, { allowUnassigned: true });
     await this.prisma.fieldTask.update({ where: { id }, data: { status: 'in_progress', startedAt: new Date(), assigneeId: t.assigneeId ?? user.userId } });
     return this.mapped(id);
   }
 
   async complete(user: Principal, id: string, dto: FieldTaskCompleteDto) {
     const t = await this.one(id);
+    assertTaskActor(user, t);
     if (t.status === 'done') return this.mapped(id); // reenvio da fila offline
     if (t.status === 'canceled' || t.status === 'open') throw conflict('conflict', 'A tarefa não pode ser concluída neste estado.');
     if (t.type === 'inspection' && (await this.prisma.inspection.count({ where: { fieldTaskId: id } })) === 0) {
@@ -224,16 +232,33 @@ export class FieldTasksService {
     if (t.type === 'collect' && !depot && isAwaitingPickup(vehicle)) throw unprocessable('validation-error', 'Informe o galpão onde a moto chegou.');
     const arrival = depot ? depotArrival(vehicle, dto.vehicleStatus, { depotId: depot.id, lat: depot.lat, lng: depot.lng }) : null;
     await this.prisma.$transaction(async (tx) => {
-      await tx.fieldTask.update({ where: { id }, data: { status: 'done', completionNotes: dto.notes, completedAt: dto.completedAt ? new Date(dto.completedAt) : new Date() } });
       if (arrival && depot) {
         // Retirada em galpão: a moto recolhida volta ao galpão. Gravação condicionada ao status lido (409 se mudou).
+        // Auditoria (revisão final item 6) no fluxo do galpão: chegada como `free` (agora ou ao reconectar) exige a moto sem
+        // aluguel/reserva e sem trava da equipe/sistema (cerca, hold, modo roubada) — senão 409, a moto entra em manutenção.
+        if (arrival.status === 'free') {
+          await assertVehicleNotInUse(tx, t.vehicleId);
+          const v = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { id: true, thingName: true, stolenMode: true } });
+          if (!v) throw notFound('Moto não encontrada.');
+          if (await this.commands.isLockedByStaff(v)) throw conflict('vehicle-unavailable', VEHICLE_LOCKED_BACK_TO_FLEET);
+        }
         const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, ...arrival.where }, data: arrival.data });
         if (!moved.count) throw conflict('vehicle-unavailable', 'A moto mudou de situação; atualize a tarefa e tente de novo.');
         await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: 'Recolhimento concluído no galpão', metadata: { fieldTaskId: id, to: arrival.status, depotId: depot.id } }, tx as any);
       } else if (dto.vehicleStatus) {
-        const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: ['free', 'maintenance', 'offline', 'blocked'] } }, data: { status: dto.vehicleStatus } });
-        if (moved.count) await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: `Tarefa ${t.type} concluída`, metadata: { fieldTaskId: id, to: dto.vehicleStatus } }, tx as any);
+        // Auditoria item 7: mesmas guardas de `setStatus` — só entre livre e manutenção e sem aluguel/reserva
+        // (consultados, não deduzidos do status, que fica `offline` durante um aluguel com o rastreador fora).
+        const v = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { id: true, status: true, thingName: true, stolenMode: true } });
+        if (!v) throw notFound('Moto não encontrada.');
+        if (!VEHICLE_STATUS_SETTABLE.includes(v.status)) throw conflict('vehicle-unavailable', `A moto está ${v.status}; só é possível alternar entre livre e manutenção.`);
+        await assertVehicleNotInUse(tx, t.vehicleId);
+        // Revisão final item 6: moto com trava da equipe/sistema (cerca, hold, modo roubada) não volta à frota pela tarefa.
+        if (dto.vehicleStatus === 'free' && (await this.commands.isLockedByStaff(v))) throw conflict('vehicle-unavailable', VEHICLE_LOCKED_BACK_TO_FLEET);
+        const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: VEHICLE_STATUS_SETTABLE } }, data: { status: dto.vehicleStatus } });
+        if (moved.count !== 1) throw conflict('vehicle-unavailable', 'A moto mudou de estado; tente de novo.');
+        await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: `Tarefa ${t.type} concluída`, metadata: { fieldTaskId: id, from: v.status, to: dto.vehicleStatus } }, tx as any);
       }
+      await tx.fieldTask.update({ where: { id }, data: { status: 'done', completionNotes: dto.notes, completedAt: dto.completedAt ? new Date(dto.completedAt) : new Date() } });
     });
     // Moto offline: o status real continua `offline` (o de retorno fica guardado), então não emite.
     if (arrival) {
@@ -248,6 +273,7 @@ export class FieldTasksService {
    */
   async submitInspection(user: Principal, id: string, dto: InspectionDto, idempotencyKey?: string) {
     const t = await this.one(id);
+    assertTaskActor(user, t);
     if (CLOSED.includes(t.status)) throw conflict('conflict', 'Tarefa já encerrada.');
     if (idempotencyKey) {
       const prev = await this.prisma.inspection.findUnique({ where: { idempotencyKey } });
@@ -291,6 +317,7 @@ export class FieldTasksService {
 
   async submitBatterySwap(user: Principal, id: string, dto: BatterySwapDto, idempotencyKey?: string) {
     const t = await this.one(id);
+    assertTaskActor(user, t);
     if (CLOSED.includes(t.status)) throw conflict('conflict', 'Tarefa já encerrada.');
     if (dto.removedBatterySerial.trim() === dto.installedBatterySerial.trim()) {
       throw unprocessable('battery-serials-must-differ', 'A bateria instalada precisa ser diferente da retirada.');

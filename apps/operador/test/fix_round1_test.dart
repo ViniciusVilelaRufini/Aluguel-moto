@@ -124,7 +124,7 @@ void main() {
     test('lista do cache (sem rede) nao solta nada', () async {
       final repo = _Repo([fakeTask(id: 'x')])..online = false;
       final h = Harness(repo: repo);
-      await h.queue.saveTasks([
+      await h.queue.saveTasks(testOwnerSub, [
         standardSerializers.serializeWith(FieldTask.serializer, fakeTask(id: 'x'))!
             as Map<String, dynamic>,
       ]);

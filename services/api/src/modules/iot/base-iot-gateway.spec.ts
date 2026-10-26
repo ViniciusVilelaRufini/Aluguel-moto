@@ -54,7 +54,7 @@ describe('BaseIotGateway', () => {
 
   it('QA-01: limite manual acima do limite da zona em que a moto está → failed/invalid_limit e nada publicado; igual ou abaixo passa', async () => {
     const { gw, transport } = await setup();
-    gw.setLimitResolver(() => 6); // calçadão
+    gw.setLimitResolver(async () => 6); // calçadão
     expect(await gw.setSpeedLimit({ commandId: 'c1', thingName: T }, 32)).toEqual({ commandId: 'c1', status: 'failed', reason: 'invalid_limit' });
     expect(await gw.setSpeedLimit({ commandId: 'c2', thingName: T }, 7)).toEqual({ commandId: 'c2', status: 'failed', reason: 'invalid_limit' });
     expect(transport.desired).toEqual([]);
@@ -151,11 +151,11 @@ describe('BaseIotGateway', () => {
 
   it('unlock cancela a rampa e restaura o limite em vigor (resolver de zona)', async () => {
     const { gw, clock, transport, updates } = await setup({ speed: 25 });
-    gw.setLimitResolver(() => 20);
+    gw.setLimitResolver(async () => 20);
     const p = gw.lock({ commandId: 'c1', thingName: T });
     await clock.advance(3_000);
     await p;
-    const u = gw.unlock({ commandId: 'c2', thingName: T });
+    const u = gw.unlock({ commandId: 'c2', thingName: T, authority: 'staff' });
     await gw.onReported(T, { travada: false, limite_kmh: 20 });
     expect(await u).toEqual({ commandId: 'c2', status: 'confirmed' });
     expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: false, limite_kmh: 20 });

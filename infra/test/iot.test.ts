@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Match } from 'aws-cdk-lib/assertions';
 import { PRESENCE_EVENT } from '../lib/stacks/messaging-stack';
 import { PRESENCE_FORWARDER, STATION_EVENTS_SQL, STATION_FORWARDER, STATION_PARTITION_KEY } from '../lib/stacks/iot-stack';
@@ -195,6 +197,40 @@ describe('IotStack', () => {
       FilterPattern: '',
       MetricTransformations: [Match.objectLike({ MetricNamespace: 'Volti/dev', MetricName: 'IotRuleErrors', MetricValue: '1' })],
     });
+  });
+
+  it('rules keep the thing identity (topic) apart from the device body (payload)', () => {
+    const rules = Object.values(t().findResources('AWS::IoT::TopicRule')) as any[];
+    const motoRules = rules.filter((r) => String(r.Properties.TopicRulePayload.Sql).includes("'motos/"));
+    const sqls = motoRules.map((r) => r.Properties.TopicRulePayload.Sql as string);
+    expect(sqls).toHaveLength(2);
+    for (const leaf of ['telemetria', 'eventos']) {
+      const sql = sqls.find((q) => q.includes(`'motos/+/${leaf}'`))!;
+      expect(sql.startsWith('SELECT topic(2) AS thingName, topic(3) AS channel, timestamp() AS ingestedAt, {')).toBe(true);
+      expect(sql).toContain('} AS payload FROM ');
+      expect(sql).not.toContain('SELECT *');
+    }
+    expect(sqls.find((q) => q.includes("'motos/+/telemetria'"))).toContain("'velocidade_kmh': velocidade_kmh");
+    expect(sqls.find((q) => q.includes("'motos/+/eventos'"))).toContain("'tipo': tipo");
+    // eventos seguem pela fila de telemetria (mesmo caminho do modo local)
+    const queues = motoRules.map((r) => JSON.stringify(r.Properties.TopicRulePayload.Actions[0].Sqs.QueueUrl));
+    expect(new Set(queues).size).toBe(1);
+  });
+
+  it('rule projections match the MQTT contract schemas (telemetria/eventos properties)', () => {
+    const schemaProps = (file: string) =>
+      Object.keys(JSON.parse(readFileSync(join(__dirname, '..', '..', 'packages', 'contracts', 'schemas', file), 'utf8')).properties).sort();
+    const rules = Object.values(t().findResources('AWS::IoT::TopicRule')) as any[];
+    const projected = (leaf: string) => {
+      const sql = rules.map((r) => String(r.Properties.TopicRulePayload.Sql)).find((q) => q.includes(`'motos/+/${leaf}'`))!;
+      const body = /\{(.*)\} AS payload/.exec(sql)![1];
+      return [...body.matchAll(/'(\w+)': (\w+)/g)].map((m) => {
+        expect(m[2]).toBe(m[1]);
+        return m[1];
+      }).sort();
+    };
+    expect(projected('telemetria')).toEqual(schemaProps('telemetria.schema.json'));
+    expect(projected('eventos')).toEqual(schemaProps('eventos.schema.json'));
   });
 
   it('creates Amazon Location tracker, geofence collection and place index (Storage) and publishes SSM params', () => {

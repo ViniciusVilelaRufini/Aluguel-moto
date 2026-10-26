@@ -1,5 +1,6 @@
+import { Logger } from '@nestjs/common';
 import { MAX_SPEED_KMH } from '../../common/enums';
-import type { VehicleLiveState } from '../../ports/iot-gateway.port';
+import type { LockOrigin, VehicleLiveState } from '../../ports/iot-gateway.port';
 import type { RedisStore } from '../../redis/redis-store';
 import type { Clock } from './clock';
 import type { TelemetryMessage } from './mqtt-contract';
@@ -85,6 +86,9 @@ export class LiveStateStore {
   private readonly heldUnpersisted = new Set<string>();
   /** Carimbo (`_at`) da última versão do hash no Redis que esta instância gravou ou leu: versão mais nova = outra instância. */
   private readonly syncedAt = new Map<string, number>();
+  /** Origem `staff`/`system` cuja escrita no Redis falhou: vale neste processo (falha fechada) até um unlock de equipe. */
+  private readonly unsyncedLockOrigin = new Map<string, LockOrigin>();
+  private readonly logger = new Logger('LiveStateStore');
 
   constructor(
     private readonly redis: RedisStore,
@@ -335,8 +339,11 @@ export class LiveStateStore {
     return lag > lagMs ? lag : null;
   }
 
-  /** "Limite segurado em 0" depois de `did_not_stop`: persiste até um unlock explícito. */
-  /** Falha fechada: erro ao ler o Redis = segurado (recusa mudar o limite) e nada vai para o cache. */
+  /**
+   * "Limite segurado em 0" depois de `did_not_stop`/lock sem confirmação: persiste até um unlock explícito.
+   * Lido do Redis a cada chamada (outra task pode ter segurado ou soltado). Falha fechada: erro ao ler = segurado
+   * (recusa mudar o limite), com log `held_read_failed`.
+   */
   async isHeld(thingName: string): Promise<boolean> {
     const v = await this.heldState(thingName);
     return v ?? true; // ilegível → segurado (falha fechada para subir limite)
@@ -350,26 +357,102 @@ export class LiveStateStore {
   async heldState(thingName: string): Promise<boolean | null> {
     let raw: string | null;
     try {
-      raw = await this.redis.get(`iot:held:${thingName}`);
-    } catch {
+      raw = await this.redis.get(heldKey(thingName));
+    } catch (err) {
+      this.logger.error({ msg: 'held_read_failed', thingName, error: (err as Error).message });
       return this.heldUnpersisted.has(thingName) ? true : null;
     }
     return raw === '1' || this.heldUnpersisted.has(thingName);
   }
 
   /**
-   * Segurar vale na memória mesmo se a escrita falhar (falha fechada); soltar só depois de apagar no Redis.
+   * Segurar vale neste processo na hora, mesmo se a escrita falhar (falha fechada); soltar só depois de apagar no Redis.
    * Erros de escrita são propagados (o unlock falha em vez de soltar em silêncio).
    */
   async setHeld(thingName: string, on: boolean): Promise<void> {
     if (on) {
       this.heldUnpersisted.add(thingName);
-      await this.redis.set(`iot:held:${thingName}`, '1');
+      await this.redis.set(heldKey(thingName), '1');
       this.heldUnpersisted.delete(thingName);
       return;
     }
-    await this.redis.del(`iot:held:${thingName}`);
+    await this.redis.del(heldKey(thingName));
     this.heldUnpersisted.delete(thingName);
+  }
+
+  /**
+   * Quem travou a moto (`iot:lock-origin:{thingName}`, campo `origin`), lido por qualquer task:
+   * - `staff`/`system` sobrescrevem (só a equipe desfaz); `customer` só grava se não houver origem (nunca rebaixa uma trava de
+   *   equipe/sistema, ex.: pausa do cliente depois da trava da cerca);
+   * - `null` apaga (unlock autorizado). Erro ao apagar é propagado (o unlock falha em vez de deixar a origem velha).
+   * Escrita de `staff`/`system` que falhar vale neste processo (falha fechada) e é registrada; não impede a trava.
+   */
+  async setLockOrigin(thingName: string, origin: LockOrigin | null): Promise<void> {
+    const key = lockOriginKey(thingName);
+    if (origin === null) {
+      await this.redis.del(key);
+      this.unsyncedLockOrigin.delete(thingName);
+      return;
+    }
+    try {
+      if (origin === 'customer') await this.redis.hcas(key, 'origin', null, { origin });
+      else await this.redis.hset(key, { origin });
+      if (origin !== 'customer') this.unsyncedLockOrigin.delete(thingName);
+    } catch (err) {
+      if (origin !== 'customer') this.unsyncedLockOrigin.set(thingName, origin);
+      this.logger.error({ msg: 'lock_origin_persist_failed', thingName, origin, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * Revisão final item 3: unlock de cliente/campo apaga a origem só se ela ainda for `customer` ou ausente, numa operação
+   * atômica (compare-and-delete). `false` = uma trava de equipe/sistema foi gravada no meio (ou não dá para confirmar:
+   * origem só neste processo, erro do Redis) — o unlock é recusado. Falha fechada.
+   */
+  async clearCustomerLockOrigin(thingName: string): Promise<boolean> {
+    if (this.unsyncedLockOrigin.has(thingName)) return false;
+    try {
+      return await this.redis.hdelIf(lockOriginKey(thingName), 'origin', ['customer', null]);
+    } catch (err) {
+      this.logger.error({ msg: 'lock_origin_clear_failed', thingName, error: (err as Error).message });
+      return false;
+    }
+  }
+
+  /** Origem da trava em vigor; `null` = sem origem (trava comum ou destravada). Falha fechada: erro ao ler = `system`. */
+  async getLockOrigin(thingName: string): Promise<LockOrigin | null> {
+    const local = this.unsyncedLockOrigin.get(thingName);
+    if (local) return local;
+    try {
+      const v = (await this.redis.hgetall(lockOriginKey(thingName))).origin;
+      if (v === undefined) return null;
+      return v === 'customer' || v === 'staff' ? v : 'system';
+    } catch (err) {
+      this.logger.error({ msg: 'lock_origin_read_failed', thingName, error: (err as Error).message });
+      return 'system';
+    }
+  }
+
+  /**
+   * Última posição conhecida da moto, lida do Redis (escrita por qualquer task); em erro do Redis, a da memória.
+   * `null` sem posição (nunca vista, ou só o estado em branco 0,0).
+   */
+  async lastKnownPosition(thingName: string): Promise<{ lat: number; lng: number } | null> {
+    let lat: number | undefined;
+    let lng: number | undefined;
+    try {
+      const h = await this.redis.hgetall(this.key(thingName));
+      if (h && h.lastSeenAt) {
+        lat = Number(h.lat);
+        lng = Number(h.lng);
+      }
+    } catch {
+      const mem = this.states.get(thingName);
+      lat = mem?.lat;
+      lng = mem?.lng;
+    }
+    if (lat === undefined || lng === undefined || !Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
+    return { lat, lng };
   }
 
   /**
@@ -448,3 +531,6 @@ export class LiveStateStore {
     await this.redis.hset(this.key(s.thingName), values).catch(() => undefined);
   }
 }
+
+const heldKey = (thingName: string) => `iot:held:${thingName}`;
+const lockOriginKey = (thingName: string) => `iot:lock-origin:${thingName}`;

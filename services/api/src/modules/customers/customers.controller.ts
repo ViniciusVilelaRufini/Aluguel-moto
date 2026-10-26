@@ -84,7 +84,9 @@ export class CustomersController {
       where.OR = [
         { name: { contains: q.q, mode: 'insensitive' } },
         { email: { contains: q.q, mode: 'insensitive' } },
-        ...(digits.length >= 4 ? [{ phone: { contains: digits } }, { cpf: { contains: digits } }] : []),
+        ...(digits.length >= 4 ? [{ phone: { contains: digits } }] : []),
+        // CPF: admin busca por trecho; os demais só por igualdade com os 11 dígitos (sem enumerar CPFs por prefixo).
+        ...(isAdmin(u) ? (digits.length >= 4 ? [{ cpf: { contains: digits } }] : []) : digits.length === 11 ? [{ cpf: digits }] : []),
       ];
     }
     const rows = await this.prisma.customer.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], ...pageArgs(q) });

@@ -35,6 +35,7 @@ void main() {
     final q = await HiveOfflineQueue.open();
     final now = DateTime.utc(2026, 10, 21, 12);
     await q.put(QueuedJob(
+      ownerSub: 'op-1',
       id: 'j1',
       kind: JobKind.inspection,
       taskId: 't1',
@@ -46,7 +47,7 @@ void main() {
       createdAt: now,
       recordedAt: now,
     ));
-    await q.saveTasks([
+    await q.saveTasks('op-1', [
       {'id': 'x'}
     ]);
     final jobs = await q.all();
@@ -55,7 +56,7 @@ void main() {
     expect(draft.speedReading, 40);
     expect(draft.effectiveSpeedOk, isFalse);
     expect(draft.photoPaths, ['/a.jpg']);
-    expect((await q.loadTasks()).single['id'], 'x');
+    expect((await q.loadTasks('op-1')).single['id'], 'x');
     await q.remove('j1');
     expect(await q.all(), isEmpty);
     await Hive.close();
@@ -109,6 +110,7 @@ void syncRobustnessTests() {
   QueuedJob swapJob(String id) {
     final now = DateTime.utc(2026, 10, 21, 12);
     return QueuedJob(
+      ownerSub: testOwnerSub,
       id: id,
       kind: JobKind.batterySwap,
       taskId: 't1',

@@ -449,7 +449,7 @@ export interface paths {
         put?: never;
         /**
          * Mudar status operacional (manutenção ou disponível)
-         * @description Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Grava AuditLog.
+         * @description Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Moto com bloqueio da equipe ou do sistema (cerca, hold, modo roubada) não volta a `free` (`409` `vehicle-unavailable`, "A moto está bloqueada pela equipe; libere-a antes de devolver à frota."). Grava AuditLog.
          */
         post: operations["setVehicleStatus"];
         delete?: never;
@@ -1235,6 +1235,8 @@ export interface paths {
          *     Moto do galpão: moto com `depotId`, ou separada por uma reserva de galpão (mesmo do próprio cliente), responde
          *     `409` `vehicle-unavailable` aqui; ela só sai do galpão pelo aceite da entrega (`POST /handovers/{id}/accept`).
          *     A moto precisa estar `free` ou reservada pelo próprio cliente (senão `409` `vehicle-unavailable`).
+         *     Moto com bloqueio da equipe ou do sistema (cerca, limite segurado em 0, modo roubada) → `409`
+         *     `vehicle-unavailable` ("A moto está bloqueada pela equipe. Escolha outra.") antes de reter a caução.
          *
          *     Caução (`depositMethod`):
          *     - `card`: pré-autoriza 5000 no cartão (`cardId` ou o cartão padrão). Sucesso → `201` com
@@ -1342,7 +1344,9 @@ export interface paths {
         put?: never;
         /**
          * Retomar aluguel
-         * @description Destrava a moto. Só de `paused`.
+         * @description Destrava a moto. Só de `paused` (senão `409` `rental-not-active`). Se a moto foi travada pela equipe ou pelo
+         *     sistema (cerca, limite segurado em 0 depois de não parar, modo roubada), `409` `vehicle-locked-by-staff`
+         *     ("A moto foi bloqueada pela equipe. Fale com o suporte.") e o aluguel continua `paused`.
          */
         post: operations["resumeRental"];
         delete?: never;
@@ -1363,9 +1367,15 @@ export interface paths {
         /**
          * Trocar de moto
          * @description Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para
-         *     `maintenance`, e destrava a nova (precisa estar `free` e a até 200 m). O aluguel continua o mesmo,
-         *     com evento `vehicle_swapped`. Com troca de bateria na estação em andamento (`currentStationSwap`) → `409`
-         *     `swap-open`.
+         *     `maintenance`, e destrava a nova (precisa estar `free`, fora do galpão, online, a até 200 m, sem aluguel nem
+         *     reserva e não ser a moto fixa do plano de outro cliente; senão `409` `vehicle-unavailable` ou `vehicle-offline`).
+         *     O preço continua o do início do aluguel, então a nova moto precisa ter preço por minuto (modelo do catálogo)
+         *     igual ou menor (`409`). Nova moto com bloqueio da equipe ou do sistema → `409` `vehicle-unavailable` ("A moto
+         *     escolhida está bloqueada pela equipe."), sem trocar nada. Moto ATUAL com bloqueio da equipe ou do sistema
+         *     (cerca, hold, modo roubada) → `409` `vehicle-locked-by-staff` ("A moto foi bloqueada pela equipe. Fale com o
+         *     suporte."), mesmo com incidente, sem trocar nada. Se o aluguel mudar de status (pausa/retomada) durante a troca
+         *     → `409` `rental-not-active`. Com troca de bateria na estação em andamento (`currentStationSwap`) → `409`
+         *     `swap-open`. O aluguel continua o mesmo, com evento `vehicle_swapped`.
          */
         post: operations["swapRentalVehicle"];
         delete?: never;
@@ -1410,6 +1420,8 @@ export interface paths {
          *       liquidado uma única vez;
          *     - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por
          *       `rental.updated` ou `GET /rentals/{id}`.
+         *     Moto com bloqueio da equipe ou do sistema no encerramento (normal ou forçado) volta como `maintenance`, não
+         *     `free`, com alerta `command_failed` para a operação liberar.
          *
          *     Liquidação idempotente por `rentalId`: no máximo uma liquidação por aluguel, não importa quantas
          *     vezes a chamada seja repetida (com ou sem `Idempotency-Key`). A `Idempotency-Key` opcional faz a
@@ -2597,7 +2609,7 @@ export interface paths {
         };
         /**
          * Listar tarefas de campo
-         * @description Para o grupo `campo`, por padrão só as atribuídas ao próprio operador (`assigneeId=me`). Ordem por prioridade e prazo.
+         * @description Usuário só do grupo `campo` recebe sempre só as tarefas atribuídas a ele (`assigneeId` é ignorado). Ordem por prioridade e prazo.
          */
         get: operations["listFieldTasks"];
         put?: never;
@@ -2633,7 +2645,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Detalhe da tarefa */
+        /**
+         * Detalhe da tarefa
+         * @description Usuário só do grupo `campo` vê apenas as tarefas atribuídas a ele ou ainda sem responsável (`403` nas de outro operador).
+         */
         get: operations["getFieldTask"];
         put?: never;
         post?: never;
@@ -2675,7 +2690,7 @@ export interface paths {
         put?: never;
         /**
          * Concluir tarefa
-         * @description Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo.
+         * @description Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status (a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa; senão `409` `vehicle-unavailable` e nada muda). Moto com bloqueio da equipe ou do sistema não volta a `free` por aqui (`409` `vehicle-unavailable`, "A moto está bloqueada pela equipe; libere-a antes de devolver à frota.").
          */
         post: operations["completeFieldTask"];
         delete?: never;
@@ -2695,7 +2710,8 @@ export interface paths {
         put?: never;
         /**
          * Registrar checklist de inspeção
-         * @description Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é
+         * @description Usuário só do grupo `campo` só registra em tarefa atribuída a ele (`403`).
+         *     Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é
          *     observado em `configuredMaxKmh` (valor lido no controlador, 0 a 100). Se `configuredMaxKmh > 32`:
          *     `speedLimiter.ok: true` é recusado (`422` `speed-limiter-noncompliant`); com `ok: false` a inspeção é
          *     registrada e a API abre automaticamente uma manutenção corretiva e um alerta, e muda a moto para
@@ -2721,7 +2737,7 @@ export interface paths {
         put?: never;
         /**
          * Registrar troca de bateria
-         * @description Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (`422` `battery-serials-must-differ`). Reenvio com a mesma `Idempotency-Key` não duplica.
+         * @description Usuário só do grupo `campo` só registra em tarefa atribuída a ele (`403`). Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (`422` `battery-serials-must-differ`). Reenvio com a mesma `Idempotency-Key` não duplica.
          */
         post: operations["submitBatterySwap"];
         delete?: never;
@@ -2741,7 +2757,7 @@ export interface paths {
         put?: never;
         /**
          * Destravar em modo serviço
-         * @description Destrava sem cobrança para o operador de campo, sem aluguel. Grava AuditLog (quem, quando, motivo, tarefa). Responde com o comando `unlock` criado.
+         * @description Destrava sem cobrança para o operador de campo, sem aluguel. Recusa (`409` `vehicle-unavailable`) moto com aluguel aberto ou reserva ativa, mesmo que esteja `offline`. `fieldTaskId`, se informado, precisa ser uma tarefa desta moto (`409`) e, para usuário só do grupo `campo`, atribuída a ele (`403`). Grava AuditLog (quem, quando, motivo, tarefa). Responde com o comando `unlock` criado.
          */
         post: operations["serviceUnlockVehicle"];
         delete?: never;
@@ -3397,10 +3413,10 @@ export interface components {
         /** @enum {string} */
         KycStatus: "not_started" | "pending" | "approved" | "rejected";
         /**
-         * @description Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`.
+         * @description Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`. `locked_by_staff`: destravar pedido por cliente ou campo recusado (trava da equipe ou do sistema, limite segurado em 0 ou modo roubada); nada é publicado e só admin/operacao desfaz.
          * @enum {string}
          */
-        CommandStatusReason: "offline" | "timeout" | "did_not_stop" | "invalid_limit";
+        CommandStatusReason: "offline" | "timeout" | "did_not_stop" | "invalid_limit" | "locked_by_staff";
         /** @enum {string} */
         AuthPool: "customer" | "staff";
         /** @enum {string} */
@@ -3954,7 +3970,7 @@ export interface components {
             /** @example Ciclovia da Faria Lima */
             name: string;
             type: components["schemas"]["ZoneType"];
-            /** @description Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre <= 20). */
+            /** @description Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre entre 6 e 20). */
             speedLimitKmh?: number;
             geometry: components["schemas"]["GeoJsonPolygon"];
             active: boolean;
@@ -3966,7 +3982,7 @@ export interface components {
         GeoZoneInput: {
             name: string;
             type: components["schemas"]["ZoneType"];
-            /** @description Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Acima de 32 → 400. */
+            /** @description Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Abaixo de 6 (menor limite de zona, área de pedestres) ou acima de 32 → 400. */
             speedLimitKmh?: number;
             geometry: components["schemas"]["GeoJsonPolygon"];
             /** @default true */

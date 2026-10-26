@@ -1,8 +1,9 @@
 import { FINANCIAL_ALERT_TYPES } from '../alerts/alerts.service';
 import { corsOptions } from '../../common/cors';
-import { Inject, Logger } from '@nestjs/common';
+import { Inject, Logger, Optional } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import { decodeJwt } from 'jose';
 import type { Namespace, Socket } from 'socket.io';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import {
@@ -13,6 +14,7 @@ import { AUTH_VERIFIER, type AuthVerifier } from '../../ports/auth-verifier.port
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Principal } from '../auth/principal';
 import { PrincipalResolver } from '../auth/principal-resolver.service';
+import { ClusterEventsBridge } from '../../common/cluster-events';
 import { toRental } from '../rentals/rentals.mapper';
 
 const FLEET_GROUPS = ['admin', 'operacao', 'suporte'];
@@ -24,10 +26,12 @@ const ALERT_FINANCE_ROOM = 'alerts:finance';
 /** Staff que acompanha as entregas dos galpões (salas `depot:{id}`, todos os galpões). */
 const DEPOT_GROUPS = ['admin', 'operacao', 'campo'];
 /**
- * Validade do cache de status/aluguel por moto. Com várias instâncias, a invalidação por `rental.changed` só acontece na
- * instância que processou a mudança; nas outras o cache expira sozinho (15 s: posição do aluguel novo chega em até 15 s).
+ * Cache veículo→aluguel curto. `rental.changed` é replicado entre instâncias (ClusterEventsBridge) e invalida o cache em
+ * todas; se a mensagem se perder, o aluguel encerrado em outra task deixa de receber telemetria em até 5 s no pior caso.
  */
-const VEHICLE_CACHE_MS = 15_000;
+const VEHICLE_CACHE_TTL_MS = 5_000;
+/** `setTimeout` estoura acima de 2^31-1 ms. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 interface VehicleCache {
   status: VehicleStatus;
@@ -66,20 +70,38 @@ export class RealtimeGateway implements OnGatewayInit {
     @Inject(AUTH_VERIFIER) private readonly verifier: AuthVerifier,
     private readonly resolver: PrincipalResolver,
     private readonly prisma: PrismaService,
+    @Optional() private readonly cluster?: ClusterEventsBridge,
   ) {}
 
   afterInit(server: Namespace): void {
     server.use((socket, next) => {
       void this.authenticate(socket)
-        .then(() => next())
+        .then(() => {
+          this.scheduleExpiry(socket);
+          next();
+        })
         .catch(() => next(new Error('unauthorized')));
     });
+  }
+
+  /** Desconecta o socket no `exp` do token do handshake (timer limpo no `disconnect`). */
+  private scheduleExpiry(socket: Socket): void {
+    const msLeft = (socket.data.exp as number) * 1000 - Date.now();
+    const timer = setTimeout(() => socket.disconnect(true), Math.max(0, Math.min(msLeft, MAX_TIMER_MS)));
+    timer.unref?.();
+    socket.on('disconnect', () => clearTimeout(timer));
   }
 
   private async authenticate(socket: Socket): Promise<void> {
     const token = (socket.handshake.auth as { token?: string } | undefined)?.token;
     if (!token) throw new Error('unauthorized');
-    const principal: Principal = await this.resolver.resolve(await this.verifier.verify(token));
+    const verified = await this.verifier.verify(token);
+    // O token já foi verificado; `exp` é obrigatório e a conexão não pode sobreviver a ele.
+    const exp = decodeJwt(token).exp;
+    if (typeof exp !== 'number') throw new Error('unauthorized');
+    if (exp * 1000 <= Date.now()) throw new Error('unauthorized');
+    const principal: Principal = await this.resolver.resolve(verified);
+    socket.data.exp = exp;
     socket.data.principal = principal;
     // Sala do próprio usuário: revogação (conta excluída, grupo removido, desativado) desconecta os sockets dele.
     await socket.join(`principal:${principal.pool}:${principal.userId}`);
@@ -104,7 +126,7 @@ export class RealtimeGateway implements OnGatewayInit {
 
   private async vehicleInfo(vehicleId: string): Promise<VehicleCache | null> {
     const cached = this.vehicles.get(vehicleId);
-    if (cached && Date.now() - cached.at < VEHICLE_CACHE_MS) return cached;
+    if (cached && Date.now() - cached.at < VEHICLE_CACHE_TTL_MS) return cached;
     const v = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { status: true, speedLimitKmh: true } });
     if (!v) return null;
     const r = await this.prisma.rental.findFirst({ where: { vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true, speedLimitKmh: true } });
@@ -156,7 +178,9 @@ export class RealtimeGateway implements OnGatewayInit {
   @OnEvent(EV.RENTAL_CHANGED)
   onRental(ev: RentalChangedEvent): void {
     this.vehicles.delete(ev.vehicleId);
-    if (!this.server) return;
+    // Replicado de outra instância: só invalida o cache local. Salas e `rental.updated` já foram feitos pela origem, e o
+    // adaptador Redis do Socket.IO os entrega no cluster inteiro (reemitir aqui duplicaria a mensagem).
+    if (!this.server || this.cluster?.isRemote(ev)) return;
     const room = `rental:${ev.rentalId}`;
     const open = OPEN_RENTAL_STATUSES.includes(ev.status);
     if (open) this.server.in(`user:${ev.customerId}`).socketsJoin(room);

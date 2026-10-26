@@ -80,7 +80,7 @@ function localSetup(opts: { graceMs?: number } = {}) {
 }
 
 /**
- * Caminho aws real: telemetria pela fila SQS `telemetria` (regra IoT com `thingName`/`ingestedAt`), reported pelo polling do
+ * Caminho aws real: telemetria pela fila SQS `telemetria` (regra IoT com `thingName`/`ingestedAt`/`payload`), reported pelo polling do
  * shadow (`GetThingShadow` com metadata) e **nenhum** evento de presença (eles vão para o EventBridge).
  */
 async function awsSetup(opts: { gapMs?: number } = {}) {
@@ -111,7 +111,7 @@ async function awsSetup(opts: { gapMs?: number } = {}) {
   const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, trackingRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) }, trackPoint: { create: async () => ({}) } } as any, events, clock, telOpts);
   await transport.start(tel);
   /** Uma mensagem da fila SQS `telemetria`. */
-  const sqs = (body: object) => handler({ ...body, thingName: T, ingestedAt: clock.now() });
+  const sqs = (body: object) => handler({ thingName: T, channel: 'telemetria', ingestedAt: clock.now(), payload: body });
   /** O rastreador escreve no shadow agora (metadata em segundos). */
   const shadow = (r: Record<string, unknown>) => {
     reported = r;
@@ -260,7 +260,7 @@ describe('Bloqueio seguro — regressões da revisão', () => {
     const redisLive = new LiveStateStore((live as any).redis, clock);
     const gw2 = new GW(transport, redisLive, clock, new EventEmitter2(), { confirmWaitMs: 1000, commandTimeoutMs: 30_000 });
     expect((await gw2.setSpeedLimit({ commandId: 'c3', thingName: T }, 20)).status).toBe('failed');
-    const u = gw.unlock({ commandId: 'c4', thingName: T });
+    const u = gw.unlock({ commandId: 'c4', thingName: T, authority: 'staff' }); // só a equipe desfaz o hold
     await tel.reported(T, { travada: false, limite_kmh: 32 });
     await u;
     const s = gw.setSpeedLimit({ commandId: 'c5', thingName: T }, 20);

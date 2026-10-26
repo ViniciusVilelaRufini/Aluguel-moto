@@ -18,6 +18,11 @@ export interface RedisStore {
    * `values` e soma `increments` (HINCRBYFLOAT), tudo numa operação. Devolve `false` se outro escritor mudou o campo antes.
    */
   hcas(key: string, guardField: string, expected: string | null, values: Record<string, string>, increments?: Record<string, number>): Promise<boolean>;
+  /**
+   * Compare-and-delete atômico no hash: apaga `key` só se `guardField` vale um de `allowed` (`null` = ausente). Devolve
+   * `false` (nada apagado) se outro escritor gravou outro valor antes.
+   */
+  hdelIf(key: string, guardField: string, allowed: Array<string | null>): Promise<boolean>;
   /** Contador de janela fixa: INCR e, no primeiro hit, expira em `ttlMs`. Devolve a contagem e o tempo restante (ms). */
   incrWindow(key: string, ttlMs: number): Promise<{ count: number; ttlMs: number }>;
   /** `SET key value NX PX ttl`: grava só se a chave não existir. `true` = gravou (lock obtido). */
@@ -36,6 +41,9 @@ export interface RedisStore {
   smembers(key: string): Promise<string[]>;
   /** Chamado quando uma chave expira por TTL (keyspace notifications `Ex`). */
   onExpired(handler: (key: string) => void): void;
+  /** Pub/sub entre instâncias da API (barramento de eventos do cluster). */
+  publish(channel: string, message: string): Promise<void>;
+  subscribe(channel: string, handler: (message: string) => void): void;
   ping(): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -53,6 +61,10 @@ const DEL_IF_EQUALS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then return 
 const PEXPIRE_IF_EQUALS_LUA = "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('PEXPIRE', KEYS[1], ARGV[2]) else return 0 end";
 const SET_WITH_INDEX_LUA = "redis.call('HSET', KEYS[2], ARGV[2], ARGV[3]) redis.call('SET', KEYS[1], ARGV[1]) return 1";
 const DEL_WITH_INDEX_LUA = "redis.call('DEL', KEYS[1]) redis.call('HDEL', KEYS[2], ARGV[1]) return 1";
+// ARGV: guardField, depois os valores aceitos ('' = ausente).
+const HDEL_IF_LUA = `local cur = redis.call('HGET', KEYS[1], ARGV[1]) or ''
+for i = 2, #ARGV do if cur == ARGV[i] then redis.call('DEL', KEYS[1]) return 1 end end
+return 0`;
 const INCR_WINDOW_LUA = "local c = redis.call('INCR', KEYS[1]) if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end return {c, redis.call('PTTL', KEYS[1])}";
 
 /** Incremento como texto decimal sem notação científica (o HINCRBYFLOAT não aceita `1e-7`). */
@@ -64,6 +76,8 @@ export class IoRedisStore implements RedisStore {
   private readonly client: Redis;
   private subscriber?: Redis;
   private readonly handlers: Array<(key: string) => void> = [];
+  private busSubscriber?: Redis;
+  private readonly busHandlers = new Map<string, Array<(message: string) => void>>();
 
   constructor(url: string) {
     this.client = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3, enableOfflineQueue: true });
@@ -98,6 +112,9 @@ export class IoRedisStore implements RedisStore {
     const incs = Object.entries(increments).filter(([, v]) => v !== 0);
     const args = [guardField, expected ?? '', String(sets.length), ...sets.flat(), ...incs.flatMap(([f, v]) => [f, floatArg(v)])];
     return Number(await this.client.eval(HCAS_LUA, 1, key, ...args)) === 1;
+  }
+  async hdelIf(key: string, guardField: string, allowed: Array<string | null>) {
+    return Number(await this.client.eval(HDEL_IF_LUA, 1, key, guardField, ...allowed.map((v) => v ?? ''))) === 1;
   }
   async incrWindow(key: string, ttlMs: number) {
     const [count, pttl] = (await this.client.eval(INCR_WINDOW_LUA, 1, key, String(Math.ceil(ttlMs)))) as [number, number];
@@ -146,6 +163,23 @@ export class IoRedisStore implements RedisStore {
     })().catch((err) => this.logger.warn({ msg: 'redis_subscribe_failed', error: (err as Error).message }));
   }
 
+  async publish(channel: string, message: string) {
+    await this.client.publish(channel, message);
+  }
+
+  subscribe(channel: string, handler: (message: string) => void): void {
+    const list = this.busHandlers.get(channel) ?? [];
+    list.push(handler);
+    this.busHandlers.set(channel, list);
+    if (!this.busSubscriber) {
+      // Conexão dedicada: um cliente em modo subscriber não executa outros comandos.
+      this.busSubscriber = this.client.duplicate();
+      this.busSubscriber.on('error', (err) => this.logger.warn({ msg: 'redis_bus_error', error: err.message }));
+      this.busSubscriber.on('message', (ch: string, msg: string) => this.busHandlers.get(ch)?.forEach((h) => h(msg)));
+    }
+    this.busSubscriber.subscribe(channel).catch((err) => this.logger.warn({ msg: 'redis_bus_subscribe_failed', error: (err as Error).message }));
+  }
+
   async ping() {
     try {
       return (await this.client.ping()) === 'PONG';
@@ -156,6 +190,7 @@ export class IoRedisStore implements RedisStore {
 
   async close() {
     await this.subscriber?.quit().catch(() => undefined);
+    await this.busSubscriber?.quit().catch(() => undefined);
     await this.client.quit().catch(() => undefined);
   }
 }
@@ -166,6 +201,7 @@ export class MemoryRedisStore implements RedisStore {
   private readonly hashes = new Map<string, Record<string, string>>();
   private readonly sets = new Map<string, Set<string>>();
   private readonly handlers: Array<(key: string) => void> = [];
+  private readonly busHandlers = new Map<string, Array<(message: string) => void>>();
 
   async set(key: string, value: string, ttlMs?: number) {
     const prev = this.data.get(key);
@@ -218,6 +254,12 @@ export class MemoryRedisStore implements RedisStore {
     const next = { ...h, ...values };
     for (const [f, v] of Object.entries(increments)) if (v !== 0) next[f] = String((Number(next[f]) || 0) + Number(floatArg(v)));
     this.hashes.set(key, next);
+    return true;
+  }
+  async hdelIf(key: string, guardField: string, allowed: Array<string | null>) {
+    const cur = this.hashes.get(key)?.[guardField] ?? '';
+    if (!allowed.some((v) => (v ?? '') === cur)) return false;
+    this.hashes.delete(key);
     return true;
   }
   async incrWindow(key: string, ttlMs: number) {
@@ -277,6 +319,13 @@ export class MemoryRedisStore implements RedisStore {
   }
   onExpired(handler: (key: string) => void) {
     this.handlers.push(handler);
+  }
+  async publish(channel: string, message: string) {
+    const list = [...(this.busHandlers.get(channel) ?? [])];
+    queueMicrotask(() => list.forEach((h) => h(message)));
+  }
+  subscribe(channel: string, handler: (message: string) => void) {
+    this.busHandlers.set(channel, [...(this.busHandlers.get(channel) ?? []), handler]);
   }
   async ping() {
     return true;

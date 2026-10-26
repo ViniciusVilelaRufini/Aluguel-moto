@@ -15,6 +15,7 @@ import 'package:volti_operador/data/location.dart';
 import 'package:volti_operador/data/models.dart';
 import 'package:volti_operador/data/offline_queue.dart';
 import 'package:volti_operador/data/sync.dart';
+import 'package:volti_operador/features/auth/auth.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
 
 class SubmittedInspection {
@@ -713,9 +714,16 @@ class FakePhotoPicker implements PhotoPicker {
 /// Celular pequeno (360x740 dp) para os testes de texto a 200%.
 const phone = Size(360, 740);
 
+/// `sub` do operador logado nos testes que nao tratam de sessao.
+const testOwnerSub = 'op-test';
+
 class Harness {
-  Harness({FakeFieldRepository? repo, OfflineQueue? queue, FakeLocationService? location})
-      : repo = repo ?? FakeFieldRepository(),
+  Harness({
+    FakeFieldRepository? repo,
+    OfflineQueue? queue,
+    FakeLocationService? location,
+    this.ownerSub = testOwnerSub,
+  })  : repo = repo ?? FakeFieldRepository(),
         connectivity = FakeConnectivity(),
         queue = queue ?? MemoryOfflineQueue(),
         location = location ?? FakeLocationService();
@@ -740,7 +748,11 @@ class Harness {
     connectivity.controller.add(true);
   }
 
+  /// Operador logado nos testes; `null` = nao fixa (o teste traz a propria sessao).
+  final String? ownerSub;
+
   List<Override> get overrides => [
+        if (ownerSub != null) ownerSubProvider.overrideWithValue(ownerSub),
         fieldRepositoryProvider.overrideWithValue(repo),
         connectivityMonitorProvider.overrideWithValue(connectivity),
         offlineQueueProvider.overrideWithValue(queue),

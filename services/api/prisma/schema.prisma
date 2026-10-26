@@ -93,6 +93,7 @@ enum CommandStatusReason {
   timeout
   did_not_stop
   invalid_limit
+  locked_by_staff
 }
 
 enum ActorType {

@@ -5,6 +5,12 @@ import {
 } from 'class-validator';
 import { MAX_SPEED_KMH, ZONE_TYPES, type ZoneType } from '../../common/enums';
 
+/**
+ * Revisão final item 7: menor limite de uma zona de velocidade reduzida (área de pedestres). Abaixo disso, a entrada na zona
+ * ou o unlock publicariam um degrau até ~0 de uma vez numa moto em movimento (cortaria o motor).
+ */
+export const REDUCED_SPEED_MIN_KMH = 6;
+
 /** Estrutura GeoJSON: anéis com ≥ 4 posições `[lng, lat]` numéricas (o fechamento e a autointerseção são checados depois → 422). */
 @ValidatorConstraint({ name: 'polygonCoordinates' })
 export class PolygonCoordinatesConstraint implements ValidatorConstraintInterface {
@@ -41,7 +47,7 @@ export class GeoZoneInputDto {
 
   @IsOptional()
   @IsInt()
-  @Min(0)
+  @Min(REDUCED_SPEED_MIN_KMH)
   @Max(MAX_SPEED_KMH)
   speedLimitKmh?: number;
 

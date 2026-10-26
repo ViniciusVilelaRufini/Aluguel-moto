@@ -10,11 +10,16 @@ abstract class OfflineQueue {
   Future<void> put(QueuedJob job);
   Future<void> remove(String id);
 
-  /// Ultima lista de tarefas (JSON) para consulta sem rede.
-  Future<List<Map<String, dynamic>>> loadTasks();
-  Future<void> saveTasks(List<Map<String, dynamic>> tasks);
+  /// Ultima lista de tarefas (JSON) do operador [ownerSub], para consulta sem rede.
+  /// O cache e separado por operador: aparelho compartilhado nao mistura listas.
+  Future<List<Map<String, dynamic>>> loadTasks(String ownerSub);
+  Future<void> saveTasks(String ownerSub, List<Map<String, dynamic>> tasks);
 
-  /// Ultima lista de galpoes (JSON): a chegada funciona sem rede.
+  /// Apaga o cache de tarefas do operador que saiu.
+  Future<void> clearTasks(String ownerSub);
+
+  /// Ultima lista de galpoes (JSON): a chegada funciona sem rede. Nao e dado
+  /// do operador (galpoes sao da operacao), entao o cache e compartilhado.
   Future<List<Map<String, dynamic>>> loadDepots();
   Future<void> saveDepots(List<Map<String, dynamic>> depots);
 }
@@ -22,7 +27,7 @@ abstract class OfflineQueue {
 /// Fila em memoria (testes).
 class MemoryOfflineQueue implements OfflineQueue {
   final Map<String, QueuedJob> _jobs = {};
-  List<Map<String, dynamic>> _tasks = [];
+  final Map<String, List<Map<String, dynamic>>> _tasks = {};
 
   @override
   Future<List<QueuedJob>> all() async =>
@@ -35,10 +40,15 @@ class MemoryOfflineQueue implements OfflineQueue {
   Future<void> remove(String id) async => _jobs.remove(id);
 
   @override
-  Future<List<Map<String, dynamic>>> loadTasks() async => _tasks;
+  Future<List<Map<String, dynamic>>> loadTasks(String ownerSub) async =>
+      _tasks[ownerSub] ?? [];
 
   @override
-  Future<void> saveTasks(List<Map<String, dynamic>> tasks) async => _tasks = tasks;
+  Future<void> saveTasks(String ownerSub, List<Map<String, dynamic>> tasks) async =>
+      _tasks[ownerSub] = tasks;
+
+  @override
+  Future<void> clearTasks(String ownerSub) async => _tasks.remove(ownerSub);
 
   List<Map<String, dynamic>> _depots = [];
 
@@ -56,12 +66,15 @@ class HiveOfflineQueue implements OfflineQueue {
   final Box<String> _jobs;
   final Box<String> _meta;
 
-  static const _tasksKey = 'tasks';
+  static const _legacyTasksKey = 'tasks';
+  static String _tasksKey(String ownerSub) => 'tasks:$ownerSub';
   static const _depotsKey = 'depots';
 
   static Future<HiveOfflineQueue> open() async {
     final jobs = await Hive.openBox<String>('operator_jobs');
     final meta = await Hive.openBox<String>('operator_meta');
+    // Cache antigo sem dono: nao da para saber de quem e, entao some.
+    await meta.delete(_legacyTasksKey);
     return HiveOfflineQueue(jobs, meta);
   }
 
@@ -80,15 +93,18 @@ class HiveOfflineQueue implements OfflineQueue {
   Future<void> remove(String id) => _jobs.delete(id);
 
   @override
-  Future<List<Map<String, dynamic>>> loadTasks() async {
-    final raw = _meta.get(_tasksKey);
+  Future<List<Map<String, dynamic>>> loadTasks(String ownerSub) async {
+    final raw = _meta.get(_tasksKey(ownerSub));
     if (raw == null) return [];
     return (jsonDecode(raw) as List).cast<Map<String, dynamic>>();
   }
 
   @override
-  Future<void> saveTasks(List<Map<String, dynamic>> tasks) =>
-      _meta.put(_tasksKey, jsonEncode(tasks));
+  Future<void> saveTasks(String ownerSub, List<Map<String, dynamic>> tasks) =>
+      _meta.put(_tasksKey(ownerSub), jsonEncode(tasks));
+
+  @override
+  Future<void> clearTasks(String ownerSub) => _meta.delete(_tasksKey(ownerSub));
 
   @override
   Future<List<Map<String, dynamic>>> loadDepots() async {

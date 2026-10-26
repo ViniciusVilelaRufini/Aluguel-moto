@@ -82,6 +82,12 @@ Comportamento:
 ## Acessibilidade dos botões (E-21)
 
 `VoltiButtonLabels` no `builder` do `MaterialApp` (`lib/app.dart`) faz os `VoltiButton` em loading/sucesso anunciarem "Carregando…"/"Concluído" (`buttonBusy`/`buttonDone` no ARB). O harness de teste (`test/helpers.dart`) faz o mesmo.
+## Fila offline e conta (correção da auditoria)
+
+- Cada job da fila guarda `ownerSub` (o `sub` do token da sessão). Só o dono envia, vê, tenta de novo e descarta; jobs de outro operador ficam retidos no aparelho, sem expiração, e não bloqueiam as tarefas de quem entrou. O dono é conferido antes de cada job: se a conta mudar (ou sair) no meio do envio, a rodada para antes do próximo job.
+- Jobs antigos sem dono (fila anterior à correção) aparecem como "Pendente de outro operador..." e só podem ser descartados.
+- O cache de tarefas é por operador (chave Hive `tasks:<sub>`), limpo no logout (inclusive saída forçada por 401: a consulta offline some até o próximo login online); a chave antiga `tasks` é apagada.
+- 403/409 da API viram falha terminal do job, visível só ao dono. A API só deixa o usuário de campo agir nas tarefas atribuídas a ele; concluir tarefa `pickup` em moto `offline`/`blocked` pode voltar 409.
 
 ## Testes
 

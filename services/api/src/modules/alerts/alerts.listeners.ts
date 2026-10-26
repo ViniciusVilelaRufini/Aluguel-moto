@@ -1,12 +1,11 @@
 import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
+import { OnEvent } from '@nestjs/event-emitter';
 import { AlertPriority, AlertType } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { CommandChangedEvent, EV, GeofenceTransitionEvent, IotConnectivityEvent, IotDeviceEvent } from '../../common/events';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PAYMENT_NEEDS_REVIEW, type PaymentNeedsReviewEvent } from '../payments/payment-review';
-import { parseDeviceEvent } from '../iot/mqtt-contract';
 import { AlertsService, CreateAlertInput } from './alerts.service';
 
 /** Motivo técnico da revisão → texto pt-BR do alerta (sem dados pessoais). */
@@ -46,18 +45,6 @@ export function parseCreateAlertInput(raw: unknown): CreateAlertInput | null {
   return out;
 }
 
-/**
- * Evento cru do rastreador (`motos/+/eventos`, regra IoT `SELECT *, topic(2) AS thingName`): `{ thingName, tipo, timestamp }`.
- * A Task 4 levou essa regra para a fila de telemetria, mas a fila `alertas` tolera os dois formatos (docs/decisoes.md).
- */
-export function parseRawDeviceEvent(raw: unknown): { thingName: string; tipo: IotDeviceEvent['type']; timestamp: string } | null {
-  if (!isObj(raw)) return null;
-  const thingName = typeof raw.thingName === 'string' ? raw.thingName : typeof raw.thing === 'string' ? raw.thing : undefined;
-  if (!thingName || thingName.length > 128) return null;
-  const ev = parseDeviceEvent(raw);
-  return ev ? { thingName, tipo: ev.tipo, timestamp: ev.timestamp } : null;
-}
-
 /** Gera alertas a partir dos eventos internos e da fila `alertas` (SQS/EventBridge em produção). */
 @Injectable()
 export class AlertsListeners implements OnModuleInit {
@@ -67,38 +54,24 @@ export class AlertsListeners implements OnModuleInit {
     private readonly alerts: AlertsService,
     private readonly prisma: PrismaService,
     @Inject(QUEUE_BUS) private readonly queue: QueueBus,
-    private readonly events: EventEmitter2,
   ) {}
 
   onModuleInit(): void {
     // Alertas vindos de fora do processo (Lambdas, EventBridge) chegam pela fila `alertas`.
+    // Eventos de dispositivo NÃO passam por aqui (vão pela fila de telemetria, com a identidade só do tópico →
+    // parseDeviceEvent); só alertas já formados, reduzidos aos campos conhecidos e validados (nada do corpo é espalhado no
+    // Prisma). O evento cru do rastreador (`{ thingName, tipo }`) é descartado: o `thingName` do corpo não é confiável.
     this.queue.subscribe<unknown>('alertas', (msg) => this.onQueueMessage(msg));
   }
 
-  /**
-   * Fila `alertas`: aceita `CreateAlertInput` ou o evento cru do rastreador (normalizado aqui: moto pelo `thingName`, aluguel
-   * aberto e posição). Mensagem inválida é descartada com aviso (sem conteúdo no log), não reprocessada para sempre.
-   */
+  /** Fila `alertas`: só `CreateAlertInput` válido. Mensagem inválida é descartada com aviso (sem conteúdo no log). */
   async onQueueMessage(msg: unknown): Promise<void> {
     const input = parseCreateAlertInput(msg);
-    if (input) {
-      await this.alerts.create(input);
-      return;
-    }
-    const raw = parseRawDeviceEvent(msg);
-    if (!raw) {
+    if (!input) {
       this.logger.warn({ msg: 'alert_message_invalid', keys: isObj(msg) ? Object.keys(msg).slice(0, 10) : typeof msg });
       return;
     }
-    const vehicle = await this.prisma.vehicle.findUnique({ where: { thingName: raw.thingName }, select: { id: true } });
-    if (!vehicle) {
-      this.logger.warn({ msg: 'alert_unknown_thing', thingName: raw.thingName, tipo: raw.tipo });
-      return;
-    }
-    // Mesmo caminho do evento vindo pela telemetria: alerta (aqui), `device.event` no tempo real e o "você está bem?".
-    const ev: IotDeviceEvent = { thingName: raw.thingName, vehicleId: vehicle.id, type: raw.tipo, ts: raw.timestamp };
-    this.logger.log({ msg: 'device_event_from_alert_queue', thingName: raw.thingName, type: raw.tipo });
-    await this.events.emitAsync(EV.IOT_DEVICE_EVENT, ev);
+    await this.alerts.create(input);
   }
 
   private async position(vehicleId: string) {

@@ -50,7 +50,7 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
   prisma.fee.findUnique.mockResolvedValue({ code: 'force_end_outside_return_zone', amountCents: 1500, active: true } as any);
 
   const billing = { holdDeposit: jest.fn(), isDelinquent: jest.fn(), settle: jest.fn().mockResolvedValue({ paymentId: 'pay-1', status: 'paid' }) };
-  const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd', status: opts.lock ?? 'confirmed' }) };
+  const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd', status: opts.lock ?? 'confirmed' }), isLockedByStaff: jest.fn().mockResolvedValue(false) };
   const zones = { findContaining: jest.fn().mockResolvedValue(opts.inZone === false ? null : { id: ZONE_ID, type: 'return' }) };
   const iot = { getLiveState: jest.fn().mockResolvedValue(null) };
   const audit = { record: jest.fn() };
@@ -277,6 +277,35 @@ describe('Encerramento do aluguel', () => {
     expect((prisma.stationSwap.findMany.mock.calls[0][0] as any).where).toEqual({ rentalId: RENTAL_ID, status: 'completed', feeCents: { gt: 0 } });
   });
 
+  it('auditoria item adiado 1: moto encerrada com trava do sistema/hold → maintenance (não free) e alerta para a operação', async () => {
+    const { service, prisma, commands, alerts } = setup();
+    commands.isLockedByStaff.mockResolvedValue(true);
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(r.rental.status).toBe('ended');
+    expect(commands.isLockedByStaff).toHaveBeenCalledWith(expect.objectContaining({ id: VEHICLE_ID, thingName: 'moto-0001' }));
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['rented', 'paused'] } }, data: { status: 'maintenance' } });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'free' } }));
+    expect(alerts.create).toHaveBeenCalledWith(
+      expect.objectContaining({ vehicleId: VEHICLE_ID, rentalId: RENTAL_ID, message: 'Moto encerrada com bloqueio da equipe/sistema; liberar antes de voltar à frota.' }),
+      expect.anything(),
+    );
+  });
+
+  it('auditoria item adiado 1: force-end com trava do sistema também vai para maintenance', async () => {
+    const { service, prisma, commands, alerts } = setup();
+    commands.isLockedByStaff.mockResolvedValue(true);
+    await service.forceEnd(admin, RENTAL_ID, 'cliente sumiu');
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'maintenance' } }));
+    expect(alerts.create).toHaveBeenCalled();
+  });
+
+  it('sem trava da equipe → moto volta free e nenhum alerta', async () => {
+    const { service, prisma, alerts } = setup();
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['rented', 'paused'] } }, data: { status: 'free' } });
+    expect(alerts.create).not.toHaveBeenCalled();
+  });
+
   it('pausado: o tempo de pausa é fechado no encerramento', async () => {
     const { service, rental, billing } = setup();
     rental.status = 'paused';
@@ -449,6 +478,24 @@ describe('Devolução em ponto verde (retirada em galpão)', () => {
     events.on(EV.VEHICLE_STATUS_CHANGED, (e: { status: string }) => emitted.push(e.status));
     await service.endAtDepot(admin, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'free' });
     expect(emitted).toEqual([]);
+  });
+
+  it('auditoria (galpão): chegada no galpão com trava da equipe/sistema → maintenance (nunca free) e alerta', async () => {
+    const { service, prisma, commands, alerts } = setup({ depotId: null });
+    commands.isLockedByStaff.mockResolvedValue(true);
+    await service.endAtDepot(admin, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'free' });
+    const calls = prisma.vehicle.updateMany.mock.calls.map((c: any) => c[0]);
+    expect(calls).toEqual([{ where: { id: VEHICLE_ID, status: { in: ['rented', 'paused'] } }, data: { status: 'maintenance', depotId: DEPOT_ID } }]);
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ vehicleId: VEHICLE_ID, rentalId: RENTAL_ID }), expect.anything());
+  });
+
+  it('auditoria (galpão): moto do galpão com trava no ponto verde fica awaiting_pickup (não alugável) e gera o alerta', async () => {
+    const { service, prisma, commands, alerts } = setup({ depotId: DEPOT_ID });
+    commands.isLockedByStaff.mockResolvedValue(true);
+    prisma.fieldTask.findFirst.mockResolvedValue(null);
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(statusSetTo(prisma)).toEqual(['awaiting_pickup']);
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ vehicleId: VEHICLE_ID }), expect.anything());
   });
 
   it('finalize com returnTo: depot (devolução no galpão, Task 6) não cria recolhimento', async () => {

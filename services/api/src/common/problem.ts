@@ -72,6 +72,7 @@ const DEFAULT_TITLES: Record<string, string> = {
   // inadimplência (Task 14 das lacunas)
   'debt-not-payable': 'Não há dívida a quitar',
   'debt-in-collection': 'Cobrança em andamento',
+  'vehicle-locked-by-staff': 'Moto bloqueada pela equipe',
   'internal-error': 'Erro interno',
 };
 

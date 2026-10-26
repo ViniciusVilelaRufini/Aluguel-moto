@@ -19,7 +19,7 @@ function setup() {
   const prisma = mockDeep<PrismaClient>();
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   const storage = { presignGet: jest.fn().mockImplementation(async ({ key }: any) => ({ url: `https://s3/${key}?sig`, expiresAt: '' })), presignPut: jest.fn(), deleteObject: jest.fn(), putObject: jest.fn() };
-  const svc = new SupportService(prisma as any, {} as any, {} as any, storage as any, loadConfig());
+  const svc = new SupportService(prisma as any, {} as any, {} as any, storage as any, loadConfig(), {} as any);
   prisma.supportConversation.findUnique.mockResolvedValue({ id: CONV_ID, customerId: CUSTOMER_ID, status: 'open', customer: { name: 'Maria' } } as any);
   prisma.supportMessage.findMany.mockResolvedValue([message()] as any);
   prisma.supportMessage.updateMany.mockResolvedValue({ count: 1 });

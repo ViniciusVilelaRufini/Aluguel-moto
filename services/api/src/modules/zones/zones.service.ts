@@ -7,7 +7,7 @@ import { badRequest, notFound, unprocessable } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
-import type { GeoZoneInputDto, ListZonesQuery } from './zones.dto';
+import { REDUCED_SPEED_MIN_KMH, type GeoZoneInputDto, type ListZonesQuery } from './zones.dto';
 
 /** Limite máximo em zonas de velocidade reduzida (pedestres 6, ciclovias 20). */
 export const REDUCED_SPEED_MAX_KMH = 20;
@@ -33,6 +33,9 @@ export function validateZoneInput(dto: Pick<GeoZoneInputDto, 'type' | 'speedLimi
     }
     if (dto.speedLimitKmh > REDUCED_SPEED_MAX_KMH) {
       throw unprocessable('zone-speed-limit-invalid', 'Em zonas de velocidade reduzida o limite máximo é 20 km/h.');
+    }
+    if (dto.speedLimitKmh < REDUCED_SPEED_MIN_KMH) {
+      throw unprocessable('zone-speed-limit-invalid', 'Em zonas de velocidade reduzida o limite mínimo é 6 km/h.');
     }
   }
   for (const ring of dto.geometry.coordinates) {

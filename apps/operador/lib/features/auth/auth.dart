@@ -7,6 +7,7 @@ import 'package:volti_operador/data/cognito_auth.dart';
 import 'package:volti_operador/data/depot_state.dart';
 import 'package:volti_operador/data/local_state.dart';
 import 'package:volti_operador/data/service_unlock.dart';
+import 'package:volti_operador/data/sync.dart';
 import 'package:volti_operador/l10n/app_localizations.dart';
 import 'package:volti_operador/ui/widgets.dart';
 
@@ -16,6 +17,24 @@ String? _sessionId(AuthSession? s) => switch (s) {
       OperatorSession(:final email, :final name) => email ?? name ?? campoGroup,
       _ => s.email,
     };
+
+/// `sub` do operador logado (claim do access token), ou `null` sem sessao.
+/// Segue o login e o logout. Token ilegivel = sem dono (falha fechado).
+final ownerSubProvider = Provider<String?>((ref) {
+  ref.watch(sessionProvider);
+  return _subOf(ref.watch(authRepositoryProvider).session);
+});
+
+/// `sub` do access token. Token ilegivel = sem dono (falha fechado).
+String? _subOf(AuthSession? session) {
+  if (session == null) return null;
+  try {
+    final sub = decodeJwtClaims(session.accessToken)['sub'];
+    return sub is String && sub.isNotEmpty ? sub : null;
+  } catch (_) {
+    return null;
+  }
+}
 
 /// Estado de sessao: e-mail logado ou `null`.
 class SessionController extends Notifier<String?> {
@@ -49,6 +68,15 @@ class SessionController extends Notifier<String?> {
   /// [userInitiated] = o operador tocou em "Sair" (encerra tambem o Hosted UI).
   /// A saida forcada (token expirado, na sincronizacao) usa o padrao `false`.
   Future<void> signOut({bool userInitiated = false}) async {
+    // Antes de encerrar: o cache de tarefas e do operador que esta saindo.
+    final leavingSub = _subOf(ref.read(authRepositoryProvider).session);
+    if (leavingSub != null) {
+      try {
+        await ref.read(offlineQueueProvider).clearTasks(leavingSub);
+      } catch (e) {
+        debugPrint('falha ao limpar o cache de tarefas: $e');
+      }
+    }
     try {
       // Nada do operador anterior fica destravado nem em rascunho.
       await ref.read(serviceUnlockProvider.notifier).clearAll();

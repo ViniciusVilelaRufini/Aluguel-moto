@@ -30,8 +30,8 @@ export class FieldTasksController {
 
   @Get(':id')
   @StaffOnly('admin', 'operacao', 'campo')
-  get(@Param('id', ParseUUIDPipe) id: string) {
-    return this.tasks.get(id);
+  get(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: Principal) {
+    return this.tasks.get(u, id);
   }
 
   @Patch(':id')

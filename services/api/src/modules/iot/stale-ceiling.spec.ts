@@ -75,7 +75,7 @@ function cluster() {
 /** A recebe a telemetria (velocidade fresca) e faz uma rampa descer a escada até 0 e travar parada (o mapa antigo de A ficaria em 0). */
 async function rampEndsAtZeroOnA(c: ReturnType<typeof cluster>) {
   await c.a.live.applyTelemetry(T, tel(25, c.clock.now()));
-  const p = c.a.gw.lock({ commandId: 'lock-1', thingName: T });
+  const p = c.a.gw.lock({ commandId: 'lock-1', thingName: T, lockOrigin: 'customer' }); // fim do aluguel do cliente (o próximo destrava)
   await c.clock.advance(20);
   await p;
   for (const step of [15, 8, 3]) {

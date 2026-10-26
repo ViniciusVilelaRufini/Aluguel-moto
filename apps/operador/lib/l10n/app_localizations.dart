@@ -742,6 +742,12 @@ abstract class AppLocalizations {
   /// **'Descartar'**
   String get discard;
 
+  /// No description provided for @pendingOtherOperator.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pendente de outro operador. Não é enviado por esta conta; só pode ser descartado.'**
+  String get pendingOtherOperator;
+
   /// No description provided for @loginCognitoAction.
   ///
   /// In pt, this message translates to:
