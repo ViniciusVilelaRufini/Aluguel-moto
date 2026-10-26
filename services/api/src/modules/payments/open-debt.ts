@@ -11,10 +11,23 @@ export const DEBT_KINDS = ['rental', 'subscription'] as const;
 
 type DebtDb = Pick<PrismaClient, 'payment' | 'settlementProgress' | 'subscription'> | Prisma.TransactionClient;
 
-export const openDebtWhere = (customerId: string): Prisma.PaymentWhereInput => ({ customerId, kind: { in: [...DEBT_KINDS] }, status: 'failed', debtSettledAt: null });
+/**
+ * Primeiro pagamento de uma assinatura recusada pelo gateway na criação (Task 8.2): a assinatura nunca começou e foi
+ * cancelada, então o pagamento não é dívida (nem pode ser reenviado por `POST /payments/{id}/retry`).
+ */
+export const SUBSCRIPTION_CREATION_DECLINED = 'subscription_creation_declined';
 
-export const isOpenDebt = (p: Pick<Payment, 'kind' | 'status' | 'debtSettledAt'>): boolean =>
-  (DEBT_KINDS as readonly string[]).includes(p.kind) && p.status === 'failed' && !p.debtSettledAt;
+export const openDebtWhere = (customerId: string): Prisma.PaymentWhereInput => ({
+  customerId,
+  kind: { in: [...DEBT_KINDS] },
+  status: 'failed',
+  debtSettledAt: null,
+  // `OR` com null: no SQL, `<> 'x'` descartaria as linhas sem motivo.
+  OR: [{ failureReason: null }, { failureReason: { not: SUBSCRIPTION_CREATION_DECLINED } }],
+});
+
+export const isOpenDebt = (p: Pick<Payment, 'kind' | 'status' | 'debtSettledAt' | 'failureReason'>): boolean =>
+  (DEBT_KINDS as readonly string[]).includes(p.kind) && p.status === 'failed' && !p.debtSettledAt && p.failureReason !== SUBSCRIPTION_CREATION_DECLINED;
 
 /** Há ao menos uma dívida `failed` de aluguel/assinatura ainda não quitada. */
 export async function hasOpenDebt(db: DebtDb, customerId: string): Promise<boolean> {

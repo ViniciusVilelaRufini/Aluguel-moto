@@ -816,3 +816,13 @@ Achado da auditoria `infra.yml:diff-job:pr-code-assumes-cdk-lookup-readonlyacces
 4. **Ações do dono (AWS e GitHub):** apagar a variável do repositório `AWS_LOOKUP_ROLE_ARN_DEV`; apagar o papel `volti-ci-cdk-lookup-dev` no IAM (ou remover o trust `pull_request`); conferir que o trust do papel de deploy é só `environment:dev`. Sem isso o papel continua assumível por qualquer workflow de PR que o referencie.
 5. **Custo:** o PR deixa de mostrar o diff contra a conta; ele aparece no log do push em `main`, imediatamente antes do deploy (que segue sem aprovação manual).
 6. **Actions fixadas por SHA** (pendência da decisão 12 resolvida): `checkout`, `pnpm/action-setup`, `setup-node`, `configure-aws-credentials` e `amazon-ecr-login` em SHA de 40 hex com o tag em comentário; teste em `workflow.test.ts`.
+
+## 2026-10-26 · Assinatura recusada na criação não vira dívida (branch `feat/galpao-correcoes`, Task 8.2) · status: aplicada
+
+Antes, a recusa do gateway na criação deixava o primeiro `Payment` (`kind: 'subscription'`) `failed` e a assinatura cancelada. `open-debt` contava esse `failed` como dívida: o cliente ficava `customer-delinquent` e `POST /payments/{id}/retry` cobraria o plano de uma assinatura que nunca começou.
+
+1. **Marca explícita:** o pagamento recusado na criação recebe `failureReason = 'subscription_creation_declined'` (constante `SUBSCRIPTION_CREATION_DECLINED` em `open-debt.ts`); o motivo bruto do gateway vai só para o log. Sem coluna nova nem migration.
+2. **Regra única:** `openDebtWhere` (com `OR` para manter `failureReason` nulo) e `isOpenDebt` excluem esse caso. Inadimplência, elegibilidade, bloqueio de exclusão de conta e saldo devedor herdam a regra.
+3. **Retry:** `POST /payments/{id}/retry` responde 409 `debt-not-payable` (slug já existente no contrato; sem mudança de openapi).
+4. **Sem mudança:** falhas recorrentes de assinatura já iniciada (qualquer outro `failureReason`) seguem sendo dívida; dívidas de aluguel idem.
+5. **Limite:** pagamentos já gravados antes desta mudança com recusa na criação continuam `failed` com o motivo do gateway e, se existirem, ainda contam como dívida (backfill manual pelo financeiro, `clearManually`).

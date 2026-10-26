@@ -338,3 +338,21 @@ describe('SubscriptionsService — renovação paga quita o ciclo recusado (Task
     expect(billing.clearDelinquencyIfSettled).toHaveBeenCalledWith('c1');
   });
 });
+
+describe('SubscriptionsService — criação recusada marca o primeiro pagamento (Task 8.2)', () => {
+  it('recusa do gateway: pagamento failed com subscription_creation_declined e assinatura cancelada', async () => {
+    const { svc, prisma, provider, customers, state, row } = setup({});
+    prisma.customer = { findUnique: jest.fn(async () => ({ id: 'c1', kycStatus: 'approved', status: 'active', delinquent: false, email: 'a@b.c' })) };
+    prisma.pricingPlan = { findFirst: jest.fn(async () => ({ unitPriceCents: 24900 })) };
+    prisma.subscription.findFirst = jest.fn(async () => null);
+    row.status = 'expired';
+    (svc as any).expireStale = jest.fn(async () => undefined);
+    customers.card = jest.fn(async () => ({ id: 'card1', last4: '4242', providerCardId: 'pc1' }));
+    customers.ensureCustomer = jest.fn(async () => 'pcust');
+    state.create = jest.fn(async () => ({ id: 'pay1' }));
+    state.transition = jest.fn(async () => undefined);
+    provider.createSubscription = jest.fn(async () => ({ status: 'failed', failureReason: 'cc_rejected' }));
+    expect(await problem(svc.create('c1', { planCode: 'weekly' }))).toEqual({ status: 402, slug: 'payment-failed' });
+    expect(state.transition).toHaveBeenCalledWith('pay1', 'failed', { failureReason: 'subscription_creation_declined' });
+  });
+});

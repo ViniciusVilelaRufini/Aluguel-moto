@@ -17,6 +17,7 @@ import { ProviderCustomersService } from './provider-customers.service';
 import { cardRequired } from './card-required';
 import { PAYMENT_PROVIDER, type PaymentProvider, type ProviderPayment, RefundRejectedError } from './provider/payment-provider';
 import { RentalBillingService } from './rental-billing.service';
+import { SUBSCRIPTION_CREATION_DECLINED } from './open-debt';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 const DAY_MS = 86_400_000;
@@ -343,7 +344,9 @@ export class SubscriptionsService {
       externalReference: `subscription:${sub.id}`,
     });
     if (res.status !== 'active') {
-      await this.state.transition(pay.id, 'failed', { failureReason: res.failureReason ?? 'subscription_failed' });
+      // Task 8.2: a assinatura nunca começou; o motivo do gateway fica só no log e o pagamento não vira dívida.
+      this.logger.warn({ msg: 'subscription_creation_declined', subscriptionId: sub.id, reason: res.failureReason ?? 'subscription_failed' });
+      await this.state.transition(pay.id, 'failed', { failureReason: SUBSCRIPTION_CREATION_DECLINED });
       await this.prisma.subscription.update({ where: { id: sub.id }, data: { status: 'canceled', canceledAt: new Date() } });
       throw new ProblemException(402, 'payment-failed', 'Pagamento recusado. Tente outro cartão.');
     }

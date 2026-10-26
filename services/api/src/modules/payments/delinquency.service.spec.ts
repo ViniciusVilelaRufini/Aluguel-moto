@@ -2,6 +2,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { MockInsuranceProvider } from '../insurance/insurance-provider';
 import { InsuranceService } from '../insurance/insurance.service';
 import { DelinquencyService } from './delinquency.service';
+import { isOpenDebt, openDebtWhere } from './open-debt';
 import { PaymentStateService } from './payment-state.service';
 import { PAYMENT_NEEDS_REVIEW, type PaymentNeedsReviewEvent } from './payment-review';
 import { FakePaymentProvider } from './provider/fake-payment-provider';
@@ -408,5 +409,35 @@ describe('Task 16: recibo depois da quitação e menores da re-revisão da Task 
     const sub = await ctx2.db.subscription.create({ data: { customerId: CUSTOMER, planCode: 'weekly', status: 'past_due', priceCents: 24900, currentPeriodStart: new Date(), currentPeriodEnd: new Date(), gatewayCancelPendingAt: null } });
     await ctx2.db.payment.create({ data: { customerId: CUSTOMER, kind: 'subscription', method: 'card', status: 'failed', amountCents: 24900, subscriptionId: sub.id } });
     await expect(ctx2.svc.clearManually(STAFF, CUSTOMER, 'Pago')).rejects.toMatchObject({ slug: 'debt-in-collection' });
+  });
+});
+
+describe('DelinquencyService — assinatura recusada na criação não é dívida (Task 8.2)', () => {
+  const declinedFirst = (db: InMemoryPrisma) =>
+    db.payment.create({ data: { customerId: CUSTOMER, kind: 'subscription', subscriptionId: 's-1', method: 'card', status: 'failed', amountCents: 24900, failureReason: 'subscription_creation_declined' } });
+
+  it('(a) nenhuma dívida em aberto e o cliente deixa de ser inadimplente', async () => {
+    const { db, svc } = await setup();
+    const p = await declinedFirst(db);
+    expect(isOpenDebt(p)).toBe(false);
+    expect(await db.payment.count({ where: openDebtWhere(CUSTOMER) })).toBe(0);
+    expect(await svc.debtCents(CUSTOMER)).toBe(0);
+  });
+
+  it('(b) retry desse pagamento → 409 debt-not-payable e nada é cobrado', async () => {
+    const { db, svc, provider } = await setup();
+    const p = await declinedFirst(db);
+    await expect(svc.payDebt(CUSTOMER, p.id, { method: 'card' })).rejects.toMatchObject({ slug: 'debt-not-payable' });
+    expect(provider.operations('charge')).toBe(0);
+  });
+
+  it('(c) falha recorrente de assinatura ativa continua sendo dívida', async () => {
+    const { db } = await setup();
+    const p = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'subscription', subscriptionId: 's-1', method: 'card', status: 'failed', amountCents: 24900, failureReason: 'cc_rejected' } });
+    expect(isOpenDebt(p)).toBe(true);
+    expect(await db.payment.count({ where: openDebtWhere(CUSTOMER) })).toBe(1);
+    const semMotivo = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'subscription', subscriptionId: 's-1', method: 'card', status: 'failed', amountCents: 100, failureReason: null } });
+    expect(isOpenDebt(semMotivo)).toBe(true);
+    expect(await db.payment.count({ where: openDebtWhere(CUSTOMER) })).toBe(2);
   });
 });
