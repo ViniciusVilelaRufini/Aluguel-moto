@@ -13,8 +13,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write       # OIDC token for aws-actions/configure-aws-credentials
-  pull-requests: read
 
 env:
   AWS_REGION: sa-east-1
@@ -44,6 +42,9 @@ jobs:
     if: github.event_name == 'pull_request'
     needs: synth
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # OIDC for the read-only lookup role
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -52,11 +53,16 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: warn when the lookup role is not configured
+        if: vars.AWS_LOOKUP_ROLE_ARN_DEV == ''
+        run: echo "::warning::AWS_LOOKUP_ROLE_ARN_DEV is not set; skipping cdk diff."
       - uses: aws-actions/configure-aws-credentials@v4
+        if: vars.AWS_LOOKUP_ROLE_ARN_DEV != ''
         with:
-          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN_DEV }}
+          role-to-assume: ${{ vars.AWS_LOOKUP_ROLE_ARN_DEV }}
           aws-region: ${{ env.AWS_REGION }}
       - name: cdk diff
+        if: vars.AWS_LOOKUP_ROLE_ARN_DEV != ''
         run: >
           pnpm --filter infra exec cdk diff --all -c env=dev
           -c account=${{ vars.AWS_ACCOUNT_ID }}
@@ -69,6 +75,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: dev
     concurrency: infra-deploy-dev
+    permissions:
+      contents: read
+      id-token: write   # OIDC for the deploy role (trust limited to environment:dev)
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -101,7 +110,7 @@ jobs:
         if: steps.api.outputs.present == 'true'
         run: |
           REPO="${{ steps.ecr.outputs.registry }}/volti-dev-api"
-          docker build -t "$REPO:${{ github.sha }}" services/api
+          docker build -f services/api/Dockerfile -t "$REPO:${{ github.sha }}" .
           docker push "$REPO:${{ github.sha }}"
       # 3) Redeploy with the service running, now that the image tag exists.
       - name: cdk deploy (service running)
