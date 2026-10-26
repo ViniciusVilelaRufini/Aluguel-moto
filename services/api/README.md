@@ -123,14 +123,16 @@ Fix round 2: assinatura `canceled`/`expired` nunca reabre. A cobrança tardia é
 
 | Chave / canal Redis | Uso |
 |---|---|
-| `volti:cluster-events` (pub/sub) | replica `PRINCIPAL_REVOKED`, `RENTAL_CHANGED`, `ZONE_CHANGED` e `CUSTOMER_CONSENT_CHANGED` entre instâncias (`ClusterEventsBridge`); at-most-once, sem persistência |
+| `volti:cluster-events` (pub/sub) | replica `PRINCIPAL_REVOKED`, `RENTAL_CHANGED`, `ZONE_CHANGED` e `CUSTOMER_CONSENT_CHANGED` entre instâncias (`ClusterEventsBridge`); at-most-once, sem persistência. `ZONE_CHANGED` remoto (`isRemote`) só invalida a memória do motor de cercas; a origem reavalia e manda os comandos |
+| `geofence:out-of-area:{vehicleId}` | prazo do bloqueio "fora da área" (`{rentalId, deadline}`); a task que trava consome o mesmo valor que armou (compare-and-delete) e decide pelo estado da cerca no Redis |
 | `geofence:inside:{vehicleId}` (campo `zoneLimit`) e `geofence:thing:{thingName}` | limite das zonas da moto e índice por rastreador; lidos pelo `unlock` e pelo teto do limite manual em qualquer task |
 | `iot:desired-limit:{thingName}` | último `limite_kmh` publicado; se estiver acima da zona, o motor de cercas o corrige |
 | `iot:held:{thingName}` | hold em 0 km/h, lido a cada comando (erro de leitura = segurado) |
-| `iot:lock-origin:{thingName}` | origem da trava (`customer`, `staff`, `system`); leitura com erro = `system` |
+| `iot:lock-origin:{thingName}` | origem da trava (`customer`, `staff`, `system`); leitura com erro = `system`; unlock de cliente/campo a apaga por compare-and-delete (só `customer`/ausente) |
 
 - Limite de zona em falha fechada: motor de cercas fora com posição conhecida = 6 km/h (nunca 0); 32 km/h só sem posição alguma (log `zone_limit_unknown`).
-- Destravar por cliente ou campo não desfaz trava de equipe/sistema nem hold: comando `failed/locked_by_staff`; `POST /rentals/{id}/resume` responde `409 vehicle-locked-by-staff`. Troca e início do aluguel recusam moto assim bloqueada (`409 vehicle-unavailable`); no fim do aluguel ela vai para `maintenance` com alerta. Só admin/operacao libera.
+- Destravar por cliente ou campo não desfaz trava de equipe/sistema nem hold: comando `failed/locked_by_staff`; `POST /rentals/{id}/resume` responde `409 vehicle-locked-by-staff`. Troca e início do aluguel recusam moto assim bloqueada (`409 vehicle-unavailable`; moto atual da troca → `409 vehicle-locked-by-staff`); no fim do aluguel ela vai para `maintenance` com alerta e não volta a `free` por tarefa nem por `POST /vehicles/{id}/status` (`409 vehicle-unavailable`). Só admin/operacao libera.
+- Zona `reduced_speed` exige `speedLimitKmh` entre 6 e 20.
 - "Moto em uso" é uma regra só (`common/vehicle-in-use.ts`): aluguel aberto ou reserva ativa no banco, não `vehicle.status`.
 - Usuário só do grupo `campo` age só nas próprias tarefas. Troca de moto só para preço por minuto igual ou menor.
 - IoT: `thingName` e `channel` vêm só do tópico; o corpo do dispositivo chega aninhado em `payload`; eventos de dispositivo passam pela fila `telemetria`.
