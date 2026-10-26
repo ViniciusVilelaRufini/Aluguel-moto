@@ -9,6 +9,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
+import { PaymentsService } from '../payments/payments.service';
 import type {
   ClaimCreateDto, ClaimUpdateDto, ConversationCreateDto, ConversationUpdateDto, DisputeCreateDto, DisputeResolveDto, IncidentCreateDto, IncidentUpdateDto,
   ListClaimsQuery, ListConversationsQuery, ListDisputesQuery, ListIncidentsQuery, ListMessagesQuery, MessageCreateDto,
@@ -26,6 +27,7 @@ export class SupportService {
     private readonly alerts: AlertsService,
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    private readonly payments: PaymentsService,
   ) {}
 
   private ownerFilter(user: Principal, customerId?: string): { customerId?: string } {
@@ -117,27 +119,44 @@ export class SupportService {
     return toDispute(d);
   }
 
-  /** `accepted` com `refundAmountCents` estorna o pagamento do aluguel. */
+  /**
+   * `accepted` com `refundAmountCents` estorna pelo mesmo pipeline de `PaymentsService.refund` (transição, teto capturado,
+   * um estorno aberto, `PaymentRefund`, gateway/carteira), com chave estável `dispute:<id>`.
+   * Fecha a corrida dinheiro x decisão: primeiro a disputa é reivindicada de forma atômica (open/under_review com `resolvedById` nulo →
+   * `under_review` com `resolvedById` = quem decide; sem migração). Ninguém reivindica de novo uma disputa já reivindicada,
+   * nem o próprio dono (duplo clique, duas abas, retry): quem perde recebe 409, inclusive uma rejeição concorrente. Falha no estorno devolve a disputa ao estado anterior; só depois do estorno reservado ela vira `accepted`.
+   * Janela residual: se o processo morrer entre a reivindicação e o desfecho, a disputa fica em `under_review` com dono e
+   * exige ajuste manual (nenhuma nova decisão passa); o estorno segue idempotente pela chave `dispute:<id>`.
+   */
   async resolveDispute(actor: Principal, id: string, dto: DisputeResolveDto) {
     const d = await this.prisma.dispute.findUnique({ where: { id } });
     if (!d) throw notFound('Contestação não encontrada.');
     if (d.status !== 'open' && d.status !== 'under_review') throw conflict('conflict', 'Contestação já decidida.');
     const refund = dto.decision === 'accepted' ? dto.refundAmountCents : undefined;
-    const updated = await this.prisma.$transaction(async (tx) => {
-      if (refund) {
-        const payment = d.paymentId ? await tx.payment.findUnique({ where: { id: d.paymentId } }) : null;
-        if (!payment) throw unprocessable('validation-error', 'Não há pagamento para estornar.');
-        const remaining = payment.amountCents - payment.refundedCents;
-        if (refund > remaining) throw unprocessable('validation-error', `Estorno acima do disponível (${remaining}).`);
-        const refundedCents = payment.refundedCents + refund;
-        await tx.payment.update({ where: { id: payment.id }, data: { refundedCents, status: refundedCents >= payment.amountCents ? 'refunded' : 'partially_refunded' } });
+    if (refund && !d.paymentId) throw unprocessable('validation-error', 'Não há pagamento para estornar.');
+
+    const claim = await this.prisma.dispute.updateMany({
+      where: { id, status: { in: ['open', 'under_review'] }, resolvedById: null },
+      data: { status: 'under_review', resolvedById: actor.userId },
+    });
+    if (claim.count !== 1) throw conflict('conflict', 'Esta contestação já está sendo resolvida.');
+
+    if (refund) {
+      try {
+        await this.payments.refund(actor, d.paymentId!, { amountCents: refund, reason: dto.resolution }, `dispute:${id}`);
+      } catch (err) {
+        await this.prisma.dispute.updateMany({ where: { id, status: 'under_review', resolvedById: actor.userId }, data: { status: d.status, resolvedById: d.resolvedById } });
+        throw err;
       }
-      const u = await tx.dispute.update({
-        where: { id },
-        data: { status: dto.decision, resolution: dto.resolution, refundAmountCents: refund ?? null, resolvedById: actor.userId, resolvedAt: new Date() },
+    }
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const res = await tx.dispute.updateMany({
+        where: { id, status: 'under_review', resolvedById: actor.userId },
+        data: { status: dto.decision, resolution: dto.resolution, refundAmountCents: refund ?? null, resolvedAt: new Date() },
       });
+      if (res.count !== 1) throw conflict('conflict', 'Contestação já decidida.');
       await this.audit.record({ actor, action: 'dispute.resolve', entityType: 'Dispute', entityId: id, reason: dto.resolution, metadata: { decision: dto.decision, refundAmountCents: refund } }, tx as any);
-      return u;
+      return tx.dispute.findUniqueOrThrow({ where: { id } });
     });
     return toDispute(updated);
   }
