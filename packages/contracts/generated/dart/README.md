@@ -277,6 +277,7 @@ Class | Method | HTTP request | Description
 [*ReportsApi*](doc/ReportsApi.md) | [**getRevenueReport**](doc/ReportsApi.md#getrevenuereport) | **GET** /reports/revenue | Receita por período e plano
 [*ReservationsApi*](doc/ReservationsApi.md) | [**cancelReservation**](doc/ReservationsApi.md#cancelreservation) | **DELETE** /reservations/{id} | Cancelar reserva
 [*ReservationsApi*](doc/ReservationsApi.md) | [**createReservation**](doc/ReservationsApi.md#createreservation) | **POST** /reservations | Reservar moto
+[*ReservationsApi*](doc/ReservationsApi.md) | [**createTestHandover**](doc/ReservationsApi.md#createtesthandover) | **POST** /reservations/{id}/test-handover | Entrega simulada (só em ambiente de teste)
 [*ReservationsApi*](doc/ReservationsApi.md) | [**getCurrentReservation**](doc/ReservationsApi.md#getcurrentreservation) | **GET** /reservations/current | Reserva ativa do cliente
 [*StaffApi*](doc/StaffApi.md) | [**createStaffUser**](doc/StaffApi.md#createstaffuser) | **POST** /staff | Convidar usuário interno
 [*StaffApi*](doc/StaffApi.md) | [**getStaffUser**](doc/StaffApi.md#getstaffuser) | **GET** /staff/{id} | Detalhe do usuário interno

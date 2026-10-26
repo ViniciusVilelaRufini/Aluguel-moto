@@ -11,6 +11,7 @@ Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**cancelReservation**](ReservationsApi.md#cancelreservation) | **DELETE** /reservations/{id} | Cancelar reserva
 [**createReservation**](ReservationsApi.md#createreservation) | **POST** /reservations | Reservar moto
+[**createTestHandover**](ReservationsApi.md#createtesthandover) | **POST** /reservations/{id}/test-handover | Entrega simulada (só em ambiente de teste)
 [**getCurrentReservation**](ReservationsApi.md#getcurrentreservation) | **GET** /reservations/current | Reserva ativa do cliente
 
 
@@ -97,6 +98,49 @@ Name | Type | Description  | Notes
 ### HTTP request headers
 
  - **Content-Type**: application/json
+ - **Accept**: application/json, application/problem+json
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+
+# **createTestHandover**
+> Handover createTestHandover(id)
+
+Entrega simulada (só em ambiente de teste)
+
+**Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (em produção, só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso a rota não existe e responde `404`.  Faz o papel da equipe do galpão para o app de teste: na reserva de galpão `active` do próprio cliente, assina o `pickupCode` da reserva e cria a entrega de saída como em `POST /handovers` (`pickup`), com checklist de teste (`[{ code: teste, ok: true }]`), sem fotos e com a bateria atual da moto. Mesmas verificações de `POST /handovers` (moto `reserved`, uma entrega aberta por reserva). A entrega nasce `pending_customer`, a reserva passa a `handover` e o cliente segue pelo aceite normal (`POST /handovers/{id}/accept`). O operador da entrega é um ator de sistema (o cliente vê \"Equipe Volti\").  Reserva inexistente, de outro cliente ou sem galpão → `404`. Reserva fora de `active` (entrega já aberta, encerrada) ou moto não separada → `409` (`conflict`, `vehicle-unavailable`). 
+
+### Example
+```dart
+import 'package:volti_api/api.dart';
+
+final api = VoltiApi().getReservationsApi();
+final String id = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | 
+
+try {
+    final response = api.createTestHandover(id);
+    print(response);
+} on DioException catch (e) {
+    print('Exception when calling ReservationsApi->createTestHandover: $e\n');
+}
+```
+
+### Parameters
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **id** | **String**|  | 
+
+### Return type
+
+[**Handover**](Handover.md)
+
+### Authorization
+
+[customerAuth](../README.md#customerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: Not defined
  - **Accept**: application/json, application/problem+json
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
