@@ -22,6 +22,7 @@ export function validateZone(z: ZoneDraft): ZoneErrors {
   const has = limit !== undefined && limit !== null && !Number.isNaN(limit);
   if (has && (limit as number) > MAX_SPEED_KMH) e.speedLimitKmh = `Máximo de ${MAX_SPEED_KMH} km/h`;
   else if (has && (limit as number) < 0) e.speedLimitKmh = 'O limite não pode ser negativo';
+  else if (has && !Number.isInteger(limit) && !(z.type === 'reduced_speed' && (limit as number) < MIN_REDUCED_SPEED_KMH)) e.speedLimitKmh = 'O limite deve ser um número inteiro de km/h';
   else if (z.type === 'reduced_speed') {
     if (!has) e.speedLimitKmh = 'Informe o limite de velocidade';
     else if ((limit as number) < MIN_REDUCED_SPEED_KMH) e.speedLimitKmh = `Mínimo de ${MIN_REDUCED_SPEED_KMH} km/h em zona de velocidade reduzida`;
