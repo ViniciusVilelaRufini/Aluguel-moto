@@ -24,35 +24,65 @@ describe('SupportService.resolveDispute', () => {
     payments.refund.mockResolvedValue({ id: PAYMENT_ID });
   });
 
-  it('aceita com estorno: delega ao pipeline de pagamentos com a chave da disputa e só então marca a disputa', async () => {
+  const claimWhere = { id: DISPUTE_ID, status: { in: ['open', 'under_review'] }, OR: [{ resolvedById: null }, { resolvedById: actor.userId }] };
+
+  it('aceita com estorno: reivindica, delega ao pipeline com a chave da disputa e só então marca accepted', async () => {
     await service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 });
+    const calls = prisma.dispute.updateMany.mock.calls.map((c) => c[0] as any);
+    expect(calls[0]).toEqual({ where: claimWhere, data: { status: 'under_review', resolvedById: actor.userId } });
     expect(payments.refund).toHaveBeenCalledWith(actor, PAYMENT_ID, { amountCents: 500, reason: 'Cobrança indevida' }, `dispute:${DISPUTE_ID}`);
-    expect(prisma.dispute.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: DISPUTE_ID, status: { in: ['open', 'under_review'] } }, data: expect.objectContaining({ status: 'accepted', refundAmountCents: 500 }) }),
-    );
+    expect(calls[1].where).toEqual({ id: DISPUTE_ID, status: 'under_review', resolvedById: actor.userId });
+    expect(calls[1].data).toMatchObject({ status: 'accepted', refundAmountCents: 500 });
     expect(prisma.payment.update).not.toHaveBeenCalled();
   });
 
-  it('estorno recusado pelo pipeline: devolve o mesmo erro e a disputa continua aberta', async () => {
+  it('estorno recusado pelo pipeline: devolve o mesmo erro e reverte a reivindicação (disputa volta a open)', async () => {
     const err = new ProblemException(422, 'validation-error', 'Valor acima do disponível para estorno (100).');
     payments.refund.mockRejectedValue(err);
     await expect(service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 })).rejects.toBe(err);
-    expect(prisma.dispute.updateMany).not.toHaveBeenCalled();
+    const calls = prisma.dispute.updateMany.mock.calls.map((c) => c[0] as any);
+    expect(calls).toHaveLength(2);
+    expect(calls[1]).toEqual({ where: { id: DISPUTE_ID, status: 'under_review', resolvedById: actor.userId }, data: { status: 'open', resolvedById: null } });
   });
 
-  it('disputa sem pagamento + estorno → 422 sem chamar o pipeline', async () => {
+  it('disputa sem pagamento + estorno → 422 sem reivindicar nem chamar o pipeline', async () => {
     prisma.dispute.findUnique.mockResolvedValue({ ...dispute, paymentId: null } as any);
     await expect(service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 })).rejects.toMatchObject({ status: 422 });
     expect(payments.refund).not.toHaveBeenCalled();
+    expect(prisma.dispute.updateMany).not.toHaveBeenCalled();
   });
 
-  it('corrida: outra decisão já fechou a disputa (update condicional count 0) → 409', async () => {
+  it('reivindicação perdida (count 0) → 409 e nenhum estorno', async () => {
     prisma.dispute.updateMany.mockResolvedValue({ count: 0 });
-    await expect(service.resolveDispute(actor, DISPUTE_ID, { decision: 'rejected', resolution: 'Sem fundamento' })).rejects.toMatchObject({ status: 409 });
+    await expect(service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 })).rejects.toMatchObject({ status: 409 });
+    expect(payments.refund).not.toHaveBeenCalled();
   });
 
   it('rejeitada não estorna', async () => {
     await service.resolveDispute(actor, DISPUTE_ID, { decision: 'rejected', resolution: 'Sem fundamento', refundAmountCents: 500 });
     expect(payments.refund).not.toHaveBeenCalled();
+  });
+
+  it('accept com estorno e reject concorrentes: a rejeição perde a reivindicação (409) e só há um estorno', async () => {
+    const other = { ...actor, userId: 'staff-2', staffId: 'staff-2' } as Principal;
+    let row = { status: 'open', resolvedById: null as string | null };
+    prisma.dispute.updateMany.mockImplementation((async (args: any) => {
+      const w = args.where;
+      const okStatus = typeof w.status === 'string' ? row.status === w.status : w.status.in.includes(row.status);
+      const okOwner = w.resolvedById !== undefined ? row.resolvedById === w.resolvedById : w.OR.some((c: any) => row.resolvedById === c.resolvedById);
+      if (!okStatus || !okOwner) return { count: 0 };
+      row = { ...row, ...args.data };
+      return { count: 1 };
+    }) as any);
+    let releaseRefund!: () => void;
+    payments.refund.mockImplementation(() => new Promise((r) => { releaseRefund = () => r({ id: PAYMENT_ID }); }));
+
+    const accept = service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 });
+    await new Promise((r) => setImmediate(r));
+    await expect(service.resolveDispute(other, DISPUTE_ID, { decision: 'rejected', resolution: 'Sem fundamento' })).rejects.toMatchObject({ status: 409 });
+    releaseRefund();
+    await accept;
+    expect(payments.refund).toHaveBeenCalledTimes(1);
+    expect(row.status).toBe('accepted');
   });
 });
