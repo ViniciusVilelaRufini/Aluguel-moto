@@ -56,6 +56,8 @@ services:
       QUEUE_MODE: local
       PAYMENT_PROVIDER: fake
       ALLOW_FAKE_PAYMENTS: "true"
+      # Entrega simulada para o app de teste (POST /reservations/{id}/test-handover); só com o pagamento fake liberado.
+      ALLOW_TEST_HANDOVER: "true"
       INSURANCE_PROVIDER: mock
       INVOICE_ISSUER: mock
       KYC_PROVIDER: mock

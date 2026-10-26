@@ -1213,6 +1213,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reservations/{id}/test-handover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Entrega simulada (só em ambiente de teste)
+         * @description **Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (em produção,
+         *     só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso a rota não existe e responde `404`.
+         *
+         *     Faz o papel da equipe do galpão para o app de teste: na reserva de galpão `active` do próprio cliente, assina o
+         *     `pickupCode` da reserva e cria a entrega de saída como em `POST /handovers` (`pickup`), com checklist de teste
+         *     (`[{ code: teste, ok: true }]`), sem fotos e com a bateria atual da moto. Mesmas verificações de `POST /handovers`
+         *     (moto `reserved`, uma entrega aberta por reserva). A entrega nasce `pending_customer`, a reserva passa a
+         *     `handover` e o cliente segue pelo aceite normal (`POST /handovers/{id}/accept`). O operador da entrega é um ator
+         *     de sistema (o cliente vê "Equipe Volti").
+         *
+         *     Reserva inexistente, de outro cliente ou sem galpão → `404`. Reserva fora de `active` (entrega já aberta,
+         *     encerrada) ou moto não separada → `409` (`conflict`, `vehicle-unavailable`).
+         */
+        post: operations["createTestHandover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rentals": {
         parameters: {
             query?: never;
@@ -8489,6 +8520,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    createTestHandover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entrega de saída criada, aguardando o aceite do cliente. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Handover"];
+                };
             };
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];

@@ -83,6 +83,28 @@ describe('assertSafeConfig — lacunas T5', () => {
     }
   });
 
+  it('ALLOW_TEST_HANDOVER=true em produção exige o pagamento fake liberado (ALLOW_FAKE_PAYMENTS=true + PAYMENT_PROVIDER=fake)', () => {
+    expect(() => assertSafeConfig({ ...base(), allowTestHandover: true })).toThrow(/ALLOW_TEST_HANDOVER=true/);
+    expect(() => assertSafeConfig({ ...base(), allowTestHandover: true, allowFakePayments: true })).toThrow(/ALLOW_TEST_HANDOVER=true/);
+    expect(() => assertSafeConfig({ ...base(), allowTestHandover: true, paymentProvider: 'fake', allowFakePayments: true })).not.toThrow();
+    expect(() => assertSafeConfig({ ...base(), allowTestHandover: false })).not.toThrow();
+    expect(() => assertSafeConfig({ ...base(), nodeEnv: 'development', allowTestHandover: true })).not.toThrow();
+  });
+
+  it('ALLOW_TEST_HANDOVER: padrão false; só "true" liga', () => {
+    const saved = { ...process.env };
+    try {
+      delete process.env.ALLOW_TEST_HANDOVER;
+      expect(loadConfig().allowTestHandover).toBe(false);
+      process.env.ALLOW_TEST_HANDOVER = '1';
+      expect(loadConfig().allowTestHandover).toBe(false);
+      process.env.ALLOW_TEST_HANDOVER = 'true';
+      expect(loadConfig().allowTestHandover).toBe(true);
+    } finally {
+      process.env = saved;
+    }
+  });
+
   it('COGNITO_STAFF_CLIENT_IDS (vírgula) + COGNITO_STAFF_CLIENT_ID legado → lista sem repetidos', () => {
     const saved = { ...process.env };
     try {

@@ -222,7 +222,7 @@ Os custos atuais estão nas seções do perfil `single` e do dev ECS enxuto, aba
 - Disco gp3 de 25 GB criptografado, 2 GB de swap e rotação de log do Docker (10 MB × 3 por container).
 
 **Containers** (Docker Compose, `deploy/single/compose.yml`)
-- API com `NODE_ENV=production`, `AUTH_MODE=cognito` e `STORAGE_MODE=s3`. IoT, fila, cerca e geocodificação rodam no modo local, e o pagamento `fake` está liberado.
+- API com `NODE_ENV=production`, `AUTH_MODE=cognito` e `STORAGE_MODE=s3`. IoT, fila, cerca e geocodificação rodam no modo local, e o pagamento `fake` está liberado. `ALLOW_TEST_HANDOVER=true` liga a entrega simulada do app de teste (`POST /reservations/{id}/test-handover`; a API só aceita a flag em produção junto com o pagamento fake).
 - PostgreSQL 16 + PostGIS, numa imagem multi-arch construída na própria instância.
 - Redis com `noeviction` e AOF.
 - Mosquitto, só na rede interna.
