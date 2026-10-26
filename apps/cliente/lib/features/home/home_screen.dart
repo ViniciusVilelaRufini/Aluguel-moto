@@ -95,15 +95,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     return h > 0 ? h : _sheetHeight.value;
   }
 
-  double _toastOffset() {
-    if (_sheetMode) {
-      final cover = _sheetCoverPx();
-      return math.max(0, cover + VoltiSpacing.s12 + homeMapButtonsHeight - MediaQuery.paddingOf(context).bottom);
-    }
-    final box = _bottomKey.currentContext?.findRenderObject();
-    return box is RenderBox && box.hasSize ? box.size.height : 0;
-  }
-
   /// Recolhida medida (ou mudou com o texto): o cabecalho cede o espaco e, com a
   /// home parada, a camera enquadra de novo acima da folha.
   void _onCollapsedChanged(double px) {
@@ -150,7 +141,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
 
   Future<void> _depotDirections(Depot d) async {
     final ok = await openDirections(ref.read(urlLauncherProvider), d.lat, d.lng);
-    if (!ok && mounted) VoltiToast.show(context, context.l.navigateFailed, tone: VoltiToastTone.danger, bottomOffset: _toastOffset());
+    if (!ok && mounted) VoltiToast.showTop(context, context.l.navigateFailed, tone: VoltiToastTone.danger);
   }
 
   @override
@@ -205,7 +196,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
   void _onPushForeground(PushPayload m) {
     if (!mounted) return;
     final text = [m.title, m.body].whereType<String>().where((t) => t.isNotEmpty).join(': ');
-    if (text.isNotEmpty) VoltiToast.show(context, text, tone: VoltiToastTone.info, bottomOffset: _toastOffset());
+    if (text.isNotEmpty) VoltiToast.showTop(context, text, tone: VoltiToastTone.info);
   }
 
   /// Toque na notificacao: abre a tela do evento por cima do inicio.
@@ -214,11 +205,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     GoRouter.of(context).push(route);
   }
 
-  /// Toast deixado por outra tela (reserva cancelada, recibo, cadastro).
+  /// Toast deixado por outra tela (reserva cancelada, recibo, cadastro). No topo:
+  /// embaixo ele ficava no meio do mapa, por cima dos pins.
   void _showFlash() {
     if (!mounted) return;
     final m = ref.read(flashProvider.notifier).take();
-    if (m != null) VoltiToast.show(context, m.text, tone: m.tone, bottomOffset: _toastOffset());
+    if (m != null) VoltiToast.showTop(context, m.text, tone: m.tone);
   }
 
   /// Explica para que serve a localizacao e so entao abre o dialogo do sistema.

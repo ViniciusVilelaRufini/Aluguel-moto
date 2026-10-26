@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
@@ -196,12 +198,48 @@ class VoltiToast extends StatelessWidget {
     this.tone = VoltiToastTone.success,
     this.actionLabel,
     this.onAction,
+    this.fromTop = false,
   });
 
   final String message;
   final VoltiToastTone tone;
   final String? actionLabel;
   final VoidCallback? onAction;
+
+  /// Entra descendo (toast no topo, [showTop]) em vez de subindo.
+  final bool fromTop;
+
+  static OverlayEntry? _topEntry;
+
+  /// Toast no topo da tela, logo abaixo da barra de status, por cima do
+  /// cabecalho. Para telas com mapa e folha no rodape, onde o toast de baixo
+  /// cobriria o mapa. Some sozinho apos [duration] ou ao deslizar para cima.
+  static void showTop(
+    BuildContext context,
+    String message, {
+    VoltiToastTone tone = VoltiToastTone.success,
+    Duration duration = const Duration(seconds: 4),
+  }) {
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+    _topEntry?.remove();
+    late final OverlayEntry entry;
+    void close() {
+      if (!entry.mounted) return;
+      entry.remove();
+      if (_topEntry == entry) _topEntry = null;
+    }
+
+    entry = OverlayEntry(
+      builder: (_) => _TopToast(
+        message: message,
+        tone: tone,
+        duration: duration,
+        onClose: close,
+      ),
+    );
+    _topEntry = entry;
+    Overlay.of(context, rootOverlay: true).insert(entry);
+  }
 
   static void show(
     BuildContext context,
@@ -251,8 +289,11 @@ class VoltiToast extends StatelessWidget {
       ),
       VoltiToastTone.danger => (LucideIcons.circleAlert, VoltiColors.coral400),
     };
-    return VoltiEnter.toast(
+    return VoltiEnter(
       key: const Key('volti-toast'),
+      duration: const Duration(milliseconds: 420),
+      fromScale: .95,
+      fromOffset: Offset(0, fromTop ? -18 : 18),
       child: Container(
         constraints: const BoxConstraints(minHeight: 48),
         padding: const EdgeInsets.fromLTRB(14, 10, 10, 10),
@@ -289,6 +330,66 @@ class VoltiToast extends StatelessWidget {
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Toast do topo ([VoltiToast.showTop]): o timer vive no estado, entao some
+/// junto com a arvore (sem timer pendente).
+class _TopToast extends StatefulWidget {
+  const _TopToast({
+    required this.message,
+    required this.tone,
+    required this.duration,
+    required this.onClose,
+  });
+
+  final String message;
+  final VoltiToastTone tone;
+  final Duration duration;
+  final VoidCallback onClose;
+
+  @override
+  State<_TopToast> createState() => _TopToastState();
+}
+
+class _TopToastState extends State<_TopToast> {
+  late final Timer _timer = Timer(widget.duration, widget.onClose);
+
+  @override
+  void initState() {
+    super.initState();
+    _timer;
+  }
+
+  @override
+  void dispose() {
+    _timer.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      top: MediaQuery.paddingOf(context).top + VoltiSpacing.s8,
+      left: VoltiSpacing.screenGutter,
+      right: VoltiSpacing.screenGutter,
+      child: Semantics(
+        liveRegion: true,
+        child: Material(
+          type: MaterialType.transparency,
+          child: Dismissible(
+            key: const Key('volti-toast-top'),
+            direction: DismissDirection.up,
+            onDismissed: (_) => widget.onClose(),
+            child: VoltiToast(
+              message: widget.message,
+              tone: widget.tone,
+              fromTop: true,
+            ),
+          ),
         ),
       ),
     );
