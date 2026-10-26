@@ -41,7 +41,7 @@ function setup() {
   const prisma = mockDeep<PrismaClient>();
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   const starter = { start: jest.fn() };
-  const ender = { endAtDepot: jest.fn().mockResolvedValue({}) };
+  const ender = { endAtDepot: jest.fn().mockResolvedValue({}), depotArrivalStatus: jest.fn(async (_vehicleId: string, target: string) => target) };
   const support = { createConversation: jest.fn().mockResolvedValue({ id: 'conv' }) };
   const events = { emit: jest.fn() };
   const storage = { presignGet: jest.fn(async ({ key }: any) => ({ url: `https://s3/${key}?sig`, expiresAt: '' })), presignPut: jest.fn() };
@@ -376,6 +376,16 @@ describe('HandoversService — chegada (return_depot)', () => {
     prisma.vehicle.findUnique.mockResolvedValue({ status: 'offline', depotId: null } as any);
     prisma.vehicle.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
     await svc.createReturn(operator, returnBody());
+    expect(prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'offline' }, data: { depotId: DEPOT_ID, statusBeforeOffline: 'maintenance', ...DEPOT_POS } });
+  });
+
+  it('auditoria: moto offline com trava da equipe/sistema na chegada → statusBeforeOffline maintenance (nunca free ao reconectar)', async () => {
+    const { prisma, ender, svc } = forReturn([{ code: 'freios', ok: true }]);
+    ender.depotArrivalStatus.mockResolvedValue('maintenance');
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'offline', depotId: null } as any);
+    prisma.vehicle.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+    await svc.createReturn(operator, returnBody());
+    expect(ender.depotArrivalStatus).toHaveBeenCalledWith(VEHICLE_ID, 'free');
     expect(prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'offline' }, data: { depotId: DEPOT_ID, statusBeforeOffline: 'maintenance', ...DEPOT_POS } });
   });
 

@@ -498,6 +498,19 @@ describe('Devolução em ponto verde (retirada em galpão)', () => {
     expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ vehicleId: VEHICLE_ID }), expect.anything());
   });
 
+  it('auditoria (galpão): depotArrivalStatus — free vira maintenance com trava da equipe/sistema; maintenance não muda', async () => {
+    const { service, commands, prisma } = setup({ depotId: null });
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, thingName: 'moto-0001', stolenMode: false } as any);
+    expect(await service.depotArrivalStatus(VEHICLE_ID, 'free')).toBe('free');
+    commands.isLockedByStaff.mockResolvedValue(true);
+    expect(await service.depotArrivalStatus(VEHICLE_ID, 'free')).toBe('maintenance');
+    expect(await service.depotArrivalStatus(VEHICLE_ID, 'maintenance')).toBe('maintenance');
+    // Moto não encontrada: falha fechada.
+    prisma.vehicle.findUnique.mockResolvedValue(null);
+    commands.isLockedByStaff.mockResolvedValue(false);
+    expect(await service.depotArrivalStatus(VEHICLE_ID, 'free')).toBe('maintenance');
+  });
+
   it('finalize com returnTo: depot (devolução no galpão, Task 6) não cria recolhimento', async () => {
     const { service, prisma, rental } = setup({ depotId: DEPOT_ID });
     rental.status = 'ending';

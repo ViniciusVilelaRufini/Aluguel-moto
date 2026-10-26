@@ -297,9 +297,11 @@ export class HandoversService {
   }
 
   /** Repetição/offline: `free` (ou `maintenance` com item problemático) + `depotId`, sem passar por `free` sem galpão. */
-  private async placeAtDepot(h: HandoverRow, target: 'free' | 'maintenance', position: ReturnType<typeof depotPosition> = {}): Promise<void> {
+  private async placeAtDepot(h: HandoverRow, wanted: 'free' | 'maintenance', position: ReturnType<typeof depotPosition> = {}): Promise<void> {
     const busy = await this.prisma.rental.findFirst({ where: { vehicleId: h.vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
     if (busy) return;
+    // Auditoria: moto com trava da equipe/sistema não volta à frota como `free` (nem ao reconectar).
+    const target = await this.ender.depotArrivalStatus(h.vehicleId, wanted);
     const moved = await this.prisma.$transaction(async (tx) => {
       const placed = await tx.vehicle.updateMany({
         where: { id: h.vehicleId, status: { in: ['free', 'awaiting_pickup', 'maintenance'] } },

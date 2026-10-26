@@ -348,6 +348,21 @@ export class RentalEndService {
     return swaps.map((s) => ({ code: STATION_SWAP_FEE_CODE, description: 'Troca de bateria na estação', amountCents: s.feeCents }));
   }
 
+  /**
+   * Auditoria (galpão): status com que a moto fica no galpão quando a colocação acontece fora do fechamento (repetição da
+   * chegada, moto offline). `free` com trava da equipe/sistema (cerca, hold, modo roubada) vira `maintenance`; moto não
+   * encontrada também (falha fechada).
+   */
+  async depotArrivalStatus(vehicleId: string, target: 'free' | 'maintenance'): Promise<'free' | 'maintenance'> {
+    if (target !== 'free') return target;
+    const v = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true, thingName: true, stolenMode: true } });
+    if (!v || (await this.commands.isLockedByStaff(v))) {
+      this.logger.warn({ msg: 'depot_arrival_locked_to_maintenance', vehicleId });
+      return 'maintenance';
+    }
+    return 'free';
+  }
+
   /** Moto do galpão: tem `depotId` ou saiu por uma entrega de galpão aceita para este aluguel. Só sai de novo pela entrega. */
   private async isDepotVehicle(rental: RentalWithVehicle): Promise<boolean> {
     if (rental.vehicle.depotId) return true;
