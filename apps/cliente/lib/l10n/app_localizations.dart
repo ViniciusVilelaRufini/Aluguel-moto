@@ -4090,6 +4090,18 @@ abstract class AppLocalizations {
   /// **'Cancelar reserva'**
   String get cancelReservation;
 
+  /// No description provided for @reservationTestHandover.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirar moto (teste)'**
+  String get reservationTestHandover;
+
+  /// No description provided for @reservationTestHandoverHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Simula a equipe do galpão · só na versão de teste'**
+  String get reservationTestHandoverHint;
+
   /// No description provided for @cancelReservationTitle.
   ///
   /// In pt, this message translates to:

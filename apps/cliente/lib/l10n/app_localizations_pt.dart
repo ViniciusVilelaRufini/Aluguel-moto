@@ -2351,6 +2351,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get cancelReservation => 'Cancelar reserva';
 
   @override
+  String get reservationTestHandover => 'Retirar moto (teste)';
+
+  @override
+  String get reservationTestHandoverHint =>
+      'Simula a equipe do galpão · só na versão de teste';
+
+  @override
   String get cancelReservationTitle => 'Cancelar reserva?';
 
   @override

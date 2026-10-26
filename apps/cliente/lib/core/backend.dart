@@ -76,6 +76,9 @@ abstract class Backend {
   /// Reserva de retirada no galpao. [idempotencyKey]: uma por tentativa de confirmar.
   Future<Reservation> createDepotReservation(ReservationCreate request, {String? idempotencyKey});
   Future<void> cancelReservation(String id);
+  /// Entrega simulada (so no app de teste; a API so tem a rota com `ALLOW_TEST_HANDOVER=true`):
+  /// faz o papel da equipe do galpao e devolve a entrega `pending_customer`.
+  Future<Handover> createTestHandover(String reservationId);
 
   // entrega no galpao ("Confira sua moto")
   Future<Handover> handover(String id);
@@ -313,6 +316,10 @@ class ApiBackend implements Backend {
   Future<void> cancelReservation(String id) => _run(() async {
         await _api.getReservationsApi().cancelReservation(id: id);
       });
+
+  @override
+  Future<Handover> createTestHandover(String reservationId) =>
+      _run(() async => (await _api.getReservationsApi().createTestHandover(id: reservationId)).data!);
 
   @override
   Future<Handover> handover(String id) => _run(() async => (await _api.getHandoversApi().getHandover(id: id)).data!);

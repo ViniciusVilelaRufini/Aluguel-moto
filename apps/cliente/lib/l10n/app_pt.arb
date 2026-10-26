@@ -1378,6 +1378,8 @@
   },
   "howToGetThere": "Como chegar",
   "cancelReservation": "Cancelar reserva",
+  "reservationTestHandover": "Retirar moto (teste)",
+  "reservationTestHandoverHint": "Simula a equipe do galpão · só na versão de teste",
   "cancelReservationTitle": "Cancelar reserva?",
   "cancelReservationText": "O cancelamento é grátis e a caução é liberada.",
   "keepReservation": "Manter reserva",

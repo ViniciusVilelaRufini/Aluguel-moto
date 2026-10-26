@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import '../../core/app_channel.dart';
 import '../../core/backend.dart';
 import '../../core/clock.dart';
 import '../../core/errors.dart';
@@ -35,6 +36,7 @@ class DepotReservationScreen extends ConsumerStatefulWidget {
 
 class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen> {
   bool _canceling = false;
+  bool _testHandoverBusy = false;
 
   void _back() {
     final router = GoRouter.maybeOf(context);
@@ -87,6 +89,26 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
     }
   }
 
+  /// "Retirar moto (teste)" (so no canal beta): a API simula a equipe do galpao e
+  /// a entrega abre direto em "Confira sua moto".
+  Future<void> _testHandover(Reservation r) async {
+    if (_testHandoverBusy) return;
+    setState(() => _testHandoverBusy = true);
+    try {
+      final h = await ref.read(backendProvider).createTestHandover(r.id);
+      // Marca como ja aberta: o HandoverWatcher nao empurra a mesma entrega de novo.
+      ref.read(autoOpenedHandoversProvider.notifier).claim(h.id);
+      ref.invalidate(currentReservationProvider);
+      if (mounted) context.push('/handover/${h.id}');
+    } catch (e) {
+      final f = toFailure(e);
+      ref.invalidate(currentReservationProvider);
+      if (mounted) VoltiToast.show(context, f.message(context.l), tone: VoltiToastTone.danger);
+    } finally {
+      if (mounted) setState(() => _testHandoverBusy = false);
+    }
+  }
+
   Future<void> _directions(Depot d) async {
     final ok = await openDirections(ref.read(urlLauncherProvider), d.lat, d.lng);
     if (!ok && mounted) VoltiToast.show(context, context.l.navigateFailed, tone: VoltiToastTone.danger);
@@ -134,6 +156,7 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
     final offset = tzOffset(depot?.timezone ?? 'America/Sao_Paulo');
     DateTime wall(DateTime utc) => utc.toUtc().add(offset);
     final handover = r.status == ReservationStatus.handover;
+    final testHandover = r.status == ReservationStatus.active && ref.watch(appChannelProvider) == AppChannel.beta;
     final deposit = r.deposit;
     final pixPending = r.depositMethod == DepositMethod.pix && deposit?.pix != null && deposit!.status == DepositStatus.awaitingPix;
     final v = r.vehicle;
@@ -286,6 +309,24 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
                           ),
                         ],
                       ),
+                    ),
+                  ],
+                  if (testHandover) ...[
+                    const SizedBox(height: VoltiSpacing.s16),
+                    VoltiButton(
+                      key: const Key('reservation-test-handover'),
+                      label: l.reservationTestHandover,
+                      icon: LucideIcons.flaskConical,
+                      variant: VoltiButtonVariant.secondary,
+                      fullWidth: true,
+                      loading: _testHandoverBusy,
+                      onPressed: _testHandoverBusy ? null : () => _testHandover(r),
+                    ),
+                    const SizedBox(height: VoltiSpacing.s4),
+                    Text(
+                      l.reservationTestHandoverHint,
+                      textAlign: TextAlign.center,
+                      style: VoltiTypography.caption.copyWith(color: scheme.onSurfaceVariant),
                     ),
                   ],
                   if (!handover) ...[
