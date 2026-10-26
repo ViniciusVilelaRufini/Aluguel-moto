@@ -63,3 +63,17 @@ test('[BUG P3-27] /settings em 1440px: coluna "Ativo" da tabela de planos nao fi
   });
   expect(m.clip, `tabela de planos com ${m.w}px visiveis e ${m.clip}px escondidos: o cabecalho "Ativo" aparece como "A" e os interruptores saem cortados`).toBeLessThanOrEqual(1);
 });
+
+test('[BUG P3-StatTile] 1440px com a ficha aberta: valores dos indicadores ficam alinhados mesmo com rotulo de 2 linhas', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginMocked(page);
+  await page.goto('/fleet?vehicle=veh-001');
+  await expect(page.getByTestId('dashboard-strip')).toBeVisible();
+  await page.waitForTimeout(900);
+  const tops = await page.getByTestId('dashboard-strip').locator('.stat-value').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(new Set(tops).size, `valores em alturas diferentes: ${tops.join(',')}`).toBe(1);
+  // forca um rotulo longo (quebra em 2 linhas) num dos cartoes: os valores continuam na mesma linha
+  await page.getByTestId('dashboard-strip').locator('.stat-tile span').first().evaluate((e) => { e.textContent = 'Alertas abertos agora na frota inteira'; });
+  const tops2 = await page.getByTestId('dashboard-strip').locator('.stat-value').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(new Set(tops2).size, `valores em alturas diferentes: ${tops2.join(',')}`).toBe(1);
+});

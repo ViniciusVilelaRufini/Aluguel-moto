@@ -112,6 +112,9 @@ a:hover{color:var(--brand-press)}
 }
 @media (max-width: 480px) { .shell-title { font-size: 15px !important; } }
 .table-scroll { overflow-x: auto; }
+/* Formulário em 2 colunas; 1 coluna em telas estreitas (diálogos em celular) */
+.form-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 480px) { .form-2col { grid-template-columns: minmax(0, 1fr); } }
 /* Celular: tabelas de preços viram uma pilha rótulo/valor por linha em vez de rolar escondidas dentro do cartão */
 @media (max-width: 640px) {
   .stack-cells .dt table, .stack-cells .dt tbody, .stack-cells .dt tr { display: block; width: 100%; }
