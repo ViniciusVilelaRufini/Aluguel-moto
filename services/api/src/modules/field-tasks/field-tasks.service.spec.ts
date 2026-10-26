@@ -30,8 +30,9 @@ function setup() {
   const alerts = { create: jest.fn().mockResolvedValue({ id: 'alert-1' }) };
   const audit = { record: jest.fn() };
   const storage = { presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn(), deleteObject: jest.fn() };
-  const service = new FieldTasksService(prisma as any, alerts as any, audit as any, storage, loadConfig(), new EventEmitter2());
-  return { prisma, alerts, service };
+  const commands = { isLockedByStaff: jest.fn().mockResolvedValue(false) };
+  const service = new FieldTasksService(prisma as any, alerts as any, audit as any, storage, loadConfig(), new EventEmitter2(), commands as any);
+  return { prisma, alerts, commands, service };
 }
 
 describe('Inspeção (limitador como observação, decisão #13)', () => {
@@ -101,6 +102,50 @@ describe('Concluir tarefa com vehicleStatus (item 7 da auditoria)', () => {
     prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
     await service.complete(campo, TASK_ID, { vehicleStatus: 'free' } as any);
     expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['free', 'maintenance'] } }, data: { status: 'free' } });
+  });
+
+  it('revisão final item 10: moto em manutenção com aluguel aberto → 409 vehicle-unavailable e nenhum updateMany', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(pickup as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'maintenance', online: true } as any);
+    prisma.rental.findFirst.mockResolvedValue({ id: 'r1', vehicleId: VEHICLE_ID, status: 'active' } as any);
+    await expect(service.complete(campo, TASK_ID, { vehicleStatus: 'free' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+  });
+
+  it('revisão final item 10: moto livre com reserva ativa → 409 vehicle-unavailable e nenhum updateMany', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(pickup as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'free', online: true } as any);
+    prisma.reservation.findFirst.mockResolvedValue({ id: 'res1', vehicleId: VEHICLE_ID, status: 'active' } as any);
+    await expect(service.complete(campo, TASK_ID, { vehicleStatus: 'maintenance' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('revisão final item 6: moto em manutenção com trava da equipe/sistema → 409 ao devolver como livre, nada muda', async () => {
+    const { service, prisma, commands } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(pickup as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'maintenance', thingName: 'moto-0001', stolenMode: false, online: true } as any);
+    commands.isLockedByStaff.mockResolvedValue(true);
+    await expect(service.complete(campo, TASK_ID, { vehicleStatus: 'free' } as any)).rejects.toMatchObject({
+      status: 409,
+      slug: 'vehicle-unavailable',
+      detail: 'A moto está bloqueada pela equipe; libere-a antes de devolver à frota.',
+    });
+    expect(commands.isLockedByStaff).toHaveBeenCalledWith(expect.objectContaining({ id: VEHICLE_ID, thingName: 'moto-0001' }));
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+  });
+
+  it('revisão final item 6: trava da equipe não impede mandar para manutenção', async () => {
+    const { service, prisma, commands } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(pickup as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'free', thingName: 'moto-0001', stolenMode: false, online: true } as any);
+    prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
+    commands.isLockedByStaff.mockResolvedValue(true);
+    await service.complete(campo, TASK_ID, { vehicleStatus: 'maintenance' } as any);
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'maintenance' } }));
   });
 });
 

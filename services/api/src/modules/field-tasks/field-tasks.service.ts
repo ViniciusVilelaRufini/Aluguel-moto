@@ -7,13 +7,14 @@ import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
 import { compact, iso } from '../../common/util';
-import { assertVehicleNotInUse } from '../../common/vehicle-in-use';
+import { assertVehicleNotInUse, VEHICLE_LOCKED_BACK_TO_FLEET } from '../../common/vehicle-in-use';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
+import { CommandsService } from '../commands/commands.service';
 import { BUDGET_MS, CALL_TIMEOUT_MS, VehicleAddressService } from '../vehicles/vehicle-address.service';
 import { assertTaskActor, isFieldOnly } from './task-actor';
 import type { BatterySwapDto, FieldTaskCompleteDto, FieldTaskCreateDto, FieldTaskUpdateDto, InspectionDto, ListFieldTasksQuery } from './field-tasks.dto';
@@ -74,6 +75,7 @@ export class FieldTasksService {
     @Inject(OBJECT_STORAGE) private readonly storage: ObjectStorage,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     private readonly events: EventEmitter2,
+    private readonly commands: CommandsService,
     @Optional() private readonly addresses?: VehicleAddressService,
   ) {}
 
@@ -190,10 +192,12 @@ export class FieldTasksService {
       if (dto.vehicleStatus) {
         // Auditoria item 7: mesmas guardas de `setStatus` — só entre livre e manutenção e sem aluguel/reserva
         // (consultados, não deduzidos do status, que fica `offline` durante um aluguel com o rastreador fora).
-        const v = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { status: true } });
+        const v = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { id: true, status: true, thingName: true, stolenMode: true } });
         if (!v) throw notFound('Moto não encontrada.');
         if (!VEHICLE_STATUS_SETTABLE.includes(v.status)) throw conflict('vehicle-unavailable', `A moto está ${v.status}; só é possível alternar entre livre e manutenção.`);
         await assertVehicleNotInUse(tx, t.vehicleId);
+        // Revisão final item 6: moto com trava da equipe/sistema (cerca, hold, modo roubada) não volta à frota pela tarefa.
+        if (dto.vehicleStatus === 'free' && (await this.commands.isLockedByStaff(v))) throw conflict('vehicle-unavailable', VEHICLE_LOCKED_BACK_TO_FLEET);
         const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: VEHICLE_STATUS_SETTABLE } }, data: { status: dto.vehicleStatus } });
         if (moved.count !== 1) throw conflict('vehicle-unavailable', 'A moto mudou de estado; tente de novo.');
         await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: `Tarefa ${t.type} concluída`, metadata: { fieldTaskId: id, from: v.status, to: dto.vehicleStatus } }, tx as any);

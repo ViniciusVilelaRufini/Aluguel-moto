@@ -16,10 +16,36 @@ function setup() {
   prisma.rental.findFirst.mockResolvedValue(null);
   prisma.reservation.findFirst.mockResolvedValue(null);
   prisma.fieldTask.findUnique.mockResolvedValue(null);
-  const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd-1', type: 'unlock', status: 'pending' }) };
+  const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd-1', type: 'unlock', status: 'pending' }), isLockedByStaff: jest.fn().mockResolvedValue(false) };
   const service = new VehiclesService(prisma as any, { record: jest.fn() } as any, commands as any, new EventEmitter2(), {} as any, {} as any, {} as any, {} as any);
   return { prisma, commands, service };
 }
+
+describe('Mudar status (revisão final item 6)', () => {
+  it('manutenção → livre com trava da equipe/sistema → 409 vehicle-unavailable, nada muda', async () => {
+    const { service, prisma, commands } = setup();
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'maintenance', thingName: 'moto-0001', stolenMode: false, online: true } as any);
+    commands.isLockedByStaff.mockResolvedValue(true);
+    await expect(service.setStatus(operacao, VEHICLE_ID, { status: 'free', reason: 'conserto feito' } as any)).rejects.toMatchObject({
+      status: 409,
+      slug: 'vehicle-unavailable',
+      detail: 'A moto está bloqueada pela equipe; libere-a antes de devolver à frota.',
+    });
+    expect(commands.isLockedByStaff).toHaveBeenCalledWith(expect.objectContaining({ id: VEHICLE_ID, thingName: 'moto-0001' }));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('livre → manutenção com trava da equipe → permitido (não consulta a trava)', async () => {
+    const { service, prisma, commands } = setup();
+    (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
+    prisma.vehicle.update.mockResolvedValue({ id: VEHICLE_ID, status: 'maintenance' } as any);
+    jest.spyOn(service as any, 'enrich').mockResolvedValue([{ id: VEHICLE_ID }]);
+    commands.isLockedByStaff.mockResolvedValue(true);
+    await service.setStatus(operacao, VEHICLE_ID, { status: 'maintenance', reason: 'revisão' } as any);
+    expect(prisma.vehicle.update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'maintenance' } }));
+  });
+});
 
 describe('Destravar em modo serviço (item 5 da auditoria)', () => {
   it('moto offline com aluguel pausado aberto → 409 vehicle-unavailable, sem comando', async () => {

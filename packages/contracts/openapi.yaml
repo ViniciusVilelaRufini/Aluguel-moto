@@ -720,7 +720,7 @@ paths:
       tags: [vehicles]
       operationId: setVehicleStatus
       summary: Mudar status operacional (manutenção ou disponível)
-      description: Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Grava AuditLog.
+      description: Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Moto com bloqueio da equipe ou do sistema (cerca, hold, modo roubada) não volta a `free` (`409` `vehicle-unavailable`, "A moto está bloqueada pela equipe; libere-a antes de devolver à frota."). Grava AuditLog.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -3267,7 +3267,7 @@ paths:
       tags: [field-tasks]
       operationId: completeFieldTask
       summary: Concluir tarefa
-      description: Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status (a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa; senão `409` `vehicle-unavailable` e nada muda).
+      description: Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status (a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa; senão `409` `vehicle-unavailable` e nada muda). Moto com bloqueio da equipe ou do sistema não volta a `free` por aqui (`409` `vehicle-unavailable`, "A moto está bloqueada pela equipe; libere-a antes de devolver à frota.").
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]

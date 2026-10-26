@@ -9,6 +9,9 @@ import { conflict } from './problem';
  */
 type InUseTx = Pick<Prisma.TransactionClient, 'rental' | 'reservation'>;
 
+/** Revisão final item 6: moto com trava da equipe/sistema não volta a `free` (tarefa concluída ou mudança de status). */
+export const VEHICLE_LOCKED_BACK_TO_FLEET = 'A moto está bloqueada pela equipe; libere-a antes de devolver à frota.';
+
 /** `true` se há aluguel aberto para a moto. */
 export async function hasOpenRental(tx: Pick<Prisma.TransactionClient, 'rental'>, vehicleId: string): Promise<boolean> {
   const rental = await tx.rental.findFirst({ where: { vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
