@@ -38,6 +38,18 @@ class _SharedDeviceAuth extends DevAuthRepository {
 }
 
 class _TasksRepo extends FakeFieldRepository {
+  /// Chamado depois de cada troca de bateria enviada (simula troca de conta no meio do sync).
+  void Function()? afterSwap;
+
+  @override
+  Future<BatterySwap> submitBatterySwap(String taskId, BatterySwapDraft draft,
+      {required DateTime recordedAt, required String idempotencyKey}) async {
+    final r = await super.submitBatterySwap(taskId, draft,
+        recordedAt: recordedAt, idempotencyKey: idempotencyKey);
+    afterSwap?.call();
+    return r;
+  }
+
   @override
   Future<List<FieldTask>> listTasks() async {
     if (!online) throw const RepositoryException(FailureKind.network, 'offline');
@@ -181,5 +193,30 @@ void main() {
       expect(s.failed.where((j) => j.taskId == 'task-$status'), hasLength(1));
       expect(s.failed.last.error, 'Pedido recusado ($status).');
     }
+  });
+
+  test('troca de conta no meio do sync: para antes do proximo job do dono anterior', () async {
+    await switchTo('op-a');
+    c.read(syncControllerProvider);
+    repo.online = false;
+    await swap('task-a1');
+    await swap('task-a2');
+    expect(await h.queue.all(), hasLength(2));
+
+    repo.online = true;
+    repo.afterSwap = () {
+      repo.afterSwap = null;
+      // B entra no aparelho enquanto o primeiro job de A esta em voo.
+      auth.loginAs('op-b');
+      c.invalidate(sessionProvider);
+      c.read(sessionProvider);
+    };
+    await c.read(syncControllerProvider.notifier).sync();
+
+    expect(repo.swaps.map((s) => s.$1), ['task-a1'],
+        reason: 'depois da troca de conta o job de A nao pode sair com o token de B');
+    final left = await h.queue.all();
+    expect(left.single.taskId, 'task-a2');
+    expect(left.single.ownerSub, 'op-a');
   });
 }
