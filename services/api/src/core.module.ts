@@ -94,6 +94,7 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
     PrismaService,
     AuditService,
     PrincipalResolver,
+    ClusterEventsBridge,
     IDEMPOTENCY_STORE,
     REDIS_STORE,
     AUTH_VERIFIER,
