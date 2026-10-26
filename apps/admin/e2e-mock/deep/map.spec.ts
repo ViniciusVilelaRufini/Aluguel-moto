@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { loginMocked } from '../login';
-import { dshot, watch } from './util';
+import { dshot, openVehicle, watch } from './util';
 
 type Pt = { x: number; y: number };
 
@@ -119,6 +119,22 @@ test.describe('mapa da frota', () => {
     mock.emit('vehicle.status', { vehicleId: 'veh-001', status: 'offline', ts: new Date().toISOString() });
     await expect.poll(() => page.getByTestId('fleet-badge').innerText(), { timeout: 3000 }).not.toBe(badge0);
     expect(w.finish('map-rt')).toEqual([]);
+  });
+});
+
+test.describe('tempo real: overrides', () => {
+  test('status ao vivo antigo nao sobrepoe o dado novo quando a frota recarrega', async ({ page }) => {
+    const mock = await loginMocked(page);
+    await openVehicle(page, 'VLT-001');
+    await expect(page.getByTestId('live-indicator')).toHaveAttribute('data-connected', 'true');
+    const sheet = page.getByTestId('vehicle-sheet');
+    mock.emit('vehicle.status', { vehicleId: 'veh-001', status: 'maintenance', ts: new Date().toISOString() });
+    await expect(sheet.getByText('Manutenção', { exact: true })).toBeVisible({ timeout: 3000 });
+    // o servidor passa a dizer outra coisa e a frota recarrega (comando confirmado invalida ['fleet'])
+    mock.db.vehicles.find((v) => v.id === 'veh-001')!.status = 'rented';
+    await page.waitForTimeout(700);
+    mock.emit('command.updated', { commandId: 'cmd-x', vehicleId: 'veh-001', type: 'horn', status: 'confirmed' });
+    await expect(sheet.getByText('Alugada', { exact: true }), 'override velho de vehicle.status segue valendo depois do recarregamento').toBeVisible({ timeout: 4000 });
   });
 });
 

@@ -11,6 +11,7 @@ import type { RealtimeEvents, S } from './types';
 
 type Handler<K extends keyof RealtimeEvents> = (payload: RealtimeEvents[K]) => void;
 export type FleetVehicle = S<'Vehicle'>;
+interface LiveOverride { at: number; patch: Partial<FleetVehicle> }
 
 interface RealtimeState {
   connected: boolean;
@@ -41,10 +42,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const { token, groups } = useAuth();
   const qc = useQueryClient();
   const [connected, setConnected] = useState(false);
-  const [overrides, setOverrides] = useState<Record<string, Partial<FleetVehicle>>>({});
+  // Cada atualização ao vivo guarda quando chegou: se a frota recarregou depois disso, o dado do servidor é mais novo.
+  const [overrides, setOverrides] = useState<Record<string, LiveOverride>>({});
   const [alertDelta, setAlertDelta] = useState(0);
   const handlers = useRef(new Map<string, Set<(p: never) => void>>());
-  const pending = useRef<Record<string, Partial<FleetVehicle>>>({});
+  const pending = useRef<Record<string, LiveOverride>>({});
 
   const canList = groups.some((g) => LIST_GROUPS.includes(g));
   const canFleet = groups.some((g) => FLEET_GROUPS.includes(g));
@@ -69,7 +71,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       pending.current = {};
       setOverrides((o) => {
         const n = { ...o };
-        for (const [id, patch] of Object.entries(p)) n[id] = { ...n[id], ...patch };
+        for (const [id, o] of Object.entries(p)) n[id] = { at: o.at, patch: { ...n[id]?.patch, ...o.patch } };
         return n;
       });
     }, 500);
@@ -87,17 +89,22 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('vehicle.position', (p: RealtimeEvents['vehicle.position']) => {
-      pending.current[p.vehicleId] = { ...pending.current[p.vehicleId], lat: p.lat, lng: p.lng, speedKmh: p.speedKmh, batteryPct: p.batteryPct, status: p.status, speedLimitKmh: p.speedLimitKmh, lastSeenAt: p.ts };
+      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...pending.current[p.vehicleId]?.patch, lat: p.lat, lng: p.lng, speedKmh: p.speedKmh, batteryPct: p.batteryPct, status: p.status, speedLimitKmh: p.speedLimitKmh, lastSeenAt: p.ts } };
       emit('vehicle.position', p);
     });
     socket.on('vehicle.status', (p: RealtimeEvents['vehicle.status']) => {
-      pending.current[p.vehicleId] = { ...pending.current[p.vehicleId], status: p.status };
+      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...pending.current[p.vehicleId]?.patch, status: p.status } };
       emit('vehicle.status', p);
       qc.invalidateQueries({ queryKey: ['vehicle', p.vehicleId] });
     });
     socket.on('command.updated', (p: RealtimeEvents['command.updated']) => {
       emit('command.updated', p);
       qc.invalidateQueries({ queryKey: ['vehicle-commands', p.vehicleId] });
+      // Comando concluído muda o estado da moto (ex.: travada): recarrega a ficha e a frota.
+      if (p.status === 'confirmed') {
+        qc.invalidateQueries({ queryKey: ['vehicle', p.vehicleId] });
+        qc.invalidateQueries({ queryKey: ['fleet'] });
+      }
     });
     socket.on('alert.created', (p: RealtimeEvents['alert.created']) => {
       setAlertDelta((d) => d + 1);
@@ -115,8 +122,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const vehicles = useMemo(
-    () => (vq.data ?? []).map((v) => (overrides[v.id] ? { ...v, ...overrides[v.id] } : v)),
-    [vq.data, overrides],
+    () => (vq.data ?? []).map((v) => {
+      const o = overrides[v.id];
+      return o && o.at >= vq.dataUpdatedAt ? { ...v, ...o.patch } : v;
+    }),
+    [vq.data, vq.dataUpdatedAt, overrides],
   );
 
   const value = useMemo<RealtimeState>(

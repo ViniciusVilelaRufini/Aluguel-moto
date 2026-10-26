@@ -17,18 +17,20 @@ export function Page({ children, style }: { children: ReactNode; style?: CSSProp
 }
 
 /** O título da seção é o <h1> do cabeçalho global (layout do painel); aqui ficam só o subtítulo e as ações. */
-export function PageHeader({ subtitle, children }: { title?: string; subtitle?: string; children?: ReactNode }) {
+export function PageHeader({ subtitle, children }: { subtitle?: string; children?: ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
       <div style={{ flex: 1, minWidth: 200 }}>
-        {subtitle && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{subtitle}</div>}
+        {subtitle && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{subtitle}</div>}
       </div>
       {children}
     </div>
   );
 }
 
-export function SidePanel({ children, width = 360, onClose, title, testId }: { children: ReactNode; width?: number; onClose?: () => void; title?: ReactNode; testId?: string }) {
+export function SidePanel({ children, width = 360, onClose, title, testId, label }: { children: ReactNode; width?: number; onClose?: () => void; title?: ReactNode; testId?: string; label?: string }) {
+  const titleId = useId();
+  const ref = useRef<HTMLElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   const closable = !!onClose;
@@ -44,15 +46,21 @@ export function SidePanel({ children, width = 360, onClose, title, testId }: { c
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [closable]);
+  // Ficha aberta pelo teclado: o foco vai para a ficha (leitor de tela e Tab seguem dali), não fica na linha da tabela.
+  useEffect(() => { if (closable) ref.current?.focus({ preventScroll: true }); }, [closable]);
   return (
     <aside
+      ref={ref}
+      tabIndex={-1}
       data-testid={testId}
+      aria-label={label}
+      aria-labelledby={!label && title ? titleId : undefined}
       className="side-panel panel-in"
-      style={{ width, flexShrink: 0, background: 'var(--surface-card)', borderLeft: '1px solid var(--border-subtle)', overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
+      style={{ outline: 'none', width, flexShrink: 0, background: 'var(--surface-card)', borderLeft: '1px solid var(--border-subtle)', overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
     >
       {(title || onClose) && (
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>{title}</div>
+          <div id={titleId} style={{ flex: 1, minWidth: 0 }}>{title}</div>
           {onClose && <IconButton icon="X" variant="soft" size={32} label="Fechar" onClick={onClose} />}
         </div>
       )}
@@ -238,6 +246,9 @@ export function Modal({ open, title, children, actions, onClose, width = 440, te
 }
 
 /** Ação com motivo obrigatório e confirmação explícita. */
+/** Erro de validação já exibido junto ao campo: o ReasonDialog mantém o diálogo aberto sem repetir a mensagem. */
+export class FieldError extends Error {}
+
 export function ReasonDialog({
   open, title, description, confirmLabel, danger, minLength = 3, onClose, onConfirm, children, testId,
 }: {
@@ -261,7 +272,7 @@ export function ReasonDialog({
             setTouched(true);
             if (invalid) return;
             setBusy(true); setError(null);
-            try { await onConfirm(reason.trim()); onClose(); } catch (e) { setError(e); } finally { setBusy(false); }
+            try { await onConfirm(reason.trim()); onClose(); } catch (e) { if (!(e instanceof FieldError)) setError(e); } finally { setBusy(false); }
           }}>{busy ? 'Enviando...' : confirmLabel}</Button>
       </>}>
       {description && <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{description}</div>}
