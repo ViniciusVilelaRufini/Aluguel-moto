@@ -82,6 +82,27 @@ test.describe('alugueis: encerrar a forca e estornar', () => {
     expect(calls(mock, /refund$/), 'estorno de R$ 99.999,00 sobre pagamento de R$ 20,00 foi enviado').toHaveLength(0);
   });
 
+  test('segundo estorno parcial logo depois valida contra o restante atualizado (cache do pagamento invalidado)', async ({ page }) => {
+    const mock = await loginMocked(page);
+    mock.db.rentals[1]!.paymentId = 'pay-001';
+    mock.db.payments[0]!.amountCents = 5000;
+    mock.db.payments[0]!.refundedCents = 0;
+    await page.goto('/customers?tab=rentals');
+    await page.getByTestId('rentals-table').getByTestId('row').nth(1).click();
+    const refund = async (v: string) => {
+      await page.getByTestId('refund').click();
+      await page.getByPlaceholder('0,00').fill(v);
+      await page.getByTestId('reason-input').fill('Parcial');
+      await page.getByTestId('confirm-action').click();
+    };
+    await refund('30,00');
+    await expect(page.getByText('Estorno solicitado')).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await refund('30,00');
+    await expect(page.getByRole('dialog').getByText('excede o que ainda pode ser estornado')).toBeVisible();
+    expect(calls(mock, /refund$/)).toHaveLength(1);
+  });
+
   test('[BUG P2-30] financeiro: detalhe do aluguel nao oferece "Abrir ficha" do cliente (secao Clientes e proibida)', async ({ page }) => {
     const mock = await loginMocked(page, { group: 'financeiro' });
     mock.db.rentals[1]!.paymentId = 'pay-001';

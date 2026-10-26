@@ -149,6 +149,7 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
           await unwrap(api.POST('/payments/{id}/refund', { params: { path: { id: r!.paymentId! }, header: { 'Idempotency-Key': crypto.randomUUID() } }, body: { reason, ...(cents ? { amountCents: cents } : {}) } }));
           toast('Estorno solicitado');
           qc.invalidateQueries({ queryKey: ['rental', id] });
+          qc.invalidateQueries({ queryKey: ['payment', r!.paymentId] });
         }}
       >
         <Field label="Valor a estornar (R$)" hint="Deixe em branco para estornar o valor total.">
