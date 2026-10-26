@@ -213,7 +213,8 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     const cid = q.get('customerId');
     return ok(page(db.payments.filter((x) => !cid || x.customerId === cid), q));
   }
-  if (method === 'POST' && match(/^\/payments\/[^/]+\/refund$/)) { const x = find(db.payments); if (!x) return notFound(); x.status = 'refunded'; return ok(x); }
+  if (method === 'GET' && match(/^\/payments\/[^/]+$/)) { const x = find(db.payments); return x ? ok(x) : notFound(); }
+  if (method === 'POST' && match(/^\/payments\/[^/]+\/refund$/)) { const x = find(db.payments); if (!x) return notFound(); x.status = 'refunded'; x.refundedCents += (b as { amountCents?: number }).amountCents ?? x.amountCents - x.refundedCents; return ok(x); }
   if (method === 'PUT' && match(/^\/payments\/subscriptions\/[^/]+\/vehicle$/)) return ok({});
 
   // Preços

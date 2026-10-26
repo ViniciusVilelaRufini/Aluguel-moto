@@ -180,10 +180,14 @@ export function TextInput({ value, onChange, type = 'text', placeholder, testId,
 }
 
 /** Campo numérico compacto para tabelas de preço (estilo `PricingView`). */
-export function MiniInput({ value, onChange, width = 110, align = 'right', label }: { value: string; onChange: (v: string) => void; width?: number; align?: 'left' | 'right'; label?: string }) {
+export function MiniInput({ value, onChange, width = 110, align = 'right', label, error }: { value: string; onChange: (v: string) => void; width?: number | string; align?: 'left' | 'right'; label?: string; error?: string }) {
+  const errId = useId();
   return (
-    <input className="field-mini" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}
-      style={{ width, height: 34, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', background: 'var(--ink-50)', font: '500 13px/1 var(--font-mono)', textAlign: align, color: 'var(--text-primary)' }} />
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: align === 'right' ? 'flex-end' : 'flex-start', width: typeof width === 'string' ? width : undefined, minWidth: 0 }}>
+      <input className="field-mini" aria-label={label} aria-invalid={error ? true : undefined} aria-describedby={error ? errId : undefined} value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ width, maxWidth: '100%', height: 34, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: `1px solid ${error ? 'var(--danger)' : 'var(--border-subtle)'}`, background: 'var(--ink-50)', font: '500 13px/1 var(--font-mono)', textAlign: align, color: 'var(--text-primary)' }} />
+      {error && <span id={errId} style={{ fontSize: 11, color: 'var(--danger-ink)', fontWeight: 600 }}>{error}</span>}
+    </span>
   );
 }
 
@@ -385,7 +389,7 @@ export function DataTable<T extends object>({
             {skeleton && Array.from({ length: dense ? 3 : 5 }).map((_, i) => (
               <tr key={'sk-' + i} aria-hidden>
                 {columns.map((c, j) => (
-                  <td key={c.key} style={{ padding: pad, borderBottom: '1px solid var(--ink-100)' }}>
+                  <td key={c.key} data-label={c.label || undefined} style={{ padding: pad, borderBottom: '1px solid var(--ink-100)' }}>
                     <Skeleton w={c.label ? (50 + ((i * 17 + j * 23) % 40)) + '%' : 64} h={dense ? 10 : 12} style={{ marginLeft: c.align === 'right' ? 'auto' : undefined }} />
                   </td>
                 ))}
@@ -402,7 +406,7 @@ export function DataTable<T extends object>({
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
                   onKeyDown={onRowClick ? (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); onRowClick(r); } } : undefined}>
                   {columns.map((c) => (
-                    <td key={c.key} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: 'nowrap' }}>
+                    <td key={c.key} data-label={c.label || undefined} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: 'nowrap' }}>
                       {c.render ? c.render(r) : (get(r, c.key) as ReactNode)}
                     </td>
                   ))}

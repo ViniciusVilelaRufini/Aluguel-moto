@@ -7,7 +7,8 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { MAINTENANCE_STATUS } from '@/lib/labels';
 import { SERVICE_STATUS, formatHours, formatKm, loadOpenTasks, maintenanceOrigin, nextServiceLabel } from '@/lib/maintenance';
-import { formatDate, formatDateTime } from '@/lib/format';
+import { formatDate, formatDateTime, localDay } from '@/lib/format';
+import { useSubmitGuard } from '@/lib/submit-guard';
 import type { S } from '@/lib/types';
 import { Alert } from '@/ds/Alert';
 import { Button } from '@/ds/Button';
@@ -85,6 +86,7 @@ function Agenda() {
   const [onlyCustomer, setOnlyCustomer] = useState(false);
   const [cancel, setCancel] = useState<Task | null>(null);
   const [err, setErr] = useState<unknown>(null);
+  const guard = useSubmitGuard();
   const fullName = groups.includes('admin') || groups.includes('suporte');
   const isOpen = status === 'open';
   // "Em aberto": consultas filtradas no servidor (agendadas + em andamento), todas as páginas, juntas.
@@ -99,14 +101,14 @@ function Agenda() {
   const loading = isOpen ? open.isLoading : paged.loading;
   const error = isOpen ? open.error : paged.error;
   const shown = rows.filter((t) => !onlyCustomer || t.source === 'customer');
-  const patch = async (t: Task, body: S<'MaintenanceTaskUpdate'>, msg: string) => {
+  const patch = (t: Task, body: S<'MaintenanceTaskUpdate'>, msg: string) => guard.run(async () => {
     setErr(null);
     try {
       await unwrap(api.PATCH('/maintenance/tasks/{id}', { params: { path: { id: t.id } }, body }));
       toast(msg);
       for (const k of ['maintenance', 'maintenance-vehicles', 'vehicle']) qc.invalidateQueries({ queryKey: [k] });
     } catch (e) { setErr(e); }
-  };
+  });
   return (
     <>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -126,8 +128,8 @@ function Agenda() {
           { key: 'status', label: 'Situação', render: (r) => <Pill tone={MAINTENANCE_STATUS[r.status][1]}>{MAINTENANCE_STATUS[r.status][0]}</Pill> },
           ...(canUpdate ? [{ key: 'a', label: '', align: 'right' as const, render: (r: Task) => (
             <div style={{ display: 'inline-flex', gap: 6 }}>
-              {r.status === 'scheduled' && <Button size="sm" variant="ghost" onClick={() => patch(r, { status: 'in_progress' }, 'Manutenção iniciada')}>Iniciar</Button>}
-              {(r.status === 'scheduled' || r.status === 'in_progress') && <Button size="sm" variant="secondary" style={ghost} testId="complete-maintenance" onClick={() => patch(r, { status: 'done' }, r.kind === 'preventive' ? 'Revisão registrada' : 'Manutenção concluída')}>Concluir</Button>}
+              {r.status === 'scheduled' && <Button size="sm" variant="ghost" busy={guard.busy} disabled={guard.busy} onClick={() => patch(r, { status: 'in_progress' }, 'Manutenção iniciada')}>Iniciar</Button>}
+              {(r.status === 'scheduled' || r.status === 'in_progress') && <Button size="sm" variant="secondary" style={ghost} testId="complete-maintenance" busy={guard.busy} disabled={guard.busy} onClick={() => patch(r, { status: 'done' }, r.kind === 'preventive' ? 'Revisão registrada' : 'Manutenção concluída')}>Concluir</Button>}
               {(r.status === 'scheduled' || r.status === 'in_progress') && <Button size="sm" variant="ghost" style={{ color: 'var(--danger-ink)' }} onClick={() => setCancel(r)}>Cancelar</Button>}
             </div>
           ) }] : []),
@@ -153,7 +155,9 @@ export function NewMaintenanceModal({ onClose, initialCode = '' }: { onClose: ()
   const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const submit = async () => {
-    setBusy(true); setErr(null);
+    setErr(null);
+    if (date && date < localDay(new Date())) { setErr(new Error('A data da manutenção não pode estar no passado')); return; }
+    setBusy(true);
     try {
       const v = await unwrap(api.GET('/vehicles/by-code/{code}', { params: { path: { code: code.trim() } } }));
       await unwrap(api.POST('/maintenance/tasks', { body: { vehicleId: v.id, kind, title: title.trim(), ...(date ? { scheduledFor: new Date(`${date}T09:00:00-03:00`).toISOString() } : {}), createFieldTask: true } }));

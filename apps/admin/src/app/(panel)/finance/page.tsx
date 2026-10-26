@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { useSubmitGuard } from '@/lib/submit-guard';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/labels';
 import { formatCompactBRL, moneyDelta, percentDelta, pointsDelta, previousRange } from '@/lib/finance-delta';
@@ -34,6 +35,7 @@ export default function FinancePage() {
   const [rental, setRental] = useState<string | null>(params.get('rental'));
   const [period, setPeriod] = useState<Period>('7d');
   const toast = useToast();
+  const exporting = useSubmitGuard();
   const r = useMemo(() => range(period), [period]);
 
   const fin = useQuery({ queryKey: ['finance', period], queryFn: () => unwrap(api.GET('/reports/finance', { params: { query: r } })).then(asJson) });
@@ -71,9 +73,9 @@ export default function FinancePage() {
   const barList = Object.entries(bars).sort(([a], [b]) => a.localeCompare(b));
   const max = Math.max(1, ...barList.map(([, v]) => v));
 
-  const exportCsv = async (path: '/reports/revenue' | '/reports/finance', name: string) => {
+  const exportCsv = (path: '/reports/revenue' | '/reports/finance', name: string) => exporting.run(async () => {
     try { await downloadCsv(path, { from: r.from, to: r.to }, name); } catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível exportar', 'danger'); }
-  };
+  });
 
   const f = fin.data;
   return (
@@ -142,8 +144,8 @@ export default function FinancePage() {
               { key: 'revenueCents', label: 'Receita', align: 'right', render: (v) => formatBRL(v.revenueCents) },
             ]} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Button size="sm" variant="secondary" icon="Download" testId="export-revenue" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/revenue', 'receita.csv')}>Exportar receita (CSV)</Button>
-            <Button size="sm" variant="secondary" icon="Download" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/finance', 'financeiro.csv')}>Exportar resumo financeiro (CSV)</Button>
+            <Button size="sm" variant="secondary" icon="Download" testId="export-revenue" busy={exporting.busy} disabled={exporting.busy} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/revenue', 'receita.csv')}>Exportar receita (CSV)</Button>
+            <Button size="sm" variant="secondary" icon="Download" busy={exporting.busy} disabled={exporting.busy} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/finance', 'financeiro.csv')}>Exportar resumo financeiro (CSV)</Button>
           </div>
         </TabPanel>
       )}
