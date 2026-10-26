@@ -229,7 +229,23 @@ aws ssm put-parameter --name /volti/dev/secrets/MERCADOPAGO_ACCESS_TOKEN --type 
 
 Depois, rode o update. Só entram no `.env` valores com `A-Z a-z 0-9 . _ : / , @ + = -`; os outros são ignorados com aviso.
 
+**Allowlist:** o `render-env.sh` só aceita nomes conhecidos. Em `/volti/dev/secrets/` são `DB_PASSWORD`, `STATION_QR_SECRET`, `FRAUD_HASH_SECRET`, `PICKUP_CODE_SECRET`, `MERCADOPAGO_WEBHOOK_SECRET` e `MERCADOPAGO_ACCESS_TOKEN`; em `/volti/dev/config/`, os parâmetros da stack mais `IOT_SIM` e `SIM_RIDE_ON_UNLOCK`. Um nome fora da lista (ou em subpasta) não entra no `.env` e aparece no log do update como `ignorado (fora da allowlist ...)`, sem o valor. Para usar um nome novo, inclua-o em `CONFIG_NAMES` ou `SECRET_NAMES` no `render-env.sh`.
+
 `DB_PASSWORD`, `STATION_QR_SECRET`, `FRAUD_HASH_SECRET`, `PICKUP_CODE_SECRET` e `MERCADOPAGO_WEBHOOK_SECRET` nascem sozinhos no primeiro boot, e a instância nunca os sobrescreve. Não troque o `DB_PASSWORD`: o volume do Postgres já foi criado com ele.
+
+## IMDS só para a API
+
+A instância usa IMDSv2 com 2 saltos para o container da API pegar a role (S3, Cognito). Os outros containers ficam sem ela: o `update.sh` roda `deploy/single/imds-guard.sh install`, que põe na chain `DOCKER-USER` um `RETURN` para o IP fixo da API (`172.30.0.10`) e, depois dele, `DROP` para `169.254.169.254`, e instala a unit `volti-imds-guard` (antes do Docker, a cada boot). Para conferir, abra o Session Manager e rode como root:
+
+```bash
+iptables -S DOCKER-USER                       # o RETURN do 172.30.0.10 antes do DROP do 169.254.169.254, uma vez cada
+systemctl is-enabled volti-imds-guard         # enabled
+cd /opt/volti/src && dc() { docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env "$@"; }
+dc exec -T api node -e "fetch('http://169.254.169.254/latest/api/token',{method:'PUT',headers:{'X-aws-ec2-metadata-token-ttl-seconds':'60'}}).then(r=>console.log('api',r.status))"
+# esperado: api 200
+dc exec -T caddy wget -T 3 -qO- http://169.254.169.254/ || echo "caddy sem IMDS (esperado)"
+docker run --rm alpine wget -T 3 -qO- http://169.254.169.254/ || echo "bridge padrão sem IMDS (esperado)"
+```
 
 ## Apontar os apps
 

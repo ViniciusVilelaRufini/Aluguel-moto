@@ -11,6 +11,8 @@ action="${1:-publish-panel}"
 email="${2:--}"
 
 bash deploy/single/render-env.sh >/dev/null
+# O build do painel roda código de terceiros (pnpm install): garante a regra que deixa os containers sem IMDS (Run-2).
+bash deploy/single/imds-guard.sh >/dev/null
 # Lê só as chaves necessárias (sem `source` do .env).
 envval() { grep -m1 "^$1=" /opt/volti/.env | cut -d= -f2-; }
 
@@ -18,7 +20,9 @@ case "$action" in
   publish-panel)
     host="$(envval PUBLIC_HOST)"
     origin="$(envval ADMIN_ORIGIN)"
-    docker run --rm -v "$VOLTI_REPO_DIR":/repo -w /repo \
+    # Rede bridge padrão (sem o IP da API: sem IMDS), sem NET_RAW e sem credencial da AWS no ambiente; o sync para o S3 e a
+    # invalidação rodam depois, no host.
+    docker run --rm --cap-drop NET_RAW -v "$VOLTI_REPO_DIR":/repo -w /repo \
       -e NEXT_PUBLIC_API_BASE_URL="https://$host" \
       -e NEXT_PUBLIC_AUTH_MODE=cognito \
       -e NEXT_PUBLIC_COGNITO_DOMAIN="$(envval ADMIN_COGNITO_DOMAIN)" \

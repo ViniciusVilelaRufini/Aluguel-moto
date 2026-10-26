@@ -4,11 +4,12 @@
 #   /volti/dev/secrets/* (SecureString com a chave alias/volti-dev; os gerados nascem aqui na primeira execução)
 # Nunca imprime valores.
 set -euo pipefail
-source /etc/volti/instance.env
+# VOLTI_INSTANCE_ENV/VOLTI_ENV_FILE: só para os testes (infra/test/single-profile-imds.test.ts); na instância, os padrões.
+source "${VOLTI_INSTANCE_ENV:-/etc/volti/instance.env}"
 export AWS_DEFAULT_REGION="$VOLTI_REGION"
-OUT=/opt/volti/.env
-mkdir -p /opt/volti
-TMP="$(mktemp /opt/volti/.env.XXXXXX)"
+OUT="${VOLTI_ENV_FILE:-/opt/volti/.env}"
+mkdir -p "$(dirname "$OUT")"
+TMP="$(mktemp "$OUT.XXXXXX")"
 chmod 600 "$TMP"
 trap 'rm -f "$TMP"' EXIT
 
@@ -30,22 +31,47 @@ for name in DB_PASSWORD STATION_QR_SECRET FRAUD_HASH_SECRET PICKUP_CODE_SECRET M
   fi
 done
 
+# Allowlists (Run-2, docs/decisoes.md 2026-10-26): só estes nomes entram no .env. Um parâmetro novo em /volti/dev/secrets/*
+# (a role da instância pode criar nomes novos ali) não vira variável da API; nome desconhecido gera aviso sem o valor.
+# Para aceitar um nome novo, inclua-o aqui (e no teste infra/test/single-profile-imds.test.ts).
+# config: os parâmetros da stack (infra/lib/stacks/single-dev-stack.ts, configParams) e os opcionais do cloudshell.md.
+CONFIG_NAMES=(
+  AWS_REGION COGNITO_REGION
+  COGNITO_CUSTOMER_POOL_ID COGNITO_CUSTOMER_CLIENT_ID COGNITO_STAFF_POOL_ID COGNITO_STAFF_CLIENT_ID COGNITO_STAFF_CLIENT_IDS
+  CORS_ORIGINS API_DOMAIN HOSTED_ZONE_ID CUSTOMER_LOGIN
+  S3_BUCKET_KYC S3_BUCKET_RETURN_PHOTOS S3_BUCKET_REPORTS S3_BUCKET_ATTACHMENTS S3_BUCKET_CATALOG
+  ADMIN_ORIGIN ADMIN_BUCKET ADMIN_DISTRIBUTION_ID ADMIN_COGNITO_DOMAIN
+  IOT_SIM SIM_RIDE_ON_UNLOCK
+)
+# secrets: os gerados acima e o manual documentado no cloudshell.md. Listas separadas de propósito: um segredo não pode
+# repetir (e sobrescrever) uma chave de config, e config (String, texto aberto) não carrega segredo.
+SECRET_NAMES=(DB_PASSWORD STATION_QR_SECRET FRAUD_HASH_SECRET PICKUP_CODE_SECRET MERCADOPAGO_WEBHOOK_SECRET MERCADOPAGO_ACCESS_TOKEN)
+
 # Só valores com caracteres seguros entram no .env (o Compose interpola $ e o arquivo nunca é executado como shell).
 SAFE='^[A-Za-z0-9._:/,@+=-]*$'
+# dump <prefixo> <nomes permitidos...>: sem --recursive e só o filho direto do prefixo (um /secrets/x/DB_PASSWORD não
+# duplica o DB_PASSWORD).
 dump() {
-  aws ssm get-parameters-by-path --path "$1" --with-decryption --recursive \
+  local prefix="$1"
+  shift
+  local allowed=" $* "
+  aws ssm get-parameters-by-path --path "$prefix" --with-decryption \
     --query 'Parameters[].[Name,Value]' --output text |
     while IFS=$'\t' read -r key value; do
       name="${key##*/}"
-      if [[ ! "$name" =~ ^[A-Z][A-Z0-9_]*$ ]] || [[ ! "$value" =~ $SAFE ]]; then
-        echo "ignorado (nome ou valor com caracteres não permitidos): $name" >&2
+      if [ "$key" != "$prefix/$name" ] || [[ "$allowed" != *" $name "* ]]; then
+        echo "ignorado (fora da allowlist de ${prefix##*/}): ${key#"$prefix"/}" >&2
+        continue
+      fi
+      if [[ ! "$value" =~ $SAFE ]]; then
+        echo "ignorado (valor com caracteres não permitidos): $name" >&2
         continue
       fi
       printf '%s=%s\n' "$name" "$value"
     done
 }
-dump "$VOLTI_CONFIG_PREFIX" >>"$TMP"
-dump "$VOLTI_SECRETS_PREFIX" >>"$TMP"
+dump "$VOLTI_CONFIG_PREFIX" "${CONFIG_NAMES[@]}" >>"$TMP"
+dump "$VOLTI_SECRETS_PREFIX" "${SECRET_NAMES[@]}" >>"$TMP"
 
 # Endereço público: API_DOMAIN (registro A mantido por dns.sh) ou, sem domínio, <ip>.sslip.io (DNS público que resolve
 # para o próprio IP e que o Let's Encrypt aceita).

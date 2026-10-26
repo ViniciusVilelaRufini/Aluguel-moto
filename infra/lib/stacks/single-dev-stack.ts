@@ -161,7 +161,9 @@ export class SingleDevStack extends Stack {
       // IMDSv2 only (session tokens required).
       httpTokens: ec2.HttpTokens.REQUIRED,
       httpEndpoint: true,
-      // 2 hops: the API container (bridge network) reads the instance role credentials from IMDS for S3 and Cognito.
+      // 2 hops: the API container (bridge network) reads the instance role credentials from IMDS for S3 and Cognito. Only the
+      // API: deploy/single/imds-guard.sh (installed by update.sh, a systemd unit before docker.service at every boot) drops
+      // 169.254.169.254 in DOCKER-USER for every container except the API's fixed IP 172.30.0.10 (deploy/single/compose.yml).
       httpPutResponseHopLimit: 2,
       propagateTagsToVolumeOnCreation: true,
       blockDevices: [

@@ -1,6 +1,8 @@
 # Volti dev em UMA instância EC2 (profile=single, infra/lib/stacks/single-dev-stack.ts).
 # Rodado por deploy/single/update.sh com: docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env ...
 # /opt/volti/.env é gerado por render-env.sh a partir do SSM (/volti/dev/config/* e /volti/dev/secrets/*); nada secreto aqui.
+# IMDS (Run-2): só a API (IP fixo 172.30.0.10) alcança a role da instância; o imds-guard.sh descarta o resto na DOCKER-USER.
+# Os outros serviços ficam sem NET_RAW (sem pacote cru, ninguém se passa pelo IP da API na rede).
 name: volti
 
 services:
@@ -8,6 +10,7 @@ services:
     build: ./postgis
     image: volti/postgis:16
     restart: unless-stopped
+    cap_drop: [NET_RAW]
     environment:
       POSTGRES_USER: volti
       POSTGRES_DB: volti
@@ -22,6 +25,7 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    cap_drop: [NET_RAW]
     # noeviction: a API guarda estado de segurança sem TTL (mesma política do ElastiCache do prod); AOF para sobreviver a reboot.
     command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction", "--appendonly", "yes"]
     volumes: ["redisdata:/data"]
@@ -29,6 +33,7 @@ services:
   mosquitto:
     image: eclipse-mosquitto:2
     restart: unless-stopped
+    cap_drop: [NET_RAW]
     # Só na rede interna do Compose (porta não publicada): IOT_MODE=local, rastreadores simulados.
     volumes: ["../../infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"]
 
@@ -38,6 +43,10 @@ services:
       dockerfile: services/api/Dockerfile
     image: volti/api:dev
     restart: unless-stopped
+    # Único container com IMDS (S3 presign, Cognito Admin*): o imds-guard.sh libera só este IP na DOCKER-USER.
+    networks:
+      default:
+        ipv4_address: 172.30.0.10
     env_file: [/opt/volti/.env]
     environment:
       NODE_ENV: production
@@ -74,9 +83,22 @@ services:
       mosquitto:
         condition: service_started
 
+  # prisma migrate deploy (update.sh) antes de trocar a API: mesma imagem, sem o IP fixo (o da API em execução), sem IMDS e
+  # só com o DATABASE_URL (não recebe o .env inteiro).
+  api-migrate:
+    profiles: ["migrate"]
+    image: volti/api:dev
+    cap_drop: [NET_RAW]
+    environment:
+      DATABASE_URL: postgresql://volti:${DB_PASSWORD}@postgres:5432/volti
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    cap_drop: [NET_RAW]
     ports: ["80:80", "443:443"]
     environment:
       PUBLIC_HOST: ${PUBLIC_HOST}
@@ -97,6 +119,7 @@ services:
       dockerfile: services/iot-sim/Dockerfile
     image: volti/iot-sim:dev
     restart: unless-stopped
+    cap_drop: [NET_RAW]
     environment:
       MQTT_URL: mqtt://mosquitto:1883
       SIM_FLEET_SOURCE: postgres
@@ -109,6 +132,16 @@ services:
         condition: service_healthy
       mosquitto:
         condition: service_started
+
+# Uma rede só (os nomes dos serviços continuam resolvendo entre si). Nome próprio: a volti_default antiga tinha outra sub-rede
+# (o update.sh a remove). IPs dinâmicos só em .128-.255, então nenhum outro container pega o .10 da API.
+networks:
+  default:
+    name: volti-dev
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          ip_range: 172.30.0.128/25
 
 volumes:
   pgdata:
