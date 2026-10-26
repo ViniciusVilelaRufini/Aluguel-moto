@@ -12,6 +12,7 @@ import { DEPOSIT_FAILED, type DepositFailedEvent } from './deposit-events';
 import { RentalBillingService } from './rental-billing.service';
 import { createInMemoryPrisma, type InMemoryPrisma } from './testing/in-memory-prisma';
 import { receiptPaymentInfo } from './receipts/receipt-status';
+import { debtInCollection, isOpenDebt } from './open-debt';
 
 const CUSTOMER = '11111111-1111-4111-8111-111111111111';
 const RENTAL = '88888888-8888-4888-8888-888888888888';
@@ -566,7 +567,7 @@ describe('fix round 2: resultados ambíguos do gateway', () => {
     expect((await ctx.db.payment.findFirst({ where: { kind: 'rental' } })).status).toBe('paid');
   });
 
-  it('cancelamento final que sempre falha → liquidação estacionada para revisão manual após 5 execuções (o job para)', async () => {
+  it('cancelamento final que sempre falha → liquidação estacionada após 5 execuções (o job para) e vira dívida pagável', async () => {
     const ctx = await setup();
     const { held } = await rentalWithDeposit(ctx);
     const dp = await depositPayment(ctx.db, held.depositId);
@@ -579,8 +580,66 @@ describe('fix round 2: resultados ambíguos do gateway', () => {
     expect(prog.parkedAt).toBeInstanceOf(Date);
     expect(prog.parkedReason).toMatch(/502/);
     expect(cancel).toHaveBeenCalledTimes(5);
-    expect(pay.status).toBe('pending');
+    // Estacionada não fica `pending` para sempre: vira dívida em aberto que o cliente quita pelo app (`POST /payments/{id}/retry`).
+    expect(pay).toMatchObject({ status: 'failed', failureReason: 'settlement_parked' });
+    expect(prog.finishedAt).toBeInstanceOf(Date);
+    expect(isOpenDebt(pay)).toBe(true);
+    expect(await debtInCollection(ctx.db as any, CUSTOMER, pay)).toBe(false);
+    expect((await ctx.db.customer.findUnique({ where: { id: CUSTOMER } })).delinquent).toBe(true);
     expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
+    expect(ctx.needsReview).toEqual([expect.objectContaining({ paymentId: pay.id, rentalId: RENTAL })]);
+    expect(ctx.emitted).toContainEqual({ paymentId: pay.id, rentalId: RENTAL, status: 'failed' });
+  });
+
+  it('card_charge: recusas e a garantia sempre com erro no gateway (fake reiniciado) → estacionada vira dívida pagável', async () => {
+    const ctx = await setup();
+    const { held } = await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockImplementation(async (i) => ({ providerPaymentId: `x-${i.idempotencyKey}`, status: 'failed', amountCents: i.amountCents, failureReason: 'card_not_found' }));
+    const getPayment = jest.spyOn(ctx.provider, 'getPayment').mockRejectedValue(new PaymentProviderError('Pagamento não encontrado no gateway.', 404));
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
+    expect(r.status).toBe('failed');
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('pending');
+    for (let i = 0; i < 10; i++) await ctx.svc.retryPendingSettlements(0);
+    const pay = await ctx.db.payment.findUnique({ where: { id: r.paymentId } });
+    const prog = await ctx.db.settlementProgress.findUnique({ where: { paymentId: pay.id } });
+    expect(prog.parkedAt).toBeInstanceOf(Date);
+    expect(getPayment).toHaveBeenCalledTimes(5);
+    expect(pay).toMatchObject({ status: 'failed', failureReason: 'settlement_parked' });
+    expect(isOpenDebt(pay)).toBe(true);
+    expect(await debtInCollection(ctx.db as any, CUSTOMER, pay)).toBe(false);
+    expect(await ctx.svc.isDelinquent(CUSTOMER)).toBe(true);
+    // A caução não foi capturada: o saldo devedor é o valor cheio; a pré-autorização fica para a revisão manual.
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('held');
+    expect(ctx.needsReview).toHaveLength(1);
+  });
+
+  it('estacionada com cobrança aprovada ou em análise no gateway (busca pela referência) → continua pending para revisão (nunca cobrar duas vezes)', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockRejectedValue(new PaymentProviderError('Mercado Pago: charge falhou (502).', 502));
+    jest.spyOn(ctx.provider, 'searchPayments').mockResolvedValue([]);
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY })).rejects.toThrow('502');
+    const pay0 = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    for (let i = 0; i < 3; i++) await ctx.svc.retryPendingSettlements(0);
+    // Na 5ª execução com erro, a busca pela referência externa acha a cobrança aprovada.
+    jest.spyOn(ctx.provider, 'searchPayments').mockResolvedValue([{ providerPaymentId: 'mp-1', status: 'paid', amountCents: 6999, externalReference: pay0.id }]);
+    await ctx.svc.retryPendingSettlements(0);
+    const pay = await ctx.db.payment.findUnique({ where: { id: pay0.id } });
+    expect((await ctx.db.settlementProgress.findUnique({ where: { paymentId: pay.id } })).parkedAt).toBeInstanceOf(Date);
+    expect(pay.status).toBe('pending');
+    expect(isOpenDebt(pay)).toBe(false);
+  });
+
+  it('estacionada sem conseguir consultar o gateway → continua pending para revisão', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockRejectedValue(new PaymentProviderError('Mercado Pago: charge falhou (502).', 502));
+    jest.spyOn(ctx.provider, 'searchPayments').mockRejectedValue(new PaymentProviderError('Mercado Pago: search falhou (502).', 502));
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY })).rejects.toThrow('502');
+    for (let i = 0; i < 6; i++) await ctx.svc.retryPendingSettlements(0);
+    const pay = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    expect((await ctx.db.settlementProgress.findUnique({ where: { paymentId: pay.id } })).parkedAt).toBeInstanceOf(Date);
+    expect(pay.status).toBe('pending');
   });
 });
 

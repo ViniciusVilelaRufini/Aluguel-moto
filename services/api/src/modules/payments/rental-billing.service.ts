@@ -42,6 +42,8 @@ export const MAX_RELEASE_ATTEMPTS = 20;
 /** Execuções com erro/resultado ambíguo até estacionar a liquidação para revisão manual. */
 export const MAX_ERROR_RUNS = 5;
 const SETTLEMENT_LEASE_MS = 2 * 60_000;
+/** `failureReason` da liquidação estacionada que virou dívida pagável. */
+export const PARKED_FAILURE = 'settlement_parked';
 
 type SettlementPlan = 'zero' | 'card_capture' | 'card_charge' | 'pix_keep' | 'pix_keep_charge' | 'charge_only';
 interface SettlementSteps {
@@ -382,14 +384,55 @@ export class RentalBillingService implements RentalBillingPort {
       where: { paymentId: pay.id },
       data: { errorRuns, lastFailure: reason, ...(park ? { parkedAt: this.now(), parkedReason: reason } : {}) },
     });
-    if (park) this.signalReview(pay, reason, { errorRuns });
+    if (park) {
+      this.signalReview(pay, reason, { errorRuns });
+      await this.parkedAsDebt(pay);
+    }
   }
 
   /** Estaciona a liquidação para revisão manual: o job, a porta e o webhook param de chamar o gateway; o operador é avisado. */
   private async park(pay: Payment, reason: string): Promise<SettleResult> {
     await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { parkedAt: this.now(), parkedReason: reason.slice(0, 500) } });
     this.signalReview(pay, reason);
+    await this.parkedAsDebt(pay);
     return { paymentId: pay.id, status: 'failed' };
+  }
+
+  /**
+   * Liquidação estacionada não fica `pending` para sempre (o cliente ficaria bloqueado sem aviso nem como pagar): vira
+   * falha definitiva, como a última recusa — `failed` (dívida em aberto de `open-debt.ts`, quitável por
+   * `POST /payments/{id}/retry`), cliente inadimplente, fora da fila do job. A revisão manual continua sinalizada.
+   * Nunca cobrar duas vezes: fica `pending` (só revisão manual) se houver algo em análise no gateway (cobrança, captura ou
+   * garantia), se a busca pela referência externa achar cobrança aprovada/em análise, ou se o gateway não responder.
+   */
+  private async parkedAsDebt(pay: Payment): Promise<void> {
+    try {
+      const progress = await this.prisma.settlementProgress.findUnique({ where: { paymentId: pay.id } });
+      const steps = (progress?.steps as SettlementSteps | null) ?? {};
+      if (steps.chargeInReview || steps.guaranteeCaptureInReview || steps.captureInReviewSince) {
+        this.logger.warn({ msg: 'settlement_parked_pending_review', paymentId: pay.id, cause: 'gateway_review' });
+        return;
+      }
+      const found = await this.provider.searchPayments({ externalReference: pay.id });
+      if (found.some((p) => p.status !== 'failed' && p.status !== 'canceled')) {
+        this.logger.warn({ msg: 'settlement_parked_pending_review', paymentId: pay.id, cause: 'gateway_payment_found' });
+        return;
+      }
+      const current = await this.prisma.payment.findUnique({ where: { id: pay.id } });
+      if (current?.status !== 'pending') return;
+      await this.markDelinquent(pay.customerId, pay.id, PARKED_FAILURE);
+      await this.finishFailed(pay.id, PARKED_FAILURE);
+      this.logger.warn({ msg: 'settlement_parked_as_debt', paymentId: pay.id });
+    } catch (err) {
+      // Sem confirmação do gateway (ou falha local): fica `pending`, estacionada para a revisão manual já sinalizada.
+      this.logger.warn({ msg: 'settlement_parked_pending_review', paymentId: pay.id, cause: 'error', error: (err as Error).message });
+    }
+  }
+
+  /** Falha definitiva da liquidação: `failed` com o motivo e fora da fila do job. */
+  private async finishFailed(paymentId: string, reason: string): Promise<void> {
+    await this.state.transition(paymentId, 'failed', { failureReason: reason });
+    await this.markFinished(paymentId);
   }
 
   private signalReview(pay: Payment, reason: string, extra: Record<string, unknown> = {}): void {
@@ -744,8 +787,7 @@ export class RentalBillingService implements RentalBillingPort {
         if (settled) return settled;
       }
       await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { attempts, lastFailure: reason } });
-      await this.state.transition(pay.id, 'failed', { failureReason: reason });
-      await this.markFinished(pay.id);
+      await this.finishFailed(pay.id, reason);
       return { paymentId: pay.id, status: 'failed' };
     }
     await this.prisma.settlementProgress.update({ where: { paymentId: pay.id }, data: { attempts, lastFailure: reason } });

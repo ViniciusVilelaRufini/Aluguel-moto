@@ -157,6 +157,28 @@ describe('DelinquencyService — cliente quita (POST /payments/{id}/retry)', () 
   });
 });
 
+describe('DelinquencyService — liquidação estacionada vira dívida pagável', () => {
+  it('erros seguidos do gateway estacionam a liquidação: failed, dívida em aberto e o cliente quita pelo retry', async () => {
+    const { db, svc, billing, provider } = await setup();
+    const rentalId = '99999999-9999-4999-8999-999999999999';
+    await db.customer.update({ where: { id: CUSTOMER }, data: { delinquent: false } });
+    await db.rental.create({ data: { id: rentalId, customerId: CUSTOMER, vehicleId: 'v', planCode: 'minute', coverage: 'basic', status: 'ended', priceSnapshot: {} } });
+    const charge = jest.spyOn(provider, 'charge').mockRejectedValue(new PaymentProviderError('Mercado Pago: charge falhou (502).', 502));
+    const key = `rental-settlement:${rentalId}`;
+    await expect(billing.settle({ rentalId, amountCents: 4200, idempotencyKey: key })).rejects.toThrow('502');
+    for (let i = 0; i < 6; i++) await billing.retryPendingSettlements(0);
+    const parked = await db.payment.findFirst({ where: { kind: 'rental', rentalId } });
+    expect(parked).toMatchObject({ status: 'failed', failureReason: 'settlement_parked' });
+    expect(await billing.isDelinquent(CUSTOMER)).toBe(true);
+    expect(await svc.debtCents(CUSTOMER)).toBe(4200);
+
+    charge.mockRestore();
+    const pay = await svc.payDebt(CUSTOMER, parked.id, { method: 'card' });
+    expect(pay).toMatchObject({ kind: 'debt_settlement', status: 'paid', amountCents: 4200, settlesPaymentId: parked.id });
+    expect((await db.customer.findUnique({ where: { id: CUSTOMER } })).delinquent).toBe(false);
+  });
+});
+
 describe('DelinquencyService — quitação manual (POST /customers/{id}/delinquency/clear)', () => {
   it('quita todas as dívidas em aberto, tira a flag e grava o AuditLog com motivo e valor', async () => {
     const { db, svc, audit } = await setup();
