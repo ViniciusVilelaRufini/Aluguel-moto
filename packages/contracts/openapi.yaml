@@ -1366,7 +1366,10 @@ paths:
         ser a moto fixa do plano de outro cliente; senão `409` `vehicle-unavailable` ou `vehicle-offline`). O preço
         continua o do início do aluguel, então a nova moto precisa ter preço por minuto (modelo do catálogo) igual ou
         menor (`409`). Nova moto com bloqueio da equipe ou do sistema → `409` `vehicle-unavailable` ("A moto escolhida
-        está bloqueada pela equipe."), sem trocar nada. O aluguel continua o mesmo, com evento `vehicle_swapped`.
+        está bloqueada pela equipe."), sem trocar nada. Moto ATUAL com bloqueio da equipe ou do sistema (cerca, hold,
+        modo roubada) → `409` `vehicle-locked-by-staff` ("A moto foi bloqueada pela equipe. Fale com o suporte."),
+        mesmo com incidente, sem trocar nada. Se o aluguel mudar de status (pausa/retomada) durante a troca → `409`
+        `rental-not-active`. O aluguel continua o mesmo, com evento `vehicle_swapped`.
       security:
         - customerAuth: []
       parameters:

@@ -117,6 +117,9 @@ export class RentalsService {
   async swap(user: Principal, id: string, dto: SwapVehicleDto) {
     const r = await this.loadFor(user, id);
     if (r.status !== 'active' && r.status !== 'paused') throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
+    // Revisão final item 2: a trava da equipe/sistema na moto ATUAL (cerca, hold, modo roubada) não se contorna com troca,
+    // nem com incidente aberto: o cliente fala com o suporte.
+    if (await this.commands.isLockedByStaff(r.vehicle)) throw conflict('vehicle-locked-by-staff', 'A moto foi bloqueada pela equipe. Fale com o suporte.');
     const target = await this.prisma.vehicle.findUnique({ where: { id: dto.newVehicleId }, include: { vehicleModel: { select: { pricePerMinuteCents: true } } } });
     if (!target) throw notFound('Moto não encontrada.');
     if (target.id === r.vehicleId || target.status !== 'free') throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
@@ -137,9 +140,10 @@ export class RentalsService {
     await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.vehicle.updateMany({ where: { id: target.id, status: 'free' }, data: { status: r.status === 'paused' ? 'paused' : 'rented' } });
       if (claimed.count === 0) throw conflict('vehicle-unavailable', 'A nova moto não está disponível.');
-      // Só troca se o aluguel ainda estiver em andamento e na moto lida acima.
+      // Só troca se o aluguel ainda estiver no MESMO status e na moto lida acima: o status da moto nova e a decisão de
+      // destravar dependem de r.status (revisão final item 1 — corrida com pausa/retomada).
       const moved = await tx.rental.updateMany({
-        where: { id, status: { in: ['active', 'paused'] }, vehicleId: r.vehicleId },
+        where: { id, status: r.status, vehicleId: r.vehicleId },
         data: { vehicleId: target.id, speedLimitKmh: target.speedLimitKmh },
       });
       if (moved.count !== 1) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
