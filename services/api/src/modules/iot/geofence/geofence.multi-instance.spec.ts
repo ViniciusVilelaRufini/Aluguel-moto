@@ -184,4 +184,68 @@ describe('Limite de zona compartilhado entre tasks (auditoria, item 1)', () => {
     await a.gw.unlock({ commandId: 'c1', thingName: T });
     expect(a.transport.desired[a.transport.desired.length - 1].desired).toEqual({ travada: false, limite_kmh: 6 });
   });
+  describe('revisão 1', () => {
+    it('saindo da zona de 6 (comando de zona aguardando o gateway) publica 32: o teto QA-01 já vê o estado novo', async () => {
+      const c = cluster();
+      const b = c.task();
+      const outcomes: string[] = [];
+      b.commander.setSpeedLimit.mockImplementation(async (_veh, kmh) => {
+        outcomes.push((await b.gw.setSpeedLimit({ commandId: `zone-${b.commander.setSpeedLimit.mock.calls.length}`, thingName: T }, kmh)).status);
+      });
+      c.engine.zones = [OPERATION, PEDESTRIAN];
+      await b.geofence.onPosition(pos());
+      c.engine.zones = [OPERATION];
+      await b.geofence.onPosition(pos('2026-10-21T15:00:05.000Z'));
+      expect(b.commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 32, expect.anything());
+      expect(outcomes).toEqual(['pending', 'pending']);
+      expect(b.transport.desired.map((d) => d.desired)).toEqual([{ limite_kmh: 6 }, { limite_kmh: 32 }]);
+    });
+
+    it('SET do estado falhando ao sair da zona de 6: o processo usa o limite novo da memória e publica 20', async () => {
+      const c = cluster();
+      const b = c.task();
+      const outcomes: string[] = [];
+      b.commander.setSpeedLimit.mockImplementation(async (_veh, kmh) => {
+        outcomes.push((await b.gw.setSpeedLimit({ commandId: `zone-${b.commander.setSpeedLimit.mock.calls.length}`, thingName: T }, kmh)).status);
+      });
+      c.engine.zones = [OPERATION, PEDESTRIAN];
+      await b.geofence.onPosition(pos());
+      const realSet = c.redis.set.bind(c.redis);
+      c.redis.set = async (k: string, v: string, ttl?: number) => {
+        if (k.startsWith('geofence:inside:')) throw new Error('redis fora');
+        return realSet(k, v, ttl);
+      };
+      c.engine.zones = [OPERATION, BIKE_LANE];
+      await b.geofence.onPosition(pos('2026-10-21T15:00:05.000Z'));
+      expect(outcomes).toEqual(['pending', 'pending']);
+      expect(b.transport.desired[b.transport.desired.length - 1].desired).toEqual({ limite_kmh: 20 });
+      expect(await b.geofence.effectiveLimit(T)).toBe(20);
+    });
+
+    it('posição conhecida e motor de cercas fora → falha fechada (0, log zone_limit_engine_failed); a próxima posição manda o limite real', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const c = cluster();
+      const b = c.task();
+      const a = c.task();
+      await b.live.applyTelemetry(T, { lat: -23.5, lng: -46.6, velocidade_kmh: 0, bateria_pct: 80, travada: true, ignicao: false, sinal: 4, timestamp: '2026-10-21T15:00:00Z' });
+      const realContaining = c.engine.containing.bind(c.engine);
+      c.engine.containing = async () => {
+        throw new Error('postgis fora');
+      };
+      expect(await a.geofence.effectiveLimit(T)).toBe(0);
+      expect(warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'zone_limit_engine_failed', thingName: T, limit: 0 }));
+      expect(warn).not.toHaveBeenCalledWith(expect.objectContaining({ msg: 'zone_limit_unknown' }));
+      // Moto online (telemetria acima): a chamada espera o reported até `confirmWaitMs`.
+      const u = a.gw.unlock({ commandId: 'c1', thingName: T });
+      await c.clock.advance(1_000);
+      expect((await u).status).toBe('in_progress');
+      expect(a.transport.desired[0].desired).toEqual({ travada: false, limite_kmh: 0 });
+
+      // Motor de volta, moto fora de zonas de velocidade reduzida: outra task manda o limite real (32).
+      c.engine.containing = realContaining;
+      c.engine.zones = [OPERATION];
+      await b.geofence.onPosition(pos());
+      expect(b.commander.setSpeedLimit).toHaveBeenCalledWith('veh-1', 32, expect.objectContaining({ purpose: 'zone_speed_limit' }));
+    });
+  });
 });
