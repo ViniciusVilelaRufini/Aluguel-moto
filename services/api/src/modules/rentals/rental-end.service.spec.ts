@@ -423,6 +423,31 @@ describe('Encerramento de teste fora do ponto verde (allowOutsideZone, ALLOW_TES
       .rejects.toMatchObject({ status: 422, slug: 'return-photo-missing' });
   });
 
+  it('porte: fora de zona com trava da equipe/sistema (ex.: cerca fora da área) → maintenance (não free) + alerta, e rental.changed ended para a cerca desarmar o prazo', async () => {
+    const { service, prisma, commands, alerts, events } = setup({ inZone: false });
+    commands.isLockedByStaff.mockResolvedValue(true);
+    const changed: any[] = [];
+    events.on(EV.RENTAL_CHANGED, (e: any) => changed.push(e));
+    const r = await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT);
+    expect(r.rental.status).toBe('ended');
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['rented', 'paused'] } }, data: { status: 'maintenance' } });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'free' } }));
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'command_failed', vehicleId: VEHICLE_ID, rentalId: RENTAL_ID }), expect.anything());
+    // Destravar nunca faz parte do encerramento de teste: só a trava pelo bloqueio seguro.
+    expect(commands.dispatch.mock.calls.map((c: any[]) => c[0].type)).toEqual(['lock']);
+    expect(changed).toContainEqual(expect.objectContaining({ rentalId: RENTAL_ID, vehicleId: VEHICLE_ID, status: 'ended' }));
+  });
+
+  it('porte: moto do galpão fora de zona com trava da equipe/sistema → awaiting_pickup (não alugável) e o alerta sai igual', async () => {
+    const { service, prisma, commands, alerts } = setup({ inZone: false, depotId: DEPOT_ID });
+    commands.isLockedByStaff.mockResolvedValue(true);
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY }, OUT);
+    const statuses = prisma.vehicle.updateMany.mock.calls.map((c: any) => c[0].data.status).filter(Boolean);
+    expect(statuses).not.toContain('free');
+    expect(statuses).toContain('awaiting_pickup');
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'command_failed', vehicleId: VEHICLE_ID }), expect.anything());
+  });
+
   it('com a opção: aluguel já encerrado → 409 rental-not-active', async () => {
     const { service, rental } = setup({ inZone: false });
     rental.status = 'ended';
