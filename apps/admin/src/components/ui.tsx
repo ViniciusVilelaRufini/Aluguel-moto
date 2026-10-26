@@ -16,12 +16,12 @@ export function Page({ children, style }: { children: ReactNode; style?: CSSProp
   return <div className="page" style={{ flex: 1, overflow: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0, ...style }}>{children}</div>;
 }
 
-export function PageHeader({ title, subtitle, children }: { title: string; subtitle?: string; children?: ReactNode }) {
+/** O título da seção é o <h1> do cabeçalho global (layout do painel); aqui ficam só o subtítulo e as ações. */
+export function PageHeader({ subtitle, children }: { title?: string; subtitle?: string; children?: ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
       <div style={{ flex: 1, minWidth: 200 }}>
-        <h1 style={{ font: 'var(--type-title)', fontSize: 22, fontWeight: 700, letterSpacing: '-.02em', margin: 0 }}>{title}</h1>
-        {subtitle && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{subtitle}</div>}
+        {subtitle && <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{subtitle}</div>}
       </div>
       {children}
     </div>
@@ -29,6 +29,21 @@ export function PageHeader({ title, subtitle, children }: { title: string; subti
 }
 
 export function SidePanel({ children, width = 360, onClose, title, testId }: { children: ReactNode; width?: number; onClose?: () => void; title?: ReactNode; testId?: string }) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const closable = !!onClose;
+  // Esc fecha a ficha, mas só quando nenhum diálogo está aberto (o do topo fica com o Esc) e fora de campos de texto.
+  useEffect(() => {
+    if (!closable) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || dialogStack.size() > 0) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+      closeRef.current?.();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [closable]);
   return (
     <aside
       data-testid={testId}
@@ -101,11 +116,20 @@ export function PanelSkeleton({ rows = 6 }: { rows?: number }) {
   );
 }
 
-export function ErrorNote({ error }: { error: unknown }) {
+/** Erro de consulta que sabe se refazer: o ErrorNote mostra "Tentar novamente" sozinho. */
+export class RetryableError extends Error {
+  constructor(cause: unknown, readonly retry: () => void) {
+    super(cause instanceof Error ? cause.message : 'Algo deu errado. Tente de novo.');
+  }
+}
+
+export function ErrorNote({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   if (!error) return null;
+  const retry = onRetry ?? (error instanceof RetryableError ? error.retry : undefined);
   return (
-    <div role="alert" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--danger-soft)', color: 'var(--danger-ink)', fontSize: 13, fontWeight: 600 }}>
-      {error instanceof Error ? error.message : 'Algo deu errado. Tente de novo.'}
+    <div role="alert" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--danger-soft)', color: 'var(--danger-ink)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+      <span style={{ flex: 1, minWidth: 0 }}>{error instanceof Error ? error.message : 'Algo deu errado. Tente de novo.'}</span>
+      {retry && <Button size="sm" variant="secondary" onClick={retry} style={{ color: 'var(--text-primary)' }}>Tentar novamente</Button>}
     </div>
   );
 }
@@ -327,6 +351,8 @@ export interface Pager {
   onNext: () => void;
   onPrev: () => void;
   loading?: boolean;
+  /** A consulta falhou: a tabela não mostra o estado vazio (o erro aparece com "Tentar novamente"). */
+  failed?: boolean;
 }
 
 export function DataTable<T extends object>({
@@ -387,7 +413,7 @@ export function DataTable<T extends object>({
         </table>
       </div>
       {skeleton && <span role="status" className="sr-only">Carregando</span>}
-      {!loading && rows.length === 0 && <Empty icon={emptyIcon} hint={emptyHint} action={emptyAction} compact={dense}>{empty}</Empty>}
+      {!loading && !pager?.failed && rows.length === 0 && <Empty icon={emptyIcon} hint={emptyHint} action={emptyAction} compact={dense}>{empty}</Empty>}
       {pager && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '8px 12px', borderTop: '1px solid var(--ink-100)' }}>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginRight: 'auto' }}>Página {pager.page + 1}</span>
@@ -418,10 +444,13 @@ export function usePagedQuery<T>(key: QueryKey, fetchPage: (cursor?: string) => 
     page,
     hasNext: !!q.data?.nextCursor,
     loading: q.isFetching,
+    failed: q.isError,
     onNext: () => q.data?.nextCursor && setCursors((c) => [...c, q.data!.nextCursor]),
     onPrev: () => setCursors((c) => (c.length > 1 ? c.slice(0, -1) : c)),
-  }), [page, q.data, q.isFetching]);
-  return { rows: q.data?.items ?? [], loading: q.isLoading, error: q.error, pager, refetch: q.refetch };
+  }), [page, q.data, q.isFetching, q.isError]);
+  const { refetch } = q;
+  const error = useMemo(() => (q.error ? new RetryableError(q.error, () => { void refetch(); }) : null), [q.error, refetch]);
+  return { rows: q.data?.items ?? [], loading: q.isLoading, error, pager, refetch };
 }
 
 /* ---------- Pequenos ---------- */
