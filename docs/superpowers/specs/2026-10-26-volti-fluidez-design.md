@@ -79,6 +79,19 @@ Toda ação tem quatro estados visuais (ocioso, enviando, sucesso, erro) com tra
 
 Cada sub-projeto termina com lint, testes, README atualizado e prints antes/depois em `docs/design/screenshots/`.
 
+## 7.1 Ajustes ao spec descobertos ao escrever o plano (prevalecem sobre o texto acima)
+
+1. O cursor de `GET /vehicles` é opaco: a carga inicial é paralela por `status`, não "3 páginas por vez" (sem mudar o contrato).
+2. O progresso do início de aluguel vai para a sala `user:{customerId}` (o cliente ainda não está em `rental:{id}`), com `attemptId` = `Idempotency-Key`.
+3. Ordem real do início: caução → seguro → reserva da moto → destravamento; caução e seguro ficam em paralelo só no cartão.
+4. Chat, recarga e Pix não têm eventos no socket do cliente: só a devolução passa de polling para evento.
+5. Otimistas só onde há endpoint: não há "reconhecer alerta", "concluir tarefa" não é do painel e pausar/retomar assinatura é do cliente.
+6. Cache HTTP: `private, no-cache` + ETag (não `max-age`, que deixaria o painel velho logo após salvar).
+7. Cache do geocoder mantém a grade atual (~11 m), não ~100 m.
+8. Contadores animados nos StatTiles e ripple nos botões já existem; o `NoSplash` está em `packages/volti_flutter/lib/src/theme.dart:68`.
+9. `--ease-exit` = `cubic-bezier(.4,0,1,1)`.
+10. Sem tarefa: popovers (não existem no painel) e Central de ajuda (5 perguntas fixas).
+
 ## 8. Decisões para confirmar
 
 1. Saídas com 0,8× a duração da entrada (`--dur-exit 160`).
