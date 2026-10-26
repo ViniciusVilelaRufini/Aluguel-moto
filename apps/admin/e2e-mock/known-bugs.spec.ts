@@ -80,6 +80,20 @@ test('[BUG P1-05] /customers: erro 500 nao mostra estado vazio junto e oferece t
   await expect(page.locator('#main-content').getByRole('button', { name: /tentar novamente/i })).toBeVisible();
 });
 
+test('/customers: "Tentar novamente" refaz a consulta e recupera a lista', async ({ page }) => {
+  const fail = ['/customers'];
+  const mock = await loginMocked(page, { failPaths: fail });
+  await page.goto('/customers');
+  const retry = page.locator('#main-content').getByRole('button', { name: /tentar novamente/i });
+  await expect(retry).toBeVisible();
+  const before = mock.calls.filter((c) => c.method === 'GET' && c.path === '/customers').length;
+  fail.length = 0; // o servidor volta
+  await retry.click();
+  await expect(page.getByTestId('customers-table').getByTestId('row').first()).toBeVisible();
+  await expect(page.locator('#main-content [role="alert"]')).toHaveCount(0);
+  expect(mock.calls.filter((c) => c.method === 'GET' && c.path === '/customers').length).toBeGreaterThan(before);
+});
+
 for (const path of ['/fleet', '/zones']) {
   test(`[BUG P1-06] ${path}: pagina tem um <h1>`, async ({ page }) => {
     await loginMocked(page);
@@ -119,7 +133,7 @@ for (const path of PANEL) {
     await expect(page.locator('#main-content')).toBeVisible();
     await expect(page.locator('h1')).toHaveCount(1);
     await expect(page.getByRole('heading', { level: 1, name: TITLES[path], exact: true })).toBeVisible();
-    // Rotulos de abas/botoes com o mesmo texto (ex.: aba "Clientes") nao contam como titulo.
-    await expect(page.locator('main').getByText(TITLES[path], { exact: true }).filter({ visible: true }).filter({ hasNot: page.locator('xpath=self::*[ancestor-or-self::button or ancestor-or-self::*[@role="radio" or @role="tab"]]') }), 'titulo repetido').toHaveCount(1);
+    // Rotulos de abas/botoes com o mesmo texto (ex.: aba "Clientes") nao sao headings: so conta o titulo.
+    await expect(page.getByRole('heading', { name: TITLES[path], exact: true }), 'titulo repetido').toHaveCount(1);
   });
 }
