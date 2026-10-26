@@ -28,6 +28,9 @@ function focusDestination(href: string) {
     const waitSheet = !!vehicle && !sheet && Date.now() - started < 1500;
     const el = here && !waitSheet ? sheet ?? document.querySelector<HTMLElement>('h1') ?? document.getElementById('main-content') : null;
     if (el) {
+      // O foco já foi para algum lugar útil (a própria ficha, um diálogo): não rouba.
+      const a = document.activeElement;
+      if (a && a !== document.body) return;
       if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1');
       el.focus({ preventScroll: true });
       return;
