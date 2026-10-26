@@ -122,11 +122,11 @@ export class SupportService {
   /**
    * `accepted` com `refundAmountCents` estorna pelo mesmo pipeline de `PaymentsService.refund` (transição, teto capturado,
    * um estorno aberto, `PaymentRefund`, gateway/carteira), com chave estável `dispute:<id>`.
-   * Fecha a corrida dinheiro x decisão: primeiro a disputa é reivindicada de forma atômica (open/under_review sem dono →
-   * `under_review` com `resolvedById` = quem decide; sem migração). Quem perde a reivindicação recebe 409, inclusive uma
-   * rejeição concorrente. Falha no estorno devolve a disputa ao estado anterior; só depois do estorno reservado ela vira `accepted`.
-   * Janela residual: se o processo morrer entre a reivindicação e o desfecho, a disputa fica em `under_review` com dono
-   * (nenhuma decisão concorrente passa); o responsável repete a decisão e o estorno é idempotente pela chave `dispute:<id>`.
+   * Fecha a corrida dinheiro x decisão: primeiro a disputa é reivindicada de forma atômica (open/under_review com `resolvedById` nulo →
+   * `under_review` com `resolvedById` = quem decide; sem migração). Ninguém reivindica de novo uma disputa já reivindicada,
+   * nem o próprio dono (duplo clique, duas abas, retry): quem perde recebe 409, inclusive uma rejeição concorrente. Falha no estorno devolve a disputa ao estado anterior; só depois do estorno reservado ela vira `accepted`.
+   * Janela residual: se o processo morrer entre a reivindicação e o desfecho, a disputa fica em `under_review` com dono e
+   * exige ajuste manual (nenhuma nova decisão passa); o estorno segue idempotente pela chave `dispute:<id>`.
    */
   async resolveDispute(actor: Principal, id: string, dto: DisputeResolveDto) {
     const d = await this.prisma.dispute.findUnique({ where: { id } });
@@ -136,10 +136,10 @@ export class SupportService {
     if (refund && !d.paymentId) throw unprocessable('validation-error', 'Não há pagamento para estornar.');
 
     const claim = await this.prisma.dispute.updateMany({
-      where: { id, status: { in: ['open', 'under_review'] }, OR: [{ resolvedById: null }, { resolvedById: actor.userId }] },
+      where: { id, status: { in: ['open', 'under_review'] }, resolvedById: null },
       data: { status: 'under_review', resolvedById: actor.userId },
     });
-    if (claim.count !== 1) throw conflict('conflict', 'Contestação já decidida ou em decisão por outra pessoa.');
+    if (claim.count !== 1) throw conflict('conflict', 'Esta contestação já está sendo resolvida.');
 
     if (refund) {
       try {

@@ -24,7 +24,7 @@ describe('SupportService.resolveDispute', () => {
     payments.refund.mockResolvedValue({ id: PAYMENT_ID });
   });
 
-  const claimWhere = { id: DISPUTE_ID, status: { in: ['open', 'under_review'] }, OR: [{ resolvedById: null }, { resolvedById: actor.userId }] };
+  const claimWhere = { id: DISPUTE_ID, status: { in: ['open', 'under_review'] }, resolvedById: null };
 
   it('aceita com estorno: reivindica, delega ao pipeline com a chave da disputa e só então marca accepted', async () => {
     await service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 });
@@ -63,26 +63,31 @@ describe('SupportService.resolveDispute', () => {
     expect(payments.refund).not.toHaveBeenCalled();
   });
 
-  it('accept com estorno e reject concorrentes: a rejeição perde a reivindicação (409) e só há um estorno', async () => {
-    const other = { ...actor, userId: 'staff-2', staffId: 'staff-2' } as Principal;
+  const concurrent = async (rejecter: Principal) => {
     let row = { status: 'open', resolvedById: null as string | null };
     prisma.dispute.updateMany.mockImplementation((async (args: any) => {
       const w = args.where;
       const okStatus = typeof w.status === 'string' ? row.status === w.status : w.status.in.includes(row.status);
-      const okOwner = w.resolvedById !== undefined ? row.resolvedById === w.resolvedById : w.OR.some((c: any) => row.resolvedById === c.resolvedById);
-      if (!okStatus || !okOwner) return { count: 0 };
+      if (!okStatus || row.resolvedById !== w.resolvedById) return { count: 0 };
       row = { ...row, ...args.data };
       return { count: 1 };
     }) as any);
     let releaseRefund!: () => void;
     payments.refund.mockImplementation(() => new Promise((r) => { releaseRefund = () => r({ id: PAYMENT_ID }); }));
-
     const accept = service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 });
     await new Promise((r) => setImmediate(r));
-    await expect(service.resolveDispute(other, DISPUTE_ID, { decision: 'rejected', resolution: 'Sem fundamento' })).rejects.toMatchObject({ status: 409 });
+    await expect(service.resolveDispute(rejecter, DISPUTE_ID, { decision: 'rejected', resolution: 'Sem fundamento' })).rejects.toMatchObject({ status: 409, detail: 'Esta contestação já está sendo resolvida.' });
     releaseRefund();
     await accept;
     expect(payments.refund).toHaveBeenCalledTimes(1);
     expect(row.status).toBe('accepted');
+  };
+
+  it('accept com estorno e reject concorrentes de pessoas diferentes: a rejeição leva 409 e há um único estorno', async () => {
+    await concurrent({ ...actor, userId: 'staff-2', staffId: 'staff-2' } as Principal);
+  });
+
+  it('accept com estorno e reject concorrentes do MESMO ator (duplo clique/retry): um vence, um estorno, nunca rejected com estorno', async () => {
+    await concurrent(actor);
   });
 });
