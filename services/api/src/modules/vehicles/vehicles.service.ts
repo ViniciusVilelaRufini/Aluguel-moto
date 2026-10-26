@@ -18,6 +18,8 @@ import { V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { VEHICLE_MODEL_SELECT } from '../catalog/catalog.service';
 import { UsageTracker } from '../maintenance/usage-tracker.service';
 import { VehicleAddressService } from './vehicle-address.service';
+import { assertVehicleNotInUse } from '../../common/vehicle-in-use';
+import { assertTaskActor } from '../field-tasks/task-actor';
 import { toVehicle, toVehicleSummary } from './vehicles.mapper';
 
 /** Relações lidas junto com a moto (contrato v2: modelo do catálogo). */
@@ -251,10 +253,14 @@ export class VehiclesService {
   async serviceUnlock(actor: Principal, id: string, reason: string, fieldTaskId?: string) {
     const v = await this.prisma.vehicle.findUnique({ where: { id } });
     if (!v) throw notFound('Moto não encontrada.');
+    // Auditoria item 5: `offline` esconde o aluguel/reserva no status; a regra consulta Rental/Reservation.
     if (['rented', 'paused', 'reserved'].includes(v.status)) throw conflict('vehicle-unavailable', 'A moto está em uso por um cliente.');
+    await assertVehicleNotInUse(this.prisma, id);
     if (fieldTaskId) {
-      const task = await this.prisma.fieldTask.findUnique({ where: { id: fieldTaskId }, select: { id: true } });
+      const task = await this.prisma.fieldTask.findUnique({ where: { id: fieldTaskId }, select: { id: true, vehicleId: true, assigneeId: true } });
       if (!task) throw notFound('Tarefa não encontrada.');
+      if (task.vehicleId !== id) throw conflict('conflict', 'A tarefa informada não é desta moto.');
+      assertTaskActor(actor, task);
     }
     return this.commands.dispatch({ vehicleId: id, type: 'unlock', reason, actor, context: { fieldTaskId, purpose: 'service_unlock' }, auditAction: 'vehicle.service_unlock' });
   }

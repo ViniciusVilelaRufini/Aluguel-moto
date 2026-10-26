@@ -3347,7 +3347,7 @@ paths:
       tags: [field-tasks]
       operationId: serviceUnlockVehicle
       summary: Destravar em modo serviço
-      description: Destrava sem cobrança para o operador de campo, sem aluguel. Grava AuditLog (quem, quando, motivo, tarefa). Responde com o comando `unlock` criado.
+      description: Destrava sem cobrança para o operador de campo, sem aluguel. Recusa (`409` `vehicle-unavailable`) moto com aluguel aberto ou reserva ativa, mesmo que esteja `offline`. `fieldTaskId`, se informado, precisa ser uma tarefa desta moto (`409`) e, para usuário só do grupo `campo`, atribuída a ele (`403`). Grava AuditLog (quem, quando, motivo, tarefa). Responde com o comando `unlock` criado.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
