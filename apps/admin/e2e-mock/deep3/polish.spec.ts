@@ -64,16 +64,29 @@ test('[BUG P3-27] /settings em 1440px: coluna "Ativo" da tabela de planos nao fi
   expect(m.clip, `tabela de planos com ${m.w}px visiveis e ${m.clip}px escondidos: o cabecalho "Ativo" aparece como "A" e os interruptores saem cortados`).toBeLessThanOrEqual(1);
 });
 
-test('[BUG P3-StatTile] 1440px com a ficha aberta: valores dos indicadores ficam alinhados mesmo com rotulo de 2 linhas', async ({ page }) => {
+test('[BUG P3-StatTile] /fleet 1440px: rotulo em 2 linhas nao desalinha os valores dos 4 indicadores', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await loginMocked(page);
   await page.goto('/fleet?vehicle=veh-001');
   await expect(page.getByTestId('dashboard-strip')).toBeVisible();
   await page.waitForTimeout(900);
-  const tops = await page.getByTestId('dashboard-strip').locator('.stat-value').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  const strip = page.getByTestId('dashboard-strip');
+  await strip.locator('.stat-tile .stat-label span').first().evaluate((e) => { e.textContent = 'Alertas abertos agora'; (e.closest('.stat-tile') as HTMLElement).style.width = '170px'; });
+  const tops = await strip.locator('.stat-value').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
+  expect(tops.length).toBe(4);
   expect(new Set(tops).size, `valores em alturas diferentes: ${tops.join(',')}`).toBe(1);
-  // forca um rotulo longo (quebra em 2 linhas) num dos cartoes: os valores continuam na mesma linha
-  await page.getByTestId('dashboard-strip').locator('.stat-tile span').first().evaluate((e) => { e.textContent = 'Alertas abertos agora na frota inteira'; });
-  const tops2 = await page.getByTestId('dashboard-strip').locator('.stat-value').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().top)));
-  expect(new Set(tops2).size, `valores em alturas diferentes: ${tops2.join(',')}`).toBe(1);
+});
+
+test('/finance 1440px: valores dos indicadores seguem alinhados ao topo com e sem variacao', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await loginMocked(page);
+  await page.goto('/finance');
+  await expect(page.locator('.stat-tile').first()).toBeVisible();
+  await page.waitForTimeout(900);
+  const r = await page.locator('.stat-tile').evaluateAll((els) => els.map((t) => {
+    const tr = t.getBoundingClientRect(); const v = t.querySelector('.stat-value')!.getBoundingClientRect();
+    return { off: Math.round(v.top - tr.top), hasDelta: t.textContent!.includes('%') };
+  }));
+  const offs = new Set(r.map((x) => x.off));
+  expect(offs.size, `deslocamento do valor por cartao: ${JSON.stringify(r)}`).toBe(1);
 });

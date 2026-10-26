@@ -107,7 +107,7 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
           </div>
         }
       />
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <main inert={open || undefined} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <header className="shell-header" style={{ height: 64, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16, padding: '0 24px', background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)' }}>
           <button ref={toggleRef} type="button" className="nav-toggle" aria-label="Abrir menu" aria-expanded={open} aria-controls="main-nav" onClick={() => setNavOpen((v) => !v)}>
             <Icon name="Menu" size={20} />

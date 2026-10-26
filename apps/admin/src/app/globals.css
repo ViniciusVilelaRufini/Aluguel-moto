@@ -112,6 +112,8 @@ a:hover{color:var(--brand-press)}
 }
 @media (max-width: 480px) { .shell-title { font-size: 15px !important; } }
 .table-scroll { overflow-x: auto; }
+/* Faixa de KPIs da frota: rótulo reserva 2 linhas, o valor nunca desalinha entre cartões */
+.kpi-strip .stat-label { min-height: 2.7em; align-items: flex-start; }
 /* Formulário em 2 colunas; 1 coluna em telas estreitas (diálogos em celular) */
 .form-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 480px) { .form-2col { grid-template-columns: minmax(0, 1fr); } }
