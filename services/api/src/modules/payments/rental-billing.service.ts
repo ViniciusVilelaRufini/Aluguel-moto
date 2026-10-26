@@ -47,6 +47,12 @@ export const PARKED_FAILURE = 'settlement_parked';
 /** Estacionada ainda `pending` (gateway sem resposta): o job tenta convertê-la em dívida com recuo exponencial. */
 export const PARKED_RETRY_BASE_MS = 5 * 60_000;
 export const PARKED_RETRY_MAX_MS = 6 * 60 * 60_000;
+/** Tentativas de conversão de uma estacionada (além das `MAX_ERROR_RUNS`) até o log de erro `settlement_parked_stuck`. */
+export const PARKED_RETRY_ALERT_AFTER = 10;
+/** Estacionadas lidas por execução do job (as em análise e as fora do intervalo só são puladas, sem escrita). */
+const PARKED_SCAN_LIMIT = 1000;
+/** Conversões tentadas por execução do job. */
+const PARKED_CLAIMS_PER_RUN = 50;
 
 type PaidBy = { method: 'card' | 'pix' | 'wallet'; providerPaymentId?: string | null; cardLast4?: string | null };
 type SettlementPlan = 'zero' | 'card_capture' | 'card_charge' | 'pix_keep' | 'pix_keep_charge' | 'charge_only';
@@ -939,28 +945,47 @@ export class RentalBillingService implements RentalBillingPort {
 
   /**
    * Estacionadas que ficaram `pending` porque o gateway não respondeu ao estacionar: de tempos em tempos (recuo
-   * exponencial de `PARKED_RETRY_BASE_MS` até `PARKED_RETRY_MAX_MS`, contado em `errorRuns`) roda **só** a conversão em
-   * dívida (`parkedAsDebt`, com as mesmas travas) — nunca uma nova cobrança. Em análise no gateway: nunca.
+   * exponencial de `PARKED_RETRY_BASE_MS` até `PARKED_RETRY_MAX_MS`) roda **só** a conversão em dívida (`parkedAsDebt`,
+   * com as mesmas travas) — nunca uma nova cobrança. Em análise no gateway: nunca.
+   * Nas estacionadas, `errorRuns` continua contando depois do limite e serve de contador do recuo (uma a mais por tentativa).
+   * Sem fome (fix round 2): lê até `PARKED_SCAN_LIMIT` registros e só então escolhe até `PARKED_CLAIMS_PER_RUN` vencidos,
+   * então as em análise (que nunca mudam) e as fora do intervalo não tomam a vez das outras; Payment que já saiu de
+   * `pending` (queda entre a transição e o carimbo) tem o registro fechado (`markFinished`), como no job principal.
    */
   private async retryParkedAsDebt(): Promise<void> {
     const now = this.now();
     const rows = await this.prisma.settlementProgress.findMany({
       where: { parkedAt: { not: null }, finishedAt: null, OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] },
       orderBy: { updatedAt: 'asc' },
-      take: 50,
+      take: PARKED_SCAN_LIMIT,
+      select: { paymentId: true, steps: true, errorRuns: true, updatedAt: true },
     });
-    for (const prog of rows) {
-      if (inGatewayReview((prog.steps as SettlementSteps | null) ?? {})) continue;
+    const due = rows.filter((prog) => {
+      if (inGatewayReview((prog.steps as SettlementSteps | null) ?? {})) return false;
       const waitMs = Math.min(PARKED_RETRY_BASE_MS * 2 ** Math.max(0, prog.errorRuns - MAX_ERROR_RUNS), PARKED_RETRY_MAX_MS);
-      if (now.getTime() - prog.updatedAt.getTime() < waitMs) continue;
+      return now.getTime() - prog.updatedAt.getTime() >= waitMs;
+    });
+    let claims = 0;
+    for (const prog of due) {
+      if (claims >= PARKED_CLAIMS_PER_RUN) break;
       const pay = await this.prisma.payment.findUnique({ where: { id: prog.paymentId } });
-      if (pay?.kind !== 'rental' || pay.status !== 'pending') continue;
+      if (!pay) continue;
+      if (pay.status !== 'pending') {
+        await this.markFinished(pay.id);
+        continue;
+      }
+      if (pay.kind !== 'rental') continue;
       const owner = randomUUID();
+      const errorRuns = prog.errorRuns + 1;
       const claimed = await this.prisma.settlementProgress.updateMany({
         where: { paymentId: pay.id, OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }] },
-        data: { leaseOwner: owner, leaseUntil: new Date(now.getTime() + SETTLEMENT_LEASE_MS), errorRuns: prog.errorRuns + 1 },
+        data: { leaseOwner: owner, leaseUntil: new Date(now.getTime() + SETTLEMENT_LEASE_MS), errorRuns },
       });
       if (claimed.count === 0) continue;
+      claims++;
+      if (errorRuns === MAX_ERROR_RUNS + PARKED_RETRY_ALERT_AFTER) {
+        this.logger.error({ msg: 'settlement_parked_stuck', paymentId: pay.id, attempts: errorRuns - MAX_ERROR_RUNS });
+      }
       try {
         await this.parkedAsDebt(pay);
       } finally {

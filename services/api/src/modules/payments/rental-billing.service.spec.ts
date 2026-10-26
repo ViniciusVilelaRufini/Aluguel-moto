@@ -1293,6 +1293,38 @@ describe('fix round 1 (revisão): caução ainda held ao estacionar', () => {
     expect(isOpenDebt(pay)).toBe(false);
   });
 
+  it('fix round 2: 50+ estacionadas em análise (mais antigas) não impedem a conversão de outra cujo gateway voltou', async () => {
+    let t = Date.now();
+    const ctx = await setup({ now: () => new Date(t) });
+    const { held } = await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockImplementation(async (i) => ({ providerPaymentId: `x-${i.idempotencyKey}`, status: 'failed', amountCents: i.amountCents, failureReason: 'card_not_found' }));
+    const getPayment = jest.spyOn(ctx.provider, 'getPayment').mockRejectedValue(new PaymentProviderError('Pagamento não encontrado no gateway.', 404));
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
+    for (let i = 0; i < 10; i++) await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('pending');
+    // 60 estacionadas em análise, todas mais antigas que a do cliente acima.
+    const old = new Date(t - 24 * 60 * 60_000);
+    for (let i = 0; i < 60; i++) {
+      const id = `aaaaaaaa-aaaa-4aaa-8aaa-${String(i).padStart(12, '0')}`;
+      await ctx.db.payment.create({ data: { id, customerId: CUSTOMER, kind: 'rental', method: 'card', status: 'pending', amountCents: 10, rentalId: `r-${i}`, idempotencyKey: `k-${i}` } });
+      await ctx.db.settlementProgress.create({ data: { paymentId: id, plan: 'charge_only', steps: { chargeInReview: `mp-${i}`, chargeInReviewSince: old.toISOString() }, parkedAt: old, parkedReason: 'review_timeout', updatedAt: old } });
+    }
+    getPayment.mockRestore();
+    t += 10 * 60_000;
+    await ctx.svc.retryPendingSettlements(0);
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'failed', failureReason: 'settlement_parked' });
+    expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
+  });
+
+  it('fix round 2: estacionada cujo Payment já saiu de pending (queda antes do carimbo) → o job fecha o registro', async () => {
+    const ctx = await setup();
+    const id = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    await ctx.db.payment.create({ data: { id, customerId: CUSTOMER, kind: 'rental', method: 'card', status: 'failed', amountCents: 10, rentalId: 'r-x', idempotencyKey: 'k-x' } });
+    await ctx.db.settlementProgress.create({ data: { paymentId: id, plan: 'charge_only', parkedAt: new Date(), parkedReason: 'x', errorRuns: 5, updatedAt: new Date(Date.now() - 60 * 60_000) } });
+    await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.settlementProgress.findUnique({ where: { paymentId: id } })).finishedAt).toBeInstanceOf(Date);
+  });
+
   it('job de estacionadas: em análise no gateway nunca vira dívida, mesmo depois do intervalo', async () => {
     let t = Date.now();
     const ctx = await setup({ now: () => new Date(t) });
