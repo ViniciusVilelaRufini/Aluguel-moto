@@ -22,6 +22,9 @@ export interface RedisStore {
   incrWindow(key: string, ttlMs: number): Promise<{ count: number; ttlMs: number }>;
   /** Chamado quando uma chave expira por TTL (keyspace notifications `Ex`). */
   onExpired(handler: (key: string) => void): void;
+  /** Pub/sub entre instâncias da API (barramento de eventos do cluster). */
+  publish(channel: string, message: string): Promise<void>;
+  subscribe(channel: string, handler: (message: string) => void): void;
   ping(): Promise<boolean>;
   close(): Promise<void>;
 }
@@ -46,6 +49,8 @@ export class IoRedisStore implements RedisStore {
   private readonly client: Redis;
   private subscriber?: Redis;
   private readonly handlers: Array<(key: string) => void> = [];
+  private busSubscriber?: Redis;
+  private readonly busHandlers = new Map<string, Array<(message: string) => void>>();
 
   constructor(url: string) {
     this.client = new Redis(url, { lazyConnect: false, maxRetriesPerRequest: 3, enableOfflineQueue: true });
@@ -103,6 +108,23 @@ export class IoRedisStore implements RedisStore {
     })().catch((err) => this.logger.warn({ msg: 'redis_subscribe_failed', error: (err as Error).message }));
   }
 
+  async publish(channel: string, message: string) {
+    await this.client.publish(channel, message);
+  }
+
+  subscribe(channel: string, handler: (message: string) => void): void {
+    const list = this.busHandlers.get(channel) ?? [];
+    list.push(handler);
+    this.busHandlers.set(channel, list);
+    if (!this.busSubscriber) {
+      // Conexão dedicada: um cliente em modo subscriber não executa outros comandos.
+      this.busSubscriber = this.client.duplicate();
+      this.busSubscriber.on('error', (err) => this.logger.warn({ msg: 'redis_bus_error', error: err.message }));
+      this.busSubscriber.on('message', (ch: string, msg: string) => this.busHandlers.get(ch)?.forEach((h) => h(msg)));
+    }
+    this.busSubscriber.subscribe(channel).catch((err) => this.logger.warn({ msg: 'redis_bus_subscribe_failed', error: (err as Error).message }));
+  }
+
   async ping() {
     try {
       return (await this.client.ping()) === 'PONG';
@@ -113,6 +135,7 @@ export class IoRedisStore implements RedisStore {
 
   async close() {
     await this.subscriber?.quit().catch(() => undefined);
+    await this.busSubscriber?.quit().catch(() => undefined);
     await this.client.quit().catch(() => undefined);
   }
 }
@@ -122,6 +145,7 @@ export class MemoryRedisStore implements RedisStore {
   private readonly data = new Map<string, { value: string; expiresAt?: number; timer?: NodeJS.Timeout }>();
   private readonly hashes = new Map<string, Record<string, string>>();
   private readonly handlers: Array<(key: string) => void> = [];
+  private readonly busHandlers = new Map<string, Array<(message: string) => void>>();
 
   async set(key: string, value: string, ttlMs?: number) {
     const prev = this.data.get(key);
@@ -188,6 +212,13 @@ export class MemoryRedisStore implements RedisStore {
   }
   onExpired(handler: (key: string) => void) {
     this.handlers.push(handler);
+  }
+  async publish(channel: string, message: string) {
+    const list = [...(this.busHandlers.get(channel) ?? [])];
+    queueMicrotask(() => list.forEach((h) => h(message)));
+  }
+  subscribe(channel: string, handler: (message: string) => void) {
+    this.busHandlers.set(channel, [...(this.busHandlers.get(channel) ?? []), handler]);
   }
   async ping() {
     return true;

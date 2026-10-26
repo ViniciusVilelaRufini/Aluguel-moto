@@ -28,6 +28,7 @@ import { CachedReverseGeocoder } from './adapters/geocoding/cached-reverse-geoco
 import { LocalReverseGeocoder } from './adapters/geocoding/local-reverse-geocoder';
 import { loadV2Config, V2_CONFIG, type V2Config } from './config/v2-config';
 import { REVERSE_GEOCODER } from './ports/reverse-geocoder.port';
+import { ClusterEventsBridge } from './common/cluster-events';
 import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis/redis-store';
 
 /** Infraestrutura compartilhada: implementação "local" ou "aws" de cada porta escolhida por variável de ambiente. */
@@ -49,6 +50,7 @@ import { IoRedisStore, MemoryRedisStore, REDIS_STORE, RedisStore } from './redis
     PrismaService,
     AuditService,
     PrincipalResolver,
+    ClusterEventsBridge,
     { provide: IDEMPOTENCY_STORE, useClass: PrismaIdempotencyStore },
     {
       provide: REDIS_STORE,
