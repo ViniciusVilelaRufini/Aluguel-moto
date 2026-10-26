@@ -48,7 +48,7 @@ export abstract class BaseIotGateway implements IotGateway {
   private readonly returnedAt = new Map<string, number>();
   /** Último `limite_kmh` gravado no desired por este processo (a rampa nunca começa acima dele). */
   private readonly desiredLimit = new Map<string, number>();
-  private limitResolver: (thingName: string) => number = () => MAX_SPEED_KMH;
+  private limitResolver: (thingName: string) => Promise<number> = async () => MAX_SPEED_KMH;
 
   constructor(
     readonly transport: IotTransport,
@@ -71,14 +71,23 @@ export abstract class BaseIotGateway implements IotGateway {
   /**
    * Publica o desired e só então registra o limite como teto (publicação que falhou não deixa teto acima do shadow real).
    * Sem registro (processo novo), o teto é o `reported` — `Math.min` com `MAX_SPEED_KMH` no lock — e o hold persistido.
+   * O limite também vai ao Redis (`LiveStateStore.recordDesiredLimit`), para o motor de cercas de qualquer task corrigir um
+   * desired acima da zona; falha nessa escrita só é registrada (o desired já foi publicado).
    */
   private async publishDesired(thingName: string, desired: DesiredState): Promise<void> {
     await this.transport.updateDesired(thingName, desired);
-    if (desired.limite_kmh !== undefined) this.desiredLimit.set(thingName, desired.limite_kmh);
+    if (desired.limite_kmh === undefined) return;
+    this.desiredLimit.set(thingName, desired.limite_kmh);
+    await this.live
+      .recordDesiredLimit(thingName, desired.limite_kmh)
+      .catch((err: Error) => this.logger.warn({ msg: 'desired_limit_persist_failed', thingName, error: err.message }));
   }
 
-  /** Limite em vigor para a moto (zonas de velocidade reduzida), usado ao destravar. Registrado pelo motor de cercas. */
-  setLimitResolver(fn: (thingName: string) => number): void {
+  /**
+   * Limite em vigor para a moto (zonas de velocidade reduzida), usado ao destravar e como teto do limite manual. Registrado
+   * pelo motor de cercas; assíncrono porque lê o estado compartilhado (Redis), válido em qualquer task.
+   */
+  setLimitResolver(fn: (thingName: string) => Promise<number>): void {
     this.limitResolver = fn;
   }
 
@@ -113,7 +122,7 @@ export abstract class BaseIotGateway implements IotGateway {
   async unlock(req: CommandRequest): Promise<CommandOutcome> {
     this.safeLock.cancel(req.thingName);
     await this.live.setHeld(req.thingName, false);
-    const limit = assertSpeedLimit(this.limitResolver(req.thingName));
+    const limit = assertSpeedLimit(await this.limitResolver(req.thingName));
     return this.desiredCommand(req, { travada: false }, { limite_kmh: limit });
   }
 
@@ -127,7 +136,7 @@ export abstract class BaseIotGateway implements IotGateway {
     }
     // QA-01: nenhum limite (operador/admin) acima do limite da zona em que a moto está (6 calçadão, 20 ciclovia).
     // O motor de cercas manda exatamente o limite em vigor, então só comandos manuais acima dele são recusados (nunca truncar).
-    const zoneLimit = this.limitResolver(req.thingName);
+    const zoneLimit = await this.limitResolver(req.thingName);
     if (kmh > zoneLimit) {
       this.logger.warn({ msg: 'speed_limit_refused_above_zone_limit', thingName: req.thingName, commandId: req.commandId, kmh, zoneLimit });
       return { commandId: req.commandId, status: 'failed', reason: 'invalid_limit' };
