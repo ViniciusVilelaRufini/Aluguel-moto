@@ -68,6 +68,14 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState(params.get('q') ?? '');
   const [debounced, setDebounced] = useState(q);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
   const full = canSeeFullCpf(groups);
   useEffect(() => { const t = setTimeout(() => setDebounced(q), 300); return () => clearTimeout(t); }, [q]);
   useEffect(() => { const v = params.get('q'); if (v) setQ(v); }, [params]);
@@ -83,7 +91,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
       <Page>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <Input placeholder="Buscar por nome, CPF, e-mail ou telefone" icon="Search" value={q} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)} testId="customer-search" />
+            <Input placeholder={narrow ? 'Buscar por nome, CPF ou e-mail' : 'Buscar por nome, CPF, e-mail ou telefone'} icon="Search" value={q} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)} testId="customer-search" />
           </div>
           <SegmentedControl options={[{ value: 'all', label: 'Todos' }, { value: 'pending', label: 'Pendentes' }, { value: 'blocked', label: 'Bloqueados' }]} value={filter} onChange={setFilter} style={{ width: 320 }} />
         </div>

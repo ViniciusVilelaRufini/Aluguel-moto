@@ -4,6 +4,7 @@ import { MOBILE } from '../helpers';
 import { hOverflow, s4, watch } from './util4';
 
 async function toOtp(page: Page) {
+  await page.getByTestId('login-password').fill('qualquer');
   await page.getByTestId('login-continue').click();
   await page.getByLabel('Código de 6 dígitos').waitFor();
 }

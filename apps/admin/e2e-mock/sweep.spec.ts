@@ -262,6 +262,7 @@ for (const vp of [{ name: 'desktop', size: DESKTOP }, { name: 'mobile', size: MO
       for (const o of await overflowReport(page)) c.note(`overflow: ${o}`);
       for (const f of await focusReport(page, 6)) c.note(f);
       await c.step('login: codigo incompleto mantem o botao desabilitado', async () => {
+        await page.getByTestId('login-password').fill('qualquer');
         await page.getByTestId('login-continue').click();
         await expect(page.getByTestId('login-submit')).toBeDisabled();
         await page.getByLabel('Código de 6 dígitos').fill('123');
