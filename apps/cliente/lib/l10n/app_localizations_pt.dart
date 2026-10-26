@@ -1270,6 +1270,13 @@ class AppLocalizationsPt extends AppLocalizations {
       'Fora dos pontos verdes não é possível encerrar sem taxa.';
 
   @override
+  String get returnTestEnd => 'Encerrar aqui (teste)';
+
+  @override
+  String get returnTestEndHint =>
+      'Ignora o ponto verde · só na versão de teste';
+
+  @override
   String get returnOutsideBlocked =>
       'Leve a moto até uma área verde do mapa para encerrar. Fora dela, encerrar só com o suporte, com taxa.';
 

@@ -2344,6 +2344,18 @@ abstract class AppLocalizations {
   /// **'Fora dos pontos verdes não é possível encerrar sem taxa.'**
   String get returnZoneRule;
 
+  /// No description provided for @returnTestEnd.
+  ///
+  /// In pt, this message translates to:
+  /// **'Encerrar aqui (teste)'**
+  String get returnTestEnd;
+
+  /// No description provided for @returnTestEndHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ignora o ponto verde · só na versão de teste'**
+  String get returnTestEndHint;
+
   /// No description provided for @returnOutsideBlocked.
   ///
   /// In pt, this message translates to:

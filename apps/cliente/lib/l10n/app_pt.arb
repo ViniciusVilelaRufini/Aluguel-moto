@@ -593,6 +593,8 @@
   "takePhoto": "Tirar foto",
   "returnPhotoHintDesign": "Mostre a moto inteira e a calçada livre",
   "returnZoneRule": "Fora dos pontos verdes não é possível encerrar sem taxa.",
+  "returnTestEnd": "Encerrar aqui (teste)",
+  "returnTestEndHint": "Ignora o ponto verde · só na versão de teste",
   "returnOutsideBlocked": "Leve a moto até uma área verde do mapa para encerrar. Fora dela, encerrar só com o suporte, com taxa.",
   "lockAndEnd": "Travar e encerrar",
   "confirmingLock": "Confirmando…",
