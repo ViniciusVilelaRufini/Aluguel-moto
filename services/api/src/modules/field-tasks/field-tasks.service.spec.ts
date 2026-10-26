@@ -19,6 +19,11 @@ function setup() {
   prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'free', code: 'VLT-0001' } as any);
   prisma.inspection.create.mockImplementation((async (a: any) => ({ id: 'insp-1', createdAt: new Date(), ...a.data })) as any);
   prisma.maintenanceTask.create.mockResolvedValue({ id: 'mt-1' } as any);
+  prisma.vehicle.findMany.mockResolvedValue([]);
+  prisma.staffUser.findMany.mockResolvedValue([]);
+  prisma.battery.findMany.mockResolvedValue([]);
+  prisma.rental.findFirst.mockResolvedValue(null);
+  prisma.reservation.findFirst.mockResolvedValue(null);
   const alerts = { create: jest.fn().mockResolvedValue({ id: 'alert-1' }) };
   const audit = { record: jest.fn() };
   const storage = { presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn(), deleteObject: jest.fn() };
@@ -59,5 +64,39 @@ describe('Inspeção (limitador como observação, decisão #13)', () => {
     await expect(
       service.submitBatterySwap(campo, TASK_ID, { removedBatterySerial: 'BAT-1', installedBatterySerial: 'BAT-1', recordedAt: new Date().toISOString() }),
     ).rejects.toMatchObject({ status: 422, slug: 'battery-serials-must-differ' });
+  });
+});
+
+describe('Concluir tarefa com vehicleStatus (item 7 da auditoria)', () => {
+  const pickup = { id: TASK_ID, type: 'pickup', status: 'in_progress', priority: 'medium', vehicleId: VEHICLE_ID, assigneeId: campo.userId, createdAt: new Date(), updatedAt: new Date() };
+
+  it('moto offline com aluguel aberto → 409 vehicle-unavailable e a moto não muda', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(pickup as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'offline', statusBeforeOffline: 'rented', online: false } as any);
+    prisma.rental.findFirst.mockResolvedValue({ id: 'r1', vehicleId: VEHICLE_ID, status: 'active' } as any);
+    await expect(service.complete(campo, TASK_ID, { vehicleStatus: 'free' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('moto offline sem aluguel → 409 (só alterna entre livre e manutenção) e a moto não muda', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(pickup as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'offline', online: false } as any);
+    prisma.rental.findFirst.mockResolvedValue(null);
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    await expect(service.complete(campo, TASK_ID, { vehicleStatus: 'free' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('moto em manutenção sem aluguel nem reserva → vira livre', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(pickup as any);
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'maintenance', online: true } as any);
+    prisma.rental.findFirst.mockResolvedValue(null);
+    prisma.reservation.findFirst.mockResolvedValue(null);
+    prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
+    await service.complete(campo, TASK_ID, { vehicleStatus: 'free' } as any);
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['free', 'maintenance'] } }, data: { status: 'free' } });
   });
 });

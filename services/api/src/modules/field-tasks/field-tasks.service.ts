@@ -1,12 +1,13 @@
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Battery, BatterySwap, FieldTask, Inspection, Prisma, StaffUser, Vehicle } from '@prisma/client';
-import { MAX_SPEED_KMH } from '../../common/enums';
+import { MAX_SPEED_KMH, type VehicleStatus } from '../../common/enums';
 import { EV, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, forbidden, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
 import { compact, iso } from '../../common/util';
+import { assertVehicleNotInUse } from '../../common/vehicle-in-use';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -26,6 +27,8 @@ type TaskRow = FieldTask & {
 };
 const PRIORITY_RANK = { urgent: 0, high: 1, medium: 2, low: 3 } as const;
 const CLOSED = ['done', 'canceled'];
+/** Status de onde (e para onde) a conclusão da tarefa pode mudar a moto, como em `VehiclesService.setStatus`. */
+const VEHICLE_STATUS_SETTABLE: VehicleStatus[] = ['free', 'maintenance'];
 
 export function toFieldTask(t: TaskRow) {
   return compact({
@@ -181,11 +184,18 @@ export class FieldTasksService {
       throw unprocessable('validation-error', 'Registre a troca de bateria antes de concluir.');
     }
     await this.prisma.$transaction(async (tx) => {
-      await tx.fieldTask.update({ where: { id }, data: { status: 'done', completionNotes: dto.notes, completedAt: dto.completedAt ? new Date(dto.completedAt) : new Date() } });
       if (dto.vehicleStatus) {
-        const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: ['free', 'maintenance', 'offline', 'blocked'] } }, data: { status: dto.vehicleStatus } });
-        if (moved.count) await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: `Tarefa ${t.type} concluída`, metadata: { fieldTaskId: id, to: dto.vehicleStatus } }, tx as any);
+        // Auditoria item 7: mesmas guardas de `setStatus` — só entre livre e manutenção e sem aluguel/reserva
+        // (consultados, não deduzidos do status, que fica `offline` durante um aluguel com o rastreador fora).
+        const v = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { status: true } });
+        if (!v) throw notFound('Moto não encontrada.');
+        if (!VEHICLE_STATUS_SETTABLE.includes(v.status)) throw conflict('vehicle-unavailable', `A moto está ${v.status}; só é possível alternar entre livre e manutenção.`);
+        await assertVehicleNotInUse(tx, t.vehicleId);
+        const moved = await tx.vehicle.updateMany({ where: { id: t.vehicleId, status: { in: VEHICLE_STATUS_SETTABLE } }, data: { status: dto.vehicleStatus } });
+        if (moved.count !== 1) throw conflict('vehicle-unavailable', 'A moto mudou de estado; tente de novo.');
+        await this.audit.record({ actor: user, action: 'vehicle.status', entityType: 'Vehicle', entityId: t.vehicleId, reason: `Tarefa ${t.type} concluída`, metadata: { fieldTaskId: id, from: v.status, to: dto.vehicleStatus } }, tx as any);
       }
+      await tx.fieldTask.update({ where: { id }, data: { status: 'done', completionNotes: dto.notes, completedAt: dto.completedAt ? new Date(dto.completedAt) : new Date() } });
     });
     if (dto.vehicleStatus) this.emitVehicle(t.vehicleId, dto.vehicleStatus);
     return this.mapped(id);
