@@ -222,7 +222,7 @@ describe('Limite de zona compartilhado entre tasks (auditoria, item 1)', () => {
       expect(await b.geofence.effectiveLimit(T)).toBe(20);
     });
 
-    it('posição conhecida e motor de cercas fora → falha fechada (0, log zone_limit_engine_failed); a próxima posição manda o limite real', async () => {
+    it('posição conhecida e motor de cercas fora → falha fechada (6, log zone_limit_engine_failed); a próxima posição manda o limite real', async () => {
       const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
       const c = cluster();
       const b = c.task();
@@ -232,14 +232,14 @@ describe('Limite de zona compartilhado entre tasks (auditoria, item 1)', () => {
       c.engine.containing = async () => {
         throw new Error('postgis fora');
       };
-      expect(await a.geofence.effectiveLimit(T)).toBe(0);
-      expect(warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'zone_limit_engine_failed', thingName: T, limit: 0 }));
+      expect(await a.geofence.effectiveLimit(T)).toBe(6);
+      expect(warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'zone_limit_engine_failed', thingName: T, limit: 6 }));
       expect(warn).not.toHaveBeenCalledWith(expect.objectContaining({ msg: 'zone_limit_unknown' }));
       // Moto online (telemetria acima): a chamada espera o reported até `confirmWaitMs`.
       const u = a.gw.unlock({ commandId: 'c1', thingName: T });
       await c.clock.advance(1_000);
       expect((await u).status).toBe('in_progress');
-      expect(a.transport.desired[0].desired).toEqual({ travada: false, limite_kmh: 0 });
+      expect(a.transport.desired[0].desired).toEqual({ travada: false, limite_kmh: 6 });
 
       // Motor de volta, moto fora de zonas de velocidade reduzida: outra task manda o limite real (32).
       c.engine.containing = realContaining;
@@ -247,5 +247,24 @@ describe('Limite de zona compartilhado entre tasks (auditoria, item 1)', () => {
       await b.geofence.onPosition(pos());
       expect(b.commander.setSpeedLimit).toHaveBeenCalledWith('veh-1', 32, expect.objectContaining({ purpose: 'zone_speed_limit' }));
     });
-  });
+      it('motor de cercas fora e moto andando a 18 km/h no unlock → publica 6 (nunca 0: não corta o motor em movimento)', async () => {
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const c = cluster();
+      const a = c.task();
+      const moving = (ts: number) => ({ lat: -23.5, lng: -46.6, velocidade_kmh: 18, bateria_pct: 80, travada: false, ignicao: true, sinal: 4, timestamp: new Date(ts).toISOString() });
+      await a.live.applyTelemetry(T, moving(c.clock.now()));
+      await c.clock.advance(10_000); // graça pós-reconexão: a velocidade passa a ser conhecida
+      await a.live.applyTelemetry(T, moving(c.clock.now()));
+      expect(a.live.knownSpeed(T)).toBe(18);
+      c.engine.containing = async () => {
+        throw new Error('postgis fora');
+      };
+      const u = a.gw.unlock({ commandId: 'c1', thingName: T });
+      await c.clock.advance(1_000);
+      await u;
+      const limits = a.transport.desired.map((d) => d.desired.limite_kmh).filter((v) => v !== undefined);
+      expect(limits).toEqual([6]);
+      expect(limits).not.toContain(0);
+    });
+});
 });

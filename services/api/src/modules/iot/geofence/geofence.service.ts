@@ -127,9 +127,10 @@ export class GeofenceService {
       return zoneLimitOf(zones);
     } catch (err) {
       // Posição conhecida mas motor de cercas fora: falha fechada. Zonas guardadas neste processo, se houver; senão o mais
-      // restritivo possível (zonas de velocidade reduzida aceitam 0..20). A próxima posição avaliada reenvia o limite real.
+      // restritivo positivo (6 km/h, área de pedestres). Nunca 0: o unlock não confere a velocidade e 0 numa moto andando
+      // cortaria o motor sem rampa. A próxima posição avaliada reenvia o limite real.
       const stored = position.vehicleId ? this.byVehicle.get(position.vehicleId)?.zones : undefined;
-      const limit = stored ? zoneLimitOf(stored) : UNKNOWN_ZONE_LIMIT_KMH;
+      const limit = stored ? zoneLimitOf(stored) : ENGINE_FAILURE_FALLBACK_KMH;
       this.forceResend.add(thingName);
       this.logger.warn({ msg: 'zone_limit_engine_failed', thingName, limit, error: (err as Error).message });
       return limit;
@@ -394,8 +395,11 @@ export class GeofenceService {
   }
 }
 
-/** Limite de falha fechada com posição conhecida e motor de cercas fora: o menor que uma zona `reduced_speed` aceita. */
-const UNKNOWN_ZONE_LIMIT_KMH = 0;
+/**
+ * Limite de falha fechada com posição conhecida e motor de cercas fora: o de área de pedestres (6 km/h), o menor limite
+ * positivo que uma zona impõe. Nunca 0 — publicado no unlock de uma moto em movimento cortaria o motor sem rampa.
+ */
+const ENGINE_FAILURE_FALLBACK_KMH = 6;
 
 /** Folga do TTL do prazo persistido além do próprio prazo. */
 const OUT_OF_AREA_KEY_GRACE_MS = 60 * 60_000;
