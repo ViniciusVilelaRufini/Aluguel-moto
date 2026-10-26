@@ -199,7 +199,7 @@ export class RentalStartService {
     // Run-2: antes de qualquer liberação (as recusas abaixo liberam `dto.depositId`), para não soltar a caução de uma reserva.
     if (dto.depositId) await this.assertDepositNotInUse(dto.depositId, dto.vehicleId, fromHandover);
 
-    const open =await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
+    const open = await this.prisma.rental.findFirst({ where: { customerId, status: { in: OPEN_RENTAL_STATUSES } } });
     if (open) {
       await release(dto.depositId);
       throw conflict('rental-already-active', 'Você já tem um aluguel em andamento.');

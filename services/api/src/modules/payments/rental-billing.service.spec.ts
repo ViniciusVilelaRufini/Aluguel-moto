@@ -340,14 +340,29 @@ describe('RentalBillingService: liberação da caução (deposit.release-request
     const marker = (depositId: string) =>
       ({ data: { rentalId: START, vehicleId: 'v', customerId: CUSTOMER, depositId, policyId: null, previousStatus: 'reserved' } });
 
-    it('(b) reserva cancelada durante o unlock lento de um start que usa a caução → a caução não é liberada', async () => {
+    it('(b) reserva cancelada durante o unlock lento de um start que usa a caução → a caução não é liberada agora, mas o pedido fica gravado', async () => {
       const ctx = await setup();
       const held = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });
       await ctx.db.rentalStart.create(marker(held.depositId));
       await ctx.svc.onReleaseRequested({ depositId: held.depositId, customerId: CUSTOMER, reason: 'reservation_canceled' });
       expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('held');
-      expect(await ctx.db.depositRelease.findUnique({ where: { depositId: held.depositId } })).toBeNull();
+      // O DepositRelease gravado é o que faz a transação final do início abortar (409 deposit-in-use).
+      expect(await ctx.db.depositRelease.findUnique({ where: { depositId: held.depositId } })).toMatchObject({ reason: 'reservation_canceled', confirmedAt: null });
       expect(ctx.provider.operations('cancelPreAuthorization')).toBe(0);
+    });
+
+    it('fix round 1: entrega cancelada durante o aceite (reserva expirada) e o aceite falha → a retentativa libera a caução', async () => {
+      const ctx = await setup();
+      const held = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });
+      await ctx.db.rentalStart.create(marker(held.depositId));
+      // HandoversService.cancel: reserva → expired e deposit.release-requested com o aceite em andamento.
+      await ctx.svc.onReleaseRequested({ depositId: held.depositId, customerId: CUSTOMER, reason: 'reservation_expired' });
+      // O aceite aborta (fromHandover: o start() não pede liberação) e o catch apaga o marcador.
+      await ctx.db.rentalStart.deleteMany({ where: { rentalId: START } });
+      await ctx.svc.retryDepositReleases();
+      expect((await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).status).toBe('released');
+      expect((await ctx.db.depositRelease.findUnique({ where: { depositId: held.depositId } })).confirmedAt).toBeInstanceOf(Date);
+      expect(ctx.provider.operations('cancelPreAuthorization')).toBe(1);
     });
 
     it('liberação pendente (retentativa) com o início em andamento → adia sem liberar nem confirmar; sem o marcador, libera', async () => {

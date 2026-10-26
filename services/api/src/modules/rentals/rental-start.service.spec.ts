@@ -652,6 +652,21 @@ describe('Início do aluguel (POST /rentals)', () => {
       expect(commands.dispatch).not.toHaveBeenCalled();
     });
 
+    it('fix round 1: entrega cancelada durante o aceite (DepositRelease gravado no unlock) → 409, marcador apagado, a moto volta e o start não pede liberação (fica com a retentativa)', async () => {
+      const handoverRes = { ...depotRes, vehicleId: VEHICLE_ID, status: 'handover' };
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved', depotId: DEPOT_ID } as any);
+      h.prisma.reservation.findUnique.mockResolvedValue(handoverRes as any);
+      h.prisma.handover.updateMany.mockResolvedValue({ count: 0 });
+      h.prisma.depositRelease.findUnique.mockResolvedValueOnce(null).mockResolvedValue({ depositId: DEPOSIT_ID, confirmedAt: null } as any);
+      await expect(
+        h.app.get(RentalStartService).start(user, { ...body, depositId: DEPOSIT_ID } as any, `handover:${HO_ID}`, { fromHandover: { reservationId: RES_ID, handoverId: HO_ID } }),
+      ).rejects.toMatchObject({ slug: 'deposit-in-use' });
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(h.prisma.rentalStart.deleteMany).toHaveBeenCalledTimes(2);
+      expect(h.prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
+      expect(released).not.toHaveBeenCalled();
+    });
+
     it.each([
       ['caução já liberada (updateMany condicional count 0)', 'final-1', () => h.prisma.deposit.updateMany.mockResolvedValue({ count: 0 })],
       ['DepositRelease gravado durante o unlock', 'final-2', () => h.prisma.depositRelease.findUnique.mockResolvedValueOnce(null).mockResolvedValue({ depositId: DEPOSIT_ID } as any)],
