@@ -7,8 +7,8 @@ import type { DesiredState, InboundHandler, IotTransport, MomentaryCommand, Repo
 /**
  * IOT_MODE=aws:
  * - desired → `UpdateThingShadow` (IoT Data Plane); comandos momentâneos → `Publish` em `motos/{t}/comandos`;
- * - telemetria chega pela fila SQS `telemetria` (regra IoT `SELECT *, topic(2) AS thingName ...`); mensagens com `tipo` são eventos
- *   (proposta: regra de `motos/+/eventos` também para esta fila — hoje ela vai para `alertas`, ver docs/decisoes.md);
+ * - telemetria chega pela fila SQS `telemetria` (regras IoT `SELECT topic(2) AS thingName, topic(3) AS channel, ..., {campos do contrato} AS payload`);
+ *   `channel = 'eventos'` → `deviceEvent` (a regra de eventos também alimenta esta fila);
  * - `reported`: enquanto houver comando ou rampa aguardando uma moto, `GetThingShadow` a cada `pollMs`.
  *   (A task role da API não tem `iot:Connect`/`iot:Subscribe`; assinar `/update/documents` exigiria isso.)
  * - presença: os eventos vão para o EventBridge e não chegam aqui. Offline = vigia de inatividade do `TelemetryService` (180 s);
@@ -33,10 +33,13 @@ export class AwsIotTransport implements IotTransport {
   async start(inbound: InboundHandler): Promise<void> {
     this.inbound = inbound;
     this.queue.subscribe<Record<string, unknown>>('telemetria', async (m) => {
-      if (!m || typeof m !== 'object' || typeof m.thingName !== 'string') return;
-      const { thingName, ingestedAt: _ingested, ...body } = m;
-      if ('tipo' in body) await inbound.deviceEvent(thingName, body);
-      else await inbound.telemetry(thingName, body);
+      // Identidade só do tópico (thingName no topo); o corpo vem exclusivamente de `payload`. Fail closed.
+      if (!m || typeof m !== 'object' || typeof m.thingName !== 'string' || !m.thingName) return;
+      const body = m.payload;
+      if (!body || typeof body !== 'object' || Array.isArray(body)) return;
+      // Eventos e telemetria compartilham a fila; `channel` (topic(3)) diz de qual regra veio. Mesmo caminho do modo local.
+      if (m.channel === 'eventos') await inbound.deviceEvent(m.thingName, body);
+      else await inbound.telemetry(m.thingName, body);
     });
     if (this.opts.pollMs > 0) {
       this.timer = setInterval(() => void this.pollOnce(), this.opts.pollMs);

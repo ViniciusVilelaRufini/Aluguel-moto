@@ -38,16 +38,34 @@ describe('AwsIotTransport', () => {
     expect(sent[0].input.qos).toBe(1);
   });
 
-  it('fila telemetria: mensagens da regra IoT (com thingName) → telemetria ou evento', async () => {
+  it('fila telemetria: mensagem da regra IoT { thingName, payload } → telemetria ou evento (canal do tópico)', async () => {
     const { t, inbound, deliver, queue } = setup();
     await t.start(inbound);
     expect(queue.subscribe).toHaveBeenCalledWith('telemetria', expect.any(Function));
-    await deliver({ lat: -23.5, lng: -46.6, thingName: 'moto-0001', ingestedAt: 1 });
-    await deliver({ tipo: 'queda', timestamp: '2026-10-21T15:00:00Z', thingName: 'moto-0002' });
-    await deliver({ lat: 1 }); // sem thingName → descartada
+    await deliver({ thingName: 'moto-0001', ingestedAt: 1, channel: 'telemetria', payload: { lat: -23.5, lng: -46.6 } });
+    await deliver({ thingName: 'moto-0002', ingestedAt: 2, channel: 'eventos', payload: { tipo: 'violacao', timestamp: '2026-10-21T15:00:00Z' } });
+    await deliver({ payload: { lat: 1 } }); // sem thingName → descartada
     expect(inbound.telemetry).toHaveBeenCalledWith('moto-0001', { lat: -23.5, lng: -46.6 });
-    expect(inbound.deviceEvent).toHaveBeenCalledWith('moto-0002', { tipo: 'queda', timestamp: '2026-10-21T15:00:00Z' });
+    expect(inbound.deviceEvent).toHaveBeenCalledWith('moto-0002', { tipo: 'violacao', timestamp: '2026-10-21T15:00:00Z' });
     expect(inbound.telemetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('identidade vem só do tópico: thingName dentro do payload não vale', async () => {
+    const { t, inbound, deliver } = setup();
+    await t.start(inbound);
+    await deliver({ thingName: 'moto-0001', channel: 'telemetria', payload: { thingName: 'moto-9999', lat: -23.5, lng: -46.6 } });
+    expect(inbound.telemetry.mock.calls[0][0]).toBe('moto-0001');
+  });
+
+  it('mensagem sem payload objeto é descartada (corpo nunca é lido do topo)', async () => {
+    const { t, inbound, deliver } = setup();
+    await t.start(inbound);
+    await deliver({ thingName: 'moto-0001', lat: 1, lng: 2 });
+    await deliver({ thingName: 'moto-0001', payload: 'x' });
+    await deliver({ thingName: 'moto-0001', payload: [1] });
+    await deliver({ thingName: 'moto-0001', payload: null });
+    expect(inbound.telemetry).not.toHaveBeenCalled();
+    expect(inbound.deviceEvent).not.toHaveBeenCalled();
   });
 
   it('enquanto houver comando aguardando, consulta o shadow e repassa só campos com metadata mais nova (fromPoll, nunca sinal de vida)', async () => {
