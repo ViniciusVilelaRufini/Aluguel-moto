@@ -138,6 +138,27 @@ test.describe('tempo real: overrides', () => {
   });
 });
 
+test.describe('tempo real: merge de overrides', () => {
+  test('posicao ao vivo antiga nao volta quando um vehicle.status chega depois do recarregamento da frota', async ({ page }) => {
+    const mock = await loginMocked(page);
+    await openVehicle(page, 'VLT-001');
+    await expect(page.getByTestId('live-indicator')).toHaveAttribute('data-connected', 'true');
+    const sheet = page.getByTestId('vehicle-sheet');
+    mock.emit('vehicle.position', { vehicleId: 'veh-001', lat: -23.5, lng: -46.6, speedKmh: 5, batteryPct: 50, status: 'rented', speedLimitKmh: 20, ts: new Date().toISOString() });
+    await expect(sheet.getByText('-23.5000, -46.6000')).toBeVisible({ timeout: 3000 });
+    // o servidor tem posicao mais nova e a frota recarrega
+    const v = mock.db.vehicles.find((x) => x.id === 'veh-001')!;
+    v.lat = -23.4; v.lng = -46.5;
+    await page.waitForTimeout(700);
+    mock.emit('command.updated', { commandId: 'cmd-x', vehicleId: 'veh-001', type: 'horn', status: 'confirmed' });
+    await expect(sheet.getByText('-23.4000, -46.5000')).toBeVisible({ timeout: 4000 });
+    await page.waitForTimeout(700);
+    mock.emit('vehicle.status', { vehicleId: 'veh-001', status: 'maintenance', ts: new Date().toISOString() });
+    await expect(sheet.getByText('Manutenção', { exact: true })).toBeVisible({ timeout: 3000 });
+    await expect(sheet.getByText('-23.4000, -46.5000'), 'posicao velha do override voltou por cima da do servidor').toBeVisible();
+  });
+});
+
 test.describe('replay de trajeto', () => {
   async function openReplay(page: Page) {
     await ready(page);

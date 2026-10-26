@@ -229,10 +229,12 @@ export function Modal({ open, title, children, actions, onClose, width = 440, te
       if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); return; }
       if (e.key !== 'Tab') return;
       const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((x) => x.offsetParent !== null);
+      // Conteúdo assíncrono ainda sem itens focáveis: o foco fica no diálogo em vez de escapar.
+      if (items.length === 0) { e.preventDefault(); el.focus({ preventScroll: true }); return; }
       const idx = items.indexOf(document.activeElement as HTMLElement);
-      const atEdge = idx < 0 || (e.shiftKey ? idx === 0 : idx === items.length - 1);
-      const next = cycleFocusIndex(items.length, idx, e.shiftKey);
-      if (atEdge && next >= 0) { e.preventDefault(); items[next].focus(); }
+      // O ciclo é sempre manual (não só nas bordas): conteúdo que carrega e muda a ordem nativa não deixa o foco escapar.
+      e.preventDefault();
+      items[cycleFocusIndex(items.length, idx, e.shiftKey)].focus();
     };
     window.addEventListener('keydown', h);
     return () => {
@@ -255,10 +257,10 @@ export function Modal({ open, title, children, actions, onClose, width = 440, te
   );
 }
 
-/** Ação com motivo obrigatório e confirmação explícita. */
 /** Erro de validação já exibido junto ao campo: o ReasonDialog mantém o diálogo aberto sem repetir a mensagem. */
 export class FieldError extends Error {}
 
+/** Ação com motivo obrigatório e confirmação explícita. */
 export function ReasonDialog({
   open, title, description, confirmLabel, danger, minLength = 3, onClose, onConfirm, children, testId,
 }: {

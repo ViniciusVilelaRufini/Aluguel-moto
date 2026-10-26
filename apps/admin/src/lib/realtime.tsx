@@ -47,11 +47,17 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const [alertDelta, setAlertDelta] = useState(0);
   const handlers = useRef(new Map<string, Set<(p: never) => void>>());
   const pending = useRef<Record<string, LiveOverride>>({});
+  // Quando a frota foi carregada pela última vez (lido dentro de setters e handlers). `at` usa o relógio do navegador:
+  // com relógio errado a comparação com dataUpdatedAt (também do navegador) continua coerente entre si, mas não com o servidor.
+  const fleetAt = useRef(0);
 
   const canList = groups.some((g) => LIST_GROUPS.includes(g));
   const canFleet = groups.some((g) => FLEET_GROUPS.includes(g));
 
   const vq = useQuery({ queryKey: ['fleet', 'all'], queryFn: loadAllVehicles, enabled: !!token && canList, staleTime: 60_000 });
+  fleetAt.current = vq.dataUpdatedAt;
+  /** Campos ao vivo anteriores só valem se chegaram depois da última carga da frota; senão trariam posição velha por cima da nova. */
+  const liveBase = (prev?: LiveOverride) => (prev && prev.at >= fleetAt.current ? prev.patch : undefined);
   const aq = useQuery({
     queryKey: ['alerts', 'open-count'],
     queryFn: async () => {
@@ -71,7 +77,7 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
       pending.current = {};
       setOverrides((o) => {
         const n = { ...o };
-        for (const [id, o] of Object.entries(p)) n[id] = { at: o.at, patch: { ...n[id]?.patch, ...o.patch } };
+        for (const [id, o] of Object.entries(p)) n[id] = { at: o.at, patch: { ...liveBase(n[id]), ...o.patch } };
         return n;
       });
     }, 500);
@@ -89,11 +95,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('vehicle.position', (p: RealtimeEvents['vehicle.position']) => {
-      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...pending.current[p.vehicleId]?.patch, lat: p.lat, lng: p.lng, speedKmh: p.speedKmh, batteryPct: p.batteryPct, status: p.status, speedLimitKmh: p.speedLimitKmh, lastSeenAt: p.ts } };
+      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), lat: p.lat, lng: p.lng, speedKmh: p.speedKmh, batteryPct: p.batteryPct, status: p.status, speedLimitKmh: p.speedLimitKmh, lastSeenAt: p.ts } };
       emit('vehicle.position', p);
     });
     socket.on('vehicle.status', (p: RealtimeEvents['vehicle.status']) => {
-      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...pending.current[p.vehicleId]?.patch, status: p.status } };
+      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), status: p.status } };
       emit('vehicle.status', p);
       qc.invalidateQueries({ queryKey: ['vehicle', p.vehicleId] });
     });
