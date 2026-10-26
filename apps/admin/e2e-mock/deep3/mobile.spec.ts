@@ -21,8 +21,10 @@ test.describe('390px: suporte', () => {
   test('[BUG P3-18] conversa aberta: o painel de mensagens tem largura legivel (>= 240px) ou empilha abaixo da lista', async ({ page }) => {
     await boot(page, '/customers?tab=support');
     await s3(page, 'm-support-list');
-    const w = await page.getByText('Selecione uma conversa.').evaluate((el) => { const r = (el.parentElement as HTMLElement).getBoundingClientRect(); return { w: Math.round(r.width), left: Math.round(r.left), vw: window.innerWidth }; });
-    expect(w.w, `painel de mensagens com ${w.w}px (left=${w.left}, vw=${w.vw}): texto cortado em "Sele/uma/conv"`).toBeGreaterThanOrEqual(240);
+    // Em celular a lista ocupa a largura toda e a conversa so aparece depois de escolhida (com "Voltar").
+    const w = await page.getByText('Moto não destrava').first().evaluate((el) => { const r = (el.closest('button') as HTMLElement).getBoundingClientRect(); return { w: Math.round(r.width), left: Math.round(r.left), vw: window.innerWidth }; });
+    expect(w.w, `lista de conversas com ${w.w}px (left=${w.left}, vw=${w.vw})`).toBeGreaterThanOrEqual(240);
+    await expect(page.getByText('Selecione uma conversa.')).toHaveCount(0);
   });
 
   test('[BUG P3-18] depois de abrir uma conversa em 390px da para ler a mensagem e usar o campo de resposta', async ({ page }) => {
@@ -34,6 +36,8 @@ test.describe('390px: suporte', () => {
     expect(box, 'campo de resposta fora da tela / invisivel').not.toBeNull();
     expect(box!.x + box!.width, 'campo de resposta passa da borda direita').toBeLessThanOrEqual(390);
     expect(box!.width, 'campo de resposta estreito demais para digitar').toBeGreaterThanOrEqual(120);
+    await page.getByRole('button', { name: 'Voltar' }).click();
+    await expect(page.getByText('Moto não destrava').first()).toBeVisible();
   });
 
   test('[BUG P3-19] sub-abas Conversas/Contestacoes/Sinistros/Ocorrencias cabem todas (nenhuma cortada)', async ({ page }) => {
