@@ -13,6 +13,7 @@ import { RentalBillingService } from './rental-billing.service';
 import { createInMemoryPrisma, type InMemoryPrisma } from './testing/in-memory-prisma';
 import { receiptPaymentInfo } from './receipts/receipt-status';
 import { debtInCollection, isOpenDebt } from './open-debt';
+import { assertCustomerEligible } from '../customers/eligibility';
 
 const CUSTOMER = '11111111-1111-4111-8111-111111111111';
 const RENTAL = '88888888-8888-4888-8888-888888888888';
@@ -1337,5 +1338,44 @@ describe('fix round 1 (revisão): caução ainda held ao estacionar', () => {
     await ctx.svc.retryPendingSettlements(0);
     expect(getPayment).not.toHaveBeenCalled();
     expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('pending');
+  });
+});
+
+describe('porte da auditoria: estacionada que vira dívida mantém o cliente bloqueado pela elegibilidade compartilhada', () => {
+  const eligible = async (ctx: Awaited<ReturnType<typeof setup>>, opts: Parameters<typeof assertCustomerEligible>[3]) => {
+    const customer = await ctx.db.customer.findUnique({ where: { id: CUSTOMER } });
+    return assertCustomerEligible({ ...customer, locationConsent: true, termsAccepted: true }, CUSTOMER, ctx.svc, opts);
+  };
+
+  it('parkedAsDebt (estacionar por erros) → reserva 409 payment-pending e início 403 customer-delinquent; flag tirada à mão não libera (dívida em aberto)', async () => {
+    const ctx = await setup();
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockRejectedValue(new PaymentProviderError('Mercado Pago: charge falhou (502).', 502));
+    await expect(ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY })).rejects.toThrow();
+    for (let i = 0; i < 4; i++) await ctx.svc.retryPendingSettlements(0);
+    const pay = await ctx.db.payment.findFirst({ where: { kind: 'rental' } });
+    expect(pay).toMatchObject({ status: 'failed', failureReason: 'settlement_parked' });
+    await expect(eligible(ctx, { requireLocationConsent: false, requireTerms: true, debtAsConflict: true })).rejects.toMatchObject({ status: 409, slug: 'payment-pending' });
+    await expect(eligible(ctx, { requireLocationConsent: true, requireTerms: true })).rejects.toMatchObject({ status: 403, slug: 'customer-delinquent' });
+    // Mesmo sem a flag, a dívida `failed` (open-debt) continua bloqueando.
+    await ctx.db.customer.update({ where: { id: CUSTOMER }, data: { delinquent: false } });
+    await expect(eligible(ctx, { requireLocationConsent: true, requireTerms: true })).rejects.toMatchObject({ status: 403, slug: 'customer-delinquent' });
+  });
+
+  it('retryParkedAsDebt (gateway volta depois) → convertida em dívida, o cliente fica bloqueado para reservar e alugar', async () => {
+    let t = Date.now();
+    const ctx = await setup({ now: () => new Date(t) });
+    await rentalWithDeposit(ctx);
+    jest.spyOn(ctx.provider, 'charge').mockImplementation(async (i) => ({ providerPaymentId: `x-${i.idempotencyKey}`, status: 'failed', amountCents: i.amountCents, failureReason: 'card_not_found' }));
+    const getPayment = jest.spyOn(ctx.provider, 'getPayment').mockRejectedValue(new PaymentProviderError('Pagamento não encontrado no gateway.', 404));
+    const r = await ctx.svc.settle({ rentalId: RENTAL, amountCents: 7000, idempotencyKey: SETTLE_KEY });
+    for (let i = 0; i < 10; i++) await ctx.svc.retryPendingSettlements(0);
+    expect((await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).status).toBe('pending');
+    getPayment.mockRestore();
+    t += 10 * 60_000;
+    await ctx.svc.retryPendingSettlements(0);
+    expect(await ctx.db.payment.findUnique({ where: { id: r.paymentId } })).toMatchObject({ status: 'failed', failureReason: 'settlement_parked' });
+    await expect(eligible(ctx, { requireLocationConsent: false, debtAsConflict: true })).rejects.toMatchObject({ status: 409, slug: 'payment-pending' });
+    await expect(eligible(ctx, { requireLocationConsent: true, requireTerms: true })).rejects.toMatchObject({ status: 403, slug: 'customer-delinquent' });
   });
 });
