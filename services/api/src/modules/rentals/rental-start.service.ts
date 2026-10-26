@@ -238,8 +238,9 @@ export class RentalStartService {
     }
 
     // Auditoria item adiado 1: trava da equipe/sistema, hold ou modo roubada → o unlock do cliente seria recusado.
+    // No aceite da entrega (`fromHandover`) a caução é da reserva e continua retida (o operador cancela a entrega).
     if (await this.commands.isLockedByStaff(vehicle)) {
-      await this.requestDepositRelease(dto.depositId, customerId);
+      await release(dto.depositId);
       throw conflict('vehicle-unavailable', LOCKED_BY_STAFF_DETAIL);
     }
 

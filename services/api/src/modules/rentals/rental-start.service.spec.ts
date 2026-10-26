@@ -505,6 +505,14 @@ describe('Início do aluguel (POST /rentals)', () => {
       expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
     });
 
+    it('auditoria: moto com trava da equipe/sistema no aceite → 409 vehicle-unavailable, sem destravar e sem liberar a caução da reserva', async () => {
+      commands.isLockedByStaff.mockResolvedValue(true);
+      await expect(svc().start(user, dto, `handover:${HO_ID}`, opts)).rejects.toMatchObject({ slug: 'vehicle-unavailable' });
+      expect(commands.dispatch).not.toHaveBeenCalled();
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(released).not.toHaveBeenCalled();
+    });
+
     it('moto que não está reserved → 409 vehicle-unavailable', async () => {
       h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'free', depotId: DEPOT_ID } as any);
       await expect(svc().start(user, dto, `handover:${HO_ID}`, opts)).rejects.toMatchObject({ slug: 'vehicle-unavailable' });
