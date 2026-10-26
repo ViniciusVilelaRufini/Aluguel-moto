@@ -168,6 +168,51 @@ describe('FakePaymentProvider', () => {
     expect(p.subscriptionStatus(s.providerSubscriptionId)).toBe('canceled');
   });
 
+  describe('reidratação após reinício da API (dev: o fake é só memória)', () => {
+    const UUID = '0b7c2f3e-1d2a-4c5b-8e9f-0a1b2c3d4e5f';
+
+    it('cobra um cartão fake-card- de antes do reinício (com token fake-tok- desconhecido) como aprovado', async () => {
+      const before = new FakePaymentProvider(SECRET);
+      const { providerCustomerId } = await before.createCustomer({ customerId: 'c1', email: 'x@example.com' });
+      const old = await before.attachCard({ providerCustomerId, cardToken: 'tok_visa_4242' });
+      const { cardToken } = await before.createCardToken({ providerCustomerId, providerCardId: old.providerCardId });
+      const after = new FakePaymentProvider(SECRET);
+      const ch = await after.charge({ providerCustomerId, providerCardId: old.providerCardId, cardToken, ...base, idempotencyKey: 'r1' });
+      expect(ch).toMatchObject({ status: 'paid', amountCents: 5000, externalReference: 'ref' });
+      expect((await after.charge({ providerCustomerId, providerCardId: old.providerCardId, ...base, idempotencyKey: 'r2' })).status).toBe('paid');
+      expect((await after.preAuthorize({ providerCustomerId, providerCardId: old.providerCardId, ...base, idempotencyKey: 'r3' })).status).toBe('authorized');
+    });
+
+    it('pré-autorização fake-pay- de antes do reinício: getPayment authorized; captura o valor pedido; cancela', async () => {
+      const before = new FakePaymentProvider(SECRET);
+      p = before;
+      const c = await card();
+      const auth = await before.preAuthorize({ ...c, ...base, idempotencyKey: 'k1' });
+      const after = new FakePaymentProvider(SECRET);
+      expect(await after.getPayment(auth.providerPaymentId)).toMatchObject({ providerPaymentId: auth.providerPaymentId, status: 'authorized' });
+      expect(await after.capture({ providerPaymentId: auth.providerPaymentId, amountCents: 5000, idempotencyKey: 'k2' })).toMatchObject({ status: 'captured', capturedCents: 5000 });
+      expect((await after.getPayment(auth.providerPaymentId)).status).toBe('captured');
+      const other = await before.preAuthorize({ ...c, ...base, idempotencyKey: 'k3' });
+      expect((await new FakePaymentProvider(SECRET).cancelPreAuthorization({ providerPaymentId: other.providerPaymentId, idempotencyKey: 'k4' })).status).toBe('canceled');
+    });
+
+    it('ids fora do formato do fake continuam falhando', async () => {
+      const fresh = new FakePaymentProvider(SECRET);
+      expect(await fresh.charge({ providerCustomerId: 'x', providerCardId: 'card-1', ...base, idempotencyKey: 'g1' })).toMatchObject({ status: 'failed', failureReason: 'card_not_found' });
+      expect(await fresh.charge({ providerCustomerId: 'x', providerCardId: 'fake-card-nao-e-uuid', ...base, idempotencyKey: 'g2' })).toMatchObject({ status: 'failed', failureReason: 'card_not_found' });
+      expect(await fresh.charge({ providerCustomerId: 'x', providerCardId: '', ...base, idempotencyKey: 'g3' })).toMatchObject({ status: 'failed', failureReason: 'card_not_found' });
+      await expect(fresh.getPayment('pay-123')).rejects.toBeInstanceOf(PaymentProviderError);
+      await expect(fresh.getPayment(`fake-pay-${UUID}x`)).rejects.toBeInstanceOf(PaymentProviderError);
+      await expect(fresh.capture({ providerPaymentId: 'mp-999', amountCents: 100, idempotencyKey: 'g4' })).rejects.toBeInstanceOf(PaymentProviderError);
+    });
+
+    it('cartão excluído (LGPD) não é reidratado', async () => {
+      const c = await card();
+      await p.deleteCustomer({ providerCustomerId: c.providerCustomerId, providerCardIds: [c.providerCardId] });
+      expect(await p.charge({ ...c, ...base, idempotencyKey: 'd1' })).toMatchObject({ status: 'failed', failureReason: 'card_not_found' });
+    });
+  });
+
   it('verifyWebhook usa o HMAC do Mercado Pago', () => {
     expect(p.verifyWebhook({ signature: sign('1', 'r', NOW), requestId: 'r', dataId: '1' })).toBe(true);
     expect(p.verifyWebhook({ signature: sign('1', 'r', NOW, 'outro'), requestId: 'r', dataId: '1' })).toBe(false);
