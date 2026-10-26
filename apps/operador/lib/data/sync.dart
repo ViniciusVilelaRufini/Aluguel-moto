@@ -392,6 +392,8 @@ class SyncController extends Notifier<SyncState> {
         status: j.status,
         error: j.error,
         photoKeys: j.photoKeys,
+        // O job regravado continua do mesmo operador (sem dono ele so poderia ser descartado).
+        ownerSub: j.ownerSub,
       );
 }
 
