@@ -21,6 +21,7 @@ import '../../core/services.dart';
 import '../../core/session.dart';
 import '../../core/widgets.dart';
 import '../handover/handover_watch.dart';
+import '../payments/debt_pix_sheet.dart' show openDebtsProvider;
 import '../pick/pick_logic.dart';
 import '../pickup/depot_hours.dart';
 import '../pickup/depot_labels.dart';
@@ -156,7 +157,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     _tick = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
       // Horario do galpao pode mudar no servidor: relê de tempos em tempos.
-      if (++minutes % 5 == 0) ref.invalidate(depotsProvider);
+      if (++minutes % 5 == 0) {
+        ref.invalidate(depotsProvider);
+        // Cobranca em andamento: a retentativa no servidor roda a cada 5 min; confere o desfecho.
+        if (ref.read(sessionProvider).value?.customer?.delinquent ?? false) _refreshPaymentState();
+      }
       setState(() {});
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -182,6 +187,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> with WidgetsBindingObse
     if (state != AppLifecycleState.resumed || !mounted) return;
     ref.invalidate(depotsProvider);
     ref.invalidate(currentRentalStateProvider);
+    _refreshPaymentState();
+  }
+
+  /// Relê as dividas em aberto e, com o cliente inadimplente, a sessao (a flag sai quando a
+  /// cobranca conclui): o aviso "Cobranca em andamento" vira "Pagar agora" ou some.
+  void _refreshPaymentState() {
+    ref.invalidate(openDebtsProvider);
+    if (ref.read(sessionProvider).value?.customer?.delinquent ?? false) {
+      unawaited(ref.read(sessionProvider.notifier).refresh().catchError((_) {}));
+    }
   }
 
   @override

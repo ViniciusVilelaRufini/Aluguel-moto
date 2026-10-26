@@ -5326,6 +5326,18 @@ abstract class AppLocalizations {
   /// **'{amount} em aberto. Pague para alugar de novo.'**
   String paymentPendingHomeText(String amount);
 
+  /// No description provided for @paymentProcessingHomeTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cobrança em andamento'**
+  String get paymentProcessingHomeTitle;
+
+  /// No description provided for @paymentProcessingHomeText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estamos processando a cobrança da sua última corrida. Assim que concluir, você poderá reservar de novo.'**
+  String get paymentProcessingHomeText;
+
   /// No description provided for @paymentPendingBlock.
   ///
   /// In pt, this message translates to:

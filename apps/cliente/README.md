@@ -381,6 +381,7 @@ Testes em `test/fechamento_sem_cartao_test.dart` (100% e 200% de fonte).
 - **Recibo:** situação do pagamento (Pago / Pendente / Processando, `VoltiBadge`), caução usada e devolvida, "A pagar" e o texto do fechamento conforme o pagamento ("Falta pagar R$ X", "Usamos R$ X da caução"). "Recibo e nota fiscal" mostra "Aguardando pagamento" e só abre o PDF com o recibo pago.
 - **Pagar agora:** quitação por Pix (`POST /payments/{id}/retry`, `Backend.payDebtPix`) com QR e copia e cola no mesmo componente da recarga (`core/pix_charge_panel.dart`, usado também pela `TopUpPixSheet`); acompanha `GET /payments/{id}` até `paid`, fecha e recarrega o recibo.
 - **Home:** `PendingPaymentBanner` com o total em aberto (`Backend.openDebts`: `GET /payments?status=failed` com `outstandingCents`) e "Pagar agora" (dívida mais antiga primeiro).
+- **Cobrança em andamento (2026-10-26):** cliente inadimplente (`Customer.delinquent`) sem dívida `failed` (a liquidação ainda retenta no cartão) vê o aviso informativo "Cobrança em andamento", sem botão; com dívida `failed` o aviso com "Pagar agora" tem precedência. Ao voltar do segundo plano (e a cada 5 min enquanto inadimplente) a home relê as dívidas e a sessão. Testes: `test/home_cobranca_em_andamento_test.dart`.
 - **Reserva:** `409 payment-pending` (ou `403 customer-delinquent`) na confirmação → aviso "Pague o valor pendente para alugar de novo." e volta à home com a pendência.
 
 ## Correções do emulador (2026-10-22, branch `feat/cliente-login`)

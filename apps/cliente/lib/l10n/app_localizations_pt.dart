@@ -3122,6 +3122,13 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get paymentProcessingHomeTitle => 'Cobrança em andamento';
+
+  @override
+  String get paymentProcessingHomeText =>
+      'Estamos processando a cobrança da sua última corrida. Assim que concluir, você poderá reservar de novo.';
+
+  @override
   String get paymentPendingBlock =>
       'Pague o valor pendente para alugar de novo.';
 
