@@ -61,7 +61,7 @@ export default function AlertsPage() {
         <Alert tone="danger" title={`${critical} ${critical === 1 ? 'alerta crítico' : 'alertas críticos'}`} icon="Siren">{criticalBanner(criticalRows.map((a) => a.type))}</Alert>
       )}
       <ErrorNote error={error} />
-      <DataTable
+      <div className="stack-cells"><DataTable
         testId="alerts-table" sticky
         rows={sorted}
         loading={loading}
@@ -89,7 +89,7 @@ export default function AlertsPage() {
             </div>
           ) },
         ]}
-      />
+      /></div>
       {assigning && <AssignModal alert={assigning} meId={me?.id} busy={assign.isPending} error={assign.error} onClose={() => { assign.reset(); setAssigning(null); }} onAssign={(assigneeId, name) => assign.mutate({ id: assigning.id, assigneeId, name })} />}
       <ReasonDialog
         open={!!resolving}

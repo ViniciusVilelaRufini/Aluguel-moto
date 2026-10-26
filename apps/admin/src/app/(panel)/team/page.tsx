@@ -53,7 +53,7 @@ function Team() {
         ))}
       </div>
       <ErrorNote error={error} />
-      <DataTable<S<'StaffUser'>> rows={rows} loading={loading} pager={pager} onRowClick={setEdit} empty="Nenhuma pessoa na equipe" emptyIcon="Users"
+      <div className="stack-cells"><DataTable<S<'StaffUser'>> rows={rows} loading={loading} pager={pager} onRowClick={setEdit} empty="Nenhuma pessoa na equipe" emptyIcon="Users"
         columns={[
           { key: 'name', label: 'Pessoa', render: (r) => <span style={{ fontWeight: 600 }}>{r.name}</span> },
           { key: 'email', label: 'E-mail' },
@@ -61,7 +61,7 @@ function Team() {
           { key: 'mfa', label: '2FA', render: (r) => (r.mfaEnabled === false ? <Badge size="sm" tone="warning">Pendente</Badge> : <Badge size="sm" tone="success" icon="ShieldCheck">Ativo</Badge>) },
           { key: 'active', label: 'Conta', render: (r) => <Pill tone={r.active ? 'success' : 'neutral'}>{r.active ? 'Ativa' : 'Inativa'}</Pill> },
           { key: 'lastLoginAt', label: 'Último acesso', align: 'right', render: (r) => (r.lastLoginAt ? timeAgo(r.lastLoginAt) : 'nunca') },
-        ]} />
+        ]} /></div>
       {invite && <StaffModal onClose={() => setInvite(false)} onSaved={() => { toast('Convite enviado'); qc.invalidateQueries({ queryKey: ['staff'] }); }} />}
       {edit && <StaffModal user={edit} onClose={() => setEdit(null)} onSaved={() => { toast('Acesso atualizado'); qc.invalidateQueries({ queryKey: ['staff'] }); }} />}
     </>

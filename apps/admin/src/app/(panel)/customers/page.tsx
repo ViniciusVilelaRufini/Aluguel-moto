@@ -88,6 +88,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
           <SegmentedControl options={[{ value: 'all', label: 'Todos' }, { value: 'pending', label: 'Pendentes' }, { value: 'blocked', label: 'Bloqueados' }]} value={filter} onChange={setFilter} style={{ width: 320 }} />
         </div>
         <ErrorNote error={error} />
+        <div className="stack-cells">
         <DataTable<S<'Customer'>>
           testId="customers-table" sticky
           rows={rows}
@@ -116,6 +117,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
             ) },
           ]}
         />
+        </div>
       </Page>
       {selected && <CustomerSheet id={selected} onClose={() => onSelect(null)} onRentals={onRentals} onChat={onChat} />}
     </div>
