@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { PLAN_LABEL, RENTAL_EVENT, RENTAL_STATUS, COVERAGE_LABEL } from '@/lib/labels';
 import { dayEndIso, dayStartIso, formatBRL, formatDateTime, formatDuration } from '@/lib/format';
+import { toCents } from '@/lib/money';
 import type { S } from '@/lib/types';
 import { DataTable, ErrorNote, Field, KV, Page, Pill, ReasonDialog, SectionTitle, Select, SidePanel, TextInput, usePagedQuery, useToast } from './ui';
 import { Alert } from '@/ds/Alert';
@@ -72,6 +73,7 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
   const rental = useQuery({ queryKey: ['rental', id], queryFn: () => unwrap(api.GET('/rentals/{id}', { params: { path: { id } } })) });
   const events = useQuery({ queryKey: ['rental-events', id], queryFn: () => unwrap(api.GET('/rentals/{id}/events', { params: { path: { id } } })) });
   const r = rental.data;
+  const payment = useQuery({ queryKey: ['payment', r?.paymentId], enabled: !!r?.paymentId, queryFn: () => unwrap(api.GET('/payments/{id}', { params: { path: { id: r!.paymentId! } } })) });
   const finished = r?.status === 'ended' || r?.status === 'force_ended';
 
   return (
@@ -140,8 +142,10 @@ function RentalDetail({ id, onClose }: { id: string; onClose: () => void }) {
         danger
         onClose={() => setRefund(false)}
         onConfirm={async (reason) => {
-          const cents = refundAmount.trim() ? Math.round(Number(refundAmount.replace(',', '.')) * 100) : undefined;
+          const cents = refundAmount.trim() ? toCents(refundAmount) : undefined;
           if (cents !== undefined && (!Number.isFinite(cents) || cents <= 0)) throw new Error('Informe um valor válido');
+          const p = payment.data;
+          if (cents !== undefined && p && cents > p.amountCents - p.refundedCents) throw new Error(`O valor excede o que ainda pode ser estornado (${formatBRL(Math.max(0, p.amountCents - p.refundedCents))})`);
           await unwrap(api.POST('/payments/{id}/refund', { params: { path: { id: r!.paymentId! }, header: { 'Idempotency-Key': crypto.randomUUID() } }, body: { reason, ...(cents ? { amountCents: cents } : {}) } }));
           toast('Estorno solicitado');
           qc.invalidateQueries({ queryKey: ['rental', id] });

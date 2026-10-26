@@ -56,6 +56,7 @@ test.describe('alugueis: encerrar a forca e estornar', () => {
   test('[BUG P2-28] estorno aceita o formato de reais com milhar ("1.234,50") como o resto do painel', async ({ page }) => {
     const mock = await loginMocked(page);
     mock.db.rentals[1]!.paymentId = 'pay-001';
+    mock.db.payments[0]!.amountCents = 500_000; // precisa caber o estorno de R$ 1.234,50 (P2-29 valida contra o pago)
     await page.goto('/customers?tab=rentals');
     await page.getByTestId('rentals-table').getByTestId('row').nth(1).click();
     await page.getByTestId('refund').click();
