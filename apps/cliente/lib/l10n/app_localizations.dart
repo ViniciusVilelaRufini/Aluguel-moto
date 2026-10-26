@@ -1132,6 +1132,18 @@ abstract class AppLocalizations {
   /// **'Caução por depósito Pix'**
   String get payPixHint;
 
+  /// No description provided for @payTest.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagamento de teste'**
+  String get payTest;
+
+  /// No description provided for @payTestHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aprova na hora · só na versão de teste'**
+  String get payTestHint;
+
   /// No description provided for @pixCopied.
   ///
   /// In pt, this message translates to:

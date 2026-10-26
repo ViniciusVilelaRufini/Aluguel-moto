@@ -428,8 +428,13 @@ abstract class CardTokenizer {
 /// numero de cartao: devolve uma constante.
 class DevCardTokenizer implements CardTokenizer {
   @override
-  Future<String?> tokenize(BuildContext context) async => 'tok_visa_4242';
+  Future<String?> tokenize(BuildContext context) async => kTestCardToken;
 }
+
+/// Token de teste do gateway falso (aprovado na hora) e o final do cartao que ele gera.
+/// Tambem usado pelo "Pagamento de teste" da retirada no canal `beta`.
+const kTestCardToken = 'tok_visa_4242';
+const kTestCardLast4 = '4242';
 
 /// Tokenizador real: abre o formulario de cartao e envia os dados DIRETO ao
 /// Mercado Pago (chave publica). So o token volta para o app e segue para a API.

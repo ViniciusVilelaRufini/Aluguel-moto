@@ -565,6 +565,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get payPixHint => 'Caução por depósito Pix';
 
   @override
+  String get payTest => 'Pagamento de teste';
+
+  @override
+  String get payTestHint => 'Aprova na hora · só na versão de teste';
+
+  @override
   String get pixCopied => 'Código Pix copiado';
 
   @override
