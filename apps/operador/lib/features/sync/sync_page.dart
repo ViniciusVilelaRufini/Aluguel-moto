@@ -58,7 +58,15 @@ class SyncPage extends ConsumerWidget {
                 children: [
                   Text(label(j.kind), style: VoltiTypography.bodyStrong),
                   const SizedBox(height: 4),
-                  if (j.status == JobStatus.pending)
+                  if (j.ownerSub == null) ...[
+                    Text(t.pendingOtherOperator, style: VoltiTypography.caption),
+                    const SizedBox(height: VoltiSpacing.s8),
+                    VoltiButton(
+                      label: t.discard,
+                      variant: VoltiButtonVariant.ghost,
+                      onPressed: () => ctrl.discard(j.id),
+                    ),
+                  ] else if (j.status == JobStatus.pending)
                     Text(t.awaitingSync, style: VoltiTypography.caption)
                   else ...[
                     Text(

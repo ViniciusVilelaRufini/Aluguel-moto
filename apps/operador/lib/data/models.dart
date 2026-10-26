@@ -150,6 +150,7 @@ class QueuedJob {
     this.status = JobStatus.pending,
     this.error,
     this.photoKeys = const [],
+    this.ownerSub,
   });
 
   final String id;
@@ -167,6 +168,10 @@ class QueuedJob {
   /// Chaves de objeto das fotos ja enviadas (evita reenvio em nova tentativa).
   final List<String> photoKeys;
 
+  /// `sub` do operador que enfileirou. `null` = job antigo (migracao do Hive):
+  /// dono desconhecido, nunca e enviado automaticamente.
+  final String? ownerSub;
+
   QueuedJob copyWith({JobStatus? status, String? error, List<String>? photoKeys}) => QueuedJob(
         id: id,
         kind: kind,
@@ -178,6 +183,7 @@ class QueuedJob {
         status: status ?? this.status,
         error: error ?? this.error,
         photoKeys: photoKeys ?? this.photoKeys,
+        ownerSub: ownerSub,
       );
 
   Map<String, dynamic> toJson() => {
@@ -191,6 +197,7 @@ class QueuedJob {
         'status': status.name,
         'error': error,
         'photoKeys': photoKeys,
+        'ownerSub': ownerSub,
       };
 
   factory QueuedJob.fromJson(Map<String, dynamic> j) => QueuedJob(
@@ -204,6 +211,7 @@ class QueuedJob {
         status: JobStatus.values.byName(j['status'] as String),
         error: j['error'] as String?,
         photoKeys: ((j['photoKeys'] as List?) ?? const []).cast<String>(),
+        ownerSub: j['ownerSub'] as String?,
       );
 }
 

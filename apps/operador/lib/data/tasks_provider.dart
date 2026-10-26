@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:volti_api/volti_api.dart';
 
+import '../features/auth/auth.dart';
 import 'field_repository.dart';
 import 'local_state.dart';
 import 'service_unlock.dart';
@@ -50,6 +51,8 @@ class TasksController extends AsyncNotifier<TasksResult> {
   @override
   Future<TasksResult> build() async {
     final queue = ref.read(offlineQueueProvider);
+    // Cache por operador; trocar de conta recarrega a lista.
+    final owner = ref.watch(ownerSubProvider);
     // Conclusao que sincronizou depois (fila offline): a tarefa vira concluida so agora.
     ref.listen(syncControllerProvider, (prev, next) {
       for (final e in next.results.entries) {
@@ -72,15 +75,17 @@ class TasksController extends AsyncNotifier<TasksResult> {
       ref.read(knownVehicleStatusProvider.notifier).forget(server.keys);
       await ref.read(serviceUnlockProvider.notifier).reconcile(tasks,
           vehicleStatuses: {...ref.read(knownVehicleStatusProvider), ...server});
-      await queue.saveTasks([
-        for (final t in tasks)
-          standardSerializers.serializeWith(FieldTask.serializer, t)!
-              as Map<String, dynamic>,
-      ]);
+      if (owner != null) {
+        await queue.saveTasks(owner, [
+          for (final t in tasks)
+            standardSerializers.serializeWith(FieldTask.serializer, t)!
+                as Map<String, dynamic>,
+        ]);
+      }
       return TasksResult(tasks);
     } on RepositoryException catch (e) {
       if (e.kind != FailureKind.network) rethrow;
-      final cached = await queue.loadTasks();
+      final cached = owner == null ? <Map<String, dynamic>>[] : await queue.loadTasks(owner);
       if (cached.isEmpty) rethrow;
       return TasksResult(
         sortTasks([

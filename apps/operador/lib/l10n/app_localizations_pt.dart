@@ -358,6 +358,10 @@ class AppLocalizationsPt extends AppLocalizations {
   String get discard => 'Descartar';
 
   @override
+  String get pendingOtherOperator =>
+      'Pendente de outro operador. Não é enviado por esta conta; só pode ser descartado.';
+
+  @override
   String get loginCognitoAction => 'Entrar com a conta Volti';
 
   @override
