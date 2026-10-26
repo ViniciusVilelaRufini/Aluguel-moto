@@ -3256,7 +3256,7 @@ paths:
       tags: [field-tasks]
       operationId: completeFieldTask
       summary: Concluir tarefa
-      description: Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status: a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa (senão `409` `vehicle-unavailable` e nada muda).
+      description: Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status (a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa; senão `409` `vehicle-unavailable` e nada muda).
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
