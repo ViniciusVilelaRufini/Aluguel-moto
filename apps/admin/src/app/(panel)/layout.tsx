@@ -37,11 +37,19 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
   const drawer = useNarrow(639);
   const [navOpen, setNavOpen] = useState(false);
   const toggleRef = useRef<HTMLButtonElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const open = drawer && navOpen;
 
   // Gaveta: fecha ao navegar; Esc fecha; Tab fica preso no menu; o foco volta ao botão.
   useEffect(() => { setNavOpen(false); }, [pathname]);
   useEffect(() => { if (!drawer) setNavOpen(false); }, [drawer]);
+  // React 18 descarta `inert` booleano: aplicado pelo DOM. Conteúdo fora da gaveta fica inerte enquanto ela está aberta.
+  useEffect(() => {
+    const m = mainRef.current;
+    if (!m || !open) return;
+    m.setAttribute('inert', '');
+    return () => m.removeAttribute('inert');
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const nav = document.getElementById('main-nav');
@@ -107,7 +115,7 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
           </div>
         }
       />
-      <main inert={open || undefined} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <main ref={mainRef} style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <header className="shell-header" style={{ height: 64, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16, padding: '0 24px', background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)' }}>
           <button ref={toggleRef} type="button" className="nav-toggle" aria-label="Abrir menu" aria-expanded={open} aria-controls="main-nav" onClick={() => setNavOpen((v) => !v)}>
             <Icon name="Menu" size={20} />

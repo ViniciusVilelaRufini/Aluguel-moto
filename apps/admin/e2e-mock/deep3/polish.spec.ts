@@ -87,6 +87,8 @@ test('/finance 1440px: valores dos indicadores seguem alinhados ao topo com e se
     const tr = t.getBoundingClientRect(); const v = t.querySelector('.stat-value')!.getBoundingClientRect();
     return { off: Math.round(v.top - tr.top), hasDelta: t.textContent!.includes('%') };
   }));
+  expect(r.some((x) => x.hasDelta), 'precisa de cartao com variacao').toBe(true);
+  expect(r.some((x) => !x.hasDelta), 'precisa de cartao sem variacao').toBe(true);
   const offs = new Set(r.map((x) => x.off));
   expect(offs.size, `deslocamento do valor por cartao: ${JSON.stringify(r)}`).toBe(1);
 });

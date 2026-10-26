@@ -23,6 +23,8 @@ test.describe('menu lateral em 390px', () => {
   });
 
   test('[BUG P3-16] botao de menu abre a gaveta (aria-expanded/controls); Esc, scrim e navegacao fecham; foco preso e devolvido', async ({ page }) => {
+    const errors: string[] = [];
+    page.on('console', (m) => { if (m.type() === 'error' || m.type() === 'warning') errors.push(m.text()); });
     await loginMocked(page);
     await page.goto('/alerts');
     const toggle = page.getByRole('button', { name: 'Abrir menu' });
@@ -30,6 +32,7 @@ test.describe('menu lateral em 390px', () => {
     await expect(toggle).toHaveAttribute('aria-controls', 'main-nav');
     await toggle.click();
     await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('main[inert]')).toHaveCount(1);
     const nav = page.locator('#main-nav');
     await expect(nav).toBeVisible();
     // foco preso: Tab repetido nunca sai da gaveta
@@ -39,6 +42,8 @@ test.describe('menu lateral em 390px', () => {
     }
     await page.keyboard.press('Escape');
     await expect(nav).toBeHidden();
+    await expect(page.locator('main[inert]')).toHaveCount(0);
+    expect(errors.filter((e) => /inert/i.test(e))).toEqual([]);
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(toggle).toBeFocused();
     // scrim fecha
