@@ -406,7 +406,7 @@ export function DataTable<T extends object>({
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
                   onKeyDown={onRowClick ? (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); onRowClick(r); } } : undefined}>
                   {columns.map((c) => (
-                    <td key={c.key} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: 'nowrap' }}>
+                    <td key={c.key} data-label={c.label || undefined} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: 'nowrap' }}>
                       {c.render ? c.render(r) : (get(r, c.key) as ReactNode)}
                     </td>
                   ))}

@@ -44,6 +44,16 @@ test.describe('celular 390x844: fluxos profundos', () => {
     expect(clipped, 'tabela de planos exige rolar horizontalmente dentro do cartao: Ativo/Desbloqueio ficam escondidos').toBeLessThanOrEqual(1);
   });
 
+  test('/settings em 390px: linha real de Cupons mostra os rotulos (Codigo, Desconto)', async ({ page }) => {
+    await loginMocked(page);
+    await page.goto('/settings');
+    const cell = page.locator('.stack-cells [data-testid="row"] td[data-label="Código"]').first();
+    await expect(cell).toBeVisible();
+    const label = await cell.evaluate((el) => getComputedStyle(el, '::before').content);
+    expect(label).toContain('Código');
+    await expect(page.locator('.stack-cells [data-testid="row"] td[data-label="Desconto"]').first()).toBeVisible();
+  });
+
   test('ficha da moto: abre inteira na tela e comandos ficam alcancaveis', async ({ page }) => {
     await loginMocked(page);
     await openVehicle(page, 'VLT-002');

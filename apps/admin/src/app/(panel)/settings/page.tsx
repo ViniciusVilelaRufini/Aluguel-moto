@@ -126,7 +126,7 @@ export default function SettingsPage() {
       </PageHeader>
       {!canEdit && <Alert tone="info" icon="Info">Seu perfil só visualiza preços e planos.</Alert>}
       <ErrorNote error={err ?? plans.error ?? fees.error} />
-      <div className="stack-cells" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 24, alignItems: 'start' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: 24, alignItems: 'start' }}>
         {sec('Planos', 'Preço por período, taxa de desbloqueio e pausa (em reais)', narrow ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {(plans.data?.items ?? []).map((p) => {
@@ -201,14 +201,14 @@ export default function SettingsPage() {
         ))}
         {sec('Cupons e indicação', 'Campanhas ativas', (
           <>
-            <DataTable<S<'Coupon'>> rows={coupons.data?.items ?? []} loading={coupons.isLoading} empty="Nenhum cupom."
+            <div className="stack-cells"><DataTable<S<'Coupon'>> rows={coupons.data?.items ?? []} loading={coupons.isLoading} empty="Nenhum cupom."
               columns={[
                 { key: 'code', label: 'Código', mono: true },
                 { key: 'discount', label: 'Desconto', render: (c) => (c.discountType === 'percent' ? `${c.percentOff}%` : `R$ ${toReais(c.amountOffCents ?? 0)}`) + (c.planCodes?.length ? ` · ${c.planCodes.map((p) => PLAN_LABEL[p]).join(', ')}` : '') },
                 { key: 'validUntil', label: 'Validade', render: (c) => <span style={{ fontSize: 12 }}>{c.validUntil ? `até ${formatDate(c.validUntil)}` : 'Sem prazo'}</span> },
                 { key: 'redemptions', label: 'Usos', align: 'right', render: (c) => <span style={{ fontFamily: 'var(--font-mono)' }}>{c.redemptions.toLocaleString('pt-BR')}{c.maxRedemptions ? ` / ${c.maxRedemptions.toLocaleString('pt-BR')}` : ''}</span> },
                 { key: 'active', label: 'Ativo', align: 'right', render: (c) => <Switch ariaLabel={`Cupom ${c.code} ativo`} disabled={!canEdit} checked={couponEdit[c.id] ?? c.active} onChange={(v: boolean) => setCouponEdit((m) => ({ ...m, [c.id]: v }))} /> },
-              ]} />
+              ]} /></div>
             {canEdit && <div><Button size="sm" variant="secondary" icon="Plus" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setNewCoupon(true)}>Novo cupom</Button></div>}
           </>
         ))}
