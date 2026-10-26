@@ -21,9 +21,16 @@ function collectModules(mod: any, seen = new Set<any>()): any[] {
 
 function collectRoutes() {
   // A entrega simulada (createTestHandover) só é registrada com ALLOW_TEST_HANDOVER=true; o AppModule é carregado depois.
+  const prevFlag = process.env.ALLOW_TEST_HANDOVER;
   process.env.ALLOW_TEST_HANDOVER = 'true';
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { AppModule } = require('./app.module') as typeof import('./app.module');
+  let AppModule: typeof import('./app.module').AppModule;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ({ AppModule } = require('./app.module') as typeof import('./app.module'));
+  } finally {
+    if (prevFlag === undefined) delete process.env.ALLOW_TEST_HANDOVER;
+    else process.env.ALLOW_TEST_HANDOVER = prevFlag;
+  }
   const routes = new Map<string, { requirement?: AuthRequirement; isPublic: boolean }>();
   for (const mod of collectModules(AppModule)) {
     const m = mod?.module ?? mod;

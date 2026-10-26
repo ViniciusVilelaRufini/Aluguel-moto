@@ -137,6 +137,7 @@ export function assertSafeConfig(
 ): void {
   // Credencial do FCM inválida falha em qualquer ambiente (melhor que descobrir no primeiro push).
   if (cfg.pushMode === 'fcm') assertFcmServiceAccount(cfg.fcmServiceAccountJson);
+  assertTestHandoverAllowed(cfg.nodeEnv, cfg.paymentProvider, cfg.allowTestHandover === true, cfg.allowFakePayments === true);
   if (cfg.nodeEnv !== 'production') return;
   if (cfg.authMode !== 'cognito') {
     throw new Error(`AUTH_MODE=${cfg.authMode} não é permitido com NODE_ENV=production (use AUTH_MODE=cognito).`);
@@ -148,12 +149,6 @@ export function assertSafeConfig(
     throw new Error('MERCADOPAGO_WEBHOOK_SECRET vazio com PAYMENT_PROVIDER=mercadopago: os webhooks não poderiam ser validados.');
   }
   assertFakePaymentsAllowed(cfg.nodeEnv, cfg.paymentProvider, cfg.allowFakePayments === true);
-  // Entrega simulada (sem a equipe do galpão) só onde o pagamento também é de mentira: nunca com clientes reais.
-  if (cfg.allowTestHandover === true && !(cfg.paymentProvider === 'fake' && cfg.allowFakePayments === true)) {
-    throw new Error(
-      'ALLOW_TEST_HANDOVER=true com NODE_ENV=production exige PAYMENT_PROVIDER=fake e ALLOW_FAKE_PAYMENTS=true (só no ambiente dev, sem clientes reais).',
-    );
-  }
   if (cfg.publicShareBaseUrl !== undefined) {
     let url: URL | undefined;
     try {
@@ -164,6 +159,20 @@ export function assertSafeConfig(
     if (!url || url.protocol !== 'https:') {
       throw new Error('PUBLIC_SHARE_BASE_URL obrigatório em produção (URL https da página pública de localização compartilhada, ex.: https://api.exemplo.com.br/share).');
     }
+  }
+}
+
+/**
+ * Entrega simulada (sem a equipe do galpão) só onde o pagamento também é de mentira, em qualquer ambiente:
+ * `ALLOW_TEST_HANDOVER=true` exige `PAYMENT_PROVIDER=fake` e, com NODE_ENV=production, também `ALLOW_FAKE_PAYMENTS=true`.
+ */
+export function assertTestHandoverAllowed(nodeEnv: string | undefined, provider: string | undefined, enabled: boolean, allowFake: boolean): void {
+  if (!enabled) return;
+  if (provider !== 'fake') {
+    throw new Error('ALLOW_TEST_HANDOVER=true exige PAYMENT_PROVIDER=fake (a entrega simulada só existe sem pagamento real).');
+  }
+  if (nodeEnv === 'production' && !allowFake) {
+    throw new Error('ALLOW_TEST_HANDOVER=true com NODE_ENV=production exige ALLOW_FAKE_PAYMENTS=true (só no ambiente dev, sem clientes reais).');
   }
 }
 

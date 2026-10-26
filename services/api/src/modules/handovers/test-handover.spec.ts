@@ -71,6 +71,12 @@ describe('TestHandoverService', () => {
     expect(handovers.createPickup).not.toHaveBeenCalled();
   });
 
+  it('reserva active já vencida (expiresAt <= agora) → 409 antes de assinar o código', async () => {
+    const { svc, handovers } = setup({ ...reservation(), expiresAt: new Date(Date.now() - 1000) });
+    await expect(svc.create(customer, RES_ID)).rejects.toMatchObject({ status: 409, slug: 'conflict', detail: 'Esta reserva não está mais ativa.' });
+    expect(handovers.createPickup).not.toHaveBeenCalled();
+  });
+
   it('caminho feliz: chama createPickup com ator de sistema, código assinado válido, checklist de teste e a bateria da moto', async () => {
     const { svc, handovers, prisma } = setup();
     const out = await svc.create(customer, RES_ID);

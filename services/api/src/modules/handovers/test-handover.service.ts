@@ -41,7 +41,8 @@ export class TestHandoverService {
     const r = await this.prisma.reservation.findUnique({ where: { id: reservationId }, include: { vehicle: true } });
     // Reserva de outro cliente responde igual à inexistente (não vaza a existência).
     if (!r || !customer.customerId || r.customerId !== customer.customerId || !r.depotId) throw reservationNotFound();
-    if (r.status !== 'active') throw conflict('conflict', 'Esta reserva não está mais ativa.');
+    // Vencida e ainda não expirada pela varredura: mesma resposta de reserva encerrada (sem assinar um código vencido).
+    if (r.status !== 'active' || r.expiresAt.getTime() <= Date.now()) throw conflict('conflict', 'Esta reserva não está mais ativa.');
 
     const result = await this.handovers.createPickup(TEST_HANDOVER_ACTOR, {
       type: 'pickup',
