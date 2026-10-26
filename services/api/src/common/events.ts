@@ -63,7 +63,7 @@ export interface IotDeviceEvent {
 export interface IotCommandUpdatedEvent {
   commandId: string;
   status: CommandStatus;
-  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit';
+  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff';
 }
 
 export interface IotConnectivityEvent {
@@ -100,7 +100,7 @@ export interface CommandChangedEvent {
   vehicleId: string;
   type: CommandType;
   status: CommandStatus;
-  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit';
+  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff';
   /** payload do VehicleCommand (rentalId, purpose…), para consumidores internos. */
   payload?: Record<string, unknown>;
 }

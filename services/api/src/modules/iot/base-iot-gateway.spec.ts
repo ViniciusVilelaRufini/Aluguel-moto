@@ -155,7 +155,7 @@ describe('BaseIotGateway', () => {
     const p = gw.lock({ commandId: 'c1', thingName: T });
     await clock.advance(3_000);
     await p;
-    const u = gw.unlock({ commandId: 'c2', thingName: T });
+    const u = gw.unlock({ commandId: 'c2', thingName: T, authority: 'staff' });
     await gw.onReported(T, { travada: false, limite_kmh: 20 });
     expect(await u).toEqual({ commandId: 'c2', status: 'confirmed' });
     expect(transport.desired[transport.desired.length - 1].desired).toEqual({ travada: false, limite_kmh: 20 });

@@ -100,7 +100,9 @@ export class RentalsService {
   async resume(user: Principal, id: string) {
     const r = await this.loadFor(user, id);
     if (r.status !== 'paused') throw conflict('rental-not-active', 'Só é possível retomar um aluguel pausado.');
-    await this.commands.dispatch({ vehicleId: r.vehicleId, type: 'unlock', reason: 'Retomada do aluguel', actor: user, context: { rentalId: id, purpose: 'rental_resume' }, auditAction: 'rental.resume' });
+    const cmd = await this.commands.dispatch({ vehicleId: r.vehicleId, type: 'unlock', reason: 'Retomada do aluguel', actor: user, context: { rentalId: id, purpose: 'rental_resume' }, auditAction: 'rental.resume' });
+    // Trava da equipe/sistema (cerca, hold, modo roubada): o cliente não desfaz; o aluguel continua pausado.
+    if (cmd.statusReason === 'locked_by_staff') throw conflict('vehicle-locked-by-staff', 'A moto foi bloqueada pela equipe. Fale com o suporte.');
     const pausedFor = r.pausedAt ? Math.floor((Date.now() - r.pausedAt.getTime()) / 1000) : 0;
     const moved = await this.prisma.rental.updateMany({
       where: { id, status: 'paused' },
