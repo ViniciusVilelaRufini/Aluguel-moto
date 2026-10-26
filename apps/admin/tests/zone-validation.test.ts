@@ -25,6 +25,11 @@ describe('validateZone', () => {
   it('rejects negative limits', () => {
     expect(validateZone({ name: 'A', type: 'reduced_speed', speedLimitKmh: -1, geometry: poly }).speedLimitKmh).toBeTruthy();
   });
+  it('rejects reduced_speed below 6 km/h with a pt-BR message', () => {
+    for (const v of [0, 3, 5.9]) {
+      expect(validateZone({ name: 'A', type: 'reduced_speed', speedLimitKmh: v, geometry: poly }).speedLimitKmh).toBe('Mínimo de 6 km/h em zona de velocidade reduzida');
+    }
+  });
   it('accepts valid zones', () => {
     expect(validateZone({ name: 'A', type: 'reduced_speed', speedLimitKmh: 6, geometry: poly })).toEqual({});
     expect(validateZone({ name: 'A', type: 'reduced_speed', speedLimitKmh: 20, geometry: poly })).toEqual({});

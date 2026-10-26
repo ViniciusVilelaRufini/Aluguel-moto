@@ -21,4 +21,6 @@ export interface RealtimeEvents {
 
 export const MAX_SPEED_KMH = 32;
 export const MAX_REDUCED_SPEED_KMH = 20;
+/** Piso de zona de velocidade reduzida (a API responde 422 abaixo disso). */
+export const MIN_REDUCED_SPEED_KMH = 6;
 export const SAFE_LOCK_SPEED_KMH = 3;
