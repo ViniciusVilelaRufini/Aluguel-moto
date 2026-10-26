@@ -13,9 +13,11 @@ bash deploy/single/render-env.sh
 # IMDS só para a API (Run-2): regras DOCKER-USER e a unit de boot, antes de qualquer build (os RUN do docker build também
 # rodam em container) e de subir os containers. Idempotente.
 bash deploy/single/imds-guard.sh install
-# A unit é RequiredBy=docker.service: se ela falhou no boot, o Docker ficou parado. Reativa a unit (as regras já estão
-# aplicadas) e sobe o Docker; idempotente quando tudo já está no ar.
-systemctl restart volti-imds-guard
+# A unit é RequiredBy=docker.service: se ela falhou no boot, o Docker ficou parado. As regras já foram aplicadas acima;
+# aqui só se ativa a unit se estiver inativa e se sobe o Docker. Nunca `restart`: com o Requires= do docker.service, o
+# restart da unit reiniciaria o dockerd e todos os containers a cada update.
+systemctl reset-failed volti-imds-guard 2>/dev/null || true
+systemctl is-active --quiet volti-imds-guard || systemctl start volti-imds-guard
 systemctl start docker
 ENV_FILE="${VOLTI_ENV_FILE:-/opt/volti/.env}"
 dc() { docker compose -f deploy/single/compose.yml --env-file "$ENV_FILE" "$@"; }

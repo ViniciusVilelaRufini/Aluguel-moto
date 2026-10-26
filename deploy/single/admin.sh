@@ -16,6 +16,11 @@ bash deploy/single/imds-guard.sh >/dev/null
 # Lê só as chaves necessárias (sem `source` do .env).
 ENV_FILE="${VOLTI_ENV_FILE:-/opt/volti/.env}"
 envval() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2-; }
+# O que o build do painel precisa (pnpm install --filter admin... e next build): a raiz do workspace, o tsconfig base que
+# apps/admin/tsconfig.json estende, o painel e as dependências workspace:* dele (packages/contracts). O teste
+# infra/test/single-profile-imds.test.ts deriva a lista de apps/admin/package.json e falha se faltar algo.
+PANEL_PATHS=(package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json apps/admin packages/contracts)
+PANEL_TMP="${VOLTI_PANEL_TMP:-/var/tmp}"
 
 case "$action" in
   publish-panel)
@@ -23,10 +28,12 @@ case "$action" in
     origin="$(envval ADMIN_ORIGIN)"
     # O build roda código de terceiros como root (pnpm install): nunca monta o repositório, de onde o root do host executa
     # update.sh, dns.sh e este script (e cujo .git/config o git do host lê). Só uma cópia descartável do HEAD (git archive,
-    # sem .git), apagada no fim.
-    work="$(mktemp -d)"
+    # sem .git, só os PANEL_PATHS), apagada no fim. Em disco (/var/tmp), não no /tmp: no AL2023 o /tmp é tmpfs (RAM) e a
+    # cópia + node_modules + .next encheria a memória da t4g.small (2 GB) e derrubaria a API.
+    mkdir -p "$PANEL_TMP"
+    work="$(mktemp -d -p "$PANEL_TMP" volti-panel.XXXXXX)"
     trap 'rm -rf "$work"' EXIT
-    git -C "$VOLTI_REPO_DIR" archive HEAD | tar -x -C "$work"
+    git -C "$VOLTI_REPO_DIR" archive HEAD -- "${PANEL_PATHS[@]}" | tar -x -C "$work"
     # Rede bridge padrão (sem o IP da API: sem IMDS), sem NET_RAW e sem credencial da AWS no ambiente; o sync para o S3 e a
     # invalidação rodam depois, no host.
     docker run --rm --cap-drop NET_RAW -v "$work":/repo -w /repo \

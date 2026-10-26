@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Template } from 'aws-cdk-lib/assertions';
@@ -261,8 +261,59 @@ esac
   }
   const logger = (name: string, extra = '') => `#!/usr/bin/env bash\necho "${name} $*" >> "$FAKE_LOG"\n${extra}`;
 
-  itBash('admin.sh publish-panel builds from a throwaway git archive copy, never mounting the repo; the copy is removed', () => {
+  /** PANEL_PATHS of admin.sh: what `git archive` copies for the panel build. */
+  const panelPaths = () => file('admin.sh').match(/^PANEL_PATHS=\(([^)]*)\)/m)![1].trim().split(/\s+/);
+
+  it('admin.sh: the panel copy holds every workspace dep of apps/admin (derived from package.json), on disk (not /tmp)', () => {
+    const paths = panelPaths();
+    const pkg = (dir: string) => JSON.parse(readFileSync(join(REPO, dir, 'package.json'), 'utf8'));
+    // Workspace packages by name -> dir (packages/*, apps/*, services/*).
+    const byName = new Map<string, string>();
+    for (const root of ['packages', 'apps', 'services']) {
+      for (const d of readdirSync(join(REPO, root))) {
+        if (existsSync(join(REPO, root, d, 'package.json'))) byName.set(pkg(`${root}/${d}`).name, `${root}/${d}`);
+      }
+    }
+    const needed = new Set<string>();
+    const visit = (dir: string) => {
+      if (needed.has(dir)) return;
+      needed.add(dir);
+      const p = pkg(dir);
+      for (const [name, v] of Object.entries({ ...p.dependencies, ...p.devDependencies }) as [string, string][]) {
+        if (v.startsWith('workspace:')) visit(byName.get(name)!);
+      }
+      // tsconfig "extends" outside the package (tsconfig.base.json at the root).
+      const ts = join(REPO, dir, 'tsconfig.json');
+      if (existsSync(ts)) {
+        const ext = /"extends":\s*"([^"]+)"/.exec(readFileSync(ts, 'utf8'));
+        if (ext) needed.add(slash(join(dir, ext[1])).replace(/^(\.\.\/)+/, ''));
+      }
+    };
+    visit('apps/admin');
+    expect(needed).toContain('packages/contracts');
+    for (const n of [...needed, 'package.json', 'pnpm-lock.yaml', 'pnpm-workspace.yaml']) expect(paths).toContain(n);
+    for (const p of paths) expect(existsSync(join(REPO, p))).toBe(true);
+    // Nothing the host runs as root (deploy/, .git) and no unrelated tree goes into the copy.
+    for (const p of paths) expect(p).not.toMatch(/^(deploy|services|infra|\.git)/);
+    const a = file('admin.sh');
+    expect(a).toMatch(/PANEL_TMP="\$\{VOLTI_PANEL_TMP:-\/var\/tmp\}"/);
+    expect(a).toMatch(/mktemp -d -p "\$PANEL_TMP" volti-panel\.XXXXXX/);
+    expect(a).not.toMatch(/mktemp -d\)/);
+  });
+
+  itBash('admin.sh publish-panel builds from a throwaway git archive copy (panel paths only), never mounting the repo; the copy is removed', () => {
     const f = fakeInstance('volti-admin-', ['PUBLIC_HOST=api.example.com', 'ADMIN_ORIGIN=https://p.example.com', 'ADMIN_BUCKET=painel', 'ADMIN_DISTRIBUTION_ID=E1']);
+    // Every PANEL_PATHS entry exists in the fake repo, plus things that must NOT be copied.
+    for (const p of panelPaths()) {
+      if (/\.[a-z]+$/.test(p)) writeFileSync(join(f.repo, p), '{}\n');
+      else {
+        mkdirSync(join(f.repo, p), { recursive: true });
+        writeFileSync(join(f.repo, p, 'package.json'), '{}\n');
+      }
+    }
+    mkdirSync(join(f.repo, 'services', 'api'), { recursive: true });
+    writeFileSync(join(f.repo, 'services', 'api', 'package.json'), '{}\n');
+    const panelTmp = mkdtempSync(join(tmpdir(), 'volti-paneltmp-'));
     const git = (...a: string[]) => spawnSync('git', ['-C', f.repo, ...a], { encoding: 'utf8' });
     git('init', '-q');
     git('add', '-A');
@@ -279,7 +330,10 @@ for a in "$@"; do
     src="\${a%:/repo}"
     echo "mount-src $src" >> "$FAKE_LOG"
     [ -e "$src/.git" ] && echo "mount-has-git" >> "$FAKE_LOG"
+    [ -e "$src/deploy" ] && echo "mount-has-deploy" >> "$FAKE_LOG"
+    [ -e "$src/services" ] && echo "mount-has-services" >> "$FAKE_LOG"
     [ -f "$src/apps/admin/package.json" ] && echo "mount-has-admin" >> "$FAKE_LOG"
+    [ -f "$src/packages/contracts/package.json" ] && echo "mount-has-contracts" >> "$FAKE_LOG"
     mkdir -p "$src/apps/admin/out" && echo ok > "$src/apps/admin/out/index.html"
   fi
   prev="$a"
@@ -288,46 +342,54 @@ done
       ),
     );
     fake(f.bin, 'aws', logger('aws'));
-    const r = runScript(join(REPO, 'deploy', 'single', 'admin.sh'), f.bin, f.env, ['publish-panel']);
+    const r = runScript(join(REPO, 'deploy', 'single', 'admin.sh'), f.bin, { ...f.env, VOLTI_PANEL_TMP: slash(panelTmp) }, ['publish-panel']);
     expect(r.stderr).toBe('');
     expect(r.status).toBe(0);
     const calls = f.calls();
     const mounts = calls.filter((c) => c.startsWith('mount-src ')).map((c) => c.slice('mount-src '.length));
     expect(mounts).toHaveLength(1);
-    expect(calls).toContain('mount-has-admin');
-    expect(calls).not.toContain('mount-has-git');
-    expect(mounts[0]).not.toContain('repo');
+    expect(mounts[0].startsWith(`${slash(panelTmp)}/volti-panel.`)).toBe(true);
+    expect(calls).toEqual(expect.arrayContaining(['mount-has-admin', 'mount-has-contracts']));
+    for (const bad of ['mount-has-git', 'mount-has-deploy', 'mount-has-services']) expect(calls).not.toContain(bad);
     const sync = calls.find((c) => c.startsWith('aws s3 sync '))!;
     expect(sync).toBe(`aws s3 sync ${mounts[0]}/apps/admin/out s3://painel --delete`);
     // The build output never lands in the repo and the copy is gone.
     expect(existsSync(join(f.repo, 'apps', 'admin', 'out'))).toBe(false);
-    const gone = spawnSync(BASH!, ['-c', 'test -e "$1"', '_', mounts[0]]);
-    expect(gone.status).not.toBe(0);
+    expect(readdirSync(panelTmp)).toEqual([]);
     expect(calls.indexOf('imds-guard.sh ')).toBeLessThan(calls.findIndex((c) => c.startsWith('docker ')));
   });
 
-  itBash('update.sh: restarts the guard unit and starts Docker before any compose call; a failed old-network removal warns', () => {
+  const runUpdate = (guardActive: boolean) => {
     const f = fakeInstance('volti-update-', ['IOT_SIM=off']);
     fake(f.bin, 'git', logger('git', 'case "$1" in rev-parse) echo abc123 ;; esac\n'));
-    fake(f.bin, 'systemctl', logger('systemctl'));
+    fake(f.bin, 'systemctl', logger('systemctl', `case "$1" in is-active) exit ${guardActive ? 0 : 3} ;; esac\n`));
     // volti_default still exists and cannot be removed (a container still holds it).
     fake(f.bin, 'docker', logger('docker', 'case "$1 $2" in "network inspect") exit 0 ;; "network rm") echo "Error: in use" >&2; exit 1 ;; esac\n'));
     const r = runScript(join(REPO, 'deploy', 'single', 'update.sh'), f.bin, f.env);
+    return { r, calls: f.calls() };
+  };
+
+  itBash('update.sh: never restarts the guard unit or Docker; starts the unit only when inactive, then Docker, before any compose call', () => {
+    for (const active of [false, true]) {
+      const { r, calls } = runUpdate(active);
+      expect(r.status).toBe(0);
+      const at = (c: string) => calls.indexOf(c);
+      expect(calls.filter((c) => /^systemctl (restart|stop|try-restart|reload-or-restart)/.test(c))).toEqual([]);
+      expect(at('imds-guard.sh install')).toBeGreaterThan(-1);
+      expect(at('systemctl reset-failed volti-imds-guard')).toBeGreaterThan(at('imds-guard.sh install'));
+      expect(at('systemctl is-active --quiet volti-imds-guard')).toBeGreaterThan(at('systemctl reset-failed volti-imds-guard'));
+      if (active) expect(calls).not.toContain('systemctl start volti-imds-guard');
+      else expect(at('systemctl start volti-imds-guard')).toBeGreaterThan(at('systemctl is-active --quiet volti-imds-guard'));
+      expect(at('systemctl start docker')).toBeGreaterThan(at('systemctl is-active --quiet volti-imds-guard'));
+      expect(calls.findIndex((c) => c.startsWith('docker '))).toBeGreaterThan(at('systemctl start docker'));
+    }
+  });
+
+  itBash('update.sh: a failed removal of the old network warns on stderr and the update goes on', () => {
+    const { r, calls } = runUpdate(true);
     expect(r.status).toBe(0);
-    const calls = f.calls();
-    const at = (pred: (c: string) => boolean) => calls.findIndex(pred);
-    const guard = at((c) => c === 'imds-guard.sh install');
-    const restart = at((c) => c === 'systemctl restart volti-imds-guard');
-    const start = at((c) => c === 'systemctl start docker');
-    const firstDocker = at((c) => c.startsWith('docker '));
-    expect(guard).toBeGreaterThan(-1);
-    expect(restart).toBeGreaterThan(guard);
-    expect(start).toBeGreaterThan(restart);
-    expect(firstDocker).toBeGreaterThan(start);
     expect(calls).toContain('docker network rm volti_default');
-    expect(r.stderr).toMatch(/volti_default/);
-    expect(r.stderr).toMatch(/AVISO/);
-    // The update went on after the warning.
+    expect(r.stderr).toMatch(/AVISO.*volti_default/);
     expect(calls.some((c) => c.startsWith('docker compose') && c.includes(' ps'))).toBe(true);
   });
 });
