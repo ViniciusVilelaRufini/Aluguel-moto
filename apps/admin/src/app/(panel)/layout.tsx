@@ -79,8 +79,8 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
         }
       />
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-        <header style={{ height: 64, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16, padding: '0 24px', background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)' }}>
-          <div style={{ font: 'var(--type-heading)', fontWeight: 700, fontSize: 18, flex: 1 }}>{current?.label}</div>
+        <header className="shell-header" style={{ height: 64, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16, padding: '0 24px', background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)' }}>
+          <h1 className="shell-title" style={{ font: 'var(--type-heading)', fontWeight: 700, fontSize: 18, flex: 1, margin: 0, minWidth: 0 }}>{current?.label}</h1>
           <CommandPalette vehicles={vehicles} menu={menu} />
           {canLive && <CriticalAlertToaster vehicles={vehicles} onAlertsPage={current?.key === 'alerts'} />}
           {vehiclesReady && (

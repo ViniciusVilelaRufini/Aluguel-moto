@@ -54,7 +54,7 @@ export default function LoginPage() {
         <div style={{ font: '800 48px/1.05 var(--font-sans)', letterSpacing: '-.03em', maxWidth: 420 }}>Painel de operação</div>
         <div style={{ fontSize: 15, color: 'rgba(255,255,255,.6)', marginTop: 12, maxWidth: 380 }}>Frota, clientes e finanças em tempo real. Acesso restrito à equipe.</div>
       </div>
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-app)', padding: 24 }}>
+      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-app)', padding: 24, minWidth: 0 }}>
         <form key={step} className="section-in" onSubmit={(e) => { e.preventDefault(); if (AUTH_MODE === 'cognito') return; if (step === 0) setStep(1); else if (!busy && code.length === 6) enter(); }}
           style={{ width: 380, maxWidth: '100%', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {AUTH_MODE === 'cognito' ? (

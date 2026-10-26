@@ -239,8 +239,6 @@ export default function ZonesPage() {
         </div>
       </div>
       <SidePanel width={360} testId="zones-panel">
-        <div style={{ font: '700 18px/1.25 var(--font-sans)' }}>Cercas e regras</div>
-
         {draft && canEdit && (
           <Card variant="outline" padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div data-testid="zone-form-title" style={{ fontWeight: 700 }}>{draft.id ? 'Editar cerca' : 'Nova cerca'}</div>

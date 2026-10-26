@@ -36,7 +36,7 @@ test.describe('[BUG] mobile 390x844', () => {
   test('[BUG P1-07] /zones: titulo do cabecalho nao quebra em 3 linhas', async ({ page }) => {
     await loginMocked(page);
     await page.goto('/zones');
-    const h = await page.locator('header').first().locator('div').first().evaluate((el) => el.getBoundingClientRect().height);
+    const h = await page.locator('header h1').evaluate((el) => el.getBoundingClientRect().height);
     expect(h, 'titulo "Cercas e regras" ocupa varias linhas no celular').toBeLessThanOrEqual(30);
   });
 
@@ -110,3 +110,16 @@ test('[BUG P1-10] /finance: variacao zero nao aparece como "+R$ 0,00"/"+0%" com 
   await expect(page.getByText(/^\+R\$ 0,00$/)).toHaveCount(0);
   await expect(page.getByText(/^\+0% vs\./)).toHaveCount(0);
 });
+
+const TITLES: Record<string, string> = { '/fleet': 'Frota ao vivo', '/alerts': 'Alertas', '/zones': 'Cercas e regras', '/customers': 'Clientes', '/tasks': 'Operação', '/finance': 'Financeiro', '/settings': 'Preços e planos', '/team': 'Equipe e acessos' };
+for (const path of PANEL) {
+  test(`[BUG P1-11] ${path}: um unico <h1> e o titulo da secao aparece uma vez`, async ({ page }) => {
+    await loginMocked(page);
+    await page.goto(path);
+    await expect(page.locator('#main-content')).toBeVisible();
+    await expect(page.locator('h1')).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 1, name: TITLES[path], exact: true })).toBeVisible();
+    // Rotulos de abas/botoes com o mesmo texto (ex.: aba "Clientes") nao contam como titulo.
+    await expect(page.locator('main').getByText(TITLES[path], { exact: true }).filter({ visible: true }).filter({ hasNot: page.locator('xpath=self::*[ancestor-or-self::button or ancestor-or-self::*[@role="radio" or @role="tab"]]') }), 'titulo repetido').toHaveCount(1);
+  });
+}

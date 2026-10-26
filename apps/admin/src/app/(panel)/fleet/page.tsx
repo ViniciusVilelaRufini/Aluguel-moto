@@ -235,7 +235,7 @@ export default function FleetPage() {
           ? { position: 'absolute', inset: 0, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', background: 'var(--surface-app)', zIndex: 1 }
           : { position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
           {dash.data ? (
-            <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
+            <div data-testid="dashboard-strip" className="vt-stagger kpi-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 760 }}>
               <StatTile icon="Gauge" label="Ocupação" numeric={Math.round(dash.data.occupancyPct)} format={pct} />
               <StatTile icon="Bike" label="Aluguéis ativos" numeric={dash.data.activeRentals} />
               <StatTile icon="Wallet" label="Receita do dia" numeric={dash.data.revenueTodayCents} format={formatBRL} />
@@ -243,7 +243,7 @@ export default function FleetPage() {
               <StatTile icon="Siren" label="Alertas abertos" numeric={openAlerts} goodWhen="down" />
             </div>
           ) : dash.isLoading ? (
-            <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, maxWidth: 760 }}>
+            <div aria-hidden className="kpi-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 10, maxWidth: 760 }}>
               {[0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />)}
             </div>
           ) : null}

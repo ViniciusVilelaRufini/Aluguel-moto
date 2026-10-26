@@ -25,7 +25,7 @@ function focusDestination(href: string) {
     const here = norm(window.location.pathname) === norm(target.pathname) && window.location.search === target.search;
     const el = here
       ? (vehicle ? document.querySelector<HTMLElement>('[data-testid="vehicle-sheet"]') : null)
-        ?? document.querySelector<HTMLElement>('#main-content h1')
+        ?? document.querySelector<HTMLElement>('h1')
         ?? document.getElementById('main-content')
       : null;
     if (el) {

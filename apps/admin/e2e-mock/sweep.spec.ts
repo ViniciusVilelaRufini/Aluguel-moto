@@ -238,8 +238,8 @@ for (const vp of [{ name: 'desktop', size: DESKTOP }, { name: 'mobile', size: MO
         await c.step('conteudo principal visivel', async () => {
           await expect(page.locator('#main-content')).toBeVisible();
           await expect(page.locator('#main-content').getByText(/./).first()).toBeVisible();
-          if ((await page.locator('#main-content h1').count()) === 0) c.note('a11y: a pagina nao tem <h1> (titulo so no cabecalho em <div>)');
-          else if ((await page.locator('#main-content h1').first().innerText()) === (await page.locator('header').first().innerText()).split(String.fromCharCode(10))[0]) c.note('titulo da secao repetido: cabecalho global e h1 mostram o mesmo texto');
+          // Convencao: o <h1> unico e o titulo do cabecalho global; as paginas nao repetem o titulo.
+          if ((await page.locator('h1').count()) !== 1) c.note('a11y: a pagina deve ter exatamente um <h1>');
         });
         await page.waitForLoadState('networkidle').catch(() => {});
         await shot(page, `${r.path.slice(1)}-${vp.name}`);
