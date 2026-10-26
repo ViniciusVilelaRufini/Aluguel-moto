@@ -96,14 +96,14 @@ class _DepotReservationScreenState extends ConsumerState<DepotReservationScreen>
     setState(() => _testHandoverBusy = true);
     try {
       final h = await ref.read(backendProvider).createTestHandover(r.id);
-      // Marca como ja aberta: o HandoverWatcher nao empurra a mesma entrega de novo.
-      ref.read(autoOpenedHandoversProvider.notifier).claim(h.id);
+      if (!mounted) return;
       ref.invalidate(currentReservationProvider);
-      if (mounted) context.push('/handover/${h.id}');
+      // So abre se o HandoverWatcher (evento handover.pending ou nova consulta) ainda nao abriu esta entrega.
+      if (ref.read(autoOpenedHandoversProvider.notifier).claim(h.id)) context.push('/handover/${h.id}');
     } catch (e) {
-      final f = toFailure(e);
+      if (!mounted) return;
       ref.invalidate(currentReservationProvider);
-      if (mounted) VoltiToast.show(context, f.message(context.l), tone: VoltiToastTone.danger);
+      VoltiToast.show(context, toFailure(e).message(context.l), tone: VoltiToastTone.danger);
     } finally {
       if (mounted) setState(() => _testHandoverBusy = false);
     }

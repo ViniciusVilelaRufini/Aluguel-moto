@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:built_collection/built_collection.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,9 +22,13 @@ class _TestHandoverBackend extends GalpaoBackend {
   final calls = <String>[];
   Object? error;
 
+  /// Segura a resposta do POST (o evento de tempo real chega antes).
+  Completer<void>? gate;
+
   @override
   Future<Handover> createTestHandover(String reservationId) async {
     calls.add(reservationId);
+    if (gate != null) await gate!.future;
     if (error != null) throw toFailure(error!);
     final h = _handover();
     // A reserva passa a `handover` com a entrega aberta (como na API).
@@ -78,7 +84,27 @@ Reservation _reservation({ReservationStatus status = ReservationStatus.active}) 
   ..depositMethod = DepositMethod.card
   ..pickupCode = 'VOLTI-RES1-SIG');
 
-Future<GoRouter> _pump(WidgetTester t, GalpaoBackend b, AppChannel channel) async {
+/// Conexoes de tempo real abertas pelo app; o evento vai para todas.
+class _Hub {
+  final all = <FakeRealtime>[];
+  RealtimeService create() {
+    final f = FakeRealtime();
+    all.add(f);
+    return f;
+  }
+
+  void emit(RealtimeEvent e) {
+    for (final f in all) {
+      try {
+        f.emit(e);
+      } catch (_) {
+        // conexao ja descartada
+      }
+    }
+  }
+}
+
+Future<GoRouter> _pump(WidgetTester t, GalpaoBackend b, AppChannel channel, {_Hub? hub}) async {
   t.view.physicalSize = const Size(412, 915);
   t.view.devicePixelRatio = 1;
   addTearDown(t.view.reset);
@@ -91,6 +117,7 @@ Future<GoRouter> _pump(WidgetTester t, GalpaoBackend b, AppChannel channel) asyn
     sessionProvider.overrideWith(() => FakeSession(session(kyc: KycStatus.approved))),
     clockProvider.overrideWithValue(() => thu10),
     appChannelProvider.overrideWithValue(channel),
+    realtimeFactoryProvider.overrideWithValue((hub ?? _Hub()).create),
   ]));
   await _settle(t);
   return router;
@@ -139,6 +166,32 @@ void main() {
     await _settle(t);
     expect(router.state.uri.path, '/handover/h-teste');
     expect(b.calls, ['res1']);
+    // Uma tela de entrega na pilha: voltar uma vez cai na reserva.
+    router.pop();
+    await _settle(t);
+    expect(router.state.uri.path, '/reservation/res1');
+  });
+
+  testWidgets('teste: handover.pending chega antes da resposta → uma tela de entrega so', (t) async {
+    final hub = _Hub();
+    final b = _TestHandoverBackend()
+      ..current = _reservation()
+      ..gate = Completer<void>();
+    final router = await _pump(t, b, AppChannel.beta, hub: hub);
+    await t.ensureVisible(find.byKey(button));
+    await t.pump();
+    await t.tap(find.byKey(button));
+    await t.pump();
+    // O HandoverWatcher abre a entrega pelo evento enquanto o POST ainda nao respondeu.
+    hub.emit(const HandoverPending(handoverId: 'h-teste', reservationId: 'res1'));
+    await _settle(t);
+    expect(router.state.uri.path, '/handover/h-teste');
+    b.gate!.complete();
+    await _settle(t);
+    expect(router.state.uri.path, '/handover/h-teste');
+    router.pop();
+    await _settle(t);
+    expect(router.state.uri.path, '/reservation/res1');
   });
 
   testWidgets('teste: erro da API mostra a falha e continua na reserva', (t) async {
