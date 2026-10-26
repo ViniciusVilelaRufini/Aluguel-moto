@@ -353,16 +353,16 @@ Cortado em relação ao dev anterior: NAT (US$ 0,093/h ≈ 68 + tráfego), WAF (
 
 - Dispara em mudanças de `infra/`, `services/api/`, `apps/admin/`, `packages/contracts/` e do lockfile.
 - Job `checks` (porta do deploy): `redocly lint` do contrato, lint e testes unitários de `services/api`, lint e vitest de `apps/admin`.
-- Pull request: `checks`, testes do CDK, `cdk synth` (dev e prod) e `cdk diff` do dev.
+- Pull request: `checks`, testes do CDK, `cdk synth` (dev e prod, conta fictícia `000000000000`). Nenhum job de pull request recebe credenciais da AWS: o `cdk diff` contra a conta roda só no push para `main`, no job `deploy-dev`, antes do deploy.
 - Push em `main`: `cdk deploy --all` no dev **completo (ECS, ~US$ 100/mês)** depois de `checks` e `synth`. Enquanto o dev for o perfil `single`, não configure as variáveis `AWS_DEPLOY_ROLE_ARN_DEV`/`CERTIFICATE_ARN_DEV` (o job falha sem elas e nada é criado); a atualização do `single` é o documento SSM `volti-dev-update`. A imagem da API é construída da raiz do repositório (`docker build -f services/api/Dockerfile .`), porque o Dockerfile copia o lockfile e o `tsconfig.base.json` do workspace.
-- Autenticação por OIDC (`aws-actions/configure-aws-credentials` com `role-to-assume`), sem chaves fixas. PRs usam `AWS_LOOKUP_ROLE_ARN_DEV` (papel só-leitura, confiança `repo:<owner>/<repo>:pull_request`, usado apenas no `cdk diff`; sem a variável o diff é pulado com aviso). O deploy usa `AWS_DEPLOY_ROLE_ARN_DEV` com `environment: dev`. Variáveis do repositório: `AWS_ACCOUNT_ID`, `AWS_LOOKUP_ROLE_ARN_DEV`, `AWS_DEPLOY_ROLE_ARN_DEV` e `CERTIFICATE_ARN_DEV`, e um provedor OIDC do GitHub na conta AWS.
-- `permissions` do topo é só `contents: read`; `id-token: write` fica apenas nos jobs `diff` e `deploy-dev`. Pendência: fixar as actions por SHA de commit.
+- Autenticação por OIDC (`aws-actions/configure-aws-credentials` com `role-to-assume`), sem chaves fixas. PRs não assumem papel nenhum. O diff e o deploy usam `AWS_DEPLOY_ROLE_ARN_DEV` com `environment: dev`. Variáveis do repositório: `AWS_ACCOUNT_ID`, `AWS_DEPLOY_ROLE_ARN_DEV` e `CERTIFICATE_ARN_DEV`, e um provedor OIDC do GitHub na conta AWS.
+- `permissions` do topo é só `contents: read`; `id-token: write` fica apenas no job `deploy-dev` (push em `main` + `environment: dev`); `infra/test/workflow.test.ts` barra credenciais em qualquer job alcançável por pull request.
 
 ### Passos na AWS e no GitHub (feitos uma vez pelo dono)
 
-1. Crie o papel `volti-ci-cdk-lookup-dev` no IAM com confiança no provedor OIDC `token.actions.githubusercontent.com`, `aud = sts.amazonaws.com`, `sub = repo:<owner>/<repo>:pull_request`.
-2. Permissões: apenas `sts:AssumeRole` em `arn:aws:iam::<conta>:role/cdk-*-lookup-role-*` (**não** em `cdk-*-deploy-role`), mais leitura de CloudFormation (`cloudformation:DescribeStacks`, `GetTemplate`, `ListStacks`) e `ssm:GetParameter` em `/cdk-bootstrap/*`.
-3. No GitHub, crie a variável `AWS_LOOKUP_ROLE_ARN_DEV` com o ARN do papel.
+1. **Papel de lookup para PR (`volti-ci-cdk-lookup-dev`) não é mais usado.** Apague o papel no IAM (ou ao menos remova do trust o `sub = repo:<owner>/<repo>:pull_request`) e apague a variável `AWS_LOOKUP_ROLE_ARN_DEV` do GitHub. Motivo: "só-leitura" aqui encadeava no papel de lookup do bootstrap do CDK, que tem `ReadOnlyAccess`, e isso inclui `s3:GetObject`; um PR (código de qualquer contribuinte rodando `pnpm install` e `cdk diff`) lia objetos do S3 criptografados com SSE-S3, como os documentos de KYC.
+2. (Reservado: antigo passo de permissões do papel de lookup, removido.)
+3. Confirme que `AWS_DEPLOY_ROLE_ARN_DEV` existe e é usado também pelo `cdk diff` do push em `main`.
 4. Restrinja a confiança do papel de deploy para `sub = repo:<owner>/<repo>:environment:dev`, removendo `pull_request` e `ref:refs/heads/*`.
 
 ### Regras IoT
