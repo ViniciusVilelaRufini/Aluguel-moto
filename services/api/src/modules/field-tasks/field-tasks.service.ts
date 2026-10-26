@@ -4,7 +4,7 @@ import type { Battery, BatterySwap, FieldTask, Inspection, Prisma, StaffUser, Ve
 import { MAX_SPEED_KMH, type VehicleStatus } from '../../common/enums';
 import { EV, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
-import { conflict, forbidden, notFound, unprocessable } from '../../common/problem';
+import { conflict, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
 import { compact, iso } from '../../common/util';
 import { assertVehicleNotInUse } from '../../common/vehicle-in-use';
@@ -13,8 +13,9 @@ import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.p
 import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { AuditService } from '../audit/audit.service';
-import { hasGroup, type Principal } from '../auth/principal';
+import type { Principal } from '../auth/principal';
 import { BUDGET_MS, CALL_TIMEOUT_MS, VehicleAddressService } from '../vehicles/vehicle-address.service';
+import { assertTaskActor, isFieldOnly } from './task-actor';
 import type { BatterySwapDto, FieldTaskCompleteDto, FieldTaskCreateDto, FieldTaskUpdateDto, InspectionDto, ListFieldTasksQuery } from './field-tasks.dto';
 
 type TaskVehicle = Pick<Vehicle, 'code' | 'lat' | 'lng' | 'batteryPct'> & Partial<Pick<Vehicle, 'status' | 'addressLabel' | 'batterySerial'>>;
@@ -117,9 +118,8 @@ export class FieldTasksService {
 
   async list(user: Principal, q: ListFieldTasksQuery) {
     const where: Prisma.FieldTaskWhereInput = {};
-    const onlyCampo = hasGroup(user, 'campo') && !hasGroup(user, 'admin', 'operacao');
-    let assignee = q.assigneeId === 'me' ? user.userId : q.assigneeId;
-    if (!assignee && onlyCampo) assignee = user.userId;
+    // Auditoria item 13: usuário só-campo lista só as próprias tarefas (o `assigneeId` pedido é ignorado).
+    const assignee = isFieldOnly(user) ? user.userId : q.assigneeId === 'me' ? user.userId : q.assigneeId;
     if (assignee) where.assigneeId = assignee;
     if (q.status) where.status = q.status;
     if (q.type) where.type = q.type;
@@ -146,8 +146,10 @@ export class FieldTasksService {
     return presignedUpload(this.storage, this.cfg.buckets.attachments, `field/${user.userId}`, contentType);
   }
 
-  async get(id: string) {
-    return this.mapped(id);
+  async get(user: Principal, id: string) {
+    const t = await this.one(id);
+    assertTaskActor(user, t, { allowUnassigned: true });
+    return toFieldTask((await this.enrich([t]))[0]);
   }
 
   async update(id: string, dto: FieldTaskUpdateDto) {
@@ -168,13 +170,14 @@ export class FieldTasksService {
   async start(user: Principal, id: string) {
     const t = await this.one(id);
     if (t.status !== 'open' && t.status !== 'assigned') throw conflict('conflict', 'A tarefa não pode ser iniciada neste estado.');
-    if (t.assigneeId && t.assigneeId !== user.userId && !hasGroup(user, 'admin', 'operacao')) throw forbidden('Esta tarefa está atribuída a outro operador.');
+    assertTaskActor(user, t, { allowUnassigned: true });
     await this.prisma.fieldTask.update({ where: { id }, data: { status: 'in_progress', startedAt: new Date(), assigneeId: t.assigneeId ?? user.userId } });
     return this.mapped(id);
   }
 
   async complete(user: Principal, id: string, dto: FieldTaskCompleteDto) {
     const t = await this.one(id);
+    assertTaskActor(user, t);
     if (t.status === 'done') return this.mapped(id); // reenvio da fila offline
     if (t.status === 'canceled' || t.status === 'open') throw conflict('conflict', 'A tarefa não pode ser concluída neste estado.');
     if (t.type === 'inspection' && (await this.prisma.inspection.count({ where: { fieldTaskId: id } })) === 0) {
@@ -207,6 +210,7 @@ export class FieldTasksService {
    */
   async submitInspection(user: Principal, id: string, dto: InspectionDto, idempotencyKey?: string) {
     const t = await this.one(id);
+    assertTaskActor(user, t);
     if (CLOSED.includes(t.status)) throw conflict('conflict', 'Tarefa já encerrada.');
     if (idempotencyKey) {
       const prev = await this.prisma.inspection.findUnique({ where: { idempotencyKey } });
@@ -250,6 +254,7 @@ export class FieldTasksService {
 
   async submitBatterySwap(user: Principal, id: string, dto: BatterySwapDto, idempotencyKey?: string) {
     const t = await this.one(id);
+    assertTaskActor(user, t);
     if (CLOSED.includes(t.status)) throw conflict('conflict', 'Tarefa já encerrada.');
     if (dto.removedBatterySerial.trim() === dto.installedBatterySerial.trim()) {
       throw unprocessable('battery-serials-must-differ', 'A bateria instalada precisa ser diferente da retirada.');

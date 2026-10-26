@@ -9,6 +9,9 @@ const TASK_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const VEHICLE_ID = '33333333-3333-4333-8333-333333333333';
 const campo: Principal = { pool: 'staff', sub: 'c', email: 'c@volti.com.br', groups: ['campo'], userId: 'bbbbbbbb-0000-4000-8000-000000000002', staffId: 'bbbbbbbb-0000-4000-8000-000000000002' };
 
+const OTHER_ID = 'bbbbbbbb-0000-4000-8000-000000000009';
+const operacao: Principal = { pool: 'staff', sub: 'o', email: 'o@volti.com.br', groups: ['operacao'], userId: 'bbbbbbbb-0000-4000-8000-000000000003', staffId: 'bbbbbbbb-0000-4000-8000-000000000003' };
+
 const ok = { ok: true };
 const baseInspection = { brakes: ok, tires: ok, lights: ok, bell: ok, photoObjectKeys: ['field/x/1.jpg'], recordedAt: new Date().toISOString() };
 
@@ -60,7 +63,7 @@ describe('Inspeção (limitador como observação, decisão #13)', () => {
 
   it('troca de bateria com números de série iguais → 422 battery-serials-must-differ', async () => {
     const { service, prisma } = setup();
-    prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'battery_swap', status: 'in_progress', vehicleId: VEHICLE_ID } as any);
+    prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'battery_swap', status: 'in_progress', vehicleId: VEHICLE_ID, assigneeId: campo.userId } as any);
     await expect(
       service.submitBatterySwap(campo, TASK_ID, { removedBatterySerial: 'BAT-1', installedBatterySerial: 'BAT-1', recordedAt: new Date().toISOString() }),
     ).rejects.toMatchObject({ status: 422, slug: 'battery-serials-must-differ' });
@@ -98,5 +101,73 @@ describe('Concluir tarefa com vehicleStatus (item 7 da auditoria)', () => {
     prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
     await service.complete(campo, TASK_ID, { vehicleStatus: 'free' } as any);
     expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: { in: ['free', 'maintenance'] } }, data: { status: 'free' } });
+  });
+});
+
+describe('Responsável da tarefa (item 13 da auditoria: só-campo age só nas próprias)', () => {
+  const others = { id: TASK_ID, type: 'pickup', status: 'in_progress', priority: 'medium', vehicleId: VEHICLE_ID, assigneeId: OTHER_ID, createdAt: new Date(), updatedAt: new Date() };
+
+  it('campo concluindo tarefa de outro operador → 403 e nada muda', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(others as any);
+    await expect(service.complete(campo, TASK_ID, { vehicleStatus: 'free' } as any)).rejects.toMatchObject({ status: 403 });
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('campo registrando inspeção na tarefa de outro operador → 403 e nada é gravado', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue({ ...others, type: 'inspection' } as any);
+    await expect(service.submitInspection(campo, TASK_ID, { ...baseInspection, speedLimiter: { ok: false, configuredMaxKmh: 45 } } as any)).rejects.toMatchObject({ status: 403 });
+    expect(prisma.inspection.create).not.toHaveBeenCalled();
+    expect(prisma.maintenanceTask.create).not.toHaveBeenCalled();
+  });
+
+  it('campo registrando troca de bateria na tarefa de outro operador → 403 e o inventário não muda', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue({ ...others, type: 'battery_swap' } as any);
+    await expect(
+      service.submitBatterySwap(campo, TASK_ID, { removedBatterySerial: 'BAT-1', installedBatterySerial: 'BAT-2', recordedAt: new Date().toISOString() }),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(prisma.battery.upsert).not.toHaveBeenCalled();
+  });
+
+  it('campo vendo o detalhe da tarefa de outro operador → 403', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(others as any);
+    await expect(service.get(campo, TASK_ID)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('campo vê o detalhe de tarefa aberta sem responsável (pode assumir com start)', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue({ ...others, status: 'open', assigneeId: null } as any);
+    await expect(service.get(campo, TASK_ID)).resolves.toMatchObject({ id: TASK_ID });
+  });
+
+  it('campo concluindo tarefa sem responsável → 403', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue({ ...others, assigneeId: null } as any);
+    await expect(service.complete(campo, TASK_ID, {} as any)).rejects.toMatchObject({ status: 403 });
+  });
+
+  it('operacao conclui e vê tarefa de outro operador', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue(others as any);
+    await expect(service.get(operacao, TASK_ID)).resolves.toMatchObject({ id: TASK_ID });
+    await expect(service.complete(operacao, TASK_ID, {} as any)).resolves.toMatchObject({ id: TASK_ID });
+  });
+
+  it('lista de campo ignora assigneeId de outro operador e filtra pelo próprio', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findMany.mockResolvedValue([]);
+    await service.list(campo, { assigneeId: OTHER_ID } as any);
+    expect(prisma.fieldTask.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assigneeId: campo.userId }) }));
+  });
+
+  it('lista de operacao respeita o assigneeId pedido', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findMany.mockResolvedValue([]);
+    await service.list(operacao, { assigneeId: OTHER_ID } as any);
+    expect(prisma.fieldTask.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assigneeId: OTHER_ID }) }));
   });
 });

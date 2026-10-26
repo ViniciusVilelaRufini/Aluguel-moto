@@ -3110,7 +3110,7 @@ paths:
       tags: [field-tasks]
       operationId: listFieldTasks
       summary: Listar tarefas de campo
-      description: Para o grupo `campo`, por padrão só as atribuídas ao próprio operador (`assigneeId=me`). Ordem por prioridade e prazo.
+      description: Usuário só do grupo `campo` recebe sempre só as tarefas atribuídas a ele (`assigneeId` é ignorado). Ordem por prioridade e prazo.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -3188,6 +3188,7 @@ paths:
       tags: [field-tasks]
       operationId: getFieldTask
       summary: Detalhe da tarefa
+      description: Usuário só do grupo `campo` vê apenas as tarefas atribuídas a ele ou ainda sem responsável (`403` nas de outro operador).
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -3253,7 +3254,7 @@ paths:
       tags: [field-tasks]
       operationId: completeFieldTask
       summary: Concluir tarefa
-      description: Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status: a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa (senão `409` `vehicle-unavailable` e nada muda).
+      description: Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status: a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa (senão `409` `vehicle-unavailable` e nada muda).
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
@@ -3283,6 +3284,7 @@ paths:
       operationId: submitInspection
       summary: Registrar checklist de inspeção
       description: |
+        Usuário só do grupo `campo` só registra em tarefa atribuída a ele (`403`).
         Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é
         observado em `configuredMaxKmh` (valor lido no controlador, 0 a 100). Se `configuredMaxKmh > 32`:
         `speedLimiter.ok: true` é recusado (`422` `speed-limiter-noncompliant`); com `ok: false` a inspeção é
@@ -3318,7 +3320,7 @@ paths:
       tags: [field-tasks]
       operationId: submitBatterySwap
       summary: Registrar troca de bateria
-      description: Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (`422` `battery-serials-must-differ`). Reenvio com a mesma `Idempotency-Key` não duplica.
+      description: Usuário só do grupo `campo` só registra em tarefa atribuída a ele (`403`). Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (`422` `battery-serials-must-differ`). Reenvio com a mesma `Idempotency-Key` não duplica.
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]
