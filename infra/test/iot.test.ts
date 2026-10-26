@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Match } from 'aws-cdk-lib/assertions';
 import { stacksFor, templateOf } from './helpers';
 
@@ -63,6 +65,22 @@ describe('IotStack', () => {
     // eventos seguem pela fila de telemetria (mesmo caminho do modo local)
     const queues = motoRules.map((r) => JSON.stringify(r.Properties.TopicRulePayload.Actions[0].Sqs.QueueUrl));
     expect(new Set(queues).size).toBe(1);
+  });
+
+  it('rule projections match the MQTT contract schemas (telemetria/eventos properties)', () => {
+    const schemaProps = (file: string) =>
+      Object.keys(JSON.parse(readFileSync(join(__dirname, '..', '..', 'packages', 'contracts', 'schemas', file), 'utf8')).properties).sort();
+    const rules = Object.values(t().findResources('AWS::IoT::TopicRule')) as any[];
+    const projected = (leaf: string) => {
+      const sql = rules.map((r) => String(r.Properties.TopicRulePayload.Sql)).find((q) => q.includes(`'motos/+/${leaf}'`))!;
+      const body = /\{(.*)\} AS payload/.exec(sql)![1];
+      return [...body.matchAll(/'(\w+)': (\w+)/g)].map((m) => {
+        expect(m[2]).toBe(m[1]);
+        return m[1];
+      }).sort();
+    };
+    expect(projected('telemetria')).toEqual(schemaProps('telemetria.schema.json'));
+    expect(projected('eventos')).toEqual(schemaProps('eventos.schema.json'));
   });
 
   it('creates Amazon Location tracker and geofence collection and publishes SSM params', () => {
