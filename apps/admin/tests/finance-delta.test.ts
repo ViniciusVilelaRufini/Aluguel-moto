@@ -34,6 +34,15 @@ describe('pointsDelta e moneyDelta', () => {
   });
 });
 
+describe('variação zero', () => {
+  it('é neutra, sem sinal nem direção', () => {
+    const flat = { text: 'sem variação', trend: 'flat' };
+    expect(percentDelta(100, 100)).toEqual(flat);
+    expect(pointsDelta(60, 60)).toEqual(flat);
+    expect(moneyDelta(500, 500)).toEqual(flat);
+  });
+});
+
 describe('formatCompactBRL', () => {
   it('usa mil a partir de R$ 1.000', () => {
     expect(formatCompactBRL(3830000)).toBe('R$ 38,3 mil');
