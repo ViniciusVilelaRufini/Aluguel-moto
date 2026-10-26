@@ -1,5 +1,5 @@
 import type { S, ZoneType } from './types';
-import { MAX_REDUCED_SPEED_KMH, MAX_SPEED_KMH } from './types';
+import { MAX_REDUCED_SPEED_KMH, MAX_SPEED_KMH, MIN_REDUCED_SPEED_KMH } from './types';
 
 export interface ZoneDraft {
   name: string;
@@ -25,6 +25,7 @@ export function validateZone(z: ZoneDraft): ZoneErrors {
   else if (z.type === 'reduced_speed') {
     if (!has) e.speedLimitKmh = 'Informe o limite de velocidade';
     else if ((limit as number) > MAX_REDUCED_SPEED_KMH) e.speedLimitKmh = `Máximo de ${MAX_REDUCED_SPEED_KMH} km/h em zona de velocidade reduzida`;
+    else if ((limit as number) < MIN_REDUCED_SPEED_KMH) e.speedLimitKmh = `Mínimo de ${MIN_REDUCED_SPEED_KMH} km/h em zona de velocidade reduzida`;
   }
   return e;
 }

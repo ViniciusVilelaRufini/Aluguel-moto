@@ -21,4 +21,6 @@ export interface RealtimeEvents {
 
 export const MAX_SPEED_KMH = 32;
 export const MAX_REDUCED_SPEED_KMH = 20;
+/** Menor limite de zona `reduced_speed` (área de pedestres); a API recusa abaixo disso (GeoZoneInput.minimum: 6). */
+export const MIN_REDUCED_SPEED_KMH = 6;
 export const SAFE_LOCK_SPEED_KMH = 3;
