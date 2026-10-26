@@ -117,7 +117,7 @@ async function setup(opts: { speed?: number; stolenMode?: boolean } = {}) {
     return p;
   };
   const unlocksPublished = () => transport.desired.filter((d) => d.desired.travada === false);
-  return { clock, transport, live, gw, svc, rentals, rental, run, unlocksPublished };
+  return { clock, transport, redis, live, gw, svc, rentals, rental, run, unlocksPublished };
 }
 
 async function expectLockedByStaff(p: Promise<unknown>) {
@@ -263,11 +263,37 @@ describe('Destravar respeita a autoridade de quem travou (auditoria, item adiado
   });
 
   it('erro do Redis ao ler a origem → unlock de cliente recusado (falha fechada)', async () => {
-    const s = await setup();
-    const redisErr = new MemoryRedisStore();
-    jest.spyOn(redisErr, 'hgetall').mockRejectedValue(new Error('redis down'));
-    const failing = new LiveStateStore(redisErr, s.clock);
-    expect(await failing.getLockOrigin(T)).toBe('system');
-    void s;
+    const s = await setup({ speed: 25 });
+    await s.run(() => s.rentals.pause(customer, RENTAL_ID));
+    expect(s.gw.safeLock.isActive(T)).toBe(true);
+    const before = s.transport.desired.length;
+    jest.spyOn(s.redis, 'hgetall').mockRejectedValue(new Error('redis down'));
+    const del = jest.spyOn(s.redis, 'del');
+
+    expect(await s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'customer' })).toEqual({ commandId: 'u1', status: 'failed', reason: 'locked_by_staff' });
+    expect(s.transport.desired.length).toBe(before);
+    expect(s.unlocksPublished()).toEqual([]);
+    expect(s.gw.safeLock.isActive(T)).toBe(true);
+    expect(del).not.toHaveBeenCalledWith('iot:lock-origin:' + T);
+  });
+
+  it('revisão final item 3: trava da equipe gravada entre a leitura da origem e a limpeza → unlock de cliente recusado, origem e rampa intactas', async () => {
+    const s = await setup({ speed: 25 });
+    await s.run(() => s.rentals.pause(customer, RENTAL_ID));
+    expect(await s.live.getLockOrigin(T)).toBe('customer');
+    expect(s.gw.safeLock.isActive(T)).toBe(true);
+    const before = s.transport.desired.length;
+    // Lock de admin em outra task: grava a origem `staff` logo depois de o unlock ter lido `customer`.
+    const isHeld = s.live.isHeld.bind(s.live);
+    jest.spyOn(s.live, 'isHeld').mockImplementationOnce(async (t: string) => {
+      await s.redis.hset('iot:lock-origin:' + T, { origin: 'staff' });
+      return isHeld(t);
+    });
+
+    expect(await s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'customer' })).toEqual({ commandId: 'u1', status: 'failed', reason: 'locked_by_staff' });
+    expect(await s.live.getLockOrigin(T)).toBe('staff');
+    expect(s.gw.safeLock.isActive(T)).toBe(true);
+    expect(s.transport.desired.length).toBe(before);
+    expect(s.unlocksPublished()).toEqual([]);
   });
 });
