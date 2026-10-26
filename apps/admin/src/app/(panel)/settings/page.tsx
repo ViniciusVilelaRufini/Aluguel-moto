@@ -197,7 +197,7 @@ export default function SettingsPage() {
             ]} />
         ))}
         {sec('Modelos', 'Catálogo "Escolha sua moto": foto, preço por minuto e desbloqueio por modelo', (
-          <ModelsSection minuteUnlockCents={plans.data?.items.find((p) => p.code === 'minute')?.unlockFeeCents} />
+          <div className="stack-cells"><ModelsSection minuteUnlockCents={plans.data?.items.find((p) => p.code === 'minute')?.unlockFeeCents} /></div>
         ))}
         {sec('Cupons e indicação', 'Campanhas ativas', (
           <>

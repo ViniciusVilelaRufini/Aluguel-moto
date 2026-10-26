@@ -11,8 +11,7 @@ import { formatBRL } from '@/lib/format';
 import { Button } from '@/ds/Button';
 import { Icon } from '@/ds/Icon';
 import { Switch } from '@/ds/Switch';
-import { useNarrow } from '@/lib/use-narrow';
-import { DataTable, ErrorNote, Field, Modal, Pill, TextArea, type Column, TextInput, useToast } from './ui';
+import { DataTable, ErrorNote, Field, Modal, Pill, TextArea, TextInput, useToast } from './ui';
 
 const ghost = { color: 'var(--text-primary)', borderColor: 'var(--border-strong)' };
 
@@ -34,19 +33,18 @@ export function ModelsSection({ minuteUnlockCents }: { minuteUnlockCents?: numbe
   const canEdit = can(groups, 'catalog.edit');
   const models = useQuery({ queryKey: ['vehicle-models', 'all'], queryFn: () => unwrap(api.GET('/vehicle-models', { params: { query: { includeInactive: true } } })) });
   const [edit, setEdit] = useState<VehicleModel | 'new' | null>(null);
-  const narrow = useNarrow();
   return (
     <>
       <ErrorNote error={models.error} />
       <DataTable<VehicleModel> testId="models-table" rows={models.data?.items ?? []} loading={models.isLoading} empty="Nenhum modelo no catálogo" emptyIcon="Bike"
         onRowClick={canEdit ? (m) => setEdit(m) : undefined}
-        columns={([
-          { key: 'name', label: 'Modelo', render: (m) => <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><Thumb url={m.photoUrl} /><div><div style={{ fontWeight: 600 }}>{m.name}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{m.categoryLabel}</div>{narrow && <Pill tone={m.active ? 'success' : 'neutral'}>{m.active ? 'Ativo' : 'Inativo'}</Pill>}</div></div> },
+        columns={[
+          { key: 'name', label: 'Modelo', render: (m) => <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}><Thumb url={m.photoUrl} /><div><div style={{ fontWeight: 600 }}>{m.name}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{m.categoryLabel}</div></div></div> },
           { key: 'price', label: 'Preço/min', align: 'right', render: (m) => <span style={{ fontFamily: 'var(--font-mono)' }}>{formatBRL(m.pricePerMinuteCents)}</span> },
           { key: 'unlock', label: 'Desbloqueio', align: 'right', render: (m) => { const u = unlockFeeLabel(m, minuteUnlockCents); return <span style={{ fontFamily: 'var(--font-mono)', color: u.inherited ? 'var(--text-secondary)' : undefined }}>{u.text}</span>; } },
           { key: 'service', label: 'Revisão', render: (m) => <span style={{ fontSize: 12 }}>{m.serviceIntervalKm.toLocaleString('pt-BR')} km / {m.serviceIntervalHours} h</span> },
           { key: 'active', label: 'Situação', render: (m) => <Pill tone={m.active ? 'success' : 'neutral'}>{m.active ? 'Ativo' : 'Inativo'}</Pill> },
-        ] as Column<VehicleModel>[]).filter((c) => !narrow || (c.key !== 'unlock' && c.key !== 'service' && c.key !== 'active'))} />
+        ]} />
       {canEdit && <div><Button size="sm" variant="secondary" icon="Plus" style={ghost} testId="new-model" onClick={() => setEdit('new')}>Novo modelo</Button></div>}
       {edit && canEdit && <ModelModal model={edit === 'new' ? undefined : edit} minuteUnlockCents={minuteUnlockCents} onClose={() => setEdit(null)} />}
     </>

@@ -54,6 +54,21 @@ test.describe('celular 390x844: fluxos profundos', () => {
     await expect(page.locator('.stack-cells [data-testid="row"] td[data-label="Desconto"]').first()).toBeVisible();
   });
 
+  test('/settings em 390px como financeiro: Modelos mostra Desbloqueio e Revisao e nao ha rolagem horizontal', async ({ page }) => {
+    await loginMocked(page, { group: 'financeiro' });
+    await page.goto('/settings');
+    const row = page.getByTestId('models-table').getByTestId('row').first();
+    await expect(row).toBeVisible();
+    for (const l of ['Desbloqueio', 'Revisão']) {
+      const cell = row.locator(`td[data-label="${l}"]`);
+      await expect(cell).toBeVisible();
+      expect(((await cell.innerText()) || '').trim().length).toBeGreaterThan(0);
+    }
+    await page.waitForTimeout(400);
+    expect(await hOverflow(page)).toBeLessThanOrEqual(1);
+    expect(await page.locator('.table-scroll').evaluateAll((els) => els.map((e) => e.scrollWidth - e.clientWidth).filter((d) => d > 1))).toEqual([]);
+  });
+
   test('ficha da moto: abre inteira na tela e comandos ficam alcancaveis', async ({ page }) => {
     await loginMocked(page);
     await openVehicle(page, 'VLT-002');
