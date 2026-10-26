@@ -2,6 +2,7 @@ import { corsOptions } from '../../common/cors';
 import { Inject, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { OnGatewayInit, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import { decodeJwt } from 'jose';
 import type { Namespace, Socket } from 'socket.io';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import {
@@ -15,6 +16,10 @@ import { PrincipalResolver } from '../auth/principal-resolver.service';
 import { toRental } from '../rentals/rentals.mapper';
 
 const FLEET_GROUPS = ['admin', 'operacao', 'suporte'];
+/** Cache veículo→aluguel curto: o aluguel encerrado em outra task deixa de receber telemetria em até 5 s no pior caso. */
+const VEHICLE_CACHE_TTL_MS = 5_000;
+/** `setTimeout` estoura acima de 2^31-1 ms. */
+const MAX_TIMER_MS = 2_147_483_647;
 
 interface VehicleCache {
   status: VehicleStatus;
@@ -58,15 +63,32 @@ export class RealtimeGateway implements OnGatewayInit {
   afterInit(server: Namespace): void {
     server.use((socket, next) => {
       void this.authenticate(socket)
-        .then(() => next())
+        .then(() => {
+          this.scheduleExpiry(socket);
+          next();
+        })
         .catch(() => next(new Error('unauthorized')));
     });
+  }
+
+  /** Desconecta o socket no `exp` do token do handshake (timer limpo no `disconnect`). */
+  private scheduleExpiry(socket: Socket): void {
+    const msLeft = (socket.data.exp as number) * 1000 - Date.now();
+    const timer = setTimeout(() => socket.disconnect(true), Math.max(0, Math.min(msLeft, MAX_TIMER_MS)));
+    timer.unref?.();
+    socket.on('disconnect', () => clearTimeout(timer));
   }
 
   private async authenticate(socket: Socket): Promise<void> {
     const token = (socket.handshake.auth as { token?: string } | undefined)?.token;
     if (!token) throw new Error('unauthorized');
-    const principal: Principal = await this.resolver.resolve(await this.verifier.verify(token));
+    const verified = await this.verifier.verify(token);
+    // O token já foi verificado; `exp` é obrigatório e a conexão não pode sobreviver a ele.
+    const exp = decodeJwt(token).exp;
+    if (typeof exp !== 'number') throw new Error('unauthorized');
+    if (exp * 1000 <= Date.now()) throw new Error('unauthorized');
+    const principal: Principal = await this.resolver.resolve(verified);
+    socket.data.exp = exp;
     socket.data.principal = principal;
     // Sala do próprio usuário: revogação (conta excluída, grupo removido, desativado) desconecta os sockets dele.
     await socket.join(`principal:${principal.pool}:${principal.userId}`);
@@ -81,7 +103,7 @@ export class RealtimeGateway implements OnGatewayInit {
 
   private async vehicleInfo(vehicleId: string): Promise<VehicleCache | null> {
     const cached = this.vehicles.get(vehicleId);
-    if (cached && Date.now() - cached.at < 60_000) return cached;
+    if (cached && Date.now() - cached.at < VEHICLE_CACHE_TTL_MS) return cached;
     const v = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { status: true, speedLimitKmh: true } });
     if (!v) return null;
     const r = await this.prisma.rental.findFirst({ where: { vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true, speedLimitKmh: true } });
