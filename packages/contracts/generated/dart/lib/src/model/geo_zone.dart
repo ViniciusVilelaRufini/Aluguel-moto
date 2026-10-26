@@ -16,7 +16,7 @@ part 'geo_zone.g.dart';
 /// * [id]
 /// * [name]
 /// * [type]
-/// * [speedLimitKmh] - Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre <= 20).
+/// * [speedLimitKmh] - Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre entre 6 e 20).
 /// * [geometry]
 /// * [active]
 /// * [createdAt]
@@ -33,7 +33,7 @@ abstract class GeoZone implements Built<GeoZone, GeoZoneBuilder> {
   ZoneType get type;
   // enum typeEnum {  operation,  return,  forbidden,  reduced_speed,  };
 
-  /// Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre <= 20).
+  /// Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre entre 6 e 20).
   @BuiltValueField(wireName: r'speedLimitKmh')
   int? get speedLimitKmh;
 

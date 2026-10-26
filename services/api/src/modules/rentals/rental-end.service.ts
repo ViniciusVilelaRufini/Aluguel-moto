@@ -58,6 +58,14 @@ export interface DepotPlacement {
 export function depotPosition(p: { lat?: number | null; lng?: number | null } | null | undefined): { lat: number; lng: number } | Record<string, never> {
   return p && typeof p.lat === 'number' && typeof p.lng === 'number' && Number.isFinite(p.lat) && Number.isFinite(p.lng) ? { lat: p.lat, lng: p.lng } : {};
 }
+/**
+ * Opções internas do encerramento pelo cliente (nunca vêm do corpo da requisição). `allowOutsideZone`: só o atalho de teste
+ * `POST /rentals/{id}/test-end` (`ALLOW_TEST_HANDOVER=true`) passa — pula apenas a conferência do ponto verde.
+ */
+export interface EndOptions {
+  allowOutsideZone?: boolean;
+}
+
 export interface FinalizeOptions {
   fees?: FeeCharge[];
   actor?: Principal;
@@ -112,7 +120,7 @@ export class RentalEndService {
     return { lat: vehicle.lat, lng: vehicle.lng };
   }
 
-  async end(customerId: string, rentalId: string, dto: { returnPhotoObjectKey: string }) {
+  async end(customerId: string, rentalId: string, dto: { returnPhotoObjectKey: string }, opts: EndOptions = {}) {
     const rental = await this.load(rentalId);
     if (rental.customerId !== customerId) throw notFound('Aluguel não encontrado.');
     if (rental.status === 'ending') return { status: 202 as const, rental: toRental(rental) };
@@ -124,7 +132,10 @@ export class RentalEndService {
       throw unprocessable('return-photo-missing', 'Envie a foto da moto estacionada antes de encerrar.');
     }
     const zone = await this.zones.findContaining(await this.positionOf(rental.vehicle), 'return');
-    if (!zone) throw unprocessable('rental-outside-return-zone', 'Estacione numa zona de devolução para encerrar.');
+    if (!zone && !opts.allowOutsideZone) throw unprocessable('rental-outside-return-zone', 'Estacione numa zona de devolução para encerrar.');
+    // Atalho de teste (ALLOW_TEST_HANDOVER): segue sem zona; a trava continua pelo bloqueio seguro e só encerra confirmada.
+    const testOutsideZone = !zone;
+    if (testOutsideZone) this.logger.log({ msg: 'rental_test_end_outside_zone', rentalId, vehicleId: rental.vehicleId });
 
     const now = new Date();
     const closedPause = rental.status === 'paused' && rental.pausedAt ? Math.floor((now.getTime() - rental.pausedAt.getTime()) / 1000) : 0;
@@ -140,7 +151,7 @@ export class RentalEndService {
           endRequestedAt: now,
           pausedAt: null,
           pausedSecondsAcc: rental.pausedSecondsAcc + closedPause,
-          endZoneId: zone.id,
+          endZoneId: zone?.id ?? null,
           returnPhotoObjectKey: dto.returnPhotoObjectKey,
           endLastAttemptAt: now,
           endAttempts: { increment: 1 },
@@ -148,7 +159,7 @@ export class RentalEndService {
       });
     });
     if (moved.count === 0) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
-    await this.prisma.rentalEvent.create({ data: { rentalId, type: 'ending', actorType: 'customer', actorId: customerId, data: { zoneId: zone.id } } });
+    await this.prisma.rentalEvent.create({ data: { rentalId, type: 'ending', actorType: 'customer', actorId: customerId, data: testOutsideZone ? { zoneId: null, testOutsideZone: true } : { zoneId: zone!.id } } });
 
     const confirmed = await this.requestLock(rentalId, rental.vehicleId, 'rental_end');
     if (confirmed) return { status: 200 as const, rental: await this.finalize(rentalId, 'ended') };

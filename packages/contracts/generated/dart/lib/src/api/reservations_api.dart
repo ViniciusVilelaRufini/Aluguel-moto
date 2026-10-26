@@ -10,6 +10,7 @@ import 'package:dio/dio.dart';
 
 import 'package:volti_api/src/api_util.dart';
 import 'package:volti_api/src/model/current_reservation.dart';
+import 'package:volti_api/src/model/handover.dart';
 import 'package:volti_api/src/model/problem.dart';
 import 'package:volti_api/src/model/reservation.dart';
 import 'package:volti_api/src/model/reservation_create.dart';
@@ -171,6 +172,91 @@ class ReservationsApi {
     }
 
     return Response<Reservation>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Entrega simulada (só em ambiente de teste)
+  /// **Só existe em ambiente de teste**: a API registra esta rota apenas com &#x60;ALLOW_TEST_HANDOVER&#x3D;true&#x60; (em produção, só junto com &#x60;PAYMENT_PROVIDER&#x3D;fake&#x60; e &#x60;ALLOW_FAKE_PAYMENTS&#x3D;true&#x60;). Fora disso a rota não existe e responde &#x60;404&#x60;.  Faz o papel da equipe do galpão para o app de teste: na reserva de galpão &#x60;active&#x60; do próprio cliente, assina o &#x60;pickupCode&#x60; da reserva e cria a entrega de saída como em &#x60;POST /handovers&#x60; (&#x60;pickup&#x60;), com checklist de teste (&#x60;[{ code: teste, ok: true }]&#x60;), sem fotos e com a bateria atual da moto. Mesmas verificações de &#x60;POST /handovers&#x60; (moto &#x60;reserved&#x60;, uma entrega aberta por reserva). A entrega nasce &#x60;pending_customer&#x60;, a reserva passa a &#x60;handover&#x60; e o cliente segue pelo aceite normal (&#x60;POST /handovers/{id}/accept&#x60;). O operador da entrega é um ator de sistema (o cliente vê \&quot;Equipe Volti\&quot;).  Reserva inexistente, de outro cliente ou sem galpão → &#x60;404&#x60;. Reserva fora de &#x60;active&#x60; (entrega já aberta, encerrada) ou moto não separada → &#x60;409&#x60; (&#x60;conflict&#x60;, &#x60;vehicle-unavailable&#x60;).
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Handover] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Handover>> createTestHandover({
+    required String id,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/reservations/{id}/test-handover'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      validateStatus: validateStatus,
+    );
+
+    final _response = await _dio.request<Object>(
+      _path,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Handover? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Handover),
+            ) as Handover;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Handover>(
       data: _responseData,
       headers: _response.headers,
       isRedirect: _response.isRedirect,

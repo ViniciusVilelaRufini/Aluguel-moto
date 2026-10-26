@@ -10,7 +10,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **name** | **String** |  | 
 **type** | [**ZoneType**](ZoneType.md) |  | 
-**speedLimitKmh** | **int** | Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Acima de 32 → 400. | [optional] 
+**speedLimitKmh** | **int** | Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Abaixo de 6 (menor limite de zona, área de pedestres) ou acima de 32 → 400. | [optional] 
 **geometry** | [**GeoJsonPolygon**](GeoJsonPolygon.md) |  | 
 **active** | **bool** |  | [optional] [default to true]
 

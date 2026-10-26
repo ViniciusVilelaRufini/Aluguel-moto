@@ -34,7 +34,7 @@ class FieldTasksApi {
   const FieldTasksApi(this._dio, this._serializers);
 
   /// Concluir tarefa
-  /// Tarefas &#x60;inspection&#x60; exigem uma inspeção registrada e &#x60;battery_swap&#x60; uma troca registrada (&#x60;422&#x60;). &#x60;vehicleStatus&#x60; muda a moto para &#x60;free&#x60; ou &#x60;maintenance&#x60; no mesmo passo.
+  /// Usuário só do grupo &#x60;campo&#x60; só conclui tarefa atribuída a ele (&#x60;403&#x60;). Tarefas &#x60;inspection&#x60; exigem uma inspeção registrada e &#x60;battery_swap&#x60; uma troca registrada (&#x60;422&#x60;). &#x60;vehicleStatus&#x60; muda a moto para &#x60;free&#x60; ou &#x60;maintenance&#x60; no mesmo passo, com as mesmas guardas da troca manual de status (a moto precisa estar &#x60;free&#x60; ou &#x60;maintenance&#x60; e sem aluguel aberto nem reserva ativa; senão &#x60;409&#x60; &#x60;vehicle-unavailable&#x60; e nada muda). Moto com bloqueio da equipe ou do sistema não volta a &#x60;free&#x60; por aqui (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;, \&quot;A moto está bloqueada pela equipe; libere-a antes de devolver à frota.\&quot;).
   ///
   /// Parameters:
   /// * [id]
@@ -346,7 +346,7 @@ class FieldTasksApi {
   }
 
   /// Detalhe da tarefa
-  ///
+  /// Usuário só do grupo &#x60;campo&#x60; vê apenas as tarefas atribuídas a ele ou ainda sem responsável (&#x60;403&#x60; nas de outro operador).
   ///
   /// Parameters:
   /// * [id]
@@ -431,7 +431,7 @@ class FieldTasksApi {
   }
 
   /// Listar tarefas de campo
-  /// Para o grupo &#x60;campo&#x60;, por padrão só as atribuídas ao próprio operador (&#x60;assigneeId&#x3D;me&#x60;). Ordem por prioridade e prazo.
+  /// Usuário só do grupo &#x60;campo&#x60; recebe sempre só as tarefas atribuídas a ele (&#x60;assigneeId&#x60; é ignorado). Ordem por prioridade e prazo.
   ///
   /// Parameters:
   /// * [cursor] - Cursor opaco devolvido em `nextCursor` da página anterior.
@@ -545,7 +545,7 @@ class FieldTasksApi {
   }
 
   /// Destravar em modo serviço
-  /// Destrava sem cobrança para o operador de campo, sem aluguel. Grava AuditLog (quem, quando, motivo, tarefa). Responde com o comando &#x60;unlock&#x60; criado.
+  /// Destrava sem cobrança para o operador de campo, sem aluguel. Recusa (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;) moto com aluguel aberto ou reserva ativa, mesmo que esteja &#x60;offline&#x60;. &#x60;fieldTaskId&#x60;, se informado, precisa ser uma tarefa desta moto (&#x60;409&#x60;) e, para usuário só do grupo &#x60;campo&#x60;, atribuída a ele (&#x60;403&#x60;). Grava AuditLog (quem, quando, motivo, tarefa). Responde com o comando &#x60;unlock&#x60; criado.
   ///
   /// Parameters:
   /// * [id]
@@ -737,7 +737,7 @@ class FieldTasksApi {
   }
 
   /// Registrar troca de bateria
-  /// Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (&#x60;422&#x60; &#x60;battery-serials-must-differ&#x60;). Reenvio com a mesma &#x60;Idempotency-Key&#x60; não duplica.
+  /// Usuário só do grupo &#x60;campo&#x60; só registra em tarefa atribuída a ele (&#x60;403&#x60;). Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (&#x60;422&#x60; &#x60;battery-serials-must-differ&#x60;). Reenvio com a mesma &#x60;Idempotency-Key&#x60; não duplica.
   ///
   /// Parameters:
   /// * [id]
@@ -847,7 +847,7 @@ class FieldTasksApi {
   }
 
   /// Registrar checklist de inspeção
-  /// Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é observado em &#x60;configuredMaxKmh&#x60; (valor lido no controlador, 0 a 100). Se &#x60;configuredMaxKmh &gt; 32&#x60;: &#x60;speedLimiter.ok: true&#x60; é recusado (&#x60;422&#x60; &#x60;speed-limiter-noncompliant&#x60;); com &#x60;ok: false&#x60; a inspeção é registrada e a API abre automaticamente uma manutenção corretiva e um alerta, e muda a moto para &#x60;maintenance&#x60;. &#x60;recordedAt&#x60; é o instante real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma &#x60;Idempotency-Key&#x60; não duplica.
+  /// Usuário só do grupo &#x60;campo&#x60; só registra em tarefa atribuída a ele (&#x60;403&#x60;). Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é observado em &#x60;configuredMaxKmh&#x60; (valor lido no controlador, 0 a 100). Se &#x60;configuredMaxKmh &gt; 32&#x60;: &#x60;speedLimiter.ok: true&#x60; é recusado (&#x60;422&#x60; &#x60;speed-limiter-noncompliant&#x60;); com &#x60;ok: false&#x60; a inspeção é registrada e a API abre automaticamente uma manutenção corretiva e um alerta, e muda a moto para &#x60;maintenance&#x60;. &#x60;recordedAt&#x60; é o instante real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma &#x60;Idempotency-Key&#x60; não duplica.
   ///
   /// Parameters:
   /// * [id]

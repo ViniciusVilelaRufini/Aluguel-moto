@@ -137,4 +137,17 @@ void main() {
     await pump(t, ParityBackend(), flash: _Flash.new);
     expect(find.text('Reserva cancelada'), findsOneWidget);
   });
+
+  testWidgets('toast deixado por outra tela fica no topo, fora do mapa e da folha', (t) async {
+    phone(t);
+    await pump(t, ParityBackend(), flash: _Flash.new);
+    final toast = find.byKey(const Key('volti-toast'));
+    expect(toast, findsOneWidget);
+    // Logo abaixo da barra de status (no meio do mapa cobria o pin do galpao).
+    expect(t.getTopLeft(toast).dy, lessThan(120));
+    // Some sozinho.
+    await t.pump(const Duration(seconds: 5));
+    await t.pump(const Duration(milliseconds: 500));
+    expect(toast, findsNothing);
+  });
 }

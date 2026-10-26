@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import '../../core/app_channel.dart';
 import '../../core/backend.dart';
 import '../../core/breakdown.dart';
 import '../../core/clock.dart';
@@ -60,6 +61,9 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
   DateTime? _slot;
   DepositMethod? _method;
   String? _cardId;
+
+  /// "Pagamento de teste" (so no canal beta): caucao no cartao de teste do gateway falso.
+  bool _testPay = false;
   late String _coupon = ref.read(pendingCouponProvider);
   bool _busy = false;
 
@@ -113,6 +117,16 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
     }
   }
 
+  /// Cartao de teste da conta: reaproveita o ja salvo (final do token de teste) ou cadastra um.
+  Future<String> _testCardId() async {
+    final saved = await ref.read(cardsProvider.future);
+    final existing = saved.where((c) => c.last4 == kTestCardLast4).map((c) => c.id).firstOrNull;
+    if (existing != null) return existing;
+    final card = await ref.read(backendProvider).addCard(kTestCardToken);
+    ref.invalidate(cardsProvider);
+    return card.id;
+  }
+
   Future<void> _editCoupon() async {
     final l = context.l;
     final code = await VoltiBottomSheet.show<String>(
@@ -160,7 +174,7 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
     }
   }
 
-  Future<void> _confirm(ReservationCreate request) async {
+  Future<void> _confirm(ReservationCreate pending) async {
     // Consentimento antes do spinner: o dialogo nao fica com o botao "carregando" atras.
     if (_busy || !await _ensureLocationConsent() || !mounted) return;
     final l = context.l;
@@ -168,12 +182,17 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
       _busy = true;
       _error = null;
     });
-    if (_idemFor != request) {
-      _idemFor = request;
-      _idemKey = newIdempotencyKey();
-    }
     final depotId = _sel.depot.id;
     try {
+      var request = pending;
+      if (_testPay) {
+        final cardId = await _testCardId();
+        request = request.rebuild((b) => b.cardId = cardId);
+      }
+      if (_idemFor != request) {
+        _idemFor = request;
+        _idemKey = newIdempotencyKey();
+      }
       final r = await ref.read(backendProvider).createDepotReservation(request, idempotencyKey: _idemKey);
       VoltiHaptics.success();
       ref.read(pendingCouponProvider.notifier).clear();
@@ -262,15 +281,20 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
     final cards = ref.watch(cardsProvider);
     final cardList = cards.value ?? const <PaymentCard>[];
     _cardId ??= cardList.where((c) => c.isDefault).map((c) => c.id).firstOrNull ?? cardList.map((c) => c.id).firstOrNull;
-    // Pix pre-selecionado quando o cliente nao tem cartao.
-    if (_method == null && cards.hasValue) _method = cardList.isEmpty ? DepositMethod.pix : DepositMethod.card;
+    final testChannel = ref.watch(appChannelProvider) == AppChannel.beta;
+    // Sem cartao: Pix pre-selecionado (no app de teste, o "Pagamento de teste").
+    if (_method == null && cards.hasValue) {
+      _testPay = testChannel && cardList.isEmpty;
+      _method = cardList.isEmpty && !_testPay ? DepositMethod.pix : DepositMethod.card;
+    }
     final method = _method;
     final plan = _sel.plan!;
     final quoteKey = (plan.code, _sel.coverage, _coupon, _sel.vehicle.id);
     final quote = ref.watch(pickupQuoteProvider(quoteKey));
 
     final whenReady = mode == PickupMode.now ? openNow : slot != null;
-    final payReady = method == DepositMethod.pix || (method == DepositMethod.card && _cardId != null);
+    // Pagamento de teste: o cartao de teste so e resolvido no confirmar.
+    final payReady = _testPay || method == DepositMethod.pix || (method == DepositMethod.card && _cardId != null);
     final request = !whenReady || !payReady
         ? null
         : ReservationCreate((b) => b
@@ -281,12 +305,13 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
           ..planCode = plan.code
           ..coverage = _sel.coverage
           ..depositMethod = method
-          ..cardId = method == DepositMethod.card ? _cardId : null
+          ..cardId = method == DepositMethod.card && !_testPay ? _cardId : null
           ..couponCode = _coupon.isEmpty ? null : _coupon);
 
     final nowExpiry = hhmm(hours.toLocal(hours.pickupNowExpiry(now)));
     // Cartao escolhido sem cartao salvo: o botao desligado diz o motivo.
-    final blockedReason = method == DepositMethod.card && _cardId == null && cards.hasValue ? l.planNeedsCard : null;
+    final blockedReason = method == DepositMethod.card && !_testPay && _cardId == null && cards.hasValue ? l.planNeedsCard : null;
+    final cardSelected = method == DepositMethod.card && !_testPay;
 
     return Scaffold(
       bottomNavigationBar: Container(
@@ -452,13 +477,16 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
                     title: l.payCard,
                     icon: LucideIcons.creditCard,
                     description: _cardId == null ? l.noCard : cardList.where((c) => c.id == _cardId).map((c) => '${c.brand} •••• ${c.last4}').firstOrNull,
-                    selected: method == DepositMethod.card,
+                    selected: cardSelected,
                     onTap: () {
-                      if (_method != DepositMethod.card) VoltiHaptics.selection();
-                      setState(() => _method = DepositMethod.card);
+                      if (!cardSelected) VoltiHaptics.selection();
+                      setState(() {
+                        _method = DepositMethod.card;
+                        _testPay = false;
+                      });
                     },
                   ),
-                  if (method == DepositMethod.card && cardList.isEmpty && !cards.isLoading)
+                  if (cardSelected && cardList.isEmpty && !cards.isLoading)
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: VoltiButton(label: l.addCard, icon: LucideIcons.plus, variant: VoltiButtonVariant.secondary, fullWidth: true, onPressed: _addCard),
@@ -472,9 +500,29 @@ class _PickupScreenState extends ConsumerState<PickupScreen> with WidgetsBinding
                     selected: method == DepositMethod.pix,
                     onTap: () {
                       if (_method != DepositMethod.pix) VoltiHaptics.selection();
-                      setState(() => _method = DepositMethod.pix);
+                      setState(() {
+                        _method = DepositMethod.pix;
+                        _testPay = false;
+                      });
                     },
                   ),
+                  if (testChannel) ...[
+                    const SizedBox(height: VoltiSpacing.s10),
+                    OptionCard(
+                      key: const Key('pickup-test-pay'),
+                      title: l.payTest,
+                      icon: LucideIcons.flaskConical,
+                      description: l.payTestHint,
+                      selected: _testPay,
+                      onTap: () {
+                        if (!_testPay) VoltiHaptics.selection();
+                        setState(() {
+                          _method = DepositMethod.card;
+                          _testPay = true;
+                        });
+                      },
+                    ),
+                  ],
                   if (_error != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),

@@ -83,6 +83,38 @@ describe('assertSafeConfig — lacunas T5', () => {
     }
   });
 
+  it('ALLOW_TEST_HANDOVER=true em produção exige o pagamento fake liberado (ALLOW_FAKE_PAYMENTS=true + PAYMENT_PROVIDER=fake)', () => {
+    expect(() => assertSafeConfig({ ...base(), allowTestHandover: true })).toThrow(/ALLOW_TEST_HANDOVER=true/);
+    expect(() => assertSafeConfig({ ...base(), allowTestHandover: true, allowFakePayments: true })).toThrow(/ALLOW_TEST_HANDOVER=true/);
+    expect(() => assertSafeConfig({ ...base(), allowTestHandover: true, paymentProvider: 'fake', allowFakePayments: true })).not.toThrow();
+    expect(() => assertSafeConfig({ ...base(), allowTestHandover: false })).not.toThrow();
+  });
+
+  it('ALLOW_TEST_HANDOVER=true fora de produção também exige PAYMENT_PROVIDER=fake (ALLOW_FAKE_PAYMENTS só em produção)', () => {
+    const dev = { ...base(), nodeEnv: 'development', authMode: 'dev' as const };
+    expect(() => assertSafeConfig({ ...dev, allowTestHandover: true, paymentProvider: 'fake' })).not.toThrow();
+    expect(() => assertSafeConfig({ ...dev, allowTestHandover: true, paymentProvider: 'mercadopago' })).toThrow(/ALLOW_TEST_HANDOVER=true/);
+    expect(() => assertSafeConfig({ ...dev, allowTestHandover: true, paymentProvider: undefined })).toThrow(/ALLOW_TEST_HANDOVER=true/);
+    expect(() => assertSafeConfig({ ...dev, allowTestHandover: false, paymentProvider: 'mercadopago' })).not.toThrow();
+  });
+
+  it('ALLOW_TEST_HANDOVER: padrão false; só "true" liga', () => {
+    const saved = { ...process.env };
+    try {
+      delete process.env.ALLOW_TEST_HANDOVER;
+      expect(loadConfig().allowTestHandover).toBe(false);
+      process.env.ALLOW_TEST_HANDOVER = '1';
+      expect(loadConfig().allowTestHandover).toBe(false);
+      process.env.ALLOW_TEST_HANDOVER = 'true';
+      process.env.PAYMENT_PROVIDER = 'fake';
+      expect(loadConfig().allowTestHandover).toBe(true);
+      process.env.PAYMENT_PROVIDER = 'mercadopago';
+      expect(() => loadConfig()).toThrow(/ALLOW_TEST_HANDOVER=true exige PAYMENT_PROVIDER=fake/);
+    } finally {
+      process.env = saved;
+    }
+  });
+
   it('COGNITO_STAFF_CLIENT_IDS (vírgula) + COGNITO_STAFF_CLIENT_ID legado → lista sem repetidos', () => {
     const saved = { ...process.env };
     try {

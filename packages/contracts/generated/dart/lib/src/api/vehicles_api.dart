@@ -714,7 +714,7 @@ class VehiclesApi {
   }
 
   /// Mudar status operacional (manutenção ou disponível)
-  /// Só entre &#x60;free&#x60; e &#x60;maintenance&#x60;, e só sem aluguel ou reserva ativa (senão &#x60;409&#x60;). Grava AuditLog.
+  /// Só entre &#x60;free&#x60; e &#x60;maintenance&#x60;, e só sem aluguel ou reserva ativa (senão &#x60;409&#x60;). Moto com bloqueio da equipe ou do sistema (cerca, hold, modo roubada) não volta a &#x60;free&#x60; (&#x60;409&#x60; &#x60;vehicle-unavailable&#x60;, \&quot;A moto está bloqueada pela equipe; libere-a antes de devolver à frota.\&quot;). Grava AuditLog.
   ///
   /// Parameters:
   /// * [id]

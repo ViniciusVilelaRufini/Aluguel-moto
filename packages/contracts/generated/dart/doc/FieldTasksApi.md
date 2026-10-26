@@ -26,7 +26,7 @@ Method | HTTP request | Description
 
 Concluir tarefa
 
-Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo.
+Usuário só do grupo `campo` só conclui tarefa atribuída a ele (`403`). Tarefas `inspection` exigem uma inspeção registrada e `battery_swap` uma troca registrada (`422`). `vehicleStatus` muda a moto para `free` ou `maintenance` no mesmo passo, com as mesmas guardas da troca manual de status (a moto precisa estar `free` ou `maintenance` e sem aluguel aberto nem reserva ativa; senão `409` `vehicle-unavailable` e nada muda). Moto com bloqueio da equipe ou do sistema não volta a `free` por aqui (`409` `vehicle-unavailable`, \"A moto está bloqueada pela equipe; libere-a antes de devolver à frota.\").
 
 ### Example
 ```dart
@@ -155,6 +155,8 @@ Name | Type | Description  | Notes
 
 Detalhe da tarefa
 
+Usuário só do grupo `campo` vê apenas as tarefas atribuídas a ele ou ainda sem responsável (`403` nas de outro operador).
+
 ### Example
 ```dart
 import 'package:volti_api/api.dart';
@@ -196,7 +198,7 @@ Name | Type | Description  | Notes
 
 Listar tarefas de campo
 
-Para o grupo `campo`, por padrão só as atribuídas ao próprio operador (`assigneeId=me`). Ordem por prioridade e prazo.
+Usuário só do grupo `campo` recebe sempre só as tarefas atribuídas a ele (`assigneeId` é ignorado). Ordem por prioridade e prazo.
 
 ### Example
 ```dart
@@ -249,7 +251,7 @@ Name | Type | Description  | Notes
 
 Destravar em modo serviço
 
-Destrava sem cobrança para o operador de campo, sem aluguel. Grava AuditLog (quem, quando, motivo, tarefa). Responde com o comando `unlock` criado.
+Destrava sem cobrança para o operador de campo, sem aluguel. Recusa (`409` `vehicle-unavailable`) moto com aluguel aberto ou reserva ativa, mesmo que esteja `offline`. `fieldTaskId`, se informado, precisa ser uma tarefa desta moto (`409`) e, para usuário só do grupo `campo`, atribuída a ele (`403`). Grava AuditLog (quem, quando, motivo, tarefa). Responde com o comando `unlock` criado.
 
 ### Example
 ```dart
@@ -335,7 +337,7 @@ Name | Type | Description  | Notes
 
 Registrar troca de bateria
 
-Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (`422` `battery-serials-must-differ`). Reenvio com a mesma `Idempotency-Key` não duplica.
+Usuário só do grupo `campo` só registra em tarefa atribuída a ele (`403`). Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (`422` `battery-serials-must-differ`). Reenvio com a mesma `Idempotency-Key` não duplica.
 
 ### Example
 ```dart
@@ -382,7 +384,7 @@ Name | Type | Description  | Notes
 
 Registrar checklist de inspeção
 
-Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é observado em `configuredMaxKmh` (valor lido no controlador, 0 a 100). Se `configuredMaxKmh > 32`: `speedLimiter.ok: true` é recusado (`422` `speed-limiter-noncompliant`); com `ok: false` a inspeção é registrada e a API abre automaticamente uma manutenção corretiva e um alerta, e muda a moto para `maintenance`. `recordedAt` é o instante real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma `Idempotency-Key` não duplica. 
+Usuário só do grupo `campo` só registra em tarefa atribuída a ele (`403`). Todos os itens são obrigatórios e é preciso ao menos uma foto. O limitador de velocidade é observado em `configuredMaxKmh` (valor lido no controlador, 0 a 100). Se `configuredMaxKmh > 32`: `speedLimiter.ok: true` é recusado (`422` `speed-limiter-noncompliant`); com `ok: false` a inspeção é registrada e a API abre automaticamente uma manutenção corretiva e um alerta, e muda a moto para `maintenance`. `recordedAt` é o instante real do preenchimento (pode ser anterior ao envio, no modo offline). Reenvio com a mesma `Idempotency-Key` não duplica. 
 
 ### Example
 ```dart

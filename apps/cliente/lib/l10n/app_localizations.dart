@@ -1132,6 +1132,18 @@ abstract class AppLocalizations {
   /// **'Caução por depósito Pix'**
   String get payPixHint;
 
+  /// No description provided for @payTest.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pagamento de teste'**
+  String get payTest;
+
+  /// No description provided for @payTestHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aprova na hora · só na versão de teste'**
+  String get payTestHint;
+
   /// No description provided for @pixCopied.
   ///
   /// In pt, this message translates to:
@@ -2331,6 +2343,18 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Fora dos pontos verdes não é possível encerrar sem taxa.'**
   String get returnZoneRule;
+
+  /// No description provided for @returnTestEnd.
+  ///
+  /// In pt, this message translates to:
+  /// **'Encerrar aqui (teste)'**
+  String get returnTestEnd;
+
+  /// No description provided for @returnTestEndHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Ignora o ponto verde · só na versão de teste'**
+  String get returnTestEndHint;
 
   /// No description provided for @returnOutsideBlocked.
   ///
@@ -4078,6 +4102,18 @@ abstract class AppLocalizations {
   /// **'Cancelar reserva'**
   String get cancelReservation;
 
+  /// No description provided for @reservationTestHandover.
+  ///
+  /// In pt, this message translates to:
+  /// **'Retirar moto (teste)'**
+  String get reservationTestHandover;
+
+  /// No description provided for @reservationTestHandoverHint.
+  ///
+  /// In pt, this message translates to:
+  /// **'Simula a equipe do galpão · só na versão de teste'**
+  String get reservationTestHandoverHint;
+
   /// No description provided for @cancelReservationTitle.
   ///
   /// In pt, this message translates to:
@@ -5289,6 +5325,18 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'{amount} em aberto. Pague para alugar de novo.'**
   String paymentPendingHomeText(String amount);
+
+  /// No description provided for @paymentProcessingHomeTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cobrança em andamento'**
+  String get paymentProcessingHomeTitle;
+
+  /// No description provided for @paymentProcessingHomeText.
+  ///
+  /// In pt, this message translates to:
+  /// **'Estamos processando a cobrança da sua última corrida. Assim que concluir, você poderá reservar de novo.'**
+  String get paymentProcessingHomeText;
 
   /// No description provided for @paymentPendingBlock.
   ///

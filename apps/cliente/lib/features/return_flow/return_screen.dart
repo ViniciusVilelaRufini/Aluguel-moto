@@ -10,6 +10,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:volti_api/volti_api.dart';
 import 'package:volti_flutter/volti_flutter.dart';
 
+import '../../core/app_channel.dart';
 import '../../core/backend.dart';
 import '../../core/errors.dart';
 import '../../core/geo.dart';
@@ -95,6 +96,7 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
   bool _waitingLock = false;
   bool _lockTimedOut = false;
   String? _endKey; // Idempotency-Key da tentativa de encerramento (mantida nas repeticoes)
+  bool? _endKeyTest; // rota da tentativa de [_endKey]: trocar de rota usa outra chave
   String? _photoKey; // objeto ja enviado desta foto
   String? _error;
 
@@ -181,7 +183,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
 
   /// [confirm]: so quando nao sabemos se a moto esta num ponto verde. Dentro
   /// da zona encerra direto (o design nao tem dialogo extra).
-  Future<void> _end({bool confirm = false}) async {
+  /// [test]: "Encerrar aqui (teste)" (canal beta) — mesmo fluxo pela rota de teste
+  /// `POST /rentals/{id}/test-end`, que ignora so o ponto verde.
+  Future<void> _end({bool confirm = false, bool test = false}) async {
     final l = context.l;
     if (confirm) {
       final confirmed = await VoltiDialog.show<bool>(
@@ -204,7 +208,8 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       _busy = true;
       _error = null;
       _swapOpen = false;
-      _outsideRejected = false;
+      // Na rota de teste o botao continua visivel se a falha for dela mesma.
+      if (!test) _outsideRejected = false;
     });
     try {
       final backend = ref.read(backendProvider);
@@ -213,8 +218,12 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
         await backend.upload(target, _photo!, 'image/jpeg');
         _photoKey = target.objectKey;
       }
+      if (_endKeyTest != test) _endKey = null;
+      _endKeyTest = test;
       _endKey ??= newIdempotencyKey();
-      final rental = await backend.endRental(widget.rentalId, _photoKey!, idempotencyKey: _endKey);
+      final rental = test
+          ? await backend.endRentalTest(widget.rentalId, _photoKey!, idempotencyKey: _endKey)
+          : await backend.endRental(widget.rentalId, _photoKey!, idempotencyKey: _endKey);
       if (rental.status == RentalStatus.ended || rental.status == RentalStatus.forceEnded) {
         _finish();
       } else {
@@ -224,17 +233,18 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     } catch (e) {
       final f = toFailure(e);
       if (mounted) {
+        final outside = f.slug == 'rental-outside-return-zone';
         setState(() {
           _swapOpen = f.slug == 'swap-open';
-          _outsideRejected = f.slug == 'rental-outside-return-zone';
+          _outsideRejected = outside || (test && _outsideRejected);
           _error = _swapOpen
               ? l.swapErrorOpen
-              : _outsideRejected
+              : outside
               ? l.returnOutsideRejected
               : failureText(l, e);
         });
         // A posicao que o app tinha estava velha: le a da moto de novo.
-        if (_outsideRejected) ref.invalidate(returnContextProvider(widget.rentalId));
+        if (outside) ref.invalidate(returnContextProvider(widget.rentalId));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -377,6 +387,9 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     final mapOn = ref.watch(mapEnabledProvider);
     final center = rc?.vehicle ?? (rc?.nearest != null ? zoneCenter(rc!.nearest!) : const LatLng(-23.5614, -46.6559));
     final canEnd = _photo != null && !_busy && ctx.hasValue && !outside;
+    // App de teste (canal beta): fora dos pontos verdes, encerra pela rota de teste. Nunca na loja.
+    final testEnd = ref.watch(appChannelProvider) == AppChannel.beta && (outside || _outsideRejected);
+    final canTestEnd = _photo != null && !_busy && ctx.hasValue;
     final atDepot = _mode == ReturnMode.depot;
     final depot = atDepot ? ref.watch(rentalDepotProvider(widget.rentalId)).value : null;
     // O galpao pode chegar depois de o cliente tocar no segmento: centra quando chegar.
@@ -568,6 +581,23 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
                             padding: const EdgeInsets.only(top: 12),
                             child: NoticeBanner(danger: true, icon: LucideIcons.circleAlert, message: _error!),
                           ),
+                        if (testEnd) ...[
+                          const SizedBox(height: VoltiSpacing.s8),
+                          VoltiButton(
+                            key: const Key('return-test-end'),
+                            label: l.returnTestEnd,
+                            icon: LucideIcons.flaskConical,
+                            variant: VoltiButtonVariant.secondary,
+                            fullWidth: true,
+                            onPressed: canTestEnd ? () => _end(test: true) : null,
+                          ),
+                          const SizedBox(height: VoltiSpacing.s4),
+                          Text(
+                            l.returnTestEndHint,
+                            textAlign: TextAlign.center,
+                            style: VoltiTypography.caption.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                          ),
+                        ],
                         if (_outsideRejected) ...[
                           const SizedBox(height: VoltiSpacing.s8),
                           VoltiButton(

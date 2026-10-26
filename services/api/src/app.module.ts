@@ -39,6 +39,7 @@ import { MaintenanceV2Module } from './modules/maintenance/maintenance-v2.module
 import { ReferralsModule } from './modules/referrals/referrals.module';
 import { DepotsModule } from './modules/depots/depots.module';
 import { HandoversModule } from './modules/handovers/handovers.module';
+import { TestHandoverModule } from './modules/handovers/test-handover.module';
 import { StationSwapsModule } from './modules/station-swaps/station-swaps.module';
 import { SwapStationsModule } from './modules/swap-stations/swap-stations.module';
 
@@ -85,6 +86,8 @@ import { SwapStationsModule } from './modules/swap-stations/swap-stations.module
     // Retirada em galpão (plano 2026-10-22-volti-galpao).
     DepotsModule,
     HandoversModule,
+    // Entrega simulada do app de teste: só com ALLOW_TEST_HANDOVER=true (docs/decisoes.md, 2026-10-26).
+    TestHandoverModule.register(),
     // Troca de bateria na estação via QR (spec 2026-10-22-volti-troca-bateria-qr).
     StationSwapsModule,
     SwapStationsModule,

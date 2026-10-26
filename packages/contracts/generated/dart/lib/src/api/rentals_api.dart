@@ -143,7 +143,7 @@ class RentalsApi {
   }
 
   /// Encerrar aluguel
-  /// Só dentro de uma zona &#x60;return&#x60; (&#x60;422&#x60; &#x60;rental-outside-return-zone&#x60;) e com a foto enviada (&#x60;422&#x60; &#x60;return-photo-missing&#x60;). Com troca de bateria na estação em andamento (&#x60;currentStationSwap&#x60; em &#x60;GET /rentals/current&#x60;) → &#x60;409&#x60; &#x60;swap-open&#x60; (termine ou cancele a troca antes; o encerramento forçado pelo staff continua permitido). Pede o travamento ao rastreador: - travada confirmada → &#x60;200&#x60;, status &#x60;ended&#x60;, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → &#x60;202&#x60;, status &#x60;ending&#x60;; o servidor tenta de novo e o cliente acompanha por   &#x60;rental.updated&#x60; ou &#x60;GET /rentals/{id}&#x60;.  Liquidação idempotente por &#x60;rentalId&#x60;: no máximo uma liquidação por aluguel, não importa quantas vezes a chamada seja repetida (com ou sem &#x60;Idempotency-Key&#x60;). A &#x60;Idempotency-Key&#x60; opcional faz a repetição devolver a mesma resposta.
+  /// Só dentro de uma zona &#x60;return&#x60; (&#x60;422&#x60; &#x60;rental-outside-return-zone&#x60;) e com a foto enviada (&#x60;422&#x60; &#x60;return-photo-missing&#x60;). Com troca de bateria na estação em andamento (&#x60;currentStationSwap&#x60; em &#x60;GET /rentals/current&#x60;) → &#x60;409&#x60; &#x60;swap-open&#x60; (termine ou cancele a troca antes; o encerramento forçado pelo staff continua permitido). Pede o travamento ao rastreador: - travada confirmada → &#x60;200&#x60;, status &#x60;ended&#x60;, valor final calculado (plano + seguro − cupom) e   liquidado uma única vez; - sem confirmação ainda → &#x60;202&#x60;, status &#x60;ending&#x60;; o servidor tenta de novo e o cliente acompanha por   &#x60;rental.updated&#x60; ou &#x60;GET /rentals/{id}&#x60;. Moto com bloqueio da equipe ou do sistema no encerramento (normal ou forçado) volta como &#x60;maintenance&#x60;, não &#x60;free&#x60;, com alerta &#x60;command_failed&#x60; para a operação liberar.  Liquidação idempotente por &#x60;rentalId&#x60;: no máximo uma liquidação por aluguel, não importa quantas vezes a chamada seja repetida (com ou sem &#x60;Idempotency-Key&#x60;). A &#x60;Idempotency-Key&#x60; opcional faz a repetição devolver a mesma resposta.
   ///
   /// Parameters:
   /// * [id]
@@ -170,6 +170,116 @@ class RentalsApi {
     ProgressCallback? onReceiveProgress,
   }) async {
     final _path = r'/rentals/{id}/end'.replaceAll(
+        '{' r'id' '}',
+        encodeQueryParameter(_serializers, id, const FullType(String))
+            .toString());
+    final _options = Options(
+      method: r'POST',
+      headers: <String, dynamic>{
+        if (idempotencyKey != null) r'Idempotency-Key': idempotencyKey,
+        ...?headers,
+      },
+      extra: <String, dynamic>{
+        'secure': <Map<String, String>>[
+          {
+            'type': 'http',
+            'scheme': 'bearer',
+            'name': 'customerAuth',
+          },
+        ],
+        ...?extra,
+      },
+      contentType: 'application/json',
+      validateStatus: validateStatus,
+    );
+
+    dynamic _bodyData;
+
+    try {
+      const _type = FullType(EndRentalRequest);
+      _bodyData =
+          _serializers.serialize(endRentalRequest, specifiedType: _type);
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _options.compose(
+          _dio.options,
+          _path,
+        ),
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    final _response = await _dio.request<Object>(
+      _path,
+      data: _bodyData,
+      options: _options,
+      cancelToken: cancelToken,
+      onSendProgress: onSendProgress,
+      onReceiveProgress: onReceiveProgress,
+    );
+
+    Rental? _responseData;
+
+    try {
+      final rawResponse = _response.data;
+      _responseData = rawResponse == null
+          ? null
+          : _serializers.deserialize(
+              rawResponse,
+              specifiedType: const FullType(Rental),
+            ) as Rental;
+    } catch (error, stackTrace) {
+      throw DioException(
+        requestOptions: _response.requestOptions,
+        response: _response,
+        type: DioExceptionType.unknown,
+        error: error,
+        stackTrace: stackTrace,
+      );
+    }
+
+    return Response<Rental>(
+      data: _responseData,
+      headers: _response.headers,
+      isRedirect: _response.isRedirect,
+      requestOptions: _response.requestOptions,
+      redirects: _response.redirects,
+      statusCode: _response.statusCode,
+      statusMessage: _response.statusMessage,
+      extra: _response.extra,
+    );
+  }
+
+  /// Encerrar aluguel fora do ponto verde (só em ambiente de teste)
+  /// **Só existe em ambiente de teste**: a API registra esta rota apenas com &#x60;ALLOW_TEST_HANDOVER&#x3D;true&#x60; (a mesma flag dos atalhos de teste; em produção, só junto com &#x60;PAYMENT_PROVIDER&#x3D;fake&#x60; e &#x60;ALLOW_FAKE_PAYMENTS&#x3D;true&#x60;). Fora disso a rota não existe e responde &#x60;404&#x60;.  Igual a &#x60;POST /rentals/{id}/end&#x60;, pulando **apenas** a conferência da zona &#x60;return&#x60;: fora de qualquer ponto verde o encerramento segue sem zona (&#x60;endZoneId&#x60; nulo, evento &#x60;ending&#x60; marcado como teste) e sem taxa de encerramento forçado. Dentro de uma zona &#x60;return&#x60; se comporta exatamente como o encerramento normal. Todo o resto é o mesmo: aluguel de outro cliente → &#x60;404&#x60;; fora de andamento → &#x60;409&#x60; &#x60;rental-not-active&#x60;; troca na estação em andamento → &#x60;409&#x60; &#x60;swap-open&#x60;; sem a foto → &#x60;422&#x60; &#x60;return-photo-missing&#x60;; travamento pelo bloqueio seguro (redução gradual, trava só abaixo de 3 km/h) e encerramento só com a confirmação (&#x60;200&#x60; &#x60;ended&#x60; ou &#x60;202&#x60; &#x60;ending&#x60;); liquidação única por &#x60;rentalId&#x60;.
+  ///
+  /// Parameters:
+  /// * [id]
+  /// * [endRentalRequest]
+  /// * [idempotencyKey] - Recomendado para reenvios da fila offline. Válida por 24 h.
+  /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
+  /// * [headers] - Can be used to add additional headers to the request
+  /// * [extras] - Can be used to add flags to the request
+  /// * [validateStatus] - A [ValidateStatus] callback that can be used to determine request success based on the HTTP status of the response
+  /// * [onSendProgress] - A [ProgressCallback] that can be used to get the send progress
+  /// * [onReceiveProgress] - A [ProgressCallback] that can be used to get the receive progress
+  ///
+  /// Returns a [Future] containing a [Response] with a [Rental] as data
+  /// Throws [DioException] if API call or serialization fails
+  Future<Response<Rental>> endRentalTest({
+    required String id,
+    required EndRentalRequest endRentalRequest,
+    String? idempotencyKey,
+    CancelToken? cancelToken,
+    Map<String, dynamic>? headers,
+    Map<String, dynamic>? extra,
+    ValidateStatus? validateStatus,
+    ProgressCallback? onSendProgress,
+    ProgressCallback? onReceiveProgress,
+  }) async {
+    final _path = r'/rentals/{id}/test-end'.replaceAll(
         '{' r'id' '}',
         encodeQueryParameter(_serializers, id, const FullType(String))
             .toString());
@@ -1195,7 +1305,7 @@ class RentalsApi {
   }
 
   /// Retomar aluguel
-  /// Destrava a moto. Só de &#x60;paused&#x60;.
+  /// Destrava a moto. Só de &#x60;paused&#x60; (senão &#x60;409&#x60; &#x60;rental-not-active&#x60;). Se a moto foi travada pela equipe ou pelo sistema (cerca, limite segurado em 0 depois de não parar, modo roubada), &#x60;409&#x60; &#x60;vehicle-locked-by-staff&#x60; (\&quot;A moto foi bloqueada pela equipe. Fale com o suporte.\&quot;) e o aluguel continua &#x60;paused&#x60;.
   ///
   /// Parameters:
   /// * [id]
@@ -1387,7 +1497,7 @@ class RentalsApi {
   }
 
   /// Iniciar aluguel
-  /// Exige KYC aprovado (&#x60;403&#x60; &#x60;kyc-not-approved&#x60;), cliente não inadimplente (&#x60;403&#x60; &#x60;customer-delinquent&#x60;), consentimento de localização (&#x60;403&#x60; &#x60;location-consent-required&#x60;, ver &#x60;PUT /lgpd/consents&#x60;), seguro (&#x60;coverage&#x60;; &#x60;basic&#x60; é o mínimo obrigatório) e caução.  Moto do galpão: moto com &#x60;depotId&#x60;, ou separada por uma reserva de galpão (mesmo do próprio cliente), responde &#x60;409&#x60; &#x60;vehicle-unavailable&#x60; aqui; ela só sai do galpão pelo aceite da entrega (&#x60;POST /handovers/{id}/accept&#x60;). A moto precisa estar &#x60;free&#x60; ou reservada pelo próprio cliente (senão &#x60;409&#x60; &#x60;vehicle-unavailable&#x60;).  Caução (&#x60;depositMethod&#x60;): - &#x60;card&#x60;: pré-autoriza 5000 no cartão (&#x60;cardId&#x60; ou o cartão padrão). Sucesso → &#x60;201&#x60; com   &#x60;outcome: started&#x60;, aluguel &#x60;active&#x60; e desbloqueio pedido ao módulo IoT. Sem nenhum cartão ativo →   &#x60;422&#x60; &#x60;card-required&#x60;. - &#x60;pix&#x60;: gera a cobrança Pix → &#x60;202&#x60; com &#x60;outcome: awaiting_deposit&#x60; e &#x60;deposit.pix&#x60;. A resposta cria   (ou estende) uma reserva do cliente para essa moto válida até &#x60;pix.expiresAt&#x60;, com as mesmas regras   das reservas (uma por cliente, KYC aprovado, sem bloqueio) e no máximo o prazo do Pix. Depois do   pagamento (&#x60;GET /payments/deposits/{id}&#x60; com &#x60;held&#x60;), o app chama &#x60;POST /rentals&#x60; de novo, com   **nova** &#x60;Idempotency-Key&#x60; e &#x60;depositId&#x60;, e recebe &#x60;201&#x60;. Caução paga cujo aluguel não chega a   iniciar (reserva expirada, &#x60;409&#x60; na segunda chamada, cancelamento) é liberada/estornada   automaticamente (&#x60;DepositStatus&#x60; → &#x60;released&#x60;).  Idempotência: a mesma &#x60;Idempotency-Key&#x60; devolve a mesma resposta e não cria outro aluguel.
+  /// Exige KYC aprovado (&#x60;403&#x60; &#x60;kyc-not-approved&#x60;), cliente não inadimplente (&#x60;403&#x60; &#x60;customer-delinquent&#x60;), consentimento de localização (&#x60;403&#x60; &#x60;location-consent-required&#x60;, ver &#x60;PUT /lgpd/consents&#x60;), seguro (&#x60;coverage&#x60;; &#x60;basic&#x60; é o mínimo obrigatório) e caução.  Moto do galpão: moto com &#x60;depotId&#x60;, ou separada por uma reserva de galpão (mesmo do próprio cliente), responde &#x60;409&#x60; &#x60;vehicle-unavailable&#x60; aqui; ela só sai do galpão pelo aceite da entrega (&#x60;POST /handovers/{id}/accept&#x60;). A moto precisa estar &#x60;free&#x60; ou reservada pelo próprio cliente (senão &#x60;409&#x60; &#x60;vehicle-unavailable&#x60;). Moto com bloqueio da equipe ou do sistema (cerca, limite segurado em 0, modo roubada) → &#x60;409&#x60; &#x60;vehicle-unavailable&#x60; (\&quot;A moto está bloqueada pela equipe. Escolha outra.\&quot;) antes de reter a caução.  Caução (&#x60;depositMethod&#x60;): - &#x60;card&#x60;: pré-autoriza 5000 no cartão (&#x60;cardId&#x60; ou o cartão padrão). Sucesso → &#x60;201&#x60; com   &#x60;outcome: started&#x60;, aluguel &#x60;active&#x60; e desbloqueio pedido ao módulo IoT. Sem nenhum cartão ativo →   &#x60;422&#x60; &#x60;card-required&#x60;. - &#x60;pix&#x60;: gera a cobrança Pix → &#x60;202&#x60; com &#x60;outcome: awaiting_deposit&#x60; e &#x60;deposit.pix&#x60;. A resposta cria   (ou estende) uma reserva do cliente para essa moto válida até &#x60;pix.expiresAt&#x60;, com as mesmas regras   das reservas (uma por cliente, KYC aprovado, sem bloqueio) e no máximo o prazo do Pix. Depois do   pagamento (&#x60;GET /payments/deposits/{id}&#x60; com &#x60;held&#x60;), o app chama &#x60;POST /rentals&#x60; de novo, com   **nova** &#x60;Idempotency-Key&#x60; e &#x60;depositId&#x60;, e recebe &#x60;201&#x60;. Caução paga cujo aluguel não chega a   iniciar (reserva expirada, &#x60;409&#x60; na segunda chamada, cancelamento) é liberada/estornada   automaticamente (&#x60;DepositStatus&#x60; → &#x60;released&#x60;).  Idempotência: a mesma &#x60;Idempotency-Key&#x60; devolve a mesma resposta e não cria outro aluguel.
   ///
   /// Parameters:
   /// * [idempotencyKey] - Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
@@ -1492,7 +1602,7 @@ class RentalsApi {
   }
 
   /// Trocar de moto
-  /// Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para &#x60;maintenance&#x60;, e destrava a nova (precisa estar &#x60;free&#x60; e a até 200 m). O aluguel continua o mesmo, com evento &#x60;vehicle_swapped&#x60;. Com troca de bateria na estação em andamento (&#x60;currentStationSwap&#x60;) → &#x60;409&#x60; &#x60;swap-open&#x60;.
+  /// Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para &#x60;maintenance&#x60;, e destrava a nova (precisa estar &#x60;free&#x60;, fora do galpão, online, a até 200 m, sem aluguel nem reserva e não ser a moto fixa do plano de outro cliente; senão &#x60;409&#x60; &#x60;vehicle-unavailable&#x60; ou &#x60;vehicle-offline&#x60;). O preço continua o do início do aluguel, então a nova moto precisa ter preço por minuto (modelo do catálogo) igual ou menor (&#x60;409&#x60;). Nova moto com bloqueio da equipe ou do sistema → &#x60;409&#x60; &#x60;vehicle-unavailable&#x60; (\&quot;A moto escolhida está bloqueada pela equipe.\&quot;), sem trocar nada. Moto ATUAL com bloqueio da equipe ou do sistema (cerca, hold, modo roubada) → &#x60;409&#x60; &#x60;vehicle-locked-by-staff&#x60; (\&quot;A moto foi bloqueada pela equipe. Fale com o suporte.\&quot;), mesmo com incidente, sem trocar nada. Se o aluguel mudar de status (pausa/retomada) durante a troca → &#x60;409&#x60; &#x60;rental-not-active&#x60;. Com troca de bateria na estação em andamento (&#x60;currentStationSwap&#x60;) → &#x60;409&#x60; &#x60;swap-open&#x60;. O aluguel continua o mesmo, com evento &#x60;vehicle_swapped&#x60;.
   ///
   /// Parameters:
   /// * [id]

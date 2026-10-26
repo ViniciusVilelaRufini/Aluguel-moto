@@ -3,7 +3,6 @@ import { METHOD_METADATA, MODULE_METADATA, PATH_METADATA } from '@nestjs/common/
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as yaml from 'js-yaml';
-import { AppModule } from './app.module';
 import { AUTH_META, AuthRequirement, PUBLIC_META } from './modules/auth/principal';
 
 /**
@@ -21,6 +20,17 @@ function collectModules(mod: any, seen = new Set<any>()): any[] {
 }
 
 function collectRoutes() {
+  // A entrega simulada (createTestHandover) e o encerramento de teste (endRentalTest) só são registrados com ALLOW_TEST_HANDOVER=true; o AppModule é carregado depois.
+  const prevFlag = process.env.ALLOW_TEST_HANDOVER;
+  process.env.ALLOW_TEST_HANDOVER = 'true';
+  let AppModule: typeof import('./app.module').AppModule;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ({ AppModule } = require('./app.module') as typeof import('./app.module'));
+  } finally {
+    if (prevFlag === undefined) delete process.env.ALLOW_TEST_HANDOVER;
+    else process.env.ALLOW_TEST_HANDOVER = prevFlag;
+  }
   const routes = new Map<string, { requirement?: AuthRequirement; isPublic: boolean }>();
   for (const mod of collectModules(AppModule)) {
     const m = mod?.module ?? mod;
@@ -58,8 +68,8 @@ describe('Contrato × controllers (segurança e grupos)', () => {
     }
   }
 
-  it('cobre as 196 operações do contrato, sem rotas extras', () => {
-    expect(ops).toHaveLength(197);
+  it('cobre as 199 operações do contrato, sem rotas extras', () => {
+    expect(ops).toHaveLength(199);
     const missing = ops.map(([k]) => k).filter((k) => !routes.has(k));
     const extra = [...routes.keys()].filter((k) => !ops.some(([o]) => o === k));
     expect({ missing, extra }).toEqual({ missing: [], extra: [] });

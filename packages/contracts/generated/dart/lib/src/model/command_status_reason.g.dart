@@ -12,6 +12,8 @@ const CommandStatusReason _$didNotStop =
     const CommandStatusReason._('didNotStop');
 const CommandStatusReason _$invalidLimit =
     const CommandStatusReason._('invalidLimit');
+const CommandStatusReason _$lockedByStaff =
+    const CommandStatusReason._('lockedByStaff');
 const CommandStatusReason _$unknownDefaultOpenApi =
     const CommandStatusReason._('unknownDefaultOpenApi');
 
@@ -25,6 +27,8 @@ CommandStatusReason _$valueOf(String name) {
       return _$didNotStop;
     case 'invalidLimit':
       return _$invalidLimit;
+    case 'lockedByStaff':
+      return _$lockedByStaff;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -38,6 +42,7 @@ final BuiltSet<CommandStatusReason> _$values =
   _$timeout,
   _$didNotStop,
   _$invalidLimit,
+  _$lockedByStaff,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -47,6 +52,7 @@ class _$CommandStatusReasonMeta {
   CommandStatusReason get timeout => _$timeout;
   CommandStatusReason get didNotStop => _$didNotStop;
   CommandStatusReason get invalidLimit => _$invalidLimit;
+  CommandStatusReason get lockedByStaff => _$lockedByStaff;
   CommandStatusReason get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   CommandStatusReason valueOf(String name) => _$valueOf(name);
   BuiltSet<CommandStatusReason> get values => _$values;
@@ -68,6 +74,7 @@ class _$CommandStatusReasonSerializer
     'timeout': 'timeout',
     'didNotStop': 'did_not_stop',
     'invalidLimit': 'invalid_limit',
+    'lockedByStaff': 'locked_by_staff',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -75,6 +82,7 @@ class _$CommandStatusReasonSerializer
     'timeout': 'timeout',
     'did_not_stop': 'didNotStop',
     'invalid_limit': 'invalidLimit',
+    'locked_by_staff': 'lockedByStaff',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

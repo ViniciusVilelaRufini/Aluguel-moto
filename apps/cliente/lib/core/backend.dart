@@ -76,6 +76,9 @@ abstract class Backend {
   /// Reserva de retirada no galpao. [idempotencyKey]: uma por tentativa de confirmar.
   Future<Reservation> createDepotReservation(ReservationCreate request, {String? idempotencyKey});
   Future<void> cancelReservation(String id);
+  /// Entrega simulada (so no app de teste; a API so tem a rota com `ALLOW_TEST_HANDOVER=true`):
+  /// faz o papel da equipe do galpao e devolve a entrega `pending_customer`.
+  Future<Handover> createTestHandover(String reservationId);
 
   // entrega no galpao ("Confira sua moto")
   Future<Handover> handover(String id);
@@ -134,6 +137,10 @@ abstract class Backend {
   Future<PresignedUpload> returnPhotoUpload(String rentalId);
   /// [idempotencyKey]: uma por tentativa de encerramento, reutilizada nas repeticoes (decisao #17).
   Future<Rental> endRental(String rentalId, String photoKey, {String? idempotencyKey});
+
+  /// Encerramento de teste fora do ponto verde (`POST /rentals/{id}/test-end`): so existe na API de teste
+  /// (`ALLOW_TEST_HANDOVER=true`); fora dela responde 404. Mesmo corpo e respostas de [endRental].
+  Future<Rental> endRentalTest(String rentalId, String photoKey, {String? idempotencyKey});
   Future<Receipt> receipt(String rentalId);
   Future<void> rate(String rentalId, int stars, String? comment);
 
@@ -313,6 +320,10 @@ class ApiBackend implements Backend {
   Future<void> cancelReservation(String id) => _run(() async {
         await _api.getReservationsApi().cancelReservation(id: id);
       });
+
+  @override
+  Future<Handover> createTestHandover(String reservationId) =>
+      _run(() async => (await _api.getReservationsApi().createTestHandover(id: reservationId)).data!);
 
   @override
   Future<Handover> handover(String id) => _run(() async => (await _api.getHandoversApi().getHandover(id: id)).data!);
@@ -505,6 +516,16 @@ class ApiBackend implements Backend {
   @override
   Future<Rental> endRental(String rentalId, String photoKey, {String? idempotencyKey}) =>
       _run(() async => (await _api.getRentalsApi().endRental(
+        id: rentalId,
+        idempotencyKey: idempotencyKey,
+        endRentalRequest: EndRentalRequest((b) => b..returnPhotoObjectKey = photoKey),
+        validateStatus: (s) => s != null && s >= 200 && s < 300,
+      ))
+          .data!);
+
+  @override
+  Future<Rental> endRentalTest(String rentalId, String photoKey, {String? idempotencyKey}) =>
+      _run(() async => (await _api.getRentalsApi().endRentalTest(
         id: rentalId,
         idempotencyKey: idempotencyKey,
         endRentalRequest: EndRentalRequest((b) => b..returnPhotoObjectKey = photoKey),

@@ -41,7 +41,7 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
 `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
 `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`,
-`payment-pending`, `card-required`.
+`payment-pending`, `card-required`, `vehicle-locked-by-staff`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -255,6 +255,7 @@ Class | Method | HTTP request | Description
 [*ReferralsApi*](doc/ReferralsApi.md) | [**redeemReferralCode**](doc/ReferralsApi.md#redeemreferralcode) | **POST** /me/referral/redeem | Usar código de indicação de um amigo
 [*RentalsApi*](doc/RentalsApi.md) | [**createReturnPhotoUpload**](doc/RentalsApi.md#createreturnphotoupload) | **POST** /rentals/{id}/return-photo | URL pré-assinada para a foto de devolução
 [*RentalsApi*](doc/RentalsApi.md) | [**endRental**](doc/RentalsApi.md#endrental) | **POST** /rentals/{id}/end | Encerrar aluguel
+[*RentalsApi*](doc/RentalsApi.md) | [**endRentalTest**](doc/RentalsApi.md#endrentaltest) | **POST** /rentals/{id}/test-end | Encerrar aluguel fora do ponto verde (só em ambiente de teste)
 [*RentalsApi*](doc/RentalsApi.md) | [**forceEndRental**](doc/RentalsApi.md#forceendrental) | **POST** /rentals/{id}/force-end | Encerramento forçado (staff)
 [*RentalsApi*](doc/RentalsApi.md) | [**getCurrentRental**](doc/RentalsApi.md#getcurrentrental) | **GET** /rentals/current | Aluguel em andamento do cliente
 [*RentalsApi*](doc/RentalsApi.md) | [**getRental**](doc/RentalsApi.md#getrental) | **GET** /rentals/{id} | Detalhe do aluguel
@@ -277,6 +278,7 @@ Class | Method | HTTP request | Description
 [*ReportsApi*](doc/ReportsApi.md) | [**getRevenueReport**](doc/ReportsApi.md#getrevenuereport) | **GET** /reports/revenue | Receita por período e plano
 [*ReservationsApi*](doc/ReservationsApi.md) | [**cancelReservation**](doc/ReservationsApi.md#cancelreservation) | **DELETE** /reservations/{id} | Cancelar reserva
 [*ReservationsApi*](doc/ReservationsApi.md) | [**createReservation**](doc/ReservationsApi.md#createreservation) | **POST** /reservations | Reservar moto
+[*ReservationsApi*](doc/ReservationsApi.md) | [**createTestHandover**](doc/ReservationsApi.md#createtesthandover) | **POST** /reservations/{id}/test-handover | Entrega simulada (só em ambiente de teste)
 [*ReservationsApi*](doc/ReservationsApi.md) | [**getCurrentReservation**](doc/ReservationsApi.md#getcurrentreservation) | **GET** /reservations/current | Reserva ativa do cliente
 [*StaffApi*](doc/StaffApi.md) | [**createStaffUser**](doc/StaffApi.md#createstaffuser) | **POST** /staff | Convidar usuário interno
 [*StaffApi*](doc/StaffApi.md) | [**getStaffUser**](doc/StaffApi.md#getstaffuser) | **GET** /staff/{id} | Detalhe do usuário interno

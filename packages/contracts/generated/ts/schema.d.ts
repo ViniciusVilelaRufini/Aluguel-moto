@@ -1213,6 +1213,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/reservations/{id}/test-handover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Entrega simulada (só em ambiente de teste)
+         * @description **Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (em produção,
+         *     só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso a rota não existe e responde `404`.
+         *
+         *     Faz o papel da equipe do galpão para o app de teste: na reserva de galpão `active` do próprio cliente, assina o
+         *     `pickupCode` da reserva e cria a entrega de saída como em `POST /handovers` (`pickup`), com checklist de teste
+         *     (`[{ code: teste, ok: true }]`), sem fotos e com a bateria atual da moto. Mesmas verificações de `POST /handovers`
+         *     (moto `reserved`, uma entrega aberta por reserva). A entrega nasce `pending_customer`, a reserva passa a
+         *     `handover` e o cliente segue pelo aceite normal (`POST /handovers/{id}/accept`). O operador da entrega é um ator
+         *     de sistema (o cliente vê "Equipe Volti").
+         *
+         *     Reserva inexistente, de outro cliente ou sem galpão → `404`. Reserva fora de `active` (entrega já aberta,
+         *     encerrada) ou moto não separada → `409` (`conflict`, `vehicle-unavailable`).
+         */
+        post: operations["createTestHandover"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/rentals": {
         parameters: {
             query?: never;
@@ -1428,6 +1459,36 @@ export interface paths {
          *     repetição devolver a mesma resposta.
          */
         post: operations["endRental"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/rentals/{id}/test-end": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Encerrar aluguel fora do ponto verde (só em ambiente de teste)
+         * @description **Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (a mesma flag
+         *     dos atalhos de teste; em produção, só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso
+         *     a rota não existe e responde `404`.
+         *
+         *     Igual a `POST /rentals/{id}/end`, pulando **apenas** a conferência da zona `return`: fora de qualquer ponto verde
+         *     o encerramento segue sem zona (`endZoneId` nulo, evento `ending` marcado como teste) e sem taxa de encerramento
+         *     forçado. Dentro de uma zona `return` se comporta exatamente como o encerramento normal. Todo o resto é o mesmo:
+         *     aluguel de outro cliente → `404`; fora de andamento → `409` `rental-not-active`; troca na estação em andamento →
+         *     `409` `swap-open`; sem a foto → `422` `return-photo-missing`; travamento pelo bloqueio seguro (redução gradual,
+         *     trava só abaixo de 3 km/h) e encerramento só com a confirmação (`200` `ended` ou `202` `ending`); liquidação
+         *     única por `rentalId`.
+         */
+        post: operations["endRentalTest"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8511,6 +8572,31 @@ export interface operations {
             409: components["responses"]["Conflict"];
         };
     };
+    createTestHandover: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Entrega de saída criada, aguardando o aceite do cliente. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Handover"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
     listRentals: {
         parameters: {
             query?: {
@@ -8775,6 +8861,49 @@ export interface operations {
         };
     };
     endRental: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Recomendado para reenvios da fila offline. Válida por 24 h. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKeyOptional"];
+            };
+            path: {
+                id: components["parameters"]["PathId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EndRentalRequest"];
+            };
+        };
+        responses: {
+            /** @description Aluguel encerrado. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rental"];
+                };
+            };
+            /** @description Encerramento em andamento (aguardando "parada e travada"). */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Rental"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
+        };
+    };
+    endRentalTest: {
         parameters: {
             query?: never;
             header?: {

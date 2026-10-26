@@ -347,7 +347,7 @@ Name | Type | Description  | Notes
 
 Mudar status operacional (manutenção ou disponível)
 
-Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Grava AuditLog.
+Só entre `free` e `maintenance`, e só sem aluguel ou reserva ativa (senão `409`). Moto com bloqueio da equipe ou do sistema (cerca, hold, modo roubada) não volta a `free` (`409` `vehicle-unavailable`, \"A moto está bloqueada pela equipe; libere-a antes de devolver à frota.\"). Grava AuditLog.
 
 ### Example
 ```dart

@@ -28,6 +28,12 @@ export interface AppConfig {
   paymentProvider?: string;
   /** `ALLOW_FAKE_PAYMENTS=true`: libera o gateway fake com NODE_ENV=production (só o ambiente dev da infra). */
   allowFakePayments: boolean;
+  /**
+   * `ALLOW_TEST_HANDOVER=true`: registra os atalhos do app de teste — `POST /reservations/{id}/test-handover` (entrega simulada,
+   * sem a equipe do galpão) e `POST /rentals/{id}/test-end` (encerrar fora do ponto verde). Em produção só junto com o
+   * pagamento fake liberado (o ambiente dev da infra).
+   */
+  allowTestHandover: boolean;
   stubPixAutoConfirmSeconds: number;
   version: string;
 }
@@ -108,6 +114,7 @@ export function loadConfig(): AppConfig {
     mercadoPagoWebhookSecret: str('MERCADOPAGO_WEBHOOK_SECRET'),
     paymentProvider: str('PAYMENT_PROVIDER'),
     allowFakePayments: str('ALLOW_FAKE_PAYMENTS') === 'true',
+    allowTestHandover: str('ALLOW_TEST_HANDOVER') === 'true',
     stubPixAutoConfirmSeconds: num('STUB_PIX_AUTOCONFIRM_SECONDS', 10),
     version: str('APP_VERSION', '0.1.0')!,
   };
@@ -121,15 +128,17 @@ export const APP_CONFIG = Symbol('APP_CONFIG');
  * Recusa subir com configuração perigosa em produção (chamada no `loadConfig`, então vale para a API e para os módulos que
  * leem o ambiente). QA-15: `AUTH_MODE=dev` (emissor local `POST /dev/token`) nunca em produção. QA-19: o segredo do webhook
  * do Mercado Pago com o placeholder da infra (`CHANGE_ME`) deixaria qualquer um assinar webhooks. Lacunas T5: gateway de
- * pagamento fake (só com `ALLOW_FAKE_PAYMENTS=true`, o ambiente dev da infra), `PUBLIC_SHARE_BASE_URL` (link do SOS) e a
+ * pagamento fake (só com `ALLOW_FAKE_PAYMENTS=true`, o ambiente dev da infra), entrega simulada (`ALLOW_TEST_HANDOVER=true`,
+ * só junto com o pagamento fake), `PUBLIC_SHARE_BASE_URL` (link do SOS) e a
  * credencial do FCM com `PUSH_MODE=fcm`.
  */
 export function assertSafeConfig(
   cfg: Pick<AppConfig, 'nodeEnv' | 'authMode' | 'mercadoPagoWebhookSecret' | 'paymentProvider'> &
-    Partial<Pick<AppConfig, 'allowFakePayments' | 'publicShareBaseUrl' | 'pushMode' | 'fcmServiceAccountJson'>>,
+    Partial<Pick<AppConfig, 'allowFakePayments' | 'allowTestHandover' | 'publicShareBaseUrl' | 'pushMode' | 'fcmServiceAccountJson'>>,
 ): void {
   // Credencial do FCM inválida falha em qualquer ambiente (melhor que descobrir no primeiro push).
   if (cfg.pushMode === 'fcm') assertFcmServiceAccount(cfg.fcmServiceAccountJson);
+  assertTestHandoverAllowed(cfg.nodeEnv, cfg.paymentProvider, cfg.allowTestHandover === true, cfg.allowFakePayments === true);
   if (cfg.nodeEnv !== 'production') return;
   if (cfg.authMode !== 'cognito') {
     throw new Error(`AUTH_MODE=${cfg.authMode} não é permitido com NODE_ENV=production (use AUTH_MODE=cognito).`);
@@ -151,6 +160,20 @@ export function assertSafeConfig(
     if (!url || url.protocol !== 'https:') {
       throw new Error('PUBLIC_SHARE_BASE_URL obrigatório em produção (URL https da página pública de localização compartilhada, ex.: https://api.exemplo.com.br/share).');
     }
+  }
+}
+
+/**
+ * Entrega simulada (sem a equipe do galpão) só onde o pagamento também é de mentira, em qualquer ambiente:
+ * `ALLOW_TEST_HANDOVER=true` exige `PAYMENT_PROVIDER=fake` e, com NODE_ENV=production, também `ALLOW_FAKE_PAYMENTS=true`.
+ */
+export function assertTestHandoverAllowed(nodeEnv: string | undefined, provider: string | undefined, enabled: boolean, allowFake: boolean): void {
+  if (!enabled) return;
+  if (provider !== 'fake') {
+    throw new Error('ALLOW_TEST_HANDOVER=true exige PAYMENT_PROVIDER=fake (a entrega simulada só existe sem pagamento real).');
+  }
+  if (nodeEnv === 'production' && !allowFake) {
+    throw new Error('ALLOW_TEST_HANDOVER=true com NODE_ENV=production exige ALLOW_FAKE_PAYMENTS=true (só no ambiente dev, sem clientes reais).');
   }
 }
 

@@ -565,6 +565,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String get payPixHint => 'Caução por depósito Pix';
 
   @override
+  String get payTest => 'Pagamento de teste';
+
+  @override
+  String get payTestHint => 'Aprova na hora · só na versão de teste';
+
+  @override
   String get pixCopied => 'Código Pix copiado';
 
   @override
@@ -1262,6 +1268,13 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get returnZoneRule =>
       'Fora dos pontos verdes não é possível encerrar sem taxa.';
+
+  @override
+  String get returnTestEnd => 'Encerrar aqui (teste)';
+
+  @override
+  String get returnTestEndHint =>
+      'Ignora o ponto verde · só na versão de teste';
 
   @override
   String get returnOutsideBlocked =>
@@ -2345,6 +2358,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String get cancelReservation => 'Cancelar reserva';
 
   @override
+  String get reservationTestHandover => 'Retirar moto (teste)';
+
+  @override
+  String get reservationTestHandoverHint =>
+      'Simula a equipe do galpão · só na versão de teste';
+
+  @override
   String get cancelReservationTitle => 'Cancelar reserva?';
 
   @override
@@ -3100,6 +3120,13 @@ class AppLocalizationsPt extends AppLocalizations {
   String paymentPendingHomeText(String amount) {
     return '$amount em aberto. Pague para alugar de novo.';
   }
+
+  @override
+  String get paymentProcessingHomeTitle => 'Cobrança em andamento';
+
+  @override
+  String get paymentProcessingHomeText =>
+      'Estamos processando a cobrança da sua última corrida. Assim que concluir, você poderá reservar de novo.';
 
   @override
   String get paymentPendingBlock =>

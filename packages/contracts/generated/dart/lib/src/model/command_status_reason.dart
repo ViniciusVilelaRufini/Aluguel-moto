@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'command_status_reason.g.dart';
 
-/// Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`.
+/// Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`. `locked_by_staff`: destravar pedido por cliente ou campo recusado (trava da equipe ou do sistema, limite segurado em 0 ou modo roubada); nada é publicado e só admin/operacao desfaz.
 class CommandStatusReason extends EnumClass {
   @BuiltValueEnumConst(wireName: r'offline')
   static const CommandStatusReason offline = _$offline;
@@ -19,6 +19,8 @@ class CommandStatusReason extends EnumClass {
   static const CommandStatusReason didNotStop = _$didNotStop;
   @BuiltValueEnumConst(wireName: r'invalid_limit')
   static const CommandStatusReason invalidLimit = _$invalidLimit;
+  @BuiltValueEnumConst(wireName: r'locked_by_staff')
+  static const CommandStatusReason lockedByStaff = _$lockedByStaff;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const CommandStatusReason unknownDefaultOpenApi =
       _$unknownDefaultOpenApi;

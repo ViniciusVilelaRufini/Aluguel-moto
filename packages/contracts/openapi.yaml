@@ -1955,6 +1955,37 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+  /reservations/{id}/test-handover:
+    post:
+      tags: [reservations]
+      operationId: createTestHandover
+      summary: Entrega simulada (só em ambiente de teste)
+      description: |
+        **Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (em produção,
+        só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso a rota não existe e responde `404`.
+
+        Faz o papel da equipe do galpão para o app de teste: na reserva de galpão `active` do próprio cliente, assina o
+        `pickupCode` da reserva e cria a entrega de saída como em `POST /handovers` (`pickup`), com checklist de teste
+        (`[{ code: teste, ok: true }]`), sem fotos e com a bateria atual da moto. Mesmas verificações de `POST /handovers`
+        (moto `reserved`, uma entrega aberta por reserva). A entrega nasce `pending_customer`, a reserva passa a
+        `handover` e o cliente segue pelo aceite normal (`POST /handovers/{id}/accept`). O operador da entrega é um ator
+        de sistema (o cliente vê "Equipe Volti").
+
+        Reserva inexistente, de outro cliente ou sem galpão → `404`. Reserva fora de `active` (entrega já aberta,
+        encerrada) ou moto não separada → `409` (`conflict`, `vehicle-unavailable`).
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+      responses:
+        '201':
+          description: Entrega de saída criada, aguardando o aceite do cliente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Handover' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
 
   # ───────────────────────────── rentals ─────────────────────────────
   /rentals:
@@ -2224,6 +2255,49 @@ paths:
         Liquidação idempotente por `rentalId`: no máximo uma liquidação por aluguel, não importa quantas
         vezes a chamada seja repetida (com ou sem `Idempotency-Key`). A `Idempotency-Key` opcional faz a
         repetição devolver a mesma resposta.
+      security:
+        - customerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/PathId'
+        - $ref: '#/components/parameters/IdempotencyKeyOptional'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/EndRentalRequest' }
+      responses:
+        '200':
+          description: Aluguel encerrado.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rental' }
+        '202':
+          description: Encerramento em andamento (aguardando "parada e travada").
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Rental' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
+  /rentals/{id}/test-end:
+    post:
+      tags: [rentals]
+      operationId: endRentalTest
+      summary: Encerrar aluguel fora do ponto verde (só em ambiente de teste)
+      description: |
+        **Só existe em ambiente de teste**: a API registra esta rota apenas com `ALLOW_TEST_HANDOVER=true` (a mesma flag
+        dos atalhos de teste; em produção, só junto com `PAYMENT_PROVIDER=fake` e `ALLOW_FAKE_PAYMENTS=true`). Fora disso
+        a rota não existe e responde `404`.
+
+        Igual a `POST /rentals/{id}/end`, pulando **apenas** a conferência da zona `return`: fora de qualquer ponto verde
+        o encerramento segue sem zona (`endZoneId` nulo, evento `ending` marcado como teste) e sem taxa de encerramento
+        forçado. Dentro de uma zona `return` se comporta exatamente como o encerramento normal. Todo o resto é o mesmo:
+        aluguel de outro cliente → `404`; fora de andamento → `409` `rental-not-active`; troca na estação em andamento →
+        `409` `swap-open`; sem a foto → `422` `return-photo-missing`; travamento pelo bloqueio seguro (redução gradual,
+        trava só abaixo de 3 km/h) e encerramento só com a confirmação (`200` `ended` ou `202` `ending`); liquidação
+        única por `rentalId`.
       security:
         - customerAuth: []
       parameters:
