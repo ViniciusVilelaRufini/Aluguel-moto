@@ -7,3 +7,6 @@ next-env.d.ts
 *.tsbuildinfo
 .env
 .env.local
+
+e2e-mock/__shots__
+e2e-mock/__results__
