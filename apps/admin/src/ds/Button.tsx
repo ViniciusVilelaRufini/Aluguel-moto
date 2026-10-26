@@ -10,19 +10,11 @@ const VARIANTS = {
   dark: { bg: 'var(--surface-inverse)', fg: 'var(--text-on-inverse)', bd: 'transparent', sh: 'var(--shadow-2)' },
   danger: { bg: 'var(--danger)', fg: 'var(--white)', bd: 'transparent', sh: 'var(--shadow-coral)' },
 };
-<<<<<<< HEAD
-export function Button({ children, variant = 'primary', size = 'md', icon, iconRight, fullWidth = false, disabled = false, onClick, type = 'button', testId, title, style, busy }: any) {
+export function Button({ children, variant = 'primary', size = 'md', icon, iconRight, fullWidth = false, disabled = false, onClick, type = 'button', testId, title, style, busy, ariaBusy }: any) {
   const [p, setP] = React.useState(false);
   const s = SIZES[size] || SIZES.md, v = VARIANTS[variant] || VARIANTS.primary;
   return (
-    <button type={type} disabled={disabled} aria-busy={busy || undefined} onClick={onClick} data-testid={testId} title={title}
-=======
-export function Button({ children, variant = 'primary', size = 'md', icon, iconRight, fullWidth = false, disabled = false, onClick, type = 'button', testId, title, style, ariaBusy }: any) {
-  const [p, setP] = React.useState(false);
-  const s = SIZES[size] || SIZES.md, v = VARIANTS[variant] || VARIANTS.primary;
-  return (
-    <button type={type} disabled={disabled} onClick={onClick} data-testid={testId} title={title} aria-busy={ariaBusy || undefined}
->>>>>>> fix/qa-b
+    <button type={type} disabled={disabled} aria-busy={busy || ariaBusy || undefined} onClick={onClick} data-testid={testId} title={title}
       onPointerDown={() => setP(true)} onPointerUp={() => setP(false)} onPointerLeave={() => setP(false)}
       style={{ display: fullWidth ? 'flex' : 'inline-flex', width: fullWidth ? '100%' : undefined, alignItems: 'center', justifyContent: 'center', gap: 10,
         height: s.h, padding: '0 ' + s.px + 'px', borderRadius: 'var(--radius-pill)', border: '1.5px solid ' + v.bd, background: v.bg, color: v.fg,
