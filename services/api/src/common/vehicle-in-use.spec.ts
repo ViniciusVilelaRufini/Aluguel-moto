@@ -16,7 +16,7 @@ describe('assertVehicleNotInUse (regra única de moto em uso)', () => {
     const prisma = setup();
     await expect(assertVehicleNotInUse(prisma as any, VEHICLE_ID)).resolves.toBeUndefined();
     expect(prisma.rental.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID, status: { in: ['active', 'paused', 'ending'] } } }));
-    expect(prisma.reservation.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID, status: 'active' } }));
+    expect(prisma.reservation.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { vehicleId: VEHICLE_ID, status: { in: ['active', 'handover'] } } }));
   });
 
   it('aluguel aberto → 409 vehicle-unavailable', async () => {
@@ -28,6 +28,12 @@ describe('assertVehicleNotInUse (regra única de moto em uso)', () => {
   it('reserva ativa → 409 vehicle-unavailable', async () => {
     const prisma = setup();
     prisma.reservation.findFirst.mockResolvedValue({ id: 'res1' } as any);
+    await expect(assertVehicleNotInUse(prisma as any, VEHICLE_ID)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+  });
+
+  it('galpão: reserva em entrega (handover) também é moto em uso', async () => {
+    const prisma = setup();
+    prisma.reservation.findFirst.mockImplementation((async (a: any) => (a.where.status?.in?.includes('handover') ? { id: 'res-ho' } : null)) as any);
     await expect(assertVehicleNotInUse(prisma as any, VEHICLE_ID)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
   });
 

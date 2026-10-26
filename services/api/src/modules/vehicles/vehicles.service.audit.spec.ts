@@ -47,6 +47,24 @@ describe('Mudar status (revisão final item 6)', () => {
   });
 });
 
+describe('Galpão: reserva em entrega (handover) conta como moto em uso', () => {
+  it('setStatus com reserva em handover → 409 vehicle-unavailable, nada muda', async () => {
+    const { service, prisma } = setup();
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'maintenance', thingName: 'moto-0001', online: true } as any);
+    prisma.reservation.findFirst.mockImplementation((async (a: any) => (a.where.status?.in?.includes('handover') ? { id: 'res-ho' } : null)) as any);
+    await expect(service.setStatus(operacao, VEHICLE_ID, { status: 'free', reason: 'ok' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('rastreador volta online com a reserva em handover → reserved (não free)', async () => {
+    const { service, prisma } = setup();
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, status: 'offline', online: false, statusBeforeOffline: 'reserved' } as any);
+    prisma.reservation.findFirst.mockImplementation((async (a: any) => (a.where.status?.in?.includes('handover') ? { id: 'res-ho' } : null)) as any);
+    await service.onConnectivity({ vehicleId: VEHICLE_ID, online: true, ts: new Date().toISOString() } as any);
+    expect((prisma.vehicle.update.mock.calls[0][0] as any).data.status).toBe('reserved');
+  });
+});
+
 describe('Destravar em modo serviço (item 5 da auditoria)', () => {
   it('moto offline com aluguel pausado aberto → 409 vehicle-unavailable, sem comando', async () => {
     const { service, prisma, commands } = setup();

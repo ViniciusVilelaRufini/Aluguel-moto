@@ -18,7 +18,7 @@ import { V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { VEHICLE_MODEL_SELECT } from '../catalog/catalog.service';
 import { UsageTracker } from '../maintenance/usage-tracker.service';
 import { VehicleAddressService } from './vehicle-address.service';
-import { assertVehicleNotInUse, VEHICLE_LOCKED_BACK_TO_FLEET } from '../../common/vehicle-in-use';
+import { assertVehicleNotInUse, IN_USE_RESERVATION_STATUSES, VEHICLE_LOCKED_BACK_TO_FLEET } from '../../common/vehicle-in-use';
 import { assertTaskActor } from '../field-tasks/task-actor';
 import { toVehicle, toVehicleSummary } from './vehicles.mapper';
 import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
@@ -299,7 +299,7 @@ export class VehiclesService {
     if (v.status !== 'free' && v.status !== 'maintenance') throw conflict('vehicle-unavailable', `A moto está ${v.status}; só é possível alternar entre livre e manutenção.`);
     const [rental, reservation] = await Promise.all([
       this.prisma.rental.findFirst({ where: { vehicleId: id, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } }),
-      this.prisma.reservation.findFirst({ where: { vehicleId: id, status: 'active' }, select: { id: true } }),
+      this.prisma.reservation.findFirst({ where: { vehicleId: id, status: { in: IN_USE_RESERVATION_STATUSES } }, select: { id: true } }),
     ]);
     if (rental || reservation) throw conflict('vehicle-unavailable', 'A moto tem aluguel ou reserva ativa.');
     // Revisão final item 6: moto com trava da equipe/sistema não volta à frota; quem travou libera antes.
@@ -405,7 +405,8 @@ export class VehiclesService {
   private async restoredStatus(v: Vehicle): Promise<VehicleStatus> {
     const rental = await this.prisma.rental.findFirst({ where: { vehicleId: v.id, status: { in: OPEN_RENTAL_STATUSES } }, select: { status: true } });
     if (rental) return rental.status === 'paused' ? 'paused' : 'rented';
-    const reservation = await this.prisma.reservation.findFirst({ where: { vehicleId: v.id, status: 'active' }, select: { id: true } });
+    // Reserva ativa ou em entrega no galpão (`handover`): a moto continua separada para ela.
+    const reservation = await this.prisma.reservation.findFirst({ where: { vehicleId: v.id, status: { in: IN_USE_RESERVATION_STATUSES } }, select: { id: true } });
     if (reservation) return 'reserved';
     const prev = v.statusBeforeOffline;
     // Retirada em galpão: moto devolvida em ponto verde continua esperando recolhimento.
