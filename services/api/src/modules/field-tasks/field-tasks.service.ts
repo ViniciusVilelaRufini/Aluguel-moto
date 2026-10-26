@@ -315,10 +315,18 @@ export class FieldTasksService {
     return toInspection(insp);
   }
 
+  /**
+   * Troca de bateria na tarefa `battery_swap`. 2026-10-26 (custódia): uma troca por tarefa (409
+   * `battery-swap-already-recorded`); a instalada sai da van de quem registra (ou é nova, sem cadastro) — senão 409
+   * `battery-not-in-van`; a retirada precisa ser a bateria desta moto (`Vehicle.batterySerial` ou a linha `in_vehicle`
+   * dela) e uma série instalada em outra moto nunca é reatribuída — 409 `battery-serial-mismatch`. Cada escrita confere o
+   * estado lido (`updateMany` + `count`). `installedBatteryPct` só vale para bateria nova; a existente mantém a carga gravada.
+   */
   async submitBatterySwap(user: Principal, id: string, dto: BatterySwapDto, idempotencyKey?: string) {
     const t = await this.one(id);
     assertTaskActor(user, t);
     if (CLOSED.includes(t.status)) throw conflict('conflict', 'Tarefa já encerrada.');
+    if (t.type !== 'battery_swap') throw conflict('task-type-mismatch', 'Esta tarefa não é de troca de bateria.');
     if (dto.removedBatterySerial.trim() === dto.installedBatterySerial.trim()) {
       throw unprocessable('battery-serials-must-differ', 'A bateria instalada precisa ser diferente da retirada.');
     }
@@ -326,39 +334,67 @@ export class FieldTasksService {
       const prev = await this.prisma.batterySwap.findUnique({ where: { idempotencyKey } });
       if (prev) return toBatterySwap(prev);
     }
+    if (await this.prisma.batterySwap.findFirst({ where: { fieldTaskId: id }, select: { id: true } })) {
+      throw conflict('battery-swap-already-recorded', 'A troca de bateria desta tarefa já foi registrada.');
+    }
     const removedSerial = dto.removedBatterySerial.trim();
     const installedSerial = dto.installedBatterySerial.trim();
     const moves: MovementInput[] = [];
     const swap = await this.prisma.$transaction(async (tx) => {
       // Contrato v2: inventário de baterias. A retirada vai para a van do operador com a última carga lida da moto;
-      // a instalada sai da van (ou de onde estiver), entra na moto e conta mais um ciclo. 2026-10-24: cada mudança grava
-      // uma movimentação; bateria com defeito ou baixada não entra numa moto (409).
+      // a instalada sai da van dele, entra na moto e conta mais um ciclo. 2026-10-24: cada mudança grava uma
+      // movimentação; bateria com defeito ou baixada não entra numa moto (409).
       const prevInstalled = await tx.battery.findUnique({ where: { serial: installedSerial } });
       if (prevInstalled && OUT_OF_SERVICE.includes(prevInstalled.status)) {
         throw conflict('conflict', `Bateria fora de uso (com defeito ou baixada): ${installedSerial}.`);
+      }
+      if (prevInstalled?.status === 'in_vehicle') {
+        throw conflict('battery-serial-mismatch', `A bateria a instalar consta instalada numa moto: ${installedSerial}. Confira a série.`);
+      }
+      if (prevInstalled && (prevInstalled.status !== 'in_van' || prevInstalled.holderId !== user.userId)) {
+        throw conflict('battery-not-in-van', `Essa bateria não está na sua van: ${installedSerial}.`);
       }
       const prevRemoved = await tx.battery.findUnique({ where: { serial: removedSerial } });
       // Fix 1 (M2): bateria fora de uso não estava numa moto — série errada ou registro inconsistente; não ressuscita.
       if (prevRemoved && OUT_OF_SERVICE.includes(prevRemoved.status)) {
         throw conflict('conflict', `A bateria retirada consta fora de uso (com defeito ou baixada): ${removedSerial}. Confira a série.`);
       }
-      const vehicle = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { batteryPct: true } });
+      const vehicle = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { batteryPct: true, batterySerial: true } });
+      const current = vehicle?.batterySerial ?? null;
+      const onVehicle = await tx.battery.findMany({ where: { vehicleId: t.vehicleId, status: 'in_vehicle' } });
+      const removedMismatch =
+        (prevRemoved?.status === 'in_vehicle' && prevRemoved.vehicleId !== t.vehicleId) ||
+        (current ? current !== removedSerial : onVehicle.length > 0 && !onVehicle.some((b) => b.serial === removedSerial)) ||
+        (!!prevRemoved && prevRemoved.status !== 'in_vehicle' && current !== removedSerial);
+      if (removedMismatch) throw conflict('battery-serial-mismatch', `A bateria retirada não é a desta moto: ${removedSerial}. Confira a série.`);
+
       const removedPct = vehicle?.batteryPct ?? null;
-      const removed = await tx.battery.upsert({
-        where: { serial: removedSerial },
-        create: { serial: removedSerial, chargePct: removedPct ?? 0, status: 'in_van', holderId: user.userId },
-        update: { status: 'in_van', holderId: user.userId, vehicleId: null, stationId: null, depotId: null, ...(removedPct !== null ? { chargePct: removedPct } : {}) },
-      });
+      let removed: Pick<Battery, 'id' | 'cycleCount'>;
+      if (prevRemoved) {
+        const data = { status: 'in_van' as const, holderId: user.userId, vehicleId: null, stationId: null, depotId: null, ...(removedPct !== null ? { chargePct: removedPct } : {}) };
+        const where: Prisma.BatteryWhereInput = { id: prevRemoved.id, status: prevRemoved.status, ...(prevRemoved.status === 'in_vehicle' ? { vehicleId: t.vehicleId } : {}) };
+        const changed = await tx.battery.updateMany({ where, data });
+        if (changed.count !== 1) throw conflict('conflict', 'A bateria retirada mudou de situação durante a operação. Atualize e tente de novo.');
+        removed = prevRemoved;
+      } else {
+        removed = await tx.battery.create({ data: { serial: removedSerial, chargePct: removedPct ?? 0, status: 'in_van', holderId: user.userId } });
+      }
       moves.push(movement(prevRemoved, { status: 'in_van', vehicleId: prevRemoved ? undefined : t.vehicleId }, user.userId, null, removed.id));
-      const installedPct = dto.installedBatteryPct;
-      const installed = await tx.battery.upsert({
-        where: { serial: installedSerial },
-        create: { serial: installedSerial, chargePct: installedPct ?? 100, status: 'in_vehicle', vehicleId: t.vehicleId, cycleCount: 1 },
-        update: { status: 'in_vehicle', vehicleId: t.vehicleId, holderId: null, stationId: null, depotId: null, cycleCount: { increment: 1 }, ...(installedPct !== undefined ? { chargePct: installedPct } : {}) },
-      });
+
+      let installed: Pick<Battery, 'id' | 'cycleCount' | 'chargePct'>;
+      if (prevInstalled) {
+        const changed = await tx.battery.updateMany({
+          where: { id: prevInstalled.id, status: 'in_van', holderId: user.userId },
+          data: { status: 'in_vehicle', vehicleId: t.vehicleId, holderId: null, stationId: null, depotId: null, cycleCount: { increment: 1 } },
+        });
+        if (changed.count !== 1) throw conflict('battery-not-in-van', `Essa bateria não está na sua van: ${installedSerial}.`);
+        installed = { id: prevInstalled.id, cycleCount: prevInstalled.cycleCount + 1, chargePct: prevInstalled.chargePct };
+      } else {
+        installed = await tx.battery.create({ data: { serial: installedSerial, chargePct: dto.installedBatteryPct ?? 100, status: 'in_vehicle', vehicleId: t.vehicleId, cycleCount: 1 } });
+      }
       moves.push(movement(prevInstalled, { status: 'in_vehicle', vehicleId: t.vehicleId }, user.userId, null, installed.id));
-      // Outra bateria registrada nesta moto (série divergente da retirada) deixa de constar como instalada.
-      const stray = await tx.battery.findMany({ where: { vehicleId: t.vehicleId, status: 'in_vehicle', NOT: { id: { in: [installed.id, removed.id] } } } });
+      // Outra bateria registrada nesta moto (registro inconsistente com a série retirada) deixa de constar como instalada.
+      const stray = onVehicle.filter((b) => b.id !== installed.id && b.id !== removed.id);
       if (stray.length) {
         await tx.battery.updateMany({ where: { id: { in: stray.map((b) => b.id) }, status: 'in_vehicle' }, data: { vehicleId: null, status: 'charging' } });
         for (const b of stray) moves.push(movement(b, { status: 'charging' }, user.userId));
@@ -371,10 +407,12 @@ export class FieldTasksService {
           removedBatteryPct: removedPct, removedBatteryCycleCount: removed.cycleCount, installedBatteryCycleCount: installed.cycleCount,
         },
       });
-      await tx.vehicle.update({
-        where: { id: t.vehicleId },
-        data: { batterySerial: dto.installedBatterySerial, batteryPct: installed.chargePct },
+      // A moto só muda se ainda tiver a bateria lida (outra troca, na estação ou noutra tarefa, não é sobrescrita).
+      const vehicleMoved = await tx.vehicle.updateMany({
+        where: { id: t.vehicleId, batterySerial: current },
+        data: { batterySerial: installedSerial, batteryPct: installed.chargePct },
       });
+      if (vehicleMoved.count !== 1) throw conflict('battery-serial-mismatch', 'A bateria da moto mudou durante a operação. Confira a série e tente de novo.');
       return s;
     });
     const depotIds = depotsLeavingCharged(moves);

@@ -73,39 +73,54 @@ describe('Inspeção (limitador como observação, decisão #13)', () => {
   });
 });
 
-describe('Troca de bateria na tarefa: movimentações (2026-10-24)', () => {
+describe('Troca de bateria na tarefa: movimentações (2026-10-24) e custódia (2026-10-26)', () => {
   const BAT_OLD = { id: 'b-old', serial: 'BAT-OLD', status: 'in_vehicle', vehicleId: VEHICLE_ID, depotId: null, stationId: null, holderId: null, chargePct: 12, cycleCount: 40 };
-  const BAT_NEW = { id: 'b-new', serial: 'BAT-NEW', status: 'charged', vehicleId: null, depotId: 'd0000000-0000-4000-8000-0000000000d1', stationId: null, holderId: null, chargePct: 100, cycleCount: 7 };
+  const BAT_NEW = { id: 'b-new', serial: 'BAT-NEW', status: 'in_van', vehicleId: null, depotId: null, stationId: null, holderId: campo.userId, chargePct: 88, cycleCount: 7 };
   const swap = { removedBatterySerial: 'BAT-OLD', installedBatterySerial: 'BAT-NEW', recordedAt: new Date().toISOString() };
 
-  function swapSetup(newStatus = 'charged', stray: any[] = []) {
+  function swapSetup(newOverrides: Record<string, unknown> | null = {}, onVehicle: any[] = [BAT_OLD]) {
     const ctx = setup();
     ctx.prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'battery_swap', status: 'in_progress', vehicleId: VEHICLE_ID, assigneeId: campo.userId } as any);
-    ctx.prisma.vehicle.findUnique.mockResolvedValue({ batteryPct: 12 } as any);
-    ctx.prisma.battery.findUnique.mockImplementation((async (a: any) => (a.where.serial === 'BAT-OLD' ? BAT_OLD : a.where.serial === 'BAT-NEW' ? { ...BAT_NEW, status: newStatus } : null)) as any);
-    ctx.prisma.battery.upsert.mockImplementation((async (a: any) => ({ ...(a.where.serial === 'BAT-OLD' ? BAT_OLD : BAT_NEW), ...a.update })) as any);
-    ctx.prisma.battery.findMany.mockResolvedValue(stray as any);
+    ctx.prisma.vehicle.findUnique.mockResolvedValue({ batteryPct: 12, batterySerial: 'BAT-OLD' } as any);
+    ctx.prisma.battery.findUnique.mockImplementation((async (a: any) =>
+      a.where.serial === 'BAT-OLD' ? BAT_OLD : a.where.serial === 'BAT-NEW' ? (newOverrides ? { ...BAT_NEW, ...newOverrides } : null) : null) as any);
+    ctx.prisma.battery.updateMany.mockResolvedValue({ count: 1 });
+    ctx.prisma.battery.create.mockImplementation((async (a: any) => ({ id: `b-created-${a.data.serial}`, cycleCount: 0, ...a.data })) as any);
+    ctx.prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
+    ctx.prisma.battery.findMany.mockResolvedValue(onVehicle as any);
+    ctx.prisma.batterySwap.findFirst.mockResolvedValue(null);
     ctx.prisma.batterySwap.create.mockImplementation((async (a: any) => ({ id: 'swap-1', createdAt: new Date(), ...a.data })) as any);
     return ctx;
   }
 
-  it('retirada → van e instalada → moto gravam movimentações do operador; saída de `charged` avisa o estoque do galpão', async () => {
-    const { service, prisma, events } = swapSetup();
-    const seen: any[] = [];
-    events.on(EV.BATTERY_CHARGED_STOCK_DECREASED, (e) => seen.push(e));
-    await service.submitBatterySwap(campo, TASK_ID, swap);
+  function expectNothingWritten(prisma: ReturnType<typeof setup>['prisma']) {
+    expect(prisma.battery.upsert).not.toHaveBeenCalled();
+    expect(prisma.battery.updateMany).not.toHaveBeenCalled();
+    expect(prisma.battery.create).not.toHaveBeenCalled();
+    expect(prisma.batterySwap.create).not.toHaveBeenCalled();
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  }
+
+  it('retirada → van e instalada (da van do operador) → moto gravam movimentações do operador', async () => {
+    const { service, prisma } = swapSetup();
+    const out = await service.submitBatterySwap(campo, TASK_ID, swap);
     const data = prisma.batteryMovement.createMany.mock.calls.flatMap((c: any) => c[0].data);
     expect(data).toEqual([
       expect.objectContaining({ batteryId: 'b-old', fromStatus: 'in_vehicle', toStatus: 'in_van', vehicleId: VEHICLE_ID, actorId: campo.userId }),
-      expect.objectContaining({ batteryId: 'b-new', fromStatus: 'charged', toStatus: 'in_vehicle', vehicleId: VEHICLE_ID, depotId: BAT_NEW.depotId }),
+      expect.objectContaining({ batteryId: 'b-new', fromStatus: 'in_van', toStatus: 'in_vehicle', vehicleId: VEHICLE_ID }),
     ]);
-    expect(prisma.battery.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { serial: 'BAT-NEW' }, update: expect.objectContaining({ depotId: null }) }));
-    expect(seen).toEqual([{ depotIds: [BAT_NEW.depotId] }]);
+    // Guarda de corrida: a instalada só sai da van se ainda estiver na van deste operador; a retirada pelo status lido.
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'b-new', status: 'in_van', holderId: campo.userId } }));
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'b-old', status: 'in_vehicle', vehicleId: VEHICLE_ID } }));
+    expect(prisma.battery.upsert).not.toHaveBeenCalled();
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, batterySerial: 'BAT-OLD' }, data: { batterySerial: 'BAT-NEW', batteryPct: 88 } });
+    expect(out).toMatchObject({ removedBatteryCycleCount: 40, installedBatteryCycleCount: 8 });
   });
 
   it('outra bateria registrada na moto (série divergente) vai para `charging` com movimentação', async () => {
     const stray = { ...BAT_OLD, id: 'b-stray', serial: 'BAT-STRAY' };
-    const { service, prisma } = swapSetup('in_van', [stray]);
+    const { service, prisma } = swapSetup({}, [BAT_OLD, stray]);
     await service.submitBatterySwap(campo, TASK_ID, swap);
     const data = prisma.batteryMovement.createMany.mock.calls.flatMap((c: any) => c[0].data);
     expect(data).toEqual(expect.arrayContaining([expect.objectContaining({ batteryId: 'b-stray', fromStatus: 'in_vehicle', toStatus: 'charging', vehicleId: VEHICLE_ID })]));
@@ -113,17 +128,105 @@ describe('Troca de bateria na tarefa: movimentações (2026-10-24)', () => {
   });
 
   it.each(['defective', 'retired'])('retirada registrada como `%s` (série errada ou registro inconsistente) → 409, nada gravado', async (status) => {
-    const { service, prisma } = swapSetup('in_van');
-    prisma.battery.findUnique.mockImplementation((async (a: any) => (a.where.serial === 'BAT-OLD' ? { ...BAT_OLD, status } : a.where.serial === 'BAT-NEW' ? { ...BAT_NEW, status: 'in_van' } : null)) as any);
+    const { service, prisma } = swapSetup();
+    prisma.battery.findUnique.mockImplementation((async (a: any) => (a.where.serial === 'BAT-OLD' ? { ...BAT_OLD, status } : a.where.serial === 'BAT-NEW' ? BAT_NEW : null)) as any);
     await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409 });
-    expect(prisma.battery.upsert).not.toHaveBeenCalled();
-    expect(prisma.batterySwap.create).not.toHaveBeenCalled();
+    expectNothingWritten(prisma);
   });
 
   it.each(['defective', 'retired'])('instalar bateria `%s` → 409 (fora de uso), nada gravado', async (status) => {
-    const { service, prisma } = swapSetup(status);
+    const { service, prisma } = swapSetup({ status, holderId: null });
     await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409 });
+    expectNothingWritten(prisma);
+  });
+
+  it.each([
+    ['na van de outro operador', { status: 'in_van', holderId: OTHER_ID }],
+    ['numa estação', { status: 'in_station', holderId: null, stationId: 'st-1' }],
+    ['carregando no galpão', { status: 'charging', holderId: null, depotId: 'd-1' }],
+    ['carregada no galpão', { status: 'charged', holderId: null, depotId: 'd-1' }],
+  ])('instalada %s → 409 battery-not-in-van, nada gravado', async (_label, over) => {
+    const { service, prisma } = swapSetup(over);
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'battery-not-in-van' });
+    expectNothingWritten(prisma);
+  });
+
+  it('instalada que consta em outra moto → 409 battery-serial-mismatch (a moto B não fica órfã)', async () => {
+    const { service, prisma } = swapSetup({ status: 'in_vehicle', holderId: null, vehicleId: '44444444-4444-4444-8444-444444444444' });
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'battery-serial-mismatch' });
+    expectNothingWritten(prisma);
+  });
+
+  it('a instalada saiu da van durante a operação (corrida) → 409 battery-not-in-van', async () => {
+    const { service, prisma } = swapSetup();
+    prisma.battery.updateMany.mockImplementation((async (a: any) => ({ count: a.where.id === 'b-new' ? 0 : 1 })) as any);
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'battery-not-in-van' });
     expect(prisma.batterySwap.create).not.toHaveBeenCalled();
+  });
+
+  it('série retirada diferente da bateria da moto (Vehicle.batterySerial) → 409 battery-serial-mismatch, nada gravado', async () => {
+    const { service, prisma } = swapSetup();
+    await expect(service.submitBatterySwap(campo, TASK_ID, { ...swap, removedBatterySerial: 'BAT-OUTRA' })).rejects.toMatchObject({ status: 409, slug: 'battery-serial-mismatch' });
+    expectNothingWritten(prisma);
+  });
+
+  it('moto sem batterySerial: a retirada precisa ser a linha `in_vehicle` dela → 409 se diferente', async () => {
+    const { service, prisma } = swapSetup();
+    prisma.vehicle.findUnique.mockResolvedValue({ batteryPct: 12, batterySerial: null } as any);
+    await expect(service.submitBatterySwap(campo, TASK_ID, { ...swap, removedBatterySerial: 'BAT-OUTRA' })).rejects.toMatchObject({ status: 409, slug: 'battery-serial-mismatch' });
+    expectNothingWritten(prisma);
+  });
+
+  it('retirada que consta instalada em outra moto → 409 battery-serial-mismatch', async () => {
+    const { service, prisma } = swapSetup({}, []);
+    prisma.vehicle.findUnique.mockResolvedValue({ batteryPct: 12, batterySerial: null } as any);
+    prisma.battery.findUnique.mockImplementation((async (a: any) =>
+      a.where.serial === 'BAT-OLD' ? { ...BAT_OLD, vehicleId: '44444444-4444-4444-8444-444444444444' } : a.where.serial === 'BAT-NEW' ? BAT_NEW : null) as any);
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'battery-serial-mismatch' });
+    expectNothingWritten(prisma);
+  });
+
+  it('installedBatteryPct não sobrescreve a carga gravada da bateria existente', async () => {
+    const { service, prisma } = swapSetup();
+    await service.submitBatterySwap(campo, TASK_ID, { ...swap, installedBatteryPct: 5 });
+    const newUpdate = prisma.battery.updateMany.mock.calls.find((c: any) => c[0].where.id === 'b-new')![0] as any;
+    expect(newUpdate.data.chargePct).toBeUndefined();
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { batterySerial: 'BAT-NEW', batteryPct: 88 } }));
+  });
+
+  it('bateria nova (sem cadastro) entra na moto com installedBatteryPct, como antes', async () => {
+    const { service, prisma } = swapSetup(null);
+    await service.submitBatterySwap(campo, TASK_ID, { ...swap, installedBatteryPct: 77 });
+    expect(prisma.battery.create).toHaveBeenCalledWith({ data: expect.objectContaining({ serial: 'BAT-NEW', status: 'in_vehicle', vehicleId: VEHICLE_ID, chargePct: 77, cycleCount: 1 }) });
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { batterySerial: 'BAT-NEW', batteryPct: 77 } }));
+  });
+
+  it('a moto trocou de bateria durante a operação (corrida) → 409 battery-serial-mismatch', async () => {
+    const { service, prisma } = swapSetup();
+    prisma.vehicle.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'battery-serial-mismatch' });
+  });
+
+  it('tarefa que não é de troca de bateria → 409 task-type-mismatch, nada gravado', async () => {
+    const { service, prisma } = swapSetup();
+    prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'inspection', status: 'in_progress', vehicleId: VEHICLE_ID, assigneeId: campo.userId } as any);
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'task-type-mismatch' });
+    expectNothingWritten(prisma);
+  });
+
+  it('segunda troca na mesma tarefa → 409 battery-swap-already-recorded, nada gravado', async () => {
+    const { service, prisma } = swapSetup();
+    prisma.batterySwap.findFirst.mockResolvedValue({ id: 'swap-anterior' } as any);
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'battery-swap-already-recorded' });
+    expectNothingWritten(prisma);
+  });
+
+  it('reenvio com a mesma Idempotency-Key devolve a troca registrada (não vira battery-swap-already-recorded)', async () => {
+    const { service, prisma } = swapSetup();
+    prisma.batterySwap.findUnique.mockResolvedValue({ id: 'swap-1', fieldTaskId: TASK_ID, vehicleId: VEHICLE_ID, operatorId: campo.userId, ...swap, recordedAt: new Date(), createdAt: new Date() } as any);
+    prisma.batterySwap.findFirst.mockResolvedValue({ id: 'swap-1' } as any);
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap, 'idem-1')).resolves.toMatchObject({ id: 'swap-1' });
+    expectNothingWritten(prisma);
   });
 });
 
