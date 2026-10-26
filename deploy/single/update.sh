@@ -2,7 +2,7 @@
 # Atualiza o Volti dev na instância: git pull, env do SSM, rebuild, prisma migrate deploy e restart.
 # Rodado no primeiro boot (user data) e depois pelo documento SSM "volti-dev-update" (Run Command, um clique).
 set -euo pipefail
-source /etc/volti/instance.env
+source "${VOLTI_INSTANCE_ENV:-/etc/volti/instance.env}"
 cd "$VOLTI_REPO_DIR"
 export GIT_SSH_COMMAND='ssh -i /root/.ssh/volti_deploy -o IdentitiesOnly=yes -o UserKnownHostsFile=/root/.ssh/known_hosts'
 git fetch --depth 1 origin "$VOLTI_BRANCH"
@@ -13,11 +13,16 @@ bash deploy/single/render-env.sh
 # IMDS só para a API (Run-2): regras DOCKER-USER e a unit de boot, antes de qualquer build (os RUN do docker build também
 # rodam em container) e de subir os containers. Idempotente.
 bash deploy/single/imds-guard.sh install
-dc() { docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env "$@"; }
+# A unit é RequiredBy=docker.service: se ela falhou no boot, o Docker ficou parado. Reativa a unit (as regras já estão
+# aplicadas) e sobe o Docker; idempotente quando tudo já está no ar.
+systemctl restart volti-imds-guard
+systemctl start docker
+ENV_FILE="${VOLTI_ENV_FILE:-/opt/volti/.env}"
+dc() { docker compose -f deploy/single/compose.yml --env-file "$ENV_FILE" "$@"; }
 
 # Simulador de rastreadores (services/iot-sim): IOT_SIM=on (padrão, também quando ausente) ou off, vindo do parâmetro
 # /volti/dev/config/IOT_SIM (render-env.sh). Ligado, sobe junto com o resto (profile "sim"); desligado, é removido.
-iot_sim="$(grep -E '^IOT_SIM=' /opt/volti/.env | tail -n 1 | cut -d= -f2- || true)"
+iot_sim="$(grep -E '^IOT_SIM=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 case "${iot_sim:-on}" in
   off|false|0) sim=() ; sim_services=() ; echo "simulador de rastreadores: desligado (IOT_SIM=$iot_sim)" ;;
   *) sim=(--profile sim) ; sim_services=(iot-sim) ; echo "simulador de rastreadores: ligado" ;;
@@ -28,7 +33,10 @@ dc "${sim[@]}" build api postgres "${sim_services[@]}"
 # (os volumes ficam) e a rede é apagada. Nas próximas execuções a volti_default não existe e nada disso roda.
 if docker network inspect volti_default >/dev/null 2>&1; then
   dc --profile sim down --remove-orphans
-  docker network rm volti_default >/dev/null 2>&1 || true
+  if ! docker network rm volti_default >/dev/null 2>&1; then
+    # Segue o update, mas avisa: enquanto a rede existir, todo update repete o down completo (API fora do ar).
+    echo "AVISO: não foi possível remover a rede antiga volti_default; cada update vai repetir o down completo até ela sair (veja: docker network inspect volti_default)" >&2
+  fi
 fi
 dc up -d postgres redis mosquitto
 # Migrações antes de trocar a API (a migração inicial cria a extensão PostGIS).

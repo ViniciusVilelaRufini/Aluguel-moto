@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { Template } from 'aws-cdk-lib/assertions';
@@ -237,5 +237,97 @@ esac
     expect(r.stderr).toMatch(/NODE_OPTIONS/);
     expect(r.stderr).toMatch(/AUTH_MODE/);
     expect(r.stderr).not.toMatch(/evil|hijack|=dev/);
+  });
+
+  /** Fake repo dir with no-op render-env.sh/imds-guard.sh that log their call; instance.env + .env in the same temp dir. */
+  function fakeInstance(prefix: string, envLines: string[]) {
+    const dir = mkdtempSync(join(tmpdir(), prefix));
+    const repo = join(dir, 'repo');
+    const log = join(dir, 'calls.log');
+    const bin = join(dir, 'bin');
+    for (const d of [bin, join(repo, 'deploy', 'single'), join(repo, 'apps', 'admin')]) mkdirSync(d, { recursive: true });
+    for (const s of ['render-env.sh', 'imds-guard.sh']) {
+      writeFileSync(join(repo, 'deploy', 'single', s), `echo "${s} $*" >> "$FAKE_LOG"\n`);
+    }
+    writeFileSync(join(repo, 'package.json'), '{}\n');
+    writeFileSync(join(repo, 'apps', 'admin', 'package.json'), '{}\n');
+    const instanceEnv = join(dir, 'instance.env');
+    writeFileSync(instanceEnv, ['VOLTI_REGION=sa-east-1', `VOLTI_REPO_DIR=${slash(repo)}`, 'VOLTI_BRANCH=feat/x', ''].join('\n'));
+    const envFile = join(dir, '.env');
+    writeFileSync(envFile, envLines.join('\n') + '\n');
+    const env = { VOLTI_INSTANCE_ENV: slash(instanceEnv), VOLTI_ENV_FILE: slash(envFile), FAKE_LOG: slash(log) };
+    const calls = () => (existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : []);
+    return { dir, repo, bin, env, calls };
+  }
+  const logger = (name: string, extra = '') => `#!/usr/bin/env bash\necho "${name} $*" >> "$FAKE_LOG"\n${extra}`;
+
+  itBash('admin.sh publish-panel builds from a throwaway git archive copy, never mounting the repo; the copy is removed', () => {
+    const f = fakeInstance('volti-admin-', ['PUBLIC_HOST=api.example.com', 'ADMIN_ORIGIN=https://p.example.com', 'ADMIN_BUCKET=painel', 'ADMIN_DISTRIBUTION_ID=E1']);
+    const git = (...a: string[]) => spawnSync('git', ['-C', f.repo, ...a], { encoding: 'utf8' });
+    git('init', '-q');
+    git('add', '-A');
+    git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'x');
+    // Fake docker: logs every -v, what the mounted dir holds, and builds apps/admin/out inside it.
+    fake(
+      f.bin,
+      'docker',
+      logger(
+        'docker',
+        `prev=""
+for a in "$@"; do
+  if [ "$prev" = "-v" ]; then
+    src="\${a%:/repo}"
+    echo "mount-src $src" >> "$FAKE_LOG"
+    [ -e "$src/.git" ] && echo "mount-has-git" >> "$FAKE_LOG"
+    [ -f "$src/apps/admin/package.json" ] && echo "mount-has-admin" >> "$FAKE_LOG"
+    mkdir -p "$src/apps/admin/out" && echo ok > "$src/apps/admin/out/index.html"
+  fi
+  prev="$a"
+done
+`,
+      ),
+    );
+    fake(f.bin, 'aws', logger('aws'));
+    const r = runScript(join(REPO, 'deploy', 'single', 'admin.sh'), f.bin, f.env, ['publish-panel']);
+    expect(r.stderr).toBe('');
+    expect(r.status).toBe(0);
+    const calls = f.calls();
+    const mounts = calls.filter((c) => c.startsWith('mount-src ')).map((c) => c.slice('mount-src '.length));
+    expect(mounts).toHaveLength(1);
+    expect(calls).toContain('mount-has-admin');
+    expect(calls).not.toContain('mount-has-git');
+    expect(mounts[0]).not.toContain('repo');
+    const sync = calls.find((c) => c.startsWith('aws s3 sync '))!;
+    expect(sync).toBe(`aws s3 sync ${mounts[0]}/apps/admin/out s3://painel --delete`);
+    // The build output never lands in the repo and the copy is gone.
+    expect(existsSync(join(f.repo, 'apps', 'admin', 'out'))).toBe(false);
+    const gone = spawnSync(BASH!, ['-c', 'test -e "$1"', '_', mounts[0]]);
+    expect(gone.status).not.toBe(0);
+    expect(calls.indexOf('imds-guard.sh ')).toBeLessThan(calls.findIndex((c) => c.startsWith('docker ')));
+  });
+
+  itBash('update.sh: restarts the guard unit and starts Docker before any compose call; a failed old-network removal warns', () => {
+    const f = fakeInstance('volti-update-', ['IOT_SIM=off']);
+    fake(f.bin, 'git', logger('git', 'case "$1" in rev-parse) echo abc123 ;; esac\n'));
+    fake(f.bin, 'systemctl', logger('systemctl'));
+    // volti_default still exists and cannot be removed (a container still holds it).
+    fake(f.bin, 'docker', logger('docker', 'case "$1 $2" in "network inspect") exit 0 ;; "network rm") echo "Error: in use" >&2; exit 1 ;; esac\n'));
+    const r = runScript(join(REPO, 'deploy', 'single', 'update.sh'), f.bin, f.env);
+    expect(r.status).toBe(0);
+    const calls = f.calls();
+    const at = (pred: (c: string) => boolean) => calls.findIndex(pred);
+    const guard = at((c) => c === 'imds-guard.sh install');
+    const restart = at((c) => c === 'systemctl restart volti-imds-guard');
+    const start = at((c) => c === 'systemctl start docker');
+    const firstDocker = at((c) => c.startsWith('docker '));
+    expect(guard).toBeGreaterThan(-1);
+    expect(restart).toBeGreaterThan(guard);
+    expect(start).toBeGreaterThan(restart);
+    expect(firstDocker).toBeGreaterThan(start);
+    expect(calls).toContain('docker network rm volti_default');
+    expect(r.stderr).toMatch(/volti_default/);
+    expect(r.stderr).toMatch(/AVISO/);
+    // The update went on after the warning.
+    expect(calls.some((c) => c.startsWith('docker compose') && c.includes(' ps'))).toBe(true);
   });
 });

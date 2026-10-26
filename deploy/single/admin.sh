@@ -4,7 +4,7 @@
 #   admin.sh create-customer <email>  cria um cliente de teste no pool de clientes (o dev não tem auto-cadastro)
 # O SSM valida action/email (allowedValues/allowedPattern) antes de rodar; o e-mail é conferido de novo aqui.
 set -euo pipefail
-source /etc/volti/instance.env
+source "${VOLTI_INSTANCE_ENV:-/etc/volti/instance.env}"
 export AWS_DEFAULT_REGION="$VOLTI_REGION"
 cd "$VOLTI_REPO_DIR"
 action="${1:-publish-panel}"
@@ -14,15 +14,22 @@ bash deploy/single/render-env.sh >/dev/null
 # O build do painel roda código de terceiros (pnpm install): garante a regra que deixa os containers sem IMDS (Run-2).
 bash deploy/single/imds-guard.sh >/dev/null
 # Lê só as chaves necessárias (sem `source` do .env).
-envval() { grep -m1 "^$1=" /opt/volti/.env | cut -d= -f2-; }
+ENV_FILE="${VOLTI_ENV_FILE:-/opt/volti/.env}"
+envval() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2-; }
 
 case "$action" in
   publish-panel)
     host="$(envval PUBLIC_HOST)"
     origin="$(envval ADMIN_ORIGIN)"
+    # O build roda código de terceiros como root (pnpm install): nunca monta o repositório, de onde o root do host executa
+    # update.sh, dns.sh e este script (e cujo .git/config o git do host lê). Só uma cópia descartável do HEAD (git archive,
+    # sem .git), apagada no fim.
+    work="$(mktemp -d)"
+    trap 'rm -rf "$work"' EXIT
+    git -C "$VOLTI_REPO_DIR" archive HEAD | tar -x -C "$work"
     # Rede bridge padrão (sem o IP da API: sem IMDS), sem NET_RAW e sem credencial da AWS no ambiente; o sync para o S3 e a
     # invalidação rodam depois, no host.
-    docker run --rm --cap-drop NET_RAW -v "$VOLTI_REPO_DIR":/repo -w /repo \
+    docker run --rm --cap-drop NET_RAW -v "$work":/repo -w /repo \
       -e NEXT_PUBLIC_API_BASE_URL="https://$host" \
       -e NEXT_PUBLIC_AUTH_MODE=cognito \
       -e NEXT_PUBLIC_COGNITO_DOMAIN="$(envval ADMIN_COGNITO_DOMAIN)" \
@@ -30,7 +37,7 @@ case "$action" in
       -e NEXT_PUBLIC_COGNITO_CLIENT_ID="$(envval COGNITO_STAFF_CLIENT_ID)" \
       -e NEXT_PUBLIC_COGNITO_REDIRECT_URI="$origin/auth/callback/" \
       node:24-alpine sh -c 'corepack enable && corepack prepare pnpm@9.15.9 --activate && pnpm install --frozen-lockfile --filter admin... && pnpm --filter admin build'
-    aws s3 sync apps/admin/out "s3://$(envval ADMIN_BUCKET)" --delete
+    aws s3 sync "$work/apps/admin/out" "s3://$(envval ADMIN_BUCKET)" --delete
     aws cloudfront create-invalidation --distribution-id "$(envval ADMIN_DISTRIBUTION_ID)" --paths '/*' >/dev/null
     echo "painel publicado em $origin (API https://$host)"
     ;;
