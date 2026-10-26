@@ -79,8 +79,8 @@ a:hover{color:var(--brand-press)}
 /* Página: filhos não encolhem (tabelas com overflow:hidden eram cortadas no fim da página). */
 .page > * { flex-shrink: 0; }
 
-/* Tablet: SideNav vira trilho de ícones */
-@media (max-width: 1023px) {
+/* Tablet: SideNav vira trilho de ícones (640-1023px); abaixo de 640px é gaveta */
+@media (min-width: 640px) and (max-width: 1023px) {
   .shell-nav { width: 68px !important; padding: 16px 8px !important; }
   .shell-nav > div:first-child { font-size: 0 !important; padding: 4px 0 16px !important; }
   .shell-nav > div:first-child::first-letter { font-size: 22px; }
@@ -89,6 +89,8 @@ a:hover{color:var(--brand-press)}
   .shell-nav .nav-badge { position: absolute; top: 2px; right: 2px; min-width: 16px !important; height: 16px !important; line-height: 16px !important; padding: 0 4px !important; font-size: 10px !important; }
   .shell-nav .nav-footer-text, .shell-nav .nav-footer-name { display: none; }
   .shell-nav .nav-footer { flex-direction: column; gap: 6px !important; padding: 8px 0 !important; }
+}
+@media (max-width: 1023px) {
   .shell-search { display: none !important; }
   .shell-search-icon { display: inline-flex !important; }
   .live-text { display: none; }
@@ -194,6 +196,16 @@ a:hover{color:var(--brand-press)}
 /* Entradas: seção, aba e painel lateral */
 .section-in { animation: vt-section-in 280ms var(--ease-out) backwards; }
 .panel-in { animation: vt-panel-in 420ms var(--ease-panel) backwards; }
+
+/* Celular (<640px): menu em gaveta, aberta pelo botão do cabeçalho */
+.nav-toggle { display: none; width: 44px; height: 44px; flex-shrink: 0; border: 0; border-radius: 50%; background: var(--surface-sunken); color: var(--text-primary); align-items: center; justify-content: center; cursor: pointer; }
+@media (max-width: 639px) {
+  .nav-toggle { display: inline-flex; }
+  .shell-nav { position: fixed !important; top: 0; bottom: 0; left: 0; z-index: 70; width: 248px !important; max-width: 85vw; overflow-y: auto; transform: translateX(-100%); visibility: hidden; transition: transform var(--dur-slow) var(--ease-screen), visibility 0s linear var(--dur-slow) !important; box-shadow: var(--shadow-2); }
+  .shell-nav[data-open] { transform: translateX(0); visibility: visible; transition: transform var(--dur-slow) var(--ease-screen), visibility 0s !important; }
+  .nav-scrim { position: fixed; inset: 0; z-index: 65; background: var(--surface-scrim); animation: vt-scrim-in var(--dur-base) var(--ease-out) backwards; }
+}
+@media (prefers-reduced-motion: reduce) { .shell-nav { transition: none !important; } }
 
 /* Menu lateral: hover e item ativo */
 .nav-item { background: transparent; color: rgba(255,255,255,.62); transition: background var(--dur-base) var(--ease-out), color var(--dur-base) var(--ease-out); }

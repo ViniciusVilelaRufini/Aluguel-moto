@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useEffect, type ReactNode } from 'react';
+import { Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { SideNav } from '@/ds/SideNav';
 import { Badge } from '@/ds/Badge';
@@ -10,6 +10,8 @@ import { useRealtime, useRealtimeEvent } from '@/lib/realtime';
 import { ALERT_TYPE } from '@/lib/labels';
 import { menuFor, MENU } from '@/lib/permissions';
 import { Initials, useToast } from '@/components/ui';
+import { useNarrow } from '@/lib/use-narrow';
+import { FOCUSABLE, cycleFocusIndex } from '@/lib/focus';
 import { CommandPalette } from '@/components/CommandPalette';
 import type { StaffGroup } from '@/lib/types';
 
@@ -31,6 +33,31 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
   const { vehicles, vehiclesReady, openAlerts, connected } = useRealtime();
   const router = useRouter();
   const pathname = usePathname() ?? '/';
+
+  const drawer = useNarrow(639);
+  const [navOpen, setNavOpen] = useState(false);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  const open = drawer && navOpen;
+
+  // Gaveta: fecha ao navegar; Esc fecha; Tab fica preso no menu; o foco volta ao botão.
+  useEffect(() => { setNavOpen(false); }, [pathname]);
+  useEffect(() => { if (!drawer) setNavOpen(false); }, [drawer]);
+  useEffect(() => {
+    if (!open) return;
+    const nav = document.getElementById('main-nav');
+    const btn = toggleRef.current;
+    nav?.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); setNavOpen(false); return; }
+      if (e.key !== 'Tab' || !nav) return;
+      const items = Array.from(nav.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((x) => x.offsetParent !== null);
+      if (items.length === 0) return;
+      e.preventDefault();
+      items[cycleFocusIndex(items.length, items.indexOf(document.activeElement as HTMLElement), e.shiftKey)].focus();
+    };
+    window.addEventListener('keydown', h);
+    return () => { window.removeEventListener('keydown', h); btn?.focus({ preventScroll: true }); };
+  }, [open]);
 
   const menu = menuFor(groups);
   const current = MENU.find((m) => pathname === m.href || pathname.startsWith(m.href + '/'));
@@ -60,7 +87,9 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
 
   return (
     <div style={{ height: '100vh', display: 'flex', background: 'var(--surface-app)' }}>
+      {open && <div data-testid="nav-scrim" className="nav-scrim" onClick={() => setNavOpen(false)} aria-hidden />}
       <SideNav
+        id="main-nav" open={open}
         style={{}}
         items={items}
         value={current?.href}
@@ -80,6 +109,9 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
       />
       <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <header className="shell-header" style={{ height: 64, flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16, padding: '0 24px', background: 'var(--surface-card)', borderBottom: '1px solid var(--border-subtle)' }}>
+          <button ref={toggleRef} type="button" className="nav-toggle" aria-label="Abrir menu" aria-expanded={open} aria-controls="main-nav" onClick={() => setNavOpen((v) => !v)}>
+            <Icon name="Menu" size={20} />
+          </button>
           <h1 className="shell-title" style={{ font: 'var(--type-heading)', fontWeight: 700, fontSize: 18, flex: 1, margin: 0, minWidth: 0 }}>{current?.label}</h1>
           <CommandPalette vehicles={vehicles} menu={menu} />
           {canLive && <CriticalAlertToaster vehicles={vehicles} onAlertsPage={current?.key === 'alerts'} />}

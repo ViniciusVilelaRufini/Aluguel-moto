@@ -7,39 +7,65 @@ import { installControllableSocket } from './fixtures3';
 test.describe('menu lateral em 390px', () => {
   test.use({ viewport: MOBILE, hasTouch: true });
 
-  test('trilho de icones: nao cobre o conteudo e nao causa rolagem horizontal', async ({ page }) => {
+  test('gaveta fechada: nao cobre o conteudo, conteudo em largura total e sem rolagem horizontal', async ({ page }) => {
     await loginMocked(page);
     await page.goto('/alerts');
     await expect(page.locator('#main-content')).toBeVisible();
     const m = await page.evaluate(() => {
-      const nav = document.querySelector('.shell-nav')!.getBoundingClientRect();
       const main = document.querySelector('#main-content')!.getBoundingClientRect();
-      return { navW: Math.round(nav.width), navRight: Math.round(nav.right), mainLeft: Math.round(main.left), mainW: Math.round(main.width), de: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+      return { mainLeft: Math.round(main.left), mainW: Math.round(main.width), de: document.documentElement.scrollWidth - document.documentElement.clientWidth };
     });
     await s3(page, 'nav-390');
-    expect(m.mainLeft).toBeGreaterThanOrEqual(m.navRight);
+    expect(m.mainLeft).toBe(0);
+    expect(m.mainW).toBe(390);
     expect(m.de).toBeLessThanOrEqual(1);
+    await expect(page.locator('.shell-nav')).toBeHidden();
   });
 
-  test('[BUG P3-16] ha como recolher o menu em celular (botao menu/hamburguer) para devolver 68 px ao conteudo', async ({ page }) => {
+  test('[BUG P3-16] botao de menu abre a gaveta (aria-expanded/controls); Esc, scrim e navegacao fecham; foco preso e devolvido', async ({ page }) => {
     await loginMocked(page);
     await page.goto('/alerts');
-    await expect(page.locator('#main-content')).toBeVisible();
-    const toggle = page.getByRole('button', { name: /menu|recolher|abrir menu|navegação/i });
-    expect(await toggle.count(), 'nenhum botao para recolher/abrir o menu: o trilho de 68px fica sempre aberto e o conteudo tem so 322px').toBeGreaterThan(0);
+    const toggle = page.getByRole('button', { name: 'Abrir menu' });
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toHaveAttribute('aria-controls', 'main-nav');
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    const nav = page.locator('#main-nav');
+    await expect(nav).toBeVisible();
+    // foco preso: Tab repetido nunca sai da gaveta
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Tab');
+      expect(await page.evaluate(() => !!document.activeElement?.closest('#main-nav'))).toBe(true);
+    }
+    await page.keyboard.press('Escape');
+    await expect(nav).toBeHidden();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(toggle).toBeFocused();
+    // scrim fecha
+    await toggle.click();
+    await expect(nav).toBeVisible();
+    await page.getByTestId('nav-scrim').click({ position: { x: 380, y: 300 } });
+    await expect(nav).toBeHidden();
+    // navegar fecha
+    await toggle.click();
+    await nav.getByRole('button', { name: /^Clientes/ }).click();
+    await expect(page).toHaveURL(/\/customers/);
+    await expect(nav).toBeHidden();
   });
 
-  test('itens do menu tem alvo de toque >= 40px e nome acessivel', async ({ page }) => {
+  test('itens do menu (gaveta aberta) tem alvo de toque >= 40px e nome acessivel', async ({ page }) => {
     await loginMocked(page);
     await page.goto('/alerts');
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
     await expect(page.locator('.shell-nav button').first()).toBeVisible();
     const small = await page.locator('.shell-nav button').evaluateAll((els) => els.map((e) => ({ n: e.getAttribute('aria-label') ?? '', w: Math.round(e.getBoundingClientRect().width), h: Math.round(e.getBoundingClientRect().height) })).filter((b) => b.w < 40 || b.h < 40 || !b.n));
     expect(small).toEqual([]);
   });
 
-  test('rodape do trilho (avatar + sair) cabe nos 68px', async ({ page }) => {
+  test('rodape da gaveta (avatar + sair) cabe na gaveta', async ({ page }) => {
     await loginMocked(page);
     await page.goto('/alerts');
+    await page.getByRole('button', { name: 'Abrir menu' }).click();
     await expect(page.getByTestId('logout')).toBeVisible();
     const r = await page.evaluate(() => { const nav = document.querySelector('.shell-nav')!.getBoundingClientRect(); const f = document.querySelector('.nav-footer')!.getBoundingClientRect(); const l = document.querySelector('[data-testid=logout]')!.getBoundingClientRect(); return { navR: nav.right, fR: f.right, lR: l.right, lW: l.width, lH: l.height }; });
     expect(r.fR).toBeLessThanOrEqual(r.navR + 1);
