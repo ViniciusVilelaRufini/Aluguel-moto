@@ -89,7 +89,11 @@ describe('IotStack', () => {
     const r = (Object.values(t().findResources('AWS::IoT::TopicRule')) as any[]).find((x) => x.Properties.RuleName === 'volti_prod_station_events')
       .Properties.TopicRulePayload;
     expect(r.Sql).toBe(STATION_EVENTS_SQL);
-    expect(r.Sql).toBe("SELECT *, topic(2) AS thing FROM 'estacoes/+/eventos'");
+    // Identidade só do tópico (auditoria): o corpo da estação vai aninhado em `payload`, só com os campos do contrato.
+    expect(r.Sql).toBe(
+      "SELECT topic(2) AS thing, {'type': type, 'swapId': swapId, 'slotNumber': slotNumber, 'serial': serial, 'pct': pct, 'ts': ts} AS payload FROM 'estacoes/+/eventos'",
+    );
+    expect(r.Sql).not.toContain('SELECT *');
     expect(r.Actions).toHaveLength(1);
     expect(r.Actions[0].Lambda).toBeUndefined(); // the async Lambda action reorders (parallel invocations, late retries)
     expect(r.Actions[0].Kinesis.PartitionKey).toBe(STATION_PARTITION_KEY);
@@ -125,6 +129,16 @@ describe('IotStack', () => {
     // No IoT → Lambda permission for the stations path any more (only presence).
     const perms = Object.values(t().findResources('AWS::Lambda::Permission')) as any[];
     expect(perms).toHaveLength(1);
+  });
+
+  it('station rule projection matches the MQTT contract schema (estacao-eventos properties)', () => {
+    const props = Object.keys(JSON.parse(readFileSync(join(__dirname, '..', '..', 'packages', 'contracts', 'schemas', 'estacao-eventos.schema.json'), 'utf8')).properties).sort();
+    const body = /\{(.*)\} AS payload/.exec(STATION_EVENTS_SQL)![1];
+    const projected = [...body.matchAll(/'(\w+)': (\w+)/g)].map((m) => {
+      expect(m[2]).toBe(m[1]);
+      return m[1];
+    }).sort();
+    expect(projected).toEqual(props);
   });
 
   describe('station forwarder (Kinesis batch → FIFO)', () => {

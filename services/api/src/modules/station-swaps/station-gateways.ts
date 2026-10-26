@@ -126,7 +126,7 @@ export function assertFifoQueueUrl(url: string | undefined): void {
 
 /**
  * IOT_MODE=aws: comandos por `Publish` do IoT Data Plane em `estacoes/{thing}/comandos`; eventos pela fila SQS `estacoes`
- * (regra IoT `SELECT *, topic(2) AS thing FROM 'estacoes/+/eventos'` — pendência de infra, ver docs/decisoes.md).
+ * (regra IoT `SELECT topic(2) AS thing, {campos do contrato} AS payload FROM 'estacoes/+/eventos'`: identidade só do tópico).
  */
 export class AwsStationGateway implements StationGateway {
   private readonly logger = new Logger('AwsStationGateway');
@@ -140,8 +140,15 @@ export class AwsStationGateway implements StationGateway {
   async start(handler: StationEventHandler): Promise<void> {
     assertFifoQueueUrl(this.queueUrl);
     this.queue.subscribe<Record<string, unknown>>('estacoes', async (m) => {
-      if (!m || typeof m !== 'object' || typeof m.thing !== 'string') return;
-      const { thing, ...body } = m;
+      // Identidade só do tópico (`thing` = topic(2) da regra IoT); o corpo da estação vem exclusivamente de `payload`
+      // (a regra projeta só os campos do contrato). Fail closed: formato antigo (corpo no topo) é descartado.
+      if (!m || typeof m !== 'object' || typeof m.thing !== 'string' || !m.thing) return;
+      const thing = m.thing;
+      const body = m.payload;
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        this.logger.warn({ msg: 'station_event_invalid', thing });
+        return;
+      }
       const ev = parseStationEvent(body);
       if (!ev) {
         this.logger.warn({ msg: 'station_event_invalid', thing });

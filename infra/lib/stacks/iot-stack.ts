@@ -82,8 +82,14 @@ export function buildStationPolicyDocument(region: string, account: string): Rec
   };
 }
 
-/** Rule SQL for station events: the API reads the station thing from the `thing` field (station-gateways.ts). */
-export const STATION_EVENTS_SQL = "SELECT *, topic(2) AS thing FROM 'estacoes/+/eventos'";
+/** Station event fields projected by the rule (packages/contracts/schemas/estacao-eventos.schema.json properties). */
+const STATION_EVENT_FIELDS = ['type', 'swapId', 'slotNumber', 'serial', 'pct', 'ts'];
+/**
+ * Rule SQL for station events. Same rule as the trackers (security audit): the identity (`thing`) comes ONLY from the topic,
+ * and the station body is nested in `payload` with the contract fields — nothing the device sends shares the level of `thing`.
+ * The API reads `thing` and `payload` (station-gateways.ts); the forwarders group the FIFO by `thing`.
+ */
+export const STATION_EVENTS_SQL = `SELECT topic(2) AS thing, {${STATION_EVENT_FIELDS.map((f) => `'${f}': ${f}`).join(', ')}} AS payload FROM 'estacoes/+/eventos'`;
 
 /** Kinesis partition key of the station events: the station thing, so each station's events stay in one ordered shard sequence. */
 export const STATION_PARTITION_KEY = '${topic(2)}';
@@ -133,7 +139,7 @@ exports.handler = async (event) => {
 
 /**
  * Dev only (stationEventsTransport 'lambda', stations are simulated): the IoT rule invokes this Lambda asynchronously with
- * the rule output (the event itself, with `thing`) and it sends it to stations.fifo with MessageGroupId = thing.
+ * the rule output (`thing` from the topic + the contract fields nested in `payload`) and it sends it to stations.fifo with MessageGroupId = thing.
  * ORDER CAVEAT: async invocations run in parallel and are retried minutes later, so two events of the same station published
  * close together may reach the FIFO inverted. A failed send throws (Lambda retries, then the on-failure destination sends the
  * event to stations-forwarder-dlq). Logs no payload.

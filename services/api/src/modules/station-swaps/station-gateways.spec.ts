@@ -79,6 +79,32 @@ describe('AwsStationGateway (IOT_MODE=aws) — fix 1, I4', () => {
   });
 });
 
+describe('AwsStationGateway — identidade da estação só do tópico (auditoria, regra IoT)', () => {
+  async function started() {
+    let deliver!: (m: unknown) => Promise<void>;
+    const queue = { publish: jest.fn(), subscribe: jest.fn((_q: string, h: (m: unknown) => Promise<void>) => (deliver = h)) };
+    const got: Array<[string, unknown]> = [];
+    const gw = new AwsStationGateway({ send: jest.fn() }, queue as any, 'https://sqs.sa-east-1.amazonaws.com/1/volti-estacoes.fifo');
+    await gw.start(async (thing, ev) => void got.push([thing, ev]));
+    return { got, deliver: (m: unknown) => deliver(m) };
+  }
+  const ev = { type: 'slot_opened', swapId: SWAP, slotNumber: 2, ts: '2026-10-22T15:00:00.000Z' };
+
+  it('{ thing, payload } da regra → evento do payload com o thing do tópico; `thing` dentro do payload não vale', async () => {
+    const { got, deliver } = await started();
+    await deliver({ thing: THING, payload: { ...ev, thing: 'station-99999999-9999-4999-8999-999999999999' } });
+    expect(got).toEqual([[THING, ev]]);
+  });
+
+  it('mensagem sem payload objeto (corpo no topo, formato antigo) é descartada', async () => {
+    const { got, deliver } = await started();
+    await deliver({ thing: THING, ...ev });
+    await deliver({ thing: THING, payload: [ev] });
+    await deliver({ thing: THING, payload: null });
+    expect(got).toEqual([]);
+  });
+});
+
 describe('MqttStationGateway (IOT_MODE=local)', () => {
   function fakeClient() {
     const handlers: Record<string, (...a: any[]) => void> = {};
