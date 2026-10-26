@@ -4840,7 +4840,7 @@ components:
           type: integer
           minimum: 0
           maximum: 32
-          description: Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre <= 20).
+          description: Só em `reduced_speed` (6 pedestres, 20 ciclovia; sempre entre 6 e 20).
         geometry: { $ref: '#/components/schemas/GeoJsonPolygon' }
         active: { type: boolean }
         createdAt: { type: string, format: date-time }
@@ -4853,9 +4853,9 @@ components:
         type: { $ref: '#/components/schemas/ZoneType' }
         speedLimitKmh:
           type: integer
-          minimum: 0
+          minimum: 6
           maximum: 32
-          description: 'Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Acima de 32 → 400.'
+          description: 'Obrigatório em `reduced_speed` (ausente → 422 `zone-speed-limit-required`; 21 a 32 → 422 `zone-speed-limit-invalid`); ignorado nos demais tipos. Abaixo de 6 (menor limite de zona, área de pedestres) ou acima de 32 → 400.'
         geometry: { $ref: '#/components/schemas/GeoJsonPolygon' }
         active: { type: boolean, default: true }
     GeoZoneList:
