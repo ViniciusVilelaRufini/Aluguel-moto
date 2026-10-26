@@ -4,6 +4,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import type { Coupon, Deposit, Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
+import { hasOpenRental } from '../../common/vehicle-in-use';
 import { CommandChangedEvent, DepositReleaseRequestedEvent, EV, RentalChangedEvent, VehicleStatusChangedEvent } from '../../common/events';
 import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { INSURANCE, type InsurancePort } from '../../ports/insurance.port';
@@ -189,7 +190,8 @@ export class RentalStartService {
       await this.requestDepositRelease(dto.depositId, customerId);
       throw conflict('vehicle-offline', 'A moto está sem conexão agora. Escolha outra moto; nada foi cobrado.');
     }
-    const available = (vehicle.status === 'free' && !reservation) || (vehicle.status === 'reserved' && !!ownReservation);
+    // Auditoria item 7 (defesa adicional): o status da moto pode não refletir um aluguel aberto dela.
+    const available = ((vehicle.status === 'free' && !reservation) || (vehicle.status === 'reserved' && !!ownReservation)) && !(await hasOpenRental(this.prisma, vehicle.id));
     if (!available) {
       await this.requestDepositRelease(dto.depositId, customerId);
       throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');

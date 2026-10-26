@@ -123,6 +123,15 @@ describe('Início do aluguel (POST /rentals)', () => {
     expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
   });
 
+  it('moto livre e online com aluguel aberto de outro cliente → 409 vehicle-unavailable (item 7 da auditoria)', async () => {
+    h.prisma.rental.findFirst.mockImplementation((async (args: any) => (args?.where?.vehicleId === VEHICLE_ID ? { id: 'r-outro' } : null)) as any);
+    const res = await post('chave-open-0001');
+    expect(res.status).toBe(409);
+    expect(res.body.type).toBe('https://api.volti.com.br/problems/vehicle-unavailable');
+    expect(billing.holdDeposit).not.toHaveBeenCalled();
+    expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
+  });
+
   it('moto reservada pelo próprio cliente → 201 e a reserva vira aluguel', async () => {
     h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved' } as any);
     h.prisma.reservation.findFirst.mockResolvedValue({ id: 'r1', customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, status: 'active' } as any);
