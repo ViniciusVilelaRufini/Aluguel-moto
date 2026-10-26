@@ -1357,8 +1357,10 @@ paths:
       summary: Trocar de moto
       description: |
         Troca a moto do aluguel em andamento (ex.: defeito). Trava a moto atual, que vai para
-        `maintenance`, e destrava a nova (precisa estar `free` e a até 200 m). O aluguel continua o mesmo,
-        com evento `vehicle_swapped`.
+        `maintenance`, e destrava a nova (precisa estar `free`, online, a até 200 m, sem aluguel nem reserva e não
+        ser a moto fixa do plano de outro cliente; senão `409` `vehicle-unavailable` ou `vehicle-offline`). O preço
+        continua o do início do aluguel, então a nova moto precisa ter preço por minuto (modelo do catálogo) igual ou
+        menor (`409`). O aluguel continua o mesmo, com evento `vehicle_swapped`.
       security:
         - customerAuth: []
       parameters:
