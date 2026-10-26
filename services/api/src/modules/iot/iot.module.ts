@@ -73,9 +73,18 @@ import { TelemetryService } from './telemetry.service';
     { provide: GEOFENCE_COMMANDER, inject: [ModuleRef], useFactory: (moduleRef: ModuleRef) => new CommandsGeofenceCommander(moduleRef) },
     {
       provide: GeofenceService,
-      inject: [GEOFENCE_ENGINE, GEOFENCE_COMMANDER, RENTAL_LOOKUP, EventEmitter2, IOT_CLOCK, REDIS_STORE, IOT_CONFIG, PrismaService],
-      useFactory: (engine: GeofenceEngine, commander: GeofenceCommander, rentals: RentalLookup, events: EventEmitter2, clock: Clock, redis: RedisStore, cfg: IotConfig, prisma: PrismaService) =>
-        new GeofenceService(engine, commander, rentals, events, clock, redis, { outOfAreaLockMinutes: cfg.outOfAreaLockMinutes }, new PrismaZoneVehiclePositions(prisma)),
+      inject: [GEOFENCE_ENGINE, GEOFENCE_COMMANDER, RENTAL_LOOKUP, EventEmitter2, IOT_CLOCK, REDIS_STORE, IOT_CONFIG, PrismaService, LiveStateStore],
+      useFactory: (
+        engine: GeofenceEngine,
+        commander: GeofenceCommander,
+        rentals: RentalLookup,
+        events: EventEmitter2,
+        clock: Clock,
+        redis: RedisStore,
+        cfg: IotConfig,
+        prisma: PrismaService,
+        live: LiveStateStore,
+      ) => new GeofenceService(engine, commander, rentals, events, clock, redis, { outOfAreaLockMinutes: cfg.outOfAreaLockMinutes }, new PrismaZoneVehiclePositions(prisma), live),
     },
     {
       provide: TelemetryService,

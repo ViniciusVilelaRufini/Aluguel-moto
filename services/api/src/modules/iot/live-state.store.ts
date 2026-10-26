@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { MAX_SPEED_KMH } from '../../common/enums';
 import type { VehicleLiveState } from '../../ports/iot-gateway.port';
 import type { RedisStore } from '../../redis/redis-store';
@@ -81,7 +82,12 @@ export class LiveStateStore {
    * Uma única mensagem velha reordenada nunca troca a referência.
    */
   private readonly jumpCandidate = new Map<string, { arrival: number; deviceTs: number }>();
-  private readonly held = new Map<string, boolean>();
+  /**
+   * Hold pedido por este processo cuja escrita no Redis ainda não foi confirmada (falha fechada local). Não é cache: com a
+   * escrita confirmada a fonte é só o Redis (`iot:held:{thingName}`), lido a cada chamada, para valer em todas as tasks.
+   */
+  private readonly unsyncedHold = new Set<string>();
+  private readonly logger = new Logger('LiveStateStore');
 
   constructor(
     private readonly redis: RedisStore,
@@ -276,34 +282,72 @@ export class LiveStateStore {
     return lag > lagMs ? lag : null;
   }
 
-  /** "Limite segurado em 0" depois de `did_not_stop`: persiste até um unlock explícito. */
-  /** Falha fechada: erro ao ler o Redis = segurado (recusa mudar o limite) e nada vai para o cache. */
+  /**
+   * "Limite segurado em 0" depois de `did_not_stop`/lock sem confirmação: persiste até um unlock explícito.
+   * Lido do Redis a cada chamada (outra task pode ter segurado ou soltado). Falha fechada: erro ao ler = segurado
+   * (recusa mudar o limite), com log `held_read_failed`.
+   */
   async isHeld(thingName: string): Promise<boolean> {
-    const mem = this.held.get(thingName);
-    if (mem !== undefined) return mem;
-    let raw: string | null;
+    if (this.unsyncedHold.has(thingName)) return true;
     try {
-      raw = await this.redis.get(`iot:held:${thingName}`);
-    } catch {
+      return (await this.redis.get(heldKey(thingName))) === '1';
+    } catch (err) {
+      this.logger.error({ msg: 'held_read_failed', thingName, error: (err as Error).message });
       return true;
     }
-    const v = raw === '1';
-    this.held.set(thingName, v);
-    return v;
   }
 
   /**
-   * Segurar vale na memória mesmo se a escrita falhar (falha fechada); soltar só depois de apagar no Redis.
+   * Segurar vale neste processo na hora, mesmo se a escrita falhar (falha fechada); soltar só depois de apagar no Redis.
    * Erros de escrita são propagados (o unlock falha em vez de soltar em silêncio).
    */
   async setHeld(thingName: string, on: boolean): Promise<void> {
     if (on) {
-      this.held.set(thingName, true);
-      await this.redis.set(`iot:held:${thingName}`, '1');
+      this.unsyncedHold.add(thingName);
+      await this.redis.set(heldKey(thingName), '1');
+      this.unsyncedHold.delete(thingName);
       return;
     }
-    await this.redis.del(`iot:held:${thingName}`);
-    this.held.set(thingName, false);
+    await this.redis.del(heldKey(thingName));
+    this.unsyncedHold.delete(thingName);
+  }
+
+  /**
+   * Último `limite_kmh` gravado no desired do shadow por qualquer task (`iot:desired-limit:{thingName}`). O motor de cercas
+   * compara com o limite da zona para corrigir um desired acima dela (ex.: unlock com limite antigo).
+   */
+  async recordDesiredLimit(thingName: string, kmh: number): Promise<void> {
+    await this.redis.set(desiredLimitKey(thingName), String(kmh));
+  }
+
+  /** `null` = desconhecido (nunca gravado, ilegível ou erro do Redis). */
+  async desiredLimit(thingName: string): Promise<number | null> {
+    const raw = await this.redis.get(desiredLimitKey(thingName)).catch(() => null);
+    if (raw === null) return null;
+    const v = Number(raw);
+    return Number.isInteger(v) && v >= 0 ? v : null;
+  }
+
+  /**
+   * Última posição conhecida da moto, lida do Redis (escrita por qualquer task); em erro do Redis, a da memória.
+   * `null` sem posição (nunca vista, ou só o estado em branco 0,0).
+   */
+  async lastKnownPosition(thingName: string): Promise<{ lat: number; lng: number } | null> {
+    let lat: number | undefined;
+    let lng: number | undefined;
+    try {
+      const h = await this.redis.hgetall(this.key(thingName));
+      if (h && h.lastSeenAt) {
+        lat = Number(h.lat);
+        lng = Number(h.lng);
+      }
+    } catch {
+      const mem = this.states.get(thingName);
+      lat = mem?.lat;
+      lng = mem?.lng;
+    }
+    if (lat === undefined || lng === undefined || !Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
+    return { lat, lng };
   }
 
   /**
@@ -378,3 +422,6 @@ export class LiveStateStore {
     await this.redis.hset(this.key(s.thingName), values).catch(() => undefined);
   }
 }
+
+const heldKey = (thingName: string) => `iot:held:${thingName}`;
+const desiredLimitKey = (thingName: string) => `iot:desired-limit:${thingName}`;

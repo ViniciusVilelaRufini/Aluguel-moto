@@ -47,6 +47,24 @@ describe('IotStack', () => {
     t().hasResourceProperties('AWS::Lambda::Function', { Runtime: Match.stringLikeRegexp('^nodejs') });
   });
 
+  it('rules keep the thing identity (topic) apart from the device body (payload)', () => {
+    const rules = Object.values(t().findResources('AWS::IoT::TopicRule')) as any[];
+    const motoRules = rules.filter((r) => String(r.Properties.TopicRulePayload.Sql).includes("'motos/"));
+    const sqls = motoRules.map((r) => r.Properties.TopicRulePayload.Sql as string);
+    expect(sqls).toHaveLength(2);
+    for (const leaf of ['telemetria', 'eventos']) {
+      const sql = sqls.find((q) => q.includes(`'motos/+/${leaf}'`))!;
+      expect(sql.startsWith('SELECT topic(2) AS thingName, topic(3) AS channel, timestamp() AS ingestedAt, {')).toBe(true);
+      expect(sql).toContain('} AS payload FROM ');
+      expect(sql).not.toContain('SELECT *');
+    }
+    expect(sqls.find((q) => q.includes("'motos/+/telemetria'"))).toContain("'velocidade_kmh': velocidade_kmh");
+    expect(sqls.find((q) => q.includes("'motos/+/eventos'"))).toContain("'tipo': tipo");
+    // eventos seguem pela fila de telemetria (mesmo caminho do modo local)
+    const queues = motoRules.map((r) => JSON.stringify(r.Properties.TopicRulePayload.Actions[0].Sqs.QueueUrl));
+    expect(new Set(queues).size).toBe(1);
+  });
+
   it('creates Amazon Location tracker and geofence collection and publishes SSM params', () => {
     t().resourceCountIs('AWS::Location::Tracker', 1);
     t().resourceCountIs('AWS::Location::GeofenceCollection', 1);

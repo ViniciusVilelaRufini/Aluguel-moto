@@ -73,7 +73,7 @@ describe('GeofenceService', () => {
     engine.zones = [OPERATION, BIKE_LANE];
     await svc.onPosition(pos());
     expect(commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 20, expect.anything());
-    expect(svc.effectiveLimit('moto-0001')).toBe(20);
+    expect(await svc.effectiveLimit('moto-0001')).toBe(20);
   });
 
   it('sem mudança de zona não reenviar limite', async () => {
@@ -164,7 +164,7 @@ describe('GeofenceService', () => {
       engine.zones = [OPERATION, BIKE_AS_PED];
       await svc.onPosition(pos('2026-10-21T15:00:05.000Z'));
       expect(commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 6, expect.objectContaining({ purpose: 'zone_speed_limit' }));
-      expect(svc.effectiveLimit('moto-0001')).toBe(6);
+      expect(await svc.effectiveLimit('moto-0001')).toBe(6);
       await svc.onPosition(pos('2026-10-21T15:00:10.000Z'));
       expect(commander.setSpeedLimit).toHaveBeenCalledTimes(2);
     });
@@ -179,7 +179,7 @@ describe('GeofenceService', () => {
       await svc.onZoneChanged({ zoneId: 'z-bike', action: 'updated', type: 'reduced_speed', speedLimitKmh: 6, active: true });
       expect(positions.vehiclesInZone).toHaveBeenCalledWith('z-bike');
       expect(a.commander.setSpeedLimit).toHaveBeenLastCalledWith('veh-1', 6, expect.objectContaining({ purpose: 'zone_speed_limit' }));
-      expect(svc.effectiveLimit('moto-0001')).toBe(6);
+      expect(await svc.effectiveLimit('moto-0001')).toBe(6);
     });
 
     it('zone.changed também reavalia motos que o processo já viu dentro da zona (geometria encolheu → volta a 32)', async () => {

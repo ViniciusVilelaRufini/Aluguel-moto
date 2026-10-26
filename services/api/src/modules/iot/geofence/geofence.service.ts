@@ -39,7 +39,18 @@ export interface PositionInput {
 
 interface VehicleZones {
   zones: ZoneRef[];
+  /** Último limite que o motor de cercas mandou (deduplicação). */
   appliedLimit?: number;
+  /** Limite das zonas em que a moto está (menor `reduced_speed`, senão 32): fonte do `effectiveLimit` em qualquer task. */
+  zoneLimit?: number;
+}
+
+/** Estado ao vivo compartilhado (implementação: `LiveStateStore`, sobre o Redis). */
+export interface LiveVehicleSource {
+  /** Última posição conhecida da moto (qualquer task), ou `null`. */
+  lastKnownPosition(thingName: string): Promise<{ lat: number; lng: number } | null>;
+  /** Último `limite_kmh` gravado no desired (qualquer task), ou `null` se desconhecido. */
+  desiredLimit(thingName: string): Promise<number | null>;
 }
 
 /** Última posição conhecida de uma moto (QA-03: reavaliar as motos dentro de uma zona alterada). */
@@ -73,6 +84,12 @@ export class GeofenceService {
   private readonly outOfArea = new Map<string, { handle: TimerHandle; rentalId: string }>();
   /** Motos cujo prazo persistido já foi conferido neste processo (evita um GET/DEL no Redis a cada posição). */
   private readonly outOfAreaChecked = new Set<string>();
+  /** thingName → vehicleId já indexado no Redis por este processo. */
+  private readonly indexed = new Map<string, string>();
+  /** Things cujo estado calculado por este processo não foi gravado no Redis (o `effectiveLimit` usa a memória). */
+  private readonly unsyncedLimit = new Set<string>();
+  /** Things que receberam um limite de falha fechada (motor fora): a próxima avaliação reenvia o limite real. */
+  private readonly forceResend = new Set<string>();
 
   constructor(
     private readonly engine: GeofenceEngine,
@@ -83,11 +100,78 @@ export class GeofenceService {
     private readonly redis: RedisStore,
     private readonly opts: { outOfAreaLockMinutes: number },
     private readonly positions?: ZoneVehiclePositions,
+    private readonly live?: LiveVehicleSource,
   ) {}
 
-  /** Limite em vigor pelas zonas (resolver do `unlock`). */
-  effectiveLimit(thingName: string): number {
-    return this.limitByThing.get(thingName) ?? MAX_SPEED_KMH;
+  /**
+   * Limite em vigor pelas zonas (resolver do `unlock` e teto do limite manual), igual em todas as tasks da API:
+   * 1. estado persistido pelo motor de cercas (`geofence:thing:{thingName}` → `geofence:inside:{vehicleId}`), de qualquer task;
+   * 2. sem estado (ou Redis fora): o que este processo calculou; senão a última posição conhecida avaliada contra as zonas;
+   * 3. sem posição alguma: 32 (teto legal), com log `zone_limit_unknown`.
+   * Nunca devolve mais que 32.
+   */
+  async effectiveLimit(thingName: string): Promise<number> {
+    const mem = this.limitByThing.get(thingName);
+    // Estado calculado aqui que não chegou ao Redis (SET falhou): o da memória é o mais novo.
+    if (mem !== undefined && this.unsyncedLimit.has(thingName)) return mem;
+    const persisted = await this.persistedZoneLimit(thingName);
+    if (persisted !== undefined) return persisted;
+    if (mem !== undefined) return mem;
+    const position = await this.knownPosition(thingName);
+    if (!position) {
+      this.logger.warn({ msg: 'zone_limit_unknown', thingName });
+      return MAX_SPEED_KMH;
+    }
+    try {
+      const zones = await this.engine.containing(position.lat, position.lng);
+      return zoneLimitOf(zones);
+    } catch (err) {
+      // Posição conhecida mas motor de cercas fora: falha fechada. Zonas guardadas neste processo, se houver; senão o mais
+      // restritivo positivo (6 km/h, área de pedestres). Nunca 0: o unlock não confere a velocidade e 0 numa moto andando
+      // cortaria o motor sem rampa. A próxima posição avaliada reenvia o limite real.
+      const stored = position.vehicleId ? this.byVehicle.get(position.vehicleId)?.zones : undefined;
+      const limit = stored ? zoneLimitOf(stored) : ENGINE_FAILURE_FALLBACK_KMH;
+      this.forceResend.add(thingName);
+      this.logger.warn({ msg: 'zone_limit_engine_failed', thingName, limit, error: (err as Error).message });
+      return limit;
+    }
+  }
+
+  private thingKey(thingName: string): string {
+    return `geofence:thing:${thingName}`;
+  }
+
+  /** Limite das zonas gravado no Redis por qualquer task; `undefined` se não houver estado (ou erro ao ler). */
+  private async persistedZoneLimit(thingName: string): Promise<number | undefined> {
+    try {
+      const vehicleId = await this.redis.get(this.thingKey(thingName));
+      if (!vehicleId) return undefined;
+      const raw = await this.redis.get(this.key(vehicleId));
+      if (!raw) return undefined;
+      const v = JSON.parse(raw) as VehicleZones;
+      if (Number.isInteger(v.zoneLimit) && v.zoneLimit! >= 0) return Math.min(MAX_SPEED_KMH, v.zoneLimit!);
+      // Estado gravado antes do campo `zoneLimit`: recalcula pelas zonas gravadas.
+      return Array.isArray(v.zones) ? zoneLimitOf(v.zones) : undefined;
+    } catch (err) {
+      this.logger.warn({ msg: 'zone_limit_read_failed', thingName, error: (err as Error).message });
+      return undefined;
+    }
+  }
+
+  private async knownPosition(thingName: string): Promise<{ lat: number; lng: number; vehicleId?: string } | null> {
+    for (const p of this.lastPosition.values()) if (p.thingName === thingName) return p;
+    return (await this.live?.lastKnownPosition(thingName).catch(() => null)) ?? null;
+  }
+
+  /** Índice thingName → vehicleId do estado persistido (uma escrita por moto e processo). */
+  private async indexThing(thingName: string, vehicleId: string): Promise<void> {
+    if (this.indexed.get(thingName) === vehicleId) return;
+    try {
+      await this.redis.set(this.thingKey(thingName), vehicleId);
+      this.indexed.set(thingName, vehicleId);
+    } catch {
+      /* tenta de novo na próxima posição */
+    }
   }
 
   /**
@@ -138,9 +222,15 @@ export class GeofenceService {
     }
   }
 
-  private async save(vehicleId: string, v: VehicleZones): Promise<void> {
+  private async save(vehicleId: string, v: VehicleZones, thingName?: string): Promise<void> {
     this.byVehicle.set(vehicleId, v);
-    await this.redis.set(this.key(vehicleId), JSON.stringify(v)).catch(() => undefined);
+    try {
+      await this.redis.set(this.key(vehicleId), JSON.stringify(v));
+      if (thingName) this.unsyncedLimit.delete(thingName);
+    } catch (err) {
+      if (thingName) this.unsyncedLimit.add(thingName);
+      this.logger.warn({ msg: 'geofence_state_persist_failed', vehicleId, error: (err as Error).message });
+    }
   }
 
   async onPosition(p: PositionInput): Promise<void> {
@@ -167,19 +257,25 @@ export class GeofenceService {
     const exits = onlyOneOperation(prevZones.filter((z) => !nowIds.has(z.id) && (z.type !== 'operation' || (opBefore && !opNow))));
     const enters = onlyOneOperation(zones.filter((z) => !prevIds.has(z.id) && (z.type !== 'operation' || (!opBefore && opNow))));
 
-    const reduced = zones.filter((z) => z.type === 'reduced_speed' && z.speedLimitKmh !== null);
-    const limit = effectiveZoneLimit(reduced.map((z) => z.speedLimitKmh!));
+    const limit = zoneLimitOf(zones);
     this.limitByThing.set(p.thingName, limit);
+    await this.indexThing(p.thingName, p.vehicleId);
 
-    const state: VehicleZones = { zones, appliedLimit: prev?.appliedLimit };
+    const state: VehicleZones = { zones, appliedLimit: prev?.appliedLimit, zoneLimit: limit };
     const zonesChanged = prevIds.size !== nowIds.size || [...nowIds].some((id) => !prevIds.has(id));
     // Regra de velocidade: o conjunto de zonas de velocidade reduzida mudou, ou o limite efetivo mudou com as mesmas zonas
     // (QA-03: cerca editada de 20 para 6 com a moto dentro). Sem limite aplicado registrado, vale 32 (nada a corrigir).
     const reducedChanged = [...exits, ...enters].some((z) => z.type === 'reduced_speed');
     const applied = reducedChanged ? state.appliedLimit : (state.appliedLimit ?? MAX_SPEED_KMH);
-    const limitChanged = applied !== limit;
+    // Auditoria, item 1: um desired acima da zona (ex.: unlock com limite antigo, em outra task) é corrigido mesmo com
+    // `appliedLimit` igual. Abaixo da zona (limite manual menor, rampa do bloqueio, hold em 0) fica como está.
+    const desired = await this.live?.desiredLimit(p.thingName).catch(() => null);
+    const desiredAbove = desired !== undefined && desired !== null && desired > limit;
+    // Sem estado anterior (primeira avaliação da moto) ou depois de um limite de falha fechada: manda o limite real.
+    const forced = this.forceResend.delete(p.thingName) || !prev;
+    const limitChanged = applied !== limit || desiredAbove || forced;
     if (!exits.length && !enters.length && !limitChanged) {
-      if (!prev || zonesChanged) await this.save(p.vehicleId, state);
+      if (zonesChanged || prev?.zoneLimit !== limit || this.unsyncedLimit.has(p.thingName)) await this.save(p.vehicleId, state, p.thingName);
       await this.evaluateOutOfArea(p.vehicleId, opNow);
       return;
     }
@@ -189,12 +285,17 @@ export class GeofenceService {
     for (const z of enters) this.emit(p, z, 'ENTER', rentalId);
 
     if (limitChanged) {
+      if (desiredAbove) this.logger.warn({ msg: 'zone_limit_resent_desired_above', vehicleId: p.vehicleId, desired, limit });
       state.appliedLimit = limit;
+    }
+    // Estado (com `zoneLimit`) gravado antes do comando: o teto QA-01 do gateway, que lê o Redis, já vê o limite novo e não
+    // recusa o próprio comando de zona ao sair de uma zona mais restritiva (6 → 20/32).
+    await this.save(p.vehicleId, state, p.thingName);
+    if (limitChanged) {
       await this.commander
         .setSpeedLimit(p.vehicleId, limit, { rentalId, purpose: 'zone_speed_limit' })
         .catch((err) => this.logger.error({ msg: 'zone_speed_limit_failed', vehicleId: p.vehicleId, error: (err as Error).message }));
     }
-    await this.save(p.vehicleId, state);
 
     await this.evaluateOutOfArea(p.vehicleId, opNow, rentalId);
   }
@@ -294,8 +395,19 @@ export class GeofenceService {
   }
 }
 
+/**
+ * Limite de falha fechada com posição conhecida e motor de cercas fora: o de área de pedestres (6 km/h), o menor limite
+ * positivo que uma zona impõe. Nunca 0 — publicado no unlock de uma moto em movimento cortaria o motor sem rampa.
+ */
+const ENGINE_FAILURE_FALLBACK_KMH = 6;
+
 /** Folga do TTL do prazo persistido além do próprio prazo. */
 const OUT_OF_AREA_KEY_GRACE_MS = 60 * 60_000;
+
+/** Limite das zonas que contêm a moto: menor `reduced_speed`, senão 32 (nunca acima de 32). */
+function zoneLimitOf(zones: ZoneRef[]): number {
+  return effectiveZoneLimit(zones.filter((z) => z.type === 'reduced_speed' && z.speedLimitKmh !== null && z.speedLimitKmh !== undefined).map((z) => z.speedLimitKmh!));
+}
 
 function onlyOneOperation(zones: ZoneRef[]): ZoneRef[] {
   let seen = false;

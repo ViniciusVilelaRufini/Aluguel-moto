@@ -107,26 +107,33 @@ export class IotStack extends Stack {
 
     const sqsRole = new iam.Role(this, 'RuleSqsRole', { assumedBy: new iam.ServicePrincipal('iot.amazonaws.com') });
     messaging.telemetry.queue.grantSendMessages(sqsRole);
-    messaging.alerts.queue.grantSendMessages(sqsRole);
 
-    const sqlTail = 'topic(2) AS thingName, timestamp() AS ingestedAt';
+    // A identidade da moto vem SÓ do tópico (thingName); o corpo do dispositivo vai aninhado em `payload`,
+    // com os campos do contrato (packages/contracts/schemas) — nada que o dispositivo envie divide o nível de thingName.
+    // Eventos seguem pela fila de telemetria (`channel` = topic(3) discrimina), o mesmo caminho do modo local.
+    const projection = (fields: string[]) => `{${fields.map((f) => `'${f}': ${f}`).join(', ')}}`;
+    const ruleSql = (leaf: string, fields: string[]) =>
+      `SELECT topic(2) AS thingName, topic(3) AS channel, timestamp() AS ingestedAt, ${projection(fields)} AS payload FROM 'motos/+/${leaf}'`;
+    const telemetryFields = ['lat', 'lng', 'velocidade_kmh', 'bateria_pct', 'travada', 'ignicao', 'sinal', 'timestamp'];
+    const eventFields = ['tipo', 'timestamp'];
+    const toTelemetryQueue = [{ sqs: { queueUrl: messaging.telemetry.queue.queueUrl, roleArn: sqsRole.roleArn, useBase64: false } }];
     new iot.CfnTopicRule(this, 'TelemetryRule', {
       ruleName: `volti_${env}_telemetry`,
       topicRulePayload: {
-        sql: `SELECT *, ${sqlTail} FROM 'motos/+/telemetria'`,
+        sql: ruleSql('telemetria', telemetryFields),
         awsIotSqlVersion: '2016-03-23',
         ruleDisabled: false,
-        actions: [{ sqs: { queueUrl: messaging.telemetry.queue.queueUrl, roleArn: sqsRole.roleArn, useBase64: false } }],
+        actions: toTelemetryQueue,
         errorAction,
       },
     });
     new iot.CfnTopicRule(this, 'DeviceEventsRule', {
       ruleName: `volti_${env}_device_events`,
       topicRulePayload: {
-        sql: `SELECT *, ${sqlTail} FROM 'motos/+/eventos'`,
+        sql: ruleSql('eventos', eventFields),
         awsIotSqlVersion: '2016-03-23',
         ruleDisabled: false,
-        actions: [{ sqs: { queueUrl: messaging.alerts.queue.queueUrl, roleArn: sqsRole.roleArn, useBase64: false } }],
+        actions: toTelemetryQueue,
         errorAction,
       },
     });

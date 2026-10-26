@@ -14,6 +14,23 @@ const DEVICE_ALERTS: Record<IotDeviceEvent['type'], { type: AlertType; priority:
   movimento_sem_aluguel: { type: 'movement_without_rental', priority: 'high', message: 'Movimento sem aluguel ativo.' },
 };
 
+const ALERT_TYPES = new Set<string>(['out_of_operation_area', 'forbidden_zone_entered', 'fall_detected', 'tamper', 'battery_critical', 'movement_without_rental', 'vehicle_offline', 'command_failed', 'customer_not_ok', 'incident_reported', 'speed_limiter_noncompliant'] satisfies AlertType[]);
+const ALERT_PRIORITIES = new Set<string>(['critical', 'high', 'medium', 'low']);
+
+function parseAlertMessage(m: unknown): CreateAlertInput | null {
+  if (!m || typeof m !== 'object' || Array.isArray(m)) return null;
+  const r = m as Record<string, unknown>;
+  if (typeof r.type !== 'string' || !ALERT_TYPES.has(r.type)) return null;
+  if (typeof r.priority !== 'string' || !ALERT_PRIORITIES.has(r.priority)) return null;
+  if (typeof r.message !== 'string' || !r.message || r.message.length > 500) return null;
+  const out: CreateAlertInput = { type: r.type as AlertType, priority: r.priority as AlertPriority, message: r.message };
+  if (typeof r.vehicleId === 'string') out.vehicleId = r.vehicleId;
+  if (typeof r.rentalId === 'string') out.rentalId = r.rentalId;
+  if (typeof r.lat === 'number' && Number.isFinite(r.lat)) out.lat = r.lat;
+  if (typeof r.lng === 'number' && Number.isFinite(r.lng)) out.lng = r.lng;
+  return out;
+}
+
 /** Gera alertas a partir dos eventos internos e da fila `alertas` (SQS/EventBridge em produção). */
 @Injectable()
 export class AlertsListeners implements OnModuleInit {
@@ -25,8 +42,11 @@ export class AlertsListeners implements OnModuleInit {
 
   onModuleInit(): void {
     // Alertas vindos de fora do processo (Lambdas, EventBridge) chegam pela fila `alertas`.
-    this.queue.subscribe<CreateAlertInput>('alertas', async (msg) => {
-      await this.alerts.create(msg);
+    // Eventos de dispositivo NÃO passam por aqui (vão pela fila de telemetria → parseDeviceEvent); só alertas já formados,
+    // reduzidos aos campos conhecidos e validados (nada do corpo é espalhado no Prisma).
+    this.queue.subscribe<unknown>('alertas', async (msg) => {
+      const input = parseAlertMessage(msg);
+      if (input) await this.alerts.create(input);
     });
   }
 

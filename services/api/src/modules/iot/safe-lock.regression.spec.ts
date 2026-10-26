@@ -80,7 +80,7 @@ function localSetup(opts: { graceMs?: number } = {}) {
 }
 
 /**
- * Caminho aws real: telemetria pela fila SQS `telemetria` (regra IoT com `thingName`/`ingestedAt`), reported pelo polling do
+ * Caminho aws real: telemetria pela fila SQS `telemetria` (regra IoT com `thingName`/`ingestedAt`/`payload`), reported pelo polling do
  * shadow (`GetThingShadow` com metadata) e **nenhum** evento de presença (eles vão para o EventBridge).
  */
 async function awsSetup(opts: { gapMs?: number } = {}) {
@@ -111,7 +111,7 @@ async function awsSetup(opts: { gapMs?: number } = {}) {
   const tel = new TelemetryService(gw, { onPosition: async () => {} }, { openRentalId: async () => undefined, trackingRentalId: async () => undefined, invalidate: () => {} }, { vehicle: { findUnique: async () => ({ id: 'v1' }) }, trackPoint: { create: async () => ({}) } } as any, events, clock, telOpts);
   await transport.start(tel);
   /** Uma mensagem da fila SQS `telemetria`. */
-  const sqs = (body: object) => handler({ ...body, thingName: T, ingestedAt: clock.now() });
+  const sqs = (body: object) => handler({ thingName: T, channel: 'telemetria', ingestedAt: clock.now(), payload: body });
   /** O rastreador escreve no shadow agora (metadata em segundos). */
   const shadow = (r: Record<string, unknown>) => {
     reported = r;
