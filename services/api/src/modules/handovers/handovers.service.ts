@@ -7,13 +7,14 @@ import { IDEMPOTENCY_STALE_MS, IDEMPOTENCY_STORE, type IdempotencyStore } from '
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
+import { distanceM } from '../../common/util';
 import { APP_CONFIG, type AppConfig } from '../../config/env';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { isUniqueViolation } from '../payments/payment-state.service';
-import { depotPosition, RentalEndService } from '../rentals/rental-end.service';
+import { DEPOT_RETURN_RADIUS_M, depotPosition, RentalEndService } from '../rentals/rental-end.service';
 import { RentalStartService } from '../rentals/rental-start.service';
 import { toRental } from '../rentals/rentals.mapper';
 import { PICKUP_CODE_SECRET, verifyPickupCode } from '../reservations/pickup-code';
@@ -34,6 +35,9 @@ const handoverNotFound = () => notFound('Entrega não encontrada.');
 const alreadyAccepted = () => conflict('conflict', 'Esta entrega já foi aceita pelo cliente; encerre pelo aluguel.');
 /** Recusas reais de pagamento vindas do start() (caução recusada pelo gateway). */
 const PAYMENT_REFUSALS = new Set(['payment-failed', 'payment-declined']);
+/** Run-2: a chegada só encerra com a moto (posição viva) no galpão; fora disso, o encerramento forçado do admin. */
+const notAtDepot = () =>
+  new ProblemException(422, 'vehicle-not-at-depot', 'A moto não está no galpão. Use o encerramento forçado pelo suporte.', undefined, 'Moto fora do galpão');
 const notPending = () => new ProblemException(422, 'handover-not-pending', 'Esta entrega não está mais aguardando o seu aceite.', undefined, 'Entrega não está pendente');
 
 export interface CreateResult {
@@ -220,11 +224,17 @@ export class HandoversService {
    * Chegada do aluguel no galpão: entrega `accepted` e encerramento pelo fechamento normal (`returnTo: 'depot'`, sem
    * `collect`). A moto fica `free` com o `depotId`, ou `maintenance` se algum item veio `ok: false`. Repetição (fila offline
    * do app do operador) → a entrega existente com 200, terminando o que tiver ficado pela metade.
+   *
+   * Run-2 (auditoria): antes de qualquer escrita, o galpão precisa existir e estar ativo (404) e a posição **viva** da moto
+   * precisa estar a até `DEPOT_RETURN_RADIUS_M` dele; fora disso ou sem posição viva → 422 `vehicle-not-at-depot` sem mudar
+   * nada (o escape é o encerramento forçado do admin, com taxa e auditoria). A chegada aceita grava o AuditLog
+   * `rental.return_depot` (operador, aluguel, galpão, distância) na mesma transação da entrega. A repetição de uma chegada já
+   * registrada não reconfere (a conferência valeu na criação).
    */
   async createReturn(operator: Principal, dto: HandoverCreateDto): Promise<CreateResult> {
     const rentalId = dto.rentalId!;
-    const depot = await this.prisma.depot.findUnique({ where: { id: dto.depotId! }, select: { id: true } });
-    if (!depot) throw notFound('Galpão não encontrado.');
+    const depot = await this.prisma.depot.findUnique({ where: { id: dto.depotId! }, select: { id: true, active: true, lat: true, lng: true } });
+    if (!depot || !depot.active) throw notFound('Galpão não encontrado.');
 
     const existing = await this.openReturn(rentalId);
     if (existing) return { status: 200, body: await this.finishReturn(operator, existing, false) };
@@ -233,23 +243,37 @@ export class HandoversService {
     if (!rental) throw notFound('Aluguel não encontrado.');
     if (!OPEN_RENTAL_STATUSES.includes(rental.status)) throw conflict('rental-not-active', 'Este aluguel não está em andamento.');
 
+    const here = await this.ender.livePosition(rental.vehicleId);
+    const distance = here ? Math.round(distanceM(here, depot)) : null;
+    if (distance === null || distance > DEPOT_RETURN_RADIUS_M) {
+      this.logger.warn({ msg: 'handover_return_not_at_depot', rentalId, depotId: depot.id, distanceM: distance, livePosition: here !== null });
+      throw notAtDepot();
+    }
+
     let created: HandoverRow;
     try {
-      created = await this.prisma.handover.create({
-        data: {
-          type: 'return_depot',
-          status: 'accepted',
-          depotId: depot.id,
-          rentalId,
-          vehicleId: rental.vehicleId,
-          operatorId: operator.userId,
-          checklist: checklistJson(dto.checklist),
-          photoKeys: dto.photoKeys,
-          batteryPct: dto.batteryPct,
-          batterySerial: dto.batterySerial ?? null,
-          respondedAt: new Date(),
-        },
-        include: { vehicle: { select: { code: true } } },
+      created = await this.prisma.$transaction(async (tx) => {
+        const row = await tx.handover.create({
+          data: {
+            type: 'return_depot',
+            status: 'accepted',
+            depotId: depot.id,
+            rentalId,
+            vehicleId: rental.vehicleId,
+            operatorId: operator.userId,
+            checklist: checklistJson(dto.checklist),
+            photoKeys: dto.photoKeys,
+            batteryPct: dto.batteryPct,
+            batterySerial: dto.batterySerial ?? null,
+            respondedAt: new Date(),
+          },
+          include: { vehicle: { select: { code: true } } },
+        });
+        await this.audit.record(
+          { actor: operator, action: 'rental.return_depot', entityType: 'Rental', entityId: rentalId, metadata: { depotId: depot.id, handoverId: row.id, distanceM: distance } },
+          tx,
+        );
+        return row;
       });
     } catch (err) {
       if (!isUniqueViolation(err)) throw err;

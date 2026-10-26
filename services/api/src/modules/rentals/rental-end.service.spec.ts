@@ -59,7 +59,7 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
   const events = new EventEmitter2();
   const stationSwaps = { closeForRentalEnd: jest.fn().mockResolvedValue(undefined) };
   const service = new RentalEndService(prisma as any, new PricingService(prisma as any), billing, commands as any, zones as any, iot as any, events, audit as any, alerts as any, stationSwaps as any);
-  return { service, prisma, rental, billing, commands, zones, audit, alerts, events, stationSwaps, vehicle: vehicle as Record<string, unknown> };
+  return { service, prisma, rental, billing, commands, zones, iot, audit, alerts, events, stationSwaps, vehicle: vehicle as Record<string, unknown> };
 }
 
 describe('Encerramento do aluguel', () => {
@@ -627,6 +627,36 @@ describe('Devolução em ponto verde (retirada em galpão)', () => {
     await service.finalize(RENTAL_ID, 'ended', { returnTo: 'depot' });
     expect(statusSetTo(prisma)).toEqual(['free']);
     expect(prisma.fieldTask.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('Run-2: posição viva para a chegada no galpão (livePosition)', () => {
+  const live = (over: Record<string, unknown> = {}) => ({
+    thingName: 'moto-0001', lat: -21.1371, lng: -48.9729, speedKmh: 0, batteryPct: 50, locked: false, ignition: false, signal: 4, speedLimitKmh: 32,
+    stolenMode: false, online: true, lastSeenAt: new Date().toISOString(), ...over,
+  });
+
+  it('rastreador online → a posição ao vivo (nunca a última gravada no banco)', async () => {
+    const { service, prisma, iot } = setup();
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, thingName: 'moto-0001' } as any);
+    iot.getLiveState.mockResolvedValue(live());
+    await expect(service.livePosition(VEHICLE_ID)).resolves.toEqual({ lat: -21.1371, lng: -48.9729 });
+    expect(iot.getLiveState).toHaveBeenCalledWith('moto-0001');
+  });
+
+  it('sem estado ao vivo, rastreador offline, coordenada inválida, erro do gateway ou moto inexistente → null (sem cair na posição do banco)', async () => {
+    const { service, prisma, iot } = setup();
+    prisma.vehicle.findUnique.mockResolvedValue({ id: VEHICLE_ID, thingName: 'moto-0001' } as any);
+    iot.getLiveState.mockResolvedValue(null);
+    await expect(service.livePosition(VEHICLE_ID)).resolves.toBeNull();
+    iot.getLiveState.mockResolvedValue(live({ online: false }));
+    await expect(service.livePosition(VEHICLE_ID)).resolves.toBeNull();
+    iot.getLiveState.mockResolvedValue(live({ lat: Number.NaN }));
+    await expect(service.livePosition(VEHICLE_ID)).resolves.toBeNull();
+    iot.getLiveState.mockRejectedValue(new Error('redis fora'));
+    await expect(service.livePosition(VEHICLE_ID)).resolves.toBeNull();
+    prisma.vehicle.findUnique.mockResolvedValue(null);
+    await expect(service.livePosition(VEHICLE_ID)).resolves.toBeNull();
   });
 });
 

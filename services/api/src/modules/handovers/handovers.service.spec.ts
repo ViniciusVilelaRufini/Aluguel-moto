@@ -41,7 +41,11 @@ function setup() {
   const prisma = mockDeep<PrismaClient>();
   (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
   const starter = { start: jest.fn() };
-  const ender = { endAtDepot: jest.fn().mockResolvedValue({}), depotArrivalStatus: jest.fn(async (_vehicleId: string, target: string) => target) };
+  const ender = {
+    endAtDepot: jest.fn().mockResolvedValue({}),
+    depotArrivalStatus: jest.fn(async (_vehicleId: string, target: string) => target),
+    livePosition: jest.fn().mockResolvedValue(null),
+  };
   const support = { createConversation: jest.fn().mockResolvedValue({ id: 'conv' }) };
   const events = { emit: jest.fn() };
   const storage = { presignGet: jest.fn(async ({ key }: any) => ({ url: `https://s3/${key}?sig`, expiresAt: '' })), presignPut: jest.fn() };
@@ -342,7 +346,9 @@ describe('HandoversService — chegada (return_depot)', () => {
 
   function forReturn(checklist: Array<{ code: string; ok: boolean }>) {
     const s = setup();
-    s.prisma.depot.findUnique.mockResolvedValue({ id: DEPOT_ID, ...DEPOT_POS } as any);
+    s.prisma.depot.findUnique.mockResolvedValue({ id: DEPOT_ID, active: true, ...DEPOT_POS } as any);
+    // Posição viva no próprio galpão (0 m); os testes de proximidade trocam.
+    s.ender.livePosition.mockResolvedValue({ ...DEPOT_POS });
     s.prisma.handover.findFirst.mockResolvedValue(null);
     s.prisma.rental.findUnique.mockResolvedValue({ id: RENTAL_ID, status: 'active', vehicleId: VEHICLE_ID, customerId: CUSTOMER_ID } as any);
     s.prisma.rental.findFirst.mockResolvedValue(null);
@@ -433,6 +439,82 @@ describe('HandoversService — chegada (return_depot)', () => {
     prisma.rental.findUnique.mockResolvedValue({ status: 'ended', customerId: CUSTOMER_ID } as any);
     expect((await svc.createReturn(operator, returnBody())).status).toBe(200);
     expect(events.emit).not.toHaveBeenCalledWith(EV.HANDOVER_UPDATED, expect.anything());
+  });
+
+  describe('Run-2: a chegada só encerra com a moto no galpão (posição viva até 150 m)', () => {
+    /** ~2 km ao norte do galpão. */
+    const FAR = { lat: DEPOT_POS.lat + 0.018, lng: DEPOT_POS.lng };
+    /** ~80 m ao norte do galpão. */
+    const NEAR = { lat: DEPOT_POS.lat + 0.00072, lng: DEPOT_POS.lng };
+
+    it('(a) moto a 2 km do galpão → 422 vehicle-not-at-depot; nada gravado, aluguel intocado, nenhum bloqueio pedido', async () => {
+      const { prisma, ender, audit, events, svc } = forReturn([{ code: 'freios', ok: true }]);
+      ender.livePosition.mockResolvedValue(FAR);
+      const err = await svc.createReturn(operator, returnBody()).catch((e) => e);
+      expect(err).toBeInstanceOf(ProblemException);
+      expect(err).toMatchObject({ status: 422, slug: 'vehicle-not-at-depot' });
+      expect(ender.livePosition).toHaveBeenCalledWith(VEHICLE_ID);
+      expect(prisma.handover.create).not.toHaveBeenCalled();
+      expect(ender.endAtDepot).not.toHaveBeenCalled();
+      expect(prisma.rental.update).not.toHaveBeenCalled();
+      expect(prisma.rental.updateMany).not.toHaveBeenCalled();
+      expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+      expect(prisma.fieldTask.updateMany).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+      expect(events.emit).not.toHaveBeenCalled();
+    });
+
+    it('(b) moto a 80 m → encerra pelo galpão e grava AuditLog rental.return_depot (operador, aluguel, galpão, distância)', async () => {
+      const { prisma, ender, audit, svc } = forReturn([{ code: 'freios', ok: true }]);
+      ender.livePosition.mockResolvedValue(NEAR);
+      prisma.vehicle.findUnique.mockResolvedValue({ status: 'free', depotId: DEPOT_ID } as any);
+      const out = await svc.createReturn(operator, returnBody());
+      expect(out.status).toBe(201);
+      expect(ender.endAtDepot).toHaveBeenCalledWith(operator, RENTAL_ID, { depotId: DEPOT_ID, targetStatus: 'free', ...DEPOT_POS });
+      expect(audit.record).toHaveBeenCalledTimes(1);
+      const [entry] = audit.record.mock.calls[0];
+      expect(entry).toEqual({
+        actor: operator,
+        action: 'rental.return_depot',
+        entityType: 'Rental',
+        entityId: RENTAL_ID,
+        metadata: { depotId: DEPOT_ID, handoverId: HO_ID, distanceM: expect.any(Number) },
+      });
+      expect(entry.metadata.distanceM).toBeGreaterThanOrEqual(75);
+      expect(entry.metadata.distanceM).toBeLessThanOrEqual(85);
+      // Sem dados pessoais na auditoria (nem posição da moto).
+      expect(JSON.stringify(entry.metadata)).not.toMatch(/lat|lng|email|cpf/i);
+    });
+
+    it('(c) sem posição viva (rastreador mudo/offline) → 422 vehicle-not-at-depot, nada gravado', async () => {
+      const { prisma, ender, audit, svc } = forReturn([{ code: 'freios', ok: true }]);
+      ender.livePosition.mockResolvedValue(null);
+      await expect(svc.createReturn(operator, returnBody())).rejects.toMatchObject({ status: 422, slug: 'vehicle-not-at-depot' });
+      expect(prisma.handover.create).not.toHaveBeenCalled();
+      expect(ender.endAtDepot).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('(d) galpão inexistente ou inativo → 404, sem consultar a moto nem gravar nada', async () => {
+      const { prisma, ender, svc } = forReturn([{ code: 'freios', ok: true }]);
+      prisma.depot.findUnique.mockResolvedValue(null);
+      await expect(svc.createReturn(operator, returnBody())).rejects.toMatchObject({ status: 404 });
+      prisma.depot.findUnique.mockResolvedValue({ id: DEPOT_ID, active: false, ...DEPOT_POS } as any);
+      await expect(svc.createReturn(operator, returnBody())).rejects.toMatchObject({ status: 404 });
+      expect(ender.livePosition).not.toHaveBeenCalled();
+      expect(prisma.handover.create).not.toHaveBeenCalled();
+      expect(ender.endAtDepot).not.toHaveBeenCalled();
+    });
+
+    it('repetição de uma chegada já registrada não reconfere a posição (a conferência valeu na criação)', async () => {
+      const { prisma, ender, audit, svc } = forReturn([{ code: 'freios', ok: true }]);
+      prisma.handover.findFirst.mockResolvedValue({ ...handover, type: 'return_depot', status: 'accepted', rentalId: RENTAL_ID } as any);
+      prisma.rental.findUnique.mockResolvedValue({ status: 'ended', customerId: CUSTOMER_ID } as any);
+      prisma.vehicle.findUnique.mockResolvedValue({ status: 'free', depotId: DEPOT_ID } as any);
+      ender.livePosition.mockResolvedValue(null);
+      expect((await svc.createReturn(operator, returnBody())).status).toBe(200);
+      expect(audit.record).not.toHaveBeenCalled();
+    });
   });
 
   it('aluguel encerrado → 409 rental-not-active; galpão inexistente → 404', async () => {

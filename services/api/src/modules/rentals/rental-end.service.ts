@@ -32,6 +32,11 @@ export async function hasOpenStationSwap(prisma: Pick<PrismaService, 'stationSwa
   const open = await prisma.stationSwap.findFirst({ where: { rentalId, status: { in: OPEN_SWAP_STATUSES } }, select: { id: true } });
   return !!open;
 }
+/**
+ * Run-2: raio (m) entre a posição viva da moto e o galpão para a chegada `return_depot` encerrar o aluguel. Fora dele (ou sem
+ * posição viva) → 422 `vehicle-not-at-depot`; o escape é o encerramento forçado do admin (taxa + auditoria).
+ */
+export const DEPOT_RETURN_RADIUS_M = 150;
 /** Intervalo mínimo entre tentativas de travamento de um aluguel em `ending`. */
 export const END_RETRY_INTERVAL_MS = 30_000;
 /** Depois de tantas tentativas sem "travada", para de reenviar e chama a operação (alerta). */
@@ -118,6 +123,24 @@ export class RentalEndService {
       this.logger.warn({ msg: 'live_state_failed', vehicleId: vehicle.id, error: (err as Error).message });
     }
     return { lat: vehicle.lat, lng: vehicle.lng };
+  }
+
+  /**
+   * Run-2 (chegada no galpão): só a posição **ao vivo** do rastreador online — a mesma fonte de `positionOf`, sem cair na
+   * última posição gravada no banco. Rastreador mudo/offline, coordenada inválida, erro do gateway ou moto inexistente →
+   * `null` (quem chama recusa; o escape é o encerramento forçado do admin).
+   */
+  async livePosition(vehicleId: string): Promise<{ lat: number; lng: number } | null> {
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true, thingName: true } });
+    if (!vehicle) return null;
+    try {
+      const live = await this.iot.getLiveState(vehicle.thingName);
+      if (!live || live.online === false || !Number.isFinite(live.lat) || !Number.isFinite(live.lng)) return null;
+      return { lat: live.lat, lng: live.lng };
+    } catch (err) {
+      this.logger.warn({ msg: 'live_state_failed', vehicleId, error: (err as Error).message });
+      return null;
+    }
   }
 
   async end(customerId: string, rentalId: string, dto: { returnPhotoObjectKey: string }, opts: EndOptions = {}) {
@@ -208,7 +231,9 @@ export class RentalEndService {
   }
 
   /**
-   * Chegada no galpão (`POST /handovers`, `return_depot`, Task 6): pede o bloqueio seguro (rampa até parar, como no
+   * Chegada no galpão (`POST /handovers`, `return_depot`, Task 6). Run-2: quem chama (`HandoversService.createReturn`) já
+   * conferiu que a posição viva está a até `DEPOT_RETURN_RADIUS_M` do galpão e gravou o AuditLog `rental.return_depot`;
+   * aqui não há taxa (devolução legítima). Pede o bloqueio seguro (rampa até parar, como no
    * encerramento forçado; o operador está com a moto) e fecha pelo caminho normal com `returnTo: 'depot'` (sem tarefa
    * `collect`). Quem chama põe a moto no galpão. Aluguel já encerrado → devolve como está (repetição idempotente).
    */

@@ -46,7 +46,7 @@ info:
     `depot-inactive`, `handover-not-pending`, `payment-declined`, `reservation-in-handover`, `station-not-found`,
     `station-unavailable`, `vehicle-moving`, `too-far`, `swap-open`, `swap-not-cancelable`, `depot-required`,
     `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`,
-    `payment-pending`, `card-required`, `vehicle-locked-by-staff`.
+    `payment-pending`, `card-required`, `vehicle-locked-by-staff`, `vehicle-not-at-depot`.
 
     ## Autenticação e grupos
     - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -1528,7 +1528,10 @@ paths:
           reserva passa a `handover` e o cliente recebe o evento `handover.pending`. Código adulterado ou vencido → `404`.
         - `return_depot`: chegada do aluguel `rentalId` no galpão. A entrega já nasce `accepted`, o aluguel é encerrado
           pelo fechamento normal e a moto volta a `free` com o `depotId` do galpão, ou vai para `maintenance` se algum
-          item do checklist vier com `ok: false`.
+          item do checklist vier com `ok: false`. O `depotId` precisa ser um galpão ativo (senão `404`) e a posição ao
+          vivo da moto (rastreador online) precisa estar a até 150 m dele; fora do raio ou sem posição ao vivo →
+          `422` `vehicle-not-at-depot` sem mudar nada (o escape é `POST /rentals/{id}/force-end`, do admin, com taxa e
+          auditoria). A chegada aceita grava a auditoria `rental.return_depot` (operador, aluguel, galpão e distância).
       security:
         - staffAuth: []
       x-required-groups: [admin, operacao, campo]

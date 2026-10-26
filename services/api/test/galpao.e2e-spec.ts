@@ -6,10 +6,12 @@ import type { AddressInfo } from 'node:net';
 import { io, type Socket } from 'socket.io-client';
 import request from 'supertest';
 import { ProblemException } from '../src/common/problem';
+import { StubIotGateway } from '../src/modules/iot/stub-iot-gateway';
 import { FakePaymentProvider } from '../src/modules/payments/provider/fake-payment-provider';
 import { PAYMENT_PROVIDER } from '../src/modules/payments/provider/payment-provider';
 import { RentalStartService } from '../src/modules/rentals/rental-start.service';
 import { ReservationsService } from '../src/modules/reservations/reservations.service';
+import { IOT_GATEWAY } from '../src/ports/iot-gateway.port';
 import { loadSpecAs30 } from './contract/openapi-30';
 import { approvedCustomer, bootE2eApp, devToken } from './helpers/e2e-app';
 
@@ -132,8 +134,18 @@ describe('Galpão: ciclo completo (e2e)', () => {
   const pickup = (code: string) =>
     http().post('/handovers').set(bearer(campo)).send({ type: 'pickup', depotId, pickupCode: code, checklist: okChecklist, photoKeys: ['handovers/e2e-ciclo.jpg'], batteryPct: 96 });
   const accept = (token: string, handoverId: string, key = randomUUID()) => http().post(`/handovers/${handoverId}/accept`).set(bearer(token)).set('Idempotency-Key', key);
-  const returnDepot = (rentalId: string, checklist: ChecklistItem[] = okChecklist) =>
-    http().post('/handovers').set(bearer(campo)).send({ type: 'return_depot', rentalId, depotId, checklist, photoKeys: [], batteryPct: 55 });
+  /** Run-2: a chegada só encerra com a posição ao vivo da moto no galpão — o rastreador (stub) reporta o galpão. */
+  async function atDepot(rentalId: string) {
+    const { vehicle } = await prisma.rental.findUniqueOrThrow({ where: { id: rentalId }, select: { vehicle: { select: { thingName: true } } } });
+    app.get<StubIotGateway>(IOT_GATEWAY).setLiveState({
+      thingName: vehicle.thingName, ...depotPoint, speedKmh: 0, batteryPct: 55, locked: false, ignition: false, signal: 4, speedLimitKmh: 32,
+      stolenMode: false, online: true, lastSeenAt: new Date().toISOString(),
+    });
+  }
+  const returnDepot = async (rentalId: string, checklist: ChecklistItem[] = okChecklist, status: 200 | 201 = 201) => {
+    await atDepot(rentalId);
+    return http().post('/handovers').set(bearer(campo)).send({ type: 'return_depot', rentalId, depotId, checklist, photoKeys: [], batteryPct: 55 }).expect(status);
+  };
 
   /** Reserva → saída → aceite: devolve o aluguel ativo. */
   async function rentedFromDepot(tag: string) {
@@ -202,11 +214,11 @@ describe('Galpão: ciclo completo (e2e)', () => {
     expect(await prisma.payment.count({ where: { rentalId: rental.body.id, kind: 'rental' } })).toBe(0);
 
     // Chegada no galpão → aluguel encerrado e liquidado uma única vez (repetição da fila offline não liquida de novo).
-    await returnDepot(rental.body.id).expect(201);
+    await returnDepot(rental.body.id);
     expect((await prisma.rental.findUniqueOrThrow({ where: { id: rental.body.id } })).status).toBe('ended');
     const payments = await settledPayments(rental.body.id);
     expect(payments).toHaveLength(1);
-    await returnDepot(rental.body.id).expect(200);
+    await returnDepot(rental.body.id, okChecklist, 200);
     await new Promise((r) => setTimeout(r, 200));
     expect(await prisma.payment.count({ where: { rentalId: rental.body.id, kind: 'rental' } })).toBe(1);
     expect((await prisma.deposit.findUniqueOrThrow({ where: { id: deposit.id } })).status).not.toBe('held');
@@ -276,7 +288,7 @@ describe('Galpão: ciclo completo (e2e)', () => {
     expect(await prisma.vehicleCommand.count({ where: { vehicleId: c.vehicleId, type: 'unlock' } })).toBe(1);
     const retry = await accept(c.token, ho.body.id).expect(201);
     expect(retry.body.id).toBe(ok[0].body.id);
-    await returnDepot(retry.body.id).expect(201);
+    await returnDepot(retry.body.id);
   });
 
   it('5a. pagamento recusado no aceite → 422 payment-declined, entrega pending_customer com lastError, nenhum destravamento', async () => {
@@ -314,7 +326,7 @@ describe('Galpão: ciclo completo (e2e)', () => {
     const replay = await accept(c.token, ho.body.id, key).expect(201);
     expect(replay.headers['idempotent-replayed']).toBe('true');
     expect(replay.body.id).toBe(rental.body.id);
-    await returnDepot(rental.body.id).expect(201);
+    await returnDepot(rental.body.id);
   });
 
   it('5b. pagamento pendente (inadimplente) no aceite, caminho real → 403, entrega pending_customer com lastError, nenhum destravamento', async () => {
@@ -332,7 +344,7 @@ describe('Galpão: ciclo completo (e2e)', () => {
     // Mesma chave depois de regularizar → tenta de novo (o 403 não foi memorizado).
     const rental = await accept(c.token, ho.body.id, key).expect(201);
     expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(1);
-    await returnDepot(rental.body.id).expect(201);
+    await returnDepot(rental.body.id);
   });
 
   it('6. chegada no galpão → ended e moto direto em free no galpão; com item problemático → direto em maintenance', async () => {
@@ -347,7 +359,7 @@ describe('Galpão: ciclo completo (e2e)', () => {
       // depotId fica na moto durante o aluguel.
       expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).toMatchObject({ status: 'rented', depotId });
       const mark = fleet.events.length;
-      const arrived = await returnDepot(c.rentalId, [...checklist]).expect(201);
+      const arrived = await returnDepot(c.rentalId, [...checklist]);
       expect(arrived).toSatisfyApiSpec();
       expect(arrived.body).toMatchObject({ type: 'return_depot', status: 'accepted', rentalId: c.rentalId, depotId });
       // handover.updated da chegada para o cliente e para o galpão.
@@ -365,7 +377,7 @@ describe('Galpão: ciclo completo (e2e)', () => {
 
       // Repetição (fila offline do operador) → 200 com a mesma entrega, sem mexer na moto.
       const before = customerWs.events.filter((e) => e.name === 'handover.updated').length;
-      const retry = await returnDepot(c.rentalId, [...checklist]).expect(200);
+      const retry = await returnDepot(c.rentalId, [...checklist], 200);
       expect(retry.body.id).toBe(arrived.body.id);
       await new Promise((r) => setTimeout(r, 200));
       // Repetição sem trabalho não reemite.
@@ -507,7 +519,7 @@ describe('Galpão: ciclo completo (e2e)', () => {
     expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(1);
     // A entrega cancelada não aceita mais.
     expect((await accept(c.token, first.body.id).expect(422)).body.code).toBe('handover-not-pending');
-    await returnDepot(rental.body.id).expect(201);
+    await returnDepot(rental.body.id);
   });
 
   it('11. cancelamento depois do prazo da reserva → expired, caução liberada, moto free no galpão', async () => {

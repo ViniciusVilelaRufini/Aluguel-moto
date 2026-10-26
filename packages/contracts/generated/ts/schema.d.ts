@@ -951,7 +951,10 @@ export interface paths {
          *       reserva passa a `handover` e o cliente recebe o evento `handover.pending`. Código adulterado ou vencido → `404`.
          *     - `return_depot`: chegada do aluguel `rentalId` no galpão. A entrega já nasce `accepted`, o aluguel é encerrado
          *       pelo fechamento normal e a moto volta a `free` com o `depotId` do galpão, ou vai para `maintenance` se algum
-         *       item do checklist vier com `ok: false`.
+         *       item do checklist vier com `ok: false`. O `depotId` precisa ser um galpão ativo (senão `404`) e a posição ao
+         *       vivo da moto (rastreador online) precisa estar a até 150 m dele; fora do raio ou sem posição ao vivo →
+         *       `422` `vehicle-not-at-depot` sem mudar nada (o escape é `POST /rentals/{id}/force-end`, do admin, com taxa e
+         *       auditoria). A chegada aceita grava a auditoria `rental.return_depot` (operador, aluguel, galpão e distância).
          */
         post: operations["createHandover"];
         delete?: never;

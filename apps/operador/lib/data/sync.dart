@@ -372,6 +372,12 @@ class SyncController extends Notifier<SyncState> {
         photoKeys: keys,
       );
     } on RepositoryException catch (e) {
+      // Run-2: a API so encerra com a moto (posicao ao vivo) no galpao; fora
+      // disso o caminho e o encerramento forcado pelo suporte.
+      if (e.slug == 'vehicle-not-at-depot') {
+        throw RepositoryException(FailureKind.rejected, vehicleNotAtDepotMessage,
+            slug: e.slug, status: e.status);
+      }
       // Resposta perdida e reenvio: a chegada ja foi registrada se o aluguel
       // guardado nao esta mais aberto na moto.
       if (e.status != 409) rethrow;
@@ -406,6 +412,10 @@ class ReturnAlreadyRegistered {
 
 /// Motivo exibido quando a moto que chegou nao tem aluguel aberto.
 const noOpenRentalMessage = 'Esta moto não tem aluguel aberto.';
+
+/// Chegada recusada (`422 vehicle-not-at-depot`): a moto nao esta no galpao.
+const vehicleNotAtDepotMessage =
+    'A moto não está no galpão. Use o encerramento forçado pelo suporte.';
 
 final syncControllerProvider =
     NotifierProvider<SyncController, SyncState>(SyncController.new);

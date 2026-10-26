@@ -3,6 +3,8 @@ import { PrismaClient } from '@prisma/client';
 import jestOpenAPI from 'jest-openapi';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
+import { StubIotGateway } from '../src/modules/iot/stub-iot-gateway';
+import { IOT_GATEWAY } from '../src/ports/iot-gateway.port';
 import { loadSpecAs30 } from './contract/openapi-30';
 import { approvedCustomer, bootE2eApp, devToken } from './helpers/e2e-app';
 
@@ -59,6 +61,15 @@ describe('Entrega no galpão (e2e)', () => {
     return { ...c, vehicleId: v.id, reservationId: res.body.id as string, pickupCode: res.body.pickupCode as string, depositId: res.body.deposit.id as string };
   }
 
+  /** Run-2: o rastreador (stub) reporta a moto em `point` (padrão: o galpão), online e parada. */
+  async function liveAt(vehicleId: string, point = { lat: -23.5654, lng: -46.6847 }) {
+    const { thingName } = await prisma.vehicle.findUniqueOrThrow({ where: { id: vehicleId }, select: { thingName: true } });
+    app.get<StubIotGateway>(IOT_GATEWAY).setLiveState({
+      thingName, ...point, speedKmh: 0, batteryPct: 50, locked: false, ignition: false, signal: 4, speedLimitKmh: 32,
+      stolenMode: false, online: true, lastSeenAt: new Date().toISOString(),
+    });
+  }
+
   const checklist = [{ code: 'freios', ok: true }, { code: 'pneus', ok: true }];
   const pickup = (code: string) => http().post('/handovers').set(bearer(campo)).send({ type: 'pickup', depotId, pickupCode: code, checklist, photoKeys: ['handovers/e2e-1.jpg'], batteryPct: 97 });
 
@@ -107,6 +118,17 @@ describe('Entrega no galpão (e2e)', () => {
 
     // Chegada no galpão com freio ruim → aluguel encerrado, moto em manutenção no galpão, sem recolhimento.
     const ret = { type: 'return_depot', rentalId: accepted.body.id, depotId, checklist: [{ code: 'freios', ok: false, note: 'Freio traseiro fraco' }], photoKeys: [], batteryPct: 41 };
+    // Run-2: moto a ~2 km do galpão (posição ao vivo) → 422 vehicle-not-at-depot; nada muda, sem trava pedida, sem auditoria.
+    await liveAt(c.vehicleId, { lat: -23.5474, lng: -46.6847 });
+    const locksBefore = await prisma.vehicleCommand.count({ where: { vehicleId: c.vehicleId, type: 'lock' } });
+    const far = await http().post('/handovers').set(bearer(campo)).send(ret).expect(422);
+    expect(far).toSatisfyApiSpec();
+    expect(far.body.code).toBe('vehicle-not-at-depot');
+    expect((await prisma.rental.findUniqueOrThrow({ where: { id: accepted.body.id } })).status).toBe('active');
+    expect(await prisma.handover.count({ where: { rentalId: accepted.body.id, type: 'return_depot' } })).toBe(0);
+    expect(await prisma.vehicleCommand.count({ where: { vehicleId: c.vehicleId, type: 'lock' } })).toBe(locksBefore);
+    expect(await prisma.auditLog.count({ where: { action: 'rental.return_depot', entityId: accepted.body.id } })).toBe(0);
+    await liveAt(c.vehicleId);
     const arrived = await http().post('/handovers').set(bearer(campo)).send(ret).expect(201);
     expect(arrived).toSatisfyApiSpec();
     expect(arrived.body).toMatchObject({ type: 'return_depot', status: 'accepted', rentalId: accepted.body.id });
@@ -114,6 +136,9 @@ describe('Entrega no galpão (e2e)', () => {
     expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).toMatchObject({ status: 'maintenance', depotId });
     expect(await prisma.fieldTask.count({ where: { vehicleId: c.vehicleId, type: 'collect' } })).toBe(0);
     expect(await prisma.vehicleCommand.count({ where: { vehicleId: c.vehicleId, type: 'lock' } })).toBeGreaterThanOrEqual(1);
+    const audits = await prisma.auditLog.findMany({ where: { action: 'rental.return_depot', entityId: accepted.body.id } });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ actorType: 'staff', entityType: 'Rental', metadata: { depotId, handoverId: arrived.body.id, distanceM: 0 } });
 
     // Repetição da fila offline → 200 com a mesma entrega.
     const retry = await http().post('/handovers').set(bearer(campo)).send(ret).expect(200);
@@ -139,6 +164,7 @@ describe('Entrega no galpão (e2e)', () => {
     const retry = await http().post(`/handovers/${created.body.id}/accept`).set(bearer(c.token)).set('Idempotency-Key', randomUUID()).expect(201);
     expect(retry.body.id).toBe(ok[0].body.id);
     // Libera o cliente e a moto para os próximos testes.
+    await liveAt(c.vehicleId);
     await http().post('/handovers').set(bearer(campo)).send({ type: 'return_depot', rentalId: retry.body.id, depotId, checklist, photoKeys: [], batteryPct: 80 }).expect(201);
     expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).toMatchObject({ status: 'free', depotId });
   });
@@ -202,6 +228,7 @@ describe('Entrega no galpão (e2e)', () => {
     expect(accepted.body).toMatchObject({ vehicleId: c.vehicleId, status: 'active' });
     // Já aceita → cancelar responde 409.
     await http().post(`/handovers/${redo.body.id}/cancel`).set(bearer(campo)).send({ reason: 'Tarde demais' }).expect(409);
+    await liveAt(c.vehicleId);
     await http().post('/handovers').set(bearer(campo)).send({ type: 'return_depot', rentalId: accepted.body.id, depotId, checklist, photoKeys: [], batteryPct: 70 }).expect(201);
   });
 

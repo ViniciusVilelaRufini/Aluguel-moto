@@ -434,6 +434,28 @@ void main() {
       expect(find.text('Chegada registrada. Moto em manutenção.'), findsOneWidget);
     });
 
+    testWidgets('Run-2: moto fora do galpao (422 vehicle-not-at-depot) mostra o encerramento forcado pelo suporte',
+        (tester) async {
+      final h = Harness();
+      h.repo.vehiclesByCode['VLT-0009'] = rentedVehicle();
+      // O texto da tela vem do slug, nao do detail do servidor.
+      h.repo.rejectHandoverWith = const RepositoryException(FailureKind.rejected, 'Vehicle is not at depot',
+          status: 422, slug: 'vehicle-not-at-depot');
+      await h.pump(tester, const ArrivalChecklistPage());
+      await _settle(tester);
+      await _enter(tester, 'arrival-vehicle', 'VLT-0009');
+      await _tap(tester, 'arrival-find');
+      await _settle(tester);
+      await fillArrival(tester);
+      await _tap(tester, 'submit-arrival');
+      await _settle(tester);
+      expect(
+          find.text('Recusado: A moto não está no galpão. Use o encerramento forçado pelo suporte.'),
+          findsOneWidget);
+      expect(find.byKey(const Key('arrival-sent')), findsNothing);
+      expect((await h.queue.all()).single.status, JobStatus.failed);
+    });
+
     testWidgets('moto sem aluguel aberto nao segue', (tester) async {
       final h = Harness();
       h.repo.vehiclesByCode['VLT-0009'] = rentedVehicle(rentalId: null);
