@@ -41,7 +41,9 @@ test.describe('suporte: conversas', () => {
     const mock = await openSupport(page);
     await openConv(page);
     await page.getByPlaceholder('Escreva uma resposta').fill('x'.repeat(4100));
-    await page.getByRole('button', { name: 'Enviar' }).click();
+    await expect(page.getByRole('button', { name: 'Enviar' })).toBeDisabled();
+    await expect(page.getByText(/4100\/4000/)).toBeVisible();
+    await page.getByPlaceholder('Escreva uma resposta').press('Enter');
     await page.waitForTimeout(600);
     const sent = calls(mock, /messages$/);
     expect(sent.every((c) => (c.body as { body: string }).body.length <= 4000), 'mensagem de 4100 caracteres chegou a API (o servidor devolveria 400 sem explicacao clara)').toBe(true);
@@ -57,15 +59,15 @@ test.describe('suporte: conversas', () => {
 
   test('[BUG P3-04] conversa da lista e acessivel por teclado (role/tabIndex)', async ({ page }) => {
     await openSupport(page);
-    const item = page.getByText('Moto não destrava').first().locator('xpath=ancestor::div[@style][1]');
-    const ok = await item.evaluate((el) => el.hasAttribute('tabindex') || el.hasAttribute('role'));
-    expect(ok, 'a linha da conversa e um <div onClick> sem role/tabIndex: nao abre com Tab+Enter').toBe(true);
+    const item = page.getByText('Moto não destrava').first().locator('xpath=ancestor::*[self::button or @role="button" or @tabindex][1]');
+    await expect(item, 'a linha da conversa deve ser um botao focavel').toHaveCount(1);
+    await item.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByText('Minha moto não destrava.')).toBeVisible();
   });
 
   test('fechar conversa envia status=closed e limpa a selecao', async ({ page }) => {
     const mock = await openSupport(page);
-    // O mock-api acha a conversa por seg[1] ("conversations") e devolve 404: limitacao do harness, nao do painel.
-    await override(page, mock, 'PATCH', /api\.mock\.local\/support\/conversations\/conv-1$/, { id: 'conv-1', customerId: 'cus-001', subject: 'Moto não destrava', status: 'closed', unreadCount: 0, createdAt: '2026-10-26T14:00:00.000Z', lastMessageAt: '2026-10-26T14:50:00.000Z' });
     await openConv(page);
     await page.getByRole('button', { name: 'Fechar conversa' }).click();
     await expect.poll(() => calls(mock, /conversations\/conv-1$/, 'PATCH').length).toBe(1);
@@ -148,6 +150,26 @@ test.describe('suporte: contestacoes e sinistros', () => {
     await dlg.getByRole('button', { name: 'Confirmar' }).click();
     await page.waitForTimeout(600);
     expect(calls(mock, /resolve$/), 'foi enviado refundAmountCents=9999999900 sem checar o pagamento do aluguel').toHaveLength(0);
+  });
+
+  test('estorno maior que o restante do pagamento (amountCents - refundedCents) e barrado com o valor maximo na mensagem', async ({ page }) => {
+    const mock = await openSupport(page);
+    await override(page, mock, 'GET', /api\.mock\.local\/support\/disputes(\?|$)/, { items: [{ ...disputes3[0], paymentId: 'pay-9' }] });
+    await override(page, mock, 'GET', /api\.mock\.local\/payments\/pay-9$/, { id: 'pay-9', amountCents: 5000, refundedCents: 1000 });
+    await page.reload();
+    await page.getByRole('button', { name: 'Contestações' }).click();
+    await resolveBtn(page).click();
+    const dlg = page.getByRole('dialog');
+    await expect(dlg).toContainText('Ainda estornável: R$');
+    await dlg.getByPlaceholder('0,00').fill('40,01');
+    await dlg.locator('textarea').fill('Acima do restante');
+    await dlg.getByRole('button', { name: 'Confirmar' }).click();
+    await expect(dlg).toContainText('excede o que ainda pode ser estornado');
+    expect(calls(mock, /resolve$/)).toHaveLength(0);
+    await dlg.getByPlaceholder('0,00').fill('40,00');
+    await dlg.getByRole('button', { name: 'Confirmar' }).click();
+    await expect.poll(() => calls(mock, /resolve$/).length).toBe(1);
+    expect((calls(mock, /resolve$/)[0]!.body as { refundAmountCents: number }).refundAmountCents).toBe(4000);
   });
 
   test('motivo longo nao gera rolagem horizontal em 1440', async ({ page }) => {

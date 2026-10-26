@@ -169,12 +169,12 @@ test.describe('lista de restricao', () => {
     await expect(dlg).toContainText('Nenhum CPF na lista.');
     const add = dlg.getByRole('button', { name: 'Adicionar' });
     await expect(add).toBeDisabled();
-    await dlg.getByPlaceholder('Somente números').fill('123.456.789-01');
+    await dlg.getByPlaceholder('Somente números').fill('529.982.247-25');
     await dlg.locator('input').nth(1).fill('Fraude comprovada');
     await expect(add).toBeEnabled();
     await add.click();
     await expect(page.getByText('CPF adicionado')).toBeVisible();
-    expect(calls(mock, '/customer-restrictions')[0]!.body).toEqual({ cpf: '12345678901', reason: 'Fraude comprovada' });
+    expect(calls(mock, '/customer-restrictions')[0]!.body).toEqual({ cpf: '52998224725', reason: 'Fraude comprovada' });
     await expect(dlg).toContainText('Fraude comprovada');
     await s3(page, 'restrictions');
   });
@@ -184,8 +184,11 @@ test.describe('lista de restricao', () => {
     const dlg = page.getByRole('dialog');
     await dlg.getByPlaceholder('Somente números').fill('11111111111');
     await dlg.locator('input').nth(1).fill('Teste de CPF');
-    await dlg.getByRole('button', { name: 'Adicionar' }).click();
-    await page.waitForTimeout(500);
+    await expect(dlg).toContainText('CPF inválido');
+    await expect(dlg.getByRole('button', { name: 'Adicionar' })).toBeDisabled();
+    await dlg.getByPlaceholder('Somente números').fill('52998224726');
+    await expect(dlg).toContainText('CPF inválido');
+    await page.waitForTimeout(300);
     expect(calls(mock, '/customer-restrictions'), 'CPF 111.111.111-11 (invalido) foi enviado: a lista passa a ter uma entrada que nunca casa com ninguem').toHaveLength(0);
   });
 
@@ -197,6 +200,8 @@ test.describe('lista de restricao', () => {
     await page.getByRole('dialog').getByRole('button', { name: 'Remover' }).click();
     await page.waitForTimeout(500);
     expect(calls(mock, /customer-restrictions\/rs-9$/, 'DELETE'), 'um clique remove o CPF da lista sem confirmacao nem motivo').toHaveLength(0);
+    await page.getByRole('dialog').filter({ hasText: 'Remover da lista de restrição' }).getByRole('button', { name: 'Remover CPF' }).click();
+    await expect.poll(() => calls(mock, /customer-restrictions\/rs-9$/, 'DELETE').length).toBe(1);
   });
 
   test('suporte ve a lista mas nao tem o botao Remover', async ({ page }) => {

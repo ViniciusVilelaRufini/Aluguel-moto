@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { maskCpf, formatCpf, displayCpf } from '@/lib/cpf';
+import { maskCpf, formatCpf, displayCpf, isValidCpf } from '@/lib/cpf';
 
 describe('maskCpf', () => {
   it('masks as ***.456.789-**', () => {
@@ -16,5 +16,18 @@ describe('maskCpf', () => {
   });
   it('formats full CPF', () => {
     expect(formatCpf('12345678901')).toBe('123.456.789-01');
+  });
+});
+
+describe('isValidCpf', () => {
+  it('aceita CPF com dígitos verificadores corretos', () => {
+    expect(isValidCpf('529.982.247-25')).toBe(true);
+    expect(isValidCpf('52998224725')).toBe(true);
+  });
+  it('recusa dígito verificador errado, repetidos e tamanho errado', () => {
+    expect(isValidCpf('52998224726')).toBe(false);
+    expect(isValidCpf('11111111111')).toBe(false);
+    expect(isValidCpf('12345678901')).toBe(false);
+    expect(isValidCpf('123')).toBe(false);
   });
 });

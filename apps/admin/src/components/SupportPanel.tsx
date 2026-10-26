@@ -6,7 +6,10 @@ import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can } from '@/lib/permissions';
 import { CLAIM_STATUS, CLAIM_TYPE, DISPUTE_STATUS, INCIDENT_CATEGORY, INCIDENT_STATUS } from '@/lib/labels';
-import { formatDateTime, timeAgo } from '@/lib/format';
+import { formatBRL, formatDateTime, timeAgo } from '@/lib/format';
+import { useNarrow } from '@/lib/use-narrow';
+import { useSubmitGuard } from '@/lib/submit-guard';
+import { toCents, validMoney } from '@/lib/money';
 import { MESSAGE_STATUS, lastUnreadFromCustomer, messageStatus } from '@/lib/chat';
 import { Icon } from '@/ds/Icon';
 import type { S } from '@/lib/types';
@@ -24,9 +27,14 @@ const SUBS: { value: Sub; label: string }[] = [
 
 export function SupportPanel({ customerId }: { customerId?: string }) {
   const [sub, setSub] = useState<Sub>('chat');
+  const narrow = useNarrow();
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, flex: 1, minWidth: 0 }}>
-      <SegmentedControl options={SUBS} value={sub} onChange={setSub} style={{ maxWidth: 520 }} />
+      {narrow ? (
+        <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
+          <SegmentedControl label="Seções do suporte" options={SUBS} value={sub} onChange={setSub} style={{ width: 'max-content', minWidth: '100%' }} />
+        </div>
+      ) : <SegmentedControl label="Seções do suporte" options={SUBS} value={sub} onChange={setSub} style={{ maxWidth: 520 }} />}
       {sub === 'chat' && <Conversations customerId={customerId} />}
       {sub === 'disputes' && <Disputes customerId={customerId} />}
       {sub === 'claims' && <Claims customerId={customerId} />}
@@ -34,6 +42,9 @@ export function SupportPanel({ customerId }: { customerId?: string }) {
     </div>
   );
 }
+
+/** Contrato: SupportMessageCreate.body tem no máximo 4000 caracteres. */
+const MAX_REPLY = 4000;
 
 function Conversations({ customerId }: { customerId?: string }) {
   const { groups } = useAuth();
@@ -43,6 +54,7 @@ function Conversations({ customerId }: { customerId?: string }) {
   const [text, setText] = useState('');
   const canReply = can(groups, 'support.reply');
   const end = useRef<HTMLDivElement>(null);
+  const narrow = useNarrow();
 
   const list = useQuery({
     queryKey: ['conversations', status, customerId ?? ''],
@@ -82,31 +94,42 @@ function Conversations({ customerId }: { customerId?: string }) {
       .catch(() => { marked.current = null; });
   }, [sel, upTo, qc]);
 
+  const overLimit = text.length > MAX_REPLY;
+  const showList = !narrow || !sel;
+  const showChat = !narrow || !!sel;
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 320px) minmax(0, 1fr)', gap: 14, minHeight: 420 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: narrow ? 'minmax(0, 1fr)' : 'minmax(220px, 320px) minmax(0, 1fr)', gap: 14, minHeight: 420 }}>
+      {showList && <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <SegmentedControl options={[{ value: 'open', label: 'Abertas' }, { value: 'closed', label: 'Fechadas' }]} value={status} onChange={(v: 'open' | 'closed') => { setStatus(v); setSel(null); }} />
         <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
           {(list.data?.items ?? []).map((c) => (
-            <div key={c.id} onClick={() => setSel(c)} style={{ padding: '12px 14px', borderBottom: '1px solid var(--ink-100)', cursor: 'pointer', background: sel?.id === c.id ? 'var(--brand-soft)' : undefined }}>
+            <button key={c.id} type="button" onClick={() => setSel(c)} aria-current={sel?.id === c.id ? 'true' : undefined} style={{ display: 'block', width: '100%', textAlign: 'left', font: 'inherit', color: 'inherit', border: 0, borderBottom: '1px solid var(--ink-100)', padding: '12px 14px', cursor: 'pointer', background: sel?.id === c.id ? 'var(--brand-soft)' : 'transparent' }}>
               <div style={{ fontSize: 14, fontWeight: 600 }}>{c.customerName ?? 'Cliente'}{c.unreadCount ? <span style={{ marginLeft: 8 }}><Pill tone="danger">{c.unreadCount}</Pill></span> : null}</div>
               <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.subject} · {timeAgo(c.lastMessageAt)}</div>
-            </div>
+            </button>
           ))}
           {list.data?.items.length === 0 && <div style={{ padding: 16, fontSize: 14, color: 'var(--text-secondary)' }}>Nenhuma conversa.</div>}
         </div>
-      </div>
-      <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', minHeight: 420 }}>
+      </div>}
+      {showChat && <div style={{ background: 'var(--surface-card)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', minHeight: 420, minWidth: 0 }}>
         {!sel ? <div style={{ margin: 'auto', color: 'var(--text-secondary)', fontSize: 14 }}>Selecione uma conversa.</div> : (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', borderBottom: '1px solid var(--ink-100)' }}>
-              <div style={{ flex: 1, fontWeight: 700 }}>{sel.subject}</div>
+              {narrow && <Button size="sm" variant="ghost" icon="ArrowLeft" onClick={() => setSel(null)}>Voltar</Button>}
+              <div style={{ flex: 1, fontWeight: 700, minWidth: 0, overflowWrap: 'anywhere' }}>{sel.subject}</div>
               {canReply && <Button size="sm" variant="ghost" onClick={() => toggle.mutate()}>{sel.status === 'open' ? 'Fechar conversa' : 'Reabrir'}</Button>}
             </div>
             <div style={{ flex: 1, overflow: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 420 }}>
               {items.map((m) => (
-                <div key={m.id} style={{ alignSelf: m.authorType === 'customer' ? 'flex-start' : 'flex-end', maxWidth: '75%', padding: '8px 12px', borderRadius: 14, background: m.authorType === 'customer' ? 'var(--surface-sunken)' : 'var(--brand-soft)', fontSize: 14 }}>
-                  <div style={{ whiteSpace: 'pre-wrap' }}>{m.body}</div>
+                <div key={m.id} style={{ alignSelf: m.authorType === 'customer' ? 'flex-start' : 'flex-end', maxWidth: narrow ? '92%' : '75%', padding: '8px 12px', borderRadius: 14, background: m.authorType === 'customer' ? 'var(--surface-sunken)' : 'var(--brand-soft)', fontSize: 14 }}>
+                  <div style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{m.body}</div>
+                  {m.attachmentObjectKeys && m.attachmentObjectKeys.length > 0 && (
+                    <ul aria-label="Anexos" style={{ listStyle: 'none', margin: '6px 0 0', padding: 0, display: 'flex', flexDirection: 'column', gap: 2, fontSize: 12 }}>
+                      {m.attachmentObjectKeys.map((k) => (
+                        <li key={k} title={k} style={{ display: 'flex', alignItems: 'center', gap: 4, overflowWrap: 'anywhere' }}><Icon name="Paperclip" size={12} />Anexo: {k.split('/').pop()}</li>
+                      ))}
+                    </ul>
+                  )}
                   <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4, justifyContent: m.authorType === 'customer' ? 'flex-start' : 'flex-end' }}>
                     <span>{m.authorName ?? (m.authorType === 'system' ? 'Sistema' : 'Cliente')} · {formatDateTime(m.createdAt)}</span>
                     {m.authorType !== 'customer' && (() => {
@@ -123,15 +146,22 @@ function Conversations({ customerId }: { customerId?: string }) {
               <div ref={end} />
             </div>
             {canReply && sel.status === 'open' && (
-              <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) send.mutate(); }} style={{ display: 'flex', gap: 8, padding: 12, borderTop: '1px solid var(--ink-100)' }}>
-                <div style={{ flex: 1 }}><TextInput value={text} onChange={setText} placeholder="Escreva uma resposta" /></div>
-                <Button size="sm" type="submit" icon="Send" disabled={send.isPending || !text.trim()}>Enviar</Button>
+              <form onSubmit={(e) => { e.preventDefault(); if (text.trim() && !overLimit) send.mutate(); }} style={{ display: 'flex', gap: 8, padding: 12, borderTop: '1px solid var(--ink-100)', flexWrap: 'wrap', alignItems: 'flex-start' }}>
+                <div style={{ flex: '1 1 160px', minWidth: 0 }}>
+                  <TextInput value={text} onChange={setText} placeholder="Escreva uma resposta" />
+                  {text.length >= MAX_REPLY - 200 && (
+                    <div role={overLimit ? 'alert' : undefined} style={{ marginTop: 4, fontSize: 12, color: overLimit ? 'var(--danger-ink)' : 'var(--text-secondary)' }}>
+                      {text.length}/{MAX_REPLY}{overLimit ? ' — a resposta passa do limite de 4.000 caracteres' : ''}
+                    </div>
+                  )}
+                </div>
+                <Button size="sm" type="submit" icon="Send" disabled={send.isPending || !text.trim() || overLimit}>Enviar</Button>
               </form>
             )}
             <ErrorNote error={send.error ?? toggle.error} />
           </>
         )}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -145,6 +175,11 @@ function Disputes({ customerId }: { customerId?: string }) {
   const [text, setText] = useState('');
   const [refund, setRefund] = useState('');
   const [err, setErr] = useState<unknown>(null);
+  const [refundErr, setRefundErr] = useState('');
+  const guard = useSubmitGuard();
+  const rental = useQuery({ queryKey: ['rental', sel?.rentalId], enabled: !!sel && !sel.paymentId, queryFn: () => unwrap(api.GET('/rentals/{id}', { params: { path: { id: sel!.rentalId } } })) });
+  const paymentId = sel?.paymentId ?? rental.data?.paymentId;
+  const payment = useQuery({ queryKey: ['payment', paymentId], enabled: !!paymentId, queryFn: () => unwrap(api.GET('/payments/{id}', { params: { path: { id: paymentId! } } })) });
   const { rows, loading, error, pager } = usePagedQuery<S<'Dispute'>>(['disputes', customerId ?? ''], (cursor) => unwrap(api.GET('/support/disputes', { params: { query: { cursor, customerId, limit: 15 } } })));
   const canResolve = groups.some((g) => ['admin', 'financeiro', 'suporte'].includes(g));
   return (
@@ -153,22 +188,31 @@ function Disputes({ customerId }: { customerId?: string }) {
       <DataTable<S<'Dispute'>> rows={rows} loading={loading} pager={pager} empty="Nenhuma contestação."
         columns={[
           { key: 'createdAt', label: 'Aberta em', render: (r) => formatDateTime(r.createdAt) },
+          { key: 'rentalId', label: 'Aluguel', mono: true, render: (r) => <span title={r.rentalId}>{r.rentalId.slice(0, 8)}</span> },
+          ...(customerId ? [] : [{ key: 'customerId', label: 'Cliente', mono: true, render: (r: S<'Dispute'>) => <span title={r.customerId}>{r.customerId.slice(0, 8)}</span> }]),
           { key: 'reason', label: 'Motivo', render: (r) => <span style={{ whiteSpace: 'normal' }}>{r.reason}</span> },
           { key: 'status', label: 'Situação', render: (r) => <Pill tone={DISPUTE_STATUS[r.status][1]}>{DISPUTE_STATUS[r.status][0]}</Pill> },
-          { key: 'a', label: '', align: 'right', render: (r) => canResolve && (r.status === 'open' || r.status === 'under_review') ? <Button size="sm" variant="dark" onClick={() => { setSel(r); setText(''); setRefund(''); setErr(null); }}>Resolver</Button> : null },
+          { key: 'a', label: '', align: 'right', render: (r) => canResolve && (r.status === 'open' || r.status === 'under_review') ? <Button size="sm" variant="dark" onClick={() => { setSel(r); setText(''); setRefund(''); setErr(null); setRefundErr(''); }}>Resolver</Button> : null },
         ]} />
       <Modal open={!!sel} title="Resolver contestação" onClose={() => setSel(null)}
         actions={<><Button size="sm" variant="ghost" onClick={() => setSel(null)}>Cancelar</Button>
-          <Button size="sm" variant="dark" disabled={text.trim().length < 3} onClick={async () => {
+          <Button size="sm" variant="dark" disabled={text.trim().length < 3 || guard.busy} aria-busy={guard.busy} onClick={() => guard.run(async () => {
+            setErr(null); setRefundErr('');
+            let cents: number | undefined;
+            if (decision === 'accepted' && refund.trim()) {
+              cents = toCents(refund);
+              if (!validMoney(refund) || !Number.isFinite(cents) || cents < 1) { setRefundErr('Informe um valor válido, de pelo menos R$ 0,01.'); return; }
+              const p = payment.data;
+              if (p && cents > p.amountCents - p.refundedCents) { setRefundErr(`O valor excede o que ainda pode ser estornado (${formatBRL(Math.max(0, p.amountCents - p.refundedCents))}).`); return; }
+            }
             try {
-              const cents = refund.trim() ? Math.round(Number(refund.replace(',', '.')) * 100) : undefined;
-              await unwrap(api.POST('/support/disputes/{id}/resolve', { params: { path: { id: sel!.id } }, body: { decision, resolution: text.trim(), ...(decision === 'accepted' && cents ? { refundAmountCents: cents } : {}) } }));
+              await unwrap(api.POST('/support/disputes/{id}/resolve', { params: { path: { id: sel!.id } }, body: { decision, resolution: text.trim(), ...(cents ? { refundAmountCents: cents } : {}) } }));
               toast('Contestação resolvida'); qc.invalidateQueries({ queryKey: ['disputes'] }); setSel(null);
             } catch (e) { setErr(e); }
-          }}>Confirmar</Button></>}>
+          })}>Confirmar</Button></>}>
         <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{sel?.reason}</div>
         <Field label="Decisão"><Select value={decision} onChange={setDecision} options={[{ value: 'accepted', label: 'Aceitar' }, { value: 'rejected', label: 'Recusar' }]} /></Field>
-        {decision === 'accepted' && <Field label="Valor a estornar (R$)" hint="Opcional."><TextInput value={refund} onChange={setRefund} placeholder="0,00" /></Field>}
+        {decision === 'accepted' && <Field label="Valor a estornar (R$)" hint={payment.data ? `Opcional. Ainda estornável: ${formatBRL(Math.max(0, payment.data.amountCents - payment.data.refundedCents))}.` : 'Opcional.'} error={refundErr || undefined}><TextInput value={refund} onChange={(v) => { setRefund(v); setRefundErr(''); }} placeholder="0,00" /></Field>}
         <Field label="Resolução"><TextArea value={text} onChange={setText} /></Field>
         <ErrorNote error={err} />
       </Modal>

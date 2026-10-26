@@ -121,8 +121,8 @@ const ok = (json: unknown, status = 200): Res => ({ status, json });
 function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: URLSearchParams, body: unknown): Res {
   const p = path.replace(/\/$/, '');
   const seg = p.split('/').filter(Boolean);
-  // /pricing/plans/{id}, /insurance/coverages/{c} e /maintenance/tasks/{id} levam o id no 3o segmento
-  const id = ['pricing', 'insurance', 'maintenance'].includes(seg[0] ?? '') ? seg[2] : seg[1];
+  // /pricing/plans/{id}, /insurance/coverages/{c}, /maintenance/tasks/{id} e /support/{recurso}/{id} levam o id no 3o segmento
+  const id = ['pricing', 'insurance', 'maintenance'].includes(seg[0] ?? '') || seg[0] === 'support' ? seg[2] : seg[1];
   const b = (body ?? {}) as Record<string, unknown>;
   const match = (re: RegExp) => re.test(p);
   const find = <T extends { id: string }>(list: T[], key = id) => list.find((x) => x.id === key);
@@ -153,7 +153,7 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
   if (method === 'GET' && p === '/vehicle-models') return ok({ items: db.models });
   if (method === 'POST' && p === '/vehicle-models') { const m = { ...db.models[0]!, ...b, id: `model-${db.models.length + 1}`, createdAt: now, updatedAt: now }; db.models.push(m as never); return ok(m, 201); }
   if (method === 'PATCH' && match(/^\/vehicle-models\/[^/]+$/)) { const m = find(db.models); if (!m) return notFound(); Object.assign(m, b); return ok(m); }
-  if (method === 'POST' && p === '/vehicle-models/uploads') return ok({ uploadUrl: 'http://api.mock.local/upload', method: 'PUT', headers: {}, objectKey: 'models/x.png', expiresAt: now }, 201);
+  if (method === 'POST' && p === '/vehicle-models/uploads') return ok({ uploadUrl: 'http://api.mock.local/upload', method: 'PUT', headers: {}, objectKey: 'catalog/x.png', expiresAt: now }, 201);
   if (method === 'GET' && p === '/swap-stations') return ok({ items: [{ id: 'st-1', name: 'Estação Paulista', address: 'Av. Paulista, 900', lat: -23.56, lng: -46.65, availableBatteries: 3, totalSlots: 8, openingHours: '24h', open24h: true }] });
 
   // Zonas
