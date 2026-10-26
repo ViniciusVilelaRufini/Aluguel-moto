@@ -47,7 +47,7 @@ export default function CustomersPage() {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
       <div style={{ padding: '20px 28px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <PageHeader title="Clientes" subtitle="Verificação, bloqueio de conta, aluguéis e atendimento">
+        <PageHeader subtitle="Verificação, bloqueio de conta, aluguéis e atendimento">
           {tab === 'customers' && <Button size="sm" variant="secondary" icon="ShieldAlert" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setRestrictions(true)}>Lista de restrição</Button>}
           <SegmentedControl options={[{ value: 'customers', label: 'Clientes' }, { value: 'rentals', label: 'Aluguéis' }, { value: 'support', label: 'Suporte' }]} value={tab} onChange={changeTab} style={{ width: 340 }} />
         </PageHeader>

@@ -33,7 +33,7 @@ export default function TasksPage() {
   const canCreate = can(groups, 'task.create');
   return (
     <Page>
-      <PageHeader title="Operação" subtitle="Tarefas da equipe de campo e manutenção preventiva">
+      <PageHeader subtitle="Tarefas da equipe de campo e manutenção preventiva">
         <SegmentedControl options={[{ value: 'tasks', label: 'Tarefas' }, { value: 'maintenance', label: 'Manutenção' }, { value: 'batteries', label: 'Baterias' }]} value={view} onChange={setView} style={{ width: 380 }} />
         {canCreate && view === 'tasks' && <Button size="sm" icon="Plus" testId="new-task" onClick={() => setNewTask(true)}>Nova tarefa</Button>}
         {can(groups, 'maintenance.schedule') && view === 'maintenance' && <Button size="sm" icon="Plus" onClick={() => setNewMaint(true)}>Agendar manutenção</Button>}

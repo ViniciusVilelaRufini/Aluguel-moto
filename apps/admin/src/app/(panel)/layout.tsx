@@ -85,7 +85,10 @@ export default function PanelLayout({ children }: { children: ReactNode }) {
           {canLive && <CriticalAlertToaster vehicles={vehicles} onAlertsPage={current?.key === 'alerts'} />}
           {vehiclesReady && (
             <Badge tone={offline > 0 ? 'warning' : 'success'} icon="Wifi">
-              <span data-testid="fleet-badge">{vehicles.length} motos · {offline} sem sinal</span>
+              <span data-testid="fleet-badge" title={`${vehicles.length} motos · ${offline} sem sinal`}>
+                <span className="fb-full">{vehicles.length} motos · {offline} sem sinal</span>
+                <span className="fb-short">{offline > 0 ? `${offline} sem sinal` : `${vehicles.length} motos`}</span>
+              </span>
             </Badge>
           )}
           {canLive && (
