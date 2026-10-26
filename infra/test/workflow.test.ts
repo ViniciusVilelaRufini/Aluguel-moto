@@ -90,6 +90,12 @@ describe('infra workflow', () => {
     expect(all['deploy-dev']).toContain('AWS_DEPLOY_ROLE_ARN_DEV');
   });
 
+  it('pins every action to a 40-hex commit SHA', () => {
+    const uses = lines.filter((l) => /^\s*- uses:/.test(l));
+    expect(uses.length).toBeGreaterThan(0);
+    for (const l of uses) expect(l).toMatch(/uses: [\w./-]+@[0-9a-f]{40}( #.*)?\s*$/);
+  });
+
   it('builds the API image with the repository root as context', () => {
     expect(text).toMatch(/docker build -f services\/api\/Dockerfile [^\n]*\s\.\s*$/m);
   });
