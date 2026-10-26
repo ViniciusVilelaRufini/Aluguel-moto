@@ -208,7 +208,8 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
       _busy = true;
       _error = null;
       _swapOpen = false;
-      _outsideRejected = false;
+      // Na rota de teste o botao continua visivel se a falha for dela mesma.
+      if (!test) _outsideRejected = false;
     });
     try {
       final backend = ref.read(backendProvider);
@@ -232,17 +233,18 @@ class _ReturnScreenState extends ConsumerState<ReturnScreen> {
     } catch (e) {
       final f = toFailure(e);
       if (mounted) {
+        final outside = f.slug == 'rental-outside-return-zone';
         setState(() {
           _swapOpen = f.slug == 'swap-open';
-          _outsideRejected = f.slug == 'rental-outside-return-zone';
+          _outsideRejected = outside || (test && _outsideRejected);
           _error = _swapOpen
               ? l.swapErrorOpen
-              : _outsideRejected
+              : outside
               ? l.returnOutsideRejected
               : failureText(l, e);
         });
         // A posicao que o app tinha estava velha: le a da moto de novo.
-        if (_outsideRejected) ref.invalidate(returnContextProvider(widget.rentalId));
+        if (outside) ref.invalidate(returnContextProvider(widget.rentalId));
       }
     } finally {
       if (mounted) setState(() => _busy = false);

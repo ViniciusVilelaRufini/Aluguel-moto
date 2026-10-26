@@ -23,6 +23,9 @@ class _TestEndB extends FakeBackend {
   _TestEndB(this._zones, {this.realOutside = false, this.testStatus = RentalStatus.ended});
   final List<GeoZone> _zones;
 
+  /// Erro da propria rota de teste (ex.: 404 com a flag desligada na API).
+  Object? testError;
+
   /// A rota normal recusa com 422 `rental-outside-return-zone` (posicao do app velha).
   final bool realOutside;
 
@@ -58,6 +61,7 @@ class _TestEndB extends FakeBackend {
   @override
   Future<Rental> endRentalTest(String rentalId, String photoKey, {String? idempotencyKey}) async {
     testCalls.add((rentalId, photoKey, idempotencyKey));
+    if (testError != null) throw testError!;
     return sampleRental(status: testStatus);
   }
 }
@@ -184,7 +188,23 @@ void main() {
     await _settle(t);
     expect(b.realCalls, hasLength(1));
     expect(b.testCalls, hasLength(1));
+    // Rotas diferentes, chaves de idempotencia diferentes.
+    expect(b.testCalls.single.$3, isNot(b.realCalls.single));
     expect(find.text('resumo r1'), findsOneWidget);
+    await t.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('beta: falha da propria rota de teste nao esconde o botao revelado pelo 422', (t) async {
+    final b = _TestEndB(_insideZones, realOutside: true)..testError = apiError(404, 'not-found');
+    await _pump(t, b, AppChannel.beta);
+    await _photo(t);
+    await t.tap(find.widgetWithText(VoltiButton, 'Travar e encerrar'));
+    await _settle(t);
+    await t.ensureVisible(find.byKey(_button));
+    await t.tap(find.byKey(_button));
+    await _settle(t);
+    expect(b.testCalls, hasLength(1));
+    expect(find.byKey(_button), findsOneWidget);
     await t.pumpWidget(const SizedBox());
   });
 
