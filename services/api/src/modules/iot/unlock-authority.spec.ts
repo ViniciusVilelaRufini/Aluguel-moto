@@ -246,6 +246,22 @@ describe('Destravar respeita a autoridade de quem travou (auditoria, item adiado
     expect(s.unlocksPublished()).toEqual([]);
   });
 
+  it('verificação compartilhada (CommandsService.isLockedByStaff): origem staff/system, hold ou modo roubada = bloqueada', async () => {
+    const s = await setup();
+    const v = { id: VEHICLE_ID, thingName: T, stolenMode: false };
+    expect(await s.svc.isLockedByStaff(v)).toBe(false);
+    await s.live.setLockOrigin(T, 'customer');
+    expect(await s.svc.isLockedByStaff(v)).toBe(false);
+    await s.live.setLockOrigin(T, 'system');
+    expect(await s.svc.isLockedByStaff(v)).toBe(true);
+    await s.live.setLockOrigin(T, null);
+    await s.live.setHeld(T, true);
+    expect(await s.svc.isLockedByStaff(v)).toBe(true);
+    await s.live.setHeld(T, false);
+    expect(await s.svc.isLockedByStaff({ ...v, stolenMode: true })).toBe(true);
+    expect(s.unlocksPublished()).toEqual([]);
+  });
+
   it('erro do Redis ao ler a origem → unlock de cliente recusado (falha fechada)', async () => {
     const s = await setup();
     const redisErr = new MemoryRedisStore();

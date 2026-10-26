@@ -35,7 +35,7 @@ function setup() {
   prisma.subscription.findFirst.mockResolvedValue(null);
   prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
   prisma.rental.updateMany.mockResolvedValue({ count: 1 });
-  const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd', status: 'confirmed' }) };
+  const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd', status: 'confirmed' }), isLockedByStaff: jest.fn().mockResolvedValue(false) };
   const iot = { getLiveState: jest.fn().mockRejectedValue(new Error('sem estado')) };
   const service = new RentalsService(prisma as any, commands as any, {} as any, new EventEmitter2(), {} as any, iot as any, loadConfig());
   return { prisma, commands, iot, service };
@@ -57,6 +57,20 @@ describe('Troca de moto (POST /rentals/:id/swap)', () => {
       data: { vehicleId: V2, speedLimitKmh: 32 },
     });
     expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ vehicleId: V2, type: 'unlock' }));
+  });
+
+  it('auditoria item adiado 1: moto alvo com trava da equipe/sistema ou hold → 409 vehicle-unavailable, nada movido', async () => {
+    const { service, prisma, commands } = setup();
+    commands.isLockedByStaff.mockResolvedValue(true);
+    await expect(service.swap(customer, RENTAL_ID, { newVehicleId: V2, reason: 'pneu furado' })).rejects.toMatchObject({
+      status: 409,
+      slug: 'vehicle-unavailable',
+      detail: 'A moto escolhida está bloqueada pela equipe.',
+    });
+    expect(commands.isLockedByStaff).toHaveBeenCalledWith(expect.objectContaining({ id: V2, thingName: v2.thingName }));
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expectNoWrites(prisma, commands);
   });
 
   it('item 11: moto fixa da assinatura de outro cliente → 409 vehicle-unavailable, sem escrita', async () => {

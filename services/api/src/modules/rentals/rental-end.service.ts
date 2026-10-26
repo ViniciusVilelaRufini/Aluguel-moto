@@ -192,7 +192,19 @@ export class RentalEndService {
     });
     if (claimed.count === 0) return toRental(await this.load(rentalId));
 
-    await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: 'free' } });
+    // Auditoria item adiado 1: moto com trava da equipe/sistema ou hold não volta à frota como `free` (todo aluguel seguinte
+    // seria recusado no desbloqueio); vai para `maintenance` com alerta para a operação liberar.
+    const lockedByStaff = await this.commands.isLockedByStaff(rental.vehicle);
+    const vehicleStatus = lockedByStaff ? 'maintenance' : 'free';
+    await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: { in: ['rented', 'paused'] } }, data: { status: vehicleStatus } });
+    if (lockedByStaff) {
+      await this.alerts
+        .create(
+          { type: 'command_failed', priority: 'high', message: 'Moto encerrada com bloqueio da equipe/sistema; liberar antes de voltar à frota.', vehicleId: rental.vehicleId, rentalId },
+          { dedupe: false },
+        )
+        .catch((err: Error) => this.logger.error({ msg: 'locked_vehicle_alert_failed', rentalId, error: err.message }));
+    }
     await this.prisma.rentalEvent.create({
       data: {
         rentalId,
@@ -212,7 +224,7 @@ export class RentalEndService {
     }
 
     const final = await this.load(rentalId);
-    this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: rental.vehicleId, status: 'free', ts: now.toISOString() } satisfies VehicleStatusChangedEvent);
+    this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: rental.vehicleId, status: vehicleStatus, ts: now.toISOString() } satisfies VehicleStatusChangedEvent);
     this.emitRental(final);
     this.logger.log({ msg: 'rental_finalized', rentalId, status: kind, costCents: breakdown.totalCents });
     return toRental(final);

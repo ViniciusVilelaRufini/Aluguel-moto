@@ -16,6 +16,8 @@ import { Interval } from '@nestjs/schedule';
 const UNLOCK_WAIT_MARGIN_MS = 5_000;
 /** Marcador `RentalStart` mais velho que a espera máxima + isto é compensado pela varredura. */
 const STALE_START_MARGIN_MS = 60_000;
+/** Auditoria item adiado 1: moto com trava que o cliente não desfaz (equipe/sistema, hold, modo roubada). */
+const LOCKED_BY_STAFF_DETAIL = 'A moto está bloqueada pela equipe. Escolha outra.';
 import { RENTAL_BILLING, type RentalBillingPort } from '../../ports/rental-billing.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { Principal } from '../auth/principal';
@@ -105,8 +107,8 @@ export class RentalStartService {
    * QA-21: pede o desbloqueio e espera o desfecho. `in_progress` (moto online, aguardando o reported) espera o
    * `command.changed` final até o prazo do comando (`IOT_COMMAND_TIMEOUT_MS`) + folga; `pending` (offline) e erro = não confirmado.
    */
-  private async unlockAndWait(vehicleId: string, user: Principal, rentalId: string): Promise<{ status: string }> {
-    let cmd: { id: string; status: string };
+  private async unlockAndWait(vehicleId: string, user: Principal, rentalId: string): Promise<{ status: string; statusReason?: string }> {
+    let cmd: { id: string; status: string; statusReason?: string };
     try {
       cmd = await this.commands.dispatch({
         vehicleId,
@@ -197,6 +199,12 @@ export class RentalStartService {
       throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
     }
 
+    // Auditoria item adiado 1: trava da equipe/sistema, hold ou modo roubada → o unlock do cliente seria recusado.
+    if (await this.commands.isLockedByStaff(vehicle)) {
+      await this.requestDepositRelease(dto.depositId, customerId);
+      throw conflict('vehicle-unavailable', LOCKED_BY_STAFF_DETAIL);
+    }
+
     // ── caução ──
     let deposit!: Deposit;
     let rentalId!: string;
@@ -205,7 +213,7 @@ export class RentalStartService {
     let rental;
     let claimedFrom: 'free' | 'reserved' | undefined;
     let compensatedBySweep = false;
-    let unlock: { status: string } | undefined;
+    let unlock: { status: string; statusReason?: string } | undefined;
     try {
     if (dto.depositId) {
       const d = await this.prisma.deposit.findUnique({ where: { id: dto.depositId } });
@@ -259,6 +267,8 @@ export class RentalStartService {
     });
     claimedFrom = previousStatus;
     unlock = await this.unlockAndWait(vehicle.id, user, rentalId);
+    // Corrida (trava da equipe depois da verificação acima): mesma resposta, não "offline".
+    if (unlock.statusReason === 'locked_by_staff') throw conflict('vehicle-unavailable', LOCKED_BY_STAFF_DETAIL);
     if (unlock.status !== 'confirmed') throw conflict('vehicle-offline', 'A moto não respondeu ao desbloqueio. Nada foi cobrado e a caução foi liberada.');
 
     rental = await this.prisma.$transaction(async (tx) => {

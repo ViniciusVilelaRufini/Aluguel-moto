@@ -1182,6 +1182,8 @@ paths:
         `customer-delinquent`), consentimento de localização (`403` `location-consent-required`, ver
         `PUT /lgpd/consents`), seguro (`coverage`; `basic` é o mínimo obrigatório) e caução.
         A moto precisa estar `free` ou reservada pelo próprio cliente (senão `409` `vehicle-unavailable`).
+        Moto com bloqueio da equipe ou do sistema (cerca, limite segurado em 0, modo roubada) → `409`
+        `vehicle-unavailable` ("A moto está bloqueada pela equipe. Escolha outra.") antes de reter a caução.
 
         Caução (`depositMethod`):
         - `card`: pré-autoriza 5000 no cartão (`cardId` ou o cartão padrão). Sucesso → `201` com
@@ -1363,7 +1365,8 @@ paths:
         `maintenance`, e destrava a nova (precisa estar `free`, online, a até 200 m, sem aluguel nem reserva e não
         ser a moto fixa do plano de outro cliente; senão `409` `vehicle-unavailable` ou `vehicle-offline`). O preço
         continua o do início do aluguel, então a nova moto precisa ter preço por minuto (modelo do catálogo) igual ou
-        menor (`409`). O aluguel continua o mesmo, com evento `vehicle_swapped`.
+        menor (`409`). Nova moto com bloqueio da equipe ou do sistema → `409` `vehicle-unavailable` ("A moto escolhida
+        está bloqueada pela equipe."), sem trocar nada. O aluguel continua o mesmo, com evento `vehicle_swapped`.
       security:
         - customerAuth: []
       parameters:
@@ -1420,6 +1423,8 @@ paths:
           liquidado uma única vez;
         - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por
           `rental.updated` ou `GET /rentals/{id}`.
+        Moto com bloqueio da equipe ou do sistema no encerramento (normal ou forçado) volta como `maintenance`, não
+        `free`, com alerta `command_failed` para a operação liberar.
 
         Liquidação idempotente por `rentalId`: no máximo uma liquidação por aluguel, não importa quantas
         vezes a chamada seja repetida (com ou sem `Idempotency-Key`). A `Idempotency-Key` opcional faz a
