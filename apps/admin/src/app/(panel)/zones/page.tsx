@@ -117,12 +117,6 @@ export default function ZonesPage() {
     };
     map.on('draw.create', sync as never);
     map.on('draw.update', sync as never);
-    // Esc durante o desenho descarta o polígono incompleto: o rascunho novo sem polígono é fechado junto.
-    map.on('draw.modechange', ((e: { mode: string }) => {
-      if (e.mode !== 'simple_select' || draw.getAll().features.length > 0) return;
-      setDraft((d) => (d && !d.id && !d.geometry ? null : d));
-      setErrors({});
-    }) as never);
     setMapReady(true);
   }, []);
 
@@ -217,6 +211,23 @@ export default function ZonesPage() {
   };
 
   useEffect(() => () => { drawRef.current = null; }, []);
+
+  // Esc durante o desenho cancela o polígono em andamento e fecha o rascunho (o Draw sozinho deixaria o formulário pedindo cliques).
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== 'Escape' || (t && ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName))) return;
+      const draw = drawRef.current;
+      const d = draftRef.current;
+      if (!draw || !d || d.id || d.geometry || draw.getMode() !== 'draw_polygon') return;
+      draw.changeMode('simple_select'); // o Draw descarta o polígono incompleto
+      draw.deleteAll();
+      setDraft(null);
+      setErrors({});
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
 
   const patch = (p: Partial<Draft>) => setDraft((d) => (d ? { ...d, ...p } : d));
   const serverMsg = serverError instanceof ApiError ? serverError.message : serverError ? problemMessage(serverError, 0).message : null;

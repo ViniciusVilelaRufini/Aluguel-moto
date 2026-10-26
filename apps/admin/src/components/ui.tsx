@@ -47,7 +47,17 @@ export function SidePanel({ children, width = 360, onClose, title, testId, label
     return () => window.removeEventListener('keydown', h);
   }, [closable]);
   // Ficha aberta pelo teclado: o foco vai para a ficha (leitor de tela e Tab seguem dali), não fica na linha da tabela.
-  useEffect(() => { if (closable) ref.current?.focus({ preventScroll: true }); }, [closable]);
+  // Ao fechar, o foco volta para quem abriu a ficha (a linha da tabela) em vez de cair no <body>.
+  useEffect(() => {
+    if (!closable) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    el?.focus({ preventScroll: true });
+    return () => {
+      const a = document.activeElement;
+      if ((!a || a === document.body || el?.contains(a)) && opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
+    };
+  }, [closable]);
   return (
     <aside
       ref={ref}
