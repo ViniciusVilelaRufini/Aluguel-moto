@@ -1,15 +1,32 @@
 // services/api/src/ports/iot-gateway.port.ts
 export const IOT_GATEWAY = Symbol('IOT_GATEWAY');
 
+/**
+ * Autoridade de quem pede o comando (derivada pelo `CommandsService` do ator): `customer` (pool de clientes), `field` (staff sem
+ * admin/operacao, ex.: só `campo`), `staff` (admin/operacao), `system` (cercas, encerramento, safe-lock automático).
+ */
+export type CommandAuthority = 'customer' | 'field' | 'staff' | 'system';
+
+/** Quem travou a moto. `staff`/`system` só são desfeitos por `staff` (admin/operacao). */
+export type LockOrigin = 'customer' | 'staff' | 'system';
+
 export interface CommandRequest {
   commandId: string;   // VehicleCommand.id, criado pelo módulo commands antes da chamada
   thingName: string;
+  /** Ausente = a interpretação mais segura: `unlock` como `customer` (sujeito às travas de equipe/sistema). */
+  authority?: CommandAuthority;
+  /**
+   * Só `lock`: origem a gravar. `null` = trava comum (encerramento, rollback, campo), que não grava origem e não rebaixa uma
+   * origem `staff`/`system` já gravada. Ausente = `system` (a mais restritiva).
+   */
+  lockOrigin?: LockOrigin | null;
 }
 
 export interface CommandOutcome {
   commandId: string;
   status: 'pending' | 'in_progress' | 'confirmed' | 'failed';
-  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit';
+  /** `locked_by_staff`: unlock de cliente/campo recusado (trava de equipe/sistema, hold em 0 ou modo roubada). */
+  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff';
 }
 
 export interface VehicleLiveState {

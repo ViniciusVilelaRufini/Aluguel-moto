@@ -259,7 +259,7 @@ describe('Bloqueio seguro — regressões da revisão', () => {
     const redisLive = new LiveStateStore((live as any).redis, clock);
     const gw2 = new GW(transport, redisLive, clock, new EventEmitter2(), { confirmWaitMs: 1000, commandTimeoutMs: 30_000 });
     expect((await gw2.setSpeedLimit({ commandId: 'c3', thingName: T }, 20)).status).toBe('failed');
-    const u = gw.unlock({ commandId: 'c4', thingName: T });
+    const u = gw.unlock({ commandId: 'c4', thingName: T, authority: 'staff' }); // só a equipe desfaz o hold
     await tel.reported(T, { travada: false, limite_kmh: 32 });
     await u;
     const s = gw.setSpeedLimit({ commandId: 'c5', thingName: T }, 20);

@@ -37,7 +37,9 @@ interface Tracked {
  * Lógica comum dos gateways reais (`LocalMqttIotGateway`, `AwsIotGateway`):
  * - grava o desired no shadow e espera o `reported` (até `confirmWaitMs`); depois disso o desfecho chega por `iot.command-updated`;
  * - moto offline → `pending`/`offline`; o shadow guarda o desired e o comando confirma quando ela reconecta e reporta;
- * - `lock` = bloqueio seguro (`SafeLockService`); `unlock` cancela a rampa e restaura o limite em vigor;
+ * - `lock` = bloqueio seguro (`SafeLockService`) e grava a origem da trava (`LiveStateStore.setLockOrigin`);
+ * - `unlock` cancela a rampa e restaura o limite em vigor; pedido por cliente/campo, é recusado sem publicar nada se a trava é de
+ *   equipe/sistema, se o limite está segurado em 0 (hold) ou com modo roubada — só `staff` (admin/operacao) desfaz;
  * - limite fora de 0..32 → `InvalidSpeedLimitError` antes de publicar qualquer coisa.
  */
 export abstract class BaseIotGateway implements IotGateway {
@@ -63,8 +65,11 @@ export abstract class BaseIotGateway implements IotGateway {
       stepIntervalMs: opts.stepIntervalMs,
       timeoutMs: opts.safeLockTimeoutMs,
       // Em memória na hora (falha fechada); a escrita no Redis que falhar é registrada.
-      onHeld: (thingName) =>
-        void this.live.setHeld(thingName, true).catch((err: Error) => this.logger.error({ msg: 'safe_lock_hold_persist_failed', thingName, error: err.message })),
+      onHeld: (thingName) => {
+        void this.live.setHeld(thingName, true).catch((err: Error) => this.logger.error({ msg: 'safe_lock_hold_persist_failed', thingName, error: err.message }));
+        // O hold é trava do sistema: só a equipe desfaz (setLockOrigin já registra a falha de escrita e falha fechada).
+        void this.live.setLockOrigin(thingName, 'system');
+      },
     });
   }
 
@@ -94,6 +99,9 @@ export abstract class BaseIotGateway implements IotGateway {
   // ── IotGateway ──
 
   async lock(req: CommandRequest): Promise<CommandOutcome> {
+    // Origem gravada antes da rampa: um unlock de cliente/campo em qualquer task já vê a trava de equipe/sistema em curso.
+    const origin = req.lockOrigin === undefined ? 'system' : req.lockOrigin;
+    if (origin) await this.live.setLockOrigin(req.thingName, origin);
     this.supersede(req.thingName, ['travada']);
     const s = await this.live.load(req.thingName);
     const state = {
@@ -120,6 +128,17 @@ export abstract class BaseIotGateway implements IotGateway {
   }
 
   async unlock(req: CommandRequest): Promise<CommandOutcome> {
+    const authority = req.authority ?? 'customer';
+    if (authority !== 'staff') {
+      const blockedBy = await this.unlockBlocker(req.thingName);
+      if (blockedBy) {
+        // Nada é publicado e a rampa em curso segue (nunca cortar/soltar a potência por uma recusa).
+        this.logger.warn({ msg: 'unlock_refused_locked_by_staff', thingName: req.thingName, commandId: req.commandId, authority, blockedBy });
+        return { commandId: req.commandId, status: 'failed', reason: 'locked_by_staff' };
+      }
+    }
+    // Origem apagada primeiro: se a escrita falhar, nada mudou (a rampa segue, o hold fica) e o unlock termina failed.
+    await this.live.setLockOrigin(req.thingName, null);
     this.safeLock.cancel(req.thingName);
     await this.live.setHeld(req.thingName, false);
     const limit = assertSpeedLimit(await this.limitResolver(req.thingName));
@@ -199,6 +218,15 @@ export abstract class BaseIotGateway implements IotGateway {
   }
 
   // ── internos ──
+
+  /** Motivo de recusa do unlock de quem não é `staff`, ou `null` se pode destravar. Erros de leitura = recusa (falha fechada). */
+  private async unlockBlocker(thingName: string): Promise<'origin' | 'held' | 'stolen_mode' | null> {
+    const origin = await this.live.getLockOrigin(thingName);
+    if (origin === 'staff' || origin === 'system') return 'origin';
+    if (await this.live.isHeld(thingName)) return 'held';
+    if ((await this.live.load(thingName))?.stolenMode === true) return 'stolen_mode';
+    return null;
+  }
 
   private watch(thingName: string): void {
     this.transport.watch?.(thingName, this.isWatching(thingName));

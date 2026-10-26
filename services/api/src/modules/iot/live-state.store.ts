@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { MAX_SPEED_KMH } from '../../common/enums';
-import type { VehicleLiveState } from '../../ports/iot-gateway.port';
+import type { LockOrigin, VehicleLiveState } from '../../ports/iot-gateway.port';
 import type { RedisStore } from '../../redis/redis-store';
 import type { Clock } from './clock';
 import type { TelemetryMessage } from './mqtt-contract';
@@ -87,6 +87,8 @@ export class LiveStateStore {
    * escrita confirmada a fonte é só o Redis (`iot:held:{thingName}`), lido a cada chamada, para valer em todas as tasks.
    */
   private readonly unsyncedHold = new Set<string>();
+  /** Origem `staff`/`system` cuja escrita no Redis falhou: vale neste processo (falha fechada) até um unlock de equipe. */
+  private readonly unsyncedLockOrigin = new Map<string, LockOrigin>();
   private readonly logger = new Logger('LiveStateStore');
 
   constructor(
@@ -313,6 +315,44 @@ export class LiveStateStore {
   }
 
   /**
+   * Quem travou a moto (`iot:lock-origin:{thingName}`, campo `origin`), lido por qualquer task:
+   * - `staff`/`system` sobrescrevem (só a equipe desfaz); `customer` só grava se não houver origem (nunca rebaixa uma trava de
+   *   equipe/sistema, ex.: pausa do cliente depois da trava da cerca);
+   * - `null` apaga (unlock autorizado). Erro ao apagar é propagado (o unlock falha em vez de deixar a origem velha).
+   * Escrita de `staff`/`system` que falhar vale neste processo (falha fechada) e é registrada; não impede a trava.
+   */
+  async setLockOrigin(thingName: string, origin: LockOrigin | null): Promise<void> {
+    const key = lockOriginKey(thingName);
+    if (origin === null) {
+      await this.redis.del(key);
+      this.unsyncedLockOrigin.delete(thingName);
+      return;
+    }
+    try {
+      if (origin === 'customer') await this.redis.hcas(key, 'origin', null, { origin });
+      else await this.redis.hset(key, { origin });
+      if (origin !== 'customer') this.unsyncedLockOrigin.delete(thingName);
+    } catch (err) {
+      if (origin !== 'customer') this.unsyncedLockOrigin.set(thingName, origin);
+      this.logger.error({ msg: 'lock_origin_persist_failed', thingName, origin, error: (err as Error).message });
+    }
+  }
+
+  /** Origem da trava em vigor; `null` = sem origem (trava comum ou destravada). Falha fechada: erro ao ler = `system`. */
+  async getLockOrigin(thingName: string): Promise<LockOrigin | null> {
+    const local = this.unsyncedLockOrigin.get(thingName);
+    if (local) return local;
+    try {
+      const v = (await this.redis.hgetall(lockOriginKey(thingName))).origin;
+      if (v === undefined) return null;
+      return v === 'customer' || v === 'staff' ? v : 'system';
+    } catch (err) {
+      this.logger.error({ msg: 'lock_origin_read_failed', thingName, error: (err as Error).message });
+      return 'system';
+    }
+  }
+
+  /**
    * Último `limite_kmh` gravado no desired do shadow por qualquer task (`iot:desired-limit:{thingName}`). O motor de cercas
    * compara com o limite da zona para corrigir um desired acima dela (ex.: unlock com limite antigo).
    */
@@ -425,3 +465,4 @@ export class LiveStateStore {
 
 const heldKey = (thingName: string) => `iot:held:${thingName}`;
 const desiredLimitKey = (thingName: string) => `iot:desired-limit:${thingName}`;
+const lockOriginKey = (thingName: string) => `iot:lock-origin:${thingName}`;

@@ -849,7 +849,9 @@ export interface paths {
         put?: never;
         /**
          * Retomar aluguel
-         * @description Destrava a moto. Só de `paused`.
+         * @description Destrava a moto. Só de `paused` (senão `409` `rental-not-active`). Se a moto foi travada pela equipe ou pelo
+         *     sistema (cerca, limite segurado em 0 depois de não parar, modo roubada), `409` `vehicle-locked-by-staff`
+         *     ("A moto foi bloqueada pela equipe. Fale com o suporte.") e o aluguel continua `paused`.
          */
         post: operations["resumeRental"];
         delete?: never;
@@ -2669,10 +2671,10 @@ export interface components {
         /** @enum {string} */
         KycStatus: "not_started" | "pending" | "approved" | "rejected";
         /**
-         * @description Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`.
+         * @description Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`. `locked_by_staff`: destravar pedido por cliente ou campo recusado (trava da equipe ou do sistema, limite segurado em 0 ou modo roubada); nada é publicado e só admin/operacao desfaz.
          * @enum {string}
          */
-        CommandStatusReason: "offline" | "timeout" | "did_not_stop" | "invalid_limit";
+        CommandStatusReason: "offline" | "timeout" | "did_not_stop" | "invalid_limit" | "locked_by_staff";
         /** @enum {string} */
         AuthPool: "customer" | "staff";
         /** @enum {string} */

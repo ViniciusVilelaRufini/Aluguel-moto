@@ -52,6 +52,7 @@ const DEFAULT_TITLES: Record<string, string> = {
   'maintenance-slot-unavailable': 'Horário de manutenção indisponível',
   'referral-code-invalid': 'Código de indicação inválido',
   'referral-not-eligible': 'Indicação não permitida',
+  'vehicle-locked-by-staff': 'Moto bloqueada pela equipe',
   'internal-error': 'Erro interno',
 };
 
