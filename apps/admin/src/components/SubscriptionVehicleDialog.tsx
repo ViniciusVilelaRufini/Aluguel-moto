@@ -36,7 +36,9 @@ export function SubscriptionVehicleDialog({ subscriptionId, currentCode, onClose
     <Modal open title={currentCode ? `Trocar a moto fixa (${currentCode})` : 'Definir a moto fixa'} onClose={onClose} testId="subscription-vehicle-dialog"
       actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" testId="subscription-vehicle-save" disabled={busy || !code.trim()} onClick={submit}>{busy ? 'Salvando...' : 'Salvar'}</Button></>}>
       <Alert tone="info" icon="Info">A moto fixa só pode ser alugada pelo assinante enquanto o plano estiver ativo ou pausado e some do mapa dos outros clientes.</Alert>
-      <Field label="Código da moto"><TextInput testId="subscription-vehicle-code" value={code} onChange={setCode} placeholder="VLT-0001" /></Field>
+      <form onSubmit={(e) => { e.preventDefault(); if (!busy && code.trim()) void submit(); }}>
+        <Field label="Código da moto"><TextInput testId="subscription-vehicle-code" value={code} onChange={setCode} placeholder="VLT-0001" /></Field>
+      </form>
       <ErrorNote error={err} />
     </Modal>
   );

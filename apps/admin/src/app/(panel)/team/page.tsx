@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
+import { useDebounced } from '@/lib/use-debounced';
 import { isEmail, useSubmitGuard } from '@/lib/submit-guard';
 import { GROUP_LABEL } from '@/lib/labels';
 import { dayEndIso, dayStartIso, formatDateTime, timeAgo } from '@/lib/format';
@@ -116,8 +117,10 @@ function Audit() {
   const [entity, setEntity] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', action, entity, from, to], (cursor) =>
-    unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: action || undefined, entityType: entity || undefined, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
+  const dAction = useDebounced(action);
+  const dEntity = useDebounced(entity);
+  const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', dAction, dEntity, from, to], (cursor) =>
+    unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: dAction || undefined, entityType: dEntity || undefined, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
   );
   return (
     <>

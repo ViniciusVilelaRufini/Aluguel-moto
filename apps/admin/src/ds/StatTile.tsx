@@ -51,7 +51,7 @@ export function StatTile({ label, value, numeric, format, goodWhen = 'up', delta
   return (
     <div data-testid={testId} className={live ? 'stat-tile stat-flash' : 'stat-tile'}
       style={{ background: 'var(--surface-card)', borderRadius: 'var(--radius-lg)', padding: 16, boxShadow: 'var(--shadow-1)', display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0, ...style }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>
+      <div style={{ flex: '1 1 auto', display: 'flex', alignItems: 'flex-start', gap: 8, font: 'var(--type-caption)', color: 'var(--text-secondary)' }}>
         {icon && <Icon name={icon} size={16} />}
         <span style={{ flex: 1, minWidth: 0, overflowWrap: 'anywhere' }}>{label}</span>
         {live && (
