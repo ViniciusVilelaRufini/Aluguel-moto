@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
+import { isEmail, useSubmitGuard } from '@/lib/submit-guard';
 import { GROUP_LABEL } from '@/lib/labels';
 import { dayEndIso, dayStartIso, formatDateTime, timeAgo } from '@/lib/format';
 import type { S, StaffGroup } from '@/lib/types';
@@ -72,31 +74,38 @@ function StaffModal({ user, onClose, onSaved }: { user?: S<'StaffUser'>; onClose
   const [groups, setGroups] = useState<StaffGroup[]>(user?.groups ?? ['operacao']);
   const [active, setActive] = useState(user?.active ?? true);
   const [err, setErr] = useState<unknown>(null);
+  const { me } = useAuth();
+  const { busy, run } = useSubmitGuard();
+  // O servidor recusa; aqui o painel nem oferece: ninguém desativa a si mesmo nem tira o próprio perfil admin.
+  const isSelf = !!user && !!me && user.id === me.id;
   const toggle = (g: StaffGroup) => setGroups((cur) => (cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g]));
-  const submit = async () => {
+  const submit = () => run(async () => {
+    setErr(null);
     try {
       if (groups.length === 0) throw new Error('Escolha ao menos um perfil');
+      if (!user && !isEmail(email)) throw new Error('Informe um e-mail válido, por exemplo nome@empresa.com');
       if (user) await unwrap(api.PATCH('/staff/{id}', { params: { path: { id: user.id } }, body: { name: name.trim(), groups, active } }));
       else await unwrap(api.POST('/staff', { body: { name: name.trim(), email: email.trim(), groups } }));
       onSaved(); onClose();
     } catch (e) { setErr(e); }
-  };
+  });
   return (
     <Modal open title={user ? 'Editar acesso' : 'Convidar pessoa'} onClose={onClose}
-      actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" disabled={!name.trim() || !email.trim()} onClick={submit}>{user ? 'Salvar' : 'Enviar convite'}</Button></>}>
+      actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" busy={busy} disabled={busy || !name.trim() || !email.trim()} onClick={submit}>{user ? 'Salvar' : 'Enviar convite'}</Button></>}>
       <Field label="Nome"><TextInput value={name} onChange={setName} /></Field>
-      <Field label="E-mail"><TextInput type="email" value={email} onChange={setEmail} /></Field>
+      <Field label="E-mail"><TextInput type="email" value={email} onChange={setEmail} readOnly={!!user} /></Field>
       <div>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Perfis</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {GROUPS.map((g) => (
             <label key={g} style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 14 }}>
-              <input type="checkbox" checked={groups.includes(g)} onChange={() => toggle(g)} /> {GROUP_LABEL[g]}
+              <input type="checkbox" checked={groups.includes(g)} disabled={isSelf && g === 'admin'} onChange={() => toggle(g)} /> {GROUP_LABEL[g]}
             </label>
           ))}
         </div>
       </div>
-      {user && <Switch label="Conta ativa" checked={active} onChange={setActive} />}
+      {user && <Switch label="Conta ativa" checked={active} disabled={isSelf} onChange={setActive} />}
+      {isSelf && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Você não pode desativar a própria conta nem remover o próprio perfil de administrador.</div>}
       <ErrorNote error={err} />
     </Modal>
   );
