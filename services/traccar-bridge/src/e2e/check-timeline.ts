@@ -12,6 +12,12 @@ export interface TimelineOptions {
 }
 
 const TS = /^(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?(?:Z|[+-]\d\d:?\d\d)?)\s+(.*)$/;
+const SECOND_ONLY = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:Z|[+-]\d\d:?\d\d)?\s/;
+
+/** Modo `stamp` do CLI: prefixa a linha com a hora UTC (ISO 8601, milissegundos) do recebimento. */
+export function stampLine(line: string, now: number = Date.now()): string {
+  return `${new Date(now).toISOString()} ${line}`;
+}
 
 function parseTime(raw: string): number | undefined {
   const norm = raw.replace(/([+-]\d\d)(\d\d)$/, '$1:$2');
@@ -20,7 +26,7 @@ function parseTime(raw: string): number | undefined {
 }
 
 /**
- * Confere o tráfego MQTT do e2e do dev single (`mosquitto_sub -v -F "%I %t %p"`: "hora tópico payload" por linha; a hora ISO no
+ * Confere o tráfego MQTT do e2e do dev single (`mosquitto_sub -v | check-timeline.js stamp`: "hora-com-ms tópico payload" por linha; a hora ISO no
  * começo é opcional) contra a spec GT06 §5: o primeiro `desired travada:true` só depois de ≥ 2 telemetrias < 3 km/h consecutivas
  * cobrindo ≥ 10 s, uma única vez, e um `reported travada:true` depois dele.
  *
@@ -45,12 +51,14 @@ export function checkTimeline(lines: string[], thing: string, opts: TimelineOpti
   let reportedWithoutStatus = false;
   let staleStatusSeconds: number | undefined;
   let unrequestedUnlock = false;
+  let secondOnly = false;
   const emulatorCuts = [...(opts.emulatorCuts ?? [])];
   for (const raw of lines) {
     let line = raw;
     let at: number | undefined;
     const m = TS.exec(line);
     if (m) {
+      if (SECOND_ONLY.test(line)) secondOnly = true;
       at = parseTime(m[1]);
       line = m[2];
     }
@@ -102,6 +110,7 @@ export function checkTimeline(lines: string[], thing: string, opts: TimelineOpti
     }
     if ((topic === delta && body?.state?.travada === false) || (topic === update && body?.state?.desired?.travada === false)) unrequestedUnlock = true;
   }
+  if (secondOnly) problems.push('check skipped: linhas do mosquitto sem milissegundos');
   if (cuts === 0) problems.push('nenhum desired travada:true observado');
   else {
     if (cuts > 1) problems.push(`travada:true gravado ${cuts} vezes`);
@@ -112,7 +121,11 @@ export function checkTimeline(lines: string[], thing: string, opts: TimelineOpti
       problems.push('check skipped: sem log do emulador (gt06_*) nas linhas; passe o log ou dispense com noEmulatorLog');
     } else {
       if (cuts > 0 && emulatorCuts.length === 0) problems.push('desired travada:true observado mas o emulador não registrou nenhum corte (gt06_cut)');
+      const seen = new Set<string>();
       for (const c of emulatorCuts) {
+        const key = `${c.text}|${c.speedKmhAtCut}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         if (!(c.speedKmhAtCut < 3)) problems.push(`emulador recebeu corte "${c.text}" com a moto a ${c.speedKmhAtCut} km/h (>= 3)`);
       }
       if (reportedWithoutStatus) problems.push('reported travada:true publicado sem status com bit de corte (blocked:true) depois do corte do emulador e da última conexão');
@@ -143,8 +156,13 @@ export function mergeByTime(stream: string[], emulator: string[]): string[] | nu
   return items.sort((a, b) => (a.t as number) - (b.t as number) || a.k - b.k || a.i - b.i).map((x) => x.l);
 }
 
-if (require.main === module) {
+function main(): void {
   const args = process.argv.slice(2);
+  if (args[0] === 'stamp') {
+    createInterface({ input: process.stdin }).on('line', (l) => process.stdout.write(`${stampLine(l)}
+`));
+    return;
+  }
   const thing = args.find((a) => !a.startsWith('--'));
   const logArg = args.find((a) => a.startsWith('--emulator-log='));
   const noLog = args.includes('--no-emulator-log');
@@ -165,10 +183,12 @@ if (require.main === module) {
         if (merged) r = checkTimeline(merged, thing, base);
         else {
           const partial = checkTimeline(stream, thing, { ...base, noEmulatorLog: true });
-          r = { ok: false, problems: ['check skipped: linhas do mosquitto sem hora (use mosquitto_sub -v -F "%I %t %p"); não dá para intercalar com o log do emulador', ...partial.problems] };
+          r = { ok: false, problems: ['check skipped: linhas do mosquitto sem hora (passe a saída do mosquitto_sub -v por "check-timeline.js stamp"); não dá para intercalar com o log do emulador', ...partial.problems] };
         }
       }
       process.stdout.write(`${JSON.stringify(r)}\n`);
       process.exit(r.ok ? 0 : 1);
     });
 }
+
+if (require.main === module) main();

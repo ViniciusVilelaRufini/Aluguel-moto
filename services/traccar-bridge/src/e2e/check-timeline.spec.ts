@@ -1,4 +1,4 @@
-import { checkTimeline, mergeByTime } from './check-timeline';
+import { checkTimeline, mergeByTime, stampLine } from './check-timeline';
 
 const T = 'moto-0901';
 const tel = (sec: number, kmh: number) => `motos/${T}/telemetria ${JSON.stringify({ lat: -23.5, lng: -46.6, velocidade_kmh: kmh, bateria_pct: 50, travada: false, ignicao: true, sinal: 5, timestamp: new Date(Date.UTC(2026, 9, 27, 12, 0, sec)).toISOString() })}`;
@@ -72,6 +72,30 @@ describe('checkTimeline (e2e do dev single)', () => {
     expect(checkTimeline([...base, desiredFalse], T, NO_EMU).problems).toEqual(['desired travada:false não solicitado']);
     expect(checkTimeline([...base, unlockDelta], T, NO_EMU).problems).toEqual(['desired travada:false não solicitado']);
     expect(checkTimeline([...base, unlockDelta], T, { ...NO_EMU, unlockRequested: true }).ok).toBe(true);
+  });
+
+  it('mesmo segundo com milissegundos: status e reported ordenados pelo ms -> ok; hora só em segundos -> problema', () => {
+    const base = (ms: string) => [
+      `2026-10-27T12:01:02.000Z ${tel(0, 0)}`,
+      `2026-10-27T12:01:03.000Z ${tel(10, 0)}`,
+      `2026-10-27T12:01:04.000Z ${cut}`,
+    ].concat(ms ? [] : []);
+    const em = (msg: Record<string, unknown>, ts: string) => JSON.stringify({ ts, level: 'info', service: 'gt06-emulator', ...msg });
+    const log = [em({ msg: 'gt06_logged_in' }, '2026-10-27T12:01:00.100Z'), em({ msg: 'gt06_cut', text: 'Relay,1#', speedKmhAtCut: 0 }, '2026-10-27T12:01:05.100Z'), em({ msg: 'gt06_status_sent', blocked: true }, '2026-10-27T12:01:06.120Z')];
+    const stream = [...base(''), `2026-10-27T12:01:06.180Z ${locked}`];
+    expect(checkTimeline(mergeByTime(stream, log)!, T)).toEqual({ ok: true, problems: [] });
+    // com resolução de 1 s (%I) o reported empata no segundo: não adivinhamos a ordem
+    const coarse = [...base(''), `2026-10-27T12:01:06 ${locked}`];
+    expect(checkTimeline(mergeByTime(coarse, log)!, T).problems).toContain('check skipped: linhas do mosquitto sem milissegundos');
+  });
+
+  it('stampLine: ISO 8601 UTC com milissegundos antes da linha', () => {
+    expect(stampLine('motos/x/telemetria {}', Date.UTC(2026, 9, 27, 12, 1, 2, 34))).toBe('2026-10-27T12:01:02.034Z motos/x/telemetria {}');
+  });
+
+  it('corte repetido em emulatorCuts e nas linhas conta uma vez só', () => {
+    const r = checkTimeline([login(), ...stopped, gotCut(20), status(true), locked], T, { emulatorCuts: [{ text: 'Relay,1#', speedKmhAtCut: 20 }] });
+    expect(r.problems).toEqual(['emulador recebeu corte "Relay,1#" com a moto a 20 km/h (>= 3)']);
   });
 
   it('mergeByTime intercala por hora e devolve null se faltar hora', () => {
