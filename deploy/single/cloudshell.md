@@ -275,13 +275,14 @@ Use uma moto livre (fora de aluguel). Esperado no fim: `comando <id>: confirmed`
 `cortes no emulador: speedKmhAtCut":0` e `e2e GT06: OK`. Os logs do e2e ficam em `/var/tmp/gt06-e2e.*` (pasta 700, arquivos
 600, só root; sem segredos; IMEI só mascarado). Com sucesso, o `mqtt.log` (posições = dado pessoal) é apagado e fica só o
 `emulator.log`; com falha, o `mqtt.log` fica para o diagnóstico: apague a pasta depois (`rm -rf /var/tmp/gt06-e2e.*`).
-O `gt06.sh provision` reinicia o `iot-sim` (se estiver rodando): ele só lê a frota ao iniciar e, sem isso, continuaria
-respondendo pelo shadow da moto que virou GT06 (confirmando um lock que o relé não fez). Se provisionar por outro caminho
-(`provision-tracker.ts`, SQL), reinicie o `iot-sim` à mão: `docker compose -f deploy/single/compose.yml --env-file
-/opt/volti/.env --profile sim restart iot-sim`.
+Com o `iot-sim` rodando, ele para de simular a moto provisionada no ciclo seguinte de releitura da frota
+(`SIM_FLEET_REFRESH_SEC`, 60 s no `compose.yml`; log `sim_removed`), com desconexão limpa (sem will, sem presença
+`disconnected` pela moto). Até lá as duas fontes podem responder pela moto: **espere um ciclo antes de testar o bloqueio** (vale
+também se provisionar por outro caminho, `provision-tracker.ts` ou SQL). Não reinicie o `iot-sim` para apressar: o SIGTERM anuncia
+`disconnected` por todas as motos que ele ainda simula, inclusive a recém-provisionada (a API a marcaria offline).
 
-`gt06.sh deprovision moto-0060` (só dev) apaga a linha inteira do `Tracker` relay_only e reinicia o `iot-sim`, que volta a
-simular a moto; o dispositivo **continua no Traccar** (a ponte passa a tratá-lo como desconhecido; apague pelo painel do
+`gt06.sh deprovision moto-0060` (só dev) apaga a linha inteira do `Tracker` relay_only; o `iot-sim` volta a simular a moto no
+ciclo seguinte. O dispositivo **continua no Traccar** (a ponte passa a tratá-lo como desconhecido; apague pelo painel do
 Traccar se o IMEI não for mais usado). Para economizar memória, `GT06=off` e update.
 
 **Traccar parado em "Waiting for changelog lock"** (primeira subida interrompida no meio da migração Liquibase, p.ex. por OOM

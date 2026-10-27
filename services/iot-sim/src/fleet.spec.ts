@@ -20,8 +20,11 @@ class FakeClient extends EventEmitter implements SimMqttClient {
     return this;
   }
   ended = false;
-  end() {
+  endForce: boolean | undefined;
+  end(force?: boolean, _opts?: object, cb?: () => void) {
     this.ended = true;
+    this.endForce = force;
+    cb?.();
     this.connected = false;
     return this;
   }
@@ -147,6 +150,10 @@ describe('Fleet.sync (um rastreador por moto cadastrada)', () => {
     const published = gt06.published.length;
     expect(fleet.sync(fleetOf(row()))).toEqual({ added: 0, relocated: 0, removed: 1 });
     expect(gt06.ended).toBe(true);
+    // Desconexão limpa (DISCONNECT): o broker descarta o will e não publica presença `disconnected` pela moto, que agora é
+    // do GT06 (a ponte cuida da presença dela).
+    expect(gt06.endForce).not.toBe(true);
+    expect(gt06.published.slice(published).filter((p) => p.topic.includes('presence/disconnected'))).toEqual([]);
     expect(fleet.devices.map((d) => d.moto.state.thingName)).toEqual(['moto-0011']);
     // Mesmo que uma mensagem atrasada chegue ao cliente antigo, nada é publicado (nenhum reported.travada falso).
     gt06.connected = true;
@@ -155,7 +162,21 @@ describe('Fleet.sync (um rastreador por moto cadastrada)', () => {
     expect(gt06.published.slice(published).filter((p) => p.topic.includes('moto-0901') && !p.topic.includes('presence'))).toEqual([]);
     // A que ficou continua normal.
     expect(clients.get('moto-0011')!.ended).toBe(false);
+    // Desligar o simulador (SIGTERM) só anuncia `disconnected` pelas motos que ele ainda simula, nunca pela removida.
     void fleet.stop();
+    expect(gt06.published.slice(published).filter((p) => p.topic.includes('presence/disconnected'))).toEqual([]);
+    expect(clients.get('moto-0011')!.published.some((p) => p.topic === '$aws/events/presence/disconnected/moto-0011')).toBe(true);
+  });
+
+  it('stop() (SIGTERM) espera a desconexão limpa de cada cliente (DISCONNECT, sem force: o broker não publica o will)', async () => {
+    const { fleet, clients, connect } = setup();
+    fleet.sync(fleetOf(row(), row({ thingName: 'moto-0901' })));
+    connect();
+    await fleet.stop();
+    for (const c of clients.values()) {
+      expect(c.ended).toBe(true);
+      expect(c.endForce).toBe(false);
+    }
   });
 
   it('moto removida e cadastrada de novo como MQTT volta com um rastreador novo', () => {

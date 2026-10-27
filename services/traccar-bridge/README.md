@@ -166,7 +166,8 @@ o compose e a ponte nunca publicam `desired`.
    VLT-0000 --thing moto-0000 --imei <15 dígitos>`. Não cria certificado: marca o `Tracker` como `relay_only`/`gt06` e cria o
    dispositivo no Traccar (`uniqueId = IMEI`). Todo dispositivo GT06 precisa estar **vinculado ao usuário da ponte** no Traccar
    (o `provision-gt06` faz isso): ser admin não basta para receber os pushes do `/api/socket`. Com o `iot-sim` rodando (dev
-   single), **reinicie-o** depois de provisionar ou desprovisionar (o `gt06.sh` já faz): ele só lê a frota ao iniciar.
+   single), **espere um ciclo** (`SIM_FLEET_REFRESH_SEC`, 60 s) depois de provisionar ou desprovisionar antes de testar o
+   bloqueio: ele relê a frota e solta a moto com desconexão limpa. Não o reinicie (o SIGTERM anuncia `disconnected` pela moto).
 2. Configurar o aparelho por SMS para o chip M2M. **Sintaxe a confirmar no manual do aparelho** (varia por firmware Concox):
    - APN: `APN,<apn>,<usuário>,<senha>#` (bancada: APN do chip M2M; produção: **APN privada**, requisito da ADR);
    - servidor: `SERVER,1,<domínio>,5023,0#` (domínio) ou `SERVER,0,<ip>,5023,0#` (IP);

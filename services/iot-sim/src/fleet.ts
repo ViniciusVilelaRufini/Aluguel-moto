@@ -158,11 +158,21 @@ export class Fleet {
   async stop(): Promise<void> {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
-    for (const [i, c] of this.clients.entries()) {
+    // Desconexão limpa e esperada (DISCONNECT antes do process.exit): sem ela o socket cai e o broker publica o will de cada
+    // cliente. Só as motos que o simulador ainda simula; as removidas (ex.: viraram GT06) já saíram da lista. Teto de 2 s.
+    const ends = this.clients.map((c, i) => {
       const t = this.devices[i].moto.state.thingName;
       if (c.connected) c.publish(topics(t).disconnected, JSON.stringify({ clientId: t, eventType: 'disconnected' }), { qos: 0 });
-      c.end();
-    }
+      return new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, 2_000);
+        timer.unref?.();
+        c.end(false, {}, () => {
+          clearTimeout(timer);
+          resolve();
+        });
+      });
+    });
+    await Promise.all(ends);
     this.log({ msg: 'sim_stopped' });
   }
 }

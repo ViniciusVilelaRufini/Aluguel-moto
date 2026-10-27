@@ -29,7 +29,9 @@ class FakeClient extends EventEmitter implements SimMqttClient {
     this.subscribed.push(...(Array.isArray(topics) ? topics : [topics]));
     return this;
   }
-  end() {
+  endCalls: Array<boolean | undefined> = [];
+  end(force?: boolean) {
+    this.endCalls.push(force);
     return this;
   }
   deliver(topic: string, payload: unknown) {
@@ -145,5 +147,16 @@ describe('SimDevice (rastreador simulado via MQTT)', () => {
     const before = { ...moto.state };
     client.deliver('motos/moto-0001/comandos', { comando_id: '6f1d1c2e-1d7b-4c55-9a3a-0b8f1f3f2a10', acao: 'buzina' });
     expect(moto.state).toEqual(before);
+  });
+
+  it('stop() desconecta limpo (DISCONNECT, sem force): o broker descarta o will e não marca a moto offline', () => {
+    const { client, dev } = setup();
+    client.take();
+    dev.stop();
+    expect(client.endCalls).toEqual([false]);
+    // Nada mais é publicado por ela (nem presença): a moto agora é de outra fonte (ponte GT06).
+    client.deliver('$aws/things/moto-0001/shadow/update/delta', { state: { travada: true } });
+    dev.tick(1);
+    expect(client.take()).toEqual([]);
   });
 });

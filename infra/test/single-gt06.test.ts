@@ -235,16 +235,17 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     });
   });
 
-  it('gt06.sh provision/deprovision reiniciam o iot-sim (se estiver rodando) para ele reler a frota; sem a frase errada do "próximo ciclo"', () => {
+  it('gt06.sh provision/deprovision não reiniciam o iot-sim (o SIGTERM anunciaria disconnected pela moto recém-provisionada): espera um ciclo', () => {
     const g = file('gt06.sh');
-    expect(g).toMatch(/restart_sim\(\) \{[^}]*--profile sim ps -q iot-sim[^}]*--profile sim restart iot-sim/);
+    expect(g).not.toContain('restart_sim');
+    expect(g).not.toMatch(/restart iot-sim/);
     const body = (name: string) => {
       const at = g.indexOf(`\n  ${name})\n`);
       return g.slice(at, g.indexOf(';;', at));
     };
-    expect(body('provision')).toContain('restart_sim');
-    expect(body('deprovision')).toContain('restart_sim');
-    expect(g).not.toContain('no próximo ciclo');
+    expect(body('provision')).toContain('sim_cycle_note');
+    expect(body('deprovision')).toContain('sim_cycle_note');
+    expect(g).toMatch(/sim_cycle_note\(\) \{[^}]*SIM_FLEET_REFRESH_SEC/);
   });
 
   it('cloudshell.md: checagens antes do deploy GT06, trava do Liquibase e o que o deprovision deixa para trás', () => {
@@ -257,7 +258,8 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(d).toMatch(/umask 077[^\n]*pg_dump/);
     expect(d).toContain('UPDATE databasechangeloglock SET locked=false, lockgranted=null, lockedby=null');
     expect(d).toMatch(/deprovision[^\n]*\n?[^\n]*Traccar/);
-    expect(d).toMatch(/reinicia o `iot-sim`/);
+    expect(d).not.toMatch(/restart iot-sim/);
+    expect(d).toMatch(/SIM_FLEET_REFRESH_SEC/);
   });
 
   it('cloudshell.md documenta o profile, o e2e e o reconhecimento da 5023', () => {

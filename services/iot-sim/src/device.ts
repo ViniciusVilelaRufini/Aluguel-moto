@@ -9,7 +9,7 @@ export interface SimMqttClient {
   on(event: 'error', cb: (err: Error) => void): unknown;
   publish(topic: string, payload: string, opts?: { qos?: 0 | 1; retain?: boolean }): unknown;
   subscribe(topics: string | string[], opts?: { qos?: 0 | 1 }): unknown;
-  end(force?: boolean): unknown;
+  end(force?: boolean, opts?: object, cb?: () => void): unknown;
 }
 
 export interface DeviceOptions {
@@ -55,10 +55,14 @@ export class SimDevice {
     this.client.on('message', (topic, payload) => this.onMessage(topic, payload));
   }
 
-  /** Desliga o rastreador: encerra a conexão MQTT (sem LWT) e ignora o que ainda chegar no cliente antigo. */
+  /**
+   * Desliga o rastreador: desconexão limpa (`end(false)` manda DISCONNECT, e o broker descarta o will — sem presença
+   * `disconnected` pela moto, que pode ter virado GT06 e estar online pela ponte) e ignora o que ainda chegar no cliente antigo.
+   * Nunca `end(true)`: ele derruba o socket sem DISCONNECT e o broker publica o will.
+   */
   stop(): void {
     this.stopped = true;
-    this.client.end(true);
+    this.client.end(false);
   }
 
   private pub(topic: string, payload: unknown, qos: 0 | 1 = 1): void {
