@@ -307,6 +307,14 @@ describe('relay_only: invariante de segurança (spec GT06 §5, teste de propried
   beforeAll(() => Logger.overrideLogger(false));
   afterAll(() => Logger.overrideLogger(['log', 'error', 'warn', 'debug', 'verbose']));
 
+  it('o oráculo usa as constantes da spec (afrouxar uma delas no código derruba este teste)', () => {
+    expect(RELAY_STILL_MIN_SAMPLES).toBeGreaterThanOrEqual(2);
+    expect(RELAY_STILL_MIN_SPAN_MS).toBeGreaterThanOrEqual(10_000);
+    expect(RELAY_STOP_TIMEOUT_MS).toBeLessThanOrEqual(120_000);
+    expect(SPEED_FRESH_MS).toBeLessThanOrEqual(10_000);
+    expect(DEFAULT_RECONNECT_GRACE_MS).toBeGreaterThan(0);
+  });
+
   it('em nenhuma sequência grava travada=true sem parada confirmada (≥ 2 amostras frescas < 3 km/h em ≥ 10 s, fora da graça), depois do prazo de 120 s ou duas vezes na mesma trava', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(step, { minLength: 1, maxLength: 80, size: 'max' }), async (steps) => {
