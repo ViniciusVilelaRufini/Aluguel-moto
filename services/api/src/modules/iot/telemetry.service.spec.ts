@@ -167,4 +167,32 @@ describe('TelemetryService', () => {
     await svc.presence(T, false, clock.now());
     expect(gateway.live.isOnline(T)).toBe(false);
   });
+
+  describe('monitor de velocidade por zona (spec GT06 §10)', () => {
+    function withZoneSpeed() {
+      const s = setup({ rentalId: RENTAL_ID });
+      const zoneSpeed = { onSample: jest.fn().mockResolvedValue(undefined) };
+      const svc = new TelemetryService(s.gateway, s.geofence, s.rentals, s.prisma as any, s.events, s.clock, { trackRetentionDays: 90 }, zoneSpeed);
+      return { ...s, svc, zoneSpeed };
+    }
+
+    it('chama onSample só com amostra em ordem (applied.newest); a mais velha fica de fora', async () => {
+      const { svc, zoneSpeed } = withZoneSpeed();
+      await svc.telemetry(T, msg({ timestamp: '2026-10-21T15:00:00.000Z', velocidade_kmh: 12.5 }));
+      expect(zoneSpeed.onSample).toHaveBeenCalledTimes(1);
+      expect(zoneSpeed.onSample).toHaveBeenCalledWith({ vehicleId: VEHICLE_ID, thingName: T, speedKmh: 12.5, measuredAt: Date.parse('2026-10-21T15:00:00.000Z') });
+      await svc.telemetry(T, msg({ timestamp: '2026-10-21T14:59:58.000Z', velocidade_kmh: 30 }));
+      expect(zoneSpeed.onSample).toHaveBeenCalledTimes(1);
+    });
+
+    it('falha do monitor não aborta o processamento (trajeto e cercas já gravados; próxima amostra segue)', async () => {
+      const { svc, zoneSpeed, prisma, geofence } = withZoneSpeed();
+      zoneSpeed.onSample.mockRejectedValueOnce(new Error('redis fora'));
+      await expect(svc.telemetry(T, msg())).resolves.toBeUndefined();
+      expect(prisma.trackPoint.create).toHaveBeenCalledTimes(1);
+      expect(geofence.onPosition).toHaveBeenCalledTimes(1);
+      await svc.telemetry(T, msg({ timestamp: '2026-10-21T15:00:05.000Z' }));
+      expect(zoneSpeed.onSample).toHaveBeenCalledTimes(2);
+    });
+  });
 });

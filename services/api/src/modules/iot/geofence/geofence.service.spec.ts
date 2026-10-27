@@ -369,7 +369,7 @@ describe('GeofenceService com rastreador relay_only (spec GT06 §10)', () => {
     await svc.onPosition(pos('2026-10-21T15:00:10.000Z'));
     expect(commander.setSpeedLimit).not.toHaveBeenCalled();
     expect(transitions.filter((t) => t.zoneType === 'reduced_speed' && t.transition === 'ENTER').every((t) => t.advisory === true)).toBe(true);
-    expect(transitions.some((t) => t.zoneType === 'reduced_speed' && t.transition === 'EXIT')).toBe(true);
+    expect(transitions.find((t) => t.zoneType === 'reduced_speed' && t.transition === 'EXIT')?.advisory).toBeUndefined();
   });
 
   it('speed_control com o lookup presente: comportamento inalterado (comando de limite, sem advisory)', async () => {
@@ -398,5 +398,53 @@ describe('GeofenceService com rastreador relay_only (spec GT06 §10)', () => {
     await svc.onPosition(pos());
     expect(commander.setSpeedLimit).toHaveBeenCalledWith('veh-1', 6, expect.anything());
     expect(transitions.some((t) => 'advisory' in t)).toBe(false);
+  });
+});
+
+describe('GeofenceService relay_only — revisão da Task 6', () => {
+  function mk(initial: 'relay_only' | 'speed_control') {
+    const base = setup();
+    const modes = { byVehicle: jest.fn().mockResolvedValue(initial), invalidate: jest.fn() };
+    const svc = new GeofenceService(base.engine, base.commander, base.rentals, base.events, base.clock, new MemoryRedisStore(), { outOfAreaLockMinutes: 5 }, undefined, undefined, modes);
+    return { ...base, svc, modes };
+  }
+
+  it('relay_only → speed_control (reprovisionado): a próxima avaliação manda o limite da zona', async () => {
+    const { svc, engine, commander, modes } = mk('relay_only');
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(pos());
+    expect(commander.setSpeedLimit).not.toHaveBeenCalled();
+    modes.byVehicle.mockResolvedValue('speed_control');
+    await svc.onPosition(pos('2026-10-21T15:00:05.000Z'));
+    expect(commander.setSpeedLimit).toHaveBeenCalledWith('veh-1', 6, expect.objectContaining({ purpose: 'zone_speed_limit' }));
+  });
+
+  it('advisory só no ENTER: o EXIT de reduced_speed não leva a marca', async () => {
+    const { svc, engine, transitions } = mk('relay_only');
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(pos());
+    engine.zones = [OPERATION];
+    await svc.onPosition(pos('2026-10-21T15:00:05.000Z'));
+    const exit = transitions.find((t) => t.transition === 'EXIT' && t.zoneType === 'reduced_speed');
+    expect(exit).toBeDefined();
+    expect(exit).not.toHaveProperty('advisory');
+  });
+
+  it('storedLimit: só o gravado (nunca o de falha fechada do motor); desconhecido = null', async () => {
+    const { svc, engine } = mk('relay_only');
+    expect(await svc.storedLimit('moto-0001')).toBeNull();
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(pos());
+    expect(await svc.storedLimit('moto-0001')).toBe(6);
+  });
+
+  it('motor de cercas fora, posição conhecida e nenhum limite gravado: effectiveLimit falha fechada em 6, storedLimit = null', async () => {
+    const { svc, engine } = mk('relay_only');
+    engine.zones = [OPERATION];
+    await svc.onPosition(pos());
+    const fresh = new GeofenceService(engine, { setSpeedLimit: jest.fn(), safeLock: jest.fn() } as any, { openRentalId: jest.fn(), trackingRentalId: jest.fn(), invalidate: jest.fn() } as any, new EventEmitter2(), new FakeClock(0), new MemoryRedisStore(), { outOfAreaLockMinutes: 5 }, undefined, { lastKnownPosition: async () => ({ lat: 1, lng: 2 }), desiredLimit: async () => null } as any);
+    engine.containing = async () => { throw new Error('motor fora'); };
+    expect(await fresh.effectiveLimit('moto-0001')).toBe(6);
+    expect(await fresh.storedLimit('moto-0001')).toBeNull();
   });
 });

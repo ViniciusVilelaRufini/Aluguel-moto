@@ -220,4 +220,10 @@ describe('RealtimeGateway', () => {
     expect(to).toHaveBeenCalledWith(`rental:${RENTAL_ID}`);
     expect(emit).toHaveBeenCalledWith('zone.notice', { rentalId: RENTAL_ID, zoneType: 'reduced_speed', transition: 'ENTER', message: 'Área com limite de 20 km/h.', speedLimitKmh: 20, advisory: true });
   });
+
+  it('zone.notice: advisory só no ENTER (EXIT não leva a marca)', async () => {
+    const { gw, emit } = setup();
+    await gw.onGeofence({ vehicleId: 'v1', rentalId: RENTAL_ID, zoneId: 'z', zoneType: 'reduced_speed', transition: 'EXIT', ts: '2026-10-27T12:00:00.000Z', advisory: true });
+    expect(emit.mock.calls[0][1]).not.toHaveProperty('advisory');
+  });
 });

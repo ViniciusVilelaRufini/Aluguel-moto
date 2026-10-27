@@ -209,7 +209,7 @@ export class RealtimeGateway implements OnGatewayInit {
     if (!rentalId || !this.server) return;
     const payload: Record<string, unknown> = { rentalId, zoneType: ev.zoneType, transition: ev.transition, message: zoneMessage(ev) };
     if (ev.speedLimitKmh !== undefined) payload.speedLimitKmh = ev.speedLimitKmh;
-    if (ev.advisory) payload.advisory = true;
+    if (ev.advisory && ev.transition === 'ENTER') payload.advisory = true;
     this.server.to(`rental:${rentalId}`).emit('zone.notice', payload);
   }
 

@@ -25,14 +25,14 @@ interface Episode {
 }
 
 /**
- * Rastreador só relé não reduz a velocidade: acima do limite da zona em que está (o mesmo `effectiveLimit` do motor de cercas)
+ * Rastreador só relé não reduz a velocidade: acima do limite da zona em que está (o limite gravado pelo motor de cercas)
  * por mais de 5 s → `zone.speed-exceeded` (um por episódio; o `AlertsService` agrupa repetições da moto em 10 min). Episódio no
  * Redis (`geofence:zone-speed:{thing}`), lido por qualquer instância. Falha de leitura do tipo = `speed_control` (não alerta).
  */
 export class ZoneSpeedMonitor {
   constructor(
     private readonly modes: TrackerModeLookup,
-    private readonly limits: { effectiveLimit(thingName: string): Promise<number> },
+    private readonly limits: { storedLimit(thingName: string): Promise<number | null> },
     private readonly redis: RedisStore,
     private readonly events: Pick<EventEmitter2, 'emit'>,
     private readonly rentals: Pick<RentalLookup, 'openRentalId'>,
@@ -45,7 +45,9 @@ export class ZoneSpeedMonitor {
   async onSample(s: ZoneSpeedSample): Promise<void> {
     const mode = await this.modes.byVehicle(s.vehicleId).catch(() => 'speed_control' as const);
     if (mode !== 'relay_only') return;
-    const limit = await this.limits.effectiveLimit(s.thingName);
+    // Só o limite gravado: o de falha fechada (6 km/h, motor de cercas fora) geraria alerta falso. Desconhecido = não alerta.
+    const limit = await this.limits.storedLimit(s.thingName);
+    if (limit === null) return;
     if (limit >= MAX_SPEED_KMH || !(s.speedKmh > limit)) {
       await this.redis.del(this.key(s.thingName)).catch(() => undefined);
       return;

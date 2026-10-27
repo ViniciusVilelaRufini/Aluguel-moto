@@ -115,7 +115,6 @@ export class AlertsListeners implements OnModuleInit {
     }
   }
 
-  /** Pagamento que exige revisão manual (Task 14): alerta `payment_needs_review`, um aberto por pagamento. */
   /** Moto `relay_only` acima do limite da zona por mais de 5 s (spec GT06 §10); a deduplicação de 10 min agrupa repetições. */
   @OnEvent(EV.ZONE_SPEED_EXCEEDED, { async: true, promisify: true })
   async onZoneSpeedExceeded(ev: ZoneSpeedExceededEvent): Promise<void> {
@@ -129,6 +128,7 @@ export class AlertsListeners implements OnModuleInit {
     });
   }
 
+  /** Pagamento que exige revisão manual (Task 14): alerta `payment_needs_review`, um aberto por pagamento. */
   @OnEvent(PAYMENT_NEEDS_REVIEW, { async: true, promisify: true })
   async onPaymentNeedsReview(ev: PaymentNeedsReviewEvent): Promise<void> {
     try {

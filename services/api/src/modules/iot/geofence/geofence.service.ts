@@ -160,6 +160,23 @@ export class GeofenceService {
     }
   }
 
+  /**
+   * Limite gravado pelas zonas (Redis, ou a memória deste processo), sem estimativa: `null` quando desconhecido. Quem não pode
+   * agir sobre o limite de falha fechada (alerta do monitor de velocidade) usa este, não o `effectiveLimit`.
+   */
+  async storedLimit(thingName: string): Promise<number | null> {
+    const mem = this.limitByThing.get(thingName);
+    if (mem !== undefined && this.unsyncedLimit.has(thingName)) return mem;
+    try {
+      const raw = await this.redis.get(this.limitKey(thingName));
+      const n = raw === null ? NaN : Number(raw);
+      if (Number.isInteger(n) && n >= 0 && n <= MAX_SPEED_KMH) return n;
+    } catch {
+      /* memória abaixo */
+    }
+    return mem ?? null;
+  }
+
   private async knownPosition(thingName: string): Promise<{ lat: number; lng: number; vehicleId?: string } | null> {
     for (const p of this.lastPosition.values()) if (p.thingName === thingName) return p;
     return (await this.live?.lastKnownPosition(thingName).catch(() => null)) ?? null;
@@ -349,7 +366,10 @@ export class GeofenceService {
     // Depois de um limite de falha fechada (motor fora, nesta ou noutra instância): manda o limite real. Noutra instância isso
     // aparece como primeira avaliação (sem estado) com um desired conhecido diferente da zona; sem desired conhecido não força.
     const forced = this.forceResend.delete(p.thingName) || (!prev && desired !== undefined && desired !== null && desired !== limit);
-    const limitChanged = applied !== limit || desiredAbove || forced;
+    // Rastreador só relé: nada a impor nem a registrar. `appliedLimit` fica indefinido, para que, depois de um reprovisionamento
+    // para speed_control, a próxima avaliação sempre mande o limite da zona.
+    if (relayOnly) state.appliedLimit = undefined;
+    const limitChanged = !relayOnly && (applied !== limit || desiredAbove || forced);
     if (!exits.length && !enters.length && !limitChanged) {
       const areaChanged = await this.evaluateOutOfArea(p.vehicleId, state, opNow);
       if (!prev || zonesChanged || areaChanged) await this.save(p.vehicleId, state);
@@ -365,13 +385,9 @@ export class GeofenceService {
       state.appliedLimit = limit;
       // Estado gravado antes do comando (auditoria): outra instância que avalie a moto durante a confirmação já vê o limite novo.
       await this.save(p.vehicleId, state);
-      if (relayOnly) {
-        this.logger.log({ msg: 'zone_speed_limit_advisory', vehicleId: p.vehicleId, limit });
-      } else {
-        await this.commander
-          .setSpeedLimit(p.vehicleId, limit, { rentalId, purpose: 'zone_speed_limit' })
-          .catch((err) => this.logger.error({ msg: 'zone_speed_limit_failed', vehicleId: p.vehicleId, error: (err as Error).message }));
-      }
+      await this.commander
+        .setSpeedLimit(p.vehicleId, limit, { rentalId, purpose: 'zone_speed_limit' })
+        .catch((err) => this.logger.error({ msg: 'zone_speed_limit_failed', vehicleId: p.vehicleId, error: (err as Error).message }));
     }
     await this.evaluateOutOfArea(p.vehicleId, state, opNow, rentalId);
     await this.save(p.vehicleId, state);
@@ -436,7 +452,7 @@ export class GeofenceService {
     const ev: GeofenceTransitionEvent = { vehicleId: p.vehicleId, zoneId: z.id, zoneType: z.type, transition, ts: p.ts };
     if (rentalId) ev.rentalId = rentalId;
     if (z.speedLimitKmh !== null && z.speedLimitKmh !== undefined) ev.speedLimitKmh = z.speedLimitKmh;
-    if (relayOnly && z.type === 'reduced_speed') ev.advisory = true;
+    if (relayOnly && z.type === 'reduced_speed' && transition === 'ENTER') ev.advisory = true;
     this.logger.log({ msg: 'geofence_transition', vehicleId: p.vehicleId, zoneId: z.id, zoneType: z.type, transition });
     this.events.emit(EV.GEOFENCE_TRANSITION, sortKeys(ev));
   }
