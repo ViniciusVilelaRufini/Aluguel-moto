@@ -5,6 +5,7 @@ on:
     paths:
       - 'infra/**'
       - 'services/api/**'
+      - 'services/traccar-bridge/**'
       - 'apps/admin/**'
       - 'packages/contracts/**'
       - 'pnpm-lock.yaml'
@@ -14,6 +15,7 @@ on:
     paths:
       - 'infra/**'
       - 'services/api/**'
+      - 'services/traccar-bridge/**'
       - 'apps/admin/**'
       - 'packages/contracts/**'
       - 'pnpm-lock.yaml'
@@ -28,7 +30,7 @@ env:
 jobs:
   # Gate before any deploy: API (lint + unit tests), admin panel (lint + vitest) and the OpenAPI contract (redocly).
   checks:
-    name: lint + tests (api, admin, contract)
+    name: lint + tests (api, admin, bridge, contract)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -48,6 +50,11 @@ jobs:
         run: pnpm --filter admin lint
       - name: admin tests (vitest)
         run: pnpm --filter admin test
+      # `pnpm install` roda o postinstall da API (prisma generate), que o e2e da ponte usa por import relativo.
+      - name: traccar-bridge lint
+        run: pnpm --filter traccar-bridge lint
+      - name: traccar-bridge tests (unidade, integração e e2e em processo)
+        run: pnpm --filter traccar-bridge test
 
   # Runs on pull_request too: no AWS credentials, fake account 000000000000 (no context lookups).
   synth:

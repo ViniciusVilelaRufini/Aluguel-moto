@@ -487,7 +487,7 @@ Lacuna: bateria em `charging` nunca voltava a ficar disponível; não havia vín
 - **M4:** as leituras de galpão do `unload` passam a usar o cliente da transação.
 - Ficam para depois: **M3** (as baterias "perdidas" das trocas continuam indo para `charging` sem galpão nem estação; mudar o destino delas é decisão de produto) e **M5** (handles abertos nos e2e, anteriores a esta tarefa; investigar com `--detectOpenHandles` numa tarefa própria).
 
-## 2026-10-24 · API pronta para várias instâncias e integrações (branch `feat/lacunas-t5`, plano `2026-10-24-volti-lacunas`, Task 5) · status: proposta aplicada (contrato aditivo)
+## 2026-10-24 · API pronta para várias instâncias e integrações (branch `feat/lacunas-t5`, plano `2026-10-24-volti-lacunas`, Task 5) · status: aplicada (contrato aditivo; CDK do Traccar como proposta, sem deploy)
 
 1. **Socket.IO com adaptador Redis** (`@socket.io/redis-adapter`, `src/modules/realtime/redis-io.adapter.ts`), ligado no `main.ts` sempre que `REDIS_URL` não é `memory` (canais `volti:socket.io#…`). `to(sala).emit`, `socketsJoin/Leave` e `disconnectSockets` (revogação) valem no cluster. O cache de status/aluguel por moto do gateway caiu de 60 s para 15 s (a invalidação por `rental.changed` só acontece na instância que processou a mudança).
 2. **Bloqueio seguro com estado no Redis** (`RedisSafeLockStore`: `iot:safe-lock:{thing}` JSON **sem TTL** — só o `finish` apaga —, índice `iot:safe-lock:index` em hash `thing → { rampId, phase, commandIds }` gravado/apagado junto com o estado numa operação atômica, lock por moto `iot:safe-lock:lock:{thing}` via `SET NX PX` renovado enquanto a operação roda + fila local + reentrância por `AsyncLocalStorage`). Toda mudança da rampa acontece sob o lock e grava **antes** de publicar. Os horários do próximo degrau (`nextStepAt`) e do prazo de 120 s (`deadlineAt`) ficam no estado; timers locais só antecipam, e uma **varredura de 1 s** em todas as instâncias cumpre degraus/prazos perdidos (deploy), começa rampas `waiting_online` cuja reconexão outra instância viu (estado relido do Redis) e liga o polling do shadow das rampas ativas. **Falha fechada:** sem estado nada é publicado (nunca `travada: true` sem a última velocidade fresca < 3 guardada no estado). **Estado perdido** (failover que perdeu escritas): a varredura acha a entrada do índice sem estado e faz o mesmo que o timeout da fase `locking` — publica `{ travada: false, limite_kmh: 0 }`, segura o limite (hold) e encerra os comandos `failed/timeout`; nunca fica um `travada: true` órfão no desired (que é do shadow e não expira). O ElastiCache usa `maxmemory-policy noeviction` (parameter group no CDK), então o estado não é expulso por memória. (Correção da revisão: o antigo "TTL de 6 h" não mitigava nada no desired do shadow.)
@@ -888,6 +888,25 @@ Regras de implementação escolhidas onde a spec não decide (cada uma com teste
     5023 publicada mas fechada no security group até `-c gt06Port=true`.
 
 Riscos (spec §12) registrados em `docs/adr-rastreador.md`.
+
+Refinamentos posteriores desta entrada estão nas entradas seguintes de 2026-10-27 (Tasks 3, 4, 8, 9, 11b e 13); em caso de
+divergência, valem as entradas posteriores. Imagem do Traccar fixada em `traccar/traccar:6.16.0-ubuntu` (mínimo 6.7.0).
+
+Pendências: e2e com Traccar de verdade no dev single (`deploy/single/gt06.sh e2e`, depende do token de staff do dono);
+validação de shadow de thing não registrada e deploy da stack `volti-<env>-traccar`; verificação da CA da RDS na ponte
+(`DATABASE_SSL`); bancada com o J16 (apêndice da spec), incluindo se o J16 recusa o corte acima de alguma velocidade
+(comando enfileirado pelo Traccar) e se o `attributes.blocked` chega nos heartbeats; termos de uso sobre limites de zona não
+impostos (jurídico).
+
+Checklist do dono (itens coletados nas revisões):
+- Bancada J16: heartbeat ≤ 60 s (obrigatório); intervalo de posição ≤ 10 s enquanto um lock espera; confirmar que envia tensão
+  externa (0x94), senão a bateria aparece 0% após 5 min; comportamento de corte em velocidade e bit de bloqueio no heartbeat;
+  estado do relé após reinício.
+- Traccar: `/api/server` devolve `version` em texto na 6.16.0-ubuntu; `noQueue` respeitado; dispositivo vinculado ao usuário da ponte.
+- Decisões de produto: tempo máximo de vida de comandos de lock pendentes (hoje não existe, vale também para `speed_control`);
+  tolerância a ruído de GPS no alerta `zone_speed_exceeded`.
+- Produção: senha admin do Traccar fora do env da API (arquivo de env separado); `reconnectAt` por instância em multi-instância;
+  fragilidade do default travado do `speed_control`; SSL do RDS; APN em rede privada.
 
 ## 2026-10-27 · Trava `relay_only`: intervalo máximo entre paradas consecutivas (branch `feat/tracker-gt06-relay-only`, Task 3 fix 1) · status: aplicada
 O intervalo entre duas amostras paradas consecutivas não pode passar de `SPEED_FRESH_MS` (10 s); acima disso a sequência recomeça na amostra nova. Rastreadores que reportam mais devagar que isso falham seguro: nunca cortam e a trava termina `did_not_stop`. Também: velocidade negativa/NaN = desconhecida (em movimento); amostra com relógio > agora + `MAX_CLOCK_SKEW_MS` não fixa a ordem; offline em `waiting_stop` volta a `waiting_online` (`pending/offline`, janela de 120 s nova ao reconectar); trava vencida nunca recebe lock novo nem corte.

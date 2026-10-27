@@ -21,6 +21,8 @@ describe('CI workflow (.github/workflows/infra.yml)', () => {
       'pnpm --filter api test',
       'pnpm --filter admin lint',
       'pnpm --filter admin test',
+      'pnpm --filter traccar-bridge lint',
+      'pnpm --filter traccar-bridge test',
     ]) {
       expect(checks).toContain(cmd);
     }
@@ -29,7 +31,7 @@ describe('CI workflow (.github/workflows/infra.yml)', () => {
   });
 
   it('runs on changes to the API, the panel and the contract too', () => {
-    for (const p of ["'services/api/**'", "'apps/admin/**'", "'packages/contracts/**'"]) {
+    for (const p of ["'services/api/**'", "'services/traccar-bridge/**'", "'apps/admin/**'", "'packages/contracts/**'"]) {
       expect(yml.split(p).length - 1).toBe(2); // pull_request and push
     }
   });

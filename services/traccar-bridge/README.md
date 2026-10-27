@@ -162,6 +162,11 @@ bancada, instalação com o relé no fio da chave, teste na moto parada, limitad
 `engineStop` é recusado (não enfileirado); heartbeat do J16 ≤ 60 s; `GET /api/server` da imagem escolhida devolve `version` como
 texto (se vier `null`, a ponte recusa todos os comandos de motor).
 
+Checklist adicional (ver a entrada da Task 1 em `docs/decisoes.md`): J16 com posição a cada <= 10 s durante um lock e tensão
+externa (0x94) no heartbeat (senão a bateria vira 0% após 5 min); corte em velocidade e bit de bloqueio no heartbeat; relé após
+reinício; `noQueue` respeitado e dispositivo vinculado ao usuário da ponte. Produção: senha admin do Traccar fora do env da API,
+`reconnectAt` por instância, SSL do RDS (`DATABASE_SSL`), APN privada.
+
 ## Emulador GT06 e conferência do e2e
 
 - `pnpm emulator` (`GT06_HOST`, `GT06_PORT`, `GT06_IMEI`, `GT06_SCENARIO=parked|ride-then-stop`, `GT06_HEARTBEAT_MS` - máximo 60 s). Logo após o login envia status (bit de corte) e a tensão externa (0x94, short com sinal em 0,01 V, sem subtipo em quadro 0x7878), e repete a cada heartbeat; a ponte segura a telemetria até receber os dois. A tensão segue o `BATTERY_MODEL` da ponte (48v/60v/72v, padrão 72v) em ~70 % da curva; `GT06_POWER_VOLTS` sobrescreve.

@@ -11,6 +11,7 @@ A especificação completa está em `docs/superpowers/specs/2026-10-21-volti-pla
 | `/infra` | AWS CDK (TypeScript) |
 | `/services/api` | NestJS + Prisma + PostGIS + Redis |
 | `/services/iot-sim` | Simulador de rastreadores (TypeScript) |
+| `/services/traccar-bridge` | Ponte Traccar - shadow do IoT para rastreadores GT06 só relé (Concox J16), com emulador GT06 |
 | `/apps/admin` | Next.js App Router + Tailwind + MapLibre |
 | `/apps/cliente` | Flutter (app do cliente) |
 | `/apps/operador` | Flutter (app de campo) |
