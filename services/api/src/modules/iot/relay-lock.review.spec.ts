@@ -209,6 +209,23 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     expect(errors.some((e) => e.msg === 'relay_lock_sweep_failed')).toBe(true);
   });
 
+  it('N1: offline com o prazo de parada já vencido (timer perdido) → did_not_stop, não waiting_online', async () => {
+    const clock = new FakeClock(T0);
+    const store = new MemoryRelayLockStore();
+    const desired: DesiredState[] = [];
+    const outcomes: CommandOutcome[] = [];
+    const known = new Map<string, number | null>([[T, 0]]);
+    const s1 = mk(clock, store, desired, outcomes, known);
+    await s1.start({ commandId: 'c1', thingName: T }, { online: true });
+    (s1 as unknown as { forget(t: string): void }).forget(T); // sem timer
+    const s2 = mk(clock, store, desired, outcomes, known);
+    await clock.advance(125_000);
+    await s2.onConnectivity(T, false, { online: false });
+    expect(outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'did_not_stop' }]);
+    expect(desired).toEqual([]);
+    expect(await store.get(T)).toBeNull();
+  });
+
   it('F9: Redis/lock indisponível → nada é enviado', async () => {
     const clock = new FakeClock(T0);
     const store = new MemoryRelayLockStore();

@@ -189,6 +189,11 @@ export class RelayLockService {
       const lock = await this.store.get(thingName);
       if (!lock) return;
       if (!online) {
+        if (lock.deadlineAt !== undefined && lock.deadlineAt <= this.clock.now()) {
+          // Prazo já vencido (timer perdido): não ganha janela nova por ter caído.
+          await this.onDeadline(lock);
+          return;
+        }
         if (lock.phase === 'waiting_stop') {
           // Moto caiu esperando parar: volta a esperar a reconexão (sem prazo; janela de 120 s nova ao voltar), como no start offline.
           lock.phase = 'waiting_online';
