@@ -83,7 +83,8 @@ Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuári
 
 1. Cadastrar a moto (`POST /vehicles`) e rodar `pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle
    VLT-0000 --thing moto-0000 --imei <15 dígitos>`. Não cria certificado: marca o `Tracker` como `relay_only`/`gt06` e cria o
-   dispositivo no Traccar (`uniqueId = IMEI`).
+   dispositivo no Traccar (`uniqueId = IMEI`). Todo dispositivo GT06 precisa estar **vinculado ao usuário da ponte** no Traccar
+   (o `provision-gt06` faz isso): ser admin não basta para receber os pushes do `/api/socket`.
 2. Configurar o aparelho por SMS para o chip M2M. **Sintaxe a confirmar no manual do aparelho** (varia por firmware Concox):
    - APN: `APN,<apn>,<usuário>,<senha>#` (bancada: APN do chip M2M; produção: **APN privada**, requisito da ADR);
    - servidor: `SERVER,1,<domínio>,5023,0#` (domínio) ou `SERVER,0,<ip>,5023,0#` (IP);
@@ -99,4 +100,5 @@ Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuári
 As tarefas físicas (comprar o kit e o chip M2M, confirmar a tensão de entrada ou usar conversor DC-DC 72 V → 12 V, teste de
 bancada, instalação com o relé no fio da chave, teste na moto parada, limitador de 32 km/h no controlador) estão no
 **Apêndice: tarefas do dono** da spec. Na bancada, confirmar também: Traccar ≥ 6.7.0 e que, com o J16 desligado, um
-`engineStop` é recusado (não enfileirado); heartbeat do J16 ≤ 60 s.
+`engineStop` é recusado (não enfileirado); heartbeat do J16 ≤ 60 s; `GET /api/server` da imagem escolhida devolve `version` como
+texto (se vier `null`, a ponte recusa todos os comandos de motor).

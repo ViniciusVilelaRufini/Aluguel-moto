@@ -38,13 +38,14 @@ interface Ctx {
   registry: Map<string, string>;
 }
 
-interface StartOpts { iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number }
+interface StartOpts { iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; serverStatus?: number }
 
 async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
   const o: StartOpts = typeof opts === 'string' ? { iotMode: opts } : opts;
   const traccar = new FakeTraccar();
   await traccar.start();
   if ('version' in o) traccar.serverVersion = o.version;
+  if (o.serverStatus) traccar.serverStatus = o.serverStatus;
   traccar.notifications = o.notifications ?? false;
   traccar.devices = [
     { id: 1, name: T, uniqueId: IMEI, status: 'online' },
@@ -434,6 +435,38 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
     await sendDelta(c, { travada: true });
     await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_sent'));
+  });
+
+  it('N1: falha passageira do /api/server não trava comandos: relê a versão antes de recusar (no máximo 1 leitura a cada 10 s)', async () => {
+    c = await start({ serverStatus: 500 }); // leituras do início falham (T0): start() e abertura do socket
+    await waitFor(() => c.traccar.serverCalls === 2);
+    c.traccar.serverStatus = 200;
+    const fresh = (id: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), speed: 0 });
+    c.now.value = T0 + 5_000;
+    c.traccar.push({ positions: [fresh(310, T0 + 5_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'traccar_no_noqueue')); // < 10 s da última leitura
+    expect(c.traccar.commands).toEqual([]);
+    c.now.value = T0 + 10_000;
+    c.traccar.push({ positions: [fresh(311, T0 + 10_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 2);
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.traccar.commands.length === 1);
+    expect(c.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+  });
+
+  it('N3: recusa traccar_no_noqueue limitada a 1/min por moto (nível erro)', async () => {
+    c = await start({ version: '6.5' });
+    const refusals = () => c.logs.filter((l) => l.msg === 'engine_stop_refused' && l.reason === 'traccar_no_noqueue');
+    c.traccar.push({ positions: [stoppedFresh(320)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    await sendDelta(c, { travada: true });
+    await waitFor(() => refusals().length === 1);
+    await sendDelta(c, { travada: true });
+    await sleep(50);
+    expect(refusals()).toEqual([{ level: 'error', msg: 'engine_stop_refused', thingName: T, reason: 'traccar_no_noqueue' }]);
+    expect(c.traccar.commands).toEqual([]);
   });
 
   // ---- I1: alarmes de position.attributes.alarm (sem Notification no Traccar) e deduplicação

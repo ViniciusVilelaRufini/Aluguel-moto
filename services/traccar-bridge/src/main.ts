@@ -36,7 +36,10 @@ async function main(): Promise<void> {
       await sleep(5_000);
     }
   }
-  setInterval(() => void bridge.refreshRegistry().catch((err: Error) => log.error({ msg: 'registry_refresh_failed', error: err.message })), cfg.registryRefreshMs).unref();
+  setInterval(() => {
+    void bridge.refreshRegistry().catch((err: Error) => log.error({ msg: 'registry_refresh_failed', error: err.message }));
+    void bridge.refreshServerVersion(); // não lança: falha vira noQueueOk=false com log
+  }, cfg.registryRefreshMs).unref();
   log.info({ msg: 'bridge_started', iotMode: cfg.iotMode });
   const stop = async () => {
     socket.close();

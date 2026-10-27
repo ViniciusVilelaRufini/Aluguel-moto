@@ -36,6 +36,8 @@ export const LOG_RATE_MS = 60_000;
 export const REPORT_REPEAT_MS = 60_000;
 /** Publicação MQTT sem conclusão neste prazo é abandonada (log) para não travar a fila de entrada. */
 export const PUBLISH_TIMEOUT_MS = 10_000;
+/** Com a versão do Traccar não confirmada, um comando relê `/api/server` no máximo uma vez neste intervalo. */
+export const VERSION_RECHECK_MS = 10_000;
 /** Ids de posição cujos alarmes já saíram, por moto (deduplicação position × events). */
 const ALARM_IDS_KEPT = 256;
 
@@ -71,6 +73,7 @@ export class Bridge {
   private replayPending = false;
   /** Traccar respeita `noQueue` (≥ 6.7.0)? Relido a cada `refreshDevices`; desconhecido = não. */
   private noQueueOk = false;
+  private lastVersionCheck = Number.NEGATIVE_INFINITY;
   private listening = false;
   private lastMissRefresh = 0;
   private readonly log: Logger;
@@ -182,7 +185,9 @@ export class Bridge {
     }
   }
 
-  private async refreshServerVersion(): Promise<void> {
+  /** Relê `GET /api/server` (gate do `noQueue`). Também chamado por `main` no intervalo do registro. */
+  async refreshServerVersion(): Promise<void> {
+    this.lastVersionCheck = this.now();
     let version: unknown;
     try {
       version = (await this.traccar.server()).version;
@@ -409,10 +414,12 @@ export class Bridge {
         await this.report(thing, a.reported.travada === true ? { ...a.reported, ...this.freshSpeed(thing) } : a.reported);
         continue;
       }
+      // Falha passageira do /api/server não pode travar comandos até a próxima releitura: relê antes de recusar (≤ 1 a cada 10 s).
+      if (!this.noQueueOk && this.now() - this.lastVersionCheck >= VERSION_RECHECK_MS) await this.refreshServerVersion();
       if (!this.noQueueOk) {
         // C1: Traccar < 6.7.0 (ou versão desconhecida) enfileira comando de dispositivo sem sessão — nenhum comando de motor.
         const msg = a.kind === 'engineStop' ? 'engine_stop_refused' : 'engine_resume_refused';
-        this.log.error({ msg, thingName: thing, reason: 'traccar_no_noqueue' });
+        this.logLimited(`${thing}|${msg}|no_noqueue`, 'error', { msg, thingName: thing, reason: 'traccar_no_noqueue' });
         continue;
       }
       const device = this.deviceOf(thing);

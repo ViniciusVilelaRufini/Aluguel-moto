@@ -27,6 +27,8 @@ export class FakeTraccar {
   /** `GET /api/server` → `{ version }` (C1: `noQueue` só a partir do 6.7.0). `undefined` = campo ausente. */
   serverVersion: string | undefined = '6.7.0';
   serverStatus = 200;
+  /** Chamadas a `GET /api/server`. */
+  serverCalls = 0;
   /**
    * `false` (padrão, como um Traccar sem Notification configurada): alarmes NÃO chegam como `events` no WebSocket, só em
    * `position.attributes.alarm`. `true` = há Notification de alarme e `push` repassa `events`.
@@ -70,6 +72,7 @@ export class FakeTraccar {
       return void res.writeHead(200, { 'Set-Cookie': `${SESSION}; Path=/; HttpOnly`, 'Content-Type': 'application/json' }).end('{}');
     }
     if (req.method === 'GET' && req.url === '/api/server') {
+      this.serverCalls++;
       return this.serverStatus === 200 ? json(200, { id: 1, ...(this.serverVersion !== undefined ? { version: this.serverVersion } : {}) }) : void res.writeHead(this.serverStatus).end();
     }
     if (!(req.headers.cookie ?? '').includes(SESSION)) return void res.writeHead(401).end();
