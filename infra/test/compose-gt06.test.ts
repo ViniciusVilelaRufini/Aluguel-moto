@@ -88,6 +88,17 @@ describe('docker-compose.yml: profile gt06 (spec GT06 §7)', () => {
     expect(e).not.toContain('GT06_POWER_VOLTS');
   });
 
+  it('healthcheck do Postgres usa TCP (não o socket unix do init) e o Traccar reinicia se o banco ainda não estava pronto', () => {
+    const p = service(compose, 'postgres');
+    expect(p).toContain('pg_isready -h 127.0.0.1 -U volti');
+    expect(p).toContain('start_period:');
+    expect(service(compose, 'traccar')).toContain('restart: unless-stopped');
+  });
+
+  it('o serviço api continua esperando o Postgres saudável', () => {
+    expect(service(compose, 'api')).toMatch(/postgres:\s+condition: service_healthy/);
+  });
+
   it('o compose não semeia shadow com desired travada:false', () => {
     expect(compose).not.toMatch(/travada/i);
   });

@@ -9,8 +9,10 @@ services:
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data, ./infra/postgres/traccar-db.sql:/docker-entrypoint-initdb.d/20-traccar.sql:ro]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U volti"]
+      # TCP (127.0.0.1): o socket unix já aceita conexões durante o init do volume (scripts de initdb ainda rodando).
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U volti"]
       interval: 5s
+      start_period: 10s
       retries: 20
   redis:
     image: redis:7-alpine
@@ -88,6 +90,7 @@ services:
   traccar:
     profiles: ["gt06"]
     image: traccar/traccar:6.16.0-ubuntu
+    restart: unless-stopped
     mem_limit: 768m
     entrypoint: ["java", "-Xms128m", "-Xmx512m", "-Djava.net.preferIPv4Stack=true"]
     command: ["-jar", "tracker-server.jar", "conf/traccar.xml"]

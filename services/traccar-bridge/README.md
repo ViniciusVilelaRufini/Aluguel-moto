@@ -115,9 +115,13 @@ docker compose --profile gt06 up -d traccar bridge-db-grants traccar-bridge gt06
 `/api/socket` nem registro IMEI -> thing). Faça o provisionamento (o `provision-gt06` cria o dispositivo e o vincula):
 
 ```bash
-TRACCAR_URL=http://localhost:8082 TRACCAR_ADMIN_EMAIL=admin@volti.local TRACCAR_ADMIN_PASSWORD=volti-dev-traccar DATABASE_URL=postgresql://volti:volti@localhost:5432/volti   pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0001 --thing moto-0001 --imei 860000000000901
+TRACCAR_URL=http://localhost:8082 TRACCAR_ADMIN_EMAIL=admin@volti.local TRACCAR_ADMIN_PASSWORD=volti-dev-traccar TRACCAR_BRIDGE_EMAIL=admin@volti.local DATABASE_URL=postgresql://volti:volti@localhost:5432/volti   pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0001 --thing moto-0001 --imei 860000000000901
 docker compose --profile gt06 logs -f traccar-bridge gt06-emulator
 ```
+
+`TRACCAR_BRIDGE_EMAIL` é o usuário com que a ponte entra no Traccar (no compose local, `admin@volti.local`): sem ele o dispositivo é criado
+mas **não é vinculado** a esse usuário e a ponte não recebe nada no `/api/socket`. A moto (`VLT-0001`) precisa existir antes (`POST /vehicles`
+ou o seed). Até o provisionamento o emulador loga falhas de conexão/login e reconecta a cada 5 s (esperado).
 
 Para ver o lock:
 `GT06_SCENARIO=ride-then-stop docker compose --profile gt06 up -d --force-recreate gt06-emulator`.
