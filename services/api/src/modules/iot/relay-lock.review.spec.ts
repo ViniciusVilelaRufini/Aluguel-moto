@@ -156,7 +156,7 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     expect(s.svc.isActive(T)).toBe(true);
   });
 
-  it('F7: se travada:false do prazo falhou, um lock novo não entra na trava expirada nem manda travada:true', async () => {
+  it('F7: se travada:null do prazo falhou, um lock novo não entra na trava expirada nem manda travada:true', async () => {
     const clock = new FakeClock(T0);
     const store = new MemoryRelayLockStore();
     const desired: DesiredState[] = [];
@@ -176,7 +176,7 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     expect(desired).toEqual([{ travada: true }]);
     fail.on = false;
     expect(await svc.start({ commandId: 'c3', thingName: T }, { online: true })).toEqual({ commandId: 'c3', status: 'in_progress' });
-    expect(desired).toEqual([{ travada: true }, { travada: false }]);
+    expect(desired).toEqual([{ travada: true }, { travada: null }]);
     expect(outcomes).toHaveLength(1);
   });
 
@@ -309,7 +309,7 @@ describe('RelayLockService — moto já travada (Task 4, fix 3)', () => {
     expect(outcomes).toHaveLength(1);
   });
 
-  it('órfã na fase de corte com travada desconhecida (null) → continua travada:false + failed/timeout', async () => {
+  it('órfã na fase de corte com travada desconhecida (null) → travada:null (apaga o corte, nunca false) + failed/timeout', async () => {
     const clock = new FakeClock(T0);
     const desired: DesiredState[] = [];
     const outcomes: CommandOutcome[] = [];
@@ -323,7 +323,7 @@ describe('RelayLockService — moto já travada (Task 4, fix 3)', () => {
       knownLocked: () => null,
     });
     await svc.sweep();
-    expect(desired).toEqual([{ travada: false }]);
+    expect(desired).toEqual([{ travada: null }]);
     expect(outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'timeout' }]);
   });
 });

@@ -924,8 +924,8 @@ O intervalo entre duas amostras paradas consecutivas não pode passar de `SPEED_
 3. Prazo, retomada, corte e órfã consultam a trava confirmada depois de reler o estado ao vivo do Redis (outra task pode ter
    processado a mensagem). Pendência conhecida: `reconnectAt` é da memória de cada instância.
 4. (fix 5) Com o corte enviado, `reported.travada = true` confirma só se for posterior ao corte **e** a trava estiver confirmada pelo
-   critério do item 1 (moto que caiu e reiniciou com o relé aberto não confirma pelo reported velho; o prazo reconfere e solta com
-   `timeout`). O lock repetido não apaga `desired.travada = true` pendente de uma trava na fase de corte (nem com o shadow ilegível).
+   critério do item 1 (moto que caiu e reiniciou com o relé aberto não confirma pelo reported velho; o prazo reconfere e encerra com
+   `timeout`, apagando o corte pendente — ver a decisão da onda final de correções). O lock repetido não apaga `desired.travada = true` pendente de uma trava na fase de corte (nem com o shadow ilegível).
 
 ## 2026-10-27 · Ponte GT06: retenção de telemetria, relógio do rastreador e API do delta (branch `feat/tracker-gt06-relay-only`, Task 8 fix 1) · status: aplicada
 1. **Retenção:** a ponte só publica telemetria quando já conhece o bit de corte atual (`attributes.blocked` recebido depois da última (re)conexão ou do início da ponte) **e** a bateria (% por tensão dentro da curva). Antes disso `applyPosition` devolve `telemetry: null` com `held: 'awaiting_status' | 'awaiting_battery'`; a memória (última posição, ignição, sinal, bateria) atualiza. Motivo: `travada: false` por falta de dado faria a API achar a moto destravada (e um corte sem delta poderia terminar soltando uma moto travada), e `bateria_pct: 0` esconde a moto da busca do app.

@@ -149,7 +149,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     expect(s.cuts()).toHaveLength(1);
   });
 
-  it('corte sem confirmação em 120 s → failed/timeout e desired travada:false', async () => {
+  it('corte sem confirmação em 120 s → failed/timeout e desired travada:null (nunca false)', async () => {
     const s = setup();
     await online(s);
     await lockRelay(s);
@@ -159,7 +159,32 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     expect(s.cuts()).toHaveLength(1);
     for (let i = 0; i < 25; i++) await s.clock.advance(5_000);
     expect(s.updates).toContainEqual({ commandId: 'c1', status: 'failed', reason: 'timeout' });
-    expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: false }]);
+    expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: null }]);
+  });
+
+  it('final fix wave: corte feito com status atrasado → timeout apaga o pendente; travada:true depois e reconexão nunca soltam', async () => {
+    const s = setup();
+    await online(s);
+    await lockRelay(s);
+    await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0);
+    expect(s.cuts()).toHaveLength(1);
+    for (let i = 0; i < 25; i++) await s.clock.advance(5_000);
+    expect(s.updates).toContainEqual({ commandId: 'c1', status: 'failed', reason: 'timeout' });
+    expect(s.transport.shadow.desired).toEqual({}); // nenhum delta de travada pendente para a ponte reaplicar
+    // O corte aconteceu: status atrasado chega, a moto cai e volta.
+    s.transport.shadow.reported = { travada: true };
+    await s.gw.onReported(T, { travada: true });
+    await s.svc.presence(T, false);
+    await s.clock.advance(20_000);
+    await s.svc.presence(T, true);
+    for (let i = 0; i < 6; i++) {
+      await s.sample(0, { travada: true, ignicao: false });
+      await s.clock.advance(5_000);
+    }
+    expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: null }]);
+    expect(s.transport.desired.some((d) => d.desired.travada === false)).toBe(false);
   });
 
   it('speed_limit e horn → failed/unsupported_by_tracker sem publicar nada', async () => {
@@ -522,7 +547,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       await s.clock.advance(20_000);
     }
 
-    it('1: corte em voo, reboot (relé aberto) e reported travada:true velho no tick da reconexão → não confirma; prazo → travada:false/timeout', async () => {
+    it('1: corte em voo, reboot (relé aberto) e reported travada:true velho no tick da reconexão → não confirma; prazo → travada:null/timeout', async () => {
       const s = setup();
       await cutThenOffline(s);
       await s.svc.presence(T, true);
@@ -532,7 +557,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       for (let i = 0; i < 30; i++) await s.clock.advance(5_000);
       expect(s.updates).toContainEqual({ commandId: 'c1', status: 'failed', reason: 'timeout' });
       expect(s.updates.filter((u) => u.status === 'confirmed')).toEqual([]);
-      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: false }]);
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: null }]);
     });
 
     it('1: corte em voo, reconexão → reported travada:true depois da graça confirma, sem travada:false', async () => {
