@@ -171,6 +171,19 @@ describe('retenção (held) e relógio do rastreador', () => {
     }
   });
 
+  it('F2b: parada com fixTime now+9 min (dentro da tolerância) e depois posição real a 20 nós (fixTime menor) → last limpo, corte recusado, sem telemetria', () => {
+    const base = AP(stopped({ fixTime: new Date(NOW + 9 * 60_000).toISOString() }), AP(pos({ attributes: { blocked: false, power: 72 } }), {}).memory);
+    expect(base.memory.last).toBeDefined();
+    const moving = AP(pos({ fixTime: new Date(NOW + 3000).toISOString(), speed: 20 }), base.memory, NOW + 3000);
+    expect(moving.telemetry).toBeNull();
+    expect(moving.memory.last).toBeUndefined();
+    expect(cutRefusal({ online: true, mem: moving.memory, now: NOW + 3000 })).toBe('no_position');
+    const bad = AP(pos({ fixTime: new Date(NOW + 3000).toISOString(), speed: 200 }), base.memory, NOW + 3000);
+    expect(bad.memory.last).toBeUndefined();
+    const slow = AP(stopped({ fixTime: new Date(NOW + 3000).toISOString() }), base.memory, NOW + 3000);
+    expect(slow.memory.last).toEqual(base.memory.last);
+  });
+
   it('F2: posição inutilizável que NÃO é mais nova (heartbeat repete o fixTime da última) não apaga last', () => {
     const t1 = new Date(NOW - 3000).toISOString();
     const ok = AP(stopped({ fixTime: t1 }), {});

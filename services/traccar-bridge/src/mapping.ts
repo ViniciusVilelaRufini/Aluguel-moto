@@ -96,8 +96,12 @@ export function applyPosition(
     next.last = undefined;
     return { ...none, invalid: true };
   }
-  if (!newer) return none;
   const speedKmh = knotsToKmh(p.speed);
+  if (!newer) {
+    // Não publica (ordem), mas velocidade em movimento ou fora do contrato vence a amostra parada guardada.
+    if (!(speedKmh < 3) || !Number.isFinite(speedKmh)) next.last = undefined;
+    return none;
+  }
   const telemetry: TelemetryMessage = {
     lat: p.latitude,
     lng: p.longitude,
