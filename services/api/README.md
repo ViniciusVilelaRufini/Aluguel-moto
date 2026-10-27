@@ -72,8 +72,8 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 - Telemetria (`telemetry.service.ts`): emite `iot.telemetry`/`iot.device-event`/`iot.connectivity`; grava `TrackPoint` só com aluguel `active`/`paused`/`ending`.
 - Cercas (`geofence/`): `reduced_speed` ajusta o limite (comando de sistema com AuditLog); saída da `operation` com aluguel → alerta e bloqueio em 5 min.
 - Contrato MQTT: `packages/contracts/mqtt.md`; firmware: `docs/firmware-bloqueio-seguro.md`; ADR: `docs/adr-rastreador.md`.
-- Provisionar rastreador: `pnpm --filter api exec tsx scripts/provision-tracker.ts --vehicle VLT-0061 --thing moto-0061 --imei 860000000000061 --mode aws|local`.
-- Provisionar rastreador GT06 só relé (sem certificado; cria o dispositivo no Traccar, `TRACCAR_ADMIN_PASSWORD` obrigatória): `pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0901 --thing moto-0901 --imei 860000000000901 [--dry-run]` (ou `node dist/cli/provision-gt06.js ...`). O modo do rastreador fica em cache de 60 s por processo da API: a troca vale em até 60 s; reprovisione com a moto fora de aluguel.
+- Provisionar rastreador: `pnpm --filter api exec tsx scripts/provision-tracker.ts --vehicle VLT-0061 --thing moto-0061 --imei 860000000000061 --mode aws|local` (grava `speed_control`/`protocol` nulo — um ex-GT06 volta a MQTT; o rastreador antigo da moto é desvinculado).
+- Provisionar rastreador GT06 só relé (sem certificado; cria o dispositivo no Traccar, `TRACCAR_ADMIN_PASSWORD` obrigatória): `pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0901 --thing moto-0901 --imei 860000000000901 [--dry-run]` (ou `node dist/cli/provision-gt06.js ...`). O modo do rastreador fica em cache de 60 s por processo da API: a troca vale em até 60 s. Os dois comandos recusam moto com aluguel aberto (`active`/`paused`/`ending`): reprovisione com a moto fora de aluguel.
 - Simulador: `services/iot-sim` (`docker compose --profile sim up -d iot-sim`).
 - Teste de integração: `pnpm --filter api test:e2e -- test/iot` (Mosquitto + Postgres/Redis do compose; sobe o simulador sozinho).
 

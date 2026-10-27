@@ -15,6 +15,7 @@
  * dispositivo no Traccar (src/cli/provision-gt06.ts; env TRACCAR_URL, TRACCAR_ADMIN_EMAIL, TRACCAR_ADMIN_PASSWORD).
  *
  * Idempotente: thing existente é reaproveitado; um certificado novo só é emitido se o Tracker ainda não tiver um.
+ * Moto com aluguel aberto é recusada antes de qualquer passo (reprovisione fora de aluguel).
  */
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -34,6 +35,7 @@ import {
 } from '@aws-sdk/client-iot';
 import { PrismaClient } from '@prisma/client';
 import { main as provisionGt06Main } from '../src/cli/provision-gt06';
+import { assertNoOpenRental, linkMqttTracker } from '../src/cli/provision-tracker';
 
 const THING_NAME = /^moto-\d{4,}$/;
 const VEHICLE_CODE = /^VLT-\d{4,}$/;
@@ -73,6 +75,7 @@ async function main(): Promise<void> {
   try {
     const vehicle = await prisma.vehicle.findUnique({ where: { code: vehicleCode }, include: { tracker: true } });
     if (!vehicle) throw new Error(`Moto ${vehicleCode} não encontrada (cadastre com POST /vehicles).`);
+    await assertNoOpenRental(prisma, vehicle);
     const clash = await prisma.vehicle.findFirst({ where: { thingName, NOT: { id: vehicle.id } }, select: { code: true } });
     if (clash) throw new Error(`thingName ${thingName} já pertence a ${clash.code}.`);
 
@@ -131,16 +134,8 @@ async function main(): Promise<void> {
       if (dryRun) return;
     }
 
-    await prisma.$transaction(async (tx) => {
-      if (vehicle.thingName !== thingName) await tx.vehicle.update({ where: { id: vehicle.id }, data: { thingName } });
-      await tx.tracker.upsert({
-        where: { thingName },
-        create: { thingName, vehicleId: vehicle.id, imei: values.imei, certificateArn },
-        update: { vehicleId: vehicle.id, imei: values.imei ?? undefined, certificateArn: certificateArn ?? undefined },
-      });
-      // Um rastreador antigo da moto (outro thingName) é desvinculado.
-      await tx.tracker.updateMany({ where: { vehicleId: vehicle.id, NOT: { thingName } }, data: { vehicleId: null } });
-    });
+    // speed_control/protocol null (um ex-GT06 volta a MQTT); o rastreador antigo da moto é desvinculado antes do upsert.
+    await prisma.$transaction((tx) => linkMqttTracker(tx, { vehicle, thingName, imei: values.imei, certificateArn }));
     log({ msg: 'tracker_linked', thingName, vehicleCode });
   } finally {
     await prisma.$disconnect();

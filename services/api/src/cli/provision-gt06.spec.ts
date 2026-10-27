@@ -4,7 +4,7 @@ import { maskImei, provisionGt06, traccarAdminApi, type TraccarAdminApi } from '
 
 const IMEI = '860000000000901';
 
-function fakes(opts: { device?: { id: number } | null; imeiOwner?: string | null; existingVehicleId?: string | null } = {}) {
+function fakes(opts: { device?: { id: number } | null; imeiOwner?: string | null; existingVehicleId?: string | null; openRental?: boolean } = {}) {
   const tx = { vehicle: { update: jest.fn() }, tracker: { upsert: jest.fn(), updateMany: jest.fn() } };
   const prisma = {
     vehicle: { findUnique: jest.fn().mockResolvedValue({ id: 'veh-1', thingName: 'moto-0901' }), findFirst: jest.fn().mockResolvedValue(null) },
@@ -12,6 +12,7 @@ function fakes(opts: { device?: { id: number } | null; imeiOwner?: string | null
       findFirst: jest.fn().mockResolvedValue(opts.imeiOwner ? { thingName: opts.imeiOwner } : null),
       findUnique: jest.fn().mockResolvedValue(opts.existingVehicleId === undefined ? null : { vehicleId: opts.existingVehicleId }),
     },
+    rental: { findFirst: jest.fn().mockResolvedValue(opts.openRental ? { id: 'r-1' } : null) },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const traccar: jest.Mocked<TraccarAdminApi> = {
@@ -95,6 +96,19 @@ describe('provisionGt06: troca de rastreador e dono do thingName', () => {
     for (const existingVehicleId of [null, 'veh-1']) {
       const f = fakes({ existingVehicleId });
       await expect(provisionGt06(f.deps, input)).resolves.toMatchObject({ created: true });
+    }
+  });
+});
+
+describe('provisionGt06: aluguel aberto (onda final de correções)', () => {
+  it('moto com aluguel aberto → erro em pt-BR antes de Traccar e banco (nem dry-run)', async () => {
+    for (const dryRun of [false, true]) {
+      const f = fakes({ openRental: true });
+      await expect(provisionGt06(f.deps, { ...input, dryRun })).rejects.toThrow('A moto VLT-0901 está com um aluguel aberto; reprovisione o rastreador com a moto fora de aluguel.');
+      expect(f.prisma.rental.findFirst).toHaveBeenCalledWith({ where: { vehicleId: 'veh-1', status: { in: ['active', 'paused', 'ending'] } }, select: { id: true } });
+      expect(f.traccar.findDevice).not.toHaveBeenCalled();
+      expect(f.traccar.createDevice).not.toHaveBeenCalled();
+      expect(f.prisma.$transaction).not.toHaveBeenCalled();
     }
   });
 });
