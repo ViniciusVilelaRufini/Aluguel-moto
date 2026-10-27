@@ -39,3 +39,17 @@ describe('AlertsListeners (fila alertas)', () => {
     expect(parseCreateAlertInput({ type: 'tamper', priority: 'high', message: 'x', lat: 200 })).toBeNull();
   });
 });
+
+describe('zone_speed_exceeded (spec GT06 §10)', () => {
+  it('alerta high em zona de 6 km/h e medium em 20, com aluguel e posição da moto', async () => {
+    const alerts = { create: jest.fn().mockResolvedValue({}) };
+    const prisma = { vehicle: { findUnique: jest.fn().mockResolvedValue({ lat: -23.5, lng: -46.6 }) }, rental: { findFirst: jest.fn() } };
+    const l = new AlertsListeners(alerts as never, prisma as never, { publish: jest.fn(), subscribe: jest.fn() } as never);
+    await l.onZoneSpeedExceeded({ vehicleId: VEHICLE, rentalId: 'r1', speedLimitKmh: 6, speedKmh: 14.2, ts: '2026-10-27T12:00:06.000Z' });
+    await l.onZoneSpeedExceeded({ vehicleId: VEHICLE, speedLimitKmh: 20, speedKmh: 26, ts: '2026-10-27T12:01:00.000Z' });
+    expect(alerts.create).toHaveBeenNthCalledWith(1, {
+      type: 'zone_speed_exceeded', priority: 'high', message: 'Acima do limite da zona (6 km/h): o rastreador só relé não reduz a velocidade.', vehicleId: VEHICLE, rentalId: 'r1', lat: -23.5, lng: -46.6,
+    });
+    expect(alerts.create).toHaveBeenNthCalledWith(2, expect.objectContaining({ type: 'zone_speed_exceeded', priority: 'medium', rentalId: undefined }));
+  });
+});

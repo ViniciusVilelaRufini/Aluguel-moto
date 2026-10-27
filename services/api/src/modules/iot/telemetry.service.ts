@@ -5,6 +5,7 @@ import { EV, IotConnectivityEvent, IotDeviceEvent, IotTelemetryEvent } from '../
 import type { BaseIotGateway } from './base-iot-gateway';
 import type { Clock } from './clock';
 import type { PositionInput, RentalLookup } from './geofence/geofence.service';
+import type { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
 import { DEFAULT_QUEUE_LAG_MS, DEFAULT_RECONNECT_GAP_MS, MAX_CLOCK_SKEW_MS } from './live-state.store';
 import { parseDeviceEvent, parseTelemetry } from './mqtt-contract';
 import type { InboundHandler, ReportedMeta, ReportedState } from './shadow-transport';
@@ -39,6 +40,8 @@ export class TelemetryService implements InboundHandler {
     private readonly events: EventEmitter2,
     private readonly clock: Clock,
     private readonly opts: TelemetryOptions,
+    /** Alerta `zone_speed_exceeded` de rastreador só relé (spec GT06 §10). */
+    private readonly zoneSpeed?: Pick<ZoneSpeedMonitor, 'onSample'>,
   ) {}
 
   /** Serializa o processamento por moto (diff de cercas e rampa dependem da ordem). */
@@ -161,6 +164,11 @@ export class TelemetryService implements InboundHandler {
         });
       }
       await this.geofence.onPosition({ vehicleId, thingName, lat: msg.lat, lng: msg.lng, ts });
+      if (this.zoneSpeed && applied.newest) {
+        await this.zoneSpeed
+          .onSample({ vehicleId, thingName, speedKmh: msg.velocidade_kmh, measuredAt: Math.min(deviceTs, now) })
+          .catch((err: Error) => this.logger.error({ msg: 'zone_speed_check_failed', thingName, error: err.message }));
+      }
     });
   }
 

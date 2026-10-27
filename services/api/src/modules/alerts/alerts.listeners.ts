@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { AlertPriority, AlertType } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
-import { CommandChangedEvent, EV, GeofenceTransitionEvent, IotConnectivityEvent, IotDeviceEvent } from '../../common/events';
+import { CommandChangedEvent, EV, GeofenceTransitionEvent, IotConnectivityEvent, IotDeviceEvent, ZoneSpeedExceededEvent } from '../../common/events';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PAYMENT_NEEDS_REVIEW, type PaymentNeedsReviewEvent } from '../payments/payment-review';
@@ -116,6 +116,19 @@ export class AlertsListeners implements OnModuleInit {
   }
 
   /** Pagamento que exige revisão manual (Task 14): alerta `payment_needs_review`, um aberto por pagamento. */
+  /** Moto `relay_only` acima do limite da zona por mais de 5 s (spec GT06 §10); a deduplicação de 10 min agrupa repetições. */
+  @OnEvent(EV.ZONE_SPEED_EXCEEDED, { async: true, promisify: true })
+  async onZoneSpeedExceeded(ev: ZoneSpeedExceededEvent): Promise<void> {
+    await this.alerts.create({
+      type: 'zone_speed_exceeded',
+      priority: ev.speedLimitKmh <= 6 ? 'high' : 'medium',
+      message: `Acima do limite da zona (${ev.speedLimitKmh} km/h): o rastreador só relé não reduz a velocidade.`,
+      vehicleId: ev.vehicleId,
+      rentalId: ev.rentalId,
+      ...(await this.position(ev.vehicleId)),
+    });
+  }
+
   @OnEvent(PAYMENT_NEEDS_REVIEW, { async: true, promisify: true })
   async onPaymentNeedsReview(ev: PaymentNeedsReviewEvent): Promise<void> {
     try {

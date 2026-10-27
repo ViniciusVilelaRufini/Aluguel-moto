@@ -337,3 +337,66 @@ describe('GeofenceService', () => {
     expect(delSpy.mock.calls.filter((c) => String(c[0]).startsWith('geofence:out-of-area:')).length).toBeLessThanOrEqual(1);
   });
 });
+
+describe('GeofenceService com rastreador relay_only (spec GT06 §10)', () => {
+  function setupRelay(mode: 'relay_only' | 'speed_control' | 'error' = 'relay_only') {
+    const base = setup();
+    const modes = { byVehicle: mode === 'error' ? jest.fn().mockRejectedValue(new Error('db fora')) : jest.fn().mockResolvedValue(mode), invalidate: jest.fn() };
+    const svc = new GeofenceService(base.engine, base.commander, base.rentals, base.events, base.clock, new MemoryRedisStore(), { outOfAreaLockMinutes: 5 }, undefined, undefined, modes);
+    return { ...base, svc };
+  }
+
+  it('ENTER em reduced_speed: transição com advisory e nenhum comando de limite; o limite da zona continua conhecido', async () => {
+    const { svc, engine, transitions, commander } = setupRelay();
+    engine.zones = [OPERATION];
+    await svc.onPosition(pos());
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(pos('2026-10-21T15:00:05.000Z'));
+    expect(transitions[transitions.length - 1]).toEqual({
+      vehicleId: 'veh-1', rentalId: 'rent-1', zoneId: 'z-ped', zoneType: 'reduced_speed', speedLimitKmh: 6, transition: 'ENTER', advisory: true, ts: '2026-10-21T15:00:05.000Z',
+    });
+    expect(commander.setSpeedLimit).not.toHaveBeenCalled();
+    expect(await svc.effectiveLimit('moto-0001')).toBe(6);
+  });
+
+  it('L4: relay_only nunca recebe comando de limite ao entrar e ao sair de zona reduced_speed', async () => {
+    const { svc, engine, commander, transitions } = setupRelay();
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(pos());
+    engine.zones = [OPERATION];
+    await svc.onPosition(pos('2026-10-21T15:00:05.000Z'));
+    engine.zones = [OPERATION, BIKE_LANE];
+    await svc.onPosition(pos('2026-10-21T15:00:10.000Z'));
+    expect(commander.setSpeedLimit).not.toHaveBeenCalled();
+    expect(transitions.filter((t) => t.zoneType === 'reduced_speed' && t.transition === 'ENTER').every((t) => t.advisory === true)).toBe(true);
+    expect(transitions.some((t) => t.zoneType === 'reduced_speed' && t.transition === 'EXIT')).toBe(true);
+  });
+
+  it('speed_control com o lookup presente: comportamento inalterado (comando de limite, sem advisory)', async () => {
+    const { svc, engine, commander, transitions } = setupRelay('speed_control');
+    engine.zones = [OPERATION];
+    await svc.onPosition(pos());
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(pos('2026-10-21T15:00:05.000Z'));
+    expect(commander.setSpeedLimit).toHaveBeenCalledWith('veh-1', 6, expect.objectContaining({ rentalId: 'rent-1' }));
+    expect(transitions.some((t) => 'advisory' in t)).toBe(false);
+  });
+
+  it('EXIT da área com aluguel: bloqueio pedido após 5 min, como hoje (a estratégia é do CommandsService)', async () => {
+    const { svc, engine, clock, commander } = setupRelay();
+    engine.zones = [OPERATION];
+    await svc.onPosition(pos());
+    engine.zones = [];
+    await svc.onPosition(pos());
+    await clock.advance(5 * 60_000);
+    expect(commander.safeLock).toHaveBeenCalledWith('veh-1', { rentalId: 'rent-1', purpose: 'out_of_area' });
+  });
+
+  it('erro ao ler o tipo do rastreador → trata como speed_control (aplica o limite; nunca falha aberto)', async () => {
+    const { svc, engine, commander, transitions } = setupRelay('error');
+    engine.zones = [OPERATION, PEDESTRIAN];
+    await svc.onPosition(pos());
+    expect(commander.setSpeedLimit).toHaveBeenCalledWith('veh-1', 6, expect.anything());
+    expect(transitions.some((t) => 'advisory' in t)).toBe(false);
+  });
+});

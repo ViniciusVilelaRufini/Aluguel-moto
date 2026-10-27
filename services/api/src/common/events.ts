@@ -8,6 +8,7 @@ export const EV = {
   IOT_COMMAND_UPDATED: 'iot.command-updated',
   IOT_CONNECTIVITY: 'iot.connectivity',
   GEOFENCE_TRANSITION: 'geofence.transition',
+  ZONE_SPEED_EXCEEDED: 'zone.speed-exceeded',
   PAYMENT_UPDATED: 'payment.updated',
   // Eventos próprios da API (Task 3) — alimentam o WebSocket e as Tasks 4/5.
   VEHICLE_STATUS_CHANGED: 'vehicle.status-changed',
@@ -117,6 +118,17 @@ export interface GeofenceTransitionEvent {
   zoneType: ZoneType;
   speedLimitKmh?: number;
   transition: 'ENTER' | 'EXIT';
+  ts: string;
+  /** Moto com rastreador `relay_only`: o limite de `reduced_speed` não é imposto, é aviso (spec GT06 §10). */
+  advisory?: boolean;
+}
+
+/** Moto `relay_only` acima do limite da zona por mais de 5 s (spec GT06 §10). Sem dado pessoal: só ids e velocidades. */
+export interface ZoneSpeedExceededEvent {
+  vehicleId: string;
+  rentalId?: string;
+  speedLimitKmh: number;
+  speedKmh: number;
   ts: string;
 }
 

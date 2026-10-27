@@ -40,10 +40,12 @@ interface VehicleCache {
   at: number;
 }
 
-export function zoneMessage(ev: Pick<GeofenceTransitionEvent, 'zoneType' | 'transition' | 'speedLimitKmh'>): string {
+export function zoneMessage(ev: Pick<GeofenceTransitionEvent, 'zoneType' | 'transition' | 'speedLimitKmh' | 'advisory'>): string {
   const enter = ev.transition === 'ENTER';
   switch (ev.zoneType) {
     case 'reduced_speed':
+      // Rastreador só relé (spec GT06 §10): o limite não é imposto — aviso com o texto da spec.
+      if (enter && ev.advisory) return `Área com limite de ${ev.speedLimitKmh ?? 20} km/h.`;
       if (!enter) return 'Você saiu da área de velocidade reduzida.';
       return ev.speedLimitKmh !== undefined && ev.speedLimitKmh <= 6
         ? `Você entrou numa área de pedestres. Velocidade máxima: ${ev.speedLimitKmh} km/h.`
@@ -207,6 +209,7 @@ export class RealtimeGateway implements OnGatewayInit {
     if (!rentalId || !this.server) return;
     const payload: Record<string, unknown> = { rentalId, zoneType: ev.zoneType, transition: ev.transition, message: zoneMessage(ev) };
     if (ev.speedLimitKmh !== undefined) payload.speedLimitKmh = ev.speedLimitKmh;
+    if (ev.advisory) payload.advisory = true;
     this.server.to(`rental:${rentalId}`).emit('zone.notice', payload);
   }
 

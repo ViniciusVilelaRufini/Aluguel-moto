@@ -5,6 +5,7 @@ import { EV, GeofenceTransitionEvent, ZoneChangedEvent } from '../../../common/e
 import { LockUnavailableError, outsideLock, RedisMutex } from '../../../redis/redis-mutex';
 import type { RedisStore } from '../../../redis/redis-store';
 import type { Clock, TimerHandle } from '../clock';
+import type { TrackerModeLookup } from '../tracker-mode';
 import { effectiveZoneLimit } from '../speed-limit';
 import type { GeofenceEngine, ZoneRef } from './geofence-engine';
 
@@ -117,6 +118,8 @@ export class GeofenceService {
     private readonly opts: { outOfAreaLockMinutes: number },
     private readonly positions?: ZoneVehiclePositions,
     private readonly live?: LiveVehicleSource,
+    /** Tipo do rastreador (spec GT06 §10): `relay_only` não recebe comando de limite; o ENTER vira aviso. */
+    private readonly modes?: TrackerModeLookup,
   ) {
     // O lock cobre a avaliação inteira, inclusive o comando de limite da zona (que espera a confirmação por alguns segundos).
     this.mutex = new RedisMutex(redis, { ttlMs: 30_000, waitMs: 10_000 });
@@ -318,6 +321,9 @@ export class GeofenceService {
     const enters = onlyOneOperation(zones.filter((z) => !prevIds.has(z.id) && (z.type !== 'operation' || (!opBefore && opNow))));
 
     const limit = zoneLimitOf(zones);
+    // Rastreador só relé: o limite da zona continua gravado (unlock, monitor de velocidade), mas não vira comando. Erro de leitura
+    // = speed_control (aplicar o limite nunca falha aberto).
+    const relayOnly = (await this.modes?.byVehicle(p.vehicleId).catch(() => 'speed_control' as const)) === 'relay_only';
     // Sempre grava (sob o lock da moto) e antes do comando de zona: o valor compartilhado é a fonte da verdade do `unlock` e do
     // teto dos comandos manuais (comparar com a cópia desta instância deixava o Redis velho — revisão C1), e o teto QA-01 do
     // gateway já vê o limite novo ao sair de uma zona mais restritiva (auditoria). Escrita perdida → a memória vale.
@@ -338,7 +344,7 @@ export class GeofenceService {
     const applied = reducedChanged ? state.appliedLimit : (state.appliedLimit ?? MAX_SPEED_KMH);
     // Auditoria, item 1: um desired acima da zona (ex.: unlock com limite antigo, em outra instância) é corrigido mesmo com
     // `appliedLimit` igual. Abaixo da zona (limite manual menor, rampa do bloqueio, hold em 0) fica como está.
-    const desired = await this.live?.desiredLimit(p.thingName).catch(() => null);
+    const desired = relayOnly ? null : await this.live?.desiredLimit(p.thingName).catch(() => null);
     const desiredAbove = desired !== undefined && desired !== null && desired > limit;
     // Depois de um limite de falha fechada (motor fora, nesta ou noutra instância): manda o limite real. Noutra instância isso
     // aparece como primeira avaliação (sem estado) com um desired conhecido diferente da zona; sem desired conhecido não força.
@@ -351,17 +357,21 @@ export class GeofenceService {
     }
 
     const rentalId = await this.rentals.openRentalId(p.vehicleId);
-    for (const z of exits) this.emit(p, z, 'EXIT', rentalId);
-    for (const z of enters) this.emit(p, z, 'ENTER', rentalId);
+    for (const z of exits) this.emit(p, z, 'EXIT', rentalId, relayOnly);
+    for (const z of enters) this.emit(p, z, 'ENTER', rentalId, relayOnly);
 
     if (limitChanged) {
       if (desiredAbove) this.logger.warn({ msg: 'zone_limit_resent_desired_above', vehicleId: p.vehicleId, desired, limit });
       state.appliedLimit = limit;
       // Estado gravado antes do comando (auditoria): outra instância que avalie a moto durante a confirmação já vê o limite novo.
       await this.save(p.vehicleId, state);
-      await this.commander
-        .setSpeedLimit(p.vehicleId, limit, { rentalId, purpose: 'zone_speed_limit' })
-        .catch((err) => this.logger.error({ msg: 'zone_speed_limit_failed', vehicleId: p.vehicleId, error: (err as Error).message }));
+      if (relayOnly) {
+        this.logger.log({ msg: 'zone_speed_limit_advisory', vehicleId: p.vehicleId, limit });
+      } else {
+        await this.commander
+          .setSpeedLimit(p.vehicleId, limit, { rentalId, purpose: 'zone_speed_limit' })
+          .catch((err) => this.logger.error({ msg: 'zone_speed_limit_failed', vehicleId: p.vehicleId, error: (err as Error).message }));
+      }
     }
     await this.evaluateOutOfArea(p.vehicleId, state, opNow, rentalId);
     await this.save(p.vehicleId, state);
@@ -422,10 +432,11 @@ export class GeofenceService {
     });
   }
 
-  private emit(p: PositionInput, z: ZoneRef, transition: 'ENTER' | 'EXIT', rentalId?: string): void {
+  private emit(p: PositionInput, z: ZoneRef, transition: 'ENTER' | 'EXIT', rentalId?: string, relayOnly = false): void {
     const ev: GeofenceTransitionEvent = { vehicleId: p.vehicleId, zoneId: z.id, zoneType: z.type, transition, ts: p.ts };
     if (rentalId) ev.rentalId = rentalId;
     if (z.speedLimitKmh !== null && z.speedLimitKmh !== undefined) ev.speedLimitKmh = z.speedLimitKmh;
+    if (relayOnly && z.type === 'reduced_speed') ev.advisory = true;
     this.logger.log({ msg: 'geofence_transition', vehicleId: p.vehicleId, zoneId: z.id, zoneType: z.type, transition });
     this.events.emit(EV.GEOFENCE_TRANSITION, sortKeys(ev));
   }
@@ -546,6 +557,7 @@ function sortKeys(ev: GeofenceTransitionEvent): GeofenceTransitionEvent {
   out.zoneType = ev.zoneType;
   if (ev.speedLimitKmh !== undefined) out.speedLimitKmh = ev.speedLimitKmh;
   out.transition = ev.transition;
+  if (ev.advisory) out.advisory = true;
   out.ts = ev.ts;
   return out as unknown as GeofenceTransitionEvent;
 }

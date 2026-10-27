@@ -28,6 +28,8 @@ import { RedisSafeLockStore } from './safe-lock.store';
 import { RedisRelayLockStore } from './relay-lock.store';
 import { StubIotGateway } from './stub-iot-gateway';
 import { TelemetryService } from './telemetry.service';
+import { PrismaTrackerModeLookup, TRACKER_MODES, type TrackerModeLookup } from './tracker-mode';
+import { ZoneSpeedMonitor } from './geofence/zone-speed-monitor';
 
 /**
  * Módulo IoT (Task 4). Seleção por variável de ambiente:
@@ -74,9 +76,10 @@ import { TelemetryService } from './telemetry.service';
     },
     { provide: RENTAL_LOOKUP, inject: [PrismaService, IOT_CLOCK], useFactory: (prisma: PrismaService, clock: Clock) => new PrismaRentalLookup(prisma, clock) },
     { provide: GEOFENCE_COMMANDER, inject: [ModuleRef], useFactory: (moduleRef: ModuleRef) => new CommandsGeofenceCommander(moduleRef) },
+    { provide: TRACKER_MODES, inject: [PrismaService, IOT_CLOCK], useFactory: (prisma: PrismaService, clock: Clock) => new PrismaTrackerModeLookup(prisma, clock) },
     {
       provide: GeofenceService,
-      inject: [GEOFENCE_ENGINE, GEOFENCE_COMMANDER, RENTAL_LOOKUP, EventEmitter2, IOT_CLOCK, REDIS_STORE, IOT_CONFIG, PrismaService, LiveStateStore],
+      inject: [GEOFENCE_ENGINE, GEOFENCE_COMMANDER, RENTAL_LOOKUP, EventEmitter2, IOT_CLOCK, REDIS_STORE, IOT_CONFIG, PrismaService, LiveStateStore, TRACKER_MODES],
       useFactory: (
         engine: GeofenceEngine,
         commander: GeofenceCommander,
@@ -87,13 +90,19 @@ import { TelemetryService } from './telemetry.service';
         cfg: IotConfig,
         prisma: PrismaService,
         live: LiveStateStore,
-      ) => new GeofenceService(engine, commander, rentals, events, clock, redis, { outOfAreaLockMinutes: cfg.outOfAreaLockMinutes }, new PrismaZoneVehiclePositions(prisma), live),
+        modes: TrackerModeLookup,
+      ) => new GeofenceService(engine, commander, rentals, events, clock, redis, { outOfAreaLockMinutes: cfg.outOfAreaLockMinutes }, new PrismaZoneVehiclePositions(prisma), live, modes),
+    },
+    {
+      provide: ZoneSpeedMonitor,
+      inject: [TRACKER_MODES, GeofenceService, REDIS_STORE, EventEmitter2, RENTAL_LOOKUP],
+      useFactory: (modes: TrackerModeLookup, geofence: GeofenceService, redis: RedisStore, events: EventEmitter2, rentals: RentalLookup) => new ZoneSpeedMonitor(modes, geofence, redis, events, rentals),
     },
     {
       provide: TelemetryService,
-      inject: [IOT_GATEWAY, GeofenceService, RENTAL_LOOKUP, PrismaService, EventEmitter2, IOT_CLOCK, APP_CONFIG, IOT_CONFIG],
-      useFactory: (gw: IotGateway, geofence: GeofenceService, rentals: RentalLookup, prisma: PrismaService, events: EventEmitter2, clock: Clock, app: AppConfig, cfg: IotConfig) =>
-        gw instanceof BaseIotGateway ? new TelemetryService(gw, geofence, rentals, prisma, events, clock, { trackRetentionDays: app.trackRetentionDays, reconnectGapMs: cfg.reconnectGapMs, queueLagMs: cfg.queueLagMs }) : null,
+      inject: [IOT_GATEWAY, GeofenceService, RENTAL_LOOKUP, PrismaService, EventEmitter2, IOT_CLOCK, APP_CONFIG, IOT_CONFIG, ZoneSpeedMonitor],
+      useFactory: (gw: IotGateway, geofence: GeofenceService, rentals: RentalLookup, prisma: PrismaService, events: EventEmitter2, clock: Clock, app: AppConfig, cfg: IotConfig, zoneSpeed: ZoneSpeedMonitor) =>
+        gw instanceof BaseIotGateway ? new TelemetryService(gw, geofence, rentals, prisma, events, clock, { trackRetentionDays: app.trackRetentionDays, reconnectGapMs: cfg.reconnectGapMs, queueLagMs: cfg.queueLagMs }, zoneSpeed) : null,
     },
     IotRuntime,
   ],
