@@ -76,7 +76,14 @@ describe('docker-compose.yml: profile gt06 (spec GT06 §7)', () => {
     expect(b).not.toMatch(/DATABASE_URL: postgresql:\/\/volti:/);
     expect(b).toContain('BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}');
     expect(b).toMatch(/bridge-db-grants:\s+condition: service_completed_successfully/);
-    expect(b).not.toMatch(/AWS_|ports:|healthcheck:/);
+    expect(b).not.toMatch(/AWS_|ports:/);
+  });
+
+  it('B-I3: ponte com healthcheck do arquivo de vida (fila de entrada andando); o emulador, mesma imagem, desliga o herdado', () => {
+    const b = service(compose, 'traccar-bridge');
+    expect(b).toMatch(/healthcheck:\s+test: \["CMD", "node", "dist\/healthcheck\.js"\]/);
+    expect(b).toMatch(/start_period: 60s/);
+    expect(service(compose, 'gt06-emulator')).toMatch(/healthcheck:\s+disable: true/);
   });
 
   it('emulador: imagem da ponte, aponta para traccar:5023, cenário e bateria por variável', () => {

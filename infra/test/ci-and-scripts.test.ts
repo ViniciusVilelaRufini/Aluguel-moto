@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, statSync } from 'fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, statSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { planFromArgs, provision } from '../scripts/provision-station';
@@ -23,6 +23,8 @@ describe('CI workflow (.github/workflows/infra.yml)', () => {
       'pnpm --filter admin test',
       'pnpm --filter traccar-bridge lint',
       'pnpm --filter traccar-bridge test',
+      'pnpm --filter iot-sim lint',
+      'pnpm --filter iot-sim test',
     ]) {
       expect(checks).toContain(cmd);
     }
@@ -34,6 +36,22 @@ describe('CI workflow (.github/workflows/infra.yml)', () => {
     for (const p of ["'services/api/**'", "'services/traccar-bridge/**'", "'apps/admin/**'", "'packages/contracts/**'"]) {
       expect(yml.split(p).length - 1).toBe(2); // pull_request and push
     }
+  });
+
+  it('also runs on the dev single deploy files, the local compose and the tracker simulator', () => {
+    for (const p of ["'deploy/**'", "'docker-compose.yml'", "'services/iot-sim/**'"]) {
+      expect(yml.split(p).length - 1).toBe(2); // pull_request and push
+    }
+  });
+});
+
+describe('.github/workflows/*.yml', () => {
+  const dir = join(__dirname, '..', '..', '.github', 'workflows');
+  const files = readdirSync(dir).filter((f) => /\.ya?ml$/.test(f));
+
+  it.each(files)('%s is valid UTF-8 (no Latin-1 bytes)', (f) => {
+    const bytes = readFileSync(join(dir, f));
+    expect(() => new TextDecoder('utf-8', { fatal: true }).decode(bytes)).not.toThrow();
   });
 });
 

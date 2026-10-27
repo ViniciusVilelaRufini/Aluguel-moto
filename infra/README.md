@@ -389,7 +389,9 @@ Ambientes implantados antes da correção QA-19 (segredo do webhook gerado aleat
 `desiredCount` 0 até o primeiro deploy) atrás de um NLB TCP 5023,
 REST 8082 só para a ponte (Cloud Map `traccar.traccar.volti-<env>.internal`), ponte em Fargate publicando no IoT Core com
 certificado de serviço e política `volti-<env>-traccar-bridge-policy` restrita aos thingNames listados. Prod exige `apnCidrs`.
-A ponte não expõe endpoint HTTP de saúde, então a task dela não tem health check de container.
+A ponte não expõe endpoint HTTP; o container dela tem health check de arquivo de vida (`node dist/healthcheck.js`, o mesmo
+HEALTHCHECK do Dockerfile: `/tmp/bridge-alive` só é tocado enquanto a fila de entrada anda; mais de 120 s parado = unhealthy e o
+ECS substitui a task).
 
 Antes do primeiro deploy (DONO): validar que `UpdateThingShadow` funciona para um thing não registrado (o provisionamento GT06 não
 cria thing); criar no RDS o banco `traccar` (dono `traccar`) e os papéis `traccar` e `volti_bridge` com as senhas dos segredos
@@ -397,6 +399,20 @@ cria thing); criar no RDS o banco `traccar` (dono `traccar`) e os papéis `tracc
 (`aws iot create-keys-and-certificate --set-as-active`), anexar a política e colar `certificatePem`/`privateKey` em
 `volti/<env>/traccar-bridge-iot`; publicar a imagem da ponte no ECR `volti-<env>-traccar-bridge`; trocar `DATABASE_SSL=require`
 (cifrado, sem verificar a CA) por verificação com o bundle da RDS. Um J16 novo em produção = `cdk deploy` com o thing na lista.
+
+Usuários do Traccar (DONO, uma vez, depois do Traccar no ar — o `provision-gt06` **não** cria usuários, só o dispositivo e o
+vínculo dele ao usuário da ponte):
+
+1. Alcançar a REST 8082 (nunca exposta): ECS Exec na task do Traccar (`aws ecs execute-command --cluster volti-<env>-traccar
+   --task <id> --container traccar --interactive --command "/bin/bash"`, exige `enableExecuteCommand` no serviço) ou um
+   bastion/SSM port forward até o IP privado da task (`AWS-StartPortForwardingSessionToRemoteHost`, `portNumber=8082`).
+   O CLI `provision-gt06` roda de onde alcance essa porta (task da API com ECS Exec, ou pelo port forward) com
+   `TRACCAR_URL`, `TRACCAR_ADMIN_PASSWORD` (segredo `volti/<env>/traccar-admin`) e `TRACCAR_BRIDGE_EMAIL=bridge@volti.local`.
+2. Criar o admin `admin@volti.local` como **primeiro** usuário (`POST /api/users`, vira administrador) com a senha de
+   `volti/<env>/traccar-admin`.
+3. Como admin, criar `bridge@volti.local` (não admin) com a senha de `volti/<env>/traccar-bridge-user`.
+4. Desligar o cadastro aberto: `PUT /api/server` com `registration: false` (mesma lógica do `deploy/single/gt06.sh init`).
+5. Conferir `GET /api/server` → `version` ≥ 6.7.0 como texto (com `null` a ponte recusa todos os comandos de motor).
 
 Opções extras da proposta: sem `apnCidrs` a stack recusa; só fora de prod, `-c openGt06=true` abre a 5023 à internet (bancada) e
 emite um warning no synth. `-c traccarDesiredCount=1` liga as duas tasks (padrão 0, para os deploys seguintes não zerarem) e exige

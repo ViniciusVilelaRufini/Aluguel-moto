@@ -124,7 +124,6 @@ services:
       postgres:
         condition: service_healthy
   # Ponte Traccar -> MQTT; no local ela cria o primeiro usuário do Traccar (admin) com estas credenciais.
-  # Sem HEALTHCHECK: a ponte não tem endpoint HTTP (observável pelos logs JSON).
   traccar-bridge:
     profiles: ["gt06"]
     build:
@@ -141,6 +140,14 @@ services:
       TRACCAR_BOOTSTRAP_ADMIN: "true"
       DATABASE_URL: postgresql://volti_bridge:volti-bridge-local@postgres:5432/volti
       BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}
+    # B-I3: o arquivo de vida só avança com a fila de entrada da ponte andando (mesmo HEALTHCHECK do Dockerfile). O Docker não
+    # reinicia contêiner unhealthy sozinho: o estado aparece em `docker ps` / `docker inspect` (no ECS a task é substituída).
+    healthcheck:
+      test: ["CMD", "node", "dist/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
     depends_on:
       postgres:
         condition: service_healthy
@@ -159,6 +166,9 @@ services:
     image: volti/traccar-bridge:local
     restart: unless-stopped
     command: ["node", "dist/gt06/emulator-main.js"]
+    # Mesma imagem da ponte: sem arquivo de vida, o HEALTHCHECK herdado do Dockerfile não vale para o emulador.
+    healthcheck:
+      disable: true
     environment:
       GT06_HOST: traccar
       GT06_PORT: "5023"

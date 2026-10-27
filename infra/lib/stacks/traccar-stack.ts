@@ -1,4 +1,4 @@
-import { Annotations, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { Annotations, Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -96,7 +96,8 @@ export class TraccarStack extends Stack {
     const secret = (key: string, name: string, description: string) =>
       new secretsmanager.Secret(this, key, { secretName: `volti/${env}/${name}`, description, generateSecretString: { passwordLength: 40, excludePunctuation: true }, removalPolicy: removal });
     const traccarDb = secret('TraccarDbSecret', 'traccar-db', 'Senha do papel traccar (database traccar no RDS)');
-    // Usado só pelo CLI do dono (provision-gt06: cria o admin do Traccar e o usuário da ponte); nenhuma task o lê.
+    // Nenhuma task o lê. O DONO cria à mão o admin do Traccar com esta senha (primeiro usuário) e, como admin, o usuário da
+    // ponte; o CLI provision-gt06 usa o admin só para criar o dispositivo e ligá-lo à ponte — NÃO cria usuários (infra/README).
     secret('TraccarAdminSecret', 'traccar-admin', 'Senha de admin@volti.local no Traccar (provisionamento)');
     const bridgeUser = secret('BridgeUserSecret', 'traccar-bridge-user', 'Senha de bridge@volti.local no Traccar');
     const bridgeDb = secret('BridgeDbSecret', 'traccar-bridge-db', 'Senha do papel volti_bridge (SELECT em 3 colunas de "Tracker")');
@@ -185,6 +186,14 @@ export class TraccarStack extends Stack {
         MQTT_KEY_PEM: ecs.Secret.fromSecretsManager(bridgeCert, 'privateKey'),
       },
       logging: ecs.LogDrivers.awsLogs({ streamPrefix: 'bridge', logGroup }),
+      // B-I3: mesmo HEALTHCHECK do Dockerfile — arquivo de vida com mais de 120 s (fila de entrada travada) → task substituída.
+      healthCheck: {
+        command: ['CMD', 'node', 'dist/healthcheck.js'],
+        interval: Duration.seconds(30),
+        timeout: Duration.seconds(10),
+        retries: 3,
+        startPeriod: Duration.seconds(60),
+      },
     });
     this.bridgeService = new ecs.FargateService(this, 'Bridge', {
       serviceName: `volti-${env}-traccar-bridge`,

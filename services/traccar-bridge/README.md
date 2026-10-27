@@ -27,8 +27,10 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   log `alarm_ignored`. Os alarmes vêm de `position.attributes.alarm` (sem Notification no Traccar o WebSocket não traz
   `events`); se houver Notification, o mesmo alarme por `events` é deduplicado pelo id da posição. Replay de conexão não gera alarme.
 - **Shadow:** todo delta passa pela segunda guarda. `travada: true` → `engineStop` **só** com o dispositivo online, posição de até
-  10 s abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
-  em 10 s); recusa = log `engine_stop_refused` com o motivo. Lock numa moto já travada → eco `reported.travada: true`.
+  10 s abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
+  em 10 s); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
+  releitura da versão e de qualquer outra espera), com o aparelho resolvido uma vez no início do delta: se a posição envelheceu,
+  o dispositivo caiu ou o IMEI do thing mudou no meio (`device_changed`), nada é enviado. Lock numa moto já travada → eco `reported.travada: true`.
   `travada: false` → `engineResume`; `travada` null/ausente não vira comando; `limite_kmh` nunca vira comando (reported
   `limite_kmh: 32`).
 - **Comandos sem fila:** `engineStop`/`engineResume` vão com `attributes.noQueue`; se o dispositivo caiu entre a checagem e o
@@ -38,8 +40,15 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   "comando aceito" nem de memória anterior à reconexão: na mudança, ou no máximo 1/min se igual. O eco do lock numa moto já
   travada sai sempre. Bit recebido há mais de 90 s não vale para "já travada" nem para o eco (sessão TCP nova do J16 pode não
   aparecer no Traccar; **heartbeat do J16 ≤ 60 s é obrigatório**).
-- **MQTT fora:** telemetria (QoS 0) é descartada e `reported` não vai para a fila offline; na reconexão a ponte reassina e
-  republica `reported.travada` do estado atual. Publicação sem conclusão em 10 s é abandonada (log `mqtt_publish_timeout`).
+- **MQTT fora:** nada é entregue ao mqtt.js: telemetria (QoS 0) é descartada; `reported`, presença, eventos e `shadow/get`
+  (QoS 1) são pulados na hora (log `mqtt_down_skipped` com o tipo, 1/min por moto e tipo), sem esperar o prazo. Um QoS 1 que já
+  estava em voo na queda (ou abandonado pelo prazo) fica no `outgoingStore` do mqtt.js, que o reenvia na reconexão **antes** do
+  `connect`; depois disso a ponte reassina, republica `reported.travada` do estado atual (que vale por último) e pede `shadow/get`
+  das motos online. Publicação sem conclusão em 10 s é abandonada (log `mqtt_publish_timeout`); SUBSCRIBE sem SUBACK em 10 s
+  falha (`mqtt_subscribe_timeout`, tenta de novo na próxima releitura do registro).
+- **Desbloqueio pendente:** no início e a cada reconexão do MQTT a ponte pede `shadow/get` de cada moto do registro online no
+  Traccar; um `travada: false` pendente (desbloqueio pedido com a ponte fora) vira `engineResume` sem esperar o aparelho reconectar.
+  `travada: true` pendente nunca é reaplicado.
 - **Reconexão:** dispositivo online de novo no Traccar → esquece o bit de corte, presença `connected` (só local), reported completo
   (sem `travada` até chegar status novo) e `shadow/get`; do get só `travada: false` pendente é reaplicado (nunca `true`: a API
   recomeça o fluxo). WebSocket da ponte reaberto → esquece o bit de corte de todas as motos e ignora o `blocked` do replay de
@@ -47,8 +56,16 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   55 s) por 130 s, derruba e reconecta.
 - `motos/{t}/comandos` (buzina) é ignorado (log `command_ignored_no_horn`).
 - **Registro** IMEI → thingName: `Tracker` com `controlMode = relay_only` (papel `volti_bridge`, só SELECT em 3 colunas), relido a
-  cada `REGISTRY_REFRESH_MS` e, para IMEI desconhecido, no máximo a cada 10 s (log `traccar_unknown_device` 1/min por IMEI). Thing
-  com IMEI trocado, removido ou devolvido recomeça sem memória (bit de corte, envio recente, `modo_roubada`).
+  cada `REGISTRY_REFRESH_MS` e, para IMEI desconhecido, no máximo a cada 10 s **sem segurar a fila de entrada** (a mensagem que
+  disparou a releitura é descartada como desconhecida; as seguintes já mapeiam; uma releitura em voo por vez). Log
+  `traccar_unknown_device` 1/min por IMEI. Thing com IMEI trocado, removido ou devolvido recomeça sem memória (bit de corte, envio
+  recente, `modo_roubada`).
+- **Prazos de I/O (nada espera para sempre na fila de entrada):** Postgres com `connectionTimeoutMillis`, `query_timeout` e
+  `statement_timeout` de 5 s (erro de cliente ocioso vira log `db_pool_error`, sem derrubar o processo); toda chamada REST ao
+  Traccar com `AbortSignal.timeout` de 10 s; publicação MQTT 10 s; SUBSCRIBE 10 s.
+- **Saúde (HEALTHCHECK):** a cada 30 s uma sonda entra na fila de entrada; ao ser processada, toca `LIVENESS_FILE`
+  (`/tmp/bridge-alive`). `node dist/healthcheck.js` falha se o arquivo tem mais de 120 s (fila travada). Usado pelo Dockerfile, pelos
+  dois compose (o emulador, mesma imagem, desliga o herdado) e pelo health check do container no ECS (task substituída).
 - Logs JSON por linha, sem dado pessoal; IMEI sempre mascarado (`***********0901`).
 
 ## Variáveis
@@ -66,6 +83,7 @@ Nenhum segredo no código: senhas e certificado vêm do ambiente (Secrets Manage
 | `DATABASE_URL` ou `DATABASE_HOST/PORT/NAME/USER/PASSWORD` (+ `DATABASE_SSL=require`) | — | leitura do `Tracker` |
 | `BATTERY_MODEL` | `72v` | `48v`, `60v` ou `72v` |
 | `REGISTRY_REFRESH_MS` | `60000` | releitura do registro (≥ 1000) |
+| `LIVENESS_FILE` | `/tmp/bridge-alive` | arquivo de vida do HEALTHCHECK |
 
 ## Rodar e testar
 
@@ -87,8 +105,10 @@ sem corte; ordem telemetria → reported da ponte; GPS 8 s atrás (mais que a ca
 → andando nada corta, parada corta e confirma; Traccar 6.5 → nenhum comando de motor (lock e unlock); WebSocket que reconecta
 com bit de corte velho no replay → nada confirma; moto offline no meio → `pending`/`offline` → `in_progress`.
 
-Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuário `volti`, sem root). O `deploy/single/gt06.sh`
-entra numa próxima tarefa do plano. A ponte não tem endpoint HTTP, então a imagem e o compose não têm HEALTHCHECK (use os logs JSON).
+Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuário `volti`, sem root; base `node:24-alpine` fixada
+por digest — para atualizar, troque o `ARG NODE_IMAGE`). Dev single: `deploy/single/gt06.sh` e `deploy/single/cloudshell.md`. A
+ponte não tem endpoint HTTP; a saúde é o HEALTHCHECK do arquivo de vida (acima). O Docker não reinicia contêiner `unhealthy`
+sozinho (veja `docker ps`); no ECS a task é substituída.
 
 ### Local com Docker (profile `gt06` do `docker-compose.yml`)
 
@@ -143,7 +163,8 @@ o compose e a ponte nunca publicam `desired`.
 1. Cadastrar a moto (`POST /vehicles`) e rodar `pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle
    VLT-0000 --thing moto-0000 --imei <15 dígitos>`. Não cria certificado: marca o `Tracker` como `relay_only`/`gt06` e cria o
    dispositivo no Traccar (`uniqueId = IMEI`). Todo dispositivo GT06 precisa estar **vinculado ao usuário da ponte** no Traccar
-   (o `provision-gt06` faz isso): ser admin não basta para receber os pushes do `/api/socket`.
+   (o `provision-gt06` faz isso): ser admin não basta para receber os pushes do `/api/socket`. Com o `iot-sim` rodando (dev
+   single), **reinicie-o** depois de provisionar ou desprovisionar (o `gt06.sh` já faz): ele só lê a frota ao iniciar.
 2. Configurar o aparelho por SMS para o chip M2M. **Sintaxe a confirmar no manual do aparelho** (varia por firmware Concox):
    - APN: `APN,<apn>,<usuário>,<senha>#` (bancada: APN do chip M2M; produção: **APN privada**, requisito da ADR);
    - servidor: `SERVER,1,<domínio>,5023,0#` (domínio) ou `SERVER,0,<ip>,5023,0#` (IP);
