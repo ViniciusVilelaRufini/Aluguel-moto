@@ -32,7 +32,7 @@ export interface TraccarAdminApi {
 }
 
 /** API REST do Traccar com o usuário administrador (Basic auth). Só rede interna (spec §6.5). */
-export function traccarAdminApi(baseUrl: string, email: string, password: string, fetchImpl: typeof fetch = fetch): TraccarAdminApi {
+export function traccarAdminApi(baseUrl: string, email: string, password: string, fetchImpl: typeof fetch = fetch, warn: (entry: Record<string, unknown>) => void = () => undefined): TraccarAdminApi {
   const authorization = `Basic ${Buffer.from(`${email}:${password}`).toString('base64')}`;
   const call = (method: string, path: string, body?: unknown) =>
     fetchImpl(`${baseUrl}${path}`, {
@@ -58,8 +58,10 @@ export function traccarAdminApi(baseUrl: string, email: string, password: string
     },
     async linkDevice(userId, deviceId) {
       const res = await call('POST', '/api/permissions', { userId, deviceId });
-      // 400 = vínculo já existe (idempotente).
-      if (!res.ok && res.status !== 400) throw new Error(`Traccar vincular dispositivo: HTTP ${res.status}`);
+      // O Traccar responde 400 quando o vínculo usuário-dispositivo já existe (re-execução); mas 400 também pode ser outro erro
+      // de validação, então tratamos como idempotente e deixamos um aviso (só o status) para quem investigar.
+      if (res.status === 400) warn({ level: 'warn', msg: 'traccar_link_http_400', status: 400 });
+      else if (!res.ok) throw new Error(`Traccar vincular dispositivo: HTTP ${res.status}`);
     },
   };
 }
@@ -87,6 +89,8 @@ export async function provisionGt06(
   if (!vehicle) throw new Error(`Moto ${vehicleCode} não encontrada (cadastre com POST /vehicles).`);
   const clash = await deps.prisma.vehicle.findFirst({ where: { thingName, NOT: { id: vehicle.id } }, select: { code: true } });
   if (clash) throw new Error(`thingName ${thingName} já pertence a ${clash.code}.`);
+  const existingTracker = await deps.prisma.tracker.findUnique({ where: { thingName }, select: { vehicleId: true } });
+  if (existingTracker?.vehicleId && existingTracker.vehicleId !== vehicle.id) throw new Error(`thingName ${thingName} já está ligado a outra moto.`);
   const imeiOwner = await deps.prisma.tracker.findFirst({ where: { imei, NOT: { thingName } }, select: { thingName: true } });
   if (imeiOwner) throw new Error(`IMEI ${maskImei(imei)} já vinculado a ${imeiOwner.thingName}.`);
 
@@ -102,13 +106,13 @@ export async function provisionGt06(
   }
   await deps.prisma.$transaction(async (tx) => {
     if (vehicle.thingName !== thingName) await tx.vehicle.update({ where: { id: vehicle.id }, data: { thingName } });
+    // Tracker.vehicleId é único: desvincula o rastreador antigo da moto (outro thingName) ANTES de ligar este.
+    await tx.tracker.updateMany({ where: { vehicleId: vehicle.id, NOT: { thingName } }, data: { vehicleId: null } });
     await tx.tracker.upsert({
       where: { thingName },
       create: { thingName, vehicleId: vehicle.id, imei, controlMode: 'relay_only', protocol: 'gt06' },
       update: { vehicleId: vehicle.id, imei, controlMode: 'relay_only', protocol: 'gt06', certificateArn: null },
     });
-    // Um rastreador antigo da moto (outro thingName) é desvinculado.
-    await tx.tracker.updateMany({ where: { vehicleId: vehicle.id, NOT: { thingName } }, data: { vehicleId: null } });
   });
   deps.log({ msg: 'tracker_linked', protocol: 'gt06', thingName, vehicleCode, traccarDevice: existing ? 'existing' : 'created' });
   return { deviceId: device.id, created: !existing };
@@ -125,7 +129,7 @@ export async function main(argv: string[] = process.argv.slice(2), env: NodeJS.P
   });
   const password = env.TRACCAR_ADMIN_PASSWORD;
   if (!password) throw new Error('TRACCAR_ADMIN_PASSWORD ausente');
-  const traccar = traccarAdminApi(env.TRACCAR_URL || 'http://localhost:8082', env.TRACCAR_ADMIN_EMAIL || 'admin@volti.local', password);
+  const traccar = traccarAdminApi(env.TRACCAR_URL || 'http://localhost:8082', env.TRACCAR_ADMIN_EMAIL || 'admin@volti.local', password, fetch, log);
   const prisma = new PrismaClient();
   try {
     await provisionGt06(

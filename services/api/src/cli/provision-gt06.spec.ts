@@ -4,11 +4,14 @@ import { maskImei, provisionGt06, traccarAdminApi, type TraccarAdminApi } from '
 
 const IMEI = '860000000000901';
 
-function fakes(opts: { device?: { id: number } | null; imeiOwner?: string | null } = {}) {
+function fakes(opts: { device?: { id: number } | null; imeiOwner?: string | null; existingVehicleId?: string | null } = {}) {
   const tx = { vehicle: { update: jest.fn() }, tracker: { upsert: jest.fn(), updateMany: jest.fn() } };
   const prisma = {
     vehicle: { findUnique: jest.fn().mockResolvedValue({ id: 'veh-1', thingName: 'moto-0901' }), findFirst: jest.fn().mockResolvedValue(null) },
-    tracker: { findFirst: jest.fn().mockResolvedValue(opts.imeiOwner ? { thingName: opts.imeiOwner } : null) },
+    tracker: {
+      findFirst: jest.fn().mockResolvedValue(opts.imeiOwner ? { thingName: opts.imeiOwner } : null),
+      findUnique: jest.fn().mockResolvedValue(opts.existingVehicleId === undefined ? null : { vehicleId: opts.existingVehicleId }),
+    },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const traccar: jest.Mocked<TraccarAdminApi> = {
@@ -71,6 +74,38 @@ describe('provisionGt06 (spec GT06 §4)', () => {
     expect(f.prisma.$transaction).not.toHaveBeenCalled();
     expect(JSON.stringify(f.logs)).not.toContain(IMEI);
     expect(f.logs[0]).toMatchObject({ msg: 'plan', protocol: 'gt06', thingName: 'moto-0901', imei: '***********0901', traccarDevice: 'create', dryRun: true });
+  });
+});
+
+describe('provisionGt06: troca de rastreador e dono do thingName', () => {
+  it('troca de rastreador: desvincula o antigo ANTES do upsert (Tracker.vehicleId é único)', async () => {
+    const f = fakes();
+    await provisionGt06(f.deps, input);
+    expect(f.tx.tracker.updateMany.mock.invocationCallOrder[0]).toBeLessThan(f.tx.tracker.upsert.mock.invocationCallOrder[0]);
+  });
+
+  it('thingName já ligado a OUTRA moto → erro antes de qualquer escrita', async () => {
+    const f = fakes({ existingVehicleId: 'veh-2' });
+    await expect(provisionGt06(f.deps, input)).rejects.toThrow('thingName moto-0901 já está ligado a outra moto.');
+    expect(f.traccar.createDevice).not.toHaveBeenCalled();
+    expect(f.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('thingName existente solto ou na mesma moto é aceito', async () => {
+    for (const existingVehicleId of [null, 'veh-1']) {
+      const f = fakes({ existingVehicleId });
+      await expect(provisionGt06(f.deps, input)).resolves.toMatchObject({ created: true });
+    }
+  });
+});
+
+describe('traccarAdminApi.linkDevice 400', () => {
+  it('400 é tratado como vínculo já existente e gera aviso só com o status', async () => {
+    const logs: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async () => new Response('dup', { status: 400 })) as unknown as typeof fetch;
+    const api = traccarAdminApi('http://t', 'a', 'b', fetchImpl, (e) => void logs.push(e));
+    await expect(api.linkDevice(3, 9)).resolves.toBeUndefined();
+    expect(logs).toEqual([{ level: 'warn', msg: 'traccar_link_http_400', status: 400 }]);
   });
 });
 
