@@ -102,3 +102,8 @@ bancada, instalação com o relé no fio da chave, teste na moto parada, limitad
 **Apêndice: tarefas do dono** da spec. Na bancada, confirmar também: Traccar ≥ 6.7.0 e que, com o J16 desligado, um
 `engineStop` é recusado (não enfileirado); heartbeat do J16 ≤ 60 s; `GET /api/server` da imagem escolhida devolve `version` como
 texto (se vier `null`, a ponte recusa todos os comandos de motor).
+
+## Emulador GT06 e conferência do e2e
+
+- `pnpm emulator` (`GT06_HOST`, `GT06_PORT`, `GT06_IMEI`, `GT06_SCENARIO=parked|ride-then-stop`, `GT06_HEARTBEAT_MS` — máximo 60 s, `GT06_POWER_VOLTS` — tensão enviada em 0x94, padrão 52 V; ajuste ao modelo de bateria da ponte). Logo após o login envia status (bit de corte) e tensão, e repete a cada heartbeat; a ponte segura a telemetria até receber os dois.
+- `node dist/e2e/check-timeline.js <thing> [--emulator-log=arquivo] [--unlock-requested] < saida-do-mosquitto_sub`: confere a linha do tempo do corte; com o log do emulador também falha se o emulador recebeu corte a >= 3 km/h, se houve `reported travada:true` sem status depois da última conexão (logs JSON do emulador intercalados nas linhas) ou `desired travada:false` não pedido.
