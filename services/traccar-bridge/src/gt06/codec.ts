@@ -92,12 +92,13 @@ export function statusPacket(s: Gt06Status, serial: number): Buffer {
 }
 
 /**
- * Pacote de informação 0x94, subtipo 0x00: tensão externa em 0,01 V. No Traccar vira `attributes.power`, de onde a ponte tira
- * `bateria_pct` (o heartbeat 0x13 só traz um nível 0–6, que a ponte não usa).
+ * Pacote de informação 0x94 em quadro 0x7878: SEM byte de subtipo (o subtipo só existe nos quadros estendidos 0x7979), conteúdo =
+ * tensão externa em 0,01 V como short com sinal. O `decodeBasic` do Traccar faz `KEY_POWER = readShort() * 0.01`, e a ponte tira
+ * `bateria_pct` de `attributes.power` (o heartbeat 0x13 só traz um nível 0–6, que a ponte não usa).
  */
 export function infoPacket(volts: number, serial: number): Buffer {
-  const c = Buffer.alloc(3);
-  c.writeUInt16BE(Math.max(0, Math.min(0xffff, Math.round(volts * 100))), 1);
+  const c = Buffer.alloc(2);
+  c.writeInt16BE(Math.max(0, Math.min(0x7fff, Math.round(volts * 100))), 0);
   return frame(PROTO.info, c, serial);
 }
 

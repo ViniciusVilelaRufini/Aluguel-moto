@@ -69,11 +69,12 @@ describe('codec GT06', () => {
     expect(commandText(parseFrames(statusPacket(status, 1)).frames[0])).toBeNull();
   });
 
-  it('info 0x94 subtipo 0x00: tensão externa em 0,01 V (vira attributes.power no Traccar)', () => {
+  it('info 0x94 (quadro 0x7878, sem subtipo): short com sinal em 0,01 V (vira attributes.power no Traccar)', () => {
     const pkt = infoPacket(52.5, 8);
-    expect(pkt[2]).toBe(0x08);
+    expect(pkt[2]).toBe(0x07);
     expect(pkt[3]).toBe(PROTO.info);
-    expect([...pkt.subarray(4, 7)]).toEqual([0x00, 0x14, 0x82]);
+    expect([...pkt.subarray(4, 6)]).toEqual([0x14, 0x82]);
+    expect(pkt.subarray(4).readInt16BE(0) * 0.01).toBeCloseTo(52.5, 5);
     expect(parseFrames(pkt).frames[0]).toMatchObject({ protocol: PROTO.info, serial: 8 });
   });
 });

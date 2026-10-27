@@ -1,4 +1,5 @@
 import { connect as netConnect, type Socket } from 'node:net';
+import { BATTERY_CURVES, type BatteryModel } from '../units';
 import { maskImei, silentLogger, type Logger } from '../log';
 import { alarmPacket, commandText, infoPacket, locationPacket, loginPacket, parseFrames, PROTO, statusPacket, stringReplyPacket, type Gt06Fix, type Gt06Status } from './codec';
 
@@ -9,7 +10,7 @@ export interface EmulatorOptions {
   intervalMs?: number;
   /** Padrão 30 s; limitado a 60 s: a ponte trata o bit de corte com mais de 90 s como desconhecido. */
   heartbeatMs?: number;
-  /** Tensão externa (0x94 → `attributes.power`) usada pela ponte para `bateria_pct`; padrão 52 V (pack 48 V ≈ 83 %). */
+  /** Tensão externa (0x94 → `attributes.power`) usada pela ponte para `bateria_pct`; sem valor: ~70 % do modelo 72v (`defaultPowerVolts`). */
   powerVolts?: number;
   start?: { lat: number; lng: number };
   log?: Logger;
@@ -20,6 +21,12 @@ export interface EmulatorOptions {
  * a `Relay,1#`/`DYD` (corta) e `Relay,0#`/`HFYD` (libera) com `0x15` e um heartbeat novo. Com o corte, a moto não anda (relé).
  * `cuts` registra a velocidade do emulador no instante de cada corte (o e2e do dev single confere que foi < 3 km/h).
  */
+/** Tensão a ~70 % da curva de cada modelo de bateria da ponte (`BATTERY_MODEL`), para a telemetria não ficar sem leitura. */
+export function defaultPowerVolts(model: BatteryModel): number {
+  const { emptyV, fullV } = BATTERY_CURVES[model];
+  return Math.round((emptyV + 0.7 * (fullV - emptyV)) * 10) / 10;
+}
+
 export const MAX_HEARTBEAT_MS = 60_000;
 
 export class Gt06Emulator {
@@ -119,7 +126,7 @@ export class Gt06Emulator {
   private sendStatus(): void {
     const s = this.status();
     this.write(statusPacket(s, this.nextSerial()));
-    this.write(infoPacket(this.opts.powerVolts ?? 52, this.nextSerial()));
+    this.write(infoPacket(this.opts.powerVolts ?? defaultPowerVolts('72v'), this.nextSerial()));
     this.log.info({ msg: 'gt06_status_sent', blocked: s.blocked });
   }
 

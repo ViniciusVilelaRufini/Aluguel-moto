@@ -2,7 +2,8 @@ import { createServer, type AddressInfo, type Server, type Socket } from 'node:n
 import { waitFor } from '../../test/wait';
 import type { Logger } from '../log';
 import { frame, parseFrames, PROTO, serverCommandPacket, type Gt06Frame } from './codec';
-import { Gt06Emulator } from './emulator';
+import { voltageToPct } from '../units';
+import { defaultPowerVolts, Gt06Emulator } from './emulator';
 
 async function fakeTraccar(): Promise<{ frames: Gt06Frame[]; sock: () => Socket; server: Server; port: number }> {
   const frames: Gt06Frame[] = [];
@@ -22,6 +23,13 @@ async function fakeTraccar(): Promise<{ frames: Gt06Frame[]; sock: () => Socket;
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return { frames, sock: () => sock!, server, port: (server.address() as AddressInfo).port };
 }
+
+describe('defaultPowerVolts', () => {
+  it.each(['48v', '60v', '72v'] as const)('modelo %s: ~70 %% da curva (bateria conhecida e saudável na ponte)', (model) => {
+    expect(voltageToPct(defaultPowerVolts(model), model)).toBeGreaterThanOrEqual(69);
+    expect(voltageToPct(defaultPowerVolts(model), model)).toBeLessThanOrEqual(71);
+  });
+});
 
 describe('Gt06Emulator (contra um "Traccar" TCP em processo)', () => {
   it('login, posições e heartbeat; Relay,1# liga o corte (registra a velocidade do instante) e Relay,0# desliga', async () => {
@@ -56,8 +64,8 @@ describe('Gt06Emulator (contra um "Traccar" TCP em processo)', () => {
       await emu.start();
       await waitFor(() => t.frames.some((f) => f.protocol === PROTO.status) && t.frames.some((f) => f.protocol === PROTO.info));
       const info = t.frames.find((f) => f.protocol === PROTO.info)!;
-      expect(info.content[0]).toBe(0x00);
-      expect(info.content.readUInt16BE(1) / 100).toBeCloseTo(52, 1);
+      expect(info.content.length).toBe(2); // 0x7878: sem subtipo, só o short da tensão
+      expect(voltageToPct(info.content.readInt16BE(0) * 0.01, '72v')).toBe(70);
     } finally {
       emu.stop();
       t.server.close();
