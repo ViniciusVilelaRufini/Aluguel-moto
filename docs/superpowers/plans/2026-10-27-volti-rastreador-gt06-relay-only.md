@@ -6577,3 +6577,245 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ```
 
 ---
+### Task 15: Painel admin — tipo do rastreador, comandos indisponíveis e textos do bloqueio
+
+**Files:**
+- Create: `apps/admin/src/lib/tracker.ts`, `apps/admin/src/components/vehicles/RelayOnlyNotice.tsx`
+- Modify: `apps/admin/src/lib/status.ts:44-58` (`commandStateLabel`), `apps/admin/src/lib/command-steps.ts` (falha antes de chegar à moto)
+- Modify: `apps/admin/src/components/VehicleSheet.tsx` (ficha, botões, rótulos), `apps/admin/src/components/vehicles/VehicleDetailPanel.tsx:97`
+- Test: `apps/admin/tests/tracker-relay.test.tsx`
+
+**Interfaces:**
+- Consumes: `S<'TrackerControlMode'>`, `S<'Vehicle'>['trackerControlMode']`, `CommandStatusReason` com `unsupported_by_tracker`, `ALERT_TYPE.zone_speed_exceeded` (Task 1).
+- Produces: `type TrackerControlMode`, `TRACKER_CONTROL_LABEL`, `RELAY_ONLY_SPEED_HINT = 'Este rastreador não controla velocidade'`, `RELAY_ONLY_HORN_HINT`, `RELAY_LOCK_WAITING = 'Aguardando a moto parar para bloquear'`, `commandSupported(type, mode): boolean`, `unsupportedHint(type): string | undefined`; `commandStateLabel(status, reason?, ctx?: { type?: CommandType; controlMode?: TrackerControlMode })`; `<RelayOnlyNotice mode />`.
+
+- [ ] **Step 1: Teste (falha)**
+
+`apps/admin/tests/tracker-relay.test.tsx`:
+
+```tsx
+import { describe, expect, it } from 'vitest';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { RelayOnlyNotice } from '@/components/vehicles/RelayOnlyNotice';
+import { commandSteps } from '@/lib/command-steps';
+import { ALERT_TYPE } from '@/lib/labels';
+import { commandStateLabel } from '@/lib/status';
+import { commandSupported, RELAY_LOCK_WAITING, TRACKER_CONTROL_LABEL, unsupportedHint } from '@/lib/tracker';
+
+describe('rastreador só relé no painel (spec GT06 §9)', () => {
+  it('rótulos do tipo de rastreador', () => {
+    expect(TRACKER_CONTROL_LABEL).toEqual({ speed_control: 'Controle de velocidade', relay_only: 'Só relé' });
+  });
+
+  it('limite de velocidade e buzina indisponíveis só em relay_only', () => {
+    expect(commandSupported('speed_limit', 'relay_only')).toBe(false);
+    expect(commandSupported('horn', 'relay_only')).toBe(false);
+    for (const t of ['lock', 'unlock', 'stolen_mode'] as const) expect(commandSupported(t, 'relay_only')).toBe(true);
+    expect(commandSupported('speed_limit', 'speed_control')).toBe(true);
+    expect(commandSupported('speed_limit', undefined)).toBe(true);
+    expect(unsupportedHint('speed_limit')).toBe('Este rastreador não controla velocidade');
+  });
+
+  it('lock em andamento em relay_only espera a moto parar; speed_control continua "em andamento"', () => {
+    expect(commandStateLabel('in_progress', undefined, { type: 'lock', controlMode: 'relay_only' })).toBe(RELAY_LOCK_WAITING);
+    expect(RELAY_LOCK_WAITING).toBe('Aguardando a moto parar para bloquear');
+    expect(commandStateLabel('in_progress', undefined, { type: 'lock', controlMode: 'speed_control' })).toBe('em andamento');
+    expect(commandStateLabel('in_progress')).toBe('em andamento');
+  });
+
+  it('falhas: unsupported_by_tracker e did_not_stop sem corte; a linha do tempo não passa por "em andamento"', () => {
+    expect(commandStateLabel('failed', 'unsupported_by_tracker')).toBe('falhou: este rastreador não executa este comando');
+    expect(commandStateLabel('failed', 'did_not_stop', { type: 'lock', controlMode: 'relay_only' })).toBe('falhou: a moto não parou em 120 s; nenhum corte foi enviado');
+    expect(commandStateLabel('failed', 'did_not_stop')).toBe('falhou: a moto não parou');
+    expect(commandSteps('failed', 'unsupported_by_tracker')[1].state).toBe('todo');
+  });
+
+  it('aviso na ficha só em relay_only; alerta zone_speed_exceeded rotulado', () => {
+    expect(renderToStaticMarkup(<RelayOnlyNotice mode="relay_only" />)).toContain('Este rastreador não controla velocidade');
+    expect(renderToStaticMarkup(<RelayOnlyNotice mode="speed_control" />)).toBe('');
+    expect(ALERT_TYPE.zone_speed_exceeded[0]).toBe('Acima do limite da zona (rastreador só relé)');
+  });
+});
+```
+
+Run: `pnpm --filter admin test -- tracker-relay`
+Expected: FAIL — `Failed to resolve import "@/lib/tracker"`.
+
+- [ ] **Step 2: `lib/tracker.ts` e `RelayOnlyNotice`**
+
+```ts
+// apps/admin/src/lib/tracker.ts
+import type { CommandType, S } from './types';
+
+/** Tipo do rastreador da moto (spec GT06 §9). */
+export type TrackerControlMode = S<'TrackerControlMode'>;
+
+export const TRACKER_CONTROL_LABEL: Record<TrackerControlMode, string> = { speed_control: 'Controle de velocidade', relay_only: 'Só relé' };
+export const RELAY_ONLY_SPEED_HINT = 'Este rastreador não controla velocidade';
+export const RELAY_ONLY_HORN_HINT = 'Este rastreador não tem buzina';
+export const RELAY_LOCK_WAITING = 'Aguardando a moto parar para bloquear';
+
+/** `relay_only` não executa limite de velocidade nem buzina (a API responde `unsupported_by_tracker`). */
+export function commandSupported(type: CommandType, mode: TrackerControlMode | undefined): boolean {
+  return mode !== 'relay_only' || (type !== 'speed_limit' && type !== 'horn');
+}
+
+export function unsupportedHint(type: CommandType): string | undefined {
+  return type === 'speed_limit' ? RELAY_ONLY_SPEED_HINT : type === 'horn' ? RELAY_ONLY_HORN_HINT : undefined;
+}
+```
+
+```tsx
+// apps/admin/src/components/vehicles/RelayOnlyNotice.tsx
+import { RELAY_ONLY_SPEED_HINT, type TrackerControlMode } from '@/lib/tracker';
+
+/** Ficha da moto com rastreador só relé: explica por que o limite não é comandável e como o bloqueio funciona. */
+export function RelayOnlyNotice({ mode }: { mode: TrackerControlMode | undefined }) {
+  if (mode !== 'relay_only') return null;
+  return (
+    <div data-testid="relay-only-hint" role="note" style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>
+      {RELAY_ONLY_SPEED_HINT}. O bloqueio só corta com a moto parada; limites de zona são avisos ao cliente.
+    </div>
+  );
+}
+```
+
+- [ ] **Step 3: `status.ts` e `command-steps.ts`**
+
+`commandStateLabel` passa a ser:
+
+```ts
+export function commandStateLabel(status: CommandStatus, reason?: CommandStatusReason, ctx: { type?: CommandType; controlMode?: TrackerControlMode } = {}): string {
+  const relayLock = ctx.controlMode === 'relay_only' && ctx.type === 'lock';
+  switch (status) {
+    case 'pending':
+      return reason === 'offline' ? 'moto offline — será aplicado ao reconectar' : 'pendente';
+    case 'in_progress':
+      return relayLock ? RELAY_LOCK_WAITING : 'em andamento';
+    case 'confirmed':
+      return 'confirmado';
+    case 'failed':
+      if (reason === 'did_not_stop') return relayLock ? 'falhou: a moto não parou em 120 s; nenhum corte foi enviado' : 'falhou: a moto não parou';
+      if (reason === 'timeout') return 'falhou: sem resposta da moto';
+      if (reason === 'invalid_limit') return 'falhou: limite inválido';
+      if (reason === 'unsupported_by_tracker') return 'falhou: este rastreador não executa este comando';
+      return 'falhou';
+  }
+}
+```
+
+(imports: `CommandType` de `./types`; `RELAY_LOCK_WAITING`, `type TrackerControlMode` de `./tracker`). Em `command-steps.ts`, no `case 'failed'`: `progress.state = reason === 'invalid_limit' || reason === 'unsupported_by_tracker' ? 'todo' : 'done';` (comentário: "recusado antes de chegar à moto").
+
+- [ ] **Step 4: `VehicleSheet.tsx` e `VehicleDetailPanel.tsx`**
+
+Em `VehicleSheet.tsx`: importar `{ commandSupported, TRACKER_CONTROL_LABEL, unsupportedHint }` de `@/lib/tracker` e `{ RelayOnlyNotice }` de `./vehicles/RelayOnlyNotice`; logo depois de `const v: S<'Vehicle'> | undefined = ...`, `const mode = v?.trackerControlMode;`. Depois do `KV` de Firmware:
+
+```tsx
+        <KV k="Rastreador" v={<span data-testid="tracker-mode">{TRACKER_CONTROL_LABEL[v.trackerControlMode ?? 'speed_control']}</span>} />
+```
+
+Nos botões `cmd-horn` e `cmd-speed`, acrescentar `disabled={!commandSupported('horn', mode)} title={commandSupported('horn', mode) ? undefined : unsupportedHint('horn')}` (e o equivalente com `'speed_limit'`). Depois do aviso "Sem sinal, o comando fica pendente...": `<RelayOnlyNotice mode={mode} />`. Os dois `commandStateLabel(...)` passam a `commandStateLabel(active.status, active.reason, { type: active.type, controlMode: mode })` e `commandStateLabel(c.status, c.statusReason, { type: c.type, controlMode: mode })`. Em `VehicleDetailPanel.tsx:97`: `commandStateLabel(c.status, c.statusReason, { type: c.type, controlMode: v.trackerControlMode })`.
+
+- [ ] **Step 5: Rodar**
+
+Run: `pnpm --filter admin test`
+Expected: PASS (todos, inclusive `tracker-relay` 5 e `status.test.ts` inalterado).
+
+Run: `pnpm --filter admin lint`
+Expected: sem erros.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add apps/admin
+git commit -m "feat(admin): tipo do rastreador na ficha, limite/buzina indisponíveis em relay_only e texto do bloqueio
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+---
+
+### Task 16: CI, READMEs, status final das decisões e verificação completa
+
+**Files:**
+- Modify: `.github/workflows/infra.yml` (job `checks` e filtros de caminho), `infra/test/ci-and-scripts.test.ts`
+- Modify: `docs/decisoes.md` (status final da entrada da Task 1), `README.md` raiz (linha do `services/traccar-bridge` no mapa do monorepo, se houver mapa)
+
+**Interfaces:**
+- Consumes: tudo das Tasks 1–15.
+- Produces: CI rodando `traccar-bridge` lint + testes; entrega final (resumo, como rodar, testes, pendências).
+
+- [ ] **Step 1: Teste de CI (falha)**
+
+Em `infra/test/ci-and-scripts.test.ts`, na lista de comandos do teste `a checks job runs ...`, acrescentar `'pnpm --filter traccar-bridge lint'` e `'pnpm --filter traccar-bridge test'`; no teste `runs on changes to ...`, acrescentar `"'services/traccar-bridge/**'"` à lista de caminhos.
+
+Run: `pnpm --filter infra test -- ci-and-scripts`
+Expected: FAIL — os comandos e o caminho da ponte não estão no workflow.
+
+- [ ] **Step 2: Workflow**
+
+Em `.github/workflows/infra.yml`, no job `checks`, depois de `admin tests (vitest)`:
+
+```yaml
+      - name: traccar-bridge lint
+        run: pnpm --filter traccar-bridge lint
+      - name: traccar-bridge tests (unidade, integração e e2e em processo)
+        run: pnpm --filter traccar-bridge test
+```
+
+e `'services/traccar-bridge/**'` nos `paths` de `pull_request` e de `push` (ao lado de `'services/api/**'`).
+
+Run: `pnpm --filter infra test -- ci-and-scripts`
+Expected: PASS.
+
+- [ ] **Step 3: Verificação completa (sem Docker)**
+
+Run, nesta ordem, e conferir que todos saem com código 0:
+
+```bash
+pnpm --filter @volti/contracts lint
+pnpm --filter @volti/contracts typecheck
+pnpm --filter api lint && pnpm --filter api test
+pnpm --filter iot-sim lint && pnpm --filter iot-sim test
+pnpm --filter traccar-bridge lint && pnpm --filter traccar-bridge test && pnpm --filter traccar-bridge build
+pnpm --filter admin lint && pnpm --filter admin test
+pnpm --filter infra build && pnpm --filter infra lint && pnpm --filter infra test
+pnpm --filter infra exec cdk synth -c env=dev -c gt06Things=moto-0901 -q
+```
+
+Expected: todos verdes. Os e2e da API que exigem Postgres (`pnpm --filter api test:e2e`) **não** rodam no PC do dono: ficam para o CI/dev single.
+
+- [ ] **Step 4: `docs/decisoes.md` — status final**
+
+No título da entrada da Task 1, trocar `status: proposta aplicada (contrato aditivo)` por `status: aplicada (contrato aditivo; CDK do Traccar como proposta, sem deploy)` e acrescentar no fim da entrada:
+
+```md
+Pendências: e2e com Traccar de verdade no dev single (`deploy/single/gt06.sh e2e`, depende do token de staff do dono);
+validação de shadow de thing não registrada e deploy da stack `volti-<env>-traccar`; verificação da CA da RDS na ponte
+(`DATABASE_SSL`); bancada com o J16 (apêndice da spec), incluindo se o J16 recusa o corte acima de alguma velocidade
+(comando enfileirado pelo Traccar) e se o `attributes.blocked` chega nos heartbeats; termos de uso sobre limites de zona não
+impostos (jurídico).
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add .github/workflows/infra.yml infra/test/ci-and-scripts.test.ts docs/decisoes.md README.md
+git commit -m "chore: CI da ponte GT06 e fechamento das decisões do rastreador só relé
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
+```
+
+- [ ] **Step 6: Entrega (DEFINIÇÃO DE PRONTO)**
+
+Relatar ao dono, em pt-BR: resumo (contrato, API, ponte, emulador, ambientes, CDK proposto, painel), como rodar localmente (testes sem Docker; compose `gt06` em máquina com Docker; `gt06.sh` no dev single), testes executados (lista do Step 3 com contagens) e pendências (Step 4 + o que o Step 11 da Task 13 ainda não rodou).
+
+---
+
+## Self-review (feito ao escrever o plano)
+
+**Cobertura da spec:** §1 decisões → Task 1 (decisoes, ADR, CLAUDE.md); §3 contrato 1–6 → Task 1; §4 banco/IMEI/provisionamento → Tasks 2 e 7; §5 regras 1–7, 9–12 → Tasks 3–4, regra 8 (fim do aluguel) → teste do `CommandsService` na Task 4 (o encerramento passa pelo mesmo `dispatch`), invariante por propriedade → Task 5; §6.1–6.5 ponte → Tasks 8–9 (IMEI mascarado, presença, delta, reported pós-comando, buzina ignorada), intervalo F7 → README da ponte (5 s fixo); §7 compose `gt06`, emulador, README com SMS → Tasks 10, 12, 13; §8 CDK → Task 14; §9 painel → Task 15; §10 zonas → Task 6 (EXIT/bloqueio fora da área coberto em `geofence.service.spec`); §11 testes e e2e → Tasks 3–6, 8–11 (e2e em processo) e 13 (e2e no dev single); §12 riscos → ADR (Task 1); apêndice do dono → citado no README da ponte (Task 9).
+
+**Placeholders:** nenhum "TBD/TODO"; os únicos passos não executáveis pelo implementador são os marcados **[CONTROLADOR]**/**[DONO]** (deploy no dev single, token de staff, deploy de CDK), com comandos completos.
+
+**Consistência de tipos:** `CommandRequest.controlMode` / `TrackerControlMode` (porta, Task 4) usados nas Tasks 5–6; `RelaySample` e `RelayLockVehicleState { online }` (Task 3) usados pelo gateway (Task 4); `onTelemetrySample`/`onReconnected` (Task 4) chamados pelo `TelemetryService` (Task 4) e pelo teste de propriedade (Task 5); `ZoneSpeedMonitor.onSample` (Task 6) é o 8º parâmetro do `TelemetryService`; `Bridge.enqueue` (Task 9) usado nas Tasks 9 e 11; `checkTimeline` e `gt06_cut` (Task 10) usados pelo `gt06.sh e2e` (Task 13); `maskImei` existe em `services/api/src/cli/provision-gt06.ts` e em `services/traccar-bridge/src/log.ts` (pacotes separados, mesma regra).
