@@ -4,7 +4,8 @@ import { RelayOnlyNotice } from '@/components/vehicles/RelayOnlyNotice';
 import { commandSteps } from '@/lib/command-steps';
 import { ALERT_TYPE } from '@/lib/labels';
 import { commandStateLabel } from '@/lib/status';
-import { commandSupported, RELAY_LOCK_WAITING, TRACKER_CONTROL_LABEL, unsupportedHint } from '@/lib/tracker';
+import { Button } from '@/ds/Button';
+import { commandSupported, RELAY_LOCK_WAITING, RELAY_ONLY_NOTICE_ID, TRACKER_CONTROL_LABEL, unsupportedDescribedBy, unsupportedHint } from '@/lib/tracker';
 
 describe('rastreador só relé no painel (spec GT06 §9)', () => {
   it('rótulos do tipo de rastreador', () => {
@@ -38,5 +39,18 @@ describe('rastreador só relé no painel (spec GT06 §9)', () => {
     expect(renderToStaticMarkup(<RelayOnlyNotice mode="relay_only" />)).toContain('Este rastreador não controla velocidade');
     expect(renderToStaticMarkup(<RelayOnlyNotice mode="speed_control" />)).toBe('');
     expect(ALERT_TYPE.zone_speed_exceeded[0]).toBe('Acima do limite da zona (rastreador só relé)');
+  });
+
+  it('a11y: Buzina e Limitar vel. desabilitados em relay_only apontam (aria-describedby) para o aviso, que explica os dois', () => {
+    const notice = renderToStaticMarkup(<RelayOnlyNotice mode="relay_only" />);
+    expect(notice).toContain(`id="${RELAY_ONLY_NOTICE_ID}"`);
+    expect(notice).toContain('não tem buzina');
+    expect(unsupportedDescribedBy('horn', 'relay_only')).toBe(RELAY_ONLY_NOTICE_ID);
+    expect(unsupportedDescribedBy('speed_limit', 'relay_only')).toBe(RELAY_ONLY_NOTICE_ID);
+    expect(unsupportedDescribedBy('lock', 'relay_only')).toBeUndefined();
+    expect(unsupportedDescribedBy('horn', 'speed_control')).toBeUndefined();
+    const btn = renderToStaticMarkup(<Button disabled ariaDescribedBy={unsupportedDescribedBy('horn', 'relay_only')}>Buzina</Button>);
+    expect(btn).toContain(`aria-describedby="${RELAY_ONLY_NOTICE_ID}"`);
+    expect(renderToStaticMarkup(<Button>Buzina</Button>)).not.toContain('aria-describedby');
   });
 });

@@ -8,7 +8,7 @@ import { useAuth } from '@/lib/auth';
 import { can, rentalHref } from '@/lib/permissions';
 import { useRealtime, useRealtimeEvent } from '@/lib/realtime';
 import { commandStateLabel, commandStateTone } from '@/lib/status';
-import { commandSupported, TRACKER_CONTROL_LABEL, unsupportedHint } from '@/lib/tracker';
+import { commandSupported, TRACKER_CONTROL_LABEL, unsupportedDescribedBy, unsupportedHint } from '@/lib/tracker';
 import { RelayOnlyNotice } from './vehicles/RelayOnlyNotice';
 import { formatDateTime, timeAgo } from '@/lib/format';
 import { assertSpeedLimit } from '@/lib/speed-limit';
@@ -180,8 +180,8 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <Button size="sm" variant="danger" icon="Lock" testId="cmd-lock" onClick={() => setDialog('lock')}>Bloquear</Button>
             <Button size="sm" variant="secondary" icon="LockOpen" testId="cmd-unlock" onClick={() => setDialog('unlock')}>Desbloquear</Button>
-            <Button size="sm" variant="secondary" icon="Megaphone" testId="cmd-horn" disabled={!commandSupported('horn', mode)} title={commandSupported('horn', mode) ? undefined : unsupportedHint('horn')} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('horn')}>Buzina</Button>
-            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" disabled={!commandSupported('speed_limit', mode)} title={commandSupported('speed_limit', mode) ? undefined : unsupportedHint('speed_limit')} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Limitar vel.</Button>
+            <Button size="sm" variant="secondary" icon="Megaphone" testId="cmd-horn" disabled={!commandSupported('horn', mode)} title={commandSupported('horn', mode) ? undefined : unsupportedHint('horn')} ariaDescribedBy={unsupportedDescribedBy('horn', mode)} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('horn')}>Buzina</Button>
+            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" disabled={!commandSupported('speed_limit', mode)} title={commandSupported('speed_limit', mode) ? undefined : unsupportedHint('speed_limit')} ariaDescribedBy={unsupportedDescribedBy('speed_limit', mode)} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Limitar vel.</Button>
           </div>
           <Button size="sm" variant="dark" icon="ShieldAlert" fullWidth style={{ marginTop: 8 }} testId="cmd-stolen" onClick={() => setDialog('stolen_mode')}>Modo roubada</Button>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>Sem sinal, o comando fica pendente e é aplicado ao reconectar.</div>
