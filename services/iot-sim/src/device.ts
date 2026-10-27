@@ -39,6 +39,8 @@ export const topics = (t: string) => ({
 export class SimDevice {
   private readonly t: ReturnType<typeof topics>;
   private lastTelemetry = 0;
+  /** Desligado (`stop`): a moto saiu da frota simulada — nada mais é publicado, nem resposta a delta atrasado. */
+  private stopped = false;
 
   constructor(
     readonly moto: VirtualMoto,
@@ -53,8 +55,14 @@ export class SimDevice {
     this.client.on('message', (topic, payload) => this.onMessage(topic, payload));
   }
 
+  /** Desliga o rastreador: encerra a conexão MQTT (sem LWT) e ignora o que ainda chegar no cliente antigo. */
+  stop(): void {
+    this.stopped = true;
+    this.client.end(true);
+  }
+
   private pub(topic: string, payload: unknown, qos: 0 | 1 = 1): void {
-    if (!this.client.connected) return;
+    if (this.stopped || !this.client.connected) return;
     this.client.publish(topic, JSON.stringify(payload), { qos });
   }
 
@@ -67,6 +75,7 @@ export class SimDevice {
   }
 
   private onMessage(topic: string, payload: Buffer): void {
+    if (this.stopped) return;
     let body: any;
     try {
       body = JSON.parse(payload.toString('utf8'));
@@ -98,6 +107,7 @@ export class SimDevice {
   }
 
   tick(dtSec: number): void {
+    if (this.stopped) return;
     const r = this.moto.step(dtSec);
     if (r.lockedNow) this.report({ travada: true });
     else if (r.reportSpeed) this.report({});
