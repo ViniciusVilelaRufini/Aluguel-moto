@@ -1,0 +1,58 @@
+/** Broker MQTT em memória (curingas + e #), na ordem de publicação. Serve à ponte e ao LocalMqttTransport da API. */
+export function topicMatches(filter: string, topic: string): boolean {
+  const f = filter.split('/');
+  const t = topic.split('/');
+  for (let i = 0; i < f.length; i++) {
+    if (f[i] === '#') return true;
+    if (i >= t.length || (f[i] !== '+' && f[i] !== t[i])) return false;
+  }
+  return f.length === t.length;
+}
+
+export class FakeMqttClient {
+  connected = true;
+  private readonly filters = new Set<string>();
+  private readonly handlers: Record<string, Array<(...args: any[]) => void>> = {};
+
+  constructor(
+    private readonly broker: FakeBroker,
+    readonly id: string,
+  ) {}
+
+  on(event: string, cb: (...args: any[]) => void): this {
+    (this.handlers[event] ??= []).push(cb);
+    return this;
+  }
+  emit(event: string, ...args: unknown[]): void {
+    for (const cb of this.handlers[event] ?? []) cb(...args);
+  }
+  matches(topic: string): boolean {
+    return [...this.filters].some((f) => topicMatches(f, topic));
+  }
+  async publishAsync(topic: string, payload: string): Promise<void> {
+    this.broker.deliver(this.id, topic, payload);
+  }
+  async subscribeAsync(topics: string[]): Promise<void> {
+    for (const t of topics) this.filters.add(t);
+  }
+  async endAsync(): Promise<void> {
+    this.connected = false;
+  }
+}
+
+export class FakeBroker {
+  readonly log: Array<{ from: string; topic: string; payload: string }> = [];
+  private readonly clients = new Set<FakeMqttClient>();
+
+  client(id: string): FakeMqttClient {
+    const c = new FakeMqttClient(this, id);
+    this.clients.add(c);
+    queueMicrotask(() => c.emit('connect'));
+    return c;
+  }
+
+  deliver(from: string, topic: string, payload: string): void {
+    this.log.push({ from, topic, payload });
+    for (const c of this.clients) if (c.id !== from && c.connected && c.matches(topic)) queueMicrotask(() => c.emit('message', topic, Buffer.from(payload)));
+  }
+}
