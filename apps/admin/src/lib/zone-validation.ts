@@ -27,7 +27,6 @@ export function validateZone(z: ZoneDraft): ZoneErrors {
     if (!has) e.speedLimitKmh = 'Informe o limite de velocidade';
     else if ((limit as number) < MIN_REDUCED_SPEED_KMH) e.speedLimitKmh = `Mínimo de ${MIN_REDUCED_SPEED_KMH} km/h em zona de velocidade reduzida`;
     else if ((limit as number) > MAX_REDUCED_SPEED_KMH) e.speedLimitKmh = `Máximo de ${MAX_REDUCED_SPEED_KMH} km/h em zona de velocidade reduzida`;
-    else if ((limit as number) < MIN_REDUCED_SPEED_KMH) e.speedLimitKmh = `Mínimo de ${MIN_REDUCED_SPEED_KMH} km/h em zona de velocidade reduzida`;
   }
   return e;
 }
