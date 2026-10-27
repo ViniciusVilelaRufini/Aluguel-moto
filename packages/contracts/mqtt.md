@@ -113,7 +113,7 @@ Tópicos, schemas e shadow são os desta página. A API escolhe a estratégia po
 | `unlock` | `travada: false` + limite da zona | `travada: false` → `engineResume`; confirma por `reported.travada = false` em 30 s |
 | `speed_limit`, `horn` | normais | `failed`/`unsupported_by_tracker`, shadow intocado |
 | `stolen_mode` | `modo_roubada` | aceito; a ponte ecoa `reported.modo_roubada` (sem mudança de telemetria no GT06) |
-| zona `reduced_speed` | ENTER grava `limite_kmh` | **aviso**: `zone.notice` "Área com limite de X km/h." (`advisory: true`); acima do limite por mais de 5 s → alerta `zone_speed_exceeded` |
+| zona `reduced_speed` | ENTER grava `limite_kmh` | **aviso**: `zone.notice` "Área com limite de X km/h." (sem limite conhecido: "Área com limite de velocidade reduzido."; `advisory: true`); acima do limite por mais de 5 s → alerta `zone_speed_exceeded` |
 | 32 km/h | firmware + controlador | só o controlador da moto (configuração física) |
 
 O que a ponte faz (detalhes em `services/traccar-bridge/README.md`):

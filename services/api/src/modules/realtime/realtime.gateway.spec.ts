@@ -216,6 +216,8 @@ describe('RealtimeGateway', () => {
   it('zone.notice de rastreador só relé: texto da spec e advisory', async () => {
     const { gw, emit, to } = setup();
     expect(zoneMessage({ zoneType: 'reduced_speed', transition: 'ENTER', speedLimitKmh: 6, advisory: true })).toBe('Área com limite de 6 km/h.');
+    // Sem limite conhecido: texto genérico (nunca um "20 km/h" inventado).
+    expect(zoneMessage({ zoneType: 'reduced_speed', transition: 'ENTER', advisory: true })).toBe('Área com limite de velocidade reduzido.');
     await gw.onGeofence({ vehicleId: 'v1', rentalId: RENTAL_ID, zoneId: 'z', zoneType: 'reduced_speed', speedLimitKmh: 20, transition: 'ENTER', ts: '2026-10-27T12:00:00.000Z', advisory: true });
     expect(to).toHaveBeenCalledWith(`rental:${RENTAL_ID}`);
     expect(emit).toHaveBeenCalledWith('zone.notice', { rentalId: RENTAL_ID, zoneType: 'reduced_speed', transition: 'ENTER', message: 'Área com limite de 20 km/h.', speedLimitKmh: 20, advisory: true });

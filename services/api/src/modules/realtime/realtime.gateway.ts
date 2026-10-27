@@ -45,7 +45,8 @@ export function zoneMessage(ev: Pick<GeofenceTransitionEvent, 'zoneType' | 'tran
   switch (ev.zoneType) {
     case 'reduced_speed':
       // Rastreador só relé (spec GT06 §10): o limite não é imposto — aviso com o texto da spec.
-      if (enter && ev.advisory) return `Área com limite de ${ev.speedLimitKmh ?? 20} km/h.`;
+      // Sem limite conhecido: texto genérico, nunca um número inventado.
+      if (enter && ev.advisory) return ev.speedLimitKmh !== undefined ? `Área com limite de ${ev.speedLimitKmh} km/h.` : 'Área com limite de velocidade reduzido.';
       if (!enter) return 'Você saiu da área de velocidade reduzida.';
       return ev.speedLimitKmh !== undefined && ev.speedLimitKmh <= 6
         ? `Você entrou numa área de pedestres. Velocidade máxima: ${ev.speedLimitKmh} km/h.`
