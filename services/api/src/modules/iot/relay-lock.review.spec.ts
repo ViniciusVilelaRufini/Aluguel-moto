@@ -8,7 +8,15 @@ import type { DesiredState } from './shadow-transport';
 const T = 'moto-0901';
 const T0 = Date.parse('2026-10-27T12:00:00Z');
 
-const mk = (clock: FakeClock, store: RelayLockStore, desired: DesiredState[], outcomes: CommandOutcome[], known: Map<string, number | null>, fail = { on: false }) =>
+const mk = (
+  clock: FakeClock,
+  store: RelayLockStore,
+  desired: DesiredState[],
+  outcomes: CommandOutcome[],
+  known: Map<string, number | null>,
+  fail = { on: false },
+  locked: { on: boolean | null } = { on: null },
+) =>
   new RelayLockService(
     clock,
     {
@@ -18,7 +26,7 @@ const mk = (clock: FakeClock, store: RelayLockStore, desired: DesiredState[], ou
       },
     },
     (o) => outcomes.push(o),
-    { store, knownSpeed: (t) => known.get(t) ?? null },
+    { store, knownSpeed: (t) => known.get(t) ?? null, knownLocked: () => locked.on },
   );
 
 function setup() {
@@ -45,7 +53,8 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     const desired: DesiredState[] = [];
     const outcomes: CommandOutcome[] = [];
     const known = new Map<string, number | null>();
-    const a = mk(clock, store, desired, outcomes, known);
+    const locked = { on: null as boolean | null };
+    const a = mk(clock, store, desired, outcomes, known, undefined, locked);
     const b = mk(clock, store, desired, outcomes, known);
     await a.start({ commandId: 'c1', thingName: T }, { online: true });
     known.set(T, 0);
@@ -59,6 +68,7 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     redis.exists = async (k: string) => {
       if (!hooked) {
         hooked = true;
+        locked.on = true; // fix 5: o reported depois do corte confirma só com a trava confirmada pelo estado ao vivo
         await a.onReported(T, { travada: true });
       }
       return orig(k);

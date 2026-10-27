@@ -314,16 +314,23 @@ export abstract class BaseIotGateway implements IotGateway {
    */
   private async clearPendingTravada(thingName: string, unlockInFlight: boolean): Promise<void> {
     let pending = unlockInFlight;
+    let pendingCut: boolean | null = false; // `null` = desconhecido (shadow ilegível)
     if (this.transport.readShadow) {
       try {
         const doc = await this.transport.readShadow(thingName);
-        pending ||= doc !== null && doc.desired.travada !== undefined && doc.desired.travada !== null && doc.desired.travada !== doc.reported.travada;
+        const t = doc?.desired.travada;
+        const differs = t !== undefined && t !== null && t !== doc?.reported.travada;
+        pending ||= differs;
+        pendingCut = differs && t === true;
       } catch (err) {
         this.logger.warn({ msg: 'relay_lock_shadow_read_failed', thingName, error: (err as Error).message });
         pending = true;
+        pendingCut = null;
       }
     }
     if (!pending) return;
+    // Fix 5: um lock repetido nunca desfaz um corte em voo (trava na fase `cutting` com `travada: true` pendente, ou shadow ilegível).
+    if (pendingCut !== false && (await this.relayLock.activePhase(thingName).catch(() => null)) === 'cutting') return;
     try {
       await this.publishDesired(thingName, { travada: null });
       this.logger.log({ msg: 'relay_lock_pending_travada_cleared', thingName });

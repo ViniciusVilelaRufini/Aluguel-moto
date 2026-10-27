@@ -149,16 +149,22 @@ describe('RelayLockService (spec GT06 §5)', () => {
     expect(s.svc.isActive(T)).toBe(false);
   });
 
-  it('corte confirmado por reported.travada = true não mais antigo que o corte', async () => {
-    const s = setup();
+  it('corte confirmado por reported.travada = true não mais antigo que o corte (e trava confirmada pelo estado ao vivo)', async () => {
+    let locked: boolean | null = null;
+    const s = setup({ knownLocked: () => locked });
     await s.svc.start({ commandId: 'c1', thingName: T }, s.state);
     await s.sample(0);
     await s.clock.advance(10_000);
     await s.sample(0);
     const cutAt = s.clock.now();
+    locked = true;
     await s.svc.onReported(T, { travada: true }, { travada: cutAt - 5_000 }); // anterior ao corte: não vale
     expect(s.outcomes).toEqual([]);
     await s.clock.advance(2_000);
+    locked = null; // fix 5: posterior ao corte, mas sem a trava confirmada (ex.: tick da reconexão na graça) → espera
+    await s.svc.onReported(T, { travada: true });
+    expect(s.outcomes).toEqual([]);
+    locked = true;
     await s.svc.onReported(T, { travada: true });
     expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
   });

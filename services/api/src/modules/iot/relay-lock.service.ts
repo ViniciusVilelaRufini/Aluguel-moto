@@ -119,6 +119,11 @@ export class RelayLockService {
     });
   }
 
+  /** Fase da trava em curso desta moto (estado compartilhado), ou `null` sem trava. */
+  async activePhase(thingName: string): Promise<RelayLockState['phase'] | null> {
+    return (await this.store.get(thingName))?.phase ?? null;
+  }
+
   /** Toda telemetria da moto (aceita ou não). Só a fase `waiting_stop` usa. */
   async onSample(thingName: string, s: RelaySample): Promise<void> {
     if (!Number.isFinite(s.deviceTs) || !Number.isFinite(s.measuredAt)) return;
@@ -164,10 +169,12 @@ export class RelayLockService {
       const lock = await this.store.get(thingName);
       if (!lock || lock.phase === 'waiting_online') return;
       if (reported.travada === true) {
-        // Corte enviado: o reported depois dele confirma. Ainda esperando parar (nada enviado): só a trava confirmada pelo estado
-        // ao vivo (depois da graça) — o reported do tick da reconexão vem da memória da ponte e pode estar velho (fix 4, N1).
+        // Só a trava confirmada pelo estado ao vivo (depois da graça) confirma — o reported do tick da reconexão vem da memória da
+        // ponte e pode estar velho (fix 4, N1). Com o corte enviado, o reported também precisa ser posterior a ele (fix 5): uma
+        // moto que caiu e reiniciou com o relé aberto não confirma pelo reported velho; o prazo reconfere e solta com `timeout`.
         const since = Math.floor((lock.cutAt ?? 0) / 1000) * 1000;
-        const confirmed = lock.phase === 'cutting' ? (at.travada ?? this.clock.now()) >= since : await this.isKnownLocked(thingName);
+        const afterCut = lock.phase !== 'cutting' || (at.travada ?? this.clock.now()) >= since;
+        const confirmed = afterCut && (await this.isKnownLocked(thingName));
         if (confirmed) {
           await this.finish(lock, { status: 'confirmed' });
           return;

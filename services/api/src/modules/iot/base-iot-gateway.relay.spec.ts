@@ -507,4 +507,62 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       expect(s.transport.desired).toEqual([]);
     });
   });
+
+  describe('corte em voo (Task 4, fix 5)', () => {
+    /** Moto parada e "aberta" para a ponte; o lock corta (travada:true gravado) e a moto cai. Termina offline na fase de corte. */
+    async function cutThenOffline(s: Setup): Promise<void> {
+      await online(s, 0);
+      await lockRelay(s);
+      for (let i = 0; i < 6 && s.cuts().length === 0; i++) {
+        await s.sample(0, { travada: false, ignicao: false });
+        await s.clock.advance(5_000);
+      }
+      expect(s.cuts()).toHaveLength(1);
+      await s.svc.presence(T, false);
+      await s.clock.advance(20_000);
+    }
+
+    it('1: corte em voo, reboot (relé aberto) e reported travada:true velho no tick da reconexão → não confirma; prazo → travada:false/timeout', async () => {
+      const s = setup();
+      await cutThenOffline(s);
+      await s.svc.presence(T, true);
+      await s.svc.reported(T, { travada: true }); // memória da ponte, depois do cutAt mas dentro da graça
+      await s.clock.advance(1_000);
+      expect(s.updates.filter((u) => u.status === 'confirmed')).toEqual([]);
+      for (let i = 0; i < 30; i++) await s.clock.advance(5_000);
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'failed', reason: 'timeout' });
+      expect(s.updates.filter((u) => u.status === 'confirmed')).toEqual([]);
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: false }]);
+    });
+
+    it('1: corte em voo, reconexão → reported travada:true depois da graça confirma, sem travada:false', async () => {
+      const s = setup();
+      await cutThenOffline(s);
+      await s.svc.presence(T, true);
+      await s.svc.reported(T, { travada: true });
+      await s.clock.advance(DEFAULT_RECONNECT_GRACE_MS);
+      await s.svc.reported(T, { travada: true });
+      await s.clock.advance(1_000);
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+      for (let i = 0; i < 30; i++) await s.clock.advance(5_000);
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }]);
+    });
+
+    it('2: lock repetido com o corte em voo (desired travada:true pendente) não apaga o corte', async () => {
+      const s = setup();
+      await online(s, 0);
+      await lockRelay(s);
+      for (let i = 0; i < 6 && s.cuts().length === 0; i++) {
+        await s.sample(0, { travada: false, ignicao: false });
+        await s.clock.advance(5_000);
+      }
+      s.transport.shadow.reported = { travada: false };
+      expect(s.transport.shadow.desired).toEqual({ travada: true });
+      expect(await lockRelay(s, 'c2')).toEqual({ commandId: 'c2', status: 'in_progress' });
+      s.transport.readFails = true; // shadow ilegível com o corte em voo: também não apaga
+      await lockRelay(s, 'c3');
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }]);
+      expect(s.transport.shadow.desired).toEqual({ travada: true });
+    });
+  });
 });

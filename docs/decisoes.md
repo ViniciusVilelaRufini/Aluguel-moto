@@ -904,3 +904,6 @@ O intervalo entre duas amostras paradas consecutivas não pode passar de `SPEED_
    no delta); a emulação local (`LocalShadowStore`) faz o mesmo. O corte (`travada: true`) continua saindo só da trava com a moto parada.
 3. Prazo, retomada, corte e órfã consultam a trava confirmada depois de reler o estado ao vivo do Redis (outra task pode ter
    processado a mensagem). Pendência conhecida: `reconnectAt` é da memória de cada instância.
+4. (fix 5) Com o corte enviado, `reported.travada = true` confirma só se for posterior ao corte **e** a trava estiver confirmada pelo
+   critério do item 1 (moto que caiu e reiniciou com o relé aberto não confirma pelo reported velho; o prazo reconfere e solta com
+   `timeout`). O lock repetido não apaga `desired.travada = true` pendente de uma trava na fase de corte (nem com o shadow ilegível).
