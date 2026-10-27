@@ -74,7 +74,17 @@ pnpm --filter traccar-bridge test     # unidade + integração (Traccar falso HT
 pnpm --filter traccar-bridge lint
 pnpm --filter traccar-bridge build    # dist/main.js
 pnpm --filter traccar-bridge dev      # local, com as variáveis acima (Traccar, Postgres e MQTT acessíveis)
+pnpm --filter traccar-bridge test -- relay-lock.e2e   # só o e2e em processo (abaixo)
 ```
+
+**e2e em processo** (`test/e2e/relay-lock.e2e.spec.ts`, spec §11, sem Docker, ~2 s): Traccar falso (HTTP + WebSocket reais) →
+ponte real → broker em memória → pilha IoT real da API (`BaseIotGateway`, `LiveStateStore`, `LocalMqttTransport` +
+`LocalShadowStore`, `TelemetryService`, `RelayLockService`, Redis em memória) → delta → ponte → `POST /api/commands/send`. Um
+`FakeClock` comum à API e à ponte; o código da API entra por caminho relativo (o ts-jest só transpila; o `tsc` da ponte exclui
+`test/e2e`, o ESLint cobre). Cenários: o `lock` só termina `confirmed` depois de 2+ paradas cobrindo 10 s e do bit de corte de
+um status seguinte; andando o tempo todo → `did_not_stop` sem `engineStop` nem `travada:false`; moto já travada → `confirmed`
+sem corte; ordem telemetria → reported da ponte; Traccar 6.5 → nenhum comando de motor (lock e unlock); WebSocket que reconecta
+com bit de corte velho no replay → nada confirma; moto offline no meio → `pending`/`offline` → `in_progress`.
 
 Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuário `volti`, sem root). O profile `gt06` do
 `docker-compose.yml` e o `deploy/single/gt06.sh` entram nas próximas tarefas do plano.
