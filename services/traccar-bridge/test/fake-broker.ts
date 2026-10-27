@@ -13,6 +13,10 @@ export class FakeMqttClient {
   connected = true;
   /** M3: QoS 1 que nunca recebe PUBACK (publicação travada). */
   stallQos1 = false;
+  /** SUBSCRIBE que nunca recebe SUBACK. */
+  stallSubscribe = false;
+  /** SUBSCRIBEs recebidos (tópicos de cada chamada). */
+  readonly subscribeCalls: string[][] = [];
   /** Como o mqtt.js: publicação feita desconectado fica na fila offline e sai na reconexão. */
   private readonly offline: Array<{ topic: string; payload: string; done: () => void }> = [];
   private readonly filters = new Set<string>();
@@ -53,6 +57,8 @@ export class FakeMqttClient {
     this.emit('connect');
   }
   async subscribeAsync(topics: string[]): Promise<void> {
+    this.subscribeCalls.push(topics);
+    if (this.stallSubscribe) return new Promise<void>(() => undefined);
     for (const t of topics) this.filters.add(t);
   }
   async endAsync(): Promise<void> {

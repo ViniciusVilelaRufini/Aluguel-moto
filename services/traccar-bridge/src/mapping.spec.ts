@@ -101,15 +101,29 @@ describe('reconexão: travada nunca vem de memória velha (decisão 4)', () => {
 });
 
 describe('I2: frescor do bit de corte (sessão TCP nova invisível no Traccar)', () => {
+  const serverNow = new Date(NOW).toISOString();
   it('applyPosition guarda a hora de RECEBIMENTO do último status com blocked; posição sem blocked não a renova', () => {
-    const hb = AP(pos({ outdated: true, attributes: { blocked: true } }), {}, NOW);
+    const hb = AP(pos({ outdated: true, serverTime: serverNow, attributes: { blocked: true } }), {}, NOW);
     expect(hb.memory.blockedAt).toBe(NOW);
     const later = AP(pos({ fixTime: '2026-10-27T12:10:30.000Z', speed: 0, attributes: { power: 72 } }), hb.memory, NOW + 30_000);
     expect(later.memory.blockedAt).toBe(NOW);
   });
 
+  it('B-M3: blockedAt = min(serverTime, agora): heartbeat que ficou parado numa fila não conta como fresco', () => {
+    const queued = AP(pos({ outdated: true, serverTime: new Date(NOW - 100_000).toISOString(), attributes: { blocked: true } }), {}, NOW);
+    expect(queued.memory.blockedAt).toBe(NOW - 100_000);
+    expect(currentBlocked(queued.memory)).toBe(true);
+    expect(freshBlocked(queued.memory, NOW)).toBeUndefined();
+    // serverTime no futuro (relógio do Traccar adiantado) não estende o frescor além de agora
+    const ahead = AP(pos({ outdated: true, serverTime: new Date(NOW + 60_000).toISOString(), attributes: { blocked: true } }), {}, NOW);
+    expect(ahead.memory.blockedAt).toBe(NOW);
+    // serverTime ilegível → agora
+    const bad = AP(pos({ outdated: true, serverTime: 'x', attributes: { blocked: true } }), {}, NOW);
+    expect(bad.memory.blockedAt).toBe(NOW);
+  });
+
   it('freshBlocked: bit de até 90 s vale; mais velho, sem hora ou após reconexão é desconhecido', () => {
-    const mem = AP(pos({ outdated: true, attributes: { blocked: true } }), {}, NOW).memory;
+    const mem = AP(pos({ outdated: true, serverTime: serverNow, attributes: { blocked: true } }), {}, NOW).memory;
     expect(BLOCKED_FRESH_MS).toBe(90_000);
     expect(freshBlocked(mem, NOW + BLOCKED_FRESH_MS)).toBe(true);
     expect(freshBlocked(mem, NOW + BLOCKED_FRESH_MS + 1)).toBeUndefined();

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { buildBridgePolicyDocument, GT06_PORT, TRACCAR_IMAGE, TRACCAR_WEB_PORT } from '../lib/stacks/traccar-stack';
 import { createVoltiApp } from '../lib/volti-app';
@@ -57,6 +59,17 @@ describe('TraccarStack (proposta, opt-in por -c gt06Things)', () => {
     expect(bridge.Secrets.map((x: any) => x.Name).sort()).toEqual(['DATABASE_PASSWORD', 'MQTT_CERT_PEM', 'MQTT_KEY_PEM', 'TRACCAR_PASSWORD']);
     expect(Object.keys(envOf(bridge)).some((k) => /PASSWORD|PEM/.test(k))).toBe(false);
     t.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'volti-dev-traccar-bridge', DesiredCount: 0 });
+  });
+
+  it('B-I3: container da ponte com health check do arquivo de vida (mesmo do Dockerfile): fila travada → task substituída', () => {
+    expect(container('bridge').HealthCheck).toEqual({ Command: ['CMD', 'node', 'dist/healthcheck.js'], Interval: 30, Timeout: 10, Retries: 3, StartPeriod: 60 });
+  });
+
+  it('Dockerfile da ponte: base fixada por digest e HEALTHCHECK com o mesmo comando', () => {
+    const df = readFileSync(join(__dirname, '..', '..', 'services', 'traccar-bridge', 'Dockerfile'), 'utf8');
+    expect(df).toMatch(/^ARG NODE_IMAGE=node:24-alpine@sha256:[0-9a-f]{64}$/m);
+    expect(df.match(/^FROM .*$/gm)).toEqual(['FROM ${NODE_IMAGE} AS base', 'FROM base AS build', 'FROM ${NODE_IMAGE} AS runtime']);
+    expect(df).toContain('HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD ["node", "dist/healthcheck.js"]');
   });
 
   it('política IoT da ponte: só os things relay_only listados (sem curinga de thing)', () => {

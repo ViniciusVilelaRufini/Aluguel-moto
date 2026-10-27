@@ -8,6 +8,9 @@ on:
       - 'services/traccar-bridge/**'
       - 'apps/admin/**'
       - 'packages/contracts/**'
+      - 'services/iot-sim/**'
+      - 'deploy/**'
+      - 'docker-compose.yml'
       - 'pnpm-lock.yaml'
       - '.github/workflows/infra.yml'
   push:
@@ -18,6 +21,9 @@ on:
       - 'services/traccar-bridge/**'
       - 'apps/admin/**'
       - 'packages/contracts/**'
+      - 'services/iot-sim/**'
+      - 'deploy/**'
+      - 'docker-compose.yml'
       - 'pnpm-lock.yaml'
       - '.github/workflows/infra.yml'
 
@@ -28,9 +34,9 @@ env:
   AWS_REGION: sa-east-1
 
 jobs:
-  # Gate before any deploy: API (lint + unit tests), admin panel (lint + vitest) and the OpenAPI contract (redocly).
+  # Gate before any deploy: API (lint + unit tests), admin panel (lint + vitest), traccar-bridge, iot-sim and the OpenAPI contract (redocly).
   checks:
-    name: lint + tests (api, admin, bridge, contract)
+    name: lint + tests (api, admin, bridge, iot-sim, contract)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -53,8 +59,12 @@ jobs:
       # `pnpm install` roda o postinstall da API (prisma generate), que o e2e da ponte usa por import relativo.
       - name: traccar-bridge lint
         run: pnpm --filter traccar-bridge lint
-      - name: traccar-bridge tests (unidade, integra��o e e2e em processo)
+      - name: traccar-bridge tests (unidade, integração e e2e em processo)
         run: pnpm --filter traccar-bridge test
+      - name: iot-sim lint
+        run: pnpm --filter iot-sim lint
+      - name: iot-sim tests
+        run: pnpm --filter iot-sim test
 
   # Runs on pull_request too: no AWS credentials, fake account 000000000000 (no context lookups).
   synth:
@@ -74,7 +84,7 @@ jobs:
       - run: pnpm --filter infra test
         if: matrix.env == 'dev'
       - name: cdk synth
-        # prod exige domainName (link público do SOS em https://api.<domínio>/share).
+        # prod exige domainName (link pÃºblico do SOS em https://api.<domÃ­nio>/share).
         run: pnpm --filter infra exec cdk synth -c env=${{ matrix.env }} -c account=${{ vars.AWS_ACCOUNT_ID || '000000000000' }} -c domainName=${{ vars.DOMAIN_NAME || 'volti.example' }} -q
 
   deploy-dev:

@@ -213,6 +213,26 @@ Spec `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`. Pr
 **Desligado por padrão**: a t4g.small tem 2 GiB e o profile soma ~900 MB de limite. Confira `free -m` na instância antes;
 se faltar memória, desligue o `IOT_SIM`.
 
+**Antes do primeiro deploy com este código** (Session Manager na instância, como root, em `/opt/volti/src`). A migração do
+GT06 cria o índice único de `Tracker.imei`; IMEI duplicado ou migração anterior pela metade fazem o `prisma migrate deploy`
+falhar:
+
+```bash
+DC="docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env"
+# 1) IMEI duplicado (tem de voltar vazio; antes da migração a coluna pode não existir — erro "column does not exist" = ok)
+echo 'SELECT imei, count(*) FROM "Tracker" WHERE imei IS NOT NULL GROUP BY imei HAVING count(*) > 1' | $DC exec -T postgres psql -U volti -d volti -tA
+# 2) migração do Prisma que falhou e ficou pendente (tem de voltar vazio; senão resolva com `prisma migrate resolve` antes)
+echo 'SELECT migration_name, started_at FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL' | $DC exec -T postgres psql -U volti -d volti -tA
+# 3) memória e disco (o profile gt06 soma ~900 MB de limite; o build da imagem da ponte precisa de ~1 GB livre em disco)
+free -m; df -h /
+# 4) volta rápida: guarda a imagem atual da API e um dump do banco (só root lê: 600)
+docker tag volti/api:dev volti/api:pre-gt06
+(umask 077; $DC exec -T postgres pg_dump -U volti -d volti -Fc > /var/tmp/volti-pre-gt06.dump) && ls -l /var/tmp/volti-pre-gt06.dump
+```
+
+Para voltar: `docker tag volti/api:pre-gt06 volti/api:dev`, `$DC up -d api` e, se preciso, `pg_restore --clean` do dump. Apague
+o dump quando não precisar mais (dado pessoal).
+
 ```bash
 # primeira vez: cria com a tag do projeto (se já existe: --overwrite, sem --tags)
 aws ssm put-parameter --name /volti/dev/config/GT06 --type String --value on --tags Key=Projeto,Value=Volti
@@ -255,7 +275,27 @@ Use uma moto livre (fora de aluguel). Esperado no fim: `comando <id>: confirmed`
 `cortes no emulador: speedKmhAtCut":0` e `e2e GT06: OK`. Os logs do e2e ficam em `/var/tmp/gt06-e2e.*` (pasta 700, arquivos
 600, só root; sem segredos; IMEI só mascarado). Com sucesso, o `mqtt.log` (posições = dado pessoal) é apagado e fica só o
 `emulator.log`; com falha, o `mqtt.log` fica para o diagnóstico: apague a pasta depois (`rm -rf /var/tmp/gt06-e2e.*`).
-`gt06.sh deprovision moto-0060` devolve a moto ao `iot-sim`; para economizar memória, `GT06=off` e update.
+O `gt06.sh provision` reinicia o `iot-sim` (se estiver rodando): ele só lê a frota ao iniciar e, sem isso, continuaria
+respondendo pelo shadow da moto que virou GT06 (confirmando um lock que o relé não fez). Se provisionar por outro caminho
+(`provision-tracker.ts`, SQL), reinicie o `iot-sim` à mão: `docker compose -f deploy/single/compose.yml --env-file
+/opt/volti/.env --profile sim restart iot-sim`.
+
+`gt06.sh deprovision moto-0060` (só dev) apaga a linha inteira do `Tracker` relay_only e reinicia o `iot-sim`, que volta a
+simular a moto; o dispositivo **continua no Traccar** (a ponte passa a tratá-lo como desconhecido; apague pelo painel do
+Traccar se o IMEI não for mais usado). Para economizar memória, `GT06=off` e update.
+
+**Traccar parado em "Waiting for changelog lock"** (primeira subida interrompida no meio da migração Liquibase, p.ex. por OOM
+ou restart): com o Traccar parado, libere a trava no banco `traccar` e suba de novo:
+
+```bash
+DC="docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env --profile gt06"
+$DC stop traccar
+echo 'UPDATE databasechangeloglock SET locked=false, lockgranted=null, lockedby=null' | $DC exec -T postgres psql -U volti -d traccar
+$DC up -d traccar
+```
+
+Saúde da ponte: o contêiner tem HEALTHCHECK (arquivo de vida que só avança com a fila de entrada andando). O Docker **não**
+reinicia contêiner `unhealthy` sozinho: confira `docker ps` (coluna STATUS) e, se `unhealthy`, `$DC restart traccar-bridge`.
 
 O `gt06.sh init` também desliga o cadastro aberto do Traccar (`registration:false` pelo `PUT /api/server`): nenhum container
 cria usuário sozinho. Se o init falhar, o update segue sem o profile `gt06` (aviso `AVISO: GT06 init falhou`) e a API é

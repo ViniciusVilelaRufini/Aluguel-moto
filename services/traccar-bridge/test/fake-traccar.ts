@@ -29,6 +29,10 @@ export class FakeTraccar {
   serverStatus = 200;
   /** Chamadas a `GET /api/server`. */
   serverCalls = 0;
+  /** Atraso (ms) da resposta de `GET /api/server` (leitura lenta da versão). */
+  serverDelayMs = 0;
+  /** Chamado ao receber `GET /api/server`, antes do atraso (ex.: avançar o relógio da ponte). */
+  onServer?: () => void;
   /**
    * `false` (padrão, como um Traccar sem Notification configurada): alarmes NÃO chegam como `events` no WebSocket, só em
    * `position.attributes.alarm`. `true` = há Notification de alarme e `push` repassa `events`.
@@ -73,6 +77,8 @@ export class FakeTraccar {
     }
     if (req.method === 'GET' && req.url === '/api/server') {
       this.serverCalls++;
+      this.onServer?.();
+      if (this.serverDelayMs) await new Promise((r) => setTimeout(r, this.serverDelayMs));
       return this.serverStatus === 200 ? json(200, { id: 1, ...(this.serverVersion !== undefined ? { version: this.serverVersion } : {}) }) : void res.writeHead(this.serverStatus).end();
     }
     if (!(req.headers.cookie ?? '').includes(SESSION)) return void res.writeHead(401).end();

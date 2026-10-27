@@ -36,9 +36,11 @@ interface Ctx {
   logs: Array<Record<string, unknown>>;
   /** Registro IMEI → thingName que a ponte lê (mutável para M4). */
   registry: Map<string, string>;
+  /** `hang: true` = a próxima leitura do registro nunca responde (banco travado); `calls` = leituras feitas. */
+  registryCtl: { hang: boolean; calls: number };
 }
 
-interface StartOpts { iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; serverStatus?: number }
+interface StartOpts { iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; subscribeTimeoutMs?: number; serverStatus?: number }
 
 async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
   const o: StartOpts = typeof opts === 'string' ? { iotMode: opts } : opts;
@@ -60,12 +62,17 @@ async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
   const log: Logger = { info: (e) => void logs.push({ level: 'info', ...e }), warn: (e) => void logs.push({ level: 'warn', ...e }), error: (e) => void logs.push({ level: 'error', ...e }) };
   const rest = new TraccarRest(traccar.url, 'bridge@volti.local', 'secret');
   const registry = new Map([[IMEI, T]]);
+  const registryCtl = { hang: false, calls: 0 };
+  const things = () => {
+    registryCtl.calls++;
+    return registryCtl.hang ? new Promise<Map<string, string>>(() => undefined) : Promise.resolve(new Map(registry));
+  };
   const mqtt = broker.client('bridge');
-  const bridge = new Bridge(mqtt, rest, { things: async () => new Map(registry) }, { iotMode: o.iotMode ?? 'local', battery: '72v', now: () => now.value, log, publishTimeoutMs: o.publishTimeoutMs });
+  const bridge = new Bridge(mqtt, rest, { things }, { iotMode: o.iotMode ?? 'local', battery: '72v', now: () => now.value, log, publishTimeoutMs: o.publishTimeoutMs, subscribeTimeoutMs: o.subscribeTimeoutMs });
   await bridge.start();
   const socket = new TraccarSocket(traccar.url, rest, (m) => void bridge.enqueue(m), silentLogger, () => void bridge.onSocketOpen());
   await socket.connect();
-  return { traccar, broker, api, mqtt, bridge, socket, now, logs, registry };
+  return { traccar, broker, api, mqtt, bridge, socket, now, logs, registry, registryCtl };
 }
 
 const out = (c: Ctx, topic: string) => c.broker.log.filter((m) => m.from === 'bridge' && m.topic === topic).map((m) => JSON.parse(m.payload));
@@ -77,6 +84,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const heartbeat = (id: number, at: number, blocked: boolean): TraccarPosition =>
   position({ id, deviceId: 1, fixTime: iso(T0 - 60_000), serverTime: iso(at), outdated: true, attributes: { blocked, ignition: false } });
 const setStatus = (c: Ctx, status: 'online' | 'offline') => c.traccar.push({ devices: [{ id: 1, name: T, uniqueId: IMEI, status }] });
+const gets = (c: Ctx) => out(c, `$aws/things/${T}/shadow/get`).length;
+const getAccepted = (c: Ctx, delta: Record<string, unknown>, version = 1) =>
+  c.api.publishAsync(`$aws/things/${T}/shadow/get/accepted`, JSON.stringify({ state: { desired: delta, reported: {}, delta }, version }));
 
 describe('Bridge (Traccar falso + broker em memória)', () => {
   let c: Ctx;
@@ -175,10 +185,11 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
 
   it('reconexão: presença connected, reported sem travada (bit desconhecido) e get; do get só travada:false é reaplicado', async () => {
     c = await start({ notifications: true }); // deviceOnline só chega como event com Notification configurada
+    const g0 = gets(c);
     setStatus(c, 'offline');
     await waitFor(() => out(c, `$aws/events/presence/disconnected/${T}`).length === 1);
     c.traccar.push({ events: [{ id: 5, type: 'deviceOnline', deviceId: 1, eventTime: iso(T0), attributes: {} }] });
-    await waitFor(() => out(c, `$aws/things/${T}/shadow/get`).length === 1);
+    await waitFor(() => gets(c) === g0 + 1);
     expect(out(c, `$aws/events/presence/connected/${T}`)).toHaveLength(1);
     expect(updates(c)).toContainEqual({ state: { reported: { limite_kmh: 32, modo_roubada: false, firmware: 'gt06' } } });
     await c.api.publishAsync(`$aws/things/${T}/shadow/get/accepted`, JSON.stringify({ state: { desired: { travada: true }, reported: {}, delta: { travada: true } }, version: 3 }));
@@ -186,7 +197,7 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(c.traccar.commands).toEqual([]);
     setStatus(c, 'offline');
     setStatus(c, 'online');
-    await waitFor(() => out(c, `$aws/things/${T}/shadow/get`).length === 2);
+    await waitFor(() => gets(c) === g0 + 2);
     await c.api.publishAsync(`$aws/things/${T}/shadow/get/accepted`, JSON.stringify({ state: { desired: { travada: false }, reported: { travada: true }, delta: { travada: false } }, version: 4 }));
     await waitFor(() => c.traccar.commands.length === 1);
     expect(c.traccar.commands).toEqual([{ deviceId: 1, type: 'engineResume' }]);
@@ -201,9 +212,10 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
 
   it('modo aws: sem tópicos de presença (o IoT Core gera os eventos de ciclo de vida)', async () => {
     c = await start('aws');
+    const g0 = gets(c);
     setStatus(c, 'offline');
     setStatus(c, 'online');
-    await waitFor(() => out(c, `$aws/things/${T}/shadow/get`).length === 1);
+    await waitFor(() => gets(c) === g0 + 1);
     expect(c.broker.log.filter((m) => m.topic.startsWith('$aws/events/presence/'))).toEqual([]);
   });
 
@@ -228,9 +240,10 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     c = await start();
     c.traccar.push({ positions: [position({ id: 60, deviceId: 1, fixTime: iso(T0 - 1_000), serverTime: iso(T0), speed: 0 })] });
     await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    const g0 = gets(c);
     setStatus(c, 'offline');
     setStatus(c, 'online');
-    await waitFor(() => out(c, `$aws/things/${T}/shadow/get`).length === 1);
+    await waitFor(() => gets(c) === g0 + 1);
     await c.api.publishAsync(`$aws/things/${T}/shadow/get/accepted`, JSON.stringify({ state: { desired: { travada: true, modo_roubada: true }, delta: { travada: true, modo_roubada: true } }, version: 7 }));
     await waitFor(() => updates(c).some((u) => u.state.reported.modo_roubada === true));
     await sleep(30);
@@ -272,9 +285,10 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     c = await start();
     c.traccar.push({ positions: [heartbeat(80, T0, true)] });
     await waitFor(() => reportedTravada(c).length === 1);
+    const g0 = gets(c);
     setStatus(c, 'offline');
     setStatus(c, 'online');
-    await waitFor(() => out(c, `$aws/things/${T}/shadow/get`).length === 1);
+    await waitFor(() => gets(c) === g0 + 1);
     expect(reportedTravada(c)).toEqual([true]); // o reported completo da reconexão não traz travada
     await sendDelta(c, { travada: true });
     await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'no_position'));
@@ -560,9 +574,10 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     await sendDelta(c, { travada: true });
     await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'no_position'));
     expect(reportedTravada(c)).toEqual([true]); // sem eco do bit do aparelho antigo
+    const g0 = gets(c);
     c.traccar.push({ devices: [{ id: 3, name: 'novo', uniqueId: NEW_IMEI, status: 'offline' }] });
     c.traccar.push({ devices: [{ id: 3, name: 'novo', uniqueId: NEW_IMEI, status: 'online' }] });
-    await waitFor(() => out(c, `$aws/things/${T}/shadow/get`).length === 1);
+    await waitFor(() => gets(c) === g0 + 1);
     expect(updates(c)).toContainEqual({ state: { reported: { limite_kmh: 32, modo_roubada: false, firmware: 'gt06' } } });
   });
 
@@ -590,5 +605,137 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     c.now.value = T0 + 61_000;
     c.traccar.push({ positions: [position({ id: 283, deviceId: 2, fixTime: iso(T0 + 3) })] });
     await waitFor(() => unknownCount() === 2);
+  });
+  // ---- Onda final B
+  const freshAt = (id: number, at: number, deviceId = 1) => position({ id, deviceId, fixTime: iso(at - 500), serverTime: iso(at), speed: 0 });
+
+  it('B-I2: a guarda é reavaliada logo antes do engineStop — releitura lenta da versão envelhece a posição → nada enviado', async () => {
+    c = await start({ serverStatus: 500 }); // versão desconhecida: o execute relê /api/server antes do envio
+    await waitFor(() => c.traccar.serverCalls === 2);
+    c.traccar.serverStatus = 200;
+    c.now.value = T0 + 10_000;
+    c.traccar.push({ positions: [freshAt(400, T0 + 10_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    c.traccar.serverDelayMs = 50;
+    c.traccar.onServer = () => void (c.now.value = T0 + 21_000); // 11 s se passam durante a leitura
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'stale'));
+    await sleep(80);
+    expect(c.traccar.commands).toEqual([]);
+  });
+
+  it('B-I2: dispositivo ficou offline durante a releitura da versão → nada enviado (offline)', async () => {
+    c = await start({ serverStatus: 500 });
+    await waitFor(() => c.traccar.serverCalls === 2);
+    c.traccar.serverStatus = 200;
+    c.now.value = T0 + 10_000;
+    c.traccar.push({ positions: [freshAt(401, T0 + 10_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    c.traccar.serverDelayMs = 150;
+    c.traccar.onServer = () => setStatus(c, 'offline');
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'offline'));
+    expect(c.traccar.commands).toEqual([]);
+  });
+
+  it('B-M4: aparelho do thing trocado no registro durante o envio → engineStop recusado (device_changed), nada enviado', async () => {
+    c = await start({ serverStatus: 500 });
+    await waitFor(() => c.traccar.serverCalls === 2);
+    c.traccar.serverStatus = 200;
+    c.now.value = T0 + 10_000;
+    c.traccar.push({ positions: [freshAt(402, T0 + 10_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    c.traccar.serverDelayMs = 150;
+    c.traccar.onServer = () => {
+      c.registry.clear();
+      c.registry.set(NEW_IMEI, T);
+      void c.bridge.refreshRegistry();
+    };
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'device_changed'));
+    expect(c.traccar.commands).toEqual([]);
+  });
+
+  it('B-I3: leitura do registro travada (IMEI desconhecido) não bloqueia a fila de entrada; releitura em voo única', async () => {
+    c = await start();
+    const calls0 = c.registryCtl.calls;
+    c.registryCtl.hang = true;
+    c.traccar.push({ positions: [freshAt(410, T0, 3)] }); // IMEI fora do registro → releitura (trava)
+    c.traccar.push({ positions: [freshAt(411, T0)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    c.now.value = T0 + 11_000;
+    c.traccar.push({ positions: [freshAt(412, T0 + 11_000, 3), freshAt(413, T0 + 11_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 2);
+    expect(c.registryCtl.calls).toBe(calls0 + 1); // a primeira ainda está em voo: não empilha outra
+  });
+
+  it('B-I3: IMEI provisionado há pouco: a primeira posição é descartada e dispara a releitura; as seguintes já saem', async () => {
+    c = await start();
+    const T2 = 'moto-0777';
+    c.registry.set(NEW_IMEI, T2);
+    c.traccar.push({ positions: [freshAt(420, T0, 3)] });
+    await waitFor(() => c.mqtt.subscribeCalls.some((t) => t.includes(`$aws/things/${T2}/shadow/update/delta`)));
+    c.traccar.push({ positions: [freshAt(421, T0 + 1_000, 3)] });
+    await waitFor(() => out(c, `motos/${T2}/telemetria`).length === 1);
+    expect(out(c, `motos/${T2}/telemetria`)[0]).toMatchObject({ timestamp: iso(T0 + 500) });
+  });
+
+  it('B-I3: SUBSCRIBE sem SUBACK tem prazo: refreshRegistry falha (o próximo ciclo tenta de novo) e a reconexão MQTT não trava', async () => {
+    c = await start({ subscribeTimeoutMs: 50 });
+    c.mqtt.stallSubscribe = true;
+    c.registry.set(NEW_IMEI, 'moto-0777');
+    await expect(c.bridge.refreshRegistry()).rejects.toThrow('mqtt_subscribe_timeout');
+    await c.bridge.onMqttConnect();
+    expect(c.logs.some((l) => l.msg === 'mqtt_resubscribe_failed')).toBe(true);
+    c.mqtt.stallSubscribe = false;
+    await c.bridge.refreshRegistry();
+    expect(c.mqtt.subscribeCalls.at(-1)).toContain(`$aws/things/moto-0777/shadow/update/delta`);
+  });
+
+  it('B-M7: MQTT fora → presença, eventos e get não esperam o prazo de 10 s (pulados com log limitado), nada sai velho na volta', async () => {
+    c = await start(); // prazo padrão de 10 s: esperar por ele estouraria o waitFor
+    c.mqtt.disconnect();
+    setStatus(c, 'offline');
+    c.traccar.push({ positions: [position({ id: 440, deviceId: 1, fixTime: iso(T0 - 1_000), attributes: { blocked: false, power: 72, alarm: 'powerCut' } })] });
+    setStatus(c, 'online');
+    c.traccar.push({ positions: [position({ id: 441, deviceId: 1, fixTime: iso(T0 - 500), attributes: { blocked: false, power: 72, alarm: 'lowPower' } })] });
+    setStatus(c, 'offline'); // marcador: quando o segundo device_offline sai, tudo antes já passou pela fila
+    await waitFor(() => c.logs.filter((l) => l.msg === 'device_offline').length === 2, 2_000);
+    expect(c.logs.some((l) => l.msg === 'mqtt_publish_timeout')).toBe(false);
+    const skipped = c.logs.filter((l) => l.msg === 'mqtt_down_skipped');
+    expect(skipped.map((l) => l.kind).sort()).toEqual(['events', 'presence', 'shadow_get']); // limitado: um por moto e tipo
+    expect(skipped[0]).toMatchObject({ level: 'warn', thingName: T });
+    c.mqtt.reconnect();
+    await sleep(50);
+    expect(c.broker.log.filter((m) => m.from === 'bridge' && (m.topic.startsWith('$aws/events/presence/') || m.topic === `motos/${T}/eventos`))).toEqual([]);
+  });
+
+  it('B-M1: no início, get das motos online; travada:false pendente → engineResume sem esperar o aparelho reconectar', async () => {
+    c = await start();
+    await waitFor(() => gets(c) >= 1);
+    await getAccepted(c, { travada: false });
+    await waitFor(() => c.traccar.commands.length === 1);
+    expect(c.traccar.commands).toEqual([{ deviceId: 1, type: 'engineResume' }]);
+  });
+
+  it('B-M1: reconexão MQTT → get das motos online; travada:true pendente nunca vira engineStop; moto offline não pede get', async () => {
+    c = await start();
+    c.traccar.push({ positions: [freshAt(450, T0)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    await getAccepted(c, { modo_roubada: false }); // consome o get do início
+    await waitFor(() => updates(c).some((u) => u.state.reported.modo_roubada === false));
+    const g0 = gets(c);
+    c.mqtt.disconnect();
+    c.mqtt.reconnect();
+    await waitFor(() => gets(c) === g0 + 1);
+    await getAccepted(c, { travada: true }, 2);
+    await sleep(50);
+    expect(c.traccar.commands).toEqual([]);
+    setStatus(c, 'offline');
+    await waitFor(() => out(c, `$aws/events/presence/disconnected/${T}`).length === 1);
+    c.mqtt.disconnect();
+    c.mqtt.reconnect();
+    await sleep(50);
+    expect(gets(c)).toBe(g0 + 1);
   });
 });

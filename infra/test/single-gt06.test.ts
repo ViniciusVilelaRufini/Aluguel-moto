@@ -82,6 +82,11 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(b).not.toMatch(/ports:/);
   });
 
+  it('B-I3: ponte com healthcheck do arquivo de vida; o emulador (mesma imagem) desliga o herdado do Dockerfile', () => {
+    expect(service(c, 'traccar-bridge')).toMatch(/healthcheck:\s+test: \["CMD", "node", "dist\/healthcheck\.js"\]/);
+    expect(service(c, 'gt06-emulator')).toMatch(/healthcheck:\s+disable: true/);
+  });
+
   it('emulador: imagem da ponte, aponta para traccar:5023, IMEI/cenário/bateria por variável, sem portas', () => {
     const e = service(c, 'gt06-emulator');
     expect(e).toContain('image: volti/traccar-bridge:dev');
@@ -228,6 +233,31 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
       expect(bin).toMatch(/gt06Cidrs: get\('gt06Cidrs'\)\?\.split\(','\)/);
       expect(bin).toMatch(/openGt06: get\('openGt06'\) === 'true'/);
     });
+  });
+
+  it('gt06.sh provision/deprovision reiniciam o iot-sim (se estiver rodando) para ele reler a frota; sem a frase errada do "próximo ciclo"', () => {
+    const g = file('gt06.sh');
+    expect(g).toMatch(/restart_sim\(\) \{[^}]*--profile sim ps -q iot-sim[^}]*--profile sim restart iot-sim/);
+    const body = (name: string) => {
+      const at = g.indexOf(`\n  ${name})\n`);
+      return g.slice(at, g.indexOf(';;', at));
+    };
+    expect(body('provision')).toContain('restart_sim');
+    expect(body('deprovision')).toContain('restart_sim');
+    expect(g).not.toContain('no próximo ciclo');
+  });
+
+  it('cloudshell.md: checagens antes do deploy GT06, trava do Liquibase e o que o deprovision deixa para trás', () => {
+    const d = file('cloudshell.md');
+    expect(d).toMatch(/GROUP BY imei HAVING count\(\*\) > 1/);
+    expect(d).toMatch(/_prisma_migrations WHERE finished_at IS NULL/);
+    expect(d).toContain('free -m');
+    expect(d).toContain('df -h');
+    expect(d).toContain('docker tag volti/api:dev volti/api:pre-gt06');
+    expect(d).toMatch(/umask 077[^\n]*pg_dump/);
+    expect(d).toContain('UPDATE databasechangeloglock SET locked=false, lockgranted=null, lockedby=null');
+    expect(d).toMatch(/deprovision[^\n]*\n?[^\n]*Traccar/);
+    expect(d).toMatch(/reinicia o `iot-sim`/);
   });
 
   it('cloudshell.md documenta o profile, o e2e e o reconhecimento da 5023', () => {

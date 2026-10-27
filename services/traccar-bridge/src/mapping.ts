@@ -6,7 +6,7 @@ import { knotsToKmh, rssiToSignal, voltageToPct, type BatteryModel } from './uni
 export interface DeviceMemory {
   /** Último bit de corte (`attributes.blocked`). Leia SEMPRE por `currentBlocked(mem)`, nunca direto. */
   blocked?: boolean;
-  /** Relógio de ingestão (ms) do último status com `attributes.blocked`. Base de `freshBlocked`. */
+  /** min(serverTime do Traccar, relógio de ingestão) (ms) do último status com `attributes.blocked`. Base de `freshBlocked`. */
   blockedAt?: number;
   ignition?: boolean;
   signal?: number;
@@ -89,7 +89,9 @@ export function applyPosition(
   const a = p.attributes ?? {};
   if (typeof a.blocked === 'boolean') {
     next.blocked = a.blocked;
-    next.blockedAt = now;
+    // Hora do Traccar ao receber o status, limitada a agora: um heartbeat parado numa fila (WebSocket, inbound) não é fresco.
+    const serverAt = Date.parse(p.serverTime);
+    next.blockedAt = Number.isFinite(serverAt) ? Math.min(serverAt, now) : now;
     next.awaitingStatus = false;
   }
   if (typeof a.ignition === 'boolean') next.ignition = a.ignition;

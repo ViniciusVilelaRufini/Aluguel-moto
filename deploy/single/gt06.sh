@@ -2,8 +2,10 @@
 # Rastreador GT06 só relé no dev single (spec docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md, §7):
 #   gt06.sh init                                      papéis/banco do Traccar e da ponte e usuários do Traccar (idempotente;
 #                                                     o update.sh chama com GT06=on, depois das migrações)
-#   gt06.sh provision <VLT-0000> <moto-0000> <imei>   Tracker relay_only + dispositivo no Traccar ligado ao usuário da ponte
-#   gt06.sh deprovision <moto-0000>                   apaga o Tracker relay_only (o iot-sim volta a simular a moto)
+#   gt06.sh provision <VLT-0000> <moto-0000> <imei>   Tracker relay_only + dispositivo no Traccar ligado ao usuário da ponte;
+#                                                     reinicia o iot-sim (se rodando) para ele parar de simular a moto
+#   gt06.sh deprovision <moto-0000>                   SÓ DEV: apaga a linha inteira do Tracker relay_only (o dispositivo fica no
+#                                                     Traccar) e reinicia o iot-sim, que volta a simular a moto
 #   gt06.sh e2e <VLT-0000> <moto-0000>                emulador anda e para; lock pela API com o token de staff do DONO
 #                                                     (/volti/dev/secrets/E2E_STAFF_TOKEN); confere a linha do tempo MQTT
 # Senhas e token nunca vão para a linha de comando (curl -K - e SQL pelo stdin) nem para a saída; o IMEI também não.
@@ -11,7 +13,7 @@ set -euo pipefail
 source "${VOLTI_INSTANCE_ENV:-/etc/volti/instance.env}"
 export AWS_DEFAULT_REGION="$VOLTI_REGION"
 
-usage() { sed -n '2,9p' "$0" >&2; exit 2; }
+usage() { sed -n '2,11p' "$0" >&2; exit 2; }
 action="${1:-}"
 case "$action" in
   init) ;;
@@ -31,6 +33,15 @@ TRACCAR_LOCAL=http://127.0.0.1:8082
 envval() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2-; }
 dc() { docker compose -f deploy/single/compose.yml --env-file "$ENV_FILE" --profile gt06 "$@"; }
 sql() { dc exec -T postgres psql -v ON_ERROR_STOP=1 -U volti -d volti -tA; }
+# O iot-sim só lê a frota ao iniciar: depois de provision/deprovision ele tem de ser reiniciado, senão continua respondendo
+# pelo shadow da moto que virou GT06 (confirmando lock que o relé não fez) ou não simula a que voltou. Só se estiver rodando.
+restart_sim() {
+  if [ -n "$(dc --profile sim ps -q iot-sim 2>/dev/null)" ]; then
+    dc --profile sim restart iot-sim >/dev/null && echo "iot-sim reiniciado (relê a frota)"
+  else
+    echo "iot-sim não está rodando (nada a reiniciar)"
+  fi
+}
 # traccar_admin <método> <caminho> [json]: credenciais e corpo pelo stdin do curl (-K -), nunca na linha de comando.
 # No config do curl, "\" e '"' dentro de aspas precisam de escape (barra invertida primeiro).
 traccar_admin() {
@@ -118,10 +129,14 @@ SQL
     dc exec -T -e TRACCAR_URL=http://traccar:8082 -e TRACCAR_ADMIN_EMAIL="$TRACCAR_ADMIN_EMAIL" -e TRACCAR_BRIDGE_EMAIL="$TRACCAR_BRIDGE_EMAIL" \
       api node dist/cli/provision-gt06.js --vehicle "$2" --thing "$3" --imei "$4"
     echo "$3 provisionada como GT06 relay_only (a ponte relê o registro em até 60 s)"
+    restart_sim
     ;;
   deprovision)
+    # Só dev: apaga a linha inteira (sem certificado/thing para restaurar). O dispositivo continua no Traccar (sem o Tracker a
+    # ponte o trata como desconhecido; remova pelo painel do Traccar se o IMEI não voltar a ser usado).
     echo "DELETE FROM \"Tracker\" WHERE \"thingName\" = '$2' AND \"controlMode\" = 'relay_only'" | sql
-    echo "Tracker relay_only de $2 removido (o iot-sim volta a simular a moto no próximo ciclo)"
+    echo "Tracker relay_only de $2 removido (o dispositivo continua no Traccar)"
+    restart_sim
     ;;
   e2e)
     code="$2" thing="$3"
