@@ -3,7 +3,6 @@ import type { AddressInfo } from 'node:net';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { TraccarDevice, TraccarPosition, TraccarSocketMessage } from '../src/traccar/types';
 
-const SESSION = 'JSESSIONID=fake-session';
 
 /**
  * Traccar falso (HTTP + WebSocket em 127.0.0.1, porta aleatória): sessão, dispositivos, comandos e o /api/socket.
@@ -40,6 +39,20 @@ export class FakeTraccar {
   notifications = false;
   /** Conexões de WebSocket aceitas até agora. */
   connections = 0;
+  /** Logins (`POST /api/session`) aceitos. */
+  logins = 0;
+  /** Atraso (ms) da resposta do login. */
+  sessionDelayMs = 0;
+  /** Chamado ao receber o login, antes do atraso (ex.: avançar o relógio da ponte). */
+  onSession?: () => void;
+  /** Geração da sessão: `expireSessions` invalida os cookies já emitidos (o Traccar reiniciou ou a sessão expirou). */
+  private sessionGen = 0;
+  private get session(): string {
+    return `JSESSIONID=fake-session-${this.sessionGen}`;
+  }
+  expireSessions(): void {
+    this.sessionGen++;
+  }
   private server?: Server;
   private wss?: WebSocketServer;
   private readonly sockets = new Set<WebSocket>();
@@ -48,7 +61,7 @@ export class FakeTraccar {
     this.server = createServer((req, res) => void this.handle(req, res));
     this.wss = new WebSocketServer({ noServer: true });
     this.server.on('upgrade', (req, socket, head) => {
-      if (req.url !== '/api/socket' || !(req.headers.cookie ?? '').includes(SESSION)) {
+      if (req.url !== '/api/socket' || !this.hasSession(req)) {
         socket.destroy();
         return;
       }
@@ -73,7 +86,10 @@ export class FakeTraccar {
     if (req.method === 'POST' && req.url === '/api/session') {
       const p = new URLSearchParams(body);
       if (p.get('email') !== 'bridge@volti.local' || p.get('password') !== 'secret') return void res.writeHead(401).end();
-      return void res.writeHead(200, { 'Set-Cookie': `${SESSION}; Path=/; HttpOnly`, 'Content-Type': 'application/json' }).end('{}');
+      this.logins++;
+      this.onSession?.();
+      if (this.sessionDelayMs) await new Promise((r) => setTimeout(r, this.sessionDelayMs));
+      return void res.writeHead(200, { 'Set-Cookie': `${this.session}; Path=/; HttpOnly`, 'Content-Type': 'application/json' }).end('{}');
     }
     if (req.method === 'GET' && req.url === '/api/server') {
       this.serverCalls++;
@@ -81,7 +97,7 @@ export class FakeTraccar {
       if (this.serverDelayMs) await new Promise((r) => setTimeout(r, this.serverDelayMs));
       return this.serverStatus === 200 ? json(200, { id: 1, ...(this.serverVersion !== undefined ? { version: this.serverVersion } : {}) }) : void res.writeHead(this.serverStatus).end();
     }
-    if (!(req.headers.cookie ?? '').includes(SESSION)) return void res.writeHead(401).end();
+    if (!this.hasSession(req)) return void res.writeHead(401).end();
     if (req.method === 'GET' && req.url === '/api/devices') return json(200, this.devices);
     if (req.method === 'POST' && req.url === '/api/commands/send') {
       const c = JSON.parse(body) as { deviceId: number; type: string; attributes?: Record<string, unknown> };
@@ -93,6 +109,10 @@ export class FakeTraccar {
       return json(202, c);
     }
     res.writeHead(404).end();
+  }
+
+  private hasSession(req: IncomingMessage): boolean {
+    return (req.headers.cookie ?? '').split(/;\s*/).includes(this.session);
   }
 
   /** Mensagem do WebSocket do Traccar para todos os clientes conectados. */

@@ -11,6 +11,9 @@ export interface TraccarApi {
   devices(): Promise<TraccarDevice[]>;
   /** `GET /api/server` (`version`). */
   server(): Promise<{ version?: unknown }>;
+  /** Abre a sessão se ainda não houver (login). */
+  ensureSession(): Promise<void>;
+  /** `engineStop` exige sessão aberta e não faz login nem reenvia no 401; `engineResume` pode. */
   sendCommand(deviceId: number, type: 'engineStop' | 'engineResume'): Promise<'sent' | 'queued'>;
 }
 
@@ -525,9 +528,16 @@ export class Bridge {
    * Chamado com a guarda liberada no plano (`planDeltaFor`) e Traccar ≥ 6.7.0. Nunca deixa o corte na fila (`noQueue`).
    * B-I2: entre o plano e aqui houve `await` (releitura da versão, outras ações): a guarda é refeita AGORA, com o status atual
    * do dispositivo, a memória atual e o relógio atual; e o aparelho do thing tem de ser o mesmo resolvido no plano (B-M4).
-   * Daqui até o `sendCommand` não há `await`.
+   * Daqui até o `sendCommand` não há `await`: a sessão HTTP é garantida ANTES da guarda (N3), e o `sendCommand` do
+   * `engineStop` não faz login nem reenvia no 401.
    */
   private async sendStop(thing: string, device: TraccarDevice): Promise<void> {
+    try {
+      await this.traccar.ensureSession();
+    } catch (err) {
+      this.log.error({ msg: 'engine_stop_not_sent', thingName: thing, error: (err as Error).message });
+      return;
+    }
     const refusal =
       this.deviceOf(thing)?.id !== device.id
         ? 'device_changed'

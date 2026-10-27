@@ -624,6 +624,48 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     expect(c.traccar.commands).toEqual([]);
   });
 
+  it('N3: sessão expirada no engineStop → 401 sem novo login nem reenvio (engine_stop_not_sent; a API expira com segurança)', async () => {
+    c = await start();
+    c.now.value = T0 + 10_000;
+    c.traccar.push({ positions: [freshAt(402, T0 + 10_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    const logins = c.traccar.logins;
+    c.traccar.expireSessions();
+    c.traccar.onSession = () => void (c.now.value = T0 + 21_000); // um re-login + reenvio sairia com a posição velha
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_not_sent'));
+    await sleep(80);
+    expect(c.traccar.commands).toEqual([]);
+    expect(c.traccar.logins).toBe(logins);
+  });
+
+  it('N3: sem sessão, o login do engineStop acontece ANTES da guarda — login lento envelhece a posição → recusa stale', async () => {
+    c = await start();
+    c.now.value = T0 + 10_000;
+    c.traccar.push({ positions: [freshAt(403, T0 + 10_000)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    c.traccar.expireSessions();
+    await sendDelta(c, { travada: true }); // 401: a sessão velha é esquecida, nada enviado
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_not_sent'));
+    c.now.value = T0 + 10_400;
+    c.traccar.push({ positions: [freshAt(404, T0 + 10_400)] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 2);
+    c.traccar.sessionDelayMs = 50;
+    c.traccar.onSession = () => void (c.now.value = T0 + 21_000); // 11 s se passam durante o login
+    await sendDelta(c, { travada: true, modo_roubada: false });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'stale'));
+    await sleep(80);
+    expect(c.traccar.commands).toEqual([]);
+  });
+
+  it('N3: engineResume com a sessão expirada mantém o novo login e o reenvio', async () => {
+    c = await start();
+    c.traccar.expireSessions();
+    await sendDelta(c, { travada: false });
+    await waitFor(() => c.traccar.commands.length === 1);
+    expect(c.traccar.commands).toEqual([{ deviceId: 1, type: 'engineResume' }]);
+  });
+
   it('B-I2: dispositivo ficou offline durante a releitura da versão → nada enviado (offline)', async () => {
     c = await start({ serverStatus: 500 });
     await waitFor(() => c.traccar.serverCalls === 2);

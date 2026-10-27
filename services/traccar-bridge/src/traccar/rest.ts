@@ -33,12 +33,22 @@ export class TraccarRest {
     return this.cookie;
   }
 
-  private async request(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  /** Garante uma sessão (login só se ainda não houver cookie). O `engineStop` chama antes de refazer a guarda (N3). */
+  async ensureSession(): Promise<void> {
+    if (!this.cookie) await this.login();
+  }
+
+  /**
+   * `strict` (engineStop): nada de login nem de novo envio aqui dentro — a guarda foi refeita logo antes, e um login ou reenvio
+   * atrasaria o corte além da frescura da posição (N3). Sem sessão → erro; 401 → esquece a sessão e erro.
+   */
+  private async request(path: string, init: RequestInit = {}, retry = true, strict = false): Promise<Response> {
+    if (strict && !this.cookie) throw new Error('traccar_no_session');
     const cookie = this.cookie ?? (await this.login());
     const res = await this.fetch(`${this.baseUrl}${path}`, { ...init, headers: { ...((init.headers as Record<string, string>) ?? {}), Cookie: cookie } });
-    if (res.status === 401 && retry) {
+    if (res.status === 401) {
       this.cookie = undefined;
-      return this.request(path, init, false);
+      if (retry && !strict) return this.request(path, init, false);
     }
     return res;
   }
@@ -59,14 +69,21 @@ export class TraccarRest {
   /**
    * Envia SEM fila (`attributes.noQueue`): sem sessão do dispositivo o Traccar recusa (erro HTTP → exceção) em vez de guardar o
    * comando e entregá-lo na reconexão, em qualquer velocidade. 200 = enviado ao dispositivo; 202 = enfileirado mesmo assim
-   * (Traccar que ignora `noQueue`) — quem chama registra como erro.
+   * (Traccar que ignora `noQueue`) — quem chama registra como erro. `engineStop` exige sessão já aberta (`ensureSession`) e
+   * nunca faz login nem reenvia no 401 (N3: a API expira o lock com segurança); `engineResume` mantém o novo login e o reenvio.
    */
   async sendCommand(deviceId: number, type: 'engineStop' | 'engineResume'): Promise<'sent' | 'queued'> {
-    const res = await this.request('/api/commands/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deviceId, type, attributes: { noQueue: true } }),
-    });
+    const strict = type === 'engineStop';
+    const res = await this.request(
+      '/api/commands/send',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId, type, attributes: { noQueue: true } }),
+      },
+      !strict,
+      strict,
+    );
     if (res.status === 202) return 'queued';
     if (!res.ok) throw new Error(`traccar_command_failed_${res.status}`);
     return 'sent';

@@ -30,7 +30,9 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   10 s abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
   em 10 s); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
   releitura da versão e de qualquer outra espera), com o aparelho resolvido uma vez no início do delta: se a posição envelheceu,
-  o dispositivo caiu ou o IMEI do thing mudou no meio (`device_changed`), nada é enviado. Lock numa moto já travada → eco `reported.travada: true`.
+  o dispositivo caiu ou o IMEI do thing mudou no meio (`device_changed`), nada é enviado. A sessão HTTP do Traccar é aberta
+  **antes** da guarda refeita; no envio do `engineStop` não há login nem reenvio no 401 (sessão expirada = `engine_stop_not_sent`;
+  a API expira o lock com segurança). O `engineResume` mantém o novo login e o reenvio. Lock numa moto já travada → eco `reported.travada: true`.
   `travada: false` → `engineResume`; `travada` null/ausente não vira comando; `limite_kmh` nunca vira comando (reported
   `limite_kmh: 32`).
 - **Comandos sem fila:** `engineStop`/`engineResume` vão com `attributes.noQueue`; se o dispositivo caiu entre a checagem e o

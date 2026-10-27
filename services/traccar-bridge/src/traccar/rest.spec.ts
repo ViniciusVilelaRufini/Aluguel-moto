@@ -19,7 +19,8 @@ describe('TraccarRest (B-I3: toda chamada HTTP com prazo)', () => {
     ['login', (r: TraccarRest) => r.login()],
     ['devices', (r: TraccarRest) => r.devices()],
     ['server', (r: TraccarRest) => r.server()],
-    ['sendCommand', (r: TraccarRest) => r.sendCommand(1, 'engineStop')],
+    ['ensureSession', (r: TraccarRest) => r.ensureSession()],
+    ['sendCommand', (r: TraccarRest) => r.sendCommand(1, 'engineResume')],
     ['bootstrapFirstUser', (r: TraccarRest) => r.bootstrapFirstUser('x')],
   ])('%s sem resposta → aborta no prazo', async (_name, call) => {
     const seen: Array<RequestInit | undefined> = [];
@@ -42,5 +43,33 @@ describe('TraccarRest (B-I3: toda chamada HTTP com prazo)', () => {
     expect(seen.map((s) => s.url)).toEqual(['http://traccar/api/session', 'http://traccar/api/devices']);
     for (const s of seen) expect(s.init?.signal).toBeInstanceOf(AbortSignal);
     expect((seen[1].init?.headers as Record<string, string>).Cookie).toBe('JSESSIONID=abc');
+  });
+
+  it('N3: engineStop sem sessão aberta falha na hora (sem login); com sessão, 401 não faz login nem reenvia', async () => {
+    const seen: string[] = [];
+    let commandStatus = 401;
+    const fetchImpl = (async (url: string) => {
+      seen.push(url);
+      if (url.endsWith('/api/session')) return new Response('{}', { status: 200, headers: { 'set-cookie': 'JSESSIONID=abc; Path=/' } });
+      return new Response('{}', { status: commandStatus });
+    }) as unknown as typeof fetch;
+    const rest = new TraccarRest('http://traccar', 'e', 'p', fetchImpl);
+    await expect(rest.sendCommand(1, 'engineStop')).rejects.toThrow('traccar_no_session');
+    expect(seen).toEqual([]);
+    await rest.ensureSession();
+    await rest.ensureSession(); // já há sessão: nenhum login a mais
+    expect(seen).toEqual(['http://traccar/api/session']);
+    await expect(rest.sendCommand(1, 'engineStop')).rejects.toThrow('traccar_command_failed_401');
+    expect(seen).toEqual(['http://traccar/api/session', 'http://traccar/api/commands/send']);
+    // A sessão rejeitada foi esquecida: o próximo engineStop exige ensureSession de novo.
+    await expect(rest.sendCommand(1, 'engineStop')).rejects.toThrow('traccar_no_session');
+    // engineResume mantém o novo login + reenvio no 401.
+    seen.length = 0;
+    commandStatus = 200;
+    await rest.ensureSession();
+    commandStatus = 401;
+    const resume = rest.sendCommand(1, 'engineResume');
+    await expect(resume).rejects.toThrow('traccar_command_failed_401');
+    expect(seen).toEqual(['http://traccar/api/session', 'http://traccar/api/commands/send', 'http://traccar/api/session', 'http://traccar/api/commands/send']);
   });
 });
