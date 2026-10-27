@@ -111,7 +111,7 @@ Name | Type | Description  | Notes
 
 Baterias (série, carga, ciclos, onde estão)
 
-`statusCounts` traz a contagem por status de todas as baterias que passam nos filtros `depotId`, `holderId` e `q` (ignora `status` e a paginação), para o resumo do inventário. 
+`statusCounts` traz a contagem por status de todas as baterias que passam nos filtros `depotId`, `holderId` e `q` (ignora `status` e a paginação), para o resumo do inventário. Usuário sem `admin`/`operacao` só filtra `holderId` pela própria van (`me` ou o próprio id); outro operador → `403` `forbidden` (mesma regra de `GET /batteries/van-stock`). 
 
 ### Example
 ```dart
@@ -122,7 +122,7 @@ final String cursor = cursor_example; // String | Cursor opaco devolvido em `nex
 final int limit = 56; // int | Itens por página.
 final BatteryStatus status = ; // BatteryStatus | 
 final String depotId = 38400000-8cf0-11bd-b23e-10b96e4ef00d; // String | Galpão onde a bateria está (`charging`, `charged` ou `defective`).
-final String holderId = holderId_example; // String | Operador que leva a bateria na van (`me` = o próprio usuário).
+final String holderId = holderId_example; // String | Operador que leva a bateria na van (`me` = o próprio usuário). Só `admin`/`operacao` consultam outro operador (`403`).
 final String q = q_example; // String | Busca por número de série.
 
 try {
@@ -141,7 +141,7 @@ Name | Type | Description  | Notes
  **limit** | **int**| Itens por página. | [optional] [default to 20]
  **status** | [**BatteryStatus**](.md)|  | [optional] 
  **depotId** | **String**| Galpão onde a bateria está (`charging`, `charged` ou `defective`). | [optional] 
- **holderId** | **String**| Operador que leva a bateria na van (`me` = o próprio usuário). | [optional] 
+ **holderId** | **String**| Operador que leva a bateria na van (`me` = o próprio usuário). Só `admin`/`operacao` consultam outro operador (`403`). | [optional] 
  **q** | **String**| Busca por número de série. | [optional] 
 
 ### Return type
@@ -211,7 +211,7 @@ Name | Type | Description  | Notes
 
 Carregar baterias na van
 
-Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada numa moto, com defeito (`defective`) ou baixada (`retired`) → `409`. Prefira as `charged` do galpão (`GET /batteries?depotId=…&status=charged`); carregar uma `charging` continua permitido: ela vai com a carga conhecida (`items[].chargePct`) e a série volta em `loadedChargingSerials`. 
+Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada numa moto, com defeito (`defective`) ou baixada (`retired`) → `409` `conflict`. Prefira as `charged` do galpão (`GET /batteries?depotId=…&status=charged`); carregar uma `charging` continua permitido: ela vai com a carga conhecida (`items[].chargePct`) e a série volta em `loadedChargingSerials`.  Custódia (2026-10-26): bateria `in_van` na van de outro operador → `409` `battery-in-other-van`; tirar bateria de uma estação (`in_station`) é só de `admin`/`operacao` — usuário só do grupo `campo` → `409` `battery-at-station`. `chargePct` só vale para série nova; a existente mantém a carga gravada. Bateria que mudou de situação durante a operação → `409` `conflict`. 
 
 ### Example
 ```dart

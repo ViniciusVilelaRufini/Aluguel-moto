@@ -441,12 +441,16 @@ describe('Contrato v2 (e2e)', () => {
     expect((await http().post('/batteries/van-stock/unload').set(bearer(campo)).send({ serials: [oldSerial] }).expect(409)).body.code).toBe('conflict');
     expect((await http().get(`/batteries/van-stock?operatorId=${randomUUID()}`).set(bearer(campo)).expect(403)).body.code).toBe('forbidden');
     await http().get('/batteries?holderId=qualquer').set(bearer(admin)).expect(400);
-    // Fix round 1 (M5): carregar da estação tira das disponíveis e mantém a carga conhecida.
+    // 2026-10-26: campo só filtra pela própria van (mesma regra do van-stock).
+    expect((await http().get(`/batteries?holderId=${randomUUID()}`).set(bearer(campo)).expect(403)).body.code).toBe('forbidden');
+    // Fix round 1 (M5): carregar da estação tira das disponíveis e mantém a carga conhecida. 2026-10-26 (custódia): só a
+    // operação tira bateria de uma estação; campo → 409 battery-at-station.
     const st = await prisma.swapStation.findFirstOrThrow({ where: { name: 'Estação Largo da Batata' } });
     const stSerial = `BT-ST-${Date.now()}`;
     await prisma.battery.create({ data: { serial: stSerial, chargePct: 97, status: 'in_station', stationId: st.id } });
     const before = st.availableBatteries;
-    const fromStation = await http().post('/batteries/van-stock/load').set(bearer(campo)).send({ serials: [stSerial] }).expect(200);
+    expect((await http().post('/batteries/van-stock/load').set(bearer(campo)).send({ serials: [stSerial] }).expect(409)).body.code).toBe('battery-at-station');
+    const fromStation = await http().post('/batteries/van-stock/load').set(bearer(admin)).send({ serials: [stSerial] }).expect(200);
     expect(fromStation.body.items.find((b: { serial: string }) => b.serial === stSerial).chargePct).toBe(97);
     expect((await prisma.swapStation.findUniqueOrThrow({ where: { id: st.id } })).availableBatteries).toBe(before - 1);
   });

@@ -11,7 +11,7 @@ Name | Type | Description | Notes
 **serials** | **BuiltList&lt;String&gt;** |  | 
 **stationId** | **String** | Só em `unload`; ausente = `charging` no galpão. | [optional] 
 **depotId** | **String** | Só em `unload` sem `stationId`: galpão onde as baterias vão carregar (padrão: o único galpão ativo). | [optional] 
-**chargePct** | **int** | Só em `load`; carga informada (padrão 100). | [optional] 
+**chargePct** | **int** | Só em `load` e só na criação de bateria nova (série sem cadastro): carga inicial (padrão 100). Bateria existente mantém a carga gravada. | [optional] 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

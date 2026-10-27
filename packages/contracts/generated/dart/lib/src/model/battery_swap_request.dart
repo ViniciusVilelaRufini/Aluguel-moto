@@ -13,7 +13,7 @@ part 'battery_swap_request.g.dart';
 /// Properties:
 /// * [removedBatterySerial]
 /// * [installedBatterySerial]
-/// * [installedBatteryPct]
+/// * [installedBatteryPct] - Só para bateria nova (sem cadastro): carga inicial (padrão 100). Bateria existente mantém a carga gravada.
 /// * [recordedAt]
 @BuiltValue()
 abstract class BatterySwapRequest
@@ -24,6 +24,7 @@ abstract class BatterySwapRequest
   @BuiltValueField(wireName: r'installedBatterySerial')
   String get installedBatterySerial;
 
+  /// Só para bateria nova (sem cadastro): carga inicial (padrão 100). Bateria existente mantém a carga gravada.
   @BuiltValueField(wireName: r'installedBatteryPct')
   int? get installedBatteryPct;
 

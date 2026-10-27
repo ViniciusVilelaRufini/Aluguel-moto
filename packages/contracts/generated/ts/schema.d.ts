@@ -2806,7 +2806,20 @@ export interface paths {
         put?: never;
         /**
          * Registrar troca de bateria
-         * @description Usuário só do grupo `campo` só registra em tarefa atribuída a ele (`403`). Números de série da bateria retirada e da instalada (lidos por QR ou código de barras); precisam ser diferentes (`422` `battery-serials-must-differ`). Reenvio com a mesma `Idempotency-Key` não duplica.
+         * @description Usuário só do grupo `campo` só registra em tarefa atribuída a ele (`403`). Números de série da bateria retirada e da
+         *     instalada (lidos por QR ou código de barras); precisam ser diferentes (`422` `battery-serials-must-differ`). Reenvio
+         *     com a mesma `Idempotency-Key` não duplica.
+         *
+         *     Custódia (2026-10-26), todos `409`:
+         *     - `task-type-mismatch`: a tarefa não é `battery_swap`;
+         *     - `battery-swap-already-recorded`: a tarefa já tem uma troca registrada (uma por tarefa);
+         *     - `battery-not-in-van`: a instalada já tem cadastro e não está `in_van` na van de quem registra (outra van, estação,
+         *       galpão); série sem cadastro entra como bateria nova;
+         *     - `battery-serial-mismatch`: a retirada não é a bateria desta moto (`Vehicle.batterySerial` ou a bateria `in_vehicle`
+         *       dela), consta em outra moto, a instalada consta instalada numa moto, ou a bateria da moto mudou durante a operação;
+         *     - `conflict`: a instalada ou a retirada está com defeito (`defective`) ou baixada (`retired`), ou a tarefa já foi encerrada.
+         *
+         *     `installedBatteryPct` só vale para bateria nova; a existente mantém a carga gravada (que vira a da moto).
          */
         post: operations["submitBatterySwap"];
         delete?: never;
@@ -2905,7 +2918,8 @@ export interface paths {
         /**
          * Baterias (série, carga, ciclos, onde estão)
          * @description `statusCounts` traz a contagem por status de todas as baterias que passam nos filtros `depotId`, `holderId` e `q`
-         *     (ignora `status` e a paginação), para o resumo do inventário.
+         *     (ignora `status` e a paginação), para o resumo do inventário. Usuário sem `admin`/`operacao` só filtra `holderId`
+         *     pela própria van (`me` ou o próprio id); outro operador → `403` `forbidden` (mesma regra de `GET /batteries/van-stock`).
          */
         get: operations["listBatteries"];
         put?: never;
@@ -3038,9 +3052,14 @@ export interface paths {
         /**
          * Carregar baterias na van
          * @description Move as baterias (por série) para a van do usuário (`in_van`). Série desconhecida é cadastrada. Bateria instalada
-         *     numa moto, com defeito (`defective`) ou baixada (`retired`) → `409`. Prefira as `charged` do galpão
+         *     numa moto, com defeito (`defective`) ou baixada (`retired`) → `409` `conflict`. Prefira as `charged` do galpão
          *     (`GET /batteries?depotId=…&status=charged`); carregar uma `charging` continua permitido: ela vai com a carga
          *     conhecida (`items[].chargePct`) e a série volta em `loadedChargingSerials`.
+         *
+         *     Custódia (2026-10-26): bateria `in_van` na van de outro operador → `409` `battery-in-other-van`; tirar bateria de uma
+         *     estação (`in_station`) é só de `admin`/`operacao` — usuário só do grupo `campo` → `409` `battery-at-station`.
+         *     `chargePct` só vale para série nova; a existente mantém a carga gravada. Bateria que mudou de situação durante a
+         *     operação → `409` `conflict`.
          */
         post: operations["loadVanBatteries"];
         delete?: never;
@@ -5295,6 +5314,7 @@ export interface components {
         BatterySwapRequest: {
             removedBatterySerial: string;
             installedBatterySerial: string;
+            /** @description Só para bateria nova (sem cadastro): carga inicial (padrão 100). Bateria existente mantém a carga gravada. */
             installedBatteryPct?: number;
             /** Format: date-time */
             recordedAt: string;
@@ -6310,7 +6330,7 @@ export interface components {
              * @description Só em `unload` sem `stationId`: galpão onde as baterias vão carregar (padrão: o único galpão ativo).
              */
             depotId?: string;
-            /** @description Só em `load`; carga informada (padrão 100). */
+            /** @description Só em `load` e só na criação de bateria nova (série sem cadastro): carga inicial (padrão 100). Bateria existente mantém a carga gravada. */
             chargePct?: number;
         };
         /**
@@ -11477,7 +11497,7 @@ export interface operations {
                 status?: components["schemas"]["BatteryStatus"];
                 /** @description Galpão onde a bateria está (`charging`, `charged` ou `defective`). */
                 depotId?: string;
-                /** @description Operador que leva a bateria na van (`me` = o próprio usuário). */
+                /** @description Operador que leva a bateria na van (`me` = o próprio usuário). Só `admin`/`operacao` consultam outro operador (`403`). */
                 holderId?: string;
                 /** @description Busca por número de série. */
                 q?: string;

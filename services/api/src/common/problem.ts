@@ -58,6 +58,13 @@ const DEFAULT_TITLES: Record<string, string> = {
   'depot-inactive': 'Galpão inativo',
   // ciclo de vida das baterias no galpão
   'depot-required': 'Informe o galpão',
+  // custódia de bateria na troca (2026-10-26)
+  'task-type-mismatch': 'Tipo de tarefa incompatível',
+  'battery-swap-already-recorded': 'Troca de bateria já registrada',
+  'battery-not-in-van': 'Bateria fora da sua van',
+  'battery-serial-mismatch': 'Série da bateria não confere',
+  'battery-in-other-van': 'Bateria na van de outro operador',
+  'battery-at-station': 'Bateria numa estação',
   // troca de bateria na estação via QR
   'station-not-found': 'Estação não encontrada',
   'station-unavailable': 'Estação indisponível',

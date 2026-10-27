@@ -15,7 +15,7 @@ part 'battery_transfer_request.g.dart';
 /// * [serials]
 /// * [stationId] - Só em `unload`; ausente = `charging` no galpão.
 /// * [depotId] - Só em `unload` sem `stationId`: galpão onde as baterias vão carregar (padrão: o único galpão ativo).
-/// * [chargePct] - Só em `load`; carga informada (padrão 100).
+/// * [chargePct] - Só em `load` e só na criação de bateria nova (série sem cadastro): carga inicial (padrão 100). Bateria existente mantém a carga gravada.
 @BuiltValue()
 abstract class BatteryTransferRequest
     implements Built<BatteryTransferRequest, BatteryTransferRequestBuilder> {
@@ -30,7 +30,7 @@ abstract class BatteryTransferRequest
   @BuiltValueField(wireName: r'depotId')
   String? get depotId;
 
-  /// Só em `load`; carga informada (padrão 100).
+  /// Só em `load` e só na criação de bateria nova (série sem cadastro): carga inicial (padrão 100). Bateria existente mantém a carga gravada.
   @BuiltValueField(wireName: r'chargePct')
   int? get chargePct;
 

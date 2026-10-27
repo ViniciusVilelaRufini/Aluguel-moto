@@ -10,7 +10,7 @@ Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **removedBatterySerial** | **String** |  | 
 **installedBatterySerial** | **String** |  | 
-**installedBatteryPct** | **int** |  | [optional] 
+**installedBatteryPct** | **int** | Só para bateria nova (sem cadastro): carga inicial (padrão 100). Bateria existente mantém a carga gravada. | [optional] 
 **recordedAt** | [**DateTime**](DateTime.md) |  | 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)

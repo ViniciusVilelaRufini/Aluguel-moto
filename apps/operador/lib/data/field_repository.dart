@@ -547,9 +547,19 @@ RepositoryException mapDioError(DioException e) {
     return RepositoryException(FailureKind.network, detail ?? 'Servidor indisponível.',
         slug: slug, status: status);
   }
-  return RepositoryException(FailureKind.rejected, detail ?? 'Pedido recusado ($status).',
+  return RepositoryException(
+      FailureKind.rejected, batteryCustodyMessages[slug] ?? detail ?? 'Pedido recusado ($status).',
       slug: slug, status: status);
 }
+
+/// Custodia de bateria na troca (2026-10-26): recusas `409` da troca na tarefa
+/// e de carregar a van, com texto do app (o `detail` da API traz a serie).
+const batteryCustodyMessages = <String, String>{
+  'battery-not-in-van': 'Essa bateria não está na sua van.',
+  'battery-in-other-van': 'Essa bateria não está na sua van.',
+  'battery-serial-mismatch': 'A bateria retirada não é a desta moto.',
+  'battery-at-station': 'Essa bateria está em uma estação.',
+};
 
 final fieldRepositoryProvider = Provider<FieldRepository>(
   (ref) => ApiFieldRepository(ref.watch(apiClientProvider)),

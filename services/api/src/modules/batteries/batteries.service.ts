@@ -55,7 +55,12 @@ export class BatteriesService {
   async list(user: Principal, q: { cursor?: string; limit?: number; status?: BatteryStatus; holderId?: string; q?: string; depotId?: string }) {
     const base: Prisma.BatteryWhereInput = {};
     if (q.depotId) base.depotId = q.depotId;
-    if (q.holderId) base.holderId = q.holderId === 'me' ? user.userId : q.holderId;
+    if (q.holderId) {
+      const holder = q.holderId === 'me' ? user.userId : q.holderId;
+      // 2026-10-26: mesma regra do `vanStock` — `campo` só filtra pela própria van.
+      if (holder !== user.userId && !hasGroup(user, 'admin', 'operacao')) throw forbidden('Você só pode consultar a sua van.');
+      base.holderId = holder;
+    }
     if (q.q) base.serial = { contains: q.q, mode: 'insensitive' };
     const where: Prisma.BatteryWhereInput = q.status ? { ...base, status: q.status } : base;
     const [rows, groups] = await Promise.all([
@@ -79,9 +84,11 @@ export class BatteriesService {
 
   /**
    * Põe baterias na van do usuário (série desconhecida é cadastrada com `chargePct` ou 100). Bateria instalada numa moto,
-   * com defeito ou baixada → 409. Fix round 1 (M5): sem `chargePct`, a carga conhecida é mantida; bateria carregada
-   * retirada de uma estação sai do `availableBatteries` dela. 2026-10-24: sai do galpão (`depotId` nulo); as que ainda
-   * estavam `charging` voltam em `loadedChargingSerials`; saída de `charged` confere o estoque mínimo do galpão.
+   * com defeito ou baixada → 409. 2026-10-26 (custódia): bateria na van de outro operador → 409 `battery-in-other-van`;
+   * só `admin`/`operacao` tiram bateria de uma estação (campo → 409 `battery-at-station`; a carregada sai do
+   * `availableBatteries` dela); `chargePct` só vale na criação — a existente mantém a carga gravada; cada existente muda pelo
+   * estado lido (`updateMany` + `count`, senão 409). 2026-10-24: sai do galpão (`depotId` nulo); as que ainda estavam
+   * `charging` voltam em `loadedChargingSerials`; saída de `charged` confere o estoque mínimo do galpão.
    */
   async load(user: Principal, serials: string[], chargePct?: number) {
     const unique = [...new Set(serials.map((s) => s.trim()))];
@@ -93,20 +100,40 @@ export class BatteriesService {
       if (installed.length) throw conflict('conflict', `Bateria instalada numa moto: ${installed.map((b) => b.serial).join(', ')}.`);
       const unusable = existing.filter((b) => OUT_OF_SERVICE.includes(b.status));
       if (unusable.length) throw conflict('conflict', `Bateria fora de uso (com defeito ou baixada): ${unusable.map((b) => b.serial).join(', ')}.`);
-      for (const b of existing.filter((x) => x.status === 'in_station' && x.stationId && x.chargePct >= CHARGED_PCT)) {
+      const otherVan = existing.filter((b) => b.status === 'in_van' && b.holderId !== user.userId);
+      if (otherVan.length) throw conflict('battery-in-other-van', `Essa bateria não está na sua van: ${otherVan.map((b) => b.serial).join(', ')}.`);
+      const atStation = existing.filter((b) => b.status === 'in_station');
+      if (atStation.length && !hasGroup(user, 'admin', 'operacao')) {
+        throw conflict('battery-at-station', `Essa bateria está em uma estação: ${atStation.map((b) => b.serial).join(', ')}.`);
+      }
+      for (const b of atStation.filter((x) => x.stationId && x.chargePct >= CHARGED_PCT)) {
         await tx.swapStation.updateMany({ where: { id: b.stationId!, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
       }
       chargingSerials = existing.filter((b) => b.status === 'charging').map((b) => b.serial);
       const bySerial = new Map(existing.map((b) => [b.serial, b]));
       for (const serial of unique) {
-        const saved = await tx.battery.upsert({
-          where: { serial },
-          create: { serial, chargePct: chargePct ?? 100, status: 'in_van', holderId: user.userId },
-          update: { status: 'in_van', holderId: user.userId, stationId: null, vehicleId: null, depotId: null, ...(chargePct !== undefined ? { chargePct } : {}) },
-        });
-        moves.push(movement(bySerial.get(serial), { status: 'in_van' }, user.userId, null, saved.id));
+        const prev = bySerial.get(serial);
+        let id: string;
+        if (prev) {
+          const where: Prisma.BatteryWhereInput = {
+            id: prev.id,
+            status: prev.status,
+            ...(prev.status === 'in_van' ? { holderId: user.userId } : {}),
+            ...(prev.status === 'in_station' ? { stationId: prev.stationId } : {}),
+          };
+          const changed = await tx.battery.updateMany({ where, data: { status: 'in_van', holderId: user.userId, stationId: null, vehicleId: null, depotId: null } });
+          if (changed.count !== 1) throw conflict('conflict', `A bateria mudou de situação durante a operação: ${serial}. Atualize e tente de novo.`);
+          id = prev.id;
+        } else {
+          id = (await tx.battery.create({ data: { serial, chargePct: chargePct ?? 100, status: 'in_van', holderId: user.userId } })).id;
+        }
+        moves.push(movement(prev, { status: 'in_van' }, user.userId, null, id));
       }
       await recordMovements(tx, moves);
+    }).catch((err: unknown) => {
+      // Série nova cadastrada ao mesmo tempo por outra pessoa: o índice único recusa; é um conflito, não erro interno.
+      if ((err as { code?: string }).code === 'P2002') throw conflict('conflict', 'Bateria cadastrada durante a operação. Atualize e tente de novo.');
+      throw err;
     });
     await this.checkStock(depotsLeavingCharged(moves));
     const stock: Awaited<ReturnType<BatteriesService['vanStock']>> & { loadedChargingSerials?: string[] } = await this.vanStock(user);

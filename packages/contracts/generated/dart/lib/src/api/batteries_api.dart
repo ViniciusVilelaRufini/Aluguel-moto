@@ -219,14 +219,14 @@ class BatteriesApi {
   }
 
   /// Baterias (série, carga, ciclos, onde estão)
-  /// &#x60;statusCounts&#x60; traz a contagem por status de todas as baterias que passam nos filtros &#x60;depotId&#x60;, &#x60;holderId&#x60; e &#x60;q&#x60; (ignora &#x60;status&#x60; e a paginação), para o resumo do inventário.
+  /// &#x60;statusCounts&#x60; traz a contagem por status de todas as baterias que passam nos filtros &#x60;depotId&#x60;, &#x60;holderId&#x60; e &#x60;q&#x60; (ignora &#x60;status&#x60; e a paginação), para o resumo do inventário. Usuário sem &#x60;admin&#x60;/&#x60;operacao&#x60; só filtra &#x60;holderId&#x60; pela própria van (&#x60;me&#x60; ou o próprio id); outro operador → &#x60;403&#x60; &#x60;forbidden&#x60; (mesma regra de &#x60;GET /batteries/van-stock&#x60;).
   ///
   /// Parameters:
   /// * [cursor] - Cursor opaco devolvido em `nextCursor` da página anterior.
   /// * [limit] - Itens por página.
   /// * [status]
   /// * [depotId] - Galpão onde a bateria está (`charging`, `charged` ou `defective`).
-  /// * [holderId] - Operador que leva a bateria na van (`me` = o próprio usuário).
+  /// * [holderId] - Operador que leva a bateria na van (`me` = o próprio usuário). Só `admin`/`operacao` consultam outro operador (`403`).
   /// * [q] - Busca por número de série.
   /// * [cancelToken] - A [CancelToken] that can be used to cancel the operation
   /// * [headers] - Can be used to add additional headers to the request
@@ -431,7 +431,7 @@ class BatteriesApi {
   }
 
   /// Carregar baterias na van
-  /// Move as baterias (por série) para a van do usuário (&#x60;in_van&#x60;). Série desconhecida é cadastrada. Bateria instalada numa moto, com defeito (&#x60;defective&#x60;) ou baixada (&#x60;retired&#x60;) → &#x60;409&#x60;. Prefira as &#x60;charged&#x60; do galpão (&#x60;GET /batteries?depotId&#x3D;…&amp;status&#x3D;charged&#x60;); carregar uma &#x60;charging&#x60; continua permitido: ela vai com a carga conhecida (&#x60;items[].chargePct&#x60;) e a série volta em &#x60;loadedChargingSerials&#x60;.
+  /// Move as baterias (por série) para a van do usuário (&#x60;in_van&#x60;). Série desconhecida é cadastrada. Bateria instalada numa moto, com defeito (&#x60;defective&#x60;) ou baixada (&#x60;retired&#x60;) → &#x60;409&#x60; &#x60;conflict&#x60;. Prefira as &#x60;charged&#x60; do galpão (&#x60;GET /batteries?depotId&#x3D;…&amp;status&#x3D;charged&#x60;); carregar uma &#x60;charging&#x60; continua permitido: ela vai com a carga conhecida (&#x60;items[].chargePct&#x60;) e a série volta em &#x60;loadedChargingSerials&#x60;.  Custódia (2026-10-26): bateria &#x60;in_van&#x60; na van de outro operador → &#x60;409&#x60; &#x60;battery-in-other-van&#x60;; tirar bateria de uma estação (&#x60;in_station&#x60;) é só de &#x60;admin&#x60;/&#x60;operacao&#x60; — usuário só do grupo &#x60;campo&#x60; → &#x60;409&#x60; &#x60;battery-at-station&#x60;. &#x60;chargePct&#x60; só vale para série nova; a existente mantém a carga gravada. Bateria que mudou de situação durante a operação → &#x60;409&#x60; &#x60;conflict&#x60;.
   ///
   /// Parameters:
   /// * [batteryTransferRequest]

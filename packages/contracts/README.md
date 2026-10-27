@@ -184,3 +184,7 @@ Slugs novos: `debt-not-payable`, `debt-in-collection`.
 - Cartão: só `cardToken` do gateway; nenhum campo de número, CVV ou validade completa.
 - Cliente nunca recebe distância percorrida; recebe tempo, custo, bateria, autonomia e velocidade.
 - CPF completo só para o próprio cliente e para `admin`.
+- Custódia de bateria (2026-10-26): `POST /field-tasks/{id}/battery-swap` responde `409` `task-type-mismatch`,
+  `battery-swap-already-recorded`, `battery-not-in-van` e `battery-serial-mismatch`; `POST /batteries/van-stock/load`
+  responde `409` `battery-in-other-van` e `battery-at-station` (só campo); `GET /batteries?holderId=` de outra pessoa
+  (sem `admin`/`operacao`) → `403`. `chargePct`/`installedBatteryPct` só valem para bateria nova.

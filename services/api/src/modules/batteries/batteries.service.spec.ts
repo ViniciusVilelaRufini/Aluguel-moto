@@ -10,6 +10,9 @@ const STATION = 'e0000000-0000-4000-8000-0000000000e1';
 const BAT = 'b0000000-0000-4000-8000-0000000000b1';
 const campo: Principal = { pool: 'staff', sub: 'c', email: 'c@volti.com.br', groups: ['campo'], userId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', staffId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' } as Principal;
 
+const admin: Principal = { pool: 'staff', sub: 'a', email: 'a@volti.com.br', groups: ['operacao'], userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', staffId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' } as Principal;
+const OTHER = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+
 const row = (o: Record<string, unknown> = {}) => ({
   id: BAT, serial: 'BT-1', chargePct: 40, cycleCount: 3, status: 'charging', vehicleId: null, holderId: null, stationId: null, depotId: DEPOT,
   createdAt: new Date(), updatedAt: new Date(), ...o,
@@ -127,7 +130,6 @@ describe('BatteriesService — fix 1: estação e checagem de estoque best-effor
     const { service, prisma, stock } = setup();
     stock.check.mockRejectedValue(new Error('banco fora'));
     prisma.battery.findMany.mockResolvedValueOnce([row({ serial: 'BT-A', status: 'charged' })]).mockResolvedValue([]);
-    prisma.battery.upsert.mockResolvedValue(row());
     await expect(service.load(campo, ['BT-A'])).resolves.toMatchObject({ operatorId: campo.userId });
     expect(stock.check).toHaveBeenCalledWith([DEPOT]);
   });
@@ -261,10 +263,13 @@ describe('BatteriesService — van', () => {
     const charged = row({ id: 'b1', serial: 'BT-A', status: 'charged', chargePct: 100 });
     const charging = row({ id: 'b2', serial: 'BT-B', status: 'charging', chargePct: 60, depotId: DEPOT2 });
     prisma.battery.findMany.mockResolvedValueOnce([charged, charging]).mockResolvedValue([]);
-    prisma.battery.upsert.mockImplementation((async (a: any) => row({ id: a.where.serial === 'BT-C' ? 'b3' : a.where.serial, serial: a.where.serial })) as any);
+    prisma.battery.create.mockImplementation((async (a: any) => row({ ...a.data, id: 'b3' })) as any);
     const res = await service.load(campo, ['BT-A', 'BT-B', 'BT-C']);
-    expect(prisma.battery.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { serial: 'BT-A' }, update: expect.objectContaining({ status: 'in_van', depotId: null, holderId: campo.userId }) }));
-    expect(prisma.battery.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { serial: 'BT-B' }, update: expect.not.objectContaining({ chargePct: expect.anything() }) }));
+    // 2026-10-26: cada existente sai do estado lido (guarda no `where`), sem upsert; a nova é cadastrada.
+    expect(prisma.battery.upsert).not.toHaveBeenCalled();
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: 'b1', status: 'charged' }, data: { status: 'in_van', holderId: campo.userId, stationId: null, vehicleId: null, depotId: null } });
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: 'b2', status: 'charging' }, data: { status: 'in_van', holderId: campo.userId, stationId: null, vehicleId: null, depotId: null } });
+    expect(prisma.battery.create).toHaveBeenCalledWith({ data: { serial: 'BT-C', chargePct: 100, status: 'in_van', holderId: campo.userId } });
     expect(res.loadedChargingSerials).toEqual(['BT-B']);
     const mv = movementsOf(prisma);
     expect(mv).toEqual(expect.arrayContaining([
@@ -278,7 +283,6 @@ describe('BatteriesService — van', () => {
   it('carregar só `charged`: sem `loadedChargingSerials`', async () => {
     const { service, prisma } = setup();
     prisma.battery.findMany.mockResolvedValueOnce([row({ serial: 'BT-A', status: 'charged' })]).mockResolvedValue([]);
-    prisma.battery.upsert.mockResolvedValue(row());
     expect(await service.load(campo, ['BT-A'])).not.toHaveProperty('loadedChargingSerials');
   });
 
@@ -289,6 +293,54 @@ describe('BatteriesService — van', () => {
       expect(await problem(service.load(campo, ['BT-1']))).toEqual({ status: 409, slug: 'conflict' });
     }
     expect(prisma.battery.upsert).not.toHaveBeenCalled();
+    expect(prisma.battery.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('2026-10-26: carregar bateria da van de outro operador → 409 battery-in-other-van, nada gravado (vale também para admin)', async () => {
+    const { service, prisma } = setup();
+    for (const who of [campo, admin]) {
+      prisma.battery.findMany.mockResolvedValueOnce([row({ serial: 'BT-A', status: 'in_van', holderId: OTHER, depotId: null })]);
+      expect(await problem(service.load(who, ['BT-A', 'BT-NOVA']))).toEqual({ status: 409, slug: 'battery-in-other-van' });
+    }
+    expect(prisma.battery.updateMany).not.toHaveBeenCalled();
+    expect(prisma.battery.create).not.toHaveBeenCalled();
+    expect(prisma.batteryMovement.createMany).not.toHaveBeenCalled();
+  });
+
+  it('2026-10-26: campo tirando bateria de uma estação → 409 battery-at-station, estação intocada', async () => {
+    const { service, prisma } = setup();
+    prisma.battery.findMany.mockResolvedValueOnce([row({ serial: 'BT-S', status: 'in_station', stationId: STATION, depotId: null, chargePct: 100 })]);
+    expect(await problem(service.load(campo, ['BT-S']))).toEqual({ status: 409, slug: 'battery-at-station' });
+    expect(prisma.swapStation.updateMany).not.toHaveBeenCalled();
+    expect(prisma.battery.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('2026-10-26: operação tira da estação (sai das disponíveis), com a estação lida no `where`', async () => {
+    const { service, prisma } = setup();
+    prisma.battery.findMany.mockResolvedValueOnce([row({ id: 'bs', serial: 'BT-S', status: 'in_station', stationId: STATION, depotId: null, chargePct: 100 })]).mockResolvedValue([]);
+    await service.load(admin, ['BT-S']);
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith({ where: { id: 'bs', status: 'in_station', stationId: STATION }, data: expect.objectContaining({ status: 'in_van', holderId: admin.userId, stationId: null }) });
+    expect(prisma.swapStation.updateMany).toHaveBeenCalledWith({ where: { id: STATION, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
+  });
+
+  it('2026-10-26: `chargePct` só vale na criação — bateria existente mantém a carga gravada', async () => {
+    const { service, prisma } = setup();
+    prisma.battery.findMany.mockResolvedValueOnce([row({ id: 'b1', serial: 'BT-A', status: 'charged', chargePct: 100 })]).mockResolvedValue([]);
+    prisma.battery.create.mockImplementation((async (a: any) => row({ ...a.data, id: 'b2' })) as any);
+    await service.load(campo, ['BT-A', 'BT-NOVA'], 10);
+    const upd = prisma.battery.updateMany.mock.calls.find((c: any) => c[0].where.id === 'b1')![0] as any;
+    expect(upd.data).not.toHaveProperty('chargePct');
+    expect(prisma.battery.create).toHaveBeenCalledWith({ data: { serial: 'BT-NOVA', chargePct: 10, status: 'in_van', holderId: campo.userId } });
+  });
+
+  it('2026-10-26: bateria já na própria van é recarregada sem erro; corrida (estado mudou) → 409', async () => {
+    const { service, prisma } = setup();
+    prisma.battery.findMany.mockResolvedValueOnce([row({ id: 'b1', serial: 'BT-A', status: 'in_van', holderId: campo.userId, depotId: null })]).mockResolvedValue([]);
+    await service.load(campo, ['BT-A']);
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'b1', status: 'in_van', holderId: campo.userId } }));
+    prisma.battery.findMany.mockResolvedValueOnce([row({ id: 'b1', serial: 'BT-A', status: 'charged' })]);
+    prisma.battery.updateMany.mockResolvedValue({ count: 0 });
+    expect(await problem(service.load(campo, ['BT-A']))).toEqual({ status: 409, slug: 'conflict' });
   });
 });
 
@@ -300,6 +352,17 @@ describe('BatteriesService — consulta', () => {
     expect(prisma.battery.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { depotId: DEPOT, status: 'charged' } }));
     expect(prisma.battery.groupBy).toHaveBeenCalledWith(expect.objectContaining({ by: ['status'], where: { depotId: DEPOT } }));
     expect(page.statusCounts).toEqual({ in_vehicle: 0, in_van: 0, charging: 0, charged: 4, in_station: 0, defective: 1, retired: 0 });
+  });
+
+  it('2026-10-26: campo listando baterias com `holderId` de outra pessoa → 403 (mesma regra do vanStock)', async () => {
+    const { service, prisma } = setup();
+    expect(await problem(service.list(campo, { holderId: OTHER }))).toEqual({ status: 403, slug: 'forbidden' });
+    expect(prisma.battery.findMany).not.toHaveBeenCalled();
+    await service.list(campo, { holderId: 'me' });
+    await service.list(campo, { holderId: campo.userId });
+    expect(prisma.battery.findMany.mock.calls.map((c: any) => c[0].where)).toEqual([{ holderId: campo.userId }, { holderId: campo.userId }]);
+    await service.list(admin, { holderId: OTHER });
+    expect((prisma.battery.findMany.mock.calls.at(-1)![0] as any).where).toEqual({ holderId: OTHER });
   });
 
   it('movimentações: mais recente primeiro; bateria inexistente → 404', async () => {
