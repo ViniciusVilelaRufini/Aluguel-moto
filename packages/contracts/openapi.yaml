@@ -4331,10 +4331,11 @@ paths:
         - `task-type-mismatch`: a tarefa não é `battery_swap`;
         - `battery-swap-already-recorded`: a tarefa já tem uma troca registrada (uma por tarefa);
         - `battery-not-in-van`: a instalada já tem cadastro e não está `in_van` na van de quem registra (outra van, estação,
-          galpão); série sem cadastro entra como bateria nova;
+          galpão ou instalada numa moto); série sem cadastro entra como bateria nova;
         - `battery-serial-mismatch`: a retirada não é a bateria desta moto (`Vehicle.batterySerial` ou a bateria `in_vehicle`
-          dela), consta em outra moto, a instalada consta instalada numa moto, ou a bateria da moto mudou durante a operação;
-        - `conflict`: a instalada ou a retirada está com defeito (`defective`) ou baixada (`retired`), ou a tarefa já foi encerrada.
+          dela) ou consta em outra moto, ou a bateria da moto mudou durante a operação;
+        - `conflict`: a instalada ou a retirada está com defeito (`defective`) ou baixada (`retired`), a tarefa já foi
+          encerrada, ou uma série nova foi cadastrada ao mesmo tempo por outro envio.
 
         `installedBatteryPct` só vale para bateria nova; a existente mantém a carga gravada (que vira a da moto).
       security:

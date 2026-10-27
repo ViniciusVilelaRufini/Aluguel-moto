@@ -595,7 +595,10 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     expect(prisma.batteryMovement.createMany).not.toHaveBeenCalled();
     expect(emitted.map((e) => e.status)).toEqual(['failed']);
     expect(alerts.create).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(alerts.create.mock.calls[0][0])).not.toMatch(/BT-X/);
+    // Fix round 1: a operação precisa saber qual bateria pode estar na moto sem registro (série da bateria, não dado pessoal).
+    expect(alerts.create.mock.calls[0][0].message).toBe(
+      'Troca na estação: a bateria liberada não constava no estoque desta estação. A moto pode estar agora com a bateria BT-X, sem registro; corrija o cadastro antes da próxima troca em campo.',
+    );
   });
 
   it('2026-10-26: a liberada saiu do estoque durante a operação (corrida no updateMany) → failed/serial_mismatch, moto e estoque intocados', async () => {
@@ -603,6 +606,7 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     Object.assign(swaps.get(SWAP_ID), { status: 'releasing', returnedSerial: 'BAT-00001' });
     prisma.battery.updateMany.mockResolvedValue({ count: 0 });
     await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-S1001', ts: ts() });
+    expect(alerts.create.mock.calls.at(-1)![0].message).toContain('A moto pode estar agora com a bateria BT-S1001, sem registro; corrija o cadastro antes da próxima troca em campo.');
     expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'serial_mismatch', releasedSerial: null }));
     expect(prisma.vehicle.update).not.toHaveBeenCalled();
     expect(prisma.swapStation.updateMany).not.toHaveBeenCalled();

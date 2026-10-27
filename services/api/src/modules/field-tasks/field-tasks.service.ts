@@ -348,8 +348,9 @@ export class FieldTasksService {
       if (prevInstalled && OUT_OF_SERVICE.includes(prevInstalled.status)) {
         throw conflict('conflict', `Bateria fora de uso (com defeito ou baixada): ${installedSerial}.`);
       }
+      // Fix round 1: o slug fala da instalada (o app mostra `battery-serial-mismatch` como "a retirada não é desta moto").
       if (prevInstalled?.status === 'in_vehicle') {
-        throw conflict('battery-serial-mismatch', `A bateria a instalar consta instalada numa moto: ${installedSerial}. Confira a série.`);
+        throw conflict('battery-not-in-van', `A bateria a instalar consta instalada numa moto, não na sua van: ${installedSerial}. Confira a série.`);
       }
       if (prevInstalled && (prevInstalled.status !== 'in_van' || prevInstalled.holderId !== user.userId)) {
         throw conflict('battery-not-in-van', `Essa bateria não está na sua van: ${installedSerial}.`);
@@ -414,6 +415,10 @@ export class FieldTasksService {
       });
       if (vehicleMoved.count !== 1) throw conflict('battery-serial-mismatch', 'A bateria da moto mudou durante a operação. Confira a série e tente de novo.');
       return s;
+    }).catch((err: unknown) => {
+      // Fix round 1: série sem cadastro criada ao mesmo tempo por outro envio — o índice único recusa; é conflito, não 500.
+      if ((err as { code?: string }).code === 'P2002') throw conflict('conflict', 'Bateria cadastrada durante a operação. Atualize e tente de novo.');
+      throw err;
     });
     const depotIds = depotsLeavingCharged(moves);
     if (depotIds.length) this.events.emit(EV.BATTERY_CHARGED_STOCK_DECREASED, { depotIds } satisfies BatteryChargedStockDecreasedEvent);

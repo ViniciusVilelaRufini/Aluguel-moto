@@ -11,9 +11,10 @@ const encode = (v: unknown) => new TextEncoder().encode(JSON.stringify(v));
 /**
  * IOT_MODE=stub: estação imaginária que avança sozinha em passos curtos (`STATION_STUB_STEP_MS`, padrão 1,5 s), para os e2e
  * e o emulador funcionarem sem o simulador. `open_slot` → `slot_opened` → `battery_returned` (série esperada, 15 %) →
- * `slot_closed`; `release_battery` → `battery_released` (série sugerida ou `BT-STUB-*`). `setAuto(false)` congela (timeout).
+ * `slot_closed`; `release_battery` → `battery_released` (série sugerida; sem ela não libera nada e a troca vence pelo prazo). `setAuto(false)` congela (timeout).
  */
 export class StubStationGateway implements StationGateway {
+  private readonly logger = new Logger('StubStationGateway');
   private handler?: StationEventHandler;
   private auto = true;
   private readonly timers = new Set<NodeJS.Timeout>();
@@ -50,7 +51,14 @@ export class StubStationGateway implements StationGateway {
       // Fecha a vaga (se aberta) e confirma; nunca libera bateria.
       this.later(1, thing, () => ({ type: 'slot_closed', swapId, ts: ts() }));
     } else {
-      const serial = command.serialHint ?? `BT-STUB-${randomBytes(3).toString('hex').toUpperCase()}`;
+      // Fix round 1 da Task 8.3: sem `serialHint` a estação não tem carregada cadastrada; o stub não inventa série (a API
+      // recusaria como fora do estoque). Não libera nada: o prazo leva a troca a `failed/release_timeout` + alerta, como uma
+      // estação real sem bateria para liberar.
+      const serial = command.serialHint;
+      if (!serial) {
+        this.logger.warn({ msg: 'station_stub_no_battery_to_release', swapId, thing });
+        return;
+      }
       this.later(1, thing, () => ({ type: 'battery_released', swapId, serial, ts: ts() }));
     }
   }

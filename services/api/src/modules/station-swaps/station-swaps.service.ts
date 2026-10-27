@@ -44,6 +44,12 @@ export const RELEASE_LATE_WINDOW_MS = 30 * 60 * 1000;
 /** Fim de troca depois do qual uma devolução ainda vale (fix 1, I2): cancelada pelo cliente ou por prazo antes da devolução. */
 const LATE_RETURN_REASONS: StationSwapEndReason[] = ['canceled_by_customer', 'return_timeout', 'station_timeout'];
 const TERMINAL_SWAP_STATUSES: StationSwapStatus[] = ['completed', 'canceled', 'failed'];
+/**
+ * Fix round 1 da Task 8.3: liberação recusada por estar fora do estoque — a estação pode ter entregado a bateria ao cliente,
+ * então o alerta traz a série da bateria (dado do equipamento, não do cliente) para a operação corrigir o cadastro.
+ */
+const releaseOutOfStockMessage = (what: string, serial: string) =>
+  `Troca na estação: ${what}. A moto pode estar agora com a bateria ${serial}, sem registro; corrija o cadastro antes da próxima troca em campo.`;
 const noBattery = () => unprocessable('station-unavailable', 'Esta estação está sem bateria carregada agora.');
 const stationNotFound = () => new ProblemException(404, 'station-not-found', 'QR inválido ou estação não encontrada.');
 const TIMEOUT_TARGET: Partial<Record<StationSwapStatus, { status: StationSwapStatus; reason: StationSwapEndReason }>> = {
@@ -393,7 +399,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
       .catch((err) => this.logger.error({ msg: 'station_abort_failed', swapId: swap.id, stationId: swap.stationId, error: (err as Error).message }));
   }
 
-  /** Alerta para a operação, só com ids (nunca série, posição ou dado do cliente na mensagem). */
+  /** Alerta para a operação, só com ids (nunca posição ou dado do cliente; série só na liberação fora do estoque, fix round 1 da Task 8.3). */
   private async alert(swap: StationSwap, message: string, msg: string): Promise<void> {
     this.logger.warn({ msg, swapId: swap.id, stationId: swap.stationId, vehicleId: swap.vehicleId });
     await this.alerts
@@ -580,7 +586,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
       return this.failRelease(swap, 'Troca na estação: a bateria liberada consta instalada em outra moto. Conferir a estação e a moto.', 'station_release_serial_conflict');
     }
     if (!record || record.status !== 'in_station' || record.stationId !== swap.stationId) {
-      return this.failRelease(swap, 'Troca na estação: a bateria liberada não constava no estoque desta estação. Conferir a estação e o cliente.', 'station_release_serial_mismatch');
+      return this.failRelease(swap, releaseOutOfStockMessage('a bateria liberada não constava no estoque desta estação', serial), 'station_release_serial_mismatch');
     }
     let rentalClosed = false;
     const moves: MovementInput[] = [];
@@ -620,7 +626,7 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     });
     if (done === 'mismatch') {
       this.emit({ ...swap, status: 'failed' });
-      await this.alert(swap, 'Troca na estação: a bateria liberada saiu do estoque desta estação durante a troca. Conferir a estação e o cliente.', 'station_release_serial_mismatch');
+      await this.alert(swap, releaseOutOfStockMessage('a bateria liberada saiu do estoque desta estação durante a troca', serial), 'station_release_serial_mismatch');
       return;
     }
     if (done) {

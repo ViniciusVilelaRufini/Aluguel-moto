@@ -6,6 +6,7 @@
  */
 import type { PrismaClient } from '@prisma/client';
 import { CATALOG_EXAMPLES, modelForCode, seedCatalog, type FetchLike, type SeedCatalogDeps } from './seed-catalog';
+import { alignStationBatteries } from './seed-stations';
 
 const id = (prefix: string, n: number) => `${prefix}-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
@@ -90,16 +91,9 @@ export async function seedV2(prisma: PrismaClient): Promise<Record<string, numbe
       });
     }
   }
-  for (const [i, s] of SWAP_STATIONS.entries()) {
-    for (let k = 1; k <= 2; k++) {
-      const serial = `BT-S${i + 1}${String(k).padStart(3, '0')}`;
-      await prisma.battery.upsert({
-        where: { serial },
-        create: { serial, chargePct: 100, cycleCount: 100 + k * 11, status: 'in_station', stationId: s.id },
-        update: { status: 'in_station', stationId: s.id, holderId: null, vehicleId: null },
-      });
-    }
-  }
+  // Fix round 1 da Task 8.3: carregadas cadastradas em cada estação = `availableBatteries` (a API só libera bateria
+  // cadastrada `in_station` nesta estação). Só cria as que faltam; nunca move bateria que já saiu da estação.
+  await alignStationBatteries(prisma, SWAP_STATIONS.map((s) => s.id));
 
   // ── cupom de boas-vindas, chave Pix e código de indicação do cliente dev ──
   await prisma.coupon.upsert({

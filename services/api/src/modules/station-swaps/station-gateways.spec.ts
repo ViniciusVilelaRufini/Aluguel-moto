@@ -27,15 +27,26 @@ describe('StubStationGateway (IOT_MODE=stub)', () => {
     expect(got[1].pct).toBeLessThan(50);
   });
 
-  it('release_battery: libera a sugerida (ou gera uma série)', async () => {
+  it('release_battery: libera a sugerida', async () => {
     const got: StationEvent[] = [];
     const gw = new StubStationGateway({ stepMs: 50 });
     await gw.start(async (_t, ev) => void got.push(ev));
     await gw.send(THING, { commandId: 'c2', swapId: SWAP, action: 'release_battery', serialHint: 'BT-S1001' });
-    await gw.send(THING, { commandId: 'c3', swapId: SWAP, action: 'release_battery' });
     jest.advanceTimersByTime(50);
     await flush();
-    expect(got.map((e) => [e.type, e.serial])).toEqual([['battery_released', 'BT-S1001'], ['battery_released', expect.stringMatching(/^BT-STUB-/)]]);
+    expect(got.map((e) => [e.type, e.serial])).toEqual([['battery_released', 'BT-S1001']]);
+  });
+
+  it('fix round 1 (8.3): release_battery sem serialHint não inventa série — não libera nada (aviso no log); o prazo leva a failed/release_timeout', async () => {
+    const got: StationEvent[] = [];
+    const gw = new StubStationGateway({ stepMs: 50 });
+    const warn = jest.spyOn((gw as any).logger, 'warn').mockImplementation(() => undefined);
+    await gw.start(async (_t, ev) => void got.push(ev));
+    await gw.send(THING, { commandId: 'c3', swapId: SWAP, action: 'release_battery' });
+    jest.advanceTimersByTime(500);
+    await flush();
+    expect(got).toEqual([]);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'station_stub_no_battery_to_release', swapId: SWAP }));
   });
 
   it('fix 1 (I2): abort_swap fecha a vaga e confirma com slot_closed (nunca libera bateria)', async () => {

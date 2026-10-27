@@ -151,10 +151,24 @@ describe('Troca de bateria na tarefa: movimentações (2026-10-24) e custódia (
     expectNothingWritten(prisma);
   });
 
-  it('instalada que consta em outra moto → 409 battery-serial-mismatch (a moto B não fica órfã)', async () => {
+  it('instalada que consta em outra moto → 409 battery-not-in-van (mensagem sobre a instalada; a moto B não fica órfã)', async () => {
     const { service, prisma } = swapSetup({ status: 'in_vehicle', holderId: null, vehicleId: '44444444-4444-4444-8444-444444444444' });
-    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'battery-serial-mismatch' });
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'battery-not-in-van', detail: expect.stringContaining('BAT-NEW') });
     expectNothingWritten(prisma);
+  });
+
+  it.each([
+    ['retirada', 'BAT-OLD'],
+    ['instalada', 'BAT-NEW'],
+  ])('fix round 1: série %s sem cadastro criada ao mesmo tempo por outro envio (P2002) → 409 conflict, não 500', async (_label, serial) => {
+    const { service, prisma } = swapSetup(serial === 'BAT-NEW' ? null : {}, []);
+    prisma.vehicle.findUnique.mockResolvedValue({ batteryPct: 12, batterySerial: 'BAT-OLD' } as any);
+    if (serial === 'BAT-OLD') {
+      prisma.battery.findUnique.mockImplementation((async (a: any) => (a.where.serial === 'BAT-NEW' ? { ...BAT_NEW } : null)) as any);
+    }
+    const { Prisma } = jest.requireActual('@prisma/client');
+    prisma.battery.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: '5' }));
+    await expect(service.submitBatterySwap(campo, TASK_ID, swap)).rejects.toMatchObject({ status: 409, slug: 'conflict' });
   });
 
   it('a instalada saiu da van durante a operação (corrida) → 409 battery-not-in-van', async () => {
