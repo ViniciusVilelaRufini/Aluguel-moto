@@ -148,6 +148,10 @@ export interface SingleDevAppOptions {
    * 'open' = self sign-up by phone (SMS through SNS) and e-mail, like the regular profile. SNS spend is per account.
    */
   customerSignup?: 'open' | 'closed';
+  /** TCP 5023 for a bench GT06 tracker (-c gt06Port=true); requires gt06Cidrs or the explicit openGt06 acknowledgement. */
+  gt06Port?: boolean;
+  gt06Cidrs?: string[];
+  openGt06?: boolean;
   overrides?: ConfigOverrides;
   outdir?: string;
 }
@@ -212,6 +216,9 @@ export function createSingleDevApp(opts: SingleDevAppOptions): SingleDevStacks {
     dns,
     schedule: opts.schedule ?? true,
     budgetEmail: opts.budgetEmail,
+    gt06Port: opts.gt06Port,
+    gt06Cidrs: opts.gt06Cidrs,
+    openGt06: opts.openGt06,
   });
 
   Tags.of(app).add(SINGLE_TAG.key, SINGLE_TAG.value);

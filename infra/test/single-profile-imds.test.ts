@@ -85,7 +85,7 @@ describe('single-dev: only the API container reaches IMDS (Run-2)', () => {
     const api = c.slice(c.indexOf('\n  api:'), c.indexOf('\n  api-migrate:'));
     expect(api).toContain(`ipv4_address: ${API_IP}`);
     expect(api).not.toMatch(/cap_drop/);
-    for (const svc of ['postgres', 'redis', 'mosquitto', 'caddy', 'iot-sim', 'api-migrate']) {
+    for (const svc of ['postgres', 'redis', 'mosquitto', 'caddy', 'traccar', 'traccar-bridge', 'gt06-emulator', 'iot-sim', 'api-migrate']) {
       const start = c.indexOf(`\n  ${svc}:`);
       expect(start).toBeGreaterThan(-1);
       const rest = c.slice(start + 1);

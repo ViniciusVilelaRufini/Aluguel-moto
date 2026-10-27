@@ -64,6 +64,7 @@ O synth offline usa conta `000000000000` e ARNs de certificado fictícios. Nenhu
 | `instanceType`, `rootVolumeGb` | `t4g.small`, `25` | `profile=single`: tamanho da instância (ARM) e do disco gp3 |
 | `apiRateLimitPer5Min` | dev 2000, prod 3000 | Limite por IP do WAF da API (requisições em 5 minutos); inteiro >= 10 |
 | `customerSignup` (só `profile=single`) | `closed` | `open` libera o auto-cadastro por celular (SMS/SNS) e e-mail no pool de clientes; `closed` mantém só e-mail e criação pelo `volti-dev-admin` |
+| `gt06Port`, `gt06Cidrs`, `openGt06` (`profile=single`) | `false`, vazio, `false` | `gt06Port=true` abre a TCP 5023 (GT06 → Traccar do profile `gt06`, `deploy/single/cloudshell.md`) no security group da instância; exige `gt06Cidrs=<cidr>[,<cidr>]` ou o reconhecimento `openGt06=true` (0.0.0.0/0, só bancada: GT06 sem TLS). A 8082 do Traccar nunca abre |
 | `sesFromEmail`, `sesVerifiedDomain` | vazio | Identidade SES verificada para os e-mails do pool de clientes; liga o `EMAIL_OTP`. Sem ela, só OTP por SMS e e-mails pelo remetente padrão do Cognito |
 | `googleIdpSecretName` | vazio | Nome do segredo do Google (`{"clientId","clientSecret"}`); vazio = IdP não criado. O segredo precisa **existir antes** do deploy com este `-c` (o synth é offline e não confere; o CloudFormation falha na resolução dinâmica se ele não existir) |
 | `appleIdpSecretName` | vazio | Nome do segredo da Apple (`{"servicesId","teamId","keyId","privateKey"}`); vazio = IdP não criado |

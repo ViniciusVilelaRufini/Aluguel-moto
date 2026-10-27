@@ -30,7 +30,16 @@ case "${iot_sim:-on}" in
   *) sim=(--profile sim) ; sim_services=(iot-sim) ; echo "simulador de rastreadores: ligado" ;;
 esac
 
-dc "${sim[@]}" build api postgres "${sim_services[@]}"
+# Rastreador GT06 só relé (Traccar + ponte + emulador, spec 2026-10-27): GT06=on liga o profile "gt06" (padrão off: a
+# t4g.small tem 2 GiB). Ligado, o gt06.sh init (papéis, banco e usuários do Traccar; idempotente) roda depois das migrações.
+# Mudanças neste arquivo só valem no update SEGUINTE: o bash já está executando a cópia antiga quando o git reset a troca.
+gt06_flag="$(grep -E '^GT06=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+case "${gt06_flag:-off}" in
+  on|true|1) gt06=(--profile gt06) ; gt06_services=(traccar-bridge) ; echo "rastreador GT06 (Traccar + ponte + emulador): ligado" ;;
+  *) gt06=() ; gt06_services=() ; echo "rastreador GT06: desligado (GT06=${gt06_flag:-off})" ;;
+esac
+
+dc "${sim[@]}" "${gt06[@]}" build api postgres "${sim_services[@]}" "${gt06_services[@]}"
 # Transição única para a rede volti-dev (172.30.0.0/24, IP fixo da API): os containers da rede antiga volti_default saem
 # (os volumes ficam) e a rede é apagada. Nas próximas execuções a volti_default não existe e nada disso roda.
 if docker network inspect volti_default >/dev/null 2>&1; then
@@ -44,9 +53,12 @@ dc up -d postgres redis mosquitto
 # Migrações antes de trocar a API (a migração inicial cria a extensão PostGIS).
 # api-migrate: sem o IP fixo da API (que está no ar), sem IMDS e só com o DATABASE_URL.
 dc --profile migrate run --rm api-migrate npx prisma migrate deploy
-dc "${sim[@]}" up -d --remove-orphans
+# GT06: banco/papéis do Traccar e da ponte (o GRANT por coluna precisa da tabela "Tracker", recém-migrada) e usuários do Traccar.
+if [ ${#gt06[@]} -gt 0 ]; then bash deploy/single/gt06.sh init; fi
+dc "${sim[@]}" "${gt06[@]}" up -d --remove-orphans
 if [ ${#sim[@]} -eq 0 ]; then dc --profile sim rm -sf iot-sim >/dev/null 2>&1 || true; fi
+if [ ${#gt06[@]} -eq 0 ]; then dc --profile gt06 rm -sf traccar traccar-bridge gt06-emulator >/dev/null 2>&1 || true; fi
 # Disco de 20 GB: descarta imagens e cache de build antigos.
 docker image prune -f >/dev/null
 docker builder prune -f --filter until=72h >/dev/null
-dc "${sim[@]}" ps
+dc "${sim[@]}" "${gt06[@]}" ps

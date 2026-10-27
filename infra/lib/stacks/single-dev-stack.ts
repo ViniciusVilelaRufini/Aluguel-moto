@@ -59,6 +59,14 @@ export interface SingleDevStackProps extends StackProps {
   /** EventBridge Scheduler: start 07:00 and stop 23:00 America/Sao_Paulo every day. */
   schedule: boolean;
   budgetEmail?: string;
+  /**
+   * Opens TCP 5023 (GT06 -> Traccar of the compose profile "gt06") for a bench J16 tracker. Default: closed. GT06 has no TLS
+   * (the IMEI is the only identity), so the source must be explicit: gt06Cidrs, or openGt06 to acknowledge 0.0.0.0/0
+   * (a common M2M SIM has no fixed address range). Traccar's REST/web port 8082 is never opened (127.0.0.1 + SSM only).
+   */
+  gt06Port?: boolean;
+  gt06Cidrs?: string[];
+  openGt06?: boolean;
 }
 
 /**
@@ -136,6 +144,16 @@ export class SingleDevStack extends Stack {
     });
     this.securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(80), 'HTTP (ACME challenge and redirect to HTTPS)');
     this.securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS (Caddy to API)');
+    if (props.gt06Port) {
+      const cidrs = props.gt06Cidrs ?? [];
+      for (const c of cidrs) if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c)) throw new Error(`gt06Cidrs: CIDR IPv4 inválido: ${c}`);
+      if (!cidrs.length && !props.openGt06) {
+        throw new Error('gt06Port=true exige -c gt06Cidrs=<cidr>[,<cidr>] ou, só para bancada, -c openGt06=true (5023 aberta à internet, GT06 sem TLS).');
+      }
+      if (!cidrs.length) Annotations.of(this).addWarningV2('volti:gt06-open', 'TCP 5023 (GT06 sem TLS, só IMEI) aberta a 0.0.0.0/0: apenas bancada; prefira gt06Cidrs.');
+      const peers = cidrs.length ? cidrs.map((c) => ec2.Peer.ipv4(c)) : [ec2.Peer.anyIpv4()];
+      for (const p of peers) this.securityGroup.addIngressRule(p, ec2.Port.tcp(5023), 'GT06 (Traccar, compose profile gt06) for the bench tracker');
+    }
 
     // No AWS managed policy: AmazonSSMManagedInstanceCore grants ssm:GetParameter(s) on every parameter of the account.
     this.instanceRole = new iam.Role(this, 'InstanceRole', {

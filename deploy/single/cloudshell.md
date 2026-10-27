@@ -205,6 +205,61 @@ Para religar, use `--value on` (ou apague o parâmetro com `aws ssm delete-param
 
 Logs: `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env logs --tail 50 iot-sim` (Session Manager, como root, em `/opt/volti/src`).
 
+## Rastreador GT06 (Traccar + ponte + emulador)
+
+Spec `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`. Profile `gt06` do `compose.yml`: Traccar
+(`traccar/traccar:6.16.0-ubuntu`, arm64, a mesma imagem do `docker-compose.yml` local e do CDK), a ponte
+(`services/traccar-bridge`) e o emulador GT06 (mesma imagem da ponte). Nenhum dos três tem IP fixo, IMDS ou `NET_RAW`.
+**Desligado por padrão**: a t4g.small tem 2 GiB e o profile soma ~900 MB de limite. Confira `free -m` na instância antes;
+se faltar memória, desligue o `IOT_SIM`.
+
+```bash
+# primeira vez: cria com a tag do projeto (se já existe: --overwrite, sem --tags)
+aws ssm put-parameter --name /volti/dev/config/GT06 --type String --value on --tags Key=Projeto,Value=Volti
+# opcional: modelo da bateria (48v, 60v ou 72v, o padrão) para a ponte e o emulador
+aws ssm put-parameter --name /volti/dev/config/GT06_BATTERY_MODEL --type String --value 72v --tags Key=Projeto,Value=Volti
+aws ssm send-command --instance-ids $IID --document-name volti-dev-update --query Command.CommandId --output text
+```
+
+**Rode o `volti-dev-update` duas vezes** na primeira vez que a instância recebe este código: o documento executa o
+`update.sh` que já estava na instância, e o `git reset` dele só troca o arquivo para o update seguinte. O primeiro update já
+gera os segredos novos (o `render-env.sh` e o `compose.yml` são lidos do código novo); o segundo liga o profile `gt06`.
+Confira no output: `rastreador GT06 (Traccar + ponte + emulador): ligado`, `Traccar no ar ("version":"6.16...")`,
+`GT06 pronto (...)` e os containers `traccar`, `traccar-bridge` e `gt06-emulator` em execução.
+
+O update gera `TRACCAR_DB_PASSWORD`, `TRACCAR_ADMIN_PASSWORD`, `TRACCAR_BRIDGE_PASSWORD` e `BRIDGE_DB_PASSWORD` em
+`/volti/dev/secrets/` (mesmo com `GT06=off`: o `compose.yml` os exige) e, com `GT06=on`, roda `gt06.sh init` depois das
+migrações: banco `traccar` (papel `traccar`), papel `volti_bridge` (só `SELECT` em `imei`, `thingName` e `controlMode` de
+`"Tracker"`), o admin do Traccar (`admin@volti.local`) e o usuário da ponte (`bridge@volti.local`, não admin; o
+`provision` liga cada dispositivo a ele). Painel/REST do Traccar só em 127.0.0.1:8082 na instância, nunca no security group:
+
+```bash
+aws ssm start-session --target $IID --document-name AWS-StartPortForwardingSession --parameters portNumber=8082,localPortNumber=8082
+```
+
+Provisionar a moto do emulador (IMEI padrão `860000000000901`) ou um J16, e rodar o e2e:
+
+```bash
+CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript \
+  --parameters 'commands=["bash /opt/volti/src/deploy/single/gt06.sh provision VLT-0060 moto-0060 860000000000901"]' --query Command.CommandId --output text)
+aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query StandardOutputContent --output text
+# DONO: token de staff (admin/operacao) de uma sessão do painel — DevTools → Rede → qualquer chamada à API → valor depois de
+# "Bearer ". Vale ~1 h; fica fora da allowlist do render-env.sh (nunca entra no .env; o update avisa "ignorado").
+aws ssm put-parameter --name /volti/dev/secrets/E2E_STAFF_TOKEN --type SecureString --key-id alias/volti-dev --overwrite --value '<token>'
+CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript --timeout-seconds 600 \
+  --parameters 'commands=["bash /opt/volti/src/deploy/single/gt06.sh e2e VLT-0060 moto-0060"]' --query Command.CommandId --output text)
+aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query '[StandardOutputContent,StandardErrorContent]' --output text
+```
+
+Use uma moto livre (fora de aluguel). Esperado no fim: `comando <id>: confirmed`, `{"ok":true,"problems":[]}`,
+`cortes no emulador: speedKmhAtCut":0` e `e2e GT06: OK`. Os logs do e2e ficam em `/var/tmp/gt06-e2e.*` (sem segredos; IMEI
+só mascarado). `gt06.sh deprovision moto-0060` devolve a moto ao `iot-sim`; para economizar memória, `GT06=off` e update.
+
+J16 de bancada (DONO): a 5023 só abre no security group com `cdk deploy` da stack `volti-dev-single` e
+`-c gt06Port=true -c gt06Cidrs=<ip-do-chip>/32` ou, reconhecendo que o GT06 não tem TLS e o chip M2M comum não tem faixa
+fixa, `-c gt06Port=true -c openGt06=true` (0.0.0.0/0, só bancada). Depois, `SERVER,0,<ip-da-instância>,5023,0#` por SMS
+(README da ponte). Logs: `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env --profile gt06 logs --tail 50 traccar traccar-bridge gt06-emulator`.
+
 ## Correção de dados: posição das motos no galpão
 
 `deploy/single/fix-depot-positions.sh` é idempotente. Ele alinha `lat`/`lng` (e o endereço em cache) de toda moto com `depotId` e status `free` ou `maintenance` à posição do galpão dela. Corrige motos movidas de galpão por SQL sem atualizar a posição. Cada moto corrigida ganha um registro `vehicle.position_fix` no AuditLog, e uma segunda execução não muda nada. Primeiro rode sem gravar (`--dry-run`), depois aplique:

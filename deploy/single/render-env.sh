@@ -16,7 +16,9 @@ trap 'rm -f "$TMP"' EXIT
 # Segredos gerados (hex, 64 caracteres). Trocar STATION_QR_SECRET invalida os QRs das estações; FRAUD_HASH_SECRET quebra
 # a comparação dos CPFs já gravados; DB_PASSWORD precisa casar com o volume do Postgres (não troque depois do primeiro boot).
 # A role da instância só cria (Deny com ssm:Overwrite=true): nunca sobrescreve um segredo existente.
-for name in DB_PASSWORD STATION_QR_SECRET FRAUD_HASH_SECRET PICKUP_CODE_SECRET MERCADOPAGO_WEBHOOK_SECRET; do
+# Os quatro do GT06 (Traccar e ponte) nascem mesmo com GT06=off: o compose.yml os exige em qualquer profile. Também casam
+# com o volume do Postgres (papéis traccar e volti_bridge, gt06.sh init) e com os usuários do Traccar: não troque depois.
+for name in DB_PASSWORD STATION_QR_SECRET FRAUD_HASH_SECRET PICKUP_CODE_SECRET MERCADOPAGO_WEBHOOK_SECRET TRACCAR_DB_PASSWORD TRACCAR_ADMIN_PASSWORD TRACCAR_BRIDGE_PASSWORD BRIDGE_DB_PASSWORD; do
   if ! aws ssm get-parameter --name "$VOLTI_SECRETS_PREFIX/$name" --query Parameter.Name --output text >/dev/null 2>&1; then
     # --no-overwrite: só cria; se outro processo criou antes (ParameterAlreadyExists), está tudo certo.
     if out="$(aws ssm put-parameter --name "$VOLTI_SECRETS_PREFIX/$name" --type SecureString --key-id "$VOLTI_KEY_ALIAS" \
@@ -42,10 +44,12 @@ CONFIG_NAMES=(
   S3_BUCKET_KYC S3_BUCKET_RETURN_PHOTOS S3_BUCKET_REPORTS S3_BUCKET_ATTACHMENTS S3_BUCKET_CATALOG
   ADMIN_ORIGIN ADMIN_BUCKET ADMIN_DISTRIBUTION_ID ADMIN_COGNITO_DOMAIN
   IOT_SIM SIM_RIDE_ON_UNLOCK
+  GT06 GT06_BATTERY_MODEL
 )
 # secrets: os gerados acima e o manual documentado no cloudshell.md. Listas separadas de propósito: um segredo não pode
 # repetir (e sobrescrever) uma chave de config, e config (String, texto aberto) não carrega segredo.
-SECRET_NAMES=(DB_PASSWORD STATION_QR_SECRET FRAUD_HASH_SECRET PICKUP_CODE_SECRET MERCADOPAGO_WEBHOOK_SECRET MERCADOPAGO_ACCESS_TOKEN)
+# /volti/dev/secrets/E2E_STAFF_TOKEN (token de staff do e2e GT06) fica FORA de propósito: só o gt06.sh e2e o lê do SSM.
+SECRET_NAMES=(DB_PASSWORD STATION_QR_SECRET FRAUD_HASH_SECRET PICKUP_CODE_SECRET MERCADOPAGO_WEBHOOK_SECRET MERCADOPAGO_ACCESS_TOKEN TRACCAR_DB_PASSWORD TRACCAR_ADMIN_PASSWORD TRACCAR_BRIDGE_PASSWORD BRIDGE_DB_PASSWORD)
 
 # Só valores com caracteres seguros entram no .env (o Compose interpola $ e o arquivo nunca é executado como shell).
 SAFE='^[A-Za-z0-9._:/,@+=-]*$'

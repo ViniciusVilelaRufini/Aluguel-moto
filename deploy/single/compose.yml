@@ -108,6 +108,81 @@ services:
       - caddyconfig:/config
     depends_on: [api]
 
+  # Rastreador GT06 só relé (profile "gt06", ligado por /volti/dev/config/GT06=on; spec 2026-10-27-volti-rastreador-gt06-relay-only).
+  # Banco "traccar" e papéis traccar/volti_bridge criados pelo deploy/single/gt06.sh init (update.sh, depois das migrações).
+  # REST/painel só em 127.0.0.1:8082 (SSM port forwarding); GT06 na 5023, que o security group só abre com -c gt06Port=true
+  # e origem explícita. t4g.small (2 GiB, arm64; a tag -ubuntu publica arm64): memória limitada e heap fixo. Mesma imagem do
+  # docker-compose.yml local e do CDK (TRACCAR_IMAGE, >= 6.7.0 pelo noQueue da ponte). Sem IP fixo: cai no DROP do imds-guard.sh.
+  traccar:
+    profiles: ["gt06"]
+    image: traccar/traccar:6.16.0-ubuntu
+    restart: unless-stopped
+    cap_drop: [NET_RAW]
+    mem_limit: 640m
+    entrypoint: ["java", "-Xms128m", "-Xmx320m", "-Djava.net.preferIPv4Stack=true"]
+    command: ["-jar", "tracker-server.jar", "conf/traccar.xml"]
+    environment:
+      CONFIG_USE_ENVIRONMENT_VARIABLES: "true"
+      DATABASE_DRIVER: org.postgresql.Driver
+      # sslmode=prefer: o Postgres do dev single (postgres:16-bookworm) não tem TLS; tráfego só na rede interna do Compose.
+      DATABASE_URL: jdbc:postgresql://postgres:5432/traccar?sslmode=prefer
+      DATABASE_USER: traccar
+      DATABASE_PASSWORD: ${TRACCAR_DB_PASSWORD:?TRACCAR_DB_PASSWORD ausente (rode render-env.sh)}
+      PROTOCOLS_ENABLE: gt06
+      GT06_PORT: "5023"
+      WEB_PORT: "8082"
+    ports: ["5023:5023", "127.0.0.1:8082:8082"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Ponte Traccar -> MQTT (services/traccar-bridge): Mosquitto, Traccar (rede interna; /api/server para o gate de versão) e
+  # Postgres com o papel volti_bridge (SELECT em 3 colunas de "Tracker"). Usuário próprio no Traccar (não admin; os
+  # dispositivos são ligados a ele pelo gt06.sh provision). Recebe só as duas senhas dela, não o .env inteiro. Logs sem IMEI.
+  traccar-bridge:
+    profiles: ["gt06"]
+    build:
+      context: ../..
+      dockerfile: services/traccar-bridge/Dockerfile
+    image: volti/traccar-bridge:dev
+    restart: unless-stopped
+    cap_drop: [NET_RAW]
+    mem_limit: 160m
+    environment:
+      IOT_MODE: local
+      MQTT_URL: mqtt://mosquitto:1883
+      TRACCAR_URL: http://traccar:8082
+      TRACCAR_EMAIL: bridge@volti.local
+      TRACCAR_PASSWORD: ${TRACCAR_BRIDGE_PASSWORD:?TRACCAR_BRIDGE_PASSWORD ausente (rode render-env.sh)}
+      DATABASE_URL: postgresql://volti_bridge:${BRIDGE_DB_PASSWORD:?BRIDGE_DB_PASSWORD ausente (rode render-env.sh)}@postgres:5432/volti
+      BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+      traccar:
+        condition: service_started
+
+  # Emulador GT06 (imagem da ponte, construída pelo serviço acima) para o e2e: GT06_SCENARIO=parked (padrão) ou
+  # ride-then-stop (gt06.sh e2e). A tensão segue BATTERY_MODEL. Nenhum segredo.
+  gt06-emulator:
+    profiles: ["gt06"]
+    image: volti/traccar-bridge:dev
+    restart: unless-stopped
+    cap_drop: [NET_RAW]
+    mem_limit: 96m
+    command: ["node", "dist/gt06/emulator-main.js"]
+    environment:
+      GT06_HOST: traccar
+      GT06_PORT: "5023"
+      GT06_IMEI: ${GT06_EMULATOR_IMEI:-860000000000901}
+      GT06_SCENARIO: ${GT06_SCENARIO:-parked}
+      BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}
+    depends_on:
+      traccar:
+        condition: service_started
+
   # Simulador de rastreadores (dev sem rastreador real): um rastreador por moto cadastrada, na posição dela (no galpão, a do
   # galpão), parado, respondendo pelo shadow como o firmware (trava só < 3 km/h, limite <= 32 km/h). Liga/desliga pelo
   # parâmetro /volti/dev/config/IOT_SIM (on, o padrão, ou off): o update.sh ativa o profile "sim" conforme o valor.

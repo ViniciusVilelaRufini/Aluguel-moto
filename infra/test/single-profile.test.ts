@@ -421,7 +421,9 @@ describe('profile=single (dev on one EC2 instance)', () => {
       ]) {
         expect(c).toContain(needle);
       }
-      expect(c.match(/^\s+ports:/gm)).toHaveLength(1);
+      // Caddy (80/443) e o Traccar do profile gt06 (5023 publicada; o security group só abre com -c gt06Port=true; REST só em 127.0.0.1).
+      expect(c.match(/^\s+ports:/gm)).toHaveLength(2);
+      expect(c).toContain('ports: ["5023:5023", "127.0.0.1:8082:8082"]');
       expect(file('postgis/Dockerfile')).toMatch(/postgresql-16-postgis-3/);
       expect(file('Caddyfile')).toMatch(/reverse_proxy api:3000/);
     });
@@ -439,7 +441,7 @@ describe('profile=single (dev on one EC2 instance)', () => {
       expect(update).toMatch(/\^IOT_SIM=/);
       expect(update).toMatch(/off\|false\|0\)/);
       expect(update).toMatch(/--profile sim/);
-      expect(update).toMatch(/dc "\$\{sim\[@\]\}" up -d --remove-orphans/);
+      expect(update).toMatch(/dc "\$\{sim\[@\]\}" "\$\{gt06\[@\]\}" up -d --remove-orphans/);
       // Data fix: idempotent (only rows that differ), never touches vehicles in use, dry-run rolls back.
       const fix = file('fix-depot-positions.sh');
       expect(fix).toMatch(/"status" IN \('free', 'maintenance'\)/);

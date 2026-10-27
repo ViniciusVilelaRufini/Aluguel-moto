@@ -42,6 +42,9 @@ const { app } =
         schedule: get('schedule') !== 'false',
         budgetEmail: get('budgetEmail'),
         customerSignup: parseSignup(get('customerSignup')),
+        gt06Port: get('gt06Port') === 'true',
+        gt06Cidrs: get('gt06Cidrs')?.split(','),
+        openGt06: get('openGt06') === 'true',
         overrides,
         outdir: process.env.CDK_OUTDIR,
       })
