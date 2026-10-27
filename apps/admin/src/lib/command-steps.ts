@@ -25,8 +25,8 @@ export function commandSteps(status: CommandStatus, reason?: CommandStatusReason
       break;
     case 'failed':
       pending.state = 'done';
-      // Limite inválido é recusado antes de chegar à moto.
-      progress.state = reason === 'invalid_limit' ? 'todo' : 'done';
+      // Limite inválido / comando não suportado: recusado antes de chegar à moto.
+      progress.state = reason === 'invalid_limit' || reason === 'unsupported_by_tracker' ? 'todo' : 'done';
       result.state = 'failed';
       break;
   }

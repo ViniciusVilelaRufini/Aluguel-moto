@@ -94,7 +94,7 @@ export function VehicleDetailPanel({ vehicleId, depots, models, onClose }: {
           )) : <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{audit.isLoading ? 'Carregando...' : 'Nenhum registro ainda.'}</div>
         ) : commands.data?.items.length ? commands.data.items.map((c) => (
           <div key={c.id} style={{ padding: '8px 0', borderBottom: '1px solid var(--ink-100)' }}>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>{COMMAND_LABEL[c.type]} · {commandStateLabel(c.status, c.statusReason)}</div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{COMMAND_LABEL[c.type]} · {commandStateLabel(c.status, c.statusReason, { type: c.type, controlMode: v.trackerControlMode })}</div>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{formatDateTime(c.createdAt)} · {c.requestedByType === 'customer' ? 'Cliente' : (c.requestedByName ?? 'Equipe')} · {c.reason}</div>
           </div>
         )) : <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{commands.isLoading ? 'Carregando...' : 'Nenhum comando enviado a esta moto.'}</div>}

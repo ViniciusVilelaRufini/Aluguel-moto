@@ -8,6 +8,8 @@ import { useAuth } from '@/lib/auth';
 import { can, rentalHref } from '@/lib/permissions';
 import { useRealtime, useRealtimeEvent } from '@/lib/realtime';
 import { commandStateLabel, commandStateTone } from '@/lib/status';
+import { commandSupported, TRACKER_CONTROL_LABEL, unsupportedHint } from '@/lib/tracker';
+import { RelayOnlyNotice } from './vehicles/RelayOnlyNotice';
 import { formatDateTime, timeAgo } from '@/lib/format';
 import { assertSpeedLimit } from '@/lib/speed-limit';
 import { MAX_SPEED_KMH, type CommandStatus, type CommandStatusReason, type CommandType, type S } from '@/lib/types';
@@ -59,6 +61,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   const detail = useQuery({ queryKey: ['vehicle', vehicleId], queryFn: () => unwrap(api.GET('/vehicles/{id}', { params: { path: { id: vehicleId } } })) });
   const live = vehicles.find((v) => v.id === vehicleId);
   const v: S<'Vehicle'> | undefined = detail.data ? { ...detail.data, ...(live ?? {}) } : live;
+  const mode = v?.trackerControlMode;
 
   const commands = useQuery({
     queryKey: ['vehicle-commands', vehicleId],
@@ -168,6 +171,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         <KV k="Travada" v={v.locked === undefined ? '—' : v.locked ? 'Sim' : 'Não'} />
         <KV k="Modo roubada" v={v.stolenMode ? 'Ligado' : 'Desligado'} />
         <KV k="Firmware" v={v.firmwareVersion ?? '—'} mono />
+        <KV k="Rastreador" v={<span data-testid="tracker-mode">{TRACKER_CONTROL_LABEL[v.trackerControlMode ?? 'speed_control']}</span>} />
       </div>
 
       {canCommand ? (
@@ -176,16 +180,17 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             <Button size="sm" variant="danger" icon="Lock" testId="cmd-lock" onClick={() => setDialog('lock')}>Bloquear</Button>
             <Button size="sm" variant="secondary" icon="LockOpen" testId="cmd-unlock" onClick={() => setDialog('unlock')}>Desbloquear</Button>
-            <Button size="sm" variant="secondary" icon="Megaphone" testId="cmd-horn" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('horn')}>Buzina</Button>
-            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Limitar vel.</Button>
+            <Button size="sm" variant="secondary" icon="Megaphone" testId="cmd-horn" disabled={!commandSupported('horn', mode)} title={commandSupported('horn', mode) ? undefined : unsupportedHint('horn')} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('horn')}>Buzina</Button>
+            <Button size="sm" variant="secondary" icon="Gauge" testId="cmd-speed" disabled={!commandSupported('speed_limit', mode)} title={commandSupported('speed_limit', mode) ? undefined : unsupportedHint('speed_limit')} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setDialog('speed_limit')}>Limitar vel.</Button>
           </div>
           <Button size="sm" variant="dark" icon="ShieldAlert" fullWidth style={{ marginTop: 8 }} testId="cmd-stolen" onClick={() => setDialog('stolen_mode')}>Modo roubada</Button>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>Sem sinal, o comando fica pendente e é aplicado ao reconectar.</div>
+          <RelayOnlyNotice mode={mode} />
           {active && (
             <div key={active.id} className="section-in" style={{ marginTop: 12, padding: '12px 12px 10px', borderRadius: 'var(--radius-md)', background: 'var(--surface-sunken)', display: 'flex', flexDirection: 'column', gap: 10 }}>
               <div data-testid="command-state" data-status={active.status} data-reason={active.reason ?? ''} role="status" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>{COMMAND_LABEL[active.type]}:</span>
-                <Pill tone={commandStateTone(active.status, active.reason)}>{commandStateLabel(active.status, active.reason)}</Pill>
+                <Pill tone={commandStateTone(active.status, active.reason)}>{commandStateLabel(active.status, active.reason, { type: active.type, controlMode: mode })}</Pill>
               </div>
               <CommandTimeline status={active.status} reason={active.reason} />
             </div>
@@ -224,7 +229,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
             <div key={c.id} style={{ display: 'flex', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--ink-100)' }}>
               <span style={{ font: '500 12px/1.4 var(--font-mono)', color: 'var(--text-secondary)' }}>{formatDateTime(c.createdAt).slice(-5)}</span>
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{COMMAND_LABEL[c.type]} · {commandStateLabel(c.status, c.statusReason)}</div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{COMMAND_LABEL[c.type]} · {commandStateLabel(c.status, c.statusReason, { type: c.type, controlMode: mode })}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{/* Nome do cliente só para quem pode ver clientes (admin, suporte); operação vê "Cliente". */}{c.requestedByType === 'customer' ? (canSeeCustomer && c.requestedByName ? c.requestedByName : 'Cliente') : (c.requestedByName ?? (c.requestedByType === 'system' ? 'Sistema' : 'Equipe'))} · {c.reason}</div>
               </div>
             </div>
