@@ -11,6 +11,9 @@
  *   5. grava/atualiza `Tracker` (thingName, IMEI, certificateArn) vinculado ao `Vehicle` e alinha `Vehicle.thingName`.
  * Modo local: só o passo 5 (o Mosquitto do compose aceita conexão anônima; o thingName é o clientId).
  *
+ * GT06 só relé (spec 2026-10-27): --protocol gt06 --imei <15 dígitos> — sem thing nem certificado; Tracker relay_only e
+ * dispositivo no Traccar (src/cli/provision-gt06.ts; env TRACCAR_URL, TRACCAR_ADMIN_EMAIL, TRACCAR_ADMIN_PASSWORD).
+ *
  * Idempotente: thing existente é reaproveitado; um certificado novo só é emitido se o Tracker ainda não tiver um.
  */
 import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -30,6 +33,7 @@ import {
   ResourceNotFoundException,
 } from '@aws-sdk/client-iot';
 import { PrismaClient } from '@prisma/client';
+import { main as provisionGt06Main } from '../src/cli/provision-gt06';
 
 const THING_NAME = /^moto-\d{4,}$/;
 const VEHICLE_CODE = /^VLT-\d{4,}$/;
@@ -44,6 +48,7 @@ async function main(): Promise<void> {
       vehicle: { type: 'string' },
       thing: { type: 'string' },
       imei: { type: 'string' },
+      protocol: { type: 'string' },
       env: { type: 'string', default: process.env.VOLTI_ENV ?? 'dev' },
       // Fora do repositório por padrão: a chave privada nunca deve ir para o git.
       out: { type: 'string', default: join(homedir(), '.volti', 'certs') },
@@ -51,6 +56,11 @@ async function main(): Promise<void> {
       'dry-run': { type: 'boolean', default: false },
     },
   });
+  if (values.protocol !== undefined && values.protocol !== 'gt06') throw new Error('--protocol aceita só gt06');
+  if (values.protocol === 'gt06') {
+    await provisionGt06Main(['--vehicle', values.vehicle ?? '', '--thing', values.thing ?? '', '--imei', values.imei ?? '', ...(values['dry-run'] ? ['--dry-run'] : [])]);
+    return;
+  }
   const vehicleCode = values.vehicle;
   const thingName = values.thing;
   if (!vehicleCode || !VEHICLE_CODE.test(vehicleCode)) throw new Error('--vehicle VLT-0000 obrigatório');

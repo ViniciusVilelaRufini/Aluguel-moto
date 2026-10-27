@@ -13,6 +13,7 @@ Cada moto:
 Em vez das 50 motos de demonstração, um rastreador por moto **cadastrada** (`thingName` do `Vehicle`), lido do Postgres da API só com `SELECT` (`DATABASE_URL`, nunca logado), agora e a cada `SIM_FLEET_REFRESH_SEC`:
 
 - **posição:** moto `free`/`maintenance` com `depotId` → a posição do **galpão**; as demais → a última gravada (`lat`/`lng`). Moto sem posição (0,0) fica fora;
+- **sem só-relé:** motos com rastreador só relé (`Tracker.controlMode = relay_only`, GT06) não são simuladas: quem publica por elas é o J16 de verdade ou o emulador GT06 da ponte (`services/traccar-bridge`);
 - **parada:** velocidade 0, travada/limite como no banco (limite sempre ≤ 32), telemetria a cada 60 s (heartbeat que mantém o `online` da API);
 - **comandos:** responde ao shadow como o firmware (unlock, lock só abaixo de 3 km/h, limite 0..32, modo roubada). Com `SIM_RIDE_ON_UNLOCK=false` (padrão no dev single) a moto destravada continua parada; com `true`, um piloto simulado anda num laço de ~220 m perto de onde ela está;
 - **moto levada:** travada e parada há `SIM_RELOCATE_AFTER_SEC` (padrão 180 s) com o cadastro a mais de 50 m (chegada ao galpão pelo recolhimento ou pela entrega) → o rastreador passa a reportar o novo ponto. Moto andando ou destravada nunca é movida;

@@ -34,6 +34,8 @@ export interface FleetRow {
 export const FLEET_SQL = `SELECT v."thingName", v."status"::text AS "status", v."lat", v."lng", v."locked", v."speedLimitKmh", v."batteryPct",
   d."lat" AS "depotLat", d."lng" AS "depotLng"
 FROM "Vehicle" v LEFT JOIN "Depot" d ON d."id" = v."depotId"
+LEFT JOIN "Tracker" t ON t."vehicleId" = v."id"
+WHERE t."controlMode" IS DISTINCT FROM 'relay_only'
 ORDER BY v."thingName"`;
 
 /** Moto parada no galpão (disponível ou em manutenção): a posição é a do galpão. */
