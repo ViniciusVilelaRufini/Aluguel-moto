@@ -249,3 +249,71 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     expect(desired).toEqual([]);
   });
 });
+
+describe('RelayLockService — moto já travada (Task 4, fix 3)', () => {
+  it('tryCut com a moto já travada (knownLocked) → confirmed sem gravar travada:true', async () => {
+    const clock = new FakeClock(T0);
+    const desired: DesiredState[] = [];
+    const outcomes: CommandOutcome[] = [];
+    const known = new Map<string, number | null>();
+    let locked = false;
+    const svc = new RelayLockService(clock, { updateDesired: async (_t, d) => void desired.push(d) }, (o) => outcomes.push(o), {
+      knownSpeed: (t) => known.get(t) ?? null,
+      knownLocked: () => locked,
+    });
+    await svc.start({ commandId: 'c1', thingName: T }, { online: true });
+    const sample = async () => {
+      known.set(T, 0);
+      await svc.onSample(T, { kmh: 0, deviceTs: clock.now(), measuredAt: clock.now(), accepted: true });
+    };
+    await sample();
+    locked = true; // travou por outro caminho durante a espera
+    await clock.advance(10_000);
+    await sample();
+    expect(desired).toEqual([]);
+    expect(outcomes).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
+    expect(svc.isActive(T)).toBe(false);
+    await clock.advance(300_000);
+    await svc.sweep();
+    expect(desired).toEqual([]);
+  });
+
+  it('órfã na fase de corte com a moto travada (knownLocked) → confirmed, órfã limpa, sem travada:false', async () => {
+    const clock = new FakeClock(T0);
+    const desired: DesiredState[] = [];
+    const outcomes: CommandOutcome[] = [];
+    const redis = new MemoryRedisStore();
+    const store = new RedisRelayLockStore(redis);
+    await store.put({ id: 'l1', thingName: T, commandIds: ['c1'], phase: 'cutting' });
+    await redis.del(`iot:relay-lock:${T}`);
+    const svc = new RelayLockService(clock, { updateDesired: async (_t, d) => void desired.push(d) }, (o) => outcomes.push(o), {
+      store,
+      knownSpeed: () => null,
+      knownLocked: () => true,
+    });
+    await svc.sweep();
+    expect(desired).toEqual([]);
+    expect(outcomes).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
+    expect((await store.scan()).orphans).toEqual([]);
+    await svc.sweep();
+    expect(outcomes).toHaveLength(1);
+  });
+
+  it('órfã na fase de corte com travada desconhecida (null) → continua travada:false + failed/timeout', async () => {
+    const clock = new FakeClock(T0);
+    const desired: DesiredState[] = [];
+    const outcomes: CommandOutcome[] = [];
+    const redis = new MemoryRedisStore();
+    const store = new RedisRelayLockStore(redis);
+    await store.put({ id: 'l1', thingName: T, commandIds: ['c1'], phase: 'cutting' });
+    await redis.del(`iot:relay-lock:${T}`);
+    const svc = new RelayLockService(clock, { updateDesired: async (_t, d) => void desired.push(d) }, (o) => outcomes.push(o), {
+      store,
+      knownSpeed: () => null,
+      knownLocked: () => null,
+    });
+    await svc.sweep();
+    expect(desired).toEqual([{ travada: false }]);
+    expect(outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'timeout' }]);
+  });
+});

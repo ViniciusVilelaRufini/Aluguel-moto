@@ -301,6 +301,11 @@ export class RelayLockService {
     const speed = this.opts.knownSpeed(lock.thingName);
     if (speed === null || !isStill(speed)) return;
     if (lock.deadlineAt !== undefined && lock.deadlineAt <= now) return;
+    if (this.opts.knownLocked?.(lock.thingName) === true) {
+      // Já travada (Task 4 fix 3): `travada: true` igual ao reported não gera delta — nada a gravar, termina confirmado.
+      await this.finish(lock, { status: 'confirmed' });
+      return;
+    }
     lock.phase = 'cutting';
     lock.cutAt = now;
     lock.run = undefined;
@@ -346,6 +351,13 @@ export class RelayLockService {
       if ((await this.store.get(orphan.thingName)) !== null) return;
       if (!(await this.store.isOrphan(orphan.thingName, orphan.lockId))) return;
       this.opts.onError?.({ msg: 'relay_lock_state_lost', thingName: orphan.thingName, phase: orphan.phase, commands: orphan.commandIds.length });
+      if (orphan.phase === 'cutting' && this.opts.knownLocked?.(orphan.thingName) === true) {
+        // Corte perdido mas a moto está travada (Task 4 fix 3): nunca soltar com `travada: false`; os comandos confirmam.
+        await this.store.clearOrphan(orphan.thingName, orphan.lockId);
+        this.forget(orphan.thingName);
+        this.emit(orphan.commandIds, { status: 'confirmed' });
+        return;
+      }
       if (orphan.phase === 'cutting') {
         try {
           await this.transport.updateDesired(orphan.thingName, { travada: false });
