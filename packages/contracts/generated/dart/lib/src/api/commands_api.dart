@@ -206,7 +206,7 @@ class CommandsApi {
   }
 
   /// Enviar comando à moto
-  /// Grava AuditLog (quem, quando, motivo) e delega ao módulo IoT. A resposta é &#x60;202&#x60; com o comando em &#x60;pending&#x60; ou &#x60;in_progress&#x60;; a confirmação chega pelo evento &#x60;command.updated&#x60; (sala &#x60;fleet&#x60;) ou por &#x60;GET /commands/{id}&#x60;. Moto offline → &#x60;pending&#x60; com &#x60;statusReason: offline&#x60;, aplicado ao reconectar. &#x60;lock&#x60; é sempre bloqueio seguro (rampa de limite até parar; trava abaixo de 3 km/h). Regras: &#x60;speed_limit&#x60; exige &#x60;speedLimitKmh&#x60; (0..32); &#x60;stolen_mode&#x60; exige &#x60;on&#x60;.
+  /// Grava AuditLog (quem, quando, motivo) e delega ao módulo IoT. A resposta é &#x60;202&#x60; com o comando em &#x60;pending&#x60; ou &#x60;in_progress&#x60;; a confirmação chega pelo evento &#x60;command.updated&#x60; (sala &#x60;fleet&#x60;) ou por &#x60;GET /commands/{id}&#x60;. Moto offline → &#x60;pending&#x60; com &#x60;statusReason: offline&#x60;, aplicado ao reconectar. &#x60;lock&#x60; é sempre bloqueio seguro: com rastreador &#x60;speed_control&#x60;, rampa de limite até parar e trava abaixo de 3 km/h; com &#x60;relay_only&#x60;, nada é enviado até a moto estar parada de forma confirmada (2 telemetrias &lt; 3 km/h em pelo menos 10 s) e só então o relé corta (&#x60;in_progress&#x60; enquanto espera; 120 s sem parar → &#x60;failed&#x60;/&#x60;did_not_stop&#x60;, nenhum corte enviado). &#x60;speed_limit&#x60; e &#x60;horn&#x60; em &#x60;relay_only&#x60; → &#x60;failed&#x60;/&#x60;unsupported_by_tracker&#x60;. Regras: &#x60;speed_limit&#x60; exige &#x60;speedLimitKmh&#x60; (0..32); &#x60;stolen_mode&#x60; exige &#x60;on&#x60;.
   ///
   /// Parameters:
   /// * [id]

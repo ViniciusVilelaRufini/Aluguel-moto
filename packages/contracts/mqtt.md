@@ -97,6 +97,38 @@ Comportamento esperado do firmware: [`docs/firmware-bloqueio-seguro.md`](../../d
 - EXIT → menor limite das zonas que ainda contêm a moto; nenhuma → 32.
 - EXIT da zona `operation` durante aluguel → alerta imediato e `zone.notice` ao cliente; bloqueio seguro após `OUT_OF_AREA_LOCK_MINUTES` (5), cancelado se a moto voltar antes.
 
+## Rastreadores só relé (`relay_only`, GT06 via Traccar)
+
+Hardware sem controle de velocidade (ex.: Concox J16, protocolo GT06 sobre TCP sem TLS) entra por uma ponte:
+`rastreador ──TCP 5023──► Traccar ──WebSocket /api/socket + REST──► services/traccar-bridge ──MQTT──► IoT Core / Mosquitto`.
+Tópicos, schemas e shadow são os desta página. A API escolhe a estratégia por `Tracker.controlMode`
+(`speed_control` | `relay_only`; no painel, `Vehicle.trackerControlMode`).
+
+| Item | `speed_control` | `relay_only` |
+|---|---|---|
+| `lock` | rampa de `limite_kmh` e `travada: true` abaixo de 3 km/h | **sem rampa**: espera 2 telemetrias frescas e consecutivas < 3 km/h cobrindo ≥ 10 s (fora da graça, com as mesmas regras de frescor, ordem, lacuna e atraso de fila) e grava `travada: true` **uma única vez**; a ponte manda `engineStop` |
+| sem parar em 120 s | `failed`/`did_not_stop`, limite 0 segurado | `failed`/`did_not_stop`, **nenhum corte enviado**, nada segurado |
+| corte sem confirmação em 120 s | `failed`/`timeout`, desired `travada: false` + `limite_kmh: 0` | `failed`/`timeout`, desired `travada: false` (a ponte não reenvia o corte) |
+| moto offline | `pending`/`offline`, rampa ao reconectar | `pending`/`offline`; ao reconectar, exige amostras novas (fora da graça) |
+| `unlock` | `travada: false` + limite da zona | `travada: false` → `engineResume`; confirma por `reported.travada = false` em 30 s |
+| `speed_limit`, `horn` | normais | `failed`/`unsupported_by_tracker`, shadow intocado |
+| `stolen_mode` | `modo_roubada` | aceito; a ponte ecoa `reported.modo_roubada` (sem mudança de telemetria no GT06) |
+| zona `reduced_speed` | ENTER grava `limite_kmh` | **aviso**: `zone.notice` "Área com limite de X km/h." (`advisory: true`); acima do limite por mais de 5 s → alerta `zone_speed_exceeded` |
+| 32 km/h | firmware + controlador | só o controlador da moto (configuração física) |
+
+O que a ponte faz (detalhes em `services/traccar-bridge/README.md`):
+- telemetria só de posição válida e não `outdated`, com `fixTime` crescente: `velocidade_kmh = speed (nós) × 1,852`,
+  `timestamp = fixTime` (hora da medição), `travada ← attributes.blocked`, `ignicao ← attributes.ignition`,
+  `sinal ← attributes.rssi` (0–4 ou 0–31 → 0–5), `bateria_pct ← attributes.power` (curva aproximada por pack);
+- eventos: `powerCut` → `violacao`, `lowBattery`/`lowPower` → `bateria_critica`, `vibration` com o corte ativo ou deslocamento
+  > 20 m travada → `movimento_sem_aluguel`; outros alarmes são descartados com log;
+- delta `travada: true` → `engineStop` **só** com o dispositivo online, posição de até 10 s com velocidade < 3 km/h e sem corte
+  já ativo (segunda guarda); `travada: false` → `engineResume`; `limite_kmh` nunca vira comando (reported `limite_kmh: 32` fixo);
+- `reported.travada` vem do bit `blocked` da primeira posição **depois** do comando, nunca do aceite do comando;
+- reconexão (`deviceOnline`): presença `connected` (modo local), `reported` completo e `shadow/get`; do delta pendente só
+  `travada: false` é reaplicado (um `travada: true` pendente nunca: a API recomeça o fluxo com amostras novas);
+- `motos/{t}/comandos` (`buzina`) é ignorado com log.
+
 ## Produção: caminho das mensagens
 
 | Origem | Caminho | Consumidor |

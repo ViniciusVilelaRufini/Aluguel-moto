@@ -48,7 +48,7 @@ abstract class VehicleCommand
 
   @BuiltValueField(wireName: r'statusReason')
   CommandStatusReason? get statusReason;
-  // enum statusReasonEnum {  offline,  timeout,  did_not_stop,  invalid_limit,  locked_by_staff,  };
+  // enum statusReasonEnum {  offline,  timeout,  did_not_stop,  invalid_limit,  locked_by_staff,  unsupported_by_tracker,  };
 
   /// Motivo informado por quem pediu.
   @BuiltValueField(wireName: r'reason')

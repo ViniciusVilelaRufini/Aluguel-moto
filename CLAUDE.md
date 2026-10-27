@@ -10,6 +10,7 @@ RESTRIÇÕES (NÃO NEGOCIÁVEIS)
 - As motos são equipamentos autopropelidos (Resolução Contran 996/2023): até 1.000 W e até 32 km/h, sem placa e sem CNH. O software nunca pode permitir ultrapassar esses limites.
 - Limites por zona: 6 km/h em áreas de pedestres, 20 km/h em ciclovias.
 - Segurança física: nunca cortar o motor com a moto em movimento. Bloquear = reduzir a potência gradualmente e travar só abaixo de 3 km/h.
+- Rampa de bloqueio, `limite_kmh` e limites por zona valem para rastreadores com controle de velocidade (`speed_control`). Rastreadores só relé (`relay_only`, ex.: GT06/Concox J16) seguem `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`: o corte só sai com a moto parada de forma confirmada, limites de zona viram aviso, e os 32 km/h ficam com o controlador da moto.
 - LGPD: localização é dado pessoal. Rastrear o cliente só durante o aluguel e com consentimento; trajetos expiram após 90 dias; o cliente pode exportar e excluir seus dados.
 - Dados de cartão nunca passam pelo backend (só tokens do gateway).
 

@@ -84,6 +84,7 @@ export const ALERT_TYPE: Record<S<'AlertType'>, [string, string]> = {
   speed_limiter_noncompliant: ['Limitador de velocidade acima de 32 km/h', 'Gauge'],
   battery_stock_low: ['Poucas baterias carregadas no galpão', 'BatteryWarning'],
   payment_needs_review: ['Pagamento precisa de revisão', 'Wallet'],
+  zone_speed_exceeded: ['Acima do limite da zona (rastreador só relé)', 'Gauge'],
 };
 
 /** Ações de auditoria da moto (`/audit-logs?entityId=`), no vocabulário do log do design. */

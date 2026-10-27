@@ -61,7 +61,7 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 | `command.updated` | `fleet` | `{ commandId, vehicleId, type: CommandType, status: CommandStatus, reason? }` |
 | `alert.created` | `alerts:ops` (admin, operacao, suporte) ou, para `payment_needs_review`, `alerts:finance` (admin, suporte, financeiro) | `{ alertId, vehicleId?, rentalId?, type, priority: 'low' \| 'medium' \| 'high' \| 'critical', createdAt }` |
 | `rental.updated` | `rental:{id}` | `{ rentalId, status: RentalStatus, elapsedSeconds, costCents, ts }` |
-| `zone.notice` | `rental:{id}` | `{ rentalId, zoneType: ZoneType, speedLimitKmh?, transition: 'ENTER' \| 'EXIT', message }` |
+| `zone.notice` | `rental:{id}` | `{ rentalId, zoneType: ZoneType, speedLimitKmh?, transition: 'ENTER' \| 'EXIT', message, advisory? }` |
 | `device.event` | `rental:{id}` | `{ rentalId, type: 'queda', ts }` (dispara o "você está bem?") |
 | `handover.pending` | `customer:{id}`, `depot:{id}` | `{ handoverId, reservationId }` |
 | `handover.updated` | `customer:{id}`, `depot:{id}` | `{ handoverId, status: HandoverStatus, lastError? }` |
@@ -71,10 +71,10 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 
 - **`vehicle.position`** — a cada telemetria (5 s em aluguel, 60 s parada). Na sala `rental:{id}` só chega a moto do aluguel. `speedLimitKmh` é o limite em vigor (0–32). O app do cliente mostra velocidade e bateria; nunca mostra distância percorrida.
 - **`vehicle.status`** — mudança de `VehicleStatus` (inclusive `offline` quando o rastreador perde conexão).
-- **`command.updated`** — cada transição do comando (`pending` → `in_progress` → `confirmed` | `failed`). `reason` é o mesmo valor de `VehicleCommand.statusReason` no REST (`CommandStatusReason`: `offline`, `timeout`, `did_not_stop`, `invalid_limit`). O texto livre que o operador informou ao pedir o comando fica só em `VehicleCommand.reason` (REST) e no AuditLog. O painel mostra `pending` + `offline` como "moto offline — será aplicado ao reconectar".
+- **`command.updated`** — cada transição do comando (`pending` → `in_progress` → `confirmed` | `failed`). `reason` é o mesmo valor de `VehicleCommand.statusReason` no REST (`CommandStatusReason`: `offline`, `timeout`, `did_not_stop`, `invalid_limit`, `locked_by_staff`, `unsupported_by_tracker`). O texto livre que o operador informou ao pedir o comando fica só em `VehicleCommand.reason` (REST) e no AuditLog. O painel mostra `pending` + `offline` como "moto offline — será aplicado ao reconectar".
 - **`alert.created`** — `type` usa os valores de `AlertType` do `openapi.yaml`; `priority` é `AlertPriority`. Detalhes completos por `GET /alerts/{id}`.
 - **`rental.updated`** — a cada mudança de status e a cada 30 s com o aluguel `active`/`paused` (atualiza tempo e custo parcial). `costCents` segue a mesma regra de `Rental.costCents`.
-- **`zone.notice`** — entrada/saída de zonas que afetam o cliente: `reduced_speed` (com o novo `speedLimitKmh`), `forbidden`, `operation` (saída da área: aviso imediato e bloqueio seguro após 5 minutos fora) e `return`. `message` vem pronto em pt-BR para a UI (ex.: "Você entrou numa área de pedestres. Velocidade máxima: 6 km/h.").
+- **`zone.notice`** — entrada/saída de zonas que afetam o cliente: `reduced_speed` (com o novo `speedLimitKmh`), `forbidden`, `operation` (saída da área: aviso imediato e bloqueio seguro após 5 minutos fora) e `return`. `message` vem pronto em pt-BR para a UI (ex.: "Você entrou numa área de pedestres. Velocidade máxima: 6 km/h."). Moto com rastreador `relay_only` (só relé, não reduz a velocidade): ENTER em `reduced_speed` vem com `advisory: true` e `message` "Área com limite de X km/h." — o limite não é imposto, é aviso.
 - **`handover.pending`** — o operador registrou a entrega de saída (`POST /handovers`, `type: pickup`). O app do cliente abre "Confira sua moto" e carrega `GET /handovers/{handoverId}`. Também descrito em `x-ws-events` no `openapi.yaml`.
 - **`handover.updated`** — aceite, disputa ou cancelamento da entrega, chegada no galpão concluída (`return_depot`, `status: accepted`), ou falha no aceite (`lastError`, ex.: `payment-declined`, com `status` ainda `pending_customer`). O operador vê "Aceito", "Pagamento não aprovado" ou "Problema apontado".
 - **`station_swap.updated`** — cada mudança de status da troca de bateria na estação (`opening_slot` → `awaiting_return` → `returned` → `releasing` → `completed`, ou `canceled`/`failed`). O app mostra "Abrindo compartimento", "Devolva a bateria na vaga N", "Liberando a carregada" e "Bateria trocada"; detalhes (vaga, séries, `endReason`) por `GET /swap-stations/{id}/swaps/{swapId}`. Só o dono recebe; sem posição.
@@ -95,7 +95,7 @@ export interface RealtimeEvents {
   'command.updated': { commandId: string; vehicleId: string; type: S['CommandType']; status: S['CommandStatus']; reason?: S['CommandStatusReason'] };
   'alert.created': { alertId: string; vehicleId?: string; rentalId?: string; type: S['AlertType']; priority: S['AlertPriority']; createdAt: string };
   'rental.updated': { rentalId: string; status: S['RentalStatus']; elapsedSeconds: number; costCents: number; ts: string };
-  'zone.notice': { rentalId: string; zoneType: S['ZoneType']; speedLimitKmh?: number; transition: 'ENTER' | 'EXIT'; message: string };
+  'zone.notice': { rentalId: string; zoneType: S['ZoneType']; speedLimitKmh?: number; transition: 'ENTER' | 'EXIT'; message: string; advisory?: true };
   'device.event': { rentalId: string; type: 'queda'; ts: string };
   'handover.pending': { handoverId: string; reservationId: string };
   'handover.updated': { handoverId: string; status: S['HandoverStatus']; lastError?: string };

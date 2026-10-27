@@ -20,6 +20,7 @@ Name | Type | Description | Notes
 **speedLimitKmh** | **int** | Limite atual aplicado (zona ou comando). | 
 **thingName** | **String** | staff. | [optional] 
 **trackerId** | **String** | staff. | [optional] 
+**trackerControlMode** | [**TrackerControlMode**](TrackerControlMode.md) | staff. Tipo do rastreador (somente leitura; muda só pelo provisionamento). Sem rastreador cadastrado, `speed_control`. | [optional] 
 **batterySerial** | **String** | staff. Bateria instalada. | [optional] 
 **online** | **bool** | staff. | [optional] 
 **locked** | **bool** | staff. | [optional] 

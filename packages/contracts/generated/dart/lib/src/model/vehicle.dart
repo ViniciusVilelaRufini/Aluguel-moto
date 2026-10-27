@@ -4,6 +4,7 @@
 
 // ignore_for_file: unused_element
 import 'package:volti_api/src/model/battery.dart';
+import 'package:volti_api/src/model/tracker_control_mode.dart';
 import 'package:volti_api/src/model/vehicle_service_info.dart';
 import 'package:volti_api/src/model/vehicle_status.dart';
 import 'package:built_value/built_value.dart';
@@ -26,6 +27,7 @@ part 'vehicle.g.dart';
 /// * [speedLimitKmh] - Limite atual aplicado (zona ou comando).
 /// * [thingName] - staff.
 /// * [trackerId] - staff.
+/// * [trackerControlMode] - staff. Tipo do rastreador (somente leitura; muda só pelo provisionamento). Sem rastreador cadastrado, `speed_control`.
 /// * [batterySerial] - staff. Bateria instalada.
 /// * [online] - staff.
 /// * [locked] - staff.
@@ -92,6 +94,11 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   /// staff.
   @BuiltValueField(wireName: r'trackerId')
   String? get trackerId;
+
+  /// staff. Tipo do rastreador (somente leitura; muda só pelo provisionamento). Sem rastreador cadastrado, `speed_control`.
+  @BuiltValueField(wireName: r'trackerControlMode')
+  TrackerControlMode? get trackerControlMode;
+  // enum trackerControlModeEnum {  speed_control,  relay_only,  };
 
   /// staff. Bateria instalada.
   @BuiltValueField(wireName: r'batterySerial')
@@ -268,6 +275,13 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
       yield serializers.serialize(
         object.trackerId,
         specifiedType: const FullType(String),
+      );
+    }
+    if (object.trackerControlMode != null) {
+      yield r'trackerControlMode';
+      yield serializers.serialize(
+        object.trackerControlMode,
+        specifiedType: const FullType(TrackerControlMode),
       );
     }
     if (object.batterySerial != null) {
@@ -549,6 +563,14 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
           ) as String?;
           if (valueDes == null) continue;
           result.trackerId = valueDes;
+          break;
+        case r'trackerControlMode':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(TrackerControlMode),
+          ) as TrackerControlMode?;
+          if (valueDes == null) continue;
+          result.trackerControlMode = valueDes;
           break;
         case r'batterySerial':
           final valueDes = serializers.deserialize(

@@ -42,6 +42,26 @@ rastreador ──TCP (porta do protocolo, ex.: 5023 GT06)──► NLB ──►
 - **Para a API nada muda:** mesmos tópicos, mesmo shadow, mesmo `AwsIotGateway`, mesmos eventos internos (`iot.telemetry`, `iot.device-event`, `iot.command-updated`, `iot.connectivity`).
 - **Custos e riscos:** mais um serviço com estado (Traccar + banco próprio — usar RDS existente com schema separado), latência maior de comando (polling/ack do protocolo), confirmação de execução dependente do protocolo, e segurança menor sem TLS/certificado por dispositivo.
 
+## Atualização 2026-10-27: rastreadores só relé (GT06) aceitos
+
+Decisão do dono (spec `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`): o hardware do piloto é o
+Concox J16 4G (GT06, TCP sem TLS, só relé). Rastreadores `relay_only` são aceitos com **rastreamento e bloqueio/liberação**:
+o bloqueio espera a moto parar de forma confirmada e então corta (sem rampa); limites de zona viram aviso e alerta; os 32 km/h
+ficam com o controlador da moto. A frase "o hardware não atende o requisito de rampa e não pode ser homologado" acima vale para
+`speed_control`; `relay_only` segue a spec. A ponte é o serviço `services/traccar-bridge` (Traccar em ECS/NLB na proposta de CDK,
+Traccar em container no dev single).
+
+Riscos conhecidos (spec §12):
+- **Janela residual:** entre a última amostra parada e a chegada do `engineStop`, a moto pode voltar a andar. A exigência de
+  2 amostras em 10 s e a segunda guarda da ponte reduzem, mas não eliminam. Em produção, avaliar hardware com controle de velocidade.
+- **Sem limite por zona imposto:** responsabilidade do condutor; refletir nos termos de uso (validar com jurídico).
+- **32 km/h depende do controlador da moto:** verificar e documentar por modelo.
+- **GT06 sem TLS:** exige APN privada em produção.
+- **`bateria_pct` aproximado** (pela tensão; sem leitura se o J16 for alimentado por conversor DC-DC).
+- **Comando enfileirado pelo Traccar:** se o dispositivo cair entre a checagem da ponte e o envio, o Traccar guarda o `engineStop`
+  e o entrega na reconexão, em qualquer velocidade. A ponte só envia com o dispositivo online e registra `engine_stop_queued`
+  (nível erro) quando o Traccar responde 202; verificar na bancada se o J16 recusa o corte acima de alguma velocidade.
+
 ## Consequências
 
 - Requisito de compra do hardware: MQTT 3.1.1+ sobre TLS 1.2 com certificado X.509, armazenamento seguro da chave, controlador com limite de velocidade configurável (0..32) e trava eletrônica, implementação de F1–F10 do documento de firmware.

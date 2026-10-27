@@ -536,7 +536,10 @@ export interface paths {
          * @description Grava AuditLog (quem, quando, motivo) e delega ao módulo IoT. A resposta é `202` com o comando em
          *     `pending` ou `in_progress`; a confirmação chega pelo evento `command.updated` (sala `fleet`) ou por
          *     `GET /commands/{id}`. Moto offline → `pending` com `statusReason: offline`, aplicado ao reconectar.
-         *     `lock` é sempre bloqueio seguro (rampa de limite até parar; trava abaixo de 3 km/h).
+         *     `lock` é sempre bloqueio seguro: com rastreador `speed_control`, rampa de limite até parar e trava abaixo de 3 km/h; com
+         *     `relay_only`, nada é enviado até a moto estar parada de forma confirmada (2 telemetrias < 3 km/h em pelo menos 10 s) e só
+         *     então o relé corta (`in_progress` enquanto espera; 120 s sem parar → `failed`/`did_not_stop`, nenhum corte enviado).
+         *     `speed_limit` e `horn` em `relay_only` → `failed`/`unsupported_by_tracker`.
          *     Regras: `speed_limit` exige `speedLimitKmh` (0..32); `stolen_mode` exige `on`.
          */
         post: operations["sendVehicleCommand"];
@@ -3502,10 +3505,23 @@ export interface components {
         /** @enum {string} */
         KycStatus: "not_started" | "pending" | "approved" | "rejected";
         /**
-         * @description Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`. `locked_by_staff`: destravar pedido por cliente ou campo recusado (trava da equipe ou do sistema, limite segurado em 0 ou modo roubada); nada é publicado e só admin/operacao desfaz.
+         * @description Motivo do estado do comando (`CommandOutcome.reason` da porta IoT). No WebSocket `command.updated` aparece como `reason`.
+         *     `locked_by_staff`: destravar pedido por cliente ou campo recusado (trava da equipe ou do sistema, limite segurado em 0 ou
+         *     modo roubada); nada é publicado e só admin/operacao desfaz.
+         *     `did_not_stop`: em rastreador `speed_control`, a moto não parou em 120 s e o limite fica segurado em 0; em `relay_only`,
+         *     a moto não parou em 120 s e nenhum corte foi enviado.
+         *     `unsupported_by_tracker`: comando que o rastreador não executa (`speed_limit` e `horn` em `relay_only`); o shadow não é tocado.
          * @enum {string}
          */
-        CommandStatusReason: "offline" | "timeout" | "did_not_stop" | "invalid_limit" | "locked_by_staff";
+        CommandStatusReason: "offline" | "timeout" | "did_not_stop" | "invalid_limit" | "locked_by_staff" | "unsupported_by_tracker";
+        /**
+         * @description Capacidade do rastreador. `speed_control` (padrão): limita velocidade e faz o bloqueio seguro com rampa (firmware F1–F12).
+         *     `relay_only` (ex.: Concox J16, protocolo GT06 via Traccar): só rastreia e corta pelo relé — o `lock` espera a moto parar
+         *     (2 telemetrias frescas < 3 km/h cobrindo pelo menos 10 s) e então corta; limites de zona viram aviso ao cliente e alerta
+         *     `zone_speed_exceeded`; o limite de 32 km/h fica com o controlador da moto.
+         * @enum {string}
+         */
+        TrackerControlMode: "speed_control" | "relay_only";
         /** @enum {string} */
         AuthPool: "customer" | "staff";
         /** @enum {string} */
@@ -3581,9 +3597,11 @@ export interface components {
          * @description `battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`).
          *     `payment_needs_review`: pagamento que exige revisão manual do financeiro (liquidação estacionada, estorno recusado em
          *     `needs_review`, cobrança tardia de assinatura sem estorno automático); `paymentId` aponta o pagamento (um aberto por pagamento).
+         *     `zone_speed_exceeded`: moto com rastreador `relay_only` acima do limite da zona em que está por mais de 5 s (o rastreador não
+         *     reduz a velocidade); repetições da mesma moto em 10 min são agrupadas no mesmo alerta.
          * @enum {string}
          */
-        AlertType: "out_of_operation_area" | "forbidden_zone_entered" | "fall_detected" | "tamper" | "battery_critical" | "movement_without_rental" | "vehicle_offline" | "command_failed" | "customer_not_ok" | "incident_reported" | "speed_limiter_noncompliant" | "battery_stock_low" | "payment_needs_review";
+        AlertType: "out_of_operation_area" | "forbidden_zone_entered" | "fall_detected" | "tamper" | "battery_critical" | "movement_without_rental" | "vehicle_offline" | "command_failed" | "customer_not_ok" | "incident_reported" | "speed_limiter_noncompliant" | "battery_stock_low" | "payment_needs_review" | "zone_speed_exceeded";
         /** @enum {string} */
         AlertPriority: "low" | "medium" | "high" | "critical";
         /** @enum {string} */
@@ -3859,6 +3877,8 @@ export interface components {
              * @description staff.
              */
             trackerId?: string;
+            /** @description staff. Tipo do rastreador (somente leitura; muda só pelo provisionamento). Sem rastreador cadastrado, `speed_control`. */
+            readonly trackerControlMode?: components["schemas"]["TrackerControlMode"];
             /** @description staff. Bateria instalada. */
             batterySerial?: string;
             /** @description staff. */

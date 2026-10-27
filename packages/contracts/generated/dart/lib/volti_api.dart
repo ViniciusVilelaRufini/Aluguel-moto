@@ -300,6 +300,7 @@ export 'package:volti_api/src/model/top_up_request.dart';
 export 'package:volti_api/src/model/top_up_status.dart';
 export 'package:volti_api/src/model/track.dart';
 export 'package:volti_api/src/model/track_point.dart';
+export 'package:volti_api/src/model/tracker_control_mode.dart';
 export 'package:volti_api/src/model/upload_content_type.dart';
 export 'package:volti_api/src/model/upload_request.dart';
 export 'package:volti_api/src/model/validation_issue.dart';

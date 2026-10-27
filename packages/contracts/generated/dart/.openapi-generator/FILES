@@ -285,6 +285,7 @@ doc/TopUpRequest.md
 doc/TopUpStatus.md
 doc/Track.md
 doc/TrackPoint.md
+doc/TrackerControlMode.md
 doc/UploadContentType.md
 doc/UploadRequest.md
 doc/ValidationIssue.md
@@ -620,6 +621,7 @@ lib/src/model/top_up_request.dart
 lib/src/model/top_up_status.dart
 lib/src/model/track.dart
 lib/src/model/track_point.dart
+lib/src/model/tracker_control_mode.dart
 lib/src/model/upload_content_type.dart
 lib/src/model/upload_request.dart
 lib/src/model/validation_issue.dart

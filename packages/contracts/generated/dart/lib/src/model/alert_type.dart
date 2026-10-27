@@ -9,7 +9,7 @@ import 'package:built_value/serializer.dart';
 
 part 'alert_type.g.dart';
 
-/// `battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`). `payment_needs_review`: pagamento que exige revisão manual do financeiro (liquidação estacionada, estorno recusado em `needs_review`, cobrança tardia de assinatura sem estorno automático); `paymentId` aponta o pagamento (um aberto por pagamento).
+/// `battery_stock_low`: baterias `charged` de um galpão abaixo de `Depot.minChargedBatteries` (um aberto por galpão, `depotId`). `payment_needs_review`: pagamento que exige revisão manual do financeiro (liquidação estacionada, estorno recusado em `needs_review`, cobrança tardia de assinatura sem estorno automático); `paymentId` aponta o pagamento (um aberto por pagamento). `zone_speed_exceeded`: moto com rastreador `relay_only` acima do limite da zona em que está por mais de 5 s (o rastreador não reduz a velocidade); repetições da mesma moto em 10 min são agrupadas no mesmo alerta.
 class AlertType extends EnumClass {
   @BuiltValueEnumConst(wireName: r'out_of_operation_area')
   static const AlertType outOfOperationArea = _$outOfOperationArea;
@@ -37,6 +37,8 @@ class AlertType extends EnumClass {
   static const AlertType batteryStockLow = _$batteryStockLow;
   @BuiltValueEnumConst(wireName: r'payment_needs_review')
   static const AlertType paymentNeedsReview = _$paymentNeedsReview;
+  @BuiltValueEnumConst(wireName: r'zone_speed_exceeded')
+  static const AlertType zoneSpeedExceeded = _$zoneSpeedExceeded;
   @BuiltValueEnumConst(wireName: r'unknown_default_open_api', fallback: true)
   static const AlertType unknownDefaultOpenApi = _$unknownDefaultOpenApi;
 

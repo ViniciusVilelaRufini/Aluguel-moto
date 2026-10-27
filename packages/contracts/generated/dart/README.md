@@ -600,6 +600,7 @@ Class | Method | HTTP request | Description
  - [TopUpStatus](doc/TopUpStatus.md)
  - [Track](doc/Track.md)
  - [TrackPoint](doc/TrackPoint.md)
+ - [TrackerControlMode](doc/TrackerControlMode.md)
  - [UploadContentType](doc/UploadContentType.md)
  - [UploadRequest](doc/UploadRequest.md)
  - [ValidationIssue](doc/ValidationIssue.md)

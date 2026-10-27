@@ -14,6 +14,8 @@ const CommandStatusReason _$invalidLimit =
     const CommandStatusReason._('invalidLimit');
 const CommandStatusReason _$lockedByStaff =
     const CommandStatusReason._('lockedByStaff');
+const CommandStatusReason _$unsupportedByTracker =
+    const CommandStatusReason._('unsupportedByTracker');
 const CommandStatusReason _$unknownDefaultOpenApi =
     const CommandStatusReason._('unknownDefaultOpenApi');
 
@@ -29,6 +31,8 @@ CommandStatusReason _$valueOf(String name) {
       return _$invalidLimit;
     case 'lockedByStaff':
       return _$lockedByStaff;
+    case 'unsupportedByTracker':
+      return _$unsupportedByTracker;
     case 'unknownDefaultOpenApi':
       return _$unknownDefaultOpenApi;
     default:
@@ -43,6 +47,7 @@ final BuiltSet<CommandStatusReason> _$values =
   _$didNotStop,
   _$invalidLimit,
   _$lockedByStaff,
+  _$unsupportedByTracker,
   _$unknownDefaultOpenApi,
 ]);
 
@@ -53,6 +58,7 @@ class _$CommandStatusReasonMeta {
   CommandStatusReason get didNotStop => _$didNotStop;
   CommandStatusReason get invalidLimit => _$invalidLimit;
   CommandStatusReason get lockedByStaff => _$lockedByStaff;
+  CommandStatusReason get unsupportedByTracker => _$unsupportedByTracker;
   CommandStatusReason get unknownDefaultOpenApi => _$unknownDefaultOpenApi;
   CommandStatusReason valueOf(String name) => _$valueOf(name);
   BuiltSet<CommandStatusReason> get values => _$values;
@@ -75,6 +81,7 @@ class _$CommandStatusReasonSerializer
     'didNotStop': 'did_not_stop',
     'invalidLimit': 'invalid_limit',
     'lockedByStaff': 'locked_by_staff',
+    'unsupportedByTracker': 'unsupported_by_tracker',
     'unknownDefaultOpenApi': 'unknown_default_open_api',
   };
   static const Map<Object, String> _fromWire = const <Object, String>{
@@ -83,6 +90,7 @@ class _$CommandStatusReasonSerializer
     'did_not_stop': 'didNotStop',
     'invalid_limit': 'invalidLimit',
     'locked_by_staff': 'lockedByStaff',
+    'unsupported_by_tracker': 'unsupportedByTracker',
     'unknown_default_open_api': 'unknownDefaultOpenApi',
   };
 

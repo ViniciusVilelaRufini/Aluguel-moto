@@ -105,7 +105,7 @@ Name | Type | Description  | Notes
 
 Enviar comando à moto
 
-Grava AuditLog (quem, quando, motivo) e delega ao módulo IoT. A resposta é `202` com o comando em `pending` ou `in_progress`; a confirmação chega pelo evento `command.updated` (sala `fleet`) ou por `GET /commands/{id}`. Moto offline → `pending` com `statusReason: offline`, aplicado ao reconectar. `lock` é sempre bloqueio seguro (rampa de limite até parar; trava abaixo de 3 km/h). Regras: `speed_limit` exige `speedLimitKmh` (0..32); `stolen_mode` exige `on`. 
+Grava AuditLog (quem, quando, motivo) e delega ao módulo IoT. A resposta é `202` com o comando em `pending` ou `in_progress`; a confirmação chega pelo evento `command.updated` (sala `fleet`) ou por `GET /commands/{id}`. Moto offline → `pending` com `statusReason: offline`, aplicado ao reconectar. `lock` é sempre bloqueio seguro: com rastreador `speed_control`, rampa de limite até parar e trava abaixo de 3 km/h; com `relay_only`, nada é enviado até a moto estar parada de forma confirmada (2 telemetrias < 3 km/h em pelo menos 10 s) e só então o relé corta (`in_progress` enquanto espera; 120 s sem parar → `failed`/`did_not_stop`, nenhum corte enviado). `speed_limit` e `horn` em `relay_only` → `failed`/`unsupported_by_tracker`. Regras: `speed_limit` exige `speedLimitKmh` (0..32); `stolen_mode` exige `on`. 
 
 ### Example
 ```dart

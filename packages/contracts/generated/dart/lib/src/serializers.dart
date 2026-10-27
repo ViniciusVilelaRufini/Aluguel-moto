@@ -274,6 +274,7 @@ import 'package:volti_api/src/model/top_up_request.dart';
 import 'package:volti_api/src/model/top_up_status.dart';
 import 'package:volti_api/src/model/track.dart';
 import 'package:volti_api/src/model/track_point.dart';
+import 'package:volti_api/src/model/tracker_control_mode.dart';
 import 'package:volti_api/src/model/upload_content_type.dart';
 import 'package:volti_api/src/model/upload_request.dart';
 import 'package:volti_api/src/model/validation_issue.dart';
@@ -572,6 +573,7 @@ part 'serializers.g.dart';
   TopUpStatus,
   Track,
   TrackPoint,
+  TrackerControlMode,
   UploadContentType,
   UploadRequest,
   ValidationIssue,

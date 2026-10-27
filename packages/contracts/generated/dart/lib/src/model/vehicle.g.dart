@@ -32,6 +32,8 @@ class _$Vehicle extends Vehicle {
   @override
   final String? trackerId;
   @override
+  final TrackerControlMode? trackerControlMode;
+  @override
   final String? batterySerial;
   @override
   final bool? online;
@@ -96,6 +98,7 @@ class _$Vehicle extends Vehicle {
       required this.speedLimitKmh,
       this.thingName,
       this.trackerId,
+      this.trackerControlMode,
       this.batterySerial,
       this.online,
       this.locked,
@@ -144,6 +147,7 @@ class _$Vehicle extends Vehicle {
         speedLimitKmh == other.speedLimitKmh &&
         thingName == other.thingName &&
         trackerId == other.trackerId &&
+        trackerControlMode == other.trackerControlMode &&
         batterySerial == other.batterySerial &&
         online == other.online &&
         locked == other.locked &&
@@ -185,6 +189,7 @@ class _$Vehicle extends Vehicle {
     _$hash = $jc(_$hash, speedLimitKmh.hashCode);
     _$hash = $jc(_$hash, thingName.hashCode);
     _$hash = $jc(_$hash, trackerId.hashCode);
+    _$hash = $jc(_$hash, trackerControlMode.hashCode);
     _$hash = $jc(_$hash, batterySerial.hashCode);
     _$hash = $jc(_$hash, online.hashCode);
     _$hash = $jc(_$hash, locked.hashCode);
@@ -228,6 +233,7 @@ class _$Vehicle extends Vehicle {
           ..add('speedLimitKmh', speedLimitKmh)
           ..add('thingName', thingName)
           ..add('trackerId', trackerId)
+          ..add('trackerControlMode', trackerControlMode)
           ..add('batterySerial', batterySerial)
           ..add('online', online)
           ..add('locked', locked)
@@ -308,6 +314,11 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
   String? _trackerId;
   String? get trackerId => _$this._trackerId;
   set trackerId(String? trackerId) => _$this._trackerId = trackerId;
+
+  TrackerControlMode? _trackerControlMode;
+  TrackerControlMode? get trackerControlMode => _$this._trackerControlMode;
+  set trackerControlMode(TrackerControlMode? trackerControlMode) =>
+      _$this._trackerControlMode = trackerControlMode;
 
   String? _batterySerial;
   String? get batterySerial => _$this._batterySerial;
@@ -434,6 +445,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
       _speedLimitKmh = $v.speedLimitKmh;
       _thingName = $v.thingName;
       _trackerId = $v.trackerId;
+      _trackerControlMode = $v.trackerControlMode;
       _batterySerial = $v.batterySerial;
       _online = $v.online;
       _locked = $v.locked;
@@ -499,6 +511,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
                 speedLimitKmh, r'Vehicle', 'speedLimitKmh'),
             thingName: thingName,
             trackerId: trackerId,
+            trackerControlMode: trackerControlMode,
             batterySerial: batterySerial,
             online: online,
             locked: locked,

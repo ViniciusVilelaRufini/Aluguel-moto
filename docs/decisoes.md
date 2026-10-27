@@ -848,3 +848,43 @@ Limites: a guarda de "uma troca por tarefa" é uma leitura antes da transação 
 
 ## 2026-10-26 · Regra IoT das estações: identidade só do tópico, corpo em `payload` (branch `feat/galpao-correcoes`, Task 1) · status: aplicada
 `STATION_EVENTS_SQL` (`infra/lib/stacks/iot-stack.ts`) passa a ser `SELECT topic(2) AS thing, {'type': type, 'swapId': swapId, 'slotNumber': slotNumber, 'serial': serial, 'pct': pct, 'ts': ts} AS payload FROM 'estacoes/+/eventos'`. A identidade da estação (`thing`) vem **somente** do tópico; o corpo enviado pelo dispositivo fica aninhado em `payload`, com os campos do contrato. Mensagens legadas planas, sem `payload` (por exemplo as que estiverem em trânsito durante um deploy gradual), são **descartadas** pela API. Sem mudança de contrato.
+
+## 2026-10-27 · rastreador GT06 só com relé (Concox J16) — contrato, API, ponte Traccar (branch `feat/tracker-gt06-relay-only`, plano `2026-10-27-volti-rastreador-gt06-relay-only`) · status: proposta aplicada (contrato aditivo)
+
+Spec aprovada pelo dono: `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`. Decisão do dono (spec §1):
+rastreadores "só relé" são aceitos (rastreamento + bloqueio/liberação); bloqueio = esperar parar e cortar, sem rampa; limites de
+zona não impostos (aviso + alerta); 32 km/h pelo controlador; o fluxo atual (rampa, `limite_kmh`, F1–F12) continua para
+`speed_control`.
+
+Contrato (aditivo):
+1. `TrackerControlMode` (`speed_control` | `relay_only`) e `Vehicle.trackerControlMode` (staff, somente leitura; sem `Tracker`
+   cadastrado = `speed_control`).
+2. `CommandStatusReason.unsupported_by_tracker`: `speed_limit` **e `horn`** em `relay_only` falham sem tocar no shadow (o J16 não
+   tem buzina; antes o `horn` ficaria `confirmed` sem efeito).
+3. `AlertType.zone_speed_exceeded`: `relay_only` acima do limite da zona por mais de 5 s; prioridade `high` em zona ≤ 6 km/h,
+   `medium` acima; a deduplicação de 10 min por moto agrupa repetições.
+4. `did_not_stop` em `relay_only`: "a moto não parou em 120 s; nenhum corte foi enviado".
+5. WebSocket `zone.notice` ganha `advisory?: true` (aditivo); `message` traz "Área com limite de X km/h." O app do cliente já mostra
+   `message`; nenhuma mudança no Flutter.
+
+Regras de implementação escolhidas onde a spec não decide (cada uma com teste):
+6. Só telemetria aceita (hora da medição) conta como amostra parada; `reported.velocidade_kmh` ≥ 3 zera a janela, < 3 não conta.
+7. A janela de 2 amostras/10 s começa no início do lock; "consecutivas" = sem amostra ≥ 3 (inclusive fora de ordem), sem amostra
+   parada mais nova rejeitada e sem reconexão entre elas. O J16 deve mandar posição a cada 5 s fixos.
+8. Prazos: 120 s para parar (desde o início ou a reconexão) e 120 s próprios para confirmar o corte. `did_not_stop` encerra a trava
+   sem hold. Redis fora do ar → lock `relay_only` falha (`timeout`) sem enviar nada.
+9. `unlock` em `relay_only` grava só `travada: false`.
+10. A ponte só envia `engineStop` com o dispositivo online, posição de até 10 s abaixo de 3 km/h, sem corte ativo e sem outro
+    `engineStop` nos últimos 30 s; nunca reaplica `travada: true` do `get` da reconexão. Telemetria só de posições válidas e não
+    `outdated`; `vibration` vira `movimento_sem_aluguel` só com o corte ativo; `bateria_pct` por curva Li-ion (fora da faixa = último
+    valor válido, senão 0).
+11. Mapa IMEI → thingName lido do Postgres por um papel só-leitura (`volti_bridge`, GRANT por coluna em `Tracker`), sem endpoint novo.
+12. Emulador GT06 dentro da ponte; o `iot-sim` deixa de simular motos `relay_only`.
+13. CDK como proposta (sem deploy): Traccar em uma task Fargate ARM64 atrás de NLB TCP 5023, REST só para a ponte; a política IoT
+    da ponte enumera os thingNames `relay_only` de `-c gt06Things=...`. Suposição a validar no primeiro deploy: shadow clássico de
+    thing não registrada (o provisionamento GT06 não cria thing nem certificado).
+14. Dev single: profile `gt06` ligado por `/volti/dev/config/GT06=on`; segredos gerados `TRACCAR_DB_PASSWORD`,
+    `TRACCAR_ADMIN_PASSWORD`, `TRACCAR_BRIDGE_PASSWORD`, `BRIDGE_DB_PASSWORD` (allowlist); REST do Traccar só em 127.0.0.1; porta
+    5023 publicada mas fechada no security group até `-c gt06Port=true`.
+
+Riscos (spec §12) registrados em `docs/adr-rastreador.md`.

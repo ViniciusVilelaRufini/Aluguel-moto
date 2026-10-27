@@ -39,7 +39,7 @@ abstract class Alert implements Built<Alert, AlertBuilder> {
 
   @BuiltValueField(wireName: r'type')
   AlertType get type;
-  // enum typeEnum {  out_of_operation_area,  forbidden_zone_entered,  fall_detected,  tamper,  battery_critical,  movement_without_rental,  vehicle_offline,  command_failed,  customer_not_ok,  incident_reported,  speed_limiter_noncompliant,  battery_stock_low,  payment_needs_review,  };
+  // enum typeEnum {  out_of_operation_area,  forbidden_zone_entered,  fall_detected,  tamper,  battery_critical,  movement_without_rental,  vehicle_offline,  command_failed,  customer_not_ok,  incident_reported,  speed_limiter_noncompliant,  battery_stock_low,  payment_needs_review,  zone_speed_exceeded,  };
 
   @BuiltValueField(wireName: r'priority')
   AlertPriority get priority;
