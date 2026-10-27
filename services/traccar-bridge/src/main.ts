@@ -1,5 +1,6 @@
 import { Bridge } from './bridge';
 import { loadConfig } from './config';
+import { LIVENESS_FILE_DEFAULT, startLiveness, touchFile } from './liveness';
 import { createLogger } from './log';
 import { connectMqtt } from './mqtt';
 import { PgRegistry, pgQuery } from './registry';
@@ -13,7 +14,19 @@ async function main(): Promise<void> {
   const log = createLogger('traccar-bridge');
   const rest = new TraccarRest(cfg.traccarUrl, cfg.traccarEmail, cfg.traccarPassword);
   const mqtt = connectMqtt(cfg);
-  const bridge = new Bridge(mqtt, rest, new PgRegistry(pgQuery(cfg.database)), { iotMode: cfg.iotMode, battery: cfg.battery, log });
+  const bridge = new Bridge(mqtt, rest, new PgRegistry(pgQuery(cfg.database, log)), { iotMode: cfg.iotMode, battery: cfg.battery, log });
+  // Arquivo de vida (HEALTHCHECK): só avança enquanto a fila de entrada anda. Começa já, para as tentativas de início contarem como vivas.
+  const livenessFile = process.env.LIVENESS_FILE || LIVENESS_FILE_DEFAULT;
+  let livenessErrorLogged = false;
+  startLiveness({
+    probe: () => bridge.probeInbound(),
+    touch: () => touchFile(livenessFile),
+    onError: (err) => {
+      if (livenessErrorLogged) return;
+      livenessErrorLogged = true;
+      log.error({ msg: 'liveness_touch_failed', error: err.message });
+    },
+  });
   // A ponte trata o `connect` do MQTT (reassina e republica o estado atual). Traccar e banco podem subir depois: tenta até conseguir.
   for (let attempt = 1; ; attempt++) {
     try {

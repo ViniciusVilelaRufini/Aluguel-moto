@@ -1,5 +1,5 @@
 import { FIXED_LIMIT_KMH, TOPICS, thingOf, type DeviceEventMessage, type ReportedState } from './contract';
-import { CUT_FRESH_MS, parseDelta, planDeltaFor, planReconnect, type BridgeAction } from './delta';
+import { CUT_FRESH_MS, cutRefusal, parseDelta, planDeltaFor, planReconnect, type BridgeAction } from './delta';
 import { maskImei, silentLogger, type Logger } from './log';
 import { applyPosition, currentBlocked, freshBlocked, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { MqttLike } from './mqtt';
@@ -26,6 +26,8 @@ export interface BridgeOptions {
   log?: Logger;
   /** Prazo de uma publicação MQTT (PUBACK do QoS 1); padrão `PUBLISH_TIMEOUT_MS`. */
   publishTimeoutMs?: number;
+  /** Prazo de um SUBSCRIBE (SUBACK); padrão `SUBSCRIBE_TIMEOUT_MS`. */
+  subscribeTimeoutMs?: number;
 }
 
 /** Corte conhecido e bateria ainda desconhecida há este tempo → telemetria sai com `bateria_pct: 0` (log `battery_unknown`). */
@@ -36,12 +38,23 @@ export const LOG_RATE_MS = 60_000;
 export const REPORT_REPEAT_MS = 60_000;
 /** Publicação MQTT sem conclusão neste prazo é abandonada (log) para não travar a fila de entrada. */
 export const PUBLISH_TIMEOUT_MS = 10_000;
+/** SUBSCRIBE sem SUBACK neste prazo falha (a próxima releitura do registro / reconexão tenta de novo). */
+export const SUBSCRIBE_TIMEOUT_MS = 10_000;
 /** Com a versão do Traccar não confirmada, um comando relê `/api/server` no máximo uma vez neste intervalo. */
 export const VERSION_RECHECK_MS = 10_000;
 /** Ids de posição cujos alarmes já saíram, por moto (deduplicação position × events). */
 const ALARM_IDS_KEPT = 256;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
+
+/** Tipo do tópico para logs (sem dado pessoal). */
+function topicKind(topic: string): 'presence' | 'events' | 'shadow_get' | 'shadow_update' | 'other' {
+  if (topic.startsWith('$aws/events/presence/')) return 'presence';
+  if (topic.endsWith('/eventos')) return 'events';
+  if (topic.endsWith('/shadow/get')) return 'shadow_get';
+  if (topic.endsWith('/shadow/update')) return 'shadow_update';
+  return 'other';
+}
 
 /**
  * Ponte GT06 (spec §6): posições/eventos do Traccar → `motos/{t}/telemetria|eventos` e `reported` do shadow; delta do shadow →
@@ -76,9 +89,12 @@ export class Bridge {
   private lastVersionCheck = Number.NEGATIVE_INFINITY;
   private listening = false;
   private lastMissRefresh = 0;
+  /** Releitura do registro em voo (single-flight): chamadas concorrentes esperam a mesma. */
+  private registryRefresh?: Promise<void>;
   private readonly log: Logger;
   private readonly now: () => number;
   private readonly publishTimeoutMs: number;
+  private readonly subscribeTimeoutMs: number;
 
   constructor(
     private readonly mqtt: MqttLike,
@@ -89,6 +105,7 @@ export class Bridge {
     this.log = opts.log ?? silentLogger;
     this.now = opts.now ?? Date.now;
     this.publishTimeoutMs = opts.publishTimeoutMs ?? PUBLISH_TIMEOUT_MS;
+    this.subscribeTimeoutMs = opts.subscribeTimeoutMs ?? SUBSCRIBE_TIMEOUT_MS;
   }
 
   async start(): Promise<void> {
@@ -101,6 +118,7 @@ export class Bridge {
     }
     await this.refreshDevices();
     await this.refreshRegistry();
+    await this.requestPendingUnlocks();
   }
 
   /** Versão do Traccar (gate do `noQueue`) e lista de dispositivos; mudança de status de um já conhecido dispara presença/reconexão. */
@@ -109,8 +127,20 @@ export class Bridge {
     for (const d of await this.traccar.devices()) await this.updateDevice(d);
   }
 
-  /** Relê o registro. Thing cujo IMEI mudou (aparelho trocado, removido ou devolvido) recomeça sem memória. */
-  async refreshRegistry(): Promise<void> {
+  /**
+   * Relê o registro. Thing cujo IMEI mudou (aparelho trocado, removido ou devolvido) recomeça sem memória.
+   * Single-flight: com uma releitura em voo, devolve a mesma promessa (o banco travado não empilha consultas).
+   */
+  refreshRegistry(): Promise<void> {
+    if (!this.registryRefresh) {
+      this.registryRefresh = this.loadRegistry().finally(() => {
+        this.registryRefresh = undefined;
+      });
+    }
+    return this.registryRefresh;
+  }
+
+  private async loadRegistry(): Promise<void> {
     const next = await this.registry.things();
     const nextT2I = new Map([...next].map(([imei, thing]) => [thing, imei]));
     const changed = [...new Set([...this.thingToImei.keys(), ...nextT2I.keys()])].filter((t) => this.thingToImei.get(t) !== nextT2I.get(t));
@@ -132,8 +162,12 @@ export class Bridge {
   }
 
   /**
-   * MQTT (re)conectado: reassina e republica `reported.travada` do estado ATUAL (bit fresco) de cada moto. Nada do que ficou
-   * pendente enquanto desconectado é reenviado pela ponte (os reported são descartados fora do ar).
+   * MQTT (re)conectado: reassina, republica `reported.travada` do estado ATUAL (bit fresco) de cada moto e pede o shadow
+   * (`get`) das motos online para aplicar um `travada: false` pendente (B-M1).
+   *
+   * Com o MQTT fora a ponte não publica QoS 1 (`publish`/`report` pulam). Mas um QoS 1 já entregue ao mqtt.js sem PUBACK
+   * (em voo na queda, ou abandonado pelo prazo de `publish`) fica no `outgoingStore` e o mqtt.js o REENVIA na reconexão,
+   * antes de emitir `connect`. Por isso este republish do estado atual vem depois e é o que vale no shadow.
    */
   async onMqttConnect(): Promise<void> {
     try {
@@ -147,6 +181,27 @@ export class Bridge {
         if (typeof blocked === 'boolean') await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
       });
     }
+    await this.requestPendingUnlocks();
+  }
+
+  /**
+   * `shadow/get` de cada moto do registro online no Traccar (início e reconexão do MQTT): um desbloqueio pedido enquanto a
+   * ponte/MQTT estava fora é aplicado sem esperar o aparelho reconectar. Do `get/accepted` só `travada: false` vira comando
+   * (`planReconnect` + filtro: `travada: true` nunca é reaplicado).
+   */
+  private async requestPendingUnlocks(): Promise<void> {
+    for (const thing of [...this.thingToImei.keys()]) {
+      if (this.deviceOf(thing)?.status !== 'online') continue;
+      await this.serial(thing, async () => {
+        this.awaitingGet.add(thing);
+        await this.publish(TOPICS.shadowGet(thing), {}, 1);
+      });
+    }
+  }
+
+  /** Conclui quando tudo o que já entrou na fila de entrada foi processado (sonda de vida, `liveness.ts`). */
+  probeInbound(): Promise<void> {
+    return this.inboundStep(async () => undefined);
   }
 
   /**
@@ -207,9 +262,21 @@ export class Bridge {
     return this.inbound;
   }
 
+  /** SUBSCRIBE com prazo (`subscribeTimeoutMs`): sem SUBACK lança `mqtt_subscribe_timeout` e os things ficam para a próxima. */
   private async subscribe(things: string[]): Promise<void> {
     if (!things.length) return;
-    await this.mqtt.subscribeAsync(things.flatMap((t) => [TOPICS.shadowDelta(t), TOPICS.shadowGetAccepted(t), TOPICS.commands(t)]), { qos: 1 });
+    const sub = this.mqtt.subscribeAsync(things.flatMap((t) => [TOPICS.shadowDelta(t), TOPICS.shadowGetAccepted(t), TOPICS.commands(t)]), { qos: 1 });
+    sub.catch(() => undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('mqtt_subscribe_timeout')), this.subscribeTimeoutMs);
+      timer.unref?.();
+    });
+    try {
+      await Promise.race([sub, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
     for (const t of things) this.subscribed.add(t);
   }
 
@@ -267,12 +334,12 @@ export class Bridge {
     if (!this.devices.has(deviceId)) await this.refreshDevices();
     const d = this.devices.get(deviceId);
     if (!d) return null;
-    let thing = this.imeiToThing.get(d.uniqueId);
+    const thing = this.imeiToThing.get(d.uniqueId);
     if (!thing && this.now() - this.lastMissRefresh > 10_000) {
-      // Provisionado há pouco (antes da próxima leitura periódica): relê o registro no máximo a cada 10 s.
+      // Provisionado há pouco (antes da próxima leitura periódica): relê o registro no máximo a cada 10 s, SEM esperar
+      // (o banco lento não pode travar a fila de entrada). Esta mensagem fica como de aparelho desconhecido; as próximas já mapeiam.
       this.lastMissRefresh = this.now();
-      await this.refreshRegistry();
-      thing = this.imeiToThing.get(d.uniqueId);
+      void this.refreshRegistry().catch((err: Error) => this.log.error({ msg: 'registry_refresh_failed', error: err.message }));
     }
     if (!thing) {
       const imei = maskImei(d.uniqueId);
@@ -397,16 +464,21 @@ export class Bridge {
     }
   }
 
-  /** Todo delta passa pela segunda guarda (`planDeltaFor`); `travada` null/ausente/não booleana não vira comando. */
+  /**
+   * Todo delta passa pela segunda guarda (`planDeltaFor`); `travada` null/ausente/não booleana não vira comando.
+   * O aparelho do thing é resolvido UMA vez (B-M4): o mesmo vale para o plano e para o envio.
+   */
   private async onDelta(thing: string, state: Record<string, unknown> | undefined): Promise<void> {
     const delta = parseDelta(state);
-    const online = this.deviceOf(thing)?.status === 'online';
+    const device = this.deviceOf(thing);
+    const online = device?.status === 'online';
     const { actions, refusal } = planDeltaFor(delta, { online, mem: this.mem(thing), now: this.now(), lastStopSentAt: this.stopSentAt.get(thing) });
     if (refusal && refusal !== 'already_blocked') this.log.warn({ msg: 'engine_stop_refused', thingName: thing, reason: refusal });
-    await this.execute(thing, actions);
+    await this.execute(thing, actions, device);
   }
 
-  private async execute(thing: string, actions: BridgeAction[]): Promise<void> {
+  /** `device` = aparelho resolvido no início do delta (B-M4); padrão: o atual do thing. */
+  private async execute(thing: string, actions: BridgeAction[], device: TraccarDevice | undefined = this.deviceOf(thing)): Promise<void> {
     for (const a of actions) {
       if (a.kind === 'report') {
         if (a.reported.modo_roubada !== undefined) this.stolen.set(thing, a.reported.modo_roubada);
@@ -422,7 +494,6 @@ export class Bridge {
         this.logLimited(`${thing}|${msg}|no_noqueue`, 'error', { msg, thingName: thing, reason: 'traccar_no_noqueue' });
         continue;
       }
-      const device = this.deviceOf(thing);
       if (!device) {
         this.log.warn({ msg: 'command_unknown_device', thingName: thing });
         continue;
@@ -431,7 +502,7 @@ export class Bridge {
         await this.sendStop(thing, device);
         continue;
       }
-      if (device.status !== 'online') {
+      if (this.deviceOf(thing)?.id !== device.id || this.devices.get(device.id)?.status !== 'online') {
         this.log.info({ msg: 'engine_resume_deferred_offline', thingName: thing });
         continue;
       }
@@ -450,8 +521,22 @@ export class Bridge {
     }
   }
 
-  /** Chamado só com a guarda liberada (`planDeltaFor` sem recusa) e Traccar ≥ 6.7.0. Nunca deixa o corte na fila (`noQueue`). */
+  /**
+   * Chamado com a guarda liberada no plano (`planDeltaFor`) e Traccar ≥ 6.7.0. Nunca deixa o corte na fila (`noQueue`).
+   * B-I2: entre o plano e aqui houve `await` (releitura da versão, outras ações): a guarda é refeita AGORA, com o status atual
+   * do dispositivo, a memória atual e o relógio atual; e o aparelho do thing tem de ser o mesmo resolvido no plano (B-M4).
+   * Daqui até o `sendCommand` não há `await`.
+   */
   private async sendStop(thing: string, device: TraccarDevice): Promise<void> {
+    const refusal =
+      this.deviceOf(thing)?.id !== device.id
+        ? 'device_changed'
+        : cutRefusal({ online: this.devices.get(device.id)?.status === 'online', mem: this.mem(thing), now: this.now(), lastStopSentAt: this.stopSentAt.get(thing) });
+    if (refusal) {
+      // `already_blocked` aqui também é recusa: o eco travada:true só sai pelo plano.
+      this.log.warn({ msg: 'engine_stop_refused', thingName: thing, reason: refusal });
+      return;
+    }
     let sent: 'sent' | 'queued';
     try {
       sent = await this.traccar.sendCommand(device.id, 'engineStop');
@@ -508,9 +593,21 @@ export class Bridge {
     }
   }
 
-  /** `false` = não publicado (QoS 0 com o MQTT fora) ou sem conclusão no prazo (log `mqtt_publish_timeout`). */
+  /**
+   * `false` = não publicado (MQTT fora) ou sem conclusão no prazo (log `mqtt_publish_timeout`).
+   * B-M7: com o MQTT fora nada é entregue ao mqtt.js — QoS 0 é descartado; QoS 1 (presença, eventos, get) é pulado com log
+   * limitado em vez de esperar o prazo, para não travar a fila de entrada (o mqtt.js o guardaria e entregaria velho na volta).
+   * Um `get` pulado é refeito na reconexão (`onMqttConnect` → `requestPendingUnlocks`).
+   */
   private async publish(topic: string, payload: unknown, qos: 0 | 1): Promise<boolean> {
-    if (qos === 0 && this.mqtt.connected === false) return false;
+    if (this.mqtt.connected === false) {
+      if (qos === 1) {
+        const kind = topicKind(topic);
+        const thing = kind === 'presence' ? topic.split('/').pop() : thingOf(topic);
+        this.logLimited(`${thing}|mqtt_down_skipped|${kind}`, 'warn', { msg: 'mqtt_down_skipped', thingName: thing, kind });
+      }
+      return false;
+    }
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeout = new Promise<'timeout'>((resolve) => {
       timer = setTimeout(() => resolve('timeout'), this.publishTimeoutMs);

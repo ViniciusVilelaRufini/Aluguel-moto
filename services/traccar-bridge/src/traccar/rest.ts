@@ -1,5 +1,8 @@
 import type { TraccarDevice } from './types';
 
+/** Prazo de cada chamada HTTP ao Traccar (resposta e corpo): Traccar travado vira erro, não espera infinita na fila (B-I3). */
+export const TRACCAR_HTTP_TIMEOUT_MS = 10_000;
+
 /** API REST do Traccar (só rede interna, spec §6.5), com a sessão do usuário da ponte (cookie também usado no WebSocket). */
 export class TraccarRest {
   private cookie?: string;
@@ -9,10 +12,16 @@ export class TraccarRest {
     private readonly email: string,
     private readonly password: string,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly timeoutMs: number = TRACCAR_HTTP_TIMEOUT_MS,
   ) {}
 
+  /** Todo `fetch` passa por aqui: `AbortSignal.timeout` cobre conexão, resposta e leitura do corpo. */
+  private fetch(url: string, init: RequestInit): Promise<Response> {
+    return this.fetchImpl(url, { ...init, signal: AbortSignal.timeout(this.timeoutMs) });
+  }
+
   async login(): Promise<string> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/session`, {
+    const res = await this.fetch(`${this.baseUrl}/api/session`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ email: this.email, password: this.password }).toString(),
@@ -26,7 +35,7 @@ export class TraccarRest {
 
   private async request(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
     const cookie = this.cookie ?? (await this.login());
-    const res = await this.fetchImpl(`${this.baseUrl}${path}`, { ...init, headers: { ...((init.headers as Record<string, string>) ?? {}), Cookie: cookie } });
+    const res = await this.fetch(`${this.baseUrl}${path}`, { ...init, headers: { ...((init.headers as Record<string, string>) ?? {}), Cookie: cookie } });
     if (res.status === 401 && retry) {
       this.cookie = undefined;
       return this.request(path, init, false);
@@ -65,7 +74,7 @@ export class TraccarRest {
 
   /** Só no compose local: o primeiro usuário de um Traccar vazio vira administrador. `false` se já houver usuários. */
   async bootstrapFirstUser(name: string): Promise<boolean> {
-    const res = await this.fetchImpl(`${this.baseUrl}/api/users`, {
+    const res = await this.fetch(`${this.baseUrl}/api/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, email: this.email, password: this.password }),
