@@ -1,13 +1,16 @@
-import { FIXED_LIMIT_KMH, TOPICS, thingOf, type ReportedState } from './contract';
+import { FIXED_LIMIT_KMH, TOPICS, thingOf, type DeviceEventMessage, type ReportedState } from './contract';
 import { CUT_FRESH_MS, parseDelta, planDeltaFor, planReconnect, type BridgeAction } from './delta';
 import { maskImei, silentLogger, type Logger } from './log';
-import { applyPosition, currentBlocked, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
+import { applyPosition, currentBlocked, freshBlocked, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { MqttLike } from './mqtt';
 import type { TraccarDevice, TraccarEvent, TraccarPosition, TraccarSocketMessage } from './traccar/types';
+import { MIN_TRACCAR_NOQUEUE, supportsNoQueue } from './traccar/version';
 import type { BatteryModel } from './units';
 
 export interface TraccarApi {
   devices(): Promise<TraccarDevice[]>;
+  /** `GET /api/server` (`version`). */
+  server(): Promise<{ version?: unknown }>;
   sendCommand(deviceId: number, type: 'engineStop' | 'engineResume'): Promise<'sent' | 'queued'>;
 }
 
@@ -21,12 +24,20 @@ export interface BridgeOptions {
   battery: BatteryModel;
   now?: () => number;
   log?: Logger;
+  /** Prazo de uma publicação MQTT (PUBACK do QoS 1); padrão `PUBLISH_TIMEOUT_MS`. */
+  publishTimeoutMs?: number;
 }
 
 /** Corte conhecido e bateria ainda desconhecida há este tempo → telemetria sai com `bateria_pct: 0` (log `battery_unknown`). */
 export const BATTERY_UNKNOWN_CAP_MS = 5 * 60_000;
-/** Logs repetitivos (retenção, bateria, replay): no máximo um por moto e motivo nesta janela. */
+/** Logs repetitivos (retenção, bateria, replay, IMEI desconhecido): no máximo um por chave nesta janela. */
 export const LOG_RATE_MS = 60_000;
+/** `reported.travada` igual ao último publicado sai no máximo uma vez neste intervalo (mudança sai na hora). */
+export const REPORT_REPEAT_MS = 60_000;
+/** Publicação MQTT sem conclusão neste prazo é abandonada (log) para não travar a fila de entrada. */
+export const PUBLISH_TIMEOUT_MS = 10_000;
+/** Ids de posição cujos alarmes já saíram, por moto (deduplicação position × events). */
+const ALARM_IDS_KEPT = 256;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
@@ -35,8 +46,9 @@ const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object
  * `engineStop`/`engineResume` (com a segunda guarda: só corta com posição fresca < 3 km/h). Para a API nada muda (mesmos tópicos).
  * Processamento em ordem por moto. Logs sem dado pessoal e sem IMEI completo.
  *
- * Bit de corte: lido só por `currentBlocked`. Toda (re)conexão — do dispositivo no Traccar ou do WebSocket da ponte — chama
- * `markReconnected`; o replay de últimas posições que o Traccar manda ao abrir o WebSocket não conta como status novo.
+ * - Bit de corte: lido só por `currentBlocked`/`freshBlocked`. Toda (re)conexão — do dispositivo no Traccar ou do WebSocket da
+ *   ponte — chama `markReconnected`; o replay de últimas posições que o Traccar manda ao abrir o WebSocket não conta como status.
+ * - Comandos de motor só com Traccar ≥ 6.7.0 (respeita `noQueue`); senão, recusa sem chamar a REST.
  */
 export class Bridge {
   private readonly devices = new Map<number, TraccarDevice>();
@@ -45,6 +57,9 @@ export class Bridge {
   private readonly stopSentAt = new Map<string, number>();
   /** Desde quando a moto está com o corte conhecido e a bateria desconhecida (teto de retenção). */
   private readonly batteryWaitSince = new Map<string, number>();
+  /** Último `reported.travada` publicado (valor e hora), para M5. */
+  private readonly lastTravada = new Map<string, { value: boolean; at: number }>();
+  private readonly alarmIds = new Map<string, number[]>();
   private readonly lastLogAt = new Map<string, number>();
   private readonly awaitingGet = new Set<string>();
   private readonly subscribed = new Set<string>();
@@ -54,10 +69,13 @@ export class Bridge {
   private inbound: Promise<void> = Promise.resolve();
   /** A próxima mensagem do WebSocket com `positions` é o replay de conexão (últimas conhecidas, possivelmente velhas). */
   private replayPending = false;
+  /** Traccar respeita `noQueue` (≥ 6.7.0)? Relido a cada `refreshDevices`; desconhecido = não. */
+  private noQueueOk = false;
   private listening = false;
   private lastMissRefresh = 0;
   private readonly log: Logger;
   private readonly now: () => number;
+  private readonly publishTimeoutMs: number;
 
   constructor(
     private readonly mqtt: MqttLike,
@@ -67,6 +85,7 @@ export class Bridge {
   ) {
     this.log = opts.log ?? silentLogger;
     this.now = opts.now ?? Date.now;
+    this.publishTimeoutMs = opts.publishTimeoutMs ?? PUBLISH_TIMEOUT_MS;
   }
 
   async start(): Promise<void> {
@@ -74,20 +93,32 @@ export class Bridge {
       this.mqtt.on('message', (topic: string, payload: Buffer) => {
         void this.onMqtt(topic, payload).catch((err: Error) => this.log.error({ msg: 'mqtt_message_failed', error: err.message }));
       });
+      this.mqtt.on('connect', () => void this.onMqttConnect());
       this.listening = true;
     }
     await this.refreshDevices();
     await this.refreshRegistry();
   }
 
-  /** Lista de dispositivos do Traccar; mudança de status de um já conhecido dispara presença/reconexão. */
+  /** Versão do Traccar (gate do `noQueue`) e lista de dispositivos; mudança de status de um já conhecido dispara presença/reconexão. */
   async refreshDevices(): Promise<void> {
+    await this.refreshServerVersion();
     for (const d of await this.traccar.devices()) await this.updateDevice(d);
   }
 
+  /** Relê o registro. Thing cujo IMEI mudou (aparelho trocado, removido ou devolvido) recomeça sem memória. */
   async refreshRegistry(): Promise<void> {
-    this.imeiToThing = await this.registry.things();
-    this.thingToImei = new Map([...this.imeiToThing].map(([imei, thing]) => [thing, imei]));
+    const next = await this.registry.things();
+    const nextT2I = new Map([...next].map(([imei, thing]) => [thing, imei]));
+    const changed = [...new Set([...this.thingToImei.keys(), ...nextT2I.keys()])].filter((t) => this.thingToImei.get(t) !== nextT2I.get(t));
+    this.imeiToThing = next;
+    this.thingToImei = nextT2I;
+    for (const thing of changed) {
+      await this.serial(thing, async () => {
+        if (this.memory.has(thing) || this.stolen.has(thing) || this.stopSentAt.has(thing)) this.log.info({ msg: 'registry_thing_remapped', thingName: thing });
+        this.forget(thing);
+      });
+    }
     await this.subscribe([...this.thingToImei.keys()].filter((t) => !this.subscribed.has(t)));
   }
 
@@ -95,6 +126,24 @@ export class Bridge {
   async resubscribe(): Promise<void> {
     this.subscribed.clear();
     await this.subscribe([...this.thingToImei.keys()]);
+  }
+
+  /**
+   * MQTT (re)conectado: reassina e republica `reported.travada` do estado ATUAL (bit fresco) de cada moto. Nada do que ficou
+   * pendente enquanto desconectado é reenviado pela ponte (os reported são descartados fora do ar).
+   */
+  async onMqttConnect(): Promise<void> {
+    try {
+      await this.resubscribe();
+    } catch (err) {
+      this.log.error({ msg: 'mqtt_resubscribe_failed', error: (err as Error).message });
+    }
+    for (const thing of [...this.memory.keys()]) {
+      await this.serial(thing, async () => {
+        const blocked = freshBlocked(this.mem(thing), this.now());
+        if (typeof blocked === 'boolean') await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
+      });
+    }
   }
 
   /**
@@ -130,6 +179,21 @@ export class Bridge {
       }
       const thing = await this.thingOfDevice(e.deviceId);
       if (thing) await this.serial(thing, () => this.onAlarm(thing, e));
+    }
+  }
+
+  private async refreshServerVersion(): Promise<void> {
+    let version: unknown;
+    try {
+      version = (await this.traccar.server()).version;
+    } catch (err) {
+      this.noQueueOk = false;
+      this.logLimited('traccar_version_unknown', 'error', { error: (err as Error).message });
+      return;
+    }
+    this.noQueueOk = supportsNoQueue(version);
+    if (!this.noQueueOk) {
+      this.logLimited('traccar_version_unsupported', 'error', { version: typeof version === 'string' ? version.slice(0, 32) : null, minimum: MIN_TRACCAR_NOQUEUE });
     }
   }
 
@@ -180,6 +244,18 @@ export class Bridge {
   private reconnected(thing: string): void {
     this.memory.set(thing, markReconnected(this.mem(thing)));
     this.batteryWaitSince.delete(thing);
+    this.lastTravada.delete(thing); // o primeiro status depois da reconexão sai sempre
+  }
+
+  /** Aparelho do thing mudou no registro: nada do aparelho anterior vale. */
+  private forget(thing: string): void {
+    this.memory.delete(thing);
+    this.stopSentAt.delete(thing);
+    this.stolen.delete(thing);
+    this.batteryWaitSince.delete(thing);
+    this.lastTravada.delete(thing);
+    this.alarmIds.delete(thing);
+    this.awaitingGet.delete(thing);
   }
 
   private async thingOfDevice(deviceId: number): Promise<string | null> {
@@ -194,7 +270,8 @@ export class Bridge {
       thing = this.imeiToThing.get(d.uniqueId);
     }
     if (!thing) {
-      this.log.warn({ msg: 'traccar_unknown_device', imei: maskImei(d.uniqueId) });
+      const imei = maskImei(d.uniqueId);
+      this.logLimited(`traccar_unknown_device|${imei}`, 'warn', { msg: 'traccar_unknown_device', imei });
       return null;
     }
     return thing;
@@ -214,7 +291,7 @@ export class Bridge {
     if (replay && typeof raw.attributes?.blocked === 'boolean') {
       // Replay de conexão: a última posição conhecida pode ser de antes de uma reinicialização do J16. Não é status atual.
       p = { ...raw, attributes: { ...raw.attributes, blocked: undefined } };
-      this.logLimited(thing, 'traccar_replay_status_ignored', 'info', {});
+      this.logLimited(`${thing}|replay`, 'info', { msg: 'traccar_replay_status_ignored', thingName: thing });
     }
     const now = this.now();
     const before = this.mem(thing);
@@ -228,7 +305,7 @@ export class Bridge {
         const forced = applyPosition(p, { ...before, batteryPct: 0 }, this.opts.battery, now);
         if (forced.telemetry) {
           r = { ...forced, memory: { ...forced.memory, batteryPct: r.memory.batteryPct } };
-          this.logLimited(thing, 'battery_unknown', 'warn', {});
+          this.logLimited(`${thing}|battery_unknown`, 'warn', { msg: 'battery_unknown', thingName: thing });
         }
       }
     } else if (r.telemetry) {
@@ -236,25 +313,57 @@ export class Bridge {
     }
     this.memory.set(thing, r.memory);
     if (r.invalid) this.log.warn({ msg: 'telemetry_invalid', thingName: thing });
-    if (r.held && !r.telemetry) this.logLimited(thing, 'telemetry_held', 'info', { reason: r.held }, r.held);
-    if (r.telemetry) await this.publish(TOPICS.telemetry(thing), r.telemetry, 0);
+    if (r.held && !r.telemetry) this.logLimited(`${thing}|held|${r.held}`, 'info', { msg: 'telemetry_held', thingName: thing, reason: r.held });
+    if (r.telemetry && !(await this.publish(TOPICS.telemetry(thing), r.telemetry, 0)) && this.mqtt.connected === false) {
+      this.logLimited(`${thing}|mqtt_down`, 'warn', { msg: 'telemetry_skipped_mqtt_down', thingName: thing });
+    }
     if (r.movedWhileLocked) {
       // Evento de segurança: sai mesmo com a telemetria retida (ex.: bateria desconhecida).
       await this.publish(TOPICS.events(thing), { tipo: 'movimento_sem_aluguel', timestamp: new Date(Date.parse(p.fixTime)).toISOString() }, 1);
     }
-    // Cada status com o bit de corte republica `reported.travada` (confirmação fresca para a API), sempre do bit ATUAL.
+    if (!replay) await this.positionAlarms(thing, p, r.memory, now);
+    // Status com o bit de corte → `reported.travada` do bit ATUAL: na mudança ou, igual, no máximo 1/min (M5).
     const blocked = currentBlocked(r.memory);
-    if (typeof p.attributes?.blocked === 'boolean' && typeof blocked === 'boolean') await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
+    if (typeof p.attributes?.blocked === 'boolean' && typeof blocked === 'boolean') {
+      const last = this.lastTravada.get(thing);
+      if (!last || last.value !== blocked || now - last.at >= REPORT_REPEAT_MS) await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
+    }
+  }
+
+  /**
+   * Sem Notification configurada no Traccar os alarmes não chegam como `events` no WebSocket, só em `position.attributes.alarm`
+   * (I1). Mesmo mapeamento de `toDeviceEvents`; deduplicado por id de posição com o caminho `events`.
+   */
+  private async positionAlarms(thing: string, p: TraccarPosition, mem: DeviceMemory, now: number): Promise<void> {
+    const alarm = p.attributes?.alarm;
+    if (typeof alarm !== 'string' || !alarm || !this.claimAlarm(thing, p.id)) return;
+    // Heartbeat/status (`outdated`) repete o fixTime da última posição: a hora do alarme é a do servidor.
+    const at = p.outdated ? p.serverTime : p.fixTime;
+    await this.publishAlarm(thing, toDeviceEvents({ id: 0, type: 'alarm', eventTime: at, deviceId: p.deviceId, positionId: p.id, attributes: { alarm } }, mem, now), alarm);
   }
 
   private async onAlarm(thing: string, e: TraccarEvent): Promise<void> {
     if (e.type !== 'alarm') return;
-    const events = toDeviceEvents(e, this.mem(thing), this.now());
+    if (e.positionId !== undefined && !this.claimAlarm(thing, e.positionId)) return; // já saiu pela posição
+    await this.publishAlarm(thing, toDeviceEvents(e, this.mem(thing), this.now()), String(e.attributes?.alarm ?? ''));
+  }
+
+  private async publishAlarm(thing: string, events: DeviceEventMessage[], alarm: string): Promise<void> {
     if (!events.length) {
-      this.log.info({ msg: 'alarm_ignored', thingName: thing, alarm: String(e.attributes?.alarm ?? '') });
+      this.log.info({ msg: 'alarm_ignored', thingName: thing, alarm: alarm.slice(0, 64) });
       return;
     }
     for (const ev of events) await this.publish(TOPICS.events(thing), ev, 1);
+  }
+
+  /** `true` na primeira vez que o alarme da posição `id` é visto (por posição ou por evento). */
+  private claimAlarm(thing: string, id: number): boolean {
+    const ids = this.alarmIds.get(thing) ?? [];
+    if (ids.includes(id)) return false;
+    ids.push(id);
+    if (ids.length > ALARM_IDS_KEPT) ids.shift();
+    this.alarmIds.set(thing, ids);
+    return true;
   }
 
   private async onMqtt(topic: string, payload: Buffer): Promise<void> {
@@ -296,8 +405,14 @@ export class Bridge {
     for (const a of actions) {
       if (a.kind === 'report') {
         if (a.reported.modo_roubada !== undefined) this.stolen.set(thing, a.reported.modo_roubada);
-        // Eco `travada: true` de moto já travada (planDeltaFor usa o bit atual) leva a velocidade fresca, como o reported normal.
+        // Eco `travada: true` de moto já travada (bit atual e fresco): sai SEMPRE (sem a deduplicação de M5), com a velocidade fresca.
         await this.report(thing, a.reported.travada === true ? { ...a.reported, ...this.freshSpeed(thing) } : a.reported);
+        continue;
+      }
+      if (!this.noQueueOk) {
+        // C1: Traccar < 6.7.0 (ou versão desconhecida) enfileira comando de dispositivo sem sessão — nenhum comando de motor.
+        const msg = a.kind === 'engineStop' ? 'engine_stop_refused' : 'engine_resume_refused';
+        this.log.error({ msg, thingName: thing, reason: 'traccar_no_noqueue' });
         continue;
       }
       const device = this.deviceOf(thing);
@@ -324,11 +439,11 @@ export class Bridge {
       this.stopSentAt.delete(thing);
       if (sent === 'queued') this.log.error({ msg: 'engine_resume_queued', thingName: thing });
       else this.log.info({ msg: 'engine_resume_sent', thingName: thing });
-      if (currentBlocked(this.mem(thing)) === false) await this.report(thing, { travada: false });
+      if (freshBlocked(this.mem(thing), this.now()) === false) await this.report(thing, { travada: false });
     }
   }
 
-  /** Chamado só com a guarda liberada (`planDeltaFor` sem recusa). Nunca deixa o corte na fila do Traccar (`noQueue`). */
+  /** Chamado só com a guarda liberada (`planDeltaFor` sem recusa) e Traccar ≥ 6.7.0. Nunca deixa o corte na fila (`noQueue`). */
   private async sendStop(thing: string, device: TraccarDevice): Promise<void> {
     let sent: 'sent' | 'queued';
     try {
@@ -340,7 +455,7 @@ export class Bridge {
     }
     this.stopSentAt.set(thing, this.now());
     if (sent === 'queued') {
-      // Só acontece com um Traccar que ignora `noQueue`: o corte seria entregue na reconexão, em qualquer velocidade. Alerta.
+      // Não deveria acontecer com ≥ 6.7.0 e `noQueue`: o corte seria entregue na reconexão, em qualquer velocidade. Alerta.
       this.log.error({ msg: 'engine_stop_queued', thingName: thing });
       return;
     }
@@ -353,10 +468,10 @@ export class Bridge {
     return { velocidade_kmh: last.speedKmh };
   }
 
-  /** Reported completo (reconexão). `travada` só se o bit ATUAL for conhecido — nunca de memória anterior à reconexão. */
+  /** Reported completo (reconexão). `travada` só se o bit atual e fresco for conhecido — nunca de memória anterior. */
   private fullReported(thing: string): ReportedState {
     const model = this.deviceOf(thing)?.model;
-    const blocked = currentBlocked(this.mem(thing));
+    const blocked = freshBlocked(this.mem(thing), this.now());
     return {
       ...(typeof blocked === 'boolean' ? { travada: blocked } : {}),
       limite_kmh: FIXED_LIMIT_KMH,
@@ -366,21 +481,48 @@ export class Bridge {
     };
   }
 
-  private logLimited(thing: string, msg: string, level: 'info' | 'warn', extra: Record<string, unknown>, key = ''): void {
-    const id = `${thing}|${msg}|${key}`;
-    const at = this.lastLogAt.get(id);
+  /** Um log por `key` a cada `LOG_RATE_MS` (relógio da ponte). `entry.msg` vale; sem ele, o nome do log é a própria `key`. */
+  private logLimited(key: string, level: 'info' | 'warn' | 'error', entry: Record<string, unknown>): void {
+    const at = this.lastLogAt.get(key);
     const now = this.now();
     if (at !== undefined && now - at < LOG_RATE_MS) return;
-    this.lastLogAt.set(id, now);
-    this.log[level]({ msg, thingName: thing, ...extra });
+    this.lastLogAt.set(key, now);
+    this.log[level]({ msg: key, ...entry });
   }
 
+  /**
+   * `reported` do shadow. Com o MQTT fora, não publica (o mqtt.js guardaria na fila offline e entregaria um estado velho na
+   * reconexão); `onMqttConnect` republica o estado atual.
+   */
   private async report(thing: string, reported: ReportedState): Promise<void> {
-    await this.publish(TOPICS.shadowUpdate(thing), { state: { reported } }, 1);
+    if (this.mqtt.connected === false) return;
+    if (await this.publish(TOPICS.shadowUpdate(thing), { state: { reported } }, 1)) {
+      if (typeof reported.travada === 'boolean') this.lastTravada.set(thing, { value: reported.travada, at: this.now() });
+    }
   }
 
-  private async publish(topic: string, payload: unknown, qos: 0 | 1): Promise<void> {
-    await this.mqtt.publishAsync(topic, JSON.stringify(payload), { qos });
+  /** `false` = não publicado (QoS 0 com o MQTT fora) ou sem conclusão no prazo (log `mqtt_publish_timeout`). */
+  private async publish(topic: string, payload: unknown, qos: 0 | 1): Promise<boolean> {
+    if (qos === 0 && this.mqtt.connected === false) return false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<'timeout'>((resolve) => {
+      timer = setTimeout(() => resolve('timeout'), this.publishTimeoutMs);
+      timer.unref?.();
+    });
+    const sent = this.mqtt.publishAsync(topic, JSON.stringify(payload), { qos }).then(() => 'ok' as const);
+    sent.catch(() => undefined);
+    try {
+      if ((await Promise.race([sent, timeout])) === 'timeout') {
+        this.log.error({ msg: 'mqtt_publish_timeout', thingName: thingOf(topic), qos });
+        return false;
+      }
+      return true;
+    } catch (err) {
+      this.log.error({ msg: 'mqtt_publish_failed', thingName: thingOf(topic), error: (err as Error).message });
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   private serial(key: string, fn: () => Promise<void>): Promise<void> {

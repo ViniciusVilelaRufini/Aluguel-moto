@@ -24,6 +24,14 @@ export class FakeTraccar {
   honorNoQueue = true;
   /** Últimas posições mandadas no replay de cada conexão do WebSocket. */
   latest: TraccarPosition[] = [];
+  /** `GET /api/server` → `{ version }` (C1: `noQueue` só a partir do 6.7.0). `undefined` = campo ausente. */
+  serverVersion: string | undefined = '6.7.0';
+  serverStatus = 200;
+  /**
+   * `false` (padrão, como um Traccar sem Notification configurada): alarmes NÃO chegam como `events` no WebSocket, só em
+   * `position.attributes.alarm`. `true` = há Notification de alarme e `push` repassa `events`.
+   */
+  notifications = false;
   /** Conexões de WebSocket aceitas até agora. */
   connections = 0;
   private server?: Server;
@@ -61,6 +69,9 @@ export class FakeTraccar {
       if (p.get('email') !== 'bridge@volti.local' || p.get('password') !== 'secret') return void res.writeHead(401).end();
       return void res.writeHead(200, { 'Set-Cookie': `${SESSION}; Path=/; HttpOnly`, 'Content-Type': 'application/json' }).end('{}');
     }
+    if (req.method === 'GET' && req.url === '/api/server') {
+      return this.serverStatus === 200 ? json(200, { id: 1, ...(this.serverVersion !== undefined ? { version: this.serverVersion } : {}) }) : void res.writeHead(this.serverStatus).end();
+    }
     if (!(req.headers.cookie ?? '').includes(SESSION)) return void res.writeHead(401).end();
     if (req.method === 'GET' && req.url === '/api/devices') return json(200, this.devices);
     if (req.method === 'POST' && req.url === '/api/commands/send') {
@@ -77,7 +88,10 @@ export class FakeTraccar {
 
   /** Mensagem do WebSocket do Traccar para todos os clientes conectados. */
   push(msg: TraccarSocketMessage): void {
-    for (const ws of this.sockets) ws.send(JSON.stringify(msg));
+    const { events, ...rest } = msg;
+    const out: TraccarSocketMessage = this.notifications && events ? { ...rest, events } : rest;
+    if (!Object.keys(out).length) return;
+    for (const ws of this.sockets) ws.send(JSON.stringify(out));
   }
 
   /** Derruba as conexões do WebSocket (o cliente deve reconectar). */

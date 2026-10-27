@@ -40,6 +40,13 @@ export class TraccarRest {
     return (await res.json()) as TraccarDevice[];
   }
 
+  /** `GET /api/server`: a ponte lê `version` (C1: `noQueue` só a partir do Traccar 6.7.0). */
+  async server(): Promise<{ version?: unknown }> {
+    const res = await this.request('/api/server');
+    if (!res.ok) throw new Error(`traccar_server_failed_${res.status}`);
+    return (await res.json()) as { version?: unknown };
+  }
+
   /**
    * Envia SEM fila (`attributes.noQueue`): sem sessão do dispositivo o Traccar recusa (erro HTTP → exceção) em vez de guardar o
    * comando e entregá-lo na reconexão, em qualquer velocidade. 200 = enviado ao dispositivo; 202 = enfileirado mesmo assim

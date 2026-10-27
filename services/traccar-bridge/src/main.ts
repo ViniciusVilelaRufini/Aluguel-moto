@@ -14,8 +14,7 @@ async function main(): Promise<void> {
   const rest = new TraccarRest(cfg.traccarUrl, cfg.traccarEmail, cfg.traccarPassword);
   const mqtt = connectMqtt(cfg);
   const bridge = new Bridge(mqtt, rest, new PgRegistry(pgQuery(cfg.database)), { iotMode: cfg.iotMode, battery: cfg.battery, log });
-  mqtt.on('connect', () => void bridge.resubscribe().catch((err: Error) => log.error({ msg: 'mqtt_resubscribe_failed', error: err.message })));
-  // Traccar e banco podem subir depois da ponte: tenta até conseguir.
+  // A ponte trata o `connect` do MQTT (reassina e republica o estado atual). Traccar e banco podem subir depois: tenta até conseguir.
   for (let attempt = 1; ; attempt++) {
     try {
       if (cfg.traccarBootstrapAdmin && (await rest.bootstrapFirstUser('Volti dev'))) log.info({ msg: 'traccar_first_user_created' });

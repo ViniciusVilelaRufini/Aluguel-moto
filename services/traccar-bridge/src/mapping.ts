@@ -6,6 +6,8 @@ import { knotsToKmh, rssiToSignal, voltageToPct, type BatteryModel } from './uni
 export interface DeviceMemory {
   /** Último bit de corte (`attributes.blocked`). Leia SEMPRE por `currentBlocked(mem)`, nunca direto. */
   blocked?: boolean;
+  /** Relógio de ingestão (ms) do último status com `attributes.blocked`. Base de `freshBlocked`. */
+  blockedAt?: number;
   ignition?: boolean;
   signal?: number;
   batteryPct?: number;
@@ -34,7 +36,19 @@ export function currentBlocked(mem: DeviceMemory): boolean | undefined {
  * a âncora. Só um `attributes.blocked` recebido depois (heartbeat ou posição) volta a valer. Não muta a entrada.
  */
 export function markReconnected(mem: DeviceMemory): DeviceMemory {
-  return { ...mem, blocked: undefined, lockAnchor: undefined, awaitingStatus: true };
+  return { ...mem, blocked: undefined, blockedAt: undefined, lockAnchor: undefined, awaitingStatus: true };
+}
+
+/**
+ * Um J16 que reconecta numa sessão TCP nova pode não aparecer como offline→online no Traccar. Heartbeat obrigatório ≤ 60 s:
+ * bit de corte recebido há mais que isto é desconhecido para decidir `already_blocked` e o eco `travada: true`.
+ */
+export const BLOCKED_FRESH_MS = 90_000;
+
+/** `currentBlocked` só se o status com o bit chegou há no máximo `BLOCKED_FRESH_MS` (sem hora = desconhecido). */
+export function freshBlocked(mem: DeviceMemory, now: number): boolean | undefined {
+  if (mem.blockedAt === undefined || now - mem.blockedAt > BLOCKED_FRESH_MS) return undefined;
+  return currentBlocked(mem);
 }
 
 export function haversineM(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
@@ -75,6 +89,7 @@ export function applyPosition(
   const a = p.attributes ?? {};
   if (typeof a.blocked === 'boolean') {
     next.blocked = a.blocked;
+    next.blockedAt = now;
     next.awaitingStatus = false;
   }
   if (typeof a.ignition === 'boolean') next.ignition = a.ignition;

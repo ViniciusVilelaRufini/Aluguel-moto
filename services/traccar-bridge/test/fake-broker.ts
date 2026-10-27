@@ -11,6 +11,10 @@ export function topicMatches(filter: string, topic: string): boolean {
 
 export class FakeMqttClient {
   connected = true;
+  /** M3: QoS 1 que nunca recebe PUBACK (publicação travada). */
+  stallQos1 = false;
+  /** Como o mqtt.js: publicação feita desconectado fica na fila offline e sai na reconexão. */
+  private readonly offline: Array<{ topic: string; payload: string; done: () => void }> = [];
   private readonly filters = new Set<string>();
   private readonly handlers: Record<string, Array<(...args: any[]) => void>> = {};
 
@@ -29,8 +33,24 @@ export class FakeMqttClient {
   matches(topic: string): boolean {
     return [...this.filters].some((f) => topicMatches(f, topic));
   }
-  async publishAsync(topic: string, payload: string): Promise<void> {
+  async publishAsync(topic: string, payload: string, opts?: { qos?: 0 | 1 }): Promise<void> {
+    if (!this.connected) return new Promise<void>((done) => void this.offline.push({ topic, payload, done }));
+    if (this.stallQos1 && opts?.qos === 1) return new Promise<void>(() => undefined);
     this.broker.deliver(this.id, topic, payload);
+  }
+  /** Queda da conexão MQTT. */
+  disconnect(): void {
+    this.connected = false;
+    this.emit('offline');
+  }
+  /** Reconexão: entrega a fila offline (como o mqtt.js) e emite `connect`. */
+  reconnect(): void {
+    this.connected = true;
+    for (const m of this.offline.splice(0)) {
+      this.broker.deliver(this.id, m.topic, m.payload);
+      m.done();
+    }
+    this.emit('connect');
   }
   async subscribeAsync(topics: string[]): Promise<void> {
     for (const t of topics) this.filters.add(t);

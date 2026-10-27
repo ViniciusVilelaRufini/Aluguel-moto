@@ -3,6 +3,8 @@ import type { BridgeConfig } from './config';
 
 /** Subconjunto do cliente `mqtt` v5 usado pela ponte (o broker falso dos testes implementa o mesmo). */
 export interface MqttLike {
+  /** `false` com a conexão caída (mqtt.js). Ausente = considerado conectado. */
+  readonly connected?: boolean;
   publishAsync(topic: string, payload: string, opts?: { qos?: 0 | 1 }): Promise<unknown>;
   subscribeAsync(topics: string[], opts?: { qos?: 0 | 1 }): Promise<unknown>;
   on(event: 'message', cb: (topic: string, payload: Buffer) => void): unknown;

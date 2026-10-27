@@ -3,7 +3,7 @@ import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cutRefusal } from './delta';
-import { applyPosition, currentBlocked, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
+import { applyPosition, BLOCKED_FRESH_MS, currentBlocked, freshBlocked, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { TraccarEvent, TraccarPosition } from './traccar/types';
 
 const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../../packages/contracts/schemas', name), 'utf8'));
@@ -97,6 +97,25 @@ describe('reconexão: travada nunca vem de memória velha (decisão 4)', () => {
     expect(hb.memory.awaitingStatus).toBe(false);
     const hb2 = AP(pos({ outdated: true, attributes: { blocked: false } }), re);
     expect(currentBlocked(hb2.memory)).toBe(false);
+  });
+});
+
+describe('I2: frescor do bit de corte (sessão TCP nova invisível no Traccar)', () => {
+  it('applyPosition guarda a hora de RECEBIMENTO do último status com blocked; posição sem blocked não a renova', () => {
+    const hb = AP(pos({ outdated: true, attributes: { blocked: true } }), {}, NOW);
+    expect(hb.memory.blockedAt).toBe(NOW);
+    const later = AP(pos({ fixTime: '2026-10-27T12:10:30.000Z', speed: 0, attributes: { power: 72 } }), hb.memory, NOW + 30_000);
+    expect(later.memory.blockedAt).toBe(NOW);
+  });
+
+  it('freshBlocked: bit de até 90 s vale; mais velho, sem hora ou após reconexão é desconhecido', () => {
+    const mem = AP(pos({ outdated: true, attributes: { blocked: true } }), {}, NOW).memory;
+    expect(BLOCKED_FRESH_MS).toBe(90_000);
+    expect(freshBlocked(mem, NOW + BLOCKED_FRESH_MS)).toBe(true);
+    expect(freshBlocked(mem, NOW + BLOCKED_FRESH_MS + 1)).toBeUndefined();
+    expect(freshBlocked({ blocked: false }, NOW)).toBeUndefined();
+    expect(freshBlocked(markReconnected(mem), NOW)).toBeUndefined();
+    expect(markReconnected(mem).blockedAt).toBeUndefined();
   });
 });
 

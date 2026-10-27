@@ -4,10 +4,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as deltaModule from './delta';
 import { cutRefusal, parseDelta, planDeltaFor, planReconnect } from './delta';
-import { markReconnected } from './mapping';
+import { BLOCKED_FRESH_MS, markReconnected } from './mapping';
 
 const now = Date.parse('2026-10-27T12:00:30Z');
 const fresh = { last: { fixTime: now - 2_000, speedKmh: 0.5, lat: 0, lng: 0 } };
+/** Moto travada com status recebido há 1 s (bit de corte fresco). */
+const lockedNow = { ...fresh, blocked: true, blockedAt: now - 1_000 };
 const plan = (d: Parameters<typeof planDeltaFor>[0]) => planDeltaFor(d, { online: true, mem: fresh, now }).actions;
 
 describe('delta do shadow → ações (spec GT06 §6.4)', () => {
@@ -56,7 +58,7 @@ describe('cutRefusal (segunda guarda da ponte)', () => {
   it('corta só online, sem corte ativo, sem envio recente e com posição de até 10 s abaixo de 3 km/h', () => {
     expect(cutRefusal({ online: true, mem: fresh, now })).toBeNull();
     expect(cutRefusal({ online: false, mem: fresh, now })).toBe('offline');
-    expect(cutRefusal({ online: true, mem: { ...fresh, blocked: true }, now })).toBe('already_blocked');
+    expect(cutRefusal({ online: true, mem: lockedNow, now })).toBe('already_blocked');
     expect(cutRefusal({ online: true, mem: fresh, now, lastStopSentAt: now - 29_999 })).toBe('recently_sent');
     expect(cutRefusal({ online: true, mem: fresh, now, lastStopSentAt: now - 30_000 })).toBeNull();
     expect(cutRefusal({ online: true, mem: {}, now })).toBe('no_position');
@@ -64,8 +66,16 @@ describe('cutRefusal (segunda guarda da ponte)', () => {
     expect(cutRefusal({ online: true, mem: { last: { ...fresh.last, speedKmh: 3 } }, now })).toBe('moving');
   });
 
+  it('I2: bit de corte recebido há mais de 90 s (ou sem hora) é desconhecido: não é already_blocked', () => {
+    expect(cutRefusal({ online: true, mem: { ...lockedNow, blockedAt: now - BLOCKED_FRESH_MS }, now })).toBe('already_blocked');
+    expect(cutRefusal({ online: true, mem: { ...lockedNow, blockedAt: now - BLOCKED_FRESH_MS - 1 }, now })).toBeNull();
+    expect(cutRefusal({ online: true, mem: { ...fresh, blocked: true }, now })).toBeNull();
+    const r = planDeltaFor({ travada: true }, { online: true, mem: { ...lockedNow, blockedAt: now - 90_001 }, now });
+    expect(r).toEqual({ actions: [{ kind: 'engineStop' }], refusal: null }); // sem eco travada:true de bit velho
+  });
+
   it('bit de corte velho (antes da reconexão) não conta como already_blocked', () => {
-    expect(cutRefusal({ online: true, mem: markReconnected({ ...fresh, blocked: true }), now })).toBeNull();
+    expect(cutRefusal({ online: true, mem: markReconnected(lockedNow), now })).toBeNull();
   });
 });
 
@@ -77,18 +87,18 @@ describe('planDeltaFor: delta com contexto da moto (decisão 3)', () => {
   });
 
   it('travada:true com a moto já travada (status atual) → eco reported.travada:true, sem engineStop', () => {
-    const r = planDeltaFor({ travada: true }, { ...ctx, mem: { ...fresh, blocked: true } });
+    const r = planDeltaFor({ travada: true }, { ...ctx, mem: lockedNow });
     expect(r.refusal).toBe('already_blocked');
     expect(r.actions).toEqual([{ kind: 'report', reported: { travada: true } }]);
   });
 
   it('eco junta-se aos demais campos reported do mesmo delta', () => {
-    const r = planDeltaFor({ travada: true, limite_kmh: 6, modo_roubada: true }, { ...ctx, mem: { ...fresh, blocked: true } });
+    const r = planDeltaFor({ travada: true, limite_kmh: 6, modo_roubada: true }, { ...ctx, mem: lockedNow });
     expect(r.actions).toEqual([{ kind: 'report', reported: { travada: true, limite_kmh: 32, modo_roubada: true } }]);
   });
 
   it('eco só com status atual: após reconexão sem status novo não ecoa true da memória velha', () => {
-    const r = planDeltaFor({ travada: true }, { ...ctx, mem: markReconnected({ ...fresh, blocked: true }) });
+    const r = planDeltaFor({ travada: true }, { ...ctx, mem: markReconnected(lockedNow) });
     expect(r.refusal).toBeNull(); // bit velho descartado: a guarda decide por posição fresca e parada, não por "já travada"
     expect(r.actions).not.toContainEqual({ kind: 'report', reported: { travada: true } });
   });
@@ -122,7 +132,7 @@ describe('F6: todo reported da ponte valida no schema do shadow', () => {
 
   it('reports de planDeltaFor (inclusive o eco travada:true) e planReconnect', () => {
     const deltas = [{ travada: true, limite_kmh: 6, modo_roubada: true }, { limite_kmh: 0 }, { modo_roubada: false }, { travada: false, limite_kmh: 20 }];
-    const ctxs = [{ online: true, mem: fresh, now }, { online: true, mem: { ...fresh, blocked: true }, now }, { online: false, mem: fresh, now }];
+    const ctxs = [{ online: true, mem: fresh, now }, { online: true, mem: lockedNow, now }, { online: false, mem: fresh, now }];
     const actions = [
       ...deltas.flatMap((d) => ctxs.flatMap((c) => planDeltaFor(d, c).actions)),
       ...deltas.flatMap((d) => planReconnect(d)),

@@ -1,5 +1,5 @@
 import { FIXED_LIMIT_KMH, type DesiredDelta, type ReportedState } from './contract';
-import { currentBlocked, type DeviceMemory } from './mapping';
+import { freshBlocked, type DeviceMemory } from './mapping';
 
 export type BridgeAction = { kind: 'engineStop' } | { kind: 'engineResume' } | { kind: 'report'; reported: ReportedState };
 
@@ -56,11 +56,11 @@ export interface CutContext {
 /**
  * Segunda guarda (a primeira é a API): `engineStop` só com o dispositivo online no Traccar, sem corte ativo, sem outro
  * `engineStop` nos últimos 30 s e com a posição mais recente de até 10 s abaixo de 3 km/h. `null` = pode cortar.
- * "Corte ativo" usa só o bit atual (`currentBlocked`): depois de reconectar, sem status novo, não vale memória velha.
+ * "Corte ativo" usa só o bit atual e fresco (`freshBlocked`, ≤ 90 s): depois de reconectar ou sem status recente, não vale memória velha.
  */
 export function cutRefusal(input: CutContext): CutRefusal | null {
   if (!input.online) return 'offline';
-  if (currentBlocked(input.mem) === true) return 'already_blocked';
+  if (freshBlocked(input.mem, input.now) === true) return 'already_blocked';
   if (input.lastStopSentAt !== undefined && input.now - input.lastStopSentAt < CUT_RESEND_MS) return 'recently_sent';
   const last = input.mem.last;
   if (!last) return 'no_position';
@@ -74,7 +74,7 @@ export function cutRefusal(input: CutContext): CutRefusal | null {
  * - guarda liberou → `engineStop`;
  * - `already_blocked` → eco `report { travada: true }` (a API só confirma o travamento por um reported.travada vindo
  *   depois da graça de reconexão; um lock repetido numa moto já travada depende deste eco). O `true` vem do bit ATUAL
- *   (`currentBlocked`), nunca de memória anterior à reconexão;
+ *   e fresco (`freshBlocked`, ≤ 90 s), nunca de memória anterior à reconexão;
  * - qualquer outra recusa → nada de comando/eco; `refusal` volta para a Task 9 logar (sem IMEI).
  * Os demais campos (limite fixo, modo_roubada) saem sempre no mesmo `report`.
  */
