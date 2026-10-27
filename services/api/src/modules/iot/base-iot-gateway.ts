@@ -266,8 +266,12 @@ export abstract class BaseIotGateway implements IotGateway {
 
   /** Rastreador só relé: espera a moto parar de forma confirmada e só então grava `travada: true` (sem rampa, sem limite). */
   private async lockRelayOnly(req: CommandRequest): Promise<CommandOutcome> {
-    await this.live.load(req.thingName);
+    const s = await this.live.load(req.thingName);
     const online = this.live.isOnline(req.thingName);
+    // Já travada pelo rastreador (mesma fonte da rampa, `safeLockState().locked`: estado ao vivo do reported/telemetria, nunca o
+    // desired): confirma sem gravar nada. Gravar `travada: true` igual ao reported não gera delta, a ponte não reporta de novo e o
+    // prazo do corte soltaria a moto com `travada: false` (revisão Task 4, I1).
+    if (online && s?.locked === true) return { commandId: req.commandId, status: 'confirmed' };
     const wait = this.registerWaiter(req.commandId);
     let initial: CommandOutcome;
     try {
@@ -407,7 +411,8 @@ export abstract class BaseIotGateway implements IotGateway {
     await this.safeLockLocal.onReported(thingName, forLock, meta.timestamps ?? {});
     // Redis fora: a rampa compartilhada não avança, mas os comandos que esperam este reported (ex.: redução de limite) confirmam.
     await this.safeLock.onReported(thingName, forLock, meta.timestamps ?? {}).catch((err: Error) => this.logger.error({ msg: 'safe_lock_reported_failed', thingName, error: err.message }));
-    await this.relayLock.onReported(thingName, forLock, meta.timestamps ?? {}).catch((err: Error) => this.logger.error({ msg: 'relay_lock_reported_failed', thingName, error: err.message }));
+    // Só relé: o reported bruto — qualquer velocidade de movimento, aceita ou não, zera a sequência parada (falha segura; L3).
+    await this.relayLock.onReported(thingName, reported, meta.timestamps ?? {}).catch((err: Error) => this.logger.error({ msg: 'relay_lock_reported_failed', thingName, error: err.message }));
     const s = this.live.get(thingName);
     for (const t of [...this.tracked.values()]) {
       if (t.thingName !== thingName) continue;

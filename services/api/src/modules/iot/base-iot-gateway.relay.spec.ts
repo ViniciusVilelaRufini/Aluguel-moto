@@ -1,7 +1,8 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EV, IotCommandUpdatedEvent } from '../../common/events';
 import { MemoryRedisStore } from '../../redis/redis-store';
-import { BaseIotGateway } from './base-iot-gateway';
+import { BaseIotGateway, type GatewayOptions } from './base-iot-gateway';
+import { MemoryRelayLockStore } from './relay-lock.store';
 import { FakeClock } from './clock';
 import { LiveStateStore } from './live-state.store';
 import type { DesiredState, IotTransport, MomentaryCommand } from './shadow-transport';
@@ -25,14 +26,14 @@ class TestGateway extends BaseIotGateway {}
 const T = 'moto-0901';
 const VEHICLE_ID = '99999999-9999-4999-8999-999999999999';
 
-function setup() {
+function setup(gwOpts: Partial<GatewayOptions> = {}) {
   const clock = new FakeClock(Date.parse('2026-10-27T12:00:00Z'));
   const transport = new FakeTransport(clock);
   const events = new EventEmitter2();
   const updates: IotCommandUpdatedEvent[] = [];
   events.on(EV.IOT_COMMAND_UPDATED, (e: IotCommandUpdatedEvent) => updates.push(e));
   const live = new LiveStateStore(new MemoryRedisStore(), clock);
-  const gw = new TestGateway(transport, live, clock, events, { confirmWaitMs: 3_000, commandTimeoutMs: 30_000 });
+  const gw = new TestGateway(transport, live, clock, events, { confirmWaitMs: 3_000, commandTimeoutMs: 30_000, ...gwOpts });
   const rentals = { openRentalId: async () => undefined, trackingRentalId: async () => undefined, invalidate: () => undefined };
   const prisma = { vehicle: { findUnique: async () => ({ id: VEHICLE_ID }) }, trackPoint: { create: async () => ({}) } };
   const svc = new TelemetryService(gw, { onPosition: async () => undefined }, rentals, prisma as any, events, clock, { trackRetentionDays: 90 });
@@ -194,5 +195,109 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     void s.gw.lock({ commandId: 'c1', thingName: T, authority: 'staff', lockOrigin: 'staff' });
     await s.clock.advance(10);
     expect(s.transport.desired[0].desired).toEqual({ limite_kmh: 15 });
+  });
+
+  describe('correções da revisão (Task 4, fix 1)', () => {
+    it('I1: moto já travada (reported.travada=true) e online → confirmed sem gravar nada; nunca solta (travada:false) depois', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      expect(await lockRelay(s)).toEqual({ commandId: 'c1', status: 'confirmed' });
+      for (let i = 0; i < 60; i++) await s.clock.advance(5_000);
+      expect(s.transport.desired).toEqual([]);
+      expect(s.updates).toEqual([]);
+    });
+
+    it('I1: reported.travada=false → fluxo só relé normal (in_progress, corta com a moto parada)', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: false });
+      expect(await lockRelay(s)).toEqual({ commandId: 'c1', status: 'in_progress' });
+      await s.sample(0);
+      await s.clock.advance(10_000);
+      await s.sample(0);
+      expect(s.cuts()).toHaveLength(1);
+    });
+
+    it('L1: offline → pending; ao reconectar a espera recomeça e o comando volta a in_progress', async () => {
+      const s = setup();
+      expect(await s.gw.lock({ commandId: 'c1', thingName: T, controlMode: 'relay_only' })).toMatchObject({ status: 'pending', reason: 'offline' });
+      await s.svc.presence(T, true);
+      await s.clock.advance(1_000); // EMIT_GRACE_MS depois do retorno pending
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'in_progress' });
+    });
+
+    it('L1: cai no meio da espera → pending/offline; volta → in_progress', async () => {
+      const s = setup();
+      await online(s);
+      await lockRelay(s);
+      await s.svc.presence(T, false);
+      await s.clock.advance(1_000);
+      expect(s.updates).toEqual([{ commandId: 'c1', status: 'pending', reason: 'offline' }]);
+      await s.svc.presence(T, true);
+      await s.clock.advance(1_000);
+      expect(s.updates).toEqual([
+        { commandId: 'c1', status: 'pending', reason: 'offline' },
+        { commandId: 'c1', status: 'in_progress' },
+      ]);
+    });
+
+    it('L3: reported com velocidade de movimento não aceita (polling sem horário) também zera a sequência parada', async () => {
+      const s = setup();
+      await online(s);
+      await lockRelay(s);
+      await s.sample(0);
+      await s.clock.advance(5_000);
+      await s.gw.onReported(T, { velocidade_kmh: 15 }, { fromPoll: true });
+      await s.clock.advance(5_000);
+      await s.sample(0);
+      expect(s.cuts()).toEqual([]);
+    });
+
+    it('L5: unlock com o corte já enviado → travada:false, o lock termina failed e o prazo do corte não grava nada depois', async () => {
+      const s = setup();
+      await online(s);
+      await lockRelay(s);
+      await s.sample(0);
+      await s.clock.advance(10_000);
+      await s.sample(0);
+      expect(s.cuts()).toHaveLength(1);
+      const p = s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await s.clock.advance(10);
+      await s.gw.onReported(T, { travada: false });
+      expect(await p).toEqual({ commandId: 'u1', status: 'confirmed' });
+      for (let i = 0; i < 60; i++) await s.clock.advance(5_000);
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: false }]);
+      expect(s.updates.filter((u) => u.commandId === 'c1')).toEqual([{ commandId: 'c1', status: 'failed' }]);
+    });
+
+    it('L5: Redis fora no lock só relé → a chamada falha (o CommandsService grava failed/timeout) e nada é publicado', async () => {
+      const broken = new MemoryRelayLockStore();
+      broken.withLock = async () => {
+        throw new Error('redis down');
+      };
+      const s = setup({ relayLockStore: broken });
+      await online(s, 0);
+      await expect(s.gw.lock({ commandId: 'c1', thingName: T, authority: 'staff', controlMode: 'relay_only' })).rejects.toThrow('redis down');
+      for (let i = 0; i < 30; i++) await s.clock.advance(5_000);
+      expect(s.transport.desired).toEqual([]);
+      expect(s.updates).toEqual([]);
+    });
+
+    it('L5: reconexão percebida por lacuna de telemetria zera a sequência (graça antes de contar parada de novo)', async () => {
+      const s = setup();
+      await online(s);
+      await lockRelay(s);
+      const spy = jest.spyOn(s.gw.relayLock, 'onReconnected');
+      await s.sample(0);
+      await s.clock.advance(16_000); // > IOT_RECONNECT_GAP_MS (15 s), moto ainda online
+      await s.sample(0);
+      expect(spy).toHaveBeenCalledWith(T);
+      await s.clock.advance(5_000);
+      await s.sample(0);
+      await s.clock.advance(5_000);
+      await s.sample(0);
+      expect(s.cuts()).toEqual([]);
+    });
   });
 });

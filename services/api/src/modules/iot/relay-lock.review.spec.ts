@@ -122,7 +122,11 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     await s.sample(0); // espera da moto: não conta
     await s.svc.onConnectivity(T, true, { online: true });
     await s.clock.advance(100_000); // < 120 s da reconexão
-    expect(s.outcomes).toHaveLength(1);
+    // Reconectada: só o `in_progress` da espera retomada (Task 4 fix 1, L1); nenhum did_not_stop.
+    expect(s.outcomes).toEqual([
+      { commandId: 'c1', status: 'pending', reason: 'offline' },
+      { commandId: 'c1', status: 'in_progress' },
+    ]);
     await s.sample(0);
     await s.clock.advance(10_000);
     await s.sample(0);

@@ -208,7 +208,7 @@ export class RelayLockService {
         return;
       }
       if (lock.phase !== 'waiting_online' || !state.online) return;
-      await this.begin(lock);
+      await this.resume(lock);
     });
   }
 
@@ -262,7 +262,7 @@ export class RelayLockService {
       }
       if (fromSweep && lock.phase === 'waiting_online' && this.opts.probe) {
         const state = await this.opts.probe(thingName);
-        if (state?.online) await this.begin(lock);
+        if (state?.online) await this.resume(lock);
       }
     });
   }
@@ -276,6 +276,12 @@ export class RelayLockService {
     lock.deadlineAt = now + (this.opts.stopTimeoutMs ?? RELAY_STOP_TIMEOUT_MS);
     await this.save(lock);
     this.schedule(lock);
+  }
+
+  /** `waiting_online` → `waiting_stop` na reconexão: os comandos que ouviram `pending`/`offline` voltam a `in_progress` (L1). */
+  private async resume(lock: RelayLockState): Promise<void> {
+    await this.begin(lock);
+    this.emit(lock.commandIds, { status: 'in_progress' });
   }
 
   /** Grava o estado `cutting` **antes** de publicar: nenhuma outra instância grava o corte de novo. */

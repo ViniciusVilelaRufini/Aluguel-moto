@@ -229,6 +229,23 @@ describe('Comandos remotos', () => {
         expect(iot.lock.mock.calls[0][0]).not.toHaveProperty('controlMode');
       });
 
+      it('tracker: null → caminho speed_control (sem controlMode; speed_limit chega ao gateway)', async () => {
+        h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, tracker: null } as any);
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio manual', actor: operator });
+        expect(iot.lock.mock.calls[0][0]).not.toHaveProperty('controlMode');
+        const out = await service.dispatch({ vehicleId: VEHICLE_ID, type: 'speed_limit', speedLimitKmh: 6, reason: 'Zona', actor: operator });
+        expect(iot.setSpeedLimit).toHaveBeenCalledTimes(1);
+        expect(iot.setSpeedLimit.mock.calls[0][0]).not.toHaveProperty('controlMode');
+        expect(out.status).toBe('confirmed');
+      });
+
+      it('gateway lança no lock só relé (Redis fora) → failed/timeout', async () => {
+        h.prisma.vehicle.findUnique.mockResolvedValue(relayVehicle as any);
+        iot.lock.mockRejectedValueOnce(new Error('redis down'));
+        const out = await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio manual', actor: operator });
+        expect(out).toMatchObject({ status: 'failed', statusReason: 'timeout' });
+      });
+
       it('a leitura da moto inclui o controlMode do Tracker', async () => {
         await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio manual', actor: operator });
         expect(h.prisma.vehicle.findUnique).toHaveBeenCalledWith(expect.objectContaining({ include: { tracker: { select: { controlMode: true } } } }));
