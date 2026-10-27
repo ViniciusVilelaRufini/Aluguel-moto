@@ -103,7 +103,9 @@ ponte real → broker em memória → pilha IoT real da API (`BaseIotGateway`, `
 um status seguinte; andando o tempo todo → `did_not_stop` sem `engineStop` nem `travada:false`; moto já travada → `confirmed`
 sem corte; ordem telemetria → reported da ponte; GPS 8 s atrás (mais que a cadência) com reported fora de banda a cada posição
 → andando nada corta, parada corta e confirma; Traccar 6.5 → nenhum comando de motor (lock e unlock); WebSocket que reconecta
-com bit de corte velho no replay → nada confirma; moto offline no meio → `pending`/`offline` → `in_progress`.
+com bit de corte velho no replay → nada confirma; moto offline no meio → `pending`/`offline` → `in_progress`; corte feito com
+status atrasado → `timeout` limpa o pedido (`travada:null`, nunca `false`) → status `blocked:true` e reconexão → nenhum
+`engineResume` (a moto continua travada).
 
 Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuário `volti`, sem root; base `node:24-alpine` fixada
 por digest — para atualizar, troque o `ARG NODE_IMAGE`). Dev single: `deploy/single/gt06.sh` e `deploy/single/cloudshell.md`. A
