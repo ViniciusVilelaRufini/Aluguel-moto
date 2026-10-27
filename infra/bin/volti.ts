@@ -57,7 +57,7 @@ const { app } =
         alarmEmail: get('alarmEmail'),
         budgetEmail: get('budgetEmail'),
         apiRunSeed: get('apiRunSeed') === 'true',
-        traccar: get('gt06Things') ? { gt06Things: get('gt06Things')!.split(','), apnCidrs: get('apnCidrs')?.split(','), bridgeImageTag: get('bridgeImageTag') } : undefined,
+        traccar: get('gt06Things') ? { gt06Things: get('gt06Things')!.split(','), apnCidrs: get('apnCidrs')?.split(','), bridgeImageTag: get('bridgeImageTag'), openGt06: get('openGt06') === 'true', desiredCount: get('traccarDesiredCount') === undefined ? undefined : Number(get('traccarDesiredCount')) } : undefined,
         overrides,
         outdir: process.env.CDK_OUTDIR,
       });

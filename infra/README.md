@@ -396,3 +396,9 @@ cria thing); criar no RDS o banco `traccar` (dono `traccar`) e os papéis `tracc
 (`aws iot create-keys-and-certificate --set-as-active`), anexar a política e colar `certificatePem`/`privateKey` em
 `volti/<env>/traccar-bridge-iot`; publicar a imagem da ponte no ECR `volti-<env>-traccar-bridge`; trocar `DATABASE_SSL=require`
 (cifrado, sem verificar a CA) por verificação com o bundle da RDS. Um J16 novo em produção = `cdk deploy` com o thing na lista.
+
+Opções extras da proposta: sem `apnCidrs` a stack recusa; só fora de prod, `-c openGt06=true` abre a 5023 à internet (bancada) e
+emite um warning no synth. `-c traccarDesiredCount=1` liga as duas tasks (padrão 0, para os deploys seguintes não zerarem) e exige
+`-c bridgeImageTag=<sha>` explícita (nunca `latest`). O JDBC do Traccar usa `?sslmode=require` (RDS PG16 com `rds.force_ssl`).
+Atenção LGPD: os logs do próprio Traccar contêm o IMEI (identificador do dispositivo) e vão ao mesmo log group `/volti/<env>/traccar`
+(mesma retenção); restrinja o acesso a ele e não o exporte.

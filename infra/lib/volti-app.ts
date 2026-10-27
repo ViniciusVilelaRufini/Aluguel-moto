@@ -45,7 +45,7 @@ export interface VoltiAppOptions {
   apiRunSeed?: boolean;
   /** Account-specific values (SES identity, IdP secret names, Cognito domain prefixes, WAF limit). */
   /** Proposta GT06 (spec 2026-10-27 §8): Traccar + ponte. Só com a lista de thingNames relay_only. */
-  traccar?: { gt06Things: string[]; apnCidrs?: string[]; bridgeImageTag?: string };
+  traccar?: { gt06Things: string[]; apnCidrs?: string[]; bridgeImageTag?: string; openGt06?: boolean; desiredCount?: number };
   overrides?: ConfigOverrides;
   outdir?: string;
 }

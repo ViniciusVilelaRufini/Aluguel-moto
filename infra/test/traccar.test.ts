@@ -1,4 +1,4 @@
-import { Match, Template } from 'aws-cdk-lib/assertions';
+import { Annotations, Match, Template } from 'aws-cdk-lib/assertions';
 import { buildBridgePolicyDocument, GT06_PORT, TRACCAR_IMAGE, TRACCAR_WEB_PORT } from '../lib/stacks/traccar-stack';
 import { createVoltiApp } from '../lib/volti-app';
 import { stacksFor } from './helpers';
@@ -6,7 +6,7 @@ import { stacksFor } from './helpers';
 const envOf = (c: any): Record<string, unknown> => Object.fromEntries((c.Environment ?? []).map((e: any) => [e.Name, e.Value]));
 
 describe('TraccarStack (proposta, opt-in por -c gt06Things)', () => {
-  const s = createVoltiApp({ envName: 'dev', traccar: { gt06Things: ['moto-0901', 'moto-0902'] } });
+  const s = createVoltiApp({ envName: 'dev', traccar: { gt06Things: ['moto-0901', 'moto-0902'], openGt06: true } });
   const t = Template.fromStack(s.traccar!);
   const tasks = () => Object.values(t.findResources('AWS::ECS::TaskDefinition')) as any[];
   const container = (name: string) => tasks().map((td) => td.Properties.ContainerDefinitions[0]).find((c: any) => c.Name === name);
@@ -74,6 +74,25 @@ describe('TraccarStack (proposta, opt-in por -c gt06Things)', () => {
     const major = Number(tag[1]);
     const minor = Number(tag[2]);
     expect(major > 6 || (major === 6 && minor >= 7)).toBe(true);
+  });
+
+  it('5023 aberta exige reconhecimento: sem apnCidrs nem openGt06 lança; com openGt06 avisa; prod nunca abre', () => {
+    expect(() => createVoltiApp({ envName: 'dev', traccar: { gt06Things: ['moto-0901'] } })).toThrow('openGt06');
+    expect(() => createVoltiApp({ envName: 'prod', apiDomainName: 'api.volti.example', traccar: { gt06Things: ['moto-0901'], openGt06: true } })).toThrow('apnCidrs');
+    Annotations.fromStack(s.traccar!).hasWarning('*', Match.stringLikeRegexp('5023'));
+  });
+
+  it('JDBC do Traccar exige SSL (rds.force_ssl)', () => {
+    expect(JSON.stringify(envOf(container('traccar')).DATABASE_URL)).toContain('?sslmode=require');
+  });
+
+  it('traccarDesiredCount: padrão 0 nos dois serviços; >0 exige bridgeImageTag explícita (não latest)', () => {
+    const base = { gt06Things: ['moto-0901'], openGt06: true };
+    expect(() => createVoltiApp({ envName: 'dev', traccar: { ...base, desiredCount: 1 } })).toThrow('bridgeImageTag');
+    expect(() => createVoltiApp({ envName: 'dev', traccar: { ...base, desiredCount: 1, bridgeImageTag: 'latest' } })).toThrow('bridgeImageTag');
+    const on = Template.fromStack(createVoltiApp({ envName: 'dev', traccar: { ...base, desiredCount: 1, bridgeImageTag: 'abc1234' } }).traccar!);
+    on.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'volti-dev-traccar', DesiredCount: 1 });
+    on.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'volti-dev-traccar-bridge', DesiredCount: 1 });
   });
 
   it('validações: thing inválido; prod sem apnCidrs (GT06 sem TLS só por APN privada)', () => {

@@ -1,4 +1,4 @@
-import { RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
+import { Annotations, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as ecs from 'aws-cdk-lib/aws-ecs';
@@ -29,6 +29,10 @@ export interface TraccarStackProps extends StackProps {
   /** Faixas da APN privada. Vazio = 5023 aberta (só bancada; prod recusa). */
   apnCidrs?: string[];
   bridgeImageTag?: string;
+  /** Fora de prod, sem apnCidrs: reconhece que a 5023 (GT06 sem TLS) fica aberta à internet (-c openGt06=true). */
+  openGt06?: boolean;
+  /** Tasks de cada serviço (padrão 0: o primeiro deploy não espera imagem; use 1 nos deploys seguintes). */
+  desiredCount?: number;
 }
 
 /** Política do certificado de serviço da ponte: telemetria/eventos e o shadow só dos things listados. */
@@ -73,6 +77,13 @@ export class TraccarStack extends Stack {
     const { cfg, vpc, data } = props;
     const env = cfg.name;
     if (!props.gt06Things.length || props.gt06Things.some((t) => !THING_NAME.test(t))) throw new Error('gt06Things: informe os thingNames relay_only (moto-0000), separados por vírgula.');
+    const desiredCount = props.desiredCount ?? 0;
+    if (!Number.isInteger(desiredCount) || desiredCount < 0 || desiredCount > 1) throw new Error('traccarDesiredCount: 0 ou 1 (uma task por vez).');
+    if (desiredCount > 0 && (!props.bridgeImageTag || props.bridgeImageTag === 'latest')) throw new Error('traccarDesiredCount > 0 exige bridgeImageTag explícita (não latest).');
+    if (!props.apnCidrs?.length && !(env !== 'prod' && props.openGt06)) {
+      throw new Error(env === 'prod' ? 'prod exige apnCidrs: o GT06 não tem TLS e só entra por APN privada (spec GT06 §6.5).' : 'informe apnCidrs ou, só para bancada, -c openGt06=true (5023 aberta à internet, sem TLS).');
+    }
+    if (!props.apnCidrs?.length) Annotations.of(this).addWarning('TCP 5023 (GT06 sem TLS, só IMEI) aberta a 0.0.0.0/0: apenas bancada; use apnCidrs.');
     if (env === 'prod' && !props.apnCidrs?.length) throw new Error('prod exige apnCidrs: o GT06 não tem TLS e só entra por APN privada (spec GT06 §6.5).');
     const removal = cfg.disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN;
     const subnetType = apiSubnetType(cfg);
@@ -85,9 +96,11 @@ export class TraccarStack extends Stack {
     const secret = (key: string, name: string, description: string) =>
       new secretsmanager.Secret(this, key, { secretName: `volti/${env}/${name}`, description, generateSecretString: { passwordLength: 40, excludePunctuation: true }, removalPolicy: removal });
     const traccarDb = secret('TraccarDbSecret', 'traccar-db', 'Senha do papel traccar (database traccar no RDS)');
+    // Usado só pelo CLI do dono (provision-gt06: cria o admin do Traccar e o usuário da ponte); nenhuma task o lê.
     secret('TraccarAdminSecret', 'traccar-admin', 'Senha de admin@volti.local no Traccar (provisionamento)');
     const bridgeUser = secret('BridgeUserSecret', 'traccar-bridge-user', 'Senha de bridge@volti.local no Traccar');
     const bridgeDb = secret('BridgeDbSecret', 'traccar-bridge-db', 'Senha do papel volti_bridge (SELECT em 3 colunas de "Tracker")');
+    // privateKey gerada aqui é um placeholder aleatório: o dono DEVE sobrescrevê-la com a chave real do certificado de serviço.
     const bridgeCert = new secretsmanager.Secret(this, 'BridgeIotCert', {
       secretName: `volti/${env}/traccar-bridge-iot`,
       description: 'Certificado de serviço da ponte no IoT Core: colar certificatePem e privateKey (aws iot create-keys-and-certificate)',
@@ -110,7 +123,7 @@ export class TraccarStack extends Stack {
       environment: {
         CONFIG_USE_ENVIRONMENT_VARIABLES: 'true',
         DATABASE_DRIVER: 'org.postgresql.Driver',
-        DATABASE_URL: `jdbc:postgresql://${data.db.dbInstanceEndpointAddress}:5432/traccar`,
+        DATABASE_URL: `jdbc:postgresql://${data.db.dbInstanceEndpointAddress}:5432/traccar?sslmode=require`,
         DATABASE_USER: 'traccar',
         PROTOCOLS_ENABLE: 'gt06',
         GT06_PORT: String(GT06_PORT),
@@ -125,7 +138,7 @@ export class TraccarStack extends Stack {
       serviceName: `volti-${env}-traccar`,
       cluster,
       taskDefinition: traccarTask,
-      desiredCount: 0,
+      desiredCount,
       minHealthyPercent: 0,
       maxHealthyPercent: 100,
       securityGroups: [traccarSg],
@@ -177,7 +190,7 @@ export class TraccarStack extends Stack {
       serviceName: `volti-${env}-traccar-bridge`,
       cluster,
       taskDefinition: bridgeTask,
-      desiredCount: 0,
+      desiredCount,
       minHealthyPercent: 0,
       maxHealthyPercent: 100,
       securityGroups: [bridgeSg],
