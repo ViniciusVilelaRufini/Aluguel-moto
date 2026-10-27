@@ -1,4 +1,4 @@
-import type { Battery, Vehicle } from '@prisma/client';
+import type { Battery, TrackerControlMode, Vehicle } from '@prisma/client';
 import { compact, estimatedRangeKm, iso } from '../../common/util';
 import { toBattery } from '../batteries/batteries.mapper';
 import type { VehicleModelRef } from '../catalog/catalog.service';
@@ -42,7 +42,7 @@ export function toVehicleSummary(v: VehicleLike, distanceM?: number) {
   });
 }
 
-type VehicleRow = Vehicle & { tracker?: { id: string } | null; vehicleModel?: VehicleModelRef | null };
+type VehicleRow = Vehicle & { tracker?: { id: string; controlMode?: TrackerControlMode } | null; vehicleModel?: VehicleModelRef | null };
 
 /** Situação da revisão (staff): intervalo do modelo ou o padrão. */
 export function vehicleServiceInfo(v: Partial<VehicleRow>, defaults: ServiceDefaults = DEFAULT_SERVICE) {
@@ -113,6 +113,7 @@ export function toVehicle(
     ...base,
     thingName: v.thingName,
     trackerId: v.tracker?.id,
+    trackerControlMode: v.tracker?.controlMode ?? 'speed_control',
     batterySerial: v.batterySerial ?? undefined,
     online: trackerOnline(v, opts.now ?? Date.now()),
     locked: v.locked,

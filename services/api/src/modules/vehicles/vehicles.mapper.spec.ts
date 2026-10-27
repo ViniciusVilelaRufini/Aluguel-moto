@@ -41,3 +41,15 @@ describe('online derivado do último heartbeat (lastSeenAt dentro da janela)', (
     expect(toVehicle(row(), { staff: false, now: NOW })).not.toHaveProperty('online');
   });
 });
+
+describe('trackerControlMode (spec GT06 §3.2)', () => {
+  it('staff vê o tipo do rastreador; sem Tracker cadastrado = speed_control', () => {
+    expect((toVehicle(row({ tracker: { id: 't1', controlMode: 'relay_only' } }), { staff: true, now: NOW }) as any).trackerControlMode).toBe('relay_only');
+    expect((toVehicle(row({ tracker: { id: 't1', controlMode: 'speed_control' } }), { staff: true, now: NOW }) as any).trackerControlMode).toBe('speed_control');
+    expect((toVehicle(row({ tracker: null }), { staff: true, now: NOW }) as any).trackerControlMode).toBe('speed_control');
+  });
+
+  it('cliente nunca recebe o tipo do rastreador', () => {
+    expect(toVehicle(row({ tracker: { id: 't1', controlMode: 'relay_only' } }), { staff: false, now: NOW })).not.toHaveProperty('trackerControlMode');
+  });
+});

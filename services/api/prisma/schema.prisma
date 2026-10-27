@@ -94,6 +94,13 @@ enum CommandStatusReason {
   did_not_stop
   invalid_limit
   locked_by_staff
+  unsupported_by_tracker
+}
+
+/// Capacidade do rastreador (spec GT06 §3.1). `relay_only` = só rastreia e corta pelo relé (GT06/Concox J16 via Traccar).
+enum TrackerControlMode {
+  speed_control
+  relay_only
 }
 
 enum ActorType {
@@ -245,6 +252,8 @@ enum AlertType {
   battery_stock_low
   /// Pagamento que exige revisão manual do financeiro (um aberto por pagamento, `paymentId`).
   payment_needs_review
+  /// Moto com rastreador `relay_only` acima do limite da zona por mais de 5 s (spec GT06 §10).
+  zone_speed_exceeded
 }
 
 enum AlertPriority {
@@ -580,15 +589,20 @@ model Vehicle {
 }
 
 model Tracker {
-  id              String   @id @default(uuid()) @db.Uuid
-  vehicleId       String?  @unique @db.Uuid
-  vehicle         Vehicle? @relation(fields: [vehicleId], references: [id])
-  thingName       String   @unique
-  imei            String?
+  id              String             @id @default(uuid()) @db.Uuid
+  vehicleId       String?            @unique @db.Uuid
+  vehicle         Vehicle?           @relation(fields: [vehicleId], references: [id])
+  thingName       String             @unique
+  /// Chave do GT06 no Traccar (uniqueId); obrigatório em `relay_only` (CHECK na migração). Único quando preenchido.
+  imei            String?            @unique
   firmwareVersion String?
   certificateArn  String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  /// `speed_control` (padrão, comportamento de sempre) ou `relay_only` (spec GT06).
+  controlMode     TrackerControlMode @default(speed_control)
+  /// Protocolo de chegada quando não é MQTT direto (ex.: `gt06`).
+  protocol        String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 }
 
 model Battery {

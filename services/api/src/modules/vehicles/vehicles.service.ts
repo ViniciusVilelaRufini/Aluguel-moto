@@ -2,7 +2,7 @@ import { withLiveState } from './live-overlay';
 import { currentSubscriptionWhere, notFixedForOtherSql } from '../../common/fixed-vehicle';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
-import { Prisma, type Vehicle } from '@prisma/client';
+import { Prisma, type TrackerControlMode, type Vehicle } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import { BatteryChargedStockDecreasedEvent, EV, IotConnectivityEvent, IotTelemetryEvent, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
@@ -24,7 +24,7 @@ import { toVehicle, toVehicleSummary } from './vehicles.mapper';
 import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
 
 /** Relações lidas junto com a moto (contrato v2: modelo do catálogo). */
-const VEHICLE_INCLUDE = { tracker: { select: { id: true } }, vehicleModel: { select: VEHICLE_MODEL_SELECT } } as const;
+const VEHICLE_INCLUDE = { tracker: { select: { id: true, controlMode: true } }, vehicleModel: { select: VEHICLE_MODEL_SELECT } } as const;
 
 const TRACK_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 /** Persistência da telemetria no Postgres no máximo a cada 30 s por moto (o estado ao vivo fica no Redis). */
@@ -64,7 +64,7 @@ export class VehiclesService {
    * Contrato v2: endereço (geocodificação reversa em cache), bateria instalada e moto fixa de assinatura, para a ficha
    * e a lista. Clientes só recebem o endereço.
    */
-  private async enrich<T extends Vehicle & { tracker?: { id: string } | null }>(rows: T[], staff: boolean, currentRental?: Map<string, string>, viewerCustomerId?: string) {
+  private async enrich<T extends Vehicle & { tracker?: { id: string; controlMode?: TrackerControlMode } | null }>(rows: T[], staff: boolean, currentRental?: Map<string, string>, viewerCustomerId?: string) {
     if (!staff) {
       // Fix round 1 (I5): para cliente, posição e endereço só de moto livre ou da própria reserva/aluguel (LGPD).
       const own = await this.ownVehicleIds(viewerCustomerId, rows.map((r) => r.id));

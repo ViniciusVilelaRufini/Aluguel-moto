@@ -26,7 +26,7 @@ export interface CommandOutcome {
   commandId: string;
   status: 'pending' | 'in_progress' | 'confirmed' | 'failed';
   /** `locked_by_staff`: unlock de cliente/campo recusado (trava de equipe/sistema, hold em 0 ou modo roubada). */
-  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff';
+  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff' | 'unsupported_by_tracker';
 }
 
 export interface VehicleLiveState {
