@@ -76,7 +76,11 @@ export class LiveStateStore {
    * mais velha pareceria mais nova. Um `timestamp` não confiável nunca entra aqui. Zerado na reconexão.
    */
   private readonly lastDeviceTs = new Map<string, number>();
-  /** Início da conexão atual (ou da primeira amostra vista por este processo): amostras anteriores a ela não valem, e a graça conta a partir dela. */
+  /**
+   * Início da conexão atual (ou da primeira amostra vista por este processo): amostras anteriores a ela não valem, e a graça conta a
+   * partir dela. Vai junto no hash do Redis (campo `reconnectAt`, vazio = desconhecida) e é hidratada no `refresh`: a reconexão
+   * vista por uma instância vale para a graça (`lockConfirmed`, `acceptSpeed`) das outras (onda final de correções, A-I2).
+   */
   private readonly reconnectAt = new Map<string, number>();
   /** Última mensagem do rastreador, de qualquer canal (hora de chegada; no polling, a metadata do shadow). Só em memória. */
   private readonly heardAt = new Map<string, number>();
@@ -161,6 +165,7 @@ export class LiveStateStore {
       this.refreshFailed.add(thingName);
       return mem ?? null;
     }
+    this.hydrateReconnect(thingName, h?.reconnectAt);
     if (!h || !h.lastSeenAt) {
       this.refreshFailed.add(thingName); // nada no Redis: a cópia da memória (se houver) não é confirmada
       return mem ?? null;
@@ -191,6 +196,21 @@ export class LiveStateStore {
     }
     this.states.set(thingName, fromRedis);
     return fromRedis;
+  }
+
+  /**
+   * Reconexão gravada por outra instância (sempre lida, mesmo sem versão nova do hash: a reconexão pode ter sido gravada sozinha).
+   * Só avança (a mais nova vale — mais conservador); avançando, a velocidade e a ordem bruta desta instância recomeçam, como em
+   * `markReconnected`.
+   */
+  private hydrateReconnect(thingName: string, raw: string | undefined): void {
+    const at = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(at)) return;
+    const local = this.reconnectAt.get(thingName);
+    if (local !== undefined && at <= local) return;
+    this.reconnectAt.set(thingName, at);
+    this.sample.delete(thingName);
+    this.lastDeviceTs.delete(thingName);
   }
 
   /** Último `limite_kmh` gravado no desired por qualquer instância (teto da rampa). Erro de leitura → desconhecido. */
@@ -240,8 +260,8 @@ export class LiveStateStore {
    * N3: o `reported` do polling (modo aws) tem horário com precisão de 1 s (metadata do shadow); logo depois de uma reconexão ele
    * normalmente não confirma — seguro: a trava só espera mais (fluxo parar-e-cortar ou a próxima mensagem).
    *
-   * Sem reconexão conhecida por esta instância (processo novo, ou a reconexão foi vista por outra task — o `reconnectAt` é só da
-   * memória), vale qualquer origem conhecida (como antes).
+   * Sem reconexão conhecida (nem nesta instância nem no hash do Redis — `reconnectAt` é hidratado no `refresh`), vale qualquer
+   * origem conhecida (como antes). Quem decide relê o estado (`load`) antes.
    */
   lockConfirmed(thingName: string): boolean {
     const s = this.states.get(thingName);
@@ -307,14 +327,23 @@ export class LiveStateStore {
    * Presença `connected`, primeira mensagem depois de offline ou lacuna de reconexão (`noteHeard`) ou atraso de fila offline (`noteTelemetry`): a velocidade de antes da desconexão deixa de valer até chegar
    * amostra nova fora da graça, e a ordem (bruta e da exibição) recomeça — o rastreador pode ter reiniciado e acertado o relógio.
    */
-  markReconnected(thingName: string, opts: { keepDisplayOrder?: boolean } = {}): void {
+  markReconnected(thingName: string, opts: { keepDisplayOrder?: boolean } = {}): Promise<void> {
     this.sample.delete(thingName);
     this.lastDeviceTs.delete(thingName);
     // Reconexão percebida pela própria telemetria (lacuna/atraso, moto online): a ordem da exibição continua — uma mensagem velha
     // reordenada que abriu a graça não volta a moto no mapa. Presença/volta de offline recomeçam (o rastreador pode ter reiniciado);
     // um salto para trás confirmado (`noteTelemetry`) também.
     if (!opts.keepDisplayOrder) this.lastTelemetryAt.delete(thingName);
-    this.reconnectAt.set(thingName, this.clock.now());
+    const now = this.clock.now();
+    this.reconnectAt.set(thingName, now);
+    // Gravada já (sem versão nova do hash): as outras instâncias aplicam a graça mesmo se nada mais for gravado agora. Erro do
+    // Redis = só esta instância sabe (a próxima escrita do estado leva o campo).
+    return Promise.resolve()
+      .then(() => this.redis.hset(this.key(thingName), { reconnectAt: String(now) }))
+      .then(
+        () => undefined,
+        () => undefined,
+      );
   }
 
   /**
@@ -579,6 +608,7 @@ export class LiveStateStore {
     for (const [k, v] of Object.entries(s)) values[k] = String(v);
     // Sempre gravado (vazio = desconhecida): o `hset` não apaga campo, e uma origem velha não pode sobrar para outra instância.
     values.lockedAt = String(this.lockedAt.get(s.thingName) ?? '');
+    values.reconnectAt = String(this.reconnectAt.get(s.thingName) ?? '');
     // Carimbo monotônico desta escrita (para as outras instâncias saberem que a cópia delas ficou velha).
     const at = Math.max(this.clock.now(), (this.syncedAt.get(s.thingName) ?? 0) + 1);
     values._at = String(at);

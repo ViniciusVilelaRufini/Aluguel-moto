@@ -36,6 +36,55 @@ describe('LiveStateStore com várias instâncias', () => {
     expect(b.isOnline(T)).toBe(false);
   });
 
+  it('final fix wave: reconexão vista por A vale para B — travada:true na graça não confirma em B até passar a graça', async () => {
+    const redis = new MemoryRedisStore();
+    const clock = new FakeClock(Date.parse('2026-10-24T12:00:00Z'));
+    const a = new LiveStateStore(redis, clock);
+    const b = new LiveStateStore(redis, clock);
+    await b.applyTelemetry(T, telemetry('2026-10-24T12:00:00Z', 0)); // B conhece a moto desde antes (reconexão antiga)
+    await clock.advance(60_000);
+    await a.load(T);
+    await a.markReconnected(T); // presença/lacuna vista só por A
+    await clock.advance(1_000);
+    await a.applyReported(T, { travada: true }); // reported da memória da ponte no tick da reconexão (na graça)
+    await b.load(T);
+    expect(b.lockConfirmed(T)).toBe(false);
+    await clock.advance(5_000);
+    await b.load(T);
+    expect(b.lockConfirmed(T)).toBe(false); // a origem continua dentro da graça
+    await clock.advance(10_000);
+    await a.applyReported(T, { travada: true }); // depois da graça
+    await b.load(T);
+    expect(b.lockConfirmed(T)).toBe(true);
+  });
+
+  it('final fix wave: reconexão só marcada em A (sem outra escrita) já vale para um reported que B processa na graça', async () => {
+    const redis = new MemoryRedisStore();
+    const clock = new FakeClock(Date.parse('2026-10-24T12:00:00Z'));
+    const a = new LiveStateStore(redis, clock);
+    const b = new LiveStateStore(redis, clock);
+    await b.applyTelemetry(T, telemetry('2026-10-24T12:00:00Z', 0));
+    await clock.advance(60_000);
+    await a.load(T);
+    await a.markReconnected(T);
+    await clock.advance(1_000);
+    await b.applyReported(T, { travada: true });
+    expect(b.lockConfirmed(T)).toBe(false);
+    await clock.advance(10_000);
+    await b.applyReported(T, { travada: true });
+    expect(b.lockConfirmed(T)).toBe(true);
+  });
+
+  it('final fix wave: reconnectAt sempre gravado no hash (vazio = desconhecido)', async () => {
+    const redis = new MemoryRedisStore();
+    const clock = new FakeClock(Date.parse('2026-10-24T12:00:00Z'));
+    const a = new LiveStateStore(redis, clock);
+    await a.setOnline(T, true);
+    expect((await redis.hgetall(`iot:live:${T}`)).reconnectAt).toBe('');
+    await a.markReconnected(T);
+    expect((await redis.hgetall(`iot:live:${T}`)).reconnectAt).toBe(String(clock.now()));
+  });
+
   it('teto do desired gravado por uma instância é lido pela outra', async () => {
     const redis = new MemoryRedisStore();
     const clock = new FakeClock(0);
