@@ -82,6 +82,11 @@ export class LiveStateStore {
    * Uma única mensagem velha reordenada nunca troca a referência.
    */
   private readonly jumpCandidate = new Map<string, { arrival: number; deviceTs: number }>();
+  /**
+   * Origem do `locked` (Task 4 fix 2, B): hora (ms) da mensagem do rastreador que gravou `travada` — telemetria mais nova ou
+   * `reported`. Ausente = desconhecida (estado em branco, presença sem mensagem, polling sem horário). Vai junto no hash do Redis.
+   */
+  private readonly lockedAt = new Map<string, number>();
   /** Hold gravado por esta instância cuja escrita no Redis falhou (vale até gravar ou um unlock). */
   private readonly heldUnpersisted = new Set<string>();
   /** Carimbo (`_at`) da última versão do hash no Redis que esta instância gravou ou leu: versão mais nova = outra instância. */
@@ -171,6 +176,9 @@ export class LiveStateStore {
       lastSeenAt: h.lastSeenAt,
     };
     this.syncedAt.set(thingName, at);
+    const lockedAt = h.lockedAt ? Number(h.lockedAt) : NaN;
+    if (Number.isFinite(lockedAt)) this.lockedAt.set(thingName, lockedAt);
+    else this.lockedAt.delete(thingName);
     if (mem) {
       Object.assign(mem, fromRedis);
       return mem;
@@ -212,6 +220,18 @@ export class LiveStateStore {
   stale(): string[] {
     const now = this.clock.now();
     return [...this.states.values()].filter((s) => s.online && now - Date.parse(s.lastSeenAt) >= this.offlineAfterMs).map((s) => s.thingName);
+  }
+
+  /**
+   * Trava confirmada pelo próprio rastreador (Task 4 fix 2, B): `locked` online e gravado por telemetria/reported depois da
+   * reconexão atual. O `locked: true` do estado em branco (presença sem mensagem) nunca confirma.
+   */
+  lockConfirmed(thingName: string): boolean {
+    const s = this.states.get(thingName);
+    if (!s || s.locked !== true || !this.isOnline(thingName)) return false;
+    const at = this.lockedAt.get(thingName);
+    if (at === undefined) return false;
+    return at >= (this.reconnectAt.get(thingName) ?? 0);
   }
 
   /** Velocidade conhecida e fresca, ou `null` (desconhecida, velha, anterior à reconexão ou dentro da graça) — nunca 0 por padrão. */
@@ -473,6 +493,9 @@ export class LiveStateStore {
     if (newest) {
       this.lastTelemetryAt.set(thingName, orderTs);
       Object.assign(s, { lat: t.lat, lng: t.lng, speedKmh: t.velocidade_kmh, batteryPct: t.bateria_pct, locked: t.travada, ignition: t.ignicao, signal: t.sinal });
+      // Origem da trava: hora da medição; relógio do rastreador não confiável (futuro distante) = origem desconhecida.
+      if (Number.isFinite(deviceTs) && deviceTs <= now + MAX_CLOCK_SKEW_MS) this.lockedAt.set(thingName, measuredAt);
+      else this.lockedAt.delete(thingName);
     }
     const speedAccepted = this.acceptSpeed(thingName, t.velocidade_kmh, measuredAt, false, deviceTs);
     s.online = true;
@@ -487,10 +510,20 @@ export class LiveStateStore {
    * Do polling (`fromPoll`): não mexe na conectividade; a velocidade só é aceita com horário (metadata) mais novo que a última
    * amostra, não anterior à reconexão e fresco. Devolve se a velocidade foi aceita.
    */
-  async applyReported(thingName: string, r: ReportedState, opts: { fromPoll?: boolean; speedAt?: number } = {}): Promise<{ state: VehicleLiveState; speedAccepted: boolean }> {
+  async applyReported(
+    thingName: string,
+    r: ReportedState,
+    opts: { fromPoll?: boolean; speedAt?: number; travadaAt?: number } = {},
+  ): Promise<{ state: VehicleLiveState; speedAccepted: boolean }> {
     const s = (await this.load(thingName)) ?? this.blank(thingName);
     const now = this.clock.now();
-    if (r.travada !== undefined) s.locked = r.travada;
+    if (r.travada !== undefined) {
+      s.locked = r.travada;
+      // Origem: horário da metadata (limitado a agora); MQTT sem ele = chegada; polling sem ele = desconhecida (pode ser velho).
+      const at = opts.fromPoll ? opts.travadaAt : (opts.travadaAt ?? now);
+      if (at !== undefined && Number.isFinite(at)) this.lockedAt.set(thingName, Math.min(at, now));
+      else this.lockedAt.delete(thingName);
+    }
     if (r.limite_kmh !== undefined) s.speedLimitKmh = r.limite_kmh;
     if (r.modo_roubada !== undefined) s.stolenMode = r.modo_roubada;
     let speedAccepted = false;
@@ -524,6 +557,8 @@ export class LiveStateStore {
   private async persist(s: VehicleLiveState): Promise<void> {
     const values: Record<string, string> = {};
     for (const [k, v] of Object.entries(s)) values[k] = String(v);
+    // Sempre gravado (vazio = desconhecida): o `hset` não apaga campo, e uma origem velha não pode sobrar para outra instância.
+    values.lockedAt = String(this.lockedAt.get(s.thingName) ?? '');
     // Carimbo monotônico desta escrita (para as outras instâncias saberem que a cópia delas ficou velha).
     const at = Math.max(this.clock.now(), (this.syncedAt.get(s.thingName) ?? 0) + 1);
     values._at = String(at);

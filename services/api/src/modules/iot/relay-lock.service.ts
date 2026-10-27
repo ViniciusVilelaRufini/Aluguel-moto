@@ -32,6 +32,11 @@ export interface RelayLockVehicleState {
 export interface RelayLockOptions {
   /** Velocidade fresca do `LiveStateStore` (`null` = desconhecida): última conferência antes de gravar o corte. */
   knownSpeed: (thingName: string) => number | null;
+  /**
+   * Trava confirmada pelo rastreador agora (`LiveStateStore.lockConfirmed`; `null`/ausente = desconhecida). Só o prazo e a
+   * retomada da espera usam: moto já travada termina `confirmed` sem gravar nada — nunca `travada: false` (Task 4 fix 2, A).
+   */
+  knownLocked?: (thingName: string) => boolean | null;
   store?: RelayLockStore;
   stopTimeoutMs?: number;
   confirmTimeoutMs?: number;
@@ -280,6 +285,11 @@ export class RelayLockService {
 
   /** `waiting_online` → `waiting_stop` na reconexão: os comandos que ouviram `pending`/`offline` voltam a `in_progress` (L1). */
   private async resume(lock: RelayLockState): Promise<void> {
+    if (this.opts.knownLocked?.(lock.thingName) === true) {
+      // Reconectou já travada (Task 4 fix 2, A): nada a cortar.
+      await this.finish(lock, { status: 'confirmed' });
+      return;
+    }
     await this.begin(lock);
     this.emit(lock.commandIds, { status: 'in_progress' });
   }
@@ -301,6 +311,12 @@ export class RelayLockService {
   }
 
   private async onDeadline(lock: RelayLockState): Promise<void> {
+    if ((lock.phase === 'waiting_stop' || lock.phase === 'cutting') && this.opts.knownLocked?.(lock.thingName) === true) {
+      // Moto travada (o corte aconteceu, ou já estava): `travada: true` igual ao reported não gera delta e a ponte não reporta
+      // de novo — gravar `travada: false` aqui soltaria a moto. Termina confirmado, sem escrever nada.
+      await this.finish(lock, { status: 'confirmed' });
+      return;
+    }
     if (lock.phase === 'waiting_stop') {
       await this.finish(lock, { status: 'failed', reason: 'did_not_stop' });
       return;

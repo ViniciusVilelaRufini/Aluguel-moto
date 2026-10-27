@@ -77,3 +77,81 @@ describe('LiveStateStore — hold em 0 km/h compartilhado entre tasks (auditoria
     expect(await live.isHeld(T)).toBe(false);
   });
 });
+
+describe('LiveStateStore.lockConfirmed — origem da trava (Task 4 fix 2, B)', () => {
+  const tele = (clock: FakeClock, travada: boolean, ts = clock.now()) => ({
+    lat: -23.5, lng: -46.6, velocidade_kmh: 0, bateria_pct: 80, travada, ignicao: false, sinal: 4, timestamp: new Date(ts).toISOString(),
+  });
+  const setup = () => {
+    const clock = new FakeClock(Date.parse('2026-10-27T12:00:00Z'));
+    const redis = new MemoryRedisStore();
+    return { clock, redis, live: new LiveStateStore(redis, clock) };
+  };
+
+  it('só presença (estado em branco locked:true) → não confirmada', async () => {
+    const { live } = setup();
+    live.markReconnected(T);
+    const s = await live.setOnline(T, true);
+    expect(s.locked).toBe(true);
+    expect(live.lockConfirmed(T)).toBe(false);
+  });
+
+  it('telemetria travada:true depois da reconexão → confirmada; travada:false → não', async () => {
+    const { clock, live } = setup();
+    live.markReconnected(T);
+    await live.applyTelemetry(T, tele(clock, true));
+    expect(live.lockConfirmed(T)).toBe(true);
+    await clock.advance(5_000);
+    await live.applyTelemetry(T, tele(clock, false));
+    expect(live.lockConfirmed(T)).toBe(false);
+  });
+
+  it('reported MQTT travada:true → confirmada; anterior à reconexão deixa de valer', async () => {
+    const { clock, live } = setup();
+    await live.applyReported(T, { travada: true });
+    expect(live.lockConfirmed(T)).toBe(true);
+    await clock.advance(1_000);
+    live.markReconnected(T);
+    await live.setOnline(T, true);
+    expect(live.lockConfirmed(T)).toBe(false);
+  });
+
+  it('telemetria da fila offline (timestamp antes da reconexão) não confirma', async () => {
+    const { clock, live } = setup();
+    await clock.advance(60_000);
+    live.markReconnected(T);
+    await live.applyTelemetry(T, tele(clock, true, clock.now() - 30_000));
+    expect(live.lockConfirmed(T)).toBe(false);
+  });
+
+  it('reported do polling sem horário da travada não confirma; com horário depois da reconexão, confirma', async () => {
+    const { clock, live } = setup();
+    live.markReconnected(T);
+    await live.setOnline(T, true);
+    await clock.advance(1_000);
+    await live.applyReported(T, { travada: true }, { fromPoll: true });
+    expect(live.lockConfirmed(T)).toBe(false);
+    await live.applyReported(T, { travada: true }, { fromPoll: true, travadaAt: clock.now() });
+    expect(live.lockConfirmed(T)).toBe(true);
+  });
+
+  it('offline → não confirmada', async () => {
+    const { live } = setup();
+    await live.applyReported(T, { travada: true });
+    await live.setOnline(T, false);
+    expect(live.lockConfirmed(T)).toBe(false);
+  });
+
+  it('a origem vai pelo Redis para outra instância', async () => {
+    const { clock, redis, live } = setup();
+    await live.applyReported(T, { travada: true });
+    const other = new LiveStateStore(redis, clock);
+    await other.load(T);
+    expect(other.lockConfirmed(T)).toBe(true);
+    // Origem desconhecida gravada (polling sem horário) também apaga a de antes na outra instância.
+    await clock.advance(1_000);
+    await live.applyReported(T, { travada: true }, { fromPoll: true });
+    await other.load(T);
+    expect(other.lockConfirmed(T)).toBe(false);
+  });
+});

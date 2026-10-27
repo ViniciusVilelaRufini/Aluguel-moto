@@ -83,7 +83,9 @@ corte sem confirmação em 120 s → `timeout` + `travada: false`. `speed_limit`
 `speed_control` (`SafeLockService`) não muda. Spec: `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`.
 Moto que cai durante a espera: o comando volta de `in_progress` para `pending`/`offline` (única regressão aceita pelo
 `CommandsService`, só pelo `iot.command-updated`); na reconexão a janela de 120 s recomeça e o comando volta a `in_progress`.
-Moto já travada (estado ao vivo `locked` vindo do reported/telemetria, online) → `lock` confirma sem gravar nada.
+Moto já travada (`LiveStateStore.lockConfirmed`: online e `locked` gravado por telemetria/reported depois da reconexão — campo
+`lockedAt` no hash `iot:live:*`; o estado em branco de uma presença sem mensagem não conta) → `lock` confirma sem gravar nada; a
+espera retomada e o prazo da trava também terminam `confirmed` (nunca `travada: false`) se a moto já estiver travada.
 
 ## Contrato v2 (`docs/decisoes.md`, 2026-10-22)
 

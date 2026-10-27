@@ -300,4 +300,54 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       expect(s.cuts()).toEqual([]);
     });
   });
+
+  describe('moto já travada (Task 4, fix 2)', () => {
+    it('B: só presença (sem telemetria/reported) → o lock não confirma cedo; segue o fluxo parar-e-cortar', async () => {
+      const s = setup();
+      await s.svc.presence(T, true);
+      expect(await lockRelay(s)).toEqual({ commandId: 'c1', status: 'in_progress' });
+    });
+
+    it('A: travada, cai, lock → pending; volta pela telemetria travada:true → confirmed e nunca grava travada:false', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      await s.svc.presence(T, false);
+      expect(await s.gw.lock({ commandId: 'c1', thingName: T, authority: 'staff', lockOrigin: 'staff', controlMode: 'relay_only' })).toEqual({ commandId: 'c1', status: 'pending', reason: 'offline' });
+      for (let i = 0; i < 60; i++) {
+        await s.sample(0, { travada: true, ignicao: false });
+        await s.clock.advance(5_000);
+      }
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+      expect(s.transport.desired.filter((d) => d.desired.travada === false)).toEqual([]);
+    });
+
+    it('A: travada, cai, lock → pending; volta por presença, reported travada:true e telemetria parada → confirmed, nunca travada:false', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      await s.svc.presence(T, false);
+      await s.gw.lock({ commandId: 'c1', thingName: T, authority: 'staff', lockOrigin: 'staff', controlMode: 'relay_only' });
+      await s.svc.presence(T, true);
+      await s.svc.reported(T, { travada: true });
+      for (let i = 0; i < 60; i++) {
+        await s.sample(0, { travada: true, ignicao: false });
+        await s.clock.advance(5_000);
+      }
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+      expect(s.transport.desired.filter((d) => d.desired.travada === false)).toEqual([]);
+    });
+
+    it('A: travada por outro caminho durante a espera (telemetria travada:true, sem reported) → prazo confirma, sem travada:false', async () => {
+      const s = setup();
+      await online(s);
+      await lockRelay(s);
+      for (let i = 0; i < 60; i++) {
+        await s.sample(0, { travada: true, ignicao: false });
+        await s.clock.advance(5_000);
+      }
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+      expect(s.transport.desired.filter((d) => d.desired.travada === false)).toEqual([]);
+    });
+  });
 });

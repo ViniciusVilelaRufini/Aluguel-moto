@@ -113,6 +113,7 @@ export abstract class BaseIotGateway implements IotGateway {
     this.safeLockLocal = new SafeLockService(clock, recording, (o) => this.settle(o), { ...common, store: new MemorySafeLockStore() });
     this.relayLock = new RelayLockService(clock, { updateDesired: (t, d) => this.publishDesired(t, d) }, (o) => this.settle(o), {
       knownSpeed: (t) => this.live.knownSpeed(t),
+      knownLocked: (t) => this.live.lockConfirmed(t),
       store: opts.relayLockStore,
       stopTimeoutMs: opts.relayStopTimeoutMs,
       confirmTimeoutMs: opts.relayConfirmTimeoutMs,
@@ -170,6 +171,8 @@ export abstract class BaseIotGateway implements IotGateway {
       speedLimitKmh: Math.min(reported, ceiling ?? MAX_SPEED_KMH),
       ...(confirmed !== undefined ? { reportedLimitKmh: confirmed } : {}),
       held: (await this.live.heldState(thingName)) === true,
+      // ATENÇÃO (pré-existente, fora do escopo da Task 4 fix 2): o `locked: true` do estado em branco (presença sem telemetria/
+      // reported) também vale aqui; a trava só-relé usa `live.lockConfirmed`, que exige a origem do rastreador.
       locked: s?.locked === true && online,
       online,
     };
@@ -266,12 +269,12 @@ export abstract class BaseIotGateway implements IotGateway {
 
   /** Rastreador só relé: espera a moto parar de forma confirmada e só então grava `travada: true` (sem rampa, sem limite). */
   private async lockRelayOnly(req: CommandRequest): Promise<CommandOutcome> {
-    const s = await this.live.load(req.thingName);
+    await this.live.load(req.thingName);
     const online = this.live.isOnline(req.thingName);
-    // Já travada pelo rastreador (mesma fonte da rampa, `safeLockState().locked`: estado ao vivo do reported/telemetria, nunca o
-    // desired): confirma sem gravar nada. Gravar `travada: true` igual ao reported não gera delta, a ponte não reporta de novo e o
-    // prazo do corte soltaria a moto com `travada: false` (revisão Task 4, I1).
-    if (online && s?.locked === true) return { commandId: req.commandId, status: 'confirmed' };
+    // Já travada pelo rastreador (`lockConfirmed`: telemetria/reported depois da reconexão, nunca o desired nem o estado em branco
+    // de uma presença sem mensagem): confirma sem gravar nada. Gravar `travada: true` igual ao reported não gera delta, a ponte
+    // não reporta de novo e o prazo do corte soltaria a moto com `travada: false` (revisão Task 4, I1 e fix 2 B).
+    if (this.live.lockConfirmed(req.thingName)) return { commandId: req.commandId, status: 'confirmed' };
     const wait = this.registerWaiter(req.commandId);
     let initial: CommandOutcome;
     try {
@@ -404,7 +407,7 @@ export abstract class BaseIotGateway implements IotGateway {
   // ── entradas vindas dos rastreadores (chamadas pelo TelemetryService) ──
 
   async onReported(thingName: string, reported: ReportedState, meta: ReportedMeta = {}): Promise<void> {
-    const { speedAccepted } = await this.live.applyReported(thingName, reported, { fromPoll: meta.fromPoll, speedAt: meta.timestamps?.velocidade_kmh });
+    const { speedAccepted } = await this.live.applyReported(thingName, reported, { fromPoll: meta.fromPoll, speedAt: meta.timestamps?.velocidade_kmh, travadaAt: meta.timestamps?.travada });
     // A rampa só vê velocidade que é amostra fresca e mais nova (reported velho replayed pelo polling não trava ninguém).
     const forLock: ReportedState = { ...reported };
     if (!speedAccepted) delete forLock.velocidade_kmh;
