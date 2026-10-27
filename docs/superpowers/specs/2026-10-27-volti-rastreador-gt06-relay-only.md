@@ -65,6 +65,7 @@ Regras (todas obrigatórias e cobertas por teste):
 4. Confirmação: `reported.travada = true` vindo da ponte (ver §6.4).
 5. Sem parar em **120 s** → `failed`/`did_not_stop`, **nenhum corte enviado**, alerta `command_failed` (prioridade alta).
 6. Corte enviado e não confirmado em 120 s → `failed`/`timeout`; grava `desired.travada = false` (para a ponte não reenviar `engineStop` ao reconectar).
+   > **Nota (revisão final):** implementado com `desired.travada = null` (limpa o pendente), nunca `false` — ver `docs/decisoes.md`, "Onda final de correções A", item 1.
 7. **Moto offline** → `pending`/`offline`; ao reconectar, recomeça do passo 1 (nunca manda corte sem amostras novas).
 8. **Fim do aluguel** em `relay_only` segue o mesmo fluxo: o encerramento só confirma a trava com a moto parada.
 9. `unlock` → `desired.travada = false` → `engineResume`. Confirma por `reported.travada = false`. Prazo 30 s.
