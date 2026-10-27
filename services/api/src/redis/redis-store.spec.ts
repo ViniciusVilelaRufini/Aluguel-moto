@@ -21,4 +21,16 @@ describe('MemoryRedisStore: compare-and-delete', () => {
     expect(await r.get('k')).toBeNull();
     expect(await r.delIfEquals('k', 'a')).toBe(false);
   });
+
+  it('hsetMax grava o campo só se o valor for maior que o atual (ausente/não numérico = grava)', async () => {
+    const r = new MemoryRedisStore();
+    expect(await r.hsetMax('h', 'at', 100)).toBe(true);
+    expect(await r.hsetMax('h', 'at', 50)).toBe(false);
+    expect(await r.hgetall('h')).toEqual({ at: '100' });
+    expect(await r.hsetMax('h', 'at', 100)).toBe(false);
+    expect(await r.hsetMax('h', 'at', 150)).toBe(true);
+    await r.hset('h', { at: '' });
+    expect(await r.hsetMax('h', 'at', 10)).toBe(true);
+    expect(await r.hgetall('h')).toEqual({ at: '10' });
+  });
 });

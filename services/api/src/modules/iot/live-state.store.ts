@@ -78,8 +78,9 @@ export class LiveStateStore {
   private readonly lastDeviceTs = new Map<string, number>();
   /**
    * Início da conexão atual (ou da primeira amostra vista por este processo): amostras anteriores a ela não valem, e a graça conta a
-   * partir dela. Vai junto no hash do Redis (campo `reconnectAt`, vazio = desconhecida) e é hidratada no `refresh`: a reconexão
-   * vista por uma instância vale para a graça (`lockConfirmed`, `acceptSpeed`) das outras (onda final de correções, A-I2).
+   * partir dela. Vai para o hash do Redis (campo `reconnectAt`, ausente = desconhecida) só por máximo atômico (`hsetMax`) e é
+   * hidratada no `refresh`: a reconexão vista por uma instância vale para a graça (`lockConfirmed`, `acceptSpeed`) das outras
+   * (onda final de correções, A-I2). Uma instância com cópia velha nunca faz o campo voltar nem o apaga (N2).
    */
   private readonly reconnectAt = new Map<string, number>();
   /** Última mensagem do rastreador, de qualquer canal (hora de chegada; no polling, a metadata do shadow). Só em memória. */
@@ -336,10 +337,11 @@ export class LiveStateStore {
     if (!opts.keepDisplayOrder) this.lastTelemetryAt.delete(thingName);
     const now = this.clock.now();
     this.reconnectAt.set(thingName, now);
-    // Gravada já (sem versão nova do hash): as outras instâncias aplicam a graça mesmo se nada mais for gravado agora. Erro do
-    // Redis = só esta instância sabe (a próxima escrita do estado leva o campo).
+    // Gravada já (sem versão nova do hash): as outras instâncias aplicam a graça mesmo se nada mais for gravado agora. Máximo
+    // atômico: uma reconexão mais velha (relógio atrasado de outra instância) nunca baixa o campo. Erro do Redis = só esta
+    // instância sabe (a próxima escrita do estado leva o campo, também por máximo).
     return Promise.resolve()
-      .then(() => this.redis.hset(this.key(thingName), { reconnectAt: String(now) }))
+      .then(() => this.redis.hsetMax(this.key(thingName), 'reconnectAt', now))
       .then(
         () => undefined,
         () => undefined,
@@ -608,12 +610,16 @@ export class LiveStateStore {
     for (const [k, v] of Object.entries(s)) values[k] = String(v);
     // Sempre gravado (vazio = desconhecida): o `hset` não apaga campo, e uma origem velha não pode sobrar para outra instância.
     values.lockedAt = String(this.lockedAt.get(s.thingName) ?? '');
-    values.reconnectAt = String(this.reconnectAt.get(s.thingName) ?? '');
+    // `reconnectAt` não vai na escrita em bloco (a cópia desta instância pode estar velha e apagaria/baixaria a reconexão de
+    // outra — false confirm): só por máximo atômico, depois.
+    delete values.reconnectAt;
     // Carimbo monotônico desta escrita (para as outras instâncias saberem que a cópia delas ficou velha).
     const at = Math.max(this.clock.now(), (this.syncedAt.get(s.thingName) ?? 0) + 1);
     values._at = String(at);
     this.syncedAt.set(s.thingName, at);
     await this.redis.hset(this.key(s.thingName), values).catch(() => undefined);
+    const reconnect = this.reconnectAt.get(s.thingName);
+    if (reconnect !== undefined) await this.redis.hsetMax(this.key(s.thingName), 'reconnectAt', reconnect).catch(() => undefined);
   }
 }
 

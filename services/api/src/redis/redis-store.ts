@@ -23,6 +23,11 @@ export interface RedisStore {
    * `false` (nada apagado) se outro escritor gravou outro valor antes.
    */
   hdelIf(key: string, guardField: string, allowed: Array<string | null>): Promise<boolean>;
+  /**
+   * Máximo atômico num campo do hash: grava `value` só se o campo estiver ausente, não numérico ou menor. Devolve `true` se
+   * gravou. Para marcas de tempo compartilhadas entre instâncias (uma cópia velha nunca faz o valor voltar).
+   */
+  hsetMax(key: string, field: string, value: number): Promise<boolean>;
   /** Contador de janela fixa: INCR e, no primeiro hit, expira em `ttlMs`. Devolve a contagem e o tempo restante (ms). */
   incrWindow(key: string, ttlMs: number): Promise<{ count: number; ttlMs: number }>;
   /** `SET key value NX PX ttl`: grava só se a chave não existir. `true` = gravou (lock obtido). */
@@ -65,6 +70,11 @@ const DEL_WITH_INDEX_LUA = "redis.call('DEL', KEYS[1]) redis.call('HDEL', KEYS[2
 const HDEL_IF_LUA = `local cur = redis.call('HGET', KEYS[1], ARGV[1]) or ''
 for i = 2, #ARGV do if cur == ARGV[i] then redis.call('DEL', KEYS[1]) return 1 end end
 return 0`;
+// ARGV: campo, valor. Ausente ou não numérico conta como menor.
+const HSET_MAX_LUA = `local cur = tonumber(redis.call('HGET', KEYS[1], ARGV[1]) or '')
+if cur and cur >= tonumber(ARGV[2]) then return 0 end
+redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
+return 1`;
 const INCR_WINDOW_LUA = "local c = redis.call('INCR', KEYS[1]) if c == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[1]) end return {c, redis.call('PTTL', KEYS[1])}";
 
 /** Incremento como texto decimal sem notação científica (o HINCRBYFLOAT não aceita `1e-7`). */
@@ -115,6 +125,9 @@ export class IoRedisStore implements RedisStore {
   }
   async hdelIf(key: string, guardField: string, allowed: Array<string | null>) {
     return Number(await this.client.eval(HDEL_IF_LUA, 1, key, guardField, ...allowed.map((v) => v ?? ''))) === 1;
+  }
+  async hsetMax(key: string, field: string, value: number) {
+    return Number(await this.client.eval(HSET_MAX_LUA, 1, key, field, String(value))) === 1;
   }
   async incrWindow(key: string, ttlMs: number) {
     const [count, pttl] = (await this.client.eval(INCR_WINDOW_LUA, 1, key, String(Math.ceil(ttlMs)))) as [number, number];
@@ -260,6 +273,14 @@ export class MemoryRedisStore implements RedisStore {
     const cur = this.hashes.get(key)?.[guardField] ?? '';
     if (!allowed.some((v) => (v ?? '') === cur)) return false;
     this.hashes.delete(key);
+    return true;
+  }
+  async hsetMax(key: string, field: string, value: number) {
+    const h = this.hashes.get(key) ?? {};
+    const raw = h[field];
+    const cur = raw === undefined || raw.trim() === '' ? NaN : Number(raw);
+    if (Number.isFinite(cur) && cur >= value) return false;
+    this.hashes.set(key, { ...h, [field]: String(value) });
     return true;
   }
   async incrWindow(key: string, ttlMs: number) {

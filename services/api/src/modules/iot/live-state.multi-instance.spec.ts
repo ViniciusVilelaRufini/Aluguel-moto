@@ -75,14 +75,65 @@ describe('LiveStateStore com várias instâncias', () => {
     expect(b.lockConfirmed(T)).toBe(true);
   });
 
-  it('final fix wave: reconnectAt sempre gravado no hash (vazio = desconhecido)', async () => {
+  it('N2: reconnectAt só vai para o hash por máximo atômico (persist não grava desconhecida nem valor velho)', async () => {
     const redis = new MemoryRedisStore();
     const clock = new FakeClock(Date.parse('2026-10-24T12:00:00Z'));
     const a = new LiveStateStore(redis, clock);
     await a.setOnline(T, true);
-    expect((await redis.hgetall(`iot:live:${T}`)).reconnectAt).toBe('');
+    expect((await redis.hgetall(`iot:live:${T}`)).reconnectAt).toBeUndefined();
     await a.markReconnected(T);
     expect((await redis.hgetall(`iot:live:${T}`)).reconnectAt).toBe(String(clock.now()));
+  });
+
+  it('N2: persist de B (leu o hash antes) depois do markReconnected de A mantém a reconexão mais nova de A', async () => {
+    const redis = new MemoryRedisStore();
+    const clock = new FakeClock(Date.parse('2026-10-24T12:00:00Z'));
+    const a = new LiveStateStore(redis, clock);
+    // B lê o hash e só grava depois: a escrita de A cai no meio (leitura → escrita não é atômica).
+    let release!: () => void;
+    let gated = false;
+    const gate = new Promise<void>((r) => (release = r));
+    const bRedis = new Proxy(redis, {
+      get(target, prop, recv) {
+        if (prop === 'hgetall' && gated) {
+          return async (key: string) => {
+            const h = await target.hgetall(key);
+            await gate;
+            return h;
+          };
+        }
+        const v = Reflect.get(target, prop, recv);
+        return typeof v === 'function' ? v.bind(target) : v;
+      },
+    });
+    const b = new LiveStateStore(bRedis, clock);
+    await b.applyTelemetry(T, telemetry('2026-10-24T12:00:00Z', 0)); // B: reconexão antiga (12:00:00) na memória
+    await clock.advance(60_000);
+    gated = true;
+    const bWrite = b.setOnline(T, true); // B lê o hash (sem a reconexão de A)…
+    await Promise.resolve();
+    await a.load(T);
+    await a.markReconnected(T); // …A grava a reconexão (12:01:00)…
+    const newer = String(clock.now());
+    release();
+    await bWrite; // …e B grava o estado com a cópia velha
+    expect((await redis.hgetall(`iot:live:${T}`)).reconnectAt).toBe(newer);
+    // Uma instância nova trata o reported na graça da reconexão de A como não confirmado.
+    await clock.advance(1_000);
+    const c = new LiveStateStore(redis, clock);
+    await c.load(T);
+    await c.applyReported(T, { travada: true });
+    expect(c.lockConfirmed(T)).toBe(false);
+  });
+
+  it('N2: markReconnected mais velho (relógio atrasado) nunca baixa o reconnectAt do hash', async () => {
+    const redis = new MemoryRedisStore();
+    const t0 = Date.parse('2026-10-24T12:00:00Z');
+    const a = new LiveStateStore(redis, new FakeClock(t0 + 10_000));
+    const b = new LiveStateStore(redis, new FakeClock(t0));
+    await a.markReconnected(T);
+    await b.markReconnected(T);
+    expect((await redis.hgetall(`iot:live:${T}`)).reconnectAt).toBe(String(t0 + 10_000));
   });
 
   it('teto do desired gravado por uma instância é lido pela outra', async () => {
