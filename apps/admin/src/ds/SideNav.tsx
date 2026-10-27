@@ -9,11 +9,13 @@ export interface SideNavItem { value: string; label: string; icon: string; badge
  * Abaixo de 1024px vira trilho de ícones (globals.css, `.shell-nav`): por isso cada item tem
  * `aria-label` e `title` — o texto visível some, o nome acessível e a dica continuam.
  */
-export function SideNav({ items = [], value, onChange, footer, brand = 'volti', style }: {
+export function SideNav({ items = [], value, onChange, footer, brand = 'volti', style, id, open }: {
   items: SideNavItem[]; value?: string; onChange?: (v: string) => void; footer?: ReactNode; brand?: string; style?: CSSProperties;
+  /** Gaveta (celular): `id` ligado ao botão de menu e estado aberto/fechado. */
+  id?: string; open?: boolean;
 }) {
   return (
-    <nav className="shell-nav" aria-label="Seções do painel" style={{ width: 232, flexShrink: 0, background: 'var(--ink-900)', color: '#fff', display: 'flex', flexDirection: 'column', padding: '20px 12px', gap: 4, transition: 'width var(--dur-slow) var(--ease-screen)', ...style }}>
+    <nav id={id} className="shell-nav" data-open={open || undefined} aria-label="Seções do painel" style={{ width: 232, flexShrink: 0, background: 'var(--ink-900)', color: '#fff', display: 'flex', flexDirection: 'column', padding: '20px 12px', gap: 4, transition: 'width var(--dur-slow) var(--ease-screen)', ...style }}>
       <div style={{ font: '800 24px/1 var(--font-sans)', letterSpacing: '-.04em', color: 'var(--green-400)', padding: '4px 12px 20px' }}>{brand}</div>
       {items.map((it) => {
         const on = it.value === value;

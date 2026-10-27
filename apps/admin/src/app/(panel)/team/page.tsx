@@ -5,6 +5,9 @@ import { staffLabel } from '@/lib/staff-label';
 import { useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { AUDIT_ACTION_OPTIONS, AUDIT_ENTITY_OPTIONS, AUDIT_OTHER, auditActionLabel, auditEntityLabel, auditFilterValue } from '@/lib/audit-labels';
+import { useAuth } from '@/lib/auth';
+import { useDebounced } from '@/lib/use-debounced';
+import { isEmail, useSubmitGuard } from '@/lib/submit-guard';
 import { GROUP_LABEL } from '@/lib/labels';
 import { dayEndIso, dayStartIso, formatDateTime, timeAgo } from '@/lib/format';
 import type { S, StaffGroup } from '@/lib/types';
@@ -28,7 +31,7 @@ export default function TeamPage() {
   const [tab, setTab] = useState<'team' | 'audit'>('team');
   return (
     <Page>
-      <PageHeader title="Equipe e acessos" subtitle="Cada perfil vê só o que precisa · 2FA obrigatório">
+      <PageHeader subtitle="Cada perfil vê só o que precisa · 2FA obrigatório">
         <SegmentedControl options={[{ value: 'team', label: 'Equipe' }, { value: 'audit', label: 'Auditoria' }]} value={tab} onChange={setTab} style={{ width: 260 }} />
       </PageHeader>
       <TabPanel k={tab}>{tab === 'team' ? <Team /> : <Audit />}</TabPanel>
@@ -54,7 +57,7 @@ function Team() {
         ))}
       </div>
       <ErrorNote error={error} />
-      <DataTable<S<'StaffUser'>> rows={rows} loading={loading} pager={pager} onRowClick={setEdit} empty="Nenhuma pessoa na equipe" emptyIcon="Users"
+      <div className="stack-cells"><DataTable<S<'StaffUser'>> rows={rows} loading={loading} pager={pager} onRowClick={setEdit} empty="Nenhuma pessoa na equipe" emptyIcon="Users"
         columns={[
           { key: 'name', label: 'Pessoa', render: (r) => <span style={{ fontWeight: 600 }}>{staffLabel(r)}</span> },
           { key: 'email', label: 'E-mail' },
@@ -62,7 +65,7 @@ function Team() {
           { key: 'mfa', label: '2FA', render: (r) => (r.mfaEnabled === false ? <Badge size="sm" tone="warning">Pendente</Badge> : <Badge size="sm" tone="success" icon="ShieldCheck">Ativo</Badge>) },
           { key: 'active', label: 'Conta', render: (r) => <Pill tone={r.active ? 'success' : 'neutral'}>{r.active ? 'Ativa' : 'Inativa'}</Pill> },
           { key: 'lastLoginAt', label: 'Último acesso', align: 'right', render: (r) => (r.lastLoginAt ? timeAgo(r.lastLoginAt) : 'nunca') },
-        ]} />
+        ]} /></div>
       {invite && <StaffModal onClose={() => setInvite(false)} onSaved={() => { toast('Convite enviado'); qc.invalidateQueries({ queryKey: ['staff'] }); }} />}
       {edit && <StaffModal user={edit} onClose={() => setEdit(null)} onSaved={() => { toast('Acesso atualizado'); qc.invalidateQueries({ queryKey: ['staff'] }); }} />}
     </>
@@ -75,31 +78,38 @@ function StaffModal({ user, onClose, onSaved }: { user?: S<'StaffUser'>; onClose
   const [groups, setGroups] = useState<StaffGroup[]>(user?.groups ?? ['operacao']);
   const [active, setActive] = useState(user?.active ?? true);
   const [err, setErr] = useState<unknown>(null);
+  const { me } = useAuth();
+  const { busy, run } = useSubmitGuard();
+  // O servidor recusa; aqui o painel nem oferece: ninguém desativa a si mesmo nem tira o próprio perfil admin.
+  const isSelf = !!user && !!me && user.id === me.id;
   const toggle = (g: StaffGroup) => setGroups((cur) => (cur.includes(g) ? cur.filter((x) => x !== g) : [...cur, g]));
-  const submit = async () => {
+  const submit = () => run(async () => {
+    setErr(null);
     try {
       if (groups.length === 0) throw new Error('Escolha ao menos um perfil');
+      if (!user && !isEmail(email)) throw new Error('Informe um e-mail válido, por exemplo nome@empresa.com');
       if (user) await unwrap(api.PATCH('/staff/{id}', { params: { path: { id: user.id } }, body: { name: name.trim(), groups, active } }));
       else await unwrap(api.POST('/staff', { body: { name: name.trim(), email: email.trim(), groups } }));
       onSaved(); onClose();
     } catch (e) { setErr(e); }
-  };
+  });
   return (
     <Modal open title={user ? 'Editar acesso' : 'Convidar pessoa'} onClose={onClose}
-      actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" disabled={!name.trim() || !email.trim()} onClick={submit}>{user ? 'Salvar' : 'Enviar convite'}</Button></>}>
+      actions={<><Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button><Button size="sm" variant="dark" busy={busy} disabled={busy || !name.trim() || !email.trim()} onClick={submit}>{user ? 'Salvar' : 'Enviar convite'}</Button></>}>
       <Field label="Nome"><TextInput value={name} onChange={setName} /></Field>
-      <Field label="E-mail"><TextInput type="email" value={email} onChange={setEmail} /></Field>
+      <Field label="E-mail"><TextInput type="email" value={email} onChange={setEmail} readOnly={!!user} /></Field>
       <div>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>Perfis</div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {GROUPS.map((g) => (
             <label key={g} style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontSize: 14 }}>
-              <input type="checkbox" checked={groups.includes(g)} onChange={() => toggle(g)} /> {GROUP_LABEL[g]}
+              <input type="checkbox" checked={groups.includes(g)} disabled={isSelf && g === 'admin'} onChange={() => toggle(g)} /> {GROUP_LABEL[g]}
             </label>
           ))}
         </div>
       </div>
-      {user && <Switch label="Conta ativa" checked={active} onChange={setActive} />}
+      {user && <Switch label="Conta ativa" checked={active} disabled={isSelf} onChange={setActive} />}
+      {isSelf && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Você não pode desativar a própria conta nem remover o próprio perfil de administrador.</div>}
       <ErrorNote error={err} />
     </Modal>
   );
@@ -122,8 +132,9 @@ function Audit() {
   const [entityCustom, setEntityCustom] = useState('');
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
-  const actionFilter = auditFilterValue(action, actionCustom);
-  const entityFilter = auditFilterValue(entity, entityCustom);
+  // Seletores mudam na hora; o identificador digitado em "Outra…" só consulta depois que a digitação para.
+  const actionFilter = useDebounced(auditFilterValue(action, actionCustom));
+  const entityFilter = useDebounced(auditFilterValue(entity, entityCustom));
   const { rows, loading, error, pager } = usePagedQuery<S<'AuditLog'>>(['audit', actionFilter, entityFilter, from, to], (cursor) =>
     unwrap(api.GET('/audit-logs', { params: { query: { cursor, limit: 20, action: actionFilter || undefined, entityType: entityFilter || undefined, from: from ? dayStartIso(from) : undefined, to: to ? dayEndIso(to) : undefined } } })),
   );

@@ -263,11 +263,12 @@ export default function FleetPage() {
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <div style={{ flex: 1, position: 'relative', minWidth: 0, minHeight: 320 }}>
         <MapView onReady={onReady} onDestroy={() => { imagesOff.current(); imagesOff.current = () => {}; pulseRef.current?.remove(); pulseRef.current = null; mapRef.current = null; drawn.current = new Map(); setMapReady(false); }} />
-        <div data-view={view} style={view === 'list'
+        {/* No celular, com uma moto selecionada no mapa, KPIs e filtros recolhem para o pin não ficar escondido (ver .fleet-overlay em globals.css). */}
+        <div data-view={view} className="fleet-overlay" data-collapsed={(!!selected && view === 'map') || undefined} style={view === 'list'
           ? { position: 'absolute', inset: 0, padding: 16, display: 'flex', flexDirection: 'column', gap: 10, overflow: 'auto', background: 'var(--surface-app)', zIndex: 3 }
           : { position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', flexDirection: 'column', gap: 10, pointerEvents: 'none' }}>
           {dash.data ? (
-            <div data-testid="dashboard-strip" className="vt-stagger" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 880 }}>
+            <div data-testid="dashboard-strip" className="vt-stagger kpi-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, pointerEvents: 'auto', maxWidth: 880 }}>
               <StatTile icon="Gauge" label="Ocupação" numeric={Math.round(dash.data.occupancyPct)} format={pct} />
               <StatTile icon="Bike" label="Aluguéis ativos" numeric={dash.data.activeRentals} />
               {/* A API zera a receita para quem não é admin/financeiro: melhor ocultar do que mostrar R$ 0,00. */}
@@ -276,7 +277,7 @@ export default function FleetPage() {
               <StatTile icon="Siren" label="Alertas pendentes" numeric={openAlerts} goodWhen="down" />
             </div>
           ) : dash.isLoading ? (
-            <div aria-hidden style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, maxWidth: 880 }}>
+            <div aria-hidden className="kpi-strip" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 10, maxWidth: 880 }}>
               {[0, 1, 2, 3].map((i) => <StatTileSkeleton key={i} />)}
             </div>
           ) : null}

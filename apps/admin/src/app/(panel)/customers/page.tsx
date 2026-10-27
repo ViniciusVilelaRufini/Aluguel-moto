@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { api, unwrap } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { can, canSeeFullCpf } from '@/lib/permissions';
-import { displayCpf } from '@/lib/cpf';
+import { displayCpf, isValidCpf } from '@/lib/cpf';
 import { CLAIM_STATUS, CONVERSATION_STATUS, CUSTOMER_STATUS, DISPUTE_STATUS, KYC_STATUS, PAYMENT_KIND, PAYMENT_STATUS, PLAN_LABEL, RENTAL_STATUS } from '@/lib/labels';
 import { formatBRL, formatDate, formatDateTime, formatDuration, formatPhone } from '@/lib/format';
 import type { S } from '@/lib/types';
@@ -50,7 +50,7 @@ export default function CustomersPage() {
   return (
     <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0 }}>
       <div style={{ padding: '20px 28px 0', display: 'flex', flexDirection: 'column', gap: 14 }}>
-        <PageHeader title="Clientes" subtitle="Verificação, bloqueio de conta, aluguéis e atendimento">
+        <PageHeader subtitle="Verificação, bloqueio de conta, aluguéis e atendimento">
           {tab === 'customers' && <Button size="sm" variant="secondary" icon="ShieldAlert" style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => setRestrictions(true)}>Lista de restrição</Button>}
           <SegmentedControl options={[{ value: 'customers', label: 'Clientes' }, { value: 'rentals', label: 'Aluguéis' }, { value: 'support', label: 'Suporte' }]} value={tab} onChange={changeTab} style={{ width: 340 }} />
         </PageHeader>
@@ -71,6 +71,14 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState(params.get('q') ?? '');
   const [debounced, setDebounced] = useState(q);
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 640px)');
+    const sync = () => setNarrow(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
   const full = canSeeFullCpf(groups);
   useEffect(() => { const t = setTimeout(() => setDebounced(q), 300); return () => clearTimeout(t); }, [q]);
   useEffect(() => { const v = params.get('q'); if (v) setQ(v); }, [params]);
@@ -86,11 +94,12 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
       <Page>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
           <div style={{ flex: 1, minWidth: 240 }}>
-            <Input placeholder="Buscar por nome, CPF, e-mail ou telefone" icon="Search" value={q} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)} testId="customer-search" />
+            <Input placeholder={narrow ? 'Buscar por nome, CPF ou e-mail' : 'Buscar por nome, CPF, e-mail ou telefone'} icon="Search" value={q} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQ(e.target.value)} testId="customer-search" />
           </div>
           <SegmentedControl options={[{ value: 'all', label: 'Todos' }, { value: 'pending', label: 'Pendentes' }, { value: 'blocked', label: 'Bloqueados' }]} value={filter} onChange={setFilter} style={{ width: 320 }} />
         </div>
         <ErrorNote error={error} />
+        <div className="stack-cells">
         <DataTable<S<'Customer'>>
           testId="customers-table" sticky
           rows={rows}
@@ -119,6 +128,7 @@ function CustomersTab({ selected, onSelect, onRentals, onChat }: { selected: str
             ) },
           ] as Column<S<'Customer'>>[]).filter((c) => !(selected && ['cpf', 'plan', 'rentals'].includes(c.key)))}
         />
+        </div>
       </Page>
       {selected && <CustomerSheet id={selected} onClose={() => onSelect(null)} onRentals={onRentals} onChat={onChat} />}
     </div>
@@ -311,7 +321,9 @@ function RestrictionModal({ onClose }: { onClose: () => void }) {
   const [cpf, setCpf] = useState('');
   const [reason, setReason] = useState('');
   const [err, setErr] = useState<unknown>(null);
+  const [removing, setRemoving] = useState<S<'RestrictionEntry'> | null>(null);
   const full = canSeeFullCpf(groups);
+  const cpfInvalid = cpf.replace(/\D/g, '').length === 11 && !isValidCpf(cpf);
   const { rows, loading, error, pager } = usePagedQuery<S<'RestrictionEntry'>>(['restrictions'], (cursor) => unwrap(api.GET('/customer-restrictions', { params: { query: { cursor, limit: 10 } } })));
   return (
     <Modal open title="Lista de restrição" onClose={onClose} width={640} actions={<Button size="sm" variant="ghost" onClick={onClose}>Fechar</Button>}>
@@ -322,19 +334,27 @@ function RestrictionModal({ onClose }: { onClose: () => void }) {
           { key: 'reason', label: 'Motivo', render: (r) => <span style={{ whiteSpace: 'normal' }}>{r.reason}</span> },
           { key: 'createdAt', label: 'Desde', render: (r) => formatDate(r.createdAt) },
           { key: 'a', label: '', align: 'right', render: (r) => can(groups, 'customer.restriction.remove') ? (
-            <Button size="sm" variant="ghost" icon="Trash2" style={{ color: 'var(--danger-ink)' }} onClick={async () => {
-              try { await unwrap(api.DELETE('/customer-restrictions/{id}', { params: { path: { id: r.id } } })); toast('CPF removido da lista'); qc.invalidateQueries({ queryKey: ['restrictions'] }); } catch (e) { setErr(e); }
-            }}>Remover</Button>
+            <Button size="sm" variant="ghost" icon="Trash2" style={{ color: 'var(--danger-ink)' }} onClick={() => setRemoving(r)}>Remover</Button>
           ) : null },
         ]} />
       <SectionTitle>Adicionar CPF</SectionTitle>
       <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-        <div style={{ width: 170 }}><Field label="CPF"><TextInput value={cpf} onChange={setCpf} placeholder="Somente números" /></Field></div>
+        <div style={{ width: 170 }}><Field label="CPF" error={cpfInvalid ? 'CPF inválido: confira os dígitos' : undefined}><TextInput value={cpf} onChange={setCpf} placeholder="Somente números" /></Field></div>
         <div style={{ flex: 1, minWidth: 180 }}><Field label="Motivo"><TextInput value={reason} onChange={setReason} /></Field></div>
-        <Button size="sm" icon="Plus" disabled={cpf.replace(/\D/g, '').length !== 11 || reason.trim().length < 3} onClick={async () => {
+        <Button size="sm" icon="Plus" disabled={cpf.replace(/\D/g, '').length !== 11 || cpfInvalid || reason.trim().length < 3} onClick={async () => {
           try { await unwrap(api.POST('/customer-restrictions', { body: { cpf: cpf.replace(/\D/g, ''), reason: reason.trim() } })); setCpf(''); setReason(''); setErr(null); toast('CPF adicionado'); qc.invalidateQueries({ queryKey: ['restrictions'] }); } catch (e) { setErr(e); }
         }}>Adicionar</Button>
       </div>
+      <Modal open={!!removing} title="Remover da lista de restrição" onClose={() => setRemoving(null)}
+        actions={<>
+          <Button size="sm" variant="ghost" onClick={() => setRemoving(null)}>Cancelar</Button>
+          <Button size="sm" variant="danger" onClick={async () => {
+            const r = removing!;
+            setRemoving(null);
+            try { await unwrap(api.DELETE('/customer-restrictions/{id}', { params: { path: { id: r.id } } })); toast('CPF removido da lista'); qc.invalidateQueries({ queryKey: ['restrictions'] }); } catch (e) { setErr(e); }
+          }}>Remover CPF</Button></>}>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>Este CPF volta a poder alugar. Confirma a remoção de {removing ? displayCpf(removing.cpf, full) : ''}?</div>
+      </Modal>
     </Modal>
   );
 }

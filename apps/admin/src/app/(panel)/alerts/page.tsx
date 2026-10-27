@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -61,14 +61,14 @@ export default function AlertsPage() {
 
   return (
     <Page>
-      <PageHeader title="Alertas" subtitle="Gerados pelo rastreador e pelas regras de área">
+      <PageHeader subtitle="Gerados pelo rastreador e pelas regras de área">
         <SegmentedControl options={TABS} value={tab} onChange={setTab} style={{ width: 340 }} />
       </PageHeader>
       {critical > 0 && (
         <Alert tone="danger" title={`${critical} ${critical === 1 ? 'alerta crítico' : 'alertas críticos'}`} icon="Siren">{criticalBanner(criticalRows.map((a) => a.type))}</Alert>
       )}
-      <ErrorNote error={error ?? assign.error} />
-      <DataTable
+      <ErrorNote error={error} />
+      <div className="stack-cells"><DataTable
         testId="alerts-table" sticky
         rows={sorted}
         loading={loading}
@@ -106,8 +106,8 @@ export default function AlertsPage() {
             </div>
           ) },
         ]}
-      />
-      {assigning && <AssignModal alert={assigning} meId={me?.id} busy={assign.isPending} onClose={() => setAssigning(null)} onAssign={(assigneeId, name) => assign.mutate({ id: assigning.id, assigneeId, name })} />}
+      /></div>
+      {assigning && <AssignModal alert={assigning} meId={me?.id} busy={assign.isPending} error={assign.error} onClose={() => { assign.reset(); setAssigning(null); }} onAssign={(assigneeId, name) => assign.mutate({ id: assigning.id, assigneeId, name })} />}
       <ReasonDialog
         open={!!resolving}
         title="Resolver alerta"
@@ -125,7 +125,7 @@ export default function AlertsPage() {
 }
 
 /** Escolhe quem assume o alerta (lista de usuários internos ativos; padrão: quem está logado). */
-function AssignModal({ alert, meId, busy, onClose, onAssign }: { alert: S<'Alert'>; meId?: string; busy: boolean; onClose: () => void; onAssign: (assigneeId: string, name: string) => void }) {
+function AssignModal({ alert, meId, busy, error, onClose, onAssign }: { alert: S<'Alert'>; meId?: string; busy: boolean; error?: unknown; onClose: () => void; onAssign: (assigneeId: string, name: string) => void }) {
   // Carrega todas as páginas de usuários ativos (a lista é paginada por cursor).
   const staff = useQuery({
     queryKey: ['staff-assignees'],
@@ -144,14 +144,23 @@ function AssignModal({ alert, meId, busy, onClose, onAssign }: { alert: S<'Alert
   const [pick, setPick] = useState<string>('');
   const value = pickAssignee(people, meId, pick);
   const chosen = people.find((x) => x.id === value);
+  // Trava síncrona: isPending só vira true no próximo render, então um duplo clique rápido passaria duas vezes.
+  const lock = useRef(false);
+  useEffect(() => { if (!busy) lock.current = false; }, [busy]);
+  const submit = () => {
+    if (!chosen || lock.current) return;
+    lock.current = true;
+    onAssign(chosen.id, chosen.name);
+  };
   return (
     <Modal open title="Atribuir alerta" onClose={onClose} testId="assign-dialog"
       actions={<>
         <Button size="sm" variant="ghost" onClick={onClose}>Cancelar</Button>
-        <Button size="sm" variant="dark" testId="assign-confirm" disabled={busy || !chosen} onClick={() => chosen && onAssign(chosen.id, chosen.name)}>{busy ? 'Atribuindo...' : 'Atribuir'}</Button>
+        <Button size="sm" variant="dark" testId="assign-confirm" disabled={busy || !chosen} ariaBusy={busy} onClick={submit}>{busy ? 'Atribuindo...' : 'Atribuir'}</Button>
       </>}>
       <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{TYPE_INFO[alert.type]?.[0] ?? alert.type}{alert.vehicleCode ? ` · ${alert.vehicleCode}` : ''}</div>
       <ErrorNote error={staff.error} />
+      <ErrorNote error={error} />
       <Field label="Responsável">
         <Select testId="assign-select" value={value} onChange={setPick} options={people.map((x) => ({ value: x.id, label: x.id === meId ? `${x.name} (você)` : x.name }))} />
       </Field>

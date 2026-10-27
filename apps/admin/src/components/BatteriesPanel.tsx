@@ -78,7 +78,8 @@ export function BatteriesPanel() {
         <div style={{ flex: 1 }} />
         {canCreate && <Button size="sm" variant="dark" icon="Plus" testId="battery-new" onClick={() => setCreating(true)}>Cadastrar bateria</Button>}
       </div>
-      <div data-testid="battery-counts" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
+      {/* 7 situações: cartões de 104 px para caber 3 por linha no celular (P3-22). */}
+      <div data-testid="battery-counts" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(104px, 1fr))', gap: 10 }}>
         {BATTERY_STATUSES.map((s) => (
           <Card key={s} padding={14} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{countCardLabel(s)}</span>
@@ -94,14 +95,14 @@ export function BatteriesPanel() {
           <div data-testid="stations-legend" style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
             Prontas para troca: baterias carregadas nas vagas, informadas pela própria estação. Cadastradas na estação: baterias com a situação “Na estação” no cadastro.
           </div>
-          <DataTable<S<'SwapStation'>> dense testId="stations-table" rows={stations.data?.items ?? []} loading={stations.isLoading} empty="Nenhuma estação cadastrada" emptyIcon="Warehouse"
+          <div className="stack-cells"><DataTable<S<'SwapStation'>> dense testId="stations-table" rows={stations.data?.items ?? []} loading={stations.isLoading} empty="Nenhuma estação cadastrada" emptyIcon="Warehouse"
             columns={[
               { key: 'name', label: 'Estação', render: (s) => <div><div style={{ fontWeight: 600 }}>{s.name}</div><div style={{ fontSize: 12, color: 'var(--text-secondary)', whiteSpace: 'normal' }}>{s.address}</div></div> },
               { key: 'available', label: 'Prontas para troca', align: 'right', render: (s) => <span style={{ fontFamily: 'var(--font-mono)' }}>{s.availableBatteries}/{s.totalSlots}</span> },
               { key: 'stock', label: 'Cadastradas na estação', align: 'right', render: (s) => inStation.get(s.id) ?? 0 },
               { key: 'hours', label: 'Horário', wrap: true, render: (s) => <span style={{ fontSize: 12 }}>{s.open24h ? '24 h' : s.openingHours}</span> },
               ...(canSwaps ? [{ key: 'swaps', label: '', align: 'right' as const, pin: true, render: (s: S<'SwapStation'>) => <Button size="sm" variant="ghost" icon="History" testId={`station-swaps-${s.id}`} onClick={() => setSwapsOf(s)}>Trocas</Button> }] : []),
-            ]} />
+            ]} /></div>
         </div>
         <VanStock staff={staff.data?.items ?? []} stations={stations.data?.items ?? []} depots={(depots.data?.items ?? []).filter((d) => d.active)} canTransfer={canTransfer} />
       </div>
@@ -128,9 +129,9 @@ function VanStock({ staff, stations, depots, canTransfer }: { staff: S<'StaffUse
         <Field label="Van de"><Select testId="van-operator" value={operator} onChange={setOperator} options={[{ value: ME, label: 'Minha van' }, ...staff.map((s) => ({ value: s.id, label: s.name }))]} /></Field>
         <ErrorNote error={van.error} onRetry={() => van.refetch()} />
         <div data-testid="van-summary" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <Pill tone="neutral" icon="Package">{van.data ? `${van.data.total} no total` : '...'}</Pill>
-          <Pill tone="success" icon="BatteryCharging">{van.data ? `${van.data.chargedCount} carregadas` : '...'}</Pill>
-          <Pill tone="warning" icon="BatteryWarning">{van.data ? `${van.data.depletedCount} descarregadas` : '...'}</Pill>
+          <Pill tone="neutral" icon="Package">{van.data ? `${van.data.total} no total` : van.isError ? '— no total' : '...'}</Pill>
+          <Pill tone="success" icon="BatteryCharging">{van.data ? `${van.data.chargedCount} ${van.data.chargedCount === 1 ? 'carregada' : 'carregadas'}` : van.isError ? '— carregadas' : '...'}</Pill>
+          <Pill tone="warning" icon="BatteryWarning">{van.data ? `${van.data.depletedCount} ${van.data.depletedCount === 1 ? 'descarregada' : 'descarregadas'}` : van.isError ? '— descarregadas' : '...'}</Pill>
         </div>
         {van.data && van.data.items.length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>

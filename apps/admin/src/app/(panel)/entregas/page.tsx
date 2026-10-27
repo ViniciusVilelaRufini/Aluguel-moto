@@ -49,7 +49,7 @@ export default function HandoversPage() {
   return (
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <Page>
-        <PageHeader title="Entregas no galpão" subtitle="Saídas e chegadas registradas pela operação, com fotos e checklist. Horários de São Paulo.">
+        <PageHeader subtitle="Saídas e chegadas registradas pela operação, com fotos e checklist. Horários de São Paulo.">
           <SegmentedControl label="Ver" options={[{ value: 'all', label: 'Todas' }, { value: 'disputes', label: 'Disputas' }]} value={view}
             onChange={(v: View) => { setView(v); setSelected(null); }} style={{ width: 260 }} />
         </PageHeader>

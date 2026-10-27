@@ -13,7 +13,7 @@ export function Input({ label, value, defaultValue, placeholder, onChange, icon,
         {icon && <Icon name={icon} size={20} color="var(--text-tertiary)" />}
         <input data-testid={testId} name={name} type={type} inputMode={inputMode} autoComplete={autoComplete} autoFocus={autoFocus} required={required} readOnly={readOnly} aria-invalid={error ? true : undefined} value={value} defaultValue={defaultValue} placeholder={placeholder} onChange={onChange}
           onFocus={() => setF(true)} onBlur={() => setF(false)}
-          style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', font: 'var(--type-body)', color: 'var(--text-primary)' }} />
+          style={{ flex: 1, minWidth: 0, border: 0, outline: 0, background: 'transparent', font: 'var(--type-body)', color: readOnly ? 'var(--text-secondary)' : 'var(--text-primary)', cursor: readOnly ? 'default' : undefined }} />
       </span>
       {(error || hint) && <span style={{ font: 'var(--type-caption)', color: error ? 'var(--danger-ink)' : 'var(--text-secondary)' }}>{error || hint}</span>}
     </label>

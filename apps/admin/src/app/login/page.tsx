@@ -11,7 +11,7 @@ import { DEV_USERS, useAuth } from '@/lib/auth';
 import { AUTH_MODE } from '@/lib/config';
 import { CognitoLoginForm } from '@/components/login/CognitoLoginForm';
 import { LoginBrand, LoginMobileBrand, titleStyle as title } from '@/components/login/LoginViews';
-import { homeFor } from '@/lib/permissions';
+import { homeFor, menuFor } from '@/lib/permissions';
 import { errorText } from '@/lib/api';
 
 type DevGroup = keyof typeof DEV_USERS;
@@ -23,12 +23,21 @@ const GROUP_OPTIONS: { value: DevGroup; label: string }[] = [
 ];
 
 export default function LoginPage() {
+  const { token, me, groups, logout } = useAuth();
+  // Sessão válida de quem não tem nenhuma seção no painel (perfil de campo): explica em vez de repetir o login.
+  const noPanel = !!token && !!me && menuFor(groups).length === 0;
   return (
     <div className="login-screen">
       <LoginBrand />
       <main className="login-main">
         <div className="login-column">
           <LoginMobileBrand />
+          {noPanel && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+              <Alert tone="warning" icon="TriangleAlert">Seu perfil é de campo; use o app do operador.</Alert>
+              <Button variant="secondary" fullWidth testId="login-logout" onClick={logout}>Sair desta conta</Button>
+            </div>
+          )}
           {AUTH_MODE === 'cognito' ? <CognitoLoginForm /> : <DevLoginForm />}
         </div>
       </main>
@@ -61,12 +70,12 @@ function DevLoginForm() {
   };
 
   return (
-    <form key={step} className="section-in login-form" onSubmit={(e) => { e.preventDefault(); if (step === 0) setStep(1); else if (!busy && code.length === 6) enter(); }}>
+    <form key={step} className="section-in login-form" onSubmit={(e) => { e.preventDefault(); if (step === 0) { if (!password.trim()) setError('Informe a senha.'); else { setError(null); setStep(1); } } else if (!busy && code.length === 6) enter(); }}>
       {step === 0 ? (
         <>
           <h1 style={title}>Entrar</h1>
-          <Input label="E-mail" value={DEV_USERS[group].email} onChange={() => {}} icon="Mail" />
-          <Input label="Senha" type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPassword(e.target.value)} icon="Lock" testId="login-password" />
+          <Input label="E-mail" value={DEV_USERS[group].email} readOnly hint="Definido pelo perfil de acesso abaixo (modo de desenvolvimento)." icon="Mail" />
+          <Input label="Senha" error={error} type="password" value={password} onChange={(e: React.ChangeEvent<HTMLInputElement>) => { setPassword(e.target.value); setError(null); }} icon="Lock" testId="login-password" />
           <Field label="Perfil de acesso (modo de desenvolvimento)">
             <Select testId="group-select" value={group} onChange={setGroup} options={GROUP_OPTIONS} />
           </Field>
@@ -80,7 +89,7 @@ function DevLoginForm() {
           <Alert tone="info" icon="ShieldCheck">Modo de desenvolvimento: o código não é verificado. Em produção o 2FA é obrigatório para todos os perfis.</Alert>
           <ErrorNote error={error ? new Error(error) : null} />
           <Button size="lg" fullWidth type="submit" disabled={busy || code.length < 6} testId="login-submit">{busy ? 'Entrando...' : 'Entrar no painel'}</Button>
-          <Button variant="ghost" fullWidth onClick={() => { setCode(''); setStep(0); }}>Voltar</Button>
+          <Button variant="ghost" fullWidth onClick={() => { setCode(''); setError(null); setStep(0); }}>Voltar</Button>
         </>
       )}
     </form>

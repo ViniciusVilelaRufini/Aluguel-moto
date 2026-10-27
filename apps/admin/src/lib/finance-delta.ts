@@ -10,6 +10,8 @@ export function previousRange(from: string, to: string): { from: string; to: str
 }
 
 const num = (n: number, digits: number) => n.toLocaleString('pt-BR', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+/** Sem mudança: texto neutro, sem sinal nem seta. */
+const FLAT: Delta = { text: 'Sem variação', trend: 'flat' };
 const signed = (n: number) => (n < 0 ? '−' : n > 0 ? '+' : '');
 const trendOf = (n: number): Delta['trend'] => (n < 0 ? 'down' : n > 0 ? 'up' : 'flat');
 
@@ -17,6 +19,7 @@ const trendOf = (n: number): Delta['trend'] => (n < 0 ? 'down' : n > 0 ? 'up' : 
 export function percentDelta(cur: number | null, prev: number | null, suffix = ' vs. período anterior'): Delta | null {
   if (cur == null || prev == null || prev === 0) return null;
   const pct = ((cur - prev) / Math.abs(prev)) * 100;
+  if (Math.round(Math.abs(pct) * 10) === 0) return FLAT;
   const shown = Math.abs(pct) >= 10 ? Math.round(Math.abs(pct)) : Math.round(Math.abs(pct) * 10) / 10;
   return { text: `${signed(pct)}${num(shown, Number.isInteger(shown) ? 0 : 1)}%${suffix}`, trend: trendOf(shown === 0 ? 0 : pct) };
 }
@@ -25,6 +28,7 @@ export function percentDelta(cur: number | null, prev: number | null, suffix = '
 export function pointsDelta(cur: number | null, prev: number | null): Delta | null {
   if (cur == null || prev == null) return null;
   const d = Math.round((cur - prev) * 10) / 10;
+  if (d === 0) return FLAT;
   return { text: `${signed(d)}${num(Math.abs(d), 1)} p.p.`, trend: trendOf(d) };
 }
 
@@ -32,7 +36,7 @@ export function pointsDelta(cur: number | null, prev: number | null): Delta | nu
 export function moneyDelta(curCents: number | null, prevCents: number | null): Delta | null {
   if (curCents == null || prevCents == null) return null;
   const d = curCents - prevCents;
-  if (d === 0) return { text: 'Sem variação', trend: 'flat' };
+  if (d === 0) return FLAT;
   return { text: `${signed(d)}R$ ${num(Math.abs(d) / 100, 2)}`, trend: trendOf(d) };
 }
 

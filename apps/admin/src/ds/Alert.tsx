@@ -7,7 +7,7 @@ export function Alert({ tone = 'info', title, children, icon, action, onAction, 
   const [bg, fg, ic] = T[tone] || T.info;
   const solidBg = { info: 'var(--info)', success: 'var(--brand)', warning: 'var(--warning)', danger: 'var(--danger)' }[tone];
   return (
-    <div role="alert" data-testid={testId} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 'var(--radius-md)', background: solid ? solidBg : bg, color: solid ? '#fff' : fg, boxShadow: solid ? 'var(--shadow-2)' : 'none', ...style }}>
+    <div role={tone === 'danger' ? 'alert' : 'status'} data-testid={testId} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '12px 14px', borderRadius: 'var(--radius-md)', background: solid ? solidBg : bg, color: solid ? '#fff' : fg, boxShadow: solid ? 'var(--shadow-2)' : 'none', ...style }}>
       <Icon name={icon || ic} size={20} style={{ marginTop: 1 }} />
       <div style={{ flex: 1, minWidth: 0 }}>
         {title && <div style={{ font: 'var(--type-label)' }}>{title}</div>}

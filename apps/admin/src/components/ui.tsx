@@ -16,11 +16,11 @@ export function Page({ children, style }: { children: ReactNode; style?: CSSProp
   return <div className="page" style={{ flex: 1, overflow: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 18, minWidth: 0, ...style }}>{children}</div>;
 }
 
-export function PageHeader({ title, subtitle, children }: { title: string; subtitle?: string; children?: ReactNode }) {
+/** O título da seção é o <h1> do cabeçalho global (layout do painel); aqui ficam só o subtítulo e as ações. */
+export function PageHeader({ subtitle, children }: { subtitle?: string; children?: ReactNode }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
       <div style={{ flex: 1, minWidth: 200 }}>
-        <h1 style={{ font: 'var(--type-title)', fontSize: 22, fontWeight: 700, letterSpacing: '-.02em', margin: 0 }}>{title}</h1>
         {subtitle && <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{subtitle}</div>}
       </div>
       {children}
@@ -28,16 +28,49 @@ export function PageHeader({ title, subtitle, children }: { title: string; subti
   );
 }
 
-export function SidePanel({ children, width = 360, onClose, title, testId }: { children: ReactNode; width?: number; onClose?: () => void; title?: ReactNode; testId?: string }) {
+export function SidePanel({ children, width = 360, onClose, title, testId, label }: { children: ReactNode; width?: number; onClose?: () => void; title?: ReactNode; testId?: string; label?: string }) {
+  const titleId = useId();
+  const ref = useRef<HTMLElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
+  const closable = !!onClose;
+  // Esc fecha a ficha, mas só quando nenhum diálogo está aberto (o do topo fica com o Esc) e fora de campos de texto.
+  useEffect(() => {
+    if (!closable) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || dialogStack.size() > 0) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+      closeRef.current?.();
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, [closable]);
+  // Ficha aberta pelo teclado: o foco vai para a ficha (leitor de tela e Tab seguem dali), não fica na linha da tabela.
+  // Ao fechar, o foco volta para quem abriu a ficha (a linha da tabela) em vez de cair no <body>.
+  useEffect(() => {
+    if (!closable) return;
+    const opener = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    el?.focus({ preventScroll: true });
+    return () => {
+      const a = document.activeElement;
+      if ((!a || a === document.body || el?.contains(a)) && opener?.isConnected && opener !== document.body) opener.focus({ preventScroll: true });
+    };
+  }, [closable]);
   return (
     <aside
+      ref={ref}
+      tabIndex={-1}
       data-testid={testId}
+      aria-label={label}
+      aria-labelledby={!label && title ? titleId : undefined}
       className="side-panel panel-in"
-      style={{ width, flexShrink: 0, background: 'var(--surface-card)', borderLeft: '1px solid var(--border-subtle)', overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
+      style={{ outline: 'none', width, flexShrink: 0, background: 'var(--surface-card)', borderLeft: '1px solid var(--border-subtle)', overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}
     >
       {(title || onClose) && (
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>{title}</div>
+          <div id={titleId} style={{ flex: 1, minWidth: 0 }}>{title}</div>
           {onClose && <IconButton icon="X" variant="soft" size={32} label="Fechar" onClick={onClose} />}
         </div>
       )}
@@ -101,12 +134,20 @@ export function PanelSkeleton({ rows = 6 }: { rows?: number }) {
   );
 }
 
+/** Erro de consulta que sabe se refazer: o ErrorNote mostra "Tentar de novo" sozinho. */
+export class RetryableError extends Error {
+  constructor(cause: unknown, readonly retry: () => void) {
+    super(cause instanceof Error ? cause.message : 'Algo deu errado. Tente de novo.');
+  }
+}
+
 export function ErrorNote({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
   if (!error) return null;
+  const retry = onRetry ?? (error instanceof RetryableError ? error.retry : undefined);
   return (
     <div role="alert" style={{ padding: '10px 14px', borderRadius: 'var(--radius-md)', background: 'var(--danger-soft)', color: 'var(--danger-ink)', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
       <span style={{ flex: 1, minWidth: 0 }}>{error instanceof Error ? error.message : 'Algo deu errado. Tente de novo.'}</span>
-      {onRetry && <Button size="sm" variant="ghost" icon="RefreshCw" testId="retry" onClick={onRetry}>Tentar de novo</Button>}
+      {retry && <Button size="sm" variant="ghost" icon="RefreshCw" testId="retry" onClick={retry}>Tentar de novo</Button>}
     </div>
   );
 }
@@ -157,10 +198,14 @@ export function TextInput({ value, onChange, type = 'text', placeholder, testId,
 }
 
 /** Campo numérico compacto para tabelas de preço (estilo `PricingView`). */
-export function MiniInput({ value, onChange, width = 110, align = 'right', label }: { value: string; onChange: (v: string) => void; width?: number; align?: 'left' | 'right'; label?: string }) {
+export function MiniInput({ value, onChange, width = 110, align = 'right', label, error }: { value: string; onChange: (v: string) => void; width?: number | string; align?: 'left' | 'right'; label?: string; error?: string }) {
+  const errId = useId();
   return (
-    <input className="field-mini" aria-label={label} value={value} onChange={(e) => onChange(e.target.value)}
-      style={{ width, height: 34, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', background: 'var(--ink-50)', font: '500 13px/1 var(--font-mono)', textAlign: align, color: 'var(--text-primary)' }} />
+    <span style={{ display: 'inline-flex', flexDirection: 'column', gap: 4, alignItems: align === 'right' ? 'flex-end' : 'flex-start', width: typeof width === 'string' ? width : undefined, minWidth: 0 }}>
+      <input className="field-mini" aria-label={label} aria-invalid={error ? true : undefined} aria-describedby={error ? errId : undefined} value={value} onChange={(e) => onChange(e.target.value)}
+        style={{ width, maxWidth: '100%', height: 34, padding: '0 10px', borderRadius: 'var(--radius-sm)', border: `1px solid ${error ? 'var(--danger)' : 'var(--border-subtle)'}`, background: 'var(--ink-50)', font: '500 13px/1 var(--font-mono)', textAlign: align, color: 'var(--text-primary)' }} />
+      {error && <span id={errId} style={{ fontSize: 11, color: 'var(--danger-ink)', fontWeight: 600 }}>{error}</span>}
+    </span>
   );
 }
 
@@ -188,10 +233,12 @@ export function Modal({ open, title, children, actions, onClose, width = 440, te
       if (e.key === 'Escape') { e.stopPropagation(); closeRef.current(); return; }
       if (e.key !== 'Tab') return;
       const items = Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((x) => x.offsetParent !== null);
+      // Conteúdo assíncrono ainda sem itens focáveis: o foco fica no diálogo em vez de escapar.
+      if (items.length === 0) { e.preventDefault(); el.focus({ preventScroll: true }); return; }
       const idx = items.indexOf(document.activeElement as HTMLElement);
-      const atEdge = idx < 0 || (e.shiftKey ? idx === 0 : idx === items.length - 1);
-      const next = cycleFocusIndex(items.length, idx, e.shiftKey);
-      if (atEdge && next >= 0) { e.preventDefault(); items[next].focus(); }
+      // O ciclo é sempre manual (não só nas bordas): conteúdo que carrega e muda a ordem nativa não deixa o foco escapar.
+      e.preventDefault();
+      items[cycleFocusIndex(items.length, idx, e.shiftKey)].focus();
     };
     window.addEventListener('keydown', h);
     return () => {
@@ -213,6 +260,9 @@ export function Modal({ open, title, children, actions, onClose, width = 440, te
     </div>
   );
 }
+
+/** Erro de validação já exibido junto ao campo: o ReasonDialog mantém o diálogo aberto sem repetir a mensagem. */
+export class FieldError extends Error {}
 
 /** Ação com motivo obrigatório e confirmação explícita. */
 export function ReasonDialog({
@@ -238,7 +288,7 @@ export function ReasonDialog({
             setTouched(true);
             if (invalid) return;
             setBusy(true); setError(null);
-            try { await onConfirm(reason.trim()); onClose(); } catch (e) { setError(e); } finally { setBusy(false); }
+            try { await onConfirm(reason.trim()); onClose(); } catch (e) { if (!(e instanceof FieldError)) setError(e); } finally { setBusy(false); }
           }}>{busy ? 'Enviando...' : confirmLabel}</Button>
       </>}>
       {description && <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>{description}</div>}
@@ -334,6 +384,8 @@ export interface Pager {
   onNext: () => void;
   onPrev: () => void;
   loading?: boolean;
+  /** A consulta falhou: a tabela não mostra o estado vazio (o erro aparece com "Tentar de novo"). */
+  failed?: boolean;
 }
 
 export function DataTable<T extends object>({
@@ -366,7 +418,7 @@ export function DataTable<T extends object>({
             {skeleton && Array.from({ length: dense ? 3 : 5 }).map((_, i) => (
               <tr key={'sk-' + i} aria-hidden>
                 {columns.map((c, j) => (
-                  <td key={c.key} style={{ padding: pad, borderBottom: '1px solid var(--ink-100)' }}>
+                  <td key={c.key} data-label={c.label || undefined} style={{ padding: pad, borderBottom: '1px solid var(--ink-100)' }}>
                     <Skeleton w={c.label ? (50 + ((i * 17 + j * 23) % 40)) + '%' : 64} h={dense ? 10 : 12} style={{ marginLeft: c.align === 'right' ? 'auto' : undefined }} />
                   </td>
                 ))}
@@ -383,7 +435,7 @@ export function DataTable<T extends object>({
                   onClick={onRowClick ? () => onRowClick(r) : undefined}
                   onKeyDown={onRowClick ? (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target === e.currentTarget) { e.preventDefault(); onRowClick(r); } } : undefined}>
                   {columns.map((c) => (
-                    <td key={c.key} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: c.wrap ? 'normal' : 'nowrap', minWidth: c.wrap ? 160 : undefined, ...(c.pin ? { ...PIN_STYLE, background: 'var(--surface-card)' } : null) }}>
+                    <td key={c.key} data-label={c.label || undefined} style={{ padding: pad, textAlign: c.align ?? 'left', borderBottom: i < rows.length - 1 ? '1px solid var(--ink-100)' : 0, font: c.mono ? '500 13px/1.3 var(--font-mono)' : undefined, whiteSpace: c.wrap ? 'normal' : 'nowrap', minWidth: c.wrap ? 160 : undefined, ...(c.pin ? { ...PIN_STYLE, background: 'var(--surface-card)' } : null) }}>
                       {c.render ? c.render(r) : (get(r, c.key) as ReactNode)}
                     </td>
                   ))}
@@ -394,7 +446,7 @@ export function DataTable<T extends object>({
         </table>
       </div>
       {skeleton && <span role="status" className="sr-only">Carregando</span>}
-      {!loading && rows.length === 0 && <Empty icon={emptyIcon} hint={emptyHint} action={emptyAction} compact={dense}>{empty}</Empty>}
+      {!loading && !pager?.failed && rows.length === 0 && <Empty icon={emptyIcon} hint={emptyHint} action={emptyAction} compact={dense}>{empty}</Empty>}
       {pager && (
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, padding: '8px 12px', borderTop: '1px solid var(--ink-100)' }}>
           <span style={{ fontSize: 12, color: 'var(--text-secondary)', marginRight: 'auto' }}>Página {pager.page + 1}</span>
@@ -425,10 +477,13 @@ export function usePagedQuery<T>(key: QueryKey, fetchPage: (cursor?: string) => 
     page,
     hasNext: !!q.data?.nextCursor,
     loading: q.isFetching,
+    failed: q.isError,
     onNext: () => q.data?.nextCursor && setCursors((c) => [...c, q.data!.nextCursor]),
     onPrev: () => setCursors((c) => (c.length > 1 ? c.slice(0, -1) : c)),
-  }), [page, q.data, q.isFetching]);
-  return { rows: q.data?.items ?? [], loading: q.isLoading, error: q.error, pager, refetch: q.refetch };
+  }), [page, q.data, q.isFetching, q.isError]);
+  const { refetch } = q;
+  const error = useMemo(() => (q.error ? new RetryableError(q.error, () => { void refetch(); }) : null), [q.error, refetch]);
+  return { rows: q.data?.items ?? [], loading: q.isLoading, error, pager, refetch };
 }
 
 /* ---------- Pequenos ---------- */

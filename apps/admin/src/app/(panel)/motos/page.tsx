@@ -55,7 +55,7 @@ export default function VehiclesPage() {
   return (
     <div className="split" style={{ flex: 1, display: 'flex', minWidth: 0, minHeight: 0 }}>
       <Page>
-        <PageHeader title="Motos" subtitle="Cadastro da frota: galpão, modelo, rastreador e bateria de cada moto.">
+        <PageHeader subtitle="Cadastro da frota: galpão, modelo, rastreador e bateria de cada moto.">
           {can(groups, 'vehicle.edit') && <Button size="sm" variant="dark" icon="Plus" testId="vehicle-create" onClick={() => setCreating(true)}>Cadastrar moto</Button>}
         </PageHeader>
         <div role="group" aria-label="Filtrar motos" style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 2fr) repeat(3, minmax(150px, 1fr))', gap: 10, alignItems: 'end' }} className="filters-grid">

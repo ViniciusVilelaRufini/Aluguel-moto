@@ -226,7 +226,7 @@ test.describe('agenda de retiradas', () => {
   test('operacao abre a agenda', async ({ page }) => {
     await login(page, 'operacao');
     await page.goto('/retiradas');
-    await expect(page.getByRole('heading', { name: 'Agenda de retiradas' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Retiradas' })).toBeVisible();
   });
 });
 

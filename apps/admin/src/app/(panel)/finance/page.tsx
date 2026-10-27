@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { revenueCaption } from '@/lib/finance-revenue';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
+import { useSubmitGuard } from '@/lib/submit-guard';
 import { api, asJson, downloadCsv, unwrap } from '@/lib/api';
 import { PLAN_LABEL } from '@/lib/labels';
 import { formatCompactBRL, moneyDelta, percentDelta, pointsDelta, previousRange } from '@/lib/finance-delta';
@@ -43,6 +44,7 @@ export default function FinancePage() {
   const [payment] = useState<string | null>(params.get('payment'));
   const [period, setPeriod] = useState<PeriodState>(DEFAULT_PERIOD);
   const toast = useToast();
+  const exporting = useSubmitGuard();
   // Período livre incompleto ou inválido: `range` é nulo e as consultas esperam (o seletor mostra o erro).
   const range = useMemo(() => periodRange(period.kind, period), [period]);
   const r = range ?? { from: '', to: '' };
@@ -87,18 +89,18 @@ export default function FinancePage() {
   const barList = Object.entries(bars).sort(([a], [b]) => a.localeCompare(b));
   const max = Math.max(1, ...barList.map(([, v]) => v));
 
-  const exportCsv = async (path: '/reports/revenue' | '/reports/finance', base: string) => {
+  const exportCsv = (path: '/reports/revenue' | '/reports/finance', base: string) => exporting.run(async () => {
     if (!range) return;
     try { await downloadCsv(path, { from: range.from, to: range.to }, csvName(base, range)); } catch (e) { toast(e instanceof Error ? e.message : 'Não foi possível exportar', 'danger'); }
-  };
+  });
 
   const f = fin.data;
   const LABELS: Record<Tab, string> = { overview: 'Visão geral', rentals: 'Aluguéis', payments: 'Pagamentos', deposits: 'Cauções', wallet: 'Carteira' };
   const tabOptions = allowedFinanceTabs(groups).map((value) => ({ value, label: LABELS[value] }));
-  if (!tab) return <Page><PageHeader title="Financeiro" subtitle="Receita, planos, inadimplência e cauções" /></Page>;
+  if (!tab) return <Page><PageHeader subtitle="Receita, planos, inadimplência e cauções" /></Page>;
   return (
     <Page>
-      <PageHeader title="Financeiro" subtitle="Receita, planos, inadimplência e cauções">
+      <PageHeader subtitle="Receita, planos, inadimplência e cauções">
         <SegmentedControl options={tabOptions} value={tab} onChange={(t: Tab) => { setTab(t); router.replace(`/finance?tab=${t}`, { scroll: false }); }} style={{ width: 120 * tabOptions.length }} />
         {tab === 'overview' && <PeriodPicker value={period} onChange={setPeriod} width={340} />}
       </PageHeader>
@@ -168,8 +170,8 @@ export default function FinancePage() {
               { key: 'revenueCents', label: 'Receita', align: 'right', render: (v) => formatBRL(v.revenueCents) },
             ]} />
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Button size="sm" variant="secondary" icon="Download" testId="export-revenue" disabled={!range} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/revenue', 'receita')}>Exportar receita (CSV)</Button>
-            <Button size="sm" variant="secondary" icon="Download" testId="export-finance" disabled={!range} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/finance', 'financeiro')}>Exportar resumo financeiro (CSV)</Button>
+            <Button size="sm" variant="secondary" icon="Download" testId="export-revenue" busy={exporting.busy} disabled={!range || exporting.busy} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/revenue', 'receita')}>Exportar receita (CSV)</Button>
+            <Button size="sm" variant="secondary" icon="Download" testId="export-finance" busy={exporting.busy} disabled={!range || exporting.busy} style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)' }} onClick={() => exportCsv('/reports/finance', 'financeiro')}>Exportar resumo financeiro (CSV)</Button>
           </div>
         </TabPanel>
       )}

@@ -58,7 +58,7 @@ export default function PickupsPage() {
 
   return (
     <Page>
-      <PageHeader title="Agenda de retiradas" subtitle={depot ? `${depot.name} · ${summarizeHours(depot.openingHours)} · horários de São Paulo` : 'Horários de São Paulo'}>
+      <PageHeader subtitle={depot ? `${depot.name} · ${summarizeHours(depot.openingHours)} · horários de São Paulo` : 'Horários de São Paulo'}>
         <div style={{ width: 260 }}>
           <Field label="Galpão">
             <Select testId="pickups-depot" value={depotId} onChange={setDepotId}
