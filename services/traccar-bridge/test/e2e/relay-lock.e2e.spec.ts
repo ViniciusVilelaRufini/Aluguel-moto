@@ -328,7 +328,7 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     expect(w.traccar.commands).toEqual([]);
   });
 
-  it('(4) ordem de publicação da ponte (telemetria antes do reported com a velocidade): o reported da própria posição não zera a sequência; um reported fora de banda zera uma vez só e a parada ainda completa', async () => {
+  it('(4) ordem de publicação da ponte (telemetria antes do reported com a velocidade): nem o reported da própria posição nem um reported parado fora de banda zeram a sequência', async () => {
     // GPS 1,5 s atrás do servidor: o reported (a API data a velocidade dele pela chegada) é mais novo que o fix da telemetria.
     w = await world({ fixLagMs: 1_500 });
     await connectAndRide(w, 9); // t = 0..40 s; o 1º reported.travada saiu em t = 0
@@ -356,22 +356,72 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     await w.settle();
     expect(w.fromBridge(`$aws/things/${T}/shadow/update`).at(-1)).toEqual({ state: { reported: { travada: false, velocidade_kmh: 0 } } });
     await w.ride(0);
-    // Sem o reported fora de banda esta (fix 68,5 s) fecharia 10 s e cortaria. Com ele (chegada 70 s), ela é "mais velha" que a
-    // última amostra aceita: rejeitada = em movimento, a sequência recomeça (falha segura) — uma vez só.
-    expect(w.seen.samples.at(-1)).toMatchObject({ kmh: 0, accepted: false });
-    expect(w.cuts()).toEqual([]);
-    for (let i = 0; i < 3; i++) {
-      await w.step(5_000); // t = 75, 80, 85
-      await w.ride(0);
-      expect(w.seen.samples.at(-1)).toMatchObject({ kmh: 0, accepted: true });
-      if (i < 2) expect(w.cuts()).toEqual([]);
-    }
-    expect(w.cuts()).toHaveLength(1); // t = 85: paradas 73,5 → 83,5 s
+    // A telemetria (fix 68,5 s) é mais velha que a chegada do reported (70 s), mas reported parado não é barreira de ordem
+    // (Task 11b): ela vale e fecha 10 s (58,5 → 68,5 s) → corte. (Reported em movimento continua barreira: testes da API.)
+    expect(w.seen.samples.at(-1)).toMatchObject({ kmh: 0, accepted: true });
+    expect(w.cuts()).toHaveLength(1);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
     await w.step(1_000);
     await w.heartbeat(true);
     await w.step(1_000);
     expect(w.outcomes('c4')).toEqual([{ commandId: 'c4', status: 'confirmed' }]);
+  });
+
+  it('(4b) GPS 8 s atrás (mais que a cadência de 5 s): reported fora de banda não derruba toda telemetria seguinte; parada de verdade corta e confirma, e nada corta andando', async () => {
+    w = await world({ fixLagMs: 8_000 });
+    await connectAndRide(w, 9); // t = 0..40 s
+    expect(await w.lock('c4b')).toEqual({ commandId: 'c4b', status: 'in_progress' });
+    await w.step(2_000);
+    // Andando, com reported fora de banda (MQTT da ponte cai e volta) a cada posição: nada corta.
+    for (let i = 0; i < 4; i++) {
+      await w.ride(20);
+      w.bridgeMqtt.disconnect();
+      w.bridgeMqtt.reconnect();
+      await w.settle();
+      expect(w.fromBridge(`$aws/things/${T}/shadow/update`).at(-1)).toEqual({ state: { reported: { travada: false, velocidade_kmh: 20 } } });
+      await w.step(5_000);
+    }
+    expect(w.cuts()).toEqual([]);
+    expect(w.traccar.commands).toEqual([]);
+    // Para de verdade; o reported fora de banda (velocidade fresca 0) continua chegando antes de cada telemetria.
+    let stoppedAt: number | undefined;
+    for (let i = 0; i < 12 && !w.cuts().length; i++) {
+      await w.ride(0);
+      stoppedAt ??= w.clock.now();
+      if (w.cuts().length) break;
+      // Logo depois da posição: reported fora de banda com a velocidade dela (fix de 8 s, ainda fresco), datado pela chegada.
+      w.bridgeMqtt.disconnect();
+      w.bridgeMqtt.reconnect();
+      await w.settle();
+      expect(w.fromBridge(`$aws/things/${T}/shadow/update`).at(-1)).toEqual({ state: { reported: { travada: false, velocidade_kmh: 0 } } });
+      await w.step(5_000);
+    }
+    expect(w.cuts()).toHaveLength(1);
+    // Nenhuma telemetria em movimento depois do 1º fix parado: o corte só saiu com a moto parada.
+    const tele = w.fromBridge(`motos/${T}/telemetria`);
+    const firstStill = tele.findIndex((t) => t.velocidade_kmh === 0 && Date.parse(t.timestamp) >= stoppedAt! - 8_000);
+    expect(tele.slice(firstStill).every((t) => t.velocidade_kmh === 0)).toBe(true);
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+    await w.step(1_000);
+    await w.heartbeat(true);
+    await w.step(1_000);
+    expect(w.outcomes('c4b')).toEqual([{ commandId: 'c4b', status: 'confirmed' }]);
+  });
+
+  it('(4c) GPS 8 s atrás, só os reported normais da ponte (1/min): a parada completa e confirma', async () => {
+    w = await world({ fixLagMs: 8_000 });
+    await connectAndRide(w, 9);
+    expect(await w.lock('c4c')).toEqual({ commandId: 'c4c', status: 'in_progress' });
+    for (let i = 0; i < 20 && !w.cuts().length; i++) {
+      await w.ride(0);
+      if (!w.cuts().length) await w.step(5_000);
+    }
+    expect(w.cuts()).toHaveLength(1);
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+    await w.step(1_000);
+    await w.heartbeat(true);
+    await w.step(1_000);
+    expect(w.outcomes('c4c')).toEqual([{ commandId: 'c4c', status: 'confirmed' }]);
   });
 
   it('(5) Traccar 6.5 (sem noQueue): o corte nunca vai ao Traccar; o lock falha seguro (timeout) e o destravar também não envia nada', async () => {

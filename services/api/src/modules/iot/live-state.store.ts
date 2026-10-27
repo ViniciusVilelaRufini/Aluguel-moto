@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { MAX_SPEED_KMH } from '../../common/enums';
+import { MAX_SPEED_KMH, SAFE_LOCK_SPEED_KMH } from '../../common/enums';
 import type { LockOrigin, VehicleLiveState } from '../../ports/iot-gateway.port';
 import type { RedisStore } from '../../redis/redis-store';
 import type { Clock } from './clock';
@@ -55,7 +55,13 @@ export class LiveStateStore {
    * Ausente = desconhecida. Não persiste: depois de um reinício, desconhecida (= em movimento).
    */
   private readonly sample = new Map<string, { kmh: number; at: number }>();
-  /** Horário da amostra mais nova já aceita (nunca volta): amostras mais antigas que ela, fora de ordem, são descartadas. */
+  /**
+   * Marca d'água da ordem: horário da amostra mais nova já aceita que **pode indicar movimento** (toda telemetria; `reported`
+   * com velocidade ≥ 3 km/h ou inválida). Nunca volta: amostras mais antigas que ela, fora de ordem, são descartadas.
+   * `reported` parado (< 3 km/h) não avança (Task 11b): ele é datado pela chegada e, com o GPS atrasado (fix > cadência), toda
+   * telemetria seguinte pareceria velha — a parada nunca se confirmaria. Uma amostra parada não é evidência de movimento, então
+   * deixar de usá-la como barreira só pode aceitar amostras que seriam aceitas sem ela.
+   */
   private readonly lastSampleAt = new Map<string, number>();
   /**
    * `timestamp` da telemetria mais nova aplicada à exibição (posição): telemetria fora de ordem não volta a moto no mapa.
@@ -291,7 +297,9 @@ export class LiveStateStore {
     if (now - since < this.reconnectGraceMs) return false;
     if (last !== undefined && (at < last || (at === last && !allowEqual && deviceTs === undefined))) return false;
     this.sample.set(thingName, { kmh, at });
-    this.lastSampleAt.set(thingName, at);
+    // `reported` parado não vira barreira para a telemetria (datada pelo fix); qualquer amostra que pode ser movimento vira.
+    const stillReported = deviceTs === undefined && Number.isFinite(kmh) && kmh >= 0 && kmh < SAFE_LOCK_SPEED_KMH;
+    if (!stillReported) this.lastSampleAt.set(thingName, at);
     return true;
   }
 

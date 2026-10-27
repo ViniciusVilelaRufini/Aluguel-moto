@@ -83,7 +83,8 @@ ponte real → broker em memória → pilha IoT real da API (`BaseIotGateway`, `
 `FakeClock` comum à API e à ponte; o código da API entra por caminho relativo (o ts-jest só transpila; o `tsc` da ponte exclui
 `test/e2e`, o ESLint cobre). Cenários: o `lock` só termina `confirmed` depois de 2+ paradas cobrindo 10 s e do bit de corte de
 um status seguinte; andando o tempo todo → `did_not_stop` sem `engineStop` nem `travada:false`; moto já travada → `confirmed`
-sem corte; ordem telemetria → reported da ponte; Traccar 6.5 → nenhum comando de motor (lock e unlock); WebSocket que reconecta
+sem corte; ordem telemetria → reported da ponte; GPS 8 s atrás (mais que a cadência) com reported fora de banda a cada posição
+→ andando nada corta, parada corta e confirma; Traccar 6.5 → nenhum comando de motor (lock e unlock); WebSocket que reconecta
 com bit de corte velho no replay → nada confirma; moto offline no meio → `pending`/`offline` → `in_progress`.
 
 Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuário `volti`, sem root). O `deploy/single/gt06.sh`

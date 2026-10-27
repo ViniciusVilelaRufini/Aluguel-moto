@@ -170,3 +170,54 @@ describe('LiveStateStore.lockConfirmed — origem da trava (Task 4 fix 2, B)', (
     expect(other.lockConfirmed(T)).toBe(false);
   });
 });
+
+describe('LiveStateStore — reported parado não é barreira de ordem para a telemetria (Task 11b)', () => {
+  const tele = (kmh: number, ts: number) => ({
+    lat: -23.5, lng: -46.6, velocidade_kmh: kmh, bateria_pct: 80, travada: false, ignicao: kmh > 0, sinal: 4, timestamp: new Date(ts).toISOString(),
+  });
+  /** Fora da graça da primeira amostra, com o GPS 8 s atrás do servidor. */
+  async function setup() {
+    const clock = new FakeClock(Date.parse('2026-10-27T12:00:00Z'));
+    const live = new LiveStateStore(new MemoryRedisStore(), clock);
+    await live.applyTelemetry(T, tele(0, clock.now() - 8_000)); // abre a graça
+    await clock.advance(DEFAULT_RECONNECT_GRACE_MS + 1_000);
+    expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(true);
+    return { clock, live };
+  }
+
+  it('reported parado (datado pela chegada) seguido de telemetria parada com fix anterior: a telemetria vale', async () => {
+    const { clock, live } = await setup();
+    expect((await live.applyReported(T, { velocidade_kmh: 0 })).speedAccepted).toBe(true);
+    await clock.advance(5_000);
+    // fix = chegada do reported − 3 s
+    expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(true);
+    expect(live.knownSpeed(T)).toBe(0);
+  });
+
+  it('reported parado seguido de telemetria em movimento mais velha: aceita, a velocidade conhecida passa a movimento', async () => {
+    const { clock, live } = await setup();
+    await live.applyReported(T, { velocidade_kmh: 0 });
+    await clock.advance(5_000);
+    expect((await live.applyTelemetry(T, tele(15, clock.now() - 8_000))).speedAccepted).toBe(true);
+    expect(live.knownSpeed(T)).toBe(15);
+  });
+
+  it('reported em movimento continua barreira: telemetria parada com fix anterior a ele é rejeitada', async () => {
+    const { clock, live } = await setup();
+    expect((await live.applyReported(T, { velocidade_kmh: 12 })).speedAccepted).toBe(true);
+    await clock.advance(5_000);
+    expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(false);
+    expect(live.knownSpeed(T)).toBe(12);
+    // A primeira com fix depois do reported em movimento volta a valer.
+    await clock.advance(5_000);
+    expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(true);
+  });
+
+  it('telemetria continua ordenada entre si: parada mais velha que uma telemetria aceita é rejeitada mesmo depois de reported parado', async () => {
+    const { clock, live } = await setup();
+    const fix = clock.now() - 8_000;
+    await live.applyReported(T, { velocidade_kmh: 0 });
+    await clock.advance(1_000);
+    expect((await live.applyTelemetry(T, tele(0, fix - 1_000))).speedAccepted).toBe(false);
+  });
+});
