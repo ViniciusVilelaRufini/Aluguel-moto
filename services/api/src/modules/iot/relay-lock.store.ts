@@ -1,6 +1,9 @@
 import { LocalMutex, outsideLock, RedisMutex } from '../../redis/redis-mutex';
 import type { RedisStore } from '../../redis/redis-store';
 
+/** Prefixo das chaves da trava só relé no Redis (`{prefix}:{thing}`, `{prefix}:index`, `{prefix}:lock:{thing}`). */
+export const RELAY_LOCK_PREFIX = 'iot:relay-lock';
+
 export type RelayLockPhase = 'waiting_online' | 'waiting_stop' | 'cutting';
 
 /** Sequência de telemetrias paradas (< 3 km/h) aceitas e consecutivas; `firstAt`/`lastAt` = hora da medição limitada a agora. */
@@ -29,7 +32,10 @@ export interface RelayLockState {
   cutAt?: number;
 }
 
-/** No índice sem estado (failover que perdeu escritas): a varredura encerra os comandos e, se o corte saiu, grava `travada: false`. */
+/**
+ * No índice sem estado (failover que perdeu escritas): a varredura encerra os comandos e, se o corte saiu, grava `travada: null`
+ * (limpa o desired; nunca `false`, que soltaria uma moto que ninguém pediu para destravar — docs/decisoes.md).
+ */
 export interface OrphanRelayLock {
   thingName: string;
   lockId: string;
@@ -91,7 +97,7 @@ export class RedisRelayLockStore implements RelayLockStore {
 
   constructor(
     private readonly redis: RedisStore,
-    private readonly prefix = 'iot:relay-lock',
+    private readonly prefix = RELAY_LOCK_PREFIX,
   ) {
     this.mutex = new RedisMutex(redis, { ttlMs: 15_000, waitMs: 5_000 });
   }

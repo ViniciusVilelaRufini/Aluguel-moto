@@ -1,11 +1,19 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { MemoryRedisStore } from '../redis/redis-store';
 import { maskImei, provisionGt06, traccarAdminApi, type TraccarAdminApi } from './provision-gt06';
 
 const IMEI = '860000000000901';
 
-function fakes(opts: { device?: { id: number } | null; imeiOwner?: string | null; existingVehicleId?: string | null; openRental?: boolean } = {}) {
-  const tx = { vehicle: { update: jest.fn() }, tracker: { upsert: jest.fn(), updateMany: jest.fn() } };
+function fakes(
+  opts: { device?: { id: number } | null; imeiOwner?: string | null; existingVehicleId?: string | null; openRental?: boolean; reservation?: boolean; openRentalInTx?: boolean } = {},
+) {
+  const tx = {
+    vehicle: { update: jest.fn() },
+    tracker: { upsert: jest.fn(), updateMany: jest.fn() },
+    rental: { findFirst: jest.fn().mockResolvedValue(opts.openRental || opts.openRentalInTx ? { id: 'r-1' } : null) },
+    reservation: { findFirst: jest.fn().mockResolvedValue(opts.reservation ? { id: 'res-1' } : null) },
+  };
   const prisma = {
     vehicle: { findUnique: jest.fn().mockResolvedValue({ id: 'veh-1', thingName: 'moto-0901' }), findFirst: jest.fn().mockResolvedValue(null) },
     tracker: {
@@ -13,6 +21,7 @@ function fakes(opts: { device?: { id: number } | null; imeiOwner?: string | null
       findUnique: jest.fn().mockResolvedValue(opts.existingVehicleId === undefined ? null : { vehicleId: opts.existingVehicleId }),
     },
     rental: { findFirst: jest.fn().mockResolvedValue(opts.openRental ? { id: 'r-1' } : null) },
+    reservation: { findFirst: jest.fn().mockResolvedValue(opts.reservation ? { id: 'res-1' } : null) },
     $transaction: jest.fn(async (fn: (t: typeof tx) => Promise<unknown>) => fn(tx)),
   };
   const traccar: jest.Mocked<TraccarAdminApi> = {
@@ -22,7 +31,8 @@ function fakes(opts: { device?: { id: number } | null; imeiOwner?: string | null
     linkDevice: jest.fn().mockResolvedValue(undefined),
   };
   const logs: Array<Record<string, unknown>> = [];
-  return { tx, prisma, traccar, logs, deps: { prisma: prisma as any, traccar, log: (e: Record<string, unknown>) => void logs.push(e) } };
+  const redis = new MemoryRedisStore();
+  return { tx, prisma, traccar, logs, redis, deps: { prisma: prisma as any, traccar, redis, log: (e: Record<string, unknown>) => void logs.push(e) } };
 }
 const input = { vehicleCode: 'VLT-0901', thingName: 'moto-0901', imei: IMEI, bridgeEmail: 'bridge@volti.local' };
 
@@ -110,6 +120,54 @@ describe('provisionGt06: aluguel aberto (onda final de correções)', () => {
       expect(f.traccar.createDevice).not.toHaveBeenCalled();
       expect(f.prisma.$transaction).not.toHaveBeenCalled();
     }
+  });
+});
+
+describe('provisionGt06: N4 (reserva e aluguel dentro da transação) e N5 (trava pendente no Redis)', () => {
+  it('reserva ativa/em entrega → erro em pt-BR antes de Traccar e banco (nem dry-run)', async () => {
+    for (const dryRun of [false, true]) {
+      const f = fakes({ reservation: true });
+      await expect(provisionGt06(f.deps, { ...input, dryRun })).rejects.toThrow('A moto VLT-0901 tem uma reserva ativa ou em entrega; reprovisione o rastreador com a moto livre.');
+      expect(f.prisma.reservation.findFirst).toHaveBeenCalledWith({ where: { vehicleId: 'veh-1', status: { in: ['active', 'handover'] } }, select: { id: true } });
+      expect(f.traccar.findDevice).not.toHaveBeenCalled();
+      expect(f.prisma.$transaction).not.toHaveBeenCalled();
+    }
+  });
+
+  it('aluguel aberto entre a checagem e a transação → reconferido dentro dela, nenhuma escrita no banco', async () => {
+    const f = fakes({ openRentalInTx: true });
+    await expect(provisionGt06(f.deps, input)).rejects.toThrow('A moto VLT-0901 está com um aluguel aberto');
+    expect(f.tx.rental.findFirst).toHaveBeenCalled();
+    expect(f.tx.vehicle.update).not.toHaveBeenCalled();
+    expect(f.tx.tracker.updateMany).not.toHaveBeenCalled();
+    expect(f.tx.tracker.upsert).not.toHaveBeenCalled();
+  });
+
+  it('reserva criada entre a checagem e a transação → reconferida dentro dela', async () => {
+    const f = fakes();
+    f.tx.reservation.findFirst.mockResolvedValue({ id: 'res-1' });
+    await expect(provisionGt06(f.deps, input)).rejects.toThrow('reserva ativa ou em entrega');
+    expect(f.tx.tracker.upsert).not.toHaveBeenCalled();
+  });
+
+  it.each([['iot:safe-lock:moto-0901'], ['iot:relay-lock:moto-0901']])('estado de trava em %s → recusa antes de Traccar e banco (nem dry-run)', async (key) => {
+    for (const dryRun of [false, true]) {
+      const f = fakes();
+      await f.redis.set(key, '{}');
+      await expect(provisionGt06(f.deps, { ...input, dryRun })).rejects.toThrow('A moto moto-0901 tem uma trava em andamento na API');
+      expect(f.traccar.findDevice).not.toHaveBeenCalled();
+      expect(f.prisma.$transaction).not.toHaveBeenCalled();
+    }
+  });
+
+  it('trava que surge durante o Traccar (rampa começou) → reconferida antes da transação', async () => {
+    const f = fakes();
+    f.traccar.createDevice.mockImplementation(async () => {
+      await f.redis.hset('iot:safe-lock:index', { 'moto-0901': '{}' });
+      return { id: 7 };
+    });
+    await expect(provisionGt06(f.deps, input)).rejects.toThrow('trava em andamento');
+    expect(f.prisma.$transaction).not.toHaveBeenCalled();
   });
 });
 

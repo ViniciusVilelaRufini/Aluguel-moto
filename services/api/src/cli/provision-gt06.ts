@@ -7,14 +7,16 @@
  *   pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0901 --thing moto-0901 --imei ...
  *
  * Modo de controle: a API guarda o modo por rastreador num cache de 60 s por processo (iot/tracker-mode.ts). Esta CLI roda em outro
- * processo e não o invalida: uma troca de modo vale em até 60 s. Moto com aluguel aberto é recusada (reprovisione fora de aluguel).
+ * processo e não o invalida: uma troca de modo vale em até 60 s. Moto com aluguel aberto ou reserva ativa/em entrega é recusada
+ * (reprovisione com a moto livre; reconferido dentro da transação), e também moto com trava em andamento no Redis da API.
  *
- * Ambiente: DATABASE_URL; TRACCAR_URL (padrão http://localhost:8082); TRACCAR_ADMIN_EMAIL (padrão admin@volti.local);
+ * Ambiente: DATABASE_URL; REDIS_URL (o da API, obrigatória: inacessível = recusa); TRACCAR_URL (padrão http://localhost:8082); TRACCAR_ADMIN_EMAIL (padrão admin@volti.local);
  * TRACCAR_ADMIN_PASSWORD (obrigatória); TRACCAR_BRIDGE_EMAIL (opcional). Idempotente. Logs JSON com o IMEI mascarado.
  */
 import { parseArgs } from 'node:util';
 import { PrismaClient } from '@prisma/client';
-import { assertNoOpenRental } from './provision-tracker';
+import type { RedisStore } from '../redis/redis-store';
+import { assertNoPendingLock, assertVehicleFreeForProvisioning, connectProvisioningRedis } from './provision-tracker';
 
 const IMEI = /^\d{15}$/;
 const THING_NAME = /^moto-\d{4,}$/;
@@ -76,10 +78,10 @@ export interface Gt06ProvisionInput {
   dryRun?: boolean;
 }
 
-type ProvisionPrisma = Pick<PrismaClient, 'vehicle' | 'tracker' | 'rental' | '$transaction'>;
+type ProvisionPrisma = Pick<PrismaClient, 'vehicle' | 'tracker' | 'rental' | 'reservation' | '$transaction'>;
 
 export async function provisionGt06(
-  deps: { prisma: ProvisionPrisma; traccar: TraccarAdminApi; log: (entry: Record<string, unknown>) => void },
+  deps: { prisma: ProvisionPrisma; traccar: TraccarAdminApi; redis: Pick<RedisStore, 'exists' | 'hgetall'>; log: (entry: Record<string, unknown>) => void },
   input: Gt06ProvisionInput,
 ): Promise<{ deviceId: number | null; created: boolean }> {
   const { vehicleCode, thingName, imei } = input;
@@ -88,7 +90,8 @@ export async function provisionGt06(
   if (!IMEI.test(imei)) throw new Error('--imei deve ter 15 dígitos');
   const vehicle = await deps.prisma.vehicle.findUnique({ where: { code: vehicleCode }, select: { id: true, thingName: true } });
   if (!vehicle) throw new Error(`Moto ${vehicleCode} não encontrada (cadastre com POST /vehicles).`);
-  await assertNoOpenRental(deps.prisma, { id: vehicle.id, code: vehicleCode });
+  await assertVehicleFreeForProvisioning(deps.prisma, { id: vehicle.id, code: vehicleCode });
+  await assertNoPendingLock(deps.redis, thingName);
   const clash = await deps.prisma.vehicle.findFirst({ where: { thingName, NOT: { id: vehicle.id } }, select: { code: true } });
   if (clash) throw new Error(`thingName ${thingName} já pertence a ${clash.code}.`);
   const existingTracker = await deps.prisma.tracker.findUnique({ where: { thingName }, select: { vehicleId: true } });
@@ -106,7 +109,11 @@ export async function provisionGt06(
     if (!user) throw new Error(`Usuário da ponte ${input.bridgeEmail} não existe no Traccar (rode deploy/single/gt06.sh init).`);
     await deps.traccar.linkDevice(user.id, device.id);
   }
+  // Reconferida depois do Traccar (uma trava pode ter começado nesse meio-tempo) e logo antes da transação.
+  await assertNoPendingLock(deps.redis, thingName);
   await deps.prisma.$transaction(async (tx) => {
+    // Aluguel/reserva reconferidos dentro da transação (como o linkMqttTracker): podem ter aberto depois da checagem.
+    await assertVehicleFreeForProvisioning(tx, { id: vehicle.id, code: vehicleCode });
     if (vehicle.thingName !== thingName) await tx.vehicle.update({ where: { id: vehicle.id }, data: { thingName } });
     // Tracker.vehicleId é único: desvincula o rastreador antigo da moto (outro thingName) ANTES de ligar este.
     await tx.tracker.updateMany({ where: { vehicleId: vehicle.id, NOT: { thingName } }, data: { vehicleId: null } });
@@ -132,14 +139,16 @@ export async function main(argv: string[] = process.argv.slice(2), env: NodeJS.P
   const password = env.TRACCAR_ADMIN_PASSWORD;
   if (!password) throw new Error('TRACCAR_ADMIN_PASSWORD ausente');
   const traccar = traccarAdminApi(env.TRACCAR_URL || 'http://localhost:8082', env.TRACCAR_ADMIN_EMAIL || 'admin@volti.local', password, fetch, log);
+  const redis = await connectProvisioningRedis(env);
   const prisma = new PrismaClient();
   try {
     await provisionGt06(
-      { prisma, traccar, log },
+      { prisma, traccar, redis, log },
       { vehicleCode: values.vehicle ?? '', thingName: values.thing ?? '', imei: values.imei ?? '', bridgeEmail: env.TRACCAR_BRIDGE_EMAIL || undefined, dryRun: values['dry-run'] },
     );
   } finally {
     await prisma.$disconnect();
+    await redis.close().catch(() => undefined);
   }
 }
 

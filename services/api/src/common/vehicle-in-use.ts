@@ -21,11 +21,14 @@ export async function hasOpenRental(tx: Pick<Prisma.TransactionClient, 'rental'>
   return !!rental;
 }
 
+/** `true` se há reserva ativa ou em entrega (`IN_USE_RESERVATION_STATUSES`) para a moto. */
+export async function hasInUseReservation(tx: Pick<Prisma.TransactionClient, 'reservation'>, vehicleId: string): Promise<boolean> {
+  const reservation = await tx.reservation.findFirst({ where: { vehicleId, status: { in: IN_USE_RESERVATION_STATUSES } }, select: { id: true } });
+  return !!reservation;
+}
+
 /** `409 vehicle-unavailable` se a moto tem aluguel aberto ou reserva ativa/em entrega, independentemente do status da moto. */
 export async function assertVehicleNotInUse(tx: InUseTx, vehicleId: string): Promise<void> {
-  const [rental, reservation] = await Promise.all([
-    hasOpenRental(tx, vehicleId),
-    tx.reservation.findFirst({ where: { vehicleId, status: { in: IN_USE_RESERVATION_STATUSES } }, select: { id: true } }),
-  ]);
+  const [rental, reservation] = await Promise.all([hasOpenRental(tx, vehicleId), hasInUseReservation(tx, vehicleId)]);
   if (rental || reservation) throw conflict('vehicle-unavailable', 'A moto está em uso por um cliente.');
 }

@@ -1,6 +1,9 @@
 import { LocalMutex, outsideLock, RedisMutex } from '../../redis/redis-mutex';
 import type { RedisStore } from '../../redis/redis-store';
 
+/** Prefixo das chaves da rampa no Redis (`{prefix}:{thing}`, `{prefix}:index`, `{prefix}:lock:{thing}`). */
+export const SAFE_LOCK_PREFIX = 'iot:safe-lock';
+
 export type SafeLockPhase = 'waiting_online' | 'ramping' | 'locking';
 
 /**
@@ -116,7 +119,7 @@ export class RedisSafeLockStore implements SafeLockStore {
     opts: RedisSafeLockStoreOptions = {},
   ) {
     this.mutex = new RedisMutex(redis, { ttlMs: opts.lockTtlMs ?? 15_000, waitMs: opts.lockWaitMs ?? 5_000 });
-    this.prefix = opts.prefix ?? 'iot:safe-lock';
+    this.prefix = opts.prefix ?? SAFE_LOCK_PREFIX;
   }
 
   private key(thingName: string) {

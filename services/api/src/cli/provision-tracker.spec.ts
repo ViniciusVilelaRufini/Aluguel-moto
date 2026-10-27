@@ -1,6 +1,7 @@
-import { linkMqttTracker } from './provision-tracker';
+import { MemoryRedisStore, type RedisStore } from '../redis/redis-store';
+import { assertNoPendingLock, assertVehicleFreeForProvisioning, connectProvisioningRedis, linkMqttTracker } from './provision-tracker';
 
-function fakes(openRental = false) {
+function fakes(openRental = false, reservation = false) {
   const calls: string[] = [];
   const tx = {
     vehicle: { update: jest.fn(async () => void calls.push('vehicle.update')) },
@@ -9,6 +10,7 @@ function fakes(openRental = false) {
       upsert: jest.fn(async () => void calls.push('tracker.upsert')),
     },
     rental: { findFirst: jest.fn().mockResolvedValue(openRental ? { id: 'r-1' } : null) },
+    reservation: { findFirst: jest.fn().mockResolvedValue(reservation ? { id: 'res-1' } : null) },
   };
   return { tx, calls };
 }
@@ -57,5 +59,80 @@ describe('assertNoOpenRental', () => {
     const rental = { findFirst: jest.fn().mockResolvedValue(null) };
     await expect(assertNoOpenRental({ rental } as any, { id: 'veh-1', code: 'VLT-0061' })).resolves.toBeUndefined();
     expect(rental.findFirst).toHaveBeenCalledWith({ where: { vehicleId: 'veh-1', status: { in: ['active', 'paused', 'ending'] } }, select: { id: true } });
+  });
+});
+
+const RESERVATION_MSG = 'A moto VLT-0061 tem uma reserva ativa ou em entrega; reprovisione o rastreador com a moto livre.';
+
+describe('N4: reserva ativa/em entrega também recusa o provisionamento', () => {
+  it('assertVehicleFreeForProvisioning consulta IN_USE_RESERVATION_STATUSES (active, handover)', async () => {
+    const rental = { findFirst: jest.fn().mockResolvedValue(null) };
+    const reservation = { findFirst: jest.fn().mockResolvedValue({ id: 'res-1' }) };
+    await expect(assertVehicleFreeForProvisioning({ rental, reservation } as any, { id: 'veh-1', code: 'VLT-0061' })).rejects.toThrow(RESERVATION_MSG);
+    expect(reservation.findFirst).toHaveBeenCalledWith({ where: { vehicleId: 'veh-1', status: { in: ['active', 'handover'] } }, select: { id: true } });
+    reservation.findFirst.mockResolvedValue(null);
+    await expect(assertVehicleFreeForProvisioning({ rental, reservation } as any, { id: 'veh-1', code: 'VLT-0061' })).resolves.toBeUndefined();
+  });
+
+  it('linkMqttTracker (dentro da transação) com reserva ativa → erro e nenhuma escrita', async () => {
+    const f = fakes(false, true);
+    await expect(linkMqttTracker(f.tx as any, { vehicle, thingName: 'moto-0061' })).rejects.toThrow(RESERVATION_MSG);
+    expect(f.calls).toEqual([]);
+  });
+});
+
+describe('N5: trava pendente no Redis da API recusa o provisionamento', () => {
+  it.each([
+    ['rampa (speed_control)', 'iot:safe-lock:moto-0061'],
+    ['trava só relé', 'iot:relay-lock:moto-0061'],
+  ])('estado de %s → erro em pt-BR', async (_name, key) => {
+    const redis = new MemoryRedisStore();
+    await redis.set(key, '{}');
+    await expect(assertNoPendingLock(redis, 'moto-0061')).rejects.toThrow('A moto moto-0061 tem uma trava em andamento na API');
+  });
+
+  it.each([['iot:safe-lock:index'], ['iot:relay-lock:index']])('só no índice (%s, órfã à espera da varredura) → também recusa', async (index) => {
+    const redis = new MemoryRedisStore();
+    await redis.hset(index, { 'moto-0061': '{"phase":"locking"}' });
+    await expect(assertNoPendingLock(redis, 'moto-0061')).rejects.toThrow('trava em andamento');
+  });
+
+  it('sem estado da moto (ou só de outra moto) → segue', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.set('iot:safe-lock:moto-0062', '{}');
+    await redis.hset('iot:relay-lock:index', { 'moto-0062': '{}' });
+    await expect(assertNoPendingLock(redis, 'moto-0061')).resolves.toBeUndefined();
+  });
+
+  it('erro de leitura do Redis propaga (falha fechada)', async () => {
+    const redis = { exists: jest.fn().mockRejectedValue(new Error('down')), hgetall: jest.fn().mockRejectedValue(new Error('down')) } as unknown as RedisStore;
+    await expect(assertNoPendingLock(redis, 'moto-0061')).rejects.toThrow('down');
+  });
+});
+
+describe('N5: connectProvisioningRedis (REDIS_URL, falha fechada)', () => {
+  const store = (ping: () => Promise<boolean>) => ({ ping: jest.fn(ping), close: jest.fn(async () => undefined) }) as unknown as RedisStore & { close: jest.Mock };
+
+  it.each([[undefined], [''], ['memory']])('REDIS_URL=%p → erro claro (não há como ver as travas da API)', async (url) => {
+    const factory = jest.fn();
+    await expect(connectProvisioningRedis({ REDIS_URL: url }, factory)).rejects.toThrow('REDIS_URL');
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it('Redis que não responde PONG → erro e conexão fechada', async () => {
+    const s = store(async () => false);
+    await expect(connectProvisioningRedis({ REDIS_URL: 'redis://x:6379' }, () => s)).rejects.toThrow('Redis inacessível');
+    expect(s.close).toHaveBeenCalled();
+  });
+
+  it('Redis que não responde no prazo → erro', async () => {
+    const s = store(() => new Promise<boolean>(() => undefined));
+    await expect(connectProvisioningRedis({ REDIS_URL: 'redis://x:6379' }, () => s, 20)).rejects.toThrow('Redis inacessível');
+    expect(s.close).toHaveBeenCalled();
+  });
+
+  it('Redis no ar → devolve o store', async () => {
+    const s = store(async () => true);
+    await expect(connectProvisioningRedis({ REDIS_URL: 'redis://x:6379' }, () => s)).resolves.toBe(s);
   });
 });
