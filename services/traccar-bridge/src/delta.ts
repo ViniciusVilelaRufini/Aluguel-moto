@@ -26,7 +26,7 @@ function reportedOf(d: DesiredDelta): ReportedState {
 }
 
 /** Delta do shadow → ações (spec §6.4), sem contexto da moto. `limite_kmh` nunca vira comando: só o reported com o limite fixo. */
-export function planDelta(d: DesiredDelta): BridgeAction[] {
+function planDelta(d: DesiredDelta): BridgeAction[] {
   const out: BridgeAction[] = [];
   if (d.travada === true) out.push({ kind: 'engineStop' });
   if (d.travada === false) out.push({ kind: 'engineResume' });
@@ -70,7 +70,7 @@ export function cutRefusal(input: CutContext): CutRefusal | null {
 }
 
 /**
- * Plano de um delta COM o estado atual da moto (a Task 9 usa no lugar de `planDelta` para o delta recebido).
+ * Plano de um delta COM o estado atual da moto (a Task 9 usa para todo delta recebido; `planDelta` é interno de propósito, pois não tem a guarda do corte).
  * - guarda liberou → `engineStop`;
  * - `already_blocked` → eco `report { travada: true }` (a API só confirma o travamento por um reported.travada vindo
  *   depois da graça de reconexão; um lock repetido numa moto já travada depende deste eco). O `true` vem do bit ATUAL

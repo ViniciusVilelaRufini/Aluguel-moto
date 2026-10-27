@@ -2,6 +2,7 @@ import Ajv2020 from 'ajv/dist/2020';
 import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { cutRefusal } from './delta';
 import { applyPosition, currentBlocked, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { TraccarEvent, TraccarPosition } from './traccar/types';
 
@@ -9,6 +10,9 @@ const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../
 const ajv = addFormats(new Ajv2020({ strict: false }));
 const validTelemetry = ajv.compile(schema('telemetria.schema.json'));
 const validEvent = ajv.compile(schema('eventos.schema.json'));
+
+const NOW = Date.parse('2026-10-27T12:10:00Z');
+const AP = (p: TraccarPosition, mem: DeviceMemory, now = NOW) => applyPosition(p, mem, '72v', now);
 
 const pos = (over: Partial<TraccarPosition> = {}): TraccarPosition => ({
   id: 1, deviceId: 1, protocol: 'gt06', serverTime: '2026-10-27T12:00:01.000Z', deviceTime: '2026-10-27T12:00:00.000Z', fixTime: '2026-10-27T12:00:00.000Z',
@@ -18,53 +22,53 @@ const pos = (over: Partial<TraccarPosition> = {}): TraccarPosition => ({
 
 describe('applyPosition (spec GT06 §6.2)', () => {
   it('posição válida → telemetria do contrato: nós × 1,852, timestamp = fixTime, blocked/ignition/rssi/power', () => {
-    const r = applyPosition(pos(), {}, '72v');
+    const r = AP(pos(), {});
     expect(r.telemetry).toEqual({ lat: -23.5614, lng: -46.6914, velocidade_kmh: 20, bateria_pct: 50, travada: false, ignicao: true, sinal: 5, timestamp: '2026-10-27T12:00:00.000Z' });
     expect(validTelemetry(r.telemetry)).toBe(true);
     expect(r.memory.last).toEqual({ fixTime: Date.parse('2026-10-27T12:00:00.000Z'), speedKmh: 20, lat: -23.5614, lng: -46.6914 });
   });
 
   it('heartbeat (outdated) não vira telemetria, mas o bit de corte e a ignição valem para a próxima', () => {
-    const hb = applyPosition(pos({ outdated: true, attributes: { blocked: true, ignition: false } }), {}, '72v');
+    const hb = AP(pos({ outdated: true, attributes: { blocked: true, ignition: false, power: 60 } }), {});
     expect(hb.telemetry).toBeNull();
     expect(hb.memory).toMatchObject({ blocked: true, ignition: false });
-    const next = applyPosition(pos({ fixTime: '2026-10-27T12:00:05.000Z', speed: 0, attributes: {} }), hb.memory, '72v');
+    const next = AP(pos({ fixTime: '2026-10-27T12:00:05.000Z', speed: 0, attributes: {} }), hb.memory);
     expect(next.telemetry).toMatchObject({ travada: true, ignicao: false, velocidade_kmh: 0, sinal: 0, bateria_pct: 0 });
   });
 
   it('valid=false, fixTime repetido ou mais velho → sem telemetria', () => {
-    expect(applyPosition(pos({ valid: false }), {}, '72v').telemetry).toBeNull();
-    const first = applyPosition(pos(), {}, '72v');
-    expect(applyPosition(pos(), first.memory, '72v').telemetry).toBeNull();
-    expect(applyPosition(pos({ fixTime: '2026-10-27T11:59:59.000Z' }), first.memory, '72v').telemetry).toBeNull();
+    expect(AP(pos({ valid: false }), {}).telemetry).toBeNull();
+    const first = AP(pos(), {});
+    expect(AP(pos(), first.memory).telemetry).toBeNull();
+    expect(AP(pos({ fixTime: '2026-10-27T11:59:59.000Z' }), first.memory).telemetry).toBeNull();
   });
 
   it('fora do schema (velocidade > 200 km/h) → invalid, sem telemetria e sem atualizar a última posição', () => {
-    const r = applyPosition(pos({ speed: 200 }), {}, '72v');
+    const r = AP(pos({ speed: 200 }), {});
     expect(r).toMatchObject({ telemetry: null, invalid: true });
     expect(r.memory.last).toBeUndefined();
   });
 
   it('tensão fora da curva (DC-DC 12 V) mantém o último % válido', () => {
-    const a = applyPosition(pos(), {}, '72v');
-    const b = applyPosition(pos({ fixTime: '2026-10-27T12:00:05.000Z', attributes: { power: 12.1 } }), a.memory, '72v');
+    const a = AP(pos(), {});
+    const b = AP(pos({ fixTime: '2026-10-27T12:00:05.000Z', attributes: { power: 12.1 } }), a.memory);
     expect(b.telemetry?.bateria_pct).toBe(50);
   });
 
   it('deslocamento > 20 m com o corte ativo → movedWhileLocked uma vez por âncora', () => {
-    let mem: DeviceMemory = applyPosition(pos({ speed: 0, attributes: { blocked: true } }), {}, '72v').memory;
-    const r1 = applyPosition(pos({ fixTime: '2026-10-27T12:00:05.000Z', latitude: -23.5613, speed: 0, attributes: {} }), mem, '72v'); // ~11 m
+    let mem: DeviceMemory = AP(pos({ speed: 0, attributes: { blocked: true, power: 72 } }), {}).memory;
+    const r1 = AP(pos({ fixTime: '2026-10-27T12:00:05.000Z', latitude: -23.5613, speed: 0, attributes: {} }), mem); // ~11 m
     expect(r1.movedWhileLocked).toBe(false);
     mem = r1.memory;
-    const r2 = applyPosition(pos({ fixTime: '2026-10-27T12:00:10.000Z', latitude: -23.5611, speed: 0, attributes: {} }), mem, '72v'); // ~33 m da âncora
+    const r2 = AP(pos({ fixTime: '2026-10-27T12:00:10.000Z', latitude: -23.5611, speed: 0, attributes: {} }), mem); // ~33 m da âncora
     expect(r2.movedWhileLocked).toBe(true);
-    const r3 = applyPosition(pos({ fixTime: '2026-10-27T12:00:15.000Z', latitude: -23.5611, speed: 0, attributes: {} }), r2.memory, '72v');
+    const r3 = AP(pos({ fixTime: '2026-10-27T12:00:15.000Z', latitude: -23.5611, speed: 0, attributes: {} }), r2.memory);
     expect(r3.movedWhileLocked).toBe(false);
   });
 });
 
 describe('reconexão: travada nunca vem de memória velha (decisão 4)', () => {
-  const locked: DeviceMemory = applyPosition(pos({ speed: 0, attributes: { blocked: true, ignition: false } }), {}, '72v').memory;
+  const locked: DeviceMemory = AP(pos({ speed: 0, attributes: { blocked: true, ignition: false, power: 60 } }), {}).memory;
 
   it('currentBlocked devolve o bit conhecido; markReconnected o descarta até chegar status novo', () => {
     expect(currentBlocked(locked)).toBe(true);
@@ -77,21 +81,101 @@ describe('reconexão: travada nunca vem de memória velha (decisão 4)', () => {
     expect(currentBlocked(locked)).toBe(true);
   });
 
-  it('posição sem atributo blocked após reconectar não reaproveita o bit antigo (desconhecida = false na telemetria, nunca true)', () => {
+  it('posição sem atributo blocked após reconectar não reaproveita o bit antigo: telemetria retida (held awaiting_status)', () => {
     const re = markReconnected(locked);
-    const r = applyPosition(pos({ fixTime: '2026-10-27T12:01:00.000Z', speed: 0, attributes: {} }), re, '72v');
-    expect(r.telemetry?.travada).toBe(false);
+    const r = AP(pos({ fixTime: '2026-10-27T12:01:00.000Z', speed: 0, attributes: {} }), re);
+    expect(r.telemetry).toBeNull();
+    expect(r.held).toBe('awaiting_status');
     expect(currentBlocked(r.memory)).toBeUndefined();
     expect(r.memory.awaitingStatus).toBe(true);
   });
 
   it('o primeiro attributes.blocked após reconectar volta a valer (heartbeat também)', () => {
     const re = markReconnected(locked);
-    const hb = applyPosition(pos({ outdated: true, attributes: { blocked: true } }), re, '72v');
+    const hb = AP(pos({ outdated: true, attributes: { blocked: true } }), re);
     expect(currentBlocked(hb.memory)).toBe(true);
     expect(hb.memory.awaitingStatus).toBe(false);
-    const hb2 = applyPosition(pos({ outdated: true, attributes: { blocked: false } }), re, '72v');
+    const hb2 = AP(pos({ outdated: true, attributes: { blocked: false } }), re);
     expect(currentBlocked(hb2.memory)).toBe(false);
+  });
+});
+
+describe('retenção (held) e relógio do rastreador', () => {
+  const future = new Date(NOW + 3_600_000).toISOString();
+  const stopped = (over: Partial<TraccarPosition> = {}) => pos({ speed: 0, ...over });
+
+  it('sem status de corte conhecido: telemetry null, held awaiting_status, mas a memória (last, ignição, bateria, sinal) atualiza; libera quando o status chega', () => {
+    const r = AP(pos({ attributes: { ignition: true, rssi: 4, power: 72 } }), {});
+    expect(r).toMatchObject({ telemetry: null, held: 'awaiting_status', invalid: false });
+    expect(r.memory).toMatchObject({ ignition: true, signal: 5, batteryPct: 50 });
+    expect(r.memory.last).toMatchObject({ speedKmh: 20 });
+    const ok = AP(pos({ fixTime: '2026-10-27T12:00:05.000Z', attributes: { blocked: false } }), r.memory);
+    expect(ok.held).toBeUndefined();
+    expect(ok.telemetry).toMatchObject({ travada: false, bateria_pct: 50, ignicao: true, sinal: 5 });
+  });
+
+  it('sem bateria conhecida: telemetry null, held awaiting_battery; libera quando a tensão chega', () => {
+    const r = AP(pos({ attributes: { blocked: false } }), {});
+    expect(r).toMatchObject({ telemetry: null, held: 'awaiting_battery' });
+    expect(currentBlocked(r.memory)).toBe(false);
+    const ok = AP(pos({ fixTime: '2026-10-27T12:00:05.000Z', attributes: { power: 84 } }), r.memory);
+    expect(ok.held).toBeUndefined();
+    expect(ok.telemetry?.bateria_pct).toBe(100);
+  });
+
+  it('tensão fora da curva (12 V) não conta como bateria conhecida', () => {
+    expect(AP(pos({ attributes: { blocked: false, power: 12 } }), {}).held).toBe('awaiting_battery');
+  });
+
+  it('retida ou não, a posição de corte com deslocamento > 20 m ainda gera movedWhileLocked', () => {
+    const a = AP(stopped({ attributes: { blocked: true } }), {});
+    expect(a.held).toBe('awaiting_battery');
+    const b = AP(stopped({ fixTime: '2026-10-27T12:00:05.000Z', latitude: -23.5611, attributes: {} }), a.memory);
+    expect(b).toMatchObject({ telemetry: null, movedWhileLocked: true });
+  });
+
+  it('F1: fixTime > agora + 10 min é invalid, não grava last/ordem e não bloqueia posições reais; cutRefusal recusa', () => {
+    const bad = AP(stopped({ fixTime: future }), {});
+    expect(bad).toMatchObject({ telemetry: null, invalid: true });
+    expect(bad.memory.last).toBeUndefined();
+    expect(bad.memory.lastFixTime).toBeUndefined();
+    expect(cutRefusal({ online: true, mem: bad.memory, now: NOW })).toBe('no_position');
+    const real = AP(pos({ fixTime: new Date(NOW - 1000).toISOString() }), bad.memory);
+    expect(real.telemetry).not.toBeNull();
+  });
+
+  it('F1: futuro dentro da tolerância (<= 10 min) vale, e a frescura usa o menor entre fixTime e agora', () => {
+    const r = AP(stopped({ fixTime: new Date(NOW + 5 * 60_000).toISOString() }), AP(pos({ attributes: { blocked: false, power: 72 } }), {}).memory);
+    expect(r.invalid).toBe(false);
+    expect(r.memory.last?.fixTime).toBe(NOW);
+    expect(cutRefusal({ online: true, mem: r.memory, now: NOW + 11_000 })).toBe('stale');
+  });
+
+  it('F1: futuro também descarta a amostra parada anterior (velocidade desconhecida)', () => {
+    const ok = AP(stopped({ fixTime: new Date(NOW - 1000).toISOString() }), {});
+    expect(cutRefusal({ online: true, mem: ok.memory, now: NOW })).toBeNull();
+    const bad = AP(stopped({ fixTime: future }), ok.memory);
+    expect(cutRefusal({ online: true, mem: bad.memory, now: NOW })).toBe('no_position');
+    expect(bad.memory.lastFixTime).toBe(ok.memory.lastFixTime);
+  });
+
+  it('F2: posição mais nova inutilizável (valid=false, outdated, velocidade inválida) limpa last: velocidade desconhecida = em movimento', () => {
+    const t1 = new Date(NOW - 3000).toISOString();
+    const t2 = new Date(NOW - 1000).toISOString();
+    for (const over of [{ valid: false }, { outdated: true }, { speed: 200 }] as Partial<TraccarPosition>[]) {
+      const ok = AP(stopped({ fixTime: t1 }), {});
+      expect(cutRefusal({ online: true, mem: ok.memory, now: NOW })).toBeNull();
+      const r = AP(stopped({ fixTime: t2, ...over }), ok.memory);
+      expect(r.memory.last).toBeUndefined();
+      expect(cutRefusal({ online: true, mem: r.memory, now: NOW })).toBe('no_position');
+    }
+  });
+
+  it('F2: posição inutilizável que NÃO é mais nova (heartbeat repete o fixTime da última) não apaga last', () => {
+    const t1 = new Date(NOW - 3000).toISOString();
+    const ok = AP(stopped({ fixTime: t1 }), {});
+    const hb = AP(stopped({ fixTime: t1, outdated: true }), ok.memory);
+    expect(hb.memory.last).toEqual(ok.memory.last);
   });
 });
 

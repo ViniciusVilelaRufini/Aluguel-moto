@@ -1,14 +1,20 @@
-import { cutRefusal, parseDelta, planDelta, planDeltaFor, planReconnect } from './delta';
+import Ajv2020 from 'ajv/dist/2020';
+import addFormats from 'ajv-formats';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import * as deltaModule from './delta';
+import { cutRefusal, parseDelta, planDeltaFor, planReconnect } from './delta';
 import { markReconnected } from './mapping';
 
 const now = Date.parse('2026-10-27T12:00:30Z');
 const fresh = { last: { fixTime: now - 2_000, speedKmh: 0.5, lat: 0, lng: 0 } };
+const plan = (d: Parameters<typeof planDeltaFor>[0]) => planDeltaFor(d, { online: true, mem: fresh, now }).actions;
 
 describe('delta do shadow → ações (spec GT06 §6.4)', () => {
   it('travada → engineStop/engineResume; limite_kmh nunca vira comando (reported 32 fixo); modo_roubada ecoado', () => {
-    expect(planDelta({ travada: true })).toEqual([{ kind: 'engineStop' }]);
-    expect(planDelta({ travada: false, limite_kmh: 0 })).toEqual([{ kind: 'engineResume' }, { kind: 'report', reported: { limite_kmh: 32 } }]);
-    expect(planDelta({ limite_kmh: 6, modo_roubada: true })).toEqual([{ kind: 'report', reported: { limite_kmh: 32, modo_roubada: true } }]);
+    expect(plan({ travada: true })).toEqual([{ kind: 'engineStop' }]);
+    expect(plan({ travada: false, limite_kmh: 0 })).toEqual([{ kind: 'engineResume' }, { kind: 'report', reported: { limite_kmh: 32 } }]);
+    expect(plan({ limite_kmh: 6, modo_roubada: true })).toEqual([{ kind: 'report', reported: { limite_kmh: 32, modo_roubada: true } }]);
   });
 
   it('get da reconexão: só travada:false é reaplicado', () => {
@@ -31,12 +37,18 @@ describe('delta do shadow → ações (spec GT06 §6.4)', () => {
 
   it('decisão 1: travada null ou ausente = nenhuma ação (nunca engineStop/engineResume)', () => {
     expect(parseDelta({ travada: null })).toEqual({});
-    expect(planDelta(parseDelta({ travada: null }))).toEqual([]);
-    expect(planDelta(parseDelta({}))).toEqual([]);
+    expect(plan(parseDelta({ travada: null }))).toEqual([]);
+    expect(plan(parseDelta({}))).toEqual([]);
     expect(planReconnect(parseDelta({ travada: null }))).toEqual([]);
-    expect(planDelta(parseDelta({ travada: null, limite_kmh: null, modo_roubada: null }))).toEqual([]);
+    expect(plan(parseDelta({ travada: null, limite_kmh: null, modo_roubada: null }))).toEqual([]);
     const ctx = { online: true, mem: fresh, now };
     expect(planDeltaFor(parseDelta({ travada: null }), ctx)).toEqual({ actions: [], refusal: null });
+  });
+});
+
+describe('API pública (F3)', () => {
+  it('planDelta (sem guarda do corte) não é exportado: só planDeltaFor e planReconnect', () => {
+    expect((deltaModule as Record<string, unknown>).planDelta).toBeUndefined();
   });
 });
 
@@ -98,5 +110,30 @@ describe('planDeltaFor: delta com contexto da moto (decisão 3)', () => {
   it('travada:false e deltas sem travada seguem planDelta', () => {
     expect(planDeltaFor({ travada: false }, { ...ctx, mem: {} })).toEqual({ actions: [{ kind: 'engineResume' }], refusal: null });
     expect(planDeltaFor({ modo_roubada: false }, { ...ctx, mem: {} }).actions).toEqual([{ kind: 'report', reported: { modo_roubada: false } }]);
+  });
+});
+
+describe('F6: todo reported da ponte valida no schema do shadow', () => {
+  const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../../packages/contracts/schemas', name), 'utf8'));
+  const ajv = addFormats(new Ajv2020({ strict: false }));
+  ajv.addSchema(schema('shadow-reported.schema.json'));
+  ajv.addSchema(schema('shadow-desired.schema.json'));
+  const validShadow = ajv.compile(schema('shadow-update.schema.json'));
+
+  it('reports de planDeltaFor (inclusive o eco travada:true) e planReconnect', () => {
+    const deltas = [{ travada: true, limite_kmh: 6, modo_roubada: true }, { limite_kmh: 0 }, { modo_roubada: false }, { travada: false, limite_kmh: 20 }];
+    const ctxs = [{ online: true, mem: fresh, now }, { online: true, mem: { ...fresh, blocked: true }, now }, { online: false, mem: fresh, now }];
+    const actions = [
+      ...deltas.flatMap((d) => ctxs.flatMap((c) => planDeltaFor(d, c).actions)),
+      ...deltas.flatMap((d) => planReconnect(d)),
+    ];
+    const reports = actions.filter((a) => a.kind === 'report');
+    expect(reports.length).toBeGreaterThan(5);
+    expect(reports).toContainEqual({ kind: 'report', reported: expect.objectContaining({ travada: true }) });
+    for (const a of reports) {
+      if (a.kind !== 'report') continue;
+      const ok = validShadow({ state: { reported: a.reported } });
+      expect({ ok, errors: validShadow.errors }).toEqual({ ok: true, errors: null });
+    }
   });
 });

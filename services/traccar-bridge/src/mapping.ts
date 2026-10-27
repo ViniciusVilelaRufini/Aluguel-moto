@@ -46,16 +46,31 @@ export function haversineM(a: { lat: number; lng: number }, b: { lat: number; ln
 }
 
 /**
+ * Tolerância de relógio do rastreador. Mesmo valor de MAX_CLOCK_SKEW_MS em services/api/src/modules/iot/live-state.store.ts
+ * (copiado, não importado entre pacotes): fixTime além de agora + isto é não confiável.
+ */
+export const MAX_CLOCK_SKEW_MS = 10 * 60 * 1000;
+
+export type HeldReason = 'awaiting_status' | 'awaiting_battery';
+
+/**
  * Posição do Traccar → telemetria do contrato (spec §6.2). Todo atributo conhecido atualiza a memória (inclusive de heartbeat);
  * só posição válida, não `outdated` e com `fixTime` mais novo que a última publicada vira telemetria.
- * `telemetry.travada` usa só o bit atual; desconhecido (logo após reconectar) sai `false`. O `reported.travada`
- * que confirma travamento deve usar `currentBlocked` e só ser publicado quando for boolean, nunca `undefined`.
+ * - `now` (ms) é o relógio de ingestão. `fixTime` > now + MAX_CLOCK_SKEW_MS = `invalid`: não grava `last`/ordem; a
+ *   frescura usa min(fixTime, now) (`last.fixTime`).
+ * - Posição mais nova e inutilizável (inválida, outdated, relógio ou velocidade fora do contrato) limpa `last`: velocidade
+ *   desconhecida = em movimento (`cutRefusal` → no_position/stale).
+ * - Retenção: sem bit de corte atual (`currentBlocked` indefinido, ex.: após reconectar) ou sem bateria conhecida, não sai
+ *   telemetria (`telemetry: null`, `held`) — um `travada: false` ou `bateria_pct: 0` por falta de dado enganaria a API.
+ *   A memória (last, ignição, sinal, bateria) atualiza mesmo assim.
+ * O `reported.travada` deve usar `currentBlocked` e só ser publicado quando for boolean.
  */
 export function applyPosition(
   p: TraccarPosition,
   mem: DeviceMemory,
   battery: BatteryModel,
-): { telemetry: TelemetryMessage | null; invalid: boolean; movedWhileLocked: boolean; memory: DeviceMemory } {
+  now: number = Date.now(),
+): { telemetry: TelemetryMessage | null; invalid: boolean; movedWhileLocked: boolean; held?: HeldReason; memory: DeviceMemory } {
   const next: DeviceMemory = { ...mem };
   const a = p.attributes ?? {};
   if (typeof a.blocked === 'boolean') {
@@ -72,8 +87,16 @@ export function applyPosition(
   if (blocked !== true) next.lockAnchor = undefined;
   const none = { telemetry: null, invalid: false, movedWhileLocked: false, memory: next };
   const fixTime = Date.parse(p.fixTime);
-  if (!p.valid || p.outdated || !Number.isFinite(fixTime)) return none;
-  if (next.lastFixTime !== undefined && fixTime <= next.lastFixTime) return none;
+  const newer = !Number.isFinite(fixTime) || next.lastFixTime === undefined || fixTime > next.lastFixTime;
+  if (!p.valid || p.outdated || !Number.isFinite(fixTime)) {
+    if (newer) next.last = undefined;
+    return none;
+  }
+  if (fixTime > now + MAX_CLOCK_SKEW_MS) {
+    next.last = undefined;
+    return { ...none, invalid: true };
+  }
+  if (!newer) return none;
   const speedKmh = knotsToKmh(p.speed);
   const telemetry: TelemetryMessage = {
     lat: p.latitude,
@@ -85,9 +108,12 @@ export function applyPosition(
     sinal: next.signal ?? 0,
     timestamp: new Date(fixTime).toISOString(),
   };
-  if (!isValidTelemetry(telemetry)) return { ...none, invalid: true };
+  if (!isValidTelemetry(telemetry)) {
+    next.last = undefined;
+    return { ...none, invalid: true };
+  }
   next.lastFixTime = fixTime;
-  next.last = { fixTime, speedKmh, lat: p.latitude, lng: p.longitude };
+  next.last = { fixTime: Math.min(fixTime, now), speedKmh, lat: p.latitude, lng: p.longitude };
   let movedWhileLocked = false;
   if (blocked === true) {
     const here = { lat: p.latitude, lng: p.longitude };
@@ -97,6 +123,8 @@ export function applyPosition(
       next.lockAnchor = here;
     }
   }
+  if (blocked === undefined) return { ...none, held: 'awaiting_status', memory: next };
+  if (next.batteryPct === undefined) return { ...none, movedWhileLocked, held: 'awaiting_battery', memory: next };
   return { telemetry, invalid: false, movedWhileLocked, memory: next };
 }
 
