@@ -21,6 +21,7 @@ import {
   SINGLE_TAG,
   SingleDevStack,
 } from './stacks/single-dev-stack';
+import { TraccarStack } from './stacks/traccar-stack';
 import { WafStack } from './stacks/waf-stack';
 
 export interface VoltiAppOptions {
@@ -43,6 +44,8 @@ export interface VoltiAppOptions {
   /** Dev only: RUN_SEED=true in the API task (idempotent seed after the migrations). */
   apiRunSeed?: boolean;
   /** Account-specific values (SES identity, IdP secret names, Cognito domain prefixes, WAF limit). */
+  /** Proposta GT06 (spec 2026-10-27 §8): Traccar + ponte. Só com a lista de thingNames relay_only. */
+  traccar?: { gt06Things: string[]; apnCidrs?: string[]; bridgeImageTag?: string; openGt06?: boolean; desiredCount?: number };
   overrides?: ConfigOverrides;
   outdir?: string;
 }
@@ -59,6 +62,8 @@ export interface VoltiStacks {
   waf?: WafStack;
   adminWeb: AdminWebStack;
   observability: ObservabilityStack;
+  /** Only with opts.traccar (-c gt06Things=...). */
+  traccar?: TraccarStack;
 }
 
 export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
@@ -106,6 +111,7 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
     apiDomainName: opts.apiDomainName,
     runSeed: opts.apiRunSeed,
   });
+  const traccar = opts.traccar ? new TraccarStack(app, `${prefix}-traccar`, { ...common, cfg, vpc: network.vpc, data, iot, ...opts.traccar }) : undefined;
   const observability = new ObservabilityStack(app, `${prefix}-observability`, {
     ...common,
     cfg,
@@ -120,7 +126,7 @@ export function createVoltiApp(opts: VoltiAppOptions): VoltiStacks {
   Tags.of(app).add('projeto', 'volti');
   Tags.of(app).add('ambiente', cfg.name);
 
-  return { app, network, data, auth, messaging, iot, api, waf, adminWeb, observability };
+  return { app, network, data, auth, messaging, iot, api, waf, adminWeb, observability, traccar };
 }
 
 export interface SingleDevAppOptions {
