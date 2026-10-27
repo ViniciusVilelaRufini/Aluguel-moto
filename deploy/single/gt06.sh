@@ -32,11 +32,19 @@ envval() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2-; }
 dc() { docker compose -f deploy/single/compose.yml --env-file "$ENV_FILE" --profile gt06 "$@"; }
 sql() { dc exec -T postgres psql -v ON_ERROR_STOP=1 -U volti -d volti -tA; }
 # traccar_admin <método> <caminho> [json]: credenciais e corpo pelo stdin do curl (-K -), nunca na linha de comando.
+# No config do curl, "\" e '"' dentro de aspas precisam de escape (barra invertida primeiro).
 traccar_admin() {
+  local b=""
+  if [ -n "${3:-}" ]; then b="${3//\\/\\\\}"; b="${b//\"/\\\"}"; fi
   {
     printf 'user = "%s:%s"\n' "$TRACCAR_ADMIN_EMAIL" "$(envval TRACCAR_ADMIN_PASSWORD)"
-    if [ -n "${3:-}" ]; then printf 'header = "Content-Type: application/json"\ndata = "%s"\n' "${3//\"/\\\"}"; fi
+    if [ -n "$b" ]; then printf 'header = "Content-Type: application/json"\ndata = "%s"\n' "$b"; fi
   } | curl -fsS -X "$1" -K - "$TRACCAR_LOCAL$2"
+}
+# admin_users_code: código HTTP do GET /api/users como admin (200 = admin existe, 401 = ainda não; 000 = sem resposta).
+admin_users_code() {
+  printf 'user = "%s:%s"\n' "$TRACCAR_ADMIN_EMAIL" "$(envval TRACCAR_ADMIN_PASSWORD)" |
+    curl -sS -o /dev/null -w '%{http_code}' -K - "$TRACCAR_LOCAL/api/users" 2>/dev/null || true
 }
 
 case "$action" in
@@ -67,18 +75,42 @@ SQL
     for _ in $(seq 1 60); do curl -fsS "$TRACCAR_LOCAL/api/server" >/dev/null 2>&1 && break; sleep 3; done
     server="$(curl -fsS "$TRACCAR_LOCAL/api/server")" || { echo "o Traccar não respondeu em 180 s (logs: docker compose ... logs traccar)" >&2; exit 1; }
     echo "Traccar no ar ($(printf '%s' "$server" | grep -o '"version":"[^"]*"' || echo 'versão desconhecida'))"
-    if ! traccar_admin GET /api/users >/dev/null 2>&1; then
-      # Traccar vazio: o primeiro usuário vira administrador. Corpo pelo stdin.
-      printf '{"name":"Volti admin","email":"%s","password":"%s"}' "$TRACCAR_ADMIN_EMAIL" "$(envval TRACCAR_ADMIN_PASSWORD)" |
-        curl -fsS -X POST -H 'Content-Type: application/json' --data @- "$TRACCAR_LOCAL/api/users" >/dev/null ||
-        { echo "não foi possível criar o admin do Traccar (já existe outro usuário com outra senha?)" >&2; exit 1; }
-      echo "administrador do Traccar criado"
-    fi
-    if ! traccar_admin GET /api/users | grep -q "\"email\":\"$TRACCAR_BRIDGE_EMAIL\""; then
+    # Admin: só um 401 (credencial do admin recusada = ainda não existe) leva à criação. Sem resposta/5xx: tenta de novo e,
+    # persistindo, falha (nunca cria às cegas).
+    code=""
+    for _ in $(seq 1 10); do
+      code="$(admin_users_code)"
+      case "$code" in 200|401) break ;; esac
+      sleep 3
+    done
+    case "$code" in
+      200) ;;
+      401)
+        # Traccar vazio: o primeiro usuário vira administrador. Corpo pelo stdin. Com usuários e cadastro fechado, o Traccar
+        # recusa (não há admin duplicado).
+        printf '{"name":"Volti admin","email":"%s","password":"%s"}' "$TRACCAR_ADMIN_EMAIL" "$(envval TRACCAR_ADMIN_PASSWORD)" |
+          curl -fsS -X POST -H 'Content-Type: application/json' --data @- "$TRACCAR_LOCAL/api/users" >/dev/null ||
+          { echo "não foi possível criar o admin do Traccar (já existe outro usuário? senha do admin trocada?)" >&2; exit 1; }
+        echo "administrador do Traccar criado"
+        ;;
+      *) echo "GET /api/users do Traccar falhou (HTTP ${code:-sem resposta}) depois de 10 tentativas" >&2; exit 1 ;;
+    esac
+    # Cadastro aberto desligado: nenhum container da rede cria usuário sozinho. O PUT exige o objeto completo do servidor.
+    server="$(traccar_admin GET /api/server)" || { echo "GET /api/server como admin falhou" >&2; exit 1; }
+    case "$server" in
+      *'"registration":false'*) ;;
+      *'"registration":true'*)
+        traccar_admin PUT /api/server "${server/\"registration\":true/\"registration\":false}" >/dev/null
+        echo "cadastro aberto do Traccar desligado (registration:false)"
+        ;;
+      *) echo "o /api/server do Traccar não traz \"registration\"; não sei desligar o cadastro aberto" >&2; exit 1 ;;
+    esac
+    users="$(traccar_admin GET /api/users)" || { echo "GET /api/users como admin falhou" >&2; exit 1; }
+    if ! printf '%s' "$users" | grep -q "\"email\":\"$TRACCAR_BRIDGE_EMAIL\""; then
       traccar_admin POST /api/users "$(printf '{"name":"traccar-bridge","email":"%s","password":"%s"}' "$TRACCAR_BRIDGE_EMAIL" "$(envval TRACCAR_BRIDGE_PASSWORD)")" >/dev/null
       echo "usuário da ponte criado no Traccar"
     fi
-    echo "GT06 pronto (Traccar, papéis traccar e volti_bridge, usuários admin e ponte)"
+    echo "GT06 pronto (Traccar, papéis traccar e volti_bridge, usuários admin e ponte, cadastro fechado)"
     ;;
   provision)
     # A senha do admin do Traccar já está no ambiente da API (env_file); aqui só valores públicos. TRACCAR_BRIDGE_EMAIL liga
@@ -106,8 +138,10 @@ SQL
         if [ -n "${3:-}" ]; then printf 'header = "Content-Type: application/json"\ndata = "%s"\n' "${3//\"/\\\"}"; fi
       } | curl -fsS -X "$1" -K - "https://$host$2"
     }
+    # Logs do e2e só do root: o mqtt.log tem posições (dado pessoal pela LGPD, mesmo de moto de teste).
+    umask 077
     dir="$(mktemp -d /var/tmp/gt06-e2e.XXXXXX)"
-    chmod 755 "$dir"
+    chmod 700 "$dir"
     # Hora UTC com milissegundos no recebimento de cada linha (o check-timeline intercala com o log JSON do emulador).
     stamp() { while IFS= read -r l; do printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)" "$l"; done; }
     sub=""
@@ -130,7 +164,7 @@ SQL
     sleep 25 # andando a 20 km/h (60 s), fora da graça de 10 s
     resp="$(api POST "/vehicles/$vid/commands" '{"type":"lock","reason":"e2e GT06 relay-only"}')" ||
       { echo "FALHA: POST /vehicles/{id}/commands recusado (token vencido? DONO: renove E2E_STAFF_TOKEN)" >&2; exit 1; }
-    cid="$(printf '%s' "$resp" | grep -o '"id":"[^"]*"' | head -n 1 | cut -d'"' -f4)"
+    cid="$(printf '%s' "$resp" | grep -o '"id":"[^"]*"' | head -n 1 | cut -d'"' -f4 || true)"
     [ -n "$cid" ] || { echo "FALHA: resposta do comando sem id" >&2; exit 1; }
     status=""
     for _ in $(seq 1 60); do
@@ -142,17 +176,20 @@ SQL
     stop_sub
     # Só as linhas JSON (todas com "ts"): o check-timeline recusa linha sem hora.
     dc logs --no-color --no-log-prefix gt06-emulator | grep '^{' >"$dir/emulator.log" || true
-    chmod 644 "$dir/mqtt.log" "$dir/emulator.log"
+    chmod 600 "$dir/mqtt.log" "$dir/emulator.log"
     echo "comando $cid: ${status:-sem status}"
     result=0
-    # Verificador sem rede, sem segredos e sem NET_RAW (imagem da ponte).
-    docker run --rm -i --network none --cap-drop NET_RAW -v "$dir:/e2e:ro" volti/traccar-bridge:dev \
+    # Verificador sem rede, sem segredos, sem capabilities e com o disco só leitura (imagem da ponte). Usuário 0 só para ler
+    # os arquivos 600 do root montados read-only (sem DAC_OVERRIDE: lê como dono).
+    docker run --rm -i --network none --cap-drop ALL --read-only --user 0:0 -v "$dir:/e2e:ro" volti/traccar-bridge:dev \
       node dist/e2e/check-timeline.js "$thing" --emulator-log=/e2e/emulator.log <"$dir/mqtt.log" || result=1
     cuts="$(grep -o '"msg":"gt06_cut"[^}]*"speedKmhAtCut":[0-9.]*' "$dir/emulator.log" | grep -o 'speedKmhAtCut":[0-9.]*' || true)"
     echo "cortes no emulador: ${cuts:-nenhum}"
     if printf '%s' "$cuts" | grep -Eq 'speedKmhAtCut":([3-9]|[1-9][0-9])'; then echo "FALHA: corte com o emulador a 3 km/h ou mais" >&2; result=1; fi
     [ "$status" = "confirmed" ] || { echo "FALHA: o lock terminou '${status:-sem status}'" >&2; result=1; }
-    echo "logs do e2e: $dir (mqtt.log, emulator.log; sem segredos)"
+    # Sucesso: apaga o mqtt.log (posições). Falha: fica para o diagnóstico (só root); apague depois.
+    if [ "$result" -eq 0 ]; then rm -f "$dir/mqtt.log"; echo "logs do e2e: $dir (emulator.log; mqtt.log apagado)"
+    else echo "logs do e2e: $dir (mqtt.log com posições e emulator.log, só root; apague depois do diagnóstico)"; fi
     if [ "$result" -eq 0 ]; then echo "e2e GT06: OK"; else echo "e2e GT06: FALHOU" >&2; fi
     exit "$result"
     ;;

@@ -252,13 +252,28 @@ aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query '[St
 ```
 
 Use uma moto livre (fora de aluguel). Esperado no fim: `comando <id>: confirmed`, `{"ok":true,"problems":[]}`,
-`cortes no emulador: speedKmhAtCut":0` e `e2e GT06: OK`. Os logs do e2e ficam em `/var/tmp/gt06-e2e.*` (sem segredos; IMEI
-só mascarado). `gt06.sh deprovision moto-0060` devolve a moto ao `iot-sim`; para economizar memória, `GT06=off` e update.
+`cortes no emulador: speedKmhAtCut":0` e `e2e GT06: OK`. Os logs do e2e ficam em `/var/tmp/gt06-e2e.*` (pasta 700, arquivos
+600, só root; sem segredos; IMEI só mascarado). Com sucesso, o `mqtt.log` (posições = dado pessoal) é apagado e fica só o
+`emulator.log`; com falha, o `mqtt.log` fica para o diagnóstico: apague a pasta depois (`rm -rf /var/tmp/gt06-e2e.*`).
+`gt06.sh deprovision moto-0060` devolve a moto ao `iot-sim`; para economizar memória, `GT06=off` e update.
 
-J16 de bancada (DONO): a 5023 só abre no security group com `cdk deploy` da stack `volti-dev-single` e
+O `gt06.sh init` também desliga o cadastro aberto do Traccar (`registration:false` pelo `PUT /api/server`): nenhum container
+cria usuário sozinho. Se o init falhar, o update segue sem o profile `gt06` (aviso `AVISO: GT06 init falhou`) e a API é
+atualizada normalmente.
+
+J16 de bancada (DONO): por padrão a 5023 do Traccar só escuta em 127.0.0.1 da instância (o emulador usa a rede interna).
+Para um J16 real, as duas coisas juntas: (1) `cdk deploy` da stack `volti-dev-single` com
 `-c gt06Port=true -c gt06Cidrs=<ip-do-chip>/32` ou, reconhecendo que o GT06 não tem TLS e o chip M2M comum não tem faixa
-fixa, `-c gt06Port=true -c openGt06=true` (0.0.0.0/0, só bancada). Depois, `SERVER,0,<ip-da-instância>,5023,0#` por SMS
-(README da ponte). Logs: `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env --profile gt06 logs --tail 50 traccar traccar-bridge gt06-emulator`.
+fixa, `-c gt06Port=true -c openGt06=true` (0.0.0.0/0, só bancada; um CIDR `/0` em `gt06Cidrs` é recusado); (2)
+`/volti/dev/config/GT06_BIND=0.0.0.0` e update. Depois, `SERVER,0,<ip-da-instância>,5023,0#` por SMS (README da ponte).
+Ao terminar, volte `GT06_BIND` (apague o parâmetro) e faça o deploy sem `gt06Port`.
+
+```bash
+aws ssm put-parameter --name /volti/dev/config/GT06_BIND --type String --value 0.0.0.0 --tags Key=Projeto,Value=Volti
+aws ssm send-command --instance-ids $IID --document-name volti-dev-update --query Command.CommandId --output text
+```
+
+Logs: `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env --profile gt06 logs --tail 50 traccar traccar-bridge gt06-emulator`.
 
 ## Correção de dados: posição das motos no galpão
 

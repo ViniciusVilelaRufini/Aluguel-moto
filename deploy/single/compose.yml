@@ -119,6 +119,8 @@ services:
     restart: unless-stopped
     cap_drop: [NET_RAW]
     mem_limit: 640m
+    # Sob pressão de memória, o OOM killer escolhe este antes da API e do Postgres.
+    oom_score_adj: 500
     entrypoint: ["java", "-Xms128m", "-Xmx320m", "-Djava.net.preferIPv4Stack=true"]
     command: ["-jar", "tracker-server.jar", "conf/traccar.xml"]
     environment:
@@ -131,7 +133,9 @@ services:
       PROTOCOLS_ENABLE: gt06
       GT06_PORT: "5023"
       WEB_PORT: "8082"
-    ports: ["5023:5023", "127.0.0.1:8082:8082"]
+    # GT06_BIND (/volti/dev/config/GT06_BIND): 127.0.0.1 por padrão (o emulador usa traccar:5023 pela rede interna). 0.0.0.0
+    # só para um J16 real, junto com -c gt06Port=true no security group (cloudshell.md).
+    ports: ["${GT06_BIND:-127.0.0.1}:5023:5023", "127.0.0.1:8082:8082"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -148,6 +152,8 @@ services:
     restart: unless-stopped
     cap_drop: [NET_RAW]
     mem_limit: 160m
+    # Sob pressão de memória, o OOM killer escolhe este antes da API e do Postgres.
+    oom_score_adj: 500
     environment:
       IOT_MODE: local
       MQTT_URL: mqtt://mosquitto:1883
@@ -172,6 +178,8 @@ services:
     restart: unless-stopped
     cap_drop: [NET_RAW]
     mem_limit: 96m
+    # Sob pressão de memória, o OOM killer escolhe este antes da API e do Postgres.
+    oom_score_adj: 500
     command: ["node", "dist/gt06/emulator-main.js"]
     environment:
       GT06_HOST: traccar

@@ -54,7 +54,10 @@ dc up -d postgres redis mosquitto
 # api-migrate: sem o IP fixo da API (que está no ar), sem IMDS e só com o DATABASE_URL.
 dc --profile migrate run --rm api-migrate npx prisma migrate deploy
 # GT06: banco/papéis do Traccar e da ponte (o GRANT por coluna precisa da tabela "Tracker", recém-migrada) e usuários do Traccar.
-if [ ${#gt06[@]} -gt 0 ]; then bash deploy/single/gt06.sh init; fi
+# Init com falha não bloqueia o deploy da API: o profile gt06 sai deste update (e os containers GT06 são removidos abaixo).
+if [ ${#gt06[@]} -gt 0 ]; then
+  bash deploy/single/gt06.sh init || { echo "AVISO: GT06 init falhou; profile gt06 fora deste update" >&2; gt06=(); gt06_services=(); }
+fi
 dc "${sim[@]}" "${gt06[@]}" up -d --remove-orphans
 if [ ${#sim[@]} -eq 0 ]; then dc --profile sim rm -sf iot-sim >/dev/null 2>&1 || true; fi
 if [ ${#gt06[@]} -eq 0 ]; then dc --profile gt06 rm -sf traccar traccar-bridge gt06-emulator >/dev/null 2>&1 || true; fi

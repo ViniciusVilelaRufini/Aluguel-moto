@@ -46,6 +46,8 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
       expect(block).toContain('cap_drop: [NET_RAW]');
       expect(block).toContain('restart: unless-stopped');
       expect(block).toMatch(/mem_limit: \d+m/);
+      // Sob pressão de memória (t4g.small, 2 GiB), o OOM killer escolhe estes antes da API e do Postgres.
+      expect(block).toContain('oom_score_adj: 500');
       expect(block).not.toMatch(/ipv4_address|env_file|AWS_/);
     }
   });
@@ -60,7 +62,8 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(t).toContain('DATABASE_USER: traccar');
     expect(t).toContain('DATABASE_PASSWORD: ${TRACCAR_DB_PASSWORD:?');
     expect(t).toContain('PROTOCOLS_ENABLE: gt06');
-    expect(t).toContain('ports: ["5023:5023", "127.0.0.1:8082:8082"]');
+    // GT06 só em 127.0.0.1 por padrão (o emulador usa traccar:5023 pela rede interna); 0.0.0.0 só com GT06_BIND e gt06Port.
+    expect(t).toContain('ports: ["${GT06_BIND:-127.0.0.1}:5023:5023", "127.0.0.1:8082:8082"]');
     expect(t).toMatch(/postgres:\s+condition: service_healthy/);
   });
 
@@ -99,7 +102,7 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
       expect(generated).toContain(n);
       expect(list('SECRET_NAMES')).toContain(n);
     }
-    expect(list('CONFIG_NAMES')).toEqual(expect.arrayContaining(['GT06', 'GT06_BATTERY_MODEL']));
+    expect(list('CONFIG_NAMES')).toEqual(expect.arrayContaining(['GT06', 'GT06_BATTERY_MODEL', 'GT06_BIND']));
     expect(list('SECRET_NAMES')).not.toContain('E2E_STAFF_TOKEN');
     expect(list('CONFIG_NAMES')).not.toContain('E2E_STAFF_TOKEN');
     // Tudo o que o gt06.sh lê do .env está nas allowlists (PUBLIC_HOST é escrito pelo próprio render-env.sh).
@@ -119,6 +122,12 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(up).toBeGreaterThan(init);
     expect(u).toMatch(/dc "\$\{sim\[@\]\}" "\$\{gt06\[@\]\}" build api postgres "\$\{sim_services\[@\]\}" "\$\{gt06_services\[@\]\}"/);
     expect(u).toMatch(/rm -sf traccar traccar-bridge gt06-emulator/);
+    // init com falha não derruba o deploy da API: o profile sai deste update (e os containers GT06 são removidos).
+    expect(u).toMatch(/bash deploy\/single\/gt06\.sh init \|\| \{[^}]*AVISO[^}]*gt06=\(\);[^}]*\}/);
+    const fallback = u.indexOf('gt06=();', init);
+    expect(fallback).toBeGreaterThan(init);
+    expect(fallback).toBeLessThan(up);
+    expect(u.indexOf('if [ ${#gt06[@]} -eq 0 ]; then dc --profile gt06 rm -sf')).toBeGreaterThan(up);
   });
 
   it('gt06.sh: senhas e token nunca na linha de comando; token do e2e só do SSM; papel da ponte só com SELECT em 3 colunas', () => {
@@ -141,7 +150,32 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(g).toContain('node dist/cli/provision-gt06.js');
     expect(g).toMatch(/check-timeline\.js "\$thing" --emulator-log=/);
     // O verificador roda sem rede e sem segredos.
-    expect(g).toMatch(/docker run --rm -i --network none --cap-drop NET_RAW/);
+    expect(g).toMatch(/docker run --rm -i --network none --cap-drop ALL --read-only --user 0:0/);
+  });
+
+  it('gt06.sh init: GET /api/users com falha não vira admin duplicado; cadastro aberto do Traccar desligado', () => {
+    const g = file('gt06.sh');
+    // Só 401 (admin ainda não existe) leva à criação; 000/5xx tenta de novo e depois falha com mensagem.
+    expect(g).toMatch(/-w '%\{http_code\}'/);
+    expect(g).toMatch(/200\)[^\n]*;;/);
+    expect(g).toMatch(/401\)/);
+    // registration:false com o objeto completo do servidor (PUT /api/server), idempotente.
+    expect(g).toMatch(/traccar_admin GET \/api\/server/);
+    expect(g).toMatch(/"registration":true/);
+    expect(g).toMatch(/traccar_admin PUT \/api\/server/);
+    // Corpo no config do curl: barra invertida escapada antes das aspas.
+    expect(g).toContain('b="${3//\\\\/\\\\\\\\}"');
+  });
+
+  it('gt06.sh e2e: id do comando extraído sem morrer no pipefail; logs só do root; mqtt.log (posições) apagado no sucesso', () => {
+    const g = file('gt06.sh');
+    expect(g).toMatch(/cid="\$\(printf '%s' "\$resp" \| grep -o[^\n]*\|\| true\)"/);
+    expect(g).toMatch(/chmod 700 "\$dir"/);
+    expect(g).toMatch(/chmod 600 "\$dir\/mqtt\.log" "\$dir\/emulator\.log"/);
+    expect(g).toMatch(/umask 077/);
+    expect(g).toMatch(/if \[ "\$result" -eq 0 \]; then rm -f "\$dir\/mqtt\.log"/);
+    expect(g).not.toMatch(/chmod 7?55 "\$dir"|chmod 644/);
+    expect(file('cloudshell.md')).toMatch(/mqtt\.log[^\n]*apagado[^\n]*sucesso|sucesso[^\n]*mqtt\.log[^\n]*apagad/);
   });
 
   itBash('gt06.sh valida a ação e os argumentos antes de tocar no Docker (sai 2)', () => {
@@ -174,6 +208,8 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
       expect(rules).toContainEqual(['tcp', 5023, '203.0.113.0/24']);
       expect(rules.filter((r) => r[1] === 5023 && r[2] === '0.0.0.0/0')).toEqual([]);
       expect(() => ingress({ gt06Port: true, gt06Cidrs: ['não-é-cidr'] })).toThrow(/gt06Cidrs/);
+      // Abrir para todos só pelo reconhecimento explícito.
+      for (const all of ['0.0.0.0/0', '::/0', '10.0.0.0/0']) expect(() => ingress({ gt06Port: true, gt06Cidrs: [all] })).toThrow(/openGt06/);
     });
 
     it('gt06Port com openGt06 (reconhecimento explícito): 5023 aberta a 0.0.0.0/0; 8082 nunca', () => {
@@ -201,5 +237,6 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(d).toContain('/volti/dev/secrets/E2E_STAFF_TOKEN');
     expect(d).toContain('gt06.sh e2e');
     expect(d).toMatch(/-c gt06Port=true -c gt06Cidrs=/);
+    expect(d).toContain('/volti/dev/config/GT06_BIND');
   });
 });

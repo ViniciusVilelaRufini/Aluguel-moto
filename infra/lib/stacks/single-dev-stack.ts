@@ -146,7 +146,11 @@ export class SingleDevStack extends Stack {
     this.securityGroup.addIngressRule(ec2.Peer.anyIpv4(), ec2.Port.tcp(443), 'HTTPS (Caddy to API)');
     if (props.gt06Port) {
       const cidrs = props.gt06Cidrs ?? [];
-      for (const c of cidrs) if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c)) throw new Error(`gt06Cidrs: CIDR IPv4 inválido: ${c}`);
+      for (const c of cidrs) {
+        // Abrir para todos (/0, inclusive ::/0) só pelo reconhecimento explícito openGt06.
+        if (/\/0$/.test(c.trim())) throw new Error(`gt06Cidrs: ${c} abre a 5023 para todos; use -c openGt06=true (só bancada) em vez de um CIDR /0.`);
+        if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c)) throw new Error(`gt06Cidrs: CIDR IPv4 inválido: ${c}`);
+      }
       if (!cidrs.length && !props.openGt06) {
         throw new Error('gt06Port=true exige -c gt06Cidrs=<cidr>[,<cidr>] ou, só para bancada, -c openGt06=true (5023 aberta à internet, GT06 sem TLS).');
       }

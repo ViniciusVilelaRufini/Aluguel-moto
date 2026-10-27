@@ -423,7 +423,7 @@ describe('profile=single (dev on one EC2 instance)', () => {
       }
       // Caddy (80/443) e o Traccar do profile gt06 (5023 publicada; o security group só abre com -c gt06Port=true; REST só em 127.0.0.1).
       expect(c.match(/^\s+ports:/gm)).toHaveLength(2);
-      expect(c).toContain('ports: ["5023:5023", "127.0.0.1:8082:8082"]');
+      expect(c).toContain('ports: ["${GT06_BIND:-127.0.0.1}:5023:5023", "127.0.0.1:8082:8082"]');
       expect(file('postgis/Dockerfile')).toMatch(/postgresql-16-postgis-3/);
       expect(file('Caddyfile')).toMatch(/reverse_proxy api:3000/);
     });
