@@ -86,6 +86,11 @@ Moto que cai durante a espera: o comando volta de `in_progress` para `pending`/`
 Moto já travada (`LiveStateStore.lockConfirmed`: online e `locked` gravado por telemetria/reported depois da reconexão — campo
 `lockedAt` no hash `iot:live:*`; o estado em branco de uma presença sem mensagem não conta) → `lock` confirma sem gravar nada; a
 espera retomada e o prazo da trava também terminam `confirmed` (nunca `travada: false`) se a moto já estiver travada.
+Só vale origem **depois da graça** da reconexão (`IOT_RECONNECT_GRACE_MS`): o `reported` do tick da reconexão (memória da ponte) e
+a fila offline com relógio adiantado nunca confirmam; antes do corte, um `reported.travada = true` só confirma por esse mesmo
+critério. As varreduras releem o estado ao vivo do Redis antes de decidir. Ao começar, o lock `relay_only` apaga
+(`desired.travada = null`) um `travada` pendente no shadow (ex.: `false` de um unlock que a moto offline não recebeu), para a
+ponte não reaplicar `engineResume` na reconexão; nunca grava `travada: true` fora do corte.
 
 ## Contrato v2 (`docs/decisoes.md`, 2026-10-22)
 

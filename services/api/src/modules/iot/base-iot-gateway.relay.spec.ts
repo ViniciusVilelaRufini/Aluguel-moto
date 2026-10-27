@@ -4,16 +4,27 @@ import { MemoryRedisStore } from '../../redis/redis-store';
 import { BaseIotGateway, type GatewayOptions } from './base-iot-gateway';
 import { MemoryRelayLockStore } from './relay-lock.store';
 import { FakeClock } from './clock';
-import { LiveStateStore } from './live-state.store';
-import type { DesiredState, IotTransport, MomentaryCommand } from './shadow-transport';
+import { DEFAULT_RECONNECT_GRACE_MS, LiveStateStore } from './live-state.store';
+import type { DesiredState, IotTransport, MomentaryCommand, ReportedState } from './shadow-transport';
 import { TelemetryService } from './telemetry.service';
 
 class FakeTransport implements IotTransport {
   readonly desired: Array<{ at: number; desired: DesiredState }> = [];
   readonly commands: MomentaryCommand[] = [];
+  /** Documento do shadow (como o IoT Core: `null` no desired apaga o campo); o `reported` é ajustado pelo teste. */
+  readonly shadow: { desired: DesiredState; reported: ReportedState } = { desired: {}, reported: {} };
+  readFails = false;
   constructor(private readonly clock: FakeClock) {}
   async updateDesired(_t: string, desired: DesiredState) {
     this.desired.push({ at: this.clock.now(), desired });
+    for (const [k, v] of Object.entries(desired) as Array<[keyof DesiredState, unknown]>) {
+      if (v === null) delete this.shadow.desired[k];
+      else (this.shadow.desired as Record<string, unknown>)[k] = v;
+    }
+  }
+  async readShadow() {
+    if (this.readFails) throw new Error('shadow indisponível');
+    return { desired: { ...this.shadow.desired }, reported: { ...this.shadow.reported } };
   }
   async publishCommand(_t: string, command: MomentaryCommand) {
     this.commands.push(command);
@@ -32,7 +43,8 @@ function setup(gwOpts: Partial<GatewayOptions> = {}) {
   const events = new EventEmitter2();
   const updates: IotCommandUpdatedEvent[] = [];
   events.on(EV.IOT_COMMAND_UPDATED, (e: IotCommandUpdatedEvent) => updates.push(e));
-  const live = new LiveStateStore(new MemoryRedisStore(), clock);
+  const redis = new MemoryRedisStore();
+  const live = new LiveStateStore(redis, clock);
   const gw = new TestGateway(transport, live, clock, events, { confirmWaitMs: 3_000, commandTimeoutMs: 30_000, ...gwOpts });
   const rentals = { openRentalId: async () => undefined, trackingRentalId: async () => undefined, invalidate: () => undefined };
   const prisma = { vehicle: { findUnique: async () => ({ id: VEHICLE_ID }) }, trackPoint: { create: async () => ({}) } };
@@ -40,7 +52,7 @@ function setup(gwOpts: Partial<GatewayOptions> = {}) {
   const sample = (kmh: number, over: Record<string, unknown> = {}) =>
     svc.telemetry(T, { lat: -23.56, lng: -46.69, velocidade_kmh: kmh, bateria_pct: 80, travada: false, ignicao: true, sinal: 4, timestamp: new Date(clock.now()).toISOString(), ...over });
   const cuts = () => transport.desired.filter((d) => d.desired.travada === true);
-  return { clock, transport, events, updates, live, gw, svc, sample, cuts };
+  return { clock, transport, events, updates, redis, live, gw, svc, sample, cuts };
 }
 type Setup = ReturnType<typeof setup>;
 
@@ -348,6 +360,151 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       }
       expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
       expect(s.transport.desired.filter((d) => d.desired.travada === false)).toEqual([]);
+    });
+  });
+
+  describe('reconexão e unlock pendente (Task 4, fix 4)', () => {
+    const relay = (commandId: string) => ({ commandId, thingName: T, authority: 'staff' as const, lockOrigin: 'staff' as const, controlMode: 'relay_only' as const });
+
+    /** Moto travada (reported travada:true), cai; o lock fica `pending`; 30 s offline. */
+    async function lockedThenOffline(s: Setup): Promise<void> {
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      s.transport.shadow.reported = { travada: true };
+      await s.svc.presence(T, false);
+      expect(await s.gw.lock(relay('c1'))).toEqual({ commandId: 'c1', status: 'pending', reason: 'offline' });
+      await s.clock.advance(30_000);
+    }
+
+    it('N1: reconecta pelo reported travada:true da memória da ponte (sem presença) → não confirma; relé aberto → corta parada e confirma', async () => {
+      const s = setup();
+      await lockedThenOffline(s);
+      await s.svc.reported(T, { travada: true }); // tick da reconexão: pode estar velho (J16 reiniciou)
+      await s.clock.advance(1_000);
+      expect(s.updates).toEqual([{ commandId: 'c1', status: 'in_progress' }]);
+      for (let i = 0; i < 6 && s.cuts().length === 0; i++) {
+        await s.sample(0, { travada: false, ignicao: false }); // relé aberto de verdade
+        await s.clock.advance(5_000);
+      }
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }]);
+      await s.svc.reported(T, { travada: true });
+      await s.clock.advance(1_000);
+      expect(s.updates).toEqual([
+        { commandId: 'c1', status: 'in_progress' },
+        { commandId: 'c1', status: 'confirmed' },
+      ]);
+    });
+
+    it('N1: presença + reported travada:true no mesmo tick → não confirma; reported travada:true depois da graça confirma sem gravar nada', async () => {
+      const s = setup();
+      await lockedThenOffline(s);
+      await s.svc.presence(T, true);
+      await s.svc.reported(T, { travada: true });
+      await s.clock.advance(1_000);
+      expect(s.updates).toEqual([{ commandId: 'c1', status: 'in_progress' }]);
+      await s.clock.advance(DEFAULT_RECONNECT_GRACE_MS);
+      await s.svc.reported(T, { travada: true });
+      await s.clock.advance(1_000);
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+      expect(s.transport.desired).toEqual([]);
+    });
+
+    it('N2: telemetria com relógio adiantado no tick da reconexão não confirma; travada:true depois da graça confirma sem gravar', async () => {
+      const s = setup();
+      await lockedThenOffline(s);
+      const ahead = () => new Date(s.clock.now() + 120_000).toISOString();
+      await s.sample(0, { travada: true, ignicao: false, timestamp: ahead() });
+      await s.clock.advance(1_000);
+      expect(s.updates).toEqual([{ commandId: 'c1', status: 'in_progress' }]);
+      for (let i = 0; i < 6; i++) {
+        await s.clock.advance(5_000);
+        await s.sample(0, { travada: true, ignicao: false, timestamp: ahead() });
+      }
+      await s.clock.advance(1_000);
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+      expect(s.transport.desired).toEqual([]);
+    });
+
+    it('unlock pendente (offline) + lock do fim do aluguel → desired travada apagado (null) antes do lock, nunca travada:false repetido', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      s.transport.shadow.reported = { travada: true };
+      await s.svc.presence(T, false);
+      expect(await s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' })).toEqual({ commandId: 'u1', status: 'pending', reason: 'offline' });
+      expect(await s.gw.lock(relay('c1'))).toEqual({ commandId: 'c1', status: 'pending', reason: 'offline' });
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: false }, { travada: null }]);
+      expect(s.transport.shadow.desired).toEqual({});
+      await s.clock.advance(1_000);
+      expect(s.updates).toContainEqual({ commandId: 'u1', status: 'failed' });
+      // Volta travada (nunca recebeu o engineResume): confirma pela telemetria depois da graça, sem gravar nada.
+      await s.svc.presence(T, true);
+      for (let i = 0; i < 6; i++) {
+        await s.sample(0, { travada: true, ignicao: false });
+        await s.clock.advance(5_000);
+      }
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: false }, { travada: null }]);
+    });
+
+    it('unlock pendente + lock: relé aberto ao voltar → termina pelo corte com a moto parada', async () => {
+      const s = setup();
+      await online(s, 0);
+      s.transport.shadow.reported = { travada: true };
+      await s.svc.presence(T, false);
+      await s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await s.gw.lock(relay('c1'));
+      await s.svc.presence(T, true);
+      for (let i = 0; i < 6 && s.cuts().length === 0; i++) {
+        await s.sample(0, { travada: false, ignicao: false });
+        await s.clock.advance(5_000);
+      }
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: false }, { travada: null }, { travada: true }]);
+      await s.svc.reported(T, { travada: true });
+      await s.clock.advance(1_000);
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+    });
+
+    it('unlock em voo com a moto online e travada → o lock apaga o travada:false pendente antes de confirmar', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      s.transport.shadow.reported = { travada: true };
+      void s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await s.clock.advance(10);
+      expect(await s.gw.lock(relay('c1'))).toEqual({ commandId: 'c1', status: 'confirmed' });
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: false }, { travada: null }]);
+    });
+
+    it('shadow ilegível → apaga o desired travada mesmo assim (falha segura; nunca grava travada:true aqui)', async () => {
+      const s = setup();
+      await online(s);
+      s.transport.readFails = true;
+      expect(await lockRelay(s)).toEqual({ commandId: 'c1', status: 'in_progress' });
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: null }]);
+    });
+
+    it('sem travada pendente no shadow → nada é gravado ao começar', async () => {
+      const s = setup();
+      await online(s);
+      s.transport.shadow.desired = { travada: true };
+      s.transport.shadow.reported = { travada: true };
+      await lockRelay(s);
+      expect(s.transport.desired).toEqual([]);
+    });
+
+    it('N4: prazo usa o estado relido do Redis (travada confirmada por outra instância) → confirmed, sem travada:false', async () => {
+      const s = setup();
+      await online(s);
+      await lockRelay(s);
+      await s.clock.advance(30_000);
+      const other = new LiveStateStore(s.redis, s.clock);
+      await other.load(T);
+      await other.applyReported(T, { travada: true }); // outra task processou o reported
+      for (let i = 0; i < 25; i++) await s.clock.advance(5_000);
+      expect(s.updates).toContainEqual({ commandId: 'c1', status: 'confirmed' });
+      expect(s.updates).not.toContainEqual(expect.objectContaining({ reason: 'did_not_stop' }));
+      expect(s.transport.desired).toEqual([]);
     });
   });
 });

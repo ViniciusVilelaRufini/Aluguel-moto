@@ -56,7 +56,7 @@ Nada nesses tópicos identifica o cliente: a associação moto ↔ aluguel exist
 
 | Campo | Tipo | Quem escreve | Regra |
 |---|---|---|---|
-| `travada` | boolean | servidor (desired), rastreador (reported) | o servidor só grava `true` com a velocidade reportada **abaixo de 3 km/h**; o firmware também nunca trava acima disso (fica pendente) |
+| `travada` | boolean | servidor (desired), rastreador (reported) | o servidor só grava `true` com a velocidade reportada **abaixo de 3 km/h**; o firmware também nunca trava acima disso (fica pendente). `null` (só no `/update` do servidor, trava `relay_only`) apaga um desired pendente; nunca chega no delta |
 | `limite_kmh` | inteiro 0..32 | servidor / rastreador | nunca acima de 32 (Contran 996/2023); o firmware recusa valores fora da faixa |
 | `modo_roubada` | boolean | servidor / rastreador | telemetria a cada 5 s mesmo travada; sirene ao mover |
 | `firmware` | string | rastreador | versão semver |

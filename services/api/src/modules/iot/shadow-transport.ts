@@ -2,7 +2,8 @@ export const SHADOW_TRANSPORT = Symbol('SHADOW_TRANSPORT');
 
 /** Estado desejado do shadow (`packages/contracts/mqtt.md`). Só os campos presentes são alterados. */
 export interface DesiredState {
-  travada?: boolean;
+  /** `null` apaga o campo do desired (semântica do device shadow): nenhum delta de `travada` fica pendente. */
+  travada?: boolean | null;
   limite_kmh?: number;
   modo_roubada?: boolean;
 }

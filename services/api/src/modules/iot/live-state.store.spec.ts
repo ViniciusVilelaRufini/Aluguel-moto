@@ -3,7 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { MemoryRedisStore } from '../../redis/redis-store';
 import { BaseIotGateway } from './base-iot-gateway';
 import { FakeClock } from './clock';
-import { LiveStateStore } from './live-state.store';
+import { DEFAULT_RECONNECT_GRACE_MS, LiveStateStore } from './live-state.store';
 import type { DesiredState, IotTransport, MomentaryCommand } from './shadow-transport';
 
 class FakeTransport implements IotTransport {
@@ -96,9 +96,10 @@ describe('LiveStateStore.lockConfirmed — origem da trava (Task 4 fix 2, B)', (
     expect(live.lockConfirmed(T)).toBe(false);
   });
 
-  it('telemetria travada:true depois da reconexão → confirmada; travada:false → não', async () => {
+  it('telemetria travada:true depois da reconexão (fora da graça) → confirmada; travada:false → não', async () => {
     const { clock, live } = setup();
     live.markReconnected(T);
+    await clock.advance(DEFAULT_RECONNECT_GRACE_MS);
     await live.applyTelemetry(T, tele(clock, true));
     expect(live.lockConfirmed(T)).toBe(true);
     await clock.advance(5_000);
@@ -128,10 +129,24 @@ describe('LiveStateStore.lockConfirmed — origem da trava (Task 4 fix 2, B)', (
     const { clock, live } = setup();
     live.markReconnected(T);
     await live.setOnline(T, true);
-    await clock.advance(1_000);
+    await clock.advance(DEFAULT_RECONNECT_GRACE_MS);
     await live.applyReported(T, { travada: true }, { fromPoll: true });
     expect(live.lockConfirmed(T)).toBe(false);
     await live.applyReported(T, { travada: true }, { fromPoll: true, travadaAt: clock.now() });
+    expect(live.lockConfirmed(T)).toBe(true);
+  });
+
+  it('N1: travada:true no tick da reconexão (reported/telemetria, inclusive relógio adiantado) não confirma até passar a graça', async () => {
+    const { clock, live } = setup();
+    live.markReconnected(T);
+    await live.applyReported(T, { travada: true });
+    expect(live.lockConfirmed(T)).toBe(false);
+    await live.applyTelemetry(T, tele(clock, true, clock.now() + 60_000));
+    expect(live.lockConfirmed(T)).toBe(false);
+    await clock.advance(DEFAULT_RECONNECT_GRACE_MS - 1);
+    expect(live.lockConfirmed(T)).toBe(false); // a origem continua sendo o tick da reconexão
+    await clock.advance(1);
+    await live.applyReported(T, { travada: true });
     expect(live.lockConfirmed(T)).toBe(true);
   });
 

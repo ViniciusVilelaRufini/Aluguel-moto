@@ -33,10 +33,11 @@ export interface RelayLockOptions {
   /** Velocidade fresca do `LiveStateStore` (`null` = desconhecida): última conferência antes de gravar o corte. */
   knownSpeed: (thingName: string) => number | null;
   /**
-   * Trava confirmada pelo rastreador agora (`LiveStateStore.lockConfirmed`; `null`/ausente = desconhecida). Só o prazo e a
-   * retomada da espera usam: moto já travada termina `confirmed` sem gravar nada — nunca `travada: false` (Task 4 fix 2, A).
+   * Trava confirmada pelo rastreador agora (`LiveStateStore.lockConfirmed`, depois da graça da reconexão; `null`/ausente =
+   * desconhecida). Moto já travada termina `confirmed` sem gravar nada — nunca `travada: false` (Task 4 fix 2, A). Pode ser
+   * assíncrona: o gateway relê o estado ao vivo do Redis antes (varreduras de outra instância — Task 4 fix 4, N4).
    */
-  knownLocked?: (thingName: string) => boolean | null;
+  knownLocked?: (thingName: string) => boolean | null | Promise<boolean | null>;
   store?: RelayLockStore;
   stopTimeoutMs?: number;
   confirmTimeoutMs?: number;
@@ -163,8 +164,11 @@ export class RelayLockService {
       const lock = await this.store.get(thingName);
       if (!lock || lock.phase === 'waiting_online') return;
       if (reported.travada === true) {
-        const since = Math.floor((lock.cutAt ?? lock.startedAt ?? 0) / 1000) * 1000;
-        if ((at.travada ?? this.clock.now()) >= since) {
+        // Corte enviado: o reported depois dele confirma. Ainda esperando parar (nada enviado): só a trava confirmada pelo estado
+        // ao vivo (depois da graça) — o reported do tick da reconexão vem da memória da ponte e pode estar velho (fix 4, N1).
+        const since = Math.floor((lock.cutAt ?? 0) / 1000) * 1000;
+        const confirmed = lock.phase === 'cutting' ? (at.travada ?? this.clock.now()) >= since : await this.isKnownLocked(thingName);
+        if (confirmed) {
           await this.finish(lock, { status: 'confirmed' });
           return;
         }
@@ -285,7 +289,7 @@ export class RelayLockService {
 
   /** `waiting_online` → `waiting_stop` na reconexão: os comandos que ouviram `pending`/`offline` voltam a `in_progress` (L1). */
   private async resume(lock: RelayLockState): Promise<void> {
-    if (this.opts.knownLocked?.(lock.thingName) === true) {
+    if (await this.isKnownLocked(lock.thingName)) {
       // Reconectou já travada (Task 4 fix 2, A): nada a cortar.
       await this.finish(lock, { status: 'confirmed' });
       return;
@@ -301,7 +305,7 @@ export class RelayLockService {
     const speed = this.opts.knownSpeed(lock.thingName);
     if (speed === null || !isStill(speed)) return;
     if (lock.deadlineAt !== undefined && lock.deadlineAt <= now) return;
-    if (this.opts.knownLocked?.(lock.thingName) === true) {
+    if (await this.isKnownLocked(lock.thingName)) {
       // Já travada (Task 4 fix 3): `travada: true` igual ao reported não gera delta — nada a gravar, termina confirmado.
       await this.finish(lock, { status: 'confirmed' });
       return;
@@ -316,7 +320,7 @@ export class RelayLockService {
   }
 
   private async onDeadline(lock: RelayLockState): Promise<void> {
-    if ((lock.phase === 'waiting_stop' || lock.phase === 'cutting') && this.opts.knownLocked?.(lock.thingName) === true) {
+    if ((lock.phase === 'waiting_stop' || lock.phase === 'cutting') && (await this.isKnownLocked(lock.thingName))) {
       // Moto travada (o corte aconteceu, ou já estava): `travada: true` igual ao reported não gera delta e a ponte não reporta
       // de novo — gravar `travada: false` aqui soltaria a moto. Termina confirmado, sem escrever nada.
       await this.finish(lock, { status: 'confirmed' });
@@ -351,7 +355,7 @@ export class RelayLockService {
       if ((await this.store.get(orphan.thingName)) !== null) return;
       if (!(await this.store.isOrphan(orphan.thingName, orphan.lockId))) return;
       this.opts.onError?.({ msg: 'relay_lock_state_lost', thingName: orphan.thingName, phase: orphan.phase, commands: orphan.commandIds.length });
-      if (orphan.phase === 'cutting' && this.opts.knownLocked?.(orphan.thingName) === true) {
+      if (orphan.phase === 'cutting' && (await this.isKnownLocked(orphan.thingName))) {
         // Corte perdido mas a moto está travada (Task 4 fix 3): nunca soltar com `travada: false`; os comandos confirmam.
         await this.store.clearOrphan(orphan.thingName, orphan.lockId);
         this.forget(orphan.thingName);
@@ -370,6 +374,11 @@ export class RelayLockService {
       this.forget(orphan.thingName);
       this.emit(orphan.commandIds, { status: 'failed', reason: 'timeout' });
     });
+  }
+
+  /** Só `true` vale: `null`/`false`/ausente seguem o fluxo normal (parar-e-cortar, ou o desfecho de falha). */
+  private async isKnownLocked(thingName: string): Promise<boolean> {
+    return (await this.opts.knownLocked?.(thingName)) === true;
   }
 
   private schedule(lock: RelayLockState): void {

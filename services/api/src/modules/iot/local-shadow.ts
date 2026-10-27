@@ -99,7 +99,10 @@ export class LocalShadowStore {
 
   private async doApplyDesired(thingName: string, desired: DesiredState): Promise<OutboundMessage[]> {
     const prev = await this.load(thingName);
-    const doc: ShadowDocument = { desired: { ...prev.desired, ...desired }, reported: { ...prev.reported }, version: prev.version + 1 };
+    const merged: Record<string, unknown> = { ...prev.desired, ...desired };
+    // Como o IoT Core: `null` no desired apaga o campo (nenhum delta pendente dele).
+    for (const k of Object.keys(merged)) if (merged[k] === null) delete merged[k];
+    const doc: ShadowDocument = { desired: merged as DesiredState, reported: { ...prev.reported }, version: prev.version + 1 };
     await this.save(thingName, doc);
     const timestamp = this.ts();
     const out: OutboundMessage[] = [

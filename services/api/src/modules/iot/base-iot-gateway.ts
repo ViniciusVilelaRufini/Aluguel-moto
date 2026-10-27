@@ -113,7 +113,11 @@ export abstract class BaseIotGateway implements IotGateway {
     this.safeLockLocal = new SafeLockService(clock, recording, (o) => this.settle(o), { ...common, store: new MemorySafeLockStore() });
     this.relayLock = new RelayLockService(clock, { updateDesired: (t, d) => this.publishDesired(t, d) }, (o) => this.settle(o), {
       knownSpeed: (t) => this.live.knownSpeed(t),
-      knownLocked: (t) => this.live.lockConfirmed(t),
+      // Relê o Redis antes (fix 4, N4): na varredura, a mensagem que travou a moto pode ter sido processada por outra instância.
+      knownLocked: async (t) => {
+        await this.live.refresh(t);
+        return this.live.lockConfirmed(t);
+      },
       store: opts.relayLockStore,
       stopTimeoutMs: opts.relayStopTimeoutMs,
       confirmTimeoutMs: opts.relayConfirmTimeoutMs,
@@ -241,8 +245,12 @@ export abstract class BaseIotGateway implements IotGateway {
     // Origem gravada antes da rampa: um unlock de cliente/campo em qualquer task já vê a trava de equipe/sistema em curso.
     const origin = req.lockOrigin === undefined ? 'system' : req.lockOrigin;
     if (origin) await this.live.setLockOrigin(req.thingName, origin);
+    if (req.controlMode === 'relay_only') {
+      const unlockInFlight = [...this.tracked.values()].some((t) => t.thingName === req.thingName && t.expect.travada === false);
+      this.supersede(req.thingName, ['travada']);
+      return this.lockRelayOnly(req, unlockInFlight);
+    }
     this.supersede(req.thingName, ['travada']);
-    if (req.controlMode === 'relay_only') return this.lockRelayOnly(req);
     // Só velocidade fresca; desconhecida = null (a rampa trata como em movimento). Nunca 0 por padrão.
     const state = await this.safeLockState(req.thingName);
     const wait = this.registerWaiter(req.commandId);
@@ -268,7 +276,8 @@ export abstract class BaseIotGateway implements IotGateway {
   }
 
   /** Rastreador só relé: espera a moto parar de forma confirmada e só então grava `travada: true` (sem rampa, sem limite). */
-  private async lockRelayOnly(req: CommandRequest): Promise<CommandOutcome> {
+  private async lockRelayOnly(req: CommandRequest, unlockInFlight: boolean): Promise<CommandOutcome> {
+    await this.clearPendingTravada(req.thingName, unlockInFlight);
     await this.live.load(req.thingName);
     const online = this.live.isOnline(req.thingName);
     // Já travada pelo rastreador (`lockConfirmed`: telemetria/reported depois da reconexão, nunca o desired nem o estado em branco
@@ -291,6 +300,36 @@ export abstract class BaseIotGateway implements IotGateway {
       return initial;
     }
     return wait();
+  }
+
+  /**
+   * Fix 4 (N1 b): antes de entrar na trava só relé, apaga (`travada: null`) um `desired.travada` ainda pendente — tipicamente o
+   * `travada: false` de um unlock que a moto (offline, ou ainda sem aplicar) não recebeu. Sem isso, a ponte reaplicaria o delta
+   * ao reconectar (`engineResume`) e soltaria a moto com o aluguel encerrado como travado. Nunca grava `travada: true` aqui: o
+   * corte sai só pelo `RelayLockService.tryCut`, com a moto parada.
+   *
+   * Pendente = desired ≠ reported no documento do shadow. Shadow ilegível → apaga mesmo assim (falha segura: sem desired de
+   * travada, nada é reaplicado). Transporte sem `readShadow` → só o unlock em voo conhecido por esta instância. Se a gravação
+   * falhar, o lock segue (o corte do fluxo normal sobrescreve o desired) e o erro é registrado.
+   */
+  private async clearPendingTravada(thingName: string, unlockInFlight: boolean): Promise<void> {
+    let pending = unlockInFlight;
+    if (this.transport.readShadow) {
+      try {
+        const doc = await this.transport.readShadow(thingName);
+        pending ||= doc !== null && doc.desired.travada !== undefined && doc.desired.travada !== null && doc.desired.travada !== doc.reported.travada;
+      } catch (err) {
+        this.logger.warn({ msg: 'relay_lock_shadow_read_failed', thingName, error: (err as Error).message });
+        pending = true;
+      }
+    }
+    if (!pending) return;
+    try {
+      await this.publishDesired(thingName, { travada: null });
+      this.logger.log({ msg: 'relay_lock_pending_travada_cleared', thingName });
+    } catch (err) {
+      this.logger.error({ msg: 'relay_lock_pending_travada_clear_failed', thingName, error: (err as Error).message });
+    }
   }
 
   /** Mesma velocidade usada pelo bloqueio seguro: só fresca; desconhecida = `null` (em movimento). */
@@ -478,7 +517,7 @@ export abstract class BaseIotGateway implements IotGateway {
 
   private async desiredCommand(
     req: CommandRequest,
-    expect: DesiredState,
+    expect: Partial<ReportedState>,
     extra: DesiredState = {},
     publish?: (desired: DesiredState) => Promise<boolean>,
   ): Promise<CommandOutcome> {

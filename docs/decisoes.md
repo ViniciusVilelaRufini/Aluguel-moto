@@ -891,3 +891,16 @@ Riscos (spec §12) registrados em `docs/adr-rastreador.md`.
 
 ## 2026-10-27 · Trava `relay_only`: intervalo máximo entre paradas consecutivas (branch `feat/tracker-gt06-relay-only`, Task 3 fix 1) · status: aplicada
 O intervalo entre duas amostras paradas consecutivas não pode passar de `SPEED_FRESH_MS` (10 s); acima disso a sequência recomeça na amostra nova. Rastreadores que reportam mais devagar que isso falham seguro: nunca cortam e a trava termina `did_not_stop`. Também: velocidade negativa/NaN = desconhecida (em movimento); amostra com relógio > agora + `MAX_CLOCK_SKEW_MS` não fixa a ordem; offline em `waiting_stop` volta a `waiting_online` (`pending/offline`, janela de 120 s nova ao reconectar); trava vencida nunca recebe lock novo nem corte.
+
+## 2026-10-27 · Trava `relay_only`: graça na confirmação e `desired.travada = null` (branch `feat/tracker-gt06-relay-only`, Task 4 fix 4) · status: aplicada
+1. `LiveStateStore.lockConfirmed` só aceita origem (`lockedAt`) ≥ reconexão + `IOT_RECONNECT_GRACE_MS` (a mesma graça da velocidade):
+   o `reported` completo que a ponte manda da memória no tick da reconexão pode estar velho (J16 reiniciado com o relé aberto) e a fila
+   offline com relógio adiantado chega com origem "agora". Antes do corte, `reported.travada = true` só confirma a trava por esse
+   critério; depois do corte, o `reported` posterior a ele confirma como antes. O `reported` do polling (precisão de 1 s) normalmente
+   não confirma logo após a reconexão: a trava só espera mais (seguro).
+2. Mudança de contrato (`shadow-desired.schema.json`): `travada` aceita `null` **só no `/update` do servidor**. O lock `relay_only`
+   apaga um `desired.travada` pendente (desired ≠ reported; shadow ilegível = apaga mesmo assim) antes de entrar no fluxo, para a
+   ponte não reaplicar o `travada: false` de um unlock pendente (`engineResume`) ao reconectar. O IoT Core remove o campo (nunca vai
+   no delta); a emulação local (`LocalShadowStore`) faz o mesmo. O corte (`travada: true`) continua saindo só da trava com a moto parada.
+3. Prazo, retomada, corte e órfã consultam a trava confirmada depois de reler o estado ao vivo do Redis (outra task pode ter
+   processado a mensagem). Pendência conhecida: `reconnectAt` é da memória de cada instância.

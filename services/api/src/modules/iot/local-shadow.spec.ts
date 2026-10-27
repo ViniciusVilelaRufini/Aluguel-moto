@@ -20,6 +20,16 @@ describe('LocalShadowStore (emulação do serviço de shadow do IoT Core)', () =
     expect(delta.version).toBe(2);
   });
 
+  it('desired null apaga o campo (como o IoT Core): o travada:false pendente some do delta e do get', async () => {
+    const s = new LocalShadowStore(new MemoryRedisStore(), now);
+    await s.applyReported(T, { travada: true });
+    await s.applyDesired(T, { travada: false });
+    const out = await s.applyDesired(T, { travada: null });
+    expect(out.map((m) => m.topic)).not.toContain('$aws/things/moto-0001/shadow/update/delta');
+    expect(s.delta(T)).toEqual({});
+    expect((await s.load(T)).desired).toEqual({});
+  });
+
   it('desired igual ao reported não gera delta', async () => {
     const s = new LocalShadowStore(new MemoryRedisStore(), now);
     await s.applyReported(T, { limite_kmh: 20 });

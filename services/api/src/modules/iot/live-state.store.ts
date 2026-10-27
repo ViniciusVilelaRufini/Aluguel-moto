@@ -224,14 +224,26 @@ export class LiveStateStore {
 
   /**
    * Trava confirmada pelo próprio rastreador (Task 4 fix 2, B): `locked` online e gravado por telemetria/reported depois da
-   * reconexão atual. O `locked: true` do estado em branco (presença sem mensagem) nunca confirma.
+   * reconexão atual **e da graça** (`reconnectGraceMs`, a mesma de `acceptSpeed`). O `locked: true` do estado em branco
+   * (presença sem mensagem) nunca confirma.
+   *
+   * Graça (Task 4 fix 4, N1/N2): no tick da reconexão a ponte manda um `reported` completo montado da memória dela (pode estar
+   * velho: o J16 reiniciou com o relé aberto) e a fila offline pode trazer telemetria com o relógio adiantado — os dois chegam
+   * com origem "agora" ≥ reconexão. Só uma mensagem depois da graça confirma.
+   *
+   * N3: o `reported` do polling (modo aws) tem horário com precisão de 1 s (metadata do shadow); logo depois de uma reconexão ele
+   * normalmente não confirma — seguro: a trava só espera mais (fluxo parar-e-cortar ou a próxima mensagem).
+   *
+   * Sem reconexão conhecida por esta instância (processo novo, ou a reconexão foi vista por outra task — o `reconnectAt` é só da
+   * memória), vale qualquer origem conhecida (como antes).
    */
   lockConfirmed(thingName: string): boolean {
     const s = this.states.get(thingName);
     if (!s || s.locked !== true || !this.isOnline(thingName)) return false;
     const at = this.lockedAt.get(thingName);
     if (at === undefined) return false;
-    return at >= (this.reconnectAt.get(thingName) ?? 0);
+    const since = this.reconnectAt.get(thingName);
+    return since === undefined || at >= since + this.reconnectGraceMs;
   }
 
   /** Velocidade conhecida e fresca, ou `null` (desconhecida, velha, anterior à reconexão ou dentro da graça) — nunca 0 por padrão. */

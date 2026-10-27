@@ -7,7 +7,7 @@
   "additionalProperties": false,
   "minProperties": 1,
   "properties": {
-    "travada": { "type": "boolean", "description": "true só é gravado pelo servidor com a velocidade reportada abaixo de 3 km/h (bloqueio seguro). O firmware também nunca trava acima de 3 km/h." },
+    "travada": { "type": ["boolean", "null"], "description": "true só é gravado pelo servidor com a velocidade reportada abaixo de 3 km/h (bloqueio seguro). O firmware também nunca trava acima de 3 km/h. null só no /update do servidor (trava relay_only): apaga um desired pendente; o shadow remove o campo e nunca o entrega no delta." },
     "limite_kmh": { "type": "integer", "minimum": 0, "maximum": 32, "description": "Limite de velocidade. Nunca acima de 32 (Contran 996/2023)." },
     "modo_roubada": { "type": "boolean", "description": "Modo roubada: telemetria a cada 5 s mesmo travada, sirene ao mover, recusa destravar localmente." }
   }

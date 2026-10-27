@@ -8,14 +8,14 @@ import type { DesiredState } from './shadow-transport';
 const T = 'moto-0901';
 const T0 = Date.parse('2026-10-27T12:00:00Z');
 
-function setup(opts: { online?: boolean } = {}) {
+function setup(opts: { online?: boolean; knownLocked?: () => boolean | null } = {}) {
   const clock = new FakeClock(T0);
   const desired: Array<{ at: number; desired: DesiredState }> = [];
   const outcomes: CommandOutcome[] = [];
   const known = new Map<string, number | null>();
   const transport = { updateDesired: async (_t: string, d: DesiredState) => void desired.push({ at: clock.now(), desired: d }) };
   const store = new MemoryRelayLockStore();
-  const svc = new RelayLockService(clock, transport, (o) => outcomes.push(o), { store, knownSpeed: (t) => known.get(t) ?? null });
+  const svc = new RelayLockService(clock, transport, (o) => outcomes.push(o), { store, knownSpeed: (t) => known.get(t) ?? null, knownLocked: opts.knownLocked });
   const state = { online: opts.online ?? true };
   /** Telemetria aceita pelo LiveStateStore medida agora (o gateway só manda `accepted: true` quando ela é fresca e fora da graça). */
   const sample = async (kmh: number, over: Partial<RelaySample> = {}) => {
@@ -188,9 +188,14 @@ describe('RelayLockService (spec GT06 §5)', () => {
   });
 
   it('nunca confirma pelo estado ao vivo: espera; reported.travada = true da ponte (moto já cortada) confirma sem publicar', async () => {
-    const s = setup();
+    let locked: boolean | null = null;
+    const s = setup({ knownLocked: () => locked });
     expect(await s.svc.start({ commandId: 'c1', thingName: T }, s.state)).toEqual({ commandId: 'c1', status: 'in_progress' });
     await s.clock.advance(1_000);
+    // Fix 4 (N1): antes do corte, o reported sozinho não basta (pode ser o da memória da ponte no tick da reconexão).
+    await s.svc.onReported(T, { travada: true });
+    expect(s.outcomes).toEqual([]);
+    locked = true; // estado ao vivo: travada confirmada depois da graça
     await s.svc.onReported(T, { travada: true });
     expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
     expect(s.desired).toEqual([]);
