@@ -80,6 +80,8 @@ const DEFAULT_TITLES: Record<string, string> = {
   'debt-not-payable': 'Não há dívida a quitar',
   'debt-in-collection': 'Cobrança em andamento',
   'vehicle-locked-by-staff': 'Moto bloqueada pela equipe',
+  'vehicle-not-at-depot': 'Moto fora do galpão',
+  'deposit-in-use': 'Caução em uso',
   'internal-error': 'Erro interno',
 };
 
