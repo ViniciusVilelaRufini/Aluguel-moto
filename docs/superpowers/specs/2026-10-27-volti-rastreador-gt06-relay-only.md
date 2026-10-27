@@ -172,3 +172,17 @@ Alarmes sem correspondência: log e descarte.
 - **32 km/h depende do controlador da moto:** verificar e documentar por modelo.
 - **GT06 sem TLS:** exige APN privada em produção.
 - **`bateria_pct` aproximado** (pela tensão).
+
+## Apêndice: tarefas do dono (fora do escopo do agente)
+
+Checklist físico para o J16 funcionar com o sistema. O agente não executa estes itens, mas pode citá-los no README da ponte.
+
+1. **Comprar** o kit J16 4G desbloqueado + relé + chicote e **um chip M2M de dados** (o kit não traz chip).
+2. **Confirmar a tensão** com o vendedor: o J16 aceita 60–72 V direto? Se não aceitar ou não houver resposta, usar um **conversor DC-DC step-down 72 V → 12 V** (entrada até pelo menos 80 V). Nunca ligar direto na bateria sem essa confirmação.
+3. **Teste de bancada** (fonte de 12 V, antes de instalar na moto), depois que a ponte estiver implementada e o Traccar no ar:
+   1. inserir o chip e enviar por SMS o APN e o `SERVER` (sintaxe conforme o manual do aparelho);
+   2. conferir se o dispositivo aparece online no Traccar e se a telemetria chega à API;
+   3. testar bloqueio e desbloqueio pelo painel e confirmar que o relé atua.
+4. **Instalar na moto** com o relé no fio da chave (sinal do controlador), nunca no cabo de potência da bateria; com o relé em repouso, a moto deve ficar bloqueada.
+5. **Teste na moto parada**, em local fechado: liberar, ligar, bloquear; conferir que o sistema só envia o corte com a moto parada.
+6. Confirmar que o **controlador da moto está limitado a 32 km/h**.
