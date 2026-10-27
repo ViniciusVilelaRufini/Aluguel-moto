@@ -380,3 +380,19 @@ O `MERCADOPAGO_WEBHOOK_SECRET` em `volti/<env>/app` é gerado no primeiro deploy
 Entre os passos 2 e 3 os webhooks assinados com o valor antigo falham com 401 e o Mercado Pago reenvia; faça tudo numa janela curta. Rotacione também se o segredo vazar.
 
 Ambientes implantados antes da correção QA-19 (segredo do webhook gerado aleatoriamente) ainda têm `MERCADOPAGO_WEBHOOK_SECRET=CHANGE_ME` no segredo, porque o Secrets Manager não regera o valor num segredo existente: rotacione-o à mão com o procedimento acima. Hoje nenhum ambiente existe, então não há o que migrar.
+
+## Proposta: Traccar + ponte GT06 (spec 2026-10-27 §8) — não implantada
+
+`cdk synth -c env=<env> -c gt06Things=moto-0901,moto-0902 [-c apnCidrs=10.x.0.0/16] [-c bridgeImageTag=<sha>]` cria a stack
+`volti-<env>-traccar`: Traccar 6.16.0 (mínimo 6.7.0, por causa do `noQueue` dos comandos de motor) em Fargate ARM64 (1 task;
+`desiredCount` 0 até o primeiro deploy) atrás de um NLB TCP 5023,
+REST 8082 só para a ponte (Cloud Map `traccar.traccar.volti-<env>.internal`), ponte em Fargate publicando no IoT Core com
+certificado de serviço e política `volti-<env>-traccar-bridge-policy` restrita aos thingNames listados. Prod exige `apnCidrs`.
+A ponte não expõe endpoint HTTP de saúde, então a task dela não tem health check de container.
+
+Antes do primeiro deploy (DONO): validar que `UpdateThingShadow` funciona para um thing não registrado (o provisionamento GT06 não
+cria thing); criar no RDS o banco `traccar` (dono `traccar`) e os papéis `traccar` e `volti_bridge` com as senhas dos segredos
+`volti/<env>/traccar-db` e `volti/<env>/traccar-bridge-db` (mesmo SQL de `deploy/single/gt06.sh init`); emitir o certificado da ponte
+(`aws iot create-keys-and-certificate --set-as-active`), anexar a política e colar `certificatePem`/`privateKey` em
+`volti/<env>/traccar-bridge-iot`; publicar a imagem da ponte no ECR `volti-<env>-traccar-bridge`; trocar `DATABASE_SSL=require`
+(cifrado, sem verificar a CA) por verificação com o bundle da RDS. Um J16 novo em produção = `cdk deploy` com o thing na lista.
