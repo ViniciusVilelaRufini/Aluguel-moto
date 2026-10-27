@@ -206,7 +206,7 @@ export class DepotsService {
     const rows = await this.prisma.vehicle.findMany({
       where,
       orderBy: [{ batteryPct: 'desc' }, { code: 'asc' }],
-      include: { vehicleModel: { select: VEHICLE_MODEL_SELECT }, ...(staff ? { tracker: { select: { id: true } } } : {}) },
+      include: { vehicleModel: { select: VEHICLE_MODEL_SELECT }, ...(staff ? { tracker: { select: { id: true, controlMode: true } } } : {}) },
     });
     if (staff) return { items: rows.map((v) => toVehicle(v as any, { staff })) };
     // Moto fixa da assinatura vigente de outro cliente some; a do próprio cliente continua visível.

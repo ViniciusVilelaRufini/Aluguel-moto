@@ -19,7 +19,10 @@ class FakeClient extends EventEmitter implements SimMqttClient {
   subscribe() {
     return this;
   }
+  ended = false;
   end() {
+    this.ended = true;
+    this.connected = false;
     return this;
   }
   deliver(topic: string, payload: unknown) {
@@ -81,11 +84,11 @@ describe('Fleet.sync (um rastreador por moto cadastrada)', () => {
 
   it('cria um rastreador por moto, parado na posição do galpão, com telemetria a velocidade 0 e travado', () => {
     const { fleet, clients, connect } = setup();
-    expect(fleet.sync(fleetOf(row(), row({ thingName: 'moto-0012' })))).toEqual({ added: 2, relocated: 0 });
+    expect(fleet.sync(fleetOf(row(), row({ thingName: 'moto-0012' })))).toEqual({ added: 2, relocated: 0, removed: 0 });
     connect();
     const t = clients.get('moto-0011')!.telemetry()[0];
     expect(t).toMatchObject({ lat: CATANDUVA[0], lng: CATANDUVA[1], velocidade_kmh: 0, travada: true });
-    expect(fleet.sync(fleetOf(row(), row({ thingName: 'moto-0012' })))).toEqual({ added: 0, relocated: 0 });
+    expect(fleet.sync(fleetOf(row(), row({ thingName: 'moto-0012' })))).toEqual({ added: 0, relocated: 0, removed: 0 });
     expect(fleet.devices).toHaveLength(2);
     void fleet.stop();
   });
@@ -133,6 +136,36 @@ describe('Fleet.sync (um rastreador por moto cadastrada)', () => {
     expect(c.telemetry().at(-1)).toMatchObject({ lat: CATANDUVA[0], lng: CATANDUVA[1], velocidade_kmh: 0 });
     tick(120);
     expect(fleet.sync(atDepot).relocated).toBe(0); // já está lá
+    void fleet.stop();
+  });
+
+  it('moto que saiu da lista (ex.: reprovisionada como relay_only) é desconectada e nunca mais responde travada', () => {
+    const { fleet, clients, connect, tick } = setup();
+    fleet.sync(fleetOf(row(), row({ thingName: 'moto-0901' })));
+    connect();
+    const gt06 = clients.get('moto-0901')!;
+    const published = gt06.published.length;
+    expect(fleet.sync(fleetOf(row()))).toEqual({ added: 0, relocated: 0, removed: 1 });
+    expect(gt06.ended).toBe(true);
+    expect(fleet.devices.map((d) => d.moto.state.thingName)).toEqual(['moto-0011']);
+    // Mesmo que uma mensagem atrasada chegue ao cliente antigo, nada é publicado (nenhum reported.travada falso).
+    gt06.connected = true;
+    gt06.deliver('$aws/things/moto-0901/shadow/update/delta', { state: { travada: true } });
+    tick(120);
+    expect(gt06.published.slice(published).filter((p) => p.topic.includes('moto-0901') && !p.topic.includes('presence'))).toEqual([]);
+    // A que ficou continua normal.
+    expect(clients.get('moto-0011')!.ended).toBe(false);
+    void fleet.stop();
+  });
+
+  it('moto removida e cadastrada de novo como MQTT volta com um rastreador novo', () => {
+    const { fleet, clients } = setup();
+    fleet.sync(fleetOf(row({ thingName: 'moto-0901' })));
+    const first = clients.get('moto-0901')!;
+    fleet.sync([]);
+    expect(fleet.devices).toEqual([]);
+    expect(fleet.sync(fleetOf(row({ thingName: 'moto-0901' })))).toEqual({ added: 1, relocated: 0, removed: 0 });
+    expect(clients.get('moto-0901')).not.toBe(first);
     void fleet.stop();
   });
 

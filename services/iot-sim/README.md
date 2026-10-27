@@ -17,7 +17,7 @@ Em vez das 50 motos de demonstração, um rastreador por moto **cadastrada** (`t
 - **parada:** velocidade 0, travada/limite como no banco (limite sempre ≤ 32), telemetria a cada 60 s (heartbeat que mantém o `online` da API);
 - **comandos:** responde ao shadow como o firmware (unlock, lock só abaixo de 3 km/h, limite 0..32, modo roubada). Com `SIM_RIDE_ON_UNLOCK=false` (padrão no dev single) a moto destravada continua parada; com `true`, um piloto simulado anda num laço de ~220 m perto de onde ela está;
 - **moto levada:** travada e parada há `SIM_RELOCATE_AFTER_SEC` (padrão 180 s) com o cadastro a mais de 50 m (chegada ao galpão pelo recolhimento ou pela entrega) → o rastreador passa a reportar o novo ponto. Moto andando ou destravada nunca é movida;
-- moto nova no cadastro ganha rastreador no próximo ciclo; removida continua conectada até reiniciar o simulador.
+- moto nova no cadastro ganha rastreador no próximo ciclo; moto que sai da lista (removida, sem posição ou **reprovisionada como `relay_only`**) é desconectada no próximo ciclo (`sim_removed`) e nada mais é publicado por ela — o simulador nunca responde `travada` por uma moto GT06. Até esse ciclo (`SIM_FLEET_REFRESH_SEC`) as duas fontes podem responder: provisione o GT06 e espere um ciclo (ou reinicie o simulador) antes de testar o bloqueio.
 
 No dev single (`deploy/single/compose.yml`, serviço `iot-sim`) liga/desliga pelo parâmetro `/volti/dev/config/IOT_SIM` (ver `deploy/single/cloudshell.md`).
 
@@ -52,7 +52,7 @@ docker compose --profile sim up -d iot-sim      # SIM_VEHICLES=50 por padrão
 | `SIM_SEED` | `42` | semente (rotas, velocidades e eventos reproduzíveis) |
 | `SIM_DURATION_SEC` | `0` | encerra depois de N segundos (0 = não encerra) |
 
-Logs em JSON (`sim_started`, `sim_status` a cada 30 s, `evento_injetado`, `sim_fleet_synced`, `sim_relocated`, `sim_fleet_load_failed`), sem coordenadas nem credenciais.
+Logs em JSON (`sim_started`, `sim_status` a cada 30 s, `evento_injetado`, `sim_fleet_synced`, `sim_relocated`, `sim_removed`, `sim_fleet_load_failed`), sem coordenadas nem credenciais.
 
 ## Testes
 

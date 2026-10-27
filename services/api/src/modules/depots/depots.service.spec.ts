@@ -103,6 +103,16 @@ describe('DepotsService', () => {
       expect(prisma.subscription.findMany).not.toHaveBeenCalled();
     });
 
+    it('staff: lê o modo de controle do rastreador (trackerControlMode relay_only na lista do galpão)', async () => {
+      const { service, prisma } = setup();
+      prisma.vehicle.findMany.mockResolvedValue([
+        { id: 'v1', code: 'VLT-0901', status: 'free', depotId: DEPOT_ID, batteryPct: 80, speedLimitKmh: 32, locked: true, stolenMode: false, thingName: 'moto-0901', tracker: { id: 't1', controlMode: 'relay_only' } },
+      ] as any);
+      const { items } = await service.vehicles(DEPOT_ID, operacao, {});
+      expect((prisma.vehicle.findMany.mock.calls[0][0] as any).include.tracker).toEqual({ select: { id: true, controlMode: true } });
+      expect(items[0]).toMatchObject({ trackerId: 't1', trackerControlMode: 'relay_only' });
+    });
+
     it('cliente: galpão inativo → 404', async () => {
       const { service, prisma } = setup();
       prisma.depot.findUnique.mockResolvedValue(depotRow({ active: false }) as any);

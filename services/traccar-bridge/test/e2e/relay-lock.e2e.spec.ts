@@ -195,6 +195,8 @@ async function world(opts: WorldOpts = {}) {
   const reportedTravada = () => fromBridge(`$aws/things/${T}/shadow/update`).filter((u) => u.state.reported.travada !== undefined).map((u) => u.state.reported.travada as boolean);
   const cuts = () => desired.filter((d) => d.desired.travada === true);
   const releases = () => desired.filter((d) => d.desired.travada === false);
+  /** `travada: null` gravados (corte pendente apagado — o prazo do corte nunca grava `false`). */
+  const clears = () => desired.filter((d) => d.desired.travada === null);
   const outcomes = (commandId: string) => updates.filter((u) => u.commandId === commandId);
 
   const stop = async () => {
@@ -206,7 +208,7 @@ async function world(opts: WorldOpts = {}) {
   return {
     clock, broker, bridgeMqtt, traccar, gateway, telemetry, transport, live, desired, seen, updates,
     settle, push, step, ride, heartbeat, setOnline, stalePosition, lock, unlock,
-    fromBridge, reportedTravada, cuts, releases, outcomes, iso, stop,
+    fromBridge, reportedTravada, cuts, releases, clears, outcomes, iso, stop,
   };
 }
 type World = Awaited<ReturnType<typeof world>>;
@@ -438,8 +440,9 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     expect(w.traccar.commands).toEqual([]); // ... e nada chega ao Traccar
     await w.step(120_000);
     expect(w.outcomes('c5')).toEqual([{ commandId: 'c5', status: 'failed', reason: 'timeout' }]);
-    // travada:false do prazo: o reported já é false (o relé nunca abriu), então nem há delta para a ponte.
-    expect(w.releases()).toHaveLength(1);
+    // O prazo apaga o corte pendente (travada:null), nunca grava travada:false.
+    expect(w.clears()).toHaveLength(1);
+    expect(w.releases()).toEqual([]);
     expect(w.traccar.commands).toEqual([]);
     expect(w.traccar.queued).toEqual([]);
   });
@@ -493,11 +496,47 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     expect(w.outcomes('c6')).toEqual([]);
     await w.step(120_000);
     expect(w.outcomes('c6')).toEqual([{ commandId: 'c6', status: 'failed', reason: 'timeout' }]);
-    // travada:false do prazo; o reported já é false (relé aberto), então não há delta nem engineResume.
-    expect(w.releases()).toHaveLength(1);
+    // O prazo apaga o corte pendente (travada:null): nenhum travada:false, nenhum delta de destravar, nenhum engineResume.
+    expect(w.clears()).toHaveLength(1);
+    expect(w.releases()).toEqual([]);
     expect(w.broker.log.filter((m) => m.topic === `$aws/things/${T}/shadow/update/delta` && JSON.parse(m.payload).state.travada === false)).toEqual([]);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
     expect(w.updates.some((u) => u.commandId === 'c6' && u.status === 'confirmed')).toBe(false);
+  });
+
+  it('(8) cortou mas o status atrasou: prazo → timeout; status blocked:true depois e reconexão → nenhum engineResume, nunca travada:false', async () => {
+    w = await world();
+    await connectAndRide(w, 4);
+    expect(await w.lock('c8')).toEqual({ commandId: 'c8', status: 'in_progress' });
+    for (let i = 0; i < 3; i++) {
+      await w.ride(0);
+      if (i < 2) await w.step(5_000);
+    }
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]); // o relé cortou de verdade...
+    await w.step(121_000); // ... mas o status com o bit de corte não chegou a tempo
+    expect(w.outcomes('c8')).toEqual([{ commandId: 'c8', status: 'failed', reason: 'timeout' }]);
+    expect(w.clears()).toHaveLength(1);
+    // O status atrasado chega: a moto está cortada.
+    const reportsBefore = w.reportedTravada().length;
+    await w.heartbeat(true);
+    await w.step(1_000);
+    expect(w.reportedTravada().at(-1)).toBe(true);
+    // A moto cai e reconecta (nova sessão TCP no Traccar): a ponte não acha nada pendente para reaplicar.
+    await w.setOnline(false);
+    await w.step(20_000);
+    await w.setOnline(true);
+    for (let i = 0; i < 4; i++) {
+      await w.ride(0, { blocked: true, ignition: false });
+      await w.step(5_000);
+    }
+    await w.heartbeat(true);
+    await w.step(1_000);
+    expect(w.traccar.commands.filter((c) => c.type === 'engineResume')).toEqual([]);
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+    expect(w.desired.some((d) => d.desired.travada === false)).toBe(false);
+    expect(w.broker.log.some((m) => m.topic === `$aws/things/${T}/shadow/update/delta` && JSON.parse(m.payload).state.travada === false)).toBe(false);
+    expect(w.reportedTravada().slice(reportsBefore)).not.toContain(false);
+    expect((await w.gateway.getLiveState(T))?.locked).toBe(true);
   });
 
   it('(7) moto cai no meio da espera: pending/offline; ao voltar, in_progress e só corta com amostras novas fora da graça', async () => {

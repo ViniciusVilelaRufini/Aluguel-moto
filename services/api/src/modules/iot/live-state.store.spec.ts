@@ -220,4 +220,36 @@ describe('LiveStateStore — reported parado não é barreira de ordem para a te
     await clock.advance(1_000);
     expect((await live.applyTelemetry(T, tele(0, fix - 1_000))).speedAccepted).toBe(false);
   });
+
+  it.each([
+    ['NaN', NaN],
+    ['negativa', -1],
+  ])('reported com velocidade %s (desconhecida = movimento) continua barreira de ordem', async (_n, kmh) => {
+    const { clock, live } = await setup();
+    await live.applyReported(T, { velocidade_kmh: kmh });
+    await clock.advance(5_000);
+    // fix = chegada do reported − 3 s: mais velha que a barreira → rejeitada
+    expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(false);
+    expect(live.knownSpeed(T)).not.toBe(0);
+    await clock.advance(5_000);
+    expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(true);
+  });
+
+  it('reported parado do polling (fromPoll) também não avança a marca de ordem: telemetria parada com fix anterior vale', async () => {
+    const { clock, live } = await setup();
+    expect((await live.applyReported(T, { velocidade_kmh: 0 }, { fromPoll: true, speedAt: clock.now() })).speedAccepted).toBe(true);
+    await clock.advance(5_000);
+    expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(true);
+    // Consequência documentada (decisoes, Task 11b): dois reported parados do polling não se ordenam entre si.
+    const at = clock.now();
+    expect((await live.applyReported(T, { velocidade_kmh: 0 }, { fromPoll: true, speedAt: at - 1_000 })).speedAccepted).toBe(true);
+    expect((await live.applyReported(T, { velocidade_kmh: 0 }, { fromPoll: true, speedAt: at - 2_000 })).speedAccepted).toBe(true);
+  });
+
+  it('reported em movimento do polling continua barreira', async () => {
+    const { clock, live } = await setup();
+    expect((await live.applyReported(T, { velocidade_kmh: 12 }, { fromPoll: true, speedAt: clock.now() })).speedAccepted).toBe(true);
+    await clock.advance(5_000);
+    expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(false);
+  });
 });

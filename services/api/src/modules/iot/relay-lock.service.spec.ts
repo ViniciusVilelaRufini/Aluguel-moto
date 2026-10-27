@@ -169,7 +169,7 @@ describe('RelayLockService (spec GT06 §5)', () => {
     expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
   });
 
-  it('corte sem confirmação em 120 s → failed/timeout e desired travada:false', async () => {
+  it('corte sem confirmação em 120 s → failed/timeout e o corte pendente apagado (travada:null, nunca false)', async () => {
     const s = setup();
     await s.svc.start({ commandId: 'c1', thingName: T }, s.state);
     await s.sample(0);
@@ -177,7 +177,7 @@ describe('RelayLockService (spec GT06 §5)', () => {
     await s.sample(0);
     await s.clock.advance(120_000);
     expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'timeout' }]);
-    expect(s.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: false }]);
+    expect(s.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: null }]);
   });
 
   it('offline → pending/offline e nada publicado; ao reconectar recomeça e exige amostras novas', async () => {
@@ -216,7 +216,7 @@ describe('RelayLockService (spec GT06 §5)', () => {
     expect(s.desired).toEqual([]);
   });
 
-  it('órfã na fase de corte (estado perdido) → desired travada:false e comandos failed/timeout', async () => {
+  it('órfã na fase de corte (estado perdido) → desired travada:null (nunca false) e comandos failed/timeout', async () => {
     const clock = new FakeClock(T0);
     const desired: DesiredState[] = [];
     const outcomes: CommandOutcome[] = [];
@@ -226,7 +226,7 @@ describe('RelayLockService (spec GT06 §5)', () => {
     await redis.del(`iot:relay-lock:${T}`); // estado perdido, índice ficou
     const svc = new RelayLockService(clock, { updateDesired: async (_t, d) => void desired.push(d) }, (o) => outcomes.push(o), { store, knownSpeed: () => null });
     await svc.sweep();
-    expect(desired).toEqual([{ travada: false }]);
+    expect(desired).toEqual([{ travada: null }]);
     expect(outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'timeout' }]);
   });
 });

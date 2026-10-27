@@ -108,12 +108,12 @@ Tópicos, schemas e shadow são os desta página. A API escolhe a estratégia po
 |---|---|---|
 | `lock` | rampa de `limite_kmh` e `travada: true` abaixo de 3 km/h | **sem rampa**: espera 2 telemetrias frescas e consecutivas < 3 km/h cobrindo ≥ 10 s (fora da graça, com as mesmas regras de frescor, ordem, lacuna e atraso de fila) e grava `travada: true` **uma única vez**; a ponte manda `engineStop` |
 | sem parar em 120 s | `failed`/`did_not_stop`, limite 0 segurado | `failed`/`did_not_stop`, **nenhum corte enviado**, nada segurado |
-| corte sem confirmação em 120 s | `failed`/`timeout`, desired `travada: false` + `limite_kmh: 0` | `failed`/`timeout`, desired `travada: false` (a ponte não reenvia o corte) |
+| corte sem confirmação em 120 s | `failed`/`timeout`, desired `travada: false` + `limite_kmh: 0` | `failed`/`timeout`, o corte pendente é apagado (desired `travada: null`; nunca `false`, que soltaria uma moto cortada com o status atrasado) |
 | moto offline | `pending`/`offline`, rampa ao reconectar | `pending`/`offline`; ao reconectar, exige amostras novas (fora da graça) |
 | `unlock` | `travada: false` + limite da zona | `travada: false` → `engineResume`; confirma por `reported.travada = false` em 30 s |
 | `speed_limit`, `horn` | normais | `failed`/`unsupported_by_tracker`, shadow intocado |
 | `stolen_mode` | `modo_roubada` | aceito; a ponte ecoa `reported.modo_roubada` (sem mudança de telemetria no GT06) |
-| zona `reduced_speed` | ENTER grava `limite_kmh` | **aviso**: `zone.notice` "Área com limite de X km/h." (`advisory: true`); acima do limite por mais de 5 s → alerta `zone_speed_exceeded` |
+| zona `reduced_speed` | ENTER grava `limite_kmh` | **aviso**: `zone.notice` "Área com limite de X km/h." (sem limite conhecido: "Área com limite de velocidade reduzido."; `advisory: true`); acima do limite por mais de 5 s → alerta `zone_speed_exceeded` |
 | 32 km/h | firmware + controlador | só o controlador da moto (configuração física) |
 
 O que a ponte faz (detalhes em `services/traccar-bridge/README.md`):

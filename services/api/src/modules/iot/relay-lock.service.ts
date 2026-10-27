@@ -63,7 +63,7 @@ export function stillConfirmed(run: RelayStillRun | undefined, now: number): boo
  * Bloqueio de rastreador só relé (spec GT06 §5): não existe rampa. Enquanto a moto não estiver parada de forma confirmada, o
  * comando fica `in_progress` e nada é enviado; confirmada a parada, grava `desired.travada = true` uma única vez (a ponte manda
  * `engineStop`) e espera `reported.travada = true`. 120 s sem parar → `did_not_stop` sem corte; corte sem confirmação em 120 s →
- * `timeout` e `desired.travada = false`. Offline → `pending`; ao reconectar, recomeça (amostras novas, fora da graça).
+ * `timeout` e o corte pendente apagado (`desired.travada = null`; nunca `false`). Offline → `pending`; ao reconectar, recomeça (amostras novas, fora da graça).
  *
  * Invariante (testes fixos e de propriedade): `travada: true` só é gravado com a sequência parada confirmada e a velocidade
  * fresca conhecida < 3 km/h no instante da gravação.
@@ -95,8 +95,8 @@ export class RelayLockService {
     return this.store.withLock(req.thingName, async () => {
       let existing = await this.store.get(req.thingName);
       if (existing && existing.deadlineAt !== undefined && existing.deadlineAt <= this.clock.now()) {
-        // Trava vencida que ninguém encerrou ainda (timer perdido, ou `travada: false` do prazo que falhou ao publicar): nunca
-        // entra nela. Encerra/retenta o `travada: false` agora; se ainda não saiu, o comando novo falha (conservador — jamais
+        // Trava vencida que ninguém encerrou ainda (timer perdido, ou `travada: null` do prazo que falhou ao publicar): nunca
+        // entra nela. Encerra/retenta o `travada: null` agora; se ainda não saiu, o comando novo falha (conservador — jamais
         // `travada: true` a partir de uma trava vencida) e a varredura continua tentando.
         await this.onDeadline(existing);
         existing = await this.store.get(req.thingName);
@@ -338,12 +338,14 @@ export class RelayLockService {
       return;
     }
     if (lock.phase !== 'cutting') return;
-    // Corte enviado e não confirmado: o desired volta a `travada: false` (a ponte não reenvia o corte ao reconectar). Se a
-    // publicação falhar, o estado fica e a próxima varredura tenta de novo (o desfecho sai uma vez só).
+    // Corte enviado e não confirmado: o desired pendente é apagado (`travada: null`) — a ponte não reenvia o corte ao reconectar
+    // e nada é solto. Nunca `travada: false`: se o corte aconteceu e o status só atrasou, `false` desfaria o corte de uma moto que
+    // ninguém pediu para destravar (desvio da spec §5.6, ver docs/decisoes.md). Se a publicação falhar, o estado fica e a
+    // próxima varredura tenta de novo (o desfecho sai uma vez só).
     const commands = lock.commandIds;
     lock.commandIds = [];
     try {
-      await this.transport.updateDesired(lock.thingName, { travada: false });
+      await this.transport.updateDesired(lock.thingName, { travada: null });
     } catch (err) {
       this.opts.onError?.({ msg: 'relay_lock_uncut_failed', thingName: lock.thingName, error: (err as Error).message });
       await this.save(lock);
@@ -363,15 +365,16 @@ export class RelayLockService {
       if (!(await this.store.isOrphan(orphan.thingName, orphan.lockId))) return;
       this.opts.onError?.({ msg: 'relay_lock_state_lost', thingName: orphan.thingName, phase: orphan.phase, commands: orphan.commandIds.length });
       if (orphan.phase === 'cutting' && (await this.isKnownLocked(orphan.thingName))) {
-        // Corte perdido mas a moto está travada (Task 4 fix 3): nunca soltar com `travada: false`; os comandos confirmam.
+        // Corte perdido mas a moto está travada (Task 4 fix 3): nada a apagar; os comandos confirmam.
         await this.store.clearOrphan(orphan.thingName, orphan.lockId);
         this.forget(orphan.thingName);
         this.emit(orphan.commandIds, { status: 'confirmed' });
         return;
       }
       if (orphan.phase === 'cutting') {
+        // Apaga o corte pendente (`travada: null`), nunca `travada: false`: não solta uma moto que pode ter sido cortada.
         try {
-          await this.transport.updateDesired(orphan.thingName, { travada: false });
+          await this.transport.updateDesired(orphan.thingName, { travada: null });
         } catch (err) {
           this.opts.onError?.({ msg: 'relay_lock_uncut_failed', thingName: orphan.thingName, error: (err as Error).message });
           return; // fica no índice: a próxima varredura tenta de novo

@@ -60,11 +60,15 @@ export class Fleet {
    * Modo `postgres`: alinha a frota simulada com as motos cadastradas. Moto nova → rastreador novo na posição cadastrada,
    * parado (velocidade 0), travado/limite como no banco. Moto já simulada, travada e parada há `relocateAfterSec`, cujo
    * cadastro está a mais de 50 m → foi levada (recolhimento, chegada ao galpão): o rastreador passa a reportar o novo ponto.
-   * Motos andando nunca são movidas. Motos removidas do cadastro continuam conectadas até o simulador reiniciar.
+   * Motos andando nunca são movidas. Moto que saiu da lista (removida do cadastro, sem posição ou reprovisionada como `relay_only`)
+   * é desconectada e esquecida: o simulador nunca responde `travada` por uma moto GT06 (quem responde é a ponte).
    */
-  sync(vehicles: FleetVehicle[]): { added: number; relocated: number } {
+  sync(vehicles: FleetVehicle[]): { added: number; relocated: number; removed: number } {
     let added = 0;
     let relocated = 0;
+    const wanted = new Set(vehicles.map((v) => v.thingName));
+    const removed = [...this.byThing.keys()].filter((t) => !wanted.has(t));
+    for (const thingName of removed) this.remove(thingName);
     for (const v of vehicles) {
       const existing = this.byThing.get(v.thingName);
       if (!existing) {
@@ -91,8 +95,21 @@ export class Fleet {
       }
     }
     this.startClock();
-    if (added || relocated) this.log({ msg: 'sim_fleet_synced', source: 'postgres', vehicles: this.devices.length, added, relocated });
-    return { added, relocated };
+    if (added || relocated || removed.length) this.log({ msg: 'sim_fleet_synced', source: 'postgres', vehicles: this.devices.length, added, relocated, removed: removed.length });
+    return { added, relocated, removed: removed.length };
+  }
+
+  private remove(thingName: string): void {
+    const device = this.byThing.get(thingName);
+    if (!device) return;
+    const i = this.devices.indexOf(device);
+    device.stop();
+    if (i >= 0) {
+      this.devices.splice(i, 1);
+      this.clients.splice(i, 1);
+    }
+    this.byThing.delete(thingName);
+    this.log({ msg: 'sim_removed', thingName });
   }
 
   private cruise(): number {

@@ -86,8 +86,8 @@ export class TelemetryService implements InboundHandler {
 
   /** Reconexão: a velocidade e a ordem recomeçam no estado ao vivo e a sequência parada da trava só-relé também. */
   private async reconnect(thingName: string, opts?: { keepDisplayOrder?: boolean }): Promise<void> {
-    if (opts) this.gateway.live.markReconnected(thingName, opts);
-    else this.gateway.live.markReconnected(thingName);
+    if (opts) await this.gateway.live.markReconnected(thingName, opts);
+    else await this.gateway.live.markReconnected(thingName);
     await this.gateway.onReconnected(thingName).catch((err: Error) => this.logger.error({ msg: 'relay_lock_reconnect_failed', thingName, error: err.message }));
   }
 

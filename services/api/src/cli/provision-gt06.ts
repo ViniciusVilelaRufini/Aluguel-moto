@@ -7,13 +7,14 @@
  *   pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0901 --thing moto-0901 --imei ...
  *
  * Modo de controle: a API guarda o modo por rastreador num cache de 60 s por processo (iot/tracker-mode.ts). Esta CLI roda em outro
- * processo e não o invalida: uma troca de modo vale em até 60 s; reprovisione com a moto fora de aluguel.
+ * processo e não o invalida: uma troca de modo vale em até 60 s. Moto com aluguel aberto é recusada (reprovisione fora de aluguel).
  *
  * Ambiente: DATABASE_URL; TRACCAR_URL (padrão http://localhost:8082); TRACCAR_ADMIN_EMAIL (padrão admin@volti.local);
  * TRACCAR_ADMIN_PASSWORD (obrigatória); TRACCAR_BRIDGE_EMAIL (opcional). Idempotente. Logs JSON com o IMEI mascarado.
  */
 import { parseArgs } from 'node:util';
 import { PrismaClient } from '@prisma/client';
+import { assertNoOpenRental } from './provision-tracker';
 
 const IMEI = /^\d{15}$/;
 const THING_NAME = /^moto-\d{4,}$/;
@@ -75,7 +76,7 @@ export interface Gt06ProvisionInput {
   dryRun?: boolean;
 }
 
-type ProvisionPrisma = Pick<PrismaClient, 'vehicle' | 'tracker' | '$transaction'>;
+type ProvisionPrisma = Pick<PrismaClient, 'vehicle' | 'tracker' | 'rental' | '$transaction'>;
 
 export async function provisionGt06(
   deps: { prisma: ProvisionPrisma; traccar: TraccarAdminApi; log: (entry: Record<string, unknown>) => void },
@@ -87,6 +88,7 @@ export async function provisionGt06(
   if (!IMEI.test(imei)) throw new Error('--imei deve ter 15 dígitos');
   const vehicle = await deps.prisma.vehicle.findUnique({ where: { code: vehicleCode }, select: { id: true, thingName: true } });
   if (!vehicle) throw new Error(`Moto ${vehicleCode} não encontrada (cadastre com POST /vehicles).`);
+  await assertNoOpenRental(deps.prisma, { id: vehicle.id, code: vehicleCode });
   const clash = await deps.prisma.vehicle.findFirst({ where: { thingName, NOT: { id: vehicle.id } }, select: { code: true } });
   if (clash) throw new Error(`thingName ${thingName} já pertence a ${clash.code}.`);
   const existingTracker = await deps.prisma.tracker.findUnique({ where: { thingName }, select: { vehicleId: true } });

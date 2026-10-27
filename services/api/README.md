@@ -72,20 +72,21 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 - Telemetria (`telemetry.service.ts`): emite `iot.telemetry`/`iot.device-event`/`iot.connectivity`; grava `TrackPoint` só com aluguel `active`/`paused`/`ending`.
 - Cercas (`geofence/`): `reduced_speed` ajusta o limite (comando de sistema com AuditLog); saída da `operation` com aluguel → alerta e bloqueio em 5 min.
 - Contrato MQTT: `packages/contracts/mqtt.md`; firmware: `docs/firmware-bloqueio-seguro.md`; ADR: `docs/adr-rastreador.md`.
-- Provisionar rastreador: `pnpm --filter api exec tsx scripts/provision-tracker.ts --vehicle VLT-0061 --thing moto-0061 --imei 860000000000061 --mode aws|local`.
-- Provisionar rastreador GT06 só relé (sem certificado; cria o dispositivo no Traccar, `TRACCAR_ADMIN_PASSWORD` obrigatória): `pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0901 --thing moto-0901 --imei 860000000000901 [--dry-run]` (ou `node dist/cli/provision-gt06.js ...`). O modo do rastreador fica em cache de 60 s por processo da API: a troca vale em até 60 s; reprovisione com a moto fora de aluguel.
+- Provisionar rastreador: `pnpm --filter api exec tsx scripts/provision-tracker.ts --vehicle VLT-0061 --thing moto-0061 --imei 860000000000061 --mode aws|local` (grava `speed_control`/`protocol` nulo — um ex-GT06 volta a MQTT; o rastreador antigo da moto é desvinculado).
+- Provisionar rastreador GT06 só relé (sem certificado; cria o dispositivo no Traccar, `TRACCAR_ADMIN_PASSWORD` obrigatória): `pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0901 --thing moto-0901 --imei 860000000000901 [--dry-run]` (ou `node dist/cli/provision-gt06.js ...`). O modo do rastreador fica em cache de 60 s por processo da API: a troca vale em até 60 s. Os dois comandos recusam moto com aluguel aberto (`active`/`paused`/`ending`): reprovisione com a moto fora de aluguel.
 - Simulador: `services/iot-sim` (`docker compose --profile sim up -d iot-sim`).
 - Teste de integração: `pnpm --filter api test:e2e -- test/iot` (Mosquitto + Postgres/Redis do compose; sobe o simulador sozinho).
 
 **Rastreadores só relé (`Tracker.controlMode = relay_only`, GT06 via Traccar).** O `CommandsService` lê o tipo do rastreador e o
 passa ao gateway (`CommandRequest.controlMode`). `lock` usa o `RelayLockService` (estado no Redis, `iot:relay-lock:*`): sem rampa,
 espera 2 telemetrias aceitas < 3 km/h cobrindo ≥ 10 s e grava `travada: true` uma vez; 120 s sem parar → `did_not_stop` sem corte;
-corte sem confirmação em 120 s → `timeout` + `travada: false`. `speed_limit` e `horn` → `unsupported_by_tracker`. O fluxo
+corte sem confirmação em 120 s → `timeout` e o corte pendente apagado (`travada: null`; nunca `travada: false`, que soltaria
+uma moto cortada cujo status só atrasou). `speed_limit` e `horn` → `unsupported_by_tracker`. O fluxo
 `speed_control` (`SafeLockService`) não muda. Spec: `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`.
 Moto que cai durante a espera: o comando volta de `in_progress` para `pending`/`offline` (única regressão aceita pelo
 `CommandsService`, só pelo `iot.command-updated`); na reconexão a janela de 120 s recomeça e o comando volta a `in_progress`.
 Moto já travada (`LiveStateStore.lockConfirmed`: online e `locked` gravado por telemetria/reported depois da reconexão — campo
-`lockedAt` no hash `iot:live:*`; o estado em branco de uma presença sem mensagem não conta) → `lock` confirma sem gravar nada; a
+`lockedAt` e `reconnectAt` no hash `iot:live:*`, compartilhados entre as instâncias; o estado em branco de uma presença sem mensagem não conta) → `lock` confirma sem gravar nada; a
 espera retomada e o prazo da trava também terminam `confirmed` (nunca `travada: false`) se a moto já estiver travada.
 Só vale origem **depois da graça** da reconexão (`IOT_RECONNECT_GRACE_MS`): o `reported` do tick da reconexão (memória da ponte) e
 a fila offline com relógio adiantado nunca confirmam; um `reported.travada = true` só confirma por esse mesmo critério (com o
