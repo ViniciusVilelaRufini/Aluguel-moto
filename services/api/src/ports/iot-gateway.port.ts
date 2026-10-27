@@ -10,6 +10,9 @@ export type CommandAuthority = 'customer' | 'field' | 'staff' | 'system';
 /** Quem travou a moto. `staff`/`system` só são desfeitos por `staff` (admin/operacao). */
 export type LockOrigin = 'customer' | 'staff' | 'system';
 
+/** Capacidade do rastreador (spec GT06): `relay_only` só rastreia e corta pelo relé — sem rampa nem limite de velocidade. */
+export type TrackerControlMode = 'speed_control' | 'relay_only';
+
 export interface CommandRequest {
   commandId: string;   // VehicleCommand.id, criado pelo módulo commands antes da chamada
   thingName: string;
@@ -20,12 +23,17 @@ export interface CommandRequest {
    * origem `staff`/`system` já gravada. Ausente = `system` (a mais restritiva).
    */
   lockOrigin?: LockOrigin | null;
+  /** Estratégia do rastreador, lida do `Tracker` pelo `CommandsService`. Ausente = `speed_control` (comportamento de sempre). */
+  controlMode?: TrackerControlMode;
 }
 
 export interface CommandOutcome {
   commandId: string;
   status: 'pending' | 'in_progress' | 'confirmed' | 'failed';
-  /** `locked_by_staff`: unlock de cliente/campo recusado (trava de equipe/sistema, hold em 0 ou modo roubada). */
+  /**
+   * `locked_by_staff`: unlock de cliente/campo recusado (trava de equipe/sistema, hold em 0 ou modo roubada).
+   * `unsupported_by_tracker`: `speed_limit`/`horn` em rastreador `relay_only` (nada é publicado).
+   */
   reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff' | 'unsupported_by_tracker';
 }
 
@@ -66,3 +74,5 @@ export interface IotGateway {
 }
 
 export class InvalidSpeedLimitError extends Error {}
+
+export type CommandFailureReason = NonNullable<CommandOutcome['reason']>;

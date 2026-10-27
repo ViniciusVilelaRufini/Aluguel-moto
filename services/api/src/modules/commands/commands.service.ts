@@ -5,7 +5,7 @@ import { MAX_SPEED_KMH, type CommandType } from '../../common/enums';
 import { CommandChangedEvent, EV, IotCommandUpdatedEvent } from '../../common/events';
 import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { badRequest, notFound, ProblemException } from '../../common/problem';
-import { CommandOutcome, InvalidSpeedLimitError, IOT_GATEWAY, type CommandAuthority, type CommandRequest, type IotGateway, type LockOrigin } from '../../ports/iot-gateway.port';
+import { CommandOutcome, InvalidSpeedLimitError, IOT_GATEWAY, type CommandAuthority, type CommandRequest, type IotGateway, type LockOrigin, type TrackerControlMode } from '../../ports/iot-gateway.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService, type AuditActor } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
@@ -18,6 +18,12 @@ const PREDECESSORS: Record<CommandOutcome['status'], VehicleCommand['status'][]>
   confirmed: ['pending', 'in_progress', 'failed'],
   failed: ['pending', 'in_progress'],
 };
+
+/**
+ * Única volta permitida (revisão Task 3, N3): a trava só-relé avisa `pending`/`offline` quando a moto cai durante a espera, e o
+ * painel passa a mostrar "aguardando conexão". Só pelo `iot.command-updated` e só com o motivo `offline`; terminal nunca volta.
+ */
+const OFFLINE_REGRESSION: VehicleCommand['status'][] = ['pending', 'in_progress'];
 
 /** Travas de sistema que são só "estacionar" (fim de aluguel, rollback do início): não gravam origem nem rebaixam uma existente. */
 const PARKING_LOCK_PURPOSES = new Set(['rental_end', 'rental_force_end', 'rental_start_rollback']);
@@ -90,8 +96,9 @@ export class CommandsService {
 
   async dispatch(input: DispatchInput) {
     this.validate(input);
-    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: input.vehicleId } });
+    const vehicle = await this.prisma.vehicle.findUnique({ where: { id: input.vehicleId }, include: { tracker: { select: { controlMode: true } } } });
     if (!vehicle) throw notFound('Moto não encontrada.');
+    const controlMode: TrackerControlMode = vehicle.tracker?.controlMode ?? 'speed_control';
 
     const payload: CommandPayload = { ...(input.context ?? {}) };
     if (input.type === 'speed_limit') payload.speedLimitKmh = input.speedLimitKmh;
@@ -126,11 +133,14 @@ export class CommandsService {
     });
 
     const authority = authorityOf(input.actor);
+    // Rastreador só relé (spec GT06 §3.3): sem limite de velocidade nem buzina — recusado sem tocar no shadow.
+    const unsupported = controlMode === 'relay_only' && (input.type === 'speed_limit' || input.type === 'horn');
     // Modo roubada no cadastro: unlock de cliente/campo recusado sem chamar o gateway (nada é publicado).
-    const outcome: CommandOutcome =
-      input.type === 'unlock' && authority !== 'staff' && vehicle.stolenMode
+    const outcome: CommandOutcome = unsupported
+      ? { commandId: command.id, status: 'failed', reason: 'unsupported_by_tracker' }
+      : input.type === 'unlock' && authority !== 'staff' && vehicle.stolenMode
         ? { commandId: command.id, status: 'failed', reason: 'locked_by_staff' }
-        : await this.callGateway(command.id, vehicle.thingName, input, authority);
+        : await this.callGateway(command.id, vehicle.thingName, input, authority, controlMode);
     const updated = await this.applyOutcome(command, outcome);
     if (updated.status === 'confirmed') await this.reflectOnVehicle(vehicle.id, input);
     return this.present([updated]).then(([c]) => c);
@@ -150,8 +160,9 @@ export class CommandsService {
     }
   }
 
-  private async callGateway(commandId: string, thingName: string, input: DispatchInput, authority: CommandAuthority): Promise<CommandOutcome> {
+  private async callGateway(commandId: string, thingName: string, input: DispatchInput, authority: CommandAuthority, controlMode: TrackerControlMode): Promise<CommandOutcome> {
     const req: CommandRequest = { commandId, thingName, authority };
+    if (controlMode === 'relay_only') req.controlMode = 'relay_only';
     if (input.type === 'lock') req.lockOrigin = lockOriginOf(authority, input.context?.purpose);
     try {
       switch (input.type) {
@@ -177,10 +188,16 @@ export class CommandsService {
    * Grava a transição sem nunca andar para trás: pending < in_progress < confirmed|failed (terminal é final;
    * só `failed` → `confirmed` tardio é aceito). O `updateMany` condicional evita que o status inicial devolvido pelo
    * gateway sobrescreva um `iot.command-updated` terminal que chegou antes da gravação. Se não avançou, devolve o estado atual.
+   * Exceção (`allowOfflineRegression`, só pelo evento): `in_progress` → `pending`/`offline` (moto caiu durante a trava só-relé).
    */
-  private async applyOutcome(command: VehicleCommand, outcome: { status: CommandOutcome['status']; reason?: CommandOutcome['reason'] }) {
+  private async applyOutcome(
+    command: VehicleCommand,
+    outcome: { status: CommandOutcome['status']; reason?: CommandOutcome['reason'] },
+    opts: { allowOfflineRegression?: boolean } = {},
+  ) {
+    const from = opts.allowOfflineRegression && outcome.status === 'pending' && outcome.reason === 'offline' ? OFFLINE_REGRESSION : PREDECESSORS[outcome.status];
     const moved = await this.prisma.vehicleCommand.updateMany({
-      where: { id: command.id, status: { in: PREDECESSORS[outcome.status] } },
+      where: { id: command.id, status: { in: from } },
       data: {
         status: outcome.status,
         statusReason: outcome.reason ?? null,
@@ -222,7 +239,8 @@ export class CommandsService {
     const command = await this.prisma.vehicleCommand.findUnique({ where: { id: ev.commandId } });
     if (!command) return;
     if (command.status === 'confirmed' || (command.status === 'failed' && ev.status !== 'confirmed')) return;
-    await this.applyOutcome(command, ev);
+    // `in_progress` → `pending`/`offline` só por aqui (N3): o retorno inicial do gateway continua só para a frente.
+    await this.applyOutcome(command, ev, { allowOfflineRegression: true });
     if (ev.status === 'confirmed') {
       const p = (command.payload ?? {}) as CommandPayload;
       await this.reflectOnVehicle(command.vehicleId, { type: command.type, speedLimitKmh: p.speedLimitKmh, on: p.on });

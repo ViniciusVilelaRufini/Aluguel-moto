@@ -8,6 +8,8 @@ import type { LiveStateStore } from './live-state.store';
 import { SafeLockService, type SafeLockVehicleState } from './safe-lock.service';
 import { assertSpeedLimit, SAFE_LOCK_MIN_START_KMH } from './speed-limit';
 import { MemorySafeLockStore, type SafeLockStore } from './safe-lock.store';
+import { RelayLockService, type RelaySample } from './relay-lock.service';
+import type { RelayLockStore } from './relay-lock.store';
 import type { DesiredState, IotTransport, ReportedMeta, ReportedState } from './shadow-transport';
 
 export interface GatewayOptions {
@@ -19,6 +21,10 @@ export interface GatewayOptions {
   safeLockTimeoutMs?: number;
   /** Estado das rampas do bloqueio seguro (produção: Redis, compartilhado entre as instâncias; padrão: memória). */
   safeLockStore?: SafeLockStore;
+  /** Estado das travas de rastreadores só relé (produção: Redis; padrão: memória). */
+  relayLockStore?: RelayLockStore;
+  relayStopTimeoutMs?: number;
+  relayConfirmTimeoutMs?: number;
 }
 
 /**
@@ -53,6 +59,8 @@ export abstract class BaseIotGateway implements IotGateway {
    * em memória (como antes da T5), com o mesmo invariante (`travada: true` só com velocidade fresca < 3).
    */
   readonly safeLockLocal: SafeLockService;
+  /** Trava de rastreador só relé (spec GT06 §5): sem rampa; corta uma vez com a moto parada de forma confirmada. */
+  readonly relayLock: RelayLockService;
   private readonly waiters = new Map<string, (o: CommandOutcome) => void>();
   private readonly tracked = new Map<string, Tracked>();
   private readonly returnedAt = new Map<string, number>();
@@ -103,6 +111,18 @@ export abstract class BaseIotGateway implements IotGateway {
       probe: (thingName) => this.safeLockState(thingName, true),
     });
     this.safeLockLocal = new SafeLockService(clock, recording, (o) => this.settle(o), { ...common, store: new MemorySafeLockStore() });
+    this.relayLock = new RelayLockService(clock, { updateDesired: (t, d) => this.publishDesired(t, d) }, (o) => this.settle(o), {
+      knownSpeed: (t) => this.live.knownSpeed(t),
+      store: opts.relayLockStore,
+      stopTimeoutMs: opts.relayStopTimeoutMs,
+      confirmTimeoutMs: opts.relayConfirmTimeoutMs,
+      probe: async (t) => {
+        await this.live.refresh(t);
+        return { online: this.live.isOnline(t) };
+      },
+      onLocalActivity: (t) => this.watch(t),
+      onError: (entry) => this.logger.error(entry),
+    });
   }
 
   /** O estado compartilhado (Redis) está legível agora? */
@@ -203,6 +223,7 @@ export abstract class BaseIotGateway implements IotGateway {
       await this.safeLockLocal.drop(ramp.thingName, ramp.id);
       this.logger.log({ msg: 'safe_lock_local_ramp_migrated', thingName: ramp.thingName });
     }
+    await this.relayLock.sweep().catch((err: Error) => this.logger.error({ msg: 'relay_lock_sweep_failed', error: err.message }));
     await this.safeLock.sweep();
   }
 
@@ -218,6 +239,7 @@ export abstract class BaseIotGateway implements IotGateway {
     const origin = req.lockOrigin === undefined ? 'system' : req.lockOrigin;
     if (origin) await this.live.setLockOrigin(req.thingName, origin);
     this.supersede(req.thingName, ['travada']);
+    if (req.controlMode === 'relay_only') return this.lockRelayOnly(req);
     // Só velocidade fresca; desconhecida = null (a rampa trata como em movimento). Nunca 0 por padrão.
     const state = await this.safeLockState(req.thingName);
     const wait = this.registerWaiter(req.commandId);
@@ -232,6 +254,28 @@ export abstract class BaseIotGateway implements IotGateway {
       }
       this.logger.error({ msg: 'safe_lock_degraded_local', thingName: req.thingName, commandId: req.commandId, error: (err as Error).message });
       initial = await this.safeLockLocal.start(req, state);
+    }
+    this.watch(req.thingName);
+    if (initial.status !== 'in_progress') {
+      this.waiters.delete(req.commandId);
+      if (initial.status === 'pending') this.returnedAt.set(req.commandId, this.clock.now());
+      return initial;
+    }
+    return wait();
+  }
+
+  /** Rastreador só relé: espera a moto parar de forma confirmada e só então grava `travada: true` (sem rampa, sem limite). */
+  private async lockRelayOnly(req: CommandRequest): Promise<CommandOutcome> {
+    await this.live.load(req.thingName);
+    const online = this.live.isOnline(req.thingName);
+    const wait = this.registerWaiter(req.commandId);
+    let initial: CommandOutcome;
+    try {
+      initial = await this.relayLock.start(req, { online });
+    } catch (err) {
+      // Redis fora do ar: sem estado compartilhado não há como provar 2 amostras paradas — falha sem enviar nada.
+      this.waiters.delete(req.commandId);
+      throw err;
     }
     this.watch(req.thingName);
     if (initial.status !== 'in_progress') {
@@ -266,7 +310,10 @@ export abstract class BaseIotGateway implements IotGateway {
     // compartilhada exige o Redis (unlock sobe o limite: falha fechada).
     await this.safeLockLocal.cancel(req.thingName);
     await this.safeLock.cancel(req.thingName);
+    await this.relayLock.cancel(req.thingName);
     await this.live.setHeld(req.thingName, false);
+    // Só relé: não há limite a restaurar (a ponte ignora `limite_kmh`); `engineResume` pela ponte, confirmado pelo reported.
+    if (req.controlMode === 'relay_only') return this.desiredCommand(req, { travada: false });
     // Sobe o limite: a zona é reavaliada pela posição atual (não só pelo valor gravado, que pode estar velho — fix 2, N3).
     const limit = assertSpeedLimit(await this.limitResolver(req.thingName, await this.positionOf(req.thingName)));
     return this.desiredCommand(req, { travada: false }, { limite_kmh: limit });
@@ -277,6 +324,7 @@ export abstract class BaseIotGateway implements IotGateway {
   }
 
   async setSpeedLimit(req: CommandRequest, kmh: number): Promise<CommandOutcome> {
+    if (req.controlMode === 'relay_only') return { commandId: req.commandId, status: 'failed', reason: 'unsupported_by_tracker' };
     assertSpeedLimit(kmh);
     // Durante o bloqueio seguro, a rampa é dona do limite: nada (zona, operador) pode subir ou mexer nos degraus.
     // Depois de `did_not_stop`, o limite fica segurado (hold) no degrau em que a rampa retomada está, até um unlock explícito.
@@ -336,6 +384,7 @@ export abstract class BaseIotGateway implements IotGateway {
   }
 
   async horn(req: CommandRequest): Promise<CommandOutcome> {
+    if (req.controlMode === 'relay_only') return { commandId: req.commandId, status: 'failed', reason: 'unsupported_by_tracker' };
     await this.live.load(req.thingName);
     if (!this.live.isOnline(req.thingName)) return { commandId: req.commandId, status: 'failed', reason: 'offline' };
     await this.transport.publishCommand(req.thingName, { comando_id: req.commandId, acao: 'buzina' });
@@ -358,6 +407,7 @@ export abstract class BaseIotGateway implements IotGateway {
     await this.safeLockLocal.onReported(thingName, forLock, meta.timestamps ?? {});
     // Redis fora: a rampa compartilhada não avança, mas os comandos que esperam este reported (ex.: redução de limite) confirmam.
     await this.safeLock.onReported(thingName, forLock, meta.timestamps ?? {}).catch((err: Error) => this.logger.error({ msg: 'safe_lock_reported_failed', thingName, error: err.message }));
+    await this.relayLock.onReported(thingName, forLock, meta.timestamps ?? {}).catch((err: Error) => this.logger.error({ msg: 'relay_lock_reported_failed', thingName, error: err.message }));
     const s = this.live.get(thingName);
     for (const t of [...this.tracked.values()]) {
       if (t.thingName !== thingName) continue;
@@ -371,8 +421,19 @@ export abstract class BaseIotGateway implements IotGateway {
     await this.safeLock.onSpeed(thingName, speedKmh);
   }
 
+  /** Toda telemetria, aceita ou não, para a trava só-relé (a rejeitada mais nova zera a sequência parada). */
+  async onTelemetrySample(thingName: string, sample: RelaySample): Promise<void> {
+    await this.relayLock.onSample(thingName, sample);
+  }
+
+  /** Reconexão percebida pelo `TelemetryService` (presença, volta de offline, lacuna, atraso de fila). */
+  async onReconnected(thingName: string): Promise<void> {
+    await this.relayLock.onReconnected(thingName);
+  }
+
   async onConnectivity(thingName: string, online: boolean): Promise<void> {
     const s = await this.live.setOnline(thingName, online);
+    await this.relayLock.onConnectivity(thingName, online, { online }).catch((err: Error) => this.logger.error({ msg: 'relay_lock_connectivity_failed', thingName, error: err.message }));
     if (!online) return;
     // Comandos que estavam esperando a moto: passam a ter prazo a partir da reconexão.
     for (const t of this.tracked.values()) {
@@ -387,7 +448,7 @@ export abstract class BaseIotGateway implements IotGateway {
 
   /** Há algo aguardando `reported` desta moto? (o modo aws consulta o shadow enquanto houver). */
   isWatching(thingName: string): boolean {
-    if (this.safeLock.isActive(thingName) || this.safeLockLocal.isActive(thingName)) return true;
+    if (this.safeLock.isActive(thingName) || this.safeLockLocal.isActive(thingName) || this.relayLock.isActive(thingName)) return true;
     for (const t of this.tracked.values()) if (t.thingName === thingName) return true;
     return false;
   }

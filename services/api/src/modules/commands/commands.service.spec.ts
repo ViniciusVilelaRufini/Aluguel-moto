@@ -201,5 +201,73 @@ describe('Comandos remotos', () => {
       await (service as any).applyOutcome(store.row, { status: 'in_progress' });
       expect(store.row.status).toBe('confirmed');
     });
+
+    describe('rastreador relay_only (spec GT06 §3.3)', () => {
+      const relayVehicle = { ...vehicle, tracker: { controlMode: 'relay_only' } };
+      const system = { system: true as const, name: 'rental-end' };
+
+      it.each([
+        ['speed_limit', { speedLimitKmh: 6 }],
+        ['horn', {}],
+      ])('%s → failed/unsupported_by_tracker sem chamar o gateway', async (type, extra) => {
+        h.prisma.vehicle.findUnique.mockResolvedValue(relayVehicle as any);
+        const out = await service.dispatch({ vehicleId: VEHICLE_ID, type: type as any, reason: 'Teste relé', actor: operator, ...extra });
+        expect(out).toMatchObject({ status: 'failed', statusReason: 'unsupported_by_tracker' });
+        expect(iot.setSpeedLimit).not.toHaveBeenCalled();
+        expect(iot.horn).not.toHaveBeenCalled();
+      });
+
+      it('lock (inclusive o do fim do aluguel) leva controlMode relay_only ao gateway', async () => {
+        h.prisma.vehicle.findUnique.mockResolvedValue(relayVehicle as any);
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Encerramento do aluguel', actor: system, context: { rentalId: 'r1', purpose: 'rental_end' } });
+        expect(iot.lock).toHaveBeenCalledWith(expect.objectContaining({ thingName: 'moto-0001', controlMode: 'relay_only', authority: 'system', lockOrigin: null }));
+      });
+
+      it('sem Tracker (ou speed_control) o pedido não leva controlMode (comportamento de sempre)', async () => {
+        h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, tracker: { controlMode: 'speed_control' } } as any);
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio manual', actor: operator });
+        expect(iot.lock.mock.calls[0][0]).not.toHaveProperty('controlMode');
+      });
+
+      it('a leitura da moto inclui o controlMode do Tracker', async () => {
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio manual', actor: operator });
+        expect(h.prisma.vehicle.findUnique).toHaveBeenCalledWith(expect.objectContaining({ include: { tracker: { select: { controlMode: true } } } }));
+      });
+    });
+
+    describe('moto caiu durante a trava (revisão Task 3, N3)', () => {
+      const inProgress = async () => {
+        iot.lock.mockImplementationOnce((async (req: { commandId: string }) => ({ commandId: req.commandId, status: 'in_progress' as const })) as any);
+        await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Bloqueio', actor: operator });
+        expect(store.row.status).toBe('in_progress');
+      };
+
+      it('in_progress → pending/offline pelo iot.command-updated (painel mostra "aguardando conexão")', async () => {
+        await inProgress();
+        await service.onIotCommandUpdated({ commandId: store.row.id, status: 'pending', reason: 'offline' });
+        expect(store.row).toMatchObject({ status: 'pending', statusReason: 'offline' });
+      });
+
+      it('in_progress → pending sem o motivo offline continua proibido', async () => {
+        await inProgress();
+        await service.onIotCommandUpdated({ commandId: store.row.id, status: 'pending' });
+        expect(store.row.status).toBe('in_progress');
+      });
+
+      it('pending/offline atrasado nunca rebaixa um desfecho terminal', async () => {
+        await inProgress();
+        await service.onIotCommandUpdated({ commandId: store.row.id, status: 'failed', reason: 'did_not_stop' });
+        await service.onIotCommandUpdated({ commandId: store.row.id, status: 'pending', reason: 'offline' });
+        expect(store.row).toMatchObject({ status: 'failed', statusReason: 'did_not_stop' });
+        await (service as any).applyOutcome(store.row, { status: 'pending', reason: 'offline' });
+        expect(store.row.status).toBe('failed');
+      });
+
+      it('o retorno inicial pending do gateway não rebaixa um in_progress já gravado (só o evento volta para pending)', async () => {
+        await inProgress();
+        await (service as any).applyOutcome(store.row, { status: 'pending', reason: 'offline' });
+        expect(store.row.status).toBe('in_progress');
+      });
+    });
   });
 });

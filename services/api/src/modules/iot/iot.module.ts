@@ -25,6 +25,7 @@ import { LiveStateStore } from './live-state.store';
 import { LocalMqttTransport, type MqttClientLike } from './local-mqtt.transport';
 import { LocalShadowStore } from './local-shadow';
 import { RedisSafeLockStore } from './safe-lock.store';
+import { RedisRelayLockStore } from './relay-lock.store';
 import { StubIotGateway } from './stub-iot-gateway';
 import { TelemetryService } from './telemetry.service';
 
@@ -51,7 +52,7 @@ import { TelemetryService } from './telemetry.service';
       inject: [IOT_CONFIG, IOT_CLOCK, LiveStateStore, EventEmitter2, REDIS_STORE, QUEUE_BUS, StubIotGateway],
       useFactory: (cfg: IotConfig, clock: Clock, live: LiveStateStore, events: EventEmitter2, redis: RedisStore, queue: QueueBus, stub: StubIotGateway): IotGateway => {
         // Rampas do bloqueio seguro no Redis: telemetria processada por qualquer instância avança a rampa e um deploy não a perde.
-        const opts = { confirmWaitMs: cfg.confirmWaitMs, commandTimeoutMs: cfg.commandTimeoutMs, safeLockStore: new RedisSafeLockStore(redis) };
+        const opts = { confirmWaitMs: cfg.confirmWaitMs, commandTimeoutMs: cfg.commandTimeoutMs, safeLockStore: new RedisSafeLockStore(redis), relayLockStore: new RedisRelayLockStore(redis) };
         if (cfg.iotMode === 'stub') return stub;
         if (cfg.iotMode === 'aws') {
           const client = new IoTDataPlaneClient({ region: cfg.region, endpoint: cfg.iotEndpoint });

@@ -81,6 +81,13 @@ export class TelemetryService implements InboundHandler {
     return true;
   }
 
+  /** Reconexão: a velocidade e a ordem recomeçam no estado ao vivo e a sequência parada da trava só-relé também. */
+  private async reconnect(thingName: string, opts?: { keepDisplayOrder?: boolean }): Promise<void> {
+    if (opts) this.gateway.live.markReconnected(thingName, opts);
+    else this.gateway.live.markReconnected(thingName);
+    await this.gateway.onReconnected(thingName).catch((err: Error) => this.logger.error({ msg: 'relay_lock_reconnect_failed', thingName, error: err.message }));
+  }
+
   private nowIso(): string {
     return new Date(this.clock.now()).toISOString();
   }
@@ -108,7 +115,7 @@ export class TelemetryService implements InboundHandler {
       // amostra saiu da fila offline (atraso). Nos dois últimos casos a própria amostra cai na graça.
       const gap = this.heard(thingName, now);
       const drained = this.drained(thingName, now, deviceTs);
-      if (!wasOnline || gap || drained) this.gateway.live.markReconnected(thingName, { keepDisplayOrder: wasOnline });
+      if (!wasOnline || gap || drained) await this.reconnect(thingName, { keepDisplayOrder: wasOnline });
       const applied = await this.gateway.live.applyTelemetry(thingName, msg);
       if (!wasOnline) await this.connectivity(thingName, vehicleId, true);
 
@@ -132,6 +139,10 @@ export class TelemetryService implements InboundHandler {
       if (applied.speedAccepted) {
         await this.gateway.onSpeed(thingName, msg.velocidade_kmh).catch((err: Error) => this.logger.error({ msg: 'safe_lock_speed_failed', thingName, error: err.message }));
       }
+      // Rastreador só relé (spec GT06 §5): toda telemetria vai para a trava; só a aceita (fresca, em ordem, fora da graça) conta parada.
+      await this.gateway
+        .onTelemetrySample(thingName, { kmh: msg.velocidade_kmh, deviceTs, measuredAt: Math.min(deviceTs, now), accepted: applied.speedAccepted })
+        .catch((err: Error) => this.logger.error({ msg: 'relay_lock_sample_failed', thingName, error: err.message }));
 
       // LGPD (QA-09): trajeto só com aluguel e consentimento de localização vigente; revogado no meio do aluguel, a posição
       // da moto continua no estado da frota (segurança), mas nada mais é ligado ao cliente.
@@ -163,7 +174,7 @@ export class TelemetryService implements InboundHandler {
       const vehicleId = await this.vehicleIdOf(thingName);
       if (!vehicleId) return;
       await this.gateway.live.load(thingName);
-      if (this.heard(thingName, this.clock.now())) this.gateway.live.markReconnected(thingName);
+      if (this.heard(thingName, this.clock.now())) await this.reconnect(thingName);
       const ev: IotDeviceEvent = { thingName, vehicleId, type: msg.tipo, ts: msg.timestamp };
       this.logger.log({ msg: 'device_event', thingName, type: msg.tipo });
       this.events.emit(EV.IOT_DEVICE_EVENT, ev);
@@ -179,7 +190,7 @@ export class TelemetryService implements InboundHandler {
         const written = Object.values(meta.timestamps ?? {}).filter((v): v is number => typeof v === 'number');
         if (written.length) {
           await this.gateway.live.load(thingName);
-          if (this.heard(thingName, Math.min(Math.max(...written), this.clock.now()))) this.gateway.live.markReconnected(thingName);
+          if (this.heard(thingName, Math.min(Math.max(...written), this.clock.now()))) await this.reconnect(thingName);
         }
         await this.gateway.onReported(thingName, reported, meta);
         return;
@@ -187,7 +198,7 @@ export class TelemetryService implements InboundHandler {
       const vehicleId = await this.vehicleIdOf(thingName);
       const wasOnline = this.gateway.live.isOnline(thingName);
       const gap = this.heard(thingName, this.clock.now());
-      if (!wasOnline || gap) this.gateway.live.markReconnected(thingName);
+      if (!wasOnline || gap) await this.reconnect(thingName);
       await this.gateway.onReported(thingName, reported, meta);
       if (!wasOnline && vehicleId) await this.connectivity(thingName, vehicleId, true);
     });
@@ -207,7 +218,7 @@ export class TelemetryService implements InboundHandler {
       // Conexão nova: a velocidade de antes não vale (a moto pode ter sido levada); espera amostra fresca.
       if (online) {
         this.heard(thingName, this.clock.now());
-        this.gateway.live.markReconnected(thingName);
+        await this.reconnect(thingName);
       }
       if (online === wasOnline) {
         if (online) await this.gateway.live.setOnline(thingName, true);

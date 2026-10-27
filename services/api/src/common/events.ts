@@ -1,4 +1,5 @@
 import type { CommandStatus, CommandType, RentalStatus, VehicleStatus, ZoneType } from './enums';
+import type { CommandFailureReason } from '../ports/iot-gateway.port';
 
 /** Eventos internos do plano mestre (@nestjs/event-emitter). Emissores: Task 4 (iot.*, geofence.*), Task 5 (payment.*). */
 export const EV = {
@@ -99,7 +100,7 @@ export interface IotDeviceEvent {
 export interface IotCommandUpdatedEvent {
   commandId: string;
   status: CommandStatus;
-  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff' | 'unsupported_by_tracker';
+  reason?: CommandFailureReason;
 }
 
 export interface IotConnectivityEvent {
@@ -136,7 +137,7 @@ export interface CommandChangedEvent {
   vehicleId: string;
   type: CommandType;
   status: CommandStatus;
-  reason?: 'offline' | 'timeout' | 'did_not_stop' | 'invalid_limit' | 'locked_by_staff' | 'unsupported_by_tracker';
+  reason?: CommandFailureReason;
   /** payload do VehicleCommand (rentalId, purpose…), para consumidores internos. */
   payload?: Record<string, unknown>;
 }

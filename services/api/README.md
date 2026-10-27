@@ -76,6 +76,14 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 - Simulador: `services/iot-sim` (`docker compose --profile sim up -d iot-sim`).
 - Teste de integração: `pnpm --filter api test:e2e -- test/iot` (Mosquitto + Postgres/Redis do compose; sobe o simulador sozinho).
 
+**Rastreadores só relé (`Tracker.controlMode = relay_only`, GT06 via Traccar).** O `CommandsService` lê o tipo do rastreador e o
+passa ao gateway (`CommandRequest.controlMode`). `lock` usa o `RelayLockService` (estado no Redis, `iot:relay-lock:*`): sem rampa,
+espera 2 telemetrias aceitas < 3 km/h cobrindo ≥ 10 s e grava `travada: true` uma vez; 120 s sem parar → `did_not_stop` sem corte;
+corte sem confirmação em 120 s → `timeout` + `travada: false`. `speed_limit` e `horn` → `unsupported_by_tracker`. O fluxo
+`speed_control` (`SafeLockService`) não muda. Spec: `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`.
+Moto que cai durante a espera: o comando volta de `in_progress` para `pending`/`offline` (única regressão aceita pelo
+`CommandsService`, só pelo `iot.command-updated`) e a janela de 120 s recomeça na reconexão.
+
 ## Contrato v2 (`docs/decisoes.md`, 2026-10-22)
 
 | Área | Onde | Regras principais |
