@@ -91,6 +91,9 @@ a fila offline com relógio adiantado nunca confirmam; um `reported.travada = tr
 corte enviado, também precisa ser posterior a ele). As varreduras releem o estado ao vivo do Redis antes de decidir. Ao começar, o lock `relay_only` apaga
 (`desired.travada = null`) um `travada` pendente no shadow (ex.: `false` de um unlock que a moto offline não recebeu), para a
 ponte não reaplicar `engineResume` na reconexão; nunca grava `travada: true` fora do corte.
+O invariante (corte só com parada confirmada, fora da graça, antes do prazo, uma vez por trava) tem teste de propriedade
+(`relay-lock.property.spec.ts`, fast-check, sequências aleatórias pelo caminho real `TelemetryService` → gateway); seed fixa com
+`FC_SEED=<n>` e mais execuções com `FC_RUNS=<n>`.
 
 ## Contrato v2 (`docs/decisoes.md`, 2026-10-22)
 
