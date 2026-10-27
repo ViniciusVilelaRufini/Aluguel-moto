@@ -48,4 +48,16 @@ describe('RedisRelayLockStore órfãs', () => {
     await s.clearOrphan('moto-0901', 'l1');
     expect(await s.scan()).toEqual({ active: [], orphans: [] });
   });
+
+  it('isOrphan: só com o índice igual ao lockId e sem estado', async () => {
+    const redis = new MemoryRedisStore();
+    const s = new RedisRelayLockStore(redis);
+    await s.put(state());
+    expect(await s.isOrphan('moto-0901', 'l1')).toBe(false); // há estado
+    await redis.del('iot:relay-lock:moto-0901');
+    expect(await s.isOrphan('moto-0901', 'outra')).toBe(false);
+    expect(await s.isOrphan('moto-0901', 'l1')).toBe(true);
+    await s.clearOrphan('moto-0901', 'l1');
+    expect(await s.isOrphan('moto-0901', 'l1')).toBe(false);
+  });
 });

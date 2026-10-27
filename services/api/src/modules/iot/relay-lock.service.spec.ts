@@ -1,7 +1,8 @@
 import type { CommandOutcome } from '../../ports/iot-gateway.port';
 import { FakeClock } from './clock';
 import { RelayLockService, stillConfirmed, type RelaySample } from './relay-lock.service';
-import { MemoryRelayLockStore } from './relay-lock.store';
+import { MemoryRedisStore } from '../../redis/redis-store';
+import { MemoryRelayLockStore, RedisRelayLockStore } from './relay-lock.store';
 import type { DesiredState } from './shadow-transport';
 
 const T = 'moto-0901';
@@ -208,8 +209,10 @@ describe('RelayLockService (spec GT06 §5)', () => {
     const clock = new FakeClock(T0);
     const desired: DesiredState[] = [];
     const outcomes: CommandOutcome[] = [];
-    const store = new MemoryRelayLockStore();
-    jest.spyOn(store, 'scan').mockResolvedValue({ active: [], orphans: [{ thingName: T, lockId: 'l1', phase: 'cutting', commandIds: ['c1'] }] });
+    const redis = new MemoryRedisStore();
+    const store = new RedisRelayLockStore(redis);
+    await store.put({ id: 'l1', thingName: T, commandIds: ['c1'], phase: 'cutting' });
+    await redis.del(`iot:relay-lock:${T}`); // estado perdido, índice ficou
     const svc = new RelayLockService(clock, { updateDesired: async (_t, d) => void desired.push(d) }, (o) => outcomes.push(o), { store, knownSpeed: () => null });
     await svc.sweep();
     expect(desired).toEqual([{ travada: false }]);

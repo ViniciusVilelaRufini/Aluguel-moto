@@ -888,3 +888,6 @@ Regras de implementação escolhidas onde a spec não decide (cada uma com teste
     5023 publicada mas fechada no security group até `-c gt06Port=true`.
 
 Riscos (spec §12) registrados em `docs/adr-rastreador.md`.
+
+## 2026-10-27 · Trava `relay_only`: intervalo máximo entre paradas consecutivas (branch `feat/tracker-gt06-relay-only`, Task 3 fix 1) · status: aplicada
+O intervalo entre duas amostras paradas consecutivas não pode passar de `SPEED_FRESH_MS` (10 s); acima disso a sequência recomeça na amostra nova. Rastreadores que reportam mais devagar que isso falham seguro: nunca cortam e a trava termina `did_not_stop`. Também: velocidade negativa/NaN = desconhecida (em movimento); amostra com relógio > agora + `MAX_CLOCK_SKEW_MS` não fixa a ordem; offline em `waiting_stop` volta a `waiting_online` (`pending/offline`, janela de 120 s nova ao reconectar); trava vencida nunca recebe lock novo nem corte.

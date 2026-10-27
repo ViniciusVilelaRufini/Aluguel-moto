@@ -45,6 +45,8 @@ export interface RelayLockStore {
   scan(): Promise<{ active: string[]; orphans: OrphanRelayLock[] }>;
   /** Tira a órfã do índice (só se a entrada ainda for `lockId` e não houver estado). */
   clearOrphan(thingName: string, lockId: string): Promise<void>;
+  /** Sob o lock da moto: o índice ainda guarda `lockId` e não há estado (relido agora, não o do `scan`). */
+  isOrphan(thingName: string, lockId: string): Promise<boolean>;
   withLock<T>(thingName: string, fn: () => Promise<T>): Promise<T>;
 }
 
@@ -71,6 +73,9 @@ export class MemoryRelayLockStore implements RelayLockStore {
     return { active: [...this.states.keys()], orphans: [] as OrphanRelayLock[] };
   }
   async clearOrphan() {}
+  async isOrphan() {
+    return false;
+  }
   withLock<T>(thingName: string, fn: () => Promise<T>): Promise<T> {
     return this.mutex.run(thingName, fn);
   }
@@ -138,17 +143,21 @@ export class RedisRelayLockStore implements RelayLockStore {
     return { active, orphans };
   }
 
-  async clearOrphan(thingName: string, lockId: string): Promise<void> {
-    if (await this.redis.exists(this.key(thingName))) return;
+  async isOrphan(thingName: string, lockId: string): Promise<boolean> {
+    if (await this.redis.exists(this.key(thingName))) return false;
     const raw = (await this.redis.hgetall(this.index))[thingName];
-    if (raw === undefined) return;
+    if (raw === undefined) return false;
     let current = '';
     try {
       current = (JSON.parse(raw) as { lockId?: string }).lockId ?? '';
     } catch {
       current = '';
     }
-    if (current !== lockId) return;
+    return current === lockId;
+  }
+
+  async clearOrphan(thingName: string, lockId: string): Promise<void> {
+    if (!(await this.isOrphan(thingName, lockId))) return;
     await this.redis.delWithIndex(this.key(thingName), this.index, thingName);
   }
 
