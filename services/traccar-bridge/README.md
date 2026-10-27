@@ -86,8 +86,52 @@ um status seguinte; andando o tempo todo → `did_not_stop` sem `engineStop` nem
 sem corte; ordem telemetria → reported da ponte; Traccar 6.5 → nenhum comando de motor (lock e unlock); WebSocket que reconecta
 com bit de corte velho no replay → nada confirma; moto offline no meio → `pending`/`offline` → `in_progress`.
 
-Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuário `volti`, sem root). O profile `gt06` do
-`docker-compose.yml` e o `deploy/single/gt06.sh` entram nas próximas tarefas do plano.
+Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuário `volti`, sem root). O `deploy/single/gt06.sh`
+entra numa próxima tarefa do plano. A ponte não tem endpoint HTTP, então a imagem e o compose não têm HEALTHCHECK (use os logs JSON).
+
+### Local com Docker (profile `gt06` do `docker-compose.yml`)
+
+O PC do dono não tem Docker; vale numa máquina que tenha (ou no dev single). Os testes estáticos do compose
+(`pnpm --filter infra test -- compose-gt06`) rodam em qualquer lugar.
+
+```bash
+docker compose up -d postgres redis mosquitto api          # a API migra ao subir (cria a tabela "Tracker")
+docker compose --profile gt06 up -d traccar bridge-db-grants traccar-bridge gt06-emulator
+```
+
+- `traccar`: `traccar/traccar:6.16.0-ubuntu` (mínimo 6.7.0), banco `traccar` próprio (papel `traccar`), só o protocolo `gt06`.
+  Portas só em `127.0.0.1`: 5023 (GT06) e 8082 (painel/REST, `admin@volti.local` / `volti-dev-traccar`). JDBC com `sslmode=prefer`
+  (o Postgres do compose não oferece TLS; no AWS é `require`).
+- `bridge-db-grants`: uma vez, espera a tabela `"Tracker"` e dá `GRANT SELECT ("imei","thingName","controlMode")` ao papel
+  `volti_bridge` (`infra/postgres/`). Sem a API ter migrado ele falha após ~5 min e a ponte não sobe. Volume do Postgres criado
+  antes do profile: aplique `infra/postgres/traccar-db.sql` à mão (`docker compose exec -T postgres psql -U volti -d volti < infra/postgres/traccar-db.sql`).
+- `traccar-bridge`: `IOT_MODE=local` (Mosquitto), cria o admin do Traccar (`TRACCAR_BOOTSTRAP_ADMIN`), lê o registro com o papel
+  só-leitura.
+- `gt06-emulator`: mesma imagem; `GT06_SCENARIO=parked` (padrão) ou `ride-then-stop`; a tensão segue `GT06_BATTERY_MODEL` (padrão `72v`,
+  repassado como `BATTERY_MODEL` à ponte e ao emulador).
+
+**O dispositivo do emulador precisa existir no Traccar e estar vinculado ao usuário da ponte** (senão não há pushes no
+`/api/socket` nem registro IMEI -> thing). Faça o provisionamento (o `provision-gt06` cria o dispositivo e o vincula):
+
+```bash
+TRACCAR_URL=http://localhost:8082 TRACCAR_ADMIN_EMAIL=admin@volti.local TRACCAR_ADMIN_PASSWORD=volti-dev-traccar DATABASE_URL=postgresql://volti:volti@localhost:5432/volti   pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0001 --thing moto-0001 --imei 860000000000901
+docker compose --profile gt06 logs -f traccar-bridge gt06-emulator
+```
+
+Para ver o lock:
+`GT06_SCENARIO=ride-then-stop docker compose --profile gt06 up -d --force-recreate gt06-emulator`.
+
+**Pipeline e2e com conferência** (ver "Emulador GT06 e conferência do e2e"): com a pilha acima no ar,
+
+```bash
+docker compose --profile gt06 logs -f --no-log-prefix gt06-emulator > emulador.log &
+mosquitto_sub -h localhost -v -t 'motos/moto-0001/#' -t '$aws/things/moto-0001/shadow/#'   | node dist/e2e/check-timeline.js stamp > mqtt.log        # stamp prefixa a hora UTC com milissegundos
+# ... dispare o lock (POST /api/commands/send) e aguarde a confirmação; depois, parando os dois processos acima:
+node dist/e2e/check-timeline.js moto-0001 --emulator-log=emulador.log < mqtt.log
+```
+
+Não semeie o shadow com `desired.travada: false` (o conferidor reprova `travada:false` em desired/delta, salvo `--unlock-requested`);
+o compose e a ponte nunca publicam `desired`.
 
 ## Provisionar um J16 de verdade
 

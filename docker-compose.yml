@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: volti
       POSTGRES_DB: volti
     ports: ["5432:5432"]
-    volumes: [pgdata:/var/lib/postgresql/data]
+    volumes: [pgdata:/var/lib/postgresql/data, ./infra/postgres/traccar-db.sql:/docker-entrypoint-initdb.d/20-traccar.sql:ro]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U volti"]
       interval: 5s
@@ -81,6 +81,89 @@ services:
       SIM_INJECT: ${SIM_INJECT:-}
     depends_on:
       mosquitto:
+        condition: service_started
+  # Rastreador GT06 só relé (docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md):
+  #   docker compose --profile gt06 up -d traccar bridge-db-grants traccar-bridge gt06-emulator   (a API precisa ter migrado antes)
+  # Banco "traccar" separado no mesmo Postgres. Portas só em localhost: 5023 (GT06) e 8082 (painel/REST do Traccar).
+  traccar:
+    profiles: ["gt06"]
+    image: traccar/traccar:6.16.0-ubuntu
+    mem_limit: 768m
+    entrypoint: ["java", "-Xms128m", "-Xmx512m", "-Djava.net.preferIPv4Stack=true"]
+    command: ["-jar", "tracker-server.jar", "conf/traccar.xml"]
+    environment:
+      CONFIG_USE_ENVIRONMENT_VARIABLES: "true"
+      DATABASE_DRIVER: org.postgresql.Driver
+      # sslmode=prefer: usa TLS se o Postgres local oferecer (a imagem padrão não oferece) e cai para texto claro; no AWS é require.
+      DATABASE_URL: jdbc:postgresql://postgres:5432/traccar?sslmode=prefer
+      DATABASE_USER: traccar
+      DATABASE_PASSWORD: traccar
+      PROTOCOLS_ENABLE: gt06
+      GT06_PORT: "5023"
+      WEB_PORT: "8082"
+    ports: ["127.0.0.1:5023:5023", "127.0.0.1:8082:8082"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  # Uma vez só: GRANT SELECT por coluna em "Tracker" para o papel volti_bridge. Espera a API migrar (até ~5 min).
+  bridge-db-grants:
+    profiles: ["gt06"]
+    image: postgis/postgis:16-3.4
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGUSER: volti
+      PGPASSWORD: volti
+      PGDATABASE: volti
+    volumes: ["./infra/postgres/bridge-grants.sql:/bridge-grants.sql:ro"]
+    entrypoint: ["sh", "-c", "for i in $$(seq 1 100); do [ -n \"$$(psql -tAc \"select to_regclass('\\\"Tracker\\\"')\")\" ] && exec psql -v ON_ERROR_STOP=1 -f /bridge-grants.sql; sleep 3; done; echo 'tabela Tracker ausente: suba a API (migrações) antes' >&2; exit 1"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+  # Ponte Traccar -> MQTT; no local ela cria o primeiro usuário do Traccar (admin) com estas credenciais.
+  # Sem HEALTHCHECK: a ponte não tem endpoint HTTP (observável pelos logs JSON).
+  traccar-bridge:
+    profiles: ["gt06"]
+    build:
+      context: .
+      dockerfile: services/traccar-bridge/Dockerfile
+    image: volti/traccar-bridge:local
+    restart: unless-stopped
+    environment:
+      IOT_MODE: local
+      MQTT_URL: mqtt://mosquitto:1883
+      TRACCAR_URL: http://traccar:8082
+      TRACCAR_EMAIL: ${TRACCAR_EMAIL:-admin@volti.local}
+      TRACCAR_PASSWORD: ${TRACCAR_PASSWORD:-volti-dev-traccar}
+      TRACCAR_BOOTSTRAP_ADMIN: "true"
+      DATABASE_URL: postgresql://volti_bridge:volti-bridge-local@postgres:5432/volti
+      BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      bridge-db-grants:
+        condition: service_completed_successfully
+      mosquitto:
+        condition: service_started
+      traccar:
+        condition: service_started
+  # Emulador GT06 (mesma imagem da ponte): GT06_SCENARIO=parked (padrão) ou ride-then-stop. A tensão segue BATTERY_MODEL.
+  gt06-emulator:
+    profiles: ["gt06"]
+    build:
+      context: .
+      dockerfile: services/traccar-bridge/Dockerfile
+    image: volti/traccar-bridge:local
+    restart: unless-stopped
+    command: ["node", "dist/gt06/emulator-main.js"]
+    environment:
+      GT06_HOST: traccar
+      GT06_PORT: "5023"
+      GT06_IMEI: ${GT06_EMULATOR_IMEI:-860000000000901}
+      GT06_SCENARIO: ${GT06_SCENARIO:-parked}
+      BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}
+    depends_on:
+      traccar:
         condition: service_started
 volumes:
   pgdata:
