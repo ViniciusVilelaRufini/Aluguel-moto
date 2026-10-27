@@ -84,7 +84,10 @@ function setup(opts: { planCode?: string; rentalStatus?: string; known?: number 
   prisma.battery.upsert.mockImplementation((async (a: any) => ({ id: 'bat-id', chargePct: 100, ...a.create })) as any);
   prisma.battery.findFirst.mockResolvedValue({ serial: 'BT-S1001' } as any);
   prisma.swapStation.updateMany.mockResolvedValue({ count: 1 });
-  prisma.battery.updateMany.mockResolvedValue({ count: 0 });
+  prisma.battery.updateMany.mockResolvedValue({ count: 1 });
+  // 2026-10-26 (custódia): a liberada padrão é uma carregada no estoque desta estação; a devolvida padrão não tem cadastro.
+  prisma.battery.findUnique.mockImplementation((async (a: any) =>
+    a.where.serial === 'BT-S1001' ? { id: 'b-st', serial: 'BT-S1001', status: 'in_station', stationId: STATION_ID, vehicleId: null, depotId: null, holderId: null, chargePct: 100, cycleCount: 3 } : null) as any);
   prisma.vehicle.update.mockResolvedValue({} as any);
   prisma.battery.findMany.mockResolvedValue([]);
 
@@ -281,11 +284,12 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-S1001', ts: ts() });
     expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'completed', releasedSerial: 'BT-S1001' }));
     expect(prisma.swapStation.updateMany).toHaveBeenCalledWith({ where: { id: STATION_ID, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
-    expect(prisma.battery.upsert).toHaveBeenLastCalledWith(expect.objectContaining({
-      where: { serial: 'BT-S1001' },
-      update: expect.objectContaining({ status: 'in_vehicle', vehicleId: VEHICLE_ID, stationId: null, cycleCount: { increment: 1 } }),
-      create: expect.objectContaining({ cycleCount: 1 }),
-    }));
+    // 2026-10-26: a liberada só sai do estoque desta estação (guarda no `where`), sem upsert.
+    expect(prisma.battery.upsert).toHaveBeenCalledTimes(1);
+    expect(prisma.battery.updateMany).toHaveBeenCalledWith({
+      where: { id: 'b-st', status: 'in_station', stationId: STATION_ID },
+      data: expect.objectContaining({ status: 'in_vehicle', vehicleId: VEHICLE_ID, stationId: null, holderId: null, depotId: null, cycleCount: { increment: 1 } }),
+    });
     expect(prisma.vehicle.update).toHaveBeenCalledWith({ where: { id: VEHICLE_ID }, data: { batterySerial: 'BT-S1001', batteryPct: 100 } });
     expect(emitted.map((e) => e.status)).toEqual(['awaiting_return', 'returned', 'releasing', 'completed']);
   });
@@ -293,7 +297,7 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
   it('movimentações (2026-10-24): devolvida → `charging` na estação e liberada → moto, com o cliente como ator', async () => {
     const { service, prisma } = await created();
     const inVehicle = { id: 'b-old', serial: 'BAT-00001', status: 'in_vehicle', vehicleId: VEHICLE_ID, stationId: null, depotId: null };
-    const inStation = { id: 'b-st', serial: 'BT-S1001', status: 'in_station', vehicleId: null, stationId: STATION_ID, depotId: null };
+    const inStation = { id: 'b-st', serial: 'BT-S1001', status: 'in_station', vehicleId: null, stationId: STATION_ID, depotId: null, chargePct: 100, cycleCount: 3 };
     prisma.battery.findUnique.mockImplementation((async (a: any) => (a.where.serial === 'BAT-00001' ? inVehicle : a.where.serial === 'BT-S1001' ? inStation : null)) as any);
     prisma.battery.upsert.mockImplementation((async (a: any) => ({ id: a.where.serial === 'BAT-00001' ? 'b-old' : 'b-st', chargePct: 100, ...a.create })) as any);
     const stray = { id: 'b-stray', serial: 'BAT-X', status: 'in_vehicle', vehicleId: VEHICLE_ID, stationId: null, depotId: null };
@@ -570,12 +574,69 @@ describe('StationSwapsService: eventos da estação e estoque', () => {
     expect(alerts.create).toHaveBeenCalledTimes(1);
   });
 
-  it('fix 1 (M1): bateria liberada que não estava nesta estação → alerta, troca concluída', async () => {
+  it.each([
+    ['de outra estação', { id: 'b-o', serial: 'BT-X', status: 'in_station', stationId: 'd0000000-0000-4000-8000-000000000009', vehicleId: null, holderId: null, depotId: null, chargePct: 100, cycleCount: 2 }],
+    ['de uma van', { id: 'b-o', serial: 'BT-X', status: 'in_van', stationId: null, vehicleId: null, holderId: 'cccccccc-0000-4000-8000-000000000001', depotId: null, chargePct: 100, cycleCount: 2 }],
+    ['do galpão', { id: 'b-o', serial: 'BT-X', status: 'charged', stationId: null, vehicleId: null, holderId: null, depotId: 'e0000000-0000-4000-8000-000000000001', chargePct: 100, cycleCount: 2 }],
+    ['com defeito nesta estação', { id: 'b-o', serial: 'BT-X', status: 'defective', stationId: STATION_ID, vehicleId: null, holderId: null, depotId: null, chargePct: 100, cycleCount: 2 }],
+    ['baixada', { id: 'b-o', serial: 'BT-X', status: 'retired', stationId: STATION_ID, vehicleId: null, holderId: null, depotId: null, chargePct: 100, cycleCount: 2 }],
+    ['sem cadastro', null],
+  ])('2026-10-26: bateria liberada %s (fora do estoque desta estação) → failed/serial_mismatch + alerta, nada gravado', async (_label, record) => {
+    const { service, swaps, prisma, alerts, emitted } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'releasing', returnedSerial: 'BAT-00001' });
+    prisma.battery.findUnique.mockResolvedValue(record as any);
+    await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-X', ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'serial_mismatch', releasedSerial: null }));
+    expect(prisma.battery.upsert).not.toHaveBeenCalled();
+    expect(prisma.battery.updateMany).not.toHaveBeenCalled();
+    expect(prisma.battery.create).not.toHaveBeenCalled();
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expect(prisma.swapStation.updateMany).not.toHaveBeenCalled();
+    expect(prisma.batteryMovement.createMany).not.toHaveBeenCalled();
+    expect(emitted.map((e) => e.status)).toEqual(['failed']);
+    expect(alerts.create).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(alerts.create.mock.calls[0][0])).not.toMatch(/BT-X/);
+  });
+
+  it('2026-10-26: a liberada saiu do estoque durante a operação (corrida no updateMany) → failed/serial_mismatch, moto e estoque intocados', async () => {
     const { service, swaps, prisma, alerts } = await created();
     Object.assign(swaps.get(SWAP_ID), { status: 'releasing', returnedSerial: 'BAT-00001' });
-    prisma.battery.findUnique.mockResolvedValue(null);
-    await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-DESCONHECIDA', ts: ts() });
-    expect(swaps.get(SWAP_ID).status).toBe('completed');
+    prisma.battery.updateMany.mockResolvedValue({ count: 0 });
+    await service.onStationEvent(THING, { type: 'battery_released', swapId: SWAP_ID, serial: 'BT-S1001', ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'failed', endReason: 'serial_mismatch', releasedSerial: null }));
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+    expect(prisma.swapStation.updateMany).not.toHaveBeenCalled();
+    expect(prisma.batteryMovement.createMany).not.toHaveBeenCalled();
+    expect(alerts.create).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['defective', 'retired'])('2026-10-26 (segurança): devolvida `%s` não volta a `charging` — mantém o status, fica na estação sem contar como disponível, com alerta', async (status) => {
+    const { service, swaps, prisma, alerts, station } = await created();
+    const before = station.availableBatteries;
+    prisma.battery.findUnique.mockImplementation((async (a: any) =>
+      a.where.serial === 'BAT-00001' ? { id: 'b-def', serial: 'BAT-00001', status, stationId: null, vehicleId: null, holderId: null, depotId: 'e0000000-0000-4000-8000-000000000001', chargePct: 40, cycleCount: 900 } : null) as any);
+    await service.onStationEvent(THING, { type: 'slot_opened', swapId: SWAP_ID, slotNumber: 2, ts: ts() });
+    await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() });
+    expect(swaps.get(SWAP_ID)).toEqual(expect.objectContaining({ status: 'returned', returnedSerial: 'BAT-00001' }));
+    const up = prisma.battery.upsert.mock.calls.at(-1)![0] as any;
+    expect(up.update.status).toBe(status);
+    expect(up.update).toEqual(expect.objectContaining({ stationId: STATION_ID, vehicleId: null, holderId: null, depotId: null }));
+    const data = prisma.batteryMovement.createMany.mock.calls.flatMap((c: any) => c[0].data);
+    expect(data).toEqual([expect.objectContaining({ batteryId: 'b-def', fromStatus: status, toStatus: status, stationId: STATION_ID })]);
+    expect(prisma.swapStation.update).not.toHaveBeenCalled();
+    expect(station.availableBatteries).toBe(before);
+    expect(alerts.create).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(alerts.create.mock.calls[0][0])).not.toMatch(/BAT-00001/);
+  });
+
+  it('2026-10-26 (segurança): devolução atrasada de bateria com defeito também não é reativada', async () => {
+    const { service, swaps, prisma, alerts } = await created();
+    Object.assign(swaps.get(SWAP_ID), { status: 'canceled', endReason: 'canceled_by_customer', slotNumber: 3 });
+    prisma.battery.findUnique.mockImplementation((async (a: any) =>
+      a.where.serial === 'BAT-00001' ? { id: 'b-def', serial: 'BAT-00001', status: 'defective', stationId: null, vehicleId: null, holderId: null, depotId: null, chargePct: 40, cycleCount: 900 } : null) as any);
+    await service.onStationEvent(THING, { type: 'battery_returned', swapId: SWAP_ID, serial: 'BAT-00001', pct: 30, ts: ts() });
+    expect(swaps.get(SWAP_ID).status).toBe('releasing');
+    expect((prisma.battery.upsert.mock.calls.at(-1)![0] as any).update.status).toBe('defective');
     expect(alerts.create).toHaveBeenCalledTimes(1);
   });
 });

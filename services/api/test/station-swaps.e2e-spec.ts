@@ -279,7 +279,9 @@ describe('Troca de bateria na estação via QR (e2e)', () => {
     expect(rel).toBeDefined();
     await station.emit(thing, { type: 'slot_closed', swapId: s1.id, ts: new Date().toISOString() });
     // As carregadas cadastradas da estação já saíram nos testes anteriores: a estação libera uma do próprio estoque.
+    // 2026-10-26 (custódia): só sai bateria cadastrada `in_station` nesta estação — cadastra a do estoque antes.
     const released = rel!.command.serialHint ?? `E2E-REL-${tag}`;
+    if (!rel!.command.serialHint) await prisma.battery.create({ data: { serial: released, chargePct: 100, status: 'in_station', stationId: st.id } });
     await station.emit(thing, { type: 'battery_released', swapId: s1.id, serial: released, ts: new Date().toISOString() });
     await waitStatus(a.token, s1.id, 'completed');
     expect(await prisma.vehicle.findUnique({ where: { id: a.vehicle.id } })).toMatchObject({ batterySerial: released });

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
-import { Prisma, type StationSwap, type StationSwapEndReason, type StationSwapStatus } from '@prisma/client';
+import { Prisma, type BatteryStatus, type StationSwap, type StationSwapEndReason, type StationSwapStatus } from '@prisma/client';
 import { type BatteryChargedStockDecreasedEvent, EV, type StationSwapUpdatedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
@@ -11,6 +11,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AlertsService } from '../alerts/alerts.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { CHARGED_PCT } from '../batteries/batteries.mapper';
+import { OUT_OF_SERVICE } from '../batteries/batteries.service';
 import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
 import { PricingService } from '../pricing/pricing.service';
 import { AuditService } from '../audit/audit.service';
@@ -427,6 +428,10 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     if (vehicle?.batterySerial && vehicle.batterySerial !== serial) {
       await this.alert(swap, 'Troca na estação: a bateria devolvida não é a registrada na moto.', 'station_return_serial_mismatch');
     }
+    // 2026-10-26 (segurança): bateria com defeito ou baixada não volta a circular (`recordReturn` mantém o status).
+    if (record && OUT_OF_SERVICE.includes(record.status)) {
+      await this.alert(swap, 'Troca na estação: a bateria devolvida consta com defeito ou baixada. Ficou na estação fora de uso; recolher.', 'station_return_out_of_service');
+    }
 
     const late = (swap.status === 'canceled' || swap.status === 'failed') && !!swap.endReason && LATE_RETURN_REASONS.includes(swap.endReason);
     if (late) return this.onLateReturn(swap, serial, pct);
@@ -456,18 +461,23 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     }
   }
 
-  /** Registra a devolvida uma única vez por troca e põe a bateria carregando na estação. */
+  /**
+   * Registra a devolvida uma única vez por troca e põe a bateria carregando na estação. 2026-10-26 (segurança): bateria
+   * com defeito ou baixada fica na estação com o mesmo status — nunca volta a `charging` (nem a `in_station` pelo
+   * `markCharged`), então não conta como disponível; `onBatteryReturned` gera o alerta.
+   */
   private async recordReturn(tx: Prisma.TransactionClient, swap: StationSwap, serial: string, pct: number): Promise<boolean> {
     const claimed = await tx.stationSwap.updateMany({ where: { id: swap.id, returnedSerial: null }, data: { returnedSerial: serial, returnedPct: pct } });
     if (!claimed.count) return false;
     const prev = await tx.battery.findUnique({ where: { serial } });
+    const status: BatteryStatus = prev && OUT_OF_SERVICE.includes(prev.status) ? prev.status : 'charging';
     const saved = await tx.battery.upsert({
       where: { serial },
       create: { serial, chargePct: pct, status: 'charging', stationId: swap.stationId },
-      update: { status: 'charging', stationId: swap.stationId, vehicleId: null, holderId: null, depotId: null, chargePct: pct },
+      update: { status, stationId: swap.stationId, vehicleId: null, holderId: null, depotId: null, chargePct: pct },
     });
     // 2026-10-24: movimentação com o cliente como ator (a moto de onde saiu fica registrada).
-    await recordMovements(tx, [movement(prev, { status: 'charging', stationId: swap.stationId, vehicleId: prev ? undefined : swap.vehicleId }, swap.customerId, null, saved.id)]);
+    await recordMovements(tx, [movement(prev, { status, stationId: swap.stationId, vehicleId: prev ? undefined : swap.vehicleId }, swap.customerId, null, saved.id)]);
     return true;
   }
 
@@ -554,7 +564,9 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
   /**
    * Liberação: completa uma troca em `releasing` (ou que falhou por prazo depois da devolução — o cliente recebeu a bateria).
    * Estoque: a estação perde uma carregada; a liberada entra na moto (+1 ciclo) e vira a bateria da moto.
-   * Fix 1 (M1): liberada registrada em outra moto → `failed/serial_mismatch`, nada é mexido; fora desta estação → alerta.
+   * Fix 1 (M1): liberada registrada em outra moto → `failed/serial_mismatch`, nada é mexido. 2026-10-26 (custódia): só sai
+   * bateria `in_station` desta estação (lida antes e conferida no `where` do `updateMany`); fora do estoque desta estação
+   * (outra estação, van, galpão, com defeito, baixada ou sem cadastro) → `failed/serial_mismatch` + alerta, nada gravado.
    */
   private async onBatteryReleased(swap: StationSwap, ev: StationEvent): Promise<void> {
     const lateAfterTimeout = swap.status === 'failed' && swap.endReason === 'release_timeout';
@@ -565,46 +577,52 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     const serial = ev.serial!;
     const record = await this.prisma.battery.findUnique({ where: { serial } });
     if (record && record.status === 'in_vehicle' && record.vehicleId && record.vehicleId !== swap.vehicleId) {
-      const moved = await this.prisma.stationSwap.updateMany({ where: { id: swap.id, status: swap.status, releasedSerial: null }, data: { status: 'failed', endReason: 'serial_mismatch' } });
-      if (moved.count) this.emit({ ...swap, status: 'failed' });
-      await this.alert(swap, 'Troca na estação: a bateria liberada consta instalada em outra moto. Conferir a estação e a moto.', 'station_release_serial_conflict');
-      return;
+      return this.failRelease(swap, 'Troca na estação: a bateria liberada consta instalada em outra moto. Conferir a estação e a moto.', 'station_release_serial_conflict');
     }
     if (!record || record.status !== 'in_station' || record.stationId !== swap.stationId) {
-      await this.alert(swap, 'Troca na estação: a bateria liberada não constava no estoque desta estação.', 'station_release_serial_mismatch');
+      return this.failRelease(swap, 'Troca na estação: a bateria liberada não constava no estoque desta estação. Conferir a estação e o cliente.', 'station_release_serial_mismatch');
     }
     let rentalClosed = false;
     const moves: MovementInput[] = [];
-    const done = await this.prisma.$transaction(async (tx) => {
+    const done = await this.prisma.$transaction(async (tx): Promise<'completed' | 'mismatch' | false> => {
       const moved = await tx.stationSwap.updateMany({
         where: { id: swap.id, status: swap.status, releasedSerial: null },
         data: { status: 'completed', releasedSerial: serial, completedAt: new Date(), endReason: null },
       });
       if (!moved.count) return false;
-      await tx.swapStation.updateMany({ where: { id: swap.stationId, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
       // Fix 2 (M-2): aluguel já encerrado (forçado pelo staff) → a bateria liberada saiu da estação, mas a moto (com a
       // operação) não a recebe: `Vehicle.batterySerial` e o registro da bateria ficam como estão; alerta para conferir.
       const rentalStatus = await this.lockRental(tx, swap.rentalId);
       if (rentalStatus !== 'active' && rentalStatus !== 'paused') {
         rentalClosed = true;
-        return true;
+        await tx.swapStation.updateMany({ where: { id: swap.stationId, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
+        return 'completed';
       }
-      const prev = await tx.battery.findUnique({ where: { serial } });
-      const installed = await tx.battery.upsert({
-        where: { serial },
-        create: { serial, chargePct: 100, status: 'in_vehicle', vehicleId: swap.vehicleId, cycleCount: 1 },
-        update: { status: 'in_vehicle', vehicleId: swap.vehicleId, holderId: null, stationId: null, depotId: null, cycleCount: { increment: 1 } },
+      // Guarda de corrida: a bateria ainda está no estoque desta estação (senão nada muda e a troca falha).
+      const installedNow = await tx.battery.updateMany({
+        where: { id: record.id, status: 'in_station', stationId: swap.stationId },
+        data: { status: 'in_vehicle', vehicleId: swap.vehicleId, holderId: null, stationId: null, depotId: null, cycleCount: { increment: 1 } },
       });
-      moves.push(movement(prev, { status: 'in_vehicle', vehicleId: swap.vehicleId, stationId: prev ? undefined : swap.stationId }, swap.customerId, null, installed.id));
-      const stray = await tx.battery.findMany({ where: { vehicleId: swap.vehicleId, status: 'in_vehicle', NOT: { id: installed.id } } });
+      if (installedNow.count !== 1) {
+        await tx.stationSwap.updateMany({ where: { id: swap.id }, data: { status: 'failed', endReason: 'serial_mismatch', releasedSerial: null, completedAt: null } });
+        return 'mismatch';
+      }
+      await tx.swapStation.updateMany({ where: { id: swap.stationId, availableBatteries: { gt: 0 } }, data: { availableBatteries: { decrement: 1 } } });
+      moves.push(movement(record, { status: 'in_vehicle', vehicleId: swap.vehicleId }, swap.customerId));
+      const stray = await tx.battery.findMany({ where: { vehicleId: swap.vehicleId, status: 'in_vehicle', NOT: { id: record.id } } });
       if (stray.length) {
         await tx.battery.updateMany({ where: { id: { in: stray.map((b) => b.id) }, status: 'in_vehicle' }, data: { vehicleId: null, status: 'charging' } });
         for (const b of stray) moves.push(movement(b, { status: 'charging' }, swap.customerId));
       }
       await recordMovements(tx, moves);
-      await tx.vehicle.update({ where: { id: swap.vehicleId }, data: { batterySerial: serial, batteryPct: installed.chargePct } });
-      return true;
+      await tx.vehicle.update({ where: { id: swap.vehicleId }, data: { batterySerial: serial, batteryPct: record.chargePct } });
+      return 'completed';
     });
+    if (done === 'mismatch') {
+      this.emit({ ...swap, status: 'failed' });
+      await this.alert(swap, 'Troca na estação: a bateria liberada saiu do estoque desta estação durante a troca. Conferir a estação e o cliente.', 'station_release_serial_mismatch');
+      return;
+    }
     if (done) {
       const depotIds = depotsLeavingCharged(moves);
       if (depotIds.length) this.events.emit(EV.BATTERY_CHARGED_STOCK_DECREASED, { depotIds } satisfies BatteryChargedStockDecreasedEvent);
@@ -616,6 +634,12 @@ export class StationSwapsService implements OnApplicationBootstrap, OnModuleDest
     }
   }
 
+  /** Liberação recusada antes de gravar qualquer coisa: a troca vai a `failed/serial_mismatch` (CAS no status) + alerta. */
+  private async failRelease(swap: StationSwap, message: string, msg: string): Promise<void> {
+    const moved = await this.prisma.stationSwap.updateMany({ where: { id: swap.id, status: swap.status, releasedSerial: null }, data: { status: 'failed', endReason: 'serial_mismatch' } });
+    if (moved.count) this.emit({ ...swap, status: 'failed' });
+    await this.alert(swap, message, msg);
+  }
   // ───────────── prazos ─────────────
 
   @Interval('station-swap-timeouts', 15_000)
