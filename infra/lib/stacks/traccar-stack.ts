@@ -119,7 +119,7 @@ export class TraccarStack extends Stack {
     const traccarTask = new ecs.FargateTaskDefinition(this, 'TraccarTask', { cpu: 512, memoryLimitMiB: 1024, runtimePlatform });
     traccarTask.addContainer('traccar', {
       image: ecs.ContainerImage.fromRegistry(TRACCAR_IMAGE),
-      entryPoint: ['java', '-Xms256m', '-Xmx640m', '-Djava.net.preferIPv4Stack=true'],
+      entryPoint: ['/opt/traccar/jre/bin/java', '-XX:+ExitOnOutOfMemoryError', '-Xms256m', '-Xmx640m', '-Djava.net.preferIPv4Stack=true'],
       command: ['-jar', 'tracker-server.jar', 'conf/traccar.xml'],
       environment: {
         CONFIG_USE_ENVIRONMENT_VARIABLES: 'true',

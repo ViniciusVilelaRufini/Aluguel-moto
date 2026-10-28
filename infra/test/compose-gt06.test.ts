@@ -110,3 +110,15 @@ describe('docker-compose.yml: profile gt06 (spec GT06 §7)', () => {
     expect(compose).not.toMatch(/travada/i);
   });
 });
+
+describe('Traccar: entrypoint usa o JRE embutido da imagem (sem java no PATH)', () => {
+  it.each([
+    ['docker-compose.yml', /entrypoint: \["\/opt\/traccar\/jre\/bin\/java"/],
+    [join('deploy', 'single', 'compose.yml'), /entrypoint: \["\/opt\/traccar\/jre\/bin\/java"/],
+    [join('infra', 'lib', 'stacks', 'traccar-stack.ts'), /entryPoint: \['\/opt\/traccar\/jre\/bin\/java'/],
+  ])('%s', (file, re) => {
+    const text = readFileSync(join(REPO, file), 'utf8');
+    expect(text).toMatch(re);
+    expect(text).not.toMatch(/entry[pP]oint: \[["']java["']/);
+  });
+});

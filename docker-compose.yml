@@ -92,7 +92,7 @@ services:
     image: traccar/traccar:6.16.0-ubuntu
     restart: unless-stopped
     mem_limit: 768m
-    entrypoint: ["java", "-Xms128m", "-Xmx512m", "-Djava.net.preferIPv4Stack=true"]
+    entrypoint: ["/opt/traccar/jre/bin/java", "-XX:+ExitOnOutOfMemoryError", "-Xms128m", "-Xmx512m", "-Djava.net.preferIPv4Stack=true"]
     command: ["-jar", "tracker-server.jar", "conf/traccar.xml"]
     environment:
       CONFIG_USE_ENVIRONMENT_VARIABLES: "true"

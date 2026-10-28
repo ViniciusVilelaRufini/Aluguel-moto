@@ -121,7 +121,7 @@ services:
     mem_limit: 640m
     # Sob pressão de memória, o OOM killer escolhe este antes da API e do Postgres.
     oom_score_adj: 500
-    entrypoint: ["java", "-Xms128m", "-Xmx320m", "-Djava.net.preferIPv4Stack=true"]
+    entrypoint: ["/opt/traccar/jre/bin/java", "-XX:+ExitOnOutOfMemoryError", "-Xms128m", "-Xmx320m", "-Djava.net.preferIPv4Stack=true"]
     command: ["-jar", "tracker-server.jar", "conf/traccar.xml"]
     environment:
       CONFIG_USE_ENVIRONMENT_VARIABLES: "true"
