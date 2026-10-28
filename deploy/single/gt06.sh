@@ -8,18 +8,21 @@
 #                                                     Traccar); o iot-sim volta a simular a moto no ciclo seguinte (60 s)
 #   gt06.sh e2e <VLT-0000> <moto-0000>                emulador anda e para; lock pela API com o token de staff do DONO
 #                                                     (/volti/dev/secrets/E2E_STAFF_TOKEN); confere a linha do tempo MQTT
+#   gt06.sh status <moto-0000>                        diagnóstico só leitura de um J16 (banco, Traccar, ponte, Redis), sem
+#                                                     IMEI completo nem posição (guia: docs/gt06-j16-instalacao.md)
 # Senhas e token nunca vão para a linha de comando (curl -K - e SQL pelo stdin) nem para a saída; o IMEI também não.
 set -euo pipefail
 source "${VOLTI_INSTANCE_ENV:-/etc/volti/instance.env}"
 export AWS_DEFAULT_REGION="$VOLTI_REGION"
 
-usage() { sed -n '2,11p' "$0" >&2; exit 2; }
+usage() { sed -n '2,13p' "$0" >&2; exit 2; }
 action="${1:-}"
 case "$action" in
   init) ;;
   provision) [[ "${2:-}" =~ ^VLT-[0-9]{4,}$ && "${3:-}" =~ ^moto-[0-9]{4,}$ && "${4:-}" =~ ^[0-9]{15}$ ]] || usage ;;
   deprovision) [[ "${2:-}" =~ ^moto-[0-9]{4,}$ ]] || usage ;;
   e2e) [[ "${2:-}" =~ ^VLT-[0-9]{4,}$ && "${3:-}" =~ ^moto-[0-9]{4,}$ ]] || usage ;;
+  status) [[ "${2:-}" =~ ^moto-[0-9]{4,}$ && -z "${3:-}" ]] || usage ;;
   *) usage ;;
 esac
 
@@ -50,6 +53,11 @@ traccar_admin() {
     printf 'user = "%s:%s"\n' "$TRACCAR_ADMIN_EMAIL" "$(envval TRACCAR_ADMIN_PASSWORD)"
     if [ -n "$b" ]; then printf 'header = "Content-Type: application/json"\ndata = "%s"\n' "$b"; fi
   } | curl -fsS -X "$1" -K - "$TRACCAR_LOCAL$2"
+}
+# traccar_get <email> <variável da senha no .env> <caminho>: GET com credencial e URL no config do curl (o caminho pode levar
+# o IMEI: nada disso na linha de comando nem na saída).
+traccar_get() {
+  printf 'user = "%s:%s"\nurl = "%s%s"\n' "$1" "$(envval "$2")" "$TRACCAR_LOCAL" "$3" | curl -fsS -K - 2>/dev/null
 }
 # admin_users_code: código HTTP do GET /api/users como admin (200 = admin existe, 401 = ainda não; 000 = sem resposta).
 admin_users_code() {
@@ -136,6 +144,125 @@ SQL
     echo "DELETE FROM \"Tracker\" WHERE \"thingName\" = '$2' AND \"controlMode\" = 'relay_only'" | sql
     echo "Tracker relay_only de $2 removido (o dispositivo continua no Traccar)"
     sim_cycle_note
+    ;;
+  status)
+    # Diagnóstico só leitura (docs/gt06-j16-instalacao.md, "Se algo falhar"): banco, Traccar (REST em 127.0.0.1), ponte (vínculo
+    # e logs) e Redis. Nada é gravado. A saída nunca traz IMEI completo, senha nem posição (lat/lng): só idades, bits e contagens.
+    thing="$2"
+    now="$(date -u +%s)"
+    problems=0
+    warn() { echo "  ATENÇÃO: $*"; problems=$((problems + 1)); }
+    # secs <data ISO>: segundos desde a data (vazio se ilegível/nula).
+    secs() {
+      local t
+      case "$1" in "" | null) return 0 ;; esac
+      t="$(date -u -d "$1" +%s 2>/dev/null)" || return 0
+      echo "$((now - t))"
+    }
+    # field <nome>: primeiro valor do campo num JSON plano (texto, número, booleano ou null), sem aspas.
+    field() { grep -o "\"$1\":\"\\{0,1\\}[^,\"}]*" | head -n 1 | sed 's/^"[^"]*":"\{0,1\}//' || true; }
+    row="$(echo "SELECT coalesce(t.imei, ''), t.\"controlMode\", coalesce(t.protocol, '-'), coalesce(v.code, '-'), coalesce(v.status::text, '-'),
+      coalesce(v.online::text, '-'), coalesce(v.locked::text, '-'), coalesce(v.\"batteryPct\"::text, '-'),
+      coalesce(round(extract(epoch FROM (now() AT TIME ZONE 'UTC') - v.\"lastSeenAt\"))::text, '-')
+      FROM \"Tracker\" t LEFT JOIN \"Vehicle\" v ON v.id = t.\"vehicleId\" WHERE t.\"thingName\" = '$thing'" | sql)"
+    [ -n "$row" ] || { echo "$thing: nenhum Tracker no banco (provisione: gt06.sh provision VLT-0000 $thing <IMEI>)" >&2; exit 1; }
+    IFS='|' read -r imei mode proto vcode vstatus vonline vlocked vbat vage <<<"$row"
+    masked="sem IMEI"
+    [ -z "$imei" ] || masked="***********${imei: -4}"
+    echo "== $thing (moto $vcode) =="
+    echo "banco: Tracker $mode/$proto, IMEI $masked; moto status=$vstatus online=$vonline travada=$vlocked bateria=$vbat% último sinal há $vage s"
+    [ "$mode" = relay_only ] || warn "o Tracker não é relay_only: a ponte não o vê (gt06.sh provision)"
+    [ "$vcode" != "-" ] || warn "Tracker sem moto vinculada"
+    registry="não"
+    if [ "$mode" = relay_only ] && [ "$masked" != "sem IMEI" ]; then registry="sim (Tracker relay_only com IMEI; releitura a cada 60 s)"; fi
+    echo "registro da ponte: $registry"
+    server="$(curl -fsS "$TRACCAR_LOCAL/api/server" 2>/dev/null || true)"
+    if [ -z "$server" ]; then
+      warn "o Traccar não responde em 127.0.0.1:8082 (profile gt06 ligado? docker ps)"
+    else
+      ver="$(printf '%s' "$server" | field version)"
+      if [ -z "$ver" ] || [ "$ver" = null ] || [ "$(printf '6.7.0\n%s\n' "$ver" | sort -V | head -n 1)" != 6.7.0 ]; then
+        warn "Traccar versão ${ver:-desconhecida}: a ponte recusa todo comando de motor (mínimo 6.7.0, texto em /api/server)"
+      else
+        echo "Traccar: versão $ver (>= 6.7.0)"
+      fi
+      dev=""
+      [ -z "$imei" ] || dev="$(traccar_get "$TRACCAR_ADMIN_EMAIL" TRACCAR_ADMIN_PASSWORD "/api/devices?uniqueId=$imei" || true)"
+      did="$(printf '%s' "$dev" | field id)"
+      if [ -z "$did" ]; then
+        warn "dispositivo não encontrado no Traccar (ou admin recusado): rode gt06.sh provision de novo"
+      else
+        dstatus="$(printf '%s' "$dev" | field status)"
+        dlast="$(secs "$(printf '%s' "$dev" | field lastUpdate)")"
+        echo "Traccar: dispositivo $did status=$dstatus última comunicação há ${dlast:-?} s"
+        [ "$dstatus" = online ] || warn "J16 não está online no Traccar: chip com dados e APN, SERVER (host e porta 5023), 5023 aberta (gt06Port + GT06_BIND=0.0.0.0)"
+        [ "$(printf '%s' "$dev" | field disabled)" != true ] || warn "dispositivo desativado no Traccar"
+        bdev="$(traccar_get "$TRACCAR_BRIDGE_EMAIL" TRACCAR_BRIDGE_PASSWORD /api/devices || true)"
+        if printf '%s' "$bdev" | grep -q "\"id\":$did[,}]"; then
+          echo "ponte: vê o dispositivo (vinculado a $TRACCAR_BRIDGE_EMAIL)"
+        else
+          warn "o usuário da ponte não vê o dispositivo: sem posições nem corte (rode gt06.sh provision de novo para vincular)"
+        fi
+        pos="$(traccar_get "$TRACCAR_ADMIN_EMAIL" TRACCAR_ADMIN_PASSWORD "/api/positions?deviceId=$did" || true)"
+        if [ -z "$(printf '%s' "$pos" | field id)" ]; then
+          warn "nenhuma posição no Traccar ainda (J16 nunca mandou mensagem válida)"
+        else
+          srv="$(secs "$(printf '%s' "$pos" | field serverTime)")"
+          fix="$(secs "$(printf '%s' "$pos" | field fixTime)")"
+          kmh="$(printf '%s' "$pos" | field speed | awk '{ printf "%.1f", $1 * 1.852 }')"
+          blocked="$(printf '%s' "$pos" | field blocked)"
+          power="$(printf '%s' "$pos" | field power)"
+          echo "última mensagem: recebida há ${srv:-?} s; fix do GPS há ${fix:-?} s; valid=$(printf '%s' "$pos" | field valid) outdated=$(printf '%s' "$pos" | field outdated) velocidade=${kmh:-?} km/h"
+          echo "última mensagem: bit de corte (blocked)=${blocked:-ausente nesta mensagem}, tensão externa (power)=${power:-ausente nesta mensagem}"
+          if [ "$dstatus" = online ] && [ -n "$srv" ] && [ "$srv" -gt 90 ]; then
+            warn "nada do J16 há mais de 90 s com ele online: heartbeat lento (HBT <= 60 s é obrigatório)"
+          fi
+          if [ -n "$fix" ] && [ "$fix" -gt 15 ]; then
+            warn "fix do GPS com mais de 10 s: o bloqueio só corta com posições paradas a cada <= 10 s (TIMER,5,5#; antena com céu aberto)"
+          fi
+        fi
+      fi
+    fi
+    if [ -n "$(dc ps -q traccar-bridge 2>/dev/null)" ]; then
+      echo "ponte: $(dc ps --format '{{.Status}}' traccar-bridge 2>/dev/null | head -n 1)"
+      logs="$(dc logs --no-color --no-log-prefix --since 15m traccar-bridge 2>/dev/null || true)"
+      if [ -n "$imei" ]; then
+        unknown="$(printf '%s\n' "$logs" | grep -c "traccar_unknown_device.*\*${imei: -4}\"" || true)"
+        [ "${unknown:-0}" -eq 0 ] || warn "a ponte logou traccar_unknown_device para $masked ($unknown vez(es) em 15 min): registro ainda não relido ou Tracker não relay_only"
+      fi
+      mine="$(printf '%s\n' "$logs" | grep -F "\"thingName\":\"$thing\"" || true)"
+      if [ -n "$mine" ]; then
+        echo "ponte, últimos 15 min (contagem por evento e motivo):"
+        printf '%s\n' "$mine" | sed -E 's/^.*"msg":"([^"]*)"(.*"reason":"([^"]*)")?.*$/\1 \3/' | sort | uniq -c | sort -rn | head -n 15 | sed 's/^/    /'
+        if printf '%s\n' "$mine" | grep -q '"msg":"battery_unknown"'; then
+          warn "battery_unknown: o J16 não manda tensão externa (ou fora da curva de GT06_BATTERY_MODEL); bateria aparece 0%"
+        fi
+        if printf '%s\n' "$mine" | grep -q '"reason":"awaiting_status"'; then
+          warn "telemetria retida esperando o bit de corte: confira o heartbeat (HBT <= 60 s)"
+        fi
+      else
+        echo "ponte, últimos 15 min: nenhum log desta moto (normal se tudo vai bem)"
+      fi
+    else
+      warn "container traccar-bridge não está rodando"
+    fi
+    live="$(dc exec -T redis redis-cli HGETALL "iot:live:$thing" 2>/dev/null | paste - - || true)"
+    hv() { printf '%s\n' "$live" | awk -F'\t' -v k="$1" '$1 == k { print $2; exit }'; }
+    if [ -n "$(hv lastSeenAt)" ]; then
+      echo "estado ao vivo (API/Redis): online=$(hv online) travada=$(hv locked) bateria=$(hv batteryPct)% última mensagem há $(secs "$(hv lastSeenAt)") s"
+    else
+      echo "estado ao vivo (API/Redis): nenhum (a API ainda não recebeu telemetria desta moto)"
+    fi
+    lock="$(dc exec -T redis redis-cli GET "iot:relay-lock:$thing" 2>/dev/null || true)"
+    phase="$(printf '%s' "$lock" | field phase)"
+    case "$phase" in
+      "") echo "trava relay_only em andamento: nenhuma" ;;
+      waiting_online) echo "trava relay_only em andamento: esperando a moto ficar online (pending/offline)" ;;
+      waiting_stop) echo "trava relay_only em andamento: esperando 2 posições paradas em 10 s (\"Aguardando a moto parar para bloquear\")" ;;
+      cutting) echo "trava relay_only em andamento: corte enviado, esperando o bit de corte do J16" ;;
+      *) echo "trava relay_only em andamento: fase $phase" ;;
+    esac
+    if [ "$problems" -eq 0 ]; then echo "diagnóstico: nenhum problema encontrado"; else echo "diagnóstico: $problems ponto(s) de atenção acima"; fi
     ;;
   e2e)
     code="$2" thing="$3"

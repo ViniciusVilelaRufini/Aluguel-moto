@@ -195,6 +195,44 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(run('provision', 'VLT-0901', "moto-0901'; DROP", '860000000000901').status).toBe(2);
     expect(run('deprovision', "moto-0901' OR 1=1").status).toBe(2);
     expect(run('e2e', 'VLT-0901').status).toBe(2);
+    expect(run('status').status).toBe(2);
+    expect(run('status', "moto-0901' OR 1=1").status).toBe(2);
+    expect(run('status', 'VLT-0901').status).toBe(2);
+    expect(run('status', 'moto-0901', 'extra').status).toBe(2);
+  });
+
+  it('gt06.sh status: diagnóstico só leitura, credenciais e IMEI fora da linha de comando e da saída, sem posição', () => {
+    const g = file('gt06.sh');
+    const at = g.indexOf('\n  status)\n');
+    expect(at).toBeGreaterThan(-1);
+    const body = g.slice(at, g.indexOf('\n    ;;\n', at));
+    // Só leitura: nada de escrita no banco, no Redis nem no Traccar.
+    expect(body).not.toMatch(/\b(INSERT|UPDATE|DELETE|ALTER|GRANT|DROP)\b/);
+    expect(body).not.toMatch(/redis-cli (SET|DEL|HSET|HDEL|EXPIRE|FLUSH)/i);
+    expect(body).not.toMatch(/traccar_admin (POST|PUT|DELETE)/);
+    expect(body).not.toMatch(/curl[^\n]*-X (POST|PUT|DELETE)/);
+    // Traccar: credencial e URL (que leva o IMEI) pelo config do curl no stdin.
+    expect(g).toMatch(/traccar_get\(\) \{\n\s+printf 'user = "%s:%s"\\nurl = "%s%s"\\n'[^\n]*\| curl -fsS -K -/);
+    expect(body).toContain('traccar_get "$TRACCAR_ADMIN_EMAIL" TRACCAR_ADMIN_PASSWORD "/api/devices?uniqueId=$imei"');
+    // O vínculo é conferido com as credenciais da própria ponte.
+    expect(body).toContain('traccar_get "$TRACCAR_BRIDGE_EMAIL" TRACCAR_BRIDGE_PASSWORD /api/devices');
+    // IMEI só mascarado (4 últimos dígitos); nunca latitude/longitude na saída.
+    expect(body).toContain('masked="***********${imei: -4}"');
+    expect(body).not.toMatch(/(echo|printf)[^\n]*\$\{?imei\}?["\s]/);
+    expect(body).not.toMatch(/field (latitude|longitude)|hv (lat|lng)\b/);
+    // Mínimo do Traccar e frescor exigidos pela ponte e pela trava.
+    expect(body).toContain('6.7.0');
+    expect(body).toMatch(/-gt 90/);
+  });
+
+  it('guia de instalação do J16 existe e está ligado no cloudshell.md e no README da ponte', () => {
+    const guide = readFileSync(join(REPO, 'docs', 'gt06-j16-instalacao.md'), 'utf8');
+    expect(guide).toContain('gt06.sh status');
+    expect(guide).toContain('5023');
+    expect(guide).toMatch(/confirmar no manual do seu J16/);
+    expect(file('cloudshell.md')).toContain('docs/gt06-j16-instalacao.md');
+    expect(readFileSync(join(REPO, 'services', 'traccar-bridge', 'README.md'), 'utf8')).toContain('docs/gt06-j16-instalacao.md');
+    expect(file('cloudshell.md')).toContain('gt06.sh status');
   });
 
   describe('security group: 5023 só com -c gt06Port=true e origem explícita; 8082 nunca', () => {

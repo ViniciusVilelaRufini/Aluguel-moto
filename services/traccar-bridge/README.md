@@ -164,6 +164,10 @@ o compose e a ponte nunca publicam `desired`.
 
 ## Provisionar um J16 de verdade
 
+**Guia de campo completo** (SMS de configuração com o grau de confiança de cada comando, ligação do relé, teste de bancada e
+tabela de sintomas): `docs/gt06-j16-instalacao.md`. No dev single, provisionar e diagnosticar com `deploy/single/gt06.sh
+provision` e `gt06.sh status <moto>`.
+
 1. Cadastrar a moto (`POST /vehicles`) e rodar `pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle
    VLT-0000 --thing moto-0000 --imei <15 dígitos>`. Não cria certificado: marca o `Tracker` como `relay_only`/`gt06` e cria o
    dispositivo no Traccar (`uniqueId = IMEI`). Todo dispositivo GT06 precisa estar **vinculado ao usuário da ponte** no Traccar
@@ -172,10 +176,11 @@ o compose e a ponte nunca publicam `desired`.
    bloqueio: ele relê a frota e solta a moto com desconexão limpa. Não o reinicie (o SIGTERM anuncia `disconnected` pela moto).
 2. Configurar o aparelho por SMS para o chip M2M. **Sintaxe a confirmar no manual do aparelho** (varia por firmware Concox):
    - APN: `APN,<apn>,<usuário>,<senha>#` (bancada: APN do chip M2M; produção: **APN privada**, requisito da ADR);
-   - servidor: `SERVER,1,<domínio>,5023,0#` (domínio) ou `SERVER,0,<ip>,5023,0#` (IP);
+   - servidor: `SERVER,1,<domínio>,5023,0#` (domínio, preferido no dev single: o IP muda a cada partida) ou
+     `SERVER,0,<ip>,5023,0#` (IP);
    - fuso UTC: `GMT,E,0,0#`;
    - intervalo de posição fixo de 5 s (com e sem ACC), p.ex. `TIMER,5,5#` — a trava só-relé exige 2 posições paradas em 10 s;
-   - heartbeat ≤ 60 s (**obrigatório**: o status de corte libera a telemetria retida depois de reconectar, e bit com mais de 90 s
+   - heartbeat ≤ 60 s, `HBT,60,60#` ou `HBT,1,1#` conforme a unidade do firmware (**obrigatório**: o status de corte libera a telemetria retida depois de reconectar, e bit com mais de 90 s
      não vale para "já travada");
    - conferir: `STATUS#`, `PARAM#`, `WHERE#`.
 3. Conferir no Traccar que o dispositivo aparece online e que a telemetria chega à API.

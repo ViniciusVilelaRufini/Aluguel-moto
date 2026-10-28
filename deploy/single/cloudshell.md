@@ -302,11 +302,21 @@ O `gt06.sh init` também desliga o cadastro aberto do Traccar (`registration:fal
 cria usuário sozinho. Se o init falhar, o update segue sem o profile `gt06` (aviso `AVISO: GT06 init falhou`) e a API é
 atualizada normalmente.
 
+**J16 real:** guia de campo do dono (SMS de configuração, ligação do relé, teste de bancada e sintomas) em
+`docs/gt06-j16-instalacao.md`. Diagnóstico só leitura de uma moto (banco, Traccar, vínculo com a ponte, idade do heartbeat e
+do fix, bit de corte, tensão, logs da ponte e fase do bloqueio; sem IMEI completo nem posição):
+
+```bash
+CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript \n  --parameters 'commands=["bash /opt/volti/src/deploy/single/gt06.sh status moto-0061"]' --query Command.CommandId --output text)
+aws ssm get-command-invocation --command-id $CMD --instance-id $IID --query StandardOutputContent --output text
+```
+
 J16 de bancada (DONO): por padrão a 5023 do Traccar só escuta em 127.0.0.1 da instância (o emulador usa a rede interna).
 Para um J16 real, as duas coisas juntas: (1) `cdk deploy` da stack `volti-dev-single` com
 `-c gt06Port=true -c gt06Cidrs=<ip-do-chip>/32` ou, reconhecendo que o GT06 não tem TLS e o chip M2M comum não tem faixa
 fixa, `-c gt06Port=true -c openGt06=true` (0.0.0.0/0, só bancada; um CIDR `/0` em `gt06Cidrs` é recusado); (2)
-`/volti/dev/config/GT06_BIND=0.0.0.0` e update. Depois, `SERVER,0,<ip-da-instância>,5023,0#` por SMS (README da ponte).
+`/volti/dev/config/GT06_BIND=0.0.0.0` e update. Depois, `SERVER,1,api-volti-dev.prestarecondominios.com.br,5023,0#` por SMS (domínio: o IP da instância muda a cada
+partida; `SERVER,0,<ip>,5023,0#` só se o firmware não aceitar domínio). Sequência completa no guia.
 Ao terminar, volte `GT06_BIND` (apague o parâmetro) e faça o deploy sem `gt06Port`.
 
 ```bash
