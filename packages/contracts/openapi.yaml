@@ -568,7 +568,12 @@ paths:
       tags: [kyc]
       operationId: reviewCustomerKyc
       summary: Revisão manual da verificação
-      description: Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog.
+      description: |
+        Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog.
+        Aprovar exige verificação enviada (`pending` ou `rejected`) com CPF, data de nascimento e documentos
+        (senão `422` `validation-error`), 18+ (`422` `kyc-underage`) e CPF fora da lista de restrição
+        (`422` `customer-blocked`). Rejeitar vale para `pending` ou `approved`. Estado incompatível ou alterado
+        durante a revisão → `409`.
       security:
         - staffAuth: []
       x-required-groups: [admin, suporte]
@@ -589,6 +594,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   # ───────────────────────────── vehicles ─────────────────────────────
   /vehicles/nearby:

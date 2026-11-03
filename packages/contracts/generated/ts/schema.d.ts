@@ -339,6 +339,10 @@ export interface paths {
         /**
          * Revisão manual da verificação
          * @description Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog.
+         *     Aprovar exige verificação enviada (`pending` ou `rejected`) com CPF, data de nascimento e documentos
+         *     (senão `422` `validation-error`), 18+ (`422` `kyc-underage`) e CPF fora da lista de restrição
+         *     (`422` `customer-blocked`). Rejeitar vale para `pending` ou `approved`. Estado incompatível ou alterado
+         *     durante a revisão → `409`.
          */
         post: operations["reviewCustomerKyc"];
         delete?: never;
@@ -7228,6 +7232,8 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     listNearbyVehicles: {
