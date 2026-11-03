@@ -26,6 +26,11 @@ export interface PriceSnapshot {
   coverage?: InsuranceCoverage;
   /** Assinatura semanal/mensal ativa com o mesmo plano: não cobra tempo. */
   subscriptionCovered?: boolean;
+  /**
+   * Auditoria run-4: fim do período da assinatura no início do aluguel (`currentPeriodEnd`, ISO 8601 UTC). O fechamento estende
+   * até o `currentPeriodEnd` atual se a assinatura continuar ativa; além disso o tempo é cobrado. Ausente em snapshots antigos.
+   */
+  subscriptionCoveredUntil?: string;
   coupon?: CouponSnapshot;
 }
 
@@ -84,6 +89,11 @@ export class PricingService {
     pausedSeconds: number;
     fees?: FeeCharge[];
     walletAvailableCents?: number;
+    /**
+     * Com `subscriptionCovered`: segundos desde o início cobertos pela assinatura (auditoria run-4). O excedente é cobrado como
+     * plano não coberto (unidades iniciadas na linha `time`). Ausente = todo o tempo coberto (comportamento anterior).
+     */
+    coveredSeconds?: number;
   }): PriceBreakdown {
     const s = input.snapshot;
     const elapsed = Math.max(0, Math.floor(input.elapsedSeconds));
@@ -106,6 +116,11 @@ export class PricingService {
       }
     } else {
       lines.push({ code: 'subscription', description: 'Coberto pela assinatura', amountCents: 0 });
+      const excess = input.coveredSeconds === undefined ? 0 : elapsed - Math.max(0, Math.floor(input.coveredSeconds));
+      if (excess > 0) {
+        const units = startedUnits(excess, UNIT_SECONDS[s.unit]);
+        lines.push({ code: 'time', description: `Tempo além da assinatura (por ${UNIT_LABEL[s.unit]})`, quantity: units, unitCents: s.unitPriceCents, amountCents: units * s.unitPriceCents });
+      }
     }
     const subtotalCents = lines.reduce((acc, l) => acc + l.amountCents, 0);
 

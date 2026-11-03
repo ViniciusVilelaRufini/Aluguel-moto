@@ -198,6 +198,16 @@ describe('Início do aluguel (POST /rentals)', () => {
     expect(first.body).toMatchObject({ outcome: 'started', rental: { status: 'active', vehicleId: VEHICLE_ID }, deposit: { id: DEPOSIT_ID, status: 'held' } });
   });
 
+  it('auditoria run-4: assinatura ativa do mesmo plano → snapshot coberto com subscriptionCoveredUntil = currentPeriodEnd (UTC)', async () => {
+    const periodEnd = new Date('2026-11-10T03:00:00.000Z');
+    h.prisma.pricingPlan.findFirst.mockResolvedValue({ ...plan, code: 'weekly', name: 'Semanal', unit: 'week', unlockFeeCents: 0, unitPriceCents: 24900, pausePerMinuteCents: 0, recurring: true } as any);
+    h.prisma.subscription.findFirst.mockResolvedValue({ id: 'sub-1', customerId: CUSTOMER_ID, planCode: 'weekly', status: 'active', currentPeriodEnd: periodEnd } as any);
+    const res = await post('chave-assinatura-01', { ...body, planCode: 'weekly' });
+    expect(res.status).toBe(201);
+    const data = h.prisma.rental.create.mock.calls[0][0].data as any;
+    expect(data.priceSnapshot).toMatchObject({ subscriptionCovered: true, subscriptionCoveredUntil: '2026-11-10T03:00:00.000Z' });
+  });
+
   it('mesma Idempotency-Key com corpo diferente → 422 idempotency-key-reused', async () => {
     await post('chave-idem-0002');
     const res = await post('chave-idem-0002', { ...body, coverage: 'full' });

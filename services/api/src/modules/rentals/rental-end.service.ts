@@ -296,6 +296,8 @@ export class RentalEndService {
     const billedUntil = late ? now : (rental.endRequestedAt ?? now);
     const timing = rentalTimes({ ...rental, endRequestedAt: billedUntil });
     const fees = [...(opts.fees ?? []), ...(late?.fee ? [late.fee] : []), ...(await this.stationSwapFees(rentalId))];
+    const snapshot = rental.priceSnapshot as unknown as PriceSnapshot;
+    const coveredSeconds = await this.subscriptionCoveredSeconds(rental, snapshot);
     // R2-01: a carteira abate primeiro (ordem de liquidação: carteira → caução → cartão → dívida). O saldo é lido e debitado
     // na mesma transação que fecha o aluguel, com o cliente travado (FOR UPDATE): o débito acontece uma única vez (o
     // fechamento é condicional) e o mesmo saldo nunca paga dois fechamentos. O restante (`totalCents`) vai para a liquidação.
@@ -303,11 +305,12 @@ export class RentalEndService {
       await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${rental.customerId}::uuid FOR UPDATE`;
       const walletAvailableCents = await walletCentsAvailable(tx, rental.customerId);
       const breakdown = this.pricing.calculate({
-        snapshot: rental.priceSnapshot as unknown as PriceSnapshot,
+        snapshot,
         elapsedSeconds: timing.elapsedSeconds,
         pausedSeconds: timing.pausedSeconds,
         fees,
         walletAvailableCents,
+        coveredSeconds,
       });
       const claimed = await tx.rental.updateMany({
         where: { id: rentalId, status: { in: ['active', 'paused', 'ending'] } },
@@ -408,6 +411,26 @@ export class RentalEndService {
         : undefined;
     this.logger.warn({ msg: 'rental_end_late_lock_confirmation', rentalId: rental.id, delayMs, outsideReturnZone: !zone });
     return { zoneId: zone?.id ?? null, ...(fee ? { fee } : {}) };
+  }
+
+  /**
+   * Auditoria run-4 (rentals/subscription-coverage-frozen-at-start): segundos desde o início cobertos pela assinatura. Parte do
+   * `subscriptionCoveredUntil` do snapshot e estende até o `currentPeriodEnd` atual se a assinatura do mesmo plano continuar
+   * `active` (renovada). Snapshot antigo sem o campo: usa o `currentPeriodEnd` da assinatura encontrada agora. Nada encontrado
+   * → `undefined` (todo o tempo coberto, como antes).
+   */
+  private async subscriptionCoveredSeconds(rental: Pick<Rental, 'customerId' | 'startedAt'>, snapshot: PriceSnapshot): Promise<number | undefined> {
+    if (!snapshot.subscriptionCovered) return undefined;
+    const frozen = snapshot.subscriptionCoveredUntil ? new Date(snapshot.subscriptionCoveredUntil) : null;
+    let until = frozen && Number.isFinite(frozen.getTime()) ? frozen : null;
+    const sub = await this.prisma.subscription.findFirst({
+      where: { customerId: rental.customerId, planCode: snapshot.planCode },
+      orderBy: [{ currentPeriodEnd: 'desc' }],
+      select: { status: true, currentPeriodEnd: true },
+    });
+    if (sub && (sub.status === 'active' || !until) && (!until || sub.currentPeriodEnd > until)) until = sub.currentPeriodEnd;
+    if (!until) return undefined;
+    return Math.max(0, Math.floor((until.getTime() - rental.startedAt.getTime()) / 1000));
   }
 
   /** Modo de controle do rastreador da moto (sem rastreador cadastrado = `speed_control`, o padrão). */

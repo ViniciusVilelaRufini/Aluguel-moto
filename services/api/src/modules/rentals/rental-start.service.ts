@@ -300,6 +300,8 @@ export class RentalStartService {
     const policy = await this.insurance.issueForRental({ rentalId, customerId, coverage: dto.coverage });
     policyId = policy.policyId;
     const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription, vehicle.vehicleModel);
+    // Auditoria run-4: a cobertura vale até o fim do período; o fechamento estende se a assinatura for renovada.
+    if (subscription) snapshot.subscriptionCoveredUntil = subscription.currentPeriodEnd.toISOString();
 
     // QA-21: reivindica a moto, desbloqueia e só cria o aluguel (relógio e cobrança) com o desbloqueio confirmado.
     // Fix round 1: a reivindicação grava junto o marcador `RentalStart`; se o processo morrer durante a espera do
