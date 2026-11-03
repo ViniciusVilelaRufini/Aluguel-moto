@@ -82,18 +82,21 @@ describe('PricingService.calculate', () => {
     expect(b.totalCents).toBe(200);
   });
 
-  it('auditoria run-4: assinatura cobre até coveredSeconds; o excedente cobra unidades iniciadas do plano na linha time', () => {
+  it('auditoria run-4: assinatura cobre até coveredSeconds; o excedente cobra por dia iniciado, pro rata do plano, na linha time', () => {
     const weekly: PriceSnapshot = { planCode: 'weekly', unit: 'week', unlockFeeCents: 0, unitPriceCents: 24900, pausePerMinuteCents: 0, insurancePremiumCents: 200, subscriptionCovered: true };
-    // 3 h de aluguel, cobertura terminou 1 h depois do início: 2 h além da cobertura = 1 semana iniciada.
+    // 3 h de aluguel, cobertura terminou 1 h depois do início: 2 h além = 1 dia iniciado × ceil(24900/7) = 3558.
     const b = pricing.calculate({ snapshot: weekly, elapsedSeconds: 3 * 3600, pausedSeconds: 0, coveredSeconds: 3600 });
     expect(b.lines).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'subscription', amountCents: 0 }),
-      expect.objectContaining({ code: 'time', quantity: 1, unitCents: 24900, amountCents: 24900 }),
+      expect.objectContaining({ code: 'time', quantity: 1, unitCents: 3558, amountCents: 3558 }),
     ]));
-    expect(b.subtotalCents).toBe(24900);
-    expect(b.totalCents).toBe(24900 + 200);
-    // 8 dias além da cobertura = 2 semanas iniciadas.
-    expect(pricing.calculate({ snapshot: weekly, elapsedSeconds: 3600 + 8 * 86400, pausedSeconds: 0, coveredSeconds: 3600 }).subtotalCents).toBe(2 * 24900);
+    expect(b.subtotalCents).toBe(3558);
+    expect(b.totalCents).toBe(3558 + 200);
+    // 8 dias além da cobertura = 8 dias.
+    expect(pricing.calculate({ snapshot: weekly, elapsedSeconds: 3600 + 8 * 86400, pausedSeconds: 0, coveredSeconds: 3600 }).subtotalCents).toBe(8 * 3558);
+    // Mensal: ceil(8990/30) = 300 por dia.
+    const monthly: PriceSnapshot = { ...weekly, planCode: 'monthly', unit: 'month', unitPriceCents: 8990, insurancePremiumCents: 0 };
+    expect(pricing.calculate({ snapshot: monthly, elapsedSeconds: 2 * 86400 + 1, pausedSeconds: 0, coveredSeconds: 0 }).subtotalCents).toBe(3 * 300);
   });
 
   it('auditoria run-4: tempo dentro da cobertura (ou sem coveredSeconds, snapshot antigo) não cobra tempo', () => {

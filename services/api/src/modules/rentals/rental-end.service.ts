@@ -19,6 +19,7 @@ import { rentalTimes, toRental } from './rentals.mapper';
 import { controlModeOf, latestRentalLock, LOCK_NOT_CUT_REASON, pauseAfterLateLock } from './relay-rental-lock';
 import { SAFE_LOCK_SPEED_KMH } from '../../common/enums';
 import { distanceM } from '../../common/util';
+import { V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 import { appendWalletEntry, walletCentsAvailable } from '../wallet/wallet-ledger';
 
@@ -51,6 +52,8 @@ export const MAX_END_ATTEMPTS = 10;
 export const LATE_LOCK_CONFIRMATION_MS = 150_000;
 /** Deslocamento mínimo (m) desde a posição no pedido para a confirmação tardia reconferir a zona e cobrar a taxa de fora da zona. */
 export const LATE_LOCK_DISPLACEMENT_M = 50;
+/** Carência de renovação padrão (72 h, igual ao padrão de `SUBSCRIPTION_RENEWAL_GRACE_HOURS`) quando a config não é injetada. */
+export const SUBSCRIPTION_RENEWAL_GRACE_DEFAULT_MS = 72 * 3_600_000;
 /** Motivo mostrado ao cliente quando a trava do fim termina sem corte (`relay_only`) e o aluguel volta a `active`. */
 export const END_LOCK_FAILED_MESSAGE = 'A moto não parou; pare e peça o encerramento de novo.';
 const SYSTEM = { system: true as const, name: 'encerramento' };
@@ -115,6 +118,8 @@ export class RentalEndService {
     // Fix 2 (M-2): fecha trocas abertas na estação quando o staff encerra o aluguel. Opcional: módulos que montam o serviço
     // sem a estação (testes) seguem funcionando.
     @Optional() private readonly stationSwaps?: StationSwapsService,
+    // Carência de renovação da assinatura (auditoria run-4); sem a config, `SUBSCRIPTION_RENEWAL_GRACE_DEFAULT_MS`.
+    @Optional() @Inject(V2_CONFIG) private readonly v2?: Pick<V2Config, 'subscriptionGraceMs'>,
   ) {}
 
   /** Fecha as trocas na estação ainda abertas antes de um encerramento pelo staff (forçado ou no galpão). */
@@ -443,9 +448,13 @@ export class RentalEndService {
 
   /**
    * Auditoria run-4 (rentals/subscription-coverage-frozen-at-start): segundos desde o início cobertos pela assinatura. Parte do
-   * `subscriptionCoveredUntil` do snapshot e estende até o `currentPeriodEnd` atual se a assinatura do mesmo plano continuar
-   * `active` (renovada). Snapshot antigo sem o campo: usa o `currentPeriodEnd` da assinatura encontrada agora. Nada encontrado
-   * → `undefined` (todo o tempo coberto, como antes).
+   * `subscriptionCoveredUntil` do snapshot (snapshot antigo sem o campo: o `currentPeriodEnd` da assinatura encontrada agora) e
+   * consulta a assinatura mais recente do mesmo plano:
+   * - `active`/`past_due` sem `cancelAtPeriodEnd` → coberta até `currentPeriodEnd` + carência de renovação
+   *   (`SUBSCRIPTION_RENEWAL_GRACE_HOURS`, a mesma que expira a assinatura) — padrão escolhido na auditoria; dono pode alterar;
+   * - `active` com `cancelAtPeriodEnd` → até `currentPeriodEnd` (não renova);
+   * - demais → o que estava congelado.
+   * Nada encontrado e snapshot antigo → `undefined` (todo o tempo coberto, como antes).
    */
   private async subscriptionCoveredSeconds(rental: Pick<Rental, 'customerId' | 'startedAt'>, snapshot: PriceSnapshot): Promise<number | undefined> {
     if (!snapshot.subscriptionCovered) return undefined;
@@ -454,9 +463,17 @@ export class RentalEndService {
     const sub = await this.prisma.subscription.findFirst({
       where: { customerId: rental.customerId, planCode: snapshot.planCode },
       orderBy: [{ currentPeriodEnd: 'desc' }],
-      select: { status: true, currentPeriodEnd: true },
+      select: { status: true, currentPeriodEnd: true, cancelAtPeriodEnd: true },
     });
-    if (sub && (sub.status === 'active' || !until) && (!until || sub.currentPeriodEnd > until)) until = sub.currentPeriodEnd;
+    if (sub) {
+      const renewing = (sub.status === 'active' || sub.status === 'past_due') && !sub.cancelAtPeriodEnd;
+      const subUntil = renewing
+        ? new Date(sub.currentPeriodEnd.getTime() + (this.v2?.subscriptionGraceMs ?? SUBSCRIPTION_RENEWAL_GRACE_DEFAULT_MS))
+        : sub.status === 'active' || !until
+          ? sub.currentPeriodEnd
+          : null;
+      if (subUntil && (!until || subUntil > until)) until = subUntil;
+    }
     if (!until) return undefined;
     return Math.max(0, Math.floor((until.getTime() - rental.startedAt.getTime()) / 1000));
   }
