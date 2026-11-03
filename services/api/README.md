@@ -314,7 +314,7 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 
 - Lista de restrição: `assertCustomerEligible` recusa `403 customer-blocked` com o CPF em `RestrictionEntry` (`RentalBillingPort.isCpfRestricted`); incluir um CPF bloqueia as contas ativas dele na mesma transação; desbloquear com o CPF na lista → `409`; block/unblock são condicionais ao status.
 - KYC: `submit` grava condicionado a `not_started`/`rejected` com `kycSubmittedAt` novo, e a decisão do provedor só vale para esse mesmo `kycSubmittedAt`. `kyc-review` aprova só `pending`/`rejected` com CPF, nascimento e documentos, 18+ e CPF fora da lista; rejeita `pending`/`approved`.
-- Contestação: o pagamento tem de ser do cliente, do aluguel e do tipo `rental`/`deposit`/`fee` (revalidado no `resolve`). Repetir um estorno misto que caiu antes da parte da carteira completa a carteira (`<chave>:wallet`) dentro do teto.
+- Contestação: o pagamento tem de ser do cliente, do aluguel e do tipo `rental`/`deposit`/`fee` (revalidado no `resolve`). O estorno misto grava o plano da carteira (`<chave>:wallet`, `planned`) junto com o pedido do gateway; a repetição com o mesmo valor conclui só esse plano, dentro da parte da carteira e do teto (valor diferente → `422`; nunca em `top_up`). Assinatura nova também recusa CPF restrito.
 - Anexos do cliente (incidente, sinistro, mensagem) só com chaves `support/<userId>/<arquivo>`; a exclusão LGPD só apaga chaves do titular ou do atendente autor do registro.
 - Sinistro: `submitted` → `under_review`/`approved`/`rejected`; `under_review` → `approved`/`rejected`; `approved` → `paid`; fora disso `409`.
 
