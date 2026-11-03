@@ -569,7 +569,12 @@ paths:
       tags: [kyc]
       operationId: reviewCustomerKyc
       summary: Revisão manual da verificação
-      description: Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog.
+      description: |
+        Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog.
+        Aprovar exige verificação enviada (`pending` ou `rejected`) com CPF, data de nascimento e documentos
+        (senão `422` `validation-error`), 18+ (`422` `kyc-underage`) e CPF fora da lista de restrição
+        (`422` `customer-blocked`). Rejeitar vale para `pending` ou `approved`. Estado incompatível ou alterado
+        durante a revisão → `409`.
       security:
         - staffAuth: []
       x-required-groups: [admin, suporte]
@@ -590,6 +595,8 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
 
   # ───────────────────────────── vehicles ─────────────────────────────
   /vehicles/nearby:
@@ -3708,7 +3715,9 @@ paths:
       tags: [support]
       operationId: createIncident
       summary: Reportar problema
-      description: Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria `accident` ou `theft` gera alerta `high`.
+      description: |
+        Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria `accident` ou `theft` gera alerta `high`.
+        Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
       security:
         - customerAuth: []
         - staffAuth: []
@@ -3727,6 +3736,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /support/incidents/{id}:
     get:
       tags: [support]
@@ -3901,7 +3911,9 @@ paths:
       tags: [support]
       operationId: createClaim
       summary: Abrir sinistro
-      description: Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo `InsuranceProvider`.
+      description: |
+        Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo `InsuranceProvider`.
+        Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
       security:
         - customerAuth: []
       requestBody:
@@ -3919,6 +3931,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /support/claims/{id}:
     get:
       tags: [support]
@@ -3943,7 +3956,10 @@ paths:
       tags: [support]
       operationId: updateClaim
       summary: Atualizar status do sinistro
-      description: Grava AuditLog.
+      description: |
+        Grava AuditLog. Transições: `submitted` → `under_review` | `approved` | `rejected`; `under_review` →
+        `approved` | `rejected`; `approved` → `paid` (`rejected` e `paid` são finais). Repetir o status atual só
+        atualiza a nota. Transição fora da tabela ou status alterado durante a atualização → `409`.
       security:
         - staffAuth: []
       x-required-groups: [admin, financeiro, suporte]
@@ -3964,6 +3980,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /support/conversations:
     get:
       tags: [support]
@@ -4067,6 +4084,7 @@ paths:
       tags: [support]
       operationId: sendSupportMessage
       summary: Enviar mensagem
+      description: Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
       security:
         - customerAuth: []
         - staffAuth: []
@@ -4089,6 +4107,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /support/conversations/{id}/read:
     post:
       tags: [support]

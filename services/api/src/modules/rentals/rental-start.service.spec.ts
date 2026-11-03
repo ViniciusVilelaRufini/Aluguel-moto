@@ -26,7 +26,7 @@ const body = { vehicleId: VEHICLE_ID, planCode: 'minute', coverage: 'basic', dep
 
 describe('Início do aluguel (POST /rentals)', () => {
   let h: Harness;
-  const billing = { holdDeposit: jest.fn(), settle: jest.fn(), isDelinquent: jest.fn() };
+  const billing = { holdDeposit: jest.fn(), settle: jest.fn(), isDelinquent: jest.fn(), isCpfRestricted: jest.fn().mockResolvedValue(false) };
   const insurance = { quote: jest.fn(), issueForRental: jest.fn(), cancel: jest.fn() };
   const reservations = { reserveForPix: jest.fn(), convert: jest.fn() };
   const commands = { dispatch: jest.fn(), isLockedByStaff: jest.fn() };

@@ -44,3 +44,77 @@ describe('GET /customers — busca por CPF', () => {
     expect(or).toContainEqual({ cpf: { contains: '12345' } });
   });
 });
+
+describe('auditoria run-4: lista de restrição x bloqueio da conta', () => {
+  let h: Harness;
+  const CID = '33333333-3333-4333-8333-333333333333';
+  const CPF = '52998224725';
+  const row = (over: Record<string, unknown> = {}) => ({ id: CID, cpf: CPF, status: 'blocked', name: 'Maria', email: 'm@x.com', kycStatus: 'approved', createdAt: new Date(), ...over });
+  beforeAll(async () => {
+    h = await createHarness({
+      controllers: [CustomersController],
+      providers: [
+        { provide: AuditService, useValue: { record: jest.fn() } },
+        { provide: DelinquencyService, useValue: {} },
+      ],
+    });
+  });
+  afterAll(() => h.app.close());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    h.prisma.restrictionEntry.findMany.mockReset().mockResolvedValue([]);
+    h.prisma.restrictionEntry.findUnique.mockReset().mockResolvedValue(null);
+    h.prisma.subscription.findFirst.mockResolvedValue(null);
+    h.prisma.rental.count.mockResolvedValue(0);
+    h.prisma.payment.aggregate.mockResolvedValue({ _sum: { amountCents: 0, refundedCents: 0 } } as any);
+    h.prisma.dispute.count.mockResolvedValue(0);
+    h.prisma.rental.findFirst.mockResolvedValue(null);
+    h.prisma.customer.updateMany.mockReset().mockResolvedValue({ count: 1 });
+    h.prisma.customer.update.mockReset();
+  });
+  const admin = async () => `Bearer ${await staffToken(['admin'])}`;
+
+  it('desbloquear com o CPF na lista de restrição → 409 e a conta continua bloqueada', async () => {
+    h.prisma.customer.findUnique.mockResolvedValue(row() as any);
+    h.prisma.restrictionEntry.findUnique.mockResolvedValue({ id: 'r1', cpf: CPF } as any);
+    const res = await request(h.app.getHttpServer()).post(`/customers/${CID}/unblock`).set('Authorization', await admin()).send({ reason: 'Pedido do cliente' });
+    expect(res.status).toBe(409);
+    expect(h.prisma.customer.updateMany).not.toHaveBeenCalled();
+    expect(h.prisma.customer.update).not.toHaveBeenCalled();
+  });
+
+  it('desbloquear: update condicional ao status blocked (corrida → 409)', async () => {
+    h.prisma.customer.findUnique.mockResolvedValue(row() as any);
+    h.prisma.customer.updateMany.mockResolvedValue({ count: 0 });
+    const res = await request(h.app.getHttpServer()).post(`/customers/${CID}/unblock`).set('Authorization', await admin()).send({ reason: 'Pedido do cliente' });
+    expect(res.status).toBe(409);
+    expect((h.prisma.customer.updateMany.mock.calls[0][0] as any).where).toEqual({ id: CID, status: 'blocked' });
+  });
+
+  it('bloquear: update condicional ao status active (corrida → 409)', async () => {
+    h.prisma.customer.findUnique.mockResolvedValue(row({ status: 'active' }) as any);
+    h.prisma.customer.updateMany.mockResolvedValue({ count: 0 });
+    const res = await request(h.app.getHttpServer()).post(`/customers/${CID}/block`).set('Authorization', await admin()).send({ reason: 'Fraude' });
+    expect(res.status).toBe(409);
+    expect((h.prisma.customer.updateMany.mock.calls[0][0] as any).where).toEqual({ id: CID, status: 'active' });
+  });
+
+  it('incluir CPF na lista bloqueia na mesma transação as contas ativas com esse CPF', async () => {
+    h.prisma.restrictionEntry.create.mockResolvedValue({ id: 'r1', cpf: CPF, reason: 'Fraude', createdAt: new Date() } as any);
+    const res = await request(h.app.getHttpServer()).post('/customer-restrictions').set('Authorization', await admin()).send({ cpf: CPF, reason: 'Fraude' });
+    expect(res.status).toBe(201);
+    expect(h.prisma.$transaction).toHaveBeenCalled();
+    expect(h.prisma.customer.updateMany).toHaveBeenCalledWith({
+      where: { cpf: CPF, status: 'active' },
+      data: expect.objectContaining({ status: 'blocked', blockedReason: 'Fraude' }),
+    });
+  });
+
+  it('incluir CPF duplicado em corrida (P2002) → 409', async () => {
+    const { Prisma } = jest.requireActual('@prisma/client');
+    h.prisma.restrictionEntry.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }));
+    const res = await request(h.app.getHttpServer()).post('/customer-restrictions').set('Authorization', await admin()).send({ cpf: CPF, reason: 'Fraude' });
+    expect(res.status).toBe(409);
+    expect(res.body.detail).toBe('CPF já está na lista de restrição.');
+  });
+});

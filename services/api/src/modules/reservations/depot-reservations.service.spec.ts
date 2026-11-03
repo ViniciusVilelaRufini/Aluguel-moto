@@ -39,6 +39,7 @@ function setup() {
   const redis = new MemoryRedisStore();
   const billing = {
     isDelinquent: jest.fn().mockResolvedValue(false),
+    isCpfRestricted: jest.fn().mockResolvedValue(false),
     holdDeposit: jest.fn().mockResolvedValue({ depositId: DEPOSIT_ID, status: 'held' }),
     settle: jest.fn(),
   };

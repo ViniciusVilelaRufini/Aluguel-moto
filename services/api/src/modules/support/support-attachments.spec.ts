@@ -1,7 +1,10 @@
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
 import { mockDeep } from 'jest-mock-extended';
 import type { PrismaClient } from '@prisma/client';
 import { loadConfig } from '../../config/env';
 import type { Principal } from '../auth/principal';
+import { ClaimCreateDto, IncidentCreateDto, MessageCreateDto } from './support.dto';
 import { SupportService } from './support.service';
 
 const CUSTOMER_ID = '11111111-1111-4111-8111-111111111111';
@@ -59,5 +62,54 @@ describe('Chat de suporte: anexos e autor (Task 30)', () => {
     const out = await svc.sendMessage(staff, CONV_ID, { body: 'Olá' } as any);
     expect((prisma.supportMessage.create.mock.calls[0][0] as any).data.authorName).toBeUndefined();
     expect(out.authorName).toBe('Equipe Volti');
+  });
+});
+
+describe('auditoria run-4: chaves de anexo do cliente presas ao próprio prefixo', () => {
+  const RENTAL = '66666666-6666-4666-8666-666666666666';
+  const own = `support/${CUSTOMER_ID}/foto.jpg`;
+  const foreign = 'support/99999999-9999-4999-8999-999999999999/foto.jpg';
+
+  it('mensagem do cliente com chave de outro usuário → 422 e nada gravado; com a própria → ok', async () => {
+    const { svc, prisma } = setup();
+    prisma.supportMessage.create.mockImplementation((async (args: any) => ({ ...message(), ...args.data, id: 'novo' })) as any);
+    await expect(svc.sendMessage(customer, CONV_ID, { body: 'Oi', attachmentObjectKeys: [foreign] })).rejects.toMatchObject({ status: 422 });
+    expect(prisma.supportMessage.create).not.toHaveBeenCalled();
+    await svc.sendMessage(customer, CONV_ID, { body: 'Oi', attachmentObjectKeys: [own] });
+    expect((prisma.supportMessage.create.mock.calls[0][0] as any).data.attachmentObjectKeys).toEqual([own]);
+  });
+
+  it('chave com o prefixo como trecho (support/<id>/../outro) → 422', async () => {
+    const { svc } = setup();
+    await expect(svc.sendMessage(customer, CONV_ID, { body: 'Oi', attachmentObjectKeys: [`support/${CUSTOMER_ID}/../outro/x.jpg`] })).rejects.toMatchObject({ status: 422 });
+  });
+
+  it('ocorrência e sinistro do cliente com chave alheia → 422', async () => {
+    const { svc, prisma } = setup();
+    prisma.rental.findUnique.mockResolvedValue({ customerId: CUSTOMER_ID, vehicleId: null, insurancePolicyId: 'pol' } as any);
+    await expect(svc.createIncident(customer, { category: 'other', description: 'Pneu furado', photoObjectKeys: [foreign] })).rejects.toMatchObject({ status: 422 });
+    await expect(svc.createClaim(customer, { rentalId: RENTAL, type: 'damage', description: 'Arranhão no para-lama', occurredAt: new Date().toISOString(), photoObjectKeys: [foreign] }))
+      .rejects.toMatchObject({ status: 422 });
+    expect(prisma.incident.create).not.toHaveBeenCalled();
+    expect(prisma.claim.create).not.toHaveBeenCalled();
+  });
+
+  it('primeira mensagem da conversa grava authorId = userId (mesmo autor das demais)', async () => {
+    const { svc, prisma } = setup();
+    prisma.supportConversation.create.mockResolvedValue({ id: CONV_ID, customerId: CUSTOMER_ID, status: 'open', subject: 'Ajuda', customer: { name: 'Maria' }, createdAt: new Date(), lastMessageAt: new Date() } as any);
+    const other: Principal = { ...customer, userId: 'user-x' };
+    await svc.createConversation(other, { subject: 'Ajuda', message: 'Oi' });
+    expect((prisma.supportMessage.create.mock.calls[0][0] as any).data.authorId).toBe('user-x');
+  });
+
+  it('DTOs: no máximo o limite do contrato de chaves (mensagem 4, ocorrência 6, sinistro 10) e cada chave com até 200 caracteres', async () => {
+    const keys = (n: number) => Array.from({ length: n }, (_, i) => `support/${CUSTOMER_ID}/${i}.jpg`);
+    const errs = async (cls: any, body: any) => (await validate(plainToInstance(cls, body))).map((e) => e.property);
+    expect(await errs(MessageCreateDto, { body: 'Oi', attachmentObjectKeys: keys(5) })).toContain('attachmentObjectKeys');
+    expect(await errs(MessageCreateDto, { body: 'Oi', attachmentObjectKeys: keys(4) })).toEqual([]);
+    expect(await errs(IncidentCreateDto, { category: 'other', description: 'Pneu furado', photoObjectKeys: keys(7) })).toContain('photoObjectKeys');
+    expect(await errs(ClaimCreateDto, { rentalId: '66666666-6666-4666-8666-666666666666', type: 'damage', description: 'Arranhão no para-lama', occurredAt: new Date().toISOString(), photoObjectKeys: keys(11) }))
+      .toContain('photoObjectKeys');
+    expect(await errs(MessageCreateDto, { body: 'Oi', attachmentObjectKeys: [`support/${'x'.repeat(200)}`] })).toContain('attachmentObjectKeys');
   });
 });

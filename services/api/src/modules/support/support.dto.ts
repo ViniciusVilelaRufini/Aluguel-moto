@@ -1,4 +1,4 @@
-import { IsArray, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsDateString, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { PageQuery } from '../../common/pagination';
 
 const CATEGORIES = ['vehicle_problem', 'accident', 'theft', 'app_problem', 'parking', 'other'] as const;
@@ -18,7 +18,8 @@ export class IncidentCreateDto {
   @IsString() @MinLength(3) @MaxLength(2000) description: string;
   @IsOptional() @IsUUID() rentalId?: string;
   @IsOptional() @IsUUID() vehicleId?: string;
-  @IsOptional() @IsArray() @IsString({ each: true }) photoObjectKeys?: string[];
+  /** Auditoria run-4: limites do contrato (`maxItems` 6) e da chave gerada pelo upload. */
+  @IsOptional() @IsArray() @ArrayMaxSize(6) @IsString({ each: true }) @MaxLength(200, { each: true }) photoObjectKeys?: string[];
   @IsOptional() @IsNumber() @Min(-90) @Max(90) lat?: number;
   @IsOptional() @IsNumber() @Min(-180) @Max(180) lng?: number;
 }
@@ -59,7 +60,7 @@ export class ClaimCreateDto {
   @IsDateString() occurredAt: string;
   @IsOptional() @IsNumber() @Min(-90) @Max(90) lat?: number;
   @IsOptional() @IsNumber() @Min(-180) @Max(180) lng?: number;
-  @IsOptional() @IsArray() @IsString({ each: true }) photoObjectKeys?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(10) @IsString({ each: true }) @MaxLength(200, { each: true }) photoObjectKeys?: string[];
 }
 
 export class ClaimUpdateDto {
@@ -93,5 +94,5 @@ export class SupportReadDto {
 
 export class MessageCreateDto {
   @IsString() @MinLength(1) @MaxLength(4000) body: string;
-  @IsOptional() @IsArray() @IsString({ each: true }) attachmentObjectKeys?: string[];
+  @IsOptional() @IsArray() @ArrayMaxSize(4) @IsString({ each: true }) @MaxLength(200, { each: true }) attachmentObjectKeys?: string[];
 }

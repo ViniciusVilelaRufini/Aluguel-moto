@@ -230,6 +230,14 @@ describe('SubscriptionsService.create valida a moto antes de cobrar (fix round 2
     expect(state.create).not.toHaveBeenCalled();
     expect(prisma.subscription.rows).toHaveLength(rowsBefore);
   });
+  it('auditoria run-4 (revisão): CPF na lista de restrição → 403 customer-blocked sem chamar o gateway', async () => {
+    const { svc, prisma, provider, billing } = forCreate([]);
+    prisma.customer.findUnique = jest.fn(async () => ({ id: 'c1', email: 'a@example.com', cpf: '52998224725', kycStatus: 'approved', status: 'active', delinquent: false }));
+    billing.isCpfRestricted = jest.fn(async () => true);
+    expect(await problem(svc.create('c1', { planCode: 'weekly' }))).toEqual({ status: 403, slug: 'customer-blocked' });
+    expect(billing.isCpfRestricted).toHaveBeenCalledWith('52998224725');
+    expect(provider.createSubscription).not.toHaveBeenCalled();
+  });
 });
 
 describe('SubscriptionsService — assinatura fechada não reabre (fix round 2, achado 1)', () => {

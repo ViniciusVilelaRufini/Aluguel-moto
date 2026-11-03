@@ -300,7 +300,7 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - "Moto em uso" é uma regra só (`common/vehicle-in-use.ts`): aluguel aberto ou reserva ativa no banco, não `vehicle.status`.
 - Usuário só do grupo `campo` age só nas próprias tarefas. Troca de moto só para preço por minuto igual ou menor.
 - IoT: `thingName` e `channel` vêm só do tópico; o corpo do dispositivo chega aninhado em `payload`; eventos de dispositivo passam pela fila `telemetria`.
-- Estorno de contestação só via `POST /support/disputes/{id}/resolve` (chave `dispute:<id>`, reivindicação atômica); disputa presa em `under_review` após queda do processo exige ajuste manual.
+- Estorno de contestação só via `POST /support/disputes/{id}/resolve` (chave `dispute:<id>`, ou `dispute:<id>:<n>` depois de `n−1` recusas do gateway; reivindicação atômica); disputa presa em `under_review` após queda do processo exige ajuste manual.
 - Busca de clientes por CPF: não-admin só por igualdade (11 dígitos). Cupom com teto atômico (`422 coupon-invalid`).
 - WebSocket exige `exp` no JWT e desconecta no vencimento; cache veículo→aluguel de 5 s. `rental.changed` replicado só invalida o cache (o adaptador Redis do Socket.IO já entrega o `rental.updated` da origem).
 - Galpão: chegada ao galpão (fim do aluguel ou `collect`) não deixa como `free` moto com trava de equipe/sistema (vai para `maintenance` no fim do aluguel; `409` no `collect`).
@@ -314,6 +314,14 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - **Estorno com carteira:** o webhook nunca diminui `refundedCents` e soma os estornos da carteira ao valor do gateway; `refunded` só no teto comum (`payments/refund-base.ts`).
 - **Ledger:** `appendWalletEntry` trava o `Customer` (`FOR NO KEY UPDATE`) antes de calcular `balanceAfterCents`.
 - **LGPD:** a exclusão de conta anula `Alert.lat/lng` dos alertas dos aluguéis do titular; o job diário anula a posição de alertas de aluguel com mais de `TRACK_RETENTION_DAYS`. Alerta ligado a aluguel precisa vir com `rentalId`.
+
+## Auditoria run-4 — suporte e KYC (`docs/decisoes.md`)
+
+- Lista de restrição: `assertCustomerEligible` recusa `403 customer-blocked` com o CPF em `RestrictionEntry` (`RentalBillingPort.isCpfRestricted`); incluir um CPF bloqueia as contas ativas dele na mesma transação; desbloquear com o CPF na lista → `409`; block/unblock são condicionais ao status.
+- KYC: `submit` grava condicionado a `not_started`/`rejected` com `kycSubmittedAt` novo, e a decisão do provedor só vale para esse mesmo `kycSubmittedAt`. `kyc-review` aprova só `pending`/`rejected` com CPF, nascimento e documentos, 18+ e CPF fora da lista; rejeita `pending`/`approved`.
+- Contestação: o pagamento tem de ser do cliente, do aluguel e do tipo `rental`/`deposit`/`fee` (revalidado no `resolve`). O estorno misto grava o plano da carteira (`<chave>:wallet`, `planned`) junto com o pedido do gateway; a repetição com o mesmo valor conclui só esse plano, dentro da parte da carteira e do teto (valor diferente → `422`; nunca em `top_up`). Assinatura nova também recusa CPF restrito.
+- Anexos do cliente (incidente, sinistro, mensagem) só com chaves `support/<userId>/<arquivo>`; a exclusão LGPD só apaga chaves do titular ou do atendente autor do registro.
+- Sinistro: `submitted` → `under_review`/`approved`/`rejected`; `under_review` → `approved`/`rejected`; `approved` → `paid`; fora disso `409`.
 
 ## Auditoria run-4 — onda 2: reservas e dinheiro (`docs/decisoes.md`)
 

@@ -44,6 +44,15 @@ export interface ConsentsInput {
 }
 
 /** LGPD: consentimentos, exportação (só do titular), exclusão/anonimização e expiração de trajetos (90 dias). */
+/**
+ * Auditoria run-4: chaves de anexo que a exclusão pode apagar — as do prefixo de upload do titular (`support/<titular>/`)
+ * e, quando o registro foi escrito por um atendente, as do prefixo dele. Chave de outra pessoa gravada no registro fica.
+ */
+function ownedKeys(keys: string[] | null | undefined, customerId: string, staffAuthorId?: string | null): string[] {
+  const prefixes = [`support/${customerId}/`, ...(staffAuthorId ? [`support/${staffAuthorId}/`] : [])];
+  return (keys ?? []).filter((k) => !k.includes('..') && prefixes.some((p) => k.startsWith(p)));
+}
+
 @Injectable()
 export class LgpdService {
   private readonly logger = new Logger('LgpdService');
@@ -340,9 +349,9 @@ export class LgpdService {
     const handoverWhere: Prisma.HandoverWhereInput[] = [{ reservation: { customerId } }];
     if (rentalIds.length) handoverWhere.push({ rentalId: { in: rentalIds } });
     const [messages, handovers, incidents, claims] = await Promise.all([
-      this.prisma.supportMessage.findMany({ where: { conversation: { customerId } }, select: { attachmentObjectKeys: true } }),
+      this.prisma.supportMessage.findMany({ where: { conversation: { customerId } }, select: { authorType: true, authorId: true, attachmentObjectKeys: true } }),
       this.prisma.handover.findMany({ where: { OR: handoverWhere }, select: { id: true, photoKeys: true } }),
-      this.prisma.incident.findMany({ where: { customerId }, select: { photoObjectKeys: true } }),
+      this.prisma.incident.findMany({ where: { customerId }, select: { createdByType: true, createdById: true, photoObjectKeys: true } }),
       this.prisma.claim.findMany({ where: { customerId, status: { in: [...CLOSED_CLAIM_STATUSES] } }, select: { photoObjectKeys: true } }),
     ]);
     const all = <T>(rows: T[] | undefined | null): T[] => rows ?? [];
@@ -351,9 +360,10 @@ export class LgpdService {
       handoverPhotoKeys: [...new Set(all(handovers).flatMap((h) => h.photoKeys ?? []))],
       attachmentKeys: [
         ...new Set([
-          ...all(messages).flatMap((m) => m.attachmentObjectKeys ?? []),
-          ...all(incidents).flatMap((i) => i.photoObjectKeys ?? []),
-          ...all(claims).flatMap((c) => c.photoObjectKeys ?? []),
+          // Auditoria run-4: só chaves do titular ou do atendente autor do próprio registro (`support/<autor>/`).
+          ...all(messages).flatMap((m) => ownedKeys(m.attachmentObjectKeys, customerId, m.authorType === 'staff' ? m.authorId : null)),
+          ...all(incidents).flatMap((i) => ownedKeys(i.photoObjectKeys, customerId, i.createdByType === 'staff' ? i.createdById : null)),
+          ...all(claims).flatMap((c) => ownedKeys(c.photoObjectKeys, customerId)),
         ]),
       ],
     };
@@ -386,7 +396,7 @@ export class LgpdService {
       take: 200,
     });
     for (const c of claims) {
-      await this.deleteAttachments(c.customerId, c.photoObjectKeys);
+      await this.deleteAttachments(c.customerId, ownedKeys(c.photoObjectKeys, c.customerId));
       await this.prisma.claim.update({ where: { id: c.id }, data: { description: REMOVED_TEXT, photoObjectKeys: [], lat: null, lng: null } });
     }
     return claims.length;

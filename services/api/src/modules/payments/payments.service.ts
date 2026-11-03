@@ -26,6 +26,8 @@ import { SubscriptionsService } from './subscriptions.service';
 import { DelinquencyService } from './delinquency.service';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
+const REFUND_RACED = 'Outro estorno deste pagamento foi registrado ao mesmo tempo. Atualize e tente de novo.';
+
 /** Repetições de um estorno sem resultado antes de pedir revisão manual. */
 export const MAX_REFUND_ATTEMPTS = 10;
 
@@ -180,7 +182,7 @@ export class PaymentsService {
     // Mesma Idempotency-Key de um pedido já registrado: repete a resposta desse pedido (sem reservar nem chamar o gateway de novo).
     if (idempotencyKey) {
       const same = await this.prisma.paymentRefund.findUnique({ where: { idempotencyKey: key } });
-      if (same) return this.replayRefund(same, p);
+      if (same) return this.replayRefund(actor, same, p, dto);
     }
     if (!canTransition(p.status, 'partially_refunded') && !canTransition(p.status, 'refunded')) {
       throw unprocessable('validation-error', 'Só é possível estornar pagamentos pagos ou capturados.');
@@ -208,34 +210,24 @@ export class PaymentsService {
     const open = await this.prisma.paymentRefund.findFirst({ where: { paymentId: p.id, status: { in: ['claimed', 'pending'] } } });
     if (open) throw conflict('conflict', 'Há um estorno deste pagamento aguardando confirmação do gateway. Tente de novo depois.');
 
-    /** Reserva um pedido de estorno (com o lançamento na carteira quando é a parte da carteira). */
-    const claim = async (read: Payment, part: number, viaWallet: boolean, recordKey: string, gatewayRefundedBefore: number | null = null) => {
-      const refundedCents = read.refundedCents + part;
-      const to = refundedCents >= base ? 'refunded' : 'partially_refunded';
-      return this.prisma.$transaction(async (tx) => {
-        if (!(await this.state.claimRefund(tx, read, to, refundedCents))) return null;
-        if (viaWallet) {
-          await appendWalletEntry(tx, { customerId: read.customerId, type: 'refund', amountCents: part, description: `Estorno: ${dto.reason}`, paymentId: read.id, rentalId: read.rentalId, createdById: actor.userId });
-        }
-        return tx.paymentRefund.create({
-          data: {
-            paymentId: read.id, idempotencyKey: recordKey, amountCents: part, prevStatus: read.status, prevRefundedCents: read.refundedCents,
-            newStatus: to, newRefundedCents: refundedCents, gatewayRefundedBefore, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
-          },
-        });
-      });
-    };
-    const raced = () => conflict('conflict', 'Outro estorno deste pagamento foi registrado ao mesmo tempo. Atualize e tente de novo.');
+    const claim = (read: Payment, part: number, viaWallet: boolean, recordKey: string, gatewayRefundedBefore: number | null = null, plannedWallet?: number) =>
+      this.claimRefundPart(actor, read, part, viaWallet, recordKey, base, dto.reason, viaWallet ? null : gatewayRefundedBefore, plannedWallet);
+    const raced = () => conflict('conflict', REFUND_RACED);
 
     let current = p;
     let gatewayOutcome: 'succeeded' | 'pending' | undefined;
     if (gatewayPart > 0) {
       // Auditoria run-4 onda 2: linha de base do gateway lida ANTES da chamada (a reconciliação exige before + valor).
       const before = await this.provider.getPayment(current.providerPaymentId!).then((pp) => pp.refundedCents ?? 0, () => null);
-      const record = await claim(current, gatewayPart, false, key, before);
+      // Auditoria run-4 (revisão): o plano da carteira nasce junto com o pedido do gateway; a repetição completa só ele.
+      // Recarga (`top_up`) nunca tem plano: o estorno dela é revertido pelo `reverseTopUp`.
+      const record = await claim(current, gatewayPart, false, key, before, walletPart > 0 && p.kind !== 'top_up' ? walletPart : undefined);
       if (!record) throw raced();
       const outcome = await this.callGatewayRefund(record);
-      if (outcome === 'rejected') throw new ProblemException(422, 'payment-failed', 'O gateway recusou o estorno.');
+      if (outcome === 'rejected') {
+        await this.prisma.paymentRefund.updateMany({ where: { idempotencyKey: `${key}:wallet`, status: 'planned' }, data: { status: 'canceled' } });
+        throw new ProblemException(422, 'payment-failed', 'O gateway recusou o estorno.');
+      }
       gatewayOutcome = outcome;
       current = (await this.prisma.payment.findUnique({ where: { id } }))!;
     }
@@ -255,14 +247,84 @@ export class PaymentsService {
   }
 
   /**
+   * Reserva um pedido de estorno (com o lançamento na carteira quando é a parte da carteira). Auditoria run-4: o teto é
+   * conferido contra o pagamento lido agora (`read`), nunca contra uma leitura anterior; passou do teto → `null` (409).
+   * `plannedWallet` (pedido misto): grava junto o plano da carteira (`<chave>:wallet`, status `planned`, ignorado pela
+   * reconciliação e pela regra de um estorno aberto), que guarda a intenção original para a repetição. A parte da carteira
+   * conclui o plano, se houver, em vez de criar outro registro.
+   */
+  private async claimRefundPart(
+    actor: Principal, read: Payment, part: number, viaWallet: boolean, recordKey: string, base: number, reason: string,
+    gatewayRefundedBefore: number | null, plannedWallet?: number,
+  ) {
+    const refundedCents = read.refundedCents + part;
+    if (refundedCents > base) return null;
+    const to = refundedCents >= base ? 'refunded' : 'partially_refunded';
+    return this.prisma.$transaction(async (tx) => {
+      if (!(await this.state.claimRefund(tx, read, to, refundedCents))) return null;
+      const data = {
+        paymentId: read.id, idempotencyKey: recordKey, amountCents: part, prevStatus: read.status, prevRefundedCents: read.refundedCents,
+        newStatus: to, newRefundedCents: refundedCents, gatewayRefundedBefore: viaWallet ? null : gatewayRefundedBefore, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
+      };
+      if (viaWallet) {
+        await appendWalletEntry(tx, { customerId: read.customerId, type: 'refund', amountCents: part, description: `Estorno: ${reason}`, paymentId: read.id, rentalId: read.rentalId, createdById: actor.userId });
+        const plan = await tx.paymentRefund.updateMany({ where: { idempotencyKey: recordKey, status: 'planned' }, data });
+        if (plan.count === 1) return tx.paymentRefund.findUniqueOrThrow({ where: { idempotencyKey: recordKey } });
+      }
+      const created = await tx.paymentRefund.create({ data });
+      if (plannedWallet) {
+        await tx.paymentRefund.create({
+          data: {
+            paymentId: read.id, idempotencyKey: `${recordKey}:wallet`, amountCents: plannedWallet, prevStatus: to, prevRefundedCents: refundedCents,
+            newStatus: refundedCents + plannedWallet >= base ? 'refunded' : 'partially_refunded', newRefundedCents: refundedCents + plannedWallet, status: 'planned', createdById: actor.userId,
+          },
+        });
+      }
+      return created;
+    });
+  }
+
+  /**
    * Repetição com a mesma chave: em aberto (`claimed`/`pending`) ou concluído → 200 com o estado atual do pagamento
    * (a reserva já vale; a reconciliação cuida do gateway); recusado → o mesmo 422; em revisão manual → 409.
+   * Auditoria run-4: valor diferente do pedido original (gateway + plano/registro da carteira) → 422; plano da carteira
+   * ainda `planned` (queda antes dela) → a repetição o conclui (`completeWalletPart`).
    */
-  private replayRefund(record: PaymentRefund, p: Payment) {
+  private async replayRefund(actor: Principal, record: PaymentRefund, p: Payment, dto: RefundDto) {
     if (record.status === 'rejected') throw new ProblemException(422, 'payment-failed', 'O gateway recusou o estorno.');
     if (record.status === 'needs_review') throw conflict('conflict', 'Este estorno está em revisão manual.');
+    const wallet = await this.prisma.paymentRefund.findUnique({ where: { idempotencyKey: `${record.idempotencyKey}:wallet` } });
+    const original = record.amountCents + (wallet?.amountCents ?? 0);
+    if (dto.amountCents !== undefined && dto.amountCents !== original) {
+      throw unprocessable('validation-error', `Repetição com valor diferente do pedido original (${original}).`);
+    }
     this.logger.log({ msg: 'refund_replayed', paymentId: p.id, refundId: record.id, status: record.status });
-    return toPayment(p);
+    const completed = wallet?.status === 'planned' ? await this.completeWalletPart(actor, record, wallet, dto) : null;
+    return toPayment(completed ?? p);
+  }
+
+  /**
+   * Conclui o plano da carteira de um estorno misto repetido. Só com o pagamento atual: nunca em recarga (`top_up`), só se
+   * o pedido do gateway esgotou a parte do gateway e o plano cabe no que resta da carteira (`walletBase` menos o já
+   * estornado além do gateway) e no teto; senão 409 + revisão manual, sem crédito.
+   */
+  private async completeWalletPart(actor: Principal, record: PaymentRefund, plan: PaymentRefund, dto: RefundDto): Promise<Payment | null> {
+    const fresh = await this.prisma.payment.findUnique({ where: { id: record.paymentId } });
+    if (!fresh || fresh.kind === 'top_up') return null;
+    const { gatewayBase, walletBase, base } = await refundBase(this.prisma, fresh);
+    const walletLeft = walletBase - Math.max(0, fresh.refundedCents - gatewayBase);
+    const gatewayExhausted = record.prevRefundedCents + record.amountCents >= gatewayBase;
+    if (!gatewayExhausted || plan.amountCents > walletLeft || fresh.refundedCents + plan.amountCents > base) {
+      this.state.needsReview({ paymentId: fresh.id, reason: 'refund_wallet_over_cap' }, { refundId: record.id });
+      throw conflict('conflict', 'A parte da carteira deste estorno não cabe no que resta do pagamento. O estorno foi para revisão manual.');
+    }
+    if (!(await this.claimRefundPart(actor, fresh, plan.amountCents, true, plan.idempotencyKey, base, dto.reason, null))) throw conflict('conflict', REFUND_RACED);
+    const updated = (await this.prisma.payment.findUnique({ where: { id: fresh.id } }))!;
+    // Como no fluxo normal: estorno total confirmado do aluguel devolve os minutos de pacote.
+    if (updated.kind === 'rental') await this.returnPackageMinutes(updated);
+    this.state.emitUpdated(updated);
+    await this.audit.record({ actor, action: 'payment.refund', entityType: 'Payment', entityId: fresh.id, reason: dto.reason, metadata: { amountCents: plan.amountCents, walletCompletion: true } });
+    return updated;
   }
 
   /** Chama o gateway para um pedido de estorno e grava o resultado. Desfaz a reserva só em recusa definitiva. */
