@@ -237,7 +237,7 @@ da moto: "Rastreador" deve dizer **Só relé**.
 | # | Faça | Esperado no painel | Esperado no `status` |
 |---|---|---|---|
 | 1 | Ligue o J16 e espere 2–3 min | "Último sinal" de segundos atrás; "GPS / 4G" com sinal | dispositivo `online`, ponte vê o dispositivo, última mensagem < 60 s |
-| 2 | Compare a posição | moto no lugar certo do mapa | fix do GPS < 10 s |
+| 2 | Compare a posição | moto no lugar certo do mapa | fix do GPS < 7 s (a ponte não corta com posição mais velha; medir também a latência posição → corte, bem abaixo de 2 s) |
 | 3 | Bateria | % plausível (J16 no pack) ou 0% após 5 min (J16 no DC-DC) | tensão externa presente / `battery_unknown` |
 | 4 | Roda **parada**, chave ligada: **Bloquear** | "Aguardando a moto parar para bloquear" por ~10–20 s, depois "confirmado" e **Travada: Sim**; o relé estala e a moto não aciona o motor | fase `waiting_stop` → `cutting` → nenhuma; `blocked=true` |
 | 5 | **Desbloquear** | "confirmado" em até 30 s, **Travada: Não**, a moto aciona de novo | `blocked=false` |

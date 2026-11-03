@@ -28,7 +28,7 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   log `alarm_ignored`. Os alarmes vêm de `position.attributes.alarm` (sem Notification no Traccar o WebSocket não traz
   `events`); se houver Notification, o mesmo alarme por `events` é deduplicado pelo id da posição. Replay de conexão não gera alarme.
 - **Shadow:** todo delta passa pela segunda guarda. `travada: true` → `engineStop` **só** com o dispositivo online, posição de até
-  10 s abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
+  7 s (`CUT_FRESH_MS`; com `TIMER,5,5#` uma amostra perdida já recusa) abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
   em 10 s); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
   releitura da versão e de qualquer outra espera), com o aparelho resolvido uma vez no início do delta: se a posição envelheceu,
   o dispositivo caiu ou o IMEI do thing mudou no meio (`device_changed`), nada é enviado. A sessão HTTP do Traccar é aberta
@@ -195,7 +195,10 @@ As tarefas físicas (comprar o kit e o chip M2M, confirmar a tensão de entrada 
 bancada, instalação com o relé no fio da chave, teste na moto parada, limitador de 32 km/h no controlador) estão no
 **Apêndice: tarefas do dono** da spec. Na bancada, confirmar também: Traccar ≥ 6.7.0 e que, com o J16 desligado, um
 `engineStop` é recusado (não enfileirado); heartbeat do J16 ≤ 60 s; `GET /api/server` da imagem escolhida devolve `version` como
-texto (se vier `null`, a ponte recusa todos os comandos de motor).
+texto (se vier `null`, a ponte recusa todos os comandos de motor); **latência posição → delta** (do `fixTime` da posição parada
+até o `engineStop` sair da ponte) **bem abaixo de 2 s** — a ponte só corta com posição de até 7 s (`CUT_FRESH_MS`), e um GPS
+com o `fixTime` mais de ~7 s atrás da chegada impede o corte (o lock termina `failed`/`timeout`, seguro mas inútil); meça
+também o atraso `fixTime` → `serverTime` no Traccar.
 
 Checklist adicional (ver a entrada da Task 1 em `docs/decisoes.md`): J16 com posição a cada <= 10 s durante um lock e tensão
 externa (0x94) no heartbeat (senão a bateria vira 0% após 5 min); corte em velocidade e bit de bloqueio no heartbeat; relé após

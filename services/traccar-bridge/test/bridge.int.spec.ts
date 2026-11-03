@@ -154,6 +154,7 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
   it.each([
     ['andando (15 km/h)', 8.1, T0 - 1_000, 'moving'],
     ['com posição velha (11 s)', 0, T0 - 11_000, 'stale'],
+    ['com posição de 8 s (uma amostra de 5 s perdida)', 0, T0 - 8_000, 'stale'],
   ])('delta travada:true %s → recusa da segunda guarda e nenhum comando', async (_name, knots, fixTime, reason) => {
     c = await start();
     c.traccar.push({ positions: [position({ id: 30, deviceId: 1, fixTime: iso(fixTime), serverTime: iso(T0), speed: knots })] });
