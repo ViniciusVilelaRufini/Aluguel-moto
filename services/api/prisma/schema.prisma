@@ -798,6 +798,8 @@ model Reservation {
   @@index([vehicleId, status])
   @@index([status, expiresAt])
   @@index([depotId, pickupAt])
+  // Auditoria run-4 (migração 20261103100000_aud4_indices).
+  @@index([depositId])
 }
 
 model Rental {
@@ -843,6 +845,10 @@ model Rental {
   @@index([customerId, startedAt])
   @@index([vehicleId, startedAt])
   @@index([status])
+  // Auditoria run-4 (migração 20261103100000_aud4_indices). Parcial escrito à mão: `Rental_start_location_startedAt`.
+  @@index([depositId])
+  @@index([endedAt])
+  @@index([startedAt])
 }
 
 model RentalEvent {
@@ -938,6 +944,10 @@ model Payment {
   @@index([rentalId])
   @@index([status])
   @@index([settlesPaymentId])
+  // Auditoria run-4 (migração 20261103100000_aud4_indices).
+  @@index([depositId])
+  @@index([providerPaymentId])
+  @@index([createdAt])
 }
 
 /// LGPD: exclusão do cliente (e cartões) no gateway depois da exclusão da conta, com retentativa (job a cada 5 min).
@@ -1311,6 +1321,8 @@ model ProcessedWebhook {
   processedAt DateTime @default(now())
 
   @@unique([provider, eventId])
+  // Auditoria run-4: expurgo diário (> 90 dias) do housekeeping.
+  @@index([processedAt])
 }
 
 /// Referência a entidades no gateway: cliente (`customer`) e assinatura (`subscription`).
