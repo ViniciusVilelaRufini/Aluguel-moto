@@ -56,7 +56,7 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 
 | Evento | Sala | Payload |
 |---|---|---|
-| `vehicle.position` | `fleet`, `rental:{id}` | `{ vehicleId, lat, lng, speedKmh, batteryPct, status: VehicleStatus, speedLimitKmh, ts }` |
+| `vehicle.position` | `fleet`, `rental:{id}` | `{ vehicleId, lat, lng, speedKmh, batteryPct, batteryKnown, status: VehicleStatus, speedLimitKmh, ts }` |
 | `vehicle.status` | `fleet` | `{ vehicleId, status: VehicleStatus, ts }` |
 | `vehicle.state` | `fleet` | `{ vehicleId, locked, online, lastSeenAt, batteryKnown, ts }` |
 | `command.updated` | `fleet` | `{ commandId, vehicleId, type: CommandType, status: CommandStatus, reason? }` |
@@ -70,9 +70,9 @@ Tabela fixada no plano mestre (`docs/superpowers/plans/2026-10-21-volti-platafor
 
 ### Detalhes por evento
 
-- **`vehicle.position`** — a cada telemetria (5 s em aluguel, 60 s parada). Na sala `rental:{id}` só chega a moto do aluguel. `speedLimitKmh` é o limite em vigor (0–32). O app do cliente mostra velocidade e bateria; nunca mostra distância percorrida.
+- **`vehicle.position`** — a cada telemetria (5 s em aluguel, 60 s parada). Na sala `rental:{id}` só chega a moto do aluguel. `speedLimitKmh` é o limite em vigor (0–32). `batteryKnown` (bancada do J16; ausente nos servidores antigos = `true`): `false` = sem leitura da bateria, `batteryPct` vem 0 e não deve aparecer como nível ("Bateria desconhecida"). O app do cliente mostra velocidade e bateria; nunca mostra distância percorrida.
 - **`vehicle.status`** — mudança de `VehicleStatus` (inclusive `offline` quando o rastreador perde conexão).
-- **`vehicle.state`** — estado do rastreador para a ficha e o mapa do painel, com os mesmos nomes e significados de `Vehicle` no REST (`locked`, `online`, `lastSeenAt`, `batteryKnown`). Emitido quando `locked` muda (na hora, também pelo status/heartbeat e pela resposta do rastreador ao comando, não só pela telemetria), quando `online` muda (rastreador conectou/caiu) e, sem mudança, no máximo a cada 15 s por moto para avançar `lastSeenAt` (telemetria, status/heartbeat ou `reported`). `lastSeenAt` é a hora do servidor em que o rastreador foi ouvido; `ts` é a hora da emissão. Use `ts` para descartar eventos mais velhos que o `GET /vehicles/{id}` já carregado. Só sala `fleet` (staff; nunca o cliente).
+- **`vehicle.state`** — estado do rastreador para a ficha e o mapa do painel, com os mesmos nomes e significados de `Vehicle` no REST (`locked`, `online`, `lastSeenAt`, `batteryKnown`). Emitido quando `locked` muda (na hora, também pelo status/heartbeat e pela resposta do rastreador ao comando, não só pela telemetria), quando `online` muda (rastreador conectou/caiu) e, sem mudança, no máximo a cada 15 s por moto para avançar `lastSeenAt` (telemetria, status/heartbeat ou `reported`). `lastSeenAt` é a hora do servidor em que o rastreador foi ouvido; `ts` é a hora da **fonte** da mudança (medição da telemetria, chegada do status/heartbeat ou da resposta ao comando, metadata do shadow, ou o evento de conectividade), não a da emissão. Trava: a do rastreador (`reported`, resposta ao comando) vence por 90 s a da telemetria, que a ponte GT06 manda `false` quando o bit de corte está velho. Use `ts` para descartar eventos mais velhos que o `GET /vehicles/{id}` já carregado. Só sala `fleet` (staff; nunca o cliente).
 - **`command.updated`** — cada transição do comando (`pending` → `in_progress` → `confirmed` | `failed`). `reason` é o mesmo valor de `VehicleCommand.statusReason` no REST (`CommandStatusReason`: `offline`, `timeout`, `did_not_stop`, `invalid_limit`, `locked_by_staff`, `unsupported_by_tracker`). O texto livre que o operador informou ao pedir o comando fica só em `VehicleCommand.reason` (REST) e no AuditLog. O painel mostra `pending` + `offline` como "moto offline — será aplicado ao reconectar".
 - **`alert.created`** — `type` usa os valores de `AlertType` do `openapi.yaml`; `priority` é `AlertPriority`. Detalhes completos por `GET /alerts/{id}`.
 - **`rental.updated`** — a cada mudança de status e a cada 30 s com o aluguel `active`/`paused` (atualiza tempo e custo parcial). `costCents` segue a mesma regra de `Rental.costCents`.
@@ -92,7 +92,7 @@ import type { components } from '@volti/contracts';
 type S = components['schemas'];
 
 export interface RealtimeEvents {
-  'vehicle.position': { vehicleId: string; lat: number; lng: number; speedKmh: number; batteryPct: number; status: S['VehicleStatus']; speedLimitKmh: number; ts: string };
+  'vehicle.position': { vehicleId: string; lat: number; lng: number; speedKmh: number; batteryPct: number; batteryKnown?: boolean; status: S['VehicleStatus']; speedLimitKmh: number; ts: string };
   'vehicle.status': { vehicleId: string; status: S['VehicleStatus']; ts: string };
   'vehicle.state': { vehicleId: string; locked: boolean; online: boolean; lastSeenAt: string; batteryKnown: boolean; ts: string };
   'command.updated': { commandId: string; vehicleId: string; type: S['CommandType']; status: S['CommandStatus']; reason?: S['CommandStatusReason'] };

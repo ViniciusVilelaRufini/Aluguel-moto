@@ -153,7 +153,12 @@ export class RealtimeGateway implements OnGatewayInit {
     if (!this.server) return;
     const info = await this.vehicleInfo(ev.vehicleId);
     if (!info) return;
-    const payload = { vehicleId: ev.vehicleId, lat: ev.lat, lng: ev.lng, speedKmh: ev.speedKmh, batteryPct: ev.batteryPct, status: info.status, speedLimitKmh: info.speedLimitKmh, ts: ev.ts };
+    // Bancada do J16: `batteryKnown` (aditivo; sem leitura a ponte manda `batteryPct` 0, que não é carga real).
+    const batteryKnown = ev.batteryKnown !== false;
+    const payload = {
+      vehicleId: ev.vehicleId, lat: ev.lat, lng: ev.lng, speedKmh: ev.speedKmh, batteryPct: batteryKnown ? ev.batteryPct : 0, batteryKnown, status: info.status,
+      speedLimitKmh: info.speedLimitKmh, ts: ev.ts,
+    };
     this.server.to('fleet').emit('vehicle.position', payload);
     if (info.rentalId) this.server.to(`rental:${info.rentalId}`).emit('vehicle.position', payload);
   }

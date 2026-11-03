@@ -56,6 +56,17 @@ describe('RealtimeGateway', () => {
     expect(emit).toHaveBeenCalledWith('vehicle.state', ev);
   });
 
+  it('bancada do J16: vehicle.position leva batteryKnown (sem leitura: false, batteryPct 0)', async () => {
+    const { gw, emit, prisma } = setup();
+    prisma.vehicle.findUnique.mockResolvedValue({ status: 'free', speedLimitKmh: 32 } as any);
+    prisma.rental.findFirst.mockResolvedValue(null);
+    const base = { thingName: 'moto-1', vehicleId: 'v1', lat: -23.5, lng: -46.6, speedKmh: 0, locked: true, ignition: false, signal: 4, ts: '2026-11-03T15:00:00.000Z' };
+    await gw.onTelemetry({ ...base, batteryPct: 0, batteryKnown: false });
+    expect(emit).toHaveBeenLastCalledWith('vehicle.position', expect.objectContaining({ batteryPct: 0, batteryKnown: false }));
+    await gw.onTelemetry({ ...base, batteryPct: 70 });
+    expect(emit).toHaveBeenLastCalledWith('vehicle.position', expect.objectContaining({ batteryPct: 70, batteryKnown: true }));
+  });
+
   it('zone.notice: mensagens em pt-BR', () => {
     expect(zoneMessage({ zoneType: 'reduced_speed', transition: 'ENTER', speedLimitKmh: 6 })).toBe('Você entrou numa área de pedestres. Velocidade máxima: 6 km/h.');
     expect(zoneMessage({ zoneType: 'operation', transition: 'EXIT' })).toMatch(/5 minutos/);

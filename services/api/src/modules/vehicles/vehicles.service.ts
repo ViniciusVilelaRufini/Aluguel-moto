@@ -33,6 +33,12 @@ const TRACK_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const DB_WRITE_INTERVAL_MS = 30_000;
 /** `lastSeenAt` no banco (e `vehicle.state` sem mudança de trava/online) no máximo a cada 15 s por moto (realtime.md). */
 export const LAST_SEEN_WRITE_INTERVAL_MS = 15_000;
+/**
+ * Trava reportada pelo rastreador (`reported`, resposta ao comando, comando confirmado) vence a da telemetria por este tempo:
+ * a ponte GT06 manda `travada: false` na telemetria quando o bit de corte está velho (> 90 s) ou com comando pendente. 90 s =
+ * a validade do bit na ponte; com o heartbeat de 60 s o reported se renova antes disso.
+ */
+export const REPORTED_LOCK_PRECEDENCE_MS = 90_000;
 
 /** Normaliza `VLT-0001`, `0001`, `1` ou `volti://v/VLT-0001` (URL-encoded) para `VLT-0001`. */
 export function parseVehicleCode(raw: string): string | null {
@@ -53,10 +59,11 @@ export class VehiclesService {
   private readonly logger = new Logger('VehiclesService');
   private readonly lastDbWrite = new Map<string, number>();
   /**
-   * Último estado do rastreador gravado por esta instância (só para poupar escritas: a decisão final é a escrita condicional
-   * no banco, que vale entre instâncias). `seenAt` = último `lastSeenAt` tentado.
+   * Último `lastSeenAt` tentado por esta instância (só poupa escritas do último sinal; a escrita é condicional no banco).
+   * Trava e bateria conhecida não têm cache: a escrita condicional decide sempre (revisão: um cache por instância escondia a
+   * mudança gravada por outra instância).
    */
-  private readonly trackerState = new Map<string, { locked?: boolean; batteryKnown?: boolean; seenAt?: number }>();
+  private readonly seenTried = new Map<string, number>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -107,13 +114,13 @@ export class VehiclesService {
     const statusFilter = isStaff(user)
       ? Prisma.empty
       : Prisma.sql`AND v."status" = 'free'::"VehicleStatus" AND v."depotId" IS NULL AND ${notFixedForOtherSql(user.customerId!)}`;
-    type NearbyRow = Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct' | 'vehicleModelId'> & {
+    type NearbyRow = Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct' | 'batteryKnown' | 'vehicleModelId'> & {
       distance: number;
       categoryLabel: string | null;
       pricePerMinuteCents: number | null;
     };
     const rows = await this.prisma.$queryRaw<NearbyRow[]>`
-      SELECT v."id", v."code", v."model", v."status", v."lat", v."lng", v."batteryPct", v."vehicleModelId",
+      SELECT v."id", v."code", v."model", v."status", v."lat", v."lng", v."batteryPct", v."batteryKnown", v."vehicleModelId",
              m."categoryLabel", m."pricePerMinuteCents",
              ST_Distance(ST_SetSRID(ST_MakePoint(v."lng", v."lat"), 4326)::geography, ${point}) AS "distance"
       FROM "Vehicle" v
@@ -389,7 +396,10 @@ export class VehiclesService {
       lat: String(ev.lat), lng: String(ev.lng), speedKmh: String(ev.speedKmh), batteryPct: String(ev.batteryPct), batteryKnown: String(batteryKnown),
       locked: String(ev.locked), ignition: String(ev.ignition), signal: String(ev.signal), ts: ev.ts,
     });
-    await this.syncTrackerState(ev.vehicleId, { locked: ev.locked, batteryKnown, seenAt: new Date(ev.receivedAt ?? ev.ts) });
+    // Hora da medição limitada à chegada (relógio do rastreador adiantado nunca passa à frente de um reported).
+    const receivedAt = Date.parse(ev.receivedAt ?? ev.ts);
+    const measuredAt = Math.min(Date.parse(ev.ts), receivedAt);
+    await this.syncTrackerState(ev.vehicleId, { locked: ev.locked, lockedBy: 'telemetry', at: measuredAt, batteryKnown, seenAt: receivedAt });
     const last = this.lastDbWrite.get(ev.vehicleId) ?? 0;
     if (Date.now() - last < DB_WRITE_INTERVAL_MS) return;
     this.lastDbWrite.set(ev.vehicleId, Date.now());
@@ -397,7 +407,8 @@ export class VehiclesService {
     await this.prisma.vehicle.updateMany({
       where: { id: ev.vehicleId },
       data: {
-        lat: ev.lat, lng: ev.lng, speedKmh: ev.speedKmh, batteryPct: batteryKnown ? Math.round(ev.batteryPct) : 0, batteryKnown, locked: ev.locked, ignition: ev.ignition,
+        // Trava, bateria conhecida e último sinal: donos são as escritas condicionais de `syncTrackerState`.
+        lat: ev.lat, lng: ev.lng, positionAt: new Date(measuredAt), speedKmh: ev.speedKmh, batteryPct: batteryKnown ? Math.round(ev.batteryPct) : 0, ignition: ev.ignition,
         signal: ev.signal, online: true,
         ...(pending.km > 0 ? { odometerKm: { increment: pending.km } } : {}),
         ...(pending.hours > 0 ? { usageHours: { increment: pending.hours } } : {}),
@@ -415,45 +426,59 @@ export class VehiclesService {
    */
   @OnEvent(EV.IOT_REPORTED, { async: true, promisify: true })
   async onReported(ev: IotReportedEvent): Promise<void> {
-    await this.syncTrackerState(ev.vehicleId, { locked: ev.locked, seenAt: ev.heard ? new Date(ev.ts) : undefined }, { checkLocked: true });
+    const at = Date.parse(ev.ts);
+    await this.syncTrackerState(ev.vehicleId, { locked: ev.locked, lockedBy: 'reported', at, seenAt: ev.heard ? at : undefined });
   }
 
   /**
-   * Estado do rastreador no banco, com escritas condicionais (valem entre instâncias): `locked` e `batteryKnown` quando mudam,
-   * `lastSeenAt` quando o do banco tem mais de 15 s. Alguma escrita pegou → `vehicle.state` (WS, sala `fleet`) com o estado
-   * relido do banco. `checkLocked` = sempre confere a trava no banco (reported: raro e autoritativo); a telemetria só confere
-   * quando muda em relação ao que esta instância viu (a gravação de 30 s acerta o resto).
+   * Estado do rastreador no banco, só com escritas condicionais (valem entre instâncias, sem cache):
+   * - `locked`: muda quando a fonte é a mais nova que vale. `reported` (status/heartbeat, resposta ao comando) muda se a trava
+   *   gravada não for mais nova que ele; telemetria muda só se a trava gravada veio da telemetria (e não é mais nova) ou se o
+   *   último reported tem mais de `REPORTED_LOCK_PRECEDENCE_MS` — a telemetria da ponte é conservadora (`false` com o bit
+   *   velho) e não desfaz o que o rastreador acabou de dizer. O reported igual ao gravado só renova a origem (sem evento).
+   * - `batteryKnown` quando muda; `lastSeenAt` quando o do banco tem mais de 15 s.
+   * Alguma mudança → `vehicle.state` (WS, sala `fleet`) com o estado relido do banco e `ts` = hora da fonte que mudou.
    */
-  private async syncTrackerState(vehicleId: string, input: { locked?: boolean; batteryKnown?: boolean; seenAt?: Date }, opts: { checkLocked?: boolean } = {}): Promise<void> {
-    const cache = this.trackerState.get(vehicleId) ?? {};
-    this.trackerState.set(vehicleId, cache);
-    const writes: Array<Promise<{ count: number }>> = [];
-    const { locked, batteryKnown, seenAt } = input;
-    if (locked !== undefined && (opts.checkLocked || cache.locked !== locked)) {
-      cache.locked = locked;
-      writes.push(this.prisma.vehicle.updateMany({ where: { id: vehicleId, locked: !locked }, data: { locked } }));
+  private async syncTrackerState(
+    vehicleId: string,
+    input: { locked?: boolean; lockedBy: 'reported' | 'telemetry'; at: number; batteryKnown?: boolean; seenAt?: number },
+  ): Promise<void> {
+    const { locked, lockedBy, at, batteryKnown, seenAt } = input;
+    const changed: number[] = [];
+    if (locked !== undefined && Number.isFinite(at)) {
+      const lockedAt = new Date(at);
+      const notNewer = [{ lockedAt: null }, { lockedAt: { lte: lockedAt } }];
+      const where =
+        lockedBy === 'reported'
+          ? { OR: notNewer }
+          : { OR: [{ lockedAt: null }, { lockedFromReport: false, lockedAt: { lte: lockedAt } }, { lockedFromReport: true, lockedAt: { lt: new Date(at - REPORTED_LOCK_PRECEDENCE_MS) } }] };
+      const data = { locked, lockedAt, lockedFromReport: lockedBy === 'reported' };
+      const r = await this.prisma.vehicle.updateMany({ where: { id: vehicleId, locked: !locked, ...where }, data });
+      if (r.count > 0) changed.push(at);
+      else if (lockedBy === 'reported') await this.prisma.vehicle.updateMany({ where: { id: vehicleId, locked, ...where }, data });
     }
-    if (batteryKnown !== undefined && cache.batteryKnown !== batteryKnown) {
-      cache.batteryKnown = batteryKnown;
-      writes.push(this.prisma.vehicle.updateMany({ where: { id: vehicleId, batteryKnown: !batteryKnown }, data: { batteryKnown } }));
+    if (batteryKnown !== undefined) {
+      const r = await this.prisma.vehicle.updateMany({ where: { id: vehicleId, batteryKnown: !batteryKnown }, data: { batteryKnown } });
+      if (r.count > 0) changed.push(seenAt ?? at);
     }
-    const seen = seenAt?.getTime();
-    if (seen !== undefined && Number.isFinite(seen) && (cache.seenAt === undefined || seen - cache.seenAt >= LAST_SEEN_WRITE_INTERVAL_MS)) {
-      cache.seenAt = seen;
-      writes.push(
-        this.prisma.vehicle.updateMany({
-          where: { id: vehicleId, OR: [{ lastSeenAt: null }, { lastSeenAt: { lt: new Date(seen - LAST_SEEN_WRITE_INTERVAL_MS) } }] },
-          data: { lastSeenAt: new Date(seen) },
-        }),
-      );
+    const tried = this.seenTried.get(vehicleId);
+    if (seenAt !== undefined && Number.isFinite(seenAt) && (tried === undefined || seenAt - tried >= LAST_SEEN_WRITE_INTERVAL_MS)) {
+      this.seenTried.set(vehicleId, seenAt);
+      const r = await this.prisma.vehicle.updateMany({
+        where: { id: vehicleId, OR: [{ lastSeenAt: null }, { lastSeenAt: { lte: new Date(seenAt - LAST_SEEN_WRITE_INTERVAL_MS) } }] },
+        data: { lastSeenAt: new Date(seenAt) },
+      });
+      if (r.count > 0) changed.push(seenAt);
     }
-    if (!writes.length) return;
-    const counts = await Promise.all(writes);
-    if (counts.some((r) => r.count > 0)) await this.emitState(vehicleId);
+    if (changed.length) await this.emitState(vehicleId, Math.max(...changed));
   }
 
-  /** `vehicle.state` com o estado do banco (mesmos nomes e regras do REST: `online` derivado do último sinal). */
-  private async emitState(vehicleId: string): Promise<void> {
+  /**
+   * `vehicle.state` com o estado do banco (mesmos nomes e regras do REST: `online` derivado do último sinal). `ts` = hora da
+   * fonte (medição/chegada da mensagem do rastreador, ou do evento de conectividade), não a da emissão: o painel descarta o
+   * evento mais velho que o último aplicado.
+   */
+  private async emitState(vehicleId: string, sourceAt: number): Promise<void> {
     const v = await this.prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { locked: true, online: true, lastSeenAt: true, batteryKnown: true } });
     if (!v?.lastSeenAt) return;
     const ev: VehicleStateChangedEvent = {
@@ -462,7 +487,7 @@ export class VehiclesService {
       online: trackerOnline(v),
       lastSeenAt: v.lastSeenAt.toISOString(),
       batteryKnown: v.batteryKnown !== false,
-      ts: new Date().toISOString(),
+      ts: new Date(sourceAt).toISOString(),
     };
     this.events.emit(EV.VEHICLE_STATE_CHANGED, ev);
   }
@@ -486,8 +511,8 @@ export class VehiclesService {
       return;
     }
     // Bancada do J16: o painel acompanha a conectividade sem recarregar a ficha.
-    if (ev.online) this.trackerState.set(v.id, { ...this.trackerState.get(v.id), seenAt: Date.parse(ev.ts) });
-    await this.emitState(v.id);
+    if (ev.online) this.seenTried.set(v.id, Date.parse(ev.ts));
+    await this.emitState(v.id, Date.parse(ev.ts));
   }
 
   private async restoredStatus(v: Vehicle): Promise<VehicleStatus> {

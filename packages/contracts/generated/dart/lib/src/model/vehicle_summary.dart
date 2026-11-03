@@ -20,6 +20,7 @@ part 'vehicle_summary.g.dart';
 /// * [lng]
 /// * [batteryPct]
 /// * [estimatedRangeKm] - Autonomia estimada com a carga atual.
+/// * [batteryKnown] - Como em `Vehicle.batteryKnown` (ausente = `true`): `false` = sem leitura da bateria, `batteryPct`/`estimatedRangeKm` vêm 0 e não são reais.
 /// * [distanceM] - Distância até o ponto da busca (só em `nearby`).
 /// * [vehicleModelId] - Modelo no catálogo (`GET /vehicle-models`, com a foto).
 /// * [categoryLabel]
@@ -52,6 +53,10 @@ abstract class VehicleSummary
   /// Autonomia estimada com a carga atual.
   @BuiltValueField(wireName: r'estimatedRangeKm')
   double get estimatedRangeKm;
+
+  /// Como em `Vehicle.batteryKnown` (ausente = `true`): `false` = sem leitura da bateria, `batteryPct`/`estimatedRangeKm` vêm 0 e não são reais.
+  @BuiltValueField(wireName: r'batteryKnown')
+  bool? get batteryKnown;
 
   /// Distância até o ponto da busca (só em `nearby`).
   @BuiltValueField(wireName: r'distanceM')
@@ -134,6 +139,13 @@ class _$VehicleSummarySerializer
       object.estimatedRangeKm,
       specifiedType: const FullType(double),
     );
+    if (object.batteryKnown != null) {
+      yield r'batteryKnown';
+      yield serializers.serialize(
+        object.batteryKnown,
+        specifiedType: const FullType(bool),
+      );
+    }
     if (object.distanceM != null) {
       yield r'distanceM';
       yield serializers.serialize(
@@ -242,6 +254,14 @@ class _$VehicleSummarySerializer
             specifiedType: const FullType(double),
           ) as double;
           result.estimatedRangeKm = valueDes;
+          break;
+        case r'batteryKnown':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(bool),
+          ) as bool?;
+          if (valueDes == null) continue;
+          result.batteryKnown = valueDes;
           break;
         case r'distanceM':
           final valueDes = serializers.deserialize(

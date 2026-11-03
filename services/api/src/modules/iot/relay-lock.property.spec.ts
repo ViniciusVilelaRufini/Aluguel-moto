@@ -317,7 +317,7 @@ describe('relay_only: invariante de segurança (spec GT06 §5, teste de propried
     expect(DEFAULT_RECONNECT_GRACE_MS).toBeGreaterThan(0);
   });
 
-  it('em nenhuma sequência grava travada=true sem parada confirmada (≥ 2 amostras frescas < 3 km/h em ≥ 10 s, fora da graça), depois do prazo de 120 s ou duas vezes na mesma trava', async () => {
+  it('em nenhuma sequência grava travada=true sem parada confirmada (≥ 3 amostras frescas < 3 km/h em ≥ 20 s, no máximo 12 s entre elas, fora da graça), depois do prazo de 120 s ou duas vezes na mesma trava', async () => {
     await fc.assert(
       fc.asyncProperty(fc.array(step, { minLength: 1, maxLength: 80, size: 'max' }), async (steps) => {
         const { violations } = await runScenario(steps);

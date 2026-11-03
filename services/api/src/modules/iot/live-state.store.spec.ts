@@ -413,3 +413,31 @@ describe('LiveStateStore — bateria desconhecida (bancada do J16, bateria_conhe
     expect((await b.load(T))?.batteryKnown).toBeUndefined();
   });
 });
+
+describe('LiveStateStore — hora da posição (positionAt; link de localização)', () => {
+  const tel = (over: Record<string, unknown> = {}) => ({ lat: -23.56, lng: -46.69, velocidade_kmh: 0, bateria_pct: 70, travada: true, ignicao: false, sinal: 4, timestamp: '2026-11-03T14:59:58.000Z', ...over });
+
+  it('a telemetria mais nova grava a hora da medição; reported/heartbeat avança o lastSeenAt mas não a posição; outra instância lê', async () => {
+    const clock = new FakeClock(Date.parse('2026-11-03T15:00:00Z'));
+    const redis = new MemoryRedisStore();
+    const a = new LiveStateStore(redis, clock);
+    const b = new LiveStateStore(redis, clock);
+    await a.applyTelemetry(T, tel() as any);
+    expect(a.positionAt(T)).toBe('2026-11-03T14:59:58.000Z');
+    await clock.advance(60_000);
+    await a.applyReported(T, { travada: true });
+    expect((await b.load(T))?.lastSeenAt).toBe('2026-11-03T15:01:00.000Z');
+    expect(b.positionAt(T)).toBe('2026-11-03T14:59:58.000Z');
+    // Relógio do rastreador no futuro: limitada a agora.
+    await a.applyTelemetry(T, tel({ timestamp: '2026-11-03T15:05:00.000Z' }) as any);
+    expect(a.positionAt(T)).toBe('2026-11-03T15:01:00.000Z');
+  });
+
+  it('getLiveState expõe positionAt', async () => {
+    const clock = new FakeClock(Date.parse('2026-11-03T15:00:00Z'));
+    const live = new LiveStateStore(new MemoryRedisStore(), clock);
+    const gw = new TestGateway(new FakeTransport(), live, clock, new EventEmitter2(), { confirmWaitMs: 1_000, commandTimeoutMs: 30_000 });
+    await live.applyTelemetry(T, tel() as any);
+    expect(await gw.getLiveState(T)).toMatchObject({ positionAt: '2026-11-03T14:59:58.000Z' });
+  });
+});

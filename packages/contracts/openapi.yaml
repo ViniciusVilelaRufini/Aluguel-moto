@@ -5920,6 +5920,7 @@ components:
         lng: { type: number, format: double }
         batteryPct: { type: integer, minimum: 0, maximum: 100 }
         estimatedRangeKm: { type: number, format: double, minimum: 0, description: Autonomia estimada com a carga atual. }
+        batteryKnown: { type: boolean, readOnly: true, description: 'Como em `Vehicle.batteryKnown` (ausente = `true`): `false` = sem leitura da bateria, `batteryPct`/`estimatedRangeKm` vêm 0 e não são reais.' }
         distanceM: { type: integer, minimum: 0, description: Distância até o ponto da busca (só em `nearby`). }
         vehicleModelId: { type: string, format: uuid, description: "Modelo no catálogo (`GET /vehicle-models`, com a foto)." }
         categoryLabel: { type: string, examples: [Urbana] }

@@ -21,7 +21,7 @@ export const RELAY_UNLOCK_TIMEOUT_MS = 90_000;
  * Parada confirmada (spec GT06 §5.1, revista na bancada do J16 — docs/decisoes.md 2026-11-03): o firmware do J16 não manda
  * posição a menos de 10 s (TIMER mínimo), então a regra antiga (2 amostras em 10 s, no máximo 10 s entre elas) quase nunca
  * fechava com o atraso do GPS (1–3 s). Agora: 3 amostras paradas consecutivas cobrindo ≥ 20 s, no máximo 12 s entre duas
- * seguidas. O frescor da última (, 10 s) e a guarda da ponte (, 7 s) não mudaram.
+ * seguidas. O frescor da última (`SPEED_FRESH_MS`, 10 s) e a guarda da ponte (`CUT_FRESH_MS`, 7 s) não mudaram.
  */
 export const RELAY_STILL_MIN_SAMPLES = 3;
 export const RELAY_STILL_MIN_SPAN_MS = 20_000;

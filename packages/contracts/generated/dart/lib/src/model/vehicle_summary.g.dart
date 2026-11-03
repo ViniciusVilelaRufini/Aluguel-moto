@@ -24,6 +24,8 @@ class _$VehicleSummary extends VehicleSummary {
   @override
   final double estimatedRangeKm;
   @override
+  final bool? batteryKnown;
+  @override
   final int? distanceM;
   @override
   final String? vehicleModelId;
@@ -44,6 +46,7 @@ class _$VehicleSummary extends VehicleSummary {
       required this.lng,
       required this.batteryPct,
       required this.estimatedRangeKm,
+      this.batteryKnown,
       this.distanceM,
       this.vehicleModelId,
       this.categoryLabel,
@@ -68,6 +71,7 @@ class _$VehicleSummary extends VehicleSummary {
         lng == other.lng &&
         batteryPct == other.batteryPct &&
         estimatedRangeKm == other.estimatedRangeKm &&
+        batteryKnown == other.batteryKnown &&
         distanceM == other.distanceM &&
         vehicleModelId == other.vehicleModelId &&
         categoryLabel == other.categoryLabel &&
@@ -85,6 +89,7 @@ class _$VehicleSummary extends VehicleSummary {
     _$hash = $jc(_$hash, lng.hashCode);
     _$hash = $jc(_$hash, batteryPct.hashCode);
     _$hash = $jc(_$hash, estimatedRangeKm.hashCode);
+    _$hash = $jc(_$hash, batteryKnown.hashCode);
     _$hash = $jc(_$hash, distanceM.hashCode);
     _$hash = $jc(_$hash, vehicleModelId.hashCode);
     _$hash = $jc(_$hash, categoryLabel.hashCode);
@@ -104,6 +109,7 @@ class _$VehicleSummary extends VehicleSummary {
           ..add('lng', lng)
           ..add('batteryPct', batteryPct)
           ..add('estimatedRangeKm', estimatedRangeKm)
+          ..add('batteryKnown', batteryKnown)
           ..add('distanceM', distanceM)
           ..add('vehicleModelId', vehicleModelId)
           ..add('categoryLabel', categoryLabel)
@@ -149,6 +155,10 @@ class VehicleSummaryBuilder
   set estimatedRangeKm(double? estimatedRangeKm) =>
       _$this._estimatedRangeKm = estimatedRangeKm;
 
+  bool? _batteryKnown;
+  bool? get batteryKnown => _$this._batteryKnown;
+  set batteryKnown(bool? batteryKnown) => _$this._batteryKnown = batteryKnown;
+
   int? _distanceM;
   int? get distanceM => _$this._distanceM;
   set distanceM(int? distanceM) => _$this._distanceM = distanceM;
@@ -183,6 +193,7 @@ class VehicleSummaryBuilder
       _lng = $v.lng;
       _batteryPct = $v.batteryPct;
       _estimatedRangeKm = $v.estimatedRangeKm;
+      _batteryKnown = $v.batteryKnown;
       _distanceM = $v.distanceM;
       _vehicleModelId = $v.vehicleModelId;
       _categoryLabel = $v.categoryLabel;
@@ -224,6 +235,7 @@ class VehicleSummaryBuilder
               batteryPct, r'VehicleSummary', 'batteryPct'),
           estimatedRangeKm: BuiltValueNullFieldError.checkNotNull(
               estimatedRangeKm, r'VehicleSummary', 'estimatedRangeKm'),
+          batteryKnown: batteryKnown,
           distanceM: distanceM,
           vehicleModelId: vehicleModelId,
           categoryLabel: categoryLabel,

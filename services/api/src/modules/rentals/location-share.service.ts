@@ -38,17 +38,19 @@ export class LocationShareService {
       select: {
         status: true,
         customer: { select: { locationConsent: true } },
-        vehicle: { select: { thingName: true, lat: true, lng: true, lastSeenAt: true } },
+        vehicle: { select: { thingName: true, lat: true, lng: true, positionAt: true } },
       },
     });
     if (!rental || !OPEN_RENTAL_STATUSES.includes(rental.status) || !rental.customer.locationConsent) throw unavailable();
 
-    // Estado ao vivo (Redis, atualizado a cada telemetria) quando é mais novo que o cadastro (gravado a cada ~30 s).
+    // Estado ao vivo (Redis, atualizado a cada telemetria) quando a posição dele é mais nova que a do cadastro (gravado a cada
+    // ~30 s). A hora é sempre a da medição da posição (`positionAt`), nunca o último sinal: o heartbeat do rastreador avança o
+    // `lastSeenAt` sem posição nova, e a página mostraria uma posição velha com hora nova (bancada do J16).
     let lat = rental.vehicle.lat;
     let lng = rental.vehicle.lng;
-    let at = rental.vehicle.lastSeenAt;
+    let at = rental.vehicle.positionAt;
     const live = await this.iot.getLiveState(rental.vehicle.thingName).catch(() => null);
-    const liveAt = live ? new Date(live.lastSeenAt) : null;
+    const liveAt = live?.positionAt ? new Date(live.positionAt) : null;
     if (live && liveAt && Number.isFinite(liveAt.getTime()) && liveAt.getTime() > 0 && (!at || liveAt > at) && !(live.lat === 0 && live.lng === 0)) {
       lat = live.lat;
       lng = live.lng;

@@ -221,8 +221,8 @@ export class CommandsService {
   /** Reflete o efeito confirmado no cadastro da moto (a telemetria da Task 4 também atualiza). */
   private async reflectOnVehicle(vehicleId: string, input: Pick<DispatchInput, 'type' | 'speedLimitKmh' | 'on'>): Promise<void> {
     const data: Prisma.VehicleUpdateInput = {};
-    if (input.type === 'lock') data.locked = true;
-    if (input.type === 'unlock') data.locked = false;
+    // Confirmado = o rastreador reportou (origem `reported`, mesma regra de precedência do VehiclesService.syncTrackerState).
+    if (input.type === 'lock' || input.type === 'unlock') Object.assign(data, { locked: input.type === 'lock', lockedAt: new Date(), lockedFromReport: true });
     if (input.type === 'speed_limit') data.speedLimitKmh = input.speedLimitKmh;
     if (input.type === 'stolen_mode') data.stolenMode = input.on;
     if (!Object.keys(data).length) return;

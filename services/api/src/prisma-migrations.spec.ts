@@ -109,3 +109,15 @@ describe('migração 20261103140000_vehicle_battery_known (bancada do J16)', () 
     expect(schema).toMatch(/^\s*batteryKnown\s+Boolean\s+@default\(true\)/m);
   });
 });
+
+describe('migração 20261103150000_vehicle_tracker_provenance (revisão da bancada do J16)', () => {
+  it('Vehicle.lockedAt, lockedFromReport (default false) e positionAt, no schema e na migração', () => {
+    const sql = sqlOf('20261103150000_vehicle_tracker_provenance');
+    expect(sql).toContain('ALTER TABLE "Vehicle" ADD COLUMN "lockedAt" TIMESTAMP(3);');
+    expect(sql).toContain('ALTER TABLE "Vehicle" ADD COLUMN "lockedFromReport" BOOLEAN NOT NULL DEFAULT false;');
+    expect(sql).toContain('ALTER TABLE "Vehicle" ADD COLUMN "positionAt" TIMESTAMP(3);');
+    expect(schema).toMatch(/^\s*lockedAt\s+DateTime\?/m);
+    expect(schema).toMatch(/^\s*lockedFromReport\s+Boolean\s+@default\(false\)/m);
+    expect(schema).toMatch(/^\s*positionAt\s+DateTime\?/m);
+  });
+});

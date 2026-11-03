@@ -118,6 +118,15 @@ describe('Troca de bateria na tarefa: movimentações (2026-10-24) e custódia (
     expect(out).toMatchObject({ removedBatteryCycleCount: 40, installedBatteryCycleCount: 8 });
   });
 
+  it('bancada do J16: moto sem leitura da bateria (batteryKnown false) → removedBatteryPct nulo e a carga da retirada não vira 0', async () => {
+    const { service, prisma } = swapSetup();
+    prisma.vehicle.findUnique.mockResolvedValue({ batteryPct: 0, batteryKnown: false, batterySerial: 'BAT-OLD' } as any);
+    await service.submitBatterySwap(campo, TASK_ID, swap);
+    expect((prisma.batterySwap.create.mock.calls[0][0] as any).data.removedBatteryPct).toBeNull();
+    const removedWrite = prisma.battery.updateMany.mock.calls.map((c: any) => c[0]).find((a: any) => a.where.id === 'b-old');
+    expect(removedWrite.data).not.toHaveProperty('chargePct');
+  });
+
   it('outra bateria registrada na moto (série divergente) vai para `charging` com movimentação', async () => {
     const stray = { ...BAT_OLD, id: 'b-stray', serial: 'BAT-STRAY' };
     const { service, prisma } = swapSetup({}, [BAT_OLD, stray]);

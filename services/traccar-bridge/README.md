@@ -127,7 +127,7 @@ pnpm --filter traccar-bridge test -- relay-lock.e2e   # só o e2e em processo (a
 ponte real → broker em memória → pilha IoT real da API (`BaseIotGateway`, `LiveStateStore`, `LocalMqttTransport` +
 `LocalShadowStore`, `TelemetryService`, `RelayLockService`, Redis em memória) → delta → ponte → `POST /api/commands/send`. Um
 `FakeClock` comum à API e à ponte; o código da API entra por caminho relativo (o ts-jest só transpila; o `tsc` da ponte exclui
-`test/e2e`, o ESLint cobre). Cenários: o `lock` só termina `confirmed` depois de 2+ paradas cobrindo 10 s e do bit de corte de
+`test/e2e`, o ESLint cobre). Cenários: o `lock` só termina `confirmed` depois de 3+ paradas cobrindo 20 s (no máximo 12 s entre elas) e do bit de corte de
 um status seguinte; andando o tempo todo → `did_not_stop` sem `engineStop` nem `travada:false`; moto já travada → `confirmed`
 sem corte; ordem telemetria → reported da ponte; GPS 8 s atrás (mais que a cadência) com reported fora de banda a cada posição
 → andando nada corta, parada corta e confirma; Traccar 6.5 → nenhum comando de motor (lock e unlock); WebSocket que reconecta
@@ -215,7 +215,7 @@ provision` e `gt06.sh status <moto>`.
    - servidor: `SERVER,1,<domínio>,5023,0#` (domínio, preferido no dev single: o IP muda a cada partida) ou
      `SERVER,0,<ip>,5023,0#` (IP);
    - fuso UTC: `GMT,E,0,0#`;
-   - intervalo de posição fixo de 5 s (com e sem ACC), p.ex. `TIMER,5,5#` — a trava só-relé exige 2 posições paradas em 10 s;
+   - intervalo de posição fixo de 5 s (com e sem ACC), p.ex. `TIMER,5,5#` — a trava só-relé exige 3 posições paradas cobrindo 20 s, no máximo 12 s entre elas (o J16 G900L só aceita `TIMER,10,10#`, que também fecha: ver o e2e (11));
    - heartbeat ≤ 60 s, `HBT,60,60#` ou `HBT,1,1#` conforme a unidade do firmware (**obrigatório**: o status de corte é o único que confirma trava/destrava pelo `reported.travada`, e bit com mais de 90 s
      não vale para "já travada");
    - conferir: `STATUS#`, `PARAM#`, `WHERE#`.

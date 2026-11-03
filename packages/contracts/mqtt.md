@@ -126,7 +126,7 @@ O que a ponte faz (detalhes em `services/traccar-bridge/README.md`):
   > 20 m travada → `movimento_sem_aluguel`; outros alarmes são descartados com log;
 - delta `travada: true` → `engineStop` **só** com o dispositivo online, posição de até 7 s (`CUT_FRESH_MS`) com velocidade < 3 km/h e sem corte
   já ativo (segunda guarda); `travada: false` → `engineResume`; `limite_kmh` nunca vira comando (reported `limite_kmh: 32` fixo);
-- `reported.travada` vem do bit `blocked` da primeira posição **depois** do comando, nunca do aceite do comando;
+- `reported.travada` vem do bit `blocked` da primeira posição **depois** do comando, ou da **resposta do J16 ao comando** (`attributes.result` com `RELAY 1 OK`/`RELAY 0 OK`, ~1 s depois do envio: estado do relé fresco, publicado na hora), nunca do aceite do comando pelo Traccar. "Confirmado" quer dizer "o J16 disse que acionou o relé", não "o relé atuou" (a ponte não mede a saída);
 - reconexão (`deviceOnline`): presença `connected` (modo local), `reported` completo e `shadow/get`; do delta pendente só
   `travada: false` é reaplicado (um `travada: true` pendente nunca: a API recomeça o fluxo com amostras novas);
 - `motos/{t}/comandos` (`buzina`) é ignorado com log.

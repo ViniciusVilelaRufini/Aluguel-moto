@@ -458,7 +458,8 @@ export abstract class BaseIotGateway implements IotGateway {
   async getLiveState(thingName: string): Promise<VehicleLiveState | null> {
     const s = await this.live.load(thingName);
     if (!s) return null;
-    return { ...s, online: this.live.isOnline(thingName) };
+    const positionAt = this.live.positionAt(thingName);
+    return { ...s, online: this.live.isOnline(thingName), ...(positionAt ? { positionAt } : {}) };
   }
 
   // ── entradas vindas dos rastreadores (chamadas pelo TelemetryService) ──

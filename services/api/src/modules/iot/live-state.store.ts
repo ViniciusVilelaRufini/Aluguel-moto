@@ -98,6 +98,8 @@ export class LiveStateStore {
    * `reported`. Ausente = desconhecida (estado em branco, presença sem mensagem, polling sem horário). Vai junto no hash do Redis.
    */
   private readonly lockedAt = new Map<string, number>();
+  /** Hora da medição (limitada a agora) da posição exibida. Vai junto no hash do Redis (campo `positionAt`, vazio = desconhecida). */
+  private readonly positionAtMs = new Map<string, number>();
   /**
    * A4-1: hora (ms) do último `desired.travada: false` (unlock só relé) — gravada antes de publicar. Uma trava com origem até
    * este instante não confirma (`lockConfirmed`): a ponte pode ter enviado o `engineResume` e o relé estar aberto. Vai para o
@@ -151,6 +153,12 @@ export class LiveStateStore {
       online: false,
       lastSeenAt: new Date(0).toISOString(),
     };
+  }
+
+  /** Hora da medição da posição exibida (ISO), ou `undefined` (sem telemetria). Quem decide relê o estado (`load`) antes. */
+  positionAt(thingName: string): string | undefined {
+    const at = this.positionAtMs.get(thingName);
+    return at === undefined ? undefined : new Date(at).toISOString();
   }
 
   get(thingName: string): VehicleLiveState | null {
@@ -215,6 +223,9 @@ export class LiveStateStore {
     const lockedAt = h.lockedAt ? Number(h.lockedAt) : NaN;
     if (Number.isFinite(lockedAt)) this.lockedAt.set(thingName, lockedAt);
     else this.lockedAt.delete(thingName);
+    const positionAt = h.positionAt ? Number(h.positionAt) : NaN;
+    if (Number.isFinite(positionAt)) this.positionAtMs.set(thingName, positionAt);
+    else this.positionAtMs.delete(thingName);
     if (mem) {
       if (fromRedis.batteryKnown === undefined) delete mem.batteryKnown;
       Object.assign(mem, fromRedis);
@@ -618,6 +629,7 @@ export class LiveStateStore {
       Object.assign(s, { lat: t.lat, lng: t.lng, speedKmh: t.velocidade_kmh, batteryPct: t.bateria_pct, locked: t.travada, ignition: t.ignicao, signal: t.sinal });
       if (t.bateria_conhecida === false) s.batteryKnown = false;
       else delete s.batteryKnown;
+      this.positionAtMs.set(thingName, Number.isFinite(deviceTs) ? measuredAt : now);
       // Origem da trava: hora da medição; relógio do rastreador não confiável (futuro distante) = origem desconhecida.
       if (Number.isFinite(deviceTs) && deviceTs <= now + MAX_CLOCK_SKEW_MS) this.lockedAt.set(thingName, measuredAt);
       else this.lockedAt.delete(thingName);
@@ -700,6 +712,7 @@ export class LiveStateStore {
     values.batteryKnown = String(s.batteryKnown !== false);
     // Sempre gravado (vazio = desconhecida): o `hset` não apaga campo, e uma origem velha não pode sobrar para outra instância.
     values.lockedAt = String(this.lockedAt.get(s.thingName) ?? '');
+    values.positionAt = String(this.positionAtMs.get(s.thingName) ?? '');
     // `reconnectAt` não vai na escrita em bloco (a cópia desta instância pode estar velha e apagaria/baixaria a reconexão de
     // outra — false confirm): só por máximo atômico, depois.
     delete values.reconnectAt;

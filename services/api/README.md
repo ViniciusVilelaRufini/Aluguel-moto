@@ -115,7 +115,7 @@ não grava mais `lastSeenAt`, e a queda (offline) não o avança. Telemetria com
 sem leitura, `batteryPct`/`estimatedRangeKm` 0. `firmwareVersion` vem do `Tracker` vinculado (fallback: a coluna da moto).
 O overlay do Redis (`vehicles/live-overlay.ts`) sobrepõe trava (só com `lockedAt` conhecido), `online`, `lastSeenAt` e bateria
 conhecida mesmo sem posição no Redis, e aceita o `lastSeenAt` do banco até 10 min à frente (relógio do rastreador adiantado).
-Migração `20261103140000_vehicle_battery_known`.
+Sem cache por instância: toda mensagem faz a escrita condicional. A trava do rastreador (`reported`, resposta ao comando, comando confirmado) vence a da telemetria por 90 s (`REPORTED_LOCK_PRECEDENCE_MS`; colunas `lockedAt`/`lockedFromReport`), porque a telemetria da ponte sai `travada: false` com o bit velho; `vehicle.state.ts` é a hora da fonte. `positionAt` (banco e hash `iot:live:*`) é a hora da medição da posição — o link de localização usa ela, não o `lastSeenAt`. `vehicle.position` e `VehicleSummary` levam `batteryKnown`; a troca de bateria na tarefa não grava carga da retirada sem leitura. Migrações `20261103140000_vehicle_battery_known` e `20261103150000_vehicle_tracker_provenance`.
 Ordem das amostras (Task 11b): um `reported.velocidade_kmh` parado (< 3 km/h) é datado pela chegada e **não** vira barreira de
 ordem para a telemetria (datada pelo `fixTime`); com o GPS mais atrasado que a cadência (ex.: GPRS com buffer), senão toda
 telemetria seguinte seria "velha" e a parada nunca se confirmaria. `reported` em movimento (≥ 3 ou inválido) continua barreira, e

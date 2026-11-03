@@ -3845,6 +3845,8 @@ export interface components {
              * @description Autonomia estimada com a carga atual.
              */
             estimatedRangeKm: number;
+            /** @description Como em `Vehicle.batteryKnown` (ausente = `true`): `false` = sem leitura da bateria, `batteryPct`/`estimatedRangeKm` vêm 0 e não são reais. */
+            readonly batteryKnown?: boolean;
             /** @description Distância até o ponto da busca (só em `nearby`). */
             distanceM?: number;
             /**

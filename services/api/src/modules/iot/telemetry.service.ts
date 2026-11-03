@@ -206,7 +206,7 @@ export class TelemetryService implements InboundHandler {
         // Trava lida do shadow (com horário): o banco/painel acompanham; não é sinal de vida (sem lastSeenAt).
         if (typeof reported.travada === 'boolean' && meta.timestamps?.travada !== undefined) {
           const vehicleId = await this.vehicleIdOf(thingName);
-          if (vehicleId) this.emitReported(thingName, vehicleId, reported, false);
+          if (vehicleId) this.emitReported(thingName, vehicleId, reported, false, Math.min(meta.timestamps.travada, this.clock.now()));
         }
         return;
       }
@@ -221,8 +221,8 @@ export class TelemetryService implements InboundHandler {
     });
   }
 
-  private emitReported(thingName: string, vehicleId: string, reported: ReportedState, heard: boolean): void {
-    const ev: IotReportedEvent = { thingName, vehicleId, ...(typeof reported.travada === 'boolean' ? { locked: reported.travada } : {}), heard, ts: this.nowIso() };
+  private emitReported(thingName: string, vehicleId: string, reported: ReportedState, heard: boolean, at = this.clock.now()): void {
+    const ev: IotReportedEvent = { thingName, vehicleId, ...(typeof reported.travada === 'boolean' ? { locked: reported.travada } : {}), heard, ts: new Date(at).toISOString() };
     this.events.emit(EV.IOT_REPORTED, ev);
   }
 

@@ -71,7 +71,7 @@ Regras (todas obrigatórias e cobertas por teste):
    > **Nota (revisão final):** implementado com `desired.travada = null` (limpa o pendente), nunca `false` — ver `docs/decisoes.md`, "Onda final de correções A", item 1.
 7. **Moto offline** → `pending`/`offline`; ao reconectar, recomeça do passo 1 (nunca manda corte sem amostras novas).
 8. **Fim do aluguel** em `relay_only` segue o mesmo fluxo: o encerramento só confirma a trava com a moto parada.
-9. `unlock` → `desired.travada = false` → `engineResume`. Confirma por `reported.travada = false`. Prazo 30 s.
+9. `unlock` → `desired.travada = false` → `engineResume`. Confirma por `reported.travada = false`. Prazo 90 s (era 30 s; ver a nota do item 1).
 10. `speed_limit` → `failed`/`unsupported_by_tracker`, sem tocar no shadow.
 11. `stolen_mode` → aceito (só muda frequência de telemetria se o protocolo permitir; senão só marca no backend). Não envia corte sozinho.
 12. Holds de equipe/sistema e autoridade de destravamento existentes continuam valendo igual.
@@ -172,7 +172,7 @@ Alarmes sem correspondência: log e descarte.
 
 ## 12. Riscos conhecidos (deixar escritos na ADR)
 
-- **Janela residual:** entre a última amostra parada e a chegada do `engineStop`, a moto pode voltar a andar. A exigência de 2 amostras em 10 s reduz, mas não elimina. Em produção, avaliar hardware com controle de velocidade.
+- **Janela residual:** entre a última amostra parada e a chegada do `engineStop`, a moto pode voltar a andar. A exigência de 3 amostras paradas em 20 s (no máximo 12 s entre elas; nota do §5.1) reduz, mas não elimina. Em produção, avaliar hardware com controle de velocidade.
 - **Sem limite por zona imposto:** responsabilidade do condutor; refletir nos termos de uso (validar com jurídico).
 - **32 km/h depende do controlador da moto:** verificar e documentar por modelo.
 - **GT06 sem TLS:** exige APN privada em produção.

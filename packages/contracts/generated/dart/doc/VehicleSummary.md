@@ -16,6 +16,7 @@ Name | Type | Description | Notes
 **lng** | **double** |  | 
 **batteryPct** | **int** |  | 
 **estimatedRangeKm** | **double** | Autonomia estimada com a carga atual. | 
+**batteryKnown** | **bool** | Como em `Vehicle.batteryKnown` (ausente = `true`): `false` = sem leitura da bateria, `batteryPct`/`estimatedRangeKm` vêm 0 e não são reais. | [optional] 
 **distanceM** | **int** | Distância até o ponto da busca (só em `nearby`). | [optional] 
 **vehicleModelId** | **String** | Modelo no catálogo (`GET /vehicle-models`, com a foto). | [optional] 
 **categoryLabel** | **String** |  | [optional] 

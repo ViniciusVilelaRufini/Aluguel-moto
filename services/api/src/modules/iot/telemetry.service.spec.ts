@@ -85,8 +85,8 @@ describe('TelemetryService', () => {
     expect(emitted[EV.IOT_REPORTED].at(-1)).toEqual({ thingName: T, vehicleId: VEHICLE_ID, heard: true, ts: '2026-10-21T15:00:30.000Z' });
     await svc.reported(T, { velocidade_kmh: 0 }, { fromPoll: true });
     expect(emitted[EV.IOT_REPORTED]).toHaveLength(2);
-    await svc.reported(T, { travada: false }, { fromPoll: true, timestamps: { travada: clock.now() } });
-    expect(emitted[EV.IOT_REPORTED].at(-1)).toEqual({ thingName: T, vehicleId: VEHICLE_ID, locked: false, heard: false, ts: '2026-10-21T15:00:30.000Z' });
+    await svc.reported(T, { travada: false }, { fromPoll: true, timestamps: { travada: clock.now() - 2_000 } }); // ts = hora da metadata do shadow
+    expect(emitted[EV.IOT_REPORTED].at(-1)).toEqual({ thingName: T, vehicleId: VEHICLE_ID, locked: false, heard: false, ts: '2026-10-21T15:00:28.000Z' });
   });
 
   it('payload inválido ou rastreador desconhecido → descartado', async () => {

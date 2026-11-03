@@ -366,7 +366,7 @@ export class FieldTasksService {
       if (prevRemoved && OUT_OF_SERVICE.includes(prevRemoved.status)) {
         throw conflict('conflict', `A bateria retirada consta fora de uso (com defeito ou baixada): ${removedSerial}. Confira a série.`);
       }
-      const vehicle = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { batteryPct: true, batterySerial: true } });
+      const vehicle = await tx.vehicle.findUnique({ where: { id: t.vehicleId }, select: { batteryPct: true, batteryKnown: true, batterySerial: true } });
       const current = vehicle?.batterySerial ?? null;
       const onVehicle = await tx.battery.findMany({ where: { vehicleId: t.vehicleId, status: 'in_vehicle' } });
       const removedMismatch =
@@ -375,7 +375,8 @@ export class FieldTasksService {
         (!!prevRemoved && prevRemoved.status !== 'in_vehicle' && current !== removedSerial);
       if (removedMismatch) throw conflict('battery-serial-mismatch', `A bateria retirada não é a desta moto: ${removedSerial}. Confira a série.`);
 
-      const removedPct = vehicle?.batteryPct ?? null;
+      // Bancada do J16: sem leitura da bateria (`batteryKnown: false`) o 0 da moto não é carga — a retirada fica sem carga registrada.
+      const removedPct = vehicle && vehicle.batteryKnown !== false ? vehicle.batteryPct : null;
       let removed: Pick<Battery, 'id' | 'cycleCount'>;
       if (prevRemoved) {
         const data = { status: 'in_van' as const, holderId: user.userId, vehicleId: null, stationId: null, depotId: null, ...(removedPct !== null ? { chargePct: removedPct } : {}) };

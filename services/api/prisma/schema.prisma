@@ -553,11 +553,17 @@ model Vehicle {
   speedKmh              Float?
   online                Boolean        @default(true)
   locked                Boolean        @default(true)
+  /// Bancada do J16: hora da fonte do `locked` (medição da telemetria ou chegada do reported) e se veio do rastreador
+  /// (`reported`/resposta ao comando). O reported vence a telemetria (conservadora) por `REPORTED_LOCK_PRECEDENCE_MS`.
+  lockedAt              DateTime?
+  lockedFromReport      Boolean        @default(false)
   ignition              Boolean        @default(false)
   signal                Int?
   stolenMode            Boolean        @default(false)
   firmwareVersion       String?
   lastSeenAt            DateTime?
+  /// Hora da medição de `lat`/`lng` (o `lastSeenAt` também avança pelo heartbeat, sem posição nova).
+  positionAt            DateTime?
   batterySerial         String?
   /// Contrato v2: catálogo, endereço em cache e manutenção preventiva por km/horas.
   vehicleModelId        String?        @db.Uuid

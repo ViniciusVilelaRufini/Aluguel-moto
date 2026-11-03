@@ -52,6 +52,8 @@ export interface VehicleLiveState {
   lastSeenAt: string;      // ISO 8601
   /** Só `false` quando a última telemetria trouxe `bateria_conhecida: false` (`batteryPct` 0 não é carga real); ausente = conhecida. */
   batteryKnown?: false;
+  /** Hora da medição da posição (`lat`/`lng`), ISO 8601; ausente = desconhecida. O `lastSeenAt` avança também sem posição. */
+  positionAt?: string;
 }
 
 export interface IotGateway {

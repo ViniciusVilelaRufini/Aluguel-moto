@@ -8,7 +8,7 @@ function setup(o: { share?: object | null; rental?: object | null; live?: object
   const share = o.share === undefined ? { token: TOKEN, rentalId: 'r1', expiresAt: new Date('2026-10-24T12:30:00Z') } : o.share;
   const rental =
     o.rental === undefined
-      ? { status: 'active', customer: { locationConsent: true }, vehicle: { thingName: 'moto-1', lat: -23.5, lng: -46.6, lastSeenAt: new Date('2026-10-24T11:59:00Z') } }
+      ? { status: 'active', customer: { locationConsent: true }, vehicle: { thingName: 'moto-1', lat: -23.5, lng: -46.6, lastSeenAt: new Date('2026-10-24T11:59:00Z'), positionAt: new Date('2026-10-24T11:59:00Z') } }
       : o.rental;
   const prisma = { locationShare: { findUnique: jest.fn().mockResolvedValue(share) }, rental: { findUnique: jest.fn().mockResolvedValue(rental) } };
   const iot = { getLiveState: jest.fn().mockResolvedValue(o.live ?? null) };
@@ -31,13 +31,27 @@ describe('LocationShareService (SOS, lacunas T5)', () => {
   });
 
   it('estado ao vivo mais novo que o cadastro → posição ao vivo', async () => {
-    const { svc } = setup({ live: { lat: -23.51, lng: -46.61, lastSeenAt: '2026-10-24T11:59:55.000Z' } });
+    const { svc } = setup({ live: { lat: -23.51, lng: -46.61, lastSeenAt: '2026-10-24T11:59:55.000Z', positionAt: '2026-10-24T11:59:55.000Z' } });
     expect(await svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.51, lng: -46.61, recordedAt: '2026-10-24T11:59:55.000Z' });
   });
 
+  it('bancada do J16: a hora é a da posição (positionAt), nunca o último sinal (heartbeat avança o lastSeenAt sem posição nova)', async () => {
+    const rental = { status: 'active', customer: { locationConsent: true }, vehicle: { thingName: 'moto-1', lat: -23.5, lng: -46.6, lastSeenAt: new Date('2026-10-24T11:59:50Z'), positionAt: new Date('2026-10-24T11:40:00Z') } };
+    expect(await setup({ rental }).svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.5, recordedAt: '2026-10-24T11:40:00.000Z' });
+    // Ao vivo: heartbeat recente, posição de 11:45 → recordedAt 11:45.
+    const live = { lat: -23.51, lng: -46.61, lastSeenAt: '2026-10-24T11:59:58.000Z', positionAt: '2026-10-24T11:45:00.000Z' };
+    expect(await setup({ rental, live }).svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.51, recordedAt: '2026-10-24T11:45:00.000Z' });
+    // Ao vivo sem a hora da posição (estado antigo do Redis): não usa a posição ao vivo.
+    expect(await setup({ rental, live: { lat: -23.52, lng: -46.62, lastSeenAt: '2026-10-24T11:59:58.000Z' } }).svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.5, recordedAt: '2026-10-24T11:40:00.000Z' });
+    // Posição ao vivo mais velha que a do cadastro → cadastro.
+    expect(await setup({ rental, live: { ...live, positionAt: '2026-10-24T11:30:00.000Z' } }).svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.5 });
+    // Sem hora de posição em lugar nenhum → indisponível (nunca o lastSeenAt).
+    expect(await status(setup({ rental: { ...rental, vehicle: { ...rental.vehicle, positionAt: null } } }).svc.get(TOKEN, NOW))).toBe(404);
+  });
+
   it('estado ao vivo vazio (0,0) ou mais velho → cadastro', async () => {
-    expect(await setup({ live: { lat: 0, lng: 0, lastSeenAt: '2026-10-24T11:59:58.000Z' } }).svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.5 });
-    expect(await setup({ live: { lat: -1, lng: -1, lastSeenAt: '2026-10-24T11:00:00.000Z' } }).svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.5 });
+    expect(await setup({ live: { lat: 0, lng: 0, lastSeenAt: '2026-10-24T11:59:58.000Z', positionAt: '2026-10-24T11:59:58.000Z' } }).svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.5 });
+    expect(await setup({ live: { lat: -1, lng: -1, lastSeenAt: '2026-10-24T11:00:00.000Z', positionAt: '2026-10-24T11:00:00.000Z' } }).svc.get(TOKEN, NOW)).toMatchObject({ lat: -23.5 });
   });
 
   it.each([

@@ -1,4 +1,4 @@
-import { onlineWindowMs, toVehicle, trackerOnline } from './vehicles.mapper';
+import { onlineWindowMs, toVehicle, toVehicleSummary, trackerOnline } from './vehicles.mapper';
 
 const NOW = Date.parse('2026-10-25T12:00:00Z');
 const ago = (ms: number) => new Date(NOW - ms);
@@ -60,6 +60,11 @@ describe('bancada do J16 (2026-11-03): bateria desconhecida, endereço da posiç
       expect(toVehicle(row({ batteryKnown: false, batteryPct: 55 }), { staff, now: NOW })).toMatchObject({ batteryKnown: false, batteryPct: 0, estimatedRangeKm: 0 });
       expect(toVehicle(row(), { staff, now: NOW })).toMatchObject({ batteryKnown: true, batteryPct: 80 });
     }
+  });
+
+  it('VehicleSummary: batteryKnown (ausente = true); sem leitura → batteryPct e estimatedRangeKm 0', () => {
+    expect(toVehicleSummary(row({ batteryKnown: false, batteryPct: 55 }))).toMatchObject({ batteryKnown: false, batteryPct: 0, estimatedRangeKm: 0 });
+    expect(toVehicleSummary(row())).toMatchObject({ batteryKnown: true, batteryPct: 80 });
   });
 
   it('sem endereço da posição atual → address e addressUpdatedAt null (nunca ausentes); com locationHidden continuam ausentes', () => {

@@ -6,6 +6,8 @@ import { computeServiceInfo, publicServiceInfo } from '../maintenance/service-du
 import { DEFAULT_OFFLINE_AFTER_MS } from '../iot/live-state.store';
 
 type VehicleLike = Pick<Vehicle, 'id' | 'code' | 'model' | 'status' | 'lat' | 'lng' | 'batteryPct'> & {
+  /** Ausente (`select` sem o campo) = conhecida. */
+  batteryKnown?: boolean;
   vehicleModelId?: string | null;
   vehicleModel?: Pick<VehicleModelRef, 'categoryLabel' | 'pricePerMinuteCents'> | null;
   /** `nearby` (SQL cru) traz os campos do modelo achatados. */
@@ -28,6 +30,9 @@ const modelFields = (v: VehicleLike) => ({
 
 /** Prisma → `VehicleSummary`. */
 export function toVehicleSummary(v: VehicleLike, distanceM?: number) {
+  // Bancada do J16: sem leitura da bateria, `batteryPct`/`estimatedRangeKm` vêm 0 (como em `Vehicle`).
+  const batteryKnown = v.batteryKnown !== false;
+  const batteryPct = batteryKnown ? v.batteryPct : 0;
   return compact({
     id: v.id,
     code: v.code,
@@ -35,8 +40,9 @@ export function toVehicleSummary(v: VehicleLike, distanceM?: number) {
     status: v.status,
     lat: v.lat,
     lng: v.lng,
-    batteryPct: v.batteryPct,
-    estimatedRangeKm: estimatedRangeKm(v.batteryPct),
+    batteryPct,
+    estimatedRangeKm: estimatedRangeKm(batteryPct),
+    batteryKnown,
     distanceM: distanceM === undefined ? undefined : Math.max(0, Math.round(distanceM)),
     ...modelFields(v),
   });

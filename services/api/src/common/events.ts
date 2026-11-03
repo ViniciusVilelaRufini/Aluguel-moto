@@ -109,7 +109,7 @@ export interface IotReportedEvent {
   locked?: boolean;
   /** `true` = mensagem do rastreador (MQTT); `false` = lida do shadow pelo servidor (polling aws), não é sinal de vida. */
   heard: boolean;
-  /** Hora do servidor. */
+  /** Hora da fonte: chegada no servidor (MQTT) ou a metadata do shadow (polling), limitada a agora. */
   ts: string;
 }
 
