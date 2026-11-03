@@ -14,7 +14,14 @@ async function main(): Promise<void> {
   const log = createLogger('traccar-bridge');
   const rest = new TraccarRest(cfg.traccarUrl, cfg.traccarEmail, cfg.traccarPassword);
   const mqtt = connectMqtt(cfg);
-  const bridge = new Bridge(mqtt, rest, new PgRegistry(pgQuery(cfg.database, log)), { iotMode: cfg.iotMode, battery: cfg.battery, log });
+  // O WebSocket é criado depois do `start` da ponte; até lá não há o que reabrir.
+  const socketRef: { current?: TraccarSocket } = {};
+  const bridge = new Bridge(mqtt, rest, new PgRegistry(pgQuery(cfg.database, log)), {
+    iotMode: cfg.iotMode,
+    battery: cfg.battery,
+    log,
+    reopenSocket: () => socketRef.current?.reopen() ?? false,
+  });
   // Arquivo de vida (HEALTHCHECK): só avança enquanto a fila de entrada anda. Começa já, para as tentativas de início contarem como vivas.
   const livenessFile = process.env.LIVENESS_FILE || LIVENESS_FILE_DEFAULT;
   let livenessErrorLogged = false;
@@ -40,6 +47,7 @@ async function main(): Promise<void> {
   }
   // Cada abertura do WebSocket (inclusive reconexão): esquece o bit de corte, marca o replay e relê os dispositivos.
   const socket = new TraccarSocket(cfg.traccarUrl, rest, (m) => void bridge.enqueue(m), log, () => void bridge.onSocketOpen());
+  socketRef.current = socket;
   for (let attempt = 1; ; attempt++) {
     try {
       await socket.connect();

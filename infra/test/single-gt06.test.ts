@@ -107,6 +107,8 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(e).toContain('GT06_IMEI: ${GT06_EMULATOR_IMEI:-860000000000901}');
     expect(e).toContain('GT06_SCENARIO: ${GT06_SCENARIO:-parked}');
     expect(e).toContain('BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}');
+    // e2e do dev single com a resposta do J16 real ("RELAY n OK"): exercita a confirmação pela resposta do aparelho.
+    expect(e).toContain('GT06_REPLY_STYLE: j16');
     expect(e).not.toMatch(/ports:|PASSWORD/);
   });
 

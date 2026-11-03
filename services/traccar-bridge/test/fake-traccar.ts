@@ -53,9 +53,15 @@ export class FakeTraccar {
   expireSessions(): void {
     this.sessionGen++;
   }
+  /**
+   * Ids dos dispositivos que uma conexão NOVA do WebSocket enxerga (`undefined` = todos). Cada conexão guarda a lista do
+   * momento em que abriu, como o Traccar da bancada do J16: dispositivo ligado ao usuário depois não chega na sessão antiga.
+   */
+  socketDeviceIds?: number[];
   private server?: Server;
   private wss?: WebSocketServer;
   private readonly sockets = new Set<WebSocket>();
+  private readonly socketScope = new Map<WebSocket, Set<number> | undefined>();
 
   async start(): Promise<void> {
     this.server = createServer((req, res) => void this.handle(req, res));
@@ -67,8 +73,12 @@ export class FakeTraccar {
       }
       this.wss!.handleUpgrade(req, socket, head, (ws) => {
         this.sockets.add(ws);
+        this.socketScope.set(ws, this.socketDeviceIds ? new Set(this.socketDeviceIds) : undefined);
         this.connections++;
-        ws.on('close', () => this.sockets.delete(ws));
+        ws.on('close', () => {
+          this.sockets.delete(ws);
+          this.socketScope.delete(ws);
+        });
         ws.send(JSON.stringify({ positions: this.latest }));
       });
     });
@@ -120,7 +130,16 @@ export class FakeTraccar {
     const { events, ...rest } = msg;
     const out: TraccarSocketMessage = this.notifications && events ? { ...rest, events } : rest;
     if (!Object.keys(out).length) return;
-    for (const ws of this.sockets) ws.send(JSON.stringify(out));
+    for (const ws of this.sockets) {
+      const scope = this.socketScope.get(ws);
+      const seen: TraccarSocketMessage = scope
+        ? Object.fromEntries(
+            Object.entries(out).map(([k, list]) => [k, (list as Array<{ id: number; deviceId?: number }>).filter((x) => scope.has(k === 'devices' ? x.id : x.deviceId!))]),
+          )
+        : out;
+      if (scope && !Object.values(seen).some((list) => (list as unknown[]).length)) continue;
+      ws.send(JSON.stringify(seen));
+    }
   }
 
   /** Derruba as conexões do WebSocket (o cliente deve reconectar). */

@@ -31,7 +31,20 @@ export interface BridgeOptions {
   publishTimeoutMs?: number;
   /** Prazo de um SUBSCRIBE (SUBACK); padrão `SUBSCRIBE_TIMEOUT_MS`. */
   subscribeTimeoutMs?: number;
+  /**
+   * Reabre o WebSocket do Traccar (login novo; `TraccarSocket.reopen`). `false` = não havia conexão aberta. Sem ele a ponte
+   * não reabre sozinha um WebSocket que não entrega um dispositivo do registro (só loga).
+   */
+  reopenSocket?: () => boolean;
 }
+
+/**
+ * Dispositivo do registro online no Traccar sem nenhuma mensagem no WebSocket por este tempo (desde que entrou no registro
+ * ou desde a abertura do WebSocket) → a sessão do WebSocket provavelmente não o inclui (bancada do J16, 2026-11-03).
+ */
+export const UNDELIVERED_REOPEN_MS = 90_000;
+/** Reaberturas do WebSocket por dispositivo não entregue: no máximo uma neste intervalo (e uma por moto). */
+export const SOCKET_REOPEN_MIN_MS = 5 * 60_000;
 
 /** Corte conhecido e bateria ainda desconhecida há este tempo → telemetria sai com `bateria_pct: 0` (log `battery_unknown`). */
 export const BATTERY_UNKNOWN_CAP_MS = 5 * 60_000;
@@ -80,6 +93,14 @@ export class Bridge {
   private readonly alarmIds = new Map<string, number[]>();
   private readonly lastLogAt = new Map<string, number>();
   private readonly awaitingGet = new Set<string>();
+  /** Relógio da ponte quando o thing entrou no registro (ou no início). Base do prazo de `checkUndelivered`. */
+  private readonly registeredAt = new Map<string, number>();
+  /** Última mensagem do WebSocket (posição, dispositivo ou evento) por id de dispositivo do Traccar. */
+  private readonly deliveredAt = new Map<number, number>();
+  /** Things para os quais o WebSocket já foi reaberto por falta de entrega (uma vez por moto e por entrada no registro). */
+  private readonly reopenTried = new Set<string>();
+  private socketOpenedAt?: number;
+  private lastReopenAt = Number.NEGATIVE_INFINITY;
   private readonly subscribed = new Set<string>();
   private readonly chains = new Map<string, Promise<void>>();
   private imeiToThing = new Map<string, string>();
@@ -156,12 +177,59 @@ export class Bridge {
     this.imeiToThing = next;
     this.thingToImei = nextT2I;
     for (const thing of changed) {
+      this.reopenTried.delete(thing);
+      if (nextT2I.has(thing)) this.registeredAt.set(thing, this.now());
+      else this.registeredAt.delete(thing);
       await this.serial(thing, async () => {
         if (this.memory.has(thing) || this.stolen.has(thing) || this.stopSentAt.has(thing)) this.log.info({ msg: 'registry_thing_remapped', thingName: thing });
         this.forget(thing);
       });
     }
     await this.subscribe([...this.thingToImei.keys()].filter((t) => !this.subscribed.has(t)));
+    try {
+      await this.checkUndelivered();
+    } catch (err) {
+      this.log.error({ msg: 'undelivered_check_failed', error: (err as Error).message });
+    }
+  }
+
+  /**
+   * Bancada do J16 (2026-11-03): dispositivo ligado ao usuário da ponte no Traccar DEPOIS da abertura do WebSocket não
+   * chegava nele até reiniciar a ponte. Moto do registro online no Traccar (REST) sem nenhuma mensagem no WebSocket há
+   * `UNDELIVERED_REOPEN_MS` (desde que entrou no registro ou desde a abertura do WebSocket) → reabre o WebSocket (login novo)
+   * pelo caminho seguro de `onSocketOpen` (esquece o bit de corte de todas as motos, ignora o replay, relê dispositivos).
+   * Uma vez por moto (por entrada no registro) e no máximo uma reabertura a cada `SOCKET_REOPEN_MIN_MS`; se nem assim chegar,
+   * erro `traccar_device_not_delivered` (limitado): reiniciar a ponte. O `gt06.sh provision` reinicia a ponte de qualquer jeito.
+   */
+  private async checkUndelivered(): Promise<void> {
+    const opened = this.socketOpenedAt;
+    if (opened === undefined) return;
+    const due = (thing: string, now: number): boolean => {
+      const base = Math.max(this.registeredAt.get(thing) ?? now, opened);
+      if (now - base < UNDELIVERED_REOPEN_MS) return false;
+      const d = this.deviceOf(thing);
+      return !(d && (this.deliveredAt.get(d.id) ?? Number.NEGATIVE_INFINITY) >= base);
+    };
+    if (![...this.thingToImei.keys()].some((t) => due(t, this.now()))) return;
+    await this.refreshDevices(); // status atual (REST: vê o que a sessão do WebSocket pode não ver) e dispositivos novos
+    const now = this.now();
+    const undelivered = [...this.thingToImei.keys()].filter((t) => due(t, now) && this.deviceOf(t)?.status === 'online');
+    for (const thing of undelivered.filter((t) => this.reopenTried.has(t))) {
+      this.logLimited(`${thing}|not_delivered`, 'error', { msg: 'traccar_device_not_delivered', thingName: thing });
+    }
+    const fresh = undelivered.filter((t) => !this.reopenTried.has(t));
+    if (!fresh.length) return;
+    if (now - this.lastReopenAt < SOCKET_REOPEN_MIN_MS) {
+      this.logLimited('traccar_socket_reopen_rate_limited', 'warn', { thingName: fresh[0], things: fresh.length });
+      return;
+    }
+    if (!this.opts.reopenSocket?.()) {
+      this.logLimited('traccar_device_not_delivered_no_reopen', 'warn', { thingName: fresh[0], things: fresh.length });
+      return;
+    }
+    this.lastReopenAt = now;
+    for (const t of fresh) this.reopenTried.add(t);
+    this.log.warn({ msg: 'traccar_socket_reopen_undelivered', thingName: fresh[0], things: fresh.length });
   }
 
   /** Sessão MQTT limpa a cada (re)conexão: assina tudo de novo. */
@@ -220,6 +288,7 @@ export class Bridge {
    */
   onSocketOpen(): Promise<void> {
     return this.inboundStep(async () => {
+      this.socketOpenedAt = this.now();
       this.replayPending = true;
       for (const thing of [...this.memory.keys()]) await this.serial(thing, async () => this.reconnected(thing));
       await this.refreshDevices();
@@ -232,6 +301,10 @@ export class Bridge {
   }
 
   async onTraccar(msg: TraccarSocketMessage): Promise<void> {
+    // Entregue pelo WebSocket (inclusive replay): a sessão inclui o dispositivo (`checkUndelivered`).
+    const at = this.now();
+    for (const x of [...(msg.positions ?? []), ...(msg.events ?? [])]) this.deliveredAt.set(x.deviceId, at);
+    for (const d of msg.devices ?? []) this.deliveredAt.set(d.id, at);
     for (const d of msg.devices ?? []) await this.updateDevice(d);
     const replay = this.replayPending && msg.positions !== undefined;
     if (msg.positions !== undefined) this.replayPending = false;

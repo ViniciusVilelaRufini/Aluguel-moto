@@ -371,6 +371,11 @@ describe('J16: resposta do aparelho com o estado do relé (attributes.result "RE
     expect(parseRelayReply('ok')).toBeUndefined();
     expect(parseRelayReply('Cut off the fuel supply: Success!')).toBeUndefined();
     expect(parseRelayReply('RELAY 2 OK')).toBeUndefined();
+    // limites de palavra: nada colado antes de RELAY nem depois de OK
+    expect(parseRelayReply('XRELAY 1 OK')).toBeUndefined();
+    expect(parseRelayReply('RELAY 1 OKAY')).toBeUndefined();
+    expect(parseRelayReply('RELAY 0 OK1')).toBeUndefined();
+    expect(parseRelayReply('Resume engine Succeed\r\nRELAY 0 OK\r\n')).toBe(false);
   });
 
   it('engineResume + "RELAY 0 OK" depois do envio → bit false fresco na hora (sem esperar heartbeat), sem telemetria', () => {
@@ -386,13 +391,25 @@ describe('J16: resposta do aparelho com o estado do relé (attributes.result "RE
   it('engineStop + "RELAY 1 OK" depois do envio → bit true fresco; a resposta não é amostra de velocidade (last intacto)', () => {
     const moving = AP(pos({ fixTime: at(NOW - 500), serverTime: at(NOW), speed: 0, attributes: { power: 72 } }), freeNow, NOW).memory;
     const sent = markCommandSent(moving, NOW + 1_000, 'stop');
-    // Mesmo com fixTime novo, não-outdated e parada: a resposta não renova a posição da guarda do corte.
-    const r = AP(reply(NOW + 2_000, STOP_OK, { outdated: false, fixTime: at(NOW + 1_900) }), sent, NOW + 2_000);
+    // fixTime repetido (a última localização conhecida, como o Traccar entrega) e parada: não renova nem apaga a amostra.
+    const r = AP(reply(NOW + 2_000, STOP_OK, { outdated: false }), sent, NOW + 2_000);
     expect(r.relayReply).toBe(true);
     expect(r.telemetry).toBeNull();
     expect(freshBlocked(r.memory, NOW + 2_000)).toBe(true);
     expect(r.memory.last).toEqual(moving.last);
     expect(r.memory.lastFixTime).toBe(moving.lastFixTime);
+  });
+
+  it('resposta com fixTime mais novo que a última telemetria (mais nova e inutilizável) apaga a amostra; ordem intacta', () => {
+    const stopped = AP(pos({ fixTime: at(NOW - 500), serverTime: at(NOW), speed: 0, attributes: { power: 72 } }), freeNow, NOW).memory;
+    const sent = markCommandSent(stopped, NOW + 1_000, 'stop');
+    const r = AP(reply(NOW + 2_000, STOP_OK, { outdated: false, fixTime: at(NOW + 1_900) }), sent, NOW + 2_000);
+    expect(r.relayReply).toBe(true);
+    expect(r.telemetry).toBeNull();
+    expect(r.memory.last).toBeUndefined();
+    expect(r.memory.lastFixTime).toBe(stopped.lastFixTime);
+    expect(cutRefusal({ online: true, mem: r.memory, now: NOW + 2_000 })).toBe('already_blocked');
+    expect(cutRefusal({ online: true, mem: markReconnected(r.memory), now: NOW + 2_000 })).toBe('no_position');
   });
 
   it('resposta com velocidade em movimento apaga a amostra parada guardada (conservador)', () => {

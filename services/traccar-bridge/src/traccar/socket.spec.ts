@@ -56,3 +56,39 @@ describe('TraccarSocket watchdog (M1)', () => {
     expect(sockets[1].terminated).toBe(false); // fechado de propósito: sem watchdog
   });
 });
+
+describe('TraccarSocket.reopen (dispositivo que o WebSocket nunca entregou)', () => {
+  afterEach(() => jest.useRealTimers());
+
+  it('derruba a conexão aberta e reconecta com login novo; onOpen roda de novo; fechado de propósito não reabre', async () => {
+    jest.useFakeTimers();
+    const sockets: FakeWs[] = [];
+    const opened = jest.fn();
+    const login = jest.fn(async () => 'JSESSIONID=x');
+    const s = new TraccarSocket('http://traccar', { login }, () => undefined, silentLogger, opened, {
+      createWs: () => {
+        const w = new FakeWs();
+        sockets.push(w);
+        return w;
+      },
+    });
+    const p = s.connect();
+    await flush();
+    sockets[0].emit('open');
+    await p;
+    expect(s.reopen()).toBe(true);
+    expect(sockets[0].terminated).toBe(true);
+    jest.advanceTimersByTime(1_000);
+    await flush();
+    expect(sockets).toHaveLength(2);
+    expect(login).toHaveBeenCalledTimes(2); // sessão nova do Traccar (permissões relidas)
+    sockets[1].emit('open');
+    await flush();
+    expect(opened).toHaveBeenCalledTimes(2);
+    s.close();
+    expect(s.reopen()).toBe(false);
+    jest.advanceTimersByTime(60_000);
+    await flush();
+    expect(sockets).toHaveLength(2);
+  });
+});

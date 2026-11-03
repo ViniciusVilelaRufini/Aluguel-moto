@@ -142,8 +142,9 @@ SQL
     echo "$3 provisionada como GT06 relay_only"
     # Bancada do J16 (2026-11-03): com a ponte já rodando, o dispositivo recém-ligado ao usuário dela no Traccar só passou a
     # chegar no WebSocket da ponte depois de reiniciá-la (permissões da sessão do Traccar). Reinício seguro: ao subir, a ponte
-    # relê o registro, esquece o bit de corte de todas as motos, ignora o replay e espera status novo; um comando em voo de
-    # outra moto expira na API (nenhum engineStop é reenviado).
+    # relê o registro, esquece o bit de corte de todas as motos, ignora o replay e espera status novo; um engineStop em voo de
+    # outra moto não é reenviado (o lock expira na API) e um engineResume pendente é reaplicado ao subir (requestPendingUnlocks).
+    # A ponte também reabre o WebSocket sozinha se a moto não chegar em 90 s; este reinício é a garantia extra.
     if [ -n "$(dc ps -q traccar-bridge 2>/dev/null)" ]; then
       dc restart traccar-bridge >/dev/null
       echo "traccar-bridge reiniciada para receber o dispositivo novo (sessão do Traccar relida); confira com gt06.sh status $3"

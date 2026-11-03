@@ -57,6 +57,30 @@ describe('Gt06Emulator (contra um "Traccar" TCP em processo)', () => {
     }
   });
 
+  it.each([
+    [undefined, 'Cut off the fuel supply: Success!', 'Restore fuel supply: Success!'],
+    ['legacy' as const, 'Cut off the fuel supply: Success!', 'Restore fuel supply: Success!'],
+    ['j16' as const, 'Stop engine Succeed\nRELAY 1 OK', 'Resume engine Succeed\nRELAY 0 OK'],
+  ])('replyStyle %s: texto da resposta 0x15 ao corte e à liberação', async (replyStyle, cutText, resumeText) => {
+    const t = await fakeTraccar();
+    const lines: Array<Record<string, unknown>> = [];
+    const push = (e: Record<string, unknown>) => void lines.push(e);
+    const emu = new Gt06Emulator({ host: '127.0.0.1', port: t.port, imei: '860000000000901', intervalMs: 5_000, heartbeatMs: 30_000, replyStyle, log: { info: push, warn: push, error: push } });
+    const replies = () => t.frames.filter((f) => f.protocol === PROTO.stringInfo).map((f) => f.content.subarray(5, 1 + f.content[0]).toString('ascii'));
+    try {
+      await emu.start();
+      t.sock().write(serverCommandPacket('Relay,1#', 9));
+      await waitFor(() => replies().length === 1);
+      t.sock().write(serverCommandPacket('Relay,0#', 10));
+      await waitFor(() => replies().length === 2);
+      expect(replies()).toEqual([cutText, resumeText]);
+      expect(lines.filter((l) => l.msg === 'gt06_reply_sent').map((l) => l.blocked)).toEqual([true, false]);
+    } finally {
+      emu.stop();
+      t.server.close();
+    }
+  });
+
   it('logo após o login manda status (bit de corte) e tensão externa 0x94 (para a ponte não segurar a telemetria)', async () => {
     const t = await fakeTraccar();
     const emu = new Gt06Emulator({ host: '127.0.0.1', port: t.port, imei: '860000000000901', intervalMs: 5_000, heartbeatMs: 30_000 });

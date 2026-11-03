@@ -212,6 +212,8 @@ services:
       GT06_PORT: "5023"
       GT06_IMEI: ${GT06_EMULATOR_IMEI:-860000000000901}
       GT06_SCENARIO: ${GT06_SCENARIO:-parked}
+      # Resposta ao comando com o texto do J16 real ("... RELAY 1 OK" / "... RELAY 0 OK"): a ponte confirma pelo estado do relé.
+      GT06_REPLY_STYLE: j16
       BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}
     depends_on:
       traccar:

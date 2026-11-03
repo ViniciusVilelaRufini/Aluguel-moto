@@ -14,7 +14,20 @@ export interface EmulatorOptions {
   powerVolts?: number;
   start?: { lat: number; lng: number };
   log?: Logger;
+  /**
+   * Texto da resposta `0x15` ao comando. `legacy` (padrão): "Cut off the fuel supply: Success!" / "Restore fuel supply:
+   * Success!" (sem estado do relé: a ponte só a usa como ack). `j16`: o texto do J16 real da bancada (2026-11-03),
+   * "Stop engine Succeed\nRELAY 1 OK" / "Resume engine Succeed\nRELAY 0 OK", que a ponte aceita como estado do relé.
+   */
+  replyStyle?: Gt06ReplyStyle;
 }
+
+export type Gt06ReplyStyle = 'legacy' | 'j16';
+
+const REPLIES: Record<Gt06ReplyStyle, { cut: string; resume: string }> = {
+  legacy: { cut: 'Cut off the fuel supply: Success!', resume: 'Restore fuel supply: Success!' },
+  j16: { cut: 'Stop engine Succeed\nRELAY 1 OK', resume: 'Resume engine Succeed\nRELAY 0 OK' },
+};
 
 /**
  * J16 de mentira para testes (spec GT06 §7): login, posição a cada `intervalMs`, heartbeat com o bit de corte, alarmes; responde
@@ -149,7 +162,9 @@ export class Gt06Emulator {
         this.log.info({ msg: 'gt06_resume' });
         this.blocked = false;
       }
-      this.write(stringReplyPacket(cut ? 'Cut off the fuel supply: Success!' : resume ? 'Restore fuel supply: Success!' : 'Unknown command', f.serial));
+      const replies = REPLIES[this.opts.replyStyle ?? 'legacy'];
+      this.write(stringReplyPacket(cut ? replies.cut : resume ? replies.resume : 'Unknown command', f.serial));
+      if (cut || resume) this.log.info({ msg: 'gt06_reply_sent', style: this.opts.replyStyle ?? 'legacy', blocked: this.blocked });
       this.sendStatus();
       this.sendLocation();
     }

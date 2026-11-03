@@ -46,7 +46,7 @@ interface Ctx {
   registryCtl: { hang: boolean; calls: number };
 }
 
-interface StartOpts { beforeStart?: (broker: FakeBroker) => Promise<void>; iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; subscribeTimeoutMs?: number; serverStatus?: number }
+interface StartOpts { beforeStart?: (broker: FakeBroker) => Promise<void>; iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; subscribeTimeoutMs?: number; serverStatus?: number; socketDeviceIds?: number[] }
 
 async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
   const o: StartOpts = typeof opts === 'string' ? { iotMode: opts } : opts;
@@ -75,9 +75,15 @@ async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
     return registryCtl.hang ? new Promise<Map<string, string>>(() => undefined) : Promise.resolve(new Map(registry));
   };
   const mqtt = broker.client('bridge');
-  const bridge = new Bridge(mqtt, rest, { things }, { iotMode: o.iotMode ?? 'local', battery: '72v', now: () => now.value, log, publishTimeoutMs: o.publishTimeoutMs, subscribeTimeoutMs: o.subscribeTimeoutMs });
+  if (o.socketDeviceIds) traccar.socketDeviceIds = o.socketDeviceIds;
+  const socketRef: { current?: TraccarSocket } = {};
+  const bridge = new Bridge(mqtt, rest, { things }, {
+    iotMode: o.iotMode ?? 'local', battery: '72v', now: () => now.value, log, publishTimeoutMs: o.publishTimeoutMs, subscribeTimeoutMs: o.subscribeTimeoutMs,
+    reopenSocket: () => socketRef.current?.reopen() ?? false,
+  });
   await bridge.start();
   const socket = new TraccarSocket(traccar.url, rest, (m) => void bridge.enqueue(m), silentLogger, () => void bridge.onSocketOpen());
+  socketRef.current = socket;
   await socket.connect();
   return { traccar, broker, api, mqtt, bridge, socket, now, logs, registry, registryCtl };
 }
@@ -737,6 +743,73 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     await sleep(40);
     expect(reportedTravada(c)).toEqual([false]);
     expect(c.logs.some((l) => l.msg === 'relay_reply')).toBe(false);
+  });
+
+  // ---- J16: dispositivo ligado à ponte depois da sessão do WebSocket (bancada 2026-11-03)
+  const telemetria = (c: Ctx) => out(c, `motos/${T}/telemetria`);
+  const fresh = (id: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at - 500), serverTime: iso(at), speed: 0 });
+
+  it('dispositivo do registro online no Traccar que o WebSocket nunca entregou em 90 s → reabre o WebSocket uma vez (login novo) e passa a chegar', async () => {
+    c = await start({ socketDeviceIds: [2, 3] }); // a sessão do WebSocket não inclui o dispositivo 1
+    c.traccar.push({ positions: [fresh(500, T0)] });
+    await sleep(40);
+    expect(telemetria(c)).toEqual([]);
+    c.traccar.socketDeviceIds = undefined; // o provision ligou o dispositivo ao usuário da ponte: sessões novas o veem
+    c.now.value = T0 + 89_000;
+    await c.bridge.refreshRegistry();
+    expect(c.traccar.connections).toBe(1); // antes de 90 s, nada
+    c.now.value = T0 + 91_000;
+    await c.bridge.refreshRegistry();
+    await waitFor(() => c.traccar.connections === 2, 5_000);
+    expect(c.logs).toContainEqual({ level: 'warn', msg: 'traccar_socket_reopen_undelivered', thingName: T, things: 1 });
+    await sleep(40); // onSocketOpen processado (caminho seguro: esquece o bit de corte, marca o replay)
+    c.now.value = T0 + 95_000;
+    c.traccar.push({ positions: [fresh(501, T0 + 95_000)] });
+    await waitFor(() => telemetria(c).length === 1);
+    c.now.value = T0 + 400_000;
+    await c.bridge.refreshRegistry();
+    await sleep(40);
+    expect(c.traccar.connections).toBe(2); // entregue: nunca mais reabre
+  });
+
+  it('reabrir não resolveu → uma reabertura só por moto; depois erro traccar_device_not_delivered (limitado) para reiniciar a ponte', async () => {
+    c = await start({ socketDeviceIds: [2, 3] });
+    c.now.value = T0 + 91_000;
+    await c.bridge.refreshRegistry();
+    await waitFor(() => c.traccar.connections === 2, 5_000);
+    await sleep(40);
+    c.now.value = T0 + 91_000 + 91_000 + 5 * 60_000;
+    await c.bridge.refreshRegistry();
+    await c.bridge.refreshRegistry();
+    await sleep(40);
+    expect(c.traccar.connections).toBe(2);
+    expect(c.logs.filter((l) => l.msg === 'traccar_device_not_delivered')).toEqual([{ level: 'error', msg: 'traccar_device_not_delivered', thingName: T }]);
+  });
+
+  it('dispositivo já entregue ou offline no Traccar → não reabre; reaberturas limitadas a 1 a cada 5 min (moto nova no registro espera)', async () => {
+    c = await start({ socketDeviceIds: [1, 2] });
+    c.traccar.push({ positions: [fresh(510, T0)] });
+    await waitFor(() => telemetria(c).length === 1);
+    c.traccar.devices[2].status = 'offline'; // dispositivo 3 (NEW_IMEI) desligado
+    c.registry.set(NEW_IMEI, 'moto-0777');
+    await c.bridge.refreshRegistry();
+    c.now.value = T0 + 120_000;
+    await c.bridge.refreshRegistry();
+    await sleep(40);
+    expect(c.traccar.connections).toBe(1); // o 1 chegou; o 3 está offline
+    c.traccar.devices[2].status = 'online'; // ligou, mas a sessão não o inclui
+    c.registry.set(OTHER_IMEI, 'moto-0999'); // entra agora: o prazo dele conta daqui
+    await c.bridge.refreshRegistry();
+    await waitFor(() => c.traccar.connections === 2, 5_000);
+    await sleep(40);
+    c.now.value = T0 + 120_000 + 91_000; // dispositivo 2 nunca entregou desde que entrou no registro (nenhuma posição)
+    await c.bridge.refreshRegistry();
+    await sleep(40);
+    expect(c.traccar.connections).toBe(2); // menos de 5 min da última reabertura
+    expect(c.logs.some((l) => l.msg === 'traccar_socket_reopen_rate_limited')).toBe(true);
+    c.now.value = T0 + 120_000 + 5 * 60_000;
+    await c.bridge.refreshRegistry();
+    await waitFor(() => c.traccar.connections === 3, 5_000);
   });
 
   it('A4-1: engineResume numa moto com bit fresco travada:false ainda ecoa reported.travada:false (o resume não trava)', async () => {

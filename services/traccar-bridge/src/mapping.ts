@@ -108,7 +108,7 @@ export type HeldReason = 'awaiting_status' | 'awaiting_battery';
  * Resposta do J16 ao comando de motor com o estado do relé (bancada 2026-11-03): `"Stop engine Succeed\nRELAY 1 OK"` /
  * `"Resume engine Succeed\nRELAY 0 OK"`, entregue pelo Traccar como posição com `attributes.result`.
  */
-export const RELAY_REPLY_RE = /RELAY\s*([01])\s*OK/i;
+export const RELAY_REPLY_RE = /\bRELAY\s*([01])\s*OK\b/i;
 
 /** `attributes.result` → estado do relé (`true` = corte ligado); `undefined` se a resposta não traz o estado. */
 export function parseRelayReply(result: string): boolean | undefined {
@@ -140,7 +140,8 @@ function relayReplyAccepted(mem: DeviceMemory, at: number, relay: boolean): bool
  * - Resposta do J16 com o estado do relé (`attributes.result` "RELAY 0/1 OK", `parseRelayReply`) aceita
  *   (`relayReplyAccepted`) = status fresco do próprio aparelho: `blocked`/`blockedAt` (min(serverTime, ingestão)) na hora e
  *   `relayReply: true` (a ponte publica `reported.travada` sem a deduplicação de 1/min). Posição com `attributes.result` nunca
- *   vira telemetria nem renova `last` (é a última localização repetida, não medição); velocidade em movimento nela apaga `last`.
+ *   vira telemetria nem renova `last` (é a última localização repetida, não medição); com `fixTime` mais novo que a última
+ *   telemetria ou velocidade em movimento, apaga `last`.
  * O `reported.travada` deve usar `currentBlocked` e só ser publicado quando for boolean.
  */
 export function applyPosition(
@@ -187,14 +188,15 @@ export function applyPosition(
   const blocked = telemetryBlocked(next, now);
   if (blocked !== true) next.lockAnchor = undefined;
   const none = { telemetry: null, invalid: false, movedWhileLocked: false, relayReply, memory: next };
-  if (result !== undefined) {
-    // Resposta a comando: a localização é a última conhecida repetida. Não é amostra parada nova para a guarda do corte.
-    const replySpeed = knotsToKmh(p.speed);
-    if (!(replySpeed < 3) || !Number.isFinite(replySpeed)) next.last = undefined;
-    return none;
-  }
   const fixTime = Date.parse(p.fixTime);
   const newer = !Number.isFinite(fixTime) || next.lastFixTime === undefined || fixTime > next.lastFixTime;
+  if (result !== undefined) {
+    // Resposta a comando: não é medição (o Traccar repete a última localização). Nunca renova `last`; mais nova que a última
+    // telemetria (inutilizável, como as outras) ou com velocidade em movimento, apaga a amostra parada guardada.
+    const replySpeed = knotsToKmh(p.speed);
+    if (newer || !(replySpeed < 3) || !Number.isFinite(replySpeed)) next.last = undefined;
+    return none;
+  }
   if (!p.valid || p.outdated || !Number.isFinite(fixTime)) {
     if (newer) next.last = undefined;
     return none;
