@@ -83,6 +83,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** Heartbeat/status do GT06 no Traccar: posição `outdated` repetida, com o bit de corte. */
 const heartbeat = (id: number, at: number, blocked: boolean): TraccarPosition =>
   position({ id, deviceId: 1, fixTime: iso(T0 - 60_000), serverTime: iso(at), outdated: true, attributes: { blocked, ignition: false } });
+/** Resposta do J16 ao comando de motor: posição `outdated` com `attributes.result` (P2). */
+const ack = (id: number, at: number): TraccarPosition =>
+  position({ id, deviceId: 1, fixTime: iso(T0 - 60_000), serverTime: iso(at), outdated: true, attributes: { result: 'ok' } });
 const setStatus = (c: Ctx, status: 'online' | 'offline') => c.traccar.push({ devices: [{ id: 1, name: T, uniqueId: IMEI, status }] });
 const gets = (c: Ctx) => out(c, `$aws/things/${T}/shadow/get`).length;
 const getAccepted = (c: Ctx, delta: Record<string, unknown>, version = 1) =>
@@ -142,6 +145,8 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'recently_sent'));
     expect(c.traccar.commands).toHaveLength(1);
     expect(reportedTravada(c)).not.toContain(true); // aceite ≠ corte
+    c.now.value = T0 + 1_000;
+    c.traccar.push({ positions: [ack(19, T0 + 1_000)] }); // resposta do J16 ao Relay
     c.now.value = T0 + 3_000;
     c.traccar.push({ positions: [position({ id: 21, deviceId: 1, fixTime: iso(T0 - 2_000), serverTime: iso(T0 + 3_000), outdated: true, attributes: { blocked: true, ignition: true } })] });
     await waitFor(() => reportedTravada(c).includes(true));
@@ -530,9 +535,9 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     await waitFor(() => reportedTravada(c).length === 1);
     c.now.value = T0 + 91_000;
     c.traccar.push({ positions: [position({ id: 231, deviceId: 1, fixTime: iso(T0 + 90_000), serverTime: iso(T0 + 91_000), speed: 0, attributes: { ignition: false, power: 72 } })] });
-    // A4-1a: bit velho também não vale para a telemetria — retida (awaiting_status), mas a posição alimenta a guarda do corte.
-    await waitFor(() => c.logs.some((l) => l.msg === 'telemetry_held' && l.reason === 'awaiting_status'));
-    expect(out(c, `motos/${T}/telemetria`)).toEqual([]);
+    // P4: bit velho não vale como travada:true — a telemetria sai com travada:false (nunca confirma lock).
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    expect(out(c, `motos/${T}/telemetria`)[0]).toMatchObject({ travada: false });
     await sendDelta(c, { travada: true });
     await waitFor(() => c.traccar.commands.length === 1);
     expect(c.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
@@ -561,11 +566,32 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     await waitFor(() => c.traccar.commands.length === 2);
     expect(c.traccar.commands.map((x) => x.type)).toEqual(['engineResume', 'engineStop']);
     expect(reportedTravada(c)).toEqual([true]);
-    // depois do engineStop, de novo só status posterior ao envio vale
+    // depois do engineStop, de novo só status posterior à resposta do J16 vale (P2)
+    c.now.value = T0 + 3_000;
+    c.traccar.push({ positions: [ack(244, T0 + 3_000)] });
     c.now.value = T0 + 4_000;
     c.traccar.push({ positions: [heartbeat(243, T0 + 4_000, true)] });
     await waitFor(() => reportedTravada(c).length === 2);
     expect(reportedTravada(c)).toEqual([true, true]);
+  });
+
+  it('P2: heartbeat recebido 1 s depois do engineResume, sem resposta do J16, com blocked:true não vale (emitido antes do Relay)', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(260, T0, true)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    await sendDelta(c, { travada: false });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_resume_sent'));
+    c.now.value = T0 + 1_000;
+    c.traccar.push({ positions: [heartbeat(261, T0 + 1_000, true)] });
+    await sleep(40);
+    expect(reportedTravada(c)).toEqual([true]);
+    await sendDelta(c, { travada: true }); // relock: sem eco already_blocked
+    await sleep(40);
+    expect(reportedTravada(c)).toEqual([true]);
+    c.now.value = T0 + 6_000;
+    c.traccar.push({ positions: [heartbeat(262, T0 + 6_000, false)] }); // depois da folga de 5 s: vale
+    await waitFor(() => reportedTravada(c).length === 2);
+    expect(reportedTravada(c)).toEqual([true, false]);
   });
 
   it('A4-1: engineResume numa moto com bit fresco travada:false ainda ecoa reported.travada:false (o resume não trava)', async () => {
