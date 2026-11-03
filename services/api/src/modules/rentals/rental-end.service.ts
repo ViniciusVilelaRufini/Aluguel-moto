@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
-import type { Prisma, Rental, Vehicle } from '@prisma/client';
+import type { Prisma, Rental, TrackerControlMode, Vehicle } from '@prisma/client';
 import { CommandChangedEvent, EV, RentalChangedEvent, VehicleStatusChangedEvent } from '../../common/events';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../common/problem';
 import { IOT_GATEWAY, type IotGateway } from '../../ports/iot-gateway.port';
@@ -41,6 +41,13 @@ export const DEPOT_RETURN_RADIUS_M = 150;
 export const END_RETRY_INTERVAL_MS = 30_000;
 /** Depois de tantas tentativas sem "travada", para de reenviar e chama a operação (alerta). */
 export const MAX_END_ATTEMPTS = 10;
+/**
+ * Auditoria run-4: trava do fim (`relay_only`) confirmada mais de 150 s depois do pedido — a moto pode ter rodado nesse meio
+ * tempo (o relé só corta com a moto parada). O tempo cobrado vai até a confirmação e a zona de devolução é reconferida.
+ */
+export const LATE_LOCK_CONFIRMATION_MS = 150_000;
+/** Motivo mostrado ao cliente quando a trava do fim termina sem corte (`relay_only`) e o aluguel volta a `active`. */
+export const END_LOCK_FAILED_MESSAGE = 'A moto não parou; pare e peça o encerramento de novo.';
 const SYSTEM = { system: true as const, name: 'encerramento' };
 
 type RentalWithVehicle = Rental & { vehicle: Vehicle };
@@ -285,8 +292,10 @@ export class RentalEndService {
     if (rental.status === 'ended' || rental.status === 'force_ended') return toRental(rental);
 
     const now = new Date();
-    const timing = rentalTimes({ ...rental, endRequestedAt: rental.endRequestedAt ?? now });
-    const fees = [...(opts.fees ?? []), ...(await this.stationSwapFees(rentalId))];
+    const late = await this.lateLockConfirmation(rental, kind, opts, now);
+    const billedUntil = late ? now : (rental.endRequestedAt ?? now);
+    const timing = rentalTimes({ ...rental, endRequestedAt: billedUntil });
+    const fees = [...(opts.fees ?? []), ...(late?.fee ? [late.fee] : []), ...(await this.stationSwapFees(rentalId))];
     // R2-01: a carteira abate primeiro (ordem de liquidação: carteira → caução → cartão → dívida). O saldo é lido e debitado
     // na mesma transação que fecha o aluguel, com o cliente travado (FOR UPDATE): o débito acontece uma única vez (o
     // fechamento é condicional) e o mesmo saldo nunca paga dois fechamentos. O restante (`totalCents`) vai para a liquidação.
@@ -305,7 +314,8 @@ export class RentalEndService {
         data: {
           status: kind,
           endedAt: now,
-          endRequestedAt: rental.endRequestedAt ?? now,
+          endRequestedAt: billedUntil,
+          ...(late ? { endZoneId: late.zoneId } : {}),
           pausedAt: null,
           pausedSecondsAcc: timing.pausedSeconds,
           costCents: breakdown.totalCents,
@@ -354,7 +364,7 @@ export class RentalEndService {
         type: kind,
         actorType: opts.actor ? 'staff' : kind === 'ended' ? 'customer' : 'system',
         actorId: opts.actor?.userId ?? (kind === 'ended' ? rental.customerId : null),
-        data: { costCents: breakdown.totalCents },
+        data: { costCents: breakdown.totalCents, ...(late ? { lateLockConfirmation: true, outsideReturnZone: !late.zoneId } : {}) },
       },
     });
 
@@ -373,6 +383,80 @@ export class RentalEndService {
     this.emitRental(final);
     this.logger.log({ msg: 'rental_finalized', rentalId, status: kind, costCents: breakdown.totalCents });
     return toRental(final);
+  }
+
+  /**
+   * Auditoria run-4 (b): fechamento normal do cliente (sem staff, fora do galpão) de moto `relay_only` com a trava confirmada
+   * mais de `LATE_LOCK_CONFIRMATION_MS` depois do pedido → cobra até agora e reconfere a zona de devolução na posição atual.
+   * Fora da zona (e o pedido tinha sido feito numa zona) → taxa de encerramento fora da zona. `null` = fechamento comum.
+   */
+  private async lateLockConfirmation(
+    rental: RentalWithVehicle,
+    kind: 'ended' | 'force_ended',
+    opts: FinalizeOptions,
+    now: Date,
+  ): Promise<{ zoneId: string | null; fee?: FeeCharge } | null> {
+    if (kind !== 'ended' || opts.actor || opts.returnTo === 'depot' || !rental.endRequestedAt) return null;
+    const delayMs = now.getTime() - rental.endRequestedAt.getTime();
+    if (delayMs <= LATE_LOCK_CONFIRMATION_MS) return null;
+    if ((await this.controlModeOf(rental.vehicleId)) !== 'relay_only') return null;
+    const zone = await this.zones.findContaining(await this.positionOf(rental.vehicle), 'return');
+    // Pedido feito fora de zona só existe no atalho de teste (`allowOutsideZone`): não vira taxa.
+    const fee: FeeCharge | undefined =
+      !zone && rental.endZoneId
+        ? { code: FORCE_END_FEE_CODE, description: 'Encerramento fora da zona de devolução', amountCents: await this.pricing.feeAmount(FORCE_END_FEE_CODE, FORCE_END_FEE_DEFAULT_CENTS) }
+        : undefined;
+    this.logger.warn({ msg: 'rental_end_late_lock_confirmation', rentalId: rental.id, delayMs, outsideReturnZone: !zone });
+    return { zoneId: zone?.id ?? null, ...(fee ? { fee } : {}) };
+  }
+
+  /** Modo de controle do rastreador da moto (sem rastreador cadastrado = `speed_control`, o padrão). */
+  private async controlModeOf(vehicleId: string): Promise<TrackerControlMode> {
+    const tracker = await this.prisma.tracker.findUnique({ where: { vehicleId }, select: { controlMode: true } });
+    return tracker?.controlMode ?? 'speed_control';
+  }
+
+  /** Último `lock` deste aluguel com o propósito dado (retentativas e trava em curso compartilham o desfecho). */
+  private latestRentalLock(rentalId: string, vehicleId: string, purpose: string) {
+    return this.prisma.vehicleCommand.findFirst({
+      where: { vehicleId, type: 'lock', AND: [{ payload: { path: ['rentalId'], equals: rentalId } }, { payload: { path: ['purpose'], equals: purpose } }] },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { id: true, status: true },
+    });
+  }
+
+  /**
+   * Auditoria run-4 (a): a trava do fim de uma moto `relay_only` terminou sem corte (`did_not_stop`/`timeout`) — a moto
+   * continua com o cliente e destravada. O aluguel volta de `ending` para `active` (o tempo volta a correr; sem zona nem pedido
+   * de fim) e o cliente pede o encerramento de novo com a moto parada. Condicional em `ending` (idempotente).
+   */
+  private async revertEnding(rentalId: string, commandReason?: string): Promise<boolean> {
+    const rental = await this.load(rentalId);
+    if (rental.status !== 'ending') return false;
+    const moved = await this.prisma.rental.updateMany({
+      where: { id: rentalId, status: 'ending' },
+      data: { status: 'active', endRequestedAt: null, endZoneId: null, endAttempts: 0, endLastAttemptAt: null },
+    });
+    if (moved.count !== 1) return false;
+    // Pedido de fim feito com o aluguel pausado: a moto seguia `paused`; volta a `rented` junto com o aluguel.
+    const unpaused = await this.prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: 'paused' }, data: { status: 'rented' } });
+    await this.prisma.rentalEvent.create({
+      data: { rentalId, type: 'resumed', actorType: 'system', message: END_LOCK_FAILED_MESSAGE, data: { reason: 'end_lock_failed', commandReason: commandReason ?? null } },
+    });
+    this.logger.warn({ msg: 'rental_end_lock_failed_reverted', rentalId, reason: commandReason ?? null });
+    if (unpaused.count) {
+      this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: rental.vehicleId, status: 'rented', ts: new Date().toISOString() } satisfies VehicleStatusChangedEvent);
+    }
+    this.emitRental(await this.load(rentalId));
+    return true;
+  }
+
+  /** `relay_only` cuja última trava de fim deste aluguel terminou `failed` (com `commandId`: e é este comando). */
+  private async endLockFailed(rental: Pick<Rental, 'id' | 'vehicleId'>, commandId?: string): Promise<boolean> {
+    if ((await this.controlModeOf(rental.vehicleId)) !== 'relay_only') return false;
+    const latest = await this.latestRentalLock(rental.id, rental.vehicleId, 'rental_end');
+    if (!latest || latest.status !== 'failed') return false;
+    return commandId === undefined || latest.id === commandId;
   }
 
   /**
@@ -448,7 +532,18 @@ export class RentalEndService {
   async onCommandChanged(ev: CommandChangedEvent): Promise<void> {
     const purpose = ev.payload?.purpose;
     const rentalId = ev.payload?.rentalId as string | undefined;
-    if (ev.type !== 'lock' || purpose !== 'rental_end' || !rentalId || ev.status !== 'confirmed') return;
+    if (ev.type !== 'lock' || purpose !== 'rental_end' || !rentalId) return;
+    if (ev.status === 'failed') {
+      // Auditoria run-4 (a): trava sem corte em `relay_only` → o aluguel volta a `active`. `speed_control` segue na retentativa.
+      try {
+        const rental = await this.prisma.rental.findUnique({ where: { id: rentalId }, select: { id: true, vehicleId: true, status: true } });
+        if (rental?.status === 'ending' && (await this.endLockFailed(rental, ev.commandId))) await this.revertEnding(rentalId, ev.reason);
+      } catch (err) {
+        this.logger.error({ msg: 'rental_end_revert_failed', rentalId, error: (err as Error).message });
+      }
+      return;
+    }
+    if (ev.status !== 'confirmed') return;
     const rental = await this.prisma.rental.findUnique({ where: { id: rentalId }, select: { status: true } });
     if (rental?.status !== 'ending') return;
     await this.finalize(rentalId, 'ended').catch((err) => this.logger.error({ msg: 'rental_finalize_failed', rentalId, error: (err as Error).message }));
@@ -469,6 +564,11 @@ export class RentalEndService {
       take: 100,
     });
     for (const r of pending) {
+      // Auditoria run-4 (a): trava de fim `relay_only` já encerrada sem corte (evento perdido) → volta a `active`, sem reenviar.
+      if (await this.endLockFailed(r)) {
+        await this.revertEnding(r.id);
+        continue;
+      }
       await this.prisma.rental.updateMany({
         where: { id: r.id, status: 'ending' },
         data: { endLastAttemptAt: new Date(), endAttempts: { increment: 1 } },
@@ -486,6 +586,16 @@ export class RentalEndService {
           { dedupe: false },
         );
       }
+    }
+    // Auditoria run-4 (a): `relay_only` que esgotou as tentativas e cuja trava terminou sem corte depois (evento perdido) não
+    // fica em `ending` com a moto destravada e o preço congelado.
+    const exhausted = await this.prisma.rental.findMany({
+      where: { status: 'ending', endAttempts: { gte: MAX_END_ATTEMPTS }, vehicle: { tracker: { controlMode: 'relay_only' } } },
+      select: { id: true, vehicleId: true },
+      take: 100,
+    });
+    for (const r of exhausted ?? []) {
+      if (await this.endLockFailed(r)) await this.revertEnding(r.id);
     }
   }
 
