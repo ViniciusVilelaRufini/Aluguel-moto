@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from './enums';
 import { conflict } from './problem';
+import { RELAY_LOCK_PREFIX } from '../modules/iot/relay-lock.store';
+import { SAFE_LOCK_PREFIX } from '../modules/iot/safe-lock.store';
+import type { RedisStore } from '../redis/redis-store';
 
 /**
  * Regra única de "moto em uso por um cliente": aluguel aberto (`OPEN_RENTAL_STATUSES`) ou reserva ativa.
@@ -31,4 +34,19 @@ export async function hasInUseReservation(tx: Pick<Prisma.TransactionClient, 're
 export async function assertVehicleNotInUse(tx: InUseTx, vehicleId: string): Promise<void> {
   const [rental, reservation] = await Promise.all([hasOpenRental(tx, vehicleId), hasInUseReservation(tx, vehicleId)]);
   if (rental || reservation) throw conflict('vehicle-unavailable', 'A moto está em uso por um cliente.');
+}
+
+/**
+ * N5: trava em andamento na API para o thing (rampa `speed_control` em `iot:safe-lock:*` ou trava só relé em
+ * `iot:relay-lock:*`, estado ou só a entrada do índice — órfã à espera da varredura). Devolve o tipo da trava ou `null`.
+ * Erro de leitura propaga (falha fechada). Usado pelo provisionamento e pela troca de `thingName` no painel.
+ */
+export async function pendingLockKind(redis: Pick<RedisStore, 'exists' | 'hgetall'>, thingName: string): Promise<string | null> {
+  for (const [prefix, what] of [
+    [SAFE_LOCK_PREFIX, 'rampa de bloqueio speed_control'],
+    [RELAY_LOCK_PREFIX, 'trava só relé'],
+  ] as const) {
+    if ((await redis.exists(`${prefix}:${thingName}`)) || (await redis.hgetall(`${prefix}:index`))[thingName] !== undefined) return what;
+  }
+  return null;
 }

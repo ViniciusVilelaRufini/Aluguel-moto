@@ -42,3 +42,45 @@ describe('Auditoria run-4: setStatus condicionado ao status lido', () => {
     await expect(service.setStatus(operacao, VEHICLE_ID, { status: 'free', reason: 'ok' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
   });
 });
+
+describe('Auditoria run-4: trocar thingName com a moto em uso ou trava em curso', () => {
+  it('aluguel aberto → 409 vehicle-unavailable, nada é gravado', async () => {
+    const { service, prisma } = setup();
+    prisma.rental.findFirst.mockResolvedValue({ id: 'r-1' } as any);
+    await expect(service.update(operacao, VEHICLE_ID, { thingName: 'moto-0099' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('reserva ativa → 409 vehicle-unavailable', async () => {
+    const { service, prisma } = setup();
+    prisma.reservation.findFirst.mockResolvedValue({ id: 'res-1' } as any);
+    await expect(service.update(operacao, VEHICLE_ID, { thingName: 'moto-0099' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('trava só relé em curso no thing atual → 409 vehicle-unavailable', async () => {
+    const { service, prisma } = setup({ keys: ['iot:relay-lock:moto-0001'] });
+    await expect(service.update(operacao, VEHICLE_ID, { thingName: 'moto-0099' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('rampa speed_control órfã só no índice → 409 vehicle-unavailable', async () => {
+    const { service, prisma } = setup({ index: { 'iot:safe-lock:index': { 'moto-0001': '1' } } });
+    await expect(service.update(operacao, VEHICLE_ID, { thingName: 'moto-0099' } as any)).rejects.toMatchObject({ status: 409, slug: 'vehicle-unavailable' });
+    expect(prisma.vehicle.update).not.toHaveBeenCalled();
+  });
+
+  it('moto livre e sem trava → troca o thingName', async () => {
+    const { service, prisma } = setup();
+    await service.update(operacao, VEHICLE_ID, { thingName: 'moto-0099' } as any);
+    expect(prisma.vehicle.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ thingName: 'moto-0099' }) }));
+  });
+
+  it('sem trocar thingName → não consulta uso nem Redis (edição de modelo com aluguel aberto segue permitida)', async () => {
+    const { service, prisma, redis } = setup();
+    prisma.rental.findFirst.mockResolvedValue({ id: 'r-1' } as any);
+    await service.update(operacao, VEHICLE_ID, { thingName: 'moto-0001', odometerKm: 10 } as any);
+    expect(redis.exists).not.toHaveBeenCalled();
+    expect(prisma.vehicle.update).toHaveBeenCalled();
+  });
+});
