@@ -8,6 +8,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
+import { assertIpv4Cidrs } from '../cidr';
 import { EnvConfig } from '../config';
 import { DataStack } from './data-stack';
 import { IotStack } from './iot-stack';
@@ -15,6 +16,8 @@ import { apiSubnetType } from './network-stack';
 
 export const GT06_PORT = 5023;
 export const TRACCAR_WEB_PORT = 8082;
+/** LGPD (CLAUDE.md): trajetos expiram em 90 dias; também vale para o banco `traccar`, que a exclusão da API não alcança. */
+export const TRACCAR_HISTORY_DAYS = 90;
 /** Imagem oficial fixada (multi-arquitetura; arm64 conferido no plano GT06, Task 13 Step 1). */
 export const TRACCAR_IMAGE = 'traccar/traccar:6.16.0-ubuntu';
 const THING_NAME = /^moto-\d{4,}$/;
@@ -83,6 +86,7 @@ export class TraccarStack extends Stack {
     if (!props.apnCidrs?.length && !(env !== 'prod' && props.openGt06)) {
       throw new Error(env === 'prod' ? 'prod exige apnCidrs: o GT06 não tem TLS e só entra por APN privada (spec GT06 §6.5).' : 'informe apnCidrs ou, só para bancada, -c openGt06=true (5023 aberta à internet, sem TLS).');
     }
+    assertIpv4Cidrs('apnCidrs', props.apnCidrs ?? []);
     if (!props.apnCidrs?.length) Annotations.of(this).addWarning('TCP 5023 (GT06 sem TLS, só IMEI) aberta a 0.0.0.0/0: apenas bancada; use apnCidrs.');
     if (env === 'prod' && !props.apnCidrs?.length) throw new Error('prod exige apnCidrs: o GT06 não tem TLS e só entra por APN privada (spec GT06 §6.5).');
     const removal = cfg.disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN;
@@ -129,6 +133,8 @@ export class TraccarStack extends Stack {
         PROTOCOLS_ENABLE: 'gt06',
         GT06_PORT: String(GT06_PORT),
         WEB_PORT: String(TRACCAR_WEB_PORT),
+        // LGPD: trajeto expira em 90 dias; a tarefa diária do Traccar (database.historyDays) apaga posições e eventos mais antigos.
+        DATABASE_HISTORY_DAYS: String(TRACCAR_HISTORY_DAYS),
       },
       secrets: { DATABASE_PASSWORD: ecs.Secret.fromSecretsManager(traccarDb) },
       portMappings: [{ containerPort: GT06_PORT }, { containerPort: TRACCAR_WEB_PORT }],

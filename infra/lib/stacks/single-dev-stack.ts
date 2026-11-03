@@ -8,6 +8,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as scheduler from 'aws-cdk-lib/aws-scheduler';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
+import { assertIpv4Cidrs } from '../cidr';
 import { EnvConfig } from '../config';
 import { AdminWebStack } from './admin-web-stack';
 import { AuthStack } from './auth-stack';
@@ -149,8 +150,8 @@ export class SingleDevStack extends Stack {
       for (const c of cidrs) {
         // Abrir para todos (/0, inclusive ::/0) só pelo reconhecimento explícito openGt06.
         if (/\/0$/.test(c.trim())) throw new Error(`gt06Cidrs: ${c} abre a 5023 para todos; use -c openGt06=true (só bancada) em vez de um CIDR /0.`);
-        if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(c)) throw new Error(`gt06Cidrs: CIDR IPv4 inválido: ${c}`);
       }
+      assertIpv4Cidrs('gt06Cidrs', cidrs);
       if (!cidrs.length && !props.openGt06) {
         throw new Error('gt06Port=true exige -c gt06Cidrs=<cidr>[,<cidr>] ou, só para bancada, -c openGt06=true (5023 aberta à internet, GT06 sem TLS).');
       }
