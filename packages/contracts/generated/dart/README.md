@@ -20,7 +20,8 @@ Mudanças depois da aprovação da Task 1 são propostas em `docs/decisoes.md` e
   última página.
 - `Idempotency-Key` (header) é obrigatório em `POST /rentals`, `POST /swap-stations/{id}/swaps` e nos POST de pagamento. A mesma chave
   com o mesmo corpo devolve a mesma resposta sem repetir o efeito; com corpo diferente → `422`
-  (`idempotency-key-reused`). Chaves valem por 24 h.
+  (`idempotency-key-reused`). Chaves valem por 24 h. Formato: 8 a 128 caracteres em `[A-Za-z0-9_-]` (UUID v4
+  passa); fora disso → `400` `validation-error`.
 - Rate limiting global; acima do limite → `429` com `Retry-After`.
 
 ## Erros (RFC 7807)
@@ -43,7 +44,8 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
 `thing-name-taken`, `station-swap-in-progress`, `slots-below-stock`, `debt-not-payable`, `debt-in-collection`,
 `payment-pending`, `card-required`, `vehicle-locked-by-staff`, `vehicle-not-at-depot`, `deposit-in-use`,
 `task-type-mismatch`, `battery-swap-already-recorded`, `battery-not-in-van`, `battery-serial-mismatch`,
-`battery-in-other-van`, `battery-at-station`.
+`battery-in-other-van`, `battery-at-station`, `staff-not-registered`, `staff-account-relink-required`,
+`staff-directory-unavailable`.
 
 ## Autenticação e grupos
 - `customerAuth`: JWT do User Pool de clientes (Cognito) ou, com `AUTH_MODE=dev`, emitido por
@@ -57,6 +59,11 @@ Todo erro é `application/problem+json` (schema `Problem`). O campo `type` é
   suporte; `campo` tarefas de campo e destravar em serviço.
 - Dados pessoais são minimizados por grupo: CPF completo só para `admin`; os demais recebem
   `***.456.789-**`.
+- Cadastro interno (qualquer operação com `staffAuth`): o token de staff só vale com um cadastro no painel. O
+  primeiro login liga o convite (`POST /staff`) pelo e-mail verificado do usuário. Sem convite → `403`
+  `staff-not-registered`; mesmo e-mail já ligado a outro usuário do pool (conta recriada) → `403`
+  `staff-account-relink-required`; diretório de usuários indisponível ao confirmar o e-mail → `503`
+  `staff-directory-unavailable` (nada foi criado; tente de novo). Usuário desativado → `403` `forbidden`.
 
 ## Tempo real
 Eventos WebSocket (Socket.IO, namespace `/realtime`) estão em `packages/contracts/realtime.md`. Os eventos da

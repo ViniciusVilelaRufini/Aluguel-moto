@@ -8,7 +8,7 @@ import 'package:volti_api/api.dart';
 ## Properties
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
-**code** | **String** | `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `wallet`. | 
+**code** | **String** | `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`. | 
 **description** | **String** |  | 
 **quantity** | **int** | Minutos, horas ou dias cobrados. | [optional] 
 **unitCents** | **int** |  | [optional] 

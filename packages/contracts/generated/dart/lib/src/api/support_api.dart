@@ -45,7 +45,7 @@ class SupportApi {
   const SupportApi(this._dio, this._serializers);
 
   /// Abrir sinistro
-  /// Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo &#x60;InsuranceProvider&#x60;.
+  /// Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo &#x60;InsuranceProvider&#x60;. Chave de anexo de cliente fora de &#x60;support/&lt;id do usuário&gt;/&lt;arquivo&gt;&#x60; (o formato do &#x60;POST /support/uploads&#x60;) → &#x60;422&#x60; &#x60;validation-error&#x60;.
   ///
   /// Parameters:
   /// * [claimCreate]
@@ -247,7 +247,7 @@ class SupportApi {
   }
 
   /// Reportar problema
-  /// Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria &#x60;accident&#x60; ou &#x60;theft&#x60; gera alerta &#x60;high&#x60;.
+  /// Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria &#x60;accident&#x60; ou &#x60;theft&#x60; gera alerta &#x60;high&#x60;. Chave de anexo de cliente fora de &#x60;support/&lt;id do usuário&gt;/&lt;arquivo&gt;&#x60; (o formato do &#x60;POST /support/uploads&#x60;) → &#x60;422&#x60; &#x60;validation-error&#x60;.
   ///
   /// Parameters:
   /// * [incidentCreate]
@@ -1601,7 +1601,7 @@ class SupportApi {
   }
 
   /// Enviar mensagem
-  ///
+  /// Chave de anexo de cliente fora de &#x60;support/&lt;id do usuário&gt;/&lt;arquivo&gt;&#x60; (o formato do &#x60;POST /support/uploads&#x60;) → &#x60;422&#x60; &#x60;validation-error&#x60;.
   ///
   /// Parameters:
   /// * [id]
@@ -1713,7 +1713,7 @@ class SupportApi {
   }
 
   /// Atualizar status do sinistro
-  /// Grava AuditLog.
+  /// Grava AuditLog. Transições: &#x60;submitted&#x60; → &#x60;under_review&#x60; | &#x60;approved&#x60; | &#x60;rejected&#x60;; &#x60;under_review&#x60; → &#x60;approved&#x60; | &#x60;rejected&#x60;; &#x60;approved&#x60; → &#x60;paid&#x60; (&#x60;rejected&#x60; e &#x60;paid&#x60; são finais). Repetir o status atual só atualiza a nota. Transição fora da tabela ou status alterado durante a atualização → &#x60;409&#x60;.
   ///
   /// Parameters:
   /// * [id]

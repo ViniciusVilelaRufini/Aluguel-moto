@@ -26,6 +26,8 @@ class _$Vehicle extends Vehicle {
   @override
   final double estimatedRangeKm;
   @override
+  final bool? batteryKnown;
+  @override
   final int speedLimitKmh;
   @override
   final String? thingName;
@@ -95,6 +97,7 @@ class _$Vehicle extends Vehicle {
       required this.lng,
       required this.batteryPct,
       required this.estimatedRangeKm,
+      this.batteryKnown,
       required this.speedLimitKmh,
       this.thingName,
       this.trackerId,
@@ -144,6 +147,7 @@ class _$Vehicle extends Vehicle {
         lng == other.lng &&
         batteryPct == other.batteryPct &&
         estimatedRangeKm == other.estimatedRangeKm &&
+        batteryKnown == other.batteryKnown &&
         speedLimitKmh == other.speedLimitKmh &&
         thingName == other.thingName &&
         trackerId == other.trackerId &&
@@ -186,6 +190,7 @@ class _$Vehicle extends Vehicle {
     _$hash = $jc(_$hash, lng.hashCode);
     _$hash = $jc(_$hash, batteryPct.hashCode);
     _$hash = $jc(_$hash, estimatedRangeKm.hashCode);
+    _$hash = $jc(_$hash, batteryKnown.hashCode);
     _$hash = $jc(_$hash, speedLimitKmh.hashCode);
     _$hash = $jc(_$hash, thingName.hashCode);
     _$hash = $jc(_$hash, trackerId.hashCode);
@@ -230,6 +235,7 @@ class _$Vehicle extends Vehicle {
           ..add('lng', lng)
           ..add('batteryPct', batteryPct)
           ..add('estimatedRangeKm', estimatedRangeKm)
+          ..add('batteryKnown', batteryKnown)
           ..add('speedLimitKmh', speedLimitKmh)
           ..add('thingName', thingName)
           ..add('trackerId', trackerId)
@@ -301,6 +307,10 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
   double? get estimatedRangeKm => _$this._estimatedRangeKm;
   set estimatedRangeKm(double? estimatedRangeKm) =>
       _$this._estimatedRangeKm = estimatedRangeKm;
+
+  bool? _batteryKnown;
+  bool? get batteryKnown => _$this._batteryKnown;
+  set batteryKnown(bool? batteryKnown) => _$this._batteryKnown = batteryKnown;
 
   int? _speedLimitKmh;
   int? get speedLimitKmh => _$this._speedLimitKmh;
@@ -442,6 +452,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
       _lng = $v.lng;
       _batteryPct = $v.batteryPct;
       _estimatedRangeKm = $v.estimatedRangeKm;
+      _batteryKnown = $v.batteryKnown;
       _speedLimitKmh = $v.speedLimitKmh;
       _thingName = $v.thingName;
       _trackerId = $v.trackerId;
@@ -507,6 +518,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
                 batteryPct, r'Vehicle', 'batteryPct'),
             estimatedRangeKm: BuiltValueNullFieldError.checkNotNull(
                 estimatedRangeKm, r'Vehicle', 'estimatedRangeKm'),
+            batteryKnown: batteryKnown,
             speedLimitKmh: BuiltValueNullFieldError.checkNotNull(
                 speedLimitKmh, r'Vehicle', 'speedLimitKmh'),
             thingName: thingName,

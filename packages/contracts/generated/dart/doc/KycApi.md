@@ -100,7 +100,7 @@ This endpoint does not need any parameter.
 
 Revisão manual da verificação
 
-Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog.
+Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog. Aprovar exige verificação enviada (`pending` ou `rejected`) com CPF, data de nascimento e documentos (senão `422` `validation-error`), 18+ (`422` `kyc-underage`) e CPF fora da lista de restrição (`422` `customer-blocked`). Rejeitar vale para `pending` ou `approved`. Estado incompatível ou alterado durante a revisão → `409`. 
 
 ### Example
 ```dart

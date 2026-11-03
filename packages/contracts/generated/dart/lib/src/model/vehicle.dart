@@ -22,8 +22,9 @@ part 'vehicle.g.dart';
 /// * [status]
 /// * [lat]
 /// * [lng]
-/// * [batteryPct]
-/// * [estimatedRangeKm]
+/// * [batteryPct] - Carga da bateria (%). Com `batteryKnown: false` vem 0 e não é leitura real (não exibir como nível).
+/// * [estimatedRangeKm] - Autonomia estimada pela carga. Com `batteryKnown: false` vem 0 e não é real.
+/// * [batteryKnown] - O rastreador tem leitura da bateria (telemetria `bateria_conhecida`, mqtt.md). Ausente = `true` (API antiga). `false` = sem leitura (ex.: J16 numa fonte DC-DC): `batteryPct` e `estimatedRangeKm` vêm 0 e devem aparecer como \"Bateria desconhecida\", nunca como 0%.
 /// * [speedLimitKmh] - Limite atual aplicado (zona ou comando).
 /// * [thingName] - staff.
 /// * [trackerId] - staff.
@@ -35,14 +36,14 @@ part 'vehicle.g.dart';
 /// * [speedKmh] - staff. Velocidade reportada.
 /// * [signal] - staff.
 /// * [stolenMode] - staff.
-/// * [firmwareVersion] - staff.
-/// * [lastSeenAt] - staff. Último sinal.
+/// * [firmwareVersion] - staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida.
+/// * [lastSeenAt] - staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.
 /// * [currentRentalId] - staff.
 /// * [vehicleModelId]
 /// * [categoryLabel]
 /// * [pricePerMinuteCents]
-/// * [address] - Endereço aproximado da posição atual (geocodificação reversa em cache).
-/// * [addressUpdatedAt]
+/// * [address] - Endereço aproximado da posição atual (geocodificação reversa em cache). `null` quando a posição atual não tem endereço geocodificado (sem resultado, provedor lento ou fora do orçamento da leitura): nunca o endereço de outro lugar. Ausente com `locationHidden`.
+/// * [addressUpdatedAt] - Quando `address` foi calculado; `null` junto com `address: null`.
 /// * [odometerKm] - staff.
 /// * [usageHours] - staff. Horas com ignição ligada.
 /// * [service]
@@ -77,11 +78,17 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   @BuiltValueField(wireName: r'lng')
   double get lng;
 
+  /// Carga da bateria (%). Com `batteryKnown: false` vem 0 e não é leitura real (não exibir como nível).
   @BuiltValueField(wireName: r'batteryPct')
   int get batteryPct;
 
+  /// Autonomia estimada pela carga. Com `batteryKnown: false` vem 0 e não é real.
   @BuiltValueField(wireName: r'estimatedRangeKm')
   double get estimatedRangeKm;
+
+  /// O rastreador tem leitura da bateria (telemetria `bateria_conhecida`, mqtt.md). Ausente = `true` (API antiga). `false` = sem leitura (ex.: J16 numa fonte DC-DC): `batteryPct` e `estimatedRangeKm` vêm 0 e devem aparecer como \"Bateria desconhecida\", nunca como 0%.
+  @BuiltValueField(wireName: r'batteryKnown')
+  bool? get batteryKnown;
 
   /// Limite atual aplicado (zona ou comando).
   @BuiltValueField(wireName: r'speedLimitKmh')
@@ -128,11 +135,11 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   @BuiltValueField(wireName: r'stolenMode')
   bool? get stolenMode;
 
-  /// staff.
+  /// staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida.
   @BuiltValueField(wireName: r'firmwareVersion')
   String? get firmwareVersion;
 
-  /// staff. Último sinal.
+  /// staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.
   @BuiltValueField(wireName: r'lastSeenAt')
   DateTime? get lastSeenAt;
 
@@ -149,10 +156,11 @@ abstract class Vehicle implements Built<Vehicle, VehicleBuilder> {
   @BuiltValueField(wireName: r'pricePerMinuteCents')
   int? get pricePerMinuteCents;
 
-  /// Endereço aproximado da posição atual (geocodificação reversa em cache).
+  /// Endereço aproximado da posição atual (geocodificação reversa em cache). `null` quando a posição atual não tem endereço geocodificado (sem resultado, provedor lento ou fora do orçamento da leitura): nunca o endereço de outro lugar. Ausente com `locationHidden`.
   @BuiltValueField(wireName: r'address')
   String? get address;
 
+  /// Quando `address` foi calculado; `null` junto com `address: null`.
   @BuiltValueField(wireName: r'addressUpdatedAt')
   DateTime? get addressUpdatedAt;
 
@@ -258,6 +266,13 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
       object.estimatedRangeKm,
       specifiedType: const FullType(double),
     );
+    if (object.batteryKnown != null) {
+      yield r'batteryKnown';
+      yield serializers.serialize(
+        object.batteryKnown,
+        specifiedType: const FullType(bool),
+      );
+    }
     yield r'speedLimitKmh';
     yield serializers.serialize(
       object.speedLimitKmh,
@@ -379,14 +394,14 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
       yield r'address';
       yield serializers.serialize(
         object.address,
-        specifiedType: const FullType(String),
+        specifiedType: const FullType.nullable(String),
       );
     }
     if (object.addressUpdatedAt != null) {
       yield r'addressUpdatedAt';
       yield serializers.serialize(
         object.addressUpdatedAt,
-        specifiedType: const FullType(DateTime),
+        specifiedType: const FullType.nullable(DateTime),
       );
     }
     if (object.odometerKm != null) {
@@ -540,6 +555,14 @@ class _$VehicleSerializer implements PrimitiveSerializer<Vehicle> {
             specifiedType: const FullType(double),
           ) as double;
           result.estimatedRangeKm = valueDes;
+          break;
+        case r'batteryKnown':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(bool),
+          ) as bool?;
+          if (valueDes == null) continue;
+          result.batteryKnown = valueDes;
           break;
         case r'speedLimitKmh':
           final valueDes = serializers.deserialize(

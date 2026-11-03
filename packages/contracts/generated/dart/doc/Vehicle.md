@@ -15,8 +15,9 @@ Name | Type | Description | Notes
 **status** | [**VehicleStatus**](VehicleStatus.md) |  | 
 **lat** | **double** |  | 
 **lng** | **double** |  | 
-**batteryPct** | **int** |  | 
-**estimatedRangeKm** | **double** |  | 
+**batteryPct** | **int** | Carga da bateria (%). Com `batteryKnown: false` vem 0 e não é leitura real (não exibir como nível). | 
+**estimatedRangeKm** | **double** | Autonomia estimada pela carga. Com `batteryKnown: false` vem 0 e não é real. | 
+**batteryKnown** | **bool** | O rastreador tem leitura da bateria (telemetria `bateria_conhecida`, mqtt.md). Ausente = `true` (API antiga). `false` = sem leitura (ex.: J16 numa fonte DC-DC): `batteryPct` e `estimatedRangeKm` vêm 0 e devem aparecer como \"Bateria desconhecida\", nunca como 0%.  | [optional] 
 **speedLimitKmh** | **int** | Limite atual aplicado (zona ou comando). | 
 **thingName** | **String** | staff. | [optional] 
 **trackerId** | **String** | staff. | [optional] 
@@ -28,14 +29,14 @@ Name | Type | Description | Notes
 **speedKmh** | **double** | staff. Velocidade reportada. | [optional] 
 **signal** | **int** | staff. | [optional] 
 **stolenMode** | **bool** | staff. | [optional] 
-**firmwareVersion** | **String** | staff. | [optional] 
-**lastSeenAt** | [**DateTime**](DateTime.md) | staff. Último sinal. | [optional] 
+**firmwareVersion** | **String** | staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida. | [optional] 
+**lastSeenAt** | [**DateTime**](DateTime.md) | staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s. | [optional] 
 **currentRentalId** | **String** | staff. | [optional] 
 **vehicleModelId** | **String** |  | [optional] 
 **categoryLabel** | **String** |  | [optional] 
 **pricePerMinuteCents** | **int** |  | [optional] 
-**address** | **String** | Endereço aproximado da posição atual (geocodificação reversa em cache). | [optional] 
-**addressUpdatedAt** | [**DateTime**](DateTime.md) |  | [optional] 
+**address** | **String** | Endereço aproximado da posição atual (geocodificação reversa em cache). `null` quando a posição atual não tem endereço geocodificado (sem resultado, provedor lento ou fora do orçamento da leitura): nunca o endereço de outro lugar. Ausente com `locationHidden`.  | [optional] 
+**addressUpdatedAt** | [**DateTime**](DateTime.md) | Quando `address` foi calculado; `null` junto com `address: null`. | [optional] 
 **odometerKm** | **double** | staff. | [optional] 
 **usageHours** | **double** | staff. Horas com ignição ligada. | [optional] 
 **service** | [**VehicleServiceInfo**](VehicleServiceInfo.md) |  | [optional] 

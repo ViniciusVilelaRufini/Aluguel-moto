@@ -11,14 +11,14 @@ part 'price_line.g.dart';
 /// PriceLine
 ///
 /// Properties:
-/// * [code] - `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `wallet`.
+/// * [code] - `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.
 /// * [description]
 /// * [quantity] - Minutos, horas ou dias cobrados.
 /// * [unitCents]
 /// * [amountCents] - Negativo para descontos.
 @BuiltValue()
 abstract class PriceLine implements Built<PriceLine, PriceLineBuilder> {
-  /// `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `wallet`.
+  /// `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.
   @BuiltValueField(wireName: r'code')
   String get code;
 

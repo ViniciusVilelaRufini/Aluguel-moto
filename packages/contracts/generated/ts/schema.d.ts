@@ -3881,9 +3881,19 @@ export interface components {
             lat: number;
             /** Format: double */
             lng: number;
+            /** @description Carga da bateria (%). Com `batteryKnown: false` vem 0 e não é leitura real (não exibir como nível). */
             batteryPct: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @description Autonomia estimada pela carga. Com `batteryKnown: false` vem 0 e não é real.
+             */
             estimatedRangeKm: number;
+            /**
+             * @description O rastreador tem leitura da bateria (telemetria `bateria_conhecida`, mqtt.md). Ausente = `true` (API antiga).
+             *     `false` = sem leitura (ex.: J16 numa fonte DC-DC): `batteryPct` e `estimatedRangeKm` vêm 0 e devem aparecer
+             *     como "Bateria desconhecida", nunca como 0%.
+             */
+            readonly batteryKnown?: boolean;
             /** @description Limite atual aplicado (zona ou comando). */
             speedLimitKmh: number;
             /**
@@ -3915,11 +3925,11 @@ export interface components {
             signal?: number;
             /** @description staff. */
             stolenMode?: boolean;
-            /** @description staff. */
+            /** @description staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida. */
             firmwareVersion?: string;
             /**
              * Format: date-time
-             * @description staff. Último sinal.
+             * @description staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.
              */
             lastSeenAt?: string;
             /**
@@ -3934,12 +3944,17 @@ export interface components {
             /** @example 79 */
             pricePerMinuteCents?: number;
             /**
-             * @description Endereço aproximado da posição atual (geocodificação reversa em cache).
+             * @description Endereço aproximado da posição atual (geocodificação reversa em cache). `null` quando a posição atual não tem
+             *     endereço geocodificado (sem resultado, provedor lento ou fora do orçamento da leitura): nunca o endereço de outro
+             *     lugar. Ausente com `locationHidden`.
              * @example R. Teodoro Sampaio, 1020 · Pinheiros, São Paulo
              */
-            address?: string;
-            /** Format: date-time */
-            addressUpdatedAt?: string;
+            address?: string | null;
+            /**
+             * Format: date-time
+             * @description Quando `address` foi calculado; `null` junto com `address: null`.
+             */
+            addressUpdatedAt?: string | null;
             /**
              * Format: double
              * @description staff.

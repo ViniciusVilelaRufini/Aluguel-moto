@@ -5943,8 +5943,15 @@ components:
         status: { $ref: '#/components/schemas/VehicleStatus' }
         lat: { type: number, format: double }
         lng: { type: number, format: double }
-        batteryPct: { type: integer, minimum: 0, maximum: 100 }
-        estimatedRangeKm: { type: number, format: double, minimum: 0 }
+        batteryPct: { type: integer, minimum: 0, maximum: 100, description: 'Carga da bateria (%). Com `batteryKnown: false` vem 0 e não é leitura real (não exibir como nível).' }
+        estimatedRangeKm: { type: number, format: double, minimum: 0, description: 'Autonomia estimada pela carga. Com `batteryKnown: false` vem 0 e não é real.' }
+        batteryKnown:
+          type: boolean
+          readOnly: true
+          description: |
+            O rastreador tem leitura da bateria (telemetria `bateria_conhecida`, mqtt.md). Ausente = `true` (API antiga).
+            `false` = sem leitura (ex.: J16 numa fonte DC-DC): `batteryPct` e `estimatedRangeKm` vêm 0 e devem aparecer
+            como "Bateria desconhecida", nunca como 0%.
         speedLimitKmh: { type: integer, minimum: 0, maximum: 32, description: Limite atual aplicado (zona ou comando). }
         thingName: { type: string, description: staff., examples: [moto-0001] }
         trackerId: { type: string, format: uuid, description: staff. }
@@ -5959,14 +5966,20 @@ components:
         speedKmh: { type: number, format: double, minimum: 0, description: staff. Velocidade reportada. }
         signal: { type: integer, minimum: 0, maximum: 5, description: staff. }
         stolenMode: { type: boolean, description: staff. }
-        firmwareVersion: { type: string, description: staff. }
-        lastSeenAt: { type: string, format: date-time, description: staff. Último sinal. }
+        firmwareVersion: { type: string, description: 'staff. Versão do firmware do rastreador vinculado (`Tracker.firmwareVersion`); sem ela, a gravada na moto. Ausente = desconhecida.' }
+        lastSeenAt: { type: string, format: date-time, description: 'staff. Último sinal do rastreador (telemetria, status/heartbeat ou reported), na hora do servidor; atualizado no banco no máximo a cada 15 s.' }
         currentRentalId: { type: string, format: uuid, description: staff. }
         vehicleModelId: { type: string, format: uuid }
         categoryLabel: { type: string, examples: [Urbana] }
         pricePerMinuteCents: { type: integer, minimum: 0, examples: [79] }
-        address: { type: string, description: Endereço aproximado da posição atual (geocodificação reversa em cache)., examples: ['R. Teodoro Sampaio, 1020 · Pinheiros, São Paulo'] }
-        addressUpdatedAt: { type: string, format: date-time }
+        address:
+          type: [string, 'null']
+          description: |
+            Endereço aproximado da posição atual (geocodificação reversa em cache). `null` quando a posição atual não tem
+            endereço geocodificado (sem resultado, provedor lento ou fora do orçamento da leitura): nunca o endereço de outro
+            lugar. Ausente com `locationHidden`.
+          examples: ['R. Teodoro Sampaio, 1020 · Pinheiros, São Paulo']
+        addressUpdatedAt: { type: [string, 'null'], format: date-time, description: 'Quando `address` foi calculado; `null` junto com `address: null`.' }
         odometerKm: { type: number, format: double, minimum: 0, description: staff. }
         usageHours: { type: number, format: double, minimum: 0, description: staff. Horas com ignição ligada. }
         service: { $ref: '#/components/schemas/VehicleServiceInfo' }

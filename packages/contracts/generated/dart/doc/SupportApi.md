@@ -35,7 +35,7 @@ Method | HTTP request | Description
 
 Abrir sinistro
 
-Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo `InsuranceProvider`.
+Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo `InsuranceProvider`. Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`. 
 
 ### Example
 ```dart
@@ -121,7 +121,7 @@ Name | Type | Description  | Notes
 
 Reportar problema
 
-Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria `accident` ou `theft` gera alerta `high`.
+Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria `accident` ou `theft` gera alerta `high`. Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`. 
 
 ### Example
 ```dart
@@ -706,6 +706,8 @@ Name | Type | Description  | Notes
 
 Enviar mensagem
 
+Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
+
 ### Example
 ```dart
 import 'package:volti_api/api.dart';
@@ -749,7 +751,7 @@ Name | Type | Description  | Notes
 
 Atualizar status do sinistro
 
-Grava AuditLog.
+Grava AuditLog. Transições: `submitted` → `under_review` | `approved` | `rejected`; `under_review` → `approved` | `rejected`; `approved` → `paid` (`rejected` e `paid` são finais). Repetir o status atual só atualiza a nota. Transição fora da tabela ou status alterado durante a atualização → `409`. 
 
 ### Example
 ```dart

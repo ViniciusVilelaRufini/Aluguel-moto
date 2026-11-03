@@ -206,7 +206,7 @@ class KycApi {
   }
 
   /// Revisão manual da verificação
-  /// Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog.
+  /// Decisão manual do time interno (por exemplo, documento ilegível no provedor). Grava AuditLog. Aprovar exige verificação enviada (&#x60;pending&#x60; ou &#x60;rejected&#x60;) com CPF, data de nascimento e documentos (senão &#x60;422&#x60; &#x60;validation-error&#x60;), 18+ (&#x60;422&#x60; &#x60;kyc-underage&#x60;) e CPF fora da lista de restrição (&#x60;422&#x60; &#x60;customer-blocked&#x60;). Rejeitar vale para &#x60;pending&#x60; ou &#x60;approved&#x60;. Estado incompatível ou alterado durante a revisão → &#x60;409&#x60;.
   ///
   /// Parameters:
   /// * [id]

@@ -41,6 +41,7 @@ Nada nesses tópicos identifica o cliente: a associação moto ↔ aluguel exist
 - `timestamp` é a hora da **medição** em UTC. Se divergir mais de 10 min do relógio do servidor, o trajeto usa a hora do servidor.
 - Telemetria guardada offline e enviada depois é aceita para o trajeto, mas só atualiza a posição exibida se for a mais nova recebida, e só vale para a rampa do bloqueio se tiver até 10 s, for posterior à reconexão e tiver `timestamp` estritamente maior que o de todas as já vistas na conexão (a janela de frescor usa `timestamp` limitado a "agora"). Depois de qualquer reconexão, nenhuma amostra de velocidade, de nenhuma origem (telemetria, `reported` via MQTT ou lido do shadow), vale para a rampa nos primeiros 10 s (`IOT_RECONNECT_GRACE_MS`), e o `timestamp` de toda telemetria vista nesse intervalo conta para a ordem. Reconexão = presença `connected` (só local), primeira mensagem depois de offline (vigia de 180 s), primeira amostra vista por um processo novo, ou lacuna > `IOT_RECONNECT_GAP_MS` (15 s; parada/travada: 150 s) entre mensagens do rastreador de qualquer canal, pela hora de chegada, ou telemetria com atraso de fila (`(chegada − chegada anterior) − (timestamp − timestamp anterior)`) > `IOT_QUEUE_LAG_MS` (5 s), independente da cadência e do desvio do relógio (no aws são os únicos detectores de quedas curtas); `timestamp` mais de 10 min no futuro nunca vale para a rampa e não ordena a posição exibida.
 - Mensagens fora do schema são descartadas (log `telemetry_invalid`, sem o payload).
+- `bateria_conhecida` (opcional; ausente = `true`): `false` = o rastreador não tem leitura da bateria e `bateria_pct: 0` não é carga real. A ponte GT06 manda `false` quando publica depois do teto de 5 min sem tensão do pack. A API grava `Vehicle.batteryKnown = false` (REST), não usa o 0 como carga da bateria instalada, e o painel/app não exibem o 0 como nível.
 - `velocidade_kmh` acima de 32 é aceita (indica limitador violado e alimenta alertas), nunca usada como limite.
 
 ## Device shadow
@@ -71,7 +72,7 @@ Um comando (`VehicleCommand`) é confirmado quando o `reported` alcança o `desi
 | Comando | Desired | Confirma quando | Prazo |
 |---|---|---|---|
 | `lock` | rampa (abaixo) e depois `travada: true` | `reported.travada = true` | 120 s → `failed`/`did_not_stop` (ou `timeout` se travou sem confirmar) |
-| `unlock` | `travada: false` + `limite_kmh` em vigor (zonas) | `reported.travada = false` | 30 s → `failed`/`timeout` |
+| `unlock` | `travada: false` + `limite_kmh` em vigor (zonas) | `reported.travada = false` | 30 s → `failed`/`timeout` (`relay_only`: 90 s, ver abaixo) |
 | `speed_limit` | `limite_kmh` | `reported.limite_kmh` igual | 30 s |
 | `stolen_mode` | `modo_roubada` | `reported.modo_roubada` igual | 30 s |
 | `horn` | `motos/{t}/comandos` `{ comando_id, acao: "buzina" }` | publicado com a moto online | offline → `failed`/`offline` |
@@ -106,11 +107,11 @@ Tópicos, schemas e shadow são os desta página. A API escolhe a estratégia po
 
 | Item | `speed_control` | `relay_only` |
 |---|---|---|
-| `lock` | rampa de `limite_kmh` e `travada: true` abaixo de 3 km/h | **sem rampa**: espera 2 telemetrias frescas e consecutivas < 3 km/h cobrindo ≥ 10 s (fora da graça, com as mesmas regras de frescor, ordem, lacuna e atraso de fila) e grava `travada: true` **uma única vez**; a ponte manda `engineStop` |
+| `lock` | rampa de `limite_kmh` e `travada: true` abaixo de 3 km/h | **sem rampa**: espera **3 telemetrias frescas e consecutivas < 3 km/h cobrindo ≥ 20 s**, com no máximo **12 s** entre duas seguidas (hora da medição; `RELAY_MAX_SAMPLE_GAP_MS`), a última fresca (≤ 10 s, `SPEED_FRESH_MS`) e a velocidade conhecida < 3 km/h no instante da gravação (fora da graça, com as mesmas regras de frescor, ordem, lacuna e atraso de fila), e grava `travada: true` **uma única vez**; a ponte manda `engineStop` (segunda guarda: posição de até 7 s com < 3 km/h). Regra feita para a cadência mínima de 10 s do J16 (`docs/decisoes.md`, 2026-11-03, bancada do J16) |
 | sem parar em 120 s | `failed`/`did_not_stop`, limite 0 segurado | `failed`/`did_not_stop`, **nenhum corte enviado**, nada segurado |
 | corte sem confirmação em 120 s | `failed`/`timeout`, desired `travada: false` + `limite_kmh: 0` | `failed`/`timeout`, o corte pendente é apagado (desired `travada: null`; nunca `false`, que soltaria uma moto cortada com o status atrasado) |
 | moto offline | `pending`/`offline`, rampa ao reconectar | `pending`/`offline`; ao reconectar, exige amostras novas (fora da graça) |
-| `unlock` | `travada: false` + limite da zona | `travada: false` → `engineResume`; confirma por `reported.travada = false` em 30 s |
+| `unlock` | `travada: false` + limite da zona | `travada: false` → `engineResume`; confirma por `reported.travada = false` em **90 s** (`RELAY_UNLOCK_TIMEOUT_MS`; normalmente confirma pela resposta do J16 ao comando, ~1 s; o prazo cobre o heartbeat de 60 s) |
 | `speed_limit`, `horn` | normais | `failed`/`unsupported_by_tracker`, shadow intocado |
 | `stolen_mode` | `modo_roubada` | aceito; a ponte ecoa `reported.modo_roubada` (sem mudança de telemetria no GT06) |
 | zona `reduced_speed` | ENTER grava `limite_kmh` | **aviso**: `zone.notice` "Área com limite de X km/h." (sem limite conhecido: "Área com limite de velocidade reduzido."; `advisory: true`); acima do limite por mais de 5 s → alerta `zone_speed_exceeded` |
