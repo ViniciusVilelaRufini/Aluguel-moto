@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { S } from '@/lib/types';
 import {
-  addressView, applyVehiclePosition, applyVehicleState, batteryView, speedLimitChip, statePatch,
+  addressView, applyVehiclePosition, applyVehicleState, batteryView, isStaleStateEvent, speedLimitChip, statePatch,
 } from '@/lib/vehicle-live';
 import { commandSentMessage } from '@/lib/fleet-copy';
 import { STATUS_LABEL, commandStateLabel } from '@/lib/status';
@@ -27,7 +27,7 @@ const base: Vehicle = {
 };
 const stateEv = (p: Partial<{ locked: boolean; online: boolean; lastSeenAt: string; batteryKnown: boolean; ts: string }> = {}) =>
   ({ vehicleId: 'v1', locked: true, online: true, lastSeenAt: T1, batteryKnown: true, ts: T1, ...p });
-const posEv = (p: Partial<{ lat: number; lng: number; speedKmh: number; batteryPct: number; ts: string }> = {}) =>
+const posEv = (p: Partial<{ lat: number; lng: number; speedKmh: number; batteryPct: number; batteryKnown: boolean; ts: string }> = {}) =>
   ({ vehicleId: 'v1', lat: -23.6, lng: -46.7, speedKmh: 0, batteryPct: 77, status: 'free' as const, speedLimitKmh: 32, ts: T1, ...p });
 
 describe('vehicle.state (J16)', () => {
@@ -36,10 +36,18 @@ describe('vehicle.state (J16)', () => {
     expect(v).toMatchObject({ locked: true, online: true, lastSeenAt: T1, batteryKnown: false });
   });
 
-  it('descarta evento mais velho que o que já está carregado', () => {
-    const loaded = { ...base, locked: false, lastSeenAt: T1 };
-    const v = applyVehicleState(loaded, stateEv({ locked: true, lastSeenAt: T0, ts: T0 }));
-    expect(v).toBe(loaded);
+  it('revisão final: lastSeenAt do evento (banco, a cada 15 s) mais velho que o carregado (posição ao vivo) ainda aplica a trava e a bateria; o último sinal não volta', () => {
+    const loaded = { ...base, locked: false, batteryKnown: true, lastSeenAt: T1 };
+    const v = applyVehicleState(loaded, stateEv({ locked: true, batteryKnown: false, lastSeenAt: T0, ts: T1 }));
+    expect(v).toMatchObject({ locked: true, batteryKnown: false, lastSeenAt: T1 });
+    expect(batteryView(v)).toMatchObject({ known: false, pctText: 'Bateria desconhecida' }); // nunca 0% / ~0 km
+  });
+
+  it('ordem só pelo ts do evento: mais velho que o último aplicado é descartado, igual ou mais novo vale', () => {
+    expect(isStaleStateEvent(undefined, T0)).toBe(false);
+    expect(isStaleStateEvent(T1, T0)).toBe(true);
+    expect(isStaleStateEvent(T1, T1)).toBe(false);
+    expect(isStaleStateEvent(T0, T1)).toBe(false);
   });
 
   it('evento com o mesmo lastSeenAt ainda vale (a trava muda sem novo sinal)', () => {
@@ -59,6 +67,12 @@ describe('vehicle.position (J16)', () => {
 
   it('batteryPct 0 não marca a bateria como conhecida', () => {
     expect(applyVehiclePosition({ ...base, batteryKnown: false, batteryPct: 0 }, posEv({ batteryPct: 0 })).batteryKnown).toBe(false);
+  });
+
+  it('revisão final: batteryKnown do evento vale quando vem (servidor novo); só sem ele a regra do batteryPct > 0', () => {
+    expect(applyVehiclePosition({ ...base, batteryKnown: true }, posEv({ batteryPct: 0, batteryKnown: false })).batteryKnown).toBe(false);
+    expect(applyVehiclePosition({ ...base, batteryKnown: false, batteryPct: 0 }, posEv({ batteryPct: 0, batteryKnown: true })).batteryKnown).toBe(true);
+    expect(applyVehiclePosition({ ...base, batteryKnown: true }, posEv({ batteryPct: 0 })).batteryKnown).toBe(true); // sem o campo: não muda
   });
 
   it('descarta posição mais velha que a carregada', () => {

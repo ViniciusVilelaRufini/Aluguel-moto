@@ -1,5 +1,6 @@
 import type { RedisStore } from '../../redis/redis-store';
 import { MAX_CLOCK_SKEW_MS } from '../iot/live-state.store';
+import { telemetryLockWins } from './lock-precedence';
 
 interface LiveFields {
   thingName: string;
@@ -13,6 +14,9 @@ interface LiveFields {
   signal: number | null;
   online?: boolean;
   lastSeenAt: Date | null;
+  /** Origem da trava gravada (lock-precedence.ts). */
+  lockedAt?: Date | null;
+  lockedFromReport?: boolean | null;
 }
 
 const num = (v: string | undefined) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? undefined : Number(v));
@@ -37,7 +41,10 @@ export async function withLiveState<T extends LiveFields>(redis: Pick<RedisStore
       if (v.lastSeenAt && seen < v.lastSeenAt.getTime() - MAX_CLOCK_SKEW_MS) return v;
       const out: T = { ...v, lastSeenAt: new Date(seen) };
       if (h.online !== undefined) out.online = h.online === 'true';
-      if (h.locked !== undefined && num(h.lockedAt) !== undefined) out.locked = h.locked === 'true';
+      // Mesma precedência do banco e do `vehicle.state`: o Redis guarda a última trava de qualquer fonte (inclusive a telemetria
+      // conservadora da ponte, `travada: false` com o bit velho) e não desfaz um reported recente gravado no banco.
+      const redisLockedAt = num(h.lockedAt);
+      if (h.locked !== undefined && redisLockedAt !== undefined && telemetryLockWins(v, redisLockedAt)) out.locked = h.locked === 'true';
       const lat = num(h.lat);
       const lng = num(h.lng);
       if (lat === undefined || lng === undefined || (lat === 0 && lng === 0)) return out;

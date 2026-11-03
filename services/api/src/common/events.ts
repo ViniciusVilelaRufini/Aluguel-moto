@@ -18,6 +18,8 @@ export const EV = {
   VEHICLE_STATUS_CHANGED: 'vehicle.status-changed',
   /** Estado do rastreador no banco mudou (trava, online, bateria conhecida) ou o lastSeenAt avançou (≤ 1 a cada 15 s): WS `vehicle.state`. */
   VEHICLE_STATE_CHANGED: 'vehicle.state-changed',
+  /** `CommandsService` mudou a trava no banco ao confirmar lock/unlock: o `VehiclesService` emite o `vehicle.state`. */
+  VEHICLE_LOCK_REFLECTED: 'vehicle.lock-reflected',
   COMMAND_CHANGED: 'command.changed',
   ALERT_CREATED: 'alert.created',
   RENTAL_CHANGED: 'rental.changed',
@@ -110,6 +112,12 @@ export interface IotReportedEvent {
   /** `true` = mensagem do rastreador (MQTT); `false` = lida do shadow pelo servidor (polling aws), não é sinal de vida. */
   heard: boolean;
   /** Hora da fonte: chegada no servidor (MQTT) ou a metadata do shadow (polling), limitada a agora. */
+  ts: string;
+}
+
+/** Trava gravada pelo comando confirmado (`ts` = hora da confirmação, a origem gravada em `lockedAt`). */
+export interface VehicleLockReflectedEvent {
+  vehicleId: string;
   ts: string;
 }
 

@@ -1,11 +1,12 @@
 import { withLiveState } from './live-overlay';
+import { reportedLockWhere, telemetryLockWhere } from './lock-precedence';
 import { currentSubscriptionWhere, notFixedForOtherSql } from '../../common/fixed-vehicle';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma, type TrackerControlMode, type Vehicle } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import {
-  BatteryChargedStockDecreasedEvent, EV, IotConnectivityEvent, IotReportedEvent, IotTelemetryEvent, VehicleStateChangedEvent, VehicleStatusChangedEvent,
+  BatteryChargedStockDecreasedEvent, EV, IotConnectivityEvent, IotReportedEvent, IotTelemetryEvent, VehicleLockReflectedEvent, VehicleStateChangedEvent, VehicleStatusChangedEvent,
 } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
 import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../common/problem';
@@ -33,12 +34,8 @@ const TRACK_MAX_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const DB_WRITE_INTERVAL_MS = 30_000;
 /** `lastSeenAt` no banco (e `vehicle.state` sem mudança de trava/online) no máximo a cada 15 s por moto (realtime.md). */
 export const LAST_SEEN_WRITE_INTERVAL_MS = 15_000;
-/**
- * Trava reportada pelo rastreador (`reported`, resposta ao comando, comando confirmado) vence a da telemetria por este tempo:
- * a ponte GT06 manda `travada: false` na telemetria quando o bit de corte está velho (> 90 s) ou com comando pendente. 90 s =
- * a validade do bit na ponte; com o heartbeat de 60 s o reported se renova antes disso.
- */
-export const REPORTED_LOCK_PRECEDENCE_MS = 90_000;
+/** Precedência da trava do rastreador sobre a da telemetria: regra única em `lock-precedence.ts` (também no overlay do GET). */
+export { REPORTED_LOCK_PRECEDENCE_MS } from './lock-precedence';
 
 /** Normaliza `VLT-0001`, `0001`, `1` ou `volti://v/VLT-0001` (URL-encoded) para `VLT-0001`. */
 export function parseVehicleCode(raw: string): string | null {
@@ -447,11 +444,7 @@ export class VehiclesService {
     const changed: number[] = [];
     if (locked !== undefined && Number.isFinite(at)) {
       const lockedAt = new Date(at);
-      const notNewer = [{ lockedAt: null }, { lockedAt: { lte: lockedAt } }];
-      const where =
-        lockedBy === 'reported'
-          ? { OR: notNewer }
-          : { OR: [{ lockedAt: null }, { lockedFromReport: false, lockedAt: { lte: lockedAt } }, { lockedFromReport: true, lockedAt: { lt: new Date(at - REPORTED_LOCK_PRECEDENCE_MS) } }] };
+      const where = lockedBy === 'reported' ? reportedLockWhere(lockedAt) : telemetryLockWhere(lockedAt);
       const data = { locked, lockedAt, lockedFromReport: lockedBy === 'reported' };
       const r = await this.prisma.vehicle.updateMany({ where: { id: vehicleId, locked: !locked, ...where }, data });
       if (r.count > 0) changed.push(at);
@@ -490,6 +483,12 @@ export class VehiclesService {
       ts: new Date(sourceAt).toISOString(),
     };
     this.events.emit(EV.VEHICLE_STATE_CHANGED, ev);
+  }
+
+  /** Comando confirmado mudou a trava no banco (`CommandsService.reflectOnVehicle`): o painel recebe o `vehicle.state`. */
+  @OnEvent(EV.VEHICLE_LOCK_REFLECTED, { async: true, promisify: true })
+  async onLockReflected(ev: VehicleLockReflectedEvent): Promise<void> {
+    await this.emitState(ev.vehicleId, Date.parse(ev.ts));
   }
 
   /** Rastreador offline → status `offline` (guarda o anterior); online → restaura. */

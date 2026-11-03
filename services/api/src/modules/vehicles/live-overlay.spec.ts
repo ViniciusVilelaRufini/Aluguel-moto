@@ -59,3 +59,39 @@ describe('withLiveState', () => {
     });
   });
 });
+
+/** Revisão final do J16: o GET/frota seguem a mesma precedência do banco e do `vehicle.state` (lock-precedence.ts). */
+describe('withLiveState — trava com a precedência do reported', () => {
+  const at = Date.parse('2026-11-03T15:00:00.000Z');
+  const row = {
+    id: 'v1', thingName: 'moto-0059', lat: -23.5, lng: -46.6, speedKmh: 0, batteryPct: 70, batteryKnown: true, locked: true, ignition: false, signal: 4, online: true,
+    lastSeenAt: new Date(at), lockedAt: new Date(at), lockedFromReport: true,
+  };
+  const hash = (lockedAtMs: number) => ({ lat: '-23.51', lng: '-46.61', locked: 'false', lockedAt: String(lockedAtMs), online: 'true', lastSeenAt: new Date(lockedAtMs).toISOString() });
+
+  it('telemetria conservadora (travada:false) 30 s depois do reported travada:true → o GET continua travado', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', hash(at + 30_000));
+    const [v] = await withLiveState(redis, [row]);
+    expect(v.locked).toBe(true);
+    expect(v).toMatchObject({ lat: -23.51, online: true }); // o resto do estado ao vivo continua valendo
+  });
+
+  it('sem reported novo por mais que a precedência → a trava do Redis vale', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', hash(at + 90_001));
+    expect((await withLiveState(redis, [row]))[0].locked).toBe(false);
+  });
+
+  it('trava do banco vinda da telemetria e mais nova que a do Redis → banco', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', hash(at - 1_000));
+    expect((await withLiveState(redis, [{ ...row, lockedFromReport: false }]))[0].locked).toBe(true);
+  });
+
+  it('banco sem origem (linha antiga) → a trava do Redis vale', async () => {
+    const redis = new MemoryRedisStore();
+    await redis.hset('iot:live:moto-0059', hash(at + 1_000));
+    expect((await withLiveState(redis, [{ ...row, lockedAt: null, lockedFromReport: false }]))[0].locked).toBe(false);
+  });
+});

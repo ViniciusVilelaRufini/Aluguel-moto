@@ -1,6 +1,7 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import request from 'supertest';
 import { createHarness, Harness, staffToken, STAFF_ID } from '../../../test/helpers/http-harness';
+import { EV } from '../../common/events';
 import { ProblemException } from '../../common/problem';
 import { IOT_GATEWAY, IotGateway } from '../../ports/iot-gateway.port';
 import { AuditService } from '../audit/audit.service';
@@ -151,6 +152,22 @@ describe('Comandos remotos', () => {
         reason: 'Motivo do operador',
       });
       expect(entry.metadata.commandId).toBe('44444444-4444-4444-8444-444444444444');
+    });
+
+    it('revisão final do J16: lock/unlock confirmado grava a trava com origem reported (condicional) e pede o vehicle.state só se mudou', async () => {
+      const events = new EventEmitter2();
+      const reflected: unknown[] = [];
+      events.on(EV.VEHICLE_LOCK_REFLECTED, (e: unknown) => reflected.push(e));
+      service = new CommandsService(h.prisma as any, audit as unknown as AuditService, iot, events);
+      h.prisma.vehicle.updateMany.mockResolvedValue({ count: 1 } as any);
+      await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Motivo', actor: operator });
+      const call = h.prisma.vehicle.updateMany.mock.calls.map((c: any) => c[0]).find((x: any) => 'locked' in x.data);
+      expect(call.where).toMatchObject({ id: VEHICLE_ID, locked: false, OR: [{ lockedAt: null }, { lockedAt: { lte: expect.any(Date) } }] });
+      expect(call.data).toMatchObject({ locked: true, lockedFromReport: true, lockedAt: expect.any(Date) });
+      expect(reflected).toEqual([{ vehicleId: VEHICLE_ID, ts: call.data.lockedAt.toISOString() }]);
+      h.prisma.vehicle.updateMany.mockResolvedValue({ count: 0 } as any);
+      await service.dispatch({ vehicleId: VEHICLE_ID, type: 'unlock', reason: 'Motivo', actor: operator });
+      expect(reflected).toHaveLength(1); // nada mudou (o reported já tinha gravado): sem evento
     });
 
     it('defesa em profundidade: speed_limit 33 no serviço → 400 sem chamar o IoT nem gravar', async () => {

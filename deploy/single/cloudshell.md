@@ -286,6 +286,22 @@ docker tag volti/api:dev volti/api:pre-gt06
 Para voltar: `docker tag volti/api:pre-gt06 volti/api:dev`, `$DC up -d api` e, se preciso, `pg_restore --clean` do dump. Apague
 o dump quando não precisar mais (dado pessoal).
 
+**Migração que desistiu (`P3009`).** As migrações com `SET lock_timeout = '5s'` (ex.: `20261103140000_vehicle_battery_known`,
+`20261103150000_vehicle_tracker_provenance`) desistem se a tabela estiver presa por uma consulta longa, em vez de travar a fila.
+A migração fica marcada como falha e todo `prisma migrate deploy` seguinte para com `P3009` ("migrate found failed
+migrations"): rodar o update de novo **não** basta. Recupere assim (root, em `/opt/volti/src`):
+
+```bash
+# 1) qual falhou e se as colunas dela existem (o arquivo roda numa transação: falhou = nada aplicado)
+echo 'SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NULL AND rolled_back_at IS NULL' | $DC exec -T postgres psql -U volti -d volti -tA
+echo "SELECT column_name FROM information_schema.columns WHERE table_name = 'Vehicle' AND column_name IN ('batteryKnown','lockedAt','lockedFromReport','positionAt')" | $DC exec -T postgres psql -U volti -d volti -tA
+# 2) colunas da migração ausentes: marque como revertida e rode o volti-dev-update de novo (ela é reaplicada)
+$DC --profile migrate run --rm api-migrate npx prisma migrate resolve --rolled-back <nome_da_migracao>
+```
+
+Se todas as colunas da migração já existirem (aplicada por fora), use `--applied <nome_da_migracao>` no lugar de
+`--rolled-back`; se só algumas existirem, pare e confira antes de marcar qualquer coisa.
+
 ```bash
 # primeira vez: cria com a tag do projeto (se já existe: --overwrite, sem --tags)
 aws ssm put-parameter --name /volti/dev/config/GT06 --type String --value on --tags Key=Projeto,Value=Volti

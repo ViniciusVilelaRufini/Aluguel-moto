@@ -10,7 +10,7 @@ import { useAuth } from './auth';
 import { alertVisibleTo } from './permissions';
 import { getToken } from './token-store';
 import type { RealtimeEvents, S } from './types';
-import { applyVehiclePosition, applyVehicleState, positionPatch, statePatch } from './vehicle-live';
+import { applyVehiclePosition, applyVehicleState, isStaleStateEvent, laterIso, positionPatch, statePatch } from './vehicle-live';
 
 type Handler<K extends keyof RealtimeEvents> = (payload: RealtimeEvents[K]) => void;
 export type FleetVehicle = S<'Vehicle'>;
@@ -113,10 +113,11 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     });
     // Estado do rastreador (travada, online, último sinal, bateria conhecida): frota e ficha, sem esperar o próximo GET.
     socket.on('vehicle.state', (p: RealtimeEvents['vehicle.state']) => {
-      const last = stateTs.current.get(p.vehicleId);
-      if (last !== undefined && Date.parse(p.ts) < Date.parse(last)) return; // evento fora de ordem
+      if (isStaleStateEvent(stateTs.current.get(p.vehicleId), p.ts)) return; // evento fora de ordem (só pelo ts)
       stateTs.current.set(p.vehicleId, p.ts);
-      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), ...statePatch(p) } };
+      const prev = liveBase(pending.current[p.vehicleId]);
+      // O lastSeenAt do evento vem do banco (a cada 15 s): não volta o último sinal da posição ao vivo.
+      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...prev, ...statePatch(p), lastSeenAt: laterIso(prev?.lastSeenAt, p.lastSeenAt) } };
       qc.setQueryData<FleetVehicle>(['vehicle', p.vehicleId], (old) => (old ? applyVehicleState(old, p) : old));
       emit('vehicle.state', p);
     });

@@ -22,17 +22,38 @@ export function statePatch(e: StateEvent): Pick<Vehicle, 'locked' | 'online' | '
   return { locked: e.locked, online: e.online, lastSeenAt: e.lastSeenAt, batteryKnown: e.batteryKnown };
 }
 
-/** Aplica `vehicle.state`; devolve o mesmo objeto se o evento é mais velho que o carregado. */
-export function applyVehicleState(v: Vehicle, e: StateEvent): Vehicle {
-  if (isOlderThanLoaded(v.lastSeenAt, e.lastSeenAt)) return v;
-  return { ...v, ...statePatch(e) };
+/** O mais novo de dois horários ISO (o inválido/ausente perde). */
+export function laterIso(a: string | undefined, b: string | undefined): string | undefined {
+  const ta = ms(a);
+  const tb = ms(b);
+  if (Number.isNaN(ta)) return b;
+  if (Number.isNaN(tb)) return a;
+  return tb > ta ? b : a;
 }
 
-/** Campos de `vehicle.position`. Leitura de bateria > 0 é leitura real: a bateria volta a ser conhecida. */
+/**
+ * `vehicle.state` fora de ordem? A ordem é só pelo `ts` do evento (hora da fonte da mudança, realtime.md), contra o último
+ * aplicado da mesma moto — nunca pelo `lastSeenAt`: o do evento vem do banco (gravado a cada 15 s) e o carregado pode ser o da
+ * posição ao vivo, mais novo; comparar os dois descartava a trava e a bateria desconhecida com a ficha aberta (revisão final).
+ */
+export function isStaleStateEvent(lastAppliedTs: string | undefined, ts: string): boolean {
+  return isOlderThanLoaded(lastAppliedTs, ts);
+}
+
+/** Aplica `vehicle.state` (a ordem já foi conferida por `isStaleStateEvent`); o último sinal nunca volta no tempo. */
+export function applyVehicleState(v: Vehicle, e: StateEvent): Vehicle {
+  return { ...v, ...statePatch(e), lastSeenAt: laterIso(v.lastSeenAt, e.lastSeenAt) };
+}
+
+/**
+ * Campos de `vehicle.position`. `batteryKnown` do evento quando vem (servidor novo); sem ele (servidor antigo), leitura de
+ * bateria > 0 é leitura real e a bateria volta a ser conhecida.
+ */
 export function positionPatch(p: PositionEvent): Partial<Vehicle> {
+  const known = p.batteryKnown !== undefined ? { batteryKnown: p.batteryKnown } : p.batteryPct > 0 ? { batteryKnown: true } : {};
   return {
     lat: p.lat, lng: p.lng, speedKmh: p.speedKmh, batteryPct: p.batteryPct, status: p.status, speedLimitKmh: p.speedLimitKmh, lastSeenAt: p.ts,
-    ...(p.batteryPct > 0 ? { batteryKnown: true } : {}),
+    ...known,
   };
 }
 

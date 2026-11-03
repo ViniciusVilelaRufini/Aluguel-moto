@@ -192,6 +192,13 @@ describe('VehiclesService: estado do rastreador no banco e vehicle.state', () =>
     });
   });
 
+  it('comando confirmado que mudou a trava (vehicle.lock-reflected) → vehicle.state com a hora da confirmação', async () => {
+    const db = table({ locked: true, lastSeenAt: new Date(T0) });
+    const a = instance(db);
+    await a.service.onLockReflected({ vehicleId: VEHICLE_ID, ts: iso(T0 + 3_000) });
+    expect(a.states).toEqual([{ vehicleId: VEHICLE_ID, locked: true, online: true, lastSeenAt: iso(T0), batteryKnown: true, ts: iso(T0 + 3_000) }]);
+  });
+
   it('online/offline: vehicle.state na transição, com a hora do evento', async () => {
     const db = table({ lastSeenAt: new Date(T0) });
     const a = instance(db);

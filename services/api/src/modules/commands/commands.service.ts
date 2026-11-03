@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Prisma, type VehicleCommand } from '@prisma/client';
 import { MAX_SPEED_KMH, type CommandType } from '../../common/enums';
-import { CommandChangedEvent, EV, IotCommandUpdatedEvent } from '../../common/events';
+import { CommandChangedEvent, EV, IotCommandUpdatedEvent, type VehicleLockReflectedEvent } from '../../common/events';
 import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { badRequest, notFound, ProblemException } from '../../common/problem';
 import { CommandOutcome, InvalidSpeedLimitError, IOT_GATEWAY, type CommandAuthority, type CommandRequest, type IotGateway, type LockOrigin, type TrackerControlMode } from '../../ports/iot-gateway.port';
@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService, type AuditActor } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
 import { CommandPayload, toVehicleCommand } from './commands.mapper';
+import { reportedLockWhere } from '../vehicles/lock-precedence';
 
 /** Status de origem aceitos para cada destino (ordem: pending < in_progress < confirmed|failed). */
 const PREDECESSORS: Record<CommandOutcome['status'], VehicleCommand['status'][]> = {
@@ -221,13 +222,30 @@ export class CommandsService {
   /** Reflete o efeito confirmado no cadastro da moto (a telemetria da Task 4 também atualiza). */
   private async reflectOnVehicle(vehicleId: string, input: Pick<DispatchInput, 'type' | 'speedLimitKmh' | 'on'>): Promise<void> {
     const data: Prisma.VehicleUpdateInput = {};
-    // Confirmado = o rastreador reportou (origem `reported`, mesma regra de precedência do VehiclesService.syncTrackerState).
-    if (input.type === 'lock' || input.type === 'unlock') Object.assign(data, { locked: input.type === 'lock', lockedAt: new Date(), lockedFromReport: true });
+    if (input.type === 'lock' || input.type === 'unlock') await this.reflectLock(vehicleId, input.type === 'lock');
     if (input.type === 'speed_limit') data.speedLimitKmh = input.speedLimitKmh;
     if (input.type === 'stolen_mode') data.stolenMode = input.on;
     if (!Object.keys(data).length) return;
     try {
       await this.prisma.vehicle.update({ where: { id: vehicleId }, data });
+    } catch (err) {
+      this.logger.warn({ msg: 'vehicle_reflect_failed', vehicleId, error: (err as Error).message });
+    }
+  }
+
+  /**
+   * Confirmado = o rastreador reportou: grava a trava com origem `reported` e a mesma regra do `VehiclesService.syncTrackerState`
+   * (lock-precedence.ts; condicional, vale entre instâncias). Mudou a linha → `vehicle.lock-reflected` (o `VehiclesService`
+   * emite o `vehicle.state`). Normalmente o reported que confirmou já gravou, e aqui nada muda.
+   */
+  private async reflectLock(vehicleId: string, locked: boolean): Promise<void> {
+    const at = new Date();
+    try {
+      const r = await this.prisma.vehicle.updateMany({
+        where: { id: vehicleId, locked: !locked, ...reportedLockWhere(at) },
+        data: { locked, lockedAt: at, lockedFromReport: true },
+      });
+      if (r.count > 0) this.events.emit(EV.VEHICLE_LOCK_REFLECTED, { vehicleId, ts: at.toISOString() } satisfies VehicleLockReflectedEvent);
     } catch (err) {
       this.logger.warn({ msg: 'vehicle_reflect_failed', vehicleId, error: (err as Error).message });
     }
