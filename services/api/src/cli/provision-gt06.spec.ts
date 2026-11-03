@@ -6,7 +6,16 @@ import { maskImei, provisionGt06, traccarAdminApi, type TraccarAdminApi } from '
 const IMEI = '860000000000901';
 
 function fakes(
-  opts: { device?: { id: number } | null; imeiOwner?: string | null; existingVehicleId?: string | null; openRental?: boolean; reservation?: boolean; openRentalInTx?: boolean } = {},
+  opts: {
+    device?: { id: number } | null;
+    imeiOwner?: string | null;
+    existingVehicleId?: string | null;
+    certificateArn?: string | null;
+    vehicleThing?: string;
+    openRental?: boolean;
+    reservation?: boolean;
+    openRentalInTx?: boolean;
+  } = {},
 ) {
   const tx = {
     vehicle: { update: jest.fn() },
@@ -15,10 +24,16 @@ function fakes(
     reservation: { findFirst: jest.fn().mockResolvedValue(opts.reservation ? { id: 'res-1' } : null) },
   };
   const prisma = {
-    vehicle: { findUnique: jest.fn().mockResolvedValue({ id: 'veh-1', thingName: 'moto-0901' }), findFirst: jest.fn().mockResolvedValue(null) },
+    vehicle: { findUnique: jest.fn().mockResolvedValue({ id: 'veh-1', thingName: opts.vehicleThing ?? 'moto-0901' }), findFirst: jest.fn().mockResolvedValue(null) },
     tracker: {
       findFirst: jest.fn().mockResolvedValue(opts.imeiOwner ? { thingName: opts.imeiOwner } : null),
-      findUnique: jest.fn().mockResolvedValue(opts.existingVehicleId === undefined ? null : { vehicleId: opts.existingVehicleId }),
+      findUnique: jest
+        .fn()
+        .mockResolvedValue(
+          opts.existingVehicleId === undefined && opts.certificateArn === undefined
+            ? null
+            : { vehicleId: opts.existingVehicleId ?? null, certificateArn: opts.certificateArn ?? null },
+        ),
     },
     rental: { findFirst: jest.fn().mockResolvedValue(opts.openRental ? { id: 'r-1' } : null) },
     reservation: { findFirst: jest.fn().mockResolvedValue(opts.reservation ? { id: 'res-1' } : null) },
@@ -167,6 +182,57 @@ describe('provisionGt06: N4 (reserva e aluguel dentro da transação) e N5 (trav
       return { id: 7 };
     });
     await expect(provisionGt06(f.deps, input)).rejects.toThrow('trava em andamento');
+    expect(f.prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+describe('provisionGt06 — rastreador MQTT com certificado (auditoria 4, item 2)', () => {
+  const ARN = 'arn:aws:iot:sa-east-1:123456789012:cert/abc123def456';
+
+  it.each([false, true])('certificateArn no Tracker MQTT → recusa (dry-run %s) com o ARN e os comandos de revogação; nada no Traccar nem no banco', async (dryRun) => {
+    const f = fakes({ existingVehicleId: 'veh-1', certificateArn: ARN });
+    const err = await provisionGt06(f.deps, { ...input, dryRun }).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    const msg = err!.message;
+    expect(msg).toContain(ARN);
+    expect(msg).toContain(`aws iot detach-thing-principal --thing-name moto-0901 --principal ${ARN}`);
+    expect(msg).toContain(`aws iot detach-policy --policy-name volti-<env>-moto-policy --target ${ARN}`);
+    expect(msg).toContain('aws iot update-certificate --certificate-id abc123def456 --new-status REVOKED');
+    expect(msg).toContain('--certificate-revoked');
+    expect(f.traccar.findDevice).not.toHaveBeenCalled();
+    expect(f.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('com --certificate-revoked (confirmação do operador) → segue e zera certificateArn, com log do ARN', async () => {
+    const f = fakes({ existingVehicleId: 'veh-1', certificateArn: ARN });
+    await provisionGt06(f.deps, { ...input, certificateRevoked: true });
+    expect(f.tx.tracker.upsert).toHaveBeenCalledWith(expect.objectContaining({ update: expect.objectContaining({ certificateArn: null }) }));
+    expect(f.logs).toContainEqual(expect.objectContaining({ msg: 'certificate_revocation_confirmed', thingName: 'moto-0901', certificateArn: ARN }));
+  });
+
+  it('Tracker sem certificado → não exige a flag', async () => {
+    const f = fakes({ existingVehicleId: 'veh-1', certificateArn: null });
+    await expect(provisionGt06(f.deps, input)).resolves.toMatchObject({ deviceId: 7 });
+  });
+
+  it('thingName antigo da moto (≠ novo) com trava em andamento → recusa antes de Traccar e banco', async () => {
+    const f = fakes({ vehicleThing: 'moto-0800' });
+    await f.redis.set('iot:relay-lock:moto-0800', '{}');
+    await expect(provisionGt06(f.deps, input)).rejects.toThrow('A moto moto-0800 tem uma trava em andamento na API');
+    expect(f.traccar.findDevice).not.toHaveBeenCalled();
+    expect(f.prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('trava no thingName antigo que surge durante o Traccar → reconferida antes da transação', async () => {
+    const f = fakes({ vehicleThing: 'moto-0800' });
+    f.traccar.createDevice.mockImplementation(async () => {
+      await f.redis.hset('iot:safe-lock:index', { 'moto-0800': '{}' });
+      return { id: 7 };
+    });
+    await expect(provisionGt06(f.deps, input)).rejects.toThrow('moto-0800 tem uma trava em andamento');
     expect(f.prisma.$transaction).not.toHaveBeenCalled();
   });
 });

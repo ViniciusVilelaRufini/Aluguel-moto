@@ -57,11 +57,22 @@ async function main(): Promise<void> {
       out: { type: 'string', default: join(homedir(), '.volti', 'certs') },
       mode: { type: 'string', default: process.env.IOT_MODE === 'aws' ? 'aws' : 'local' },
       'dry-run': { type: 'boolean', default: false },
+      // Só com --protocol gt06: o operador confirma que revogou o certificado MQTT antigo do thing (ver provision-gt06).
+      'certificate-revoked': { type: 'boolean', default: false },
     },
   });
   if (values.protocol !== undefined && values.protocol !== 'gt06') throw new Error('--protocol aceita só gt06');
   if (values.protocol === 'gt06') {
-    await provisionGt06Main(['--vehicle', values.vehicle ?? '', '--thing', values.thing ?? '', '--imei', values.imei ?? '', ...(values['dry-run'] ? ['--dry-run'] : [])]);
+    await provisionGt06Main([
+      '--vehicle',
+      values.vehicle ?? '',
+      '--thing',
+      values.thing ?? '',
+      '--imei',
+      values.imei ?? '',
+      ...(values['dry-run'] ? ['--dry-run'] : []),
+      ...(values['certificate-revoked'] ? ['--certificate-revoked'] : []),
+    ]);
     return;
   }
   const vehicleCode = values.vehicle;

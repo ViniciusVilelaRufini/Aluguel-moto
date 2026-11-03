@@ -43,7 +43,12 @@ export function planReconnect(d: DesiredDelta | undefined): BridgeAction[] {
 }
 
 export type CutRefusal = 'offline' | 'already_blocked' | 'recently_sent' | 'no_position' | 'stale' | 'moving';
-export const CUT_FRESH_MS = 10_000;
+/**
+ * Idade máxima da posição para cortar (A4-4). Com `TIMER,5,5#` a posição chega a cada 5 s: 7 s cobre o intervalo e o atraso da
+ * rede, e uma amostra perdida já recusa (`stale`) — com 10 s a ponte cortava com a posição de até 10 s atrás. A latência
+ * posição → delta na bancada precisa ficar bem abaixo de 2 s (README da ponte). Não é o `SPEED_FRESH_MS` da API (speed_control).
+ */
+export const CUT_FRESH_MS = 7_000;
 export const CUT_RESEND_MS = 30_000;
 
 export interface CutContext {
@@ -55,7 +60,7 @@ export interface CutContext {
 
 /**
  * Segunda guarda (a primeira é a API): `engineStop` só com o dispositivo online no Traccar, sem corte ativo, sem outro
- * `engineStop` nos últimos 30 s e com a posição mais recente de até 10 s abaixo de 3 km/h. `null` = pode cortar.
+ * `engineStop` nos últimos 30 s e com a posição mais recente de até 7 s (`CUT_FRESH_MS`) abaixo de 3 km/h. `null` = pode cortar.
  * "Corte ativo" usa só o bit atual e fresco (`freshBlocked`, ≤ 90 s): depois de reconectar ou sem status recente, não vale memória velha.
  */
 export function cutRefusal(input: CutContext): CutRefusal | null {

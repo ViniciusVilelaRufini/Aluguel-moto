@@ -53,3 +53,15 @@ describe('zone_speed_exceeded (spec GT06 §10)', () => {
     expect(alerts.create).toHaveBeenNthCalledWith(2, expect.objectContaining({ type: 'zone_speed_exceeded', priority: 'medium', rentalId: undefined }));
   });
 });
+
+describe('speed_limiter_noncompliant pelo teto legal (auditoria 4, item 3)', () => {
+  it('acima de 32 km/h → alerta high com aluguel e posição', async () => {
+    const alerts = { create: jest.fn().mockResolvedValue({}) };
+    const prisma = { vehicle: { findUnique: jest.fn().mockResolvedValue({ lat: -23.5, lng: -46.6 }) }, rental: { findFirst: jest.fn() } };
+    const l = new AlertsListeners(alerts as never, prisma as never, { publish: jest.fn(), subscribe: jest.fn() } as never);
+    await l.onSpeedCeilingExceeded({ vehicleId: VEHICLE, rentalId: 'r1', speedKmh: 41.2, ts: '2026-10-27T12:00:06.000Z' });
+    expect(alerts.create).toHaveBeenCalledWith({
+      type: 'speed_limiter_noncompliant', priority: 'high', message: 'Acima de 32 km/h: limitador fora da norma', vehicleId: VEHICLE, rentalId: 'r1', lat: -23.5, lng: -46.6,
+    });
+  });
+});

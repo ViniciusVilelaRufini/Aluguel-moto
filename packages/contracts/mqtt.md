@@ -115,6 +115,7 @@ Tópicos, schemas e shadow são os desta página. A API escolhe a estratégia po
 | `stolen_mode` | `modo_roubada` | aceito; a ponte ecoa `reported.modo_roubada` (sem mudança de telemetria no GT06) |
 | zona `reduced_speed` | ENTER grava `limite_kmh` | **aviso**: `zone.notice` "Área com limite de X km/h." (sem limite conhecido: "Área com limite de velocidade reduzido."; `advisory: true`); acima do limite por mais de 5 s → alerta `zone_speed_exceeded` |
 | 32 km/h | firmware + controlador | só o controlador da moto (configuração física) |
+| acima de 32 km/h | telemetria acima de 35 km/h (32 + 3 de tolerância do GPS) por mais de 5 s → alerta `speed_limiter_noncompliant` (high, "Acima de 32 km/h: limitador fora da norma"), um por episódio | igual |
 
 O que a ponte faz (detalhes em `services/traccar-bridge/README.md`):
 - telemetria só de posição válida e não `outdated`, com `fixTime` crescente: `velocidade_kmh = speed (nós) × 1,852`,
@@ -122,7 +123,7 @@ O que a ponte faz (detalhes em `services/traccar-bridge/README.md`):
   `sinal ← attributes.rssi` (0–4 ou 0–31 → 0–5), `bateria_pct ← attributes.power` (curva aproximada por pack);
 - eventos: `powerCut` → `violacao`, `lowBattery`/`lowPower` → `bateria_critica`, `vibration` com o corte ativo ou deslocamento
   > 20 m travada → `movimento_sem_aluguel`; outros alarmes são descartados com log;
-- delta `travada: true` → `engineStop` **só** com o dispositivo online, posição de até 10 s com velocidade < 3 km/h e sem corte
+- delta `travada: true` → `engineStop` **só** com o dispositivo online, posição de até 7 s (`CUT_FRESH_MS`) com velocidade < 3 km/h e sem corte
   já ativo (segunda guarda); `travada: false` → `engineResume`; `limite_kmh` nunca vira comando (reported `limite_kmh: 32` fixo);
 - `reported.travada` vem do bit `blocked` da primeira posição **depois** do comando, nunca do aceite do comando;
 - reconexão (`deviceOnline`): presença `connected` (modo local), `reported` completo e `shadow/get`; do delta pendente só

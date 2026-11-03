@@ -44,7 +44,8 @@ interface WorldOpts {
 }
 
 interface RideOpts {
-  blocked?: boolean;
+  /** `null` = posição sem o bit de corte (pacote de localização do GT06, que não traz o status). */
+  blocked?: boolean | null;
   ignition?: boolean;
   /** Tensão do pack (V); `attributes.power` do decodificador GT06. */
   power?: number;
@@ -155,7 +156,7 @@ async function world(opts: WorldOpts = {}) {
           fixTime: iso(lastFix),
           serverTime: iso(now),
           speed: kmh / KNOT,
-          attributes: { ignition: o.ignition ?? kmh > 0, blocked: o.blocked ?? false, rssi: 4, power: o.power ?? 72 },
+          attributes: { ignition: o.ignition ?? kmh > 0, ...(o.blocked === null ? {} : { blocked: o.blocked ?? false }), rssi: 4, power: o.power ?? 72 },
         }),
       ],
     });
@@ -166,6 +167,16 @@ async function world(opts: WorldOpts = {}) {
       positions: [
         position({ id: ++seq, deviceId: 1, fixTime: iso(lastFix), serverTime: iso(clock.now()), outdated: true, attributes: { blocked, ignition: false, power: 72 } }),
       ],
+    });
+  /** Resposta do J16 ao comando (`Relay,…`): o Traccar a entrega como posição `outdated` com `attributes.result`. */
+  const ack = async () =>
+    push({
+      positions: [position({ id: ++seq, deviceId: 1, fixTime: iso(lastFix), serverTime: iso(clock.now()), outdated: true, attributes: { result: 'Cut off the fuel supply: Success!' } })],
+    });
+  /** Heartbeat com a ignição informada (o `heartbeat` padrão manda `ignition: false`). */
+  const heartbeatWith = async (blocked: boolean, ignition: boolean) =>
+    push({
+      positions: [position({ id: ++seq, deviceId: 1, fixTime: iso(lastFix), serverTime: iso(clock.now()), outdated: true, attributes: { blocked, ignition, power: 72 } })],
     });
   const setOnline = (online: boolean) => push({ devices: [{ id: 1, name: T, uniqueId: IMEI, status: online ? 'online' : 'offline' }] });
   const stalePosition = (over: Partial<TraccarPosition> & { fixTime: string }): TraccarPosition => position({ id: ++seq, deviceId: 1, ...over });
@@ -207,7 +218,7 @@ async function world(opts: WorldOpts = {}) {
 
   return {
     clock, broker, bridgeMqtt, traccar, gateway, telemetry, transport, live, desired, seen, updates,
-    settle, push, step, ride, heartbeat, setOnline, stalePosition, lock, unlock,
+    settle, push, step, ride, heartbeat, heartbeatWith, ack, setOnline, stalePosition, lock, unlock,
     fromBridge, reportedTravada, cuts, releases, clears, outcomes, iso, stop,
   };
 }
@@ -251,8 +262,10 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     // Aceite do comando não confirma.
     expect(w.outcomes('c1')).toEqual([]);
     expect(w.reportedTravada()).not.toContain(true);
-    // Heartbeat do J16 depois do comando, com o bit de corte → reported.travada = true → confirmed.
-    await w.step(1_000);
+    // Resposta do J16 ao comando e heartbeat depois dela, com o bit de corte → reported.travada = true → confirmed.
+    await w.step(500);
+    await w.ack();
+    await w.step(500);
     await w.heartbeat(true);
     expect(w.reportedTravada().at(-1)).toBe(true);
     await w.step(1_000);
@@ -363,14 +376,17 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     expect(w.seen.samples.at(-1)).toMatchObject({ kmh: 0, accepted: true });
     expect(w.cuts()).toHaveLength(1);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
-    await w.step(1_000);
+    await w.step(500);
+    await w.ack(); // resposta do J16 ao Relay, 0,5 s depois (P2: só status depois dela confirma)
+    await w.step(500);
     await w.heartbeat(true);
     await w.step(1_000);
     expect(w.outcomes('c4')).toEqual([{ commandId: 'c4', status: 'confirmed' }]);
   });
 
-  it('(4b) GPS 8 s atrás (mais que a cadência de 5 s): reported fora de banda não derruba toda telemetria seguinte; parada de verdade corta e confirma, e nada corta andando', async () => {
-    w = await world({ fixLagMs: 8_000 });
+  // A4-4: o atraso do GPS destes cenários era 8 s; com CUT_FRESH_MS = 7 s na ponte, 6 s (ainda mais que a cadência de 5 s).
+  it('(4b) GPS 6 s atrás (mais que a cadência de 5 s): reported fora de banda não derruba toda telemetria seguinte; parada de verdade corta e confirma, e nada corta andando', async () => {
+    w = await world({ fixLagMs: 6_000 });
     await connectAndRide(w, 9); // t = 0..40 s
     expect(await w.lock('c4b')).toEqual({ commandId: 'c4b', status: 'in_progress' });
     await w.step(2_000);
@@ -391,7 +407,7 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
       await w.ride(0);
       stoppedAt ??= w.clock.now();
       if (w.cuts().length) break;
-      // Logo depois da posição: reported fora de banda com a velocidade dela (fix de 8 s, ainda fresco), datado pela chegada.
+      // Logo depois da posição: reported fora de banda com a velocidade dela (fix de 6 s, ainda fresco), datado pela chegada.
       w.bridgeMqtt.disconnect();
       w.bridgeMqtt.reconnect();
       await w.settle();
@@ -401,17 +417,19 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     expect(w.cuts()).toHaveLength(1);
     // Nenhuma telemetria em movimento depois do 1º fix parado: o corte só saiu com a moto parada.
     const tele = w.fromBridge(`motos/${T}/telemetria`);
-    const firstStill = tele.findIndex((t) => t.velocidade_kmh === 0 && Date.parse(t.timestamp) >= stoppedAt! - 8_000);
+    const firstStill = tele.findIndex((t) => t.velocidade_kmh === 0 && Date.parse(t.timestamp) >= stoppedAt! - 6_000);
     expect(tele.slice(firstStill).every((t) => t.velocidade_kmh === 0)).toBe(true);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
-    await w.step(1_000);
+    await w.step(500);
+    await w.ack(); // resposta do J16 ao Relay, 0,5 s depois (P2: só status depois dela confirma)
+    await w.step(500);
     await w.heartbeat(true);
     await w.step(1_000);
     expect(w.outcomes('c4b')).toEqual([{ commandId: 'c4b', status: 'confirmed' }]);
   });
 
-  it('(4c) GPS 8 s atrás, só os reported normais da ponte (1/min): a parada completa e confirma', async () => {
-    w = await world({ fixLagMs: 8_000 });
+  it('(4c) GPS 6 s atrás, só os reported normais da ponte (1/min): a parada completa e confirma', async () => {
+    w = await world({ fixLagMs: 6_000 });
     await connectAndRide(w, 9);
     expect(await w.lock('c4c')).toEqual({ commandId: 'c4c', status: 'in_progress' });
     for (let i = 0; i < 20 && !w.cuts().length; i++) {
@@ -420,10 +438,25 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     }
     expect(w.cuts()).toHaveLength(1);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
-    await w.step(1_000);
+    await w.step(500);
+    await w.ack(); // resposta do J16 ao Relay, 0,5 s depois (P2: só status depois dela confirma)
+    await w.step(500);
     await w.heartbeat(true);
     await w.step(1_000);
     expect(w.outcomes('c4c')).toEqual([{ commandId: 'c4c', status: 'confirmed' }]);
+  });
+
+  it('(4d) A4-4: GPS 8 s atrás (posição mais velha que CUT_FRESH_MS = 7 s): a ponte nunca corta (stale); o lock falha seguro', async () => {
+    w = await world({ fixLagMs: 8_000 });
+    await connectAndRide(w, 9);
+    expect(await w.lock('c4d')).toEqual({ commandId: 'c4d', status: 'in_progress' });
+    for (let i = 0; i < 30; i++) {
+      await w.ride(0);
+      await w.step(5_000);
+    }
+    expect(w.cuts()).toHaveLength(1); // a API pediu o corte com a moto parada…
+    expect(w.traccar.commands).toEqual([]); // …mas a segunda guarda da ponte recusou a posição velha
+    expect(w.outcomes('c4d').at(-1)).toMatchObject({ commandId: 'c4d', status: 'failed' });
   });
 
   it('(5) Traccar 6.5 (sem noQueue): o corte nunca vai ao Traccar; o lock falha seguro (timeout) e o destravar também não envia nada', async () => {
@@ -562,8 +595,52 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     await w.ride(0);
     expect(w.cuts()).toHaveLength(1);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+    // A4-1/P2: o status que confirma vale só depois da resposta do J16 ao comando (ou de envio + 5 s sem resposta).
+    await w.step(500);
+    await w.ack();
+    await w.step(500);
     await w.heartbeat(true);
     await w.step(1_000);
     expect(w.outcomes('c7').at(-1)).toEqual({ commandId: 'c7', status: 'confirmed' });
+  });
+  it('(10) P1: depois do corte a telemetria segue (travada:false) sem resposta do J16; heartbeat 40 s depois, ignição ligada → confirma nele', async () => {
+    w = await world();
+    await connectAndRide(w, 4, 20, { blocked: null }); // pacotes de localização sem o bit
+    await w.heartbeatWith(false, true); // status: relé fechado
+    expect(await w.lock('c10')).toEqual({ commandId: 'c10', status: 'in_progress' });
+    for (let i = 0; i < 4 && !w.cuts().length; i++) {
+      await w.ride(0, { blocked: null, ignition: true });
+      if (!w.cuts().length) await w.step(5_000);
+    }
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+    const cutAt = w.clock.now();
+    const teleBefore = w.fromBridge(`motos/${T}/telemetria`).length;
+    // O J16 não responde ao comando; posições a cada 5 s continuam (sem o bit) até o heartbeat de 40 s.
+    while (w.clock.now() - cutAt < 40_000) {
+      await w.step(5_000);
+      await w.ride(0, { blocked: null, ignition: true });
+    }
+    const after = w.fromBridge(`motos/${T}/telemetria`).slice(teleBefore);
+    expect(after.length).toBeGreaterThanOrEqual(7);
+    expect(after.every((t) => t.travada === false)).toBe(true); // nunca confirma o lock pela telemetria
+    expect(w.outcomes('c10')).toEqual([]);
+    await w.heartbeatWith(true, true);
+    await w.step(1);
+    expect(w.outcomes('c10')).toEqual([{ commandId: 'c10', status: 'confirmed' }]);
+  });
+
+  it('(9) A4-1: unlock enviado e sem status depois (prazo expira) → relock de rollback não confirma pelo bit de antes do engineResume', async () => {
+    w = await world();
+    await connectAndRide(w, 4, 0, { blocked: true, ignition: false }); // t = 20 s, bit travada:true fresco
+    expect(w.reportedTravada()).toEqual([true]);
+    const u = await w.unlock('u9');
+    expect(u.status).toBe('in_progress');
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineResume' }]);
+    // o J16 fica mudo (nenhum status depois do comando) até o prazo do unlock
+    for (let i = 0; i < 7; i++) await w.step(5_000);
+    expect(w.outcomes('u9').at(-1)).toMatchObject({ commandId: 'u9', status: 'failed' });
+    const l = await w.lock('c9');
+    expect(l).not.toEqual({ commandId: 'c9', status: 'confirmed' });
+    expect(w.reportedTravada()).toEqual([true]); // nenhum eco travada:true do bit anterior ao engineResume
   });
 });

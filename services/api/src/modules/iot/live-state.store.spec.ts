@@ -171,6 +171,48 @@ describe('LiveStateStore.lockConfirmed — origem da trava (Task 4 fix 2, B)', (
   });
 });
 
+describe('LiveStateStore.lockConfirmed — trava anterior ao último travada:false publicado não confirma (A4-1)', () => {
+  const setup = () => {
+    const clock = new FakeClock(Date.parse('2026-10-27T12:00:00Z'));
+    const redis = new MemoryRedisStore();
+    return { clock, redis, live: new LiveStateStore(redis, clock) };
+  };
+
+  it('travada:true de antes do release deixa de confirmar; só mensagem do rastreador posterior volta a confirmar', async () => {
+    const { clock, live } = setup();
+    await live.applyReported(T, { travada: true });
+    expect(live.lockConfirmed(T)).toBe(true);
+    await clock.advance(1_000);
+    await live.markReleaseRequested(T);
+    expect(live.lockConfirmed(T)).toBe(false);
+    // reported com horário anterior ao release (chegou atrasado) também não
+    await live.applyReported(T, { travada: true }, { travadaAt: clock.now() - 500 });
+    expect(live.lockConfirmed(T)).toBe(false);
+    await clock.advance(1_000);
+    await live.applyReported(T, { travada: true });
+    expect(live.lockConfirmed(T)).toBe(true);
+  });
+
+  it('o release vai pelo Redis: outra instância também não confirma pela trava antiga', async () => {
+    const { clock, redis, live } = setup();
+    await live.applyReported(T, { travada: true });
+    const other = new LiveStateStore(redis, clock);
+    await other.load(T);
+    expect(other.lockConfirmed(T)).toBe(true);
+    await clock.advance(1_000);
+    await live.markReleaseRequested(T);
+    await other.load(T);
+    expect(other.lockConfirmed(T)).toBe(false);
+  });
+
+  it('Redis fora ao gravar o release → erro (quem chama não publica o travada:false)', async () => {
+    const { live, redis } = setup();
+    jest.spyOn(redis, 'hsetMax').mockRejectedValueOnce(new Error('redis down'));
+    await expect(live.markReleaseRequested(T)).rejects.toThrow('redis down');
+    expect(live.lockConfirmed(T)).toBe(false);
+  });
+});
+
 describe('LiveStateStore — reported parado não é barreira de ordem para a telemetria (Task 11b)', () => {
   const tele = (kmh: number, ts: number) => ({
     lat: -23.5, lng: -46.6, velocidade_kmh: kmh, bateria_pct: 80, travada: false, ignicao: kmh > 0, sinal: 4, timestamp: new Date(ts).toISOString(),

@@ -166,7 +166,7 @@ export class TelemetryService implements InboundHandler {
       await this.geofence.onPosition({ vehicleId, thingName, lat: msg.lat, lng: msg.lng, ts });
       if (this.zoneSpeed && applied.newest) {
         await this.zoneSpeed
-          .onSample({ vehicleId, thingName, speedKmh: msg.velocidade_kmh, measuredAt: Math.min(deviceTs, now) })
+          .onSample({ vehicleId, thingName, speedKmh: msg.velocidade_kmh, measuredAt: Math.min(deviceTs, now), locked: msg.travada })
           .catch((err: Error) => this.logger.error({ msg: 'zone_speed_check_failed', thingName, error: err.message }));
       }
     });

@@ -19,15 +19,19 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 - **Telemetria** (`motos/{t}/telemetria`) de cada posição válida, não `outdated`, com `fixTime` crescente: `velocidade_kmh = speed × 1,852`
   (o Traccar usa nós), `timestamp = fixTime`, `travada ← blocked`, `ignicao ← ignition`, `sinal ← rssi` (0–5), `bateria_pct ←
   power` pela curva do pack (`BATTERY_MODEL`; aproximado). Heartbeats do GT06 só atualizam o estado (corte, ignição, sinal).
-- **Retenção:** sem o bit de corte atual (depois de cada (re)conexão) ou sem bateria conhecida a telemetria fica retida (log
+- **Retenção:** sem bit de corte conhecido (depois de cada (re)conexão, ou com `engineResume` enviado e ainda sem status
+  novo — um `travada: false` confirmaria o unlock antes da hora) ou sem bateria conhecida a telemetria fica retida (log
   `telemetry_held` com o motivo, no máximo 1/min por moto). Com o corte conhecido e a bateria ainda desconhecida há 5 min (ex.:
-  J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` (log `battery_unknown`).
+  J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` (log `battery_unknown`). Com `engineStop`
+  enviado e ainda sem status novo, ou com o bit recebido há mais de 90 s (firmware sem heartbeat em movimento), a telemetria
+  **não** é retida: sai com `travada: false` (conservador — nunca confirma lock; a API não vê lacuna nem reconexão, e cercas e
+  zonas continuam vendo a moto).
 - **Eventos** (`motos/{t}/eventos`): `powerCut` → `violacao`, `lowBattery`/`lowPower` → `bateria_critica`, `vibration` com o corte
   ativo ou deslocamento > 20 m travada → `movimento_sem_aluguel` (este sai mesmo com a telemetria retida). Outros alarmes:
   log `alarm_ignored`. Os alarmes vêm de `position.attributes.alarm` (sem Notification no Traccar o WebSocket não traz
   `events`); se houver Notification, o mesmo alarme por `events` é deduplicado pelo id da posição. Replay de conexão não gera alarme.
 - **Shadow:** todo delta passa pela segunda guarda. `travada: true` → `engineStop` **só** com o dispositivo online, posição de até
-  10 s abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
+  7 s (`CUT_FRESH_MS`; com `TIMER,5,5#` uma amostra perdida já recusa) abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
   em 10 s); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
   releitura da versão e de qualquer outra espera), com o aparelho resolvido uma vez no início do delta: se a posição envelheceu,
   o dispositivo caiu ou o IMEI do thing mudou no meio (`device_changed`), nada é enviado. A sessão HTTP do Traccar é aberta
@@ -41,7 +45,12 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 - **`reported.travada`** sai de status/heartbeat com o bit de corte, sempre do bit atual (`currentBlocked`), nunca do
   "comando aceito" nem de memória anterior à reconexão: na mudança, ou no máximo 1/min se igual. O eco do lock numa moto já
   travada sai sempre. Bit recebido há mais de 90 s não vale para "já travada" nem para o eco (sessão TCP nova do J16 pode não
-  aparecer no Traccar; **heartbeat do J16 ≤ 60 s é obrigatório**).
+  aparecer no Traccar; **heartbeat do J16 ≤ 60 s é obrigatório**). Depois de um `engineStop`/`engineResume` aceito, o bit
+  anterior é descartado (`markCommandSent`): só vale status recebido **depois da resposta do J16 ao comando** (posição do
+  Traccar com `attributes.result`) ou, sem resposta, depois de envio + 5 s (`COMMAND_ACK_GRACE_MS`; um heartbeat emitido
+  antes de o J16 executar o `Relay` pode chegar logo depois do envio). Esse primeiro status sai sempre como `reported.travada`
+  (sem a deduplicação de 1/min). Assim um unlock sem resposta seguido de relock não "confirma" a trava pelo bit de antes do
+  `engineResume`.
 - **MQTT fora:** nada é entregue ao mqtt.js: telemetria (QoS 0) é descartada; `reported`, presença, eventos e `shadow/get`
   (QoS 1) são pulados na hora (log `mqtt_down_skipped` com o tipo, 1/min por moto e tipo), sem esperar o prazo. Um QoS 1 que já
   estava em voo na queda (ou abandonado pelo prazo) fica no `outgoingStore` do mqtt.js, que o reenvia na reconexão **antes** do
@@ -191,7 +200,10 @@ As tarefas físicas (comprar o kit e o chip M2M, confirmar a tensão de entrada 
 bancada, instalação com o relé no fio da chave, teste na moto parada, limitador de 32 km/h no controlador) estão no
 **Apêndice: tarefas do dono** da spec. Na bancada, confirmar também: Traccar ≥ 6.7.0 e que, com o J16 desligado, um
 `engineStop` é recusado (não enfileirado); heartbeat do J16 ≤ 60 s; `GET /api/server` da imagem escolhida devolve `version` como
-texto (se vier `null`, a ponte recusa todos os comandos de motor).
+texto (se vier `null`, a ponte recusa todos os comandos de motor); **latência posição → delta** (do `fixTime` da posição parada
+até o `engineStop` sair da ponte) **bem abaixo de 2 s** — a ponte só corta com posição de até 7 s (`CUT_FRESH_MS`), e um GPS
+com o `fixTime` mais de ~7 s atrás da chegada impede o corte (o lock termina `failed`/`timeout`, seguro mas inútil); meça
+também o atraso `fixTime` → `serverTime` no Traccar.
 
 Checklist adicional (ver a entrada da Task 1 em `docs/decisoes.md`): J16 com posição a cada <= 10 s durante um lock e tensão
 externa (0x94) no heartbeat (senão a bateria vira 0% após 5 min); corte em velocidade e bit de bloqueio no heartbeat; relé após

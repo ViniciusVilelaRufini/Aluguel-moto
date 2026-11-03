@@ -3,7 +3,7 @@ import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as deltaModule from './delta';
-import { cutRefusal, parseDelta, planDeltaFor, planReconnect } from './delta';
+import { CUT_FRESH_MS, cutRefusal, parseDelta, planDeltaFor, planReconnect } from './delta';
 import { BLOCKED_FRESH_MS, markReconnected } from './mapping';
 
 const now = Date.parse('2026-10-27T12:00:30Z');
@@ -55,7 +55,14 @@ describe('API pública (F3)', () => {
 });
 
 describe('cutRefusal (segunda guarda da ponte)', () => {
-  it('corta só online, sem corte ativo, sem envio recente e com posição de até 10 s abaixo de 3 km/h', () => {
+  it('A4-4: frescor do corte = 7 s (TIMER de 5 s + folga; uma amostra perdida já recusa)', () => {
+    expect(CUT_FRESH_MS).toBe(7_000);
+    expect(cutRefusal({ online: true, mem: { last: { ...fresh.last, fixTime: now - 7_000 } }, now })).toBeNull();
+    expect(cutRefusal({ online: true, mem: { last: { ...fresh.last, fixTime: now - 7_001 } }, now })).toBe('stale');
+    expect(cutRefusal({ online: true, mem: { last: { ...fresh.last, fixTime: now - 10_000 } }, now })).toBe('stale');
+  });
+
+  it('corta só online, sem corte ativo, sem envio recente e com posição de até 7 s abaixo de 3 km/h', () => {
     expect(cutRefusal({ online: true, mem: fresh, now })).toBeNull();
     expect(cutRefusal({ online: false, mem: fresh, now })).toBe('offline');
     expect(cutRefusal({ online: true, mem: lockedNow, now })).toBe('already_blocked');

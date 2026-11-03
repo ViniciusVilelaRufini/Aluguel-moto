@@ -2,7 +2,7 @@
 # Rastreador GT06 só relé no dev single (spec docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md, §7):
 #   gt06.sh init                                      papéis/banco do Traccar e da ponte e usuários do Traccar (idempotente;
 #                                                     o update.sh chama com GT06=on, depois das migrações)
-#   gt06.sh provision <VLT-0000> <moto-0000> <imei>   Tracker relay_only + dispositivo no Traccar ligado ao usuário da ponte;
+#   gt06.sh provision <VLT-0000> <moto-0000> <imei> [--certificate-revoked]  Tracker relay_only + dispositivo no Traccar (ponte);
 #                                                     o iot-sim (se rodando) para de simular a moto no ciclo seguinte (60 s)
 #   gt06.sh deprovision <moto-0000>                   SÓ DEV: apaga a linha inteira do Tracker relay_only (o dispositivo fica no
 #                                                     Traccar); o iot-sim volta a simular a moto no ciclo seguinte (60 s)
@@ -20,7 +20,7 @@ usage() { sed -n '2,14p' "$0" >&2; exit 2; }
 action="${1:-}"
 case "$action" in
   init) ;;
-  provision) [[ "${2:-}" =~ ^VLT-[0-9]{4,}$ && "${3:-}" =~ ^moto-[0-9]{4,}$ && "${4:-}" =~ ^[0-9]{15}$ ]] || usage ;;
+  provision) [[ "${2:-}" =~ ^VLT-[0-9]{4,}$ && "${3:-}" =~ ^moto-[0-9]{4,}$ && "${4:-}" =~ ^[0-9]{15}$ && ( -z "${5:-}" || "${5:-}" == --certificate-revoked ) ]] || usage ;;
   deprovision) [[ "${2:-}" =~ ^moto-[0-9]{4,}$ ]] || usage ;;
   e2e) [[ "${2:-}" =~ ^VLT-[0-9]{4,}$ && "${3:-}" =~ ^moto-[0-9]{4,}$ ]] || usage ;;
   status) [[ "${2:-}" =~ ^moto-[0-9]{4,}$ && -z "${3:-}" ]] || usage ;;
@@ -138,7 +138,7 @@ SQL
     # A senha do admin do Traccar já está no ambiente da API (env_file); aqui só valores públicos. TRACCAR_BRIDGE_EMAIL liga
     # o dispositivo ao usuário da ponte (sem isso a ponte não recebe as posições nem manda o corte).
     dc exec -T -e TRACCAR_URL=http://traccar:8082 -e TRACCAR_ADMIN_EMAIL="$TRACCAR_ADMIN_EMAIL" -e TRACCAR_BRIDGE_EMAIL="$TRACCAR_BRIDGE_EMAIL" \
-      api node dist/cli/provision-gt06.js --vehicle "$2" --thing "$3" --imei "$4"
+      api node dist/cli/provision-gt06.js --vehicle "$2" --thing "$3" --imei "$4" ${5:+"$5"}
     echo "$3 provisionada como GT06 relay_only (a ponte relê o registro em até 60 s)"
     sim_cycle_note
     ;;

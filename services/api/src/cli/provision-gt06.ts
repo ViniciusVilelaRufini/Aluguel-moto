@@ -3,12 +3,16 @@
  * `relay_only`/`gt06` com o IMEI, vincula à moto (alinhando `Vehicle.thingName`) e cria o dispositivo no Traccar
  * (`POST /api/devices`, `uniqueId = IMEI`, nome = thingName — nada do cliente), dando acesso ao usuário da ponte.
  *
- *   node dist/cli/provision-gt06.js --vehicle VLT-0901 --thing moto-0901 --imei 860000000000901 [--dry-run]
+ *   node dist/cli/provision-gt06.js --vehicle VLT-0901 --thing moto-0901 --imei 860000000000901 [--dry-run] [--certificate-revoked]
  *   pnpm --filter api exec tsx scripts/provision-tracker.ts --protocol gt06 --vehicle VLT-0901 --thing moto-0901 --imei ...
  *
  * Modo de controle: a API guarda o modo por rastreador num cache de 60 s por processo (iot/tracker-mode.ts). Esta CLI roda em outro
  * processo e não o invalida: uma troca de modo vale em até 60 s. Moto com aluguel aberto ou reserva ativa/em entrega é recusada
  * (reprovisione com a moto livre; reconferido dentro da transação), e também moto com trava em andamento no Redis da API.
+ *
+ * Ex-rastreador MQTT (Tracker com `certificateArn`): a CLI não fala com o IoT Core (sem dependência AWS) e recusa até o operador
+ * revogar o certificado (comandos na mensagem de erro) e confirmar com `--certificate-revoked` — senão o certificado continuaria
+ * ativo, ligado ao thing, sem registro no banco. Trocando o thingName da moto, o thing antigo também não pode ter trava em andamento.
  *
  * Ambiente: DATABASE_URL; REDIS_URL (o da API, obrigatória: inacessível = recusa); TRACCAR_URL (padrão http://localhost:8082); TRACCAR_ADMIN_EMAIL (padrão admin@volti.local);
  * TRACCAR_ADMIN_PASSWORD (obrigatória); TRACCAR_BRIDGE_EMAIL (opcional). Idempotente. Logs JSON com o IMEI mascarado.
@@ -76,6 +80,26 @@ export interface Gt06ProvisionInput {
   /** Usuário (não admin) da ponte no Traccar, que passa a ver o dispositivo. Ausente = a ponte usa o admin (só local). */
   bridgeEmail?: string;
   dryRun?: boolean;
+  /** `--certificate-revoked`: o operador confirma que revogou o certificado MQTT antigo no IoT Core. */
+  certificateRevoked?: boolean;
+}
+
+/**
+ * Recusa de reprovisionar um ex-rastreador MQTT: zerar `certificateArn` sem revogar deixaria o certificado ativo no IoT Core
+ * (publicando como o thing) e sem rastro no banco. Mostra o ARN e os comandos para o operador.
+ */
+export function certificateStillActiveError(thingName: string, certificateArn: string): Error {
+  const certificateId = certificateArn.split('/').pop() ?? certificateArn;
+  return new Error(
+    [
+      `O rastreador ${thingName} ainda tem certificado MQTT registrado (${certificateArn}).`,
+      'Revogue-o no IoT Core antes de reprovisionar como GT06:',
+      `  aws iot detach-thing-principal --thing-name ${thingName} --principal ${certificateArn}`,
+      `  aws iot detach-policy --policy-name volti-<env>-moto-policy --target ${certificateArn}`,
+      `  aws iot update-certificate --certificate-id ${certificateId} --new-status REVOKED`,
+      'Depois rode de novo com --certificate-revoked para confirmar.',
+    ].join('\n'),
+  );
 }
 
 type ProvisionPrisma = Pick<PrismaClient, 'vehicle' | 'tracker' | 'rental' | 'reservation' | '$transaction'>;
@@ -91,11 +115,15 @@ export async function provisionGt06(
   const vehicle = await deps.prisma.vehicle.findUnique({ where: { code: vehicleCode }, select: { id: true, thingName: true } });
   if (!vehicle) throw new Error(`Moto ${vehicleCode} não encontrada (cadastre com POST /vehicles).`);
   await assertVehicleFreeForProvisioning(deps.prisma, { id: vehicle.id, code: vehicleCode });
-  await assertNoPendingLock(deps.redis, thingName);
+  // O thing antigo da moto (se for trocar) também não pode ter trava em andamento: ela ficaria órfã no thing velho.
+  const things = vehicle.thingName && vehicle.thingName !== thingName ? [thingName, vehicle.thingName] : [thingName];
+  for (const t of things) await assertNoPendingLock(deps.redis, t);
   const clash = await deps.prisma.vehicle.findFirst({ where: { thingName, NOT: { id: vehicle.id } }, select: { code: true } });
   if (clash) throw new Error(`thingName ${thingName} já pertence a ${clash.code}.`);
-  const existingTracker = await deps.prisma.tracker.findUnique({ where: { thingName }, select: { vehicleId: true } });
+  const existingTracker = await deps.prisma.tracker.findUnique({ where: { thingName }, select: { vehicleId: true, certificateArn: true } });
   if (existingTracker?.vehicleId && existingTracker.vehicleId !== vehicle.id) throw new Error(`thingName ${thingName} já está ligado a outra moto.`);
+  const certificateArn = existingTracker?.certificateArn ?? null;
+  if (certificateArn && !input.certificateRevoked) throw certificateStillActiveError(thingName, certificateArn);
   const imeiOwner = await deps.prisma.tracker.findFirst({ where: { imei, NOT: { thingName } }, select: { thingName: true } });
   if (imeiOwner) throw new Error(`IMEI ${maskImei(imei)} já vinculado a ${imeiOwner.thingName}.`);
 
@@ -110,7 +138,9 @@ export async function provisionGt06(
     await deps.traccar.linkDevice(user.id, device.id);
   }
   // Reconferida depois do Traccar (uma trava pode ter começado nesse meio-tempo) e logo antes da transação.
-  await assertNoPendingLock(deps.redis, thingName);
+  for (const t of things) await assertNoPendingLock(deps.redis, t);
+  // O ARN não é dado pessoal: fica no log como registro de que o operador confirmou a revogação.
+  if (certificateArn) deps.log({ msg: 'certificate_revocation_confirmed', thingName, certificateArn });
   await deps.prisma.$transaction(async (tx) => {
     // Aluguel/reserva reconferidos dentro da transação (como o linkMqttTracker): podem ter aberto depois da checagem.
     await assertVehicleFreeForProvisioning(tx, { id: vehicle.id, code: vehicleCode });
@@ -134,7 +164,13 @@ function log(entry: Record<string, unknown>): void {
 export async function main(argv: string[] = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): Promise<void> {
   const { values } = parseArgs({
     args: argv,
-    options: { vehicle: { type: 'string' }, thing: { type: 'string' }, imei: { type: 'string' }, 'dry-run': { type: 'boolean', default: false } },
+    options: {
+      vehicle: { type: 'string' },
+      thing: { type: 'string' },
+      imei: { type: 'string' },
+      'dry-run': { type: 'boolean', default: false },
+      'certificate-revoked': { type: 'boolean', default: false },
+    },
   });
   const password = env.TRACCAR_ADMIN_PASSWORD;
   if (!password) throw new Error('TRACCAR_ADMIN_PASSWORD ausente');
@@ -144,7 +180,7 @@ export async function main(argv: string[] = process.argv.slice(2), env: NodeJS.P
   try {
     await provisionGt06(
       { prisma, traccar, redis, log },
-      { vehicleCode: values.vehicle ?? '', thingName: values.thing ?? '', imei: values.imei ?? '', bridgeEmail: env.TRACCAR_BRIDGE_EMAIL || undefined, dryRun: values['dry-run'] },
+      { vehicleCode: values.vehicle ?? '', thingName: values.thing ?? '', imei: values.imei ?? '', bridgeEmail: env.TRACCAR_BRIDGE_EMAIL || undefined, dryRun: values['dry-run'], certificateRevoked: values['certificate-revoked'] },
     );
   } finally {
     await prisma.$disconnect();

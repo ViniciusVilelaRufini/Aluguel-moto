@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
 import { AlertPriority, AlertType } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
-import { CommandChangedEvent, EV, GeofenceTransitionEvent, IotConnectivityEvent, IotDeviceEvent, ZoneSpeedExceededEvent } from '../../common/events';
+import { CommandChangedEvent, EV, GeofenceTransitionEvent, IotConnectivityEvent, IotDeviceEvent, SpeedCeilingExceededEvent, ZoneSpeedExceededEvent } from '../../common/events';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PAYMENT_NEEDS_REVIEW, type PaymentNeedsReviewEvent } from '../payments/payment-review';
@@ -122,6 +122,22 @@ export class AlertsListeners implements OnModuleInit {
       type: 'zone_speed_exceeded',
       priority: ev.speedLimitKmh <= 6 ? 'high' : 'medium',
       message: `Acima do limite da zona (${ev.speedLimitKmh} km/h): o rastreador só relé não reduz a velocidade.`,
+      vehicleId: ev.vehicleId,
+      rentalId: ev.rentalId,
+      ...(await this.position(ev.vehicleId)),
+    });
+  }
+
+  /**
+   * Acima do teto legal (32 km/h + tolerância do GPS) por mais de 5 s, em qualquer rastreador (auditoria 4, item 3): limitador
+   * fora da Resolução Contran 996/2023. Um por episódio no monitor; a deduplicação de 10 min agrupa repetições.
+   */
+  @OnEvent(EV.SPEED_CEILING_EXCEEDED, { async: true, promisify: true })
+  async onSpeedCeilingExceeded(ev: SpeedCeilingExceededEvent): Promise<void> {
+    await this.alerts.create({
+      type: 'speed_limiter_noncompliant',
+      priority: 'high',
+      message: 'Acima de 32 km/h: limitador fora da norma',
       vehicleId: ev.vehicleId,
       rentalId: ev.rentalId,
       ...(await this.position(ev.vehicleId)),

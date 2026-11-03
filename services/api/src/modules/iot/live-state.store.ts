@@ -98,6 +98,12 @@ export class LiveStateStore {
    * `reported`. Ausente = desconhecida (estado em branco, presença sem mensagem, polling sem horário). Vai junto no hash do Redis.
    */
   private readonly lockedAt = new Map<string, number>();
+  /**
+   * A4-1: hora (ms) do último `desired.travada: false` (unlock só relé) — gravada antes de publicar. Uma trava com origem até
+   * este instante não confirma (`lockConfirmed`): a ponte pode ter enviado o `engineResume` e o relé estar aberto. Vai para o
+   * hash do Redis (campo `releaseAt`) só por máximo atômico e é hidratada no `refresh` (como `reconnectAt`).
+   */
+  private readonly releaseAt = new Map<string, number>();
   /** Hold gravado por esta instância cuja escrita no Redis falhou (vale até gravar ou um unlock). */
   private readonly heldUnpersisted = new Set<string>();
   /** Carimbo (`_at`) da última versão do hash no Redis que esta instância gravou ou leu: versão mais nova = outra instância. */
@@ -167,6 +173,7 @@ export class LiveStateStore {
       return mem ?? null;
     }
     this.hydrateReconnect(thingName, h?.reconnectAt);
+    this.hydrateRelease(thingName, h?.releaseAt);
     if (!h || !h.lastSeenAt) {
       this.refreshFailed.add(thingName); // nada no Redis: a cópia da memória (se houver) não é confirmada
       return mem ?? null;
@@ -212,6 +219,25 @@ export class LiveStateStore {
     this.reconnectAt.set(thingName, at);
     this.sample.delete(thingName);
     this.lastDeviceTs.delete(thingName);
+  }
+
+  /** Release gravado por outra instância: só avança (o mais novo vale — mais conservador). */
+  private hydrateRelease(thingName: string, raw: string | undefined): void {
+    const at = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(at)) return;
+    const local = this.releaseAt.get(thingName);
+    if (local === undefined || at > local) this.releaseAt.set(thingName, at);
+  }
+
+  /**
+   * A4-1: chamado ANTES de publicar `desired.travada: false` (unlock só relé). Daqui em diante só uma trava reportada pelo
+   * rastreador depois de agora confirma. Grava no Redis por máximo atômico e propaga o erro: sem o registro compartilhado,
+   * quem chama não publica o `travada: false` (falha fechada — outra instância confirmaria pela trava antiga).
+   */
+  async markReleaseRequested(thingName: string): Promise<void> {
+    const now = this.clock.now();
+    this.releaseAt.set(thingName, Math.max(now, this.releaseAt.get(thingName) ?? 0));
+    await this.redis.hsetMax(this.key(thingName), 'releaseAt', now);
   }
 
   /** Último `limite_kmh` gravado no desired por qualquer instância (teto da rampa). Erro de leitura → desconhecido. */
@@ -269,6 +295,9 @@ export class LiveStateStore {
     if (!s || s.locked !== true || !this.isOnline(thingName)) return false;
     const at = this.lockedAt.get(thingName);
     if (at === undefined) return false;
+    // A4-1: trava medida até o último `travada: false` publicado é de antes do `engineResume` — não diz nada do relé agora.
+    const released = this.releaseAt.get(thingName);
+    if (released !== undefined && at <= released) return false;
     const since = this.reconnectAt.get(thingName);
     return since === undefined || at >= since + this.reconnectGraceMs;
   }
@@ -613,6 +642,7 @@ export class LiveStateStore {
     // `reconnectAt` não vai na escrita em bloco (a cópia desta instância pode estar velha e apagaria/baixaria a reconexão de
     // outra — false confirm): só por máximo atômico, depois.
     delete values.reconnectAt;
+    delete values.releaseAt;
     // Carimbo monotônico desta escrita (para as outras instâncias saberem que a cópia delas ficou velha).
     const at = Math.max(this.clock.now(), (this.syncedAt.get(s.thingName) ?? 0) + 1);
     values._at = String(at);
