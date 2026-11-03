@@ -77,6 +77,36 @@ só se o controlador pedir (ex.: o firmware não aceitar domínio), sabendo que 
 Ligue o J16 numa fonte de 12 V (ou no DC-DC), **com o chip inserido com o aparelho desligado**, perto de uma janela ou ao ar
 livre (GPS precisa de céu). Espere 1–2 min para ele registrar na rede. Mande cada SMS abaixo para o número do chip.
 
+### 3.0 O que funcionou na bancada (J16 4G, etiqueta G900L, 2026-11-03)
+
+Testado de verdade, com um chip Vivo comum; vale mais que a tabela 3.2 para este modelo:
+
+- **`SERVER,0/1,...#` é ignorado** em qualquer forma (com ou sem senha). O servidor só grava com
+  `SZCS#SERVIP=<ip ou domínio>#SERVPORT=5023` (responde `CFGSZCS,SERVIP,SERVPORT`), junto com `SZCS#PTL_SEL=2` (protocolo GT06).
+- **Não usa senha** nos comandos. **Não mande** cada comando "com e sem senha": num aparelho sem senha a forma com senha é
+  lida com o `123456` no lugar do primeiro campo (ex.: `APN,123456,<apn>,...#` grava o APN errado).
+- `GPRSON,1#` responde `GPRSON,CONFIG OK!`; `RESET#` responde `RESET OK`; `HBT,60,60#` é aceito.
+- **`TIMER` mínimo é 10 s**: `TIMER,5,5#` é recusado, `TIMER,10,10#` é aceito (ver 3.4).
+- Conferência: `STATUS#` deve mostrar `GPRS:Online` (ex.: `GPRS:Online, CSQ:22, ACC:ON, GPS:ON, Relay:0`).
+- **Chip M2M**: o chip M2M multioperadora testado registrou na rede, mas a sessão de dados não alcançou o servidor (no celular
+  com o mesmo APN só alguns sites abriram, e nenhuma conexão chegou ao servidor). Antes de instalar, teste o chip num celular
+  com o APN, **roaming de dados ligado** e Wi-Fi desligado, abrindo `https://api-volti-dev.prestarecondominios.com.br/health`.
+  Se não abrir, peça à operadora para liberar TCP de saída para o IP do servidor, porta 5023.
+
+Sequência que funcionou (uma mensagem por vez, sem senha):
+
+```
+SZCS#PTL_SEL=2
+SZCS#SERVIP=api-volti-dev.prestarecondominios.com.br#SERVPORT=5023
+APN,<apn>,<usuário>,<senha>#
+GMT,E,0,0#
+TIMER,10,10#
+HBT,60,60#
+GPRSON,1#
+RESET#
+STATUS#
+```
+
 ### 3.1 Senha
 
 A maioria dos J16 vem **sem senha de SMS** (os comandos abaixo vão sem senha). Se o aparelho não responder a nada, ou
@@ -132,6 +162,11 @@ O bloqueio só corta depois de **2 posições paradas cobrindo ≥ 10 s com no m
 de 10 s não vale. Com `TIMER` de 10 s, qualquer atraso da rede (10,5 s) recomeça a contagem e o bloqueio tende a terminar
 `did_not_stop`. Por isso: **`TIMER,5,5#`** (5 s com e sem ignição). O J16 não muda o intervalo em tempo real pelo sistema,
 então o 5 s é fixo.
+
+> **J16 G900L (3.0): o firmware não aceita menos de 10 s.** Com `TIMER,10,10#` as posições chegam a cada ~10 s, no limite da
+> regra acima: uma posição 10,5 s depois da anterior recomeça a contagem, e o bloqueio pode terminar `did_not_stop` com a
+> moto parada. O ajuste da regra para cadência de 10 s é decisão pendente (docs/decisoes.md); até lá, teste o bloqueio
+> sabendo disso.
 
 Estimativa de dados (TCP/IP incluído, aproximada): posição GT06 ≈ 36 bytes + ~80 bytes de cabeçalhos/ACK ≈ 120 bytes.
 
