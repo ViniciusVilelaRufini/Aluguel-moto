@@ -1,7 +1,7 @@
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { EV, type ZoneSpeedExceededEvent } from '../../../common/events';
+import { EV, type SpeedCeilingExceededEvent, type ZoneSpeedExceededEvent } from '../../../common/events';
 import { MemoryRedisStore } from '../../../redis/redis-store';
-import { ZoneSpeedMonitor } from './zone-speed-monitor';
+import { SPEED_CEILING_ALERT_KMH, ZoneSpeedMonitor } from './zone-speed-monitor';
 
 const AT0 = Date.parse('2026-10-27T12:00:00Z');
 
@@ -97,5 +97,77 @@ describe('ZoneSpeedMonitor (spec GT06 §10)', () => {
     await expect(monitor.onSample({ vehicleId: 'v', thingName: 't', speedKmh: 12, measuredAt: AT0 })).resolves.toBeUndefined();
     await expect(monitor.onSample({ vehicleId: 'v', thingName: 't', speedKmh: 12, measuredAt: AT0 + 20_000 })).resolves.toBeUndefined();
     expect(got).toEqual([]);
+  });
+});
+
+describe('ZoneSpeedMonitor — teto legal de 32 km/h (auditoria 4, item 3; contrato telemetria: acima de 32 alerta)', () => {
+  function ceiling(mode: 'relay_only' | 'speed_control' | 'fail' = 'relay_only', limit: number | null = 32) {
+    const events = new EventEmitter2();
+    const zone: ZoneSpeedExceededEvent[] = [];
+    const over: SpeedCeilingExceededEvent[] = [];
+    events.on(EV.ZONE_SPEED_EXCEEDED, (e: ZoneSpeedExceededEvent) => zone.push(e));
+    events.on(EV.SPEED_CEILING_EXCEEDED, (e: SpeedCeilingExceededEvent) => over.push(e));
+    const modes = { byVehicle: mode === 'fail' ? jest.fn().mockRejectedValue(new Error('banco fora')) : jest.fn().mockResolvedValue(mode), invalidate: jest.fn() };
+    const limits = { storedLimit: jest.fn().mockResolvedValue(limit) };
+    const monitor = new ZoneSpeedMonitor(modes, limits, new MemoryRedisStore(), events, { openRentalId: jest.fn().mockResolvedValue('rent-1') });
+    const sample = (kmh: number, sec: number) => monitor.onSample({ vehicleId: 'veh-1', thingName: 'moto-0901', speedKmh: kmh, measuredAt: AT0 + sec * 1000 });
+    return { zone, over, sample, limits };
+  }
+
+  it('fora de zona (limite 32): acima de 35 km/h (32 + 3 de tolerância do GPS) por mais de 5 s → um alerta por episódio', async () => {
+    expect(SPEED_CEILING_ALERT_KMH).toBe(35);
+    const s = ceiling();
+    await s.sample(40, 0);
+    await s.sample(41, 5);
+    expect(s.over).toEqual([]);
+    await s.sample(40.04, 6);
+    expect(s.over).toEqual([{ vehicleId: 'veh-1', rentalId: 'rent-1', speedKmh: 40, ts: '2026-10-27T12:00:06.000Z' }]);
+    await s.sample(45, 12);
+    expect(s.over).toHaveLength(1);
+    await s.sample(35, 13); // na tolerância: fim do episódio
+    await s.sample(36, 14);
+    await s.sample(36, 20);
+    expect(s.over).toHaveLength(2);
+    expect(s.zone).toEqual([]); // não é alerta de zona
+  });
+
+  it('35 km/h (na tolerância) não alerta; amostra isolada acima também não', async () => {
+    const s = ceiling();
+    await s.sample(35, 0);
+    await s.sample(35, 10);
+    await s.sample(50, 11);
+    await s.sample(30, 12);
+    await s.sample(50, 13);
+    expect(s.over).toEqual([]);
+  });
+
+  it('limite desconhecido (nada gravado) e falha ao ler o tipo do rastreador: o teto legal vale mesmo assim', async () => {
+    for (const s of [ceiling('relay_only', null), ceiling('fail', 6)]) {
+      await s.sample(40, 0);
+      await s.sample(40, 6);
+      expect(s.over).toHaveLength(1);
+      expect(s.zone).toEqual([]);
+    }
+  });
+
+  it('speed_control acima de 35 km/h também: o limitador está fora da norma', async () => {
+    const s = ceiling('speed_control', 20);
+    await s.sample(40, 0);
+    await s.sample(40, 6);
+    expect(s.over).toHaveLength(1);
+    expect(s.zone).toEqual([]);
+    expect(s.limits.storedLimit).not.toHaveBeenCalled();
+  });
+
+  it('zona de 6 km/h a 40 km/h: alerta de zona e do teto, cada um com o seu episódio', async () => {
+    const s = ceiling('relay_only', 6);
+    await s.sample(40, 0);
+    await s.sample(40, 6);
+    expect(s.zone).toHaveLength(1);
+    expect(s.over).toHaveLength(1);
+    await s.sample(20, 7); // abaixo do teto, acima da zona: só o episódio do teto termina
+    await s.sample(20, 12);
+    expect(s.zone).toHaveLength(1);
+    expect(s.over).toHaveLength(1);
   });
 });

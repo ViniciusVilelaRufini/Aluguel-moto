@@ -9,6 +9,8 @@ export const EV = {
   IOT_CONNECTIVITY: 'iot.connectivity',
   GEOFENCE_TRANSITION: 'geofence.transition',
   ZONE_SPEED_EXCEEDED: 'zone.speed-exceeded',
+  /** Acima do teto legal (32 km/h + tolerância do GPS) por mais de 5 s, em qualquer tipo de rastreador (auditoria 4, item 3). */
+  SPEED_CEILING_EXCEEDED: 'iot.speed-ceiling-exceeded',
   PAYMENT_UPDATED: 'payment.updated',
   // Eventos próprios da API (Task 3) — alimentam o WebSocket e as Tasks 4/5.
   VEHICLE_STATUS_CHANGED: 'vehicle.status-changed',
@@ -128,6 +130,13 @@ export interface ZoneSpeedExceededEvent {
   vehicleId: string;
   rentalId?: string;
   speedLimitKmh: number;
+  speedKmh: number;
+  ts: string;
+}
+
+export interface SpeedCeilingExceededEvent {
+  vehicleId: string;
+  rentalId?: string;
   speedKmh: number;
   ts: string;
 }
