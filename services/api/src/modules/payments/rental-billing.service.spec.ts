@@ -1479,6 +1479,23 @@ describe('Auditoria run-4: aluguel encerrado sem liquidação (queda entre o fec
     expect(ctx.provider.operations('capture')).toBe(0);
   });
 
+  it('revisão: encerrado há mais de 7 dias não é cobrado automaticamente (só log para revisão)', async () => {
+    const ctx = await setup();
+    await endedWithoutPayment(ctx, { costCents: 1290, endedAt: minutesAgo(8 * 24 * 60) });
+    const warn = jest.spyOn((ctx.svc as any).logger, 'warn');
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'rental_unbilled_needs_review', count: 1 }));
+  });
+
+  it('revisão: cliente excluído não é cobrado pela varredura', async () => {
+    const ctx = await setup();
+    await endedWithoutPayment(ctx, { costCents: 1290 });
+    await ctx.db.customer.update({ where: { id: CUSTOMER }, data: { status: 'deleted', deletedAt: new Date() } });
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(0);
+  });
+
   it('aluguel já vinculado ou ainda aberto não é tocado', async () => {
     const ctx = await setup();
     await endedWithoutPayment(ctx, { costCents: 1290 });

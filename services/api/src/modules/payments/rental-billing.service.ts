@@ -997,17 +997,32 @@ export class RentalBillingService implements RentalBillingPort {
    * (`amountCents` = `costCents` = `breakdown.totalCents`; `walletCents` = `breakdown.walletAppliedCents`).
    */
   private async settleUnbilledRentals(cutoff: Date): Promise<void> {
+    // Revisão: só a janela recente (como os reconciliadores) é cobrada automaticamente; mais antigo vai para revisão manual.
+    // A janela também limita a retentativa: o `settle` cria o `Payment` antes de chamar o gateway, então uma falha do
+    // gateway deixa o `Payment` (vinculado na próxima execução); um aluguel que nunca liquida sai da varredura em 7 dias.
+    const windowStart = new Date(this.now().getTime() - RECONCILE_WINDOW_MS);
+    const unbilled = { status: { in: ['ended', 'force_ended'] as Array<'ended' | 'force_ended'> }, paymentId: null };
+    const stale = await this.prisma.rental.count({ where: { ...unbilled, endedAt: { lt: windowStart } } });
+    if (stale > 0) this.logger.warn({ msg: 'rental_unbilled_needs_review', count: stale });
     const rentals = await this.prisma.rental.findMany({
-      where: { status: { in: ['ended', 'force_ended'] }, paymentId: null, endedAt: { lte: cutoff } },
+      where: { ...unbilled, endedAt: { lte: cutoff, gte: windowStart } },
       orderBy: { endedAt: 'asc' },
       take: 50,
-      select: { id: true, costCents: true, breakdown: true },
+      select: { id: true, customerId: true, costCents: true, breakdown: true },
     });
+    if (!rentals.length) return;
+    const deleted = new Set(
+      (await this.prisma.customer.findMany({ where: { id: { in: [...new Set(rentals.map((r) => r.customerId))] }, OR: [{ status: 'deleted' }, { deletedAt: { not: null } }] }, select: { id: true } })).map((c) => c.id),
+    );
     for (const r of rentals) {
       const idempotencyKey = `rental-settlement:${r.id}`;
       try {
         let paymentId = (await this.prisma.payment.findUnique({ where: { idempotencyKey }, select: { id: true } }))?.id;
         if (!paymentId) {
+          if (deleted.has(r.customerId)) {
+            this.logger.warn({ msg: 'rental_unbilled_customer_deleted', rentalId: r.id });
+            continue;
+          }
           const walletCents = Math.max(0, Number((r.breakdown as { walletAppliedCents?: number } | null)?.walletAppliedCents ?? 0));
           paymentId = (await this.settle({ rentalId: r.id, amountCents: r.costCents, walletCents, idempotencyKey })).paymentId;
           this.logger.warn({ msg: 'rental_unbilled_settled', rentalId: r.id, paymentId });
