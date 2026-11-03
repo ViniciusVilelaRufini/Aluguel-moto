@@ -67,6 +67,17 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(t).toMatch(/postgres:\s+condition: service_healthy/);
   });
 
+  it('LGPD: Traccar do dev single e do docker-compose local apagam posições com mais de 90 dias (DATABASE_HISTORY_DAYS 1..90)', () => {
+    const local = readFileSync(join(REPO, 'docker-compose.yml'), 'utf8');
+    for (const block of [service(c, 'traccar'), service(local, 'traccar')]) {
+      const m = /DATABASE_HISTORY_DAYS: "(\d+)"/.exec(block);
+      expect(m).not.toBeNull();
+      const days = Number(m![1]);
+      expect(days).toBeGreaterThanOrEqual(1);
+      expect(days).toBeLessThanOrEqual(90);
+    }
+  });
+
   it('ponte: papel volti_bridge e usuário próprio do Traccar; nada do DB_PASSWORD da API, sem bootstrap de admin, sem portas', () => {
     const b = service(c, 'traccar-bridge');
     expect(b).toContain('dockerfile: services/traccar-bridge/Dockerfile');

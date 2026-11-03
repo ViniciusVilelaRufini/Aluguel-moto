@@ -419,3 +419,6 @@ emite um warning no synth. `-c traccarDesiredCount=1` liga as duas tasks (padrã
 `-c bridgeImageTag=<sha>` explícita (nunca `latest`). O JDBC do Traccar usa `?sslmode=require` (RDS PG16 com `rds.force_ssl`).
 Atenção LGPD: os logs do próprio Traccar contêm o IMEI (identificador do dispositivo) e vão ao mesmo log group `/volti/<env>/traccar`
 (mesma retenção); restrinja o acesso a ele e não o exporte.
+Retenção LGPD do banco `traccar`: `DATABASE_HISTORY_DAYS=90` (`database.historyDays`) faz o próprio Traccar apagar, numa tarefa
+diária, posições e eventos com mais de 90 dias (mesmo valor no `deploy/single/compose.yml` e no `docker-compose.yml`). A exclusão
+de dados da API não alcança esse banco: é essa retenção que cobre a expiração dos trajetos guardados pelo Traccar.

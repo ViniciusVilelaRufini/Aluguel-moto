@@ -95,6 +95,13 @@ describe('TraccarStack (proposta, opt-in por -c gt06Things)', () => {
     Annotations.fromStack(s.traccar!).hasWarning('*', Match.stringLikeRegexp('5023'));
   });
 
+  it('LGPD: o Traccar apaga posições/eventos com mais de 90 dias (database.historyDays, entre 1 e 90)', () => {
+    const days = Number(envOf(container('traccar')).DATABASE_HISTORY_DAYS);
+    expect(Number.isInteger(days)).toBe(true);
+    expect(days).toBeGreaterThanOrEqual(1);
+    expect(days).toBeLessThanOrEqual(90);
+  });
+
   it('JDBC do Traccar exige SSL (rds.force_ssl)', () => {
     expect(JSON.stringify(envOf(container('traccar')).DATABASE_URL)).toContain('?sslmode=require');
   });

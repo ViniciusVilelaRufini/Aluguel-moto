@@ -15,6 +15,8 @@ import { apiSubnetType } from './network-stack';
 
 export const GT06_PORT = 5023;
 export const TRACCAR_WEB_PORT = 8082;
+/** LGPD (CLAUDE.md): trajetos expiram em 90 dias; também vale para o banco `traccar`, que a exclusão da API não alcança. */
+export const TRACCAR_HISTORY_DAYS = 90;
 /** Imagem oficial fixada (multi-arquitetura; arm64 conferido no plano GT06, Task 13 Step 1). */
 export const TRACCAR_IMAGE = 'traccar/traccar:6.16.0-ubuntu';
 const THING_NAME = /^moto-\d{4,}$/;
@@ -129,6 +131,8 @@ export class TraccarStack extends Stack {
         PROTOCOLS_ENABLE: 'gt06',
         GT06_PORT: String(GT06_PORT),
         WEB_PORT: String(TRACCAR_WEB_PORT),
+        // LGPD: trajeto expira em 90 dias; a tarefa diária do Traccar (database.historyDays) apaga posições e eventos mais antigos.
+        DATABASE_HISTORY_DAYS: String(TRACCAR_HISTORY_DAYS),
       },
       secrets: { DATABASE_PASSWORD: ecs.Secret.fromSecretsManager(traccarDb) },
       portMappings: [{ containerPort: GT06_PORT }, { containerPort: TRACCAR_WEB_PORT }],

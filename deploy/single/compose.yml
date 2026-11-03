@@ -133,6 +133,8 @@ services:
       PROTOCOLS_ENABLE: gt06
       GT06_PORT: "5023"
       WEB_PORT: "8082"
+      # LGPD: trajeto expira em 90 dias; a tarefa diária do Traccar (database.historyDays) apaga posições e eventos mais antigos.
+      DATABASE_HISTORY_DAYS: "90"
     # GT06_BIND (/volti/dev/config/GT06_BIND): 127.0.0.1 por padrão (o emulador usa traccar:5023 pela rede interna). 0.0.0.0
     # só para um J16 real, junto com -c gt06Port=true no security group (cloudshell.md).
     ports: ["${GT06_BIND:-127.0.0.1}:5023:5023", "127.0.0.1:8082:8082"]
