@@ -22,6 +22,8 @@ describe('SupportService.resolveDispute', () => {
     prisma.dispute.updateMany.mockResolvedValue({ count: 1 });
     prisma.dispute.findUniqueOrThrow.mockResolvedValue({ ...dispute, status: 'accepted' } as any);
     payments.refund.mockResolvedValue({ id: PAYMENT_ID });
+    prisma.payment.findUnique.mockResolvedValue({ id: PAYMENT_ID, customerId: 'c', rentalId: 'r', kind: 'rental' } as any);
+    prisma.paymentRefund.count.mockResolvedValue(0);
   });
 
   const claimWhere = { id: DISPUTE_ID, status: { in: ['open', 'under_review'] }, resolvedById: null };
@@ -89,5 +91,76 @@ describe('SupportService.resolveDispute', () => {
 
   it('accept com estorno e reject concorrentes do MESMO ator (duplo clique/retry): um vence, um estorno, nunca rejected com estorno', async () => {
     await concurrent(actor);
+  });
+});
+
+describe('auditoria run-4: contestação ligada ao pagamento do aluguel e estorno por tentativa', () => {
+  const prisma = mockDeep<PrismaClient>();
+  const audit = { record: jest.fn() };
+  const payments = { refund: jest.fn() };
+  const service = new SupportService(prisma as any, audit as any, {} as any, {} as any, {} as any, payments as any);
+  const CUSTOMER = '11111111-1111-4111-8111-111111111111';
+  const RENTAL = '66666666-6666-4666-8666-666666666666';
+  const customer = { pool: 'customer', sub: 'c', email: 'c@x.com', groups: [], userId: CUSTOMER, customerId: CUSTOMER } as Principal;
+  const dispute = { id: DISPUTE_ID, customerId: CUSTOMER, rentalId: RENTAL, paymentId: PAYMENT_ID, status: 'open', resolvedById: null };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (prisma.$transaction as any).mockImplementation(async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg)));
+    prisma.rental.findUnique.mockResolvedValue({ customerId: CUSTOMER, paymentId: null } as any);
+    prisma.payment.findUnique.mockResolvedValue({ id: PAYMENT_ID, customerId: CUSTOMER, rentalId: RENTAL, kind: 'rental' } as any);
+    prisma.dispute.findFirst.mockResolvedValue(null);
+    prisma.dispute.create.mockImplementation((async (a: any) => ({ ...dispute, ...a.data, createdAt: new Date(), updatedAt: new Date() })) as any);
+    prisma.dispute.findUnique.mockResolvedValue(dispute as any);
+    prisma.dispute.updateMany.mockResolvedValue({ count: 1 });
+    prisma.dispute.findUniqueOrThrow.mockResolvedValue({ ...dispute, status: 'accepted', createdAt: new Date(), updatedAt: new Date() } as any);
+    prisma.paymentRefund.count.mockResolvedValue(0);
+    payments.refund.mockResolvedValue({ id: PAYMENT_ID });
+  });
+
+  it('criar com pagamento de outro aluguel do mesmo cliente → 404 e nada gravado', async () => {
+    prisma.payment.findUnique.mockResolvedValue({ id: PAYMENT_ID, customerId: CUSTOMER, rentalId: 'outro-aluguel', kind: 'rental' } as any);
+    await expect(service.createDispute(customer, { rentalId: RENTAL, paymentId: PAYMENT_ID, reason: 'Cobrança indevida' })).rejects.toMatchObject({ status: 404 });
+    expect(prisma.dispute.create).not.toHaveBeenCalled();
+  });
+
+  it('criar com pagamento que não é do aluguel (recarga/assinatura) → 404', async () => {
+    prisma.payment.findUnique.mockResolvedValue({ id: PAYMENT_ID, customerId: CUSTOMER, rentalId: RENTAL, kind: 'top_up' } as any);
+    await expect(service.createDispute(customer, { rentalId: RENTAL, paymentId: PAYMENT_ID, reason: 'Cobrança indevida' })).rejects.toMatchObject({ status: 404 });
+  });
+
+  it('criar com o pagamento do próprio aluguel → ok', async () => {
+    await expect(service.createDispute(customer, { rentalId: RENTAL, paymentId: PAYMENT_ID, reason: 'Cobrança indevida' })).resolves.toMatchObject({ paymentId: PAYMENT_ID });
+  });
+
+  it('duas contestações abertas em corrida: o índice único parcial (P2002) vira 409', async () => {
+    const { Prisma } = jest.requireActual('@prisma/client');
+    prisma.dispute.create.mockRejectedValue(new Prisma.PrismaClientKnownRequestError('dup', { code: 'P2002', clientVersion: 'x' }));
+    await expect(service.createDispute(customer, { rentalId: RENTAL, reason: 'Cobrança indevida' }))
+      .rejects.toMatchObject({ status: 409, detail: 'Já existe uma contestação aberta para este aluguel.' });
+  });
+
+  it('resolver: disputa antiga com pagamento de outro aluguel → 422 antes de reivindicar e sem estorno', async () => {
+    prisma.payment.findUnique.mockResolvedValue({ id: PAYMENT_ID, customerId: CUSTOMER, rentalId: 'outro-aluguel', kind: 'rental' } as any);
+    await expect(service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 }))
+      .rejects.toMatchObject({ status: 422 });
+    expect(prisma.dispute.updateMany).not.toHaveBeenCalled();
+    expect(payments.refund).not.toHaveBeenCalled();
+  });
+
+  it('estorno recusado antes: nova tentativa usa chave nova (dispute:<id>:<n>), sem repetir o 422 da chave velha', async () => {
+    prisma.paymentRefund.count.mockResolvedValue(1);
+    await service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 });
+    expect(payments.refund).toHaveBeenCalledWith(actor, PAYMENT_ID, { amountCents: 500, reason: 'Cobrança indevida' }, `dispute:${DISPUTE_ID}:2`);
+    const where = (prisma.paymentRefund.count.mock.calls[0][0] as any).where;
+    expect(where).toEqual({
+      paymentId: PAYMENT_ID, status: 'rejected',
+      OR: [{ idempotencyKey: `refund:${PAYMENT_ID}:dispute:${DISPUTE_ID}` }, { idempotencyKey: { startsWith: `refund:${PAYMENT_ID}:dispute:${DISPUTE_ID}:` } }],
+    });
+  });
+
+  it('sem recusa anterior a chave continua dispute:<id> (idempotente para pedidos em aberto/concluídos)', async () => {
+    await service.resolveDispute(actor, DISPUTE_ID, { decision: 'accepted', resolution: 'Cobrança indevida', refundAmountCents: 500 });
+    expect(payments.refund.mock.calls[0][3]).toBe(`dispute:${DISPUTE_ID}`);
   });
 });

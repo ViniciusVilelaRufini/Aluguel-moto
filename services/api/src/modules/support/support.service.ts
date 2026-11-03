@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { Prisma, SupportMessage } from '@prisma/client';
+import { Prisma, type PaymentKind, type SupportMessage } from '@prisma/client';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
@@ -17,6 +17,8 @@ import type {
 import { toClaim, toConversation, toDispute, toIncident, toMessage } from './support.mapper';
 import { staffFirstName } from '../../common/staff-display-name';
 
+/** Pagamentos que podem ser contestados num aluguel (auditoria run-4): os gerados pelo próprio aluguel. */
+const DISPUTABLE_PAYMENT_KINDS: PaymentKind[] = ['rental', 'deposit', 'fee'];
 const byNewest = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
 /** Task 30 (item 31): validade das URLs dos anexos do chat para a equipe. */
 export const ATTACHMENT_URL_TTL_SECONDS = 15 * 60;
@@ -103,16 +105,41 @@ export class SupportService {
   async createDispute(user: Principal, dto: DisputeCreateDto) {
     const r = await this.prisma.rental.findUnique({ where: { id: dto.rentalId }, select: { customerId: true, paymentId: true } });
     if (!r || r.customerId !== user.customerId) throw notFound('Aluguel não encontrado.');
-    if (dto.paymentId) {
-      const p = await this.prisma.payment.findUnique({ where: { id: dto.paymentId }, select: { customerId: true } });
-      if (!p || p.customerId !== user.customerId) throw notFound('Pagamento não encontrado.');
-    }
+    // Auditoria run-4: só um pagamento do próprio aluguel (aluguel, caução capturada ou taxa) pode ser contestado nele.
+    if (dto.paymentId && !(await this.paymentOfRental(dto.paymentId, user.customerId!, dto.rentalId))) throw notFound('Pagamento não encontrado.');
     const open = await this.prisma.dispute.findFirst({ where: { rentalId: dto.rentalId, status: { in: ['open', 'under_review'] } } });
-    if (open) throw conflict('conflict', 'Já existe uma contestação aberta para este aluguel.');
-    const d = await this.prisma.dispute.create({
-      data: { customerId: user.customerId!, rentalId: dto.rentalId, paymentId: dto.paymentId ?? r.paymentId, reason: dto.reason, description: dto.description },
+    const alreadyOpen = () => conflict('conflict', 'Já existe uma contestação aberta para este aluguel.');
+    if (open) throw alreadyOpen();
+    try {
+      const d = await this.prisma.dispute.create({
+        data: { customerId: user.customerId!, rentalId: dto.rentalId, paymentId: dto.paymentId ?? r.paymentId, reason: dto.reason, description: dto.description },
+      });
+      return toDispute(d);
+    } catch (err) {
+      // Corrida: o índice único parcial `Dispute_one_open_per_rental` garante uma contestação aberta por aluguel.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw alreadyOpen();
+      throw err;
+    }
+  }
+
+  /** O pagamento é do cliente, do aluguel e de um tipo ligado ao aluguel (`DISPUTABLE_PAYMENT_KINDS`). */
+  private async paymentOfRental(paymentId: string, customerId: string, rentalId: string): Promise<boolean> {
+    const p = await this.prisma.payment.findUnique({ where: { id: paymentId }, select: { customerId: true, rentalId: true, kind: true } });
+    return !!p && p.customerId === customerId && p.rentalId === rentalId && DISPUTABLE_PAYMENT_KINDS.includes(p.kind);
+  }
+
+  /**
+   * Chave do estorno por tentativa (auditoria run-4): `dispute:<id>` na primeira; cada pedido recusado pelo gateway
+   * (`PaymentRefund` `rejected` com o prefixo da disputa) abre a próxima, `dispute:<id>:<n>`. Pedido em aberto, concluído
+   * ou em revisão manual mantém a chave (repetição idempotente).
+   */
+  private async disputeRefundKey(id: string, paymentId: string): Promise<string> {
+    const base = `dispute:${id}`;
+    const prefix = `refund:${paymentId}:${base}`;
+    const rejected = await this.prisma.paymentRefund.count({
+      where: { paymentId, status: 'rejected', OR: [{ idempotencyKey: prefix }, { idempotencyKey: { startsWith: `${prefix}:` } }] },
     });
-    return toDispute(d);
+    return rejected === 0 ? base : `${base}:${rejected + 1}`;
   }
 
   async getDispute(user: Principal, id: string) {
@@ -124,7 +151,7 @@ export class SupportService {
 
   /**
    * `accepted` com `refundAmountCents` estorna pelo mesmo pipeline de `PaymentsService.refund` (transição, teto capturado,
-   * um estorno aberto, `PaymentRefund`, gateway/carteira), com chave estável `dispute:<id>`.
+   * um estorno aberto, `PaymentRefund`, gateway/carteira), com chave estável por tentativa (`disputeRefundKey`).
    * Fecha a corrida dinheiro x decisão: primeiro a disputa é reivindicada de forma atômica (open/under_review com `resolvedById` nulo →
    * `under_review` com `resolvedById` = quem decide; sem migração). Ninguém reivindica de novo uma disputa já reivindicada,
    * nem o próprio dono (duplo clique, duas abas, retry): quem perde recebe 409, inclusive uma rejeição concorrente. Falha no estorno devolve a disputa ao estado anterior; só depois do estorno reservado ela vira `accepted`.
@@ -137,6 +164,10 @@ export class SupportService {
     if (d.status !== 'open' && d.status !== 'under_review') throw conflict('conflict', 'Contestação já decidida.');
     const refund = dto.decision === 'accepted' ? dto.refundAmountCents : undefined;
     if (refund && !d.paymentId) throw unprocessable('validation-error', 'Não há pagamento para estornar.');
+    // Auditoria run-4: revalida disputas antigas (gravadas antes da checagem de vínculo na criação).
+    if (refund && !(await this.paymentOfRental(d.paymentId!, d.customerId, d.rentalId))) {
+      throw unprocessable('validation-error', 'O pagamento da contestação não pertence ao aluguel contestado.');
+    }
 
     const claim = await this.prisma.dispute.updateMany({
       where: { id, status: { in: ['open', 'under_review'] }, resolvedById: null },
@@ -146,7 +177,8 @@ export class SupportService {
 
     if (refund) {
       try {
-        await this.payments.refund(actor, d.paymentId!, { amountCents: refund, reason: dto.resolution }, `dispute:${id}`);
+        const key = await this.disputeRefundKey(id, d.paymentId!);
+        await this.payments.refund(actor, d.paymentId!, { amountCents: refund, reason: dto.resolution }, key);
       } catch (err) {
         await this.prisma.dispute.updateMany({ where: { id, status: 'under_review', resolvedById: actor.userId }, data: { status: d.status, resolvedById: d.resolvedById } });
         throw err;
