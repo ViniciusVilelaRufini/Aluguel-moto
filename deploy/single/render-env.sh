@@ -45,6 +45,7 @@ CONFIG_NAMES=(
   ADMIN_ORIGIN ADMIN_BUCKET ADMIN_DISTRIBUTION_ID ADMIN_COGNITO_DOMAIN
   IOT_SIM SIM_RIDE_ON_UNLOCK
   GT06 GT06_BATTERY_MODEL GT06_BIND
+  STAFF_BOOTSTRAP_EMAILS
 )
 # secrets: os gerados acima e o manual documentado no cloudshell.md. Listas separadas de propósito: um segredo não pode
 # repetir (e sobrescrever) uma chave de config, e config (String, texto aberto) não carrega segredo.

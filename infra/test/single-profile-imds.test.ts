@@ -126,6 +126,9 @@ describe('single-dev: only the API container reaches IMDS (Run-2)', () => {
     for (const n of names) expect(config).toContain(n);
     // Optional config documented in cloudshell.md.
     expect(config).toEqual(expect.arrayContaining(['IOT_SIM', 'SIM_RIDE_ON_UNLOCK']));
+    // Auditoria run-4 (onda 2): bootstrap do primeiro admin (allowlist de e-mails, String) documentado no cloudshell.md.
+    expect(config).toContain('STAFF_BOOTSTRAP_EMAILS');
+    expect(file('cloudshell.md')).toContain('/volti/dev/config/STAFF_BOOTSTRAP_EMAILS');
     const generated = env.match(/^for name in ([A-Z_ ]+); do/m)![1].split(' ');
     expect(secrets).toEqual(expect.arrayContaining([...generated, 'MERCADOPAGO_ACCESS_TOKEN']));
     expect(file('cloudshell.md')).toContain('/volti/dev/secrets/MERCADOPAGO_ACCESS_TOKEN');

@@ -7,6 +7,10 @@ import { ProblemException } from '../../common/problem';
 import { deletedSubMarker } from './deleted-identity';
 import { STAFF_DIRECTORY, type StaffDirectory } from '../../ports/staff-directory.port';
 import { CUSTOMER_IDENTITY, type CustomerContact, type CustomerIdentityDirectory } from '../../ports/customer-identity.port';
+import { APP_CONFIG, type AppConfig } from '../../config/env';
+
+const STAFF_SELECT = { id: true, active: true, groups: true, cognitoSub: true, lastLoginAt: true } as const;
+type StaffRow = Prisma.StaffUserGetPayload<{ select: typeof STAFF_SELECT }>;
 
 /** Login do staff gravado no máximo a cada 5 min (o staff é resolvido a cada requisição). */
 const STAFF_LOGIN_TOUCH_MS = 5 * 60_000;
@@ -32,6 +36,7 @@ export class PrincipalResolver {
     private readonly prisma: PrismaService,
     @Optional() @Inject(STAFF_DIRECTORY) private readonly directory?: StaffDirectory,
     @Optional() @Inject(CUSTOMER_IDENTITY) private readonly customerDirectory?: CustomerIdentityDirectory,
+    @Optional() @Inject(APP_CONFIG) private readonly cfg?: Pick<AppConfig, 'authMode' | 'staffBootstrapEmails'>,
   ) {}
 
   async resolve(token: VerifiedToken): Promise<Principal> {
@@ -86,58 +91,96 @@ export class PrincipalResolver {
 
   /**
    * Staff: lido do banco a cada requisição. O token não regrava mais `StaffUser.groups` (antes o `PATCH` era desfeito na
-   * requisição seguinte do próprio usuário). Primeiro acesso de um usuário do pool sem cadastro: criado com os grupos do token.
+   * requisição seguinte do próprio usuário). Auditoria run-4 (onda 2): primeiro acesso de um `sub` sem cadastro é
+   * **fail-closed** — só liga o convite do painel (`POST /staff`) pelo e-mail verificado; sem convite, 403, salvo o
+   * bootstrap explícito (`STAFF_BOOTSTRAP_EMAILS`) ou `AUTH_MODE=dev` (o emissor local já não autentica ninguém).
    */
   private async resolveStaff(token: VerifiedToken): Promise<Principal> {
-    const select = { id: true, active: true, groups: true, cognitoSub: true, lastLoginAt: true } as const;
-    // QA-17: casa pelo sub. O e-mail só liga um cadastro ainda sem sub (criado pelo painel antes do primeiro login) e só
-    // existe em tokens dev; o access token do Cognito não traz e-mail, e o `username` nunca é usado como e-mail.
+    const select = STAFF_SELECT;
+    // QA-17: casa pelo sub. O e-mail só liga um cadastro ainda sem sub (criado pelo painel antes do primeiro login).
     // M7 (revisão final): sem e-mail no token (Cognito), o e-mail verificado vem do pool pelo sub (AdminGetUser), só
     // quando o sub ainda não tem cadastro — uma vez por usuário, no primeiro login.
-    let existing = await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select });
-    let email = token.email;
+    let existing: StaffRow | null = await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select });
     if (!existing) {
-      if (!email) email = (await this.directoryEmail(token.sub)) ?? '';
-      if (email) existing = await this.prisma.staffUser.findFirst({ where: { email: { equals: email, mode: 'insensitive' }, cognitoSub: null }, select });
-    }
-    if (!existing) {
-      try {
-        const created = await this.prisma.staffUser.create({
-          data: {
-            cognitoSub: token.sub,
-            email: email || `${token.sub}@staff.volti.invalid`,
-            // Task 30 (item 38): nada derivado do e-mail ou do sub (o cliente veria); o nome é cadastrado no painel.
-            name: '',
-            groups: token.groups,
-            lastLoginAt: new Date(),
-          },
-          select: { id: true },
-        });
-        return { pool: 'staff', sub: token.sub, email: token.email, groups: [...token.groups], userId: created.id, staffId: created.id };
-      } catch (err) {
-        // QA-08 (resto): requisições paralelas no primeiro acesso → relê o cadastro criado pela concorrente.
-        if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
-        existing = await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select });
-        if (!existing) throw err;
+      const email = (token.email || (await this.directoryEmail(token.sub)) || '').toLowerCase();
+      const byEmail = email ? await this.prisma.staffUser.findFirst({ where: { email: { equals: email, mode: 'insensitive' } }, select }) : null;
+      if (byEmail?.cognitoSub) {
+        // Usuário apagado e recriado no pool (sub novo, mesmo e-mail): nada de P2002/409 nem de religar sozinho.
+        this.logger.warn({ msg: 'staff_sub_mismatch', staffId: byEmail.id });
+        throw new ProblemException(403, 'staff-account-relink-required', 'Sua conta interna foi recriada. Peça a um administrador para religá-la no painel.', undefined, 'Conta interna recriada');
+      }
+      if (byEmail) {
+        existing = await this.linkInvite(byEmail, token);
+      } else {
+        if (!this.mayBootstrap(email)) {
+          this.logger.warn({ msg: 'staff_not_registered' });
+          throw new ProblemException(403, 'staff-not-registered', 'Usuário interno não cadastrado no painel.', undefined, 'Usuário interno não cadastrado');
+        }
+        const created = await this.createBootstrap(token, email);
+        if (created.created) return { pool: 'staff', sub: token.sub, email: token.email, groups: [...token.groups], userId: created.row.id, staffId: created.row.id };
+        existing = created.row;
       }
     }
     if (!existing.active) throw new ProblemException(403, 'forbidden', 'Usuário interno desativado.');
     const now = Date.now();
-    if (existing.cognitoSub !== token.sub || !existing.lastLoginAt || now - existing.lastLoginAt.getTime() > STAFF_LOGIN_TOUCH_MS) {
-      await this.prisma.staffUser.update({ where: { id: existing.id }, data: { cognitoSub: token.sub, lastLoginAt: new Date(now) } });
+    if (!existing.lastLoginAt || now - existing.lastLoginAt.getTime() > STAFF_LOGIN_TOUCH_MS) {
+      await this.prisma.staffUser.update({ where: { id: existing.id }, data: { lastLoginAt: new Date(now) } });
     }
     const groups = existing.groups.filter((g) => token.groups.includes(g));
     return { pool: 'staff', sub: token.sub, email: token.email, groups, userId: existing.id, staffId: existing.id };
   }
 
-  /** Falha do diretório não impede o login: o usuário entra como cadastro novo com os grupos do token (como antes). */
+  /** Bootstrap só com e-mail na allowlist (o primeiro admin) ou com o emissor dev (que aceita qualquer sub). */
+  private mayBootstrap(email: string): boolean {
+    if (this.cfg?.authMode === 'dev') return true;
+    return !!email && (this.cfg?.staffBootstrapEmails ?? []).includes(email);
+  }
+
+  /** Liga o convite ao sub. P2002 (o sub já foi gravado por uma requisição concorrente) → relê pelo sub. */
+  private async linkInvite(invite: StaffRow, token: VerifiedToken): Promise<StaffRow> {
+    try {
+      await this.prisma.staffUser.update({ where: { id: invite.id }, data: { cognitoSub: token.sub, lastLoginAt: new Date() } });
+      return { ...invite, cognitoSub: token.sub, lastLoginAt: new Date() };
+    } catch (err) {
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+      const again = await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select: STAFF_SELECT });
+      if (!again) throw err;
+      return again;
+    }
+  }
+
+  private async createBootstrap(token: VerifiedToken, email: string): Promise<{ created: boolean; row: StaffRow }> {
+    try {
+      const created = await this.prisma.staffUser.create({
+        data: {
+          cognitoSub: token.sub,
+          email: email || `${token.sub}@staff.volti.invalid`,
+          // Task 30 (item 38): nada derivado do e-mail ou do sub (o cliente veria); o nome é cadastrado no painel.
+          name: '',
+          groups: token.groups,
+          lastLoginAt: new Date(),
+        },
+        select: { id: true },
+      });
+      this.logger.log({ msg: 'staff_bootstrap_created', staffId: created.id });
+      return { created: true, row: { id: created.id, active: true, groups: [...token.groups], cognitoSub: token.sub, lastLoginAt: new Date() } };
+    } catch (err) {
+      // QA-08 (resto): requisições paralelas no primeiro acesso → relê o cadastro criado pela concorrente.
+      if (!(err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002')) throw err;
+      const again = await this.prisma.staffUser.findUnique({ where: { cognitoSub: token.sub }, select: STAFF_SELECT });
+      if (!again) throw err;
+      return { created: false, row: again };
+    }
+  }
+
+  /** Diretório fora (exceção) → 503 retryable: sem o e-mail verificado não dá para decidir (e nada é criado). */
   private async directoryEmail(sub: string): Promise<string | null> {
     if (!this.directory) return null;
     try {
       return await this.directory.verifiedEmail(sub);
     } catch (err) {
-      this.logger.warn({ msg: 'staff_directory_lookup_failed', error: (err as Error).message });
-      return null;
+      this.logger.warn({ msg: 'staff_directory_lookup_failed', error: (err as Error).name ?? 'unknown' });
+      throw new ProblemException(503, 'staff-directory-unavailable', 'Não conseguimos confirmar seu cadastro agora. Tente de novo em instantes.', undefined, 'Diretório de usuários indisponível');
     }
   }
 

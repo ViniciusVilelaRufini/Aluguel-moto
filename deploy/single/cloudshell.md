@@ -155,7 +155,17 @@ O painel fica em `https://<distribuição>.cloudfront.net`. O endereço está no
 aws ssm get-parameter --name /volti/dev/config/ADMIN_ORIGIN --query Parameter.Value --output text
 ```
 
-O primeiro usuário da equipe se cria no console do Cognito (pool `volti-dev-staff`): coloque-o no grupo `admin` e configure o TOTP no primeiro login.
+O primeiro usuário da equipe se cria no console do Cognito (pool `volti-dev-staff`): coloque-o no grupo `admin`, com o e-mail **verificado**, e configure o TOTP no primeiro login.
+
+**Antes do primeiro login dele**, libere o e-mail no bootstrap (auditoria run-4, onda 2). A API é fail-closed: um usuário do pool interno sem convite do painel (`POST /staff`) recebe `403 staff-not-registered` ("Usuário interno não cadastrado no painel."). Só os e-mails da lista abaixo podem criar o próprio cadastro no primeiro login, com os grupos do Cognito. Depois do primeiro login, a lista pode ficar como está ou ser apagada (o cadastro já existe). Os próximos usuários entram por convite no painel (Equipe → Convidar) com o mesmo e-mail criado no pool.
+
+```bash
+# e-mails em minúsculas, separados por vírgula
+aws ssm put-parameter --name /volti/dev/config/STAFF_BOOTSTRAP_EMAILS --type String --value 'dono@exemplo.com' --tags Key=Projeto,Value=Volti
+# depois: rode o volti-dev-update (o .env da API é montado a partir do SSM)
+```
+
+Se o admin já entrou no painel antes desta mudança, o cadastro dele já existe e nada precisa ser feito.
 
 **Clientes no dev:** não há auto-cadastro. O fluxo "criar conta" do app só funciona com usuários criados antes pelo `volti-dev-admin` (`create-customer`).
 
