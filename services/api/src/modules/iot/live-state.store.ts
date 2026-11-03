@@ -112,6 +112,11 @@ export class LiveStateStore {
    */
   private readonly reportedFreeAt = new Map<string, number>();
   private readonly reportedCutAt = new Map<string, number>();
+  /**
+   * P-A: `reported.travada: false` vindo do polling do shadow (modo aws; metadata com resolução de 1 s, truncada). Campo à parte
+   * (`reportedFreePollAt`, também por `hsetMax`) porque é comparado com o `releaseAt` truncado ao segundo.
+   */
+  private readonly reportedFreePollAt = new Map<string, number>();
   /** Hold gravado por esta instância cuja escrita no Redis falhou (vale até gravar ou um unlock). */
   private readonly heldUnpersisted = new Set<string>();
   /** Carimbo (`_at`) da última versão do hash no Redis que esta instância gravou ou leu: versão mais nova = outra instância. */
@@ -184,6 +189,7 @@ export class LiveStateStore {
     this.hydrateRelease(thingName, h?.releaseAt);
     this.hydrateMax(this.reportedFreeAt, thingName, h?.reportedFreeAt);
     this.hydrateMax(this.reportedCutAt, thingName, h?.reportedCutAt);
+    this.hydrateMax(this.reportedFreePollAt, thingName, h?.reportedFreePollAt);
     if (!h || !h.lastSeenAt) {
       this.refreshFailed.add(thingName); // nada no Redis: a cópia da memória (se houver) não é confirmada
       return mem ?? null;
@@ -250,10 +256,16 @@ export class LiveStateStore {
    * de corte velho/desconhecido). Quem decide relê o estado (`load`) antes.
    */
   unlockConfirmed(thingName: string): boolean {
-    const free = this.reportedFreeAt.get(thingName);
-    if (free === undefined) return false;
     const released = this.releaseAt.get(thingName);
-    if (released !== undefined && free <= released) return false;
+    const mqtt = this.reportedFreeAt.get(thingName);
+    const poll = this.reportedFreePollAt.get(thingName);
+    // MQTT (ms): estritamente depois do release. Polling (metadata em segundos, truncada): o eco no mesmo segundo do release
+    // tem hora ≤ release em ms — compara com o release truncado ao segundo (como o `since` do corte no RelayLockService).
+    const okMqtt = mqtt !== undefined && (released === undefined || mqtt > released);
+    const okPoll = poll !== undefined && (released === undefined || poll >= Math.floor(released / 1000) * 1000);
+    const free = Math.max(okMqtt ? mqtt : -Infinity, okPoll ? poll : -Infinity);
+    if (free === -Infinity) return false;
+    // `travada: true` no mesmo instante (ou mesmo segundo do polling) também barra.
     const cut = this.reportedCutAt.get(thingName);
     return cut === undefined || free > cut;
   }
@@ -633,7 +645,7 @@ export class LiveStateStore {
       if (at !== undefined && Number.isFinite(at)) {
         const origin = Math.min(at, now);
         this.lockedAt.set(thingName, origin);
-        await this.noteReportedTravada(thingName, r.travada, origin);
+        await this.noteReportedTravada(thingName, r.travada, origin, opts.fromPoll === true);
       } else this.lockedAt.delete(thingName);
     }
     if (r.limite_kmh !== undefined) s.speedLimitKmh = r.limite_kmh;
@@ -657,10 +669,14 @@ export class LiveStateStore {
   }
 
   /** A4-6: registra a hora do `reported.travada` (máximo, local e no Redis por `hsetMax`). Falha do Redis = só local. */
-  private async noteReportedTravada(thingName: string, travada: boolean, at: number): Promise<void> {
-    const map = travada ? this.reportedCutAt : this.reportedFreeAt;
+  private async noteReportedTravada(thingName: string, travada: boolean, at: number, fromPoll: boolean): Promise<void> {
+    const [map, field] = travada
+      ? [this.reportedCutAt, 'reportedCutAt']
+      : fromPoll
+        ? [this.reportedFreePollAt, 'reportedFreePollAt']
+        : [this.reportedFreeAt, 'reportedFreeAt'];
     map.set(thingName, Math.max(at, map.get(thingName) ?? at));
-    await this.redis.hsetMax(this.key(thingName), travada ? 'reportedCutAt' : 'reportedFreeAt', at).catch(() => undefined);
+    await this.redis.hsetMax(this.key(thingName), field, at).catch(() => undefined);
   }
 
   async setOnline(thingName: string, online: boolean): Promise<VehicleLiveState> {

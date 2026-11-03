@@ -353,6 +353,40 @@ describe('LiveStateStore.unlockConfirmed — destrava só relé confirmada só p
     expect(fresh.unlockConfirmed(T)).toBe(true);
   });
 
+  it('P-A: polling (modo aws, horário em segundos) com travada:false no mesmo segundo do release confirma; true no mesmo segundo depois não', async () => {
+    const { clock, live } = setup();
+    await clock.advance(400); // release no meio do segundo
+    await live.markReleaseRequested(T);
+    await clock.advance(300);
+    const sec = Math.floor(clock.now() / 1000) * 1000; // metadata truncada: anterior ao release em ms
+    await live.applyReported(T, { travada: false }, { fromPoll: true, travadaAt: sec });
+    expect(live.unlockConfirmed(T)).toBe(true);
+    await live.applyReported(T, { travada: true }, { fromPoll: true, travadaAt: sec });
+    expect(live.unlockConfirmed(T)).toBe(false);
+  });
+
+  it('P-A: polling com horário do segundo anterior ao release não confirma; o MQTT continua exigindo > release em ms', async () => {
+    const { clock, live } = setup();
+    await clock.advance(400);
+    await live.markReleaseRequested(T);
+    const sec = Math.floor(clock.now() / 1000) * 1000;
+    await live.applyReported(T, { travada: false }, { fromPoll: true, travadaAt: sec - 1_000 });
+    expect(live.unlockConfirmed(T)).toBe(false);
+    await live.applyReported(T, { travada: false }, { travadaAt: clock.now() - 100 });
+    expect(live.unlockConfirmed(T)).toBe(false);
+  });
+
+  it('P-A: o reported do polling vai pelo Redis para outra instância', async () => {
+    const { clock, redis, live } = setup();
+    await clock.advance(400);
+    await live.markReleaseRequested(T);
+    await clock.advance(300);
+    const other = new LiveStateStore(redis, clock);
+    await other.applyReported(T, { travada: false }, { fromPoll: true, travadaAt: Math.floor(clock.now() / 1000) * 1000 });
+    await live.load(T);
+    expect(live.unlockConfirmed(T)).toBe(true);
+  });
+
   it('polling sem horário do travada não conta', async () => {
     const { clock, live } = setup();
     await live.markReleaseRequested(T);
