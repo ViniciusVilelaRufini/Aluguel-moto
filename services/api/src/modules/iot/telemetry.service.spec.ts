@@ -180,7 +180,7 @@ describe('TelemetryService', () => {
       const { svc, zoneSpeed } = withZoneSpeed();
       await svc.telemetry(T, msg({ timestamp: '2026-10-21T15:00:00.000Z', velocidade_kmh: 12.5 }));
       expect(zoneSpeed.onSample).toHaveBeenCalledTimes(1);
-      expect(zoneSpeed.onSample).toHaveBeenCalledWith({ vehicleId: VEHICLE_ID, thingName: T, speedKmh: 12.5, measuredAt: Date.parse('2026-10-21T15:00:00.000Z') });
+      expect(zoneSpeed.onSample).toHaveBeenCalledWith({ vehicleId: VEHICLE_ID, thingName: T, speedKmh: 12.5, measuredAt: Date.parse('2026-10-21T15:00:00.000Z'), locked: false });
       await svc.telemetry(T, msg({ timestamp: '2026-10-21T14:59:58.000Z', velocidade_kmh: 30 }));
       expect(zoneSpeed.onSample).toHaveBeenCalledTimes(1);
     });

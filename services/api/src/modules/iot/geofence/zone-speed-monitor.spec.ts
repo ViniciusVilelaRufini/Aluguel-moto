@@ -13,7 +13,7 @@ function setup(mode: 'relay_only' | 'speed_control' = 'relay_only', limit = 6) {
   const limits = { storedLimit: jest.fn().mockResolvedValue(limit as number | null) };
   const rentals = { openRentalId: jest.fn().mockResolvedValue('rent-1') };
   const monitor = new ZoneSpeedMonitor(modes, limits, new MemoryRedisStore(), events, rentals);
-  const sample = (kmh: number, sec: number) => monitor.onSample({ vehicleId: 'veh-1', thingName: 'moto-0901', speedKmh: kmh, measuredAt: AT0 + sec * 1000 });
+  const sample = (kmh: number, sec: number) => monitor.onSample({ vehicleId: 'veh-1', thingName: 'moto-0901', speedKmh: kmh, measuredAt: AT0 + sec * 1000, locked: false });
   return { got, sample, limits };
 }
 
@@ -94,14 +94,14 @@ describe('ZoneSpeedMonitor (spec GT06 §10)', () => {
     const boom = jest.fn().mockRejectedValue(new Error('redis fora'));
     const redis = { get: boom, set: boom, del: boom } as never;
     const monitor = new ZoneSpeedMonitor({ byVehicle: async () => 'relay_only', invalidate: jest.fn() }, { storedLimit: async () => 6 }, redis, events, { openRentalId: async () => undefined });
-    await expect(monitor.onSample({ vehicleId: 'v', thingName: 't', speedKmh: 12, measuredAt: AT0 })).resolves.toBeUndefined();
-    await expect(monitor.onSample({ vehicleId: 'v', thingName: 't', speedKmh: 12, measuredAt: AT0 + 20_000 })).resolves.toBeUndefined();
+    await expect(monitor.onSample({ vehicleId: 'v', thingName: 't', speedKmh: 12, measuredAt: AT0, locked: false })).resolves.toBeUndefined();
+    await expect(monitor.onSample({ vehicleId: 'v', thingName: 't', speedKmh: 12, measuredAt: AT0 + 20_000, locked: false })).resolves.toBeUndefined();
     expect(got).toEqual([]);
   });
 });
 
 describe('ZoneSpeedMonitor — teto legal de 32 km/h (auditoria 4, item 3; contrato telemetria: acima de 32 alerta)', () => {
-  function ceiling(mode: 'relay_only' | 'speed_control' | 'fail' = 'relay_only', limit: number | null = 32) {
+  function ceiling(mode: 'relay_only' | 'speed_control' | 'fail' = 'relay_only', limit: number | null = 32, rental: string | null = 'rent-1', locked = false) {
     const events = new EventEmitter2();
     const zone: ZoneSpeedExceededEvent[] = [];
     const over: SpeedCeilingExceededEvent[] = [];
@@ -109,8 +109,8 @@ describe('ZoneSpeedMonitor — teto legal de 32 km/h (auditoria 4, item 3; contr
     events.on(EV.SPEED_CEILING_EXCEEDED, (e: SpeedCeilingExceededEvent) => over.push(e));
     const modes = { byVehicle: mode === 'fail' ? jest.fn().mockRejectedValue(new Error('banco fora')) : jest.fn().mockResolvedValue(mode), invalidate: jest.fn() };
     const limits = { storedLimit: jest.fn().mockResolvedValue(limit) };
-    const monitor = new ZoneSpeedMonitor(modes, limits, new MemoryRedisStore(), events, { openRentalId: jest.fn().mockResolvedValue('rent-1') });
-    const sample = (kmh: number, sec: number) => monitor.onSample({ vehicleId: 'veh-1', thingName: 'moto-0901', speedKmh: kmh, measuredAt: AT0 + sec * 1000 });
+    const monitor = new ZoneSpeedMonitor(modes, limits, new MemoryRedisStore(), events, { openRentalId: jest.fn().mockResolvedValue(rental ?? undefined) });
+    const sample = (kmh: number, sec: number) => monitor.onSample({ vehicleId: 'veh-1', thingName: 'moto-0901', speedKmh: kmh, measuredAt: AT0 + sec * 1000, locked });
     return { zone, over, sample, limits };
   }
 
@@ -157,6 +157,23 @@ describe('ZoneSpeedMonitor — teto legal de 32 km/h (auditoria 4, item 3; contr
     expect(s.over).toHaveLength(1);
     expect(s.zone).toEqual([]);
     expect(s.limits.storedLimit).not.toHaveBeenCalled();
+  });
+
+  it('P5: moto travada e sem aluguel (transportada na van) acima de 35 km/h → nenhum alerta do teto', async () => {
+    const s = ceiling('relay_only', 32, null, true);
+    for (let sec = 0; sec <= 30; sec += 5) await s.sample(80, sec);
+    expect(s.over).toEqual([]);
+  });
+
+  it('P5: travada mas com aluguel aberto → alerta; destravada sem aluguel → alerta (sem rentalId)', async () => {
+    const a = ceiling('relay_only', 32, 'rent-1', true);
+    await a.sample(40, 0);
+    await a.sample(40, 6);
+    expect(a.over).toEqual([expect.objectContaining({ rentalId: 'rent-1' })]);
+    const b = ceiling('relay_only', 32, null, false);
+    await b.sample(40, 0);
+    await b.sample(40, 6);
+    expect(b.over).toEqual([{ vehicleId: 'veh-1', speedKmh: 40, ts: '2026-10-27T12:00:06.000Z' }]);
   });
 
   it('zona de 6 km/h a 40 km/h: alerta de zona e do teto, cada um com o seu episódio', async () => {

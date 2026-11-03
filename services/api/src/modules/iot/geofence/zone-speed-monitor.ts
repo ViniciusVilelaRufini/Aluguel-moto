@@ -20,6 +20,8 @@ export interface ZoneSpeedSample {
   speedKmh: number;
   /** Hora da medição limitada a agora (ms). */
   measuredAt: number;
+  /** `travada` da telemetria: o teto legal só alerta com a moto destravada ou em aluguel (P5: moto travada na van). */
+  locked: boolean;
 }
 
 interface Episode {
@@ -74,16 +76,22 @@ export class ZoneSpeedMonitor {
     this.events.emit(EV.ZONE_SPEED_EXCEEDED, ev);
   }
 
-  /** Teto legal: independe do tipo do rastreador e da zona. */
+  /**
+   * Teto legal: independe do tipo do rastreador e da zona. Só com a moto destravada ou em aluguel aberto (P5): travada e sem
+   * aluguel ela está sendo transportada (van), e a velocidade é a do veículo que a leva. Aluguel só é consultado acima do teto.
+   */
   private async checkCeiling(s: ZoneSpeedSample): Promise<void> {
     const key = this.ceilingKey(s.thingName);
-    if (!(s.speedKmh > SPEED_CEILING_ALERT_KMH)) {
+    let rentalId: string | undefined;
+    const over = s.speedKmh > SPEED_CEILING_ALERT_KMH;
+    if (over && s.locked !== false) rentalId = await this.rentals.openRentalId(s.vehicleId).catch(() => undefined);
+    if (!over || (s.locked !== false && !rentalId)) {
       await this.redis.del(key).catch(() => undefined);
       return;
     }
     if (!(await this.episodeElapsed(key, MAX_SPEED_KMH, s.measuredAt))) return;
     const ev: SpeedCeilingExceededEvent = { vehicleId: s.vehicleId, speedKmh: Math.round(s.speedKmh * 10) / 10, ts: new Date(s.measuredAt).toISOString() };
-    const rentalId = await this.rentals.openRentalId(s.vehicleId).catch(() => undefined);
+    rentalId ??= await this.rentals.openRentalId(s.vehicleId).catch(() => undefined);
     if (rentalId) ev.rentalId = rentalId;
     this.events.emit(EV.SPEED_CEILING_EXCEEDED, ev);
   }
