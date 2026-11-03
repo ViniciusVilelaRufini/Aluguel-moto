@@ -37,7 +37,8 @@ export class FakeMqttClient {
   matches(topic: string): boolean {
     return [...this.filters].some((f) => topicMatches(f, topic));
   }
-  async publishAsync(topic: string, payload: string, opts?: { qos?: 0 | 1 }): Promise<void> {
+  async publishAsync(topic: string, payload: string, opts?: { qos?: 0 | 1; retain?: boolean }): Promise<void> {
+    if (opts?.retain) this.broker.retain(topic, payload);
     if (!this.connected) return new Promise<void>((done) => void this.offline.push({ topic, payload, done }));
     if (this.stallQos1 && opts?.qos === 1) return new Promise<void>(() => undefined);
     this.broker.deliver(this.id, topic, payload);
@@ -60,6 +61,8 @@ export class FakeMqttClient {
     this.subscribeCalls.push(topics);
     if (this.stallSubscribe) return new Promise<void>(() => undefined);
     for (const t of topics) this.filters.add(t);
+    // Como um broker real: cada SUBSCRIBE entrega as mensagens retidas que casam, com `packet.retain = true`.
+    this.broker.deliverRetained(this, topics);
   }
   async endAsync(): Promise<void> {
     this.connected = false;
@@ -69,6 +72,18 @@ export class FakeMqttClient {
 export class FakeBroker {
   readonly log: Array<{ from: string; topic: string; payload: string }> = [];
   private readonly clients = new Set<FakeMqttClient>();
+  /** Mensagens retidas por tópico (publicadas com `retain: true`, mesmo com o publicador desconectado). */
+  private readonly retained = new Map<string, string>();
+
+  retain(topic: string, payload: string): void {
+    this.retained.set(topic, payload);
+  }
+
+  deliverRetained(c: FakeMqttClient, filters: string[]): void {
+    for (const [topic, payload] of this.retained) {
+      if (filters.some((f) => topicMatches(f, topic))) queueMicrotask(() => c.emit('message', topic, Buffer.from(payload), { retain: true }));
+    }
+  }
 
   client(id: string): FakeMqttClient {
     const c = new FakeMqttClient(this, id);
@@ -79,6 +94,6 @@ export class FakeBroker {
 
   deliver(from: string, topic: string, payload: string): void {
     this.log.push({ from, topic, payload });
-    for (const c of this.clients) if (c.id !== from && c.connected && c.matches(topic)) queueMicrotask(() => c.emit('message', topic, Buffer.from(payload)));
+    for (const c of this.clients) if (c.id !== from && c.connected && c.matches(topic)) queueMicrotask(() => c.emit('message', topic, Buffer.from(payload), { retain: false }));
   }
 }

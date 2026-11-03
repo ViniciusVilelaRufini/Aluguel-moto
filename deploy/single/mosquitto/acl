@@ -1,0 +1,36 @@
+# ACL do Mosquitto do dev single (auditoria run-4, onda 2). Um bloco por usuário; nada fora daqui é permitido.
+# Contrato: packages/contracts/mqtt.md. Os tópicos $aws/... são escritos por extenso (curinga no início não casa com $).
+
+# API (LocalMqttTransport + shadow local + estações): o shadow do servidor publica delta/accepted/documents/get.
+user api
+topic readwrite motos/#
+topic readwrite estacoes/#
+topic readwrite $aws/things/#
+topic read $aws/events/#
+
+# Ponte GT06 (services/traccar-bridge): só o lado do aparelho. Nunca escreve delta/desired nem comandos.
+user traccar-bridge
+topic write motos/+/telemetria
+topic write motos/+/eventos
+topic read motos/+/comandos
+topic write $aws/things/+/shadow/update
+topic write $aws/things/+/shadow/get
+topic read $aws/things/+/shadow/update/delta
+topic read $aws/things/+/shadow/get/accepted
+topic write $aws/events/presence/+/+
+
+# Simulador de rastreadores (services/iot-sim): o mesmo lado do aparelho.
+user iot-sim
+topic write motos/+/telemetria
+topic write motos/+/eventos
+topic read motos/+/comandos
+topic write $aws/things/+/shadow/update
+topic write $aws/things/+/shadow/get
+topic read $aws/things/+/shadow/update/delta
+topic read $aws/things/+/shadow/get/accepted
+topic write $aws/events/presence/+/+
+
+# Observador do e2e do GT06 (gt06.sh e2e, mosquitto_sub dentro do container): só leitura; senha aleatória do start.sh.
+user observador
+topic read motos/#
+topic read $aws/things/#

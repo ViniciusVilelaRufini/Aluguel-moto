@@ -7,6 +7,11 @@ export interface AppConfig {
   authMode: 'dev' | 'cognito';
   devJwtSecret?: string;
   /**
+   * `STAFF_BOOTSTRAP_EMAILS` (vírgula, minúsculas): e-mails cujo primeiro login no pool interno, sem convite do painel, pode
+   * criar o cadastro com os grupos do token (o primeiro admin). Fora da lista, primeiro login sem convite → 403 (fail-closed).
+   */
+  staffBootstrapEmails: string[];
+  /**
    * `staffClientIds`: clients do pool interno aceitos (painel e app do operador). `COGNITO_STAFF_CLIENT_IDS` (vírgula) mais o
    * legado `COGNITO_STAFF_CLIENT_ID`; vazio = qualquer client do pool (só fora de produção faz sentido).
    */
@@ -61,14 +66,22 @@ const num = (name: string, fallback: number): number => {
   return Number.isFinite(v) && process.env[name] !== '' && process.env[name] !== undefined ? v : fallback;
 };
 
+/**
+ * `AUTH_MODE` e `NODE_ENV` normalizados como no `loadConfig` (vazio = padrão; inválido recusa), sem as checagens de
+ * produção: para quem decide antes do Nest subir (registro de rotas no `AuthModule.register`).
+ */
+export function authModeConfig(): Pick<AppConfig, 'authMode' | 'nodeEnv'> {
+  return { authMode: oneOf('AUTH_MODE', ['dev', 'cognito'] as const, 'dev'), nodeEnv: str('NODE_ENV', 'development')! };
+}
+
 export function loadConfig(): AppConfig {
   const cfg: AppConfig = {
-    nodeEnv: str('NODE_ENV', 'development')!,
+    ...authModeConfig(),
     port: num('PORT', 3000),
     databaseUrl: str('DATABASE_URL'),
     redisUrl: str('REDIS_URL', 'redis://localhost:6379')!,
-    authMode: oneOf('AUTH_MODE', ['dev', 'cognito'] as const, 'dev'),
     devJwtSecret: str('DEV_JWT_SECRET'),
+    staffBootstrapEmails: csv(str('STAFF_BOOTSTRAP_EMAILS')).map((e) => e.toLowerCase()),
     cognito: {
       region: str('COGNITO_REGION', str('AWS_REGION', 'sa-east-1'))!,
       customerPoolId: str('COGNITO_CUSTOMER_POOL_ID'),

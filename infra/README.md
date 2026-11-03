@@ -227,7 +227,7 @@ Os custos atuais estão nas seções do perfil `single` e do dev ECS enxuto, aba
 - API com `NODE_ENV=production`, `AUTH_MODE=cognito` e `STORAGE_MODE=s3`. IoT, fila, cerca e geocodificação rodam no modo local, e o pagamento `fake` está liberado. `ALLOW_TEST_HANDOVER=true` liga os atalhos do app de teste (entrega simulada `POST /reservations/{id}/test-handover` e encerramento fora do ponto verde `POST /rentals/{id}/test-end`; a API só aceita a flag em produção junto com o pagamento fake).
 - PostgreSQL 16 + PostGIS, numa imagem multi-arch construída na própria instância.
 - Redis com `noeviction` e AOF.
-- Mosquitto, só na rede interna.
+- Mosquitto, só na rede interna, sem anônimo: usuário e senha por serviço (`api`, `traccar-bridge`, `iot-sim`; senhas `MQTT_*_PASSWORD` geradas pelo `render-env.sh` no SSM) e ACL por papel (`deploy/single/mosquitto/acl`: só a API escreve delta/accepted/comandos; ponte e simulador só o lado do aparelho). O `mosquitto/start.sh` gera o arquivo de senhas com hash a cada start. O dev no PC (`docker-compose.yml`) segue anônimo, com a porta só em `127.0.0.1`.
 - Caddy, com HTTPS automático (Let's Encrypt) em `https://api-volti-dev.prestarecondominios.com.br`.
 
 **DNS** (zona `prestarecondominios.com.br`, de outro projeto)

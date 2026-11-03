@@ -113,7 +113,13 @@ export class Bridge {
 
   async start(): Promise<void> {
     if (!this.listening) {
-      this.mqtt.on('message', (topic: string, payload: Buffer) => {
+      this.mqtt.on('message', (topic: string, payload: Buffer, packet?: { retain?: boolean }) => {
+        // Auditoria run-4: mensagem RETIDA (entregue no SUBSCRIBE, de qualquer publicador antigo) nunca vira comando. O
+        // shadow do servidor não retém delta nem get/accepted; um retido é sobra ou injeção e destravaria a moto sozinho.
+        if (packet?.retain) {
+          this.log.warn({ msg: 'mqtt_retained_ignored', thingName: thingOf(topic) ?? undefined });
+          return;
+        }
         void this.onMqtt(topic, payload).catch((err: Error) => this.log.error({ msg: 'mqtt_message_failed', error: err.message }));
       });
       this.mqtt.on('connect', () => void this.onMqttConnect());

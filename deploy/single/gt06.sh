@@ -308,6 +308,8 @@ SQL
     }
     trap cleanup EXIT
     # Tráfego MQTT da moto (telemetria, delta e update do shadow); -W encerra o mosquitto_sub sozinho em último caso.
+    # Mosquitto sem anônimo (auditoria run-4): o mosquitto_sub entra como "observador" (só leitura) pelas opções padrão que o
+    # mosquitto/start.sh grava em /root/.config/mosquitto_sub dentro do container; nenhuma senha na linha de comando.
     dc exec -T mosquitto mosquitto_sub -W 540 -v -t "motos/$thing/telemetria" -t "\$aws/things/$thing/shadow/update/delta" \
       -t "\$aws/things/$thing/shadow/update" | stamp >"$dir/mqtt.log" &
     sub=$!

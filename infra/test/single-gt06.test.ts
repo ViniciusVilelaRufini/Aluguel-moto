@@ -82,7 +82,7 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     const b = service(c, 'traccar-bridge');
     expect(b).toContain('dockerfile: services/traccar-bridge/Dockerfile');
     expect(b).toContain('IOT_MODE: local');
-    expect(b).toContain('MQTT_URL: mqtt://mosquitto:1883');
+    expect(b).toContain('MQTT_URL: mqtt://traccar-bridge:${MQTT_BRIDGE_PASSWORD:?');
     expect(b).toContain('TRACCAR_URL: http://traccar:8082');
     expect(b).toContain('DATABASE_URL: postgresql://volti_bridge:${BRIDGE_DB_PASSWORD:?');
     expect(b).toContain('TRACCAR_EMAIL: bridge@volti.local');

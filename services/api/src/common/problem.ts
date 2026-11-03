@@ -82,6 +82,10 @@ const DEFAULT_TITLES: Record<string, string> = {
   'vehicle-locked-by-staff': 'Moto bloqueada pela equipe',
   'vehicle-not-at-depot': 'Moto fora do galpão',
   'deposit-in-use': 'Caução em uso',
+  // cadastro interno (auditoria run-4, onda 2)
+  'staff-not-registered': 'Usuário interno não cadastrado',
+  'staff-account-relink-required': 'Conta interna recriada',
+  'staff-directory-unavailable': 'Diretório de usuários indisponível',
   'internal-error': 'Erro interno',
 };
 

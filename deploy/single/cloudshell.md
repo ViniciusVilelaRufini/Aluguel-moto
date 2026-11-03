@@ -155,7 +155,34 @@ O painel fica em `https://<distribuição>.cloudfront.net`. O endereço está no
 aws ssm get-parameter --name /volti/dev/config/ADMIN_ORIGIN --query Parameter.Value --output text
 ```
 
-O primeiro usuário da equipe se cria no console do Cognito (pool `volti-dev-staff`): coloque-o no grupo `admin` e configure o TOTP no primeiro login.
+O primeiro usuário da equipe se cria no console do Cognito (pool `volti-dev-staff`): coloque-o no grupo `admin`, com o e-mail **verificado**, e configure o TOTP no primeiro login.
+
+**Antes do primeiro login dele**, libere o e-mail no bootstrap (auditoria run-4, onda 2). A API é fail-closed: um usuário do pool interno sem convite do painel (`POST /staff`) recebe `403 staff-not-registered` ("Usuário interno não cadastrado no painel."). Só os e-mails da lista abaixo podem criar o próprio cadastro no primeiro login, com os grupos do Cognito. Depois do primeiro login, a lista pode ficar como está ou ser apagada (o cadastro já existe). Os próximos usuários entram por convite no painel (Equipe → Convidar) com o mesmo e-mail criado no pool.
+
+```bash
+# e-mails em minúsculas, separados por vírgula SEM ESPAÇOS ('a@x.com,b@y.com'): o render-env.sh descarta o valor inteiro
+# se tiver espaço (aviso "valor com caracteres não permitidos") e o bootstrap fica desligado
+aws ssm put-parameter --name /volti/dev/config/STAFF_BOOTSTRAP_EMAILS --type String --value 'dono@exemplo.com' --tags Key=Projeto,Value=Volti
+# depois: rode o volti-dev-update (o .env da API é montado a partir do SSM)
+```
+
+Se o admin já entrou no painel antes desta mudança, o cadastro dele já existe e nada precisa ser feito.
+
+**Quem precisa de convite no painel (Equipe → Convidar) antes de entrar:** todo usuário do pool interno que **nunca** entrou
+na API — operadores de campo ainda sem primeiro login no app e o usuário cujo token vai em `/volti/dev/secrets/E2E_STAFF_TOKEN`
+(e2e do GT06), se ele nunca entrou. Sem convite com o mesmo e-mail, a API responde `403 staff-not-registered`. Quem já
+entrou alguma vez já tem cadastro.
+
+**Conta interna recriada no Cognito** (usuário apagado e criado de novo com o mesmo e-mail): a API responde
+`403 staff-account-relink-required` ("Peça ao suporte técnico para religar a conta."). O painel ainda não tem a ação de
+religar (proposta em `docs/decisoes.md`, 2026-11-03 onda 2). Religamento manual pelo Session Manager na instância — o
+próximo login liga o cadastro ao usuário novo pelo e-mail verificado, mantendo grupos, nome e histórico:
+
+```bash
+cd /opt/volti/src
+sudo docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env exec -T postgres \
+  psql -U volti -d volti -c "UPDATE \"StaffUser\" SET \"cognitoSub\" = NULL WHERE lower(email) = lower('pessoa@exemplo.com');"
+```
 
 **Clientes no dev:** não há auto-cadastro. O fluxo "criar conta" do app só funciona com usuários criados antes pelo `volti-dev-admin` (`create-customer`).
 
@@ -182,6 +209,32 @@ aws ssm send-command --instance-ids $IID --document-name volti-dev-update
 
 - Painel: `volti-dev-admin` com `action=publish-panel`.
 - Mudanças de infra: repita o passo 4 com os novos `-c`. O user data só roda no primeiro boot; para trocar a branch de uma instância já criada, edite `VOLTI_BRANCH` em `/etc/volti/instance.env` e rode o update.
+
+### Mosquitto com senha (auditoria run-4, onda 2) — exigido a partir do próximo update
+
+> **ATENÇÃO, DONO:** o próximo `volti-dev-update` precisa dos parâmetros `/volti/dev/secrets/MQTT_API_PASSWORD`,
+> `/volti/dev/secrets/MQTT_BRIDGE_PASSWORD` e `/volti/dev/secrets/MQTT_SIM_PASSWORD`. Sem eles o update **aborta** antes de
+> trocar qualquer container (`MQTT_*_PASSWORD ausente (rode render-env.sh)` ou falha do `render-env.sh`): os containers
+> antigos continuam rodando com o Mosquitto anônimo até um update completo.
+>
+> **Na transição** (o update que liga a senha), o Mosquitto e os clientes são recriados: há dezenas de segundos sem MQTT
+> (sem telemetria, comandos nem confirmações). Não rode esse update com um rastreador GT06 real em teste de rampa ou com
+> aluguel em andamento; rode com a moto de bancada parada.
+
+O Mosquitto da instância não aceita mais anônimo: a API, a ponte GT06 e o simulador entram com usuário e senha próprios, e a
+ACL (`deploy/single/mosquitto/acl`) limita cada um ao seu papel. O `render-env.sh` do próprio update **cria as três senhas
+sozinho** (como `DB_PASSWORD` e os outros segredos gerados). Só se a criação falhar (por exemplo, a role da instância sem
+`ssm:PutParameter` em `/volti/dev/secrets/*`), crie à mão no CloudShell e rode o update de novo:
+
+```bash
+for name in MQTT_API_PASSWORD MQTT_BRIDGE_PASSWORD MQTT_SIM_PASSWORD; do
+  aws ssm put-parameter --name /volti/dev/secrets/$name --type SecureString --key-id alias/volti-dev \
+    --value "$(openssl rand -hex 32)" --tags Key=Projeto,Value=Volti
+done
+```
+
+Só letras e números (o `openssl rand -hex` serve). Para trocar uma senha: apague o parâmetro e rode o update (o novo valor é
+gerado e o Mosquitto e o serviço sobem com ele).
 
 ## Simulador de rastreadores (motos sem rastreador real)
 

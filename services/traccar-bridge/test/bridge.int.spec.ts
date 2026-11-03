@@ -40,7 +40,7 @@ interface Ctx {
   registryCtl: { hang: boolean; calls: number };
 }
 
-interface StartOpts { iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; subscribeTimeoutMs?: number; serverStatus?: number }
+interface StartOpts { beforeStart?: (broker: FakeBroker) => Promise<void>; iotMode?: 'local' | 'aws'; version?: string | undefined; notifications?: boolean; publishTimeoutMs?: number; subscribeTimeoutMs?: number; serverStatus?: number }
 
 async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
   const o: StartOpts = typeof opts === 'string' ? { iotMode: opts } : opts;
@@ -55,6 +55,7 @@ async function start(opts: StartOpts | 'local' | 'aws' = {}): Promise<Ctx> {
     { id: 3, name: 'novo', uniqueId: NEW_IMEI, status: 'online' },
   ];
   const broker = new FakeBroker();
+  if (o.beforeStart) await o.beforeStart(broker);
   const api = broker.client('api'); // faz o papel da API e do shadow: vê tudo o que a ponte publica
   await api.subscribeAsync(['#']);
   const now = { value: T0 };
@@ -205,6 +206,25 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     setStatus(c, 'online');
     await waitFor(() => gets(c) === g0 + 2);
     await c.api.publishAsync(`$aws/things/${T}/shadow/get/accepted`, JSON.stringify({ state: { desired: { travada: false }, reported: { travada: true }, delta: { travada: false } }, version: 4 }));
+    await waitFor(() => c.traccar.commands.length === 1);
+    expect(c.traccar.commands).toEqual([{ deviceId: 1, type: 'engineResume' }]);
+  });
+
+  it('auditoria run-4: delta e get/accepted RETIDOS ({travada:false}) não geram engineResume, nem no subscribe inicial nem após resubscribe', async () => {
+    const retainDelta = async (b: FakeBroker) => {
+      const intruso = b.client('intruso');
+      await intruso.publishAsync(`$aws/things/${T}/shadow/update/delta`, JSON.stringify({ state: { travada: false }, version: 1, timestamp: 1 }), { qos: 1, retain: true });
+      await intruso.publishAsync(`$aws/things/${T}/shadow/get/accepted`, JSON.stringify({ state: { delta: { travada: false } }, version: 1 }), { qos: 1, retain: true });
+    };
+    c = await start({ beforeStart: retainDelta });
+    await waitFor(() => c.logs.filter((l) => l.msg === 'mqtt_retained_ignored').length >= 2);
+    c.mqtt.disconnect();
+    c.mqtt.reconnect();
+    await waitFor(() => c.logs.filter((l) => l.msg === 'mqtt_retained_ignored').length >= 4);
+    await sleep(50);
+    expect(c.traccar.commands).toEqual([]);
+    // Um delta ao vivo (não retido) continua valendo.
+    await sendDelta(c, { travada: false });
     await waitFor(() => c.traccar.commands.length === 1);
     expect(c.traccar.commands).toEqual([{ deviceId: 1, type: 'engineResume' }]);
   });
