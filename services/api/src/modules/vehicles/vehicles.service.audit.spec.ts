@@ -39,11 +39,12 @@ describe('Mudar status (revisão final item 6)', () => {
   it('livre → manutenção com trava da equipe → permitido (não consulta a trava)', async () => {
     const { service, prisma, commands } = setup();
     (prisma.$transaction as any).mockImplementation(async (fn: any) => fn(prisma));
-    prisma.vehicle.update.mockResolvedValue({ id: VEHICLE_ID, status: 'maintenance' } as any);
+    prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
+    prisma.vehicle.findUniqueOrThrow.mockResolvedValue({ id: VEHICLE_ID, status: 'maintenance' } as any);
     jest.spyOn(service as any, 'enrich').mockResolvedValue([{ id: VEHICLE_ID }]);
     commands.isLockedByStaff.mockResolvedValue(true);
     await service.setStatus(operacao, VEHICLE_ID, { status: 'maintenance', reason: 'revisão' } as any);
-    expect(prisma.vehicle.update).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'maintenance' } }));
+    expect(prisma.vehicle.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'maintenance' } }));
   });
 });
 
