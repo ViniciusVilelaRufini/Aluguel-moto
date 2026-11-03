@@ -414,6 +414,13 @@ export class SubscriptionsService {
     // Auditoria run-4: o webhook chama isto sempre que o status local é final (não só quando mudou). A renovação e o
     // `past_due` são aplicados uma vez por pagamento (`applyEffectsOnce`, marcador `Payment.effectsAppliedAt`).
     if (payment.status === 'paid' && !isFirst) {
+      // Revisão: renovação já aplicada por este pagamento nunca é "cobrança tardia", mesmo que a assinatura tenha sido
+      // fechada depois (cancelamento, expiração) — sem isso, um evento repetido estornaria uma renovação legítima.
+      const applied = await this.prisma.payment.findUnique({ where: { id: payment.id }, select: { effectsAppliedAt: true } });
+      if (applied?.effectsAppliedAt) {
+        await this.settleFailedCycle(sub, payment);
+        return;
+      }
       for (let attempt = 0; sub && !CLOSED.includes(sub.status) && attempt < 3; attempt++) {
         const current: Subscription = sub;
         const out = await applyEffectsOnce(this.prisma, payment.id, async (tx) => ((await this.renew(current, tx)) ? true : SKIP_EFFECT));

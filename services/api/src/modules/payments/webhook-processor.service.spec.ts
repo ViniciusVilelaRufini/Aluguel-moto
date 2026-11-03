@@ -242,3 +242,38 @@ describe('Auditoria run-4: efeitos reaplicados quando o status local já é fina
     expect((await db.subscription.findUnique({ where: { id: sub.id } })).status).toBe('active');
   });
 });
+
+describe('Auditoria run-4 (revisão): renovação já aplicada nunca é estornada como cobrança tardia', () => {
+  async function weekly() {
+    const ctx = await setup();
+    await new ProviderCustomersService(ctx.db as any, ctx.provider).addCard(CUSTOMER, 'tok_visa_4242', true);
+    await ctx.db.pricingPlan.create({ data: { code: 'weekly', name: 'Semanal', unit: 'week', unitPriceCents: 24900, active: true } });
+    const sub = await ctx.subscriptions.create(CUSTOMER, { planCode: 'weekly' });
+    return { ...ctx, sub };
+  }
+
+  it('renovação aplicada → assinatura cancelada → novo evento paid do mesmo pagamento não estorna', async () => {
+    const { db, provider, processor, sub } = await weekly();
+    const charged = await provider.charge({ providerCustomerId: 'x', providerCardId: (await db.paymentCard.findFirst({ where: { customerId: CUSTOMER } })).providerCardId, amountCents: 24900, description: 'x', idempotencyKey: 'ren', externalReference: `subscription:${sub.id}` });
+    await processor.process(event(charged.providerPaymentId, 'p1'));
+    const pay = await db.payment.findFirst({ where: { providerPaymentId: charged.providerPaymentId } });
+    expect(pay).toMatchObject({ status: 'paid', effectsAppliedAt: expect.any(Date) });
+    await db.subscription.update({ where: { id: sub.id }, data: { status: 'canceled', canceledAt: new Date() } });
+    const refund = jest.spyOn(provider, 'refund');
+    await processor.process(event(charged.providerPaymentId, 'p2'));
+    expect(refund).not.toHaveBeenCalled();
+    expect((await db.payment.findUnique({ where: { id: pay.id } })).status).toBe('paid');
+    expect(await db.paymentRefund.count()).toBe(0);
+  });
+
+  it('cobrança paga depois do fechamento (nunca aplicada) continua sendo estornada uma única vez', async () => {
+    const { db, provider, processor, sub } = await weekly();
+    await db.subscription.update({ where: { id: sub.id }, data: { status: 'canceled', canceledAt: new Date() } });
+    const charged = await provider.charge({ providerCustomerId: 'x', providerCardId: (await db.paymentCard.findFirst({ where: { customerId: CUSTOMER } })).providerCardId, amountCents: 24900, description: 'x', idempotencyKey: 'late', externalReference: `subscription:${sub.id}` });
+    const refund = jest.spyOn(provider, 'refund');
+    await processor.process(event(charged.providerPaymentId, 'l1'));
+    await processor.process(event(charged.providerPaymentId, 'l2'));
+    expect(refund).toHaveBeenCalledTimes(1);
+    expect((await db.payment.findFirst({ where: { providerPaymentId: charged.providerPaymentId } })).status).toBe('refunded');
+  });
+});
