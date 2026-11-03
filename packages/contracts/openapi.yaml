@@ -3949,7 +3949,10 @@ paths:
       tags: [support]
       operationId: updateClaim
       summary: Atualizar status do sinistro
-      description: Grava AuditLog.
+      description: |
+        Grava AuditLog. Transições: `submitted` → `under_review` | `approved` | `rejected`; `under_review` →
+        `approved` | `rejected`; `approved` → `paid` (`rejected` e `paid` são finais). Repetir o status atual só
+        atualiza a nota. Transição fora da tabela ou status alterado durante a atualização → `409`.
       security:
         - staffAuth: []
       x-required-groups: [admin, financeiro, suporte]
@@ -3970,6 +3973,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /support/conversations:
     get:
       tags: [support]

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { Prisma, type PaymentKind, type SupportMessage } from '@prisma/client';
+import { Prisma, type ClaimStatus, type PaymentKind, type SupportMessage } from '@prisma/client';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
@@ -19,6 +19,14 @@ import { staffFirstName } from '../../common/staff-display-name';
 
 /** Pagamentos que podem ser contestados num aluguel (auditoria run-4): os gerados pelo próprio aluguel. */
 const DISPUTABLE_PAYMENT_KINDS: PaymentKind[] = ['rental', 'deposit', 'fee'];
+/** Transições do sinistro (auditoria run-4): `rejected` e `paid` são finais; só `approved` vira `paid`. */
+const CLAIM_TRANSITIONS: Record<ClaimStatus, ClaimStatus[]> = {
+  submitted: ['under_review', 'approved', 'rejected'],
+  under_review: ['approved', 'rejected'],
+  approved: ['paid'],
+  rejected: [],
+  paid: [],
+};
 const byNewest = [{ createdAt: 'desc' as const }, { id: 'desc' as const }];
 /** Task 30 (item 31): validade das URLs dos anexos do chat para a equipe. */
 export const ATTACHMENT_URL_TTL_SECONDS = 15 * 60;
@@ -241,12 +249,18 @@ export class SupportService {
     return toClaim(c);
   }
 
+  /** Auditoria run-4: só transições da tabela `CLAIM_TRANSITIONS` (ou o mesmo status, para a nota), condicionais ao status lido. */
   async updateClaim(actor: Principal, id: string, dto: ClaimUpdateDto) {
-    if (!(await this.prisma.claim.findUnique({ where: { id }, select: { id: true } }))) throw notFound('Sinistro não encontrado.');
+    const c = await this.prisma.claim.findUnique({ where: { id }, select: { id: true, status: true } });
+    if (!c) throw notFound('Sinistro não encontrado.');
+    if (dto.status !== c.status && !CLAIM_TRANSITIONS[c.status].includes(dto.status)) {
+      throw conflict('conflict', 'Mudança de status do sinistro não permitida.');
+    }
     const updated = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.claim.update({ where: { id }, data: { status: dto.status, statusNote: dto.statusNote } });
-      await this.audit.record({ actor, action: 'claim.update', entityType: 'Claim', entityId: id, reason: dto.statusNote, metadata: { status: dto.status } }, tx as any);
-      return u;
+      const res = await tx.claim.updateMany({ where: { id, status: c.status }, data: { status: dto.status, statusNote: dto.statusNote } });
+      if (res.count !== 1) throw conflict('conflict', 'O sinistro mudou enquanto era atualizado. Atualize e tente de novo.');
+      await this.audit.record({ actor, action: 'claim.update', entityType: 'Claim', entityId: id, reason: dto.statusNote, metadata: { status: dto.status, from: c.status } }, tx as any);
+      return tx.claim.findUniqueOrThrow({ where: { id } });
     });
     return toClaim(updated);
   }

@@ -164,3 +164,42 @@ describe('auditoria run-4: contestação ligada ao pagamento do aluguel e estorn
     expect(payments.refund.mock.calls[0][3]).toBe(`dispute:${DISPUTE_ID}`);
   });
 });
+
+describe('auditoria run-4: transições do sinistro', () => {
+  const prisma = mockDeep<PrismaClient>();
+  const audit = { record: jest.fn() };
+  const service = new SupportService(prisma as any, audit as any, {} as any, {} as any, {} as any, {} as any);
+  const CLAIM_ID = '77777777-7777-4777-8777-777777777777';
+  const claim = (status: string) => ({ id: CLAIM_ID, customerId: 'c', rentalId: 'r', status, type: 'damage', description: 'x', occurredAt: new Date(), photoObjectKeys: [], createdAt: new Date(), updatedAt: new Date() });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    (prisma.$transaction as any).mockImplementation(async (arg: any) => (typeof arg === 'function' ? arg(prisma) : Promise.all(arg)));
+    prisma.claim.updateMany.mockResolvedValue({ count: 1 });
+  });
+
+  it.each([
+    ['submitted', 'under_review'], ['submitted', 'approved'], ['submitted', 'rejected'], ['under_review', 'approved'], ['under_review', 'rejected'], ['approved', 'paid'],
+  ])('%s → %s permitido, condicional ao status lido', async (from, to) => {
+    prisma.claim.findUnique.mockResolvedValue(claim(from) as any);
+    prisma.claim.findUniqueOrThrow.mockResolvedValue(claim(to) as any);
+    await service.updateClaim(actor, CLAIM_ID, { status: to as any });
+    expect((prisma.claim.updateMany.mock.calls[0][0] as any).where).toEqual({ id: CLAIM_ID, status: from });
+  });
+
+  it.each([
+    ['paid', 'submitted'], ['rejected', 'approved'], ['submitted', 'paid'], ['approved', 'rejected'], ['under_review', 'submitted'],
+  ])('%s → %s → 409 sem gravar', async (from, to) => {
+    prisma.claim.findUnique.mockResolvedValue(claim(from) as any);
+    await expect(service.updateClaim(actor, CLAIM_ID, { status: to as any })).rejects.toMatchObject({ status: 409 });
+    expect(prisma.claim.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('mesmo status só atualiza a nota; corrida (count 0) → 409', async () => {
+    prisma.claim.findUnique.mockResolvedValue(claim('under_review') as any);
+    prisma.claim.findUniqueOrThrow.mockResolvedValue(claim('under_review') as any);
+    await service.updateClaim(actor, CLAIM_ID, { status: 'under_review', statusNote: 'Aguardando perícia' });
+    prisma.claim.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.updateClaim(actor, CLAIM_ID, { status: 'approved' })).rejects.toMatchObject({ status: 409 });
+  });
+});

@@ -2597,7 +2597,9 @@ export interface paths {
         head?: never;
         /**
          * Atualizar status do sinistro
-         * @description Grava AuditLog.
+         * @description Grava AuditLog. Transições: `submitted` → `under_review` | `approved` | `rejected`; `under_review` →
+         *     `approved` | `rejected`; `approved` → `paid` (`rejected` e `paid` são finais). Repetir o status atual só
+         *     atualiza a nota. Transição fora da tabela ou status alterado durante a atualização → `409`.
          */
         patch: operations["updateClaim"];
         trace?: never;
@@ -10891,6 +10893,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listSupportConversations: {
