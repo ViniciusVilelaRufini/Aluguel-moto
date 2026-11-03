@@ -6242,7 +6242,7 @@ components:
       properties:
         code:
           type: string
-          description: '`unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `wallet`.'
+          description: '`unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.'
           examples: [time]
         description: { type: string, examples: ['10 min x R$ 0,79'] }
         quantity: { type: integer, minimum: 0, description: 'Minutos, horas ou dias cobrados.' }
