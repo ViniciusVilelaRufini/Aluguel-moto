@@ -2470,6 +2470,7 @@ export interface paths {
         /**
          * Reportar problema
          * @description Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria `accident` ou `theft` gera alerta `high`.
+         *     Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
          */
         post: operations["createIncident"];
         delete?: never;
@@ -2573,6 +2574,7 @@ export interface paths {
         /**
          * Abrir sinistro
          * @description Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo `InsuranceProvider`.
+         *     Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
          */
         post: operations["createClaim"];
         delete?: never;
@@ -2655,7 +2657,10 @@ export interface paths {
          */
         get: operations["listSupportMessages"];
         put?: never;
-        /** Enviar mensagem */
+        /**
+         * Enviar mensagem
+         * @description Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
+         */
         post: operations["sendSupportMessage"];
         delete?: never;
         options?: never;
@@ -10610,6 +10615,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getIncident: {
@@ -10838,6 +10844,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getClaim: {
@@ -11042,6 +11049,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     markSupportConversationRead: {

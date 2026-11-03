@@ -3714,7 +3714,9 @@ paths:
       tags: [support]
       operationId: createIncident
       summary: Reportar problema
-      description: Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria `accident` ou `theft` gera alerta `high`.
+      description: |
+        Cliente reporta problema na moto ou no aluguel; staff também pode abrir. Categoria `accident` ou `theft` gera alerta `high`.
+        Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
       security:
         - customerAuth: []
         - staffAuth: []
@@ -3733,6 +3735,7 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /support/incidents/{id}:
     get:
       tags: [support]
@@ -3907,7 +3910,9 @@ paths:
       tags: [support]
       operationId: createClaim
       summary: Abrir sinistro
-      description: Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo `InsuranceProvider`.
+      description: |
+        Vinculado a um aluguel com apólice. O sinistro é encaminhado à seguradora parceira pelo `InsuranceProvider`.
+        Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
       security:
         - customerAuth: []
       requestBody:
@@ -3925,6 +3930,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /support/claims/{id}:
     get:
       tags: [support]
@@ -4077,6 +4083,7 @@ paths:
       tags: [support]
       operationId: sendSupportMessage
       summary: Enviar mensagem
+      description: Chave de anexo de cliente fora de `support/<id do usuário>/<arquivo>` (o formato do `POST /support/uploads`) → `422` `validation-error`.
       security:
         - customerAuth: []
         - staffAuth: []
@@ -4099,6 +4106,7 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/Unprocessable' }
   /support/conversations/{id}/read:
     post:
       tags: [support]
