@@ -33,8 +33,11 @@ function setup(opts: { mode?: 'relay_only' | 'speed_control'; lock?: string; sta
   prisma.vehicleCommand.findFirst.mockResolvedValue((opts.latestLock === undefined ? { id: 'cmd-1', status: 'failed', statusReason: 'did_not_stop' } : opts.latestLock) as any);
   const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd-1', status: opts.lock ?? 'in_progress' }), isLockedByStaff: jest.fn().mockResolvedValue(false) };
   const events = { emit: jest.fn() };
-  const svc = new RentalsService(prisma as any, commands as any, {} as any, events as any, {} as any, {} as any, {} as any);
-  return { prisma, commands, svc, rental, vehicle, events };
+  const alerts = { create: jest.fn().mockResolvedValue({ id: 'alert-1' }) };
+  prisma.vehicleCommand.count.mockResolvedValue(1);
+  prisma.rentalEvent.findFirst.mockResolvedValue(null);
+  const svc = new RentalsService(prisma as any, commands as any, alerts as any, events as any, {} as any, {} as any, {} as any);
+  return { prisma, commands, svc, rental, vehicle, events, alerts };
 }
 
 const failed = { commandId: 'cmd-1', vehicleId: VEHICLE_ID, type: 'lock', status: 'failed', reason: 'did_not_stop', payload: { rentalId: RENTAL_ID, purpose: 'rental_pause' } };
@@ -81,12 +84,57 @@ describe('Auditoria run-4: pausa com trava só relé', () => {
 
   it('confirmed tardio da trava da pausa com o aluguel já active (relay_only, último lock) → volta a paused, sem destravar', async () => {
     const { svc, rental, vehicle, commands, prisma } = setup({ mode: 'relay_only', status: 'active', latestLock: { id: 'cmd-1', status: 'confirmed' } });
+    // O aluguel foi revertido por ESTE comando (evento resumed com o commandId).
+    prisma.rentalEvent.findFirst.mockResolvedValue({ id: 'ev-1' } as any);
     await svc.onPauseLockChanged({ ...failed, status: 'confirmed', reason: undefined } as any);
     expect(rental.status).toBe('paused');
     expect(rental.pausedAt).toBeInstanceOf(Date);
     expect(vehicle.status).toBe('paused');
     expect(commands.dispatch).not.toHaveBeenCalled();
     expect(prisma.rentalEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'paused', data: expect.objectContaining({ commandId: 'cmd-1' }) }) });
+  });
+
+  it('pausa normal com a moto já travada: confirmed imediato chega antes de o pause() gravar → 200 e um único evento paused', async () => {
+    const { svc, rental, prisma } = setup({ mode: 'relay_only', lock: 'confirmed', latestLock: { id: 'cmd-1', status: 'confirmed' } });
+    // O listener roda com o aluguel ainda active (nenhum resumed deste comando): não pode pausar.
+    await svc.onPauseLockChanged({ ...failed, status: 'confirmed', reason: undefined } as any);
+    expect(rental.status).toBe('active');
+    const out: any = await svc.pause(user, RENTAL_ID);
+    expect(out.status).toBe('paused');
+    const pausedEvents = prisma.rentalEvent.create.mock.calls.filter((c: any) => c[0].data.type === 'paused');
+    expect(pausedEvents).toHaveLength(1);
+    expect((prisma.rentalEvent.findFirst.mock.calls[0][0] as any).where).toMatchObject({ rentalId: RENTAL_ID, type: 'resumed' });
+  });
+
+  it('resume entre a confirmação e o listener → não repausa (a moto foi destravada)', async () => {
+    const { svc, rental } = setup({ mode: 'relay_only', status: 'active', latestLock: { id: 'cmd-1', status: 'confirmed' } });
+    await svc.onPauseLockChanged({ ...failed, status: 'confirmed', reason: undefined } as any);
+    expect(rental.status).toBe('active');
+  });
+
+  it('varredura: failed sem motivo (cancel/unlock da equipe/conflito) → não reenvia', async () => {
+    const { svc, prisma, commands } = setup({ mode: 'relay_only', status: 'paused', latestLock: { id: 'cmd-1', status: 'failed', statusReason: null } });
+    prisma.rental.findMany.mockResolvedValue([{ id: RENTAL_ID, vehicleId: VEHICLE_ID, pausedAt: new Date() }] as any);
+    await svc.retryPauseLocks();
+    expect(commands.dispatch).not.toHaveBeenCalled();
+  });
+
+  it('varredura: 10 tentativas desde a pausa → para de reenviar e abre um alerta command_failed uma vez só', async () => {
+    const { svc, prisma, commands, alerts } = setup({ mode: 'relay_only', status: 'paused', latestLock: { id: 'cmd-1', status: 'failed', statusReason: 'timeout' } });
+    const pausedAt = new Date(Date.now() - 600_000);
+    prisma.rental.findMany.mockResolvedValue([{ id: RENTAL_ID, vehicleId: VEHICLE_ID, pausedAt }] as any);
+    prisma.vehicleCommand.count.mockResolvedValue(10);
+    await svc.retryPauseLocks();
+    expect(commands.dispatch).not.toHaveBeenCalled();
+    expect((prisma.vehicleCommand.count.mock.calls[0][0] as any).where).toMatchObject({ vehicleId: VEHICLE_ID, type: 'lock', createdAt: { gte: pausedAt } });
+    expect(alerts.create).toHaveBeenCalledWith(expect.objectContaining({ type: 'command_failed', priority: 'high', vehicleId: VEHICLE_ID, rentalId: RENTAL_ID }), expect.anything());
+    expect(prisma.rentalEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'alert', data: expect.objectContaining({ reason: 'pause_lock_retry_exhausted' }) }) });
+    // Já alertado (evento registrado) → não alerta de novo.
+    alerts.create.mockClear();
+    prisma.rentalEvent.findFirst.mockResolvedValue({ id: 'ev-alert' } as any);
+    await svc.retryPauseLocks();
+    expect(alerts.create).not.toHaveBeenCalled();
+    expect(commands.dispatch).not.toHaveBeenCalled();
   });
 
   it('corrida: a trava já terminou did_not_stop quando a pausa foi gravada → volta a active na hora', async () => {
@@ -106,7 +154,7 @@ describe('Auditoria run-4: pausa com trava só relé', () => {
 
   it('varredura: pausado em relay_only com a última trava de pausa failed por timeout → pede a trava de novo (sistema)', async () => {
     const { svc, prisma, commands } = setup({ mode: 'relay_only', status: 'paused', latestLock: { id: 'cmd-1', status: 'failed', statusReason: 'timeout' } });
-    prisma.rental.findMany.mockResolvedValue([{ id: RENTAL_ID, vehicleId: VEHICLE_ID }] as any);
+    prisma.rental.findMany.mockResolvedValue([{ id: RENTAL_ID, vehicleId: VEHICLE_ID, pausedAt: new Date() }] as any);
     await svc.retryPauseLocks();
     expect((prisma.rental.findMany.mock.calls[0][0] as any).where).toMatchObject({ status: 'paused', vehicle: { tracker: { controlMode: 'relay_only' } } });
     expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ vehicleId: VEHICLE_ID, type: 'lock', actor: expect.objectContaining({ system: true }), context: { rentalId: RENTAL_ID, purpose: 'rental_pause' } }));

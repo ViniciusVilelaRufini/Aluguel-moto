@@ -145,6 +145,7 @@ describe('Auditoria run-4: trava do fim falhou (relay_only) → aluguel volta a 
   it('confirmed tardio da trava do fim com o aluguel já active → passa a paused (sem destravar nem encerrar)', async () => {
     const { service, rental, vehicle, prisma, commands, billing, emitted } = setup({ mode: 'relay_only', status: 'active', latestLock: { id: 'cmd-1', status: 'confirmed' } });
     rental.endRequestedAt = null;
+    prisma.rentalEvent.findFirst.mockResolvedValue({ id: 'ev-1' } as any);
     await service.onCommandChanged({ ...failed(), status: 'confirmed', reason: undefined } as any);
     expect(rental.status).toBe('paused');
     expect(rental.pausedAt).toEqual(NOW);
@@ -153,6 +154,16 @@ describe('Auditoria run-4: trava do fim falhou (relay_only) → aluguel volta a 
     expect(billing.settle).not.toHaveBeenCalled();
     expect(prisma.rentalEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'paused', actorType: 'system', data: expect.objectContaining({ commandId: 'cmd-1' }) }) });
     expect(emitted.find((e) => e.name === EV.RENTAL_CHANGED)?.payload).toMatchObject({ status: 'paused' });
+  });
+
+  it('confirmed de rental_end com aluguel active que não foi revertido por este comando → nada muda', async () => {
+    const { service, rental, prisma } = setup({ mode: 'relay_only', status: 'active', latestLock: { id: 'cmd-1', status: 'confirmed' } });
+    prisma.rentalEvent.findFirst.mockResolvedValue(null);
+    await service.onCommandChanged({ ...failed(), status: 'confirmed', reason: undefined } as any);
+    expect(rental.status).toBe('active');
+    const where = (prisma.rentalEvent.findFirst.mock.calls[0][0] as any).where;
+    expect(where).toMatchObject({ rentalId: RENTAL_ID, type: 'resumed' });
+    expect(JSON.stringify(where)).toContain('cmd-1');
   });
 
   it('confirmed tardio com aluguel active em speed_control → nada muda', async () => {

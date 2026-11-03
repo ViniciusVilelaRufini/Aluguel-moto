@@ -29,15 +29,30 @@ export function latestRentalLock(prisma: Pick<PrismaService, 'vehicleCommand'>, 
  */
 export const LOCK_NOT_CUT_REASON = 'did_not_stop';
 
+/** `data.reason` do evento `resumed` gravado quando a trava de fim/pausa terminou `did_not_stop` e o aluguel voltou a `active`. */
+export const REVERT_REASON = { rental_end: 'end_lock_failed', rental_pause: 'pause_lock_failed' } as const;
+
 /**
  * Defesa (auditoria run-4): a trava de fim/pausa confirmou tarde com o aluguel já `active` (voltou depois de um
  * `did_not_stop`) — a moto está travada; o aluguel passa a `paused` (cobra pausa) e o cliente retoma pelo app. Não destrava
- * nem encerra sozinho. Só `relay_only` e só o último lock do propósito. Devolve `true` se pausou.
+ * nem encerra sozinho. Só `relay_only`, só o último lock do propósito e só se este comando reverteu o aluguel.
  */
 export async function pauseAfterLateLock(prisma: Db, rental: { id: string; vehicleId: string }, commandId: string, purpose: 'rental_end' | 'rental_pause'): Promise<{ vehicleMoved: boolean } | null> {
   if ((await controlModeOf(prisma, rental.vehicleId)) !== 'relay_only') return null;
   const latest = await latestRentalLock(prisma, rental.id, rental.vehicleId, purpose);
   if (!latest || latest.id !== commandId || latest.status !== 'confirmed') return null;
+  // Só o aluguel revertido por ESTE comando (evento `resumed` com o `commandId`). No caminho normal da pausa com a moto já
+  // travada o gateway confirma na hora e o `command.changed` chega antes de o `pause()` gravar `paused`; e um `resume` do
+  // cliente entre a confirmação e este listener destrava a moto — nos dois casos não há esse evento e nada muda.
+  const reverted = await prisma.rentalEvent.findFirst({
+    where: {
+      rentalId: rental.id,
+      type: 'resumed',
+      AND: [{ data: { path: ['commandId'], equals: commandId } }, { data: { path: ['reason'], equals: REVERT_REASON[purpose] } }],
+    },
+    select: { id: true },
+  });
+  if (!reverted) return null;
   const moved = await prisma.rental.updateMany({ where: { id: rental.id, status: 'active' }, data: { status: 'paused', pausedAt: new Date() } });
   if (moved.count !== 1) return null;
   const vehicle = await prisma.vehicle.updateMany({ where: { id: rental.vehicleId, status: 'rented' }, data: { status: 'paused' } });
