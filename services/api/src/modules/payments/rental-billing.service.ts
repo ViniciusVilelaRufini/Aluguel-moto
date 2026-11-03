@@ -17,6 +17,7 @@ import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError, type ProviderPayment } from './provider/payment-provider';
 import { ReceiptService } from './receipts/receipt.service';
 import { hasOpenDebt, rentalSettlementRetrying } from './open-debt';
+import { refundBase } from './refund-base';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const DEPOSIT_CENTS = 5000;
@@ -1096,6 +1097,8 @@ export class RentalBillingService implements RentalBillingPort {
   private async applyToLocal(local: Payment, pp: ProviderPayment): Promise<{ payment: Payment; changed: boolean }> {
     // Pix que expirou/foi cancelado no gateway antes de ser pago: localmente é pending → failed.
     if (pp.status === 'canceled' && local.status === 'pending') pp = { ...pp, status: 'failed', failureReason: pp.failureReason ?? 'pix_expired' };
+    // Auditoria run-4: estorno com parte da carteira ou feito pelo `PaymentsService.refund` — o gateway só conhece a parte dele.
+    if ((pp.status === 'refunded' || pp.status === 'partially_refunded') && (await this.refundsTrackedLocally(local))) return this.applyRefundState(local, pp);
     if (local.status === pp.status) {
       // Auditoria run-4: status já final aqui (transição gravada, efeito perdido numa queda): reaplica o efeito idempotente.
       await this.reapplyDepositEffects(local);
@@ -1119,6 +1122,32 @@ export class RentalBillingService implements RentalBillingPort {
     this.logger.warn({ msg: 'payment_transition_ignored', paymentId: local.id, from: local.status, to: pp.status });
     await this.reapplyDepositEffects(local);
     return { payment: local, changed: false };
+  }
+
+  private async refundsTrackedLocally(local: Payment): Promise<boolean> {
+    if (local.walletCents > 0 || local.method === 'wallet') return true;
+    return !!(await this.prisma.paymentRefund.findFirst({ where: { paymentId: local.id }, select: { id: true } }));
+  }
+
+  /**
+   * Estado de estorno vindo do gateway num pagamento com parte da carteira (ou com estornos registrados aqui): o
+   * `refundedCents` do gateway é só a parte dele. Total = máx(local, gateway + estornos da carteira já lançados) — nunca
+   * diminui (um webhook atrasado não desfaz um estorno da carteira nem um pedido reservado) — limitado ao teto
+   * (`refundBase`); `refunded` só ao atingir o teto. Igual ao local → nada muda (sem corrida com o estorno em andamento).
+   */
+  private async applyRefundState(local: Payment, pp: ProviderPayment): Promise<{ payment: Payment; changed: boolean }> {
+    const { base } = await refundBase(this.prisma, local);
+    const wallet = await this.prisma.walletEntry.aggregate({ where: { paymentId: local.id, type: 'refund' }, _sum: { amountCents: true } });
+    const walletRefunded = Math.max(0, wallet?._sum?.amountCents ?? 0);
+    const refundedCents = Math.min(base, Math.max(local.refundedCents, (pp.refundedCents ?? 0) + walletRefunded));
+    const status = refundedCents >= base ? 'refunded' : 'partially_refunded';
+    if (status === local.status && refundedCents === local.refundedCents) return { payment: local, changed: false };
+    if (!canTransition(local.status, status)) {
+      this.logger.warn({ msg: 'payment_transition_ignored', paymentId: local.id, from: local.status, to: status });
+      return { payment: local, changed: false };
+    }
+    const updated = await this.state.transition(local.id, status, { refundedCents, providerPaymentId: local.providerPaymentId ?? pp.providerPaymentId });
+    return { payment: updated, changed: true };
   }
 
   /** Efeito do Payment da caução (`onDepositPaymentChanged`, idempotente por update condicional) quando o status local é final. */
