@@ -947,6 +947,11 @@ export class RentalBillingService implements RentalBillingPort {
     return hasOpenDebt(this.prisma, customerId);
   }
 
+  /** Auditoria run-4: CPF na lista de restrição (gate comum de elegibilidade para reservar e alugar). */
+  async isCpfRestricted(cpf: string): Promise<boolean> {
+    return !!(await this.prisma.restrictionEntry.findUnique({ where: { cpf }, select: { id: true } }));
+  }
+
   /** Liquidações `pending` (erro do gateway ou cobrança recusada) são retomadas pelo plano gravado, sem cobrar duas vezes. */
   @Interval('payments-settlement-retry', 5 * 60_000)
   @ExclusiveJob('payments-settlement-retry', jobLockTtl(5 * 60_000))

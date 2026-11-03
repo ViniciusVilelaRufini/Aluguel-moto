@@ -26,3 +26,9 @@ export async function walletCentsAvailable(tx: Prisma.TransactionClient, custome
   const agg = await tx.walletEntry.aggregate({ where: { customerId }, _sum: { amountCents: true } });
   return Math.max(0, agg?._sum?.amountCents ?? 0);
 }
+
+/** Auditoria run-4 onda 2: saldo de minutos de pacote que pode abater um fechamento (nunca negativo; tolerante como acima). */
+export async function walletMinutesAvailable(tx: Prisma.TransactionClient, customerId: string): Promise<number> {
+  const agg = await tx.walletEntry.aggregate({ where: { customerId }, _sum: { minutes: true } });
+  return Math.max(0, agg?._sum?.minutes ?? 0);
+}

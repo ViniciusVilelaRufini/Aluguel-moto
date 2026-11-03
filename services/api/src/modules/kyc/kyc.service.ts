@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { cpfHash } from '../../common/fraud-hash';
 import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
-import type { Customer } from '@prisma/client';
+import { Prisma, type Customer } from '@prisma/client';
 import { ageOn } from '../../adapters/kyc/mock-kyc-provider';
 import { conflict, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
@@ -59,42 +59,63 @@ export class KycService {
     const keys = [dto.documentFrontObjectKey, dto.selfieObjectKey, dto.documentBackObjectKey].filter((k): k is string => !!k);
     if (keys.some((k) => !k.startsWith(prefix))) throw unprocessable('validation-error', 'Arquivos de verificação inválidos.');
     if (ageOn(dto.birthDate) < 18) throw unprocessable('kyc-underage', 'É preciso ter 18 anos ou mais para usar a Volti.');
-    if (await this.prisma.restrictionEntry.findUnique({ where: { cpf: dto.cpf } })) {
+    if (await this.isRestricted(dto.cpf)) {
       throw unprocessable('customer-blocked', 'Não foi possível concluir o cadastro. Fale com o suporte.');
     }
     const other = await this.prisma.customer.findFirst({ where: { cpf: dto.cpf, id: { not: customerId } }, select: { id: true } });
-    if (other) throw conflict('conflict', 'Este CPF já está cadastrado em outra conta.');
+    const cpfTaken = () => conflict('conflict', 'Este CPF já está cadastrado em outra conta.');
+    if (other) throw cpfTaken();
 
-    const updated = await this.prisma.customer.update({
-      where: { id: customerId },
-      data: {
-        name: dto.fullName,
-        cpf: dto.cpf,
-        // Fix round 1 (I4): HMAC do CPF para prevenção a fraude (retido após a exclusão LGPD).
-        cpfHash: cpfHash(dto.cpf, (this.v2 ?? loadV2Config()).fraudHashSecret),
-        birthDate: new Date(`${dto.birthDate}T00:00:00Z`),
-        kycStatus: 'pending',
-        kycReason: null,
-        kycSubmittedAt: new Date(),
-        kycReviewedAt: null,
-        kycDocumentType: dto.documentType,
-        kycDocumentFrontKey: dto.documentFrontObjectKey,
-        kycDocumentBackKey: dto.documentBackObjectKey ?? null,
-        kycSelfieKey: dto.selfieObjectKey,
-      },
-    });
+    // Auditoria run-4: envio condicional ao estado (dois envios concorrentes → um só vale) e com `kycSubmittedAt` novo,
+    // que amarra a decisão assíncrona do provedor a este envio.
+    const submittedAt = new Date();
+    let res: Prisma.BatchPayload;
+    try {
+      res = await this.prisma.customer.updateMany({
+        where: { id: customerId, kycStatus: { in: ['not_started', 'rejected'] } },
+        data: {
+          name: dto.fullName,
+          cpf: dto.cpf,
+          // Fix round 1 (I4): HMAC do CPF para prevenção a fraude (retido após a exclusão LGPD).
+          cpfHash: cpfHash(dto.cpf, (this.v2 ?? loadV2Config()).fraudHashSecret),
+          birthDate: new Date(`${dto.birthDate}T00:00:00Z`),
+          kycStatus: 'pending',
+          kycReason: null,
+          kycSubmittedAt: submittedAt,
+          kycReviewedAt: null,
+          kycDocumentType: dto.documentType,
+          kycDocumentFrontKey: dto.documentFrontObjectKey,
+          kycDocumentBackKey: dto.documentBackObjectKey ?? null,
+          kycSelfieKey: dto.selfieObjectKey,
+        },
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw cpfTaken();
+      throw err;
+    }
+    if (res.count !== 1) throw conflict('conflict', 'Sua verificação já foi enviada.');
+    const updated = await this.prisma.customer.findUniqueOrThrow({ where: { id: customerId } });
     // Decisão assíncrona do provedor.
-    setImmediate(() => void this.decide(customerId, dto));
+    setImmediate(() => void this.decide(customerId, dto, submittedAt));
     return toKycStatus(updated);
   }
 
-  private async decide(customerId: string, dto: KycSubmitDto): Promise<void> {
+  private async decide(customerId: string, dto: KycSubmitDto, submittedAt: Date): Promise<void> {
     try {
-      const result = await this.provider.verify({ customerId, ...dto });
-      await this.prisma.customer.updateMany({
-        where: { id: customerId, kycStatus: 'pending' },
+      let result = await this.provider.verify({ customerId, ...dto });
+      // Auditoria run-4: CPF incluído na lista de restrição durante a análise não é aprovado.
+      if (result.decision === 'approved' && (await this.isRestricted(dto.cpf))) {
+        result = { decision: 'rejected', reason: 'Não foi possível concluir o cadastro. Fale com o suporte.' };
+      }
+      // Só o envio que pediu a decisão (mesmo `kycSubmittedAt`, ainda `pending`) recebe o resultado.
+      const res = await this.prisma.customer.updateMany({
+        where: { id: customerId, kycStatus: 'pending', kycSubmittedAt: submittedAt },
         data: { kycStatus: result.decision, kycReason: result.reason ?? null, kycReviewedAt: new Date() },
       });
+      if (res.count !== 1) {
+        this.logger.log({ msg: 'kyc_decision_stale', customerId });
+        return;
+      }
       await this.push.sendToOwner(customerId, {
         title: result.decision === 'approved' ? 'Cadastro aprovado' : 'Cadastro não aprovado',
         body: result.decision === 'approved' ? 'Tudo certo. Você já pode alugar.' : 'Toque para ver o motivo.',
@@ -107,20 +128,38 @@ export class KycService {
     }
   }
 
+  private async isRestricted(cpf: string): Promise<boolean> {
+    return !!(await this.prisma.restrictionEntry.findUnique({ where: { cpf }, select: { id: true } }));
+  }
+
   async status(customerId: string) {
     return toKycStatus(await this.customer(customerId));
   }
 
+  /**
+   * Revisão manual. Auditoria run-4: aprovar só quem enviou (`pending`, ou `rejected` reavaliado) com CPF, nascimento e
+   * documentos, 18+ e CPF fora da lista de restrição; rejeitar vale para `pending` (e revoga um `approved`). A gravação
+   * é condicional ao estado lido (`kycStatus` e `kycSubmittedAt`): um envio ou decisão concorrente → 409.
+   */
   async review(actor: Principal, customerId: string, dto: KycReviewDto) {
-    await this.customer(customerId);
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.customer.update({
-        where: { id: customerId },
+    const c = await this.customer(customerId);
+    const from: Customer['kycStatus'][] = dto.decision === 'approved' ? ['pending', 'rejected'] : ['pending', 'approved'];
+    if (!from.includes(c.kycStatus)) throw conflict('conflict', 'A verificação não está em um estado que permita esta decisão.');
+    if (dto.decision === 'approved') {
+      if (!c.cpf || !c.birthDate || !c.kycDocumentFrontKey || !c.kycSelfieKey) {
+        throw unprocessable('validation-error', 'Faltam CPF, data de nascimento ou documentos para aprovar.');
+      }
+      if (ageOn(c.birthDate.toISOString().slice(0, 10)) < 18) throw unprocessable('kyc-underage', 'É preciso ter 18 anos ou mais para usar a Volti.');
+      if (await this.isRestricted(c.cpf)) throw unprocessable('customer-blocked', 'O CPF desta conta está na lista de restrição.');
+    }
+    await this.prisma.$transaction(async (tx) => {
+      const res = await tx.customer.updateMany({
+        where: { id: customerId, kycStatus: c.kycStatus, kycSubmittedAt: c.kycSubmittedAt },
         data: { kycStatus: dto.decision, kycReason: dto.decision === 'rejected' ? dto.reason : null, kycReviewedAt: new Date() },
       });
+      if (res.count !== 1) throw conflict('conflict', 'A verificação mudou enquanto era revisada. Atualize e tente de novo.');
       await this.audit.record({ actor, action: 'customer.kyc_review', entityType: 'Customer', entityId: customerId, reason: dto.reason, metadata: { decision: dto.decision } }, tx as any);
-      return u;
     });
-    return toKycStatus(updated);
+    return toKycStatus(await this.prisma.customer.findUniqueOrThrow({ where: { id: customerId } }));
   }
 }

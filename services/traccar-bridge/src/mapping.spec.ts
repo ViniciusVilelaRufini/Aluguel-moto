@@ -82,11 +82,12 @@ describe('reconexão: travada nunca vem de memória velha (decisão 4)', () => {
     expect(currentBlocked(locked)).toBe(true);
   });
 
-  it('posição sem atributo blocked após reconectar não reaproveita o bit antigo: telemetria retida (held awaiting_status)', () => {
+  it('A4-6: posição sem atributo blocked após reconectar não reaproveita o bit antigo: telemetria sai com travada:false, sem âncora', () => {
     const re = markReconnected(locked);
     const r = AP(pos({ fixTime: '2026-10-27T12:01:00.000Z', speed: 0, attributes: {} }), re);
-    expect(r.telemetry).toBeNull();
-    expect(r.held).toBe('awaiting_status');
+    expect(r.telemetry).toMatchObject({ travada: false });
+    expect(r.held).toBeUndefined();
+    expect(r.memory.lockAnchor).toBeUndefined();
     expect(currentBlocked(r.memory)).toBeUndefined();
     expect(r.memory.awaitingStatus).toBe(true);
   });
@@ -138,14 +139,21 @@ describe('retenção (held) e relógio do rastreador', () => {
   const future = new Date(NOW + 3_600_000).toISOString();
   const stopped = (over: Partial<TraccarPosition> = {}) => pos({ speed: 0, ...over });
 
-  it('sem status de corte conhecido: telemetry null, held awaiting_status, mas a memória (last, ignição, bateria, sinal) atualiza; libera quando o status chega', () => {
+  it('A4-6: bit de corte nunca visto (sem comando pendente): telemetria sai com travada:false; o status depois vale', () => {
     const r = AP(pos({ attributes: { ignition: true, rssi: 4, power: 72 } }), {});
-    expect(r).toMatchObject({ telemetry: null, held: 'awaiting_status', invalid: false });
-    expect(r.memory).toMatchObject({ ignition: true, signal: 5, batteryPct: 50 });
+    expect(r.held).toBeUndefined();
+    expect(r.invalid).toBe(false);
+    expect(r.telemetry).toMatchObject({ travada: false, bateria_pct: 50, ignicao: true, sinal: 5 });
+    expect(currentBlocked(r.memory)).toBeUndefined();
+    const ok = AP(pos({ fixTime: '2026-10-27T12:00:05.000Z', attributes: { blocked: true } }), r.memory);
+    expect(ok.telemetry).toMatchObject({ travada: true });
+  });
+
+  it('sem bateria conhecida: telemetry null, held awaiting_battery, mas a memória (last, ignição, sinal) atualiza', () => {
+    const r = AP(pos({ attributes: { ignition: true, rssi: 4, blocked: false } }), {});
+    expect(r).toMatchObject({ telemetry: null, held: 'awaiting_battery', invalid: false });
+    expect(r.memory).toMatchObject({ ignition: true, signal: 5 });
     expect(r.memory.last).toMatchObject({ speedKmh: 20 });
-    const ok = AP(pos({ fixTime: '2026-10-27T12:00:05.000Z', attributes: { blocked: false } }), r.memory);
-    expect(ok.held).toBeUndefined();
-    expect(ok.telemetry).toMatchObject({ travada: false, bateria_pct: 50, ignicao: true, sinal: 5 });
   });
 
   it('sem bateria conhecida: telemetry null, held awaiting_battery; libera quando a tensão chega', () => {
@@ -329,9 +337,18 @@ describe('A4-1a / P4: bit de corte velho (> 90 s) sem comando pendente', () => {
     expect(r.telemetry).toMatchObject({ travada: true });
   });
 
-  it('depois de reconectar (bit desconhecido, sem comando) a retenção continua', () => {
+  it('A4-6: depois de reconectar (bit desconhecido, sem comando pendente) a telemetria sai com travada:false', () => {
     const mem = markReconnected(AP(pos({ outdated: true, serverTime: at(NOW), attributes: { blocked: true, power: 72 } }), {}, NOW).memory);
     const r = AP(pos({ fixTime: at(NOW + 500), serverTime: at(NOW + 1_000), speed: 0, attributes: { power: 72 } }), mem, NOW + 1_000);
+    expect(r.held).toBeUndefined();
+    expect(r.telemetry).toMatchObject({ travada: false });
+  });
+
+  it('A4-6: reconexão com engineResume pendente → retida (um false confirmaria o unlock antes do status)', () => {
+    const base = AP(pos({ outdated: true, serverTime: at(NOW), attributes: { blocked: true, power: 72 } }), {}, NOW).memory;
+    const mem = markReconnected(markCommandSent(base, NOW + 500, 'resume'));
+    const r = AP(pos({ fixTime: at(NOW + 800), serverTime: at(NOW + 1_000), speed: 0, attributes: { power: 72 } }), mem, NOW + 1_000);
+    expect(r.telemetry).toBeNull();
     expect(r.held).toBe('awaiting_status');
   });
 });

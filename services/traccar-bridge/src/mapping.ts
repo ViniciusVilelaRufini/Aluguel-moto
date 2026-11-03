@@ -111,9 +111,9 @@ export type HeldReason = 'awaiting_status' | 'awaiting_battery';
  *   frescura usa min(fixTime, now) (`last.fixTime`).
  * - Posição mais nova e inutilizável (inválida, outdated, relógio ou velocidade fora do contrato) limpa `last`: velocidade
  *   desconhecida = em movimento (`cutRefusal` → no_position/stale).
- * - Retenção: sem bit de corte conhecido (após reconectar ou com `engineResume` pendente — `telemetryBlocked`) ou sem
- *   bateria conhecida, não sai
- *   telemetria (`telemetry: null`, `held`) — um `travada: false` ou `bateria_pct: 0` por falta de dado enganaria a API.
+ * - Retenção: com `engineResume` pendente sem status novo (`telemetryBlocked`) ou sem bateria conhecida, não sai telemetria
+ *   (`telemetry: null`, `held`) — um `travada: false` antes do status ou `bateria_pct: 0` por falta de dado enganaria a API.
+ *   Bit desconhecido sem comando pendente (reconexão, nunca visto) sai com `travada: false` (A4-6).
  *   A memória (last, ignição, sinal, bateria) atualiza mesmo assim.
  * O `reported.travada` deve usar `currentBlocked` e só ser publicado quando for boolean.
  */
@@ -205,18 +205,17 @@ function statusAccepted(mem: DeviceMemory, at: number): boolean {
 
 /**
  * `travada` da telemetria (e base da âncora). Bit atual e fresco (≤ 90 s) quando há; senão:
- * - `engineResume` pendente → indefinido = retida (um `false` confirmaria o unlock antes do status);
- * - `engineStop` pendente ou bit velho (> 90 s; firmware sem heartbeat em movimento) → `false`: conservador, nunca confirma
- *   lock, e a telemetria não some (cercas/zonas e a guarda da API seguem vendo a moto; P1/P4);
- * - bit desconhecido (reconexão sem status novo, ou nunca visto) → indefinido = retida (como antes).
+ * - `engineResume` pendente → indefinido = retida (defesa em profundidade: a API não confirma unlock só relé pela telemetria
+ *   — só por `reported.travada: false` posterior ao release, A4-6 —, mas um `false` aqui ainda enganaria o mapa até o status);
+ * - qualquer outro caso sem bit fresco (`engineStop` pendente, bit velho > 90 s, reconexão sem status novo ou bit nunca visto)
+ *   → `false`: conservador, nunca confirma lock, e a telemetria não some (cercas/zonas, trajeto e a guarda da API seguem vendo
+ *   a moto; P1/P4/A4-6).
  * O eco `already_blocked` e o `reported.travada` continuam só com o bit atual e fresco.
  */
 function telemetryBlocked(mem: DeviceMemory, now: number): boolean | undefined {
   const fresh = freshBlocked(mem, now);
   if (fresh !== undefined) return fresh;
   if (mem.pendingCommand === 'resume') return undefined;
-  if (mem.pendingCommand === 'stop') return false;
-  if (mem.awaitingStatus || mem.blocked === undefined) return undefined;
   return false;
 }
 

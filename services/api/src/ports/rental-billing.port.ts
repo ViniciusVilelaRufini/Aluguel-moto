@@ -13,4 +13,6 @@ export interface RentalBillingPort {
   settle(input: { rentalId: string; amountCents: number; idempotencyKey: string; walletCents?: number })
     : Promise<{ paymentId: string; status: 'paid' | 'failed' }>;
   isDelinquent(customerId: string): Promise<boolean>;
+  /** Auditoria run-4: CPF na lista de restrição (`RestrictionEntry`), lido no gate comum de elegibilidade. */
+  isCpfRestricted(cpf: string): Promise<boolean>;
 }

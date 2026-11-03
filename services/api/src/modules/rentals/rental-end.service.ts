@@ -21,7 +21,7 @@ import { SAFE_LOCK_SPEED_KMH } from '../../common/enums';
 import { distanceM } from '../../common/util';
 import { V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
-import { appendWalletEntry, walletCentsAvailable } from '../wallet/wallet-ledger';
+import { appendWalletEntry, walletCentsAvailable, walletMinutesAvailable } from '../wallet/wallet-ledger';
 
 export const FORCE_END_FEE_CODE = 'force_end_outside_return_zone';
 export const FORCE_END_FEE_DEFAULT_CENTS = 1500;
@@ -317,6 +317,8 @@ export class RentalEndService {
     const { claimed, breakdown } = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${rental.customerId}::uuid FOR UPDATE`;
       const walletAvailableCents = await walletCentsAvailable(tx, rental.customerId);
+      // Auditoria run-4 onda 2: minutos de pacote abatem antes da carteira (só plano por minuto sem assinatura).
+      const minutesAvailable = snapshot.unit === 'minute' && !snapshot.subscriptionCovered ? await walletMinutesAvailable(tx, rental.customerId) : 0;
       const breakdown = this.pricing.calculate({
         snapshot,
         elapsedSeconds: timing.elapsedSeconds,
@@ -324,6 +326,7 @@ export class RentalEndService {
         fees,
         walletAvailableCents,
         coveredSeconds,
+        minutesAvailable,
       });
       const claimed = await tx.rental.updateMany({
         where: { id: rentalId, status: { in: ['active', 'paused', 'ending'] } },
@@ -338,6 +341,13 @@ export class RentalEndService {
           breakdown: breakdown as unknown as Prisma.InputJsonValue,
         },
       });
+      const packageMinutes = breakdown.lines.find((l) => l.code === 'minute_package')?.quantity ?? 0;
+      if (claimed.count === 1 && packageMinutes > 0) {
+        await appendWalletEntry(tx, {
+          customerId: rental.customerId, type: 'minute_package', amountCents: 0, minutes: -packageMinutes, rentalId,
+          description: `Aluguel: ${packageMinutes} min do pacote`,
+        });
+      }
       if (claimed.count === 1 && breakdown.walletAppliedCents) {
         await appendWalletEntry(tx, {
           customerId: rental.customerId, type: 'rental_charge', amountCents: -breakdown.walletAppliedCents, rentalId,

@@ -39,6 +39,11 @@ interface Tracked {
   commandId: string;
   thingName: string;
   expect: Partial<ReportedState>;
+  /**
+   * A4-6: unlock de rastreador só relé — `travada: false` confirma só por `LiveStateStore.unlockConfirmed` (reported posterior ao
+   * release), nunca pelo `locked` do estado (a telemetria da ponte manda `travada: false` com o bit de corte velho).
+   */
+  relayOnly?: boolean;
   timer?: TimerHandle;
 }
 
@@ -369,7 +374,7 @@ export abstract class BaseIotGateway implements IotGateway {
     if (req.controlMode === 'relay_only') {
       // A4-1: a trava vista até agora deixa de confirmar um lock (o relé vai abrir); erro do Redis aqui = nada publicado.
       await this.live.markReleaseRequested(req.thingName);
-      return this.desiredCommand(req, { travada: false });
+      return this.desiredCommand(req, { travada: false }, {}, undefined, { relayOnly: true });
     }
     // Sobe o limite: a zona é reavaliada pela posição atual (não só pelo valor gravado, que pode estar velho — fix 2, N3).
     const limit = assertSpeedLimit(await this.limitResolver(req.thingName, await this.positionOf(req.thingName)));
@@ -469,7 +474,7 @@ export abstract class BaseIotGateway implements IotGateway {
     const s = this.live.get(thingName);
     for (const t of [...this.tracked.values()]) {
       if (t.thingName !== thingName) continue;
-      if (matches(s, t.expect)) this.finishTracked(t, { status: 'confirmed' });
+      if (this.matches(s, t)) this.finishTracked(t, { status: 'confirmed' });
     }
     this.watch(thingName);
   }
@@ -531,11 +536,12 @@ export abstract class BaseIotGateway implements IotGateway {
     expect: Partial<ReportedState>,
     extra: DesiredState = {},
     publish?: (desired: DesiredState) => Promise<boolean>,
+    opts: { relayOnly?: boolean } = {},
   ): Promise<CommandOutcome> {
     await this.live.load(req.thingName);
     const online = this.live.isOnline(req.thingName);
     this.supersede(req.thingName, Object.keys(expect) as Array<keyof ReportedState>);
-    const tracked: Tracked = { commandId: req.commandId, thingName: req.thingName, expect };
+    const tracked: Tracked = { commandId: req.commandId, thingName: req.thingName, expect, ...(opts.relayOnly ? { relayOnly: true } : {}) };
     const wait = this.registerWaiter(req.commandId);
     if (online) tracked.timer = this.clock.setTimeout(() => this.onTrackedTimeout(req.commandId), this.opts.commandTimeoutMs);
     this.tracked.set(req.commandId, tracked);
@@ -549,7 +555,7 @@ export abstract class BaseIotGateway implements IotGateway {
     }
     this.watch(req.thingName);
     // Reported já igual ao desired (ex.: limite já aplicado): o rastreador não reporta de novo.
-    if (this.tracked.has(req.commandId) && online && matches(this.live.get(req.thingName), expect)) {
+    if (this.tracked.has(req.commandId) && online && this.matches(this.live.get(req.thingName), tracked)) {
       this.finishTracked(tracked, { status: 'confirmed' });
     }
     if (!online && this.tracked.has(req.commandId)) {
@@ -599,6 +605,15 @@ export abstract class BaseIotGateway implements IotGateway {
     const wait = returned === undefined ? 0 : EMIT_GRACE_MS - (this.clock.now() - returned);
     if (wait > 0) this.clock.setTimeout(() => this.events.emit(EV.IOT_COMMAND_UPDATED, ev), wait);
     else this.events.emit(EV.IOT_COMMAND_UPDATED, ev);
+  }
+
+  /** O estado já mostra o que o comando pediu? Unlock só relé: só `reported.travada: false` posterior ao release (A4-6). */
+  private matches(s: VehicleLiveState | null, t: Tracked): boolean {
+    if (t.relayOnly && t.expect.travada === false) {
+      const { travada: _travada, ...rest } = t.expect;
+      return this.live.unlockConfirmed(t.thingName) && matches(s, rest);
+    }
+    return matches(s, t.expect);
   }
 
   private onTrackedTimeout(commandId: string): void {

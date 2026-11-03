@@ -116,10 +116,18 @@ export class ReservationsService implements OnModuleInit {
     const existing = await this.prisma.reservation.findFirst({ where: { customerId, status: 'active', expiresAt: { gt: new Date() } } });
     let reservation: Reservation;
     if (existing && existing.vehicleId === vehicleId) {
-      reservation = await this.prisma.reservation.update({
-        where: { id: existing.id },
+      // Auditoria run-4 onda 2: extensão condicional (a reserva pode ter vencido/sido cancelada desde a leitura) e a
+      // caução anterior da reserva, trocada por esta, é liberada (senão fica retida sem nada que a libere).
+      const upd = await this.prisma.reservation.updateMany({
+        where: { id: existing.id, status: 'active', expiresAt: { gt: new Date() } },
         data: { expiresAt: until > existing.expiresAt ? until : existing.expiresAt, depositId },
       });
+      if (upd.count !== 1) throw conflict('vehicle-unavailable', 'Sua reserva desta moto acabou de vencer. Tente de novo.');
+      reservation = (await this.prisma.reservation.findUnique({ where: { id: existing.id } }))!;
+      if (existing.depositId && existing.depositId !== depositId) {
+        const release: DepositReleaseRequestedEvent = { depositId: existing.depositId, customerId, reason: 'rental_not_started' };
+        this.events.emit(EV.DEPOSIT_RELEASE_REQUESTED, release);
+      }
     } else {
       if (existing) throw conflict('reservation-already-active', 'Você já tem uma reserva ativa em outra moto.');
       await assertNotFixedForOther(this.prisma, vehicleId, customerId);
@@ -174,8 +182,9 @@ export class ReservationsService implements OnModuleInit {
     throw conflict('conflict', 'A reserva não está mais ativa.');
   }
 
+  /** Expiração pelo TTL do Redis: só encerra reserva vencida (`expiresAt <= agora`); estendida → regrava a chave. */
   async expire(id: string, reason: 'expired' | 'canceled'): Promise<void> {
-    await this.end(id, reason);
+    await this.end(id, reason, { requireDue: reason === 'expired' });
   }
 
   /** Fix round 1: caução Pix não paga (vencida/cancelada no gateway) → a reserva ativa presa nela expira. */
@@ -189,25 +198,38 @@ export class ReservationsService implements OnModuleInit {
     }
   }
 
-  /** Converte a reserva ativa (ou em entrega de galpão) da moto em aluguel (sem liberar a moto). */
-  async convert(tx: Tx, reservationId: string): Promise<void> {
-    await tx.reservation.updateMany({ where: { id: reservationId, status: { in: ['active', 'handover'] } }, data: { status: 'converted', endedAt: new Date() } });
+  /**
+   * Converte a reserva ativa (ou em entrega de galpão) da moto em aluguel (sem liberar a moto). Devolve quantas reservas
+   * foram convertidas (0 = já não estava aberta; o chamador aborta).
+   */
+  async convert(tx: Tx, reservationId: string): Promise<number> {
+    const r = await tx.reservation.updateMany({ where: { id: reservationId, status: { in: ['active', 'handover'] } }, data: { status: 'converted', endedAt: new Date() } });
     await this.redis.del(KEY_PREFIX + reservationId);
+    return r.count;
   }
 
-  /** `true` só se esta chamada encerrou a reserva (transição condicional `active → reason`). */
-  private async end(id: string, reason: 'expired' | 'canceled'): Promise<boolean> {
+  /**
+   * `true` só se esta chamada encerrou a reserva (transição condicional `active → reason`).
+   * Auditoria run-4 onda 2: `requireDue` (TTL do Redis, varredura) só encerra com `expiresAt <= agora` — a reserva pode ter
+   * sido estendida pelo fluxo Pix depois de a chave ser gravada; aí a chave é regravada com o prazo novo. O status `free`
+   * só é emitido se a moto saiu de fato de `reserved` (moto já alugada não é anunciada como livre).
+   */
+  private async end(id: string, reason: 'expired' | 'canceled', opts: { requireDue?: boolean } = {}): Promise<boolean> {
     const r = await this.prisma.reservation.findUnique({ where: { id } });
     if (!r || r.status !== 'active') return false;
     const done = await this.prisma.$transaction(async (tx) => {
-      const upd = await tx.reservation.updateMany({ where: { id, status: 'active' }, data: { status: reason, endedAt: new Date() } });
-      if (upd.count === 0) return false;
-      await tx.vehicle.updateMany({ where: { id: r.vehicleId, status: 'reserved' }, data: { status: 'free' } });
-      return true;
+      const where: Prisma.ReservationWhereInput = opts.requireDue ? { id, status: 'active', expiresAt: { lte: new Date() } } : { id, status: 'active' };
+      const upd = await tx.reservation.updateMany({ where, data: { status: reason, endedAt: new Date() } });
+      if (upd.count === 0) return null;
+      const freed = await tx.vehicle.updateMany({ where: { id: r.vehicleId, status: 'reserved' }, data: { status: 'free' } });
+      return { freed: freed.count === 1 };
     });
     await this.redis.del(KEY_PREFIX + id);
-    if (!done) return false;
-    this.emitVehicleStatus(r.vehicleId, 'free');
+    if (!done) {
+      if (opts.requireDue) await this.rearm(id);
+      return false;
+    }
+    if (done.freed) this.emitVehicleStatus(r.vehicleId, 'free');
     const ev: ReservationEndedEvent = { reservationId: id, customerId: r.customerId, vehicleId: r.vehicleId, depositId: r.depositId ?? undefined, reason };
     this.events.emit(EV.RESERVATION_ENDED, ev);
     if (r.depositId) {
@@ -220,6 +242,14 @@ export class ReservationsService implements OnModuleInit {
     }
     this.logger.log({ msg: 'reservation_ended', reservationId: id, reason });
     return true;
+  }
+
+  /** Reserva ainda `active` com prazo futuro (estendida): regrava a chave com o TTL restante. */
+  private async rearm(id: string): Promise<void> {
+    const now = await this.prisma.reservation.findUnique({ where: { id }, select: { status: true, expiresAt: true, customerId: true } });
+    if (now?.status !== 'active' || !now.expiresAt) return;
+    const ttl = now.expiresAt.getTime() - Date.now();
+    if (ttl > 0) await this.redis.set(KEY_PREFIX + id, now.customerId ?? '1', ttl);
   }
 
   /** Rede de segurança (rua e galpão; só `active`: `handover` não vence pelo prazo): expira reservas vencidas (Redis sem keyspace notifications, reinício da API…). */
@@ -243,7 +273,7 @@ export class ReservationsService implements OnModuleInit {
       orderBy: { expiresAt: 'asc' },
       take: SWEEP_BATCH,
     });
-    for (const c of overdue) await this.end(c.id, 'expired');
+    for (const c of overdue) await this.end(c.id, 'expired', { requireDue: true });
 
     const unpaid = (await this.prisma.$queryRaw<Array<{ id: string }>>`
       SELECT r."id" FROM "Reservation" r JOIN "Deposit" d ON d."id" = r."depositId"

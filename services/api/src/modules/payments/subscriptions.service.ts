@@ -315,7 +315,10 @@ export class SubscriptionsService {
   async create(customerId: string, dto: { planCode: 'weekly' | 'monthly'; cardId?: string; vehicleId?: string }) {
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
     if (!customer || customer.kycStatus !== 'approved') throw forbidden('Conclua a verificação de identidade.', 'kyc-not-approved');
-    if (customer.status !== 'active') throw forbidden('Sua conta está bloqueada.', 'customer-blocked');
+    // Auditoria run-4: CPF na lista de restrição também bloqueia (mesma regra do gate de reservar/alugar).
+    if (customer.status !== 'active' || (customer.cpf && (await this.billing.isCpfRestricted(customer.cpf)))) {
+      throw forbidden('Sua conta está bloqueada.', 'customer-blocked');
+    }
     if (customer.delinquent) throw forbidden('Há um pagamento pendente. Regularize para assinar.', 'customer-delinquent');
     // C1: fecha assinaturas vencidas antes de checar (senão o índice parcial acusaria duplicidade).
     await this.expireStale(new Date(), { customerId });

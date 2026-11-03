@@ -56,7 +56,7 @@ function setup(opts: { mode?: 'relay_only' | 'speed_control'; status?: string; e
   prisma.fee.findUnique.mockResolvedValue({ code: FORCE_END_FEE_CODE, amountCents: 1500, active: true } as any);
   prisma.stationSwap.findMany.mockResolvedValue([]);
 
-  const billing = { holdDeposit: jest.fn(), isDelinquent: jest.fn(), settle: jest.fn().mockResolvedValue({ paymentId: 'pay-1', status: 'paid' }) };
+  const billing = { holdDeposit: jest.fn(), isDelinquent: jest.fn(), isCpfRestricted: jest.fn().mockResolvedValue(false), settle: jest.fn().mockResolvedValue({ paymentId: 'pay-1', status: 'paid' }) };
   const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd-2', status: 'in_progress' }), isLockedByStaff: jest.fn().mockResolvedValue(false) };
   const zones = { findContaining: jest.fn().mockResolvedValue(opts.inZone === false ? null : { id: ZONE_ID, type: 'return' }) };
   const iot = { getLiveState: jest.fn().mockResolvedValue(null) };

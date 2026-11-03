@@ -93,6 +93,11 @@ a fila offline com relógio adiantado nunca confirmam; um `reported.travada = tr
 corte enviado, também precisa ser posterior a ele). As varreduras releem o estado ao vivo do Redis antes de decidir. Ao começar, o lock `relay_only` apaga
 (`desired.travada = null`) um `travada` pendente no shadow (ex.: `false` de um unlock que a moto offline não recebeu), para a
 ponte não reaplicar `engineResume` na reconexão; nunca grava `travada: true` fora do corte.
+Unlock `relay_only` confirma **só** por `reported.travada: false` com hora depois do `releaseAt` (gravado antes de publicar o
+`travada: false`) e sem `reported.travada: true` depois dele (`LiveStateStore.unlockConfirmed`; campos `reportedFreeAt`/
+`reportedCutAt` do hash `iot:live:*`, só por máximo atômico `hsetMax`). No modo aws o `false` do polling (metadata em segundos)
+fica em `reportedFreePollAt` e é comparado com o release truncado ao segundo. Nunca pelo `locked` do estado: a telemetria da ponte
+sai com `travada: false` quando o bit de corte está velho ou desconhecido (A4-6). `speed_control` não muda.
 Ordem das amostras (Task 11b): um `reported.velocidade_kmh` parado (< 3 km/h) é datado pela chegada e **não** vira barreira de
 ordem para a telemetria (datada pelo `fixTime`); com o GPS mais atrasado que a cadência (ex.: GPRS com buffer), senão toda
 telemetria seguinte seria "velha" e a parada nunca se confirmaria. `reported` em movimento (≥ 3 ou inválido) continua barreira, e
@@ -295,7 +300,7 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - "Moto em uso" é uma regra só (`common/vehicle-in-use.ts`): aluguel aberto ou reserva ativa no banco, não `vehicle.status`.
 - Usuário só do grupo `campo` age só nas próprias tarefas. Troca de moto só para preço por minuto igual ou menor.
 - IoT: `thingName` e `channel` vêm só do tópico; o corpo do dispositivo chega aninhado em `payload`; eventos de dispositivo passam pela fila `telemetria`.
-- Estorno de contestação só via `POST /support/disputes/{id}/resolve` (chave `dispute:<id>`, reivindicação atômica); disputa presa em `under_review` após queda do processo exige ajuste manual.
+- Estorno de contestação só via `POST /support/disputes/{id}/resolve` (chave `dispute:<id>`, ou `dispute:<id>:<n>` depois de `n−1` recusas do gateway; reivindicação atômica); disputa presa em `under_review` após queda do processo exige ajuste manual.
 - Busca de clientes por CPF: não-admin só por igualdade (11 dígitos). Cupom com teto atômico (`422 coupon-invalid`).
 - WebSocket exige `exp` no JWT e desconecta no vencimento; cache veículo→aluguel de 5 s. `rental.changed` replicado só invalida o cache (o adaptador Redis do Socket.IO já entrega o `rental.updated` da origem).
 - Galpão: chegada ao galpão (fim do aluguel ou `collect`) não deixa como `free` moto com trava de equipe/sistema (vai para `maintenance` no fim do aluguel; `409` no `collect`).
@@ -309,6 +314,24 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - **Estorno com carteira:** o webhook nunca diminui `refundedCents` e soma os estornos da carteira ao valor do gateway; `refunded` só no teto comum (`payments/refund-base.ts`).
 - **Ledger:** `appendWalletEntry` trava o `Customer` (`FOR NO KEY UPDATE`) antes de calcular `balanceAfterCents`.
 - **LGPD:** a exclusão de conta anula `Alert.lat/lng` dos alertas dos aluguéis do titular; o job diário anula a posição de alertas de aluguel com mais de `TRACK_RETENTION_DAYS`. Alerta ligado a aluguel precisa vir com `rentalId`.
+
+## Auditoria run-4 — suporte e KYC (`docs/decisoes.md`)
+
+- Lista de restrição: `assertCustomerEligible` recusa `403 customer-blocked` com o CPF em `RestrictionEntry` (`RentalBillingPort.isCpfRestricted`); incluir um CPF bloqueia as contas ativas dele na mesma transação; desbloquear com o CPF na lista → `409`; block/unblock são condicionais ao status.
+- KYC: `submit` grava condicionado a `not_started`/`rejected` com `kycSubmittedAt` novo, e a decisão do provedor só vale para esse mesmo `kycSubmittedAt`. `kyc-review` aprova só `pending`/`rejected` com CPF, nascimento e documentos, 18+ e CPF fora da lista; rejeita `pending`/`approved`.
+- Contestação: o pagamento tem de ser do cliente, do aluguel e do tipo `rental`/`deposit`/`fee` (revalidado no `resolve`). O estorno misto grava o plano da carteira (`<chave>:wallet`, `planned`) junto com o pedido do gateway; a repetição com o mesmo valor conclui só esse plano, dentro da parte da carteira e do teto (valor diferente → `422`; nunca em `top_up`). Assinatura nova também recusa CPF restrito.
+- Anexos do cliente (incidente, sinistro, mensagem) só com chaves `support/<userId>/<arquivo>`; a exclusão LGPD só apaga chaves do titular ou do atendente autor do registro.
+- Sinistro: `submitted` → `under_review`/`approved`/`rejected`; `under_review` → `approved`/`rejected`; `approved` → `paid`; fora disso `409`.
+
+## Auditoria run-4 — onda 2: reservas e dinheiro (`docs/decisoes.md`)
+
+- **Início do aluguel:** a reivindicação usa o status exato lido (`free` ou `reserved`); `reserved` exige a reserva do próprio cliente ainda `active`/`handover` na mesma transação; `convert()` devolve a contagem e o início aborta se 0. Rollback e varredura só voltam a `reserved` com a reserva do cliente ainda aberta (senão `free`), e nunca sobrescrevem um status que não seja `rented`.
+- **Pix de rua:** `reserveForPix` estende a reserva só se ela ainda está `active` e no prazo (senão `409`) e pede a liberação da caução anterior quando a troca; recusa da reserva libera a caução Pix recém-criada. O job `depot-reservations-orphan-deposits` também libera caução de rua (`deposit:<cliente>:<chave>`) `held`/`awaiting_pix` 10 min após o prazo do Pix; o filtro fica no SQL (`NOT EXISTS` em `Rental`, `Reservation` `active`/`handover`, `RentalStart`, `DepositRelease`) e só reserva aberta protege a caução.
+- **Reserva:** a expiração pelo TTL do Redis (e o passe de vencidas da varredura) só encerra com `expiresAt <= agora`; reserva estendida tem a chave regravada. `vehicle.status_changed` `free` só quando a moto saiu de fato de `reserved`.
+- **`Idempotency-Key`:** 8 a 128 caracteres em `[A-Za-z0-9_-]` (`400 validation-error`); UUID v4 passa. Caução devolvida por `holdDeposit` que pertence a reserva aberta de outro fluxo → `409 deposit-in-use`.
+- **Estorno:** `PaymentRefund.gatewayRefundedBefore` (migração `20261103130000_payment_refund_baseline`) guarda o total estornado no gateway antes da chamada; a reconciliação exige `before + amountCents` (o `providerPaymentId` pode ser compartilhado). Pedido antigo sem linha de base só confia no total do gateway se nenhum outro `Payment` compartilha o id.
+- **Pacotes de minutos:** no plano por minuto sem assinatura, os minutos da carteira abatem a linha `time` (linha `minute_package`, negativa) antes da carteira em reais, com lançamento `minute_package` (minutos negativos, `rentalId`) na transação do fechamento.
+- **Estorno de recarga:** tira o crédito da carteira uma vez por incremento (`TopUp.reversedCents`, migração `20261103131000_top_up_reversed_cents`): `top_up` negativo de `min(incremento, saldo)` ou os minutos proporcionais do pacote; falta de saldo → `payment.needs-review` (`top_up_refund_exceeds_balance`). Estorno do admin de recarga cujo crédito já foi gasto além do saldo → `409`. Só estorno confirmado conta (pedidos `claimed`/`pending` são descontados). Estorno total confirmado do aluguel devolve os minutos de pacote consumidos (parcial não devolve).
 
 ## Regras que nunca mudam
 
