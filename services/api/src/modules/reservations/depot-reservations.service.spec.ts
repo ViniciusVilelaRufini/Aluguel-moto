@@ -273,7 +273,7 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     prisma.reservation.findUnique.mockResolvedValue(row({ expiresAt: new Date(Date.now() - 1000) }) as any);
     prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
     await reservations.sweep();
-    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active' }, data: expect.objectContaining({ status: 'expired' }) });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active', expiresAt: { lte: expect.any(Date) } }, data: expect.objectContaining({ status: 'expired' }) });
     expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'reserved' }, data: { status: 'free' } });
     expect(released).toEqual([expect.objectContaining({ depositId: DEPOSIT_ID, reason: 'reservation_expired' })]);
     // Só reservas `active` são varridas: `handover` (entrega aberta) não expira pelo prazo.
@@ -375,7 +375,7 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     await reservations.sweep();
     const expiryCall = prisma.reservation.findMany.mock.calls.map((c) => c[0] as any).find((a) => a.where.expiresAt?.lte);
     expect(expiryCall).toMatchObject({ where: { status: 'active', expiresAt: { lte: expect.any(Date) } }, orderBy: { expiresAt: 'asc' }, take: 500 });
-    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active' }, data: expect.objectContaining({ status: 'expired' }) });
+    expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active', expiresAt: { lte: expect.any(Date) } }, data: expect.objectContaining({ status: 'expired' }) });
     expect(prisma.reservation.updateMany).toHaveBeenCalledTimes(1);
   });
 

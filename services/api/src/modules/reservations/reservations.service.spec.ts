@@ -116,7 +116,7 @@ describe('ReservationsService', () => {
     await new Promise((r) => setTimeout(r, 150));
 
     expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
-      where: { id: RES_ID, status: 'active' },
+      where: { id: RES_ID, status: 'active', expiresAt: { lte: expect.any(Date) } },
       data: expect.objectContaining({ status: 'expired' }),
     });
     expect(prisma.vehicle.updateMany).toHaveBeenCalledWith({ where: { id: VEHICLE_ID, status: 'reserved' }, data: { status: 'free' } });
@@ -218,6 +218,39 @@ describe('ReservationsService', () => {
       await expect(service.reserveForPix(CUSTOMER_ID, VEHICLE_ID, NEW, new Date(Date.now() + 15 * 60_000))).rejects.toMatchObject({ status: 409 });
       expect(prisma.reservation.update).not.toHaveBeenCalled();
       expect(released).not.toHaveBeenCalled();
+    });
+  });
+  describe('auditoria run-4 onda 2: expiração pelo TTL respeita expiresAt e o status da moto', () => {
+    it('chave do Redis venceu mas a reserva foi estendida (Pix) → não expira e regrava a chave', async () => {
+      const { service, prisma, redis } = setup();
+      const future = new Date(Date.now() + 10 * 60_000);
+      prisma.reservation.findUnique.mockResolvedValue({ id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, status: 'active', depositId: null, expiresAt: future } as any);
+      prisma.reservation.updateMany.mockResolvedValue({ count: 0 });
+      await service.expire(RES_ID, 'expired');
+      expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: 'active', expiresAt: { lte: expect.any(Date) } }, data: expect.objectContaining({ status: 'expired' }) });
+      expect(prisma.vehicle.updateMany).not.toHaveBeenCalled();
+      expect(await redis.exists(`reservation:${RES_ID}`)).toBe(true);
+    });
+
+    it('fim da reserva com a moto que já não está reserved (alugada) → não emite status free', async () => {
+      const { service, prisma, events } = setup();
+      const status = jest.fn();
+      events.on(EV.VEHICLE_STATUS_CHANGED, status);
+      prisma.reservation.findUnique.mockResolvedValue({ id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, status: 'active', depositId: null, expiresAt: new Date(Date.now() - 1000) } as any);
+      prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+      prisma.vehicle.updateMany.mockResolvedValue({ count: 0 });
+      await service.expire(RES_ID, 'expired');
+      expect(status).not.toHaveBeenCalled();
+    });
+
+    it('fim com a moto reserved → emite free', async () => {
+      const { service, prisma, events } = setup();
+      const status = jest.fn();
+      events.on(EV.VEHICLE_STATUS_CHANGED, status);
+      prisma.reservation.findUnique.mockResolvedValue({ id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, status: 'active', depositId: null, expiresAt: new Date(Date.now() - 1000) } as any);
+      prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+      await service.expire(RES_ID, 'expired');
+      expect(status).toHaveBeenCalledWith(expect.objectContaining({ vehicleId: VEHICLE_ID, status: 'free' }));
     });
   });
 });
