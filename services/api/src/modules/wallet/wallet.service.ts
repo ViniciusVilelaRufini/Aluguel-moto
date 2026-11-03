@@ -89,13 +89,12 @@ export class WalletService {
       throw new ProblemException(402, 'payment-failed', 'Pagamento recusado. Tente outro cartão.');
     }
     // Auditoria run-4: transição e crédito na mesma transação (uma queda entre os dois não deixa Payment paid sem crédito).
-    const paid = await this.prisma.$transaction(async (tx) => {
+    const { paid, credited } = await this.prisma.$transaction(async (tx) => {
       const p = await this.state.transitionTx(tx, payment.id, 'paid', { providerPaymentId: res.providerPaymentId });
-      await this.creditTopUp(tx, topUp, p.id);
-      return p;
+      return { paid: p, credited: await this.creditTopUp(tx, topUp, p.id) };
     });
     this.state.emitUpdated(paid);
-    this.logger.log({ msg: 'wallet_top_up_paid', topUpId: topUp.id });
+    if (credited) this.logger.log({ msg: 'wallet_top_up_paid', topUpId: topUp.id });
     return toTopUp((await this.prisma.topUp.findUnique({ where: { id: topUp.id } }))!);
   }
 

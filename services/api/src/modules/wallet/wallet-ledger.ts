@@ -8,11 +8,12 @@ export async function walletBalance(tx: Prisma.TransactionClient, customerId: st
 
 /**
  * Único ponto de escrita do ledger da carteira: só inserção (nunca update/delete). Auditoria run-4: trava a linha do
- * cliente (`FOR UPDATE`, até o fim da transação de quem chama) antes de somar o saldo, para dois lançamentos simultâneos
+ * cliente (`FOR NO KEY UPDATE`, até o fim da transação de quem chama; serializa o saldo sem bloquear inserções com FK
+ * para o cliente) antes de somar o saldo, para dois lançamentos simultâneos
  * não gravarem o mesmo `balanceAfterCents` (o saldo em si é sempre a soma do ledger; isto corrige a exibição).
  */
 export async function appendWalletEntry(tx: Prisma.TransactionClient, data: Omit<Prisma.WalletEntryUncheckedCreateInput, 'balanceAfterCents'>) {
-  await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${data.customerId}::uuid FOR UPDATE`;
+  await tx.$queryRaw`SELECT "id" FROM "Customer" WHERE "id" = ${data.customerId}::uuid FOR NO KEY UPDATE`;
   const { balanceCents } = await walletBalance(tx, data.customerId);
   return tx.walletEntry.create({ data: { ...data, balanceAfterCents: balanceCents + data.amountCents } });
 }

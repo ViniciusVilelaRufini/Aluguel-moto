@@ -3,7 +3,7 @@ import { appendWalletEntry } from './wallet-ledger';
 const CUSTOMER = '11111111-1111-4111-8111-111111111111';
 
 describe('appendWalletEntry (auditoria run-4: balanceAfterCents sem corrida)', () => {
-  it('trava a linha do cliente (FOR UPDATE) antes de somar o saldo e inserir', async () => {
+  it('trava a linha do cliente (FOR NO KEY UPDATE) antes de somar o saldo e inserir', async () => {
     const calls: string[] = [];
     const tx: any = {
       $queryRaw: jest.fn(async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -16,7 +16,7 @@ describe('appendWalletEntry (auditoria run-4: balanceAfterCents sem corrida)', (
       },
     };
     const e = await appendWalletEntry(tx, { customerId: CUSTOMER, type: 'top_up', amountCents: 500, description: 'x' });
-    expect(calls).toEqual([`lock:SELECT "id" FROM "Customer" WHERE "id" = ?::uuid FOR UPDATE:${CUSTOMER}`, 'aggregate', 'create']);
+    expect(calls).toEqual([`lock:SELECT "id" FROM "Customer" WHERE "id" = ?::uuid FOR NO KEY UPDATE:${CUSTOMER}`, 'aggregate', 'create']);
     expect(e).toMatchObject({ balanceAfterCents: 1500 });
   });
 });
