@@ -221,11 +221,14 @@ class Delegate {
 
 export type InMemoryPrisma = Record<keyof typeof SPECS, Delegate> & {
   $transaction: (arg: any) => Promise<any>;
+  /** SQL cru (ex.: `SELECT ... FOR UPDATE` do ledger da carteira): sem banco, não há linha a travar. */
+  $queryRaw: (...args: any[]) => Promise<any[]>;
 };
 
 export function createInMemoryPrisma(): InMemoryPrisma {
   const db: Row = {};
   for (const [name, spec] of Object.entries(SPECS)) db[name] = new Delegate(name, spec);
   db.$transaction = async (arg: any) => (typeof arg === 'function' ? arg(db) : Promise.all(arg));
+  db.$queryRaw = async () => [];
   return db as InMemoryPrisma;
 }
