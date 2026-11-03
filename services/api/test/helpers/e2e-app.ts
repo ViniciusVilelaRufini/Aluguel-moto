@@ -10,6 +10,7 @@ import { configureApp } from '../../src/bootstrap';
  * um `migrate dev` descuidado poderia removê-los). O setup de e2e/contrato falha se algum sumir.
  */
 export const HAND_WRITTEN_INDEXES = [
+  'Rental_unbilled_endedAt_idx',
   'Zone_geom_gist',
   'Vehicle_position_gist',
   'Reservation_one_active_per_customer',
@@ -32,8 +33,17 @@ export const HAND_WRITTEN_INDEXES = [
   // Task 14 das lacunas: um alerta `payment_needs_review` não resolvido por pagamento; uma quitação pendente por dívida.
   'Alert_one_open_per_payment',
   'Payment_one_pending_debt_settlement',
+  // Auditoria run-4: parcial do expurgo LGPD da posição de início (`startLat` não nulo).
+  'Rental_start_location_startedAt',
 ];
-export const HAND_WRITTEN_CHECKS = ['Vehicle_speed_limit_range', 'Zone_speed_limit_range', 'Rental_speed_limit_range', 'Handover_battery_pct_range', 'Depot_windows_range', 'Handover_type_reference', 'StationSwap_returned_pct_range', 'StationSwap_fee_nonnegative'];
+export const HAND_WRITTEN_CHECKS = [
+  'Vehicle_speed_limit_range', 'Zone_speed_limit_range', 'Rental_speed_limit_range', 'Handover_battery_pct_range', 'Depot_windows_range', 'Handover_type_reference', 'StationSwap_returned_pct_range', 'StationSwap_fee_nonnegative',
+  // Auditoria run-4: dinheiro e faixas (migrações 20261103101000_aud4_checks + _validate).
+  'Payment_amount_nonnegative', 'Payment_wallet_range', 'Payment_refunded_range', 'Deposit_amount_nonnegative', 'Deposit_captured_range',
+  'Fee_amount_nonnegative', 'PricingPlan_prices_nonnegative', 'MinutePackage_price_nonnegative', 'VehicleModel_prices_nonnegative',
+  'Coupon_percent_off_range', 'Coupon_amount_off_nonnegative', 'SwapStation_battery_counts_nonnegative', 'Battery_charge_pct_range',
+  'Vehicle_battery_pct_range', 'Rental_cost_nonnegative',
+];
 
 export async function assertHandWrittenSchema(prisma: PrismaClient): Promise<void> {
   const idx = await prisma.$queryRaw<Array<{ indexname: string }>>`SELECT indexname FROM pg_indexes WHERE schemaname = 'public'`;

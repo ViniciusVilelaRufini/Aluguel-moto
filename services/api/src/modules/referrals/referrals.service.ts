@@ -12,7 +12,7 @@ import { isUniqueViolation } from '../payments/payment-state.service';
 import { toWalletEntry } from '../payments/payments.mapper';
 import { PricingService } from '../pricing/pricing.service';
 import { appendWalletEntry } from '../wallet/wallet-ledger';
-import { assertReferralEligible, customerCouponStatus, firstName, makeReferralCode, normalizeReferralCode } from './referral-rules';
+import { assertReferralEligible, customerCouponStatus, firstName, makeReferralCode, newMoneyCents, normalizeReferralCode } from './referral-rules';
 
 const brl = (cents: number) => `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`;
 
@@ -176,15 +176,15 @@ export class ReferralsService {
 
   /**
    * Fix round 1 (M8): bônus de quem indicou só com a primeira corrida **paga** do indicado, de pelo menos
-   * `REFERRAL_MIN_RENTAL_CENTS` (líquido de estornos), e com a conta do indicado ativa. Uma vez, por transição condicional.
+   * `REFERRAL_MIN_RENTAL_CENTS` (líquido de estornos e, desde a auditoria run-4, sem a parte paga com a carteira), e com a conta do indicado ativa. Uma vez, por transição condicional.
    */
   @OnEvent(EV.PAYMENT_UPDATED, { async: true, promisify: true })
   async onPaymentUpdated(ev: PaymentUpdatedEvent): Promise<void> {
     if (ev.status !== 'paid' && ev.status !== 'captured') return;
     try {
-      const pay = await this.prisma.payment.findUnique({ where: { id: ev.paymentId }, select: { kind: true, customerId: true, amountCents: true, refundedCents: true, status: true } });
+      const pay = await this.prisma.payment.findUnique({ where: { id: ev.paymentId }, select: { kind: true, customerId: true, amountCents: true, walletCents: true, refundedCents: true, status: true } });
       if (!pay || pay.kind !== 'rental' || (pay.status !== 'paid' && pay.status !== 'captured')) return;
-      if (pay.amountCents - pay.refundedCents < this.v2.referralMinRentalCents) return;
+      if (newMoneyCents(pay) < this.v2.referralMinRentalCents) return;
       const referee = await this.prisma.customer.findUnique({ where: { id: pay.customerId }, select: { status: true } });
       if (referee?.status !== 'active') return;
       await this.grantReferrer(pay.customerId);

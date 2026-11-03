@@ -23,8 +23,12 @@ export async function assertNotFixedForOther(tx: SubTx, vehicleId: string, custo
   if (owner && owner.customerId !== customerId) throw conflict('vehicle-unavailable', 'Esta moto é a moto fixa de outro plano.');
 }
 
-/** Filtro SQL (alias `v` para "Vehicle") que esconde motos fixas de outros clientes. */
+/**
+ * Filtro SQL (alias `v` para "Vehicle") que esconde motos fixas de outros clientes. Auditoria run-4: `currentPeriodEnd` é
+ * `timestamp` sem fuso gravado em UTC; compara com `now() AT TIME ZONE 'UTC'` (como o reports.service) para não depender
+ * do `TimeZone` da sessão.
+ */
 export const notFixedForOtherSql = (customerId: string) => Prisma.sql`NOT EXISTS (
   SELECT 1 FROM "Subscription" s
-  WHERE s."assignedVehicleId" = v."id" AND s."status" IN ('active', 'paused') AND s."currentPeriodEnd" > now()
+  WHERE s."assignedVehicleId" = v."id" AND s."status" IN ('active', 'paused') AND s."currentPeriodEnd" > (now() AT TIME ZONE 'UTC')
     AND s."customerId" <> ${customerId}::uuid)`;
