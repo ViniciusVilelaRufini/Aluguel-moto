@@ -20,7 +20,13 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../../packages/contracts/schemas', name), 'utf8'));
 const ajv = addFormats(new Ajv2020({ strict: false }));
 for (const name of ['shadow-desired.schema.json', 'shadow-reported.schema.json']) ajv.addSchema(schema(name)); // $ref do shadow-update
-const validTelemetry = ajv.compile(schema('telemetria.schema.json'));
+/**
+ * `bateria_conhecida` (opcional, boolean) entra no telemetria.schema.json pelo contrato do J16 (feito em outra branch). Até o
+ * merge, a regra é aplicada aqui numa cópia local; depois do merge o `??=` não muda nada e vale o schema do contrato.
+ */
+const telemetrySchema = schema('telemetria.schema.json');
+telemetrySchema.properties.bateria_conhecida ??= { type: 'boolean' };
+const validTelemetry = ajv.compile(telemetrySchema);
 const validEvent = ajv.compile(schema('eventos.schema.json'));
 const validUpdate = ajv.compile(schema('shadow-update.schema.json'));
 
@@ -87,6 +93,11 @@ const heartbeat = (id: number, at: number, blocked: boolean): TraccarPosition =>
 /** Resposta do J16 ao comando de motor: posição `outdated` com `attributes.result` (P2). */
 const ack = (id: number, at: number): TraccarPosition =>
   position({ id, deviceId: 1, fixTime: iso(T0 - 60_000), serverTime: iso(at), outdated: true, attributes: { result: 'ok' } });
+/** Resposta real do J16 ao `engineStop`/`engineResume` (bancada 2026-11-03), com o estado do relé. */
+const STOP_OK = 'Stop engine Succeed\nRELAY 1 OK';
+const RESUME_OK = 'Resume engine Succeed\nRELAY 0 OK';
+const relayReply = (id: number, at: number, result: string): TraccarPosition =>
+  position({ id, deviceId: 1, fixTime: iso(T0 - 60_000), serverTime: iso(at), outdated: true, speed: 0, attributes: { result } });
 const setStatus = (c: Ctx, status: 'online' | 'offline') => c.traccar.push({ devices: [{ id: 1, name: T, uniqueId: IMEI, status }] });
 const gets = (c: Ctx) => out(c, `$aws/things/${T}/shadow/get`).length;
 const getAccepted = (c: Ctx, delta: Record<string, unknown>, version = 1) =>
@@ -383,8 +394,16 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     c.traccar.push({ positions: [dcdc(113, T0 + BATTERY_UNKNOWN_CAP_MS), dcdc(114, T0 + BATTERY_UNKNOWN_CAP_MS + 5_000)] });
     await waitFor(() => out(c, `motos/${T}/telemetria`).length === 2);
     const [t] = out(c, `motos/${T}/telemetria`);
-    expect(t).toMatchObject({ bateria_pct: 0, travada: false, timestamp: iso(T0 + BATTERY_UNKNOWN_CAP_MS - 500) });
+    expect(t).toMatchObject({ bateria_pct: 0, bateria_conhecida: false, travada: false, timestamp: iso(T0 + BATTERY_UNKNOWN_CAP_MS - 500) });
     expect(validTelemetry(t)).toBe(true);
+    // a tensão volta: bateria conhecida, o campo some (ausente = true)
+    c.now.value = T0 + BATTERY_UNKNOWN_CAP_MS + 10_000;
+    c.traccar.push({ positions: [position({ id: 115, deviceId: 1, fixTime: iso(c.now.value - 500), serverTime: iso(c.now.value), attributes: { blocked: false, ignition: false, rssi: 4, power: 72 } })] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 3);
+    const known = out(c, `motos/${T}/telemetria`)[2];
+    expect(known.bateria_pct).toBe(50);
+    expect(known).not.toHaveProperty('bateria_conhecida');
+    expect(validTelemetry(known)).toBe(true);
     expect(c.logs.filter((l) => l.msg === 'battery_unknown')).toEqual([{ level: 'warn', msg: 'battery_unknown', thingName: T }]);
   });
 
@@ -629,6 +648,95 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     c.traccar.push({ positions: [heartbeat(262, T0 + 6_000, false)] }); // depois da folga de 5 s: vale
     await waitFor(() => reportedTravada(c).length === 2);
     expect(reportedTravada(c)).toEqual([true, false]);
+  });
+
+  // ---- J16 (bancada 2026-11-03): a resposta do aparelho ao comando traz o estado do relé
+  it('J16: unlock confirmado pela resposta "RELAY 0 OK" (~1 s), sem esperar o heartbeat de 60 s; a resposta não vira telemetria', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(400, T0, true)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    c.now.value = T0 + 1_000;
+    await sendDelta(c, { travada: false });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_resume_sent'));
+    c.now.value = T0 + 2_000;
+    c.traccar.push({ positions: [relayReply(401, T0 + 2_000, RESUME_OK)] });
+    await waitFor(() => reportedTravada(c).length === 2);
+    expect(reportedTravada(c)).toEqual([true, false]);
+    const last = updates(c).pop();
+    expect(validUpdate(last)).toBe(true);
+    expect(out(c, `motos/${T}/telemetria`)).toEqual([]);
+    expect(c.logs).toContainEqual({ level: 'info', msg: 'relay_reply', thingName: T, travada: false });
+  });
+
+  it('J16: lock confirmado pela resposta "RELAY 1 OK"; o lock repetido vira eco already_blocked, sem segundo engineStop', async () => {
+    c = await start();
+    c.traccar.push({ positions: [position({ id: 410, deviceId: 1, fixTime: iso(T0 - 2_000), serverTime: iso(T0 - 1_000), speed: 0 })] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.traccar.commands.length === 1);
+    c.now.value = T0 + 1_000;
+    c.traccar.push({ positions: [relayReply(411, T0 + 1_000, STOP_OK)] });
+    await waitFor(() => reportedTravada(c).includes(true));
+    expect(updates(c).pop()).toEqual({ state: { reported: { travada: true, velocidade_kmh: 0 } } });
+    expect(out(c, `motos/${T}/telemetria`)).toHaveLength(1);
+    c.now.value = T0 + 40_000; // fora do recently_sent: só o bit fresco da resposta segura o segundo corte
+    await sendDelta(c, { travada: true });
+    await waitFor(() => reportedTravada(c).length === 3);
+    expect(reportedTravada(c)).toEqual([false, true, true]); // false = status da primeira posição, antes do lock
+    expect(c.traccar.commands.map((x) => x.type)).toEqual(['engineStop']);
+  });
+
+  it('J16: resposta com o relé sai sempre como reported.travada (sem a deduplicação de 1/min), mesmo igual ao último', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(420, T0, true)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    c.now.value = T0 + 10_000;
+    c.traccar.push({ positions: [relayReply(421, T0 + 10_000, STOP_OK)] }); // ex.: RELAY,1# por SMS
+    await waitFor(() => reportedTravada(c).length === 2);
+    expect(reportedTravada(c)).toEqual([true, true]);
+  });
+
+  it('J16: resposta atrasada do comando anterior (RELAY 1 com engineResume pendente) não confirma nem vira eco already_blocked', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(430, T0, true)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    c.now.value = T0 + 1_000;
+    await sendDelta(c, { travada: false });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_resume_sent'));
+    c.now.value = T0 + 1_500;
+    c.traccar.push({ positions: [relayReply(431, T0 + 1_500, STOP_OK)] });
+    await sleep(40);
+    expect(reportedTravada(c)).toEqual([true]);
+    await sendDelta(c, { travada: true }); // relock: sem eco already_blocked (o bit não é conhecido)
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'no_position'));
+    expect(reportedTravada(c)).toEqual([true]);
+    c.now.value = T0 + 2_000;
+    c.traccar.push({ positions: [relayReply(432, T0 + 2_000, RESUME_OK)] });
+    await waitFor(() => reportedTravada(c).length === 2);
+    expect(reportedTravada(c)).toEqual([true, false]);
+  });
+
+  it('J16 (segunda guarda): resposta com fixTime novo e parada não é amostra de velocidade → corte recusado no_position', async () => {
+    c = await start();
+    c.traccar.push({ positions: [{ ...relayReply(450, T0, RESUME_OK), fixTime: iso(T0 - 500), outdated: false }] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_stop_refused' && l.reason === 'no_position'));
+    expect(c.traccar.commands).toEqual([]);
+    expect(out(c, `motos/${T}/telemetria`)).toEqual([]);
+  });
+
+  it('J16: resposta "RELAY n OK" no replay de conexão do WebSocket não é estado atual (ignorada)', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(440, T0, false)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    c.traccar.latest = [relayReply(441, T0, STOP_OK)];
+    c.traccar.dropSockets();
+    await waitFor(() => c.traccar.connections === 2, 5_000);
+    await waitFor(() => c.logs.some((l) => l.msg === 'traccar_replay_status_ignored'));
+    await sleep(40);
+    expect(reportedTravada(c)).toEqual([false]);
+    expect(c.logs.some((l) => l.msg === 'relay_reply')).toBe(false);
   });
 
   it('A4-1: engineResume numa moto com bit fresco travada:false ainda ecoa reported.travada:false (o resume não trava)', async () => {

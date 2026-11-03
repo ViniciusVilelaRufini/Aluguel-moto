@@ -24,7 +24,8 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   fica retida (log `telemetry_held` com o motivo, no máximo 1/min por moto). Bit de corte desconhecido sem comando pendente
   (depois de uma (re)conexão sem status novo, ou nunca visto) **não** retém: a telemetria sai com `travada: false` (A4-6;
   cercas, zonas e trajeto não ficam cegos se o firmware não mandar heartbeat em movimento). Com o corte conhecido e a bateria ainda desconhecida há 5 min (ex.:
-  J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` (log `battery_unknown`). Com `engineStop`
+  J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` **e `bateria_conhecida: false`** (log
+  `battery_unknown`; o 0 é falta de leitura, não bateria vazia). Com a bateria conhecida o campo não vai (ausente = `true`). Com `engineStop`
   enviado e ainda sem status novo, ou com o bit recebido há mais de 90 s (firmware sem heartbeat em movimento), a telemetria
   **não** é retida: sai com `travada: false` (conservador — nunca confirma lock; a API não vê lacuna nem reconexão, e cercas e
   zonas continuam vendo a moto).
@@ -55,6 +56,15 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   antes de o J16 executar o `Relay` pode chegar logo depois do envio). Esse primeiro status sai sempre como `reported.travada`
   (sem a deduplicação de 1/min). Assim um unlock sem resposta seguido de relock não "confirma" a trava pelo bit de antes do
   `engineResume`.
+- **Resposta do J16 com o estado do relé** (bancada 2026-11-03: `"Stop engine Succeed\nRELAY 1 OK"` /
+  `"Resume engine Succeed\nRELAY 0 OK"` em ~1 s): `attributes.result` que casa com `/RELAY\s*([01])\s*OK/i` é status fresco
+  do próprio aparelho — `blocked = ($1 === '1')`, hora = min(`serverTime`, relógio da ponte) — e sai **na hora** como
+  `reported.travada` (log `relay_reply`, sem a deduplicação de 1/min). É isso que confirma o lock/unlock sem esperar o
+  heartbeat de 60 s. Com comando pendente só vale a resposta recebida depois do envio **e** do comando pendente (`engineStop`
+  → `RELAY 1`, `engineResume` → `RELAY 0`); uma resposta atrasada do comando anterior não confirma, não é ack e não vira eco
+  `already_blocked`. Posição com `attributes.result` nunca vira telemetria nem renova a amostra de velocidade da guarda do corte
+  (é a última localização repetida); com velocidade ≥ 3 km/h ela apaga a amostra parada. No replay de conexão do WebSocket a
+  resposta é ignorada como o bit `blocked`.
 - **MQTT fora:** nada é entregue ao mqtt.js: telemetria (QoS 0) é descartada; `reported`, presença, eventos e `shadow/get`
   (QoS 1) são pulados na hora (log `mqtt_down_skipped` com o tipo, 1/min por moto e tipo), sem esperar o prazo. Um QoS 1 que já
   estava em voo na queda (ou abandonado pelo prazo) fica no `outgoingStore` do mqtt.js, que o reenvia na reconexão **antes** do

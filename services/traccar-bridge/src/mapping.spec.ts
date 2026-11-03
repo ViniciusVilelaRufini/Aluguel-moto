@@ -3,7 +3,7 @@ import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cutRefusal } from './delta';
-import { applyPosition, BLOCKED_FRESH_MS, COMMAND_ACK_GRACE_MS, currentBlocked, freshBlocked, markCommandSent, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
+import { applyPosition, BLOCKED_FRESH_MS, COMMAND_ACK_GRACE_MS, currentBlocked, freshBlocked, markCommandSent, markReconnected, parseRelayReply, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { TraccarEvent, TraccarPosition } from './traccar/types';
 
 const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../../packages/contracts/schemas', name), 'utf8'));
@@ -350,5 +350,100 @@ describe('A4-1a / P4: bit de corte velho (> 90 s) sem comando pendente', () => {
     const r = AP(pos({ fixTime: at(NOW + 800), serverTime: at(NOW + 1_000), speed: 0, attributes: { power: 72 } }), mem, NOW + 1_000);
     expect(r.telemetry).toBeNull();
     expect(r.held).toBe('awaiting_status');
+  });
+});
+
+describe('J16: resposta do aparelho com o estado do relé (attributes.result "RELAY n OK")', () => {
+  const at = (ms: number) => new Date(ms).toISOString();
+  const STOP_OK = 'Stop engine Succeed\nRELAY 1 OK';
+  const RESUME_OK = 'Resume engine Succeed\nRELAY 0 OK';
+  // Como o Traccar entrega a resposta do GT06: posição `outdated` com a última localização conhecida (fixTime velho).
+  const reply = (ms: number, result: string, over: Partial<TraccarPosition> = {}) =>
+    pos({ outdated: true, fixTime: at(NOW - 60_000), serverTime: at(ms), speed: 0, attributes: { result }, ...over });
+  const lockedNow = AP(pos({ outdated: true, serverTime: at(NOW), attributes: { blocked: true, power: 72 } }), {}, NOW).memory;
+  const freeNow = AP(pos({ outdated: true, serverTime: at(NOW), attributes: { blocked: false, power: 72 } }), {}, NOW).memory;
+
+  it('parseRelayReply: só "RELAY 0/1 OK" (qualquer caixa e espaço) é estado do relé', () => {
+    expect(parseRelayReply(STOP_OK)).toBe(true);
+    expect(parseRelayReply(RESUME_OK)).toBe(false);
+    expect(parseRelayReply('relay1ok')).toBe(true);
+    expect(parseRelayReply('Relay,1 OK')).toBeUndefined();
+    expect(parseRelayReply('ok')).toBeUndefined();
+    expect(parseRelayReply('Cut off the fuel supply: Success!')).toBeUndefined();
+    expect(parseRelayReply('RELAY 2 OK')).toBeUndefined();
+  });
+
+  it('engineResume + "RELAY 0 OK" depois do envio → bit false fresco na hora (sem esperar heartbeat), sem telemetria', () => {
+    const sent = markCommandSent(lockedNow, NOW + 1_000, 'resume');
+    const r = AP(reply(NOW + 2_000, RESUME_OK), sent, NOW + 2_000);
+    expect(r.relayReply).toBe(true);
+    expect(r.telemetry).toBeNull();
+    expect(currentBlocked(r.memory)).toBe(false);
+    expect(freshBlocked(r.memory, NOW + 2_000)).toBe(false);
+    expect(r.memory).toMatchObject({ blockedAt: NOW + 2_000, awaitingStatus: false, pendingCommand: undefined, commandAckAt: undefined });
+  });
+
+  it('engineStop + "RELAY 1 OK" depois do envio → bit true fresco; a resposta não é amostra de velocidade (last intacto)', () => {
+    const moving = AP(pos({ fixTime: at(NOW - 500), serverTime: at(NOW), speed: 0, attributes: { power: 72 } }), freeNow, NOW).memory;
+    const sent = markCommandSent(moving, NOW + 1_000, 'stop');
+    // Mesmo com fixTime novo, não-outdated e parada: a resposta não renova a posição da guarda do corte.
+    const r = AP(reply(NOW + 2_000, STOP_OK, { outdated: false, fixTime: at(NOW + 1_900) }), sent, NOW + 2_000);
+    expect(r.relayReply).toBe(true);
+    expect(r.telemetry).toBeNull();
+    expect(freshBlocked(r.memory, NOW + 2_000)).toBe(true);
+    expect(r.memory.last).toEqual(moving.last);
+    expect(r.memory.lastFixTime).toBe(moving.lastFixTime);
+  });
+
+  it('resposta com velocidade em movimento apaga a amostra parada guardada (conservador)', () => {
+    const stopped = AP(pos({ fixTime: at(NOW - 500), serverTime: at(NOW), speed: 0, attributes: { power: 72 } }), freeNow, NOW).memory;
+    const r = AP(reply(NOW + 1_000, RESUME_OK, { speed: 8.1 }), stopped, NOW + 1_000);
+    expect(r.memory.last).toBeUndefined();
+    expect(cutRefusal({ online: true, mem: r.memory, now: NOW + 1_000 })).toBe('no_position');
+  });
+
+  it('blockedAt = min(serverTime, ingestão): resposta parada numa fila não é fresca', () => {
+    const r = AP(reply(NOW - BLOCKED_FRESH_MS - 1_000, STOP_OK), freeNow, NOW);
+    expect(r.relayReply).toBe(true);
+    expect(r.memory.blockedAt).toBe(NOW - BLOCKED_FRESH_MS - 1_000);
+    expect(freshBlocked(r.memory, NOW)).toBeUndefined();
+    const future = AP(reply(NOW + 60_000, STOP_OK), freeNow, NOW);
+    expect(future.memory.blockedAt).toBe(NOW);
+  });
+
+  it('resposta recebida pelo Traccar até o envio (de um comando anterior) não vale como estado nem como ack', () => {
+    const sent = markCommandSent(lockedNow, NOW + 1_000, 'resume');
+    const r = AP(reply(NOW + 1_000, RESUME_OK), sent, NOW + 1_200);
+    expect(r.relayReply).toBe(false);
+    expect(currentBlocked(r.memory)).toBeUndefined();
+    expect(r.memory).toMatchObject({ pendingCommand: 'resume', commandAckAt: undefined });
+  });
+
+  it('resposta que não bate com o comando pendente (resposta atrasada do anterior) não vale como estado nem como ack', () => {
+    const sentResume = markCommandSent(lockedNow, NOW + 1_000, 'resume');
+    const a = AP(reply(NOW + 1_500, STOP_OK), sentResume, NOW + 1_500);
+    expect(a.relayReply).toBe(false);
+    expect(freshBlocked(a.memory, NOW + 1_500)).toBeUndefined(); // nada de eco already_blocked
+    expect(a.memory).toMatchObject({ pendingCommand: 'resume', commandAckAt: undefined });
+    const sentStop = markCommandSent(freeNow, NOW + 1_000, 'stop');
+    const b = AP(reply(NOW + 1_500, RESUME_OK), sentStop, NOW + 1_500);
+    expect(b.relayReply).toBe(false);
+    expect(currentBlocked(b.memory)).toBeUndefined();
+    expect(b.memory).toMatchObject({ pendingCommand: 'stop', commandAckAt: undefined });
+  });
+
+  it('sem comando pendente (ex.: reconexão, comando por SMS): a resposta é o estado atual do relé', () => {
+    const r = AP(reply(NOW + 1_000, STOP_OK), markReconnected(freeNow), NOW + 1_000);
+    expect(r.relayReply).toBe(true);
+    expect(freshBlocked(r.memory, NOW + 1_000)).toBe(true);
+  });
+
+  it('result que não é estado do relé continua só como ack (P2), sem telemetria', () => {
+    const sent = markCommandSent(lockedNow, NOW + 1_000, 'resume');
+    const r = AP(reply(NOW + 1_500, 'ok', { outdated: false, fixTime: at(NOW + 1_400) }), sent, NOW + 1_500);
+    expect(r.relayReply).toBe(false);
+    expect(r.telemetry).toBeNull();
+    expect(r.memory.commandAckAt).toBe(NOW + 1_500);
+    expect(currentBlocked(r.memory)).toBeUndefined();
   });
 });

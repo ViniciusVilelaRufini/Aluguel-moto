@@ -6,7 +6,7 @@ import { knotsToKmh, rssiToSignal, voltageToPct, type BatteryModel } from './uni
 export interface DeviceMemory {
   /** Último bit de corte (`attributes.blocked`). Leia SEMPRE por `currentBlocked(mem)`, nunca direto. */
   blocked?: boolean;
-  /** min(serverTime do Traccar, relógio de ingestão) (ms) do último status com `attributes.blocked`. Base de `freshBlocked`. */
+  /** min(serverTime do Traccar, relógio de ingestão) (ms) do último status com `attributes.blocked` ou resposta "RELAY n OK". Base de `freshBlocked`. */
   blockedAt?: number;
   ignition?: boolean;
   signal?: number;
@@ -105,6 +105,28 @@ export const MAX_CLOCK_SKEW_MS = 10 * 60 * 1000;
 export type HeldReason = 'awaiting_status' | 'awaiting_battery';
 
 /**
+ * Resposta do J16 ao comando de motor com o estado do relé (bancada 2026-11-03): `"Stop engine Succeed\nRELAY 1 OK"` /
+ * `"Resume engine Succeed\nRELAY 0 OK"`, entregue pelo Traccar como posição com `attributes.result`.
+ */
+export const RELAY_REPLY_RE = /RELAY\s*([01])\s*OK/i;
+
+/** `attributes.result` → estado do relé (`true` = corte ligado); `undefined` se a resposta não traz o estado. */
+export function parseRelayReply(result: string): boolean | undefined {
+  const m = RELAY_REPLY_RE.exec(result);
+  return m ? m[1] === '1' : undefined;
+}
+
+/**
+ * Com comando pendente, a resposta só vale se recebida pelo Traccar depois do envio E se for a do comando pendente
+ * (`stop` → `RELAY 1`, `resume` → `RELAY 0`): uma resposta atrasada do comando anterior não confirma nem vira eco
+ * `already_blocked`. Sem comando pendente (reconexão, comando por SMS) é o estado atual do relé.
+ */
+function relayReplyAccepted(mem: DeviceMemory, at: number, relay: boolean): boolean {
+  if (!mem.pendingCommand || mem.commandSentAt === undefined) return true;
+  return at > mem.commandSentAt && relay === (mem.pendingCommand === 'stop');
+}
+
+/**
  * Posição do Traccar → telemetria do contrato (spec §6.2). Todo atributo conhecido atualiza a memória (inclusive de heartbeat);
  * só posição válida, não `outdated` e com `fixTime` mais novo que a última publicada vira telemetria.
  * - `now` (ms) é o relógio de ingestão. `fixTime` > now + MAX_CLOCK_SKEW_MS = `invalid`: não grava `last`/ordem; a
@@ -115,6 +137,10 @@ export type HeldReason = 'awaiting_status' | 'awaiting_battery';
  *   (`telemetry: null`, `held`) — um `travada: false` antes do status ou `bateria_pct: 0` por falta de dado enganaria a API.
  *   Bit desconhecido sem comando pendente (reconexão, nunca visto) sai com `travada: false` (A4-6).
  *   A memória (last, ignição, sinal, bateria) atualiza mesmo assim.
+ * - Resposta do J16 com o estado do relé (`attributes.result` "RELAY 0/1 OK", `parseRelayReply`) aceita
+ *   (`relayReplyAccepted`) = status fresco do próprio aparelho: `blocked`/`blockedAt` (min(serverTime, ingestão)) na hora e
+ *   `relayReply: true` (a ponte publica `reported.travada` sem a deduplicação de 1/min). Posição com `attributes.result` nunca
+ *   vira telemetria nem renova `last` (é a última localização repetida, não medição); velocidade em movimento nela apaga `last`.
  * O `reported.travada` deve usar `currentBlocked` e só ser publicado quando for boolean.
  */
 export function applyPosition(
@@ -122,17 +148,30 @@ export function applyPosition(
   mem: DeviceMemory,
   battery: BatteryModel,
   now: number = Date.now(),
-): { telemetry: TelemetryMessage | null; invalid: boolean; movedWhileLocked: boolean; held?: HeldReason; memory: DeviceMemory } {
+): { telemetry: TelemetryMessage | null; invalid: boolean; movedWhileLocked: boolean; held?: HeldReason; relayReply: boolean; memory: DeviceMemory } {
   const next: DeviceMemory = { ...mem };
   const a = p.attributes ?? {};
   // Hora do Traccar ao receber a mensagem, limitada a agora: um heartbeat parado numa fila (WebSocket, inbound) não é fresco.
   const serverAt = Date.parse(p.serverTime);
   const at = Number.isFinite(serverAt) ? Math.min(serverAt, now) : now;
-  // P2: resposta do aparelho ao comando pendente (o Traccar a entrega como posição com `attributes.result`).
-  if (next.pendingCommand && typeof a.result === 'string' && next.commandSentAt !== undefined && at > next.commandSentAt && next.commandAckAt === undefined) {
+  const result = typeof a.result === 'string' ? a.result : undefined;
+  const relay = result === undefined ? undefined : parseRelayReply(result);
+  // P2: resposta do aparelho ao comando pendente (o Traccar a entrega como posição com `attributes.result`). Resposta com o
+  // estado do relé que não é a do comando pendente não conta como ack.
+  if (
+    next.pendingCommand && result !== undefined && next.commandSentAt !== undefined && at > next.commandSentAt && next.commandAckAt === undefined &&
+    (relay === undefined || relayReplyAccepted(next, at, relay))
+  ) {
     next.commandAckAt = at;
   }
-  if (typeof a.blocked === 'boolean' && statusAccepted(next, at)) {
+  const relayReply = relay !== undefined && relayReplyAccepted(next, at, relay);
+  if (relayReply) {
+    next.blocked = relay === true;
+    next.blockedAt = at;
+    next.awaitingStatus = false;
+    next.pendingCommand = undefined;
+    next.commandAckAt = undefined;
+  } else if (typeof a.blocked === 'boolean' && statusAccepted(next, at)) {
     next.blocked = a.blocked;
     next.blockedAt = at;
     next.awaitingStatus = false;
@@ -147,7 +186,13 @@ export function applyPosition(
   }
   const blocked = telemetryBlocked(next, now);
   if (blocked !== true) next.lockAnchor = undefined;
-  const none = { telemetry: null, invalid: false, movedWhileLocked: false, memory: next };
+  const none = { telemetry: null, invalid: false, movedWhileLocked: false, relayReply, memory: next };
+  if (result !== undefined) {
+    // Resposta a comando: a localização é a última conhecida repetida. Não é amostra parada nova para a guarda do corte.
+    const replySpeed = knotsToKmh(p.speed);
+    if (!(replySpeed < 3) || !Number.isFinite(replySpeed)) next.last = undefined;
+    return none;
+  }
   const fixTime = Date.parse(p.fixTime);
   const newer = !Number.isFinite(fixTime) || next.lastFixTime === undefined || fixTime > next.lastFixTime;
   if (!p.valid || p.outdated || !Number.isFinite(fixTime)) {
@@ -191,7 +236,7 @@ export function applyPosition(
   }
   if (blocked === undefined) return { ...none, held: 'awaiting_status', memory: next };
   if (next.batteryPct === undefined) return { ...none, movedWhileLocked, held: 'awaiting_battery', memory: next };
-  return { telemetry, invalid: false, movedWhileLocked, memory: next };
+  return { telemetry, invalid: false, movedWhileLocked, relayReply, memory: next };
 }
 
 /**

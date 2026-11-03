@@ -369,9 +369,10 @@ export class Bridge {
 
   private async onPosition(thing: string, raw: TraccarPosition, replay: boolean): Promise<void> {
     let p = raw;
-    if (replay && typeof raw.attributes?.blocked === 'boolean') {
-      // Replay de conexão: a última posição conhecida pode ser de antes de uma reinicialização do J16. Não é status atual.
-      p = { ...raw, attributes: { ...raw.attributes, blocked: undefined } };
+    if (replay && (typeof raw.attributes?.blocked === 'boolean' || typeof raw.attributes?.result === 'string')) {
+      // Replay de conexão: a última posição conhecida pode ser de antes de uma reinicialização do J16 (inclusive uma resposta
+      // "RELAY n OK" antiga). Não é status atual: sai sem o bit e sem a resposta.
+      p = { ...raw, attributes: { ...raw.attributes, blocked: undefined, result: undefined } };
       this.logLimited(`${thing}|replay`, 'info', { msg: 'traccar_replay_status_ignored', thingName: thing });
     }
     const now = this.now();
@@ -385,7 +386,8 @@ export class Bridge {
         // `bateria_pct: 0` só na mensagem; a memória continua sem bateria conhecida.
         const forced = applyPosition(p, { ...before, batteryPct: 0 }, this.opts.battery, now);
         if (forced.telemetry) {
-          r = { ...forced, memory: { ...forced.memory, batteryPct: r.memory.batteryPct } };
+          // `bateria_conhecida: false` (contrato MQTT): o 0 é falta de leitura, não bateria vazia.
+          r = { ...forced, telemetry: { ...forced.telemetry, bateria_conhecida: false }, memory: { ...forced.memory, batteryPct: r.memory.batteryPct } };
           this.logLimited(`${thing}|battery_unknown`, 'warn', { msg: 'battery_unknown', thingName: thing });
         }
       }
@@ -403,8 +405,15 @@ export class Bridge {
       await this.publish(TOPICS.events(thing), { tipo: 'movimento_sem_aluguel', timestamp: new Date(Date.parse(p.fixTime)).toISOString() }, 1);
     }
     if (!replay) await this.positionAlarms(thing, p, r.memory, now);
-    // Status com o bit de corte → `reported.travada` do bit ATUAL: na mudança ou, igual, no máximo 1/min (M5).
     const blocked = currentBlocked(r.memory);
+    if (r.relayReply && typeof blocked === 'boolean') {
+      // Resposta do J16 com o estado do relé ("RELAY n OK"): status fresco do aparelho, sai na hora (sem a deduplicação de M5).
+      // É ela que confirma o lock/unlock em ~1 s, sem esperar o heartbeat de 60 s.
+      this.log.info({ msg: 'relay_reply', thingName: thing, travada: blocked });
+      await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
+      return;
+    }
+    // Status com o bit de corte → `reported.travada` do bit ATUAL: na mudança ou, igual, no máximo 1/min (M5).
     if (typeof p.attributes?.blocked === 'boolean' && typeof blocked === 'boolean') {
       const last = this.lastTravada.get(thing);
       if (!last || last.value !== blocked || now - last.at >= REPORT_REPEAT_MS) await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
