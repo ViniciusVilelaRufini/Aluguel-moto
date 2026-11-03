@@ -63,3 +63,42 @@ describe('migração 20261103100000_aud4_indices', () => {
     expect(sql).not.toMatch(/^\s*CREATE INDEX CONCURRENTLY/m);
   });
 });
+
+describe('migrações 20261103101000_aud4_checks + 20261103101100_aud4_checks_validate', () => {
+  const add = sqlOf('20261103101000_aud4_checks');
+  const validate = sqlOf('20261103101100_aud4_checks_validate');
+  const checks: Array<[string, string, string]> = [
+    ['Payment', 'Payment_amount_nonnegative', `"amountCents" >= 0`],
+    ['Payment', 'Payment_wallet_range', `"walletCents" >= 0 AND "walletCents" <= "amountCents"`],
+    ['Payment', 'Payment_refunded_range', `"refundedCents" >= 0 AND "refundedCents" <= "amountCents"`],
+    ['Deposit', 'Deposit_amount_nonnegative', `"amountCents" >= 0`],
+    ['Deposit', 'Deposit_captured_range', `"capturedCents" IS NULL OR ("capturedCents" >= 0 AND "capturedCents" <= "amountCents")`],
+    ['Fee', 'Fee_amount_nonnegative', `"amountCents" >= 0`],
+    ['PricingPlan', 'PricingPlan_prices_nonnegative', `"unlockFeeCents" >= 0 AND "unitPriceCents" >= 0 AND "pausePerMinuteCents" >= 0`],
+    ['MinutePackage', 'MinutePackage_price_nonnegative', `"priceCents" >= 0`],
+    ['VehicleModel', 'VehicleModel_prices_nonnegative', `"pricePerMinuteCents" >= 0 AND ("unlockFeeCents" IS NULL OR "unlockFeeCents" >= 0)`],
+    ['Coupon', 'Coupon_percent_off_range', `"percentOff" IS NULL OR ("percentOff" >= 0 AND "percentOff" <= 100)`],
+    ['Coupon', 'Coupon_amount_off_nonnegative', `"amountOffCents" IS NULL OR "amountOffCents" >= 0`],
+    ['SwapStation', 'SwapStation_battery_counts_nonnegative', `"availableBatteries" >= 0 AND "totalSlots" >= 0`],
+    ['Battery', 'Battery_charge_pct_range', `"chargePct" >= 0 AND "chargePct" <= 100`],
+    ['Vehicle', 'Vehicle_battery_pct_range', `"batteryPct" >= 0 AND "batteryPct" <= 100`],
+    ['Rental', 'Rental_cost_nonnegative', `"costCents" >= 0`],
+  ];
+
+  it.each(checks)('%s.%s: ADD ... NOT VALID, depois VALIDATE noutra migração, e listado em HAND_WRITTEN_CHECKS', (table, name, expr) => {
+    expect(add).toContain(`ALTER TABLE "${table}" ADD CONSTRAINT "${name}" CHECK (${expr}) NOT VALID;`);
+    expect(validate).toContain(`ALTER TABLE "${table}" VALIDATE CONSTRAINT "${name}";`);
+    expect(e2eHelper).toContain(`'${name}'`);
+  });
+
+  it('cada constraint adicionada é validada (e nada além disso)', () => {
+    const added = [...add.matchAll(/ADD CONSTRAINT "(\w+)"/g)].map((m) => m[1]).sort();
+    const validated = [...validate.matchAll(/VALIDATE CONSTRAINT "(\w+)"/g)].map((m) => m[1]).sort();
+    expect(validated).toEqual(added);
+    expect(added).toEqual(checks.map((c) => c[1]).sort());
+  });
+
+  it('sem teto availableBatteries <= totalSlots (a descarga da van incrementa sem limite; docs/decisoes.md)', () => {
+    expect(add).not.toMatch(/"availableBatteries" <= "totalSlots"/);
+  });
+});
