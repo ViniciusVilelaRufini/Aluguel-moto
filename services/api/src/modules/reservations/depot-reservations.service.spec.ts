@@ -388,54 +388,48 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     expect(prisma.reservation.updateMany).not.toHaveBeenCalled();
   });
 
-  it('fix 4: compensador libera caução de reserva órfã (held/awaiting_pix, chave de reserva, sem reserva nem aluguel, > 10 min)', async () => {
+  it('revisão onda 2: compensador filtra no SQL (NOT EXISTS em Rental, Reservation aberta, RentalStart, DepositRelease) — aluguéis longos não ocupam o lote', async () => {
     const { service, prisma, released } = setup();
     const now = new Date('2026-10-22T15:00:00Z');
-    prisma.deposit.findMany.mockResolvedValue([
-      { id: 'orfa', customerId: CUSTOMER_ID },
-      { id: 'com-reserva', customerId: CUSTOMER_ID },
-      { id: 'com-aluguel', customerId: CUSTOMER_ID },
-    ] as any);
-    prisma.reservation.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'com-reserva' ? { id: 'r' } : null)) as any);
-    prisma.rental.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'com-aluguel' ? { id: 'x' } : null)) as any);
-    const depotList = [
-      { id: 'orfa', customerId: CUSTOMER_ID },
-      { id: 'com-reserva', customerId: CUSTOMER_ID },
-      { id: 'com-aluguel', customerId: CUSTOMER_ID },
-      { id: 'ja-liberando', customerId: CUSTOMER_ID },
-    ];
-    // Segunda busca (cauções de rua) vazia neste cenário.
-    prisma.deposit.findMany.mockImplementation((async (a: any) => (JSON.stringify(a.where).includes('"not"') ? [] : depotList)) as any);
-    prisma.depositRelease.findUnique.mockImplementation((async (a: any) => (a.where.depositId === 'ja-liberando' ? { depositId: 'ja-liberando' } : null)) as any);
+    // 100+ cauções em uso ficam fora pela consulta; ela devolve só a órfã.
+    (prisma.$queryRaw as any).mockResolvedValue([{ id: 'orfa', customerId: CUSTOMER_ID }]);
     expect(await service.releaseOrphanDeposits(now)).toBe(1);
     expect(released).toEqual([expect.objectContaining({ depositId: 'orfa', customerId: CUSTOMER_ID })]);
-    const where = (prisma.deposit.findMany.mock.calls[0][0] as any).where;
-    expect(where).toMatchObject({
-      status: { in: ['held', 'awaiting_pix'] },
-      createdAt: { lt: new Date(now.getTime() - 10 * 60_000) },
-    });
-    expect(JSON.stringify(where)).toContain(':reservation:');
+    expect(prisma.deposit.findMany).not.toHaveBeenCalled();
+    const call = (prisma.$queryRaw as any).mock.calls[0];
+    const sql = (call[0] as TemplateStringsArray).join('?').replace(/\s+/g, ' ');
+    expect(sql).toContain(`d."status" IN ('held', 'awaiting_pix')`);
+    expect(sql).toContain(`NOT EXISTS (SELECT 1 FROM "Rental" r WHERE r."depositId" = d."id")`);
+    expect(sql).toContain(`NOT EXISTS (SELECT 1 FROM "Reservation" v WHERE v."depositId" = d."id" AND v."status" IN ('active', 'handover'))`);
+    expect(sql).toContain(`NOT EXISTS (SELECT 1 FROM "RentalStart" s WHERE s."depositId" = d."id")`);
+    expect(sql).toContain(`NOT EXISTS (SELECT 1 FROM "DepositRelease" x WHERE x."depositId" = d."id")`);
+    expect(sql).toContain(`d."idempotencyKey" LIKE '%:reservation:%'`);
+    expect(sql).toContain(`(d."pix"->>'expiresAt')::timestamptz`);
+    expect(sql).toMatch(/ORDER BY d."createdAt" ASC LIMIT 100/);
+    expect(call.slice(1)).toEqual([new Date(now.getTime() - 10 * 60_000), new Date(now.getTime() - 10 * 60_000)]);
   });
 
-  it('auditoria run-4 onda 2: compensador também libera caução de rua (sem :reservation:) órfã, 10 min além do prazo do Pix', async () => {
+  it('revisão onda 2 (item 7): reserva converted/expired/canceled não protege a caução sem aluguel; active/handover protege; corrida com aluguel/início/liberação → pula', async () => {
     const { service, prisma, released } = setup();
-    const now = new Date('2026-10-22T15:00:00Z');
-    const ago = (min: number) => new Date(now.getTime() - min * 60_000);
-    const street = [
-      { id: 'rua-orfa-pix', customerId: CUSTOMER_ID, createdAt: ago(40), pix: { expiresAt: ago(25).toISOString() } },
-      { id: 'rua-pix-no-prazo', customerId: CUSTOMER_ID, createdAt: ago(40), pix: { expiresAt: ago(5).toISOString() } },
-      { id: 'rua-cartao-orfa', customerId: CUSTOMER_ID, createdAt: ago(30), pix: null },
-      { id: 'rua-com-inicio', customerId: CUSTOMER_ID, createdAt: ago(30), pix: null },
-      { id: 'rua-com-reserva', customerId: CUSTOMER_ID, createdAt: ago(30), pix: null },
-    ];
-    prisma.deposit.findMany.mockImplementation((async (a: any) => (JSON.stringify(a.where).includes('"not"') ? street : [])) as any);
-    prisma.reservation.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'rua-com-reserva' ? { id: 'r' } : null)) as any);
-    prisma.rentalStart.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'rua-com-inicio' ? { rentalId: 'x' } : null)) as any);
-    expect(await service.releaseOrphanDeposits(now)).toBe(2);
-    expect(released.map((e) => e.depositId).sort()).toEqual(['rua-cartao-orfa', 'rua-orfa-pix']);
-    const streetWhere = (prisma.deposit.findMany.mock.calls.map((c) => (c[0] as any).where)).find((w: any) => JSON.stringify(w).includes('"not"'));
-    expect(streetWhere).toMatchObject({ status: { in: ['held', 'awaiting_pix'] }, createdAt: { lt: ago(10) } });
-    expect(JSON.stringify(streetWhere)).toContain(':reservation:');
+    (prisma.$queryRaw as any).mockResolvedValue([
+      { id: 'de-reserva-convertida', customerId: CUSTOMER_ID },
+      { id: 'reserva-aberta', customerId: CUSTOMER_ID },
+      { id: 'com-aluguel', customerId: CUSTOMER_ID },
+      { id: 'com-inicio', customerId: CUSTOMER_ID },
+      { id: 'ja-liberando', customerId: CUSTOMER_ID },
+    ]);
+    // Reserva de qualquer status existe para as duas primeiras; só a segunda está aberta.
+    prisma.reservation.findFirst.mockImplementation((async (a: any) => {
+      if (a.where.depositId === 'reserva-aberta') return { id: 'r-aberta' };
+      if (a.where.depositId === 'de-reserva-convertida' && !a.where.status) return { id: 'r-convertida' };
+      return null;
+    }) as any);
+    prisma.rental.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'com-aluguel' ? { id: 'x' } : null)) as any);
+    prisma.rentalStart.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'com-inicio' ? { rentalId: 'y' } : null)) as any);
+    prisma.depositRelease.findUnique.mockImplementation((async (a: any) => (a.where.depositId === 'ja-liberando' ? { depositId: 'ja-liberando' } : null)) as any);
+    expect(await service.releaseOrphanDeposits(new Date('2026-10-22T15:00:00Z'))).toBe(1);
+    expect(released.map((e) => e.depositId)).toEqual(['de-reserva-convertida']);
+    expect(prisma.reservation.findFirst).toHaveBeenCalledWith({ where: { depositId: 'de-reserva-convertida', status: { in: ['active', 'handover'] } }, select: { id: true } });
   });
 
   it('fix 4: compensador respeita JOBS_ENABLED', async () => {

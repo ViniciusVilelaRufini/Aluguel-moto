@@ -198,43 +198,34 @@ export class DepotReservationsService {
    */
   async releaseOrphanDeposits(now = new Date()): Promise<number> {
     const olderThan = new Date(now.getTime() - ORPHAN_DEPOSIT_AGE_MS);
-    const depot = await this.prisma.deposit.findMany({
-      where: {
-        status: { in: ['held', 'awaiting_pix'] },
-        idempotencyKey: { startsWith: 'deposit:', contains: RESERVATION_KEY_MARK },
-        createdAt: { lt: olderThan },
-      },
-      select: { id: true, customerId: true },
-      take: 100,
-    });
-    const street = await this.prisma.deposit.findMany({
-      where: {
-        status: { in: ['held', 'awaiting_pix'] },
-        idempotencyKey: { startsWith: 'deposit:', not: { contains: RESERVATION_KEY_MARK } },
-        createdAt: { lt: olderThan },
-      },
-      select: { id: true, customerId: true, createdAt: true, pix: true },
-      orderBy: { createdAt: 'asc' },
-      take: 100,
-    });
+    // Revisão onda 2: o filtro de "em uso" fica no SQL (NOT EXISTS), para cauções de aluguéis longos (ou de reservas
+    // abertas) não ocuparem o lote e esconderem as órfãs. Só reserva `active`/`handover` protege a caução: convertida,
+    // vencida ou cancelada sem aluguel com a caução não a segura. Rua: só 10 min depois do prazo do Pix.
+    const candidates =
+      (await this.prisma.$queryRaw<Array<{ id: string; customerId: string }>>`
+        SELECT d."id", d."customerId" FROM "Deposit" d
+        WHERE d."status" IN ('held', 'awaiting_pix')
+          AND d."idempotencyKey" LIKE 'deposit:%'
+          AND d."createdAt" < ${olderThan}
+          AND (d."idempotencyKey" LIKE '%:reservation:%' OR COALESCE((d."pix"->>'expiresAt')::timestamptz, d."createdAt") < ${olderThan})
+          AND NOT EXISTS (SELECT 1 FROM "Rental" r WHERE r."depositId" = d."id")
+          AND NOT EXISTS (SELECT 1 FROM "Reservation" v WHERE v."depositId" = d."id" AND v."status" IN ('active', 'handover'))
+          AND NOT EXISTS (SELECT 1 FROM "RentalStart" s WHERE s."depositId" = d."id")
+          AND NOT EXISTS (SELECT 1 FROM "DepositRelease" x WHERE x."depositId" = d."id")
+        ORDER BY d."createdAt" ASC LIMIT 100`) ?? [];
     let released = 0;
-    for (const d of depot) if (await this.releaseIfOrphan(d)) released++;
-    for (const d of street ?? []) {
-      const pixUntil = Date.parse(String((d.pix as { expiresAt?: string } | null)?.expiresAt ?? ''));
-      const since = Math.max(d.createdAt.getTime(), Number.isFinite(pixUntil) ? pixUntil : 0);
-      if (since + ORPHAN_DEPOSIT_AGE_MS > now.getTime()) continue;
-      // Início em andamento com esta caução: a liberação fica para depois que o marcador sumir.
-      if (await this.prisma.rentalStart.findFirst({ where: { depositId: d.id }, select: { rentalId: true } })) continue;
-      if (await this.releaseIfOrphan(d)) released++;
-    }
+    for (const d of candidates) if (await this.releaseIfOrphan(d)) released++;
     return released;
   }
 
+  /** Reconfere caso a caso (corrida entre a consulta e a liberação: aluguel, início ou liberação gravados no meio). */
   private async releaseIfOrphan(d: { id: string; customerId: string }): Promise<boolean> {
     // Liberação já pedida (DepositRelease): o job de retentativa de pagamentos cuida dela.
     if (await this.prisma.depositRelease.findUnique({ where: { depositId: d.id } })) return false;
-    if (await this.prisma.reservation.findFirst({ where: { depositId: d.id }, select: { id: true } })) return false;
+    if (await this.prisma.reservation.findFirst({ where: { depositId: d.id, status: { in: ['active', 'handover'] } }, select: { id: true } })) return false;
     if (await this.prisma.rental.findFirst({ where: { depositId: d.id }, select: { id: true } })) return false;
+    // Início em andamento com esta caução: a liberação fica para depois que o marcador sumir.
+    if (await this.prisma.rentalStart.findFirst({ where: { depositId: d.id }, select: { rentalId: true } })) return false;
     await this.requestDepositRelease(d.id, d.customerId);
     this.logger.warn({ msg: 'orphan_deposit_released', depositId: d.id });
     return true;
