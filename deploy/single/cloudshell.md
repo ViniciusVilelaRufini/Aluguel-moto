@@ -193,6 +193,26 @@ aws ssm send-command --instance-ids $IID --document-name volti-dev-update
 - Painel: `volti-dev-admin` com `action=publish-panel`.
 - Mudanças de infra: repita o passo 4 com os novos `-c`. O user data só roda no primeiro boot; para trocar a branch de uma instância já criada, edite `VOLTI_BRANCH` em `/etc/volti/instance.env` e rode o update.
 
+### Mosquitto com senha (auditoria run-4, onda 2) — exigido a partir do próximo update
+
+> **ATENÇÃO, DONO:** o próximo `volti-dev-update` precisa dos parâmetros `/volti/dev/secrets/MQTT_API_PASSWORD`,
+> `/volti/dev/secrets/MQTT_BRIDGE_PASSWORD` e `/volti/dev/secrets/MQTT_SIM_PASSWORD`. Sem eles o Compose recusa subir
+> (`MQTT_*_PASSWORD ausente (rode render-env.sh)`) e a API, a ponte e o simulador ficam fora do ar.
+
+O Mosquitto da instância não aceita mais anônimo: a API, a ponte GT06 e o simulador entram com usuário e senha próprios, e a
+ACL (`deploy/single/mosquitto/acl`) limita cada um ao seu papel. O `render-env.sh` do próprio update **cria as três senhas
+sozinho** (como `DB_PASSWORD` e os outros segredos gerados). Só se a criação falhar (por exemplo, a role da instância sem
+`ssm:PutParameter` em `/volti/dev/secrets/*`), crie à mão no CloudShell e rode o update de novo:
+
+```bash
+for name in MQTT_API_PASSWORD MQTT_BRIDGE_PASSWORD MQTT_SIM_PASSWORD; do
+  aws ssm put-parameter --name /volti/dev/secrets/$name --type SecureString --key-id alias/volti-dev     --value "$(openssl rand -hex 32)" --tags Key=Projeto,Value=Volti
+done
+```
+
+Só letras e números (o `openssl rand -hex` serve). Para trocar uma senha: apague o parâmetro e rode o update (o novo valor é
+gerado e o Mosquitto e o serviço sobem com ele).
+
 ## Simulador de rastreadores (motos sem rastreador real)
 
 O dev single não tem rastreador físico. Por isso o `update.sh` sobe o serviço `iot-sim` (`services/iot-sim`, profile `sim` do `compose.yml`) ligado ao Mosquitto da instância. Ele simula um rastreador por moto cadastrada, lendo a frota do Postgres só com `SELECT`, e:
