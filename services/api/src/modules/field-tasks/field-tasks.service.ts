@@ -209,7 +209,13 @@ export class FieldTasksService {
     const t = await this.one(id);
     if (t.status !== 'open' && t.status !== 'assigned') throw conflict('conflict', 'A tarefa não pode ser iniciada neste estado.');
     assertTaskActor(user, t, { allowUnassigned: true });
-    await this.prisma.fieldTask.update({ where: { id }, data: { status: 'in_progress', startedAt: new Date(), assigneeId: t.assigneeId ?? user.userId } });
+    // Auditoria run-4: condicionado ao status e ao responsável lidos — dois operadores iniciando a mesma tarefa sem
+    // responsável não se sobrescrevem; o segundo recebe 409.
+    const started = await this.prisma.fieldTask.updateMany({
+      where: { id, status: { in: ['open', 'assigned'] }, assigneeId: t.assigneeId },
+      data: { status: 'in_progress', startedAt: new Date(), assigneeId: t.assigneeId ?? user.userId },
+    });
+    if (started.count !== 1) throw conflict('conflict', 'A tarefa mudou de situação; atualize e tente de novo.');
     return this.mapped(id);
   }
 
