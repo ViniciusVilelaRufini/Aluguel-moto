@@ -47,6 +47,8 @@ export interface TelemetryMessage {
   ignicao: boolean;
   sinal: number;
   timestamp: string;
+  /** Opcional (ausente = `true`): `false` = sem leitura da bateria, `bateria_pct` 0 não é carga real (bancada do J16). */
+  bateria_conhecida?: boolean;
 }
 
 export interface DeviceEventMessage {
@@ -63,13 +65,15 @@ const isIso = (v: unknown): v is string => typeof v === 'string' && v.length >= 
 
 export function parseTelemetry(raw: unknown): TelemetryMessage | null {
   if (!isObj(raw)) return null;
-  const { lat, lng, velocidade_kmh, bateria_pct, travada, ignicao, sinal, timestamp } = raw;
+  const { lat, lng, velocidade_kmh, bateria_pct, travada, ignicao, sinal, timestamp, bateria_conhecida } = raw;
   if (!isNum(lat, -90, 90) || !isNum(lng, -180, 180)) return null;
   if (!isNum(velocidade_kmh, 0, 200) || !isNum(bateria_pct, 0, 100)) return null;
   if (!isBool(travada) || !isBool(ignicao)) return null;
   if (!isNum(sinal, 0, 5) || !Number.isInteger(sinal)) return null;
   if (!isIso(timestamp)) return null;
-  return { lat, lng, velocidade_kmh, bateria_pct, travada, ignicao, sinal, timestamp };
+  // `null` = ausente (projeção da regra do IoT Core com o atributo faltando); outro tipo = fora do schema.
+  if (bateria_conhecida !== undefined && bateria_conhecida !== null && !isBool(bateria_conhecida)) return null;
+  return { lat, lng, velocidade_kmh, bateria_pct, travada, ignicao, sinal, timestamp, ...(isBool(bateria_conhecida) ? { bateria_conhecida } : {}) };
 }
 
 export function parseDeviceEvent(raw: unknown): DeviceEventMessage | null {

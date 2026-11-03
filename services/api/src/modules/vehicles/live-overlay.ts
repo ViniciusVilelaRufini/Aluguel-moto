@@ -1,4 +1,5 @@
 import type { RedisStore } from '../../redis/redis-store';
+import { MAX_CLOCK_SKEW_MS } from '../iot/live-state.store';
 
 interface LiveFields {
   thingName: string;
@@ -6,39 +7,50 @@ interface LiveFields {
   lng: number;
   speedKmh: number | null;
   batteryPct: number;
+  batteryKnown?: boolean;
   locked: boolean;
   ignition: boolean;
   signal: number | null;
+  online?: boolean;
   lastSeenAt: Date | null;
 }
 
 const num = (v: string | undefined) => (v === undefined || v === '' || !Number.isFinite(Number(v)) ? undefined : Number(v));
 
 /**
- * QA-20: sobrepõe às linhas do Postgres (gravadas a cada 30 s por moto) o estado ao vivo do módulo IoT no Redis
- * (`iot:live:{thingName}`), quando ele é mais novo. Sem estado ao vivo ou com o Redis fora, vale o banco.
- * Conectividade/status continuam do banco (a vigia de inatividade é quem decide offline).
+ * QA-20: sobrepõe às linhas do Postgres o estado ao vivo do módulo IoT no Redis (`iot:live:{thingName}`). Sem estado ao vivo,
+ * com o Redis fora ou com o Redis muito mais velho que o banco (mais que `MAX_CLOCK_SKEW_MS`), vale o banco.
+ *
+ * Bancada do J16 (2026-11-03): o estado do rastreador (trava, online, último sinal, bateria conhecida) é sobreposto **à parte**
+ * da posição: um J16 parado só com status/heartbeat (Redis sem posição, lat/lng 0) ainda mostra a trava e o último sinal reais.
+ * E o `lastSeenAt` do banco pode estar à frente do Redis (gravado com o relógio do rastreador adiantado, antes de passar a ser a
+ * hora do servidor): até `MAX_CLOCK_SKEW_MS` de diferença o Redis (hora de chegada no servidor) vale. A trava só é sobreposta
+ * com origem conhecida (`lockedAt`): o `locked: true` do estado em branco (presença sem mensagem) não vale. O status da moto
+ * (`offline`) continua do banco (a vigia de inatividade é quem decide).
  */
 export async function withLiveState<T extends LiveFields>(redis: Pick<RedisStore, 'hgetall'>, rows: T[]): Promise<T[]> {
   return Promise.all(
     rows.map(async (v) => {
       const h = await redis.hgetall(`iot:live:${v.thingName}`).catch(() => ({}) as Record<string, string>);
       const seen = h?.lastSeenAt ? Date.parse(h.lastSeenAt) : NaN;
-      if (!Number.isFinite(seen) || (v.lastSeenAt && seen <= v.lastSeenAt.getTime())) return v;
+      if (!Number.isFinite(seen) || seen <= 0) return v;
+      if (v.lastSeenAt && seen < v.lastSeenAt.getTime() - MAX_CLOCK_SKEW_MS) return v;
+      const out: T = { ...v, lastSeenAt: new Date(seen) };
+      if (h.online !== undefined) out.online = h.online === 'true';
+      if (h.locked !== undefined && num(h.lockedAt) !== undefined) out.locked = h.locked === 'true';
       const lat = num(h.lat);
       const lng = num(h.lng);
-      if (lat === undefined || lng === undefined || (lat === 0 && lng === 0)) return v;
+      if (lat === undefined || lng === undefined || (lat === 0 && lng === 0)) return out;
       const battery = num(h.batteryPct);
       return {
-        ...v,
+        ...out,
         lat,
         lng,
         speedKmh: num(h.speedKmh) ?? v.speedKmh,
         batteryPct: battery === undefined ? v.batteryPct : Math.round(battery),
-        locked: h.locked === undefined ? v.locked : h.locked === 'true',
+        ...(h.batteryKnown === undefined ? {} : { batteryKnown: h.batteryKnown !== 'false' }),
         ignition: h.ignition === undefined ? v.ignition : h.ignition === 'true',
         signal: num(h.signal) ?? v.signal,
-        lastSeenAt: new Date(seen),
       };
     }),
   );

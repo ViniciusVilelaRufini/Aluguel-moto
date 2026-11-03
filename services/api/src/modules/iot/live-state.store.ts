@@ -209,12 +209,14 @@ export class LiveStateStore {
       stolenMode: h.stolenMode === 'true',
       online: h.online === 'true',
       lastSeenAt: h.lastSeenAt,
+      ...(h.batteryKnown === 'false' ? { batteryKnown: false as const } : {}),
     };
     this.syncedAt.set(thingName, at);
     const lockedAt = h.lockedAt ? Number(h.lockedAt) : NaN;
     if (Number.isFinite(lockedAt)) this.lockedAt.set(thingName, lockedAt);
     else this.lockedAt.delete(thingName);
     if (mem) {
+      if (fromRedis.batteryKnown === undefined) delete mem.batteryKnown;
       Object.assign(mem, fromRedis);
       return mem;
     }
@@ -614,6 +616,8 @@ export class LiveStateStore {
     if (newest) {
       this.lastTelemetryAt.set(thingName, orderTs);
       Object.assign(s, { lat: t.lat, lng: t.lng, speedKmh: t.velocidade_kmh, batteryPct: t.bateria_pct, locked: t.travada, ignition: t.ignicao, signal: t.sinal });
+      if (t.bateria_conhecida === false) s.batteryKnown = false;
+      else delete s.batteryKnown;
       // Origem da trava: hora da medição; relógio do rastreador não confiável (futuro distante) = origem desconhecida.
       if (Number.isFinite(deviceTs) && deviceTs <= now + MAX_CLOCK_SKEW_MS) this.lockedAt.set(thingName, measuredAt);
       else this.lockedAt.delete(thingName);
@@ -692,6 +696,8 @@ export class LiveStateStore {
   private async persist(s: VehicleLiveState): Promise<void> {
     const values: Record<string, string> = {};
     for (const [k, v] of Object.entries(s)) values[k] = String(v);
+    // Sempre gravado (o `hset` não apaga campo): a bateria que voltou a ser lida não fica "desconhecida" para as outras instâncias.
+    values.batteryKnown = String(s.batteryKnown !== false);
     // Sempre gravado (vazio = desconhecida): o `hset` não apaga campo, e uma origem velha não pode sobrar para outra instância.
     values.lockedAt = String(this.lockedAt.get(s.thingName) ?? '');
     // `reconnectAt` não vai na escrita em bloco (a cópia desta instância pode estar velha e apagaria/baixaria a reconexão de

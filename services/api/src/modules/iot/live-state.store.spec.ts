@@ -395,3 +395,21 @@ describe('LiveStateStore.unlockConfirmed — destrava só relé confirmada só p
     expect(live.unlockConfirmed(T)).toBe(false);
   });
 });
+
+describe('LiveStateStore — bateria desconhecida (bancada do J16, bateria_conhecida)', () => {
+  const tel = (over: Record<string, unknown> = {}) => ({ lat: -23.56, lng: -46.69, velocidade_kmh: 0, bateria_pct: 0, travada: true, ignicao: false, sinal: 4, timestamp: '2026-11-03T15:00:00.000Z', ...over });
+
+  it('vai para o hash do Redis (batteryKnown), é relido por outra instância e volta a true quando a leitura volta', async () => {
+    const clock = new FakeClock(Date.parse('2026-11-03T15:00:00Z'));
+    const redis = new MemoryRedisStore();
+    const a = new LiveStateStore(redis, clock);
+    const b = new LiveStateStore(redis, clock);
+    await a.applyTelemetry(T, tel({ bateria_conhecida: false }) as any);
+    expect((await redis.hgetall('iot:live:' + T)).batteryKnown).toBe('false');
+    expect((await b.load(T))?.batteryKnown).toBe(false);
+    await clock.advance(10_000);
+    await a.applyTelemetry(T, tel({ bateria_pct: 76, timestamp: '2026-11-03T15:00:10.000Z' }) as any);
+    expect((await redis.hgetall('iot:live:' + T)).batteryKnown).toBe('true');
+    expect((await b.load(T))?.batteryKnown).toBeUndefined();
+  });
+});

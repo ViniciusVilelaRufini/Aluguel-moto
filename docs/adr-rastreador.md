@@ -53,7 +53,8 @@ Traccar em container no dev single).
 
 Riscos conhecidos (spec §12):
 - **Janela residual:** entre a última amostra parada e a chegada do `engineStop`, a moto pode voltar a andar. A exigência de
-  2 amostras em 10 s e a segunda guarda da ponte reduzem, mas não eliminam. Em produção, avaliar hardware com controle de velocidade.
+  3 amostras paradas em 20 s (no máximo 12 s entre elas; regra da bancada do J16, `docs/decisoes.md` 2026-11-03) e a segunda
+  guarda da ponte reduzem, mas não eliminam. Em produção, avaliar hardware com controle de velocidade.
 - **Sem limite por zona imposto:** responsabilidade do condutor; refletir nos termos de uso (validar com jurídico).
 - **32 km/h depende do controlador da moto:** verificar e documentar por modelo.
 - **GT06 sem TLS:** exige APN privada em produção.

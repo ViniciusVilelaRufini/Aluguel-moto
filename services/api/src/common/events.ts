@@ -7,6 +7,8 @@ export const EV = {
   IOT_DEVICE_EVENT: 'iot.device-event',
   IOT_COMMAND_UPDATED: 'iot.command-updated',
   IOT_CONNECTIVITY: 'iot.connectivity',
+  /** `reported` do rastreador (status/heartbeat via ponte, eco de comando) ou lido do shadow (polling). */
+  IOT_REPORTED: 'iot.reported',
   GEOFENCE_TRANSITION: 'geofence.transition',
   ZONE_SPEED_EXCEEDED: 'zone.speed-exceeded',
   /** Acima do teto legal (32 km/h + tolerância do GPS) por mais de 5 s, em qualquer tipo de rastreador (auditoria 4, item 3). */
@@ -14,6 +16,8 @@ export const EV = {
   PAYMENT_UPDATED: 'payment.updated',
   // Eventos próprios da API (Task 3) — alimentam o WebSocket e as Tasks 4/5.
   VEHICLE_STATUS_CHANGED: 'vehicle.status-changed',
+  /** Estado do rastreador no banco mudou (trava, online, bateria conhecida) ou o lastSeenAt avançou (≤ 1 a cada 15 s): WS `vehicle.state`. */
+  VEHICLE_STATE_CHANGED: 'vehicle.state-changed',
   COMMAND_CHANGED: 'command.changed',
   ALERT_CREATED: 'alert.created',
   RENTAL_CHANGED: 'rental.changed',
@@ -89,6 +93,33 @@ export interface IotTelemetryEvent {
   locked: boolean;
   ignition: boolean;
   signal: number;
+  /** Hora da medição (relógio do rastreador, ou do servidor se ele estiver mais de 10 min fora). */
+  ts: string;
+  /** Telemetria `bateria_conhecida` (ausente = `true`). */
+  batteryKnown?: boolean;
+  /** Hora em que o servidor recebeu a mensagem (base do `lastSeenAt`). Ausente = `ts`. */
+  receivedAt?: string;
+}
+
+/** `reported` processado (TelemetryService): trava reportada e se foi sinal de vida do rastreador. */
+export interface IotReportedEvent {
+  thingName: string;
+  vehicleId: string;
+  /** `reported.travada` (ausente quando o reported não trouxe a trava). */
+  locked?: boolean;
+  /** `true` = mensagem do rastreador (MQTT); `false` = lida do shadow pelo servidor (polling aws), não é sinal de vida. */
+  heard: boolean;
+  /** Hora do servidor. */
+  ts: string;
+}
+
+/** Payload do WS `vehicle.state` (packages/contracts/realtime.md). */
+export interface VehicleStateChangedEvent {
+  vehicleId: string;
+  locked: boolean;
+  online: boolean;
+  lastSeenAt: string;
+  batteryKnown: boolean;
   ts: string;
 }
 

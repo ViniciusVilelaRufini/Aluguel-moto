@@ -29,7 +29,7 @@ function setup(opts: { rentalId?: string; consent?: boolean } = {}) {
   const clock = new FakeClock(Date.parse('2026-10-21T15:00:00Z'));
   const events = new EventEmitter2();
   const emitted: Record<string, any[]> = {};
-  for (const name of [EV.IOT_TELEMETRY, EV.IOT_DEVICE_EVENT, EV.IOT_CONNECTIVITY]) {
+  for (const name of [EV.IOT_TELEMETRY, EV.IOT_DEVICE_EVENT, EV.IOT_CONNECTIVITY, EV.IOT_REPORTED]) {
     emitted[name] = [];
     events.on(name, (e: unknown) => emitted[name].push(e));
   }
@@ -55,9 +55,38 @@ describe('TelemetryService', () => {
     const { svc, emitted, geofence } = setup();
     await svc.telemetry(T, msg());
     expect(emitted[EV.IOT_TELEMETRY]).toEqual([
-      { thingName: T, vehicleId: VEHICLE_ID, lat: -23.5614, lng: -46.6914, speedKmh: 12.5, batteryPct: 81, locked: false, ignition: true, signal: 4, ts: '2026-10-21T15:00:00.000Z' },
+      {
+        thingName: T, vehicleId: VEHICLE_ID, lat: -23.5614, lng: -46.6914, speedKmh: 12.5, batteryPct: 81, batteryKnown: true, locked: false, ignition: true, signal: 4,
+        ts: '2026-10-21T15:00:00.000Z', receivedAt: '2026-10-21T15:00:00.000Z',
+      },
     ]);
     expect(geofence.onPosition).toHaveBeenCalledWith({ vehicleId: VEHICLE_ID, thingName: T, lat: -23.5614, lng: -46.6914, ts: '2026-10-21T15:00:00.000Z' });
+  });
+
+  it('bancada do J16: bateria_conhecida false → iot.telemetry com batteryKnown false; ausente → true; não booleana → descartada', async () => {
+    const { svc, emitted, clock } = setup();
+    await svc.telemetry(T, msg({ bateria_pct: 0, bateria_conhecida: false }));
+    expect(emitted[EV.IOT_TELEMETRY].at(-1)).toMatchObject({ batteryPct: 0, batteryKnown: false });
+    await clock.advance(5_000);
+    await svc.telemetry(T, msg({ timestamp: '2026-10-21T15:00:05.000Z', bateria_conhecida: true }));
+    expect(emitted[EV.IOT_TELEMETRY].at(-1)).toMatchObject({ batteryPct: 81, batteryKnown: true });
+    await clock.advance(5_000);
+    await svc.telemetry(T, msg({ timestamp: '2026-10-21T15:00:10.000Z', bateria_conhecida: 'nao' }));
+    expect(emitted[EV.IOT_TELEMETRY]).toHaveLength(2);
+  });
+
+  it('bancada do J16: reported do rastreador (status/heartbeat) → iot.reported com a trava e a hora do servidor; polling sem travada não emite', async () => {
+    const { svc, emitted, clock } = setup();
+    await svc.telemetry(T, msg());
+    await clock.advance(30_000);
+    await svc.reported(T, { travada: true });
+    expect(emitted[EV.IOT_REPORTED]).toEqual([{ thingName: T, vehicleId: VEHICLE_ID, locked: true, heard: true, ts: '2026-10-21T15:00:30.000Z' }]);
+    await svc.reported(T, { velocidade_kmh: 0 });
+    expect(emitted[EV.IOT_REPORTED].at(-1)).toEqual({ thingName: T, vehicleId: VEHICLE_ID, heard: true, ts: '2026-10-21T15:00:30.000Z' });
+    await svc.reported(T, { velocidade_kmh: 0 }, { fromPoll: true });
+    expect(emitted[EV.IOT_REPORTED]).toHaveLength(2);
+    await svc.reported(T, { travada: false }, { fromPoll: true, timestamps: { travada: clock.now() } });
+    expect(emitted[EV.IOT_REPORTED].at(-1)).toEqual({ thingName: T, vehicleId: VEHICLE_ID, locked: false, heard: false, ts: '2026-10-21T15:00:30.000Z' });
   });
 
   it('payload inválido ou rastreador desconhecido → descartado', async () => {

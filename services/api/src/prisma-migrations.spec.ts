@@ -102,3 +102,10 @@ describe('migrações 20261103101000_aud4_checks + 20261103101100_aud4_checks_va
     expect(add).not.toMatch(/"availableBatteries" <= "totalSlots"/);
   });
 });
+
+describe('migração 20261103140000_vehicle_battery_known (bancada do J16)', () => {
+  it('Vehicle.batteryKnown BOOLEAN NOT NULL DEFAULT true, no schema e na migração', () => {
+    expect(sqlOf('20261103140000_vehicle_battery_known')).toContain('ALTER TABLE "Vehicle" ADD COLUMN "batteryKnown" BOOLEAN NOT NULL DEFAULT true;');
+    expect(schema).toMatch(/^\s*batteryKnown\s+Boolean\s+@default\(true\)/m);
+  });
+});

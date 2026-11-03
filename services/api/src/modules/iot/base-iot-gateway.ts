@@ -296,7 +296,7 @@ export abstract class BaseIotGateway implements IotGateway {
     try {
       initial = await this.relayLock.start(req, { online });
     } catch (err) {
-      // Redis fora do ar: sem estado compartilhado não há como provar 2 amostras paradas — falha sem enviar nada.
+      // Redis fora do ar: sem estado compartilhado não há como provar a sequência parada — falha sem enviar nada.
       this.waiters.delete(req.commandId);
       throw err;
     }

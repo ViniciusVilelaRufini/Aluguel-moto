@@ -19,6 +19,13 @@ describe('mqtt-contract', () => {
     expect(parseTelemetry(telemetry)).toEqual(telemetry);
   });
 
+  it('bateria_conhecida opcional (bancada do J16): repassada quando booleana, ausente quando não vem', () => {
+    expect(parseTelemetry({ ...telemetry, bateria_pct: 0, bateria_conhecida: false })).toEqual({ ...telemetry, bateria_pct: 0, bateria_conhecida: false });
+    expect(parseTelemetry({ ...telemetry, bateria_conhecida: true })).toEqual({ ...telemetry, bateria_conhecida: true });
+    expect(parseTelemetry(telemetry)).not.toHaveProperty('bateria_conhecida');
+    expect(parseTelemetry({ ...telemetry, bateria_conhecida: null })).toEqual(telemetry); // projeção do IoT Core sem o atributo
+  });
+
   it.each([
     ['lat fora', { ...telemetry, lat: -91 }],
     ['lng texto', { ...telemetry, lng: '-46' }],
@@ -29,6 +36,7 @@ describe('mqtt-contract', () => {
     ['sem timestamp', { ...telemetry, timestamp: undefined }],
     ['timestamp inválido', { ...telemetry, timestamp: 'ontem' }],
     ['travada não booleano', { ...telemetry, travada: 'sim' }],
+    ['bateria_conhecida não booleano', { ...telemetry, bateria_conhecida: 'nao' }],
     ['nulo', null],
   ])('telemetria inválida: %s', (_n, v) => {
     expect(parseTelemetry(v)).toBeNull();

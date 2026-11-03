@@ -42,7 +42,12 @@ export function toVehicleSummary(v: VehicleLike, distanceM?: number) {
   });
 }
 
-type VehicleRow = Vehicle & { tracker?: { id: string; controlMode?: TrackerControlMode } | null; vehicleModel?: VehicleModelRef | null };
+type VehicleRow = Omit<Vehicle, 'batteryKnown'> & {
+  /** Ausente (linha antiga, `select` parcial) = conhecida. */
+  batteryKnown?: boolean;
+  tracker?: { id: string; controlMode?: TrackerControlMode; firmwareVersion?: string | null } | null;
+  vehicleModel?: VehicleModelRef | null;
+};
 
 /** Situação da revisão (staff): intervalo do modelo ou o padrão. */
 export function vehicleServiceInfo(v: Partial<VehicleRow>, defaults: ServiceDefaults = DEFAULT_SERVICE) {
@@ -90,6 +95,9 @@ export function toVehicle(
     now?: number;
   },
 ) {
+  // Bancada do J16: sem leitura da bateria, `batteryPct`/`estimatedRangeKm` vêm 0 (contrato: não exibir como nível).
+  const batteryKnown = v.batteryKnown !== false;
+  const batteryPct = batteryKnown ? v.batteryPct : 0;
   const base = {
     id: v.id,
     code: v.code,
@@ -98,18 +106,19 @@ export function toVehicle(
     status: v.status,
     lat: v.lat,
     lng: v.lng,
-    batteryPct: v.batteryPct,
-    estimatedRangeKm: estimatedRangeKm(v.batteryPct),
+    batteryPct,
+    estimatedRangeKm: estimatedRangeKm(batteryPct),
+    batteryKnown,
     speedLimitKmh: v.speedLimitKmh,
     ...modelFields(v),
-    address: v.addressLabel ?? undefined,
-    addressUpdatedAt: iso(v.addressUpdatedAt),
     depotId: v.depotId ?? undefined,
   };
-  // Fix round 1 (I5): moto em uso por outra pessoa — posição oculta para o cliente.
-  if (!opts.staff && opts.hideLocation) return compact({ ...base, lat: 0, lng: 0, address: undefined, addressUpdatedAt: undefined, locationHidden: true });
-  if (!opts.staff) return compact(base);
-  return compact({
+  // Endereço da posição atual ou `null` (nunca o de outro lugar; contrato: `Vehicle.address`). `compact` tira nulos: vai depois.
+  const address = { address: v.addressLabel ?? null, addressUpdatedAt: v.addressLabel ? (iso(v.addressUpdatedAt) ?? null) : null };
+  // Fix round 1 (I5): moto em uso por outra pessoa — posição oculta para o cliente (endereço ausente).
+  if (!opts.staff && opts.hideLocation) return compact({ ...base, lat: 0, lng: 0, address: undefined as string | undefined, addressUpdatedAt: undefined as string | undefined, locationHidden: true });
+  if (!opts.staff) return { ...compact(base), ...address };
+  const staffView = compact({
     ...base,
     thingName: v.thingName,
     trackerId: v.tracker?.id,
@@ -121,7 +130,8 @@ export function toVehicle(
     speedKmh: v.speedKmh ?? undefined,
     signal: v.signal ?? undefined,
     stolenMode: v.stolenMode,
-    firmwareVersion: v.firmwareVersion ?? undefined,
+    // Versão do rastreador vinculado (provisionamento); sem ela, a gravada na moto.
+    firmwareVersion: v.tracker?.firmwareVersion ?? v.firmwareVersion ?? undefined,
     lastSeenAt: iso(v.lastSeenAt),
     currentRentalId: opts.currentRentalId,
     odometerKm: round1(v.odometerKm ?? 0),
@@ -132,4 +142,5 @@ export function toVehicle(
     createdAt: iso(v.createdAt),
     updatedAt: iso(v.updatedAt),
   });
+  return { ...staffView, ...address };
 }

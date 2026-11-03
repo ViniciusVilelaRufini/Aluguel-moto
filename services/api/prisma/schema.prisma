@@ -547,6 +547,8 @@ model Vehicle {
   lat                   Float          @default(0)
   lng                   Float          @default(0)
   batteryPct            Int            @default(100)
+  /// Bancada do J16: o rastreador tem leitura da bateria (telemetria `bateria_conhecida`); `false` = `batteryPct` 0 não é carga real.
+  batteryKnown          Boolean        @default(true)
   speedLimitKmh         Int            @default(32)
   speedKmh              Float?
   online                Boolean        @default(true)

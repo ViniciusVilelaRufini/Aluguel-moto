@@ -1,7 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { EventEmitter2 } from '@nestjs/event-emitter';
 import type { PrismaClient } from '@prisma/client';
-import { EV, IotConnectivityEvent, IotDeviceEvent, IotTelemetryEvent } from '../../common/events';
+import { EV, IotConnectivityEvent, IotDeviceEvent, IotReportedEvent, IotTelemetryEvent } from '../../common/events';
 import type { BaseIotGateway } from './base-iot-gateway';
 import type { Clock } from './clock';
 import type { PositionInput, RentalLookup } from './geofence/geofence.service';
@@ -129,10 +129,12 @@ export class TelemetryService implements InboundHandler {
         lng: msg.lng,
         speedKmh: msg.velocidade_kmh,
         batteryPct: msg.bateria_pct,
+        batteryKnown: msg.bateria_conhecida !== false,
         locked: msg.travada,
         ignition: msg.ignicao,
         signal: msg.sinal,
         ts,
+        receivedAt: new Date(now).toISOString(),
       };
       // Fora de ordem (mais velha que a última recebida): fica só no trajeto, não volta a moto no mapa/frota.
       if (applied.newest) this.events.emit(EV.IOT_TELEMETRY, ev);
@@ -201,6 +203,11 @@ export class TelemetryService implements InboundHandler {
           if (this.heard(thingName, Math.min(Math.max(...written), this.clock.now()))) await this.reconnect(thingName);
         }
         await this.gateway.onReported(thingName, reported, meta);
+        // Trava lida do shadow (com horário): o banco/painel acompanham; não é sinal de vida (sem lastSeenAt).
+        if (typeof reported.travada === 'boolean' && meta.timestamps?.travada !== undefined) {
+          const vehicleId = await this.vehicleIdOf(thingName);
+          if (vehicleId) this.emitReported(thingName, vehicleId, reported, false);
+        }
         return;
       }
       const vehicleId = await this.vehicleIdOf(thingName);
@@ -209,7 +216,14 @@ export class TelemetryService implements InboundHandler {
       if (!wasOnline || gap) await this.reconnect(thingName);
       await this.gateway.onReported(thingName, reported, meta);
       if (!wasOnline && vehicleId) await this.connectivity(thingName, vehicleId, true);
+      // Status/heartbeat do rastreador (ponte GT06: bit de corte a cada 60 s e resposta ao comando): trava e último sinal no banco.
+      if (vehicleId) this.emitReported(thingName, vehicleId, reported, true);
     });
+  }
+
+  private emitReported(thingName: string, vehicleId: string, reported: ReportedState, heard: boolean): void {
+    const ev: IotReportedEvent = { thingName, vehicleId, ...(typeof reported.travada === 'boolean' ? { locked: reported.travada } : {}), heard, ts: this.nowIso() };
+    this.events.emit(EV.IOT_REPORTED, ev);
   }
 
   presence(thingName: string, online: boolean, at?: number): Promise<void> {

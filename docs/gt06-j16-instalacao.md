@@ -158,15 +158,14 @@ liberaria a moto — pare e avise o controlador (o Traccar tem modos alternativo
 
 ### 3.4 Intervalo de posição (`TIMER`) e plano de dados
 
-O bloqueio só corta depois de **2 posições paradas cobrindo ≥ 10 s com no máximo 10 s entre uma e outra**; posição com mais
-de 10 s não vale. Com `TIMER` de 10 s, qualquer atraso da rede (10,5 s) recomeça a contagem e o bloqueio tende a terminar
-`did_not_stop`. Por isso: **`TIMER,5,5#`** (5 s com e sem ignição). O J16 não muda o intervalo em tempo real pelo sistema,
-então o 5 s é fixo.
+O bloqueio só corta depois de **3 posições paradas cobrindo ≥ 20 s com no máximo 12 s entre uma e outra**, a última com até
+10 s (regra revista na bancada do J16 em 2026-11-03, `docs/decisoes.md`). Com `TIMER,10,10#` o corte sai na 3ª posição parada
+(~20 s depois de parar); com `TIMER,5,5#`, na 5ª (também ~20 s). Onde o firmware aceitar, prefira **`TIMER,5,5#`** (5 s com e
+sem ignição): uma posição perdida ainda fica dentro dos 12 s. O J16 não muda o intervalo em tempo real pelo sistema.
 
-> **J16 G900L (3.0): o firmware não aceita menos de 10 s.** Com `TIMER,10,10#` as posições chegam a cada ~10 s, no limite da
-> regra acima: uma posição 10,5 s depois da anterior recomeça a contagem, e o bloqueio pode terminar `did_not_stop` com a
-> moto parada. O ajuste da regra para cadência de 10 s é decisão pendente (docs/decisoes.md); até lá, teste o bloqueio
-> sabendo disso.
+> **J16 G900L (3.0): o firmware não aceita menos de 10 s.** Com `TIMER,10,10#` as posições chegam a cada ~10 s; a regra acima
+> foi ajustada para essa cadência (até 12 s entre posições). Uma posição perdida (20 s) recomeça a contagem: o bloqueio espera
+> mais, e termina `did_not_stop` se a moto não ficar parada por 3 posições seguidas em 120 s.
 
 Estimativa de dados (TCP/IP incluído, aproximada): posição GT06 ≈ 36 bytes + ~80 bytes de cabeçalhos/ACK ≈ 120 bytes.
 

@@ -47,6 +47,15 @@ describe('RealtimeGateway', () => {
     expect(disconnectSockets).toHaveBeenCalledWith(true);
   });
 
+  it('bancada do J16: vehicle.state (trava, online, último sinal, bateria conhecida) só na sala fleet, sem posição', () => {
+    const { gw, emit, to } = setup();
+    const ev = { vehicleId: 'v1', locked: false, online: true, lastSeenAt: '2026-11-03T15:00:00.000Z', batteryKnown: false, ts: '2026-11-03T15:00:01.000Z' };
+    gw.onVehicleState(ev);
+    expect(to).toHaveBeenCalledTimes(1);
+    expect(to).toHaveBeenCalledWith('fleet');
+    expect(emit).toHaveBeenCalledWith('vehicle.state', ev);
+  });
+
   it('zone.notice: mensagens em pt-BR', () => {
     expect(zoneMessage({ zoneType: 'reduced_speed', transition: 'ENTER', speedLimitKmh: 6 })).toBe('Você entrou numa área de pedestres. Velocidade máxima: 6 km/h.');
     expect(zoneMessage({ zoneType: 'operation', transition: 'EXIT' })).toMatch(/5 minutos/);

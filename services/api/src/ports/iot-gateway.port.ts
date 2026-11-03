@@ -50,6 +50,8 @@ export interface VehicleLiveState {
   stolenMode: boolean;
   online: boolean;
   lastSeenAt: string;      // ISO 8601
+  /** Só `false` quando a última telemetria trouxe `bateria_conhecida: false` (`batteryPct` 0 não é carga real); ausente = conhecida. */
+  batteryKnown?: false;
 }
 
 export interface IotGateway {

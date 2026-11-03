@@ -60,6 +60,9 @@ Regras (todas obrigatórias e cobertas por teste):
    - pelo menos **2 amostras frescas consecutivas** com `velocidade_kmh < 3`, cobrindo **pelo menos 10 s** entre a primeira e a última;
    - todas fora da graça de reconexão e com as mesmas regras de frescor/ordem já existentes (`IOT_RECONNECT_GRACE_MS`, lacuna, atraso de fila, 10 s de frescor);
    - velocidade desconhecida, velha ou na graça = **em movimento**.
+   > **Nota (bancada do J16, 2026-11-03):** passou a **3 amostras paradas cobrindo ≥ 20 s, no máximo 12 s entre duas seguidas**
+   > (o frescor de 10 s da última e a guarda de 7 s da ponte não mudaram); o prazo do unlock (§5.9) passou a **90 s** — ver
+   > `docs/decisoes.md`, "Bancada do J16".
 2. Enquanto a pré-condição não for atendida, o comando fica `in_progress` e **nada é enviado ao rastreador**. Não existe degrau de `limite_kmh`.
 3. Atendida a pré-condição, grava `desired.travada = true` **uma única vez**. A ponte traduz para `engineStop` no Traccar.
 4. Confirmação: `reported.travada = true` vindo da ponte (ver §6.4).

@@ -79,7 +79,9 @@ Usuários do seed: `dev-admin`, `dev-operacao`, `dev-financeiro`, `dev-suporte`,
 
 **Rastreadores só relé (`Tracker.controlMode = relay_only`, GT06 via Traccar).** O `CommandsService` lê o tipo do rastreador e o
 passa ao gateway (`CommandRequest.controlMode`). `lock` usa o `RelayLockService` (estado no Redis, `iot:relay-lock:*`): sem rampa,
-espera 2 telemetrias aceitas < 3 km/h cobrindo ≥ 10 s e grava `travada: true` uma vez; 120 s sem parar → `did_not_stop` sem corte;
+espera 3 telemetrias aceitas < 3 km/h cobrindo ≥ 20 s, no máximo 12 s entre duas seguidas (`RELAY_STILL_MIN_SAMPLES`,
+`RELAY_STILL_MIN_SPAN_MS`, `RELAY_MAX_SAMPLE_GAP_MS`; a última fresca, ≤ 10 s) e grava `travada: true` uma vez — regra da
+bancada do J16 (TIMER mínimo de 10 s; `docs/decisoes.md`, 2026-11-03); 120 s sem parar → `did_not_stop` sem corte;
 corte sem confirmação em 120 s → `timeout` e o corte pendente apagado (`travada: null`; nunca `travada: false`, que soltaria
 uma moto cortada cujo status só atrasou). `speed_limit` e `horn` → `unsupported_by_tracker`. O fluxo
 `speed_control` (`SafeLockService`) não muda. Spec: `docs/superpowers/specs/2026-10-27-volti-rastreador-gt06-relay-only.md`.
@@ -97,7 +99,23 @@ Unlock `relay_only` confirma **só** por `reported.travada: false` com hora depo
 `travada: false`) e sem `reported.travada: true` depois dele (`LiveStateStore.unlockConfirmed`; campos `reportedFreeAt`/
 `reportedCutAt` do hash `iot:live:*`, só por máximo atômico `hsetMax`). No modo aws o `false` do polling (metadata em segundos)
 fica em `reportedFreePollAt` e é comparado com o release truncado ao segundo. Nunca pelo `locked` do estado: a telemetria da ponte
-sai com `travada: false` quando o bit de corte está velho ou desconhecido (A4-6). `speed_control` não muda.
+sai com `travada: false` quando o bit de corte está velho ou desconhecido (A4-6). Prazo do unlock `relay_only`: **90 s**
+(`RELAY_UNLOCK_TIMEOUT_MS`; `GatewayOptions.relayUnlockTimeoutMs`), para cobrir o heartbeat de 60 s do J16 — o normal é confirmar
+pela resposta do J16 ao comando (~1 s); expirar só reporta `failed`/`timeout`, nada é gravado. O início do aluguel continua
+esperando `IOT_COMMAND_TIMEOUT_MS` + 5 s (limite do aceite da entrega, `IDEMPOTENCY_STALE_MS`). `speed_control` não muda.
+
+**Estado do rastreador no banco e `vehicle.state` (bancada do J16, 2026-11-03).** `VehiclesService.syncTrackerState`: `Vehicle.locked`
+e `Vehicle.batteryKnown` vão para o Postgres na hora em que mudam (escrita condicional, vale entre instâncias) e `lastSeenAt`
+(hora do servidor em que o rastreador foi ouvido) no máximo a cada 15 s (`LAST_SEEN_WRITE_INTERVAL_MS`) — pela telemetria e
+também pelo `reported` (status/heartbeat da ponte, evento interno `iot.reported`; o polling do shadow grava só a trava, não é
+sinal de vida). Alguma escrita pegou, ou a conectividade mudou → WS `vehicle.state` na sala `fleet`
+(`{ vehicleId, locked, online, lastSeenAt, batteryKnown, ts }`, `packages/contracts/realtime.md`). A gravação de 30 s da telemetria
+não grava mais `lastSeenAt`, e a queda (offline) não o avança. Telemetria com `bateria_conhecida: false` → `batteryKnown = false`,
+`batteryPct` 0 e a carga da bateria instalada não muda; o mapper expõe `batteryKnown` (ausente no banco antigo = `true`) e,
+sem leitura, `batteryPct`/`estimatedRangeKm` 0. `firmwareVersion` vem do `Tracker` vinculado (fallback: a coluna da moto).
+O overlay do Redis (`vehicles/live-overlay.ts`) sobrepõe trava (só com `lockedAt` conhecido), `online`, `lastSeenAt` e bateria
+conhecida mesmo sem posição no Redis, e aceita o `lastSeenAt` do banco até 10 min à frente (relógio do rastreador adiantado).
+Migração `20261103140000_vehicle_battery_known`.
 Ordem das amostras (Task 11b): um `reported.velocidade_kmh` parado (< 3 km/h) é datado pela chegada e **não** vira barreira de
 ordem para a telemetria (datada pelo `fixTime`); com o GPS mais atrasado que a cadência (ex.: GPRS com buffer), senão toda
 telemetria seguinte seria "velha" e a parada nunca se confirmaria. `reported` em movimento (≥ 3 ou inválido) continua barreira, e
@@ -116,7 +134,7 @@ O invariante (corte só com parada confirmada, fora da graça, antes do prazo, u
 | Cupons e indicação | `referrals/` | cupons salvos com situação calculada; código `NOME+4`, bônus do indicado na hora e de quem indicou na primeira corrida `ended` (lançamentos `bonus`) |
 | Estações e manutenção do cliente | `catalog/`, `maintenance/maintenance-v2.service.ts` | `GET /swap-stations`: qualquer cliente autenticado lê (sem grupo), só campos públicos (e2e `test/swap-stations-cliente.e2e-spec.ts`); janelas de 1 h seg–sáb 8–18 h (SP), capacidade `MAINTENANCE_SLOT_CAPACITY`; exige plano e moto fixa |
 | Chat | `support/support.service.ts` | `sent` → `delivered` (o outro lado buscou) → `read` (`POST .../read`); `unreadCount` real |
-| Endereço da moto | `vehicles/vehicle-address.service.ts`, `adapters/geocoding/` | gravado na moto e recalculado quando ela anda > 50 m; cache Redis por célula de ~11 m |
+| Endereço da moto | `vehicles/vehicle-address.service.ts`, `adapters/geocoding/` | gravado na moto e recalculado quando ela anda > 50 m; cache Redis por célula de ~11 m. Sempre o da posição atual ou `null` (bancada do J16): andou e o geocodificador não tem endereço → limpo no banco (uma vez); erro, lento ou fora do orçamento → `null` só na resposta |
 | Revisão por km/horas | `maintenance/service-due.ts`, `usage-accumulator.ts`, `usage-tracker.service.ts` | odômetro/horas somados da telemetria (descarta saltos > 45 km/h, ruído < 5 m e lacunas > 10 min); `due_soon` a 90% do intervalo; preventiva concluída = revisão |
 | Baterias | `batteries/`, troca em `field-tasks.service.ts` | retirada vai para a van do operador com a última carga; instalada +1 ciclo; carregar/descarregar a van; ciclo de vida no galpão (seção abaixo); cadastro, defeito, baixa e marcar carregada gravam `AuditLog` (`battery.create|defect|retire|mark_charged`, entidade `Battery`) na mesma transação |
 | Catálogo | `catalog/`, `PricingService.snapshotFrom` | preço por minuto do modelo vale no plano `minute` (aluguel e cotação com `vehicleId`); foto em bucket `catalogo` com link assinado de 24 h |

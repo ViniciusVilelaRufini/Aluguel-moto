@@ -53,3 +53,27 @@ describe('trackerControlMode (spec GT06 §3.2)', () => {
     expect(toVehicle(row({ tracker: { id: 't1', controlMode: 'relay_only' } }), { staff: false, now: NOW })).not.toHaveProperty('trackerControlMode');
   });
 });
+
+describe('bancada do J16 (2026-11-03): bateria desconhecida, endereço da posição atual e firmware do rastreador', () => {
+  it('batteryKnown false → batteryPct e estimatedRangeKm 0 (cliente e staff); padrão true', () => {
+    for (const staff of [true, false]) {
+      expect(toVehicle(row({ batteryKnown: false, batteryPct: 55 }), { staff, now: NOW })).toMatchObject({ batteryKnown: false, batteryPct: 0, estimatedRangeKm: 0 });
+      expect(toVehicle(row(), { staff, now: NOW })).toMatchObject({ batteryKnown: true, batteryPct: 80 });
+    }
+  });
+
+  it('sem endereço da posição atual → address e addressUpdatedAt null (nunca ausentes); com locationHidden continuam ausentes', () => {
+    expect(toVehicle(row({ addressLabel: null, addressUpdatedAt: null }), { staff: true, now: NOW })).toMatchObject({ address: null, addressUpdatedAt: null });
+    expect(toVehicle(row({ addressLabel: null }), { staff: false, now: NOW })).toMatchObject({ address: null, addressUpdatedAt: null });
+    expect(toVehicle(row({ addressLabel: 'R. A, 1', addressUpdatedAt: ago(1_000) }), { staff: true, now: NOW })).toMatchObject({ address: 'R. A, 1', addressUpdatedAt: ago(1_000).toISOString() });
+    const hidden = toVehicle(row({ addressLabel: 'R. A, 1' }), { staff: false, hideLocation: true, now: NOW });
+    expect(hidden).not.toHaveProperty('address');
+    expect(hidden).not.toHaveProperty('addressUpdatedAt');
+  });
+
+  it('firmwareVersion vem do Tracker vinculado; sem ele, da coluna da moto', () => {
+    expect((toVehicle(row({ firmwareVersion: '1.0.0', tracker: { id: 't1', controlMode: 'relay_only', firmwareVersion: 'J16_V2.3' } }), { staff: true, now: NOW }) as any).firmwareVersion).toBe('J16_V2.3');
+    expect((toVehicle(row({ firmwareVersion: '1.0.0', tracker: { id: 't1', controlMode: 'relay_only', firmwareVersion: null } }), { staff: true, now: NOW }) as any).firmwareVersion).toBe('1.0.0');
+    expect(toVehicle(row({ firmwareVersion: null, tracker: null }), { staff: true, now: NOW })).not.toHaveProperty('firmwareVersion');
+  });
+});

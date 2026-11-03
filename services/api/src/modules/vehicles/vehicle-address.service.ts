@@ -45,20 +45,44 @@ export class VehicleAddressService {
     @Inject(REVERSE_GEOCODER) private readonly geocoder: ReverseGeocoder,
   ) {}
 
-  /** Preenche/atualiza `addressLabel` das linhas (mutando-as) e grava no banco. Nunca lança. */
+  /**
+   * Preenche/atualiza `addressLabel` das linhas (mutando-as) e grava no banco. Nunca lança.
+   *
+   * Bancada do J16 (2026-11-03): o endereço é sempre o da posição atual ou nenhum. A moto que andou mais de 50 m e ficou sem
+   * endereço novo sai com `addressLabel`/`addressUpdatedAt` nulos — sem resultado do geocodificador (o banco também é limpo,
+   * uma vez; o cache de 30 dias do geocodificador continua valendo para a próxima leitura), erro, consulta lenta ou fora do
+   * orçamento (só a linha: a próxima leitura tenta de novo).
+   */
   async ensure<T extends AddressRow>(rows: T[]): Promise<T[]> {
     const started = Date.now();
     for (const r of rows) {
       if (!needsAddress(r)) continue;
+      const stale = !!r.addressLabel || r.addressUpdatedAt != null;
+      const clear = () => Object.assign(r, { addressLabel: null, addressUpdatedAt: null });
       const remaining = BUDGET_MS - (Date.now() - started);
-      if (remaining <= 0) break;
+      if (remaining <= 0) {
+        clear();
+        continue;
+      }
       try {
-        const label = await withTimeout(this.geocoder.reverse(r.lat, r.lng), Math.min(CALL_TIMEOUT_MS, remaining));
-        if (!label) continue;
+        // `null` = teto da consulta; `{ label: null }` = o geocodificador respondeu sem endereço.
+        const res = await withTimeout(this.geocoder.reverse(r.lat, r.lng).then((l) => ({ label: l })), Math.min(CALL_TIMEOUT_MS, remaining));
+        const timedOut = res === null;
+        const label = res?.label;
+        if (!label) {
+          clear();
+          // Resposta sem endereço (não o teto da consulta): o endereço gravado é de outro lugar — limpa no banco, uma vez.
+          if (!timedOut && stale) {
+            Object.assign(r, { addressLat: null, addressLng: null });
+            await this.prisma.vehicle.updateMany({ where: { id: r.id }, data: { addressLabel: null, addressLat: null, addressLng: null, addressUpdatedAt: null } });
+          }
+          continue;
+        }
         const now = new Date();
         Object.assign(r, { addressLabel: label, addressLat: r.lat, addressLng: r.lng, addressUpdatedAt: now });
         await this.prisma.vehicle.updateMany({ where: { id: r.id }, data: { addressLabel: label, addressLat: r.lat, addressLng: r.lng, addressUpdatedAt: now } });
       } catch (err) {
+        clear();
         this.logger.warn({ msg: 'vehicle_address_failed', vehicleId: r.id, error: (err as Error).message });
       }
     }

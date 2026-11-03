@@ -8,7 +8,7 @@ import type { Namespace, Socket } from 'socket.io';
 import { OPEN_RENTAL_STATUSES, type VehicleStatus } from '../../common/enums';
 import {
   AlertCreatedEvent, CommandChangedEvent, EV, GeofenceTransitionEvent, HandoverPendingEvent, HandoverUpdatedEvent, IotDeviceEvent, IotTelemetryEvent,
-  PaymentUpdatedEvent, RentalChangedEvent, PrincipalRevokedEvent, StationSwapUpdatedEvent, VehicleStatusChangedEvent,
+  PaymentUpdatedEvent, RentalChangedEvent, PrincipalRevokedEvent, StationSwapUpdatedEvent, VehicleStateChangedEvent, VehicleStatusChangedEvent,
 } from '../../common/events';
 import { AUTH_VERIFIER, type AuthVerifier } from '../../ports/auth-verifier.port';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -163,6 +163,14 @@ export class RealtimeGateway implements OnGatewayInit {
     const cached = this.vehicles.get(ev.vehicleId);
     if (cached) cached.status = ev.status;
     this.server?.to('fleet').emit('vehicle.status', { vehicleId: ev.vehicleId, status: ev.status, ts: ev.ts });
+  }
+
+  /** Estado do rastreador (trava, online, último sinal, bateria conhecida): só staff da frota; sem posição (realtime.md). */
+  @OnEvent(EV.VEHICLE_STATE_CHANGED)
+  onVehicleState(ev: VehicleStateChangedEvent): void {
+    this.server?.to('fleet').emit('vehicle.state', {
+      vehicleId: ev.vehicleId, locked: ev.locked, online: ev.online, lastSeenAt: ev.lastSeenAt, batteryKnown: ev.batteryKnown, ts: ev.ts,
+    });
   }
 
   @OnEvent(EV.COMMAND_CHANGED)
