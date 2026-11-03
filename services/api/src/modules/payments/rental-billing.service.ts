@@ -343,14 +343,14 @@ export class RentalBillingService implements RentalBillingPort {
 
   async reconcileDepositPayments(olderThanMs = 2 * 60_000): Promise<number> {
     const now = this.now().getTime();
-    const deposits = await this.prisma.deposit.findMany({
-      where: { status: 'awaiting_pix', updatedAt: { lte: new Date(now - olderThanMs) }, createdAt: { gte: new Date(now - RECONCILE_WINDOW_MS) } },
-      orderBy: { createdAt: 'asc' },
-      take: RECONCILE_LIMIT,
-      select: { id: true },
-    });
-    if (!deposits.length) return 0;
-    const payments = await this.prisma.payment.findMany({ where: { depositId: { in: deposits.map((d) => d.id) }, kind: 'deposit', status: { in: ['paid', 'failed'] } } });
+    // Revisão: o status do Payment é filtrado na própria consulta (junção), para Pix abandonado não ocupar o lote.
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT p."id" FROM "Deposit" d JOIN "Payment" p ON p."depositId" = d."id" AND p."kind" = 'deposit'
+      WHERE d."status" = 'awaiting_pix' AND p."status" IN ('paid', 'failed')
+        AND d."updatedAt" <= ${new Date(now - olderThanMs)} AND d."createdAt" >= ${new Date(now - RECONCILE_WINDOW_MS)}
+      ORDER BY d."createdAt" ASC LIMIT ${RECONCILE_LIMIT}`;
+    if (!rows.length) return 0;
+    const payments = await this.prisma.payment.findMany({ where: { id: { in: rows.map((r) => r.id) }, kind: 'deposit', status: { in: ['paid', 'failed'] } } });
     for (const p of payments) {
       await this.onDepositPaymentChanged(p).catch((err) => this.logger.warn({ msg: 'deposit_reconcile_item_failed', paymentId: p.id, error: (err as Error).message }));
     }

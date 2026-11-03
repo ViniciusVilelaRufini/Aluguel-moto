@@ -161,14 +161,15 @@ export class WalletService {
 
   async reconcileTopUps(olderThanMs = 2 * 60_000): Promise<number> {
     const now = Date.now();
-    const pending = await this.prisma.topUp.findMany({
-      where: { status: 'pending', paymentId: { not: null }, updatedAt: { lte: new Date(now - olderThanMs) }, createdAt: { gte: new Date(now - RECONCILE_WINDOW_MS) } },
-      orderBy: { createdAt: 'asc' },
-      take: RECONCILE_LIMIT,
-      select: { paymentId: true },
-    });
-    if (!pending.length) return 0;
-    const payments = await this.prisma.payment.findMany({ where: { id: { in: pending.map((t) => t.paymentId!) }, kind: 'top_up', status: { in: ['paid', 'failed'] } } });
+    // Revisão: o status do Payment é filtrado na própria consulta (junção), para Pix abandonado (Payment pending) não
+    // ocupar o lote. TopUp não tem relação Prisma com Payment, daí o SQL cru.
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT p."id" FROM "TopUp" t JOIN "Payment" p ON p."id" = t."paymentId"
+      WHERE t."status" = 'pending' AND p."kind" = 'top_up' AND p."status" IN ('paid', 'failed')
+        AND t."updatedAt" <= ${new Date(now - olderThanMs)} AND t."createdAt" >= ${new Date(now - RECONCILE_WINDOW_MS)}
+      ORDER BY t."createdAt" ASC LIMIT ${RECONCILE_LIMIT}`;
+    if (!rows.length) return 0;
+    const payments = await this.prisma.payment.findMany({ where: { id: { in: rows.map((r) => r.id) }, kind: 'top_up', status: { in: ['paid', 'failed'] } } });
     for (const p of payments) {
       await this.onTopUpPayment(p).catch((err) => this.logger.warn({ msg: 'top_up_reconcile_item_failed', paymentId: p.id, error: (err as Error).message }));
     }

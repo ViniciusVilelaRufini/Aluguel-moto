@@ -152,4 +152,21 @@ describe('Auditoria run-4: reconciliador de recargas', () => {
     expect((await svc.get(CUSTOMER)).balanceCents).toBe(2000);
     expect(await db.walletEntry.count()).toBe(1);
   });
+
+  it('revisão: Pix abandonado (Payment pending) não ocupa o lote — o filtro do status do Payment está na consulta', async () => {
+    const { db, svc } = await setup(false);
+    const old = new Date(Date.now() - 10 * 60_000);
+    const mk = async (status: 'paid' | 'pending', createdAt: Date) => {
+      const p = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'top_up', method: 'pix', status, amountCents: 100 } });
+      const t = await db.topUp.create({ data: { customerId: CUSTOMER, status: 'pending', method: 'pix', amountCents: 100, paymentId: p.id, createdAt } });
+      db.topUp.rows.find((r: any) => r.id === t.id)!.updatedAt = old;
+      return t;
+    };
+    for (let i = 0; i < 510; i++) await mk('pending', new Date(Date.now() - 2 * 86_400_000 + i));
+    const paid = await mk('paid', new Date(Date.now() - 86_400_000));
+    const raw = jest.spyOn(db, '$queryRaw');
+    expect(await svc.reconcileTopUps()).toBe(1);
+    expect((await db.topUp.findUnique({ where: { id: paid.id } })).status).toBe('paid');
+    expect((raw.mock.calls[0][0] as unknown as string[]).join('?')).toContain(`p."status" IN ('paid', 'failed')`);
+  });
 });
