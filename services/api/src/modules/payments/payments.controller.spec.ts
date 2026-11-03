@@ -13,6 +13,7 @@ import { PAYMENT_PROVIDER, PaymentProviderError, RefundRejectedError } from './p
 import { ProviderCustomersService } from './provider-customers.service';
 import { SubscriptionsService } from './subscriptions.service';
 import { createInMemoryPrisma } from './testing/in-memory-prisma';
+import { reverseTopUpRefund } from '../wallet/top-up-refund';
 import { RentalBillingService } from './rental-billing.service';
 import { InsuranceService } from '../insurance/insurance.service';
 import { MockInsuranceProvider } from '../insurance/insurance-provider';
@@ -367,6 +368,32 @@ describe('PaymentsService.refund (via gateway)', () => {
       await expect(svc.refund(admin, tp.id, { reason: 'x' }, 'k-tu-1')).rejects.toMatchObject({ status: 409 });
       expect(provider.operations('refund')).toBe(0);
       expect(await db.payment.findUnique({ where: { id: tp.id } })).toMatchObject({ status: 'paid', refundedCents: 0 });
+    });
+
+    const walletSum = async (db: any) => (await db.walletEntry.findMany({ where: { customerId: CUSTOMER_ID } })).reduce((a: number, e: any) => a + e.amountCents, 0);
+
+    it('revisão: estorno pendente refeito pela reconciliação (succeeded) → tira o crédito da carteira', async () => {
+      const { db, svc, tp, provider } = await topUp(2000);
+      jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+      await svc.refund(admin, tp.id, { amountCents: 800, reason: 'x' }, 'k-tu-3');
+      expect(await walletSum(db)).toBe(2000);
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: tp.id } })).toMatchObject({ status: 'succeeded' });
+      expect(await walletSum(db)).toBe(1200);
+    });
+
+    it('revisão: estorno pendente + webhook (refundedCents local já reservado) → não debita; recusado depois → nada debitado', async () => {
+      const { db, svc, tp, provider } = await topUp(2000);
+      const refund = jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+      await svc.refund(admin, tp.id, { amountCents: 800, reason: 'x' }, 'k-tu-4');
+      // O webhook de outro evento chega com o Payment local já reservado (partially_refunded, 800).
+      await reverseTopUpRefund(db as any, await db.payment.findUnique({ where: { id: tp.id } }));
+      expect(await walletSum(db)).toBe(2000);
+      refund.mockRejectedValueOnce(new RefundRejectedError('recusado'));
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: tp.id } })).toMatchObject({ status: 'rejected' });
+      await reverseTopUpRefund(db as any, await db.payment.findUnique({ where: { id: tp.id } }));
+      expect(await walletSum(db)).toBe(2000);
     });
 
     it('com saldo → estorna no gateway e tira o crédito da carteira', async () => {

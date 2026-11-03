@@ -30,7 +30,12 @@ export async function reverseTopUpRefund(
   const topUp = await tx.topUp.findFirst({ where: { paymentId: payment.id } });
   // Só recarga creditada: pendente/falha nunca entrou na carteira.
   if (!topUp || topUp.status !== 'paid') return null;
-  const target = Math.min(payment.refundedCents, topUp.amountCents);
+  // Revisão: só o estorno confirmado. `Payment.refundedCents` sobe na reserva do estorno do admin, antes do gateway;
+  // os pedidos ainda em aberto (`claimed`/`pending`) são descontados (recusa desfaz a reserva; sucesso entra depois).
+  const current = await tx.payment.findUnique({ where: { id: payment.id }, select: { refundedCents: true } });
+  const open = await tx.paymentRefund.aggregate({ where: { paymentId: payment.id, status: { in: ['claimed', 'pending'] } }, _sum: { amountCents: true } });
+  const confirmed = Math.max(0, (current?.refundedCents ?? payment.refundedCents) - (open?._sum?.amountCents ?? 0));
+  const target = Math.min(confirmed, topUp.amountCents);
   const prev = topUp.reversedCents ?? 0;
   if (target <= prev) return null;
   const claimed = await tx.topUp.updateMany({ where: { id: topUp.id, reversedCents: prev }, data: { reversedCents: target } });

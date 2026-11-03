@@ -323,7 +323,10 @@ export class PaymentsService {
           this.state.needsReview({ paymentId: rec.paymentId, reason: 'refund_attempts_exhausted' }, { refundId: rec.id });
           continue;
         }
-        await this.callGatewayRefund(rec);
+        // Revisão: estorno refeito e confirmado agora → a recarga perde o crédito também por este caminho.
+        if ((await this.callGatewayRefund(rec)) === 'succeeded' && p.kind === 'top_up') {
+          await this.reverseTopUp((await this.prisma.payment.findUnique({ where: { id: p.id } }))!);
+        }
       } catch (err) {
         this.logger.warn({ msg: 'refund_reconcile_item_failed', refundId: rec.id, error: (err as Error).message });
       }
