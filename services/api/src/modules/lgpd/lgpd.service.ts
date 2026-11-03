@@ -258,7 +258,12 @@ export class LgpdService {
         await tx.paymentCard.updateMany({ where: { customerId, deletedAt: null }, data: { deletedAt: requestedAt, isDefault: false } });
         await tx.providerCustomerDeletion.upsert({ where: { customerId }, create: { customerId, ...gateway }, update: {} });
       }
-      if (rentalIds.length) await tx.trackPoint.deleteMany({ where: { rentalId: { in: rentalIds } } });
+      if (rentalIds.length) {
+        await tx.trackPoint.deleteMany({ where: { rentalId: { in: rentalIds } } });
+        // Auditoria run-4: alerta de aluguel (cerca, velocidade, queda...) guarda uma cópia da posição do titular; o
+        // alerta fica para a operação/auditoria, a posição sai. Alertas sem aluguel (frota) mantêm a posição.
+        await tx.alert.updateMany({ where: { rentalId: { in: rentalIds } }, data: { lat: null, lng: null } });
+      }
       // QA-12: a posição de início é localização ligada ao titular.
       await tx.rental.updateMany({ where: { customerId }, data: { startLat: null, startLng: null, returnPhotoObjectKey: null, returnPhotoUploadKey: null } });
       await tx.device.deleteMany({ where: { ownerId: customerId } });
@@ -489,6 +494,19 @@ export class LgpdService {
     return res.count;
   }
 
+  /**
+   * Auditoria run-4: a posição copiada nos alertas de aluguel segue a retenção dos trajetos (TRACK_RETENTION_DAYS).
+   * Alertas sem aluguel (moto parada, bateria, estoque) mantêm a posição: não é localização de cliente.
+   */
+  async purgeExpiredAlertLocations(): Promise<number> {
+    const cutoff = new Date(Date.now() - this.cfg.trackRetentionDays * 86_400_000);
+    const res = await this.prisma.alert.updateMany({
+      where: { rentalId: { not: null }, createdAt: { lt: cutoff }, OR: [{ lat: { not: null } }, { lng: { not: null } }] },
+      data: { lat: null, lng: null },
+    });
+    return res.count;
+  }
+
   /** Job diário (03:30 em São Paulo). */
   @Cron('30 3 * * *', { name: 'purge-expired-tracks', timeZone: 'America/Sao_Paulo' })
   @ExclusiveJob('purge-expired-tracks', 10 * 60_000)
@@ -496,10 +514,11 @@ export class LgpdService {
     if (!this.cfg.jobsEnabled) return;
     const count = await this.purgeExpiredTracks();
     const startLocations = await this.purgeExpiredStartLocations();
+    const alertLocations = await this.purgeExpiredAlertLocations();
     const closedClaims = await this.purgeClosedClaimsOfDeletedCustomers().catch((err) => {
       this.logger.error({ msg: 'closed_claims_purge_failed', error: (err as Error).message });
       return 0;
     });
-    this.logger.log({ msg: 'expired_tracks_purged', count, startLocations, closedClaims });
+    this.logger.log({ msg: 'expired_tracks_purged', count, startLocations, alertLocations, closedClaims });
   }
 }
