@@ -56,3 +56,11 @@ export function customerCouponStatus(
   }
   return { status: 'available', usesRemaining };
 }
+
+/**
+ * Auditoria run-4: o que a corrida trouxe de dinheiro novo — o bruto (`amountCents`) menos a parte paga com a carteira
+ * (`walletCents`) e menos os estornos (`refundedCents`), nunca negativo. Créditos da carteira não qualificam o bônus.
+ */
+export function newMoneyCents(p: { amountCents: number; walletCents: number; refundedCents: number }): number {
+  return Math.max(0, p.amountCents - p.walletCents - p.refundedCents);
+}
