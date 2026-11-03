@@ -85,6 +85,29 @@ describe('WalletService (ledger somente inserção)', () => {
     expect((await svc.get(CUSTOMER)).balanceCents).toBe(2000);
   });
 
+  it('auditoria run-4: recarga no cartão grava a transição para paid e o crédito na mesma transação', async () => {
+    const { db, svc } = await setup();
+    const txCalls: string[][] = [];
+    const realTx = db.$transaction;
+    db.$transaction = async (fn: any) => {
+      const calls: string[] = [];
+      txCalls.push(calls);
+      const tracked = new Proxy(db, {
+        get: (target: any, model: string) => {
+          const delegate = target[model];
+          if (!delegate || typeof delegate !== 'object') return delegate;
+          return new Proxy(delegate, { get: (d: any, op: string) => (typeof d[op] === 'function' ? (args: any) => (calls.push(`${model}.${op}:${JSON.stringify(args?.data?.status ?? '')}`), d[op](args)) : d[op]) });
+        },
+      });
+      return realTx(() => fn(tracked));
+    };
+    const t = await svc.topUp(CUSTOMER, { amountCents: 2000, method: 'card' });
+    expect(t.status).toBe('paid');
+    const credit = txCalls.find((c) => c.some((x) => x.startsWith('walletEntry.create')));
+    expect(credit).toEqual(expect.arrayContaining(['payment.updateMany:"paid"', 'topUp.updateMany:"paid"']));
+    expect(await db.walletEntry.count()).toBe(1);
+  });
+
   it('ajuste do financeiro: lançamento adjustment + auditoria; zero → 422', async () => {
     const { db, svc, audit } = await setup(false);
     const e = await svc.adjust(admin, CUSTOMER, { amountCents: -500, reason: 'Correção' });
