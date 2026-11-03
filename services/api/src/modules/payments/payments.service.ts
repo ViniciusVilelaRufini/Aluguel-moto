@@ -14,6 +14,7 @@ import { isStaff, type Principal } from '../auth/principal';
 import { toDeposit } from '../rentals/rentals.mapper';
 import { appendWalletEntry } from '../wallet/wallet-ledger';
 import { reverseTopUpRefund, topUpRefundFits } from '../wallet/top-up-refund';
+import { returnRentalPackageMinutes } from '../wallet/rental-minutes-return';
 import { canTransition } from './payment-state';
 import { PaymentStateService } from './payment-state.service';
 import type { DebtPaymentDto, ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto } from './payments.dto';
@@ -246,6 +247,8 @@ export class PaymentsService {
     const updated = (await this.prisma.payment.findUnique({ where: { id } }))!;
     // Só com o estorno confirmado no gateway (pendente: a reconciliação tira o crédito quando confirmar).
     if (updated.kind === 'top_up' && gatewayOutcome === 'succeeded') await this.reverseTopUp(updated);
+    // Revisão onda 2: estorno total confirmado do aluguel devolve os minutos de pacote (a função confere o confirmado).
+    if (updated.kind === 'rental') await this.returnPackageMinutes(updated);
     this.state.emitUpdated(updated);
     await this.audit.record({ actor, action: 'payment.refund', entityType: 'Payment', entityId: id, reason: dto.reason, metadata: { amountCents: amount } });
     return toPayment(updated);
@@ -316,6 +319,7 @@ export class PaymentsService {
         if (await this.gatewayShowsRefund(rec, p, pp.refundedCents ?? 0)) {
           await this.prisma.paymentRefund.update({ where: { id: rec.id }, data: { status: 'succeeded' } });
           if (p.kind === 'top_up') await this.reverseTopUp(p);
+          if (p.kind === 'rental') await this.returnPackageMinutes(p);
           continue;
         }
         if (rec.attempts >= MAX_REFUND_ATTEMPTS) {
@@ -324,13 +328,21 @@ export class PaymentsService {
           continue;
         }
         // Revisão: estorno refeito e confirmado agora → a recarga perde o crédito também por este caminho.
-        if ((await this.callGatewayRefund(rec)) === 'succeeded' && p.kind === 'top_up') {
-          await this.reverseTopUp((await this.prisma.payment.findUnique({ where: { id: p.id } }))!);
+        if ((await this.callGatewayRefund(rec)) === 'succeeded') {
+          const fresh = (await this.prisma.payment.findUnique({ where: { id: p.id } }))!;
+          if (fresh.kind === 'top_up') await this.reverseTopUp(fresh);
+          if (fresh.kind === 'rental') await this.returnPackageMinutes(fresh);
         }
       } catch (err) {
         this.logger.warn({ msg: 'refund_reconcile_item_failed', refundId: rec.id, error: (err as Error).message });
       }
     }
+  }
+
+  /** Revisão onda 2: estorno total do aluguel devolve os minutos de pacote consumidos (idempotente). */
+  private async returnPackageMinutes(p: Payment): Promise<void> {
+    const back = await this.prisma.$transaction((tx) => returnRentalPackageMinutes(tx, p));
+    if (back) this.logger.log({ msg: 'rental_refund_package_minutes_returned', paymentId: p.id, minutes: back });
   }
 
   /** Auditoria run-4 onda 2: estorno de recarga tira o crédito da carteira (idempotente; falta de saldo → revisão). */

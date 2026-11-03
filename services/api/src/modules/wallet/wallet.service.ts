@@ -19,6 +19,7 @@ import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 import { Interval } from '@nestjs/schedule';
 import { appendWalletEntry, walletBalance } from './wallet-ledger';
 import { reverseTopUpRefund } from './top-up-refund';
+import { returnRentalPackageMinutes } from './rental-minutes-return';
 
 /**
  * Carteira: créditos e pacotes de minutos em ledger **somente inserção** (`WalletEntry`); saldo = soma dos lançamentos.
@@ -132,6 +133,12 @@ export class WalletService {
     } else if (payment.status === 'refunded' || payment.status === 'partially_refunded') {
       await this.onTopUpRefunded(payment);
     }
+  }
+
+  /** Revisão onda 2: estorno total do aluguel (webhook/contestação) devolve os minutos de pacote consumidos. */
+  async onRentalRefunded(payment: Payment): Promise<void> {
+    const back = await this.prisma.$transaction((tx) => returnRentalPackageMinutes(tx, payment));
+    if (back) this.logger.log({ msg: 'rental_refund_package_minutes_returned', paymentId: payment.id, minutes: back });
   }
 
   /**

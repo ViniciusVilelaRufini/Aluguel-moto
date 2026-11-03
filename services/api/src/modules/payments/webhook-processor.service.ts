@@ -65,6 +65,9 @@ export class WebhookProcessor implements OnModuleInit {
         // Auditoria run-4: os efeitos rodam sempre que o status local é final, não só quando este evento o mudou — uma
         // queda entre a transição e o efeito não o perde. Cada um é idempotente (update condicional ou `applyEffectsOnce`).
         await this.wallet.onTopUpPayment(applied.payment);
+      } else if (applied.payment.kind === 'rental' && applied.payment.status === 'refunded') {
+        // Revisão onda 2: estorno/contestação total do aluguel devolve os minutos de pacote (idempotente).
+        await this.wallet.onRentalRefunded(applied.payment);
       } else if (applied.payment.kind === 'subscription') {
         await this.subscriptions.onSubscriptionPaymentChanged(applied.payment);
       } else if (applied.payment.kind === 'debt_settlement' && applied.payment.status === 'paid') {

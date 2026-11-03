@@ -214,3 +214,19 @@ describe('Auditoria run-4 onda 2: estorno de recarga tira o crédito da carteira
   });
 });
 
+describe('Revisão onda 2: estorno/contestação total do aluguel (webhook) devolve os minutos do pacote', () => {
+  it('Payment rental refunded → devolve os minutos consumidos uma vez; partially_refunded → nada', async () => {
+    const { db, svc } = await setup(false);
+    const RENTAL = '99999999-9999-4999-8999-999999999999';
+    await db.walletEntry.create({ data: { customerId: CUSTOMER, type: 'minute_package', amountCents: 0, minutes: 60, balanceAfterCents: 0, description: 'p' } });
+    await db.walletEntry.create({ data: { customerId: CUSTOMER, type: 'minute_package', amountCents: 0, minutes: -15, balanceAfterCents: 0, description: 'a', rentalId: RENTAL } });
+    const pay = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'rental', method: 'card', status: 'partially_refunded', refundedCents: 100, amountCents: 1000, rentalId: RENTAL } });
+    await svc.onRentalRefunded(pay);
+    expect((await svc.get(CUSTOMER)).minutesBalance).toBe(45);
+    const full = await db.payment.update({ where: { id: pay.id }, data: { status: 'refunded', refundedCents: 1000 } });
+    await svc.onRentalRefunded(full);
+    await svc.onRentalRefunded(full);
+    expect((await svc.get(CUSTOMER)).minutesBalance).toBe(60);
+  });
+});
+

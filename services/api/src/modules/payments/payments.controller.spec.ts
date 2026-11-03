@@ -14,6 +14,7 @@ import { ProviderCustomersService } from './provider-customers.service';
 import { SubscriptionsService } from './subscriptions.service';
 import { createInMemoryPrisma } from './testing/in-memory-prisma';
 import { reverseTopUpRefund } from '../wallet/top-up-refund';
+import { returnRentalPackageMinutes } from '../wallet/rental-minutes-return';
 import { RentalBillingService } from './rental-billing.service';
 import { InsuranceService } from '../insurance/insurance.service';
 import { MockInsuranceProvider } from '../insurance/insurance-provider';
@@ -347,6 +348,42 @@ describe('PaymentsService.refund (via gateway)', () => {
       await db.paymentRefund.create({ data: { paymentId: rp.id, idempotencyKey: `refund:${rp.id}:legado`, amountCents: 3000, prevStatus: 'paid', prevRefundedCents: 0, newStatus: 'refunded', newRefundedCents: 3000, status: 'pending' } });
       await svc.reconcileRefunds(0);
       expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'pending' });
+    });
+  });
+
+  describe('revisão onda 2: estorno total do aluguel devolve os minutos de pacote consumidos', () => {
+    const RENTAL = '99999999-9999-4999-8999-999999999999';
+    const minutes = async (db: any) => (await db.walletEntry.findMany({ where: { customerId: CUSTOMER_ID } })).reduce((a: number, e: any) => a + (e.minutes ?? 0), 0);
+    async function rentalWithPackage() {
+      const base = await setup();
+      const { db, p } = base;
+      await db.payment.update({ where: { id: p.id }, data: { rentalId: RENTAL } });
+      await db.walletEntry.create({ data: { customerId: CUSTOMER_ID, type: 'minute_package', amountCents: 0, minutes: 60, balanceAfterCents: 0, description: 'pacote' } });
+      await db.walletEntry.create({ data: { customerId: CUSTOMER_ID, type: 'minute_package', amountCents: 0, minutes: -10, balanceAfterCents: 0, description: 'aluguel', rentalId: RENTAL } });
+      return base;
+    }
+
+    it('estorno total → +10 min (minute_package com rentalId), uma vez só', async () => {
+      const { db, svc, p } = await rentalWithPackage();
+      await svc.refund(admin, p.id, { reason: 'Tudo' }, 'k-min-1');
+      expect(await minutes(db)).toBe(60);
+      const back = await db.walletEntry.findMany({ where: { rentalId: RENTAL, minutes: { gt: 0 } } });
+      expect(back).toEqual([expect.objectContaining({ type: 'minute_package', minutes: 10, amountCents: 0 })]);
+      await returnRentalPackageMinutes(db as any, await db.payment.findUnique({ where: { id: p.id } }));
+      expect(await minutes(db)).toBe(60);
+    });
+
+    it('estorno parcial → não devolve minutos; total pendente no gateway → ainda não devolve', async () => {
+      const { db, svc, p, provider } = await rentalWithPackage();
+      await svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k-min-2');
+      expect(await minutes(db)).toBe(50);
+      jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+      await svc.refund(admin, p.id, { reason: 'resto' }, 'k-min-3');
+      expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'refunded' });
+      await returnRentalPackageMinutes(db as any, await db.payment.findUnique({ where: { id: p.id } }));
+      expect(await minutes(db)).toBe(50);
+      await svc.reconcileRefunds(0);
+      expect(await minutes(db)).toBe(60);
     });
   });
 
