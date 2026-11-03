@@ -4257,7 +4257,7 @@ export interface components {
         };
         PriceLine: {
             /**
-             * @description `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `wallet`.
+             * @description `unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.
              * @example time
              */
             code: string;

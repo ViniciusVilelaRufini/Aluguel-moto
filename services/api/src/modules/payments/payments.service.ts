@@ -13,6 +13,8 @@ import { AuditService } from '../audit/audit.service';
 import { isStaff, type Principal } from '../auth/principal';
 import { toDeposit } from '../rentals/rentals.mapper';
 import { appendWalletEntry } from '../wallet/wallet-ledger';
+import { reverseTopUpRefund, topUpRefundFits } from '../wallet/top-up-refund';
+import { returnRentalPackageMinutes } from '../wallet/rental-minutes-return';
 import { canTransition } from './payment-state';
 import { PaymentStateService } from './payment-state.service';
 import type { DebtPaymentDto, ListDepositsQuery, ListPaymentsQuery, MercadoPagoWebhookDto, PaymentCardCreateDto, RefundDto, SubscriptionCreateDto } from './payments.dto';
@@ -198,24 +200,35 @@ export class PaymentsService {
     const walletPart = amount - gatewayPart;
     if (gatewayPart > 0 && !p.providerPaymentId) throw unprocessable('validation-error', 'Pagamento sem registro no gateway para estornar.');
 
+    // Auditoria run-4 onda 2: recarga cujo crédito já foi gasto além do saldo atual não é estornada (o cliente ficaria
+    // com o dinheiro de volta e o crédito usado); o financeiro decide (ajuste/cobrança) antes.
+    if (p.kind === 'top_up' && !(await topUpRefundFits(this.prisma, p, amount))) {
+      throw conflict('conflict', 'O crédito desta recarga já foi usado pelo cliente; o saldo atual não cobre o estorno.');
+    }
+
     // Um estorno em aberto por pagamento: sem isso, a reconciliação (que compara totais acumulados) confundiria pedidos.
     const open = await this.prisma.paymentRefund.findFirst({ where: { paymentId: p.id, status: { in: ['claimed', 'pending'] } } });
     if (open) throw conflict('conflict', 'Há um estorno deste pagamento aguardando confirmação do gateway. Tente de novo depois.');
 
-    const claim = (read: Payment, part: number, viaWallet: boolean, recordKey: string, plannedWallet?: number) =>
-      this.claimRefundPart(actor, read, part, viaWallet, recordKey, base, dto.reason, plannedWallet);
+    const claim = (read: Payment, part: number, viaWallet: boolean, recordKey: string, gatewayRefundedBefore: number | null = null, plannedWallet?: number) =>
+      this.claimRefundPart(actor, read, part, viaWallet, recordKey, base, dto.reason, viaWallet ? null : gatewayRefundedBefore, plannedWallet);
     const raced = () => conflict('conflict', REFUND_RACED);
 
     let current = p;
+    let gatewayOutcome: 'succeeded' | 'pending' | undefined;
     if (gatewayPart > 0) {
+      // Auditoria run-4 onda 2: linha de base do gateway lida ANTES da chamada (a reconciliação exige before + valor).
+      const before = await this.provider.getPayment(current.providerPaymentId!).then((pp) => pp.refundedCents ?? 0, () => null);
       // Auditoria run-4 (revisão): o plano da carteira nasce junto com o pedido do gateway; a repetição completa só ele.
-      const record = await claim(current, gatewayPart, false, key, walletPart > 0 && p.kind !== 'top_up' ? walletPart : undefined);
+      // Recarga (`top_up`) nunca tem plano: o estorno dela é revertido pelo `reverseTopUp`.
+      const record = await claim(current, gatewayPart, false, key, before, walletPart > 0 && p.kind !== 'top_up' ? walletPart : undefined);
       if (!record) throw raced();
       const outcome = await this.callGatewayRefund(record);
       if (outcome === 'rejected') {
         await this.prisma.paymentRefund.updateMany({ where: { idempotencyKey: `${key}:wallet`, status: 'planned' }, data: { status: 'canceled' } });
         throw new ProblemException(422, 'payment-failed', 'O gateway recusou o estorno.');
       }
+      gatewayOutcome = outcome;
       current = (await this.prisma.payment.findUnique({ where: { id } }))!;
     }
     if (walletPart > 0) {
@@ -224,6 +237,10 @@ export class PaymentsService {
       if (!record) throw raced();
     }
     const updated = (await this.prisma.payment.findUnique({ where: { id } }))!;
+    // Só com o estorno confirmado no gateway (pendente: a reconciliação tira o crédito quando confirmar).
+    if (updated.kind === 'top_up' && gatewayOutcome === 'succeeded') await this.reverseTopUp(updated);
+    // Revisão onda 2: estorno total confirmado do aluguel devolve os minutos de pacote (a função confere o confirmado).
+    if (updated.kind === 'rental') await this.returnPackageMinutes(updated);
     this.state.emitUpdated(updated);
     await this.audit.record({ actor, action: 'payment.refund', entityType: 'Payment', entityId: id, reason: dto.reason, metadata: { amountCents: amount } });
     return toPayment(updated);
@@ -236,7 +253,10 @@ export class PaymentsService {
    * reconciliação e pela regra de um estorno aberto), que guarda a intenção original para a repetição. A parte da carteira
    * conclui o plano, se houver, em vez de criar outro registro.
    */
-  private async claimRefundPart(actor: Principal, read: Payment, part: number, viaWallet: boolean, recordKey: string, base: number, reason: string, plannedWallet?: number) {
+  private async claimRefundPart(
+    actor: Principal, read: Payment, part: number, viaWallet: boolean, recordKey: string, base: number, reason: string,
+    gatewayRefundedBefore: number | null, plannedWallet?: number,
+  ) {
     const refundedCents = read.refundedCents + part;
     if (refundedCents > base) return null;
     const to = refundedCents >= base ? 'refunded' : 'partially_refunded';
@@ -244,7 +264,7 @@ export class PaymentsService {
       if (!(await this.state.claimRefund(tx, read, to, refundedCents))) return null;
       const data = {
         paymentId: read.id, idempotencyKey: recordKey, amountCents: part, prevStatus: read.status, prevRefundedCents: read.refundedCents,
-        newStatus: to, newRefundedCents: refundedCents, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
+        newStatus: to, newRefundedCents: refundedCents, gatewayRefundedBefore: viaWallet ? null : gatewayRefundedBefore, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
       };
       if (viaWallet) {
         await appendWalletEntry(tx, { customerId: read.customerId, type: 'refund', amountCents: part, description: `Estorno: ${reason}`, paymentId: read.id, rentalId: read.rentalId, createdById: actor.userId });
@@ -298,8 +318,10 @@ export class PaymentsService {
       this.state.needsReview({ paymentId: fresh.id, reason: 'refund_wallet_over_cap' }, { refundId: record.id });
       throw conflict('conflict', 'A parte da carteira deste estorno não cabe no que resta do pagamento. O estorno foi para revisão manual.');
     }
-    if (!(await this.claimRefundPart(actor, fresh, plan.amountCents, true, plan.idempotencyKey, base, dto.reason))) throw conflict('conflict', REFUND_RACED);
+    if (!(await this.claimRefundPart(actor, fresh, plan.amountCents, true, plan.idempotencyKey, base, dto.reason, null))) throw conflict('conflict', REFUND_RACED);
     const updated = (await this.prisma.payment.findUnique({ where: { id: fresh.id } }))!;
+    // Como no fluxo normal: estorno total confirmado do aluguel devolve os minutos de pacote.
+    if (updated.kind === 'rental') await this.returnPackageMinutes(updated);
     this.state.emitUpdated(updated);
     await this.audit.record({ actor, action: 'payment.refund', entityType: 'Payment', entityId: fresh.id, reason: dto.reason, metadata: { amountCents: plan.amountCents, walletCompletion: true } });
     return updated;
@@ -356,8 +378,10 @@ export class PaymentsService {
       try {
         const p = (await this.prisma.payment.findUnique({ where: { id: rec.paymentId } }))!;
         const pp = await this.provider.getPayment(p.providerPaymentId!);
-        if ((pp.refundedCents ?? 0) >= rec.newRefundedCents) {
+        if (await this.gatewayShowsRefund(rec, p, pp.refundedCents ?? 0)) {
           await this.prisma.paymentRefund.update({ where: { id: rec.id }, data: { status: 'succeeded' } });
+          if (p.kind === 'top_up') await this.reverseTopUp(p);
+          if (p.kind === 'rental') await this.returnPackageMinutes(p);
           continue;
         }
         if (rec.attempts >= MAX_REFUND_ATTEMPTS) {
@@ -365,11 +389,41 @@ export class PaymentsService {
           this.state.needsReview({ paymentId: rec.paymentId, reason: 'refund_attempts_exhausted' }, { refundId: rec.id });
           continue;
         }
-        await this.callGatewayRefund(rec);
+        // Revisão: estorno refeito e confirmado agora → a recarga perde o crédito também por este caminho.
+        if ((await this.callGatewayRefund(rec)) === 'succeeded') {
+          const fresh = (await this.prisma.payment.findUnique({ where: { id: p.id } }))!;
+          if (fresh.kind === 'top_up') await this.reverseTopUp(fresh);
+          if (fresh.kind === 'rental') await this.returnPackageMinutes(fresh);
+        }
       } catch (err) {
         this.logger.warn({ msg: 'refund_reconcile_item_failed', refundId: rec.id, error: (err as Error).message });
       }
     }
+  }
+
+  /** Revisão onda 2: estorno total do aluguel devolve os minutos de pacote consumidos (idempotente). */
+  private async returnPackageMinutes(p: Payment): Promise<void> {
+    const back = await this.prisma.$transaction((tx) => returnRentalPackageMinutes(tx, p));
+    if (back) this.logger.log({ msg: 'rental_refund_package_minutes_returned', paymentId: p.id, minutes: back });
+  }
+
+  /** Auditoria run-4 onda 2: estorno de recarga tira o crédito da carteira (idempotente; falta de saldo → revisão). */
+  private async reverseTopUp(p: Payment): Promise<void> {
+    const r = await this.prisma.$transaction((tx) => reverseTopUpRefund(tx, p));
+    if (r && (r.shortfallCents > 0 || r.shortfallMinutes > 0)) {
+      this.state.needsReview({ paymentId: p.id, reason: 'top_up_refund_exceeds_balance' }, { shortfallCents: r.shortfallCents, shortfallMinutes: r.shortfallMinutes });
+    }
+  }
+
+  /**
+   * Auditoria run-4 onda 2: o gateway já mostra ESTE estorno? Com linha de base: `before + amountCents`. Pedido antigo
+   * (sem linha de base): o total do gateway só vale se nenhum outro Payment compartilhar o `providerPaymentId` (Pix da
+   * caução que pagou o aluguel); senão segue a retentativa idempotente e, esgotada, revisão manual.
+   */
+  private async gatewayShowsRefund(rec: PaymentRefund, p: Payment, gatewayRefunded: number): Promise<boolean> {
+    if (rec.gatewayRefundedBefore !== null && rec.gatewayRefundedBefore !== undefined) return gatewayRefunded >= rec.gatewayRefundedBefore + rec.amountCents;
+    const siblings = await this.prisma.payment.count({ where: { providerPaymentId: p.providerPaymentId, id: { not: p.id } } });
+    return siblings === 0 && gatewayRefunded >= rec.newRefundedCents;
   }
 
   // ── webhook ──

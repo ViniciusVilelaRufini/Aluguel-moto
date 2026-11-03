@@ -7,6 +7,9 @@ import { IDEMPOTENCY_STORE, type IdempotencyStore } from './idempotency.store';
 
 export const IDEMPOTENT_META = 'volti:idempotent';
 
+/** Formato aceito da `Idempotency-Key` (contrato: parâmetro `IdempotencyKey`). */
+export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
+
 /** Marca a operação com `Idempotency-Key` (obrigatória ou opcional, conforme o contrato). */
 export const Idempotent = (opts: { required: boolean }) => SetMetadata(IDEMPOTENT_META, opts);
 
@@ -44,9 +47,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
       }
       return lastValueFrom(next.handle(), { defaultValue: undefined });
     }
-    if (typeof key !== 'string' || key.length < 8 || key.length > 128) {
-      throw new ProblemException(400, 'validation-error', 'Idempotency-Key deve ter de 8 a 128 caracteres.', [
-        { field: 'Idempotency-Key', message: 'entre 8 e 128 caracteres' },
+    // Auditoria run-4 onda 2: alfabeto restrito (UUID v4 passa). Sem `:` a chave do cliente não colide com os
+    // namespaces internos (`deposit:<cliente>:reservation:<chave>` da caução de galpão × `deposit:<cliente>:<chave>` da rua).
+    if (typeof key !== 'string' || !IDEMPOTENCY_KEY_PATTERN.test(key)) {
+      throw new ProblemException(400, 'validation-error', 'Idempotency-Key deve ter de 8 a 128 caracteres: letras sem acento, números, hífen ou sublinhado.', [
+        { field: 'Idempotency-Key', message: 'de 8 a 128 caracteres em [A-Za-z0-9_-]' },
       ]);
     }
     const actor = req.principal?.userId ?? 'anon';
