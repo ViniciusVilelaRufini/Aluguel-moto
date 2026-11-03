@@ -288,6 +288,10 @@ export class RentalStartService {
       rentalId = randomUUID();
       const held = await this.billing.holdDeposit({ customerId, rentalId, method: dto.depositMethod, idempotencyKey: `deposit:${customerId}:${idempotencyKey}` });
       const d = await this.prisma.deposit.findUnique({ where: { id: held.depositId } });
+      // Auditoria run-4 onda 2 (defesa extra): caução devolvida pela chave pertence a uma reserva aberta (outro fluxo) →
+      // 409 deposit-in-use antes de marcá-la como desta tentativa (o catch não a libera). A reserva Pix de rua da
+      // mesma moto (repetição do primeiro passo do fluxo Pix) continua passando.
+      if (d) await this.assertDepositNotInUse(d.id, vehicle.id, undefined);
       // Repetição com a mesma chave depois de um 409: a caução daquela tentativa já foi liberada/capturada.
       if (held.status === 'failed' && d && (d.status === 'released' || d.status === 'captured')) {
         throw new ProblemException(402, 'deposit-not-held', 'A caução desta tentativa já foi liberada. Tente de novo com uma nova requisição.');

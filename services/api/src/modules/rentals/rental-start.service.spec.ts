@@ -189,6 +189,36 @@ describe('Início do aluguel (POST /rentals)', () => {
     expect(res.body.type).toBe('https://api.volti.com.br/problems/validation-error');
   });
 
+  it.each([['reservation:abcdefgh'], ['chave com espaço'], ['chave/barra-0001'], ['ção-acentuada-0001']])(
+    'auditoria run-4 onda 2: Idempotency-Key fora de [A-Za-z0-9_-] (%s) → 400 validation-error, sem caução',
+    async (key) => {
+      const res = await request(h.app.getHttpServer()).post('/rentals').set('Authorization', `Bearer ${await customerToken()}`).set('Idempotency-Key', key).send(body);
+      expect(res.status).toBe(400);
+      expect(res.body.type).toBe('https://api.volti.com.br/problems/validation-error');
+      expect(res.body.detail).toMatch(/Idempotency-Key/);
+      expect(billing.holdDeposit).not.toHaveBeenCalled();
+    },
+  );
+
+  it('auditoria run-4 onda 2: UUID v4 continua aceito como Idempotency-Key', async () => {
+    const res = await post('0f8c7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c');
+    expect(res.status).toBe(201);
+  });
+
+  it('auditoria run-4 onda 2: holdDeposit devolve caução ligada a uma reserva de galpão aberta → 409 deposit-in-use, sem liberar nem reivindicar', async () => {
+    const released = jest.fn();
+    h.app.get(EventEmitter2).removeAllListeners(EV.DEPOSIT_RELEASE_REQUESTED);
+    h.app.get(EventEmitter2).on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+    h.prisma.reservation.findFirst.mockImplementation((async (a: any) =>
+      (a?.where?.depositId === DEPOSIT_ID ? { id: 'res-galpao', vehicleId: '88888888-8888-4888-8888-888888888888', depotId: 'dep', status: 'handover' } : null)) as any);
+    const res = await post('chave-colisao-0001');
+    expect(res.status).toBe(409);
+    expect(res.body.type).toBe('https://api.volti.com.br/problems/deposit-in-use');
+    expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    expect(insurance.issueForRental).not.toHaveBeenCalled();
+    expect(released).not.toHaveBeenCalled();
+  });
+
   it('mesma Idempotency-Key duas vezes → um aluguel só e a mesma resposta', async () => {
     const first = await post('chave-idem-0001');
     const second = await post('chave-idem-0001');
