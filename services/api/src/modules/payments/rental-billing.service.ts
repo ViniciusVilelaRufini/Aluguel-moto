@@ -950,7 +950,39 @@ export class RentalBillingService implements RentalBillingPort {
       await this.runSettlement({ rentalId: p.rentalId, amountCents: p.amountCents, idempotencyKey: p.idempotencyKey }, true)
         .catch((err) => this.logger.warn({ msg: 'settlement_retry_item_failed', paymentId: p.id, error: (err as Error).message }));
     }
+    await this.settleUnbilledRentals(cutoff);
     await this.retryParkedAsDebt();
+  }
+
+  /**
+   * Auditoria run-4: o fechamento (`rental-end` → `doFinalize`) commita status, `costCents`, `breakdown` e o débito da
+   * carteira e só depois chama `settle`. Uma queda nesse intervalo deixava o aluguel encerrado sem `Payment` (caução retida
+   * para sempre, carteira já debitada). Aqui o job retoma: aluguel `ended`/`force_ended` sem `paymentId`, encerrado antes de
+   * `cutoff`. Se o `Payment` da chave estável `rental-settlement:<id>` já existe (o `settle` começou), só vincula — o
+   * restante da liquidação é do fluxo acima. Senão, chama `settle` com os mesmos argumentos do fechamento
+   * (`amountCents` = `costCents` = `breakdown.totalCents`; `walletCents` = `breakdown.walletAppliedCents`).
+   */
+  private async settleUnbilledRentals(cutoff: Date): Promise<void> {
+    const rentals = await this.prisma.rental.findMany({
+      where: { status: { in: ['ended', 'force_ended'] }, paymentId: null, endedAt: { lte: cutoff } },
+      orderBy: { endedAt: 'asc' },
+      take: 50,
+      select: { id: true, costCents: true, breakdown: true },
+    });
+    for (const r of rentals) {
+      const idempotencyKey = `rental-settlement:${r.id}`;
+      try {
+        let paymentId = (await this.prisma.payment.findUnique({ where: { idempotencyKey }, select: { id: true } }))?.id;
+        if (!paymentId) {
+          const walletCents = Math.max(0, Number((r.breakdown as { walletAppliedCents?: number } | null)?.walletAppliedCents ?? 0));
+          paymentId = (await this.settle({ rentalId: r.id, amountCents: r.costCents, walletCents, idempotencyKey })).paymentId;
+          this.logger.warn({ msg: 'rental_unbilled_settled', rentalId: r.id, paymentId });
+        }
+        await this.prisma.rental.updateMany({ where: { id: r.id, paymentId: null }, data: { paymentId } });
+      } catch (err) {
+        this.logger.warn({ msg: 'rental_unbilled_settle_failed', rentalId: r.id, error: (err as Error).message });
+      }
+    }
   }
 
   /**
