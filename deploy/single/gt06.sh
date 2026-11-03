@@ -275,8 +275,8 @@ SQL
     [ -n "$vid" ] || { echo "moto $code não encontrada" >&2; exit 1; }
     imei="$(echo "SELECT imei FROM \"Tracker\" WHERE \"thingName\" = '$thing' AND \"controlMode\" = 'relay_only' AND \"vehicleId\" = '$vid'" | sql)"
     [ -n "$imei" ] || { echo "$thing não está provisionada como GT06 na moto $code (gt06.sh provision)" >&2; exit 1; }
-    # Só o emulador: o compose sobe o gt06-emulator com o IMEI padrão (o GT06_EMULATOR_IMEI do ambiente não vale aqui).
-    unset GT06_EMULATOR_IMEI
+    # Só o emulador: fixa o IMEI padrão no shell, que vence o --env-file do compose (um GT06_EMULATOR_IMEI no .env não vale aqui).
+    export GT06_EMULATOR_IMEI="$GT06_EMULATOR_DEFAULT_IMEI"
     if [ "$imei" != "$GT06_EMULATOR_DEFAULT_IMEI" ]; then
       echo "e2e recusado: o Tracker de $thing não usa o IMEI do emulador (padrão do compose.yml). O e2e é só com o emulador;" >&2
       echo "com um J16 real ele forjaria posições do aparelho. Para J16 use gt06.sh status e o teste de bancada (docs/gt06-j16-instalacao.md)." >&2

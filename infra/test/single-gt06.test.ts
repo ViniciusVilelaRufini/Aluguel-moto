@@ -215,7 +215,7 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
   describe('gt06.sh e2e: só com o IMEI do emulador (nunca forja posição de um J16 real)', () => {
     const slash = (p: string) => p.replace(/\\/g, '/');
     /** Roda o e2e com docker/aws/curl/sleep/mktemp falsos no PATH; o docker anota cada chamada (e o GT06_EMULATOR_IMEI do ambiente). */
-    function runE2e(trackerImei: string) {
+    function runE2e(trackerImei: string, envExtra = '') {
       const dir = mkdtempSync(join(tmpdir(), 'volti-gt06-e2e-'));
       const bin = join(dir, 'bin');
       mkdirSync(bin);
@@ -238,7 +238,7 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
       const inst = join(dir, 'instance.env');
       const envFile = join(dir, '.env');
       writeFileSync(inst, `VOLTI_REGION=sa-east-1\nVOLTI_REPO_DIR=${slash(dir)}\nVOLTI_SECRETS_PREFIX=/volti/dev/secrets\n`);
-      writeFileSync(envFile, 'PUBLIC_HOST=api.exemplo.test\n');
+      writeFileSync(envFile, `PUBLIC_HOST=api.exemplo.test\n${envExtra}`);
       const wrapper = 'd="$1"; shift; if command -v cygpath >/dev/null 2>&1; then d="$(cygpath -u "$d")"; fi; export PATH="$d:$PATH"; exec bash "$@"';
       const env: Record<string, string | undefined> = { ...process.env, VOLTI_INSTANCE_ENV: slash(inst), VOLTI_ENV_FILE: slash(envFile), FAKE_TRACKER_IMEI: trackerImei };
       delete env.GT06_EMULATOR_IMEI;
@@ -254,13 +254,21 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
       expect(r.calls).not.toMatch(/up -d --force-recreate gt06-emulator/);
     });
 
-    itBash('Tracker com o IMEI do emulador: segue; emulador e cleanup sem sobrescrever o IMEI (padrão do compose)', () => {
+    itBash('Tracker com o IMEI do emulador: segue; emulador e cleanup sobem com o IMEI padrão', () => {
       const r = runE2e('860000000000901');
       expect(r.stderr).not.toMatch(/IMEI do emulador/);
       expect(r.status).toBe(0);
       const ups = r.calls.split('\n').filter((l) => /up -d --force-recreate gt06-emulator/.test(l));
       expect(ups).toHaveLength(2); // cenário ride-then-stop e o cleanup (parked)
-      for (const l of ups) expect(l).toMatch(/^IMEI= /);
+      for (const l of ups) expect(l).toMatch(/^IMEI=860000000000901 /);
+    });
+
+    itBash('GT06_EMULATOR_IMEI de J16 no .env não vale: o shell fixa o padrão (vence o --env-file do compose)', () => {
+      const r = runE2e('860000000000901', 'GT06_EMULATOR_IMEI=861234567890123\n');
+      expect(r.status).toBe(0);
+      const ups = r.calls.split('\n').filter((l) => /up -d --force-recreate gt06-emulator/.test(l));
+      expect(ups).toHaveLength(2);
+      for (const l of ups) expect(l).toMatch(/^IMEI=860000000000901 /);
     });
 
     it('o IMEI padrão do emulador no gt06.sh é o mesmo do compose.yml', () => {
