@@ -302,12 +302,12 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 
 ## Auditoria run-4 — pagamentos e LGPD (`docs/decisoes.md`)
 
-- **Aluguel encerrado sem `Payment`:** o `payments-settlement-retry` (5 min) também liquida aluguéis `ended`/`force_ended` sem `paymentId` encerrados há mais de 2 min (queda entre o fechamento e o `settle`), com os argumentos do fechamento (`costCents`, `breakdown.walletAppliedCents`, chave `rental-settlement:<id>`); se o `Payment` da chave já existe, só vincula.
+- **Aluguel encerrado sem `Payment`:** o `payments-settlement-retry` (5 min) também liquida aluguéis `ended`/`force_ended` sem `paymentId` encerrados há mais de 2 min e menos de 7 dias (queda entre o fechamento e o `settle`; mais antigo só gera log `rental_unbilled_needs_review`; cliente excluído é pulado), com os argumentos do fechamento (`costCents`, `breakdown.walletAppliedCents`, chave `rental-settlement:<id>`); se o `Payment` da chave já existe, só vincula.
 - **Webhook:** os efeitos (crédito da recarga, caução `held`/`failed`, renovação/`past_due` da assinatura, quitação da dívida) rodam sempre que o status local é final, não só quando o evento o mudou. Assinatura e quitação são idempotentes por pagamento (`Payment.effectsAppliedAt`, `payments/effects-once.ts`). Recarga no cartão: transição e crédito na mesma transação (`PaymentStateService.transitionTx`).
 - **Reconciliadores (5 min):** `wallet-top-up-reconcile` (recarga `pending` com `Payment` `paid`/`failed`) e `payments-deposit-reconcile` (caução `awaiting_pix` com `Payment` `paid`/`failed`).
 - **Estorno com carteira:** o webhook nunca diminui `refundedCents` e soma os estornos da carteira ao valor do gateway; `refunded` só no teto comum (`payments/refund-base.ts`).
-- **Ledger:** `appendWalletEntry` trava o `Customer` (`FOR UPDATE`) antes de calcular `balanceAfterCents`.
-- **LGPD:** a exclusão de conta anula `Alert.lat/lng` dos alertas dos aluguéis do titular; o job diário anula a posição de alertas de aluguel com mais de `TRACK_RETENTION_DAYS`.
+- **Ledger:** `appendWalletEntry` trava o `Customer` (`FOR NO KEY UPDATE`) antes de calcular `balanceAfterCents`.
+- **LGPD:** a exclusão de conta anula `Alert.lat/lng` dos alertas dos aluguéis do titular; o job diário anula a posição de alertas de aluguel com mais de `TRACK_RETENTION_DAYS`. Alerta ligado a aluguel precisa vir com `rentalId`.
 
 ## Regras que nunca mudam
 
