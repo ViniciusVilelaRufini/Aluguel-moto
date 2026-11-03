@@ -1136,10 +1136,12 @@ export class RentalBillingService implements RentalBillingPort {
    * (`refundBase`); `refunded` só ao atingir o teto. Igual ao local → nada muda (sem corrida com o estorno em andamento).
    */
   private async applyRefundState(local: Payment, pp: ProviderPayment): Promise<{ payment: Payment; changed: boolean }> {
-    const { base } = await refundBase(this.prisma, local);
+    const { base, gatewayBase } = await refundBase(this.prisma, local);
     const wallet = await this.prisma.walletEntry.aggregate({ where: { paymentId: local.id, type: 'refund' }, _sum: { amountCents: true } });
     const walletRefunded = Math.max(0, wallet?._sum?.amountCents ?? 0);
-    const refundedCents = Math.min(base, Math.max(local.refundedCents, (pp.refundedCents ?? 0) + walletRefunded));
+    // Gateway `refunded` (estorno total ou chargeback, às vezes sem `refundedCents`): a parte do gateway inteira voltou.
+    const gatewayRefunded = pp.status === 'refunded' ? Math.max(pp.refundedCents ?? 0, gatewayBase) : (pp.refundedCents ?? 0);
+    const refundedCents = Math.min(base, Math.max(local.refundedCents, gatewayRefunded + walletRefunded));
     const status = refundedCents >= base ? 'refunded' : 'partially_refunded';
     if (status === local.status && refundedCents === local.refundedCents) return { payment: local, changed: false };
     if (!canTransition(local.status, status)) {

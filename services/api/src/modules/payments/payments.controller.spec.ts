@@ -366,6 +366,14 @@ describe('Auditoria run-4: webhook de estorno não sobrescreve a parte da cartei
     expect(provider.operations('refund')).toBe(1);
   });
 
+  it('revisão: estorno total/chargeback no gateway sem refundedCents → a parte do gateway inteira (partially_refunded/600)', async () => {
+    const { db, p, provider, webhook } = await setup();
+    const real = await provider.getPayment(p.providerPaymentId!);
+    jest.spyOn(provider, 'getPayment').mockResolvedValueOnce({ ...real, status: 'refunded', refundedCents: undefined });
+    await webhook();
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'partially_refunded', refundedCents: 600 });
+  });
+
   it('estorno feito direto no gateway (fora da API) → partially_refunded com o valor do gateway; total do cartão não vira refunded', async () => {
     const { db, p, provider, webhook } = await setup();
     await provider.refund({ providerPaymentId: p.providerPaymentId!, amountCents: 600, idempotencyKey: 'painel-mp' });
