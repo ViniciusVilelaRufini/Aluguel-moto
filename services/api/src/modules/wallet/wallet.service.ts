@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { assertTopUpAmount, topUpLimits } from './top-up-limits';
-import { Prisma, type Payment } from '@prisma/client';
+import { Prisma, type Payment, type TopUp } from '@prisma/client';
 import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { badRequest, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
@@ -14,7 +14,9 @@ import { PaymentStateService } from '../payments/payment-state.service';
 import { ProviderCustomersService } from '../payments/provider-customers.service';
 import { scheduleFakePixConfirmation } from '../payments/provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/provider/payment-provider';
-import { BILLING_OPTIONS, type BillingOptions } from '../payments/rental-billing.service';
+import { BILLING_OPTIONS, type BillingOptions, RECONCILE_LIMIT, RECONCILE_WINDOW_MS } from '../payments/rental-billing.service';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
+import { Interval } from '@nestjs/schedule';
 import { appendWalletEntry, walletBalance } from './wallet-ledger';
 
 /**
@@ -86,8 +88,13 @@ export class WalletService {
       await this.prisma.topUp.update({ where: { id: topUp.id }, data: { status: 'failed' } });
       throw new ProblemException(402, 'payment-failed', 'Pagamento recusado. Tente outro cartão.');
     }
-    const paid = await this.state.transition(payment.id, 'paid', { providerPaymentId: res.providerPaymentId });
-    await this.onTopUpPayment(paid);
+    // Auditoria run-4: transição e crédito na mesma transação (uma queda entre os dois não deixa Payment paid sem crédito).
+    const { paid, credited } = await this.prisma.$transaction(async (tx) => {
+      const p = await this.state.transitionTx(tx, payment.id, 'paid', { providerPaymentId: res.providerPaymentId });
+      return { paid: p, credited: await this.creditTopUp(tx, topUp, p.id) };
+    });
+    this.state.emitUpdated(paid);
+    if (credited) this.logger.log({ msg: 'wallet_top_up_paid', topUpId: topUp.id });
     return toTopUp((await this.prisma.topUp.findUnique({ where: { id: topUp.id } }))!);
   }
 
@@ -117,22 +124,56 @@ export class WalletService {
     const topUp = await this.prisma.topUp.findFirst({ where: { paymentId: payment.id } });
     if (!topUp) return;
     if (payment.status === 'paid') {
-      await this.prisma.$transaction(async (tx) => {
-        const claimed = await tx.topUp.updateMany({ where: { id: topUp.id, status: 'pending' }, data: { status: 'paid' } });
-        if (claimed.count === 0) return;
-        await this.append(tx, {
-          customerId: topUp.customerId,
-          type: topUp.minutes ? 'minute_package' : 'top_up',
-          amountCents: topUp.minutes ? 0 : topUp.amountCents,
-          minutes: topUp.minutes ?? undefined,
-          description: topUp.minutes ? `Pacote de ${topUp.minutes} minutos` : 'Recarga de créditos',
-          paymentId: payment.id,
-        });
-      });
-      this.logger.log({ msg: 'wallet_top_up_paid', topUpId: topUp.id });
+      const credited = await this.prisma.$transaction((tx) => this.creditTopUp(tx, topUp, payment.id));
+      if (credited) this.logger.log({ msg: 'wallet_top_up_paid', topUpId: topUp.id });
     } else if (payment.status === 'failed') {
       await this.prisma.topUp.updateMany({ where: { id: topUp.id, status: 'pending' }, data: { status: payment.failureReason === 'pix_expired' ? 'expired' : 'failed' } });
     }
+  }
+
+  /** Recarga paga → um lançamento só (claim condicional `pending → paid` na mesma transação do lançamento). */
+  private async creditTopUp(tx: Prisma.TransactionClient, topUp: Pick<TopUp, 'id' | 'customerId' | 'minutes' | 'amountCents'>, paymentId: string): Promise<boolean> {
+    const claimed = await tx.topUp.updateMany({ where: { id: topUp.id, status: 'pending' }, data: { status: 'paid' } });
+    if (claimed.count === 0) return false;
+    await this.append(tx, {
+      customerId: topUp.customerId,
+      type: topUp.minutes ? 'minute_package' : 'top_up',
+      amountCents: topUp.minutes ? 0 : topUp.amountCents,
+      minutes: topUp.minutes ?? undefined,
+      description: topUp.minutes ? `Pacote de ${topUp.minutes} minutos` : 'Recarga de créditos',
+      paymentId,
+    });
+    return true;
+  }
+
+  /**
+   * Auditoria run-4: reconciliador das recargas. Recarga `pending` cujo Payment já é `paid`/`failed` (queda entre a
+   * transição e o efeito, com o evento do webhook já registrado): aplica `onTopUpPayment` (idempotente). Só recargas
+   * paradas há `olderThanMs` e criadas nos últimos 7 dias.
+   */
+  @Interval('wallet-top-up-reconcile', 5 * 60_000)
+  @ExclusiveJob('wallet-top-up-reconcile', jobLockTtl(5 * 60_000))
+  async reconcileJob(): Promise<void> {
+    if (process.env.JOBS_ENABLED === 'false') return;
+    await this.reconcileTopUps().catch((err) => this.logger.error({ msg: 'top_up_reconcile_failed', error: (err as Error).message }));
+  }
+
+  async reconcileTopUps(olderThanMs = 2 * 60_000): Promise<number> {
+    const now = Date.now();
+    // Revisão: o status do Payment é filtrado na própria consulta (junção), para Pix abandonado (Payment pending) não
+    // ocupar o lote. TopUp não tem relação Prisma com Payment, daí o SQL cru.
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT p."id" FROM "TopUp" t JOIN "Payment" p ON p."id" = t."paymentId"
+      WHERE t."status" = 'pending' AND p."kind" = 'top_up' AND p."status" IN ('paid', 'failed')
+        AND t."updatedAt" <= ${new Date(now - olderThanMs)} AND t."createdAt" >= ${new Date(now - RECONCILE_WINDOW_MS)}
+      ORDER BY t."createdAt" ASC LIMIT ${RECONCILE_LIMIT}`;
+    if (!rows.length) return 0;
+    const payments = await this.prisma.payment.findMany({ where: { id: { in: rows.map((r) => r.id) }, kind: 'top_up', status: { in: ['paid', 'failed'] } } });
+    for (const p of payments) {
+      await this.onTopUpPayment(p).catch((err) => this.logger.warn({ msg: 'top_up_reconcile_item_failed', paymentId: p.id, error: (err as Error).message }));
+    }
+    if (payments.length) this.logger.warn({ msg: 'top_ups_reconciled', count: payments.length });
+    return payments.length;
   }
 
   async getTopUp(customerId: string, id: string) {

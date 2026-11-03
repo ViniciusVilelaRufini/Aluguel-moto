@@ -13,6 +13,9 @@ import { PAYMENT_PROVIDER, PaymentProviderError, RefundRejectedError } from './p
 import { ProviderCustomersService } from './provider-customers.service';
 import { SubscriptionsService } from './subscriptions.service';
 import { createInMemoryPrisma } from './testing/in-memory-prisma';
+import { RentalBillingService } from './rental-billing.service';
+import { InsuranceService } from '../insurance/insurance.service';
+import { MockInsuranceProvider } from '../insurance/insurance-provider';
 
 const SECRET = 'segredo-webhook-teste';
 const sign = (dataId: string, requestId: string, ts = String(Math.floor(Date.now() / 1000)), secret = SECRET) =>
@@ -306,5 +309,75 @@ describe('PaymentsService.refund (via gateway)', () => {
     const dp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'deposit', method: 'card', status: 'captured', amountCents: 5000, providerPaymentId: 'x' } });
     await db.paymentCapture.create({ data: { paymentId: dp.id, capturedCents: 1290 } });
     await expect(svc.refund(admin, dp.id, { amountCents: 2000, reason: 'x' })).rejects.toMatchObject({ slug: 'validation-error' });
+  });
+});
+
+describe('Auditoria run-4: webhook de estorno não sobrescreve a parte da carteira', () => {
+  const admin: Principal = { pool: 'staff', sub: 'a', email: 'a@volti.com.br', groups: ['admin'], userId: '22222222-2222-4222-8222-222222222222', staffId: '22222222-2222-4222-8222-222222222222' };
+
+  /** Aluguel de 1000 (bruto): 400 da carteira + 600 no cartão. */
+  async function setup() {
+    const db = createInMemoryPrisma();
+    const provider = new FakePaymentProvider(SECRET);
+    const events = new EventEmitter2();
+    const state = new PaymentStateService(db as any, events);
+    const customers = new ProviderCustomersService(db as any, provider);
+    await db.customer.create({ data: { id: CUSTOMER_ID, cognitoSub: 's', email: 'c@example.com' } });
+    const card = await customers.addCard(CUSTOMER_ID, 'tok_visa_4242', true);
+    const charged = await provider.charge({ providerCustomerId: 'x', providerCardId: card.providerCardId, amountCents: 600, description: 'x', idempotencyKey: 'c', externalReference: 'r' });
+    const p = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'rental', method: 'card', status: 'paid', amountCents: 1000, walletCents: 400, providerPaymentId: charged.providerPaymentId } });
+    const svc = new PaymentsService(db as any, { record: jest.fn() } as any, { publish: jest.fn() } as any, provider, customers, state, {} as any, {} as any);
+    const billing = new RentalBillingService(db as any, provider, state, customers, new InsuranceService(db as any, new MockInsuranceProvider()), { issueForPayment: jest.fn() } as any, { publish: jest.fn(), subscribe: jest.fn() } as any, events, { pixExpirationMinutes: 15, fakePixAutoConfirmSeconds: 0 });
+    const webhook = async () => billing.applyProviderPayment(await provider.getPayment(p.providerPaymentId!));
+    return { db, provider, svc, p, webhook };
+  }
+
+  it('refund 600 → webhook refunded/600 mantém partially_refunded/600 → refund 400 → refunded/1000 com lançamento de 400', async () => {
+    const { db, svc, p, webhook } = await setup();
+    expect(await svc.refund(admin, p.id, { amountCents: 600, reason: 'Cartão' })).toMatchObject({ status: 'partially_refunded', refundedCents: 600 });
+    await webhook();
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'partially_refunded', refundedCents: 600 });
+    expect(await svc.refund(admin, p.id, { amountCents: 400, reason: 'Carteira' })).toMatchObject({ status: 'refunded', refundedCents: 1000 });
+    expect(await db.walletEntry.findMany({ where: { paymentId: p.id } })).toEqual([expect.objectContaining({ type: 'refund', amountCents: 400 })]);
+    // Webhook depois do estorno da carteira: continua refunded/1000 (nunca diminui).
+    await webhook();
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'refunded', refundedCents: 1000 });
+  });
+
+  it('webhook entre o estorno no gateway e o da carteira (estorno total) → sem 409/422: refunded/1000', async () => {
+    const { db, svc, p, provider, webhook } = await setup();
+    const realRefund = provider.refund.bind(provider);
+    jest.spyOn(provider, 'refund').mockImplementationOnce(async (i) => {
+      const r = await realRefund(i);
+      await webhook();
+      return r;
+    });
+    expect(await svc.refund(admin, p.id, { reason: 'Tudo' })).toMatchObject({ status: 'refunded', refundedCents: 1000 });
+    expect(await db.walletEntry.count({ where: { paymentId: p.id } })).toBe(1);
+  });
+
+  it('webhook depois dos estornos do cartão e da carteira mantém o total (nunca diminui)', async () => {
+    const { db, svc, p, provider, webhook } = await setup();
+    await svc.refund(admin, p.id, { amountCents: 600, reason: 'Cartão' });
+    await svc.refund(admin, p.id, { amountCents: 100, reason: 'Carteira' });
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'partially_refunded', refundedCents: 700 });
+    await webhook();
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'partially_refunded', refundedCents: 700 });
+    expect(provider.operations('refund')).toBe(1);
+  });
+
+  it('revisão: estorno total/chargeback no gateway sem refundedCents → a parte do gateway inteira (partially_refunded/600)', async () => {
+    const { db, p, provider, webhook } = await setup();
+    const real = await provider.getPayment(p.providerPaymentId!);
+    jest.spyOn(provider, 'getPayment').mockResolvedValueOnce({ ...real, status: 'refunded', refundedCents: undefined });
+    await webhook();
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'partially_refunded', refundedCents: 600 });
+  });
+
+  it('estorno feito direto no gateway (fora da API) → partially_refunded com o valor do gateway; total do cartão não vira refunded', async () => {
+    const { db, p, provider, webhook } = await setup();
+    await provider.refund({ providerPaymentId: p.providerPaymentId!, amountCents: 600, idempotencyKey: 'painel-mp' });
+    await webhook();
+    expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'partially_refunded', refundedCents: 600 });
   });
 });

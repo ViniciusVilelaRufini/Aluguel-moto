@@ -11,6 +11,7 @@ import { ProviderCustomersService } from './provider-customers.service';
 import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError } from './provider/payment-provider';
 import { debtInCollection, isOpenDebt, openDebtWhere, rentalSettlementRetrying } from './open-debt';
+import { applyEffectsOnce } from './effects-once';
 import { BILLING_OPTIONS, type BillingOptions, RentalBillingService } from './rental-billing.service';
 import { ReceiptService } from './receipts/receipt.service';
 
@@ -255,17 +256,27 @@ export class DelinquencyService {
    */
   async onSettlementPaid(pay: Payment): Promise<void> {
     if (pay.kind !== 'debt_settlement' || !pay.settlesPaymentId) return;
-    const res = await this.prisma.payment.updateMany({
-      where: { id: pay.settlesPaymentId, customerId: pay.customerId, status: 'failed', debtSettledAt: null },
-      data: { debtSettledAt: new Date(), debtSettlement: 'payment' },
+    const debtId = pay.settlesPaymentId;
+    // Auditoria run-4: idempotente por pagamento (`applyEffectsOnce`): o webhook chama isto a cada evento com o status
+    // final, e só a primeira execução quita (ou pede revisão). As seguintes só refazem o que é idempotente.
+    const out = await applyEffectsOnce(this.prisma, pay.id, async (tx) => {
+      const res = await tx.payment.updateMany({
+        where: { id: debtId, customerId: pay.customerId, status: 'failed', debtSettledAt: null },
+        data: { debtSettledAt: new Date(), debtSettlement: 'payment' },
+      });
+      return res.count === 1;
     });
-    if (res.count === 0) {
+    if (out.status === 'applied' && !out.result) {
       this.state.needsReview({ paymentId: pay.id, reason: 'debt_settlement_after_settled' });
       return;
     }
-    this.logger.log({ msg: 'debt_settled', paymentId: pay.settlesPaymentId, settlementPaymentId: pay.id });
+    if (out.status === 'applied') this.logger.log({ msg: 'debt_settled', paymentId: debtId, settlementPaymentId: pay.id });
     await this.billing.clearDelinquencyIfSettled(pay.customerId);
-    await this.issueReceipts([pay.settlesPaymentId]);
+    if (out.status === 'applied') await this.issueReceipts([debtId]);
+    else {
+      const debt = await this.prisma.payment.findUnique({ where: { id: debtId }, select: { debtSettledAt: true } });
+      if (debt?.debtSettledAt) await this.issueReceipts([debtId]);
+    }
   }
 
   // ───────────────────────── financeiro registra ─────────────────────────

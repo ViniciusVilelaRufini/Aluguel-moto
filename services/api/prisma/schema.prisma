@@ -929,6 +929,9 @@ model Payment {
   debtSettlement    DebtSettlementKind?
   /// Só em `debt_settlement`: o pagamento cuja dívida esta cobrança quita (índice parcial `Payment_one_pending_debt_settlement`: uma pendente por dívida, escrito à mão).
   settlesPaymentId  String?       @db.Uuid
+  /// Auditoria run-4: efeitos do resultado já aplicados (renovação/`past_due` da assinatura, quitação da dívida). Marcador de
+  /// idempotência gravado na mesma transação do efeito: webhooks repetidos do mesmo pagamento não renovam nem quitam de novo.
+  effectsAppliedAt  DateTime?
   /// Só em `debt_settlement` por Pix: PixCharge { chargeId, qrCodeBase64, copyPaste, expiresAt } (reaproveitado enquanto vale).
   pix               Json?
   createdAt         DateTime      @default(now())

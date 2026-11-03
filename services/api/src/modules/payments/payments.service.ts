@@ -6,6 +6,7 @@ import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, ProblemException, unprocessable } from '../../common/problem';
 import { OBJECT_STORAGE, type ObjectStorage } from '../../ports/object-storage.port';
 import { QUEUE_BUS, type QueueBus } from '../../ports/queue-bus.port';
+import { refundBase } from './refund-base';
 import { receiptLinks } from './receipts/receipt-links';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -185,10 +186,7 @@ export class PaymentsService {
     // Task 16 (fix round 1): o pagamento do aluguel registra o bruto, com a parte da carteira em `walletCents`. O estorno
     // devolve primeiro a parte do gateway (cartão/Pix/caução capturada) e depois a da carteira (lançamento `refund` no
     // ledger). Pagamento só da carteira (`method: wallet`) inteiro é carteira.
-    const captured = await this.prisma.paymentCapture.findUnique({ where: { paymentId: p.id } });
-    const walletBase = p.method === 'wallet' ? p.amountCents : p.walletCents;
-    const gatewayBase = p.method === 'wallet' ? 0 : (captured?.capturedCents ?? p.amountCents - p.walletCents);
-    const base = gatewayBase + walletBase;
+    const { gatewayBase, base } = await refundBase(this.prisma, p);
     const remaining = base - p.refundedCents;
     const amount = dto.amountCents ?? remaining;
     if (amount <= 0 || amount > remaining) throw unprocessable('validation-error', `Valor acima do disponível para estorno (${remaining}).`);

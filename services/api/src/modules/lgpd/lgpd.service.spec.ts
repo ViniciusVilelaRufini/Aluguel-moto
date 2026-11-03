@@ -325,6 +325,54 @@ describe('LgpdService', () => {
     expect(before - cutoff).toBeLessThanOrEqual(90 * 86_400_000 + 1000);
   });
 
+  it('auditoria run-4: exclusão anula a posição dos alertas ligados aos aluguéis do titular (alertas sem aluguel ficam)', async () => {
+    const { service, prisma } = setup();
+    prisma.rental.findMany.mockResolvedValue([{ id: 'r1' }, { id: 'r2' }] as any);
+    await service.deleteAccount(ME);
+    expect(prisma.alert.updateMany).toHaveBeenCalledWith({ where: { rentalId: { in: ['r1', 'r2'] } }, data: { lat: null, lng: null } });
+  });
+
+  it('auditoria run-4: exclusão sem aluguéis não toca nos alertas', async () => {
+    const { service, prisma } = setup();
+    await service.deleteAccount(ME);
+    expect(prisma.alert.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('auditoria run-4: job diário anula lat/lng dos alertas de aluguel com mais de TRACK_RETENTION_DAYS', async () => {
+    const { service, prisma } = setup();
+    prisma.alert.updateMany.mockResolvedValue({ count: 2 });
+    const before = Date.now();
+    expect(await service.purgeExpiredAlertLocations()).toBe(2);
+    const args = prisma.alert.updateMany.mock.calls[0][0] as any;
+    expect(args.data).toEqual({ lat: null, lng: null });
+    expect(args.where.rentalId).toEqual({ not: null });
+    expect(args.where.OR).toEqual([{ lat: { not: null } }, { lng: { not: null } }]);
+    const cutoff = args.where.createdAt.lt.getTime();
+    expect(before - cutoff).toBeGreaterThanOrEqual(90 * 86_400_000 - 1000);
+    expect(before - cutoff).toBeLessThanOrEqual(90 * 86_400_000 + 1000);
+  });
+
+  it('auditoria run-4: purgeJob inclui o expurgo da posição dos alertas', async () => {
+    const { service, prisma } = setup();
+    (service as any).cfg = { ...(service as any).cfg, jobsEnabled: true };
+    prisma.trackPoint.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.rental.updateMany.mockResolvedValue({ count: 0 });
+    prisma.alert.updateMany.mockResolvedValue({ count: 1 });
+    await service.purgeJob();
+    expect(prisma.alert.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { lat: null, lng: null } }));
+  });
+
+  it('revisão: falha no expurgo da posição dos alertas não derruba o resto do job', async () => {
+    const { service, prisma } = setup();
+    (service as any).cfg = { ...(service as any).cfg, jobsEnabled: true };
+    prisma.trackPoint.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.rental.updateMany.mockResolvedValue({ count: 0 });
+    prisma.alert.updateMany.mockRejectedValue(new Error('db'));
+    const claims = jest.spyOn(service, 'purgeClosedClaimsOfDeletedCustomers').mockResolvedValue(0);
+    await expect(service.purgeJob()).resolves.toBeUndefined();
+    expect(claims).toHaveBeenCalled();
+  });
+
   it('job de expiração apaga TrackPoint com expiresAt < now', async () => {
     const { service, prisma } = setup();
     prisma.trackPoint.deleteMany.mockResolvedValue({ count: 7 });

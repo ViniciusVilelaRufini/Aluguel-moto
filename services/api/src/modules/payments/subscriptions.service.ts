@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
-import type { Payment, Subscription, SubscriptionStatus } from '@prisma/client';
+import type { Payment, Prisma, Subscription, SubscriptionStatus } from '@prisma/client';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { conflict, forbidden, notFound, ProblemException } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -11,6 +11,7 @@ import { assertNotFixedForOther, currentSubscriptionWhere } from '../../common/f
 import { loadV2Config, V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { assertVehicleSwapAllowed, checkPause, lifecycleCandidatesWhere, lifecycleTransition, renewEffect, resumeEffect } from './subscription-rules';
 import { canTransition } from './payment-state';
+import { applyEffectsOnce, SKIP_EFFECT } from './effects-once';
 import { isUniqueViolation, PaymentStateService } from './payment-state.service';
 import { toSubscription } from './payments.mapper';
 import { ProviderCustomersService } from './provider-customers.service';
@@ -410,21 +411,38 @@ export class SubscriptionsService {
     let sub = await this.prisma.subscription.findUnique({ where: { id: payment.subscriptionId } });
     if (!sub) return;
     const isFirst = payment.idempotencyKey === `subscription:${sub.id}:1`;
+    // Auditoria run-4: o webhook chama isto sempre que o status local é final (não só quando mudou). A renovação e o
+    // `past_due` são aplicados uma vez por pagamento (`applyEffectsOnce`, marcador `Payment.effectsAppliedAt`).
     if (payment.status === 'paid' && !isFirst) {
+      // Revisão: renovação já aplicada por este pagamento nunca é "cobrança tardia", mesmo que a assinatura tenha sido
+      // fechada depois (cancelamento, expiração) — sem isso, um evento repetido estornaria uma renovação legítima.
+      const applied = await this.prisma.payment.findUnique({ where: { id: payment.id }, select: { effectsAppliedAt: true } });
+      if (applied?.effectsAppliedAt) {
+        await this.settleFailedCycle(sub, payment);
+        return;
+      }
       for (let attempt = 0; sub && !CLOSED.includes(sub.status) && attempt < 3; attempt++) {
-        if (await this.renew(sub)) {
-          await this.settleFailedCycle(sub, payment);
+        const current: Subscription = sub;
+        const out = await applyEffectsOnce(this.prisma, payment.id, async (tx) => ((await this.renew(current, tx)) ? true : SKIP_EFFECT));
+        if (out.status !== 'skipped') {
+          // Já renovada por este pagamento (repetição) ou renovada agora: a quitação do ciclo é idempotente.
+          await this.settleFailedCycle(current, payment);
           return;
         }
         // Mudou entre a leitura e a gravação (job de ciclo de vida, pausa): relê e decide de novo.
-        sub = await this.prisma.subscription.findUnique({ where: { id: sub.id } });
+        sub = await this.prisma.subscription.findUnique({ where: { id: current.id } });
       }
       if (sub && CLOSED.includes(sub.status)) await this.onChargeAfterClose(sub, payment);
       return;
     }
     if (payment.status === 'failed') {
-      const marked = await this.prisma.subscription.updateMany({ where: { id: sub.id, status: { in: OPEN } }, data: { status: 'past_due' } });
-      if (marked.count === 0) {
+      const subId = sub.id;
+      const out = await applyEffectsOnce(this.prisma, payment.id, async (tx) => {
+        const marked = await tx.subscription.updateMany({ where: { id: subId, status: { in: OPEN } }, data: { status: 'past_due' } });
+        return marked.count === 0 ? SKIP_EFFECT : true;
+      });
+      if (out.status === 'already') return;
+      if (out.status === 'skipped') {
         await this.onChargeAfterClose(sub, payment);
         return;
       }
@@ -451,9 +469,9 @@ export class SubscriptionsService {
   }
 
   /** Renovação paga: período seguinte; pausada continua pausada (I1, regra em `renewEffect`). Só sobre o estado lido. */
-  private async renew(sub: Subscription): Promise<boolean> {
+  private async renew(sub: Subscription, tx: Prisma.TransactionClient = this.prisma): Promise<boolean> {
     if (CLOSED.includes(sub.status)) return false;
-    const res = await this.prisma.subscription.updateMany({
+    const res = await tx.subscription.updateMany({
       where: { id: sub.id, status: sub.status, currentPeriodEnd: sub.currentPeriodEnd },
       data: renewEffect(sub, periodMs(sub.planCode)),
     });

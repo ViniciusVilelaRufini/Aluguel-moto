@@ -17,7 +17,7 @@ interface ModelSpec {
 }
 
 const SPECS: Record<string, ModelSpec> = {
-  payment: { unique: [['id'], ['idempotencyKey']], defaults: () => ({ refundedCents: 0, walletCents: 0, rentalId: null, depositId: null, subscriptionId: null, cardLast4: null, failureReason: null, providerPaymentId: null, receiptUrl: null, idempotencyKey: null, debtSettledAt: null, debtSettlement: null, settlesPaymentId: null, pix: null }), updatedAt: true },
+  payment: { unique: [['id'], ['idempotencyKey']], defaults: () => ({ refundedCents: 0, walletCents: 0, rentalId: null, depositId: null, subscriptionId: null, cardLast4: null, failureReason: null, providerPaymentId: null, receiptUrl: null, idempotencyKey: null, debtSettledAt: null, debtSettlement: null, settlesPaymentId: null, pix: null, effectsAppliedAt: null }), updatedAt: true },
   deposit: { unique: [['id'], ['idempotencyKey']], defaults: () => ({ rentalId: null, capturedCents: null, cardId: null, idempotencyKey: null, providerReference: null, pix: null }), updatedAt: true },
   customer: { unique: [['id']], defaults: () => ({ delinquent: false, status: 'active', kycStatus: 'approved', deletedAt: null }), updatedAt: true },
   rental: { unique: [['id']], defaults: () => ({ insurancePolicyId: null, paymentId: null, breakdown: null }), updatedAt: true },
@@ -221,11 +221,43 @@ class Delegate {
 
 export type InMemoryPrisma = Record<keyof typeof SPECS, Delegate> & {
   $transaction: (arg: any) => Promise<any>;
+  /** SQL cru (ex.: `SELECT ... FOR UPDATE` do ledger da carteira): sem banco, não há linha a travar. */
+  $queryRaw: (...args: any[]) => Promise<any[]>;
 };
 
 export function createInMemoryPrisma(): InMemoryPrisma {
   const db: Row = {};
   for (const [name, spec] of Object.entries(SPECS)) db[name] = new Delegate(name, spec);
   db.$transaction = async (arg: any) => (typeof arg === 'function' ? arg(db) : Promise.all(arg));
+  db.$queryRaw = async (strings: TemplateStringsArray | undefined, ...values: any[]) => reconcileQuery(db, strings ? strings.join('?') : '', values);
   return db as InMemoryPrisma;
+}
+
+/**
+ * Emula só as consultas cruas dos reconciliadores (recarga e caução Pix, auditoria run-4): junção com o `Payment`
+ * filtrando o status do pagamento na própria consulta. Qualquer outro SQL (ex.: `FOR NO KEY UPDATE`) devolve [].
+ */
+function reconcileQuery(db: Row, sql: string, values: any[]): Row[] {
+  const [cutoff, windowStart, limit] = values as [Date, Date, number];
+  const settled = (p: Row | undefined, kind: string) => !!p && p.kind === kind && ['paid', 'failed'].includes(p.status);
+  const inWindow = (r: Row) => cmp(r.updatedAt, cutoff) <= 0 && cmp(r.createdAt, windowStart) >= 0;
+  const byCreated = (a: Row, b: Row) => cmp(a.createdAt, b.createdAt);
+  if (sql.includes('FROM "TopUp" t JOIN "Payment" p')) {
+    const payments: Row[] = db.payment.rows;
+    return (db.topUp.rows as Row[])
+      .filter((t) => t.status === 'pending' && inWindow(t) && settled(payments.find((p) => p.id === t.paymentId), 'top_up'))
+      .sort(byCreated)
+      .slice(0, limit)
+      .map((t) => ({ id: t.paymentId }));
+  }
+  if (sql.includes('FROM "Deposit" d JOIN "Payment" p')) {
+    const payments: Row[] = db.payment.rows;
+    return (db.deposit.rows as Row[])
+      .filter((d) => d.status === 'awaiting_pix' && inWindow(d))
+      .sort(byCreated)
+      .flatMap((d) => payments.filter((p) => p.depositId === d.id && settled(p, 'deposit')))
+      .slice(0, limit)
+      .map((p) => ({ id: p.id }));
+  }
+  return [];
 }

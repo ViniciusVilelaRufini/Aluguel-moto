@@ -29,15 +29,22 @@ export class PaymentStateService {
   }
 
   async transition(paymentId: string, to: PaymentStatus, data: PaymentData = {}): Promise<Payment> {
-    const current = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    const updated = await this.transitionTx(this.prisma, paymentId, to, data);
+    this.emitUpdated(updated);
+    return updated;
+  }
+
+  /**
+   * Auditoria run-4: a mesma transição dentro da transação de quem chama (ex.: recarga paga + crédito na carteira),
+   * **sem** emitir `payment.updated` — quem chama emite com `emitUpdated` depois do commit.
+   */
+  async transitionTx(tx: Prisma.TransactionClient, paymentId: string, to: PaymentStatus, data: PaymentData = {}): Promise<Payment> {
+    const current = await tx.payment.findUnique({ where: { id: paymentId } });
     if (!current) throw new Error(`Pagamento ${paymentId} não encontrado.`);
     assertTransition(current.status, to);
-    const res = await this.prisma.payment.updateMany({ where: { id: paymentId, status: current.status }, data: { ...data, status: to } });
+    const res = await tx.payment.updateMany({ where: { id: paymentId, status: current.status }, data: { ...data, status: to } });
     if (res.count === 0) throw new ConcurrentPaymentUpdateError(`Atualização concorrente do pagamento ${paymentId} (${current.status} → ${to}).`);
-    const updated = (await this.prisma.payment.findUnique({ where: { id: paymentId } }))!;
-    const ev: PaymentUpdatedEvent = { paymentId, status: to, ...(updated.rentalId ? { rentalId: updated.rentalId } : {}) };
-    this.events.emit(EV.PAYMENT_UPDATED, ev);
-    return updated;
+    return (await tx.payment.findUnique({ where: { id: paymentId } }))!;
   }
 
   /**

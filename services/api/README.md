@@ -300,6 +300,15 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - Galpão: chegada ao galpão (fim do aluguel ou `collect`) não deixa como `free` moto com trava de equipe/sistema (vai para `maintenance` no fim do aluguel; `409` no `collect`).
 - Run-2 — caução não é reaproveitada: `POST /rentals` com `depositId` de uma reserva `active`/`handover` → `409 deposit-in-use` antes de qualquer recusa que liberaria a caução (exceções: aceite da entrega da própria reserva e a 2ª chamada do Pix de rua na mesma moto). A liberação da caução só é ignorada com `Rental` criado; com o marcador `RentalStart` em andamento o `DepositRelease` é gravado e a liberação adiada até o marcador sumir (a retentativa libera, inclusive a caução de uma entrega cancelada durante o aceite). A transação final do `start()` relê a caução (`updateMany` condicional `held` + sem `DepositRelease`); senão `409 deposit-in-use` com o rollback do `vehicle-offline`.
 
+## Auditoria run-4 — pagamentos e LGPD (`docs/decisoes.md`)
+
+- **Aluguel encerrado sem `Payment`:** o `payments-settlement-retry` (5 min) também liquida aluguéis `ended`/`force_ended` sem `paymentId` encerrados há mais de 2 min e menos de 7 dias (queda entre o fechamento e o `settle`; mais antigo só gera log `rental_unbilled_needs_review`; cliente excluído é pulado), com os argumentos do fechamento (`costCents`, `breakdown.walletAppliedCents`, chave `rental-settlement:<id>`); se o `Payment` da chave já existe, só vincula.
+- **Webhook:** os efeitos (crédito da recarga, caução `held`/`failed`, renovação/`past_due` da assinatura, quitação da dívida) rodam sempre que o status local é final, não só quando o evento o mudou. Assinatura e quitação são idempotentes por pagamento (`Payment.effectsAppliedAt`, `payments/effects-once.ts`). Recarga no cartão: transição e crédito na mesma transação (`PaymentStateService.transitionTx`).
+- **Reconciliadores (5 min):** `wallet-top-up-reconcile` (recarga `pending` com `Payment` `paid`/`failed`) e `payments-deposit-reconcile` (caução `awaiting_pix` com `Payment` `paid`/`failed`).
+- **Estorno com carteira:** o webhook nunca diminui `refundedCents` e soma os estornos da carteira ao valor do gateway; `refunded` só no teto comum (`payments/refund-base.ts`).
+- **Ledger:** `appendWalletEntry` trava o `Customer` (`FOR NO KEY UPDATE`) antes de calcular `balanceAfterCents`.
+- **LGPD:** a exclusão de conta anula `Alert.lat/lng` dos alertas dos aluguéis do titular; o job diário anula a posição de alertas de aluguel com mais de `TRACK_RETENTION_DAYS`. Alerta ligado a aluguel precisa vir com `rentalId`.
+
 ## Regras que nunca mudam
 
 - Nenhum `speedLimitKmh` fora de 0..32 é aceito (DTO → 400 `speed-limit-out-of-range`; serviço de comandos revalida; `CHECK` no banco).

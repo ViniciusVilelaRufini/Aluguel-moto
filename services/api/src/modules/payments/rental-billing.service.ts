@@ -17,6 +17,7 @@ import { scheduleFakePixConfirmation } from './provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider, PaymentProviderError, type ProviderPayment } from './provider/payment-provider';
 import { ReceiptService } from './receipts/receipt.service';
 import { hasOpenDebt, rentalSettlementRetrying } from './open-debt';
+import { refundBase } from './refund-base';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const DEPOSIT_CENTS = 5000;
@@ -36,6 +37,10 @@ export const DEFAULT_REVIEW_MAX_DAYS = 7;
 type HoldInput = { customerId: string; rentalId: string; method: 'card' | 'pix'; idempotencyKey: string; cardId?: string };
 type HoldResult = { depositId: string; status: 'held' | 'awaiting_pix' | 'failed'; pix?: PixCharge };
 type SettleResult = { paymentId: string; status: 'paid' | 'failed' };
+
+/** Reconciliadores (caução Pix, recarga): janela e lote por execução. */
+export const RECONCILE_WINDOW_MS = 7 * 24 * 60 * 60_000;
+export const RECONCILE_LIMIT = 500;
 
 export const MAX_COLLECTION_ATTEMPTS = 3;
 export const MAX_RELEASE_ATTEMPTS = 20;
@@ -322,6 +327,35 @@ export class RentalBillingService implements RentalBillingPort {
   async releaseRetryJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.retryDepositReleases().catch((err) => this.logger.error({ msg: 'deposit_release_retry_failed', error: (err as Error).message }));
+  }
+
+  /**
+   * Auditoria run-4: reconciliador da caução Pix. Payment da caução já `paid`/`failed` com a caução ainda `awaiting_pix`
+   * (queda entre a transição e o efeito, e o evento do webhook já registrado): aplica o efeito (`onDepositPaymentChanged`,
+   * idempotente por update condicional). Só cauções paradas há `olderThanMs` e criadas nos últimos 7 dias.
+   */
+  @Interval('payments-deposit-reconcile', 5 * 60_000)
+  @ExclusiveJob('payments-deposit-reconcile', jobLockTtl(5 * 60_000))
+  async depositReconcileJob(): Promise<void> {
+    if (process.env.JOBS_ENABLED === 'false') return;
+    await this.reconcileDepositPayments().catch((err) => this.logger.error({ msg: 'deposit_reconcile_failed', error: (err as Error).message }));
+  }
+
+  async reconcileDepositPayments(olderThanMs = 2 * 60_000): Promise<number> {
+    const now = this.now().getTime();
+    // Revisão: o status do Payment é filtrado na própria consulta (junção), para Pix abandonado não ocupar o lote.
+    const rows = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT p."id" FROM "Deposit" d JOIN "Payment" p ON p."depositId" = d."id" AND p."kind" = 'deposit'
+      WHERE d."status" = 'awaiting_pix' AND p."status" IN ('paid', 'failed')
+        AND d."updatedAt" <= ${new Date(now - olderThanMs)} AND d."createdAt" >= ${new Date(now - RECONCILE_WINDOW_MS)}
+      ORDER BY d."createdAt" ASC LIMIT ${RECONCILE_LIMIT}`;
+    if (!rows.length) return 0;
+    const payments = await this.prisma.payment.findMany({ where: { id: { in: rows.map((r) => r.id) }, kind: 'deposit', status: { in: ['paid', 'failed'] } } });
+    for (const p of payments) {
+      await this.onDepositPaymentChanged(p).catch((err) => this.logger.warn({ msg: 'deposit_reconcile_item_failed', paymentId: p.id, error: (err as Error).message }));
+    }
+    if (payments.length) this.logger.warn({ msg: 'deposit_payments_reconciled', count: payments.length });
+    return payments.length;
   }
 
   async retryDepositReleases(): Promise<void> {
@@ -950,7 +984,54 @@ export class RentalBillingService implements RentalBillingPort {
       await this.runSettlement({ rentalId: p.rentalId, amountCents: p.amountCents, idempotencyKey: p.idempotencyKey }, true)
         .catch((err) => this.logger.warn({ msg: 'settlement_retry_item_failed', paymentId: p.id, error: (err as Error).message }));
     }
+    await this.settleUnbilledRentals(cutoff);
     await this.retryParkedAsDebt();
+  }
+
+  /**
+   * Auditoria run-4: o fechamento (`rental-end` → `doFinalize`) commita status, `costCents`, `breakdown` e o débito da
+   * carteira e só depois chama `settle`. Uma queda nesse intervalo deixava o aluguel encerrado sem `Payment` (caução retida
+   * para sempre, carteira já debitada). Aqui o job retoma: aluguel `ended`/`force_ended` sem `paymentId`, encerrado antes de
+   * `cutoff`. Se o `Payment` da chave estável `rental-settlement:<id>` já existe (o `settle` começou), só vincula — o
+   * restante da liquidação é do fluxo acima. Senão, chama `settle` com os mesmos argumentos do fechamento
+   * (`amountCents` = `costCents` = `breakdown.totalCents`; `walletCents` = `breakdown.walletAppliedCents`).
+   */
+  private async settleUnbilledRentals(cutoff: Date): Promise<void> {
+    // Revisão: só a janela recente (como os reconciliadores) é cobrada automaticamente; mais antigo vai para revisão manual.
+    // A janela também limita a retentativa: o `settle` cria o `Payment` antes de chamar o gateway, então uma falha do
+    // gateway deixa o `Payment` (vinculado na próxima execução); um aluguel que nunca liquida sai da varredura em 7 dias.
+    const windowStart = new Date(this.now().getTime() - RECONCILE_WINDOW_MS);
+    const unbilled = { status: { in: ['ended', 'force_ended'] as Array<'ended' | 'force_ended'> }, paymentId: null };
+    const stale = await this.prisma.rental.count({ where: { ...unbilled, endedAt: { lt: windowStart } } });
+    if (stale > 0) this.logger.warn({ msg: 'rental_unbilled_needs_review', count: stale });
+    const rentals = await this.prisma.rental.findMany({
+      where: { ...unbilled, endedAt: { lte: cutoff, gte: windowStart } },
+      orderBy: { endedAt: 'asc' },
+      take: 50,
+      select: { id: true, customerId: true, costCents: true, breakdown: true },
+    });
+    if (!rentals.length) return;
+    const deleted = new Set(
+      (await this.prisma.customer.findMany({ where: { id: { in: [...new Set(rentals.map((r) => r.customerId))] }, OR: [{ status: 'deleted' }, { deletedAt: { not: null } }] }, select: { id: true } })).map((c) => c.id),
+    );
+    for (const r of rentals) {
+      const idempotencyKey = `rental-settlement:${r.id}`;
+      try {
+        let paymentId = (await this.prisma.payment.findUnique({ where: { idempotencyKey }, select: { id: true } }))?.id;
+        if (!paymentId) {
+          if (deleted.has(r.customerId)) {
+            this.logger.warn({ msg: 'rental_unbilled_customer_deleted', rentalId: r.id });
+            continue;
+          }
+          const walletCents = Math.max(0, Number((r.breakdown as { walletAppliedCents?: number } | null)?.walletAppliedCents ?? 0));
+          paymentId = (await this.settle({ rentalId: r.id, amountCents: r.costCents, walletCents, idempotencyKey })).paymentId;
+          this.logger.warn({ msg: 'rental_unbilled_settled', rentalId: r.id, paymentId });
+        }
+        await this.prisma.rental.updateMany({ where: { id: r.id, paymentId: null }, data: { paymentId } });
+      } catch (err) {
+        this.logger.warn({ msg: 'rental_unbilled_settle_failed', rentalId: r.id, error: (err as Error).message });
+      }
+    }
   }
 
   /**
@@ -1031,7 +1112,13 @@ export class RentalBillingService implements RentalBillingPort {
   private async applyToLocal(local: Payment, pp: ProviderPayment): Promise<{ payment: Payment; changed: boolean }> {
     // Pix que expirou/foi cancelado no gateway antes de ser pago: localmente é pending → failed.
     if (pp.status === 'canceled' && local.status === 'pending') pp = { ...pp, status: 'failed', failureReason: pp.failureReason ?? 'pix_expired' };
-    if (local.status === pp.status) return { payment: local, changed: false };
+    // Auditoria run-4: estorno com parte da carteira ou feito pelo `PaymentsService.refund` — o gateway só conhece a parte dele.
+    if ((pp.status === 'refunded' || pp.status === 'partially_refunded') && (await this.refundsTrackedLocally(local))) return this.applyRefundState(local, pp);
+    if (local.status === pp.status) {
+      // Auditoria run-4: status já final aqui (transição gravada, efeito perdido numa queda): reaplica o efeito idempotente.
+      await this.reapplyDepositEffects(local);
+      return { payment: local, changed: false };
+    }
 
     if (canTransition(local.status, pp.status)) {
       const updated = await this.state.transition(local.id, pp.status, {
@@ -1048,7 +1135,41 @@ export class RentalBillingService implements RentalBillingPort {
       return { payment: local, changed: false };
     }
     this.logger.warn({ msg: 'payment_transition_ignored', paymentId: local.id, from: local.status, to: pp.status });
+    await this.reapplyDepositEffects(local);
     return { payment: local, changed: false };
+  }
+
+  private async refundsTrackedLocally(local: Payment): Promise<boolean> {
+    if (local.walletCents > 0 || local.method === 'wallet') return true;
+    return !!(await this.prisma.paymentRefund.findFirst({ where: { paymentId: local.id }, select: { id: true } }));
+  }
+
+  /**
+   * Estado de estorno vindo do gateway num pagamento com parte da carteira (ou com estornos registrados aqui): o
+   * `refundedCents` do gateway é só a parte dele. Total = máx(local, gateway + estornos da carteira já lançados) — nunca
+   * diminui (um webhook atrasado não desfaz um estorno da carteira nem um pedido reservado) — limitado ao teto
+   * (`refundBase`); `refunded` só ao atingir o teto. Igual ao local → nada muda (sem corrida com o estorno em andamento).
+   */
+  private async applyRefundState(local: Payment, pp: ProviderPayment): Promise<{ payment: Payment; changed: boolean }> {
+    const { base, gatewayBase } = await refundBase(this.prisma, local);
+    const wallet = await this.prisma.walletEntry.aggregate({ where: { paymentId: local.id, type: 'refund' }, _sum: { amountCents: true } });
+    const walletRefunded = Math.max(0, wallet?._sum?.amountCents ?? 0);
+    // Gateway `refunded` (estorno total ou chargeback, às vezes sem `refundedCents`): a parte do gateway inteira voltou.
+    const gatewayRefunded = pp.status === 'refunded' ? Math.max(pp.refundedCents ?? 0, gatewayBase) : (pp.refundedCents ?? 0);
+    const refundedCents = Math.min(base, Math.max(local.refundedCents, gatewayRefunded + walletRefunded));
+    const status = refundedCents >= base ? 'refunded' : 'partially_refunded';
+    if (status === local.status && refundedCents === local.refundedCents) return { payment: local, changed: false };
+    if (!canTransition(local.status, status)) {
+      this.logger.warn({ msg: 'payment_transition_ignored', paymentId: local.id, from: local.status, to: status });
+      return { payment: local, changed: false };
+    }
+    const updated = await this.state.transition(local.id, status, { refundedCents, providerPaymentId: local.providerPaymentId ?? pp.providerPaymentId });
+    return { payment: updated, changed: true };
+  }
+
+  /** Efeito do Payment da caução (`onDepositPaymentChanged`, idempotente por update condicional) quando o status local é final. */
+  private async reapplyDepositEffects(local: Payment): Promise<void> {
+    if (local.kind === 'deposit' && local.depositId && (local.status === 'paid' || local.status === 'failed')) await this.onDepositPaymentChanged(local);
   }
 
   private async nudgeSettlement(local: Payment, pp: ProviderPayment): Promise<void> {

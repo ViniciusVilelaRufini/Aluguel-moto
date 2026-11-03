@@ -1426,3 +1426,102 @@ describe('porte da auditoria: estacionada que vira dívida mantém o cliente blo
     await expect(eligible(ctx, { requireLocationConsent: true, requireTerms: true })).rejects.toMatchObject({ status: 403, slug: 'customer-delinquent' });
   });
 });
+
+describe('Auditoria run-4: aluguel encerrado sem liquidação (queda entre o fechamento e o settle)', () => {
+  const minutesAgo = (m: number) => new Date(Date.now() - m * 60_000);
+
+  async function endedWithoutPayment(ctx: Awaited<ReturnType<typeof setup>>, data: { costCents: number; walletAppliedCents?: number; endedAt?: Date; status?: 'ended' | 'force_ended' }) {
+    const held = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'card', idempotencyKey: KEY });
+    await ctx.db.rental.create({
+      data: {
+        id: RENTAL, customerId: CUSTOMER, vehicleId: 'v', planCode: 'minute', coverage: 'basic', status: data.status ?? 'ended', depositId: held.depositId, priceSnapshot: {},
+        endedAt: data.endedAt ?? minutesAgo(5), costCents: data.costCents,
+        breakdown: { totalCents: data.costCents, ...(data.walletAppliedCents ? { walletAppliedCents: data.walletAppliedCents } : {}) },
+      },
+    });
+    return held;
+  }
+
+  it('job liquida com costCents + walletAppliedCents do breakdown, mesma chave estável, e grava rental.paymentId', async () => {
+    const ctx = await setup();
+    const held = await endedWithoutPayment(ctx, { costCents: 1290, walletAppliedCents: 400 });
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    const pay = await ctx.db.payment.findUnique({ where: { idempotencyKey: SETTLE_KEY } });
+    expect(pay).toMatchObject({ kind: 'rental', status: 'paid', amountCents: 1690, walletCents: 400, rentalId: RENTAL });
+    expect(await ctx.db.deposit.findUnique({ where: { id: held.depositId } })).toMatchObject({ status: 'captured', capturedCents: 1290 });
+    expect((await ctx.db.rental.findUnique({ where: { id: RENTAL } })).paymentId).toBe(pay.id);
+    // Repetir não cobra de novo.
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    expect(ctx.provider.operations('capture')).toBe(1);
+    expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(1);
+  });
+
+  it('force_ended também entra; encerrado há menos de 2 min fica para a próxima execução', async () => {
+    const ctx = await setup();
+    await endedWithoutPayment(ctx, { costCents: 0, status: 'force_ended', endedAt: minutesAgo(1) });
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(0);
+    await ctx.db.rental.update({ where: { id: RENTAL }, data: { endedAt: minutesAgo(3) } });
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    const pay = await ctx.db.payment.findUnique({ where: { idempotencyKey: SETTLE_KEY } });
+    expect(pay).toMatchObject({ status: 'paid', amountCents: 0 });
+    expect((await ctx.db.rental.findUnique({ where: { id: RENTAL } })).paymentId).toBe(pay.id);
+  });
+
+  it('Payment da chave já existe (settle caiu depois de criar) → só vincula, sem nova liquidação pela varredura', async () => {
+    const ctx = await setup();
+    await endedWithoutPayment(ctx, { costCents: 1290 });
+    const existing = await ctx.db.payment.create({ data: { customerId: CUSTOMER, rentalId: RENTAL, kind: 'rental', method: 'card', status: 'failed', amountCents: 1290, idempotencyKey: SETTLE_KEY } });
+    const settle = jest.spyOn(ctx.svc, 'settle');
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    expect(settle).not.toHaveBeenCalled();
+    expect((await ctx.db.rental.findUnique({ where: { id: RENTAL } })).paymentId).toBe(existing.id);
+    expect(ctx.provider.operations('capture')).toBe(0);
+  });
+
+  it('revisão: encerrado há mais de 7 dias não é cobrado automaticamente (só log para revisão)', async () => {
+    const ctx = await setup();
+    await endedWithoutPayment(ctx, { costCents: 1290, endedAt: minutesAgo(8 * 24 * 60) });
+    const warn = jest.spyOn((ctx.svc as any).logger, 'warn');
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(0);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ msg: 'rental_unbilled_needs_review', count: 1 }));
+  });
+
+  it('revisão: cliente excluído não é cobrado pela varredura', async () => {
+    const ctx = await setup();
+    await endedWithoutPayment(ctx, { costCents: 1290 });
+    await ctx.db.customer.update({ where: { id: CUSTOMER }, data: { status: 'deleted', deletedAt: new Date() } });
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(0);
+  });
+
+  it('aluguel já vinculado ou ainda aberto não é tocado', async () => {
+    const ctx = await setup();
+    await endedWithoutPayment(ctx, { costCents: 1290 });
+    await ctx.db.rental.update({ where: { id: RENTAL }, data: { status: 'ending' } });
+    await ctx.svc.retryPendingSettlements(2 * 60_000);
+    expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(0);
+  });
+});
+
+describe('Auditoria run-4: reconciliador da caução Pix', () => {
+  it('caução awaiting_pix com Payment paid vira held; com Payment failed vira failed (evento deposit.failed)', async () => {
+    const ctx = await setup({ card: null });
+    const failedEvents: DepositFailedEvent[] = [];
+    (ctx.svc as any).events.on(DEPOSIT_FAILED, (e: DepositFailedEvent) => failedEvents.push(e));
+    const a = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'pix', idempotencyKey: `${KEY}-a` });
+    const b = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'pix', idempotencyKey: `${KEY}-b` });
+    const c = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'pix', idempotencyKey: `${KEY}-c` });
+    await ctx.db.payment.updateMany({ where: { depositId: a.depositId }, data: { status: 'paid' } });
+    await ctx.db.payment.updateMany({ where: { depositId: b.depositId }, data: { status: 'failed', failureReason: 'pix_expired' } });
+    const old = new Date(Date.now() - 10 * 60_000);
+    for (const r of ctx.db.deposit.rows) r.updatedAt = old;
+    await ctx.svc.reconcileDepositPayments();
+    await ctx.svc.reconcileDepositPayments();
+    expect((await ctx.db.deposit.findUnique({ where: { id: a.depositId } })).status).toBe('held');
+    expect((await ctx.db.deposit.findUnique({ where: { id: b.depositId } })).status).toBe('failed');
+    expect((await ctx.db.deposit.findUnique({ where: { id: c.depositId } })).status).toBe('awaiting_pix');
+    expect(failedEvents).toEqual([{ depositId: b.depositId, customerId: CUSTOMER }]);
+  });
+});

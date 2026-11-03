@@ -85,6 +85,29 @@ describe('WalletService (ledger somente inserção)', () => {
     expect((await svc.get(CUSTOMER)).balanceCents).toBe(2000);
   });
 
+  it('auditoria run-4: recarga no cartão grava a transição para paid e o crédito na mesma transação', async () => {
+    const { db, svc } = await setup();
+    const txCalls: string[][] = [];
+    const realTx = db.$transaction;
+    db.$transaction = async (fn: any) => {
+      const calls: string[] = [];
+      txCalls.push(calls);
+      const tracked = new Proxy(db, {
+        get: (target: any, model: string) => {
+          const delegate = target[model];
+          if (!delegate || typeof delegate !== 'object') return delegate;
+          return new Proxy(delegate, { get: (d: any, op: string) => (typeof d[op] === 'function' ? (args: any) => (calls.push(`${model}.${op}:${JSON.stringify(args?.data?.status ?? '')}`), d[op](args)) : d[op]) });
+        },
+      });
+      return realTx(() => fn(tracked));
+    };
+    const t = await svc.topUp(CUSTOMER, { amountCents: 2000, method: 'card' });
+    expect(t.status).toBe('paid');
+    const credit = txCalls.find((c) => c.some((x) => x.startsWith('walletEntry.create')));
+    expect(credit).toEqual(expect.arrayContaining(['payment.updateMany:"paid"', 'topUp.updateMany:"paid"']));
+    expect(await db.walletEntry.count()).toBe(1);
+  });
+
   it('ajuste do financeiro: lançamento adjustment + auditoria; zero → 422', async () => {
     const { db, svc, audit } = await setup(false);
     const e = await svc.adjust(admin, CUSTOMER, { amountCents: -500, reason: 'Correção' });
@@ -105,3 +128,45 @@ describe('WalletService (ledger somente inserção)', () => {
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(join(dir, d.name)) : [join(dir, d.name)]));
 }
+
+describe('Auditoria run-4: reconciliador de recargas', () => {
+  it('recarga pending com Payment paid credita; com Payment failed vira failed; Payment pending e recente ficam', async () => {
+    const { db, svc } = await setup(false);
+    const old = new Date(Date.now() - 10 * 60_000);
+    const mk = async (status: 'paid' | 'failed' | 'pending', amountCents: number, updatedAt = old) => {
+      const p = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'top_up', method: 'pix', status, amountCents } });
+      const t = await db.topUp.create({ data: { customerId: CUSTOMER, status: 'pending', method: 'pix', amountCents, paymentId: p.id } });
+      db.topUp.rows.find((r: any) => r.id === t.id)!.updatedAt = updatedAt;
+      return t;
+    };
+    const paid = await mk('paid', 2000);
+    const failed = await mk('failed', 3000);
+    const waiting = await mk('pending', 4000);
+    const fresh = await mk('paid', 5000, new Date());
+    await svc.reconcileTopUps();
+    await svc.reconcileTopUps();
+    expect((await db.topUp.findUnique({ where: { id: paid.id } })).status).toBe('paid');
+    expect((await db.topUp.findUnique({ where: { id: failed.id } })).status).toBe('failed');
+    expect((await db.topUp.findUnique({ where: { id: waiting.id } })).status).toBe('pending');
+    expect((await db.topUp.findUnique({ where: { id: fresh.id } })).status).toBe('pending');
+    expect((await svc.get(CUSTOMER)).balanceCents).toBe(2000);
+    expect(await db.walletEntry.count()).toBe(1);
+  });
+
+  it('revisão: Pix abandonado (Payment pending) não ocupa o lote — o filtro do status do Payment está na consulta', async () => {
+    const { db, svc } = await setup(false);
+    const old = new Date(Date.now() - 10 * 60_000);
+    const mk = async (status: 'paid' | 'pending', createdAt: Date) => {
+      const p = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'top_up', method: 'pix', status, amountCents: 100 } });
+      const t = await db.topUp.create({ data: { customerId: CUSTOMER, status: 'pending', method: 'pix', amountCents: 100, paymentId: p.id, createdAt } });
+      db.topUp.rows.find((r: any) => r.id === t.id)!.updatedAt = old;
+      return t;
+    };
+    for (let i = 0; i < 510; i++) await mk('pending', new Date(Date.now() - 2 * 86_400_000 + i));
+    const paid = await mk('paid', new Date(Date.now() - 86_400_000));
+    const raw = jest.spyOn(db, '$queryRaw');
+    expect(await svc.reconcileTopUps()).toBe(1);
+    expect((await db.topUp.findUnique({ where: { id: paid.id } })).status).toBe('paid');
+    expect((raw.mock.calls[0][0] as unknown as string[]).join('?')).toContain(`p."status" IN ('paid', 'failed')`);
+  });
+});
