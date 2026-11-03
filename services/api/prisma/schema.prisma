@@ -1017,6 +1017,9 @@ model TopUp {
   minutes     Int?
   pix         Json?
   paymentId   String?     @db.Uuid
+  /// Auditoria run-4 onda 2: quanto do estorno da recarga (`Payment.refundedCents`) já foi tirado da carteira. Claim
+  /// condicional deste valor torna o débito idempotente por pagamento + total estornado.
+  reversedCents Int       @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 }

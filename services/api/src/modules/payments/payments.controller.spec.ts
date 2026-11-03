@@ -349,6 +349,34 @@ describe('PaymentsService.refund (via gateway)', () => {
     });
   });
 
+  describe('auditoria run-4 onda 2: estorno de recarga pelo admin', () => {
+    async function topUp(credit: number, spent = 0) {
+      const base = await setup();
+      const { db, provider } = base;
+      const card = await db.paymentCard.findFirst({ where: { customerId: CUSTOMER_ID } });
+      const gw = await provider.charge({ providerCustomerId: 'x', providerCardId: card.providerCardId, amountCents: credit, description: 'r', idempotencyKey: 'tu', externalReference: 't' });
+      const tp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'top_up', method: 'card', status: 'paid', amountCents: credit, providerPaymentId: gw.providerPaymentId } });
+      await db.topUp.create({ data: { customerId: CUSTOMER_ID, status: 'paid', method: 'card', amountCents: credit, paymentId: tp.id } });
+      await db.walletEntry.create({ data: { customerId: CUSTOMER_ID, type: 'top_up', amountCents: credit, balanceAfterCents: credit, description: 'x', paymentId: tp.id } });
+      if (spent) await db.walletEntry.create({ data: { customerId: CUSTOMER_ID, type: 'rental_charge', amountCents: -spent, balanceAfterCents: credit - spent, description: 'x' } });
+      return { ...base, tp };
+    }
+
+    it('crédito já consumido além do saldo atual → 409, nada estornado', async () => {
+      const { db, svc, tp, provider } = await topUp(2000, 1500);
+      await expect(svc.refund(admin, tp.id, { reason: 'x' }, 'k-tu-1')).rejects.toMatchObject({ status: 409 });
+      expect(provider.operations('refund')).toBe(0);
+      expect(await db.payment.findUnique({ where: { id: tp.id } })).toMatchObject({ status: 'paid', refundedCents: 0 });
+    });
+
+    it('com saldo → estorna no gateway e tira o crédito da carteira', async () => {
+      const { db, svc, tp } = await topUp(2000);
+      await svc.refund(admin, tp.id, { amountCents: 800, reason: 'x' }, 'k-tu-2');
+      const sum = (await db.walletEntry.findMany({ where: { customerId: CUSTOMER_ID } })).reduce((a: number, e: any) => a + e.amountCents, 0);
+      expect(sum).toBe(1200);
+    });
+  });
+
   it('fix round 1: teto do estorno de caução capturada = valor capturado (PaymentCapture)', async () => {
     const { db, svc } = await setup();
     const dp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'deposit', method: 'card', status: 'captured', amountCents: 5000, providerPaymentId: 'x' } });
