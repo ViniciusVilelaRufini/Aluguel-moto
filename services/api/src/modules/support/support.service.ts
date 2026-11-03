@@ -44,6 +44,17 @@ export class SupportService {
     if (!isStaff(user) && ownerId !== user.customerId) throw notFound(`${what} não encontrado.`);
   }
 
+  /**
+   * Auditoria run-4: o cliente só grava chaves do próprio prefixo de upload (`support/<userId>/<arquivo>`, o formato do
+   * `POST /support/uploads`), sem subpastas nem `..`. Assim a exclusão LGPD nunca apaga arquivo de outra pessoa.
+   */
+  private assertOwnKeys(user: Principal, keys: string[] | undefined): void {
+    if (isStaff(user) || !keys?.length) return;
+    const prefix = `support/${user.userId}/`;
+    const ok = (k: string) => k.startsWith(prefix) && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(k.slice(prefix.length)) && !k.includes('..');
+    if (!keys.every(ok)) throw unprocessable('validation-error', 'Anexo inválido. Envie o arquivo pelo app e tente de novo.');
+  }
+
   async upload(user: Principal, contentType: string) {
     return presignedUpload(this.storage, this.cfg.buckets.attachments, `support/${user.userId}`, contentType);
   }
@@ -58,6 +69,7 @@ export class SupportService {
   }
 
   async createIncident(user: Principal, dto: IncidentCreateDto) {
+    this.assertOwnKeys(user, dto.photoObjectKeys);
     let customerId: string | undefined = isStaff(user) ? undefined : user.customerId;
     let vehicleId = dto.vehicleId;
     if (dto.rentalId) {
@@ -205,6 +217,7 @@ export class SupportService {
   }
 
   async createClaim(user: Principal, dto: ClaimCreateDto) {
+    this.assertOwnKeys(user, dto.photoObjectKeys);
     const r = await this.prisma.rental.findUnique({ where: { id: dto.rentalId }, select: { customerId: true, insurancePolicyId: true } });
     if (!r || r.customerId !== user.customerId) throw notFound('Aluguel não encontrado.');
     if (!r.insurancePolicyId) throw conflict('conflict', 'Este aluguel não tem apólice de seguro.');
@@ -291,7 +304,7 @@ export class SupportService {
     }
     const conv = await this.prisma.$transaction(async (tx) => {
       const c = await tx.supportConversation.create({ data: { customerId: user.customerId!, subject: dto.subject, rentalId: dto.rentalId }, include: { customer: { select: { name: true } } } });
-      await tx.supportMessage.create({ data: { conversationId: c.id, authorType: 'customer', authorId: user.customerId, body: dto.message } });
+      await tx.supportMessage.create({ data: { conversationId: c.id, authorType: 'customer', authorId: user.userId, body: dto.message } });
       return c;
     });
     return toConversation(conv);
@@ -347,6 +360,7 @@ export class SupportService {
   }
 
   async sendMessage(user: Principal, id: string, dto: MessageCreateDto) {
+    this.assertOwnKeys(user, dto.attachmentObjectKeys);
     const c = await this.conversationFor(user, id);
     if (c.status === 'closed') throw conflict('conflict', 'A conversa está encerrada.');
     const staff = isStaff(user) ? await this.prisma.staffUser.findUnique({ where: { id: user.staffId }, select: { name: true } }) : null;

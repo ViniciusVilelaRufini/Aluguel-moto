@@ -20,10 +20,10 @@ function setup(provider?: FakePaymentProvider) {
   prisma.rental.findFirst.mockResolvedValue(null);
   prisma.payment.count.mockResolvedValue(0);
   prisma.rental.findMany.mockResolvedValue([{ id: 'r1', returnPhotoObjectKey: null, returnPhotoUploadKey: null }] as any);
-  prisma.supportMessage.findMany.mockResolvedValue([{ attachmentObjectKeys: ['support/u/a.jpg'] }, { attachmentObjectKeys: [] }] as any);
+  prisma.supportMessage.findMany.mockResolvedValue([{ attachmentObjectKeys: [`support/${ME}/a.jpg`] }, { attachmentObjectKeys: [] }] as any);
   prisma.handover.findMany.mockResolvedValue([{ id: 'h1', photoKeys: ['handovers/h1/1.jpg', 'handovers/h1/2.jpg'] }] as any);
-  prisma.incident.findMany.mockResolvedValue([{ photoObjectKeys: ['support/u/inc.jpg'] }] as any);
-  prisma.claim.findMany.mockResolvedValue([{ photoObjectKeys: ['support/u/bo.pdf'] }] as any);
+  prisma.incident.findMany.mockResolvedValue([{ photoObjectKeys: [`support/${ME}/inc.jpg`] }] as any);
+  prisma.claim.findMany.mockResolvedValue([{ photoObjectKeys: [`support/${ME}/bo.pdf`] }] as any);
   prisma.paymentCard.findMany.mockResolvedValue([{ providerCardId: 'card-1' }, { providerCardId: 'card-2' }] as any);
   const storage = { deleteObject: jest.fn().mockResolvedValue(undefined), presignPut: jest.fn(), presignGet: jest.fn(), putObject: jest.fn() };
   const cfg = loadConfig();
@@ -52,9 +52,9 @@ describe('LgpdService — exclusão completa (Task 14)', () => {
       expect.arrayContaining([
         `${cfg.buckets.returnPhotos}:handovers/h1/1.jpg`,
         `${cfg.buckets.returnPhotos}:handovers/h1/2.jpg`,
-        `${cfg.buckets.attachments}:support/u/a.jpg`,
-        `${cfg.buckets.attachments}:support/u/inc.jpg`,
-        `${cfg.buckets.attachments}:support/u/bo.pdf`,
+        `${cfg.buckets.attachments}:support/${ME}/a.jpg`,
+        `${cfg.buckets.attachments}:support/${ME}/inc.jpg`,
+        `${cfg.buckets.attachments}:support/${ME}/bo.pdf`,
       ]),
     );
   });
@@ -129,11 +129,39 @@ describe('LgpdService — exclusão completa (Task 14)', () => {
 
   it('job diário: sinistro que encerrou depois da exclusão perde fotos, boletim, texto e posição', async () => {
     const { prisma, storage, cfg, service } = setup();
-    prisma.claim.findMany.mockResolvedValue([{ id: 'cl1', customerId: ME, photoObjectKeys: ['support/u/bo.jpg'] }] as any);
+    prisma.claim.findMany.mockResolvedValue([{ id: 'cl1', customerId: ME, photoObjectKeys: [`support/${ME}/bo.jpg`] }] as any);
     expect(await service.purgeClosedClaimsOfDeletedCustomers()).toBe(1);
     expect((prisma.claim.findMany.mock.calls[0][0] as any).where).toMatchObject({ status: { in: ['rejected', 'paid'] }, customer: { status: 'deleted' } });
-    expect(storage.deleteObject).toHaveBeenCalledWith({ bucket: cfg.buckets.attachments, key: 'support/u/bo.jpg' });
+    expect(storage.deleteObject).toHaveBeenCalledWith({ bucket: cfg.buckets.attachments, key: `support/${ME}/bo.jpg` });
     expect(prisma.claim.update).toHaveBeenCalledWith({ where: { id: 'cl1' }, data: expect.objectContaining({ photoObjectKeys: [], lat: null, lng: null }) });
+  });
+});
+
+describe('auditoria run-4: exclusão LGPD só apaga anexos do titular ou do autor da própria mensagem/ocorrência', () => {
+  const OTHER = '99999999-9999-4999-8999-999999999999';
+  const STAFF = '22222222-2222-4222-8222-222222222222';
+  it('chaves de outra pessoa gravadas nos registros do titular ficam; as do titular e do atendente autor saem', async () => {
+    const { prisma, storage, cfg, service } = setup();
+    prisma.supportMessage.findMany.mockResolvedValue([
+      { authorType: 'customer', authorId: ME, attachmentObjectKeys: [`support/${ME}/a.jpg`, `support/${OTHER}/alheio.jpg`] },
+      { authorType: 'staff', authorId: STAFF, attachmentObjectKeys: [`support/${STAFF}/print.png`, `support/${OTHER}/b.jpg`] },
+    ] as any);
+    prisma.incident.findMany.mockResolvedValue([
+      { createdByType: 'staff', createdById: STAFF, photoObjectKeys: [`support/${STAFF}/inc.jpg`] },
+      { createdByType: 'customer', createdById: ME, photoObjectKeys: [`support/${OTHER}/inc.jpg`, 'kyc/outro/doc.jpg'] },
+    ] as any);
+    prisma.claim.findMany.mockResolvedValue([{ photoObjectKeys: [`support/${ME}/bo.pdf`, `support/${OTHER}/bo.pdf`] }] as any);
+    await service.deleteAccount(ME);
+    const deleted = storage.deleteObject.mock.calls.filter((c) => c[0].bucket === cfg.buckets.attachments).map((c) => c[0].key).sort();
+    expect(deleted).toEqual([`support/${ME}/a.jpg`, `support/${ME}/bo.pdf`, `support/${STAFF}/inc.jpg`, `support/${STAFF}/print.png`].sort());
+    expect((prisma.supportMessage.findMany.mock.calls[0][0] as any).select).toEqual({ authorType: true, authorId: true, attachmentObjectKeys: true });
+  });
+
+  it('job dos sinistros encerrados: só as chaves do titular', async () => {
+    const { prisma, storage, service } = setup();
+    prisma.claim.findMany.mockResolvedValue([{ id: 'cl1', customerId: ME, photoObjectKeys: [`support/${ME}/bo.jpg`, `support/${OTHER}/x.jpg`] }] as any);
+    await service.purgeClosedClaimsOfDeletedCustomers();
+    expect(storage.deleteObject.mock.calls.map((c) => c[0].key)).toEqual([`support/${ME}/bo.jpg`]);
   });
 });
 
@@ -148,7 +176,7 @@ describe('LgpdService — exportação com o chat do suporte (Task 14)', () => {
       {
         id: 'conv1', customerId: ME, rentalId: null, subject: 'Cobrança', status: 'open', lastMessageAt: now, createdAt: now, updatedAt: now,
         messages: [
-          { id: 'm1', conversationId: 'conv1', authorType: 'customer', authorId: ME, authorName: null, body: 'Oi', attachmentObjectKeys: ['support/u/a.jpg'], deliveredAt: null, readAt: null, createdAt: now },
+          { id: 'm1', conversationId: 'conv1', authorType: 'customer', authorId: ME, authorName: null, body: 'Oi', attachmentObjectKeys: [`support/${ME}/a.jpg`], deliveredAt: null, readAt: null, createdAt: now },
           { id: 'm2', conversationId: 'conv1', authorType: 'staff', authorId: 'staff-1', authorName: 'Ana Paula Lima', body: 'Olá!', attachmentObjectKeys: [], deliveredAt: now, readAt: null, createdAt: now },
         ],
       },
@@ -158,7 +186,7 @@ describe('LgpdService — exportação com o chat do suporte (Task 14)', () => {
     expect(out.supportConversations).toHaveLength(1);
     const [conv] = out.supportConversations;
     expect(conv).toMatchObject({ id: 'conv1', subject: 'Cobrança', status: 'open' });
-    expect(conv.messages[0]).toMatchObject({ id: 'm1', authorType: 'customer', body: 'Oi', attachmentObjectKeys: ['support/u/a.jpg'] });
+    expect(conv.messages[0]).toMatchObject({ id: 'm1', authorType: 'customer', body: 'Oi', attachmentObjectKeys: [`support/${ME}/a.jpg`] });
     expect(conv.messages[1]).toMatchObject({ id: 'm2', authorType: 'staff', authorName: 'Ana', status: 'delivered' });
     expect(conv.messages[1]).not.toHaveProperty('authorId');
     expect(JSON.stringify(out.supportConversations)).not.toContain('Paula');
