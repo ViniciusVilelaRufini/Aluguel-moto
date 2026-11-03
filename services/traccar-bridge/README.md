@@ -19,9 +19,11 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 - **Telemetria** (`motos/{t}/telemetria`) de cada posição válida, não `outdated`, com `fixTime` crescente: `velocidade_kmh = speed × 1,852`
   (o Traccar usa nós), `timestamp = fixTime`, `travada ← blocked`, `ignicao ← ignition`, `sinal ← rssi` (0–5), `bateria_pct ←
   power` pela curva do pack (`BATTERY_MODEL`; aproximado). Heartbeats do GT06 só atualizam o estado (corte, ignição, sinal).
-- **Retenção:** sem bit de corte conhecido (depois de cada (re)conexão, ou com `engineResume` enviado e ainda sem status
-  novo — um `travada: false` confirmaria o unlock antes da hora) ou sem bateria conhecida a telemetria fica retida (log
-  `telemetry_held` com o motivo, no máximo 1/min por moto). Com o corte conhecido e a bateria ainda desconhecida há 5 min (ex.:
+- **Retenção:** com `engineResume` enviado e ainda sem status novo (defesa em profundidade: a API só confirma o unlock
+  `relay_only` por `reported.travada: false` posterior ao pedido, nunca pela telemetria) ou sem bateria conhecida a telemetria
+  fica retida (log `telemetry_held` com o motivo, no máximo 1/min por moto). Bit de corte desconhecido sem comando pendente
+  (depois de uma (re)conexão sem status novo, ou nunca visto) **não** retém: a telemetria sai com `travada: false` (A4-6;
+  cercas, zonas e trajeto não ficam cegos se o firmware não mandar heartbeat em movimento). Com o corte conhecido e a bateria ainda desconhecida há 5 min (ex.:
   J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` (log `battery_unknown`). Com `engineStop`
   enviado e ainda sem status novo, ou com o bit recebido há mais de 90 s (firmware sem heartbeat em movimento), a telemetria
   **não** é retida: sai com `travada: false` (conservador — nunca confirma lock; a API não vê lacuna nem reconexão, e cercas e
@@ -189,7 +191,7 @@ provision` e `gt06.sh status <moto>`.
      `SERVER,0,<ip>,5023,0#` (IP);
    - fuso UTC: `GMT,E,0,0#`;
    - intervalo de posição fixo de 5 s (com e sem ACC), p.ex. `TIMER,5,5#` — a trava só-relé exige 2 posições paradas em 10 s;
-   - heartbeat ≤ 60 s, `HBT,60,60#` ou `HBT,1,1#` conforme a unidade do firmware (**obrigatório**: o status de corte libera a telemetria retida depois de reconectar, e bit com mais de 90 s
+   - heartbeat ≤ 60 s, `HBT,60,60#` ou `HBT,1,1#` conforme a unidade do firmware (**obrigatório**: o status de corte é o único que confirma trava/destrava pelo `reported.travada`, e bit com mais de 90 s
      não vale para "já travada");
    - conferir: `STATUS#`, `PARAM#`, `WHERE#`.
 3. Conferir no Traccar que o dispositivo aparece online e que a telemetria chega à API.
