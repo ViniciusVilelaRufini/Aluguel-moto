@@ -50,7 +50,7 @@ function setup(opts: { photo?: boolean; inZone?: boolean; lock?: 'confirmed' | '
   prisma.vehicle.updateMany.mockResolvedValue({ count: 1 });
   prisma.fee.findUnique.mockResolvedValue({ code: 'force_end_outside_return_zone', amountCents: 1500, active: true } as any);
 
-  const billing = { holdDeposit: jest.fn(), isDelinquent: jest.fn(), settle: jest.fn().mockResolvedValue({ paymentId: 'pay-1', status: 'paid' }) };
+  const billing = { holdDeposit: jest.fn(), isDelinquent: jest.fn(), isCpfRestricted: jest.fn().mockResolvedValue(false), settle: jest.fn().mockResolvedValue({ paymentId: 'pay-1', status: 'paid' }) };
   const commands = { dispatch: jest.fn().mockResolvedValue({ id: 'cmd', status: opts.lock ?? 'confirmed' }), isLockedByStaff: jest.fn().mockResolvedValue(false) };
   const zones = { findContaining: jest.fn().mockResolvedValue(opts.inZone === false ? null : { id: ZONE_ID, type: 'return' }) };
   const iot = { getLiveState: jest.fn().mockResolvedValue(null) };

@@ -3,20 +3,21 @@ import { conflict, forbidden, notFound } from '../../common/problem';
 import type { RentalBillingPort } from '../../ports/rental-billing.port';
 
 type CustomerGateFields = Pick<Customer, 'kycStatus' | 'status' | 'delinquent'> &
-  Partial<Pick<Customer, 'locationConsent' | 'termsAccepted' | 'termsVersion'>>;
+  Partial<Pick<Customer, 'cpf' | 'locationConsent' | 'termsAccepted' | 'termsVersion'>>;
 
 /** Texto do `409 payment-pending` (reserva com dívida em aberto). */
 export const PAYMENT_PENDING_MESSAGE = 'Pague o valor pendente para alugar de novo.';
 
 /**
- * Regras comuns para reservar e alugar (ordem fixa): KYC aprovado → sem bloqueio → sem inadimplência
+ * Regras comuns para reservar e alugar (ordem fixa): KYC aprovado → sem bloqueio (conta ativa e CPF fora da lista de
+ * restrição, auditoria run-4) → sem inadimplência
  * → (só para iniciar o aluguel) consentimento de localização → termos aceitos (QA-24; na versão `TERMS_CURRENT_VERSION`,
  * quando definida). Sem slug próprio no contrato: `403 forbidden` (proposta `terms-not-accepted` em docs/decisoes.md).
  */
 export async function assertCustomerEligible(
   customer: CustomerGateFields | null,
   customerId: string,
-  billing: Pick<RentalBillingPort, 'isDelinquent'>,
+  billing: Pick<RentalBillingPort, 'isDelinquent' | 'isCpfRestricted'>,
   opts: {
     requireLocationConsent: boolean;
     requireTerms?: boolean;
@@ -28,7 +29,8 @@ export async function assertCustomerEligible(
   if (customer.kycStatus !== 'approved') {
     throw forbidden('Conclua a verificação de identidade para alugar.', 'kyc-not-approved');
   }
-  if (customer.status !== 'active') {
+  // Auditoria run-4: a lista de restrição vale mesmo se a conta ficou ativa (desbloqueio manual, cadastro concorrente).
+  if (customer.status !== 'active' || (customer.cpf && (await billing.isCpfRestricted(customer.cpf)))) {
     throw forbidden('Sua conta está bloqueada. Fale com o suporte.', 'customer-blocked');
   }
   if (customer.delinquent || (await billing.isDelinquent(customerId))) {

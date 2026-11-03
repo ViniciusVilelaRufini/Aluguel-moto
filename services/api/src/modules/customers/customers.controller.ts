@@ -2,7 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Qu
 import { currentSubscriptionWhere } from '../../common/fixed-vehicle';
 import { Transform } from 'class-transformer';
 import { IsBoolean, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength } from 'class-validator';
-import type { Customer, Prisma } from '@prisma/client';
+import { Prisma, type Customer, type RestrictionEntry } from '@prisma/client';
 import { KYC_STATUSES, type KycStatus } from '../../common/enums';
 import { PageQuery, pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound } from '../../common/problem';
@@ -108,11 +108,26 @@ export class CustomersController {
     }));
   }
 
+  /**
+   * Auditoria run-4: incluir o CPF bloqueia, na mesma transação, as contas ativas com esse CPF (o gate de elegibilidade
+   * também consulta a lista). CPF já na lista, inclusive em corrida (P2002) → 409.
+   */
   @Post('customer-restrictions')
   @StaffOnly('admin', 'suporte')
   async addRestriction(@Body() dto: RestrictionCreateDto, @CurrentUser() u: Principal) {
-    if (await this.prisma.restrictionEntry.findUnique({ where: { cpf: dto.cpf } })) throw conflict('conflict', 'CPF já está na lista de restrição.');
-    const r = await this.prisma.restrictionEntry.create({ data: { cpf: dto.cpf, reason: dto.reason, createdById: u.userId } });
+    const duplicate = () => conflict('conflict', 'CPF já está na lista de restrição.');
+    if (await this.prisma.restrictionEntry.findUnique({ where: { cpf: dto.cpf } })) throw duplicate();
+    let r: RestrictionEntry;
+    try {
+      r = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.restrictionEntry.create({ data: { cpf: dto.cpf, reason: dto.reason, createdById: u.userId } });
+        await tx.customer.updateMany({ where: { cpf: dto.cpf, status: 'active' }, data: { status: 'blocked', blockedReason: dto.reason, blockedAt: new Date() } });
+        return created;
+      });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') throw duplicate();
+      throw err;
+    }
     await this.audit.record({ actor: u, action: 'restriction.add', entityType: 'RestrictionEntry', entityId: r.id, reason: dto.reason });
     return { id: r.id, cpf: isAdmin(u) ? r.cpf : `***.${r.cpf.slice(3, 6)}.${r.cpf.slice(6, 9)}-**`, reason: r.reason, createdById: u.userId, createdAt: r.createdAt.toISOString() };
   }
@@ -143,7 +158,10 @@ export class CustomersController {
     if (!c) throw notFound('Cliente não encontrado.');
     if (c.status !== 'active') throw conflict('conflict', 'A conta não está ativa.');
     const updated = await this.prisma.$transaction(async (tx) => {
-      const upd = await tx.customer.update({ where: { id }, data: { status: 'blocked', blockedReason: dto.reason, blockedAt: new Date() } });
+      // Auditoria run-4: condicional ao status lido (bloqueio/desbloqueio concorrentes → 409).
+      const res = await tx.customer.updateMany({ where: { id, status: 'active' }, data: { status: 'blocked', blockedReason: dto.reason, blockedAt: new Date() } });
+      if (res.count !== 1) throw conflict('conflict', 'A conta não está ativa.');
+      const upd = await tx.customer.findUniqueOrThrow({ where: { id } });
       if (dto.addToRestrictionList && c.cpf) {
         await tx.restrictionEntry.upsert({ where: { cpf: c.cpf }, create: { cpf: c.cpf, reason: dto.reason, createdById: u.userId }, update: {} });
       }
@@ -169,8 +187,14 @@ export class CustomersController {
     const c = await this.prisma.customer.findUnique({ where: { id } });
     if (!c) throw notFound('Cliente não encontrado.');
     if (c.status !== 'blocked') throw conflict('conflict', 'A conta não está bloqueada.');
+    // Auditoria run-4: CPF na lista de restrição mantém a conta bloqueada (tire o CPF da lista antes).
+    if (c.cpf && (await this.prisma.restrictionEntry.findUnique({ where: { cpf: c.cpf }, select: { id: true } }))) {
+      throw conflict('conflict', 'O CPF desta conta está na lista de restrição. Remova-o da lista antes de desbloquear.');
+    }
     const updated = await this.prisma.$transaction(async (tx) => {
-      const upd = await tx.customer.update({ where: { id }, data: { status: 'active', blockedReason: null, blockedAt: null } });
+      const res = await tx.customer.updateMany({ where: { id, status: 'blocked' }, data: { status: 'active', blockedReason: null, blockedAt: null } });
+      if (res.count !== 1) throw conflict('conflict', 'A conta não está bloqueada.');
+      const upd = await tx.customer.findUniqueOrThrow({ where: { id } });
       await this.audit.record({ actor: u, action: 'customer.unblock', entityType: 'Customer', entityId: id, reason: dto.reason }, tx as any);
       return upd;
     });
