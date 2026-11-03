@@ -93,6 +93,10 @@ a fila offline com relógio adiantado nunca confirmam; um `reported.travada = tr
 corte enviado, também precisa ser posterior a ele). As varreduras releem o estado ao vivo do Redis antes de decidir. Ao começar, o lock `relay_only` apaga
 (`desired.travada = null`) um `travada` pendente no shadow (ex.: `false` de um unlock que a moto offline não recebeu), para a
 ponte não reaplicar `engineResume` na reconexão; nunca grava `travada: true` fora do corte.
+Unlock `relay_only` confirma **só** por `reported.travada: false` com hora depois do `releaseAt` (gravado antes de publicar o
+`travada: false`) e sem `reported.travada: true` depois dele (`LiveStateStore.unlockConfirmed`; campos `reportedFreeAt`/
+`reportedCutAt` do hash `iot:live:*`, só por máximo atômico `hsetMax`). Nunca pelo `locked` do estado: a telemetria da ponte
+sai com `travada: false` quando o bit de corte está velho ou desconhecido (A4-6). `speed_control` não muda.
 Ordem das amostras (Task 11b): um `reported.velocidade_kmh` parado (< 3 km/h) é datado pela chegada e **não** vira barreira de
 ordem para a telemetria (datada pelo `fixTime`); com o GPS mais atrasado que a cadência (ex.: GPRS com buffer), senão toda
 telemetria seguinte seria "velha" e a parada nunca se confirmaria. `reported` em movimento (≥ 3 ou inválido) continua barreira, e

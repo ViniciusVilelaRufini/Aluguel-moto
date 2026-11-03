@@ -103,6 +103,13 @@ describe('BaseIotGateway', () => {
     expect(updates).toEqual([{ commandId: 'c1', status: 'confirmed' }]);
   });
 
+  it('A4-6: speed_control inalterado — unlock confirma pelo locked:false da telemetria + limite reportado', async () => {
+    const { gw, live } = await setup(); // telemetria com travada:false
+    await live.applyReported(T, { limite_kmh: 32 });
+    expect(live.unlockConfirmed(T)).toBe(false); // nenhum reported.travada: o caminho relay_only não confirmaria
+    expect(await gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff' })).toEqual({ commandId: 'u1', status: 'confirmed' });
+  });
+
   it('reported já igual ao desired → confirmed na hora', async () => {
     const { gw, live } = await setup();
     await live.applyReported(T, { limite_kmh: 20 });

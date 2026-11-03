@@ -104,6 +104,14 @@ export class LiveStateStore {
    * hash do Redis (campo `releaseAt`) só por máximo atômico e é hidratada no `refresh` (como `reconnectAt`).
    */
   private readonly releaseAt = new Map<string, number>();
+  /**
+   * A4-6: hora (ms) do último `reported.travada: false` / `reported.travada: true` do rastreador — só `reported`, nunca
+   * telemetria (a ponte manda `travada: false` na telemetria com o bit de corte velho ou desconhecido). Base de
+   * `unlockConfirmed`. Vão para o hash do Redis (campos `reportedFreeAt`/`reportedCutAt`) só por máximo atômico e são
+   * hidratadas no `refresh` (como `releaseAt`): uma cópia velha nunca faz voltar.
+   */
+  private readonly reportedFreeAt = new Map<string, number>();
+  private readonly reportedCutAt = new Map<string, number>();
   /** Hold gravado por esta instância cuja escrita no Redis falhou (vale até gravar ou um unlock). */
   private readonly heldUnpersisted = new Set<string>();
   /** Carimbo (`_at`) da última versão do hash no Redis que esta instância gravou ou leu: versão mais nova = outra instância. */
@@ -174,6 +182,8 @@ export class LiveStateStore {
     }
     this.hydrateReconnect(thingName, h?.reconnectAt);
     this.hydrateRelease(thingName, h?.releaseAt);
+    this.hydrateMax(this.reportedFreeAt, thingName, h?.reportedFreeAt);
+    this.hydrateMax(this.reportedCutAt, thingName, h?.reportedCutAt);
     if (!h || !h.lastSeenAt) {
       this.refreshFailed.add(thingName); // nada no Redis: a cópia da memória (se houver) não é confirmada
       return mem ?? null;
@@ -223,10 +233,29 @@ export class LiveStateStore {
 
   /** Release gravado por outra instância: só avança (o mais novo vale — mais conservador). */
   private hydrateRelease(thingName: string, raw: string | undefined): void {
+    this.hydrateMax(this.releaseAt, thingName, raw);
+  }
+
+  private hydrateMax(map: Map<string, number>, thingName: string, raw: string | undefined): void {
     const at = raw ? Number(raw) : NaN;
     if (!Number.isFinite(at)) return;
-    const local = this.releaseAt.get(thingName);
-    if (local === undefined || at > local) this.releaseAt.set(thingName, at);
+    const local = map.get(thingName);
+    if (local === undefined || at > local) map.set(thingName, at);
+  }
+
+  /**
+   * A4-6: destrava só relé confirmada pelo próprio rastreador — `reported.travada: false` com hora **depois** do último
+   * `travada: false` publicado (`releaseAt`, gravado antes de publicar) e sem `reported.travada: true` depois dele. Espelha
+   * `lockConfirmed`. Nunca usa o `locked` do estado (a telemetria também o grava, e a ponte publica `travada: false` com o bit
+   * de corte velho/desconhecido). Quem decide relê o estado (`load`) antes.
+   */
+  unlockConfirmed(thingName: string): boolean {
+    const free = this.reportedFreeAt.get(thingName);
+    if (free === undefined) return false;
+    const released = this.releaseAt.get(thingName);
+    if (released !== undefined && free <= released) return false;
+    const cut = this.reportedCutAt.get(thingName);
+    return cut === undefined || free > cut;
   }
 
   /**
@@ -601,8 +630,11 @@ export class LiveStateStore {
       s.locked = r.travada;
       // Origem: horário da metadata (limitado a agora); MQTT sem ele = chegada; polling sem ele = desconhecida (pode ser velho).
       const at = opts.fromPoll ? opts.travadaAt : (opts.travadaAt ?? now);
-      if (at !== undefined && Number.isFinite(at)) this.lockedAt.set(thingName, Math.min(at, now));
-      else this.lockedAt.delete(thingName);
+      if (at !== undefined && Number.isFinite(at)) {
+        const origin = Math.min(at, now);
+        this.lockedAt.set(thingName, origin);
+        await this.noteReportedTravada(thingName, r.travada, origin);
+      } else this.lockedAt.delete(thingName);
     }
     if (r.limite_kmh !== undefined) s.speedLimitKmh = r.limite_kmh;
     if (r.modo_roubada !== undefined) s.stolenMode = r.modo_roubada;
@@ -622,6 +654,13 @@ export class LiveStateStore {
     this.states.set(thingName, s);
     await this.persist(s);
     return { state: s, speedAccepted };
+  }
+
+  /** A4-6: registra a hora do `reported.travada` (máximo, local e no Redis por `hsetMax`). Falha do Redis = só local. */
+  private async noteReportedTravada(thingName: string, travada: boolean, at: number): Promise<void> {
+    const map = travada ? this.reportedCutAt : this.reportedFreeAt;
+    map.set(thingName, Math.max(at, map.get(thingName) ?? at));
+    await this.redis.hsetMax(this.key(thingName), travada ? 'reportedCutAt' : 'reportedFreeAt', at).catch(() => undefined);
   }
 
   async setOnline(thingName: string, online: boolean): Promise<VehicleLiveState> {

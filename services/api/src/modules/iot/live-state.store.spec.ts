@@ -295,3 +295,69 @@ describe('LiveStateStore — reported parado não é barreira de ordem para a te
     expect((await live.applyTelemetry(T, tele(0, clock.now() - 8_000))).speedAccepted).toBe(false);
   });
 });
+
+describe('LiveStateStore.unlockConfirmed — destrava só relé confirmada só por reported.travada:false posterior ao release (A4-6)', () => {
+  const setup = () => {
+    const clock = new FakeClock(Date.parse('2026-10-27T12:00:00Z'));
+    const redis = new MemoryRedisStore();
+    return { clock, redis, live: new LiveStateStore(redis, clock) };
+  };
+  const tel = (clock: FakeClock, travada: boolean) => ({
+    lat: -23.56, lng: -46.69, velocidade_kmh: 0, bateria_pct: 80, travada, ignicao: false, sinal: 4, timestamp: new Date(clock.now()).toISOString(),
+  });
+
+  it('telemetria travada:false (bit velho da ponte) nunca confirma; só o reported depois do release', async () => {
+    const { clock, live } = setup();
+    await live.applyReported(T, { travada: true });
+    await clock.advance(1_000);
+    await live.markReleaseRequested(T);
+    await clock.advance(1_000);
+    await live.applyTelemetry(T, tel(clock, false));
+    expect(live.get(T)?.locked).toBe(false);
+    expect(live.unlockConfirmed(T)).toBe(false);
+    await clock.advance(1_000);
+    await live.applyReported(T, { travada: false });
+    expect(live.unlockConfirmed(T)).toBe(true);
+  });
+
+  it('reported travada:false de até o release (atrasado) não confirma; travada:true posterior desfaz a confirmação', async () => {
+    const { clock, live } = setup();
+    await live.applyReported(T, { travada: false });
+    await clock.advance(1_000);
+    await live.markReleaseRequested(T);
+    expect(live.unlockConfirmed(T)).toBe(false);
+    await live.applyReported(T, { travada: false }, { travadaAt: clock.now() - 500 });
+    expect(live.unlockConfirmed(T)).toBe(false);
+    await clock.advance(1_000);
+    await live.applyReported(T, { travada: false });
+    expect(live.unlockConfirmed(T)).toBe(true);
+    await clock.advance(1_000);
+    await live.applyReported(T, { travada: true });
+    expect(live.unlockConfirmed(T)).toBe(false);
+  });
+
+  it('o reported vai pelo Redis (máximo atômico): outra instância confirma; uma cópia velha não faz voltar', async () => {
+    const { clock, redis, live } = setup();
+    const other = new LiveStateStore(redis, clock);
+    await clock.advance(1_000);
+    await other.markReleaseRequested(T);
+    await clock.advance(1_000);
+    await live.applyReported(T, { travada: false });
+    await other.load(T);
+    expect(other.unlockConfirmed(T)).toBe(true);
+    // cópia velha (polling com horário antigo) numa terceira instância não apaga o reported mais novo
+    const third = new LiveStateStore(redis, clock);
+    await third.applyReported(T, { travada: false }, { fromPoll: true, travadaAt: clock.now() - 5_000 });
+    const fresh = new LiveStateStore(redis, clock);
+    await fresh.load(T);
+    expect(fresh.unlockConfirmed(T)).toBe(true);
+  });
+
+  it('polling sem horário do travada não conta', async () => {
+    const { clock, live } = setup();
+    await live.markReleaseRequested(T);
+    await clock.advance(1_000);
+    await live.applyReported(T, { travada: false }, { fromPoll: true });
+    expect(live.unlockConfirmed(T)).toBe(false);
+  });
+});
