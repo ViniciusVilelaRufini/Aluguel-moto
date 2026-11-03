@@ -1,7 +1,7 @@
 import { FIXED_LIMIT_KMH, TOPICS, thingOf, type DeviceEventMessage, type ReportedState } from './contract';
 import { CUT_FRESH_MS, cutRefusal, parseDelta, planDeltaFor, planReconnect, type BridgeAction } from './delta';
 import { maskImei, silentLogger, type Logger } from './log';
-import { applyPosition, currentBlocked, freshBlocked, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
+import { applyPosition, currentBlocked, freshBlocked, markCommandSent, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { MqttLike } from './mqtt';
 import type { TraccarDevice, TraccarEvent, TraccarPosition, TraccarSocketMessage } from './traccar/types';
 import { MIN_TRACCAR_NOQUEUE, supportsNoQueue } from './traccar/version';
@@ -518,9 +518,13 @@ export class Bridge {
         continue;
       }
       this.stopSentAt.delete(thing);
+      // A4-1: o bit anterior ao comando não vale mais (nem telemetria, nem eco already_blocked). O eco `false` de uma moto
+      // já destravada continua: o resume nunca trava o relé.
+      const wasUnlocked = freshBlocked(this.mem(thing), this.now()) === false;
+      this.commandSent(thing);
       if (sent === 'queued') this.log.error({ msg: 'engine_resume_queued', thingName: thing });
       else this.log.info({ msg: 'engine_resume_sent', thingName: thing });
-      if (freshBlocked(this.mem(thing), this.now()) === false) await this.report(thing, { travada: false });
+      if (wasUnlocked) await this.report(thing, { travada: false });
     }
   }
 
@@ -556,12 +560,23 @@ export class Bridge {
       return;
     }
     this.stopSentAt.set(thing, this.now());
+    // A4-1: só um status recebido depois do envio confirma o corte; o bit anterior não vale para nada.
+    this.commandSent(thing);
     if (sent === 'queued') {
       // Não deveria acontecer com ≥ 6.7.0 e `noQueue`: o corte seria entregue na reconexão, em qualquer velocidade. Alerta.
       this.log.error({ msg: 'engine_stop_queued', thingName: thing });
       return;
     }
     this.log.info({ msg: 'engine_stop_sent', thingName: thing });
+  }
+
+  /**
+   * A4-1: comando de motor aceito → esquece o bit de corte anterior (`markCommandSent`) e a deduplicação M5, para que o
+   * primeiro status posterior ao envio saia sempre como `reported.travada` (é ele que confirma o comando).
+   */
+  private commandSent(thing: string): void {
+    this.memory.set(thing, markCommandSent(this.mem(thing), this.now()));
+    this.lastTravada.delete(thing);
   }
 
   private freshSpeed(thing: string): { velocidade_kmh?: number } {

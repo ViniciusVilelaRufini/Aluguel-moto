@@ -3,7 +3,7 @@ import addFormats from 'ajv-formats';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cutRefusal } from './delta';
-import { applyPosition, BLOCKED_FRESH_MS, currentBlocked, freshBlocked, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
+import { applyPosition, BLOCKED_FRESH_MS, currentBlocked, freshBlocked, markCommandSent, markReconnected, toDeviceEvents, type DeviceMemory } from './mapping';
 import type { TraccarEvent, TraccarPosition } from './traccar/types';
 
 const schema = (name: string) => JSON.parse(readFileSync(join(__dirname, '../../../packages/contracts/schemas', name), 'utf8'));
@@ -11,11 +11,12 @@ const ajv = addFormats(new Ajv2020({ strict: false }));
 const validTelemetry = ajv.compile(schema('telemetria.schema.json'));
 const validEvent = ajv.compile(schema('eventos.schema.json'));
 
+// `pos` recebido pelo Traccar em NOW: o bit de corte dele é fresco (A4-1a: telemetria só com bit ≤ 90 s).
 const NOW = Date.parse('2026-10-27T12:10:00Z');
 const AP = (p: TraccarPosition, mem: DeviceMemory, now = NOW) => applyPosition(p, mem, '72v', now);
 
 const pos = (over: Partial<TraccarPosition> = {}): TraccarPosition => ({
-  id: 1, deviceId: 1, protocol: 'gt06', serverTime: '2026-10-27T12:00:01.000Z', deviceTime: '2026-10-27T12:00:00.000Z', fixTime: '2026-10-27T12:00:00.000Z',
+  id: 1, deviceId: 1, protocol: 'gt06', serverTime: '2026-10-27T12:10:00.000Z', deviceTime: '2026-10-27T12:00:00.000Z', fixTime: '2026-10-27T12:00:00.000Z',
   outdated: false, valid: true, latitude: -23.5614, longitude: -46.6914, speed: 10.79914, course: 90,
   attributes: { ignition: true, blocked: false, rssi: 4, power: 72 }, ...over,
 });
@@ -244,5 +245,56 @@ describe('toDeviceEvents (spec GT06 §6.3)', () => {
 
   it('vibration logo após reconectar (bit de corte ainda desconhecido) não vira movimento_sem_aluguel', () => {
     expect(toDeviceEvents(ev('vibration'), markReconnected({ blocked: true }), now)).toEqual([]);
+  });
+});
+
+describe('A4-1: comando de motor enviado invalida o bit de corte anterior', () => {
+  const at = (ms: number) => new Date(ms).toISOString();
+  const lockedNow = AP(pos({ outdated: true, serverTime: at(NOW), attributes: { blocked: true, power: 72 } }), {}, NOW).memory;
+
+  it('markCommandSent: o bit anterior deixa de valer (currentBlocked/freshBlocked indefinidos) e não muta a entrada', () => {
+    expect(freshBlocked(lockedNow, NOW + 1_000)).toBe(true);
+    const sent = markCommandSent(lockedNow, NOW + 1_000);
+    expect(currentBlocked(sent)).toBeUndefined();
+    expect(freshBlocked(sent, NOW + 1_000)).toBeUndefined();
+    expect(sent.commandSentAt).toBe(NOW + 1_000);
+    expect(sent.lockAnchor).toBeUndefined();
+    expect(currentBlocked(lockedNow)).toBe(true);
+  });
+
+  it('posição sem blocked depois do comando: telemetria retida (awaiting_status), nunca travada:true do bit velho', () => {
+    const sent = markCommandSent(lockedNow, NOW + 1_000);
+    const r = AP(pos({ fixTime: at(NOW + 2_000), serverTime: at(NOW + 2_000), speed: 0, attributes: { power: 72 } }), sent, NOW + 2_000);
+    expect(r.telemetry).toBeNull();
+    expect(r.held).toBe('awaiting_status');
+  });
+
+  it('status com serverTime até o envio (parado numa fila) não vale; o primeiro status posterior ao envio volta a valer', () => {
+    const sent = markCommandSent(lockedNow, NOW + 1_000);
+    const queued = AP(pos({ outdated: true, serverTime: at(NOW + 500), attributes: { blocked: true } }), sent, NOW + 3_000);
+    expect(currentBlocked(queued.memory)).toBeUndefined();
+    expect(queued.memory.awaitingStatus).toBe(true);
+    const fresh = AP(pos({ outdated: true, serverTime: at(NOW + 4_000), attributes: { blocked: false } }), queued.memory, NOW + 4_000);
+    expect(currentBlocked(fresh.memory)).toBe(false);
+    expect(freshBlocked(fresh.memory, NOW + 4_000)).toBe(false);
+  });
+});
+
+describe('A4-1a: telemetria usa o bit FRESCO (≤ 90 s), não só o atual', () => {
+  const at = (ms: number) => new Date(ms).toISOString();
+  it('bit de corte com mais de 90 s → posição sem blocked fica retida (awaiting_status), sem travada da memória velha', () => {
+    const mem = AP(pos({ outdated: true, serverTime: at(NOW), attributes: { blocked: true, power: 72 } }), {}, NOW).memory;
+    const now = NOW + BLOCKED_FRESH_MS + 1_000;
+    const r = AP(pos({ fixTime: at(now - 500), serverTime: at(now), speed: 0, attributes: { power: 72 } }), mem, now);
+    expect(r.telemetry).toBeNull();
+    expect(r.held).toBe('awaiting_status');
+    expect(r.memory.last).toMatchObject({ speedKmh: 0 }); // a guarda do corte continua com a posição
+  });
+
+  it('bit fresco → telemetria sai com ele', () => {
+    const mem = AP(pos({ outdated: true, serverTime: at(NOW), attributes: { blocked: true, power: 72 } }), {}, NOW).memory;
+    const now = NOW + 30_000;
+    const r = AP(pos({ fixTime: at(now - 500), serverTime: at(now), speed: 0, attributes: { power: 72 } }), mem, now);
+    expect(r.telemetry).toMatchObject({ travada: true });
   });
 });

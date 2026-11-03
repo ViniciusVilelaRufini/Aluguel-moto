@@ -19,6 +19,11 @@ export interface DeviceMemory {
   last?: { fixTime: number; speedKmh: number; lat: number; lng: number };
   /** Onde a moto estava quando o corte foi visto (deslocamento > 20 m travada → `movimento_sem_aluguel`). */
   lockAnchor?: { lat: number; lng: number };
+  /**
+   * Relógio da ponte (ms) do último `engineStop`/`engineResume` aceito pelo Traccar (`markCommandSent`). Status com hora
+   * (min(serverTime, ingestão)) até este instante é anterior ao comando e não vale como bit de corte.
+   */
+  commandSentAt?: number;
 }
 
 export const MOVED_WHILE_LOCKED_M = 20;
@@ -37,6 +42,16 @@ export function currentBlocked(mem: DeviceMemory): boolean | undefined {
  */
 export function markReconnected(mem: DeviceMemory): DeviceMemory {
   return { ...mem, blocked: undefined, blockedAt: undefined, lockAnchor: undefined, awaitingStatus: true };
+}
+
+/**
+ * A4-1: chamado logo depois de um `engineStop`/`engineResume` aceito pelo Traccar. O bit anterior ao comando não diz mais
+ * nada sobre o relé: nem telemetria, nem eco `already_blocked`, nem `reported.travada` podem usá-lo (senão um unlock
+ * expirado + relock de rollback "confirmaria" uma trava que não aconteceu). Só um status recebido DEPOIS de `now` volta a
+ * valer (`applyPosition` descarta status com hora ≤ `commandSentAt`). Não muta a entrada.
+ */
+export function markCommandSent(mem: DeviceMemory, now: number): DeviceMemory {
+  return { ...mem, blocked: undefined, blockedAt: undefined, lockAnchor: undefined, awaitingStatus: true, commandSentAt: now };
 }
 
 /**
@@ -74,7 +89,8 @@ export type HeldReason = 'awaiting_status' | 'awaiting_battery';
  *   frescura usa min(fixTime, now) (`last.fixTime`).
  * - Posição mais nova e inutilizável (inválida, outdated, relógio ou velocidade fora do contrato) limpa `last`: velocidade
  *   desconhecida = em movimento (`cutRefusal` → no_position/stale).
- * - Retenção: sem bit de corte atual (`currentBlocked` indefinido, ex.: após reconectar) ou sem bateria conhecida, não sai
+ * - Retenção: sem bit de corte atual e fresco (`freshBlocked` indefinido: após reconectar, após um comando de motor ou
+ *   status com mais de 90 s) ou sem bateria conhecida, não sai
  *   telemetria (`telemetry: null`, `held`) — um `travada: false` ou `bateria_pct: 0` por falta de dado enganaria a API.
  *   A memória (last, ignição, sinal, bateria) atualiza mesmo assim.
  * O `reported.travada` deve usar `currentBlocked` e só ser publicado quando for boolean.
@@ -88,11 +104,15 @@ export function applyPosition(
   const next: DeviceMemory = { ...mem };
   const a = p.attributes ?? {};
   if (typeof a.blocked === 'boolean') {
-    next.blocked = a.blocked;
     // Hora do Traccar ao receber o status, limitada a agora: um heartbeat parado numa fila (WebSocket, inbound) não é fresco.
     const serverAt = Date.parse(p.serverTime);
-    next.blockedAt = Number.isFinite(serverAt) ? Math.min(serverAt, now) : now;
-    next.awaitingStatus = false;
+    const at = Number.isFinite(serverAt) ? Math.min(serverAt, now) : now;
+    // A4-1: status recebido até o envio do último comando de motor é anterior a ele — o relé pode ter mudado.
+    if (next.commandSentAt === undefined || at > next.commandSentAt) {
+      next.blocked = a.blocked;
+      next.blockedAt = at;
+      next.awaitingStatus = false;
+    }
   }
   if (typeof a.ignition === 'boolean') next.ignition = a.ignition;
   if (typeof a.rssi === 'number') next.signal = rssiToSignal(a.rssi);
@@ -100,7 +120,8 @@ export function applyPosition(
     const pct = voltageToPct(a.power, battery);
     if (pct !== null) next.batteryPct = pct;
   }
-  const blocked = currentBlocked(next);
+  // A4-1a: telemetria e âncora só com o bit atual E fresco (≤ 90 s); indefinido = retida (awaiting_status).
+  const blocked = freshBlocked(next, now);
   if (blocked !== true) next.lockAnchor = undefined;
   const none = { telemetry: null, invalid: false, movedWhileLocked: false, memory: next };
   const fixTime = Date.parse(p.fixTime);

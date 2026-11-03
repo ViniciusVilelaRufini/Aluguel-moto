@@ -19,7 +19,8 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 - **Telemetria** (`motos/{t}/telemetria`) de cada posição válida, não `outdated`, com `fixTime` crescente: `velocidade_kmh = speed × 1,852`
   (o Traccar usa nós), `timestamp = fixTime`, `travada ← blocked`, `ignicao ← ignition`, `sinal ← rssi` (0–5), `bateria_pct ←
   power` pela curva do pack (`BATTERY_MODEL`; aproximado). Heartbeats do GT06 só atualizam o estado (corte, ignição, sinal).
-- **Retenção:** sem o bit de corte atual (depois de cada (re)conexão) ou sem bateria conhecida a telemetria fica retida (log
+- **Retenção:** sem o bit de corte atual e fresco (depois de cada (re)conexão, depois de cada `engineStop`/`engineResume` aceito
+  pelo Traccar, ou bit recebido há mais de 90 s) ou sem bateria conhecida a telemetria fica retida (log
   `telemetry_held` com o motivo, no máximo 1/min por moto). Com o corte conhecido e a bateria ainda desconhecida há 5 min (ex.:
   J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` (log `battery_unknown`).
 - **Eventos** (`motos/{t}/eventos`): `powerCut` → `violacao`, `lowBattery`/`lowPower` → `bateria_critica`, `vibration` com o corte
@@ -41,7 +42,10 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 - **`reported.travada`** sai de status/heartbeat com o bit de corte, sempre do bit atual (`currentBlocked`), nunca do
   "comando aceito" nem de memória anterior à reconexão: na mudança, ou no máximo 1/min se igual. O eco do lock numa moto já
   travada sai sempre. Bit recebido há mais de 90 s não vale para "já travada" nem para o eco (sessão TCP nova do J16 pode não
-  aparecer no Traccar; **heartbeat do J16 ≤ 60 s é obrigatório**).
+  aparecer no Traccar; **heartbeat do J16 ≤ 60 s é obrigatório**). Depois de um `engineStop`/`engineResume` aceito, o bit
+  anterior é descartado (`markCommandSent`): só status com `serverTime` **posterior** ao envio vale para telemetria, eco e
+  `reported.travada` (o primeiro sai sempre, sem a deduplicação de 1/min). Assim um unlock sem resposta seguido de relock não
+  "confirma" a trava pelo bit de antes do `engineResume`.
 - **MQTT fora:** nada é entregue ao mqtt.js: telemetria (QoS 0) é descartada; `reported`, presença, eventos e `shadow/get`
   (QoS 1) são pulados na hora (log `mqtt_down_skipped` com o tipo, 1/min por moto e tipo), sem esperar o prazo. Um QoS 1 que já
   estava em voo na queda (ou abandonado pelo prazo) fica no `outgoingStore` do mqtt.js, que o reenvia na reconexão **antes** do

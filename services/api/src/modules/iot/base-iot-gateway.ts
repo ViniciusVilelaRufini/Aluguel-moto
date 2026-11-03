@@ -366,7 +366,11 @@ export abstract class BaseIotGateway implements IotGateway {
     await this.relayLock.cancel(req.thingName);
     await this.live.setHeld(req.thingName, false);
     // Só relé: não há limite a restaurar (a ponte ignora `limite_kmh`); `engineResume` pela ponte, confirmado pelo reported.
-    if (req.controlMode === 'relay_only') return this.desiredCommand(req, { travada: false });
+    if (req.controlMode === 'relay_only') {
+      // A4-1: a trava vista até agora deixa de confirmar um lock (o relé vai abrir); erro do Redis aqui = nada publicado.
+      await this.live.markReleaseRequested(req.thingName);
+      return this.desiredCommand(req, { travada: false });
+    }
     // Sobe o limite: a zona é reavaliada pela posição atual (não só pelo valor gravado, que pode estar velho — fix 2, N3).
     const limit = assertSpeedLimit(await this.limitResolver(req.thingName, await this.positionOf(req.thingName)));
     return this.desiredCommand(req, { travada: false }, { limite_kmh: limit });

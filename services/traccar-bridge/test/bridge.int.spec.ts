@@ -529,11 +529,51 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
     await waitFor(() => reportedTravada(c).length === 1);
     c.now.value = T0 + 91_000;
     c.traccar.push({ positions: [position({ id: 231, deviceId: 1, fixTime: iso(T0 + 90_000), serverTime: iso(T0 + 91_000), speed: 0, attributes: { ignition: false, power: 72 } })] });
-    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    // A4-1a: bit velho também não vale para a telemetria — retida (awaiting_status), mas a posição alimenta a guarda do corte.
+    await waitFor(() => c.logs.some((l) => l.msg === 'telemetry_held' && l.reason === 'awaiting_status'));
+    expect(out(c, `motos/${T}/telemetria`)).toEqual([]);
     await sendDelta(c, { travada: true });
     await waitFor(() => c.traccar.commands.length === 1);
     expect(c.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
     expect(reportedTravada(c)).toEqual([true]);
+  });
+
+  // ---- A4-1: bit de corte anterior ao comando de motor não confirma nada
+  it('A4-1: depois do engineResume o bit travada:true anterior não sai na telemetria, nem como eco already_blocked, nem de status parado na fila', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(240, T0, true)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    c.now.value = T0 + 1_000;
+    await sendDelta(c, { travada: false });
+    await waitFor(() => c.logs.some((l) => l.msg === 'engine_resume_sent'));
+    // posição nova sem o bit: nada de travada:true da memória
+    c.now.value = T0 + 2_000;
+    c.traccar.push({ positions: [position({ id: 241, deviceId: 1, fixTime: iso(T0 + 1_500), serverTime: iso(T0 + 2_000), speed: 0, attributes: { ignition: false, power: 72 } })] });
+    await waitFor(() => c.logs.some((l) => l.msg === 'telemetry_held' && l.reason === 'awaiting_status'));
+    expect(out(c, `motos/${T}/telemetria`)).toEqual([]);
+    // status recebido pelo Traccar ANTES do envio (fila): ignorado
+    c.traccar.push({ positions: [heartbeat(242, T0 + 500, true)] });
+    await sleep(40);
+    expect(reportedTravada(c)).toEqual([true]);
+    // relock de rollback: sem eco already_blocked do bit velho → a guarda corta (moto parada e fresca)
+    await sendDelta(c, { travada: true });
+    await waitFor(() => c.traccar.commands.length === 2);
+    expect(c.traccar.commands.map((x) => x.type)).toEqual(['engineResume', 'engineStop']);
+    expect(reportedTravada(c)).toEqual([true]);
+    // depois do engineStop, de novo só status posterior ao envio vale
+    c.now.value = T0 + 4_000;
+    c.traccar.push({ positions: [heartbeat(243, T0 + 4_000, true)] });
+    await waitFor(() => reportedTravada(c).length === 2);
+    expect(reportedTravada(c)).toEqual([true, true]);
+  });
+
+  it('A4-1: engineResume numa moto com bit fresco travada:false ainda ecoa reported.travada:false (o resume não trava)', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(250, T0, false)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    await sendDelta(c, { travada: false });
+    await waitFor(() => reportedTravada(c).length === 2);
+    expect(reportedTravada(c)).toEqual([false, false]);
   });
 
   // ---- M3: MQTT fora / publicação travada

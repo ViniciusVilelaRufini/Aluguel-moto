@@ -497,8 +497,26 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       s.transport.shadow.reported = { travada: true };
       void s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
       await s.clock.advance(10);
-      expect(await s.gw.lock(relay('c1'))).toEqual({ commandId: 'c1', status: 'confirmed' });
+      // A4-1: a trava reportada ANTES do travada:false não confirma (a ponte pode ter enviado o engineResume): segue o corte.
+      expect(await lockRelay(s)).toEqual({ commandId: 'c1', status: 'in_progress' });
       expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: false }, { travada: null }]);
+    });
+
+    it('A4-1: unlock expira sem status novo → relock de rollback não confirma pela trava antiga; confirma só pelo reported posterior', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      s.transport.shadow.reported = { travada: true };
+      const u = s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await s.clock.advance(3_000);
+      expect(await u).toEqual({ commandId: 'u1', status: 'in_progress' });
+      await s.clock.advance(30_000); // prazo do unlock sem nenhum status
+      const l = await lockRelay(s, 'c2');
+      expect(l.status).not.toBe('confirmed');
+      await s.clock.advance(1_000);
+      await s.gw.onReported(T, { travada: true });
+      for (let i = 0; i < 3; i++) await s.clock.advance(5_000);
+      expect(s.updates).toContainEqual({ commandId: 'c2', status: 'confirmed' });
     });
 
     it('shadow ilegível → apaga o desired travada mesmo assim (falha segura; nunca grava travada:true aqui)', async () => {

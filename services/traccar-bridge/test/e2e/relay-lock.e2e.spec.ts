@@ -562,8 +562,24 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     await w.ride(0);
     expect(w.cuts()).toHaveLength(1);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+    // A4-1: o status que confirma tem de ser recebido DEPOIS do envio (no mesmo ms seria anterior ao comando).
+    await w.step(500);
     await w.heartbeat(true);
     await w.step(1_000);
     expect(w.outcomes('c7').at(-1)).toEqual({ commandId: 'c7', status: 'confirmed' });
+  });
+  it('(9) A4-1: unlock enviado e sem status depois (prazo expira) → relock de rollback não confirma pelo bit de antes do engineResume', async () => {
+    w = await world();
+    await connectAndRide(w, 4, 0, { blocked: true, ignition: false }); // t = 20 s, bit travada:true fresco
+    expect(w.reportedTravada()).toEqual([true]);
+    const u = await w.unlock('u9');
+    expect(u.status).toBe('in_progress');
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineResume' }]);
+    // o J16 fica mudo (nenhum status depois do comando) até o prazo do unlock
+    for (let i = 0; i < 7; i++) await w.step(5_000);
+    expect(w.outcomes('u9').at(-1)).toMatchObject({ commandId: 'u9', status: 'failed' });
+    const l = await w.lock('c9');
+    expect(l).not.toEqual({ commandId: 'c9', status: 'confirmed' });
+    expect(w.reportedTravada()).toEqual([true]); // nenhum eco travada:true do bit anterior ao engineResume
   });
 });
