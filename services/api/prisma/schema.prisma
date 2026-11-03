@@ -1429,6 +1429,9 @@ model PaymentRefund {
   prevRefundedCents Int
   newStatus         String
   newRefundedCents  Int
+  /// Auditoria run-4 onda 2: total já estornado no gateway (`refundedCents` do pagamento do provedor) lido antes da
+  /// chamada. A reconciliação exige `before + amountCents` (o id do gateway pode ser compartilhado por mais de um Payment).
+  gatewayRefundedBefore Int?
   status            String
   attempts          Int      @default(0)
   providerRefundId  String?

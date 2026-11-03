@@ -304,6 +304,51 @@ describe('PaymentsService.refund (via gateway)', () => {
     expect(provider.operations('refund')).toBe(0);
   });
 
+  describe('auditoria run-4 onda 2: reconciliação com providerPaymentId compartilhado (Pix da caução que pagou o aluguel)', () => {
+    /** Pix de 10000 no gateway; excedente de 7000 já estornado; Payment do aluguel (pix_keep) de 3000 no mesmo id. */
+    async function shared() {
+      const base = await setup();
+      const { db, provider } = base;
+      const card = await db.paymentCard.findFirst({ where: { customerId: CUSTOMER_ID } });
+      const gw = await provider.charge({ providerCustomerId: 'x', providerCardId: card.providerCardId, amountCents: 10000, description: 'pix', idempotencyKey: 'pix-10000', externalReference: 'd' });
+      await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'deposit', method: 'pix', status: 'partially_refunded', amountCents: 10000, refundedCents: 7000, providerPaymentId: gw.providerPaymentId } });
+      await provider.refund({ providerPaymentId: gw.providerPaymentId, amountCents: 7000, idempotencyKey: 'excesso' });
+      const rp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'rental', method: 'pix', status: 'paid', amountCents: 3000, providerPaymentId: gw.providerPaymentId } });
+      return { ...base, rp };
+    }
+
+    it('estorno do aluguel falha → o total estornado do excedente (7000) não faz a reconciliação marcar succeeded', async () => {
+      const { db, svc, rp, provider } = await shared();
+      jest.spyOn(provider, 'refund').mockRejectedValue(new PaymentProviderError('timeout'));
+      await svc.refund(admin, rp.id, { amountCents: 3000, reason: 'x' }, 'k-shared');
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'pending', gatewayRefundedBefore: 7000 });
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'pending' });
+    });
+
+    it('com a linha de base: o gateway mostra before + valor → succeeded', async () => {
+      const { db, svc, rp, provider } = await shared();
+      const real = provider.refund.bind(provider);
+      jest.spyOn(provider, 'refund').mockImplementationOnce(async (input) => {
+        await real(input);
+        throw new PaymentProviderError('timeout');
+      });
+      await svc.refund(admin, rp.id, { amountCents: 3000, reason: 'x' }, 'k-shared-ok');
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'succeeded' });
+      expect(provider.operations('refund')).toBe(2);
+    });
+
+    it('pedido antigo sem linha de base e Payment compartilhado → não confia no total do gateway (segue pendente)', async () => {
+      const { db, svc, rp, provider } = await shared();
+      jest.spyOn(provider, 'refund').mockRejectedValue(new PaymentProviderError('timeout'));
+      await db.payment.update({ where: { id: rp.id }, data: { status: 'refunded', refundedCents: 3000 } });
+      await db.paymentRefund.create({ data: { paymentId: rp.id, idempotencyKey: `refund:${rp.id}:legado`, amountCents: 3000, prevStatus: 'paid', prevRefundedCents: 0, newStatus: 'refunded', newRefundedCents: 3000, status: 'pending' } });
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'pending' });
+    });
+  });
+
   it('fix round 1: teto do estorno de caução capturada = valor capturado (PaymentCapture)', async () => {
     const { db, svc } = await setup();
     const dp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'deposit', method: 'card', status: 'captured', amountCents: 5000, providerPaymentId: 'x' } });

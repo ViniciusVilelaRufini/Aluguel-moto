@@ -201,7 +201,7 @@ export class PaymentsService {
     if (open) throw conflict('conflict', 'Há um estorno deste pagamento aguardando confirmação do gateway. Tente de novo depois.');
 
     /** Reserva um pedido de estorno (com o lançamento na carteira quando é a parte da carteira). */
-    const claim = async (read: Payment, part: number, viaWallet: boolean, recordKey: string) => {
+    const claim = async (read: Payment, part: number, viaWallet: boolean, recordKey: string, gatewayRefundedBefore: number | null = null) => {
       const refundedCents = read.refundedCents + part;
       const to = refundedCents >= base ? 'refunded' : 'partially_refunded';
       return this.prisma.$transaction(async (tx) => {
@@ -212,7 +212,7 @@ export class PaymentsService {
         return tx.paymentRefund.create({
           data: {
             paymentId: read.id, idempotencyKey: recordKey, amountCents: part, prevStatus: read.status, prevRefundedCents: read.refundedCents,
-            newStatus: to, newRefundedCents: refundedCents, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
+            newStatus: to, newRefundedCents: refundedCents, gatewayRefundedBefore, status: viaWallet ? 'succeeded' : 'claimed', createdById: actor.userId,
           },
         });
       });
@@ -221,7 +221,9 @@ export class PaymentsService {
 
     let current = p;
     if (gatewayPart > 0) {
-      const record = await claim(current, gatewayPart, false, key);
+      // Auditoria run-4 onda 2: linha de base do gateway lida ANTES da chamada (a reconciliação exige before + valor).
+      const before = await this.provider.getPayment(current.providerPaymentId!).then((pp) => pp.refundedCents ?? 0, () => null);
+      const record = await claim(current, gatewayPart, false, key, before);
       if (!record) throw raced();
       const outcome = await this.callGatewayRefund(record);
       if (outcome === 'rejected') throw new ProblemException(422, 'payment-failed', 'O gateway recusou o estorno.');
@@ -300,7 +302,7 @@ export class PaymentsService {
       try {
         const p = (await this.prisma.payment.findUnique({ where: { id: rec.paymentId } }))!;
         const pp = await this.provider.getPayment(p.providerPaymentId!);
-        if ((pp.refundedCents ?? 0) >= rec.newRefundedCents) {
+        if (await this.gatewayShowsRefund(rec, p, pp.refundedCents ?? 0)) {
           await this.prisma.paymentRefund.update({ where: { id: rec.id }, data: { status: 'succeeded' } });
           continue;
         }
@@ -314,6 +316,17 @@ export class PaymentsService {
         this.logger.warn({ msg: 'refund_reconcile_item_failed', refundId: rec.id, error: (err as Error).message });
       }
     }
+  }
+
+  /**
+   * Auditoria run-4 onda 2: o gateway já mostra ESTE estorno? Com linha de base: `before + amountCents`. Pedido antigo
+   * (sem linha de base): o total do gateway só vale se nenhum outro Payment compartilhar o `providerPaymentId` (Pix da
+   * caução que pagou o aluguel); senão segue a retentativa idempotente e, esgotada, revisão manual.
+   */
+  private async gatewayShowsRefund(rec: PaymentRefund, p: Payment, gatewayRefunded: number): Promise<boolean> {
+    if (rec.gatewayRefundedBefore !== null && rec.gatewayRefundedBefore !== undefined) return gatewayRefunded >= rec.gatewayRefundedBefore + rec.amountCents;
+    const siblings = await this.prisma.payment.count({ where: { providerPaymentId: p.providerPaymentId, id: { not: p.id } } });
+    return siblings === 0 && gatewayRefunded >= rec.newRefundedCents;
   }
 
   // ── webhook ──
