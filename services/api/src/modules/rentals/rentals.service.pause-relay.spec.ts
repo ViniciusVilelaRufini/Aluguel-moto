@@ -17,7 +17,7 @@ function setup(opts: { mode?: 'relay_only' | 'speed_control'; lock?: string; sta
     priceSnapshot: { planCode: 'minute', unit: 'minute', unlockFeeCents: 0, unitPriceCents: 79, pausePerMinuteCents: 20, insurancePremiumCents: 0 },
     costCents: 0, breakdown: null, createdAt: new Date(), updatedAt: new Date(),
   };
-  const vehicle: any = { id: VEHICLE_ID, thingName: 't', status: opts.status === 'paused' ? 'paused' : 'rented' };
+  const vehicle: any = { id: VEHICLE_ID, thingName: 't', status: opts.status === 'paused' ? 'paused' : 'rented', tracker: opts.mode ? { controlMode: opts.mode } : null };
   prisma.rental.findUnique.mockImplementation((async () => ({ ...rental, vehicle })) as any);
   prisma.rental.updateMany.mockImplementation((async (a: any) => {
     if (a.where.status && a.where.status !== rental.status) return { count: 0 };

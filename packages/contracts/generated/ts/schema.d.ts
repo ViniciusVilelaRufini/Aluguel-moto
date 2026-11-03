@@ -1368,7 +1368,8 @@ export interface paths {
          * Pausar aluguel
          * @description Trava a moto (bloqueio seguro) e passa a cobrar a tarifa de pausa. Só de `active` (senão `409` `rental-not-active`).
          *     Rastreador só relé (`relay_only`): trava recusada na hora → `409` `conflict` e o aluguel continua `active`; trava
-         *     que termina sem corte depois (a moto não parou) devolve o aluguel a `active` sem contar o trecho como pausa.
+         *     que termina sem corte depois porque a moto não parou (`did_not_stop`) devolve o aluguel a `active` sem contar o
+         *     trecho como pausa; sem confirmação por prazo (`timeout`) continua `paused` e o servidor pede a trava de novo.
          */
         post: operations["pauseRental"];
         delete?: never;
@@ -1464,10 +1465,11 @@ export interface paths {
          *       liquidado uma única vez;
          *     - sem confirmação ainda → `202`, status `ending`; o servidor tenta de novo e o cliente acompanha por
          *       `rental.updated` ou `GET /rentals/{id}`.
-         *     Rastreador só relé (`relay_only`): se a trava terminar sem corte (a moto não parou), o aluguel volta de `ending`
-         *     para `active` (evento `resumed` com "A moto não parou; pare e peça o encerramento de novo.") e o tempo volta a
-         *     correr; confirmação da trava mais de 150 s depois do pedido cobra o tempo até a confirmação e reconfere a zona
-         *     de devolução (fora dela soma a taxa `force_end_outside_return_zone`).
+         *     Rastreador só relé (`relay_only`): se a trava terminar sem corte porque a moto não parou (`did_not_stop`), o
+         *     aluguel volta de `ending` para `active` (evento `resumed` com "A moto não parou; pare e peça o encerramento de
+         *     novo.") e o tempo volta a correr; sem confirmação por prazo (`timeout`) continua `ending` e o servidor pede a
+         *     trava de novo. Confirmação mais de 150 s depois do pedido cobra até a última movimentação da moto e, se ela se
+         *     deslocou mais de 50 m para fora da zona de devolução, soma a taxa `force_end_outside_return_zone`.
          *     Moto com bloqueio da equipe ou do sistema no encerramento (normal ou forçado) volta como `maintenance`, não
          *     `free`, com alerta `command_failed` para a operação liberar.
          *

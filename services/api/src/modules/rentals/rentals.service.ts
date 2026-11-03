@@ -56,7 +56,8 @@ export class RentalsService {
 
   /** Cliente só enxerga os próprios aluguéis (404 para os demais, sem revelar existência). */
   private async loadFor(user: Principal, id: string): Promise<RentalWithVehicle> {
-    const r = await this.prisma.rental.findUnique({ where: { id }, include: { vehicle: true } });
+    // O modo do rastreador vem junto (auditoria run-4: regras da pausa em `relay_only`).
+    const r = await this.prisma.rental.findUnique({ where: { id }, include: { vehicle: { include: { tracker: { select: { controlMode: true } } } } } });
     if (!r || (!isStaff(user) && r.customerId !== user.customerId)) throw notFound('Aluguel não encontrado.');
     return r as RentalWithVehicle;
   }
@@ -111,7 +112,7 @@ export class RentalsService {
     if (r.status !== 'active') throw conflict('rental-not-active', 'Só é possível pausar um aluguel em andamento.');
     const cmd = await this.commands.dispatch({ vehicleId: r.vehicleId, type: 'lock', reason: 'Pausa do aluguel', actor: user, context: { rentalId: id, purpose: 'rental_pause' }, auditAction: 'rental.pause' });
     // Auditoria run-4 (c): em `relay_only` a trava recusada deixa a moto destravada — não cobra pausa. `speed_control` como antes.
-    const relayOnly = cmd.status !== 'confirmed' && (await controlModeOf(this.prisma, r.vehicleId)) === 'relay_only';
+    const relayOnly = cmd.status !== 'confirmed' && (r.vehicle as { tracker?: { controlMode: string } | null }).tracker?.controlMode === 'relay_only';
     if (cmd.status === 'failed' && relayOnly) throw conflict('conflict', PAUSE_LOCK_REFUSED_MESSAGE);
     const moved = await this.prisma.rental.updateMany({ where: { id, status: 'active' }, data: { status: 'paused', pausedAt: new Date() } });
     if (moved.count === 0) throw conflict('rental-not-active', 'Só é possível pausar um aluguel em andamento.');
