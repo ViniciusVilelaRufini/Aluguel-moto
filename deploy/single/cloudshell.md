@@ -281,6 +281,19 @@ Com o `iot-sim` rodando, ele para de simular a moto provisionada no ciclo seguin
 também se provisionar por outro caminho, `provision-tracker.ts` ou SQL). Não reinicie o `iot-sim` para apressar: o SIGTERM anuncia
 `disconnected` por todas as motos que ele ainda simula, inclusive a recém-provisionada (a API a marcaria offline).
 
+**Moto que tinha rastreador MQTT (Tracker com certificado):** o `provision` recusa e mostra o ARN do certificado e os comandos
+para revogá-lo no IoT Core (a CLI não fala com a AWS). Rode-os no CloudShell, na ordem (política: `volti-dev-moto-policy` no dev):
+
+```bash
+aws iot detach-thing-principal --thing-name moto-0060 --principal <arn>
+aws iot detach-policy --policy-name volti-dev-moto-policy --target <arn>
+aws iot update-certificate --certificate-id <id, o trecho do ARN depois de cert/> --new-status REVOKED
+```
+
+e repita o `provision` com o 5º argumento `--certificate-revoked` (confirmação do operador; o log `certificate_revocation_confirmed`
+registra o ARN). Sem revogar, o certificado continuaria ativo publicando como o thing, sem registro no banco. Trocando o
+thingName da moto, o `provision` também recusa se o thing **antigo** tiver trava em andamento.
+
 `gt06.sh deprovision moto-0060` (só dev) apaga a linha inteira do `Tracker` relay_only; o `iot-sim` volta a simular a moto no
 ciclo seguinte. O dispositivo **continua no Traccar** (a ponte passa a tratá-lo como desconhecido; apague pelo painel do
 Traccar se o IMEI não for mais usado). Para economizar memória, `GT06=off` e update.
