@@ -36,8 +36,8 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 - **Mensagem retida:** delta, `get/accepted` ou comando entregue como **retido** (`packet.retain`, no SUBSCRIBE e de novo a cada
   reconexão) é descartado com log `mqtt_retained_ignored` (auditoria run-4): o shadow do servidor nunca retém essas mensagens.
 - **Shadow:** todo delta passa pela segunda guarda. `travada: true` → `engineStop` **só** com o dispositivo online, posição de até
-  7 s (`CUT_FRESH_MS`; com `TIMER,5,5#` uma amostra perdida já recusa) abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
-  em 10 s); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
+  7 s (`CUT_FRESH_MS`; com `TIMER,5,5#` uma amostra perdida já recusa) abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 3 amostras paradas
+  cobrindo 20 s, com no máximo 12 s entre elas); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
   releitura da versão e de qualquer outra espera), com o aparelho resolvido uma vez no início do delta: se a posição envelheceu,
   o dispositivo caiu ou o IMEI do thing mudou no meio (`device_changed`), nada é enviado. A sessão HTTP do Traccar é aberta
   **antes** da guarda refeita; no envio do `engineStop` não há login nem reenvio no 401 (sessão expirada = `engine_stop_not_sent`;
@@ -137,6 +137,13 @@ Imagem: `docker build -f services/traccar-bridge/Dockerfile .` (da raiz; usuári
 por digest — para atualizar, troque o `ARG NODE_IMAGE`). Dev single: `deploy/single/gt06.sh` e `deploy/single/cloudshell.md`. A
 ponte não tem endpoint HTTP; a saúde é o HEALTHCHECK do arquivo de vida (acima). O Docker não reinicia contêiner `unhealthy`
 sozinho (veja `docker ps`); no ECS a task é substituída.
+
+**Dispositivo provisionado com a ponte rodando:** na bancada do J16 (2026-11-03) a ponte só passou a receber o dispositivo
+recém-ligado ao usuário dela no Traccar depois de reiniciar (a sessão do WebSocket não incluía o dispositivo novo). Por isso o
+`gt06.sh provision` reinicia a `traccar-bridge` quando ela está rodando (linha `traccar-bridge reiniciada ...`). O reinício é
+seguro: a ponte relê o registro, esquece o bit de corte de todas as motos, ignora o replay e espera status novo; um comando em
+voo de outra moto expira na API. Provisionou por outro caminho e o `status` não mostra nenhum log da ponte para a moto:
+`docker compose ... restart traccar-bridge`.
 
 ### Local com Docker (profile `gt06` do `docker-compose.yml`)
 

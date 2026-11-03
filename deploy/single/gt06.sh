@@ -3,7 +3,7 @@
 #   gt06.sh init                                      papéis/banco do Traccar e da ponte e usuários do Traccar (idempotente;
 #                                                     o update.sh chama com GT06=on, depois das migrações)
 #   gt06.sh provision <VLT-0000> <moto-0000> <imei> [--certificate-revoked]  Tracker relay_only + dispositivo no Traccar (ponte);
-#                                                     o iot-sim (se rodando) para de simular a moto no ciclo seguinte (60 s)
+#                                                     reinicia a ponte se rodando; o iot-sim para de simular a moto em 60 s
 #   gt06.sh deprovision <moto-0000>                   SÓ DEV: apaga a linha inteira do Tracker relay_only (o dispositivo fica no
 #                                                     Traccar); o iot-sim volta a simular a moto no ciclo seguinte (60 s)
 #   gt06.sh e2e <VLT-0000> <moto-0000>                SÓ EMULADOR (Tracker com o IMEI padrão dele; J16 real sai 2): anda e para;
@@ -139,7 +139,17 @@ SQL
     # o dispositivo ao usuário da ponte (sem isso a ponte não recebe as posições nem manda o corte).
     dc exec -T -e TRACCAR_URL=http://traccar:8082 -e TRACCAR_ADMIN_EMAIL="$TRACCAR_ADMIN_EMAIL" -e TRACCAR_BRIDGE_EMAIL="$TRACCAR_BRIDGE_EMAIL" \
       api node dist/cli/provision-gt06.js --vehicle "$2" --thing "$3" --imei "$4" ${5:+"$5"}
-    echo "$3 provisionada como GT06 relay_only (a ponte relê o registro em até 60 s)"
+    echo "$3 provisionada como GT06 relay_only"
+    # Bancada do J16 (2026-11-03): com a ponte já rodando, o dispositivo recém-ligado ao usuário dela no Traccar só passou a
+    # chegar no WebSocket da ponte depois de reiniciá-la (permissões da sessão do Traccar). Reinício seguro: ao subir, a ponte
+    # relê o registro, esquece o bit de corte de todas as motos, ignora o replay e espera status novo; um comando em voo de
+    # outra moto expira na API (nenhum engineStop é reenviado).
+    if [ -n "$(dc ps -q traccar-bridge 2>/dev/null)" ]; then
+      dc restart traccar-bridge >/dev/null
+      echo "traccar-bridge reiniciada para receber o dispositivo novo (sessão do Traccar relida); confira com gt06.sh status $3"
+    else
+      echo "traccar-bridge não está rodando: ao subir, ela lê o registro e o dispositivo novo"
+    fi
     sim_cycle_note
     ;;
   deprovision)
@@ -245,7 +255,7 @@ SQL
           warn "telemetria retida esperando o bit de corte: confira o heartbeat (HBT <= 60 s)"
         fi
       else
-        echo "ponte, últimos 15 min: nenhum log desta moto (normal se tudo vai bem)"
+        echo "ponte, últimos 15 min: nenhum log desta moto (normal se tudo vai bem; se o Traccar recebe o J16 e a API não, reinicie a ponte: docker compose ... restart traccar-bridge)"
       fi
     else
       warn "container traccar-bridge não está rodando"
