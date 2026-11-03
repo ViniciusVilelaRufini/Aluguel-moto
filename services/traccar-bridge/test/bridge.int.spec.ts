@@ -320,14 +320,31 @@ describe('Bridge (Traccar falso + broker em memória)', () => {
   });
 
   // ---- Decisão 4: retenção com log limitado e teto de 5 min para bateria desconhecida
-  it('sem bit de corte: telemetria retida, um log telemetry_held (limitado) com thingName', async () => {
+  it('A4-6: bit de corte nunca visto, sem comando pendente: telemetria sai com travada:false, sem reported.travada nem log telemetry_held', async () => {
     c = await start();
     const noStatus = (id: number, at: number) => position({ id, deviceId: 1, fixTime: iso(at), attributes: { ignition: true, rssi: 4, power: 72 } });
     c.traccar.push({ positions: [noStatus(100, T0 - 2_000), noStatus(101, T0 - 1_000)] });
-    await waitFor(() => c.logs.some((l) => l.msg === 'telemetry_held'));
-    await sleep(30);
-    expect(c.logs.filter((l) => l.msg === 'telemetry_held')).toEqual([{ level: 'info', msg: 'telemetry_held', thingName: T, reason: 'awaiting_status' }]);
-    expect(out(c, `motos/${T}/telemetria`)).toEqual([]);
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 2);
+    expect(out(c, `motos/${T}/telemetria`).map((t) => t.travada)).toEqual([false, false]);
+    expect(c.logs.filter((l) => l.msg === 'telemetry_held')).toEqual([]);
+    expect(reportedTravada(c)).toEqual([]);
+  });
+
+  it('A4-6: reconexão sem status novo e sem comando pendente: telemetria segue com travada:false (cercas/trajeto não ficam cegos); o status depois vale', async () => {
+    c = await start();
+    c.traccar.push({ positions: [heartbeat(110, T0, true)] });
+    await waitFor(() => reportedTravada(c).length === 1);
+    c.traccar.dropSockets();
+    await waitFor(() => c.traccar.connections === 2, 5_000);
+    c.now.value = T0 + 2_000;
+    c.traccar.push({ positions: [position({ id: 111, deviceId: 1, fixTime: iso(T0 + 1_500), serverTime: iso(T0 + 2_000), speed: 0, attributes: { ignition: false, power: 72 } })] });
+    await waitFor(() => out(c, `motos/${T}/telemetria`).length === 1);
+    expect(out(c, `motos/${T}/telemetria`)[0]).toMatchObject({ travada: false });
+    expect(reportedTravada(c)).toEqual([true]); // nada de reported.travada sem status novo
+    c.now.value = T0 + 5_000;
+    c.traccar.push({ positions: [heartbeat(112, T0 + 5_000, true)] });
+    await waitFor(() => reportedTravada(c).length === 2);
+    expect(reportedTravada(c)).toEqual([true, true]);
   });
 
   it('bateria desconhecida com corte conhecido: retida até 5 min, depois sai com bateria_pct 0 e log battery_unknown', async () => {

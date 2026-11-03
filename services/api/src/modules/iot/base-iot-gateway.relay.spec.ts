@@ -519,6 +519,60 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       expect(s.updates).toContainEqual({ commandId: 'c2', status: 'confirmed' });
     });
 
+    it('A4-6: moto travada com bit velho (telemetria travada:false) → unlock NÃO confirma até reported.travada:false posterior ao release', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      await s.clock.advance(1_000);
+      // Bit de corte > 90 s na ponte (P4): a telemetria sai com travada:false mesmo com o relé cortado.
+      await s.sample(0, { travada: false, ignicao: false });
+      expect(s.live.get(T)?.locked).toBe(false);
+      await s.clock.advance(1_000);
+      const u = s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await s.clock.advance(10);
+      expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: false }]);
+      // mais telemetria velha e um reported sem travada (velocidade) não confirmam
+      await s.sample(0, { travada: false, ignicao: false });
+      await s.gw.onReported(T, { velocidade_kmh: 0 });
+      await s.clock.advance(3_000);
+      expect(await u).toEqual({ commandId: 'u1', status: 'in_progress' });
+      expect(s.updates.filter((x) => x.commandId === 'u1')).toEqual([]);
+      await s.clock.advance(1_000);
+      await s.gw.onReported(T, { travada: false });
+      await s.clock.advance(1_000);
+      expect(s.updates).toContainEqual({ commandId: 'u1', status: 'confirmed' });
+    });
+
+    it('A4-6: envio do engineResume perdido → sem reported o unlock expira (failed/timeout), nunca confirmed pela telemetria', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      await s.clock.advance(1_000);
+      const u = s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await s.clock.advance(3_000);
+      expect(await u).toEqual({ commandId: 'u1', status: 'in_progress' });
+      for (let i = 0; i < 7; i++) {
+        await s.sample(0, { travada: false, ignicao: false });
+        await s.gw.onReported(T, { velocidade_kmh: 0 });
+        await s.clock.advance(5_000);
+      }
+      expect(s.updates).toContainEqual({ commandId: 'u1', status: 'failed', reason: 'timeout' });
+      expect(s.updates).not.toContainEqual({ commandId: 'u1', status: 'confirmed' });
+    });
+
+    it('A4-6: reported.travada:false anterior ao release (moto já destravada) não confirma na hora; o eco posterior confirma', async () => {
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: false });
+      await s.clock.advance(1_000);
+      const u = s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await s.clock.advance(3_000);
+      expect(await u).toEqual({ commandId: 'u1', status: 'in_progress' });
+      await s.gw.onReported(T, { travada: false });
+      await s.clock.advance(1_000);
+      expect(s.updates).toContainEqual({ commandId: 'u1', status: 'confirmed' });
+    });
+
     it('shadow ilegível → apaga o desired travada mesmo assim (falha segura; nunca grava travada:true aqui)', async () => {
       const s = setup();
       await online(s);
