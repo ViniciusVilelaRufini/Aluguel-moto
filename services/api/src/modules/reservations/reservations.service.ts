@@ -190,9 +190,11 @@ export class ReservationsService implements OnModuleInit {
   }
 
   /** Converte a reserva ativa (ou em entrega de galpão) da moto em aluguel (sem liberar a moto). */
-  async convert(tx: Tx, reservationId: string): Promise<void> {
-    await tx.reservation.updateMany({ where: { id: reservationId, status: { in: ['active', 'handover'] } }, data: { status: 'converted', endedAt: new Date() } });
+  /** Devolve quantas reservas foram convertidas (0 = já não estava aberta; o chamador aborta). */
+  async convert(tx: Tx, reservationId: string): Promise<number> {
+    const r = await tx.reservation.updateMany({ where: { id: reservationId, status: { in: ['active', 'handover'] } }, data: { status: 'converted', endedAt: new Date() } });
     await this.redis.del(KEY_PREFIX + reservationId);
+    return r.count;
   }
 
   /** `true` só se esta chamada encerrou a reserva (transição condicional `active → reason`). */

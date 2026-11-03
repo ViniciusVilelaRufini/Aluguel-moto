@@ -92,7 +92,7 @@ export class RentalStartService {
       if (claimed.count !== 1) continue;
       if (await this.prisma.rental.findUnique({ where: { id: m.rentalId }, select: { id: true } })) continue;
       const open = await this.prisma.rental.findFirst({ where: { vehicleId: m.vehicleId, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } });
-      if (!open) await this.prisma.vehicle.updateMany({ where: { id: m.vehicleId, status: 'rented' }, data: { status: m.previousStatus } });
+      if (!open) await this.restoreVehicle(m.vehicleId, m.customerId, m.previousStatus === 'reserved' ? 'reserved' : 'free');
       await this.relock(m.vehicleId, m.rentalId);
       if (m.policyId) {
         try {
@@ -180,6 +180,20 @@ export class RentalStartService {
     } catch (err) {
       this.logger.error({ msg: 'rental_start_relock_failed', vehicleId, rentalId, error: (err as Error).message });
     }
+  }
+
+  /**
+   * Auditoria run-4 onda 2: devolve a moto reivindicada (ainda `rented`) ao status anterior. `reserved` só volta se a
+   * reserva do próprio cliente para a moto ainda estiver aberta (`active`/`handover`); senão a moto fica `free`.
+   * Nunca sobrescreve outro status (a condição `rented` protege mudanças feitas por fora durante a espera).
+   */
+  private async restoreVehicle(vehicleId: string, customerId: string, claimedFrom: 'free' | 'reserved'): Promise<void> {
+    let status = claimedFrom;
+    if (claimedFrom === 'reserved') {
+      const own = await this.prisma.reservation.count({ where: { customerId, vehicleId, status: { in: ['active', 'handover'] } } });
+      if (own < 1) status = 'free';
+    }
+    await this.prisma.vehicle.updateMany({ where: { id: vehicleId, status: 'rented' }, data: { status } });
   }
 
   /** Reserva de galpão do próprio cliente em `handover` que separou esta moto (`reserved`); senão `null`. */
@@ -308,8 +322,16 @@ export class RentalStartService {
     // desbloqueio, o job de varredura compensa (moto, lock, caução, apólice).
     const previousStatus = vehicle.status === 'reserved' ? 'reserved' : 'free';
     await this.prisma.$transaction(async (tx) => {
-      const claimed = await tx.vehicle.updateMany({ where: { id: vehicle.id, status: { in: ['free', 'reserved'] } }, data: { status: 'rented' } });
+      // Auditoria run-4 onda 2: status exato lido acima; `reserved` só com a reserva do próprio cliente ainda aberta
+      // (uma moto que ficou `reserved` por outro cliente durante a retenção da caução não é tomada).
+      const claimed = await tx.vehicle.updateMany({ where: { id: vehicle.id, status: previousStatus }, data: { status: 'rented' } });
       if (claimed.count === 0) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
+      if (previousStatus === 'reserved') {
+        const own = ownReservation
+          ? await tx.reservation.count({ where: { id: ownReservation.id, customerId, vehicleId: vehicle.id, status: { in: ['active', 'handover'] } } })
+          : 0;
+        if (own !== 1) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
+      }
       await tx.rentalStart.create({ data: { rentalId, vehicleId: vehicle.id, customerId, depositId: deposit.id, policyId: policy.policyId, previousStatus } });
     });
     claimedFrom = previousStatus;
@@ -329,7 +351,8 @@ export class RentalStartService {
       // senão aborta e o catch desfaz como no `vehicle-offline`. `rentalId` já é o da caução quando ela tinha um.
       const kept = await tx.deposit.updateMany({ where: { id: deposit.id, status: 'held' }, data: { rentalId } });
       if (kept.count !== 1 || (await tx.depositRelease.findUnique({ where: { depositId: deposit.id } }))) throw depositInUse();
-      if (ownReservation) await this.reservations.convert(tx, ownReservation.id);
+      // Reserva que acabou durante o desbloqueio (expirou/cancelou): não começa sobre ela.
+      if (ownReservation && (await this.reservations.convert(tx, ownReservation.id)) !== 1) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
       if (fromHandover) {
         // Aceite único: a entrega só passa a `accepted` se ainda estiver pendente (disputa/cancelamento concorrente desfaz tudo).
         const accepted = await tx.handover.updateMany({
@@ -376,8 +399,7 @@ export class RentalStartService {
       // QA-21: moto reivindicada e aluguel não criado → volta ao estado anterior; desbloqueio pedido (pendente ou já
       // aplicado) → bloqueio de sistema, que substitui o desbloqueio pendente e trava com segurança ao reconectar.
       if (claimedFrom && !rental) {
-        await this.prisma.vehicle
-          .updateMany({ where: { id: vehicle.id, status: 'rented' }, data: { status: claimedFrom } })
+        await this.restoreVehicle(vehicle.id, customerId, claimedFrom)
           .catch((e) => this.logger.error({ msg: 'vehicle_release_failed', vehicleId: vehicle.id, error: (e as Error).message }));
         if (unlock) await this.relock(vehicle.id, rentalId);
       }
