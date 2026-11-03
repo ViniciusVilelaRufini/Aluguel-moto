@@ -176,4 +176,48 @@ describe('ReservationsService', () => {
     await service.convert(prisma as any, RES_ID);
     expect(prisma.reservation.updateMany).toHaveBeenCalledWith({ where: { id: RES_ID, status: { in: ['active', 'handover'] } }, data: expect.objectContaining({ status: 'converted' }) });
   });
+  describe('auditoria run-4 onda 2: reserveForPix não deixa caução de rua órfã', () => {
+    const OLD = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const NEW = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const existing = () => ({ id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, status: 'active', depositId: OLD, expiresAt: new Date(Date.now() + 60_000) });
+
+    it('nova caução na mesma reserva → pede a liberação da caução anterior; extensão condicional', async () => {
+      const { service, prisma, events } = setup();
+      const released = jest.fn();
+      events.on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+      prisma.reservation.findFirst.mockResolvedValue(existing() as any);
+      prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+      prisma.reservation.findUnique.mockResolvedValue({ ...existing(), depositId: NEW } as any);
+      const until = new Date(Date.now() + 15 * 60_000);
+      const r = await service.reserveForPix(CUSTOMER_ID, VEHICLE_ID, NEW, until);
+      expect(r.depositId).toBe(NEW);
+      expect(prisma.reservation.updateMany).toHaveBeenCalledWith({
+        where: { id: RES_ID, status: 'active', expiresAt: { gt: expect.any(Date) } },
+        data: { expiresAt: until, depositId: NEW },
+      });
+      expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: OLD, customerId: CUSTOMER_ID }));
+    });
+
+    it('mesma caução (repetição) → não libera nada', async () => {
+      const { service, prisma, events } = setup();
+      const released = jest.fn();
+      events.on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+      prisma.reservation.findFirst.mockResolvedValue(existing() as any);
+      prisma.reservation.updateMany.mockResolvedValue({ count: 1 });
+      prisma.reservation.findUnique.mockResolvedValue(existing() as any);
+      await service.reserveForPix(CUSTOMER_ID, VEHICLE_ID, OLD, new Date(Date.now() + 15 * 60_000));
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it('reserva expirou/cancelou entre a leitura e a extensão → 409 e não troca nem libera a caução antiga', async () => {
+      const { service, prisma, events } = setup();
+      const released = jest.fn();
+      events.on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+      prisma.reservation.findFirst.mockResolvedValue(existing() as any);
+      prisma.reservation.updateMany.mockResolvedValue({ count: 0 });
+      await expect(service.reserveForPix(CUSTOMER_ID, VEHICLE_ID, NEW, new Date(Date.now() + 15 * 60_000))).rejects.toMatchObject({ status: 409 });
+      expect(prisma.reservation.update).not.toHaveBeenCalled();
+      expect(released).not.toHaveBeenCalled();
+    });
+  });
 });

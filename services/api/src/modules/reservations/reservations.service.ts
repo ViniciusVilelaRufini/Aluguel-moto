@@ -116,10 +116,18 @@ export class ReservationsService implements OnModuleInit {
     const existing = await this.prisma.reservation.findFirst({ where: { customerId, status: 'active', expiresAt: { gt: new Date() } } });
     let reservation: Reservation;
     if (existing && existing.vehicleId === vehicleId) {
-      reservation = await this.prisma.reservation.update({
-        where: { id: existing.id },
+      // Auditoria run-4 onda 2: extensão condicional (a reserva pode ter vencido/sido cancelada desde a leitura) e a
+      // caução anterior da reserva, trocada por esta, é liberada (senão fica retida sem nada que a libere).
+      const upd = await this.prisma.reservation.updateMany({
+        where: { id: existing.id, status: 'active', expiresAt: { gt: new Date() } },
         data: { expiresAt: until > existing.expiresAt ? until : existing.expiresAt, depositId },
       });
+      if (upd.count !== 1) throw conflict('vehicle-unavailable', 'Sua reserva desta moto acabou de vencer. Tente de novo.');
+      reservation = (await this.prisma.reservation.findUnique({ where: { id: existing.id } }))!;
+      if (existing.depositId && existing.depositId !== depositId) {
+        const release: DepositReleaseRequestedEvent = { depositId: existing.depositId, customerId, reason: 'rental_not_started' };
+        this.events.emit(EV.DEPOSIT_RELEASE_REQUESTED, release);
+      }
     } else {
       if (existing) throw conflict('reservation-already-active', 'Você já tem uma reserva ativa em outra moto.');
       await assertNotFixedForOther(this.prisma, vehicleId, customerId);

@@ -192,28 +192,52 @@ export class DepotReservationsService {
   /**
    * Fix round 1: caução de reserva de galpão (`held`/`awaiting_pix`, chave `deposit:<cliente>:reservation:…`) sem reserva
    * nem aluguel há mais de 10 min — o processo caiu entre a caução e a transação — é liberada.
+   * Auditoria run-4 onda 2: também a caução de rua (`deposit:<cliente>:<chave>` do `POST /rentals`) sem reserva, aluguel
+   * nem início em andamento (`RentalStart`), 10 min depois do prazo do Pix (ou da criação, no cartão) — p.ex. a caução
+   * trocada numa reserva Pix ou um início que morreu antes do marcador.
    */
   async releaseOrphanDeposits(now = new Date()): Promise<number> {
-    const candidates = await this.prisma.deposit.findMany({
+    const olderThan = new Date(now.getTime() - ORPHAN_DEPOSIT_AGE_MS);
+    const depot = await this.prisma.deposit.findMany({
       where: {
         status: { in: ['held', 'awaiting_pix'] },
         idempotencyKey: { startsWith: 'deposit:', contains: RESERVATION_KEY_MARK },
-        createdAt: { lt: new Date(now.getTime() - ORPHAN_DEPOSIT_AGE_MS) },
+        createdAt: { lt: olderThan },
       },
       select: { id: true, customerId: true },
       take: 100,
     });
+    const street = await this.prisma.deposit.findMany({
+      where: {
+        status: { in: ['held', 'awaiting_pix'] },
+        idempotencyKey: { startsWith: 'deposit:', not: { contains: RESERVATION_KEY_MARK } },
+        createdAt: { lt: olderThan },
+      },
+      select: { id: true, customerId: true, createdAt: true, pix: true },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
     let released = 0;
-    for (const d of candidates) {
-      // Liberação já pedida (DepositRelease): o job de retentativa de pagamentos cuida dela.
-      if (await this.prisma.depositRelease.findUnique({ where: { depositId: d.id } })) continue;
-      if (await this.prisma.reservation.findFirst({ where: { depositId: d.id }, select: { id: true } })) continue;
-      if (await this.prisma.rental.findFirst({ where: { depositId: d.id }, select: { id: true } })) continue;
-      await this.requestDepositRelease(d.id, d.customerId);
-      this.logger.warn({ msg: 'orphan_deposit_released', depositId: d.id });
-      released++;
+    for (const d of depot) if (await this.releaseIfOrphan(d)) released++;
+    for (const d of street ?? []) {
+      const pixUntil = Date.parse(String((d.pix as { expiresAt?: string } | null)?.expiresAt ?? ''));
+      const since = Math.max(d.createdAt.getTime(), Number.isFinite(pixUntil) ? pixUntil : 0);
+      if (since + ORPHAN_DEPOSIT_AGE_MS > now.getTime()) continue;
+      // Início em andamento com esta caução: a liberação fica para depois que o marcador sumir.
+      if (await this.prisma.rentalStart.findFirst({ where: { depositId: d.id }, select: { rentalId: true } })) continue;
+      if (await this.releaseIfOrphan(d)) released++;
     }
     return released;
+  }
+
+  private async releaseIfOrphan(d: { id: string; customerId: string }): Promise<boolean> {
+    // Liberação já pedida (DepositRelease): o job de retentativa de pagamentos cuida dela.
+    if (await this.prisma.depositRelease.findUnique({ where: { depositId: d.id } })) return false;
+    if (await this.prisma.reservation.findFirst({ where: { depositId: d.id }, select: { id: true } })) return false;
+    if (await this.prisma.rental.findFirst({ where: { depositId: d.id }, select: { id: true } })) return false;
+    await this.requestDepositRelease(d.id, d.customerId);
+    this.logger.warn({ msg: 'orphan_deposit_released', depositId: d.id });
+    return true;
   }
 
   // ───────────────────────── lembrete ─────────────────────────

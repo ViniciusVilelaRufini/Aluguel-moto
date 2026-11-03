@@ -302,7 +302,13 @@ export class RentalStartService {
       if (held.status === 'held') heldDepositId = d.id;
       if (held.status === 'awaiting_pix') {
         const until = new Date(held.pix?.expiresAt ?? Date.now() + 15 * 60 * 1000);
-        await this.reservations.reserveForPix(customerId, vehicle.id, held.depositId, until);
+        try {
+          await this.reservations.reserveForPix(customerId, vehicle.id, held.depositId, until);
+        } catch (err) {
+          // Auditoria run-4 onda 2: sem reserva, a caução Pix desta tentativa ficaria órfã.
+          await this.requestDepositRelease(held.depositId, customerId);
+          throw err;
+        }
         return { status: 202, body: { outcome: 'awaiting_deposit', deposit: toDeposit(deposit) } };
       }
     }

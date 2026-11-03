@@ -270,6 +270,19 @@ describe('Início do aluguel (POST /rentals)', () => {
     expect(h.prisma.rental.create).not.toHaveBeenCalled();
   });
 
+  it('auditoria run-4 onda 2: reserveForPix recusa (409) → a caução Pix recém-criada é liberada', async () => {
+    const released = jest.fn();
+    h.app.get(EventEmitter2).removeAllListeners(EV.DEPOSIT_RELEASE_REQUESTED);
+    h.app.get(EventEmitter2).on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+    billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'awaiting_pix', pix: { expiresAt: new Date(Date.now() + 900_000).toISOString() } });
+    h.prisma.deposit.findUnique.mockResolvedValue({ id: DEPOSIT_ID, customerId: CUSTOMER_ID, rentalId: null, method: 'pix', status: 'awaiting_pix', amountCents: 5000, pix: {}, createdAt: new Date(), updatedAt: new Date() } as any);
+    const { conflict } = await import('../../common/problem');
+    reservations.reserveForPix.mockRejectedValueOnce(conflict('vehicle-unavailable', 'Esta moto não está disponível.'));
+    const res = await post('chave-pix-409-0001', { ...body, depositMethod: 'pix' });
+    expect(res.status).toBe(409);
+    expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: DEPOSIT_ID, reason: 'rental_not_started' }));
+  });
+
   it('caução recusada → 402 payment-failed', async () => {
     billing.holdDeposit.mockResolvedValue({ depositId: DEPOSIT_ID, status: 'failed' });
     const res = await post('chave-fail-0001');

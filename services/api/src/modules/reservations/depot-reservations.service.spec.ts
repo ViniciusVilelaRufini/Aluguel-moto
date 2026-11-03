@@ -398,12 +398,14 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
     ] as any);
     prisma.reservation.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'com-reserva' ? { id: 'r' } : null)) as any);
     prisma.rental.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'com-aluguel' ? { id: 'x' } : null)) as any);
-    prisma.deposit.findMany.mockResolvedValue([
+    const depotList = [
       { id: 'orfa', customerId: CUSTOMER_ID },
       { id: 'com-reserva', customerId: CUSTOMER_ID },
       { id: 'com-aluguel', customerId: CUSTOMER_ID },
       { id: 'ja-liberando', customerId: CUSTOMER_ID },
-    ] as any);
+    ];
+    // Segunda busca (cauções de rua) vazia neste cenário.
+    prisma.deposit.findMany.mockImplementation((async (a: any) => (JSON.stringify(a.where).includes('"not"') ? [] : depotList)) as any);
     prisma.depositRelease.findUnique.mockImplementation((async (a: any) => (a.where.depositId === 'ja-liberando' ? { depositId: 'ja-liberando' } : null)) as any);
     expect(await service.releaseOrphanDeposits(now)).toBe(1);
     expect(released).toEqual([expect.objectContaining({ depositId: 'orfa', customerId: CUSTOMER_ID })]);
@@ -413,6 +415,27 @@ describe('DepotReservationsService — cancelamento, expiração e lembrete', ()
       createdAt: { lt: new Date(now.getTime() - 10 * 60_000) },
     });
     expect(JSON.stringify(where)).toContain(':reservation:');
+  });
+
+  it('auditoria run-4 onda 2: compensador também libera caução de rua (sem :reservation:) órfã, 10 min além do prazo do Pix', async () => {
+    const { service, prisma, released } = setup();
+    const now = new Date('2026-10-22T15:00:00Z');
+    const ago = (min: number) => new Date(now.getTime() - min * 60_000);
+    const street = [
+      { id: 'rua-orfa-pix', customerId: CUSTOMER_ID, createdAt: ago(40), pix: { expiresAt: ago(25).toISOString() } },
+      { id: 'rua-pix-no-prazo', customerId: CUSTOMER_ID, createdAt: ago(40), pix: { expiresAt: ago(5).toISOString() } },
+      { id: 'rua-cartao-orfa', customerId: CUSTOMER_ID, createdAt: ago(30), pix: null },
+      { id: 'rua-com-inicio', customerId: CUSTOMER_ID, createdAt: ago(30), pix: null },
+      { id: 'rua-com-reserva', customerId: CUSTOMER_ID, createdAt: ago(30), pix: null },
+    ];
+    prisma.deposit.findMany.mockImplementation((async (a: any) => (JSON.stringify(a.where).includes('"not"') ? street : [])) as any);
+    prisma.reservation.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'rua-com-reserva' ? { id: 'r' } : null)) as any);
+    prisma.rentalStart.findFirst.mockImplementation((async (a: any) => (a.where.depositId === 'rua-com-inicio' ? { rentalId: 'x' } : null)) as any);
+    expect(await service.releaseOrphanDeposits(now)).toBe(2);
+    expect(released.map((e) => e.depositId).sort()).toEqual(['rua-cartao-orfa', 'rua-orfa-pix']);
+    const streetWhere = (prisma.deposit.findMany.mock.calls.map((c) => (c[0] as any).where)).find((w: any) => JSON.stringify(w).includes('"not"'));
+    expect(streetWhere).toMatchObject({ status: { in: ['held', 'awaiting_pix'] }, createdAt: { lt: ago(10) } });
+    expect(JSON.stringify(streetWhere)).toContain(':reservation:');
   });
 
   it('fix 4: compensador respeita JOBS_ENABLED', async () => {
