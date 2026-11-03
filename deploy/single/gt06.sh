@@ -6,7 +6,8 @@
 #                                                     o iot-sim (se rodando) para de simular a moto no ciclo seguinte (60 s)
 #   gt06.sh deprovision <moto-0000>                   SÓ DEV: apaga a linha inteira do Tracker relay_only (o dispositivo fica no
 #                                                     Traccar); o iot-sim volta a simular a moto no ciclo seguinte (60 s)
-#   gt06.sh e2e <VLT-0000> <moto-0000>                emulador anda e para; lock pela API com o token de staff do DONO
+#   gt06.sh e2e <VLT-0000> <moto-0000>                SÓ EMULADOR (Tracker com o IMEI padrão dele; J16 real sai 2): anda e para;
+#                                                     lock pela API com o token de staff do DONO
 #                                                     (/volti/dev/secrets/E2E_STAFF_TOKEN); confere a linha do tempo MQTT
 #   gt06.sh status <moto-0000>                        diagnóstico só leitura de um J16 (banco, Traccar, ponte, Redis), sem
 #                                                     IMEI completo nem posição (guia: docs/gt06-j16-instalacao.md)
@@ -15,7 +16,7 @@ set -euo pipefail
 source "${VOLTI_INSTANCE_ENV:-/etc/volti/instance.env}"
 export AWS_DEFAULT_REGION="$VOLTI_REGION"
 
-usage() { sed -n '2,13p' "$0" >&2; exit 2; }
+usage() { sed -n '2,14p' "$0" >&2; exit 2; }
 action="${1:-}"
 case "$action" in
   init) ;;
@@ -33,6 +34,9 @@ ENV_FILE="${VOLTI_ENV_FILE:-/opt/volti/.env}"
 TRACCAR_ADMIN_EMAIL=admin@volti.local
 TRACCAR_BRIDGE_EMAIL=bridge@volti.local
 TRACCAR_LOCAL=http://127.0.0.1:8082
+# IMEI do gt06-emulator (padrão de GT06_IMEI no compose.yml). O e2e só roda com o Tracker neste IMEI: com o de um J16 real o
+# emulador forjaria posições (paradas) do aparelho de verdade e a trava poderia cortar o relê com a moto andando.
+GT06_EMULATOR_DEFAULT_IMEI=860000000000901
 envval() { grep -m1 "^$1=" "$ENV_FILE" | cut -d= -f2-; }
 dc() { docker compose -f deploy/single/compose.yml --env-file "$ENV_FILE" --profile gt06 "$@"; }
 sql() { dc exec -T postgres psql -v ON_ERROR_STOP=1 -U volti -d volti -tA; }
@@ -271,6 +275,13 @@ SQL
     [ -n "$vid" ] || { echo "moto $code não encontrada" >&2; exit 1; }
     imei="$(echo "SELECT imei FROM \"Tracker\" WHERE \"thingName\" = '$thing' AND \"controlMode\" = 'relay_only' AND \"vehicleId\" = '$vid'" | sql)"
     [ -n "$imei" ] || { echo "$thing não está provisionada como GT06 na moto $code (gt06.sh provision)" >&2; exit 1; }
+    # Só o emulador: o compose sobe o gt06-emulator com o IMEI padrão (o GT06_EMULATOR_IMEI do ambiente não vale aqui).
+    unset GT06_EMULATOR_IMEI
+    if [ "$imei" != "$GT06_EMULATOR_DEFAULT_IMEI" ]; then
+      echo "e2e recusado: o Tracker de $thing não usa o IMEI do emulador (padrão do compose.yml). O e2e é só com o emulador;" >&2
+      echo "com um J16 real ele forjaria posições do aparelho. Para J16 use gt06.sh status e o teste de bancada (docs/gt06-j16-instalacao.md)." >&2
+      exit 2
+    fi
     token="$(aws ssm get-parameter --name "$VOLTI_SECRETS_PREFIX/E2E_STAFF_TOKEN" --with-decryption --query Parameter.Value --output text)" ||
       { echo "sem $VOLTI_SECRETS_PREFIX/E2E_STAFF_TOKEN (DONO: grave o token de staff, cloudshell.md)" >&2; exit 1; }
     api() {
@@ -293,7 +304,7 @@ SQL
     }
     cleanup() {
       stop_sub
-      GT06_SCENARIO=parked GT06_EMULATOR_IMEI="$imei" dc up -d --force-recreate gt06-emulator >/dev/null 2>&1 || true
+      GT06_SCENARIO=parked dc up -d --force-recreate gt06-emulator >/dev/null 2>&1 || true
     }
     trap cleanup EXIT
     # Tráfego MQTT da moto (telemetria, delta e update do shadow); -W encerra o mosquitto_sub sozinho em último caso.
@@ -301,7 +312,7 @@ SQL
       -t "\$aws/things/$thing/shadow/update" | stamp >"$dir/mqtt.log" &
     sub=$!
     sleep 2
-    GT06_SCENARIO=ride-then-stop GT06_EMULATOR_IMEI="$imei" dc up -d --force-recreate gt06-emulator
+    GT06_SCENARIO=ride-then-stop dc up -d --force-recreate gt06-emulator
     sleep 25 # andando a 20 km/h (60 s), fora da graça de 10 s
     resp="$(api POST "/vehicles/$vid/commands" '{"type":"lock","reason":"e2e GT06 relay-only"}')" ||
       { echo "FALHA: POST /vehicles/{id}/commands recusado (token vencido? DONO: renove E2E_STAFF_TOKEN)" >&2; exit 1; }

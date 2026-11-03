@@ -257,7 +257,9 @@ migrações: banco `traccar` (papel `traccar`), papel `volti_bridge` (só `SELEC
 aws ssm start-session --target $IID --document-name AWS-StartPortForwardingSession --parameters portNumber=8082,localPortNumber=8082
 ```
 
-Provisionar a moto do emulador (IMEI padrão `860000000000901`) ou um J16, e rodar o e2e:
+Provisionar a moto do emulador (IMEI padrão `860000000000901`) e rodar o e2e. O e2e é só com o emulador: com o Tracker em
+outro IMEI (um J16 real) ele sai 2 sem subir o emulador, que forjaria posições paradas do aparelho de verdade (o relê poderia
+cortar com a moto andando). J16 real: `gt06.sh provision` com o IMEI dele, `gt06.sh status` e o teste de bancada do guia abaixo.
 
 ```bash
 CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript \

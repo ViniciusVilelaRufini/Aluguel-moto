@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Template } from 'aws-cdk-lib/assertions';
@@ -210,6 +210,71 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(run('status', "moto-0901' OR 1=1").status).toBe(2);
     expect(run('status', 'VLT-0901').status).toBe(2);
     expect(run('status', 'moto-0901', 'extra').status).toBe(2);
+  });
+
+  describe('gt06.sh e2e: só com o IMEI do emulador (nunca forja posição de um J16 real)', () => {
+    const slash = (p: string) => p.replace(/\\/g, '/');
+    /** Roda o e2e com docker/aws/curl/sleep/mktemp falsos no PATH; o docker anota cada chamada (e o GT06_EMULATOR_IMEI do ambiente). */
+    function runE2e(trackerImei: string) {
+      const dir = mkdtempSync(join(tmpdir(), 'volti-gt06-e2e-'));
+      const bin = join(dir, 'bin');
+      mkdirSync(bin);
+      const calls = join(dir, 'docker.log');
+      const fake = (name: string, body: string) => {
+        writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${body}\n`);
+        chmodSync(join(bin, name), 0o755);
+      };
+      fake('docker', [
+        `echo "IMEI=\${GT06_EMULATOR_IMEI:-} $*" >>"${slash(calls)}"`,
+        'case "$*" in',
+        '  *psql*) q="$(cat)"; case "$q" in *Vehicle*) echo veh-1 ;; *imei*) echo "$FAKE_TRACKER_IMEI" ;; esac ;;',
+        'esac',
+        'exit 0',
+      ].join('\n'));
+      fake('aws', 'echo token-falso');
+      fake('curl', 'cat >/dev/null; echo \'{"id":"cmd-1","status":"confirmed"}\'');
+      fake('sleep', 'exit 0');
+      fake('mktemp', `mkdir -p "${slash(dir)}/e2e"; echo "${slash(dir)}/e2e"`);
+      const inst = join(dir, 'instance.env');
+      const envFile = join(dir, '.env');
+      writeFileSync(inst, `VOLTI_REGION=sa-east-1\nVOLTI_REPO_DIR=${slash(dir)}\nVOLTI_SECRETS_PREFIX=/volti/dev/secrets\n`);
+      writeFileSync(envFile, 'PUBLIC_HOST=api.exemplo.test\n');
+      const wrapper = 'd="$1"; shift; if command -v cygpath >/dev/null 2>&1; then d="$(cygpath -u "$d")"; fi; export PATH="$d:$PATH"; exec bash "$@"';
+      const env: Record<string, string | undefined> = { ...process.env, VOLTI_INSTANCE_ENV: slash(inst), VOLTI_ENV_FILE: slash(envFile), FAKE_TRACKER_IMEI: trackerImei };
+      delete env.GT06_EMULATOR_IMEI;
+      const r = spawnSync(BASH!, ['-c', wrapper, '_', slash(bin), slash(join(REPO, 'deploy', 'single', 'gt06.sh')), 'e2e', 'VLT-0901', 'moto-0901'], { env, encoding: 'utf8' });
+      return { ...r, calls: existsSync(calls) ? readFileSync(calls, 'utf8') : '' };
+    }
+
+    itBash('Tracker com IMEI de J16 real: sai 2 com mensagem clara e não recria o emulador', () => {
+      const r = runE2e('861234567890123');
+      expect(r.status).toBe(2);
+      expect(r.stderr).toMatch(/IMEI do emulador/);
+      expect(r.stderr).not.toContain('861234567890123');
+      expect(r.calls).not.toMatch(/up -d --force-recreate gt06-emulator/);
+    });
+
+    itBash('Tracker com o IMEI do emulador: segue; emulador e cleanup sem sobrescrever o IMEI (padrão do compose)', () => {
+      const r = runE2e('860000000000901');
+      expect(r.stderr).not.toMatch(/IMEI do emulador/);
+      expect(r.status).toBe(0);
+      const ups = r.calls.split('\n').filter((l) => /up -d --force-recreate gt06-emulator/.test(l));
+      expect(ups).toHaveLength(2); // cenário ride-then-stop e o cleanup (parked)
+      for (const l of ups) expect(l).toMatch(/^IMEI= /);
+    });
+
+    it('o IMEI padrão do emulador no gt06.sh é o mesmo do compose.yml', () => {
+      const def = /^GT06_EMULATOR_DEFAULT_IMEI=(\d{15})$/m.exec(file('gt06.sh'));
+      expect(def).not.toBeNull();
+      expect(service(c, 'gt06-emulator')).toContain(`GT06_IMEI: \${GT06_EMULATOR_IMEI:-${def![1]}}`);
+      expect(file('gt06.sh')).not.toMatch(/GT06_EMULATOR_IMEI="\$imei"/);
+    });
+
+    it('cloudshell.md não sugere e2e com J16 real', () => {
+      const d = file('cloudshell.md');
+      expect(d).not.toMatch(/ou um J16, e rodar o e2e/);
+      expect(d).toMatch(/e2e[^\n]*só[^\n]*emulador|emulador[^\n]*só[^\n]*e2e/);
+    });
   });
 
   it('gt06.sh status: diagnóstico só leitura, credenciais e IMEI fora da linha de comando e da saída, sem posição', () => {
