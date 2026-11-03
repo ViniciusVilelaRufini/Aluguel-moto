@@ -1487,3 +1487,24 @@ describe('Auditoria run-4: aluguel encerrado sem liquidação (queda entre o fec
     expect(await ctx.db.payment.count({ where: { kind: 'rental' } })).toBe(0);
   });
 });
+
+describe('Auditoria run-4: reconciliador da caução Pix', () => {
+  it('caução awaiting_pix com Payment paid vira held; com Payment failed vira failed (evento deposit.failed)', async () => {
+    const ctx = await setup({ card: null });
+    const failedEvents: DepositFailedEvent[] = [];
+    (ctx.svc as any).events.on(DEPOSIT_FAILED, (e: DepositFailedEvent) => failedEvents.push(e));
+    const a = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'pix', idempotencyKey: `${KEY}-a` });
+    const b = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'pix', idempotencyKey: `${KEY}-b` });
+    const c = await ctx.svc.holdDeposit({ customerId: CUSTOMER, rentalId: RENTAL, method: 'pix', idempotencyKey: `${KEY}-c` });
+    await ctx.db.payment.updateMany({ where: { depositId: a.depositId }, data: { status: 'paid' } });
+    await ctx.db.payment.updateMany({ where: { depositId: b.depositId }, data: { status: 'failed', failureReason: 'pix_expired' } });
+    const old = new Date(Date.now() - 10 * 60_000);
+    for (const r of ctx.db.deposit.rows) r.updatedAt = old;
+    await ctx.svc.reconcileDepositPayments();
+    await ctx.svc.reconcileDepositPayments();
+    expect((await ctx.db.deposit.findUnique({ where: { id: a.depositId } })).status).toBe('held');
+    expect((await ctx.db.deposit.findUnique({ where: { id: b.depositId } })).status).toBe('failed');
+    expect((await ctx.db.deposit.findUnique({ where: { id: c.depositId } })).status).toBe('awaiting_pix');
+    expect(failedEvents).toEqual([{ depositId: b.depositId, customerId: CUSTOMER }]);
+  });
+});

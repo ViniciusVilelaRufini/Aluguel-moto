@@ -14,7 +14,9 @@ import { PaymentStateService } from '../payments/payment-state.service';
 import { ProviderCustomersService } from '../payments/provider-customers.service';
 import { scheduleFakePixConfirmation } from '../payments/provider/fake-pix-autoconfirm';
 import { PAYMENT_PROVIDER, type PaymentProvider } from '../payments/provider/payment-provider';
-import { BILLING_OPTIONS, type BillingOptions } from '../payments/rental-billing.service';
+import { BILLING_OPTIONS, type BillingOptions, RECONCILE_LIMIT, RECONCILE_WINDOW_MS } from '../payments/rental-billing.service';
+import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
+import { Interval } from '@nestjs/schedule';
 import { appendWalletEntry, walletBalance } from './wallet-ledger';
 
 /**
@@ -143,6 +145,35 @@ export class WalletService {
       paymentId,
     });
     return true;
+  }
+
+  /**
+   * Auditoria run-4: reconciliador das recargas. Recarga `pending` cujo Payment já é `paid`/`failed` (queda entre a
+   * transição e o efeito, com o evento do webhook já registrado): aplica `onTopUpPayment` (idempotente). Só recargas
+   * paradas há `olderThanMs` e criadas nos últimos 7 dias.
+   */
+  @Interval('wallet-top-up-reconcile', 5 * 60_000)
+  @ExclusiveJob('wallet-top-up-reconcile', jobLockTtl(5 * 60_000))
+  async reconcileJob(): Promise<void> {
+    if (process.env.JOBS_ENABLED === 'false') return;
+    await this.reconcileTopUps().catch((err) => this.logger.error({ msg: 'top_up_reconcile_failed', error: (err as Error).message }));
+  }
+
+  async reconcileTopUps(olderThanMs = 2 * 60_000): Promise<number> {
+    const now = Date.now();
+    const pending = await this.prisma.topUp.findMany({
+      where: { status: 'pending', paymentId: { not: null }, updatedAt: { lte: new Date(now - olderThanMs) }, createdAt: { gte: new Date(now - RECONCILE_WINDOW_MS) } },
+      orderBy: { createdAt: 'asc' },
+      take: RECONCILE_LIMIT,
+      select: { paymentId: true },
+    });
+    if (!pending.length) return 0;
+    const payments = await this.prisma.payment.findMany({ where: { id: { in: pending.map((t) => t.paymentId!) }, kind: 'top_up', status: { in: ['paid', 'failed'] } } });
+    for (const p of payments) {
+      await this.onTopUpPayment(p).catch((err) => this.logger.warn({ msg: 'top_up_reconcile_item_failed', paymentId: p.id, error: (err as Error).message }));
+    }
+    if (payments.length) this.logger.warn({ msg: 'top_ups_reconciled', count: payments.length });
+    return payments.length;
   }
 
   async getTopUp(customerId: string, id: string) {

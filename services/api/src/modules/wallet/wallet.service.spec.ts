@@ -128,3 +128,28 @@ describe('WalletService (ledger somente inserção)', () => {
 function walk(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((d) => (d.isDirectory() ? walk(join(dir, d.name)) : [join(dir, d.name)]));
 }
+
+describe('Auditoria run-4: reconciliador de recargas', () => {
+  it('recarga pending com Payment paid credita; com Payment failed vira failed; Payment pending e recente ficam', async () => {
+    const { db, svc } = await setup(false);
+    const old = new Date(Date.now() - 10 * 60_000);
+    const mk = async (status: 'paid' | 'failed' | 'pending', amountCents: number, updatedAt = old) => {
+      const p = await db.payment.create({ data: { customerId: CUSTOMER, kind: 'top_up', method: 'pix', status, amountCents } });
+      const t = await db.topUp.create({ data: { customerId: CUSTOMER, status: 'pending', method: 'pix', amountCents, paymentId: p.id } });
+      db.topUp.rows.find((r: any) => r.id === t.id)!.updatedAt = updatedAt;
+      return t;
+    };
+    const paid = await mk('paid', 2000);
+    const failed = await mk('failed', 3000);
+    const waiting = await mk('pending', 4000);
+    const fresh = await mk('paid', 5000, new Date());
+    await svc.reconcileTopUps();
+    await svc.reconcileTopUps();
+    expect((await db.topUp.findUnique({ where: { id: paid.id } })).status).toBe('paid');
+    expect((await db.topUp.findUnique({ where: { id: failed.id } })).status).toBe('failed');
+    expect((await db.topUp.findUnique({ where: { id: waiting.id } })).status).toBe('pending');
+    expect((await db.topUp.findUnique({ where: { id: fresh.id } })).status).toBe('pending');
+    expect((await svc.get(CUSTOMER)).balanceCents).toBe(2000);
+    expect(await db.walletEntry.count()).toBe(1);
+  });
+});

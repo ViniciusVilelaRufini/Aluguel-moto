@@ -37,6 +37,10 @@ type HoldInput = { customerId: string; rentalId: string; method: 'card' | 'pix';
 type HoldResult = { depositId: string; status: 'held' | 'awaiting_pix' | 'failed'; pix?: PixCharge };
 type SettleResult = { paymentId: string; status: 'paid' | 'failed' };
 
+/** Reconciliadores (caução Pix, recarga): janela e lote por execução. */
+export const RECONCILE_WINDOW_MS = 7 * 24 * 60 * 60_000;
+export const RECONCILE_LIMIT = 500;
+
 export const MAX_COLLECTION_ATTEMPTS = 3;
 export const MAX_RELEASE_ATTEMPTS = 20;
 /** Execuções com erro/resultado ambíguo até estacionar a liquidação para revisão manual. */
@@ -322,6 +326,35 @@ export class RentalBillingService implements RentalBillingPort {
   async releaseRetryJob(): Promise<void> {
     if (process.env.JOBS_ENABLED === 'false') return;
     await this.retryDepositReleases().catch((err) => this.logger.error({ msg: 'deposit_release_retry_failed', error: (err as Error).message }));
+  }
+
+  /**
+   * Auditoria run-4: reconciliador da caução Pix. Payment da caução já `paid`/`failed` com a caução ainda `awaiting_pix`
+   * (queda entre a transição e o efeito, e o evento do webhook já registrado): aplica o efeito (`onDepositPaymentChanged`,
+   * idempotente por update condicional). Só cauções paradas há `olderThanMs` e criadas nos últimos 7 dias.
+   */
+  @Interval('payments-deposit-reconcile', 5 * 60_000)
+  @ExclusiveJob('payments-deposit-reconcile', jobLockTtl(5 * 60_000))
+  async depositReconcileJob(): Promise<void> {
+    if (process.env.JOBS_ENABLED === 'false') return;
+    await this.reconcileDepositPayments().catch((err) => this.logger.error({ msg: 'deposit_reconcile_failed', error: (err as Error).message }));
+  }
+
+  async reconcileDepositPayments(olderThanMs = 2 * 60_000): Promise<number> {
+    const now = this.now().getTime();
+    const deposits = await this.prisma.deposit.findMany({
+      where: { status: 'awaiting_pix', updatedAt: { lte: new Date(now - olderThanMs) }, createdAt: { gte: new Date(now - RECONCILE_WINDOW_MS) } },
+      orderBy: { createdAt: 'asc' },
+      take: RECONCILE_LIMIT,
+      select: { id: true },
+    });
+    if (!deposits.length) return 0;
+    const payments = await this.prisma.payment.findMany({ where: { depositId: { in: deposits.map((d) => d.id) }, kind: 'deposit', status: { in: ['paid', 'failed'] } } });
+    for (const p of payments) {
+      await this.onDepositPaymentChanged(p).catch((err) => this.logger.warn({ msg: 'deposit_reconcile_item_failed', paymentId: p.id, error: (err as Error).message }));
+    }
+    if (payments.length) this.logger.warn({ msg: 'deposit_payments_reconciled', count: payments.length });
+    return payments.length;
   }
 
   async retryDepositReleases(): Promise<void> {
