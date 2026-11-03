@@ -362,6 +362,17 @@ describe('LgpdService', () => {
     expect(prisma.alert.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { lat: null, lng: null } }));
   });
 
+  it('revisão: falha no expurgo da posição dos alertas não derruba o resto do job', async () => {
+    const { service, prisma } = setup();
+    (service as any).cfg = { ...(service as any).cfg, jobsEnabled: true };
+    prisma.trackPoint.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.rental.updateMany.mockResolvedValue({ count: 0 });
+    prisma.alert.updateMany.mockRejectedValue(new Error('db'));
+    const claims = jest.spyOn(service, 'purgeClosedClaimsOfDeletedCustomers').mockResolvedValue(0);
+    await expect(service.purgeJob()).resolves.toBeUndefined();
+    expect(claims).toHaveBeenCalled();
+  });
+
   it('job de expiração apaga TrackPoint com expiresAt < now', async () => {
     const { service, prisma } = setup();
     prisma.trackPoint.deleteMany.mockResolvedValue({ count: 7 });

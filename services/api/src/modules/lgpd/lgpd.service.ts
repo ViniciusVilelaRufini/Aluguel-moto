@@ -514,7 +514,10 @@ export class LgpdService {
     if (!this.cfg.jobsEnabled) return;
     const count = await this.purgeExpiredTracks();
     const startLocations = await this.purgeExpiredStartLocations();
-    const alertLocations = await this.purgeExpiredAlertLocations();
+    const alertLocations = await this.purgeExpiredAlertLocations().catch((err) => {
+      this.logger.error({ msg: 'alert_locations_purge_failed', error: (err as Error).message });
+      return 0;
+    });
     const closedClaims = await this.purgeClosedClaimsOfDeletedCustomers().catch((err) => {
       this.logger.error({ msg: 'closed_claims_purge_failed', error: (err as Error).message });
       return 0;
