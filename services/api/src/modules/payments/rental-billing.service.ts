@@ -1063,7 +1063,11 @@ export class RentalBillingService implements RentalBillingPort {
   private async applyToLocal(local: Payment, pp: ProviderPayment): Promise<{ payment: Payment; changed: boolean }> {
     // Pix que expirou/foi cancelado no gateway antes de ser pago: localmente é pending → failed.
     if (pp.status === 'canceled' && local.status === 'pending') pp = { ...pp, status: 'failed', failureReason: pp.failureReason ?? 'pix_expired' };
-    if (local.status === pp.status) return { payment: local, changed: false };
+    if (local.status === pp.status) {
+      // Auditoria run-4: status já final aqui (transição gravada, efeito perdido numa queda): reaplica o efeito idempotente.
+      await this.reapplyDepositEffects(local);
+      return { payment: local, changed: false };
+    }
 
     if (canTransition(local.status, pp.status)) {
       const updated = await this.state.transition(local.id, pp.status, {
@@ -1080,7 +1084,13 @@ export class RentalBillingService implements RentalBillingPort {
       return { payment: local, changed: false };
     }
     this.logger.warn({ msg: 'payment_transition_ignored', paymentId: local.id, from: local.status, to: pp.status });
+    await this.reapplyDepositEffects(local);
     return { payment: local, changed: false };
+  }
+
+  /** Efeito do Payment da caução (`onDepositPaymentChanged`, idempotente por update condicional) quando o status local é final. */
+  private async reapplyDepositEffects(local: Payment): Promise<void> {
+    if (local.kind === 'deposit' && local.depositId && (local.status === 'paid' || local.status === 'failed')) await this.onDepositPaymentChanged(local);
   }
 
   private async nudgeSettlement(local: Payment, pp: ProviderPayment): Promise<void> {

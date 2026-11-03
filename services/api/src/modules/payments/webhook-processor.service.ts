@@ -61,11 +61,13 @@ export class WebhookProcessor implements OnModuleInit {
       if (!applied) {
         if (pp.externalReference?.startsWith('subscription:')) await this.subscriptions.onRecurringPayment(pp);
         else this.logger.warn({ msg: 'webhook_payment_unknown', eventId: msg.eventId });
-      } else if (applied.changed && applied.payment.kind === 'top_up') {
+      } else if (applied.payment.kind === 'top_up') {
+        // Auditoria run-4: os efeitos rodam sempre que o status local é final, não só quando este evento o mudou — uma
+        // queda entre a transição e o efeito não o perde. Cada um é idempotente (update condicional ou `applyEffectsOnce`).
         await this.wallet.onTopUpPayment(applied.payment);
-      } else if (applied.changed && applied.payment.kind === 'subscription') {
+      } else if (applied.payment.kind === 'subscription') {
         await this.subscriptions.onSubscriptionPaymentChanged(applied.payment);
-      } else if (applied.changed && applied.payment.kind === 'debt_settlement' && applied.payment.status === 'paid') {
+      } else if (applied.payment.kind === 'debt_settlement' && applied.payment.status === 'paid') {
         // Task 14: quitação por Pix (ou cartão que estava em análise) confirmada pelo gateway.
         await this.delinquency?.onSettlementPaid(applied.payment);
       } else if (applied.payment.kind === 'debt_settlement' && applied.payment.status === 'failed' && pp.status === 'paid') {

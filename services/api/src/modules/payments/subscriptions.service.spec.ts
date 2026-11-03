@@ -22,6 +22,7 @@ function matches(row: Row, where: Row = {}): boolean {
       if ('not' in cond) return cond.not === null ? v != null : v !== cond.not;
       return false;
     }
+    if (cond === null) return v == null;
     return v instanceof Date && cond instanceof Date ? v.getTime() === cond.getTime() : v === cond;
   });
 }

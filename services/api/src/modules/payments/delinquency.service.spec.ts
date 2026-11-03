@@ -441,3 +441,31 @@ describe('DelinquencyService — assinatura recusada na criação não é dívid
     expect(await db.payment.count({ where: openDebtWhere(CUSTOMER) })).toBe(2);
   });
 });
+
+describe('Auditoria run-4: quitação idempotente por pagamento', () => {
+  it('Pix da quitação já paid sem a dívida quitada (queda) → o webhook quita; eventos repetidos não abrem revisão falsa', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const pix = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'pix' });
+    ctx.provider.simulatePixPaid(pix.providerPaymentId!);
+    await ctx.db.payment.update({ where: { id: pix.id }, data: { status: 'paid' } }); // transição gravada, quitação perdida
+    const webhook = new WebhookProcessor(ctx.db as any, ctx.provider, ctx.billing, { onTopUpPayment: jest.fn() } as any, { onRecurringPayment: jest.fn() } as any, { subscribe: jest.fn() } as any, ctx.svc);
+    await webhook.process({ provider: 'fake', eventId: 'q1', type: 'payment', dataId: pix.providerPaymentId! });
+    expect(await ctx.db.payment.findUnique({ where: { id: d.id } })).toMatchObject({ debtSettlement: 'payment', debtSettledAt: expect.any(Date) });
+    expect((await ctx.db.customer.findUnique({ where: { id: CUSTOMER } })).delinquent).toBe(false);
+    await webhook.process({ provider: 'fake', eventId: 'q2', type: 'payment', dataId: pix.providerPaymentId! });
+    await ctx.svc.onSettlementPaid((await ctx.db.payment.findUnique({ where: { id: pix.id } }))!);
+    expect(ctx.reviews).toEqual([]);
+  });
+
+  it('segunda quitação paga de uma dívida já quitada por outra → revisão (uma vez só)', async () => {
+    const ctx = await setup();
+    const d = await debt(ctx.db, 3000);
+    const a = await ctx.svc.payDebt(CUSTOMER, d.id, { method: 'card' });
+    const b = await ctx.db.payment.create({ data: { customerId: CUSTOMER, kind: 'debt_settlement', method: 'pix', status: 'paid', amountCents: 3000, settlesPaymentId: d.id } });
+    await ctx.svc.onSettlementPaid(b);
+    await ctx.svc.onSettlementPaid((await ctx.db.payment.findUnique({ where: { id: b.id } }))!);
+    expect(a.status).toBe('paid');
+    expect(ctx.reviews).toEqual([{ paymentId: b.id, reason: 'debt_settlement_after_settled' }]);
+  });
+});
