@@ -12,7 +12,7 @@ export interface PaletteItem {
   keywords?: string;
 }
 
-interface VehicleLike { id: string; code: string; status: string; address?: string; model?: string }
+interface VehicleLike { id: string; code: string; status: string; address?: string | null; model?: string }
 
 /** Minúsculas e sem acento ("Operação" casa com "operacao"). */
 export function normalize(s: string): string {

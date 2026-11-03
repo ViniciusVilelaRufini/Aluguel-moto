@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { FleetVehicle } from '@/lib/realtime';
 import { matchesVehicle } from '@/lib/fleet-search';
+import { addressView, batteryView } from '@/lib/vehicle-live';
 import { SERVICE_STATUS, formatKm } from '@/lib/maintenance';
 import { timeAgo } from '@/lib/format';
 import { FleetStatus } from '@/ds/FleetStatus';
@@ -38,8 +39,8 @@ export function FleetList({ vehicles, selected, onSelect, onlyFixed, onToggleFix
         columns={[
           { key: 'code', label: 'Moto', mono: true },
           { key: 'status', label: 'Situação', render: (v) => <FleetStatus status={v.status} variant="dot" /> },
-          { key: 'batteryPct', label: 'Bateria', align: 'right', render: (v) => `${v.batteryPct}%` },
-          { key: 'address', label: 'Endereço', render: (v) => <span title={v.address} style={{ display: 'inline-block', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'bottom' }}>{v.address ?? '—'}</span> },
+          { key: 'batteryPct', label: 'Bateria', align: 'right', render: (v) => batteryView(v).pctText },
+          { key: 'address', label: 'Endereço', render: (v) => <span title={v.address ?? undefined} style={{ display: 'inline-block', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', verticalAlign: 'bottom' }}>{addressView(v).text}</span> },
           { key: 'model', label: 'Modelo', render: (v) => v.categoryLabel ? `${v.model} · ${v.categoryLabel}` : v.model },
           { key: 'service', label: 'Revisão', render: (v) => v.service ? <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}><Pill tone={SERVICE_STATUS[v.service.status][1]}>{SERVICE_STATUS[v.service.status][0]}</Pill><span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{formatKm(v.service.kmSinceService)}</span></span> : '—' },
           { key: 'lastSeenAt', label: 'Último sinal', render: (v) => timeAgo(v.lastSeenAt) },

@@ -112,7 +112,7 @@ export function VehicleDetailPanel({ vehicleId, depots, models, onClose }: {
 export function VehicleFacts({ v, depots, models }: { v: Vehicle; depots: readonly Pick<S<'Depot'>, 'id' | 'name'>[]; models: readonly Pick<S<'VehicleModel'>, 'id' | 'photoUrl'>[] }) {
   return (
     <div>
-      <div style={{ marginBottom: 8 }}><BatteryPill level={v.batteryPct} range={Math.round(v.estimatedRangeKm)} /></div>
+      <div style={{ marginBottom: 8 }}><BatteryPill level={v.batteryPct} range={Math.round(v.estimatedRangeKm)} known={v.batteryKnown !== false} /></div>
       <KV k="Modelo" v={<ModelCell v={v} models={models} />} />
       <KV k="Galpão" v={<span data-testid="vehicle-detail-depot">{depotName(depots, v.depotId)}</span>} />
       <KV k="Situação" v={STATUS_LABEL[v.status]} />

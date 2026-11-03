@@ -48,7 +48,7 @@ export function VehiclesTable({ rows, depots, models, loading, selectedId, onSel
         { key: 'model', label: 'Modelo', render: (v) => <ModelCell v={v} models={models} /> },
         { key: 'depotId', label: 'Galpão', render: (v) => <span style={{ color: v.depotId ? undefined : 'var(--text-secondary)' }}>{depotName(depots, v.depotId)}</span> },
         { key: 'status', label: 'Situação', render: (v) => <FleetStatus status={v.status} variant="dot" /> },
-        { key: 'batteryPct', label: 'Bateria', render: (v) => <BatteryPill level={v.batteryPct} range={Math.round(v.estimatedRangeKm)} /> },
+        { key: 'batteryPct', label: 'Bateria', render: (v) => <BatteryPill level={v.batteryPct} range={Math.round(v.estimatedRangeKm)} known={v.batteryKnown !== false} /> },
         { key: 'online', label: 'Sinal', render: (v) => <Pill tone={v.online ? 'success' : 'neutral'} icon={v.online ? 'Wifi' : 'WifiOff'}>{signalSummary(v)}</Pill> },
         { key: 'odometerKm', label: 'Odômetro', align: 'right', render: (v) => formatKm(v.odometerKm) },
       ]}

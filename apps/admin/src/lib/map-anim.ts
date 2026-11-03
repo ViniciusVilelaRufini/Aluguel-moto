@@ -35,3 +35,6 @@ export function batteryHex(pct: number): string {
   if (pct > 20) return '#FBC531';
   return '#F2665A';
 }
+
+/** Anel cinza do pin quando a moto não tem leitura de bateria (token --ink-400). */
+export const UNKNOWN_BATTERY_HEX = '#9AA0A6';

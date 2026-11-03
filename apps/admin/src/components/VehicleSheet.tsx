@@ -8,7 +8,8 @@ import { useAuth } from '@/lib/auth';
 import { can, rentalHref } from '@/lib/permissions';
 import { useRealtime, useRealtimeEvent } from '@/lib/realtime';
 import { commandStateLabel, commandStateTone } from '@/lib/status';
-import { commandSupported, TRACKER_CONTROL_LABEL, unsupportedDescribedBy, unsupportedHint } from '@/lib/tracker';
+import { commandSupported, lockDescription, lockMovingWarning, TRACKER_CONTROL_LABEL, unsupportedDescribedBy, unsupportedHint } from '@/lib/tracker';
+import { addressView, batteryView, speedLimitChip } from '@/lib/vehicle-live';
 import { RelayOnlyNotice } from './vehicles/RelayOnlyNotice';
 import { formatDateTime, timeAgo } from '@/lib/format';
 import { assertSpeedLimit } from '@/lib/speed-limit';
@@ -59,8 +60,10 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   }, [active, toast]);
 
   const detail = useQuery({ queryKey: ['vehicle', vehicleId], queryFn: () => unwrap(api.GET('/vehicles/{id}', { params: { path: { id: vehicleId } } })) });
+  // O GET /vehicles/{id} é a fonte: ele vence em todo campo que traz. A cópia da frota (`live`, até 60 s velha) só
+  // aparece enquanto a ficha carrega; os eventos ao vivo (vehicle.position/state) entram direto no cache da ficha.
   const live = vehicles.find((v) => v.id === vehicleId);
-  const v: S<'Vehicle'> | undefined = detail.data ? { ...detail.data, ...(live ?? {}) } : live;
+  const v: S<'Vehicle'> | undefined = detail.data ?? live;
   const mode = v?.trackerControlMode;
 
   const commands = useQuery({
@@ -120,12 +123,13 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   if (!v) return <SidePanel width={360} onClose={onClose} label="Ficha da moto"><PanelSkeleton rows={7} /></SidePanel>;
 
   const moving = (v.speedKmh ?? 0) >= 3;
+  const address = addressView(v);
   const send = async (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => {
     // Última barreira: nenhum chamador envia limite fora de 0..32 km/h.
     if (type === 'speed_limit') assertSpeedLimit(extra.speedLimitKmh);
     const cmd = await unwrap(api.POST('/vehicles/{id}/commands', { params: { path: { id: vehicleId } }, body: { type, reason, ...extra } }));
     setActive({ id: cmd.id, type, status: cmd.status, reason: cmd.statusReason });
-    toast(commandSentMessage(type, extra));
+    toast(commandSentMessage(type, extra, mode));
     qc.invalidateQueries({ queryKey: ['vehicle-commands', vehicleId] });
   };
 
@@ -142,9 +146,9 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
       }
     >
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <BatteryPill level={v.batteryPct} range={Math.round(v.estimatedRangeKm)} />
+        <BatteryPill level={v.batteryPct} range={Math.round(v.estimatedRangeKm)} known={batteryView(v).known} />
         <Badge tone="neutral" icon="Gauge">{Math.round(v.speedKmh ?? 0)} km/h</Badge>
-        <Badge tone="neutral">Limite {v.speedLimitKmh} km/h</Badge>
+        <Badge tone="neutral">{speedLimitChip(v)}</Badge>
       </div>
       <div>
         <KV k="Último sinal" v={v.lastSeenAt ? timeAgo(v.lastSeenAt) : '—'} />
@@ -153,10 +157,10 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         <KV k="Aluguel" v={v.currentRentalId ? (rentalHref(groups, v.currentRentalId) ? <Link href={rentalHref(groups, v.currentRentalId)!} style={{ color: 'var(--text-link)', fontWeight: 600 }}>Ver aluguel atual</Link> : 'Em andamento') : '—'} />
         <KV k="Endereço" v={v.address ? (
           <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-            <span data-testid="vehicle-address">{v.address}</span>
-            {v.addressUpdatedAt && <span data-testid="vehicle-address-updated" style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>atualizado {timeAgo(v.addressUpdatedAt)}</span>}
+            <span data-testid="vehicle-address">{address.text}</span>
+            {address.updatedAt && <span data-testid="vehicle-address-updated" style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>atualizado {timeAgo(address.updatedAt)}</span>}
           </span>
-        ) : '—'} />
+        ) : address.text} />
         <KV k="Posição" v={`${v.lat.toFixed(4)}, ${v.lng.toFixed(4)}`} mono />
         <KV k="Modelo" v={v.categoryLabel ? `${v.model} · ${v.categoryLabel}` : v.model} />
         <KV k="Km desde revisão" v={v.service ? (
@@ -237,7 +241,7 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
         </div>
       )}
 
-      {dialog && <CommandDialog type={dialog} vehicle={v} moving={moving} onClose={() => setDialog(null)} onSend={send} />}
+      {dialog && <CommandDialog type={dialog} vehicle={v} mode={mode} moving={moving} onClose={() => setDialog(null)} onSend={send} />}
       {moveFixed && v.assignedSubscriptionId && <SubscriptionVehicleDialog subscriptionId={v.assignedSubscriptionId} currentCode={v.code} onClose={() => setMoveFixed(false)} />}
       {editing && <VehicleFormModal vehicle={v} onClose={() => setEditing(false)} />}
       {history && <HistoryModal vehicleId={vehicleId} code={v.code} groups={groups} onClose={() => setHistory(false)} />}
@@ -245,8 +249,8 @@ export function VehicleSheet({ vehicleId, onClose, onReplay, replayActive }: {
   );
 }
 
-function CommandDialog({ type, vehicle, moving, onClose, onSend }: {
-  type: CommandType; vehicle: S<'Vehicle'>; moving: boolean; onClose: () => void;
+function CommandDialog({ type, vehicle, mode, moving, onClose, onSend }: {
+  type: CommandType; vehicle: S<'Vehicle'>; mode: S<'Vehicle'>['trackerControlMode']; moving: boolean; onClose: () => void;
   onSend: (type: CommandType, reason: string, extra: { speedLimitKmh?: number; on?: boolean }) => Promise<void>;
 }) {
   const [limit, setLimit] = useState('20');
@@ -256,13 +260,13 @@ function CommandDialog({ type, vehicle, moving, onClose, onSend }: {
 
   const description = useMemo(() => {
     switch (type) {
-      case 'lock': return 'A moto reduz a potência aos poucos e só trava abaixo de 3 km/h. Nunca corta o motor em movimento.';
+      case 'lock': return lockDescription(mode);
       case 'unlock': return 'Libera a moto para uso.';
       case 'horn': return 'Aciona a buzina da moto.';
       case 'speed_limit': return 'Define o limite de velocidade da moto. O máximo permitido é 32 km/h.';
       case 'stolen_mode': return 'Bloqueia a moto e passa a enviar a posição a cada 5 segundos.';
     }
-  }, [type]);
+  }, [type, mode]);
 
   return (
     <ReasonDialog
@@ -286,7 +290,7 @@ function CommandDialog({ type, vehicle, moving, onClose, onSend }: {
       }}
     >
       {type === 'lock' && moving && (
-        <Alert tone="warning" icon="TriangleAlert">A moto está a {Math.round(vehicle.speedKmh ?? 0)} km/h. O comando fica pendente até a velocidade cair abaixo de 3 km/h.</Alert>
+        <Alert tone="warning" icon="TriangleAlert">A moto está a {Math.round(vehicle.speedKmh ?? 0)} km/h. {lockMovingWarning(mode)}</Alert>
       )}
       {offline && (
         <Alert tone="warning" icon="WifiOff">Moto offline — será aplicado ao reconectar.</Alert>

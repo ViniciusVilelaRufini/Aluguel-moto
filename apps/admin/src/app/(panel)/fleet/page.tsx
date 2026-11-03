@@ -9,7 +9,7 @@ import { useAuth } from '@/lib/auth';
 import { useRealtime, type FleetVehicle } from '@/lib/realtime';
 import { STATUS_COLOR, STATUS_LABEL, VEHICLE_STATUSES } from '@/lib/status';
 import { formatBRL } from '@/lib/format';
-import { anyMoved, batteryHex, interpolatePositions, positionsOf, type LngLat } from '@/lib/map-anim';
+import { UNKNOWN_BATTERY_HEX, anyMoved, batteryHex, interpolatePositions, positionsOf, type LngLat } from '@/lib/map-anim';
 import { easeInOutCubic, prefersReducedMotion, tween } from '@/lib/motion';
 import { dialogStack } from '@/lib/focus';
 import { rentalWindow } from '@/lib/fleet-copy';
@@ -41,7 +41,7 @@ function toFeatures(list: FleetVehicle[]): GeoJSON.FeatureCollection {
     features: list.map((v) => ({
       type: 'Feature',
       geometry: { type: 'Point', coordinates: [v.lng, v.lat] },
-      properties: { id: v.id, code: v.code, status: v.status, battery: v.batteryPct, batteryColor: batteryHex(v.batteryPct) },
+      properties: { id: v.id, code: v.code, status: v.status, battery: v.batteryKnown === false ? null : v.batteryPct, batteryColor: v.batteryKnown === false ? UNKNOWN_BATTERY_HEX : batteryHex(v.batteryPct) },
     })),
   };
 }
@@ -145,14 +145,14 @@ export default function FleetPage() {
       if (mapRef.current !== map) return;
       let popup: Popup | null = null;
       map.on('mouseenter', 'vehicles', (e) => {
-        const p = e.features?.[0]?.properties as { code?: string; status?: VehicleStatus; battery?: number } | undefined;
+        const p = e.features?.[0]?.properties as { code?: string; status?: VehicleStatus; battery?: number | null } | undefined;
         if (!p?.code) return;
         const el = document.createElement('div');
         el.className = 'vt-tip';
         const strong = document.createElement('strong');
         strong.textContent = p.code;
         const span = document.createElement('span');
-        span.textContent = `${p.status ? STATUS_LABEL[p.status] : ''} · ${p.battery ?? '—'}%`;
+        span.textContent = `${p.status ? STATUS_LABEL[p.status] : ''} · ${p.battery == null ? 'Bateria desconhecida' : `${p.battery}%`}`;
         el.append(strong, span);
         popup = new ml.Popup({ closeButton: false, closeOnClick: false, offset: 14, className: 'vt-popup' })
           .setLngLat((e.features![0].geometry as GeoJSON.Point).coordinates as [number, number]).setDOMContent(el).addTo(map);

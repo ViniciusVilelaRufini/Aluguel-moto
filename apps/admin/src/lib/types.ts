@@ -15,6 +15,7 @@ export type AlertPriority = S<'AlertPriority'>;
 export interface RealtimeEvents {
   'vehicle.position': { vehicleId: string; lat: number; lng: number; speedKmh: number; batteryPct: number; status: VehicleStatus; speedLimitKmh: number; ts: string };
   'vehicle.status': { vehicleId: string; status: VehicleStatus; ts: string };
+  'vehicle.state': { vehicleId: string; locked: boolean; online: boolean; lastSeenAt: string; batteryKnown: boolean; ts: string };
   'command.updated': { commandId: string; vehicleId: string; type: CommandType; status: CommandStatus; reason?: CommandStatusReason };
   'alert.created': { alertId: string; vehicleId?: string; rentalId?: string; type: S<'AlertType'>; priority: AlertPriority; createdAt: string };
 }

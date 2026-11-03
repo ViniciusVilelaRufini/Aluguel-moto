@@ -9,7 +9,7 @@ import type { MenuItem } from '@/lib/permissions';
 import { STATUS_COLOR, STATUS_LABEL } from '@/lib/status';
 import type { VehicleStatus } from '@/lib/types';
 
-interface VehicleLike { id: string; code: string; status: VehicleStatus; address?: string; model?: string }
+interface VehicleLike { id: string; code: string; status: VehicleStatus; address?: string | null; model?: string }
 
 /**
  * Depois de navegar pela paleta, o foco vai para o destino em vez de cair no <body>:

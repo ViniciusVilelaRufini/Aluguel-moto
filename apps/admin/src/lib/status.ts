@@ -1,4 +1,4 @@
-import { RELAY_LOCK_WAITING, type TrackerControlMode } from './tracker';
+import { RELAY_LOCK_WAITING, RELAY_UNLOCK_TIMEOUT, RELAY_UNLOCK_WAITING, type TrackerControlMode } from './tracker';
 import type { AlertPriority, CommandStatus, CommandStatusReason, CommandType, VehicleStatus } from './types';
 
 export const VEHICLE_STATUSES: VehicleStatus[] = ['free', 'rented', 'reserved', 'paused', 'blocked', 'maintenance', 'offline', 'awaiting_pickup'];
@@ -44,16 +44,17 @@ export const PRIORITY_ORDER: Record<AlertPriority, number> = { critical: 0, high
 
 export function commandStateLabel(status: CommandStatus, reason?: CommandStatusReason, ctx: { type?: CommandType; controlMode?: TrackerControlMode } = {}): string {
   const relayLock = ctx.controlMode === 'relay_only' && ctx.type === 'lock';
+  const relayUnlock = ctx.controlMode === 'relay_only' && ctx.type === 'unlock';
   switch (status) {
     case 'pending':
       return reason === 'offline' ? 'moto offline — será aplicado ao reconectar' : 'pendente';
     case 'in_progress':
-      return relayLock ? RELAY_LOCK_WAITING : 'em andamento';
+      return relayLock ? RELAY_LOCK_WAITING : relayUnlock ? RELAY_UNLOCK_WAITING : 'em andamento';
     case 'confirmed':
       return 'confirmado';
     case 'failed':
       if (reason === 'did_not_stop') return relayLock ? 'falhou: a moto não parou em 120 s; nenhum corte foi enviado' : 'falhou: a moto não parou';
-      if (reason === 'timeout') return 'falhou: sem resposta da moto';
+      if (reason === 'timeout') return relayUnlock ? RELAY_UNLOCK_TIMEOUT : 'falhou: sem resposta da moto';
       if (reason === 'invalid_limit') return 'falhou: limite inválido';
       if (reason === 'unsupported_by_tracker') return 'falhou: este rastreador não executa este comando';
       return 'falhou';

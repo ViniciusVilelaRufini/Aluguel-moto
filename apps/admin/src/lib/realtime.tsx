@@ -10,6 +10,7 @@ import { useAuth } from './auth';
 import { alertVisibleTo } from './permissions';
 import { getToken } from './token-store';
 import type { RealtimeEvents, S } from './types';
+import { applyVehiclePosition, applyVehicleState, positionPatch, statePatch } from './vehicle-live';
 
 type Handler<K extends keyof RealtimeEvents> = (payload: RealtimeEvents[K]) => void;
 export type FleetVehicle = S<'Vehicle'>;
@@ -52,6 +53,8 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   // Quando a frota foi carregada pela última vez (lido dentro de setters e handlers). `at` usa o relógio do navegador:
   // com relógio errado a comparação com dataUpdatedAt (também do navegador) continua coerente entre si, mas não com o servidor.
   const fleetAt = useRef(0);
+  // Último `ts` de vehicle.state por moto: evento fora de ordem não desfaz o mais novo.
+  const stateTs = useRef(new Map<string, string>());
 
   const canList = groups.some((g) => LIST_GROUPS.includes(g));
   const canFleet = groups.some((g) => FLEET_GROUPS.includes(g));
@@ -103,8 +106,19 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
     });
     socket.on('disconnect', () => setConnected(false));
     socket.on('vehicle.position', (p: RealtimeEvents['vehicle.position']) => {
-      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), lat: p.lat, lng: p.lng, speedKmh: p.speedKmh, batteryPct: p.batteryPct, status: p.status, speedLimitKmh: p.speedLimitKmh, lastSeenAt: p.ts } };
+      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), ...positionPatch(p) } };
+      // Ficha aberta: a posição nova também entra no GET /vehicles/{id} carregado (descartada se for mais velha que ele).
+      qc.setQueryData<FleetVehicle>(['vehicle', p.vehicleId], (old) => (old ? applyVehiclePosition(old, p) : old));
       emit('vehicle.position', p);
+    });
+    // Estado do rastreador (travada, online, último sinal, bateria conhecida): frota e ficha, sem esperar o próximo GET.
+    socket.on('vehicle.state', (p: RealtimeEvents['vehicle.state']) => {
+      const last = stateTs.current.get(p.vehicleId);
+      if (last !== undefined && Date.parse(p.ts) < Date.parse(last)) return; // evento fora de ordem
+      stateTs.current.set(p.vehicleId, p.ts);
+      pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), ...statePatch(p) } };
+      qc.setQueryData<FleetVehicle>(['vehicle', p.vehicleId], (old) => (old ? applyVehicleState(old, p) : old));
+      emit('vehicle.state', p);
     });
     socket.on('vehicle.status', (p: RealtimeEvents['vehicle.status']) => {
       pending.current[p.vehicleId] = { at: Date.now(), patch: { ...liveBase(pending.current[p.vehicleId]), status: p.status } };

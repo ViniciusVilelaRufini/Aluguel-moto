@@ -4,7 +4,7 @@ interface Searchable {
   code: string;
   model?: string;
   categoryLabel?: string;
-  address?: string;
+  address?: string | null;
   batterySerial?: string;
 }
 
@@ -20,7 +20,7 @@ export function matchesVehicle(v: Searchable, query: string): boolean {
 }
 
 /** Texto curto de endereço para tabelas: só a primeira parte ("R. Teodoro Sampaio, 1020"). */
-export function shortAddress(address?: string): string {
+export function shortAddress(address?: string | null): string {
   if (!address) return '—';
   return address.split(' · ')[0] || address;
 }

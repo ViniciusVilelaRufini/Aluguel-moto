@@ -1,5 +1,6 @@
 import type { CommandType, S } from './types';
 import { ALERT_TYPE, AUDIT_ACTION_LABEL } from './labels';
+import type { TrackerControlMode } from './tracker';
 
 type AlertType = S<'AlertType'>;
 
@@ -12,9 +13,9 @@ export function signalLabel(online: boolean | undefined, signal: number | undefi
 }
 
 /** Toast de comando enviado, com o complemento do design (FleetView.jsx). */
-export function commandSentMessage(type: CommandType, extra: { speedLimitKmh?: number; on?: boolean } = {}): string {
+export function commandSentMessage(type: CommandType, extra: { speedLimitKmh?: number; on?: boolean } = {}, mode?: TrackerControlMode): string {
   switch (type) {
-    case 'lock': return 'Bloqueio enviado · reduz potência e trava abaixo de 3 km/h';
+    case 'lock': return mode === 'relay_only' ? 'Bloqueio enviado · aguarda a moto parar e corta o relé' : 'Bloqueio enviado · reduz potência e trava abaixo de 3 km/h';
     case 'unlock': return 'Desbloqueio enviado';
     case 'horn': return 'Buzina acionada';
     case 'speed_limit': return extra.speedLimitKmh != null ? `Limite de ${extra.speedLimitKmh} km/h aplicado` : 'Limite de velocidade aplicado';
