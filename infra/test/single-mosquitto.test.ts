@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 
@@ -69,11 +69,14 @@ describe('dev single: Mosquitto sem anônimo, senha por serviço e ACL por papel
     expect(conf).toMatch(/^allow_anonymous false$/m);
     expect(conf).not.toMatch(/^allow_anonymous true/m);
     expect(conf).toMatch(/^password_file \/mosquitto\/auth\/passwd$/m);
-    expect(conf).toMatch(/^acl_file \/mosquitto\/config\/acl$/m);
+    // A ACL montada (:ro, root, 644) é copiada pelo start.sh para o diretório de runtime (mosquitto, 600).
+    expect(conf).toMatch(/^acl_file \/mosquitto\/auth\/acl$/m);
   });
 
   it('compose: o Mosquitto sobe pelo start.sh com as três senhas obrigatórias, sem portas publicadas', () => {
     const m = service(compose, 'mosquitto');
+    // Versão exata (como o Traccar): a 2.x flutuante pode passar a recusar arquivos de senha/ACL com permissão larga.
+    expect(m).toMatch(/image: eclipse-mosquitto:2\.0\.\d+\n/);
     expect(m).toContain('entrypoint: ["/bin/sh", "/mosquitto/start.sh"]');
     expect(m).toContain('./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro');
     expect(m).toContain('./mosquitto/acl:/mosquitto/config/acl:ro');
@@ -164,22 +167,28 @@ describe('deploy/single/mosquitto/start.sh (fakes do mosquitto_passwd, chown e m
     const wrapper = 'd="$1"; shift; if command -v cygpath >/dev/null 2>&1; then d="$(cygpath -u "$d")"; fi; export PATH="$d:$PATH"; exec sh "$@"';
     const script = join(REPO, 'deploy', 'single', 'mosquitto', 'start.sh');
     const authDir = join(dir, 'auth');
+    const aclSrc = join(dir, 'acl-montada');
+    writeFileSync(aclSrc, 'user api\ntopic readwrite motos/#\n');
     const subConf = join(dir, 'home', '.config', 'mosquitto_sub');
     const r = spawnSync(BASH!, ['-c', wrapper, '_', slash(bin), slash(script)], {
-      env: { ...process.env, FAKE_LOG: slash(log), MOSQUITTO_AUTH_DIR: slash(authDir), MOSQUITTO_SUB_CONF: slash(subConf), MOSQUITTO_CONF: '/conf/mosquitto.conf', ...env },
+      env: { ...process.env, FAKE_LOG: slash(log), MOSQUITTO_AUTH_DIR: slash(authDir), MOSQUITTO_SUB_CONF: slash(subConf), MOSQUITTO_CONF: '/conf/mosquitto.conf', MOSQUITTO_ACL_SRC: slash(aclSrc), ...env },
       encoding: 'utf8',
     });
     const read = (p: string) => (existsSync(p) ? readFileSync(p, 'utf8') : '');
-    return { r, calls: read(log).trim().split('\n').filter(Boolean), passwd: read(join(authDir, 'passwd')), subConf: read(subConf), tmpLeft: existsSync(join(authDir, 'passwd.tmp')) };
+    return { r, calls: read(log).trim().split('\n').filter(Boolean), acl: read(join(authDir, 'acl')), aclMode: existsSync(join(authDir, 'acl')) ? statSync(join(authDir, 'acl')).mode & 0o777 : -1, passwd: read(join(authDir, 'passwd')), subConf: read(subConf), tmpLeft: existsSync(join(authDir, 'passwd.tmp')) };
   }
   const pw = { MQTT_API_PASSWORD: 'a'.repeat(64), MQTT_BRIDGE_PASSWORD: 'b'.repeat(64), MQTT_SIM_PASSWORD: 'c'.repeat(64) };
 
   itBash('gera o passwd com hash (mosquitto_passwd -U), dono mosquitto, opções do observador e sobe o broker com o conf', () => {
-    const { r, calls, passwd, subConf, tmpLeft } = run(pw);
+    const { r, calls, passwd, subConf, tmpLeft, acl, aclMode } = run(pw);
     expect(r.stderr).toBe('');
     expect(r.status).toBe(0);
     expect(passwd.trim().split('\n')).toEqual(['api:HASH', 'traccar-bridge:HASH', 'iot-sim:HASH', 'observador:HASH']);
     expect(tmpLeft).toBe(false);
+    // ACL copiada para o diretório de runtime (dono mosquitto pelo chown -R, 600 onde o sistema de arquivos permite).
+    expect(acl).toBe('user api\ntopic readwrite motos/#\n');
+    if (process.platform !== 'win32') expect(aclMode).toBe(0o600);
+    expect(single('mosquitto/start.sh')).toMatch(/chmod 600 "\$dir\/passwd" "\$dir\/acl"/);
     expect(calls[0]).toMatch(/^mosquitto_passwd -U /);
     expect(calls).toContainEqual(expect.stringMatching(/^chown -R mosquitto:mosquitto /));
     expect(calls[calls.length - 1]).toBe('mosquitto -c /conf/mosquitto.conf');

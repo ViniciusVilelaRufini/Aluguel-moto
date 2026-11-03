@@ -107,14 +107,14 @@ export class PrincipalResolver {
       if (byEmail?.cognitoSub) {
         // Usuário apagado e recriado no pool (sub novo, mesmo e-mail): nada de P2002/409 nem de religar sozinho.
         this.logger.warn({ msg: 'staff_sub_mismatch', staffId: byEmail.id });
-        throw new ProblemException(403, 'staff-account-relink-required', 'Sua conta interna foi recriada. Peça a um administrador para religá-la no painel.', undefined, 'Conta interna recriada');
+        throw new ProblemException(403, 'staff-account-relink-required', 'Sua conta interna foi recriada. Peça ao suporte técnico para religar a conta.');
       }
       if (byEmail) {
         existing = await this.linkInvite(byEmail, token);
       } else {
         if (!this.mayBootstrap(email)) {
           this.logger.warn({ msg: 'staff_not_registered' });
-          throw new ProblemException(403, 'staff-not-registered', 'Usuário interno não cadastrado no painel.', undefined, 'Usuário interno não cadastrado');
+          throw new ProblemException(403, 'staff-not-registered', 'Usuário interno não cadastrado no painel.');
         }
         const created = await this.createBootstrap(token, email);
         if (created.created) return { pool: 'staff', sub: token.sub, email: token.email, groups: [...token.groups], userId: created.row.id, staffId: created.row.id };
@@ -180,7 +180,7 @@ export class PrincipalResolver {
       return await this.directory.verifiedEmail(sub);
     } catch (err) {
       this.logger.warn({ msg: 'staff_directory_lookup_failed', error: (err as Error).name ?? 'unknown' });
-      throw new ProblemException(503, 'staff-directory-unavailable', 'Não conseguimos confirmar seu cadastro agora. Tente de novo em instantes.', undefined, 'Diretório de usuários indisponível');
+      throw new ProblemException(503, 'staff-directory-unavailable', 'Não conseguimos confirmar seu cadastro agora. Tente de novo em instantes.');
     }
   }
 

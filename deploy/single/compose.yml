@@ -31,7 +31,8 @@ services:
     volumes: ["redisdata:/data"]
 
   mosquitto:
-    image: eclipse-mosquitto:2
+    # Versão exata (como o Traccar): a 2.x flutuante pode passar a recusar senha/ACL com permissão larga sem aviso no update.
+    image: eclipse-mosquitto:2.0.20
     restart: unless-stopped
     cap_drop: [NET_RAW]
     # Só na rede interna do Compose (porta não publicada): IOT_MODE=local, rastreadores simulados e ponte GT06.

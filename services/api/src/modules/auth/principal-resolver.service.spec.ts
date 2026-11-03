@@ -205,7 +205,7 @@ describe('PrincipalResolver (staff sem convite, fail-closed)', () => {
   it('cadastro com o mesmo e-mail ligado a outro sub (usuário recriado no Cognito) → 403 próprio, sem P2002/409', async () => {
     const prisma = mkPrisma({ id: 'velho', active: true, groups: ['admin'], cognitoSub: 'sub-antigo', lastLoginAt: null });
     const r = new PrincipalResolver(prisma as any, dir('ana@volti.com.br') as any, undefined, cognitoCfg(['ana@volti.com.br']) as any);
-    await expect(r.resolve(cognitoToken)).rejects.toMatchObject({ status: 403, slug: 'staff-account-relink-required' });
+    await expect(r.resolve(cognitoToken)).rejects.toMatchObject({ status: 403, slug: 'staff-account-relink-required', detail: 'Sua conta interna foi recriada. Peça ao suporte técnico para religar a conta.' });
     expect(prisma.staffUser.create).not.toHaveBeenCalled();
     expect(prisma.staffUser.update).not.toHaveBeenCalled();
   });

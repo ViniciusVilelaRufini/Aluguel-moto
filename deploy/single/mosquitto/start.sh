@@ -29,10 +29,12 @@ tmp="$dir/passwd.tmp"
 } >"$tmp"
 mosquitto_passwd -U "$tmp"
 mv "$tmp" "$dir/passwd"
-# O broker cai para o usuário mosquitto: o arquivo de senhas precisa ser legível por ele (e só por ele).
+# A ACL vem montada :ro (root, 644); o broker lê uma cópia só dele no diretório de runtime.
+cp "${MOSQUITTO_ACL_SRC:-/mosquitto/config/acl}" "$dir/acl"
+# O broker cai para o usuário mosquitto: senhas e ACL precisam ser legíveis por ele (e só por ele).
 chown -R mosquitto:mosquitto "$dir"
 chmod 700 "$dir"
-chmod 600 "$dir/passwd"
+chmod 600 "$dir/passwd" "$dir/acl"
 printf -- '-u observador\n-P %s\n' "$observer" >"$sub_conf"
 chmod 600 "$sub_conf"
 exec mosquitto -c "${MOSQUITTO_CONF:-/mosquitto/config/mosquitto.conf}"
