@@ -8,6 +8,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as servicediscovery from 'aws-cdk-lib/aws-servicediscovery';
 import { Construct } from 'constructs';
+import { assertIpv4Cidrs } from '../cidr';
 import { EnvConfig } from '../config';
 import { DataStack } from './data-stack';
 import { IotStack } from './iot-stack';
@@ -85,6 +86,7 @@ export class TraccarStack extends Stack {
     if (!props.apnCidrs?.length && !(env !== 'prod' && props.openGt06)) {
       throw new Error(env === 'prod' ? 'prod exige apnCidrs: o GT06 não tem TLS e só entra por APN privada (spec GT06 §6.5).' : 'informe apnCidrs ou, só para bancada, -c openGt06=true (5023 aberta à internet, sem TLS).');
     }
+    assertIpv4Cidrs('apnCidrs', props.apnCidrs ?? []);
     if (!props.apnCidrs?.length) Annotations.of(this).addWarning('TCP 5023 (GT06 sem TLS, só IMEI) aberta a 0.0.0.0/0: apenas bancada; use apnCidrs.');
     if (env === 'prod' && !props.apnCidrs?.length) throw new Error('prod exige apnCidrs: o GT06 não tem TLS e só entra por APN privada (spec GT06 §6.5).');
     const removal = cfg.disposable ? RemovalPolicy.DESTROY : RemovalPolicy.RETAIN;

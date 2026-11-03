@@ -331,6 +331,14 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
       for (const all of ['0.0.0.0/0', '::/0', '10.0.0.0/0']) expect(() => ingress({ gt06Port: true, gt06Cidrs: [all] })).toThrow(/openGt06/);
     });
 
+    it('gt06Cidrs: CIDR IPv4 válido com prefixo /8 ou maior (dois /1 não contornam o /0)', () => {
+      expect(() => ingress({ gt06Port: true, gt06Cidrs: ['0.0.0.0/1', '128.0.0.0/1'] })).toThrow(/gt06Cidrs/);
+      expect(() => ingress({ gt06Port: true, gt06Cidrs: ['10.0.0.0/7'] })).toThrow(/gt06Cidrs/);
+      expect(() => ingress({ gt06Port: true, gt06Cidrs: ['300.1.1.1/32'] })).toThrow(/gt06Cidrs/);
+      expect(() => ingress({ gt06Port: true, gt06Cidrs: ['10.20.0.0/33'] })).toThrow(/gt06Cidrs/);
+      expect(ingress({ gt06Port: true, gt06Cidrs: ['10.20.0.0/16'] })).toContainEqual(['tcp', 5023, '10.20.0.0/16']);
+    });
+
     it('gt06Port com openGt06 (reconhecimento explícito): 5023 aberta a 0.0.0.0/0; 8082 nunca', () => {
       const rules = ingress({ gt06Port: true, openGt06: true });
       expect(rules).toContainEqual(['tcp', 5023, '0.0.0.0/0']);

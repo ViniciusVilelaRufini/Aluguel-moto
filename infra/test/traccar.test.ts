@@ -115,6 +115,18 @@ describe('TraccarStack (proposta, opt-in por -c gt06Things)', () => {
     on.hasResourceProperties('AWS::ECS::Service', { ServiceName: 'volti-dev-traccar-bridge', DesiredCount: 1 });
   });
 
+  it('apnCidrs: só CIDR IPv4 válido com prefixo /8 ou maior (nada de /0 nem de dois /1 cobrindo a internet)', () => {
+    const prod = (apnCidrs: string[]) => createVoltiApp({ envName: 'prod', apiDomainName: 'api.volti.example', traccar: { gt06Things: ['moto-0901'], apnCidrs } });
+    expect(() => prod(['0.0.0.0/0'])).toThrow('apnCidrs');
+    expect(() => prod(['0.0.0.0/1', '128.0.0.0/1'])).toThrow('apnCidrs');
+    expect(() => prod(['10.0.0.0/7'])).toThrow('apnCidrs');
+    expect(() => prod(['10.20.0.0/16', 'não-é-cidr'])).toThrow('apnCidrs');
+    expect(() => prod(['300.1.1.1/32'])).toThrow('apnCidrs');
+    expect(() => prod(['10.20.0.0/33'])).toThrow('apnCidrs');
+    expect(() => prod(['10.20.0.0/16'])).not.toThrow();
+    expect(() => createVoltiApp({ envName: 'dev', traccar: { gt06Things: ['moto-0901'], apnCidrs: ['0.0.0.0/1', '128.0.0.0/1'] } })).toThrow('apnCidrs');
+  });
+
   it('validações: thing inválido; prod sem apnCidrs (GT06 sem TLS só por APN privada)', () => {
     expect(() => createVoltiApp({ envName: 'dev', traccar: { gt06Things: ['VLT-1'] } })).toThrow('gt06Things');
     expect(() => createVoltiApp({ envName: 'prod', apiDomainName: 'api.volti.example', traccar: { gt06Things: ['moto-0901'] } })).toThrow('apnCidrs');
