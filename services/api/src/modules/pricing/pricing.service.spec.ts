@@ -16,6 +16,23 @@ describe('PricingService.calculate', () => {
     expect(b.subtotalCents).toBe(1090);
   });
 
+  it('auditoria run-4 onda 2: pacote de minutos abate a linha time (desbloqueio e seguro continuam), antes da carteira', () => {
+    const b = pricing.calculate({ snapshot: { ...MINUTE, insurancePremiumCents: 200 }, elapsedSeconds: 10 * MIN, pausedSeconds: 0, minutesAvailable: 60, walletAvailableCents: 10_000 });
+    expect(b.lines).toContainEqual({ code: 'minute_package', description: 'Minutos do pacote', quantity: 10, unitCents: 79, amountCents: -790 });
+    expect(b.subtotalCents).toBe(300);
+    expect(b.walletAppliedCents).toBe(500);
+    expect(b.totalCents).toBe(0);
+    const part = pricing.calculate({ snapshot: MINUTE, elapsedSeconds: 10 * MIN, pausedSeconds: 0, minutesAvailable: 5 });
+    expect(part.lines.find((l) => l.code === 'minute_package')).toMatchObject({ quantity: 5, amountCents: -395 });
+    expect(part.totalCents).toBe(1090 - 395);
+  });
+
+  it('auditoria run-4 onda 2: pacote de minutos não vale fora do plano por minuto nem com saldo zero', () => {
+    expect(pricing.calculate({ snapshot: HOUR, elapsedSeconds: 30 * MIN, pausedSeconds: 0, minutesAvailable: 60 }).lines.some((l) => l.code === 'minute_package')).toBe(false);
+    expect(pricing.calculate({ snapshot: MINUTE, elapsedSeconds: 10 * MIN, pausedSeconds: 0, minutesAvailable: 0 }).lines.some((l) => l.code === 'minute_package')).toBe(false);
+    expect(pricing.calculate({ snapshot: { ...MINUTE, subscriptionCovered: true }, elapsedSeconds: 10 * MIN, pausedSeconds: 0, minutesAvailable: 60 }).lines.some((l) => l.code === 'minute_package')).toBe(false);
+  });
+
   it('minute: 10 min 01 s → 1169 (minuto parcial arredonda para cima)', () => {
     const b = pricing.calculate({ snapshot: MINUTE, elapsedSeconds: 10 * MIN + 1, pausedSeconds: 0 });
     expect(b.totalCents).toBe(1169);

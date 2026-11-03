@@ -315,6 +315,16 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - **Ledger:** `appendWalletEntry` trava o `Customer` (`FOR NO KEY UPDATE`) antes de calcular `balanceAfterCents`.
 - **LGPD:** a exclusão de conta anula `Alert.lat/lng` dos alertas dos aluguéis do titular; o job diário anula a posição de alertas de aluguel com mais de `TRACK_RETENTION_DAYS`. Alerta ligado a aluguel precisa vir com `rentalId`.
 
+## Auditoria run-4 — onda 2: reservas e dinheiro (`docs/decisoes.md`)
+
+- **Início do aluguel:** a reivindicação usa o status exato lido (`free` ou `reserved`); `reserved` exige a reserva do próprio cliente ainda `active`/`handover` na mesma transação; `convert()` devolve a contagem e o início aborta se 0. Rollback e varredura só voltam a `reserved` com a reserva do cliente ainda aberta (senão `free`), e nunca sobrescrevem um status que não seja `rented`.
+- **Pix de rua:** `reserveForPix` estende a reserva só se ela ainda está `active` e no prazo (senão `409`) e pede a liberação da caução anterior quando a troca; recusa da reserva libera a caução Pix recém-criada. O job `depot-reservations-orphan-deposits` também libera caução de rua (`deposit:<cliente>:<chave>`) `held`/`awaiting_pix` 10 min após o prazo do Pix; o filtro fica no SQL (`NOT EXISTS` em `Rental`, `Reservation` `active`/`handover`, `RentalStart`, `DepositRelease`) e só reserva aberta protege a caução.
+- **Reserva:** a expiração pelo TTL do Redis (e o passe de vencidas da varredura) só encerra com `expiresAt <= agora`; reserva estendida tem a chave regravada. `vehicle.status_changed` `free` só quando a moto saiu de fato de `reserved`.
+- **`Idempotency-Key`:** 8 a 128 caracteres em `[A-Za-z0-9_-]` (`400 validation-error`); UUID v4 passa. Caução devolvida por `holdDeposit` que pertence a reserva aberta de outro fluxo → `409 deposit-in-use`.
+- **Estorno:** `PaymentRefund.gatewayRefundedBefore` (migração `20261103130000_payment_refund_baseline`) guarda o total estornado no gateway antes da chamada; a reconciliação exige `before + amountCents` (o `providerPaymentId` pode ser compartilhado). Pedido antigo sem linha de base só confia no total do gateway se nenhum outro `Payment` compartilha o id.
+- **Pacotes de minutos:** no plano por minuto sem assinatura, os minutos da carteira abatem a linha `time` (linha `minute_package`, negativa) antes da carteira em reais, com lançamento `minute_package` (minutos negativos, `rentalId`) na transação do fechamento.
+- **Estorno de recarga:** tira o crédito da carteira uma vez por incremento (`TopUp.reversedCents`, migração `20261103131000_top_up_reversed_cents`): `top_up` negativo de `min(incremento, saldo)` ou os minutos proporcionais do pacote; falta de saldo → `payment.needs-review` (`top_up_refund_exceeds_balance`). Estorno do admin de recarga cujo crédito já foi gasto além do saldo → `409`. Só estorno confirmado conta (pedidos `claimed`/`pending` são descontados). Estorno total confirmado do aluguel devolve os minutos de pacote consumidos (parcial não devolve).
+
 ## Regras que nunca mudam
 
 - Nenhum `speedLimitKmh` fora de 0..32 é aceito (DTO → 400 `speed-limit-out-of-range`; serviço de comandos revalida; `CHECK` no banco).

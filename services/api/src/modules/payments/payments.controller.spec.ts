@@ -13,6 +13,8 @@ import { PAYMENT_PROVIDER, PaymentProviderError, RefundRejectedError } from './p
 import { ProviderCustomersService } from './provider-customers.service';
 import { SubscriptionsService } from './subscriptions.service';
 import { createInMemoryPrisma } from './testing/in-memory-prisma';
+import { reverseTopUpRefund } from '../wallet/top-up-refund';
+import { returnRentalPackageMinutes } from '../wallet/rental-minutes-return';
 import { RentalBillingService } from './rental-billing.service';
 import { InsuranceService } from '../insurance/insurance.service';
 import { MockInsuranceProvider } from '../insurance/insurance-provider';
@@ -302,6 +304,141 @@ describe('PaymentsService.refund (via gateway)', () => {
     await expect(svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k')).rejects.toMatchObject({ slug: 'payment-failed' });
     expect(await db.paymentRefund.count({ where: { paymentId: p.id } })).toBe(1);
     expect(provider.operations('refund')).toBe(0);
+  });
+
+  describe('auditoria run-4 onda 2: reconciliação com providerPaymentId compartilhado (Pix da caução que pagou o aluguel)', () => {
+    /** Pix de 10000 no gateway; excedente de 7000 já estornado; Payment do aluguel (pix_keep) de 3000 no mesmo id. */
+    async function shared() {
+      const base = await setup();
+      const { db, provider } = base;
+      const card = await db.paymentCard.findFirst({ where: { customerId: CUSTOMER_ID } });
+      const gw = await provider.charge({ providerCustomerId: 'x', providerCardId: card.providerCardId, amountCents: 10000, description: 'pix', idempotencyKey: 'pix-10000', externalReference: 'd' });
+      await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'deposit', method: 'pix', status: 'partially_refunded', amountCents: 10000, refundedCents: 7000, providerPaymentId: gw.providerPaymentId } });
+      await provider.refund({ providerPaymentId: gw.providerPaymentId, amountCents: 7000, idempotencyKey: 'excesso' });
+      const rp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'rental', method: 'pix', status: 'paid', amountCents: 3000, providerPaymentId: gw.providerPaymentId } });
+      return { ...base, rp };
+    }
+
+    it('estorno do aluguel falha → o total estornado do excedente (7000) não faz a reconciliação marcar succeeded', async () => {
+      const { db, svc, rp, provider } = await shared();
+      jest.spyOn(provider, 'refund').mockRejectedValue(new PaymentProviderError('timeout'));
+      await svc.refund(admin, rp.id, { amountCents: 3000, reason: 'x' }, 'k-shared');
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'pending', gatewayRefundedBefore: 7000 });
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'pending' });
+    });
+
+    it('com a linha de base: o gateway mostra before + valor → succeeded', async () => {
+      const { db, svc, rp, provider } = await shared();
+      const real = provider.refund.bind(provider);
+      jest.spyOn(provider, 'refund').mockImplementationOnce(async (input) => {
+        await real(input);
+        throw new PaymentProviderError('timeout');
+      });
+      await svc.refund(admin, rp.id, { amountCents: 3000, reason: 'x' }, 'k-shared-ok');
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'succeeded' });
+      expect(provider.operations('refund')).toBe(2);
+    });
+
+    it('pedido antigo sem linha de base e Payment compartilhado → não confia no total do gateway (segue pendente)', async () => {
+      const { db, svc, rp, provider } = await shared();
+      jest.spyOn(provider, 'refund').mockRejectedValue(new PaymentProviderError('timeout'));
+      await db.payment.update({ where: { id: rp.id }, data: { status: 'refunded', refundedCents: 3000 } });
+      await db.paymentRefund.create({ data: { paymentId: rp.id, idempotencyKey: `refund:${rp.id}:legado`, amountCents: 3000, prevStatus: 'paid', prevRefundedCents: 0, newStatus: 'refunded', newRefundedCents: 3000, status: 'pending' } });
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: rp.id } })).toMatchObject({ status: 'pending' });
+    });
+  });
+
+  describe('revisão onda 2: estorno total do aluguel devolve os minutos de pacote consumidos', () => {
+    const RENTAL = '99999999-9999-4999-8999-999999999999';
+    const minutes = async (db: any) => (await db.walletEntry.findMany({ where: { customerId: CUSTOMER_ID } })).reduce((a: number, e: any) => a + (e.minutes ?? 0), 0);
+    async function rentalWithPackage() {
+      const base = await setup();
+      const { db, p } = base;
+      await db.payment.update({ where: { id: p.id }, data: { rentalId: RENTAL } });
+      await db.walletEntry.create({ data: { customerId: CUSTOMER_ID, type: 'minute_package', amountCents: 0, minutes: 60, balanceAfterCents: 0, description: 'pacote' } });
+      await db.walletEntry.create({ data: { customerId: CUSTOMER_ID, type: 'minute_package', amountCents: 0, minutes: -10, balanceAfterCents: 0, description: 'aluguel', rentalId: RENTAL } });
+      return base;
+    }
+
+    it('estorno total → +10 min (minute_package com rentalId), uma vez só', async () => {
+      const { db, svc, p } = await rentalWithPackage();
+      await svc.refund(admin, p.id, { reason: 'Tudo' }, 'k-min-1');
+      expect(await minutes(db)).toBe(60);
+      const back = await db.walletEntry.findMany({ where: { rentalId: RENTAL, minutes: { gt: 0 } } });
+      expect(back).toEqual([expect.objectContaining({ type: 'minute_package', minutes: 10, amountCents: 0 })]);
+      await returnRentalPackageMinutes(db as any, await db.payment.findUnique({ where: { id: p.id } }));
+      expect(await minutes(db)).toBe(60);
+    });
+
+    it('estorno parcial → não devolve minutos; total pendente no gateway → ainda não devolve', async () => {
+      const { db, svc, p, provider } = await rentalWithPackage();
+      await svc.refund(admin, p.id, { amountCents: 1000, reason: 'x' }, 'k-min-2');
+      expect(await minutes(db)).toBe(50);
+      jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+      await svc.refund(admin, p.id, { reason: 'resto' }, 'k-min-3');
+      expect(await db.payment.findUnique({ where: { id: p.id } })).toMatchObject({ status: 'refunded' });
+      await returnRentalPackageMinutes(db as any, await db.payment.findUnique({ where: { id: p.id } }));
+      expect(await minutes(db)).toBe(50);
+      await svc.reconcileRefunds(0);
+      expect(await minutes(db)).toBe(60);
+    });
+  });
+
+  describe('auditoria run-4 onda 2: estorno de recarga pelo admin', () => {
+    async function topUp(credit: number, spent = 0) {
+      const base = await setup();
+      const { db, provider } = base;
+      const card = await db.paymentCard.findFirst({ where: { customerId: CUSTOMER_ID } });
+      const gw = await provider.charge({ providerCustomerId: 'x', providerCardId: card.providerCardId, amountCents: credit, description: 'r', idempotencyKey: 'tu', externalReference: 't' });
+      const tp = await db.payment.create({ data: { customerId: CUSTOMER_ID, kind: 'top_up', method: 'card', status: 'paid', amountCents: credit, providerPaymentId: gw.providerPaymentId } });
+      await db.topUp.create({ data: { customerId: CUSTOMER_ID, status: 'paid', method: 'card', amountCents: credit, paymentId: tp.id } });
+      await db.walletEntry.create({ data: { customerId: CUSTOMER_ID, type: 'top_up', amountCents: credit, balanceAfterCents: credit, description: 'x', paymentId: tp.id } });
+      if (spent) await db.walletEntry.create({ data: { customerId: CUSTOMER_ID, type: 'rental_charge', amountCents: -spent, balanceAfterCents: credit - spent, description: 'x' } });
+      return { ...base, tp };
+    }
+
+    it('crédito já consumido além do saldo atual → 409, nada estornado', async () => {
+      const { db, svc, tp, provider } = await topUp(2000, 1500);
+      await expect(svc.refund(admin, tp.id, { reason: 'x' }, 'k-tu-1')).rejects.toMatchObject({ status: 409 });
+      expect(provider.operations('refund')).toBe(0);
+      expect(await db.payment.findUnique({ where: { id: tp.id } })).toMatchObject({ status: 'paid', refundedCents: 0 });
+    });
+
+    const walletSum = async (db: any) => (await db.walletEntry.findMany({ where: { customerId: CUSTOMER_ID } })).reduce((a: number, e: any) => a + e.amountCents, 0);
+
+    it('revisão: estorno pendente refeito pela reconciliação (succeeded) → tira o crédito da carteira', async () => {
+      const { db, svc, tp, provider } = await topUp(2000);
+      jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+      await svc.refund(admin, tp.id, { amountCents: 800, reason: 'x' }, 'k-tu-3');
+      expect(await walletSum(db)).toBe(2000);
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: tp.id } })).toMatchObject({ status: 'succeeded' });
+      expect(await walletSum(db)).toBe(1200);
+    });
+
+    it('revisão: estorno pendente + webhook (refundedCents local já reservado) → não debita; recusado depois → nada debitado', async () => {
+      const { db, svc, tp, provider } = await topUp(2000);
+      const refund = jest.spyOn(provider, 'refund').mockRejectedValueOnce(new PaymentProviderError('timeout'));
+      await svc.refund(admin, tp.id, { amountCents: 800, reason: 'x' }, 'k-tu-4');
+      // O webhook de outro evento chega com o Payment local já reservado (partially_refunded, 800).
+      await reverseTopUpRefund(db as any, await db.payment.findUnique({ where: { id: tp.id } }));
+      expect(await walletSum(db)).toBe(2000);
+      refund.mockRejectedValueOnce(new RefundRejectedError('recusado'));
+      await svc.reconcileRefunds(0);
+      expect(await db.paymentRefund.findFirst({ where: { paymentId: tp.id } })).toMatchObject({ status: 'rejected' });
+      await reverseTopUpRefund(db as any, await db.payment.findUnique({ where: { id: tp.id } }));
+      expect(await walletSum(db)).toBe(2000);
+    });
+
+    it('com saldo → estorna no gateway e tira o crédito da carteira', async () => {
+      const { db, svc, tp } = await topUp(2000);
+      await svc.refund(admin, tp.id, { amountCents: 800, reason: 'x' }, 'k-tu-2');
+      const sum = (await db.walletEntry.findMany({ where: { customerId: CUSTOMER_ID } })).reduce((a: number, e: any) => a + e.amountCents, 0);
+      expect(sum).toBe(1200);
+    });
   });
 
   it('fix round 1: teto do estorno de caução capturada = valor capturado (PaymentCapture)', async () => {

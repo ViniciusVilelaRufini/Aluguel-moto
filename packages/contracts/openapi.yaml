@@ -25,7 +25,8 @@ info:
       última página.
     - `Idempotency-Key` (header) é obrigatório em `POST /rentals`, `POST /swap-stations/{id}/swaps` e nos POST de pagamento. A mesma chave
       com o mesmo corpo devolve a mesma resposta sem repetir o efeito; com corpo diferente → `422`
-      (`idempotency-key-reused`). Chaves valem por 24 h.
+      (`idempotency-key-reused`). Chaves valem por 24 h. Formato: 8 a 128 caracteres em `[A-Za-z0-9_-]` (UUID v4
+      passa); fora disso → `400` `validation-error`.
     - Rate limiting global; acima do limite → `429` com `Retry-After`.
 
     ## Erros (RFC 7807)
@@ -5410,13 +5411,13 @@ components:
       in: header
       required: true
       description: Chave única por intenção (UUID v4 recomendado). Válida por 24 h.
-      schema: { type: string, minLength: 8, maxLength: 128 }
+      schema: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9_-]{8,128}$' }
     IdempotencyKeyOptional:
       name: Idempotency-Key
       in: header
       required: false
       description: Recomendado para reenvios da fila offline. Válida por 24 h.
-      schema: { type: string, minLength: 8, maxLength: 128 }
+      schema: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9_-]{8,128}$' }
 
     ShareToken:
       name: token
@@ -6241,7 +6242,7 @@ components:
       properties:
         code:
           type: string
-          description: '`unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `wallet`.'
+          description: '`unlock`, `time`, `pause`, `insurance`, `coupon`, `fee:<code>`, `subscription_covered`, `minute_package` (minutos do pacote da carteira abatidos da linha `time`, negativo), `wallet`.'
           examples: [time]
         description: { type: string, examples: ['10 min x R$ 0,79'] }
         quantity: { type: integer, minimum: 0, description: 'Minutos, horas ou dias cobrados.' }

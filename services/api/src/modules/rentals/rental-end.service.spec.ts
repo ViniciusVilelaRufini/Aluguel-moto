@@ -259,6 +259,28 @@ describe('Encerramento do aluguel', () => {
     expect(billing.settle).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    [60, 10, 500, 50],
+    [5, 5, 1290 - 395, 0],
+  ])('auditoria run-4 onda 2: saldo de %i min de pacote → %i min cobertos no fechamento (lançamento minute_package na mesma transação)', async (minutes, covered, total, left) => {
+    const { service, billing, prisma, rental } = setup();
+    let balanceMinutes = minutes;
+    prisma.walletEntry.aggregate.mockImplementation((async () => ({ _sum: { amountCents: 0, minutes: balanceMinutes }, _max: { createdAt: null } })) as any);
+    prisma.walletEntry.create.mockImplementation((async (args: any) => {
+      balanceMinutes += args.data.minutes ?? 0;
+      return args.data;
+    }) as any);
+    await service.end(CUSTOMER_ID, RENTAL_ID, { returnPhotoObjectKey: PHOTO_KEY });
+    expect(rental.breakdown.lines).toContainEqual(expect.objectContaining({ code: 'minute_package', quantity: covered, amountCents: -covered * 79 }));
+    expect(billing.settle).toHaveBeenCalledWith(expect.objectContaining({ amountCents: total }));
+    expect(prisma.walletEntry.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ customerId: CUSTOMER_ID, type: 'minute_package', amountCents: 0, minutes: -covered, rentalId: RENTAL_ID }),
+    });
+    expect(balanceMinutes).toBe(left);
+    await service.finalize(RENTAL_ID, 'ended');
+    expect(prisma.walletEntry.create).toHaveBeenCalledTimes(1);
+  });
+
   it('Task 16 (R2-01): saldo negativo (ajuste) ou zero não abate nada', async () => {
     const { service, billing, prisma } = setup();
     prisma.walletEntry.aggregate.mockResolvedValue({ _sum: { amountCents: -300 } } as any);

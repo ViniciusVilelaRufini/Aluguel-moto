@@ -96,6 +96,12 @@ export class PricingService {
      * plano não coberto (unidades iniciadas na linha `time`). Ausente = todo o tempo coberto (comportamento anterior).
      */
     coveredSeconds?: number;
+    /**
+     * Auditoria run-4 onda 2 (padrão da auditoria; dono pode alterar): saldo de minutos de pacote da carteira. No plano por
+     * minuto sem assinatura, abate os minutos da linha `time` (linha `minute_package`, negativa) antes da carteira em reais;
+     * desbloqueio, pausa e seguro continuam cobrados.
+     */
+    minutesAvailable?: number;
   }): PriceBreakdown {
     const s = input.snapshot;
     const elapsed = Math.max(0, Math.floor(input.elapsedSeconds));
@@ -107,6 +113,10 @@ export class PricingService {
         if (s.unlockFeeCents > 0) lines.push({ code: 'unlock', description: 'Desbloqueio', quantity: 1, unitCents: s.unlockFeeCents, amountCents: s.unlockFeeCents });
         const rideMinutes = startedUnits(elapsed - paused, 60);
         lines.push({ code: 'time', description: 'Tempo de uso (por minuto)', quantity: rideMinutes, unitCents: s.unitPriceCents, amountCents: rideMinutes * s.unitPriceCents });
+        const packageMinutes = Math.min(Math.max(0, Math.floor(input.minutesAvailable ?? 0)), rideMinutes);
+        if (packageMinutes > 0 && s.unitPriceCents > 0) {
+          lines.push({ code: 'minute_package', description: 'Minutos do pacote', quantity: packageMinutes, unitCents: s.unitPriceCents, amountCents: -packageMinutes * s.unitPriceCents });
+        }
         const pauseMinutes = startedUnits(paused, 60);
         if (pauseMinutes > 0 && s.pausePerMinuteCents > 0) {
           lines.push({ code: 'pause', description: 'Tempo pausado (por minuto)', quantity: pauseMinutes, unitCents: s.pausePerMinuteCents, amountCents: pauseMinutes * s.pausePerMinuteCents });
