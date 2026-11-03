@@ -59,9 +59,9 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     await a.start({ commandId: 'c1', thingName: T }, { online: true });
     known.set(T, 0);
     await a.onSample(T, { kmh: 0, deviceTs: clock.now(), measuredAt: clock.now(), accepted: true });
-    await clock.advance(5_000);
+    await clock.advance(10_000);
     await a.onSample(T, { kmh: 0, deviceTs: clock.now(), measuredAt: clock.now(), accepted: true });
-    await clock.advance(5_000);
+    await clock.advance(10_000);
     await a.onSample(T, { kmh: 0, deviceTs: clock.now(), measuredAt: clock.now(), accepted: true });
     const orig = redis.exists.bind(redis);
     let hooked = false;
@@ -95,17 +95,17 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     expect(outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'did_not_stop' }]);
   });
 
-  it('F3: intervalo entre paradas > 10 s reinicia a sequência', async () => {
+  it('F3: intervalo entre paradas > 12 s (RELAY_MAX_SAMPLE_GAP_MS) reinicia a sequência', async () => {
     const s = setup();
     await s.svc.start({ commandId: 'c1', thingName: T }, { online: true });
     await s.sample(0);
     await s.clock.advance(70_000);
     await s.sample(2);
     expect(s.cuts()).toEqual([]);
-    await s.clock.advance(5_000);
+    await s.clock.advance(10_000);
     await s.sample(1);
     expect(s.cuts()).toEqual([]);
-    await s.clock.advance(5_000);
+    await s.clock.advance(10_000);
     await s.sample(1);
     expect(s.cuts()).toHaveLength(1);
   });
@@ -114,6 +114,8 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     const s = setup();
     await s.svc.start({ commandId: 'c1', thingName: T }, { online: true });
     await s.sample(0, { deviceTs: s.clock.now() + 3_600_000, accepted: false });
+    await s.sample(0);
+    await s.clock.advance(10_000);
     await s.sample(0);
     await s.clock.advance(10_000);
     await s.sample(0);
@@ -131,12 +133,14 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     expect(s.outcomes).toHaveLength(1); // sem did_not_stop enquanto offline
     await s.sample(0); // espera da moto: não conta
     await s.svc.onConnectivity(T, true, { online: true });
-    await s.clock.advance(100_000); // < 120 s da reconexão
+    await s.clock.advance(90_000); // < 120 s da reconexão (as 3 paradas fecham em 110 s)
     // Reconectada: só o `in_progress` da espera retomada (Task 4 fix 1, L1); nenhum did_not_stop.
     expect(s.outcomes).toEqual([
       { commandId: 'c1', status: 'pending', reason: 'offline' },
       { commandId: 'c1', status: 'in_progress' },
     ]);
+    await s.sample(0);
+    await s.clock.advance(10_000);
     await s.sample(0);
     await s.clock.advance(10_000);
     await s.sample(0);
@@ -165,6 +169,8 @@ describe('RelayLockService — correções da revisão (fix 1)', () => {
     const fail = { on: false };
     const svc = mk(clock, store, desired, outcomes, known, fail);
     await svc.start({ commandId: 'c1', thingName: T }, { online: true });
+    await svc.onSample(T, { kmh: 0, deviceTs: clock.now(), measuredAt: clock.now(), accepted: true });
+    await clock.advance(10_000);
     await svc.onSample(T, { kmh: 0, deviceTs: clock.now(), measuredAt: clock.now(), accepted: true });
     await clock.advance(10_000);
     await svc.onSample(T, { kmh: 0, deviceTs: clock.now(), measuredAt: clock.now(), accepted: true });
@@ -276,6 +282,8 @@ describe('RelayLockService — moto já travada (Task 4, fix 3)', () => {
       known.set(T, 0);
       await svc.onSample(T, { kmh: 0, deviceTs: clock.now(), measuredAt: clock.now(), accepted: true });
     };
+    await sample();
+    await clock.advance(10_000);
     await sample();
     locked = true; // travou por outro caminho durante a espera
     await clock.advance(10_000);

@@ -5,7 +5,7 @@ import { MemoryRedisStore } from '../../redis/redis-store';
 import { BaseIotGateway } from './base-iot-gateway';
 import { FakeClock } from './clock';
 import { DEFAULT_OFFLINE_AFTER_MS, DEFAULT_RECONNECT_GAP_MS, DEFAULT_RECONNECT_GRACE_MS, LiveStateStore, PARKED_GAP_FACTOR, PARKED_TELEMETRY_MS, SPEED_FRESH_MS } from './live-state.store';
-import { RELAY_STILL_MIN_SAMPLES, RELAY_STILL_MIN_SPAN_MS, RELAY_STOP_TIMEOUT_MS } from './relay-lock.service';
+import { RELAY_MAX_SAMPLE_GAP_MS, RELAY_STILL_MIN_SAMPLES, RELAY_STILL_MIN_SPAN_MS, RELAY_STOP_TIMEOUT_MS } from './relay-lock.service';
 import { MemoryRelayLockStore } from './relay-lock.store';
 import type { DesiredState, IotTransport, ReportedState } from './shadow-transport';
 import { TelemetryService } from './telemetry.service';
@@ -29,7 +29,7 @@ const fcParams = (numRuns: number) => ({ numRuns: FC_RUNS ?? numRuns, ...(FC_SEE
 
 type Step =
   | { kind: 'sample'; afterMs: number; kmh: number; skewMs: number }
-  /** Moto parada por um tempo: `count` telemetrias < 3 km/h a cada `everyMs` (cadência do J16 ~5 s; > 10 s nunca é consecutiva). */
+  /** Moto parada por um tempo: `count` telemetrias < 3 km/h a cada `everyMs` (cadência do J16 5–10 s; > 12 s nunca é consecutiva). */
   | { kind: 'parked'; afterMs: number; count: number; everyMs: number; kmh: number; skewMs: number }
   | { kind: 'replay'; afterMs: number; kmh: number; ageMs: number }
   | { kind: 'reported'; afterMs: number; kmh: number; travada: boolean | null }
@@ -52,8 +52,8 @@ const step: fc.Arbitrary<Step> = fc.oneof(
     arbitrary: fc.record({
       kind: fc.constant('parked' as const),
       afterMs: fc.integer({ min: 500, max: 7_000 }),
-      count: fc.integer({ min: 1, max: 6 }),
-      everyMs: fc.integer({ min: 1_000, max: 12_000 }),
+      count: fc.integer({ min: 1, max: 8 }),
+      everyMs: fc.integer({ min: 1_000, max: 14_000 }),
       kmh: fc.oneof(fc.double({ min: 0, max: 2.99, noNaN: true }), fc.constantFrom(0, 2.999)),
       skewMs: fc.integer({ min: -2_000, max: 2_000 }),
     }),
@@ -155,7 +155,8 @@ class World {
  * - a gravação sai durante a entrega de uma telemetria parada, fresca (≤ 10 s) e fora da graça da última reconexão;
  * - a última velocidade conhecida desde a reconexão (maior hora de medição, telemetria ou `reported`) é parada;
  * - existe uma sequência parada: a partir da gravação, para trás, sem nenhuma mensagem em movimento/desconhecida nem mensagem na
- *   graça no meio, com ≥ 2 telemetrias frescas, medidas depois da reconexão, cobrindo ≥ 10 s e sem intervalo > 10 s entre elas.
+ *   graça no meio, com ≥ 3 telemetrias frescas, medidas depois da reconexão, cobrindo ≥ 20 s e sem intervalo > 12 s entre elas
+ *   (regra da bancada do J16, cadência mínima de 10 s — docs/decisoes.md 2026-11-03).
  */
 function stoppedRunViolation(w: World, at: number): string | null {
   const d = w.log[w.log.length - 1];
@@ -177,7 +178,7 @@ function stoppedRunViolation(w: World, at: number): string | null {
   let first = d.measured;
   let count = 0;
   for (const m of members) {
-    if (first - m > SPEED_FRESH_MS) break;
+    if (first - m > RELAY_MAX_SAMPLE_GAP_MS) break;
     first = m;
     count++;
   }
@@ -308,8 +309,9 @@ describe('relay_only: invariante de segurança (spec GT06 §5, teste de propried
   afterAll(() => Logger.overrideLogger(['log', 'error', 'warn', 'debug', 'verbose']));
 
   it('o oráculo usa as constantes da spec (afrouxar uma delas no código derruba este teste)', () => {
-    expect(RELAY_STILL_MIN_SAMPLES).toBeGreaterThanOrEqual(2);
-    expect(RELAY_STILL_MIN_SPAN_MS).toBeGreaterThanOrEqual(10_000);
+    expect(RELAY_STILL_MIN_SAMPLES).toBeGreaterThanOrEqual(3);
+    expect(RELAY_STILL_MIN_SPAN_MS).toBeGreaterThanOrEqual(20_000);
+    expect(RELAY_MAX_SAMPLE_GAP_MS).toBeLessThanOrEqual(12_000);
     expect(RELAY_STOP_TIMEOUT_MS).toBeLessThanOrEqual(120_000);
     expect(SPEED_FRESH_MS).toBeLessThanOrEqual(10_000);
     expect(DEFAULT_RECONNECT_GRACE_MS).toBeGreaterThan(0);
@@ -335,6 +337,13 @@ describe('relay_only: invariante de segurança (spec GT06 §5, teste de propried
     );
   }, 120_000);
 
+  it('sanidade do gerador: J16 com TIMER de 10 s e o GPS 2 s atrás, parado, corta uma vez (bancada 2026-11-03)', async () => {
+    const steps: Step[] = [{ kind: 'parked', afterMs: 10_000, count: 6, everyMs: 10_000, kmh: 0, skewMs: -2_000 }];
+    const { cuts, violations } = await runScenario(steps);
+    expect(cuts).toBe(1);
+    expect(violations).toEqual([]);
+  });
+
   it('sanidade do gerador: um cenário parado de verdade corta uma vez (o oráculo não é vazio)', async () => {
     const steps: Step[] = Array.from({ length: 8 }, () => ({ kind: 'sample' as const, afterMs: 5_000, kmh: 0, skewMs: 0 }));
     const { cuts, violations } = await runScenario(steps);
@@ -353,10 +362,17 @@ describe('relay_only: invariante de segurança (spec GT06 §5, teste de propried
     tel(0);
     await clock.advance(5_000);
     tel(0);
-    expect(stoppedRunViolation(w, clock.now())).toMatch(/sequência parada de 5000 ms/);
+    expect(stoppedRunViolation(w, clock.now())).toMatch(/^2 telemetria/);
     await clock.advance(5_000);
     tel(0);
+    expect(stoppedRunViolation(w, clock.now())).toMatch(/sequência parada de 10000 ms/);
+    await clock.advance(10_000);
+    tel(0);
     expect(stoppedRunViolation(w, clock.now())).toBeNull();
+    // Intervalo > 12 s entre duas paradas: a sequência recomeça (só 1 telemetria consecutiva).
+    await clock.advance(12_001);
+    tel(0);
+    expect(stoppedRunViolation(w, clock.now())).toMatch(/^1 telemetria/);
     w.message({ kind: 'reported', arrival: clock.now(), measured: clock.now(), kmh: 4 });
     tel(0);
     expect(stoppedRunViolation(w, clock.now())).not.toBeNull();

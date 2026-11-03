@@ -1,6 +1,7 @@
 import type { CommandOutcome } from '../../ports/iot-gateway.port';
 import { FakeClock } from './clock';
-import { RelayLockService, stillConfirmed, type RelaySample } from './relay-lock.service';
+import { RELAY_MAX_SAMPLE_GAP_MS, RELAY_STILL_MIN_SAMPLES, RELAY_STILL_MIN_SPAN_MS, RelayLockService, stillConfirmed, type RelaySample } from './relay-lock.service';
+import { SPEED_FRESH_MS } from './live-state.store';
 import { MemoryRedisStore } from '../../redis/redis-store';
 import { MemoryRelayLockStore, RedisRelayLockStore } from './relay-lock.store';
 import type { DesiredState } from './shadow-transport';
@@ -28,31 +29,41 @@ function setup(opts: { online?: boolean; knownLocked?: () => boolean | null } = 
 }
 
 describe('stillConfirmed', () => {
-  it('exige 2 amostras, 10 s entre a primeira e a última e a última fresca (≤ 10 s)', () => {
+  it('J16 (bancada 2026-11-03): exige 3 amostras, 20 s entre a primeira e a última e a última fresca (≤ 10 s)', () => {
     expect(stillConfirmed(undefined, 0)).toBe(false);
-    expect(stillConfirmed({ firstAt: 0, lastAt: 10_000, count: 1 }, 10_000)).toBe(false);
-    expect(stillConfirmed({ firstAt: 0, lastAt: 9_999, count: 3 }, 9_999)).toBe(false);
-    expect(stillConfirmed({ firstAt: 0, lastAt: 10_000, count: 2 }, 10_000)).toBe(true);
-    expect(stillConfirmed({ firstAt: 0, lastAt: 10_000, count: 2 }, 20_000)).toBe(true);
-    expect(stillConfirmed({ firstAt: 0, lastAt: 10_000, count: 2 }, 20_001)).toBe(false);
+    expect(stillConfirmed({ firstAt: 0, lastAt: 20_000, count: 2 }, 20_000)).toBe(false);
+    expect(stillConfirmed({ firstAt: 0, lastAt: 19_999, count: 5 }, 19_999)).toBe(false);
+    expect(stillConfirmed({ firstAt: 0, lastAt: 20_000, count: 3 }, 20_000)).toBe(true);
+    expect(stillConfirmed({ firstAt: 0, lastAt: 20_000, count: 3 }, 30_000)).toBe(true);
+    expect(stillConfirmed({ firstAt: 0, lastAt: 20_000, count: 3 }, 30_001)).toBe(false);
+  });
+
+  it('constantes da regra (spec GT06 §5, docs/decisoes.md 2026-11-03): 3 amostras, 20 s, intervalo máximo de 12 s, frescor de 10 s', () => {
+    expect(RELAY_STILL_MIN_SAMPLES).toBe(3);
+    expect(RELAY_STILL_MIN_SPAN_MS).toBe(20_000);
+    expect(RELAY_MAX_SAMPLE_GAP_MS).toBe(12_000);
+    expect(SPEED_FRESH_MS).toBe(10_000);
   });
 });
 
 describe('RelayLockService (spec GT06 §5)', () => {
-  it('online e andando → in_progress e nada publicado; só corta com 2 amostras paradas cobrindo 10 s, uma única vez', async () => {
+  it('online e andando → in_progress e nada publicado; só corta com 3 amostras paradas cobrindo 20 s, uma única vez', async () => {
     const s = setup();
     expect(await s.svc.start({ commandId: 'c1', thingName: T }, s.state)).toEqual({ commandId: 'c1', status: 'in_progress' });
     await s.sample(18);
+    await s.clock.advance(10_000);
+    await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(1.5);
+    expect(s.desired).toEqual([]); // 2 amostras em 10 s
     await s.clock.advance(5_000);
     await s.sample(0);
-    await s.clock.advance(5_000);
-    await s.sample(1.5);
-    expect(s.desired).toEqual([]); // 2 amostras, mas só 5 s entre elas
+    expect(s.desired).toEqual([]); // 3 amostras, mas só 15 s entre a primeira e a última
     await s.clock.advance(5_000);
     await s.sample(0);
     expect(s.cuts()).toHaveLength(1);
-    expect(s.desired).toEqual([{ at: T0 + 15_000, desired: { travada: true } }]); // nunca limite_kmh (sem rampa)
-    await s.clock.advance(5_000);
+    expect(s.desired).toEqual([{ at: T0 + 30_000, desired: { travada: true } }]); // nunca limite_kmh (sem rampa)
+    await s.clock.advance(10_000);
     await s.sample(0);
     expect(s.cuts()).toHaveLength(1);
   });
@@ -65,9 +76,11 @@ describe('RelayLockService (spec GT06 §5)', () => {
     await s.sample(3); // exatamente 3 = em movimento
     await s.clock.advance(5_000);
     await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0);
     await s.clock.advance(5_000);
     await s.sample(0);
-    expect(s.cuts()).toEqual([]);
+    expect(s.cuts()).toEqual([]); // 3 paradas, 15 s
     await s.clock.advance(5_000);
     await s.sample(0);
     expect(s.cuts()).toHaveLength(1);
@@ -83,6 +96,9 @@ describe('RelayLockService (spec GT06 §5)', () => {
     await s.sample(0);
     expect(s.cuts()).toEqual([]);
     await s.sample(0, { deviceTs: s.clock.now() - 60_000, measuredAt: s.clock.now() - 60_000, accepted: false }); // parada reordenada: ignorada
+    await s.clock.advance(10_000);
+    await s.sample(0);
+    expect(s.cuts()).toEqual([]);
     await s.clock.advance(10_000);
     await s.sample(0);
     expect(s.cuts()).toHaveLength(1);
@@ -113,6 +129,8 @@ describe('RelayLockService (spec GT06 §5)', () => {
   it('velocidade conhecida desconhecida ou ≥ 3 no instante da decisão → não corta', async () => {
     const s = setup();
     await s.svc.start({ commandId: 'c1', thingName: T }, s.state);
+    await s.sample(0);
+    await s.clock.advance(10_000);
     await s.sample(0);
     await s.clock.advance(10_000);
     s.known.set(T, null);
@@ -156,6 +174,9 @@ describe('RelayLockService (spec GT06 §5)', () => {
     await s.sample(0);
     await s.clock.advance(10_000);
     await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0);
+    expect(s.cuts()).toHaveLength(1);
     const cutAt = s.clock.now();
     locked = true;
     await s.svc.onReported(T, { travada: true }, { travada: cutAt - 5_000 }); // anterior ao corte: não vale
@@ -175,6 +196,8 @@ describe('RelayLockService (spec GT06 §5)', () => {
     await s.sample(0);
     await s.clock.advance(10_000);
     await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0);
     await s.clock.advance(120_000);
     expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'timeout' }]);
     expect(s.desired.map((d) => d.desired)).toEqual([{ travada: true }, { travada: null }]);
@@ -190,7 +213,46 @@ describe('RelayLockService (spec GT06 §5)', () => {
     expect(s.cuts()).toEqual([]);
     await s.clock.advance(10_000);
     await s.sample(0);
+    expect(s.cuts()).toEqual([]);
+    await s.clock.advance(10_000);
+    await s.sample(0);
     expect(s.cuts()).toHaveLength(1);
+  });
+
+  it('J16: cadência de 10 s com o GPS 2 s atrás corta na 3ª parada (20 s); intervalo de 12 s ainda é consecutivo, 12,001 s não', async () => {
+    const s = setup();
+    await s.svc.start({ commandId: 'c1', thingName: T }, s.state);
+    const lagged = (kmh: number) => s.sample(kmh, { deviceTs: s.clock.now() - 2_000, measuredAt: s.clock.now() - 2_000 });
+    await lagged(0);
+    await s.clock.advance(10_000);
+    await lagged(0);
+    expect(s.cuts()).toEqual([]);
+    await s.clock.advance(10_000);
+    await lagged(0);
+    expect(s.desired).toEqual([{ at: T0 + 20_000, desired: { travada: true } }]);
+
+    const g = setup();
+    await g.svc.start({ commandId: 'c2', thingName: T }, g.state);
+    await g.sample(0);
+    await g.clock.advance(12_000);
+    await g.sample(0);
+    await g.clock.advance(8_000);
+    await g.sample(0); // 0, 12, 20 s: intervalo máximo 12 s → consecutivas
+    expect(g.cuts()).toHaveLength(1);
+
+    const h = setup();
+    await h.svc.start({ commandId: 'c3', thingName: T }, h.state);
+    await h.sample(0);
+    await h.clock.advance(12_001);
+    await h.sample(0); // intervalo > 12 s: a sequência recomeça aqui
+    await h.clock.advance(9_000);
+    await h.sample(0);
+    await h.clock.advance(9_000);
+    await h.sample(0);
+    expect(h.cuts()).toEqual([]); // 3 paradas desde o recomeço, mas só 18 s
+    await h.clock.advance(3_000);
+    await h.sample(0);
+    expect(h.cuts()).toHaveLength(1);
   });
 
   it('nunca confirma pelo estado ao vivo: espera; reported.travada = true da ponte (moto já cortada) confirma sem publicar', async () => {

@@ -3,6 +3,7 @@ import { EV, IotCommandUpdatedEvent } from '../../common/events';
 import { MemoryRedisStore } from '../../redis/redis-store';
 import { BaseIotGateway, type GatewayOptions } from './base-iot-gateway';
 import { MemoryRelayLockStore } from './relay-lock.store';
+import { RELAY_UNLOCK_TIMEOUT_MS } from './relay-lock.service';
 import { FakeClock } from './clock';
 import { DEFAULT_RECONNECT_GRACE_MS, LiveStateStore } from './live-state.store';
 import type { DesiredState, IotTransport, MomentaryCommand, ReportedState } from './shadow-transport';
@@ -73,16 +74,16 @@ async function lockRelay(s: Setup, commandId = 'c1') {
 }
 
 describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
-  it('andando → in_progress e nada publicado (sem rampa); corta uma vez depois de 2 telemetrias paradas em 10 s; reported confirma', async () => {
+  it('andando → in_progress e nada publicado (sem rampa); corta uma vez depois de 3 telemetrias paradas em 20 s; reported confirma', async () => {
     const s = setup();
     await online(s);
     expect(await lockRelay(s)).toEqual({ commandId: 'c1', status: 'in_progress' });
     await s.sample(20);
-    await s.clock.advance(5_000);
-    await s.sample(0);
-    await s.clock.advance(5_000);
-    await s.sample(0);
-    expect(s.transport.desired).toEqual([]);
+    for (let i = 0; i < 4; i++) {
+      await s.clock.advance(5_000);
+      await s.sample(0);
+    }
+    expect(s.transport.desired).toEqual([]); // 4 paradas cobrindo 15 s
     await s.clock.advance(5_000);
     await s.sample(0);
     expect(s.transport.desired.map((d) => d.desired)).toEqual([{ travada: true }]);
@@ -113,7 +114,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     await s.sample(0);
     await s.clock.advance(5_000);
     await s.svc.presence(T, true);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       await s.sample(0);
       await s.clock.advance(5_000);
     }
@@ -136,11 +137,11 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     expect(s.cuts()).toEqual([]);
   });
 
-  it('moto offline → pending/offline; reconectada, só corta depois da graça e de 2 amostras paradas novas', async () => {
+  it('moto offline → pending/offline; reconectada, só corta depois da graça e de 3 amostras paradas novas em 20 s', async () => {
     const s = setup();
     expect(await s.gw.lock({ commandId: 'c1', thingName: T, controlMode: 'relay_only' })).toEqual({ commandId: 'c1', status: 'pending', reason: 'offline' });
     await s.svc.presence(T, true);
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       await s.sample(0);
       await s.clock.advance(5_000);
     }
@@ -156,6 +157,8 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     await s.sample(0);
     await s.clock.advance(10_000);
     await s.sample(0);
+    await s.clock.advance(10_000);
+    await s.sample(0);
     expect(s.cuts()).toHaveLength(1);
     for (let i = 0; i < 25; i++) await s.clock.advance(5_000);
     expect(s.updates).toContainEqual({ commandId: 'c1', status: 'failed', reason: 'timeout' });
@@ -166,6 +169,8 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     const s = setup();
     await online(s);
     await lockRelay(s);
+    await s.sample(0);
+    await s.clock.advance(10_000);
     await s.sample(0);
     await s.clock.advance(10_000);
     await s.sample(0);
@@ -253,6 +258,8 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       await s.sample(0);
       await s.clock.advance(10_000);
       await s.sample(0);
+      await s.clock.advance(10_000);
+      await s.sample(0);
       expect(s.cuts()).toHaveLength(1);
     });
 
@@ -295,6 +302,8 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       const s = setup();
       await online(s);
       await lockRelay(s);
+      await s.sample(0);
+      await s.clock.advance(10_000);
       await s.sample(0);
       await s.clock.advance(10_000);
       await s.sample(0);
@@ -407,7 +416,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       await s.svc.reported(T, { travada: true }); // tick da reconexão: pode estar velho (J16 reiniciou)
       await s.clock.advance(1_000);
       expect(s.updates).toEqual([{ commandId: 'c1', status: 'in_progress' }]);
-      for (let i = 0; i < 6 && s.cuts().length === 0; i++) {
+      for (let i = 0; i < 10 && s.cuts().length === 0; i++) {
         await s.sample(0, { travada: false, ignicao: false }); // relé aberto de verdade
         await s.clock.advance(5_000);
       }
@@ -464,7 +473,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       expect(s.updates).toContainEqual({ commandId: 'u1', status: 'failed' });
       // Volta travada (nunca recebeu o engineResume): confirma pela telemetria depois da graça, sem gravar nada.
       await s.svc.presence(T, true);
-      for (let i = 0; i < 6; i++) {
+      for (let i = 0; i < 8; i++) {
         await s.sample(0, { travada: true, ignicao: false });
         await s.clock.advance(5_000);
       }
@@ -480,7 +489,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       await s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
       await s.gw.lock(relay('c1'));
       await s.svc.presence(T, true);
-      for (let i = 0; i < 6 && s.cuts().length === 0; i++) {
+      for (let i = 0; i < 10 && s.cuts().length === 0; i++) {
         await s.sample(0, { travada: false, ignicao: false });
         await s.clock.advance(5_000);
       }
@@ -510,7 +519,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       const u = s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
       await s.clock.advance(3_000);
       expect(await u).toEqual({ commandId: 'u1', status: 'in_progress' });
-      await s.clock.advance(30_000); // prazo do unlock sem nenhum status
+      await s.clock.advance(RELAY_UNLOCK_TIMEOUT_MS); // prazo do unlock só relé (90 s) sem nenhum status
       const l = await lockRelay(s, 'c2');
       expect(l.status).not.toBe('confirmed');
       await s.clock.advance(1_000);
@@ -551,13 +560,51 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       const u = s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
       await s.clock.advance(3_000);
       expect(await u).toEqual({ commandId: 'u1', status: 'in_progress' });
-      for (let i = 0; i < 7; i++) {
+      for (let i = 0; i < 19; i++) {
         await s.sample(0, { travada: false, ignicao: false });
         await s.gw.onReported(T, { velocidade_kmh: 0 });
         await s.clock.advance(5_000);
       }
       expect(s.updates).toContainEqual({ commandId: 'u1', status: 'failed', reason: 'timeout' });
       expect(s.updates).not.toContainEqual({ commandId: 'u1', status: 'confirmed' });
+    });
+
+    it('bancada do J16: unlock só relé tem prazo de 90 s (heartbeat de 60 s); speed_control continua com 30 s', async () => {
+      expect(RELAY_UNLOCK_TIMEOUT_MS).toBe(90_000);
+      const s = setup();
+      await online(s, 0);
+      await s.gw.onReported(T, { travada: true });
+      await s.clock.advance(1_000);
+      const u = s.gw.unlock({ commandId: 'u1', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await s.clock.advance(3_000);
+      expect(await u).toEqual({ commandId: 'u1', status: 'in_progress' });
+      await s.clock.advance(60_000); // 63 s: além dos 30 s de antes, ainda esperando o status
+      expect(s.updates.filter((x) => x.commandId === 'u1')).toEqual([]);
+      await s.gw.onReported(T, { travada: false }); // heartbeat de 60 s com o relé aberto
+      await s.clock.advance(1_000);
+      expect(s.updates).toContainEqual({ commandId: 'u1', status: 'confirmed' });
+
+      const t = setup();
+      await online(t, 0);
+      const v = t.gw.unlock({ commandId: 'u2', thingName: T, authority: 'staff', controlMode: 'relay_only' });
+      await t.clock.advance(3_000);
+      expect(await v).toEqual({ commandId: 'u2', status: 'in_progress' });
+      await t.clock.advance(RELAY_UNLOCK_TIMEOUT_MS - 3_001);
+      expect(t.updates.filter((x) => x.commandId === 'u2')).toEqual([]);
+      await t.clock.advance(1_001);
+      expect(t.updates).toContainEqual({ commandId: 'u2', status: 'failed', reason: 'timeout' });
+      // nada além do travada:false pedido: o prazo nunca grava outra coisa
+      expect(t.transport.desired.map((d) => d.desired)).toEqual([{ travada: false }]);
+
+      const k = setup();
+      await online(k, 0);
+      await k.gw.onReported(T, { travada: true });
+      await k.sample(0, { travada: true, ignicao: false });
+      const w = k.gw.unlock({ commandId: 'u3', thingName: T, authority: 'staff' });
+      await k.clock.advance(3_000);
+      expect(await w).toEqual({ commandId: 'u3', status: 'in_progress' });
+      await k.clock.advance(27_001);
+      expect(k.updates).toContainEqual({ commandId: 'u3', status: 'failed', reason: 'timeout' });
     });
 
     it('A4-6: reported.travada:false anterior ao release (moto já destravada) não confirma na hora; o eco posterior confirma', async () => {
@@ -610,7 +657,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
     async function cutThenOffline(s: Setup): Promise<void> {
       await online(s, 0);
       await lockRelay(s);
-      for (let i = 0; i < 6 && s.cuts().length === 0; i++) {
+      for (let i = 0; i < 10 && s.cuts().length === 0; i++) {
         await s.sample(0, { travada: false, ignicao: false });
         await s.clock.advance(5_000);
       }
@@ -649,7 +696,7 @@ describe('BaseIotGateway com rastreador relay_only (spec GT06 §5)', () => {
       const s = setup();
       await online(s, 0);
       await lockRelay(s);
-      for (let i = 0; i < 6 && s.cuts().length === 0; i++) {
+      for (let i = 0; i < 10 && s.cuts().length === 0; i++) {
         await s.sample(0, { travada: false, ignicao: false });
         await s.clock.advance(5_000);
       }

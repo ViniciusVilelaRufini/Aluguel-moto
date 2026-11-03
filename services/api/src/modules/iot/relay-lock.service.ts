@@ -11,8 +11,22 @@ import type { DesiredState, ReportedState } from './shadow-transport';
 export const RELAY_STOP_TIMEOUT_MS = 120_000;
 /** Prazo para o rastreador confirmar o corte (desde a gravação de `travada: true`). */
 export const RELAY_CONFIRM_TIMEOUT_MS = 120_000;
-export const RELAY_STILL_MIN_SAMPLES = 2;
-export const RELAY_STILL_MIN_SPAN_MS = 10_000;
+/**
+ * Prazo do unlock só relé (`reported.travada: false` posterior ao release). O normal é confirmar pela resposta do J16 ao comando
+ * (~1 s, ponte); o prazo é o backstop e cobre o heartbeat de 60 s do J16 (bancada 2026-11-03: com 30 s o painel mostrava
+ * "sem resposta" de um destravar que funcionou). Expirar só reporta `failed`/`timeout`: nada é gravado no shadow.
+ */
+export const RELAY_UNLOCK_TIMEOUT_MS = 90_000;
+/**
+ * Parada confirmada (spec GT06 §5.1, revista na bancada do J16 — docs/decisoes.md 2026-11-03): o firmware do J16 não manda
+ * posição a menos de 10 s (TIMER mínimo), então a regra antiga (2 amostras em 10 s, no máximo 10 s entre elas) quase nunca
+ * fechava com o atraso do GPS (1–3 s). Agora: 3 amostras paradas consecutivas cobrindo ≥ 20 s, no máximo 12 s entre duas
+ * seguidas. O frescor da última (, 10 s) e a guarda da ponte (, 7 s) não mudaram.
+ */
+export const RELAY_STILL_MIN_SAMPLES = 3;
+export const RELAY_STILL_MIN_SPAN_MS = 20_000;
+/** Maior intervalo (hora da medição) entre duas amostras paradas para contarem como consecutivas. */
+export const RELAY_MAX_SAMPLE_GAP_MS = 12_000;
 
 /** Telemetria vista pelo `TelemetryService`: `accepted` = o `LiveStateStore` aceitou a velocidade (fresca, em ordem, fora da graça). */
 export interface RelaySample {
@@ -52,7 +66,7 @@ function isStill(kmh: number): boolean {
   return Number.isFinite(kmh) && kmh >= 0 && kmh < SAFE_LOCK_SPEED_KMH;
 }
 
-/** Parada confirmada (spec §5.1): ≥ 2 amostras paradas consecutivas, ≥ 10 s entre a primeira e a última, a última fresca. */
+/** Parada confirmada (spec §5.1): ≥ 3 amostras paradas consecutivas, ≥ 20 s entre a primeira e a última, a última fresca. */
 export function stillConfirmed(run: RelayStillRun | undefined, now: number): boolean {
   if (!run || run.count < RELAY_STILL_MIN_SAMPLES) return false;
   if (run.lastAt - run.firstAt < RELAY_STILL_MIN_SPAN_MS) return false;
@@ -154,8 +168,8 @@ export class RelayLockService {
         await this.save(lock);
         return;
       }
-      // Intervalo entre paradas maior que a validade da velocidade: não são "consecutivas" (trackers lentos falham seguro: did_not_stop).
-      if (lock.run && s.measuredAt - lock.run.lastAt > SPEED_FRESH_MS) lock.run = undefined;
+      // Intervalo entre paradas maior que RELAY_MAX_SAMPLE_GAP_MS: não são "consecutivas" (trackers mais lentos falham seguro: did_not_stop).
+      if (lock.run && s.measuredAt - lock.run.lastAt > RELAY_MAX_SAMPLE_GAP_MS) lock.run = undefined;
       lock.run = lock.run ? { firstAt: lock.run.firstAt, lastAt: s.measuredAt, count: lock.run.count + 1 } : { firstAt: s.measuredAt, lastAt: s.measuredAt, count: 1 };
       await this.save(lock);
       await this.tryCut(lock);

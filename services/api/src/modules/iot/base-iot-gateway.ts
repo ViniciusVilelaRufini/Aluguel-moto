@@ -8,7 +8,7 @@ import type { LiveStateStore } from './live-state.store';
 import { SafeLockService, type SafeLockVehicleState } from './safe-lock.service';
 import { assertSpeedLimit, SAFE_LOCK_MIN_START_KMH } from './speed-limit';
 import { MemorySafeLockStore, type SafeLockStore } from './safe-lock.store';
-import { RelayLockService, type RelaySample } from './relay-lock.service';
+import { RELAY_UNLOCK_TIMEOUT_MS, RelayLockService, type RelaySample } from './relay-lock.service';
 import type { RelayLockStore } from './relay-lock.store';
 import type { DesiredState, IotTransport, ReportedMeta, ReportedState } from './shadow-transport';
 
@@ -25,6 +25,8 @@ export interface GatewayOptions {
   relayLockStore?: RelayLockStore;
   relayStopTimeoutMs?: number;
   relayConfirmTimeoutMs?: number;
+  /** Prazo do unlock de rastreador só relé (padrão `RELAY_UNLOCK_TIMEOUT_MS`, 90 s); os outros comandos usam `commandTimeoutMs`. */
+  relayUnlockTimeoutMs?: number;
 }
 
 /**
@@ -500,7 +502,7 @@ export abstract class BaseIotGateway implements IotGateway {
     if (!online) return;
     // Comandos que estavam esperando a moto: passam a ter prazo a partir da reconexão.
     for (const t of this.tracked.values()) {
-      if (t.thingName === thingName && !t.timer) t.timer = this.clock.setTimeout(() => this.onTrackedTimeout(t.commandId), this.opts.commandTimeoutMs);
+      if (t.thingName === thingName && !t.timer) t.timer = this.clock.setTimeout(() => this.onTrackedTimeout(t.commandId), this.timeoutOf(t));
     }
     // Mesmo teto do lock (reported, desired gravado e hold): a rampa pendente nunca começa acima do que já foi pedido.
     const state = await this.safeLockState(thingName);
@@ -543,7 +545,7 @@ export abstract class BaseIotGateway implements IotGateway {
     this.supersede(req.thingName, Object.keys(expect) as Array<keyof ReportedState>);
     const tracked: Tracked = { commandId: req.commandId, thingName: req.thingName, expect, ...(opts.relayOnly ? { relayOnly: true } : {}) };
     const wait = this.registerWaiter(req.commandId);
-    if (online) tracked.timer = this.clock.setTimeout(() => this.onTrackedTimeout(req.commandId), this.opts.commandTimeoutMs);
+    if (online) tracked.timer = this.clock.setTimeout(() => this.onTrackedTimeout(req.commandId), this.timeoutOf(tracked));
     this.tracked.set(req.commandId, tracked);
     try {
       const ok = publish ? await publish({ ...expect, ...extra }) : (await this.publishDesired(req.thingName, { ...expect, ...extra }), true);
@@ -564,6 +566,11 @@ export abstract class BaseIotGateway implements IotGateway {
       return { commandId: req.commandId, status: 'pending', reason: 'offline' };
     }
     return wait();
+  }
+
+  /** Prazo do comando: unlock só relé = `relayUnlockTimeoutMs` (90 s, heartbeat do J16); o resto, `commandTimeoutMs`. */
+  private timeoutOf(t: Tracked): number {
+    return t.relayOnly && t.expect.travada === false ? (this.opts.relayUnlockTimeoutMs ?? RELAY_UNLOCK_TIMEOUT_MS) : this.opts.commandTimeoutMs;
   }
 
   /** Comando novo sobre o mesmo campo substitui o anterior ainda pendente (que termina `failed`). */

@@ -238,27 +238,30 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
   let w: World;
   afterEach(async () => w?.stop());
 
-  it('(1) lock relay_only fica in_progress andando e com 2 paradas em 5 s; corta só com 2+ paradas cobrindo 10 s; confirma pelo bit de corte do status seguinte', async () => {
+  it('(1) lock relay_only fica in_progress andando e com 4 paradas em 15 s; corta só com 3+ paradas cobrindo 20 s; confirma pelo bit de corte do status seguinte', async () => {
     w = await world();
     await connectAndRide(w, 4); // t = 0, 5, 10, 15 s (as duas primeiras na graça); agora t = 20 s
     expect(await w.lock('c1')).toEqual({ commandId: 'c1', status: 'in_progress' }); // t = 23 s
     await w.ride(20);
+    for (let i = 0; i < 3; i++) {
+      await w.step(5_000);
+      await w.ride(0);
+    }
+    expect(w.cuts()).toEqual([]); // 3 paradas, mas só 10 s
     await w.step(5_000);
-    await w.ride(0);
-    await w.step(5_000);
-    await w.ride(0); // 2 paradas cobrindo 5 s
-    expect(w.seen.samples.filter((s) => s.kmh === 0 && s.accepted)).toHaveLength(2);
+    await w.ride(0); // 4 paradas cobrindo 15 s
+    expect(w.seen.samples.filter((s) => s.kmh === 0 && s.accepted)).toHaveLength(4);
     expect(w.cuts()).toEqual([]);
     expect(w.traccar.commands).toEqual([]);
     expect(w.broker.log.filter((m) => m.topic === `$aws/things/${T}/shadow/update/delta`)).toEqual([]);
     await w.step(5_000);
-    await w.ride(0); // 3 paradas cobrindo 10 s → corte
+    await w.ride(0); // 5 paradas cobrindo 20 s → corte
     expect(w.cuts()).toHaveLength(1);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
     expect(w.traccar.commandBodies[0]).toMatchObject({ attributes: { noQueue: true } });
-    // O corte saiu depois da 3ª telemetria parada, nunca com a moto andando.
+    // O corte saiu depois da 5ª telemetria parada, nunca com a moto andando.
     const tele = w.fromBridge(`motos/${T}/telemetria`);
-    expect(tele.slice(-3).map((t) => t.velocidade_kmh)).toEqual([0, 0, 0]);
+    expect(tele.slice(-5).map((t) => t.velocidade_kmh)).toEqual([0, 0, 0, 0, 0]);
     // Aceite do comando não confirma.
     expect(w.outcomes('c1')).toEqual([]);
     expect(w.reportedTravada()).not.toContain(true);
@@ -328,7 +331,7 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     await w.ride(0, { blocked: true, ignition: false }); // t = 0: status com o bit, na graça
     await w.step(2_000);
     expect(await w.lock('c3b')).toEqual({ commandId: 'c3b', status: 'in_progress' }); // t = 5 s
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 8; i++) {
       await w.ride(0, { blocked: true, ignition: false });
       if (w.outcomes('c3b').length) break;
       await w.step(5_000);
@@ -372,8 +375,15 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     expect(w.fromBridge(`$aws/things/${T}/shadow/update`).at(-1)).toEqual({ state: { reported: { travada: false, velocidade_kmh: 0 } } });
     await w.ride(0);
     // A telemetria (fix 68,5 s) é mais velha que a chegada do reported (70 s), mas reported parado não é barreira de ordem
-    // (Task 11b): ela vale e fecha 10 s (58,5 → 68,5 s) → corte. (Reported em movimento continua barreira: testes da API.)
+    // (Task 11b): ela vale e a sequência continua (58,5 → 68,5 s: 3 paradas, 10 s). (Reported em movimento continua barreira.)
     expect(w.seen.samples.at(-1)).toMatchObject({ kmh: 0, accepted: true });
+    expect(w.cuts()).toEqual([]);
+    await w.step(5_000); // t = 75
+    await w.ride(0);
+    expect(w.cuts()).toEqual([]); // 15 s
+    await w.step(5_000); // t = 80
+    await w.ride(0); // 58,5 → 78,5 s: 5 paradas cobrindo 20 s → corte
+    expect(w.seen.samples.slice(-3).map((x) => [x.kmh, x.accepted])).toEqual([[0, true], [0, true], [0, true]]);
     expect(w.cuts()).toHaveLength(1);
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
     await w.step(500);
@@ -463,7 +473,7 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     w = await world({ version: '6.5.0' });
     await connectAndRide(w, 4);
     expect(await w.lock('c5')).toEqual({ commandId: 'c5', status: 'in_progress' });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       await w.ride(0);
       await w.step(5_000);
     }
@@ -488,7 +498,13 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     expect(w.releases()).toHaveLength(1);
     expect(w.broker.log.some((m) => m.topic === `$aws/things/${T}/shadow/update/delta` && JSON.parse(m.payload).state.travada === false)).toBe(true);
     expect(w.traccar.commands).toEqual([]);
-    for (let i = 0; i < 6; i++) {
+    // Prazo do unlock só relé: 90 s (RELAY_UNLOCK_TIMEOUT_MS).
+    for (let i = 0; i < 12; i++) {
+      await w.ride(0, { blocked: true, ignition: false });
+      await w.step(5_000);
+    }
+    expect(w.outcomes('u5')).toEqual([]); // 60 s: ainda esperando
+    for (let i = 0; i < 7; i++) {
       await w.ride(0, { blocked: true, ignition: false });
       await w.step(5_000);
     }
@@ -502,9 +518,9 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     w = await world();
     await connectAndRide(w, 4);
     expect(await w.lock('c6')).toEqual({ commandId: 'c6', status: 'in_progress' });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       await w.ride(0);
-      if (i < 2) await w.step(5_000);
+      if (i < 4) await w.step(5_000);
     }
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
     const reportsBefore = w.reportedTravada().length;
@@ -541,9 +557,9 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     w = await world();
     await connectAndRide(w, 4);
     expect(await w.lock('c8')).toEqual({ commandId: 'c8', status: 'in_progress' });
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       await w.ride(0);
-      if (i < 2) await w.step(5_000);
+      if (i < 4) await w.step(5_000);
     }
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]); // o relé cortou de verdade...
     await w.step(121_000); // ... mas o status com o bit de corte não chegou a tempo
@@ -586,8 +602,8 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     await w.step(1_000);
     expect(w.outcomes('c7').at(-1)).toEqual({ commandId: 'c7', status: 'in_progress' });
     await w.step(1_000);
-    // Parada desde a reconexão: r+2 s e r+7 s na graça, r+12 s inicia a sequência, r+22 s completa 10 s.
-    for (let i = 0; i < 4; i++) {
+    // Parada desde a reconexão: r+2 s e r+7 s na graça, r+12 s inicia a sequência, r+32 s completa 20 s.
+    for (let i = 0; i < 6; i++) {
       await w.ride(0);
       expect(w.cuts()).toEqual([]);
       await w.step(5_000);
@@ -608,7 +624,7 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     await connectAndRide(w, 4, 20, { blocked: null }); // pacotes de localização sem o bit
     await w.heartbeatWith(false, true); // status: relé fechado
     expect(await w.lock('c10')).toEqual({ commandId: 'c10', status: 'in_progress' });
-    for (let i = 0; i < 4 && !w.cuts().length; i++) {
+    for (let i = 0; i < 8 && !w.cuts().length; i++) {
       await w.ride(0, { blocked: null, ignition: true });
       if (!w.cuts().length) await w.step(5_000);
     }
@@ -629,6 +645,64 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     expect(w.outcomes('c10')).toEqual([{ commandId: 'c10', status: 'confirmed' }]);
   });
 
+  it('(11) bancada do J16: TIMER de 10 s e GPS 2 s atrás — parado, corta na 3ª posição (20 s), a ponte aceita (posição ≤ 7 s) e confirma; andando, nunca', async () => {
+    w = await world({ fixLagMs: 2_000 });
+    await w.setOnline(true);
+    for (let i = 0; i < 3; i++) {
+      await w.ride(18); // t = 0 (graça), 10, 20 s
+      await w.step(10_000);
+    }
+    expect(await w.lock('c11')).toEqual({ commandId: 'c11', status: 'in_progress' }); // t = 33 s
+    await w.step(7_000); // t = 40
+    // Andando a cada 10 s: nada corta.
+    for (let i = 0; i < 3; i++) {
+      await w.ride(12);
+      await w.step(10_000);
+    }
+    expect(w.cuts()).toEqual([]);
+    // Para: posições a cada 10 s, fix 2 s atrás da chegada.
+    const stoppedAt = w.clock.now(); // t = 70
+    await w.ride(0);
+    await w.step(10_000);
+    await w.ride(0);
+    expect(w.cuts()).toEqual([]); // 2 paradas, 10 s
+    await w.step(10_000);
+    await w.ride(0); // 3 paradas, fix 68 → 88 s: 20 s, intervalo de 10 s ≤ 12 s, última com 2 s
+    expect(w.clock.now() - stoppedAt).toBe(20_000);
+    expect(w.seen.samples.slice(-3).map((x) => [x.kmh, x.accepted])).toEqual([[0, true], [0, true], [0, true]]);
+    expect(w.cuts()).toHaveLength(1);
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+    // Nenhuma telemetria em movimento depois da 1ª parada.
+    const tele = w.fromBridge(`motos/${T}/telemetria`);
+    expect(tele.slice(-3).map((t) => t.velocidade_kmh)).toEqual([0, 0, 0]);
+    await w.step(500);
+    await w.ack();
+    await w.step(500);
+    await w.heartbeat(true);
+    await w.step(1_000);
+    expect(w.outcomes('c11')).toEqual([{ commandId: 'c11', status: 'confirmed' }]);
+    expect(w.releases()).toEqual([]);
+    expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineStop' }]);
+  });
+
+  it('(11b) bancada do J16: TIMER de 10 s e GPS 2 s atrás, para por 2 posições e volta a andar, sempre: nunca corta; 120 s → did_not_stop', async () => {
+    w = await world({ fixLagMs: 2_000 });
+    await w.setOnline(true);
+    for (let i = 0; i < 3; i++) {
+      await w.ride(18);
+      await w.step(10_000);
+    }
+    await w.lock('c11b');
+    for (let i = 0; i < 13; i++) {
+      await w.ride(i % 3 === 2 ? 10 : 0); // 2 paradas (10 s) e anda de novo
+      await w.step(10_000);
+    }
+    expect(w.outcomes('c11b')).toEqual([{ commandId: 'c11b', status: 'failed', reason: 'did_not_stop' }]);
+    expect(w.cuts()).toEqual([]);
+    expect(w.traccar.commands).toEqual([]);
+    expect(w.releases()).toEqual([]);
+  });
+
   it('(9) A4-1: unlock enviado e sem status depois (prazo expira) → relock de rollback não confirma pelo bit de antes do engineResume', async () => {
     w = await world();
     await connectAndRide(w, 4, 0, { blocked: true, ignition: false }); // t = 20 s, bit travada:true fresco
@@ -636,8 +710,8 @@ describe('e2e em processo: J16 (Traccar falso) → ponte → MQTT → API → po
     const u = await w.unlock('u9');
     expect(u.status).toBe('in_progress');
     expect(w.traccar.commands).toEqual([{ deviceId: 1, type: 'engineResume' }]);
-    // o J16 fica mudo (nenhum status depois do comando) até o prazo do unlock
-    for (let i = 0; i < 7; i++) await w.step(5_000);
+    // o J16 fica mudo (nenhum status depois do comando) até o prazo do unlock só relé (90 s)
+    for (let i = 0; i < 19; i++) await w.step(5_000);
     expect(w.outcomes('u9').at(-1)).toMatchObject({ commandId: 'u9', status: 'failed' });
     const l = await w.lock('c9');
     expect(l).not.toEqual({ commandId: 'c9', status: 'confirmed' });
