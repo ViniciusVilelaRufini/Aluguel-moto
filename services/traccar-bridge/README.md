@@ -30,6 +30,8 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   ativo ou deslocamento > 20 m travada → `movimento_sem_aluguel` (este sai mesmo com a telemetria retida). Outros alarmes:
   log `alarm_ignored`. Os alarmes vêm de `position.attributes.alarm` (sem Notification no Traccar o WebSocket não traz
   `events`); se houver Notification, o mesmo alarme por `events` é deduplicado pelo id da posição. Replay de conexão não gera alarme.
+- **Mensagem retida:** delta, `get/accepted` ou comando entregue como **retido** (`packet.retain`, no SUBSCRIBE e de novo a cada
+  reconexão) é descartado com log `mqtt_retained_ignored` (auditoria run-4): o shadow do servidor nunca retém essas mensagens.
 - **Shadow:** todo delta passa pela segunda guarda. `travada: true` → `engineStop` **só** com o dispositivo online, posição de até
   7 s (`CUT_FRESH_MS`; com `TIMER,5,5#` uma amostra perdida já recusa) abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
   em 10 s); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
@@ -86,6 +88,7 @@ Nenhum segredo no código: senhas e certificado vêm do ambiente (Secrets Manage
 | Variável | Padrão | Uso |
 |---|---|---|
 | `IOT_MODE` | `local` | `local` (Mosquitto) ou `aws` (IoT Core com certificado de serviço) |
+| `MQTT_URL` | `mqtt://localhost:1883` (local) | No dev single, com usuário e senha da ponte: `mqtt://traccar-bridge:<senha>@mosquitto:1883` (o mqtt.js lê da URL; a URL nunca vai para log) |
 | `MQTT_URL` | `mqtt://localhost:1883` | local; no aws vem de `IOT_ENDPOINT` (`mqtts://<endpoint>:8883`) |
 | `MQTT_CLIENT_ID` | `traccar-bridge` | no aws, `traccar-bridge-<env>` (a política só aceita esse) |
 | `MQTT_CERT_PEM`, `MQTT_KEY_PEM` | — | aws: certificado da ponte (Secrets Manager) |

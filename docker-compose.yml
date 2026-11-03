@@ -19,7 +19,8 @@ services:
     ports: ["6379:6379"]
   mosquitto:
     image: eclipse-mosquitto:2
-    ports: ["1883:1883"]
+    # Só no PC e anônimo (auditoria run-4, onda 2): porta só em 127.0.0.1. O dev single exige usuário/senha e ACL.
+    ports: ["127.0.0.1:1883:1883"]
     volumes: ["./infra/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"]
   minio:
     # A MinIO deixou de publicar imagens no Docker Hub/quay (2025); bitnamilegacy é a última imagem pública compatível.

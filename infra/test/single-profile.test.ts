@@ -434,7 +434,7 @@ describe('profile=single (dev on one EC2 instance)', () => {
       expect(sim).toContain('profiles: ["sim"]');
       expect(sim).toContain('SIM_FLEET_SOURCE: postgres');
       expect(sim).toContain('DATABASE_URL: postgresql://volti:${DB_PASSWORD}@postgres:5432/volti');
-      expect(sim).toContain('MQTT_URL: mqtt://mosquitto:1883');
+      expect(sim).toContain('MQTT_URL: mqtt://iot-sim:${MQTT_SIM_PASSWORD:?');
       expect(sim).not.toContain('env_file');
       expect(sim).not.toMatch(/ports:/);
       const update = file('update.sh');
