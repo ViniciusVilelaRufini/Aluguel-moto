@@ -3,9 +3,7 @@
  * para teste.
  */
 import type { Prisma } from '@prisma/client';
-import { hasInUseReservation, hasOpenRental } from '../common/vehicle-in-use';
-import { RELAY_LOCK_PREFIX } from '../modules/iot/relay-lock.store';
-import { SAFE_LOCK_PREFIX } from '../modules/iot/safe-lock.store';
+import { hasInUseReservation, hasOpenRental, pendingLockKind } from '../common/vehicle-in-use';
 import { IoRedisStore, type RedisStore } from '../redis/redis-store';
 
 /**
@@ -36,15 +34,8 @@ export async function assertVehicleFreeForProvisioning(tx: Pick<Prisma.Transacti
  * Erro de leitura propaga (falha fechada).
  */
 export async function assertNoPendingLock(redis: Pick<RedisStore, 'exists' | 'hgetall'>, thingName: string): Promise<void> {
-  for (const [prefix, what] of [
-    [SAFE_LOCK_PREFIX, 'rampa de bloqueio speed_control'],
-    [RELAY_LOCK_PREFIX, 'trava só relé'],
-  ] as const) {
-    const pending = (await redis.exists(`${prefix}:${thingName}`)) || (await redis.hgetall(`${prefix}:index`))[thingName] !== undefined;
-    if (pending) {
-      throw new Error(`A moto ${thingName} tem uma trava em andamento na API (${what}); espere a trava terminar antes de reprovisionar o rastreador.`);
-    }
-  }
+  const what = await pendingLockKind(redis, thingName);
+  if (what) throw new Error(`A moto ${thingName} tem uma trava em andamento na API (${what}); espere a trava terminar antes de reprovisionar o rastreador.`);
 }
 
 /** Prazo do PING ao Redis da API no provisionamento. */

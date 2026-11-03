@@ -26,6 +26,11 @@ export interface PriceSnapshot {
   coverage?: InsuranceCoverage;
   /** Assinatura semanal/mensal ativa com o mesmo plano: não cobra tempo. */
   subscriptionCovered?: boolean;
+  /**
+   * Auditoria run-4: fim do período da assinatura no início do aluguel (`currentPeriodEnd`, ISO 8601 UTC). O fechamento estende
+   * até o `currentPeriodEnd` atual se a assinatura continuar ativa; além disso o tempo é cobrado. Ausente em snapshots antigos.
+   */
+  subscriptionCoveredUntil?: string;
   coupon?: CouponSnapshot;
 }
 
@@ -55,6 +60,8 @@ export interface FeeCharge {
 
 const UNIT_SECONDS: Record<PlanUnit, number> = { minute: 60, hour: 3600, day: 86400, week: 7 * 86400, month: 30 * 86400 };
 const UNIT_LABEL: Record<PlanUnit, string> = { minute: 'minuto', hour: 'hora', day: 'dia', week: 'semana', month: 'mês' };
+/** Dias por unidade para o excedente pro rata da assinatura (auditoria run-4). */
+const PRO_RATA_DAYS: Partial<Record<PlanUnit, number>> = { week: 7, month: 30 };
 const COVERAGE_LABEL: Record<InsuranceCoverage, string> = { basic: 'Seguro básico', full: 'Seguro completo' };
 
 /** Unidades iniciadas (parcial arredonda para cima). */
@@ -84,6 +91,11 @@ export class PricingService {
     pausedSeconds: number;
     fees?: FeeCharge[];
     walletAvailableCents?: number;
+    /**
+     * Com `subscriptionCovered`: segundos desde o início cobertos pela assinatura (auditoria run-4). O excedente é cobrado como
+     * plano não coberto (unidades iniciadas na linha `time`). Ausente = todo o tempo coberto (comportamento anterior).
+     */
+    coveredSeconds?: number;
   }): PriceBreakdown {
     const s = input.snapshot;
     const elapsed = Math.max(0, Math.floor(input.elapsedSeconds));
@@ -106,6 +118,19 @@ export class PricingService {
       }
     } else {
       lines.push({ code: 'subscription', description: 'Coberto pela assinatura', amountCents: 0 });
+      const excess = input.coveredSeconds === undefined ? 0 : elapsed - Math.max(0, Math.floor(input.coveredSeconds));
+      if (excess > 0) {
+        // Auditoria run-4 (padrão escolhido; dono pode alterar): dia iniciado, pro rata do plano (semana/7, mês/30, ↑ em centavos).
+        const daysPerUnit = PRO_RATA_DAYS[s.unit];
+        if (daysPerUnit) {
+          const days = startedUnits(excess, UNIT_SECONDS.day);
+          const dayCents = Math.ceil(s.unitPriceCents / daysPerUnit);
+          lines.push({ code: 'time', description: 'Tempo além da assinatura (por dia)', quantity: days, unitCents: dayCents, amountCents: days * dayCents });
+        } else {
+          const units = startedUnits(excess, UNIT_SECONDS[s.unit]);
+          lines.push({ code: 'time', description: `Tempo além da assinatura (por ${UNIT_LABEL[s.unit]})`, quantity: units, unitCents: s.unitPriceCents, amountCents: units * s.unitPriceCents });
+        }
+      }
     }
     const subtotalCents = lines.reduce((acc, l) => acc + l.amountCents, 0);
 

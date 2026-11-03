@@ -583,3 +583,25 @@ describe('Responsável da tarefa (item 13 da auditoria: só-campo age só nas pr
     expect(prisma.fieldTask.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ assigneeId: OTHER_ID }) }));
   });
 });
+
+describe('Iniciar tarefa (auditoria run-4: corrida no responsável)', () => {
+  it('grava condicionado ao status (open/assigned) e ao responsável lidos', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'inspection', status: 'open', vehicleId: VEHICLE_ID, assigneeId: null } as any);
+    prisma.fieldTask.updateMany.mockResolvedValue({ count: 1 });
+    jest.spyOn(service as any, 'mapped').mockResolvedValue({ id: TASK_ID });
+    await service.start(campo, TASK_ID);
+    expect(prisma.fieldTask.updateMany).toHaveBeenCalledWith({
+      where: { id: TASK_ID, status: { in: ['open', 'assigned'] }, assigneeId: null },
+      data: expect.objectContaining({ status: 'in_progress', assigneeId: campo.userId }),
+    });
+    expect(prisma.fieldTask.update).not.toHaveBeenCalled();
+  });
+
+  it('outro operador pegou a tarefa entre a leitura e a escrita (count 0) → 409 conflict', async () => {
+    const { service, prisma } = setup();
+    prisma.fieldTask.findUnique.mockResolvedValue({ id: TASK_ID, type: 'inspection', status: 'open', vehicleId: VEHICLE_ID, assigneeId: null } as any);
+    prisma.fieldTask.updateMany.mockResolvedValue({ count: 0 });
+    await expect(service.start(campo, TASK_ID)).rejects.toMatchObject({ status: 409, slug: 'conflict' });
+  });
+});

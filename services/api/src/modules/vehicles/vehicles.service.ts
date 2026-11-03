@@ -18,7 +18,7 @@ import { V2_CONFIG, type V2Config } from '../../config/v2-config';
 import { VEHICLE_MODEL_SELECT } from '../catalog/catalog.service';
 import { UsageTracker } from '../maintenance/usage-tracker.service';
 import { VehicleAddressService } from './vehicle-address.service';
-import { assertVehicleNotInUse, IN_USE_RESERVATION_STATUSES, VEHICLE_LOCKED_BACK_TO_FLEET } from '../../common/vehicle-in-use';
+import { assertVehicleNotInUse, IN_USE_RESERVATION_STATUSES, pendingLockKind, VEHICLE_LOCKED_BACK_TO_FLEET } from '../../common/vehicle-in-use';
 import { assertTaskActor } from '../field-tasks/task-actor';
 import { toVehicle, toVehicleSummary } from './vehicles.mapper';
 import { depotsLeavingCharged, movement, recordMovements, type MovementInput } from '../batteries/battery-movements';
@@ -277,6 +277,11 @@ export class VehiclesService {
     if (dto.thingName && dto.thingName !== v.thingName) {
       const dup = await this.prisma.vehicle.findUnique({ where: { thingName: dto.thingName } });
       if (dup) throw conflict('conflict', 'Este rastreador já está vinculado a outra moto.');
+      // Auditoria run-4: trocar o rastreador com cliente na moto ou trava em curso deixaria o aluguel/trava falando com o thing errado.
+      await assertVehicleNotInUse(this.prisma, id);
+      for (const thing of [v.thingName, dto.thingName]) {
+        if (await pendingLockKind(this.redis, thing)) throw conflict('vehicle-unavailable', 'A moto tem uma trava em andamento; espere a trava terminar para trocar o rastreador.');
+      }
     }
     const modelName = dto.vehicleModelId ? await this.modelName(dto.vehicleModelId) : undefined;
     const corrected = dto.odometerKm !== undefined || dto.usageHours !== undefined;
@@ -305,7 +310,10 @@ export class VehiclesService {
     // Revisão final item 6: moto com trava da equipe/sistema não volta à frota; quem travou libera antes.
     if (dto.status === 'free' && (await this.commands.isLockedByStaff(v))) throw conflict('vehicle-unavailable', VEHICLE_LOCKED_BACK_TO_FLEET);
     const updated = await this.prisma.$transaction(async (tx) => {
-      const u = await tx.vehicle.update({ where: { id }, data: { status: dto.status }, include: VEHICLE_INCLUDE });
+      // Auditoria run-4: condicionado ao status lido — um aluguel/reserva/tarefa que pegou a moto no meio não é sobrescrito.
+      const changed = await tx.vehicle.updateMany({ where: { id, status: v.status }, data: { status: dto.status } });
+      if (changed.count !== 1) throw conflict('vehicle-unavailable', 'A moto mudou de situação; atualize e tente de novo.');
+      const u = await tx.vehicle.findUniqueOrThrow({ where: { id }, include: VEHICLE_INCLUDE });
       await this.audit.record({ actor, action: 'vehicle.status', entityType: 'Vehicle', entityId: id, reason: dto.reason, metadata: { from: v.status, to: dto.status } }, tx as any);
       return u;
     });

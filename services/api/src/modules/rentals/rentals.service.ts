@@ -1,12 +1,12 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
-import { EventEmitter2 } from '@nestjs/event-emitter';
+import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { Interval } from '@nestjs/schedule';
 import type { Prisma, Rental, Vehicle } from '@prisma/client';
 import { randomBytes } from 'node:crypto';
 import { OPEN_RENTAL_STATUSES } from '../../common/enums';
 import { assertNotFixedForOther } from '../../common/fixed-vehicle';
 import { assertVehicleNotInUse } from '../../common/vehicle-in-use';
-import { EV, RentalChangedEvent, VehicleStatusChangedEvent } from '../../common/events';
+import { CommandChangedEvent, EV, RentalChangedEvent, VehicleStatusChangedEvent } from '../../common/events';
 import { pageArgs, toPage } from '../../common/pagination';
 import { conflict, notFound, unprocessable } from '../../common/problem';
 import { presignedUpload } from '../../common/uploads';
@@ -21,15 +21,20 @@ import { CommandsService } from '../commands/commands.service';
 import { PricingService, type PriceBreakdown, type PriceSnapshot } from '../pricing/pricing.service';
 import { OPEN_SWAP_STATUSES, SWAP_FEE_CODE, SWAP_FEE_DEFAULT_CENTS, swapFeeCents } from '../station-swaps/station-swap.rules';
 import { toStationSwap } from '../station-swaps/station-swaps.mapper';
-import { hasOpenStationSwap } from './rental-end.service';
+import { hasOpenStationSwap, MAX_END_ATTEMPTS } from './rental-end.service';
 import { isDepotLocked } from './rental-start.service';
 import type { ListRentalsQuery, LocationShareDto, RatingDto, SwapVehicleDto, WellbeingDto } from './rentals.dto';
 import { toRental, toRentalEvent } from './rentals.mapper';
+import { controlModeOf, latestRentalLock, LOCK_NOT_CUT_REASON, pauseAfterLateLock } from './relay-rental-lock';
 import { receiptPaymentInfo } from '../payments/receipts/receipt-status';
 import { receiptLinks } from '../payments/receipts/receipt-links';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
 export const SWAP_MAX_DISTANCE_M = 200;
+/** Auditoria run-4: trava da pausa recusada na hora em moto `relay_only` (409, o aluguel continua `active`). */
+export const PAUSE_LOCK_REFUSED_MESSAGE = 'Não foi possível travar a moto; pare a moto e tente pausar de novo.';
+/** Auditoria run-4: trava da pausa terminou sem corte (`relay_only`); o aluguel volta a `active`. */
+export const PAUSE_LOCK_FAILED_MESSAGE = 'A moto não parou; pare e peça a pausa de novo.';
 type RentalWithVehicle = Rental & { vehicle: Vehicle };
 
 /** Leitura e ações do aluguel em andamento (pausa, retomada, troca, foto, avaliação, SOS, "você está bem?"). */
@@ -51,7 +56,8 @@ export class RentalsService {
 
   /** Cliente só enxerga os próprios aluguéis (404 para os demais, sem revelar existência). */
   private async loadFor(user: Principal, id: string): Promise<RentalWithVehicle> {
-    const r = await this.prisma.rental.findUnique({ where: { id }, include: { vehicle: true } });
+    // O modo do rastreador vem junto (auditoria run-4: regras da pausa em `relay_only`).
+    const r = await this.prisma.rental.findUnique({ where: { id }, include: { vehicle: { include: { tracker: { select: { controlMode: true } } } } } });
     if (!r || (!isStaff(user) && r.customerId !== user.customerId)) throw notFound('Aluguel não encontrado.');
     return r as RentalWithVehicle;
   }
@@ -104,13 +110,123 @@ export class RentalsService {
   async pause(user: Principal, id: string) {
     const r = await this.loadFor(user, id);
     if (r.status !== 'active') throw conflict('rental-not-active', 'Só é possível pausar um aluguel em andamento.');
-    await this.commands.dispatch({ vehicleId: r.vehicleId, type: 'lock', reason: 'Pausa do aluguel', actor: user, context: { rentalId: id, purpose: 'rental_pause' }, auditAction: 'rental.pause' });
+    const cmd = await this.commands.dispatch({ vehicleId: r.vehicleId, type: 'lock', reason: 'Pausa do aluguel', actor: user, context: { rentalId: id, purpose: 'rental_pause' }, auditAction: 'rental.pause' });
+    // Auditoria run-4 (c): em `relay_only` a trava recusada deixa a moto destravada — não cobra pausa. `speed_control` como antes.
+    const relayOnly = cmd.status !== 'confirmed' && (r.vehicle as { tracker?: { controlMode: string } | null }).tracker?.controlMode === 'relay_only';
+    if (cmd.status === 'failed' && relayOnly) throw conflict('conflict', PAUSE_LOCK_REFUSED_MESSAGE);
     const moved = await this.prisma.rental.updateMany({ where: { id, status: 'active' }, data: { status: 'paused', pausedAt: new Date() } });
     if (moved.count === 0) throw conflict('rental-not-active', 'Só é possível pausar um aluguel em andamento.');
     await this.prisma.vehicle.updateMany({ where: { id: r.vehicleId, status: 'rented' }, data: { status: 'paused' } });
     await this.prisma.rentalEvent.create({ data: { rentalId: id, type: 'paused', actorType: 'customer', actorId: user.customerId } });
+    if (relayOnly && cmd.id) {
+      // Corrida (auditoria run-4): o desfecho `did_not_stop` pode ter chegado antes de a pausa ser gravada — o listener viu o
+      // aluguel ainda `active` e não fez nada. Relê o comando e desfaz a pausa aqui.
+      const now = await this.prisma.vehicleCommand.findUnique({ where: { id: cmd.id }, select: { status: true, statusReason: true } });
+      if (now?.status === 'failed' && now.statusReason === LOCK_NOT_CUT_REASON && (await this.revertPause(id, r.vehicleId, cmd.id, now.statusReason))) {
+        const after = await this.prisma.rental.findUnique({ where: { id }, include: { vehicle: true } });
+        return toRental(after!);
+      }
+    }
     return this.afterChange(id, r.vehicleId, 'paused');
   }
+
+  /**
+   * Auditoria run-4 (c): desfecho tardio da trava da pausa de uma moto `relay_only` (só o último lock de pausa do aluguel conta).
+   * - `failed`/`did_not_stop` (a moto não parou, nada foi cortado) com o aluguel `paused` → volta a `active` sem contar o trecho
+   *   como pausa (a moto ficou destravada) e a moto a `rented`.
+   * - `failed` por `timeout` (fase de corte: a moto pode estar travada) → continua `paused`; a varredura pede a trava de novo.
+   * - `confirmed` com o aluguel já `active` (voltou por um `did_not_stop` e o corte chegou depois) → `paused` de novo.
+   */
+  @OnEvent(EV.COMMAND_CHANGED, { async: true, promisify: true })
+  async onPauseLockChanged(ev: CommandChangedEvent): Promise<void> {
+    const rentalId = ev.payload?.rentalId as string | undefined;
+    if (ev.type !== 'lock' || (ev.status !== 'failed' && ev.status !== 'confirmed') || ev.payload?.purpose !== 'rental_pause' || !rentalId) return;
+    try {
+      const r = await this.prisma.rental.findUnique({ where: { id: rentalId }, select: { id: true, vehicleId: true, status: true } });
+      if (!r) return;
+      if (ev.status === 'confirmed') {
+        if (r.status !== 'active') return;
+        const paused = await pauseAfterLateLock(this.prisma, r, ev.commandId, 'rental_pause');
+        if (paused) {
+          this.logger.warn({ msg: 'rental_late_lock_paused', rentalId });
+          await this.afterChange(rentalId, r.vehicleId, 'paused');
+        }
+        return;
+      }
+      if (r.status !== 'paused' || (await controlModeOf(this.prisma, r.vehicleId)) !== 'relay_only') return;
+      const latest = await latestRentalLock(this.prisma, rentalId, r.vehicleId, 'rental_pause');
+      if (!latest || latest.id !== ev.commandId || latest.status !== 'failed' || latest.statusReason !== LOCK_NOT_CUT_REASON) return;
+      await this.revertPause(rentalId, r.vehicleId, ev.commandId, latest.statusReason);
+    } catch (err) {
+      this.logger.error({ msg: 'rental_pause_revert_failed', rentalId, error: (err as Error).message });
+    }
+  }
+
+  /** Pausa → `active` sem somar o trecho pausado; moto `paused` → `rented`; evento `resumed` com o comando. */
+  private async revertPause(rentalId: string, vehicleId: string, commandId: string, commandReason: string | null): Promise<boolean> {
+    const moved = await this.prisma.rental.updateMany({ where: { id: rentalId, status: 'paused' }, data: { status: 'active', pausedAt: null } });
+    if (moved.count !== 1) return false;
+    await this.prisma.vehicle.updateMany({ where: { id: vehicleId, status: 'paused' }, data: { status: 'rented' } });
+    await this.prisma.rentalEvent.create({
+      data: { rentalId, type: 'resumed', actorType: 'system', message: PAUSE_LOCK_FAILED_MESSAGE, data: { reason: 'pause_lock_failed', commandId, commandReason } },
+    });
+    this.logger.warn({ msg: 'rental_pause_lock_failed_reverted', rentalId, reason: commandReason });
+    await this.afterChange(rentalId, vehicleId, 'rented');
+    return true;
+  }
+
+  /** Varredura (auditoria run-4): pausa `relay_only` cuja última trava terminou `failed` sem ser `did_not_stop` → pede de novo. */
+  @Interval('rental-pause-lock-retry', 30_000)
+  @ExclusiveJob('rental-pause-lock-retry', jobLockTtl(30_000), { runIfUnavailable: true })
+  async retryPauseLocksJob(): Promise<void> {
+    if (process.env.JOBS_ENABLED === 'false') return;
+    await this.retryPauseLocks().catch((err) => this.logger.error({ msg: 'rental_pause_lock_retry_failed', error: (err as Error).message }));
+  }
+
+  async retryPauseLocks(): Promise<void> {
+    const paused = await this.prisma.rental.findMany({
+      where: { status: 'paused', vehicle: { tracker: { controlMode: 'relay_only' } } },
+      select: { id: true, vehicleId: true, pausedAt: true },
+      take: 100,
+    });
+    for (const r of paused ?? []) {
+      const latest = await latestRentalLock(this.prisma, r.id, r.vehicleId, 'rental_pause');
+      // Só `timeout` (e outros motivos explícitos que não `did_not_stop`): `failed` sem motivo vem de cancel/unlock da equipe ou
+      // de comando conflitante — reenviar regravaria a trava que a equipe acabou de soltar.
+      if (!latest || latest.status !== 'failed' || !latest.statusReason || latest.statusReason === LOCK_NOT_CUT_REASON) continue;
+      const attempts = await this.prisma.vehicleCommand.count({
+        where: {
+          vehicleId: r.vehicleId,
+          type: 'lock',
+          ...(r.pausedAt ? { createdAt: { gte: r.pausedAt } } : {}),
+          AND: [{ payload: { path: ['rentalId'], equals: r.id } }, { payload: { path: ['purpose'], equals: 'rental_pause' } }],
+        },
+      });
+      if (attempts >= MAX_END_ATTEMPTS) {
+        await this.pauseRetryExhausted(r.id, r.vehicleId, attempts);
+        continue;
+      }
+      await this.commands
+        .dispatch({ vehicleId: r.vehicleId, type: 'lock', reason: 'Pausa do aluguel (nova tentativa)', actor: { system: true, name: 'pausa' }, context: { rentalId: r.id, purpose: 'rental_pause' }, auditAction: 'rental.pause' })
+        .catch((err: Error) => this.logger.error({ msg: 'rental_pause_lock_retry_failed', rentalId: r.id, error: err.message }));
+    }
+  }
+
+  /** Limite de tentativas da trava da pausa: para de reenviar e chama a operação uma vez (marcada por evento `alert`). */
+  private async pauseRetryExhausted(rentalId: string, vehicleId: string, attempts: number): Promise<void> {
+    const already = await this.prisma.rentalEvent.findFirst({
+      where: { rentalId, type: 'alert', data: { path: ['reason'], equals: 'pause_lock_retry_exhausted' } },
+      select: { id: true },
+    });
+    if (already) return;
+    await this.alerts.create(
+      { type: 'command_failed', priority: 'high', message: `Pausa sem confirmação de travamento após ${attempts} tentativas.`, vehicleId, rentalId },
+      { dedupe: false },
+    );
+    await this.prisma.rentalEvent.create({ data: { rentalId, type: 'alert', actorType: 'system', data: { reason: 'pause_lock_retry_exhausted', attempts } } });
+    this.logger.warn({ msg: 'rental_pause_lock_retry_exhausted', rentalId, attempts });
+  }
+
 
   async resume(user: Principal, id: string) {
     const r = await this.loadFor(user, id);
