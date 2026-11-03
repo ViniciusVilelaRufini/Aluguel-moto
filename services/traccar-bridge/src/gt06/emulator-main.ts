@@ -1,6 +1,6 @@
 import { createLogger, maskImei } from '../log';
 import type { BatteryModel } from '../units';
-import { defaultPowerVolts, Gt06Emulator } from './emulator';
+import { defaultPowerVolts, Gt06Emulator, type Gt06ReplyStyle } from './emulator';
 
 const env = process.env;
 const log = createLogger('gt06-emulator');
@@ -9,6 +9,9 @@ const imei = env.GT06_IMEI ?? '860000000000901';
 if (!/^\d{15}$/.test(imei)) throw new Error('GT06_IMEI deve ter 15 dígitos');
 const scenario = env.GT06_SCENARIO ?? 'parked';
 if (scenario !== 'parked' && scenario !== 'ride-then-stop') throw new Error('GT06_SCENARIO deve ser parked ou ride-then-stop');
+// Texto da resposta ao comando: legacy (padrão) ou j16 (o do J16 real, com o estado do relé; o compose do dev single usa j16).
+const replyStyle = (env.GT06_REPLY_STYLE ?? 'legacy') as Gt06ReplyStyle;
+if (replyStyle !== 'legacy' && replyStyle !== 'j16') throw new Error('GT06_REPLY_STYLE deve ser legacy ou j16');
 // Mesma variável da ponte (BATTERY_MODEL, padrão 72v): a tensão enviada cai em ~70 % da curva desse modelo.
 const batteryModel = (env.BATTERY_MODEL ?? '72v') as BatteryModel;
 if (!['48v', '60v', '72v'].includes(batteryModel)) throw new Error('BATTERY_MODEL deve ser 48v, 60v ou 72v');
@@ -24,12 +27,12 @@ function speedNow(): number {
 
 async function run(): Promise<void> {
   for (;;) {
-    const emu = new Gt06Emulator({ host: env.GT06_HOST ?? 'localhost', port: num('GT06_PORT', 5023), imei, intervalMs: num('GT06_INTERVAL_MS', 5_000), heartbeatMs: num('GT06_HEARTBEAT_MS', 30_000), powerVolts: num('GT06_POWER_VOLTS', defaultPowerVolts(batteryModel)), start, log });
+    const emu = new Gt06Emulator({ host: env.GT06_HOST ?? 'localhost', port: num('GT06_PORT', 5023), imei, intervalMs: num('GT06_INTERVAL_MS', 5_000), heartbeatMs: num('GT06_HEARTBEAT_MS', 30_000), powerVolts: num('GT06_POWER_VOLTS', defaultPowerVolts(batteryModel)), start, replyStyle, log });
     try {
       emu.setIgnition(scenario === 'ride-then-stop');
       emu.setSpeed(speedNow());
       await emu.start();
-      log.info({ msg: 'gt06_emulator_started', imei: maskImei(imei), scenario });
+      log.info({ msg: 'gt06_emulator_started', imei: maskImei(imei), scenario, replyStyle });
       const t = setInterval(() => emu.setSpeed(speedNow()), 1_000);
       await emu.closed;
       clearInterval(t);

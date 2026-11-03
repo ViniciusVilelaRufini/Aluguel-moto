@@ -125,6 +125,7 @@ Alarmes sem correspondência: log e descarte.
   - `travada: false` → `{ type: "engineResume" }`
   - `limite_kmh` → **ignora** e reporta o limite fixo (ver abaixo); nunca envia comando.
 - Reported publicado pela ponte: `travada` (de `attributes.blocked` da posição seguinte ao comando, **não** do simples "comando aceito"), `limite_kmh: 32` fixo, `modo_roubada`, `firmware` (modelo/versão do Traccar), `velocidade_kmh` (só da posição mais recente e fresca).
+  - **Desvio (2026-11-03, bancada do J16):** a resposta do aparelho ao comando com o estado do relé (`attributes.result` "RELAY 1 OK" / "RELAY 0 OK", posterior ao envio e do comando pendente) também vale como `travada`, na hora. É o que o J16 diz, não uma medição da saída. Ver `docs/decisoes.md` (2026-11-03, J16 parte B).
 - Ao reconectar o dispositivo (Traccar `deviceOnline`): publicar reported completo e reaplicar o desired pendente **somente** se for `travada: false`. Um `travada: true` pendente **não** é reaplicado pela ponte: a API recomeça o fluxo (§5.7).
 - `motos/+/comandos` (`buzina`): ignorar com log (J16 não tem buzina).
 - Presença: `deviceOnline/deviceOffline` do Traccar → mesmos sinais de presença do modo local.

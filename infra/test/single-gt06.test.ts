@@ -107,6 +107,8 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(e).toContain('GT06_IMEI: ${GT06_EMULATOR_IMEI:-860000000000901}');
     expect(e).toContain('GT06_SCENARIO: ${GT06_SCENARIO:-parked}');
     expect(e).toContain('BATTERY_MODEL: ${GT06_BATTERY_MODEL:-72v}');
+    // e2e do dev single com a resposta do J16 real ("RELAY n OK"): exercita a confirmação pela resposta do aparelho.
+    expect(e).toContain('GT06_REPLY_STYLE: j16');
     expect(e).not.toMatch(/ports:|PASSWORD/);
   });
 
@@ -376,6 +378,22 @@ describe('dev single: rastreador GT06 (spec GT06 §7, plano Task 13)', () => {
     expect(body('provision')).toContain('sim_cycle_note');
     expect(body('deprovision')).toContain('sim_cycle_note');
     expect(g).toMatch(/sim_cycle_note\(\) \{[^}]*SIM_FLEET_REFRESH_SEC/);
+  });
+
+  it('gt06.sh provision reinicia a ponte se ela estiver rodando (bancada J16: a ponte só recebeu o dispositivo novo depois de reiniciar)', () => {
+    const g = file('gt06.sh');
+    const at = g.indexOf('\n  provision)\n');
+    const body = g.slice(at, g.indexOf(';;', at));
+    const cli = body.indexOf('node dist/cli/provision-gt06.js');
+    const restart = body.search(/if \[ -n "\$\(dc ps -q traccar-bridge 2>\/dev\/null\)" \]; then\n\s*dc restart traccar-bridge/);
+    expect(cli).toBeGreaterThan(0);
+    expect(restart).toBeGreaterThan(cli); // só depois do provisionamento (set -e: provisionamento que falha não reinicia nada)
+    expect(body).toMatch(/echo "[^"\n]*traccar-bridge reiniciada[^"\n]*"/);
+    expect(body).not.toMatch(/restart iot-sim/); // o SIGTERM do iot-sim anunciaria disconnected pela moto recém-provisionada
+    expect(file('cloudshell.md')).toMatch(/provision[^\n]*(\n[^\n]*)?reinicia[^\n]*(\n[^\n]*)?`traccar-bridge`/);
+    const guia = readFileSync(join(REPO, 'docs', 'gt06-j16-instalacao.md'), 'utf8');
+    expect(guia).toMatch(/provisionad[ao] mas a ponte não recebe/i);
+    expect(guia).toContain('restart traccar-bridge');
   });
 
   it('cloudshell.md: checagens antes do deploy GT06, trava do Liquibase e o que o deprovision deixa para trás', () => {

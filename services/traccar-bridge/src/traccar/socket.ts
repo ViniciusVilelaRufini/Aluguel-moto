@@ -112,6 +112,18 @@ export class TraccarSocket {
     t.unref?.();
   }
 
+  /**
+   * Derruba a conexão aberta para reconectar (login novo + WebSocket novo, pelo mesmo caminho do watchdog: `close` →
+   * reconexão → `onOpen`). Usado pela ponte quando um dispositivo do registro, online no Traccar, nunca chegou pelo
+   * WebSocket (bancada do J16: a sessão não incluía o dispositivo ligado depois dela). `false` se não há conexão aberta.
+   */
+  reopen(): boolean {
+    if (this.stopped || !this.ws) return false;
+    this.log.warn({ msg: 'traccar_socket_reopen' });
+    this.ws.terminate();
+    return true;
+  }
+
   close(): void {
     this.stopped = true;
     this.clearWatchdog();

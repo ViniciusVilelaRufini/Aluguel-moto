@@ -31,7 +31,20 @@ export interface BridgeOptions {
   publishTimeoutMs?: number;
   /** Prazo de um SUBSCRIBE (SUBACK); padrão `SUBSCRIBE_TIMEOUT_MS`. */
   subscribeTimeoutMs?: number;
+  /**
+   * Reabre o WebSocket do Traccar (login novo; `TraccarSocket.reopen`). `false` = não havia conexão aberta. Sem ele a ponte
+   * não reabre sozinha um WebSocket que não entrega um dispositivo do registro (só loga).
+   */
+  reopenSocket?: () => boolean;
 }
+
+/**
+ * Dispositivo do registro online no Traccar sem nenhuma mensagem no WebSocket por este tempo (desde que entrou no registro
+ * ou desde a abertura do WebSocket) → a sessão do WebSocket provavelmente não o inclui (bancada do J16, 2026-11-03).
+ */
+export const UNDELIVERED_REOPEN_MS = 90_000;
+/** Reaberturas do WebSocket por dispositivo não entregue: no máximo uma neste intervalo (e uma por moto). */
+export const SOCKET_REOPEN_MIN_MS = 5 * 60_000;
 
 /** Corte conhecido e bateria ainda desconhecida há este tempo → telemetria sai com `bateria_pct: 0` (log `battery_unknown`). */
 export const BATTERY_UNKNOWN_CAP_MS = 5 * 60_000;
@@ -80,6 +93,14 @@ export class Bridge {
   private readonly alarmIds = new Map<string, number[]>();
   private readonly lastLogAt = new Map<string, number>();
   private readonly awaitingGet = new Set<string>();
+  /** Relógio da ponte quando o thing entrou no registro (ou no início). Base do prazo de `checkUndelivered`. */
+  private readonly registeredAt = new Map<string, number>();
+  /** Última mensagem do WebSocket (posição, dispositivo ou evento) por id de dispositivo do Traccar. */
+  private readonly deliveredAt = new Map<number, number>();
+  /** Things para os quais o WebSocket já foi reaberto por falta de entrega (uma vez por moto e por entrada no registro). */
+  private readonly reopenTried = new Set<string>();
+  private socketOpenedAt?: number;
+  private lastReopenAt = Number.NEGATIVE_INFINITY;
   private readonly subscribed = new Set<string>();
   private readonly chains = new Map<string, Promise<void>>();
   private imeiToThing = new Map<string, string>();
@@ -156,12 +177,59 @@ export class Bridge {
     this.imeiToThing = next;
     this.thingToImei = nextT2I;
     for (const thing of changed) {
+      this.reopenTried.delete(thing);
+      if (nextT2I.has(thing)) this.registeredAt.set(thing, this.now());
+      else this.registeredAt.delete(thing);
       await this.serial(thing, async () => {
         if (this.memory.has(thing) || this.stolen.has(thing) || this.stopSentAt.has(thing)) this.log.info({ msg: 'registry_thing_remapped', thingName: thing });
         this.forget(thing);
       });
     }
     await this.subscribe([...this.thingToImei.keys()].filter((t) => !this.subscribed.has(t)));
+    try {
+      await this.checkUndelivered();
+    } catch (err) {
+      this.log.error({ msg: 'undelivered_check_failed', error: (err as Error).message });
+    }
+  }
+
+  /**
+   * Bancada do J16 (2026-11-03): dispositivo ligado ao usuário da ponte no Traccar DEPOIS da abertura do WebSocket não
+   * chegava nele até reiniciar a ponte. Moto do registro online no Traccar (REST) sem nenhuma mensagem no WebSocket há
+   * `UNDELIVERED_REOPEN_MS` (desde que entrou no registro ou desde a abertura do WebSocket) → reabre o WebSocket (login novo)
+   * pelo caminho seguro de `onSocketOpen` (esquece o bit de corte de todas as motos, ignora o replay, relê dispositivos).
+   * Uma vez por moto (por entrada no registro) e no máximo uma reabertura a cada `SOCKET_REOPEN_MIN_MS`; se nem assim chegar,
+   * erro `traccar_device_not_delivered` (limitado): reiniciar a ponte. O `gt06.sh provision` reinicia a ponte de qualquer jeito.
+   */
+  private async checkUndelivered(): Promise<void> {
+    const opened = this.socketOpenedAt;
+    if (opened === undefined) return;
+    const due = (thing: string, now: number): boolean => {
+      const base = Math.max(this.registeredAt.get(thing) ?? now, opened);
+      if (now - base < UNDELIVERED_REOPEN_MS) return false;
+      const d = this.deviceOf(thing);
+      return !(d && (this.deliveredAt.get(d.id) ?? Number.NEGATIVE_INFINITY) >= base);
+    };
+    if (![...this.thingToImei.keys()].some((t) => due(t, this.now()))) return;
+    await this.refreshDevices(); // status atual (REST: vê o que a sessão do WebSocket pode não ver) e dispositivos novos
+    const now = this.now();
+    const undelivered = [...this.thingToImei.keys()].filter((t) => due(t, now) && this.deviceOf(t)?.status === 'online');
+    for (const thing of undelivered.filter((t) => this.reopenTried.has(t))) {
+      this.logLimited(`${thing}|not_delivered`, 'error', { msg: 'traccar_device_not_delivered', thingName: thing });
+    }
+    const fresh = undelivered.filter((t) => !this.reopenTried.has(t));
+    if (!fresh.length) return;
+    if (now - this.lastReopenAt < SOCKET_REOPEN_MIN_MS) {
+      this.logLimited('traccar_socket_reopen_rate_limited', 'warn', { thingName: fresh[0], things: fresh.length });
+      return;
+    }
+    if (!this.opts.reopenSocket?.()) {
+      this.logLimited('traccar_device_not_delivered_no_reopen', 'warn', { thingName: fresh[0], things: fresh.length });
+      return;
+    }
+    this.lastReopenAt = now;
+    for (const t of fresh) this.reopenTried.add(t);
+    this.log.warn({ msg: 'traccar_socket_reopen_undelivered', thingName: fresh[0], things: fresh.length });
   }
 
   /** Sessão MQTT limpa a cada (re)conexão: assina tudo de novo. */
@@ -220,6 +288,7 @@ export class Bridge {
    */
   onSocketOpen(): Promise<void> {
     return this.inboundStep(async () => {
+      this.socketOpenedAt = this.now();
       this.replayPending = true;
       for (const thing of [...this.memory.keys()]) await this.serial(thing, async () => this.reconnected(thing));
       await this.refreshDevices();
@@ -232,6 +301,10 @@ export class Bridge {
   }
 
   async onTraccar(msg: TraccarSocketMessage): Promise<void> {
+    // Entregue pelo WebSocket (inclusive replay): a sessão inclui o dispositivo (`checkUndelivered`).
+    const at = this.now();
+    for (const x of [...(msg.positions ?? []), ...(msg.events ?? [])]) this.deliveredAt.set(x.deviceId, at);
+    for (const d of msg.devices ?? []) this.deliveredAt.set(d.id, at);
     for (const d of msg.devices ?? []) await this.updateDevice(d);
     const replay = this.replayPending && msg.positions !== undefined;
     if (msg.positions !== undefined) this.replayPending = false;
@@ -369,9 +442,10 @@ export class Bridge {
 
   private async onPosition(thing: string, raw: TraccarPosition, replay: boolean): Promise<void> {
     let p = raw;
-    if (replay && typeof raw.attributes?.blocked === 'boolean') {
-      // Replay de conexão: a última posição conhecida pode ser de antes de uma reinicialização do J16. Não é status atual.
-      p = { ...raw, attributes: { ...raw.attributes, blocked: undefined } };
+    if (replay && (typeof raw.attributes?.blocked === 'boolean' || typeof raw.attributes?.result === 'string')) {
+      // Replay de conexão: a última posição conhecida pode ser de antes de uma reinicialização do J16 (inclusive uma resposta
+      // "RELAY n OK" antiga). Não é status atual: sai sem o bit e sem a resposta.
+      p = { ...raw, attributes: { ...raw.attributes, blocked: undefined, result: undefined } };
       this.logLimited(`${thing}|replay`, 'info', { msg: 'traccar_replay_status_ignored', thingName: thing });
     }
     const now = this.now();
@@ -385,7 +459,8 @@ export class Bridge {
         // `bateria_pct: 0` só na mensagem; a memória continua sem bateria conhecida.
         const forced = applyPosition(p, { ...before, batteryPct: 0 }, this.opts.battery, now);
         if (forced.telemetry) {
-          r = { ...forced, memory: { ...forced.memory, batteryPct: r.memory.batteryPct } };
+          // `bateria_conhecida: false` (contrato MQTT): o 0 é falta de leitura, não bateria vazia.
+          r = { ...forced, telemetry: { ...forced.telemetry, bateria_conhecida: false }, memory: { ...forced.memory, batteryPct: r.memory.batteryPct } };
           this.logLimited(`${thing}|battery_unknown`, 'warn', { msg: 'battery_unknown', thingName: thing });
         }
       }
@@ -403,8 +478,15 @@ export class Bridge {
       await this.publish(TOPICS.events(thing), { tipo: 'movimento_sem_aluguel', timestamp: new Date(Date.parse(p.fixTime)).toISOString() }, 1);
     }
     if (!replay) await this.positionAlarms(thing, p, r.memory, now);
-    // Status com o bit de corte → `reported.travada` do bit ATUAL: na mudança ou, igual, no máximo 1/min (M5).
     const blocked = currentBlocked(r.memory);
+    if (r.relayReply && typeof blocked === 'boolean') {
+      // Resposta do J16 com o estado do relé ("RELAY n OK"): status fresco do aparelho, sai na hora (sem a deduplicação de M5).
+      // É ela que confirma o lock/unlock em ~1 s, sem esperar o heartbeat de 60 s.
+      this.log.info({ msg: 'relay_reply', thingName: thing, travada: blocked });
+      await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });
+      return;
+    }
+    // Status com o bit de corte → `reported.travada` do bit ATUAL: na mudança ou, igual, no máximo 1/min (M5).
     if (typeof p.attributes?.blocked === 'boolean' && typeof blocked === 'boolean') {
       const last = this.lastTravada.get(thing);
       if (!last || last.value !== blocked || now - last.at >= REPORT_REPEAT_MS) await this.report(thing, { travada: blocked, ...this.freshSpeed(thing) });

@@ -92,6 +92,12 @@ Testado de verdade, com um chip Vivo comum; vale mais que a tabela 3.2 para este
   com o mesmo APN só alguns sites abriram, e nenhuma conexão chegou ao servidor). Antes de instalar, teste o chip num celular
   com o APN, **roaming de dados ligado** e Wi-Fi desligado, abrindo `https://api-volti-dev.prestarecondominios.com.br/health`.
   Se não abrir, peça à operadora para liberar TCP de saída para o IP do servidor, porta 5023.
+- **Resposta ao bloqueio/desbloqueio pelo servidor**: o J16 responde em ~1 s `Stop engine Succeed` + `RELAY 1 OK` (bloquear) e
+  `Resume engine Succeed` + `RELAY 0 OK` (desbloquear). A ponte usa essa resposta para confirmar o comando na hora.
+  **Atenção (em investigação):** na bancada o J16 respondeu `RELAY 1 OK` **sem o estalo do relé**. A resposta é o que o
+  firmware diz, não uma medição da saída: até a causa ser entendida (bobina sem +12 V, saída no outro pino, corte adiado do
+  3.6 ou firmware que responde `Succeed` e adia), **confirme o corte fisicamente** (estalo, multímetro ou LED na saída e a moto
+  sem acionar) no teste 4 da seção 5.
 
 Sequência que funcionou (uma mensagem por vez, sem senha):
 
@@ -273,8 +279,9 @@ da moto: "Rastreador" deve dizer **Só relé**.
 | 1 | Ligue o J16 e espere 2–3 min | "Último sinal" de segundos atrás; "GPS / 4G" com sinal | dispositivo `online`, ponte vê o dispositivo, última mensagem < 60 s |
 | 2 | Compare a posição | moto no lugar certo do mapa | fix do GPS < 7 s (a ponte não corta com posição mais velha; medir também a latência posição → corte, bem abaixo de 2 s) |
 | 3 | Bateria | % plausível (J16 no pack) ou 0% após 5 min (J16 no DC-DC) | tensão externa presente / `battery_unknown` |
-| 4 | Roda **parada**, chave ligada: **Bloquear** | "Aguardando a moto parar para bloquear" por ~10–20 s, depois "confirmado" e **Travada: Sim**; o relé estala e a moto não aciona o motor | fase `waiting_stop` → `cutting` → nenhuma; `blocked=true` |
-| 5 | **Desbloquear** | "confirmado" em até 30 s, **Travada: Não**, a moto aciona de novo | `blocked=false` |
+| 4 | Roda **parada**, chave ligada: **Bloquear** | "Aguardando a moto parar para bloquear" por ~20–30 s (3 posições paradas cobrindo 20 s), depois "confirmado" e **Travada: Sim**; o relé estala e a moto não aciona o motor. **Confira fisicamente** (estalo + multímetro ou LED na saída + acelerador sem resposta): "confirmado" só quer dizer que o J16 respondeu `RELAY 1 OK`. Nenhuma moto vai a campo sem este teste passar fisicamente | fase `waiting_stop` → `cutting` → nenhuma; `blocked=true`; ponte com `relay_reply` |
+| 4b | Corte adiado (3.6): moto no cavalete, **ninguém montado**, ignição ligada, antena do GPS coberta (sem fix). Mande `RELAY,1#` por SMS e anote a resposta e se o relé estala; descubra a antena e espere 2 min; depois `RELAY,0#` | nada no painel (o servidor não manda corte sem posição) | se o SMS responder "Succeed"/`RELAY 1 OK` **sem** estalo (ou com estalo só depois do fix): o firmware confirma e adia. Registre com o horário e avise o controlador: a confirmação pela resposta não vale para esse firmware |
+| 5 | **Desbloquear** | "confirmado" em poucos segundos (quem confirma é a resposta do J16 ao comando, `RELAY 0 OK`, em ~1 s; prazo de segurança 90 s), **Travada: Não**, a moto aciona de novo | `blocked=false`; ponte com `relay_reply` |
 | 6 | Bloquear com a moto **desligada** (ACC off) | igual ao 4 | igual |
 | 7 | Desligue a energia do J16 com a moto bloqueada, religue | continua **Travada: Sim** depois de reconectar | `blocked=true` após o primeiro heartbeat |
 | 8 | Desbloqueie, desligue o J16, peça **Bloquear** no painel, religue em 1 min | "moto offline — será aplicado ao reconectar", depois "Aguardando a moto parar…" e "confirmado" | nunca um corte antes das posições novas |
@@ -287,7 +294,7 @@ esse teste **não** prova a proteção contra corte em movimento. Para provar, f
 | # | Faça | Esperado |
 |---|---|---|
 | 10 | Em local fechado, sem trânsito, capacete, alguém pilotando a 8–15 km/h em linha reta/círculos. Peça **Bloquear** e **continue andando** | "Aguardando a moto parar para bloquear" o tempo todo; o relé **não** atua. Depois de **120 s**: "falhou: a moto não parou em 120 s; nenhum corte foi enviado" |
-| 11 | Peça **Bloquear** de novo, ande ~20 s e **pare** (pé no chão, moto parada) | ~10–20 s depois de parar: corte, "confirmado", **Travada: Sim** |
+| 11 | Peça **Bloquear** de novo, ande ~20 s e **pare** (pé no chão, moto parada) | ~20–30 s depois de parar: corte, "confirmado", **Travada: Sim** |
 | 12 | Desbloqueie e confirme que o **controlador limita a 32 km/h** (velocímetro/GPS) | ≤ 32 km/h no plano |
 
 Se o relé atuar com a moto andando no teste 10: **pare os testes**, desligue o J16 e avise o controlador com o horário.
@@ -305,12 +312,15 @@ Peça sempre um `gt06.sh status <moto>` primeiro: ele aponta a maioria destes ca
 | GPRS online mas o `status` diz "dispositivo não encontrado" ou o J16 nunca aparece | IMEI errado no provisionamento; `SERVER` errado; 5023 fechada | confira o IMEI do `PARAM#` contra o enviado; `GPRSSET#` mostra o servidor; peça ao controlador para conferir `gt06Port` + `GT06_BIND=0.0.0.0` |
 | Aparece no Traccar, mas nada no painel; `status`: "o usuário da ponte não vê o dispositivo" | dispositivo não vinculado ao usuário da ponte | controlador roda o `gt06.sh provision` de novo (vincula) |
 | `status`: `traccar_unknown_device` | registro da ponte ainda não relido / Tracker não `relay_only` | espere 60 s; se continuar, reprovisionar |
+| Provisionado mas a ponte não recebe: online no Traccar, nada no painel, `status` sem nenhum log da ponte desta moto | a ponte já rodava quando o dispositivo foi ligado ao usuário dela no Traccar e a sessão do WebSocket não o inclui (visto na bancada de 2026-11-03) | controlador reinicia a ponte: `docker compose -f deploy/single/compose.yml --env-file /opt/volti/.env --profile gt06 restart traccar-bridge` (o `gt06.sh provision` já faz isso quando a ponte está rodando: linha `traccar-bridge reiniciada`). A ponte também reabre o WebSocket sozinha depois de 90 s (log `traccar_socket_reopen_undelivered`); `traccar_device_not_delivered` = nem isso resolveu: reinicie |
 | Online no Traccar, mas o painel não mostra posição; `status`: `telemetry_held awaiting_status` | telemetria **retida**: não chegou heartbeat com o bit de corte depois da conexão | `HBT` ≤ 60 s (3.2 #7, 3.5); espere 1 min |
 | `telemetry_held awaiting_battery` e depois **bateria 0%** após 5 min (`battery_unknown`) | J16 não manda tensão externa, ou mede 12 V do DC-DC | `ADT,ON#` + `RESET#`; com DC-DC é esperado (4.3); com pack direto, confira `GT06_BATTERY_MODEL` |
 | Nada no painel em local coberto | sem fix de GPS (posição inválida é descartada) | céu aberto; antena para cima, sem metal (4.4) |
 | Bloqueio **sempre** termina "a moto não parou em 120 s" com a moto parada | posições a cada > 10 s ou GPS atrasado ≥ 10 s; `status`: "fix do GPS com mais de 10 s" | `TIMER,5,5#` + `RESET#`; confira com `PARAM#`; céu aberto; `SZCS#SLPDISCONNECT=0` |
 | Bloqueio fica em "Aguardando a moto parar…" e o J16 está parado | posições paradas mas espaçadas > 10 s, ou velocidade de deriva do GPS ≥ 3 km/h | como acima; espere o GPS estabilizar (1–2 min ligado) |
-| Relé atua, mas o painel termina "falhou: sem resposta da moto" e **Travada** não vira Sim | bit de corte não chegou em 120 s: heartbeat lento; ou J16 adiou o corte (sem GPS, ignição ligada, 3.6) | `HBT` ≤ 60 s; céu aberto. A moto **continua cortada**: confira e use **Desbloquear** |
+| Relé atua, mas o painel termina "falhou: sem resposta da moto" e **Travada** não vira Sim | nem a resposta do J16 ao comando (`RELAY 1 OK`, que confirma em ~1 s) nem o bit de corte de um heartbeat chegaram a tempo: heartbeat lento ou resposta com outro texto (firmware diferente); ou J16 adiou o corte (sem GPS, ignição ligada, 3.6) | `HBT` ≤ 60 s; céu aberto; o `status` mostra `relay_reply` quando a resposta chega. A moto **continua cortada**: confira e use **Desbloquear** |
+| Painel **confirma** o bloqueio (**Travada: Sim**; `status` com `relay_reply`), mas o relé **não estala** ou a moto **aciona** | "confirmado" é o que o J16 disse (`RELAY 1 OK`), não uma medição: bobina do relé sem +12 V; saída do J16 que exige o outro pino (NA/NF ou fio errado, 4.1/4.2); corte adiado pelo firmware (3.6); firmware que responde `Succeed` e adia (visto na bancada, 3.0) | **pare os testes**; meça a saída do J16 com multímetro ou LED ao bloquear/desbloquear; confira a alimentação da bobina e o pino (4.1, 4.2); faça o 4b. **Nenhuma moto vai a campo sem o teste 4 passar fisicamente** |
+| **Desbloquear** termina "falhou: sem resposta da moto", mas o relé liberou | a resposta `RELAY 0 OK` do J16 não chegou (ou veio com outro texto) e o heartbeat não veio em 90 s | `HBT` ≤ 60 s; peça o `status` (sem `relay_reply` = a resposta não chegou à ponte) e avise o controlador com o horário |
 | Nada acontece ao bloquear; `status`: "Traccar versão ... a ponte recusa todo comando de motor" | gate de versão do Traccar (< 6.7.0 ou `version` ilegível) | controlador: imagem `traccar/traccar:6.16.0-ubuntu` (já é a do compose) e conferir `/api/server` |
 | Nada acontece ao bloquear; `status` mostra `engine_stop_refused` | segunda guarda da ponte recusou (dispositivo offline, posição velha > 10 s, ≥ 3 km/h, corte já ativo) | ver o motivo no `status`; quase sempre `TIMER`/GPS |
 | Bloquear **libera** a moto e Desbloquear bloqueia | relé ligado em NA ou J16 com sentido invertido (3.3, 4.2) | pare; religue em NF (30 + 87a) ou avise o controlador |

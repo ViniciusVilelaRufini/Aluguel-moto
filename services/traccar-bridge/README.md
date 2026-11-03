@@ -24,7 +24,8 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   fica retida (log `telemetry_held` com o motivo, no máximo 1/min por moto). Bit de corte desconhecido sem comando pendente
   (depois de uma (re)conexão sem status novo, ou nunca visto) **não** retém: a telemetria sai com `travada: false` (A4-6;
   cercas, zonas e trajeto não ficam cegos se o firmware não mandar heartbeat em movimento). Com o corte conhecido e a bateria ainda desconhecida há 5 min (ex.:
-  J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` (log `battery_unknown`). Com `engineStop`
+  J16 alimentado por conversor DC-DC), a telemetria sai com `bateria_pct: 0` **e `bateria_conhecida: false`** (log
+  `battery_unknown`; o 0 é falta de leitura, não bateria vazia). Com a bateria conhecida o campo não vai (ausente = `true`). Com `engineStop`
   enviado e ainda sem status novo, ou com o bit recebido há mais de 90 s (firmware sem heartbeat em movimento), a telemetria
   **não** é retida: sai com `travada: false` (conservador — nunca confirma lock; a API não vê lacuna nem reconexão, e cercas e
   zonas continuam vendo a moto).
@@ -35,8 +36,8 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
 - **Mensagem retida:** delta, `get/accepted` ou comando entregue como **retido** (`packet.retain`, no SUBSCRIBE e de novo a cada
   reconexão) é descartado com log `mqtt_retained_ignored` (auditoria run-4): o shadow do servidor nunca retém essas mensagens.
 - **Shadow:** todo delta passa pela segunda guarda. `travada: true` → `engineStop` **só** com o dispositivo online, posição de até
-  7 s (`CUT_FRESH_MS`; com `TIMER,5,5#` uma amostra perdida já recusa) abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 2 amostras paradas
-  em 10 s); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
+  7 s (`CUT_FRESH_MS`; com `TIMER,5,5#` uma amostra perdida já recusa) abaixo de 3 km/h, sem corte ativo (bit recebido há ≤ 90 s, contado do `serverTime` do Traccar) e sem outro `engineStop` em 30 s (a primeira guarda é a API, que exige 3 amostras paradas
+  cobrindo 20 s, com no máximo 12 s entre elas); recusa = log `engine_stop_refused` com o motivo. A guarda é **refeita imediatamente antes do envio** (depois da
   releitura da versão e de qualquer outra espera), com o aparelho resolvido uma vez no início do delta: se a posição envelheceu,
   o dispositivo caiu ou o IMEI do thing mudou no meio (`device_changed`), nada é enviado. A sessão HTTP do Traccar é aberta
   **antes** da guarda refeita; no envio do `engineStop` não há login nem reenvio no 401 (sessão expirada = `engine_stop_not_sent`;
@@ -55,6 +56,17 @@ Para a API nada muda: mesmos tópicos (`packages/contracts/mqtt.md`), mesmos sch
   antes de o J16 executar o `Relay` pode chegar logo depois do envio). Esse primeiro status sai sempre como `reported.travada`
   (sem a deduplicação de 1/min). Assim um unlock sem resposta seguido de relock não "confirma" a trava pelo bit de antes do
   `engineResume`.
+- **Resposta do J16 com o estado do relé** (bancada 2026-11-03: `"Stop engine Succeed\nRELAY 1 OK"` /
+  `"Resume engine Succeed\nRELAY 0 OK"` em ~1 s): `attributes.result` que casa com `/\bRELAY\s*([01])\s*OK\b/i` é status fresco
+  do próprio aparelho — `blocked = ($1 === '1')`, hora = min(`serverTime`, relógio da ponte) — e sai **na hora** como
+  `reported.travada` (log `relay_reply`, sem a deduplicação de 1/min). É isso que confirma o lock/unlock sem esperar o
+  heartbeat de 60 s. **"Confirmado" quer dizer "o J16 disse que acionou", não "o relé atuou"**: a ponte não mede a saída
+  (bobina sem +12 V, pino errado ou corte adiado pelo firmware passam como confirmados; veja o guia do J16, seção 6). Com comando pendente só vale a resposta recebida depois do envio **e** do comando pendente (`engineStop`
+  → `RELAY 1`, `engineResume` → `RELAY 0`); uma resposta atrasada do comando anterior não confirma, não é ack e não vira eco
+  `already_blocked`. Posição com `attributes.result` nunca vira telemetria nem renova a amostra de velocidade da guarda do corte
+  (é a última localização repetida); com `fixTime` mais novo que a última telemetria ou velocidade ≥ 3 km/h ela apaga a amostra
+  parada. No replay de conexão do WebSocket a
+  resposta é ignorada como o bit `blocked`.
 - **MQTT fora:** nada é entregue ao mqtt.js: telemetria (QoS 0) é descartada; `reported`, presença, eventos e `shadow/get`
   (QoS 1) são pulados na hora (log `mqtt_down_skipped` com o tipo, 1/min por moto e tipo), sem esperar o prazo. Um QoS 1 que já
   estava em voo na queda (ou abandonado pelo prazo) fica no `outgoingStore` do mqtt.js, que o reenvia na reconexão **antes** do
@@ -128,6 +140,16 @@ por digest — para atualizar, troque o `ARG NODE_IMAGE`). Dev single: `deploy/s
 ponte não tem endpoint HTTP; a saúde é o HEALTHCHECK do arquivo de vida (acima). O Docker não reinicia contêiner `unhealthy`
 sozinho (veja `docker ps`); no ECS a task é substituída.
 
+**Dispositivo provisionado com a ponte rodando:** na bancada do J16 (2026-11-03) a ponte só passou a receber o dispositivo
+recém-ligado ao usuário dela no Traccar depois de reiniciar (a sessão do WebSocket não incluía o dispositivo novo). Por isso o
+`gt06.sh provision` reinicia a `traccar-bridge` quando ela está rodando (linha `traccar-bridge reiniciada ...`). O reinício é
+seguro: a ponte relê o registro, esquece o bit de corte de todas as motos, ignora o replay e espera status novo; um
+`engineStop` em voo de outra moto não é reenviado (o lock expira na API) e um `engineResume` pendente é reaplicado ao subir
+(`shadow/get` das motos online, `requestPendingUnlocks`). A própria ponte também reabre o WebSocket (login novo) quando uma moto
+do registro, online no Traccar, não chega nele em 90 s (`traccar_socket_reopen_undelivered`; uma vez por moto, no máximo uma
+reabertura a cada 5 min; se nem assim chegar, erro `traccar_device_not_delivered`). Provisionou por outro caminho e o `status`
+não mostra nenhum log da ponte para a moto: `docker compose ... restart traccar-bridge`.
+
 ### Local com Docker (profile `gt06` do `docker-compose.yml`)
 
 O PC do dono não tem Docker; vale numa máquina que tenha (ou no dev single). Os testes estáticos do compose
@@ -146,7 +168,7 @@ docker compose --profile gt06 up -d traccar bridge-db-grants traccar-bridge gt06
   antes do profile: aplique `infra/postgres/traccar-db.sql` à mão (`docker compose exec -T postgres psql -U volti -d volti < infra/postgres/traccar-db.sql`).
 - `traccar-bridge`: `IOT_MODE=local` (Mosquitto), cria o admin do Traccar (`TRACCAR_BOOTSTRAP_ADMIN`), lê o registro com o papel
   só-leitura.
-- `gt06-emulator`: mesma imagem; `GT06_SCENARIO=parked` (padrão) ou `ride-then-stop`; a tensão segue `GT06_BATTERY_MODEL` (padrão `72v`,
+- `gt06-emulator`: mesma imagem; `GT06_SCENARIO=parked` (padrão) ou `ride-then-stop`; `GT06_REPLY_STYLE=legacy` (padrão; resposta sem estado do relé) ou `j16` (o texto do J16 real, `... RELAY 1 OK`, que a ponte aceita como estado do relé; o compose do dev single usa `j16`); a tensão segue `GT06_BATTERY_MODEL` (padrão `72v`,
   repassado como `BATTERY_MODEL` à ponte e ao emulador).
 
 **O dispositivo do emulador precisa existir no Traccar e estar vinculado ao usuário da ponte** (senão não há pushes no
@@ -217,6 +239,6 @@ reinício; `noQueue` respeitado e dispositivo vinculado ao usuário da ponte. Pr
 
 ## Emulador GT06 e conferência do e2e
 
-- `pnpm emulator` (`GT06_HOST`, `GT06_PORT`, `GT06_IMEI`, `GT06_SCENARIO=parked|ride-then-stop`, `GT06_HEARTBEAT_MS` - máximo 60 s). Logo após o login envia status (bit de corte) e a tensão externa (0x94, short com sinal em 0,01 V, sem subtipo em quadro 0x7878), e repete a cada heartbeat; a ponte segura a telemetria até receber os dois. A tensão segue o `BATTERY_MODEL` da ponte (48v/60v/72v, padrão 72v) em ~70 % da curva; `GT06_POWER_VOLTS` sobrescreve.
+- `pnpm emulator` (`GT06_HOST`, `GT06_PORT`, `GT06_IMEI`, `GT06_SCENARIO=parked|ride-then-stop`, `GT06_REPLY_STYLE=legacy|j16`, `GT06_HEARTBEAT_MS` - máximo 60 s). Logo após o login envia status (bit de corte) e a tensão externa (0x94, short com sinal em 0,01 V, sem subtipo em quadro 0x7878), e repete a cada heartbeat; a ponte segura a telemetria até receber os dois. A tensão segue o `BATTERY_MODEL` da ponte (48v/60v/72v, padrão 72v) em ~70 % da curva; `GT06_POWER_VOLTS` sobrescreve.
 - Conferência (falha fechada): `mosquitto_sub -v -t "..." | node dist/e2e/check-timeline.js stamp > mqtt.log` (o modo `stamp` prefixa cada linha com a hora UTC ISO 8601 com milissegundos do recebimento; o `-F %I` do mosquitto só tem resolução de 1 s e é recusado), depois `node dist/e2e/check-timeline.js <thing> --emulator-log=emulador.log [--unlock-requested] < mqtt.log`. O log JSON do emulador é intercalado com as linhas pelo horário. Emulador, ponte e o `stamp` precisam rodar no mesmo host (ou com relógios sincronizados por NTP). Falha se: o emulador recebeu corte a >= 3 km/h; houve `desired travada:true` sem `gt06_cut`; `reported travada:true` saiu sem `gt06_status_sent` com `blocked:true` depois do corte e da última conexão (ou com mais de 90 s de idade); houve `desired travada:false` não pedido; ou alguma linha tem hora só em segundos ("check skipped: linhas do mosquitto sem milissegundos"). Sem `--emulator-log` o CLI sai com código 2, a menos que se passe `--no-emulator-log` (então só as checagens do mosquitto rodam).
 - `--unlock-requested`: use só quando o cenário do e2e pede um desbloqueio de propósito (ou o shadow nasce com `desired travada:false`); sem ele qualquer `travada:false` em desired ou delta é reprovado. A ponte e o emulador nunca publicam desired, então o fluxo padrão (corte e confirmação) não gera `travada:false`.

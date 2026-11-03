@@ -25,6 +25,8 @@ export interface TelemetryMessage {
   ignicao: boolean;
   sinal: number;
   timestamp: string;
+  /** `false` = `bateria_pct` é 0 por falta de leitura (teto de 5 min da ponte), não bateria vazia. Ausente = `true`. */
+  bateria_conhecida?: boolean;
 }
 
 export interface DeviceEventMessage {
@@ -59,7 +61,8 @@ export function isValidTelemetry(t: TelemetryMessage): boolean {
     typeof t.ignicao === 'boolean' &&
     Number.isInteger(t.sinal) &&
     inRange(t.sinal, 0, 5) &&
-    !Number.isNaN(Date.parse(t.timestamp))
+    !Number.isNaN(Date.parse(t.timestamp)) &&
+    (t.bateria_conhecida === undefined || typeof t.bateria_conhecida === 'boolean')
   );
 }
 

@@ -313,6 +313,12 @@ aws ssm start-session --target $IID --document-name AWS-StartPortForwardingSessi
 Provisionar a moto do emulador (IMEI padrão `860000000000901`) e rodar o e2e. O e2e é só com o emulador: com o Tracker em
 outro IMEI (um J16 real) ele sai 2 sem subir o emulador, que forjaria posições paradas do aparelho de verdade (o relê poderia
 cortar com a moto andando). J16 real: `gt06.sh provision` com o IMEI dele, `gt06.sh status` e o teste de bancada do guia abaixo.
+Depois de provisionar, o `provision` reinicia a `traccar-bridge` se ela estiver rodando (linha `traccar-bridge reiniciada ...`):
+na bancada do J16 a ponte só passou a receber o dispositivo recém-ligado a ela no Traccar depois de reiniciar (permissões da
+sessão do WebSocket). O reinício é seguro: a ponte esquece o bit de corte de todas as motos e espera status novo; um
+`engineStop` em voo de outra moto não é reenviado (o lock expira na API) e um `engineResume` pendente é reaplicado ao subir
+(`shadow/get` das motos online). A ponte também reabre o WebSocket sozinha se a moto não chegar em 90 s; o reinício no
+`provision` é a garantia extra. Se provisionou por outro caminho com a ponte rodando: `$DC restart traccar-bridge`.
 
 ```bash
 CMD=$(aws ssm send-command --instance-ids $IID --document-name AWS-RunShellScript \
