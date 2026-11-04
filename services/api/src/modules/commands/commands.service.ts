@@ -26,8 +26,12 @@ const PREDECESSORS: Record<CommandOutcome['status'], VehicleCommand['status'][]>
  */
 const OFFLINE_REGRESSION: VehicleCommand['status'][] = ['pending', 'in_progress'];
 
-/** Travas de sistema que são só "estacionar" (fim de aluguel, rollback do início): não gravam origem nem rebaixam uma existente. */
-const PARKING_LOCK_PURPOSES = new Set(['rental_end', 'rental_force_end', 'rental_start_rollback']);
+/**
+ * Travas de sistema que são só "estacionar" (fim de aluguel, chegada no galpão, rollback do início): não gravam origem nem
+ * rebaixam uma existente. A chegada no galpão (`rental_depot_return`) também: com origem `system`, o fechamento mandaria a
+ * moto para `maintenance` e o próximo início no balcão (`isLockedByStaff`) recusaria a moto.
+ */
+const PARKING_LOCK_PURPOSES = new Set(['rental_end', 'rental_force_end', 'rental_depot_return', 'rental_start_rollback']);
 
 /**
  * Autoridade do ator: cliente → `customer`; staff com admin/operacao → `staff`; demais staff (ex.: só `campo`) → `field`;

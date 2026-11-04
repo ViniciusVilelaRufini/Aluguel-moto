@@ -7,7 +7,7 @@ import { IOT_GATEWAY, IotGateway } from '../../ports/iot-gateway.port';
 import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
 import { CommandsController } from './commands.controller';
-import { CommandsService } from './commands.service';
+import { CommandsService, lockOriginOf } from './commands.service';
 
 const VEHICLE_ID = '33333333-3333-4333-8333-333333333333';
 const vehicle = { id: VEHICLE_ID, code: 'VLT-0001', thingName: 'moto-0001', status: 'free' };
@@ -154,6 +154,24 @@ describe('Comandos remotos', () => {
       it('sem authority, admin continua com autoridade staff (comando do painel)', async () => {
         await service.dispatch({ vehicleId: VEHICLE_ID, type: 'unlock', reason: 'Desbloqueio manual', actor: admin });
         expect(iot.unlock).toHaveBeenCalledWith(expect.objectContaining({ authority: 'staff' }));
+      });
+    });
+
+    describe('origem da trava de sistema (estacionar x trava de sistema)', () => {
+      const system = { system: true as const, name: 'rental-end' };
+
+      it.each(['rental_end', 'rental_force_end', 'rental_start_rollback', 'rental_depot_return'])(
+        'lock de sistema com purpose %s só estaciona: lockOrigin null (o próximo aluguel destrava)',
+        async (purpose) => {
+          expect(lockOriginOf('system', purpose)).toBeNull();
+          await service.dispatch({ vehicleId: VEHICLE_ID, type: 'lock', reason: 'Fim', actor: system, context: { rentalId: 'r1', purpose } });
+          expect(iot.lock).toHaveBeenCalledWith(expect.objectContaining({ authority: 'system', lockOrigin: null }));
+        },
+      );
+
+      it('lock de sistema sem purpose de estacionar (ex.: cerca) grava origem system', () => {
+        expect(lockOriginOf('system', 'geofence')).toBe('system');
+        expect(lockOriginOf('system')).toBe('system');
       });
     });
 
