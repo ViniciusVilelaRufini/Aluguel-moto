@@ -26,15 +26,33 @@ import { PrismaService } from '../../prisma/prisma.service';
 import type { Principal } from '../auth/principal';
 import { CommandsService } from '../commands/commands.service';
 import { assertCustomerEligible } from '../customers/eligibility';
-import { PricingService } from '../pricing/pricing.service';
+import { isCounterMethod, type CounterMethod } from '../payments/counter-methods';
+import { type PriceSnapshot, PricingService } from '../pricing/pricing.service';
 import { ReservationsService } from '../reservations/reservations.service';
 import type { StartRentalDto } from './rentals.dto';
 import { toDeposit, toRental } from './rentals.mapper';
 import { ExclusiveJob, jobLockTtl } from '../../common/job-lock';
 
-/** Aceite da entrega de galpão (`POST /handovers/{id}/accept`): a única passagem de uma moto do galpão para o aluguel. */
+/**
+ * Pré-reserva/balcão: o atendente inicia o aluguel no balcão (`POST /handovers/{id}/counter-checkout`). O `user` do
+ * `start()` é o atendente (ator do `unlock`); o cliente é `customerId`. Pagamento e caução não passam pelo gateway: são
+ * gravados na mesma transação que cria o aluguel.
+ */
+export interface CounterStart {
+  customerId: string;
+  operatorId: string;
+  snapshot: PriceSnapshot;
+  periodSeconds: number;
+  payment: { method: CounterMethod; amountCents: number; reference?: string };
+  deposit: { method: CounterMethod; amountCents: number; reference?: string };
+  contractPhotoKeys: string[];
+}
+
+/** Saída de galpão (entrega de saída): a única passagem de uma moto do galpão para o aluguel. */
 export interface StartOptions {
   fromHandover?: { reservationId: string; handoverId: string };
+  /** Só junto com `fromHandover`. */
+  counter?: CounterStart;
 }
 
 export interface StartResult {
@@ -204,8 +222,10 @@ export class RentalStartService {
   }
 
   async start(user: Principal, dto: StartRentalDto, idempotencyKey: string, opts: StartOptions = {}): Promise<StartResult> {
-    const customerId = user.customerId!;
+    const counter = opts.counter;
     const fromHandover = opts.fromHandover;
+    if (counter && !fromHandover) throw new Error('rental_start_counter_requires_handover');
+    const customerId = counter ? counter.customerId : user.customerId!;
     // Entrega de galpão: a caução é da reserva (que continua `handover` se o aceite falhar); quem a libera é a reserva.
     const release = (depositId: string | undefined) => (fromHandover ? Promise.resolve() : this.requestDepositRelease(depositId, customerId));
     const customer = await this.prisma.customer.findUnique({ where: { id: customerId } });
@@ -220,7 +240,7 @@ export class RentalStartService {
     }
 
     const plan = await this.pricing.activePlan(dto.planCode);
-    const coupon: Coupon | null = dto.couponCode ? await this.pricing.requireCoupon(dto.couponCode, dto.planCode, customerId) : null;
+    const coupon: Coupon | null = !counter && dto.couponCode ? await this.pricing.requireCoupon(dto.couponCode, dto.planCode, customerId) : null;
 
     const vehicle = await this.prisma.vehicle.findUnique({ where: { id: dto.vehicleId }, include: { vehicleModel: { select: { pricePerMinuteCents: true, unlockFeeCents: true } } } });
     if (!vehicle) throw notFound('Moto não encontrada.');
@@ -272,7 +292,16 @@ export class RentalStartService {
     let compensatedBySweep = false;
     let unlock: { status: string; statusReason?: string } | undefined;
     try {
-    if (dto.depositId) {
+    if (counter) {
+      // Balcão: a caução é gravada só na transação final (nada a liberar se o início falhar).
+      rentalId = randomUUID();
+      const now = new Date();
+      deposit = {
+        id: randomUUID(), rentalId, customerId, method: counter.deposit.method, status: 'held', amountCents: counter.deposit.amountCents,
+        capturedCents: null, refundedCents: 0, reference: counter.deposit.reference ?? null, cardId: null,
+        idempotencyKey: `counter-deposit:${fromHandover!.handoverId}`, providerReference: null, pix: null, createdAt: now, updatedAt: now,
+      };
+    } else if (dto.depositId) {
       const d = await this.prisma.deposit.findUnique({ where: { id: dto.depositId } });
       if (!d || d.customerId !== customerId) throw notFound('Caução não encontrada.');
       if (d.status !== 'held') throw new ProblemException(402, 'deposit-not-held', 'A caução ainda não foi confirmada.');
@@ -318,12 +347,12 @@ export class RentalStartService {
     }
 
     // ── seguro, preço congelado e criação ──
-    const subscription = dto.planCode === 'weekly' || dto.planCode === 'monthly'
+    const subscription = !counter && (dto.planCode === 'weekly' || dto.planCode === 'monthly')
       ? await this.prisma.subscription.findFirst({ where: { customerId, planCode: dto.planCode, status: 'active', currentPeriodEnd: { gt: new Date() } } })
       : null;
     const policy = await this.insurance.issueForRental({ rentalId, customerId, coverage: dto.coverage });
     policyId = policy.policyId;
-    const snapshot = PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription, vehicle.vehicleModel);
+    const snapshot = counter ? counter.snapshot : PricingService.snapshotFrom(plan, policy.premiumCents, dto.coverage, coupon, !!subscription, vehicle.vehicleModel);
     // Auditoria run-4: a cobertura vale até o fim do período; o fechamento estende se a assinatura for renovada.
     if (subscription) snapshot.subscriptionCoveredUntil = subscription.currentPeriodEnd.toISOString();
 
@@ -357,24 +386,32 @@ export class RentalStartService {
         compensatedBySweep = true;
         throw conflict('vehicle-offline', 'A moto não respondeu a tempo. Nada foi cobrado e a caução foi liberada.');
       }
-      // Run-2: relê a caução com bloqueio condicional (ainda `held` e sem pedido de liberação gravado durante o unlock);
-      // senão aborta e o catch desfaz como no `vehicle-offline`. `rentalId` já é o da caução quando ela tinha um.
-      const kept = await tx.deposit.updateMany({ where: { id: deposit.id, status: 'held' }, data: { rentalId } });
-      if (kept.count !== 1 || (await tx.depositRelease.findUnique({ where: { depositId: deposit.id } }))) throw depositInUse();
+      let paymentId: string | null = null;
+      if (counter) {
+        paymentId = await this.recordCounterPayments(tx, counter, deposit, rentalId, fromHandover!.handoverId);
+      } else {
+        // Run-2: relê a caução com bloqueio condicional (ainda `held` e sem pedido de liberação gravado durante o unlock);
+        // senão aborta e o catch desfaz como no `vehicle-offline`. `rentalId` já é o da caução quando ela tinha um.
+        const kept = await tx.deposit.updateMany({ where: { id: deposit.id, status: 'held' }, data: { rentalId } });
+        if (kept.count !== 1 || (await tx.depositRelease.findUnique({ where: { depositId: deposit.id } }))) throw depositInUse();
+      }
       // Reserva que acabou durante o desbloqueio (expirou/cancelou): não começa sobre ela.
       if (ownReservation && (await this.reservations.convert(tx, ownReservation.id)) !== 1) throw conflict('vehicle-unavailable', 'Esta moto não está disponível.');
       if (fromHandover) {
         // Aceite único: a entrega só passa a `accepted` se ainda estiver pendente (disputa/cancelamento concorrente desfaz tudo).
         const accepted = await tx.handover.updateMany({
           where: { id: fromHandover.handoverId, status: 'pending_customer' },
-          data: { status: 'accepted', rentalId, lastError: null, respondedAt: new Date() },
+          data: { status: 'accepted', rentalId, lastError: null, respondedAt: new Date(), ...(counter ? { contractPhotoKeys: counter.contractPhotoKeys } : {}) },
         });
         if (accepted.count !== 1) throw new ProblemException(422, 'handover-not-pending', 'Esta entrega não está mais aguardando o seu aceite.');
       }
+      const startedAt = new Date();
       const created = await tx.rental.create({
         data: {
           id: rentalId,
           customerId,
+          // Balcão: o período pré-pago conta do início confirmado (o mesmo instante gravado em `startedAt`).
+          ...(counter ? { startedAt, prepaidUntil: new Date(startedAt.getTime() + counter.periodSeconds * 1000), paymentId } : {}),
           vehicleId: vehicle.id,
           planCode: dto.planCode,
           coverage: dto.coverage,
@@ -388,7 +425,9 @@ export class RentalStartService {
           speedLimitKmh: vehicle.speedLimitKmh,
         },
       });
-      await tx.rentalEvent.create({ data: { rentalId, type: 'started', actorType: 'customer', actorId: customerId } });
+      await tx.rentalEvent.create({
+        data: { rentalId, type: 'started', actorType: counter ? 'staff' : 'customer', actorId: counter ? counter.operatorId : customerId },
+      });
       if (coupon) {
         await tx.couponRedemption.create({ data: { couponId: coupon.id, customerId, rentalId, cpfHash: await this.pricing.cpfHashFor(customerId) } });
         const reserved = await tx.coupon.updateMany({
@@ -425,6 +464,9 @@ export class RentalStartService {
       throw err;
     }
 
+    // C10: reserva antiga (apps beta12) com caução do gateway retida: o balcão não a usa; libera depois do commit.
+    if (counter && handoverReservation?.depositId) await this.releaseLegacyReservationDeposit(handoverReservation.depositId, customerId);
+
     const mapped = toRental({ ...rental, vehicle });
     this.events.emit(EV.VEHICLE_STATUS_CHANGED, { vehicleId: vehicle.id, status: 'rented', ts: new Date().toISOString() } satisfies VehicleStatusChangedEvent);
     this.events.emit(EV.RENTAL_CHANGED, {
@@ -432,6 +474,44 @@ export class RentalStartService {
     } satisfies RentalChangedEvent);
     this.logger.log({ msg: 'rental_started', rentalId, planCode: dto.planCode });
     return { status: 201, body: { outcome: 'started', rental: mapped, deposit: toDeposit({ ...deposit, rentalId }) } };
+  }
+
+  /**
+   * Balcão: caução de balcão `held` (valor 0 = sem caução), `Payment` `rental` `paid` (o pré-pago, gravado pelo
+   * atendente) e, com caução > 0, `Payment` `deposit` `paid`. Chaves únicas por entrega: um pagamento por entrega.
+   */
+  private async recordCounterPayments(tx: Prisma.TransactionClient, counter: CounterStart, deposit: Deposit, rentalId: string, handoverId: string): Promise<string> {
+    await tx.deposit.create({
+      data: {
+        id: deposit.id, customerId: deposit.customerId, rentalId, method: deposit.method, status: 'held', amountCents: deposit.amountCents,
+        refundedCents: 0, reference: deposit.reference, idempotencyKey: deposit.idempotencyKey,
+      },
+    });
+    const paymentId = randomUUID();
+    await tx.payment.create({
+      data: {
+        id: paymentId, kind: 'rental', status: 'paid', method: counter.payment.method, amountCents: counter.payment.amountCents,
+        reference: counter.payment.reference ?? null, recordedById: counter.operatorId, rentalId, customerId: deposit.customerId,
+        idempotencyKey: `counter-checkout:${handoverId}`,
+      },
+    });
+    if (deposit.amountCents > 0) {
+      await tx.payment.create({
+        data: {
+          kind: 'deposit', status: 'paid', method: deposit.method, amountCents: deposit.amountCents, reference: deposit.reference,
+          recordedById: counter.operatorId, rentalId, depositId: deposit.id, customerId: deposit.customerId,
+          idempotencyKey: `counter-deposit-payment:${handoverId}`,
+        },
+      });
+    }
+    return paymentId;
+  }
+
+  /** C10: caução de gateway de uma reserva beta12 (ainda retida ou aguardando Pix) → pedido de liberação. */
+  private async releaseLegacyReservationDeposit(depositId: string, customerId: string): Promise<void> {
+    const d = await this.prisma.deposit.findUnique({ where: { id: depositId }, select: { method: true, status: true } }).catch(() => null);
+    if (!d || isCounterMethod(d.method) || (d.status !== 'held' && d.status !== 'awaiting_pix')) return;
+    await this.requestDepositRelease(depositId, customerId);
   }
 
   /**

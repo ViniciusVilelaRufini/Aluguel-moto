@@ -625,6 +625,124 @@ describe('Início do aluguel (POST /rentals)', () => {
     });
   });
 
+  describe('pré-reserva/balcão: início pelo atendente (counter)', () => {
+    const DEPOT_ID = '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c';
+    const RES_ID = '44444444-4444-4444-8444-444444444444';
+    const HO_ID = '55555555-5555-4555-8555-555555555555';
+    const STAFF_ID = '12121212-1212-4212-8212-121212121212';
+    const OLD_DEPOSIT_ID = '67676767-6767-4767-8767-676767676767';
+    const operator = { pool: 'staff', sub: 'op', email: 'op@volti.test', groups: ['campo'], userId: STAFF_ID, staffId: STAFF_ID } as any;
+    const dto = { vehicleId: VEHICLE_ID, planCode: 'day', coverage: 'basic', depositMethod: 'card' } as any;
+    const fromHandover = { reservationId: RES_ID, handoverId: HO_ID };
+    const snapshot = {
+      unit: 'day', unlockFeeCents: 0, unitPriceCents: 6000, pausePerMinuteCents: 0, insurancePremiumCents: 1500, coverage: 'basic', subscriptionCovered: false,
+      counter: { quantity: 1, prepaidCents: 7500, excessDayCents: 6000 },
+    } as any;
+    const counter = {
+      customerId: CUSTOMER_ID, operatorId: STAFF_ID, snapshot, periodSeconds: 86_400,
+      payment: { method: 'cash', amountCents: 7500 }, deposit: { method: 'cash', amountCents: 0 }, contractPhotoKeys: ['contracts/a.jpg'],
+    } as any;
+    const handoverRes = { id: RES_ID, customerId: CUSTOMER_ID, vehicleId: VEHICLE_ID, depotId: DEPOT_ID, status: 'handover', depositId: null, expiresAt: new Date(Date.now() - 60_000) };
+    let released: jest.Mock;
+    const svc = () => h.app.get(RentalStartService);
+
+    beforeEach(() => {
+      released = jest.fn();
+      h.app.get(EventEmitter2).removeAllListeners(EV.DEPOSIT_RELEASE_REQUESTED);
+      h.app.get(EventEmitter2).on(EV.DEPOSIT_RELEASE_REQUESTED, released);
+      h.prisma.vehicle.findUnique.mockResolvedValue({ ...vehicle, status: 'reserved', depotId: DEPOT_ID } as any);
+      h.prisma.reservation.findUnique.mockResolvedValue(handoverRes as any);
+      h.prisma.handover.updateMany.mockResolvedValue({ count: 1 });
+      h.prisma.pricingPlan.findFirst.mockResolvedValue({ ...plan, code: 'day', unit: 'day', unitPriceCents: 6000 } as any);
+    });
+
+    it('counter: não cobra gateway e grava caução + pagamento de balcão na transação do aluguel', async () => {
+      const r = await svc().start(operator, dto, `counter:${HO_ID}`, { fromHandover, counter });
+      expect(billing.holdDeposit).not.toHaveBeenCalled();
+      expect(h.prisma.deposit.updateMany).not.toHaveBeenCalled();
+      expect(h.prisma.deposit.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ customerId: CUSTOMER_ID, method: 'cash', status: 'held', amountCents: 0, refundedCents: 0, idempotencyKey: `counter-deposit:${HO_ID}` }),
+      });
+      expect(h.prisma.payment.create).toHaveBeenCalledTimes(1);
+      expect(h.prisma.payment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          kind: 'rental', status: 'paid', method: 'cash', amountCents: 7500, recordedById: STAFF_ID, customerId: CUSTOMER_ID, idempotencyKey: `counter-checkout:${HO_ID}`,
+        }),
+      });
+      const rentalData = h.prisma.rental.create.mock.calls[0][0].data as any;
+      expect(rentalData).toEqual(expect.objectContaining({ customerId: CUSTOMER_ID, prepaidUntil: expect.any(Date), priceSnapshot: expect.objectContaining({ counter: expect.any(Object) }), couponCode: null }));
+      expect(rentalData.prepaidUntil.getTime() - rentalData.startedAt.getTime()).toBe(86_400_000);
+      const depositData = (h.prisma.deposit.create.mock.calls[0][0] as any).data;
+      const paymentData = (h.prisma.payment.create.mock.calls[0][0] as any).data;
+      expect(rentalData.depositId).toBe(depositData.id);
+      expect(rentalData.paymentId).toBe(paymentData.id);
+      expect(paymentData.rentalId).toBe(rentalData.id);
+      expect(depositData.rentalId).toBe(rentalData.id);
+      expect(h.prisma.handover.updateMany).toHaveBeenCalledWith({
+        where: { id: HO_ID, status: 'pending_customer' },
+        data: expect.objectContaining({ status: 'accepted', rentalId: rentalData.id, lastError: null, contractPhotoKeys: ['contracts/a.jpg'] }),
+      });
+      expect(h.prisma.rentalEvent.create).toHaveBeenCalledWith({ data: expect.objectContaining({ type: 'started', actorType: 'staff', actorId: STAFF_ID }) });
+      expect(h.prisma.rentalStart.create).toHaveBeenCalledWith({ data: expect.objectContaining({ customerId: CUSTOMER_ID, depositId: depositData.id }) });
+      expect(commands.dispatch).toHaveBeenCalledWith(expect.objectContaining({ type: 'unlock', actor: operator }));
+      // Sem cobertura de assinatura no balcão (a consulta de moto fixa de assinatura continua).
+      expect(h.prisma.subscription.findFirst.mock.calls.some((c) => !!(c[0] as any)?.where?.planCode)).toBe(false);
+      expect(released).not.toHaveBeenCalled();
+      expect(r.status).toBe(201);
+      expect(r.body.deposit).toMatchObject({ id: depositData.id, method: 'cash', status: 'held', amountCents: 0 });
+    });
+
+    it('counter: caução > 0 também vira Payment kind deposit paid ligado à caução', async () => {
+      await svc().start(operator, dto, `counter:${HO_ID}`, { fromHandover, counter: { ...counter, deposit: { method: 'counter_pix', amountCents: 20000, reference: 'E123' } } });
+      const depositData = (h.prisma.deposit.create.mock.calls[0][0] as any).data;
+      expect(depositData).toMatchObject({ method: 'counter_pix', amountCents: 20000, reference: 'E123' });
+      expect(h.prisma.payment.create).toHaveBeenCalledTimes(2);
+      expect(h.prisma.payment.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          kind: 'deposit', status: 'paid', method: 'counter_pix', amountCents: 20000, depositId: depositData.id, recordedById: STAFF_ID, idempotencyKey: `counter-deposit-payment:${HO_ID}`,
+        }),
+      });
+    });
+
+    it('counter: desbloqueio não confirmado → nada gravado, moto volta a reserved', async () => {
+      commands.dispatch.mockImplementation(async (i: any) => (i.type === 'unlock' ? { id: 'cmd-u', status: 'pending' } : { id: 'cmd-l', status: 'pending' }));
+      await expect(svc().start(operator, dto, `counter:${HO_ID}`, { fromHandover, counter })).rejects.toMatchObject({ slug: 'vehicle-offline' });
+      expect(h.prisma.deposit.create).not.toHaveBeenCalled();
+      expect(h.prisma.payment.create).not.toHaveBeenCalled();
+      expect(h.prisma.rental.create).not.toHaveBeenCalled();
+      expect(h.prisma.vehicle.updateMany).toHaveBeenLastCalledWith({ where: { id: VEHICLE_ID, status: 'rented' }, data: { status: 'reserved' } });
+      expect(commands.dispatch).toHaveBeenLastCalledWith(expect.objectContaining({ type: 'lock' }));
+      expect(insurance.cancel).toHaveBeenCalledWith(POLICY_ID);
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it('counter: cliente sem consentimento de localização → 403 location-consent-required, sem reivindicar a moto', async () => {
+      h.prisma.customer.findUnique.mockResolvedValue({ ...customer, locationConsent: false } as any);
+      await expect(svc().start(operator, dto, `counter:${HO_ID}`, { fromHandover, counter })).rejects.toMatchObject({ slug: 'location-consent-required' });
+      expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('C10: reserva beta12 com caução de cartão retida → liberada depois do commit', async () => {
+      h.prisma.reservation.findUnique.mockResolvedValue({ ...handoverRes, depositId: OLD_DEPOSIT_ID } as any);
+      h.prisma.deposit.findUnique.mockResolvedValue({ id: OLD_DEPOSIT_ID, customerId: CUSTOMER_ID, method: 'card', status: 'held' } as any);
+      await svc().start(operator, dto, `counter:${HO_ID}`, { fromHandover, counter });
+      expect(released).toHaveBeenCalledWith(expect.objectContaining({ depositId: OLD_DEPOSIT_ID, customerId: CUSTOMER_ID }));
+    });
+
+    it('C10: falha no início não libera a caução antiga da reserva', async () => {
+      h.prisma.reservation.findUnique.mockResolvedValue({ ...handoverRes, depositId: OLD_DEPOSIT_ID } as any);
+      h.prisma.deposit.findUnique.mockResolvedValue({ id: OLD_DEPOSIT_ID, customerId: CUSTOMER_ID, method: 'card', status: 'held' } as any);
+      h.prisma.handover.updateMany.mockResolvedValue({ count: 0 });
+      await expect(svc().start(operator, dto, `counter:${HO_ID}`, { fromHandover, counter })).rejects.toMatchObject({ slug: 'handover-not-pending' });
+      expect(released).not.toHaveBeenCalled();
+    });
+
+    it('counter sem fromHandover → erro de programação, nada reivindicado', async () => {
+      await expect(svc().start(operator, dto, 'counter:x', { counter })).rejects.toThrow();
+      expect(h.prisma.vehicle.updateMany).not.toHaveBeenCalled();
+    });
+  });
+
   describe('Run-2: caução não é reaproveitada entre reserva e aluguel de rua', () => {
     const DEPOT_ID = '9b2d7c1e-4a3f-4e8b-8c55-1d2e3f4a5b6c';
     const RES_ID = '44444444-4444-4444-8444-444444444444';
