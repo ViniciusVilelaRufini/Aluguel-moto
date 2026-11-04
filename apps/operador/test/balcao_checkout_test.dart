@@ -235,6 +235,25 @@ void main() {
     expect(find.byKey(const Key('handover-cancel')), findsNothing);
   });
 
+  testWidgets('entrega mudou (handover-not-pending) volta ao mesmo estado', (t) async {
+    final h = Harness();
+    h.repo.handovers['ho-1'] = fakePendingHandover();
+    await h.pump(t, const HandoverStatusPage(handoverId: 'ho-1'));
+    await _settle(t);
+    await _tapKey(t, 'handover-counter-checkout');
+    await _ready(t);
+    h.repo.handovers['ho-1'] =
+        fakePendingHandover().rebuild((b) => b.status = HandoverStatus.canceled);
+    h.repo.checkoutRejectOnce = const RepositoryException(FailureKind.rejected,
+        'Esta entrega não está mais aguardando o seu aceite.',
+        status: 422, slug: 'handover-not-pending');
+    await _tapKey(t, 'counter-start');
+    await _settle(t);
+    expect(find.byType(CounterCheckoutPage), findsNothing);
+    expect(find.byType(HandoverStatusPage, skipOffstage: false), findsOneWidget);
+    expect(find.text('Entrega cancelada'), findsOneWidget);
+  });
+
   testWidgets('aluguel ja aceito nao oferece o balcao', (t) async {
     final h = Harness();
     h.repo.handovers['ho-1'] =

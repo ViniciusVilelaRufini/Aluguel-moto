@@ -63,13 +63,15 @@ class _CounterSettlePageState extends ConsumerState<CounterSettlePage> {
     }
   }
 
+  /// Abre a folha da acao e relê o saldo sempre que ela fecha (sucesso, desistencia
+  /// ou valor divergente): uma resposta perdida pode ter sido registrada no servidor.
   Future<void> _act(_SettleAction action) async {
-    final done = await VoltiBottomSheet.show<String>(
+    final result = await VoltiBottomSheet.show<_SheetResult>(
       context,
       builder: (_) => _SettleSheet(action: action),
     );
-    if (!mounted || done == null) return;
-    VoltiToast.show(context, done, tone: VoltiToastTone.success);
+    if (!mounted) return;
+    if (result != null) VoltiToast.show(context, result.message, tone: result.tone);
     await _load();
   }
 
@@ -235,6 +237,9 @@ class _CounterSettlePageState extends ConsumerState<CounterSettlePage> {
 
 enum _Kind { receive, fromDeposit, refund }
 
+/// Como a folha fechou: texto e tom do aviso.
+typedef _SheetResult = ({String message, VoltiToastTone tone});
+
 /// Uma acao do acerto: receber, abater da caucao ou devolver a caucao.
 class _SettleAction {
   _SettleAction.receive(CounterDebt this.debt)
@@ -346,9 +351,17 @@ class _SettleSheetState extends ConsumerState<_SettleSheet> {
         await repo.counterSettle(_a.debt!.paymentId, req, idempotencyKey: _keyFor(req));
         done = _a.kind == _Kind.receive ? t.settleDoneReceive : t.settleDoneFromDeposit;
       }
-      if (mounted) Navigator.of(context).pop(done);
+      if (mounted) {
+        Navigator.of(context).pop<_SheetResult>((message: done, tone: VoltiToastTone.success));
+      }
     } on RepositoryException catch (e) {
       if (!mounted) return;
+      if (e.slug == 'counter-amount-mismatch') {
+        // Saldo mudou no servidor: fecha a folha e a tela relê o saldo.
+        Navigator.of(context).pop<_SheetResult>(
+            (message: t.settleAmountChanged(formatBrl(cents)), tone: VoltiToastTone.warning));
+        return;
+      }
       setState(() {
         _sending = false;
         _error = e.kind == FailureKind.network && e.status == null ? t.offlineAction : e.message;

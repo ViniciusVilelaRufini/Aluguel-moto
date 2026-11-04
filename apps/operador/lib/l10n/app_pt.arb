@@ -1093,5 +1093,13 @@
   "settleDoneRefund": "Devolução registrada.",
   "settleDepositPick": "Caução usada",
   "settleDepositCard": "Cartão",
-  "settleDepositPix": "Pix"
+  "settleDepositPix": "Pix",
+  "settleAmountChanged": "O saldo mudou e {amount} não confere mais. Confira o saldo atualizado e tente de novo.",
+  "@settleAmountChanged": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  }
 }

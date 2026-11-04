@@ -516,6 +516,9 @@ class FakeFieldRepository implements FieldRepository {
   final refunds = <({String depositId, CounterRefundRequest request, String key})>[];
   RepositoryException? settleRejectOnce;
 
+  /// Registra o acerto e perde a resposta (timeout) uma vez.
+  bool settleLoseResponseOnce = false;
+
   @override
   Future<CounterBalance> getCounterBalance(String rentalId) async {
     if (!online) throw const RepositoryException(FailureKind.network, 'offline');
@@ -549,6 +552,10 @@ class FakeFieldRepository implements FieldRepository {
     settles.add((paymentId: paymentId, request: r, key: idempotencyKey));
     _debit(paymentId, r.amountCents);
     if (r.fromDepositId != null) _useDeposit(r.fromDepositId!, captured: r.amountCents);
+    if (settleLoseResponseOnce) {
+      settleLoseResponseOnce = false;
+      throw const RepositoryException(FailureKind.network, 'Sem conexão com o servidor.');
+    }
     final now = DateTime.utc(2026, 11, 4, 15);
     return Payment((b) => b
       ..id = 'pay-settle-${settles.length}'

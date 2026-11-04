@@ -6,6 +6,7 @@ import 'package:volti_operador/data/field_repository.dart';
 import 'package:volti_operador/data/handover_models.dart';
 import 'package:volti_operador/features/arrivals/arrival_checklist_page.dart';
 import 'package:volti_operador/features/arrivals/counter_settle_page.dart';
+import 'package:volti_operador/features/tasks/task_ui.dart' show parseReaisToCents;
 
 import 'helpers.dart';
 
@@ -120,6 +121,59 @@ void main() {
     expect(h.repo.settles, isEmpty);
     await _tap(t, 'settle-confirm');
     expect(h.repo.settles.single.request.amountCents, 6000);
+  });
+
+  testWidgets('resposta perdida: fechar a folha relê o saldo', (t) async {
+    final h = await _open(t, fakeCounterBalance());
+    h.repo.settleLoseResponseOnce = true;
+    await _tap(t, 'settle-receive-pay1');
+    await _tap(t, 'settle-method-cash');
+    await _enter(t, 'settle-amount', '30,00');
+    await _tap(t, 'settle-confirm');
+    expect(find.byKey(const Key('settle-error')), findsOneWidget);
+    expect(h.repo.balanceReads, 1);
+
+    // Operador desiste da folha: a tela relê e mostra o saldo que o servidor registrou.
+    Navigator.of(t.element(find.byKey(const Key('settle-amount')))).pop();
+    await _settle(t);
+    expect(h.repo.balanceReads, 2);
+    expect(find.text('R\$ 30,00'), findsWidgets);
+    await _tap(t, 'settle-receive-pay1');
+    expect(t.widget<TextField>(find.byKey(const Key('settle-amount'))).controller!.text, '30,00');
+  });
+
+  testWidgets('valor divergente da API fecha a folha, avisa em reais e relê o saldo', (t) async {
+    final h = await _open(t, fakeCounterBalance());
+    h.repo.settleRejectOnce = const RepositoryException(FailureKind.rejected,
+        'amountCents 6000 > outstanding 3000',
+        status: 422, slug: 'counter-amount-mismatch');
+    await _tap(t, 'settle-receive-pay1');
+    await _tap(t, 'settle-method-cash');
+    await t.tap(find.byKey(const Key('settle-confirm')));
+    await t.pump();
+    await t.pump(const Duration(milliseconds: 100));
+    expect(find.textContaining('R\$ 60,00 não confere mais'), findsOneWidget);
+    expect(find.textContaining('6000'), findsNothing);
+    await _settle(t);
+    expect(find.byKey(const Key('settle-amount')), findsNothing);
+    expect(h.repo.balanceReads, 2);
+  });
+
+  test('parseReaisToCents', () {
+    expect(parseReaisToCents('60'), 6000);
+    expect(parseReaisToCents('25,5'), 2550);
+    expect(parseReaisToCents('1.075,50'), 107550);
+    expect(parseReaisToCents('60.5'), 6050);
+    expect(parseReaisToCents('75.50'), 7550);
+    expect(parseReaisToCents('1.075'), 107500, reason: 'ponto com 3 dígitos é milhar');
+    expect(parseReaisToCents('R\$ 10,00'), 1000);
+    expect(parseReaisToCents('999999999,99'), 99999999999);
+    expect(parseReaisToCents('9999999999'), isNull, reason: 'mais de 9 dígitos');
+    expect(parseReaisToCents('99999999999999999999999'), isNull);
+    expect(parseReaisToCents('1.000.000.000'), isNull);
+    expect(parseReaisToCents('abc'), isNull);
+    expect(parseReaisToCents('1,234'), isNull);
+    expect(parseReaisToCents(''), isNull);
   });
 
   testWidgets('aluguel ainda aberto mostra aguardando', (t) async {

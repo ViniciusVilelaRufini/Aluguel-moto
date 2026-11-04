@@ -275,6 +275,8 @@ class _CounterCheckoutPageState extends ConsumerState<CounterCheckoutPage> {
           _fail(t.counterConsentRequired, tone: NoticeTone.warning);
         case 'handover-not-pending':
           // A entrega mudou (cancelada, disputada ou ja iniciada): mostra o estado atual.
+          // Aberta pelo estado: volta a ele (que relê a entrega), sem empilhar outro.
+          if (widget.popOnSuccess) return Navigator.of(context).pop();
           await Navigator.of(context).pushReplacement(MaterialPageRoute<void>(
               builder: (_) => HandoverStatusPage(handoverId: widget.handover.id)));
         default:

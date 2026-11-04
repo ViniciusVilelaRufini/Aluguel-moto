@@ -1673,4 +1673,9 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get settleDepositPix => 'Pix';
+
+  @override
+  String settleAmountChanged(String amount) {
+    return 'O saldo mudou e $amount não confere mais. Confira o saldo atualizado e tente de novo.';
+  }
 }

@@ -2935,6 +2935,12 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Pix'**
   String get settleDepositPix;
+
+  /// No description provided for @settleAmountChanged.
+  ///
+  /// In pt, this message translates to:
+  /// **'O saldo mudou e {amount} não confere mais. Confira o saldo atualizado e tente de novo.'**
+  String settleAmountChanged(String amount);
 }
 
 class _AppLocalizationsDelegate

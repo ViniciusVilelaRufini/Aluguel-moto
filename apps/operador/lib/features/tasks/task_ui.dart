@@ -136,13 +136,23 @@ String formatBrl(int cents) {
   return '${cents < 0 ? '-' : ''}R\$ $reais,$c';
 }
 
-final _reais = RegExp(r'^(\d{1,3}(\.\d{3})+|\d+)(,\d{1,2})?$');
+/// Ate 9 digitos inteiros (sem estouro): "1.075,50", "60", "60,5".
+final _reaisGrouped = RegExp(r'^(\d{1,3}(\.\d{3}){1,2}|\d{1,9})(,\d{1,2})?$');
 
-/// Valor digitado em reais ("60", "60,5", "1.075,50") -> centavos inteiros; `null` se invalido.
+/// Ponto como separador decimal quando seguido de 1–2 digitos: "60.5", "75.50".
+final _reaisDotDecimal = RegExp(r'^\d{1,9}\.\d{1,2}$');
+
+/// Valor digitado em reais ("60", "60,5", "60.5", "1.075,50") -> centavos inteiros; `null` se invalido.
 int? parseReaisToCents(String text) {
   final s = text.trim().replaceAll('R\$', '').trim();
-  if (!_reais.hasMatch(s)) return null;
-  final parts = s.replaceAll('.', '').split(',');
+  final List<String> parts;
+  if (_reaisDotDecimal.hasMatch(s)) {
+    parts = s.split('.');
+  } else if (_reaisGrouped.hasMatch(s)) {
+    parts = s.replaceAll('.', '').split(',');
+  } else {
+    return null;
+  }
   final whole = int.parse(parts[0]);
   final frac = parts.length > 1 ? int.parse(parts[1].padRight(2, '0')) : 0;
   return whole * 100 + frac;
