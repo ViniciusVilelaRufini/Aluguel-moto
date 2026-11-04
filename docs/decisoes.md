@@ -1273,3 +1273,31 @@ Contexto: na bancada, o cliente pediu o encerramento com a VLT-0059 (J16 `relay_
 3. **Painel:** "Encerrar aluguel à força" também na ficha da moto com aluguel em andamento (`admin`, `suporte`), além do detalhe do aluguel (diálogo compartilhado `ForceEndRentalDialog`). A API já aceitava `ending` e não espera a trava.
 
 Pendente (decisão do dono): contar como parada a moto sem GPS com a ignição desligada mudaria a regra de segurança; não implementado.
+
+## 2026-11-04 · Pendências do balcão, painel e app (branch `fix/pendencias-integracao`) · status: aplicada (sem mudança de contrato)
+
+Itens que as revisões da pré-reserva com balcão deixaram para depois, mais achados do emulador.
+
+1. **API.**
+   - Débito novo do balcão liga `Customer.delinquent`; ele sai ao quitar ou no `clearManually`.
+   - `hasOpenDebt` e `hasCounterDebt` só contam débito do balcão com saldo maior que zero.
+   - `counter-settle` emite `payment.updated` ao zerar o saldo, mesmo sem mudar de status; `clearManually` também emite.
+   - `clearManually` não emite recibo nem NFS-e de débito do balcão, alinhado ao `counter-settle`.
+   - O log `telemetry_unknown_thing` sai no máximo uma vez por `thingName` a cada 5 min, com teto de 1000 entradas no mapa.
+   - **Pendente (dono):** a regra fiscal do balcão, isto é, se a NFS-e sai pela API ou pelo caixa do galpão. Se for pela API, vale para os três caminhos.
+2. **Painel.**
+   - "Acertar no balcão" só aparece quando o `GET /rentals/{id}/counter-balance` tem dívida ou caução a devolver. O contrato não diz quais aluguéis podem ter débito do balcão.
+   - Resposta perdida (rede, timeout, 5xx) que o saldo relido mostra quitada → "Acerto registrado".
+   - Recusa 4xx com o débito já quitado por outra pessoa → aviso neutro, nunca "Acerto registrado".
+   - As chaves de idempotência do balcão expiram em 24 h, menos que as 24 h do registro da API, que nasce depois.
+   - O checkout usa uma chave por (entrega, conteúdo). As fotos do contrato mudam o conteúdo, e por isso a chave, ao reabrir o diálogo; a API recusa a entrega já aceita.
+3. **App do cliente.**
+   - Plano ou assinatura em modo só leitura mostra a validade, sem próxima cobrança nem cartão.
+   - As dívidas em aberto são carregadas em paralelo.
+   - Erro dos seguros na pré-reserva tem "Tentar de novo".
+   - Recusar o consentimento depois do 403 explica o motivo.
+   - Saíram `Backend.ring`, `validateCoupon` e 198 chaves de l10n sem uso.
+   - `PassCard` sem toque é anunciado como informação (em `packages/volti_flutter`). Ele cabe na largura da tela, com o subtítulo em até 2 linhas.
+   - O cabeçalho de localização ganhou desfoque; antes, o rótulo do mapa vazava pela pílula translúcida.
+   - "Escolher moto" fixa o galpão que a home mostra. A lista não troca de galpão se a ordem "mais perto primeiro" mudar (localização relida sem resposta, visto no emulador).
+4. **CI (`infra.yml`, "test + synth (dev)").** O teste API→infra lia `CONFIRM_FLAG`, `RENTAL_PLANS` e `VOLTI_ENV`, do CLI do dono `dev-reset-bench`, como variáveis da task. Esses nomes foram para `NOT_VARIABLES`. Falhava desde a entrada desse CLI.
