@@ -66,6 +66,8 @@ function makeDb(group: NonNullable<MockOptions['group']>) {
     reservations: F.makeReservations(),
     counter: F.makeCounterState(),
     uploadSeq: 1,
+    /** A próxima chegada (`return_depot`) responde 422 `vehicle-not-at-depot`. */
+    returnNotAtDepot: false,
   };
 }
 
@@ -327,6 +329,27 @@ function handle(db: ReturnType<typeof makeDb>, method: string, path: string, q: 
     };
     db.handovers.push(h as never);
     Object.assign(r, { status: 'handover', handoverId: h.id });
+    return ok(h, 201);
+  }
+  // Chegada no galpão pelo painel (2026-11-04): como a API, encerra o aluguel e põe a moto no galpão (ou em manutenção
+  // com algum item `ok: false`); `db.returnNotAtDepot` imita a moto a mais de 150 m (422 `vehicle-not-at-depot`).
+  if (method === 'POST' && p === '/handovers' && b.type === 'return_depot') {
+    if (!b.rentalId || !b.depotId) return { status: 400, json: problem(400, 'Informe o aluguel e o galpão.', 'validation-error') };
+    const depot = db.depots.find((d) => d.id === b.depotId && d.active);
+    if (!depot) return notFound();
+    const r = db.rentals.find((x) => x.id === b.rentalId);
+    const v = db.vehicles.find((x) => x.currentRentalId === b.rentalId);
+    if (!r || !v) return notFound();
+    if (db.returnNotAtDepot) return { status: 422, json: problem(422, 'A moto não está no galpão. Use o encerramento forçado pelo suporte.', 'vehicle-not-at-depot') };
+    const issue = (b.checklist as { ok: boolean }[]).some((i) => !i.ok);
+    const h = {
+      id: `ho-${db.handovers.length + 1}`, type: 'return_depot', depotId: depot.id, rentalId: r.id, vehicleId: v.id, vehicleCode: v.code,
+      operatorId: db.me.id, operatorFirstName: 'Equipe Volti', checklist: b.checklist, photoKeys: b.photoKeys, batteryPct: b.batteryPct, status: 'accepted', createdAt: now, respondedAt: now,
+    };
+    db.handovers.unshift(h as never);
+    Object.assign(r, { status: 'ended', endedAt: now });
+    Object.assign(v, { status: issue ? 'maintenance' : 'free', currentRentalId: undefined, depotId: depot.id });
+    db.counter.rentalStatus = 'ended';
     return ok(h, 201);
   }
   if (method === 'GET' && match(/^\/handovers\/[^/]+\/counter-quote$/)) {
