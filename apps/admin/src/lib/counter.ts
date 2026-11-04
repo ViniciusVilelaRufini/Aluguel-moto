@@ -34,6 +34,14 @@ export function reaisToCents(text: string): number | null {
   return Math.round(n * 100);
 }
 
+/**
+ * O pagamento tem estorno pelo gateway (`POST /payments/{id}/refund`)? Pagamento do balcão (maquininha, Pix do galpão,
+ * dinheiro) não passou pelo gateway e a API responde 422; sem o pagamento carregado, também não.
+ */
+export function isGatewayRefundable(method: S<'PaymentMethod'> | undefined): boolean {
+  return !!method && !(COUNTER_METHODS as string[]).includes(method);
+}
+
 /** Aluguel ainda não encerrado: o acerto espera o fechamento (excedente só existe depois dele). */
 export function isRentalOpen(status: S<'RentalStatus'>): boolean {
   return status === 'active' || status === 'paused' || status === 'ending';
