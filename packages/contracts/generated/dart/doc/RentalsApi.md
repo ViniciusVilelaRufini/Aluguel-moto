@@ -298,7 +298,7 @@ Name | Type | Description  | Notes
 
 Saldo a acertar no balcão
 
-Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do cliente deste aluguel (`debts`, com `outstandingCents` > 0; inclui débitos de balcão `pending` e débitos antigos `failed`) e as cauções de balcão do cliente com saldo disponível (`deposits`). Saldo do débito de balcão = valor − carteira − Σ quitações `debt_settlement` pagas dele. Disponível da caução = `amountCents` − `capturedCents` − `refundedCents`. Só o primeiro nome do cliente. Aluguel inexistente → `404`. 
+Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do cliente deste aluguel (`debts`, com `outstandingCents` > 0; inclui débitos de balcão `pending` e débitos antigos `failed`) e as cauções de balcão do cliente com saldo disponível (`deposits`; a caução de aluguel ainda aberto — `active`, `paused` ou `ending`, inclusive deste — fica fora). Saldo do débito de balcão = valor − carteira − Σ quitações `debt_settlement` pagas dele. Disponível da caução = `amountCents` − `capturedCents` − `refundedCents`. Só o primeiro nome do cliente. Aluguel inexistente → `404`. 
 
 ### Example
 ```dart

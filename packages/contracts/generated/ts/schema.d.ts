@@ -1422,7 +1422,8 @@ export interface paths {
          * Saldo a acertar no balcão
          * @description Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do
          *     cliente deste aluguel (`debts`, com `outstandingCents` > 0; inclui débitos de balcão `pending` e débitos antigos
-         *     `failed`) e as cauções de balcão do cliente com saldo disponível (`deposits`). Saldo do débito de balcão = valor
+         *     `failed`) e as cauções de balcão do cliente com saldo disponível (`deposits`; a caução de aluguel ainda aberto —
+         *     `active`, `paused` ou `ending`, inclusive deste — fica fora). Saldo do débito de balcão = valor
          *     − carteira − Σ quitações `debt_settlement` pagas dele. Disponível da caução = `amountCents` − `capturedCents` −
          *     `refundedCents`. Só o primeiro nome do cliente. Aluguel inexistente → `404`.
          */
@@ -2264,6 +2265,8 @@ export interface paths {
          *     Débito de assinatura com cobrança automática ainda em andamento no gateway (assinatura `past_due` ou cancelamento
          *     no gateway pendente) → `409` `debt-in-collection` ("Há uma cobrança automática em andamento no cartão do cliente.
          *     Aguarde o resultado antes de registrar a quitação."); débito de aluguel `failed` sempre pode ser quitado.
+         *     `fromDepositId` de caução de aluguel ainda aberto (`active`, `paused` ou `ending`) → `409` `conflict` ("A caução
+         *     só abate dívidas depois do encerramento do aluguel.").
          *     `amountCents` ≤ saldo do débito, e com `fromDepositId` também ≤ disponível da caução; senão `422`
          *     `counter-amount-mismatch`. Cada parte vira um `Payment` `debt_settlement` `paid` (`settlesPaymentId` = este id,
          *     `recordedBy` = atendente; com caução, `depositId` e `capturedCents` da caução somados). Saldo do débito de balcão = valor −
@@ -5057,7 +5060,7 @@ export interface components {
             /** @description Soma de `outstandingCents` das dívidas em aberto. */
             debtTotalCents: number;
             debts: components["schemas"]["CounterDebt"][];
-            /** @description Cauções de balcão do cliente com saldo disponível. */
+            /** @description Cauções de balcão do cliente com saldo disponível (sem as de aluguel ainda aberto). */
             deposits: components["schemas"]["CounterDepositBalance"][];
         };
         DelinquencyClearRequest: {
@@ -10648,7 +10651,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description `debt-not-payable` (não é dívida em aberto), `debt-in-collection` (assinatura ainda em cobrança automática) ou `conflict` (caução que não é do balcão). */
+            /** @description `debt-not-payable` (não é dívida em aberto), `debt-in-collection` (assinatura ainda em cobrança automática) ou `conflict` (caução que não é do balcão ou de aluguel ainda aberto). */
             409: {
                 headers: {
                     [name: string]: unknown;

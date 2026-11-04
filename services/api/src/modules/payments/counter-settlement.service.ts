@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import type { Deposit, Payment, Prisma } from '@prisma/client';
+import type { Deposit, Payment, Prisma, Rental } from '@prisma/client';
 import { badRequest, conflict, notFound, ProblemException } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -47,12 +47,13 @@ export interface CounterBalanceView {
   deposits: CounterDepositBalanceView[];
 }
 
-/** Aluguel ainda não encerrado: a caução dele não pode ser devolvida. */
-const OPEN_RENTAL_STATUSES = ['active', 'paused', 'ending'];
+/** Aluguel ainda não encerrado: a caução dele não pode ser devolvida nem abater dívida. */
+const OPEN_RENTAL_STATUSES: Rental['status'][] = ['active', 'paused', 'ending'];
 
 const amountMismatch = (detail: string) => new ProblemException(422, 'counter-amount-mismatch', detail, undefined, 'Valor não confere');
 const depositNotFound = () => notFound('Caução não encontrada.');
 const notCounterDeposit = () => conflict('conflict', 'Esta caução não é do balcão.');
+const depositOfOpenRental = () => conflict('conflict', 'A caução só abate dívidas depois do encerramento do aluguel.');
 
 /**
  * Disponível da caução de balcão para abater ou devolver. Só `held` tem saldo: `captured`/`released` já zeraram
@@ -98,6 +99,12 @@ export class CounterSettlementService {
       this.prisma.deposit.findMany({ where: { customerId, status: 'held', method: { in: [...COUNTER_METHODS] } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }),
     ]);
     const outstanding = await this.delinquency.outstandingMap(open);
+    // A caução do aluguel ainda aberto (inclusive deste) garante esse aluguel: não entra no saldo para abater.
+    const depositRentalIds = [...new Set(deposits.map((d) => d.rentalId).filter((x): x is string => !!x))];
+    const openRentals = depositRentalIds.length
+      ? await this.prisma.rental.findMany({ where: { id: { in: depositRentalIds }, status: { in: OPEN_RENTAL_STATUSES } }, select: { id: true } })
+      : [];
+    const openRentalIds = new Set(openRentals.map((r) => r.id));
     const debts: CounterDebtView[] = open
       .filter((p) => (outstanding.get(p.id) ?? 0) > 0)
       .map((p) => ({
@@ -118,7 +125,7 @@ export class CounterSettlementService {
       debtTotalCents: debts.reduce((a, d) => a + d.outstandingCents, 0),
       debts,
       deposits: deposits
-        .filter((d) => available(d) > 0)
+        .filter((d) => available(d) > 0 && !(d.rentalId && openRentalIds.has(d.rentalId)))
         .map((d) => ({
           depositId: d.id,
           ...(d.rentalId ? { rentalId: d.rentalId } : {}),
@@ -162,6 +169,10 @@ export class CounterSettlementService {
         deposit = await tx.deposit.findUnique({ where: { id: dto.fromDepositId } });
         if (!deposit || deposit.customerId !== debt.customerId) throw depositNotFound();
         if (!isCounterMethod(deposit.method)) throw notCounterDeposit();
+        if (deposit.rentalId) {
+          const owner = await tx.rental.findUnique({ where: { id: deposit.rentalId }, select: { status: true } });
+          if (owner && OPEN_RENTAL_STATUSES.includes(owner.status)) throw depositOfOpenRental();
+        }
         const left = available(deposit);
         if (dto.amountCents > left) throw amountMismatch(`O valor passa do disponível da caução (${left}).`);
         const next = { amountCents: deposit.amountCents, capturedCents: (deposit.capturedCents ?? 0) + dto.amountCents, refundedCents: deposit.refundedCents };

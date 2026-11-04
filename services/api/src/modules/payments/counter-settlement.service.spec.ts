@@ -162,6 +162,20 @@ describe('CounterSettlementService.settle', () => {
     }
   });
 
+  it('caução de um aluguel ainda aberto não abate dívida → 409, nada gravado', async () => {
+    const { db, svc } = await setup();
+    const debt = await counterDebt(db);
+    for (const status of ['active', 'paused', 'ending']) {
+      const rentalId = `${status === 'active' ? 'a' : status === 'paused' ? 'b' : 'c'}5555555-5555-4555-8555-555555555555`;
+      await db.rental.create({ data: { id: rentalId, customerId: CUSTOMER, status } });
+      const dep = await counterDeposit(db, { rentalId });
+      const err = await problem(svc.settle(staff, debt.id, { amountCents: 1000, fromDepositId: dep.id }));
+      expect([err.getStatus(), err.slug, err.detail]).toEqual([409, 'conflict', 'A caução só abate dívidas depois do encerramento do aluguel.']);
+      expect(await db.deposit.findUnique({ where: { id: dep.id } })).toMatchObject({ status: 'held', capturedCents: null });
+    }
+    expect(await db.payment.count({ where: { kind: 'debt_settlement' } })).toBe(0);
+  });
+
   it('pagamento inexistente → 404', async () => {
     const { svc } = await setup();
     const err = await problem(svc.settle(staff, '55555555-5555-4555-8555-555555555555', { amountCents: 1000, method: 'cash' }));
@@ -299,6 +313,18 @@ describe('CounterSettlementService.balance', () => {
     });
     expect(out.debts).toHaveLength(2);
     expect(JSON.stringify(out)).not.toContain('Souza');
+  });
+
+  it('cauções de aluguel ainda aberto (active/paused/ending) ficam fora do saldo', async () => {
+    const { db, svc } = await setup();
+    const ended = await counterDeposit(db);
+    for (const [i, status] of ['active', 'paused', 'ending'].entries()) {
+      const rentalId = `${'abc'[i]}5555555-5555-4555-8555-555555555555`;
+      await db.rental.create({ data: { id: rentalId, customerId: CUSTOMER, status } });
+      await counterDeposit(db, { rentalId });
+    }
+    const out = await svc.balance(RENTAL);
+    expect(out.deposits.map((d) => d.depositId)).toEqual([ended.id]);
   });
 
   it('aluguel inexistente → 404', async () => {

@@ -644,7 +644,7 @@ class RentalsApi {
   }
 
   /// Saldo a acertar no balcão
-  /// Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do cliente deste aluguel (&#x60;debts&#x60;, com &#x60;outstandingCents&#x60; &gt; 0; inclui débitos de balcão &#x60;pending&#x60; e débitos antigos &#x60;failed&#x60;) e as cauções de balcão do cliente com saldo disponível (&#x60;deposits&#x60;). Saldo do débito de balcão &#x3D; valor − carteira − Σ quitações &#x60;debt_settlement&#x60; pagas dele. Disponível da caução &#x3D; &#x60;amountCents&#x60; − &#x60;capturedCents&#x60; − &#x60;refundedCents&#x60;. Só o primeiro nome do cliente. Aluguel inexistente → &#x60;404&#x60;.
+  /// Para o acerto no galpão (checklist de chegada, página do cliente no painel): todas as dívidas em aberto do cliente deste aluguel (&#x60;debts&#x60;, com &#x60;outstandingCents&#x60; &gt; 0; inclui débitos de balcão &#x60;pending&#x60; e débitos antigos &#x60;failed&#x60;) e as cauções de balcão do cliente com saldo disponível (&#x60;deposits&#x60;; a caução de aluguel ainda aberto — &#x60;active&#x60;, &#x60;paused&#x60; ou &#x60;ending&#x60;, inclusive deste — fica fora). Saldo do débito de balcão &#x3D; valor − carteira − Σ quitações &#x60;debt_settlement&#x60; pagas dele. Disponível da caução &#x3D; &#x60;amountCents&#x60; − &#x60;capturedCents&#x60; − &#x60;refundedCents&#x60;. Só o primeiro nome do cliente. Aluguel inexistente → &#x60;404&#x60;.
   ///
   /// Parameters:
   /// * [id]

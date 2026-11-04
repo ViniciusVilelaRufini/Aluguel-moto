@@ -14,7 +14,7 @@ Name | Type | Description | Notes
 **rentalStatus** | [**RentalStatus**](RentalStatus.md) |  | 
 **debtTotalCents** | **int** | Soma de `outstandingCents` das dívidas em aberto. | 
 **debts** | [**BuiltList&lt;CounterDebt&gt;**](CounterDebt.md) |  | 
-**deposits** | [**BuiltList&lt;CounterDepositBalance&gt;**](CounterDepositBalance.md) | Cauções de balcão do cliente com saldo disponível. | 
+**deposits** | [**BuiltList&lt;CounterDepositBalance&gt;**](CounterDepositBalance.md) | Cauções de balcão do cliente com saldo disponível (sem as de aluguel ainda aberto). | 
 
 [[Back to Model list]](../README.md#documentation-for-models) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to README]](../README.md)
 

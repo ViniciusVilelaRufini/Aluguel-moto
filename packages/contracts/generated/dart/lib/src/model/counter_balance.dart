@@ -21,7 +21,7 @@ part 'counter_balance.g.dart';
 /// * [rentalStatus]
 /// * [debtTotalCents] - Soma de `outstandingCents` das dívidas em aberto.
 /// * [debts]
-/// * [deposits] - Cauções de balcão do cliente com saldo disponível.
+/// * [deposits] - Cauções de balcão do cliente com saldo disponível (sem as de aluguel ainda aberto).
 @BuiltValue()
 abstract class CounterBalance
     implements Built<CounterBalance, CounterBalanceBuilder> {
@@ -46,7 +46,7 @@ abstract class CounterBalance
   @BuiltValueField(wireName: r'debts')
   BuiltList<CounterDebt> get debts;
 
-  /// Cauções de balcão do cliente com saldo disponível.
+  /// Cauções de balcão do cliente com saldo disponível (sem as de aluguel ainda aberto).
   @BuiltValueField(wireName: r'deposits')
   BuiltList<CounterDepositBalance> get deposits;
 
