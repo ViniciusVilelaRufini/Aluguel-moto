@@ -153,3 +153,41 @@ describe('KycService.review (auditoria run-4: estado, idade e restrição)', () 
     await expect(svc.review(staff, CID, reject)).rejects.toMatchObject({ status: 409 });
   });
 });
+
+describe('KycService.files (painel de bancada, P2-6: revisão com os arquivos)', () => {
+  const withStorage = () => {
+    const s = setup();
+    const storage = { presignGet: jest.fn(async ({ key, expiresInSeconds }: any) => ({ url: `https://minio.local/${key}?sig=1`, expiresAt: new Date(Date.parse('2026-11-03T12:00:00Z') + expiresInSeconds * 1000).toISOString() })) };
+    const svc = new KycService(s.prisma as any, s.audit as any, s.provider as any, storage as any, s.push as any, loadConfig(), { fraudHashSecret: 'segredo-de-teste' } as any);
+    return { ...s, svc, storage };
+  };
+
+  it('links pré-assinados curtos (5 min) do documento e da selfie, no bucket de KYC; frente/verso ausentes não viram link', async () => {
+    const { prisma, svc, storage } = withStorage();
+    prisma.customer.findUnique.mockResolvedValue(customer({ kycDocumentType: 'cnh' }) as any);
+    const out = await svc.files(staff, CID);
+    expect(out).toEqual({
+      customerId: CID, documentType: 'cnh',
+      documentFront: { url: `https://minio.local/kyc/${CID}/document-front?sig=1`, expiresAt: '2026-11-03T12:05:00.000Z' },
+      selfie: { url: `https://minio.local/kyc/${CID}/selfie?sig=1`, expiresAt: '2026-11-03T12:05:00.000Z' },
+    });
+    for (const [arg] of storage.presignGet.mock.calls) expect(arg).toMatchObject({ bucket: loadConfig().buckets.kyc, expiresInSeconds: 300 });
+  });
+
+  it('cada consulta grava AuditLog sem as chaves dos objetos (LGPD)', async () => {
+    const { prisma, svc, audit } = withStorage();
+    prisma.customer.findUnique.mockResolvedValue(customer() as any);
+    await svc.files(staff, CID);
+    expect(audit.record).toHaveBeenCalledWith({ actor: staff, action: 'customer.kyc_files_view', entityType: 'Customer', entityId: CID, metadata: { files: ['documentFront', 'selfie'] } });
+    expect(JSON.stringify(audit.record.mock.calls)).not.toContain(`kyc/${CID}`);
+  });
+
+  it('chave fora do prefixo do cliente não vira link; cliente sem envio → nenhum link; inexistente → 404', async () => {
+    const { prisma, svc, storage } = withStorage();
+    prisma.customer.findUnique.mockResolvedValue(customer({ kycDocumentFrontKey: 'kyc/outro/document-front', kycSelfieKey: null }) as any);
+    expect(await svc.files(staff, CID)).toEqual({ customerId: CID });
+    expect(storage.presignGet).not.toHaveBeenCalled();
+    prisma.customer.findUnique.mockResolvedValue(null);
+    await expect(svc.files(staff, CID)).rejects.toMatchObject({ status: 404 });
+  });
+});

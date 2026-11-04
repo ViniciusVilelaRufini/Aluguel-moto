@@ -274,7 +274,7 @@ describe('RelayLockService (spec GT06 §5)', () => {
     await s.svc.start({ commandId: 'c1', thingName: T }, s.state);
     expect(await s.svc.start({ commandId: 'c2', thingName: T }, s.state)).toEqual({ commandId: 'c2', status: 'in_progress' });
     await s.svc.cancel(T);
-    expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'failed' }, { commandId: 'c2', status: 'failed' }]);
+    expect(s.outcomes).toEqual([{ commandId: 'c1', status: 'failed', reason: 'superseded' }, { commandId: 'c2', status: 'failed', reason: 'superseded' }]);
     expect(s.desired).toEqual([]);
   });
 

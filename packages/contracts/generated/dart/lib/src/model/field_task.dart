@@ -23,7 +23,7 @@ part 'field_task.g.dart';
 /// * [vehicleCode]
 /// * [vehicleLat] - Última posição conhecida da moto.
 /// * [vehicleLng]
-/// * [vehicleBatteryPct]
+/// * [vehicleBatteryPct] - Carga da bateria da moto. Ausente quando a moto não tem leitura de bateria (`Vehicle.batteryKnown: false`).
 /// * [vehicleStatus]
 /// * [vehicleAddress] - Endereço aproximado da moto.
 /// * [vehicleBatterySerial] - Bateria instalada (retirada numa troca).
@@ -72,6 +72,7 @@ abstract class FieldTask implements Built<FieldTask, FieldTaskBuilder> {
   @BuiltValueField(wireName: r'vehicleLng')
   double? get vehicleLng;
 
+  /// Carga da bateria da moto. Ausente quando a moto não tem leitura de bateria (`Vehicle.batteryKnown: false`).
   @BuiltValueField(wireName: r'vehicleBatteryPct')
   int? get vehicleBatteryPct;
 

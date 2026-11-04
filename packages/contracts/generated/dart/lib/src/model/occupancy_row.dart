@@ -13,8 +13,8 @@ part 'occupancy_row.g.dart';
 /// Properties:
 /// * [periodStart]
 /// * [vehiclesTotal]
-/// * [vehiclesRented] - Média de motos em aluguel no período.
-/// * [occupancyPct]
+/// * [vehiclesRented] - Média de motos em aluguel no período (tempo em aluguel ÷ duração do período), arredondada.
+/// * [occupancyPct] - Tempo em aluguel ÷ tempo de frota no período (motos cadastradas × duração), em %, uma casa decimal. O período é cortado em `from`, `to` e agora (o trecho futuro não conta). Aluguel em aberto (`active`, `paused`, `ending`) conta até agora: é a mesma definição de `DashboardSummary.occupancyPct` (motos com aluguel em aberto ÷ frota) integrada no tempo.
 @BuiltValue()
 abstract class OccupancyRow
     implements Built<OccupancyRow, OccupancyRowBuilder> {
@@ -24,10 +24,11 @@ abstract class OccupancyRow
   @BuiltValueField(wireName: r'vehiclesTotal')
   int get vehiclesTotal;
 
-  /// Média de motos em aluguel no período.
+  /// Média de motos em aluguel no período (tempo em aluguel ÷ duração do período), arredondada.
   @BuiltValueField(wireName: r'vehiclesRented')
   int get vehiclesRented;
 
+  /// Tempo em aluguel ÷ tempo de frota no período (motos cadastradas × duração), em %, uma casa decimal. O período é cortado em `from`, `to` e agora (o trecho futuro não conta). Aluguel em aberto (`active`, `paused`, `ending`) conta até agora: é a mesma definição de `DashboardSummary.occupancyPct` (motos com aluguel em aberto ÷ frota) integrada no tempo.
   @BuiltValueField(wireName: r'occupancyPct')
   double get occupancyPct;
 

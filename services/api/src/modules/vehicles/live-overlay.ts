@@ -14,6 +14,8 @@ interface LiveFields {
   signal: number | null;
   online?: boolean;
   lastSeenAt: Date | null;
+  /** Hora da medição de lat/lng (painel de bancada); ausente/null = desconhecida. */
+  positionAt?: Date | null;
   /** Origem da trava gravada (lock-precedence.ts). */
   lockedAt?: Date | null;
   lockedFromReport?: boolean | null;
@@ -49,10 +51,13 @@ export async function withLiveState<T extends LiveFields>(redis: Pick<RedisStore
       const lng = num(h.lng);
       if (lat === undefined || lng === undefined || (lat === 0 && lng === 0)) return out;
       const battery = num(h.batteryPct);
+      // Hora da medição da posição do Redis (ms); sem ela, desconhecida — nunca a hora da posição velha do banco.
+      const positionAtMs = num(h.positionAt);
       return {
         ...out,
         lat,
         lng,
+        positionAt: positionAtMs !== undefined && positionAtMs > 0 ? new Date(positionAtMs) : null,
         speedKmh: num(h.speedKmh) ?? v.speedKmh,
         batteryPct: battery === undefined ? v.batteryPct : Math.round(battery),
         ...(h.batteryKnown === undefined ? {} : { batteryKnown: h.batteryKnown !== 'false' }),

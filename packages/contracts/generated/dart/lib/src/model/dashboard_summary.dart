@@ -13,7 +13,7 @@ part 'dashboard_summary.g.dart';
 ///
 /// Properties:
 /// * [generatedAt]
-/// * [occupancyPct]
+/// * [occupancyPct] - Motos com aluguel em aberto (`active`, `paused`, `ending`), inclusive sem sinal, ÷ motos cadastradas, em %. Mesma definição do relatório de ocupação.
 /// * [activeRentals]
 /// * [revenueTodayCents] - Mesma definição de `FinanceReport.totalRevenueCents`, desde 00:00 de hoje (America/Sao_Paulo).
 /// * [openAlerts]
@@ -24,6 +24,7 @@ abstract class DashboardSummary
   @BuiltValueField(wireName: r'generatedAt')
   DateTime get generatedAt;
 
+  /// Motos com aluguel em aberto (`active`, `paused`, `ending`), inclusive sem sinal, ÷ motos cadastradas, em %. Mesma definição do relatório de ocupação.
   @BuiltValueField(wireName: r'occupancyPct')
   double get occupancyPct;
 

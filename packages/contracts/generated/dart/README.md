@@ -206,6 +206,7 @@ Class | Method | HTTP request | Description
 [*InsuranceApi*](doc/InsuranceApi.md) | [**listInsurancePolicies**](doc/InsuranceApi.md#listinsurancepolicies) | **GET** /insurance/policies | Apólices emitidas
 [*InsuranceApi*](doc/InsuranceApi.md) | [**updateInsuranceCoverage**](doc/InsuranceApi.md#updateinsurancecoverage) | **PUT** /insurance/coverages/{coverage} | Configurar cobertura
 [*KycApi*](doc/KycApi.md) | [**createKycUploads**](doc/KycApi.md#createkycuploads) | **POST** /kyc/uploads | URLs pré-assinadas para documento e selfie
+[*KycApi*](doc/KycApi.md) | [**getCustomerKycFiles**](doc/KycApi.md#getcustomerkycfiles) | **GET** /customers/{id}/kyc-files | Arquivos da verificação (documento e selfie)
 [*KycApi*](doc/KycApi.md) | [**getKycStatus**](doc/KycApi.md#getkycstatus) | **GET** /kyc/status | Status da verificação
 [*KycApi*](doc/KycApi.md) | [**reviewCustomerKyc**](doc/KycApi.md#reviewcustomerkyc) | **POST** /customers/{id}/kyc-review | Revisão manual da verificação
 [*KycApi*](doc/KycApi.md) | [**submitKyc**](doc/KycApi.md#submitkyc) | **POST** /kyc/submit | Enviar verificação de identidade
@@ -478,6 +479,8 @@ Class | Method | HTTP request | Description
  - [InsurancePolicy](doc/InsurancePolicy.md)
  - [InsurancePolicyPage](doc/InsurancePolicyPage.md)
  - [KycDecision](doc/KycDecision.md)
+ - [KycFileLink](doc/KycFileLink.md)
+ - [KycFiles](doc/KycFiles.md)
  - [KycReviewRequest](doc/KycReviewRequest.md)
  - [KycStatus](doc/KycStatus.md)
  - [KycStatusResponse](doc/KycStatusResponse.md)

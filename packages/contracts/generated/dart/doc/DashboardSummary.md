@@ -9,7 +9,7 @@ import 'package:volti_api/api.dart';
 Name | Type | Description | Notes
 ------------ | ------------- | ------------- | -------------
 **generatedAt** | [**DateTime**](DateTime.md) |  | 
-**occupancyPct** | **double** |  | 
+**occupancyPct** | **double** | Motos com aluguel em aberto (`active`, `paused`, `ending`), inclusive sem sinal, ÷ motos cadastradas, em %. Mesma definição do relatório de ocupação. | 
 **activeRentals** | **int** |  | 
 **revenueTodayCents** | **int** | Mesma definição de `FinanceReport.totalRevenueCents`, desde 00:00 de hoje (America/Sao_Paulo). | 
 **openAlerts** | **int** |  | 

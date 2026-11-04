@@ -145,6 +145,8 @@ import 'package:volti_api/src/model/insurance_coverage_update.dart';
 import 'package:volti_api/src/model/insurance_policy.dart';
 import 'package:volti_api/src/model/insurance_policy_page.dart';
 import 'package:volti_api/src/model/kyc_decision.dart';
+import 'package:volti_api/src/model/kyc_file_link.dart';
+import 'package:volti_api/src/model/kyc_files.dart';
 import 'package:volti_api/src/model/kyc_review_request.dart';
 import 'package:volti_api/src/model/kyc_status.dart';
 import 'package:volti_api/src/model/kyc_status_response.dart';
@@ -443,6 +445,8 @@ part 'serializers.g.dart';
   InsurancePolicy,
   InsurancePolicyPage,
   KycDecision,
+  KycFileLink,
+  KycFiles,
   KycReviewRequest,
   KycStatus,
   KycStatusResponse,

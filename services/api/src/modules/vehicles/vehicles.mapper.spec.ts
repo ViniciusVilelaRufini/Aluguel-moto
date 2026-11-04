@@ -82,3 +82,20 @@ describe('bancada do J16 (2026-11-03): bateria desconhecida, endereço da posiç
     expect(toVehicle(row({ firmwareVersion: null, tracker: null }), { staff: true, now: NOW })).not.toHaveProperty('firmwareVersion');
   });
 });
+
+describe('painel de bancada (2026-11-03): hora da posição (positionAt)', () => {
+  it('staff recebe positionAt (hora da medição de lat/lng); cliente não; sem a coluna, ausente', () => {
+    const at = ago(5 * 60_000);
+    expect(toVehicle(row({ positionAt: at }), { staff: true, now: NOW })).toMatchObject({ positionAt: at.toISOString() });
+    expect(toVehicle(row({ positionAt: at }), { staff: false, now: NOW })).not.toHaveProperty('positionAt');
+    expect(toVehicle(row({ positionAt: null }), { staff: true, now: NOW })).not.toHaveProperty('positionAt');
+  });
+});
+
+describe('painel de bancada (2026-11-03): bateria instalada numa moto sem leitura', () => {
+  it('battery.chargeKnown false quando a moto não tem leitura (batteryKnown false)', () => {
+    const battery = { id: 'b1', serial: 'BT-1', chargePct: 63, cycleCount: 2, status: 'in_vehicle', vehicleId: 'v1', holderId: null, stationId: null, depotId: null, updatedAt: ago(1e3) } as any;
+    expect((toVehicle(row({ batteryKnown: false }), { staff: true, now: NOW, battery }) as any).battery).toMatchObject({ serial: 'BT-1', chargeKnown: false });
+    expect((toVehicle(row(), { staff: true, now: NOW, battery }) as any).battery).not.toHaveProperty('chargeKnown');
+  });
+});

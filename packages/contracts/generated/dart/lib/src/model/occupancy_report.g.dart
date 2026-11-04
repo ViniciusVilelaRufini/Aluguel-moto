@@ -14,6 +14,8 @@ class _$OccupancyReport extends OccupancyReport {
   @override
   final ReportGroupBy groupBy;
   @override
+  final double? occupancyPct;
+  @override
   final BuiltList<OccupancyRow> rows;
 
   factory _$OccupancyReport([void Function(OccupancyReportBuilder)? updates]) =>
@@ -23,6 +25,7 @@ class _$OccupancyReport extends OccupancyReport {
       {required this.from,
       required this.to,
       required this.groupBy,
+      this.occupancyPct,
       required this.rows})
       : super._();
   @override
@@ -39,6 +42,7 @@ class _$OccupancyReport extends OccupancyReport {
         from == other.from &&
         to == other.to &&
         groupBy == other.groupBy &&
+        occupancyPct == other.occupancyPct &&
         rows == other.rows;
   }
 
@@ -48,6 +52,7 @@ class _$OccupancyReport extends OccupancyReport {
     _$hash = $jc(_$hash, from.hashCode);
     _$hash = $jc(_$hash, to.hashCode);
     _$hash = $jc(_$hash, groupBy.hashCode);
+    _$hash = $jc(_$hash, occupancyPct.hashCode);
     _$hash = $jc(_$hash, rows.hashCode);
     _$hash = $jf(_$hash);
     return _$hash;
@@ -59,6 +64,7 @@ class _$OccupancyReport extends OccupancyReport {
           ..add('from', from)
           ..add('to', to)
           ..add('groupBy', groupBy)
+          ..add('occupancyPct', occupancyPct)
           ..add('rows', rows))
         .toString();
   }
@@ -80,6 +86,10 @@ class OccupancyReportBuilder
   ReportGroupBy? get groupBy => _$this._groupBy;
   set groupBy(ReportGroupBy? groupBy) => _$this._groupBy = groupBy;
 
+  double? _occupancyPct;
+  double? get occupancyPct => _$this._occupancyPct;
+  set occupancyPct(double? occupancyPct) => _$this._occupancyPct = occupancyPct;
+
   ListBuilder<OccupancyRow>? _rows;
   ListBuilder<OccupancyRow> get rows =>
       _$this._rows ??= ListBuilder<OccupancyRow>();
@@ -95,6 +105,7 @@ class OccupancyReportBuilder
       _from = $v.from;
       _to = $v.to;
       _groupBy = $v.groupBy;
+      _occupancyPct = $v.occupancyPct;
       _rows = $v.rows.toBuilder();
       _$v = null;
     }
@@ -125,6 +136,7 @@ class OccupancyReportBuilder
                 to, r'OccupancyReport', 'to'),
             groupBy: BuiltValueNullFieldError.checkNotNull(
                 groupBy, r'OccupancyReport', 'groupBy'),
+            occupancyPct: occupancyPct,
             rows: rows.build(),
           );
     } catch (_) {

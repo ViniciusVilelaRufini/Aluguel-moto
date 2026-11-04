@@ -54,6 +54,8 @@ class _$Vehicle extends Vehicle {
   @override
   final DateTime? lastSeenAt;
   @override
+  final DateTime? positionAt;
+  @override
   final String? currentRentalId;
   @override
   final String? vehicleModelId;
@@ -111,6 +113,7 @@ class _$Vehicle extends Vehicle {
       this.stolenMode,
       this.firmwareVersion,
       this.lastSeenAt,
+      this.positionAt,
       this.currentRentalId,
       this.vehicleModelId,
       this.categoryLabel,
@@ -161,6 +164,7 @@ class _$Vehicle extends Vehicle {
         stolenMode == other.stolenMode &&
         firmwareVersion == other.firmwareVersion &&
         lastSeenAt == other.lastSeenAt &&
+        positionAt == other.positionAt &&
         currentRentalId == other.currentRentalId &&
         vehicleModelId == other.vehicleModelId &&
         categoryLabel == other.categoryLabel &&
@@ -204,6 +208,7 @@ class _$Vehicle extends Vehicle {
     _$hash = $jc(_$hash, stolenMode.hashCode);
     _$hash = $jc(_$hash, firmwareVersion.hashCode);
     _$hash = $jc(_$hash, lastSeenAt.hashCode);
+    _$hash = $jc(_$hash, positionAt.hashCode);
     _$hash = $jc(_$hash, currentRentalId.hashCode);
     _$hash = $jc(_$hash, vehicleModelId.hashCode);
     _$hash = $jc(_$hash, categoryLabel.hashCode);
@@ -249,6 +254,7 @@ class _$Vehicle extends Vehicle {
           ..add('stolenMode', stolenMode)
           ..add('firmwareVersion', firmwareVersion)
           ..add('lastSeenAt', lastSeenAt)
+          ..add('positionAt', positionAt)
           ..add('currentRentalId', currentRentalId)
           ..add('vehicleModelId', vehicleModelId)
           ..add('categoryLabel', categoryLabel)
@@ -368,6 +374,10 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
   DateTime? get lastSeenAt => _$this._lastSeenAt;
   set lastSeenAt(DateTime? lastSeenAt) => _$this._lastSeenAt = lastSeenAt;
 
+  DateTime? _positionAt;
+  DateTime? get positionAt => _$this._positionAt;
+  set positionAt(DateTime? positionAt) => _$this._positionAt = positionAt;
+
   String? _currentRentalId;
   String? get currentRentalId => _$this._currentRentalId;
   set currentRentalId(String? currentRentalId) =>
@@ -466,6 +476,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
       _stolenMode = $v.stolenMode;
       _firmwareVersion = $v.firmwareVersion;
       _lastSeenAt = $v.lastSeenAt;
+      _positionAt = $v.positionAt;
       _currentRentalId = $v.currentRentalId;
       _vehicleModelId = $v.vehicleModelId;
       _categoryLabel = $v.categoryLabel;
@@ -533,6 +544,7 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
             stolenMode: stolenMode,
             firmwareVersion: firmwareVersion,
             lastSeenAt: lastSeenAt,
+            positionAt: positionAt,
             currentRentalId: currentRentalId,
             vehicleModelId: vehicleModelId,
             categoryLabel: categoryLabel,

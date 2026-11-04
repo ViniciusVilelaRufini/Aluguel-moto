@@ -95,6 +95,7 @@ enum CommandStatusReason {
   invalid_limit
   locked_by_staff
   unsupported_by_tracker
+  superseded
 }
 
 /// Capacidade do rastreador (spec GT06 §3.1). `relay_only` = só rastreia e corta pelo relé (GT06/Concox J16 via Traccar).

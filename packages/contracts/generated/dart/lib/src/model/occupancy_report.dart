@@ -17,6 +17,7 @@ part 'occupancy_report.g.dart';
 /// * [from]
 /// * [to]
 /// * [groupBy]
+/// * [occupancyPct] - Ocupação do intervalo inteiro (`from`–`to`, até agora), ponderada pelo tempo: soma do tempo em aluguel ÷ soma do tempo de frota. Use esta, não a média simples das linhas.
 /// * [rows]
 @BuiltValue()
 abstract class OccupancyReport
@@ -30,6 +31,10 @@ abstract class OccupancyReport
   @BuiltValueField(wireName: r'groupBy')
   ReportGroupBy get groupBy;
   // enum groupByEnum {  hour,  day,  week,  month,  };
+
+  /// Ocupação do intervalo inteiro (`from`–`to`, até agora), ponderada pelo tempo: soma do tempo em aluguel ÷ soma do tempo de frota. Use esta, não a média simples das linhas.
+  @BuiltValueField(wireName: r'occupancyPct')
+  double? get occupancyPct;
 
   @BuiltValueField(wireName: r'rows')
   BuiltList<OccupancyRow> get rows;
@@ -75,6 +80,13 @@ class _$OccupancyReportSerializer
       object.groupBy,
       specifiedType: const FullType(ReportGroupBy),
     );
+    if (object.occupancyPct != null) {
+      yield r'occupancyPct';
+      yield serializers.serialize(
+        object.occupancyPct,
+        specifiedType: const FullType(double),
+      );
+    }
     yield r'rows';
     yield serializers.serialize(
       object.rows,
@@ -125,6 +137,14 @@ class _$OccupancyReportSerializer
             specifiedType: const FullType(ReportGroupBy),
           ) as ReportGroupBy;
           result.groupBy = valueDes;
+          break;
+        case r'occupancyPct':
+          final valueDes = serializers.deserialize(
+            value,
+            specifiedType: const FullType.nullable(double),
+          ) as double?;
+          if (valueDes == null) continue;
+          result.occupancyPct = valueDes;
           break;
         case r'rows':
           final valueDes = serializers.deserialize(

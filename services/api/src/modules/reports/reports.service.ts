@@ -1,6 +1,6 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { VEHICLE_STATUSES, type PlanCode } from '../../common/enums';
+import { OPEN_RENTAL_STATUSES, VEHICLE_STATUSES, type PlanCode } from '../../common/enums';
 import { badRequest } from '../../common/problem';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DEBT_KINDS, DelinquencyService } from '../payments/delinquency.service';
@@ -25,6 +25,83 @@ const fromLocal = (ts: Prisma.Sql) => Prisma.sql`(${ts} AT TIME ZONE ${TZ})`;
 export function startOfTodaySaoPaulo(now = new Date()): Date {
   const local = new Date(now.getTime() - 3 * 3600 * 1000);
   return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) + 3 * 3600 * 1000);
+}
+
+const SP_OFFSET_MS = 3 * 3600 * 1000;
+
+/** Início do período (`date_trunc` no fuso de São Paulo, UTC−3 fixo) que contém `t`, e o início do seguinte. */
+function periodOf(t: Date, groupBy: GroupBy): { start: Date; next: (d: Date) => Date } {
+  const l = new Date(t.getTime() - SP_OFFSET_MS);
+  const toUtc = (y: number, m: number, d: number, h = 0) => new Date(Date.UTC(y, m, d, h) + SP_OFFSET_MS);
+  switch (groupBy) {
+    case 'hour':
+      return { start: toUtc(l.getUTCFullYear(), l.getUTCMonth(), l.getUTCDate(), l.getUTCHours()), next: (d) => new Date(d.getTime() + 3600_000) };
+    case 'day':
+      return { start: toUtc(l.getUTCFullYear(), l.getUTCMonth(), l.getUTCDate()), next: (d) => new Date(d.getTime() + 86400_000) };
+    case 'week': {
+      const back = (l.getUTCDay() + 6) % 7; // segunda = 0 (date_trunc('week'))
+      return { start: toUtc(l.getUTCFullYear(), l.getUTCMonth(), l.getUTCDate() - back), next: (d) => new Date(d.getTime() + 7 * 86400_000) };
+    }
+    case 'month':
+      return {
+        start: toUtc(l.getUTCFullYear(), l.getUTCMonth(), 1),
+        next: (d) => {
+          const ld = new Date(d.getTime() - SP_OFFSET_MS);
+          return toUtc(ld.getUTCFullYear(), ld.getUTCMonth() + 1, 1);
+        },
+      };
+  }
+}
+
+export interface OccupancyRental { vehicleId: string; startedAt: Date; endedAt: Date | null }
+
+const pct1 = (num: number, den: number) => (den > 0 ? Math.min(100, Math.round((num / den) * 1000) / 10) : 0);
+
+/**
+ * Ocupação ponderada pelo tempo (painel de bancada, L3): por período, tempo em aluguel ÷ tempo de frota (motos cadastradas ×
+ * duração). O período é cortado em `from`, `to` e agora; aluguel em aberto conta até agora (mesma definição do dashboard:
+ * moto com aluguel em aberto = ocupada). A média simples dos períodos não serve: um aluguel de 1 h não ocupa o dia inteiro.
+ */
+export function occupancyBuckets(input: { from: Date; to: Date; now: Date; groupBy: GroupBy; rentals: OccupancyRental[]; vehicles: Array<{ createdAt: Date }> }) {
+  const { from, to, now, groupBy } = input;
+  const end = Math.min(to.getTime(), now.getTime());
+  const buckets: Array<{ start: number; next: number; a: number; b: number; rented: number }> = [];
+  const first = periodOf(from, groupBy);
+  for (let p = first.start; p < to && buckets.length < MAX_PERIODS + 1; p = first.next(p)) {
+    const n = first.next(p);
+    buckets.push({ start: p.getTime(), next: n.getTime(), a: Math.max(p.getTime(), from.getTime()), b: Math.min(n.getTime(), end), rented: 0 });
+  }
+  const overlap = (a0: number, a1: number, b0: number, b1: number) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+  for (const r of input.rentals) {
+    const r0 = r.startedAt.getTime();
+    const r1 = Math.min(r.endedAt ? r.endedAt.getTime() : now.getTime(), now.getTime());
+    if (!(r1 > r0)) continue;
+    // Primeiro período que pode cruzar o aluguel (busca binária) e segue enquanto o período começa antes do fim do aluguel.
+    let lo = 0;
+    let hi = buckets.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (buckets[mid].next <= r0) lo = mid + 1;
+      else hi = mid;
+    }
+    for (let i = lo; i < buckets.length && buckets[i].start < r1; i++) buckets[i].rented += overlap(r0, r1, buckets[i].a, buckets[i].b);
+  }
+  let rentedTotal = 0;
+  let fleetTotal = 0;
+  const rows = buckets.map((bk) => {
+    const span = Math.max(0, bk.b - bk.a);
+    const fleet = input.vehicles.reduce((acc, v) => acc + overlap(v.createdAt.getTime(), Infinity, bk.a, bk.b), 0);
+    const rented = Math.min(bk.rented, fleet);
+    rentedTotal += rented;
+    fleetTotal += fleet;
+    return {
+      periodStart: new Date(bk.start).toISOString(),
+      vehiclesTotal: input.vehicles.filter((v) => v.createdAt.getTime() < Math.max(bk.a, bk.b)).length,
+      vehiclesRented: span > 0 ? Math.round(rented / span) : 0,
+      occupancyPct: pct1(rented, fleet),
+    };
+  });
+  return { rows, occupancyPct: pct1(rentedTotal, fleetTotal) };
 }
 
 /** Formato de uma coluna do CSV em pt-BR (QA-16). */
@@ -95,8 +172,10 @@ export class ReportsService {
   /** `alertScope`: alertas que o perfil vê (Task 14: operação não conta os financeiros, financeiro só os dele). */
   async dashboard(canSeeRevenue: boolean, alertScope: Prisma.AlertWhereInput | null = null) {
     const today = startOfTodaySaoPaulo();
-    const [byStatus, activeRentals, openAlerts, revenue, subscriptions] = await Promise.all([
+    const [byStatus, occupied, activeRentals, openAlerts, revenue, subscriptions] = await Promise.all([
       this.prisma.vehicle.groupBy({ by: ['status'], _count: { _all: true } }),
+      // P1-7: ocupada = moto com aluguel em aberto (inclusive a que está sem sinal), a mesma definição do relatório de ocupação.
+      this.prisma.rental.groupBy({ by: ['vehicleId'], where: { status: { in: OPEN_RENTAL_STATUSES } } }),
       this.prisma.rental.count({ where: { status: { in: ['active', 'paused', 'ending'] } } }),
       this.prisma.alert.count({ where: { status: { not: 'resolved' }, ...(alertScope ?? {}) } }),
       canSeeRevenue
@@ -108,7 +187,7 @@ export class ReportsService {
     const counts = Object.fromEntries(VEHICLE_STATUSES.map((s) => [s, 0])) as Record<string, number>;
     for (const row of byStatus) counts[row.status] = row._count._all;
     const total = Object.values(counts).reduce((a, b) => a + b, 0);
-    const inUse = counts.rented + counts.paused;
+    const inUse = Math.min(total, (occupied ?? []).length);
     return {
       generatedAt: new Date().toISOString(),
       occupancyPct: total ? Math.round((inUse / total) * 1000) / 10 : 0,
@@ -160,27 +239,12 @@ export class ReportsService {
 
   async occupancy(fromIso: string, toIso: string, groupBy: GroupBy) {
     const { from, to } = this.window(fromIso, toIso, groupBy);
-    const step = Prisma.sql`('1 ' || ${groupBy})::interval`;
-    const rows = await this.prisma.$queryRaw<Array<{ periodStart: Date; total: bigint; rented: bigint }>>`
-      WITH periods AS (
-        SELECT gs AS p FROM generate_series(date_trunc(${groupBy}, ${from.toISOString()}::timestamptz AT TIME ZONE ${TZ}), ${to.toISOString()}::timestamptz AT TIME ZONE ${TZ} - interval '1 microsecond', ${step}) gs
-      )
-      SELECT (p AT TIME ZONE ${TZ}) AS "periodStart",
-             (SELECT count(*) FROM "Vehicle") AS "total",
-             (SELECT count(DISTINCT r."vehicleId") FROM "Rental" r
-                WHERE r."startedAt" < (((p + ${step}) AT TIME ZONE ${TZ}) AT TIME ZONE 'UTC')
-                  AND coalesce(r."endedAt", (now() AT TIME ZONE 'UTC')) >= ((p AT TIME ZONE ${TZ}) AT TIME ZONE 'UTC')) AS "rented"
-      FROM periods ORDER BY p`;
-    return {
-      from: from.toISOString(),
-      to: to.toISOString(),
-      groupBy,
-      rows: rows.map((r) => {
-        const total = n(r.total);
-        const rented = Math.min(total, n(r.rented));
-        return { periodStart: r.periodStart.toISOString(), vehiclesTotal: total, vehiclesRented: rented, occupancyPct: total ? Math.round((rented / total) * 1000) / 10 : 0 };
-      }),
-    };
+    const [rentals, vehicles] = await Promise.all([
+      this.prisma.rental.findMany({ where: { startedAt: { lt: to }, OR: [{ endedAt: null }, { endedAt: { gt: from } }] }, select: { vehicleId: true, startedAt: true, endedAt: true } }),
+      this.prisma.vehicle.findMany({ where: { createdAt: { lt: to } }, select: { createdAt: true } }),
+    ]);
+    const out = occupancyBuckets({ from, to, now: new Date(), groupBy, rentals, vehicles });
+    return { from: from.toISOString(), to: to.toISOString(), groupBy, occupancyPct: out.occupancyPct, rows: out.rows };
   }
 
   async revenuePerVehicle(fromIso: string, toIso: string, vehicleId?: string) {

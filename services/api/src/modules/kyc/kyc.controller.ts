@@ -26,6 +26,13 @@ export class KycController {
     return this.kyc.status(u.customerId!);
   }
 
+  /** Links curtos dos arquivos da verificação para a revisão (painel). AuditLog a cada consulta. */
+  @Get('customers/:id/kyc-files')
+  @StaffOnly('admin', 'suporte')
+  files(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() u: Principal) {
+    return this.kyc.files(u, id);
+  }
+
   @Post('customers/:id/kyc-review')
   @HttpCode(200)
   @StaffOnly('admin', 'suporte')

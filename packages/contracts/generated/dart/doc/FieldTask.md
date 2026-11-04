@@ -16,7 +16,7 @@ Name | Type | Description | Notes
 **vehicleCode** | **String** |  | 
 **vehicleLat** | **double** | Última posição conhecida da moto. | [optional] 
 **vehicleLng** | **double** |  | [optional] 
-**vehicleBatteryPct** | **int** |  | [optional] 
+**vehicleBatteryPct** | **int** | Carga da bateria da moto. Ausente quando a moto não tem leitura de bateria (`Vehicle.batteryKnown: false`). | [optional] 
 **vehicleStatus** | [**VehicleStatus**](VehicleStatus.md) |  | [optional] 
 **vehicleAddress** | **String** | Endereço aproximado da moto. | [optional] 
 **vehicleBatterySerial** | **String** | Bateria instalada (retirada numa troca). | [optional] 

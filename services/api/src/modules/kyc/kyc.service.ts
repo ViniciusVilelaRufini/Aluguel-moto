@@ -15,6 +15,9 @@ import { AuditService } from '../audit/audit.service';
 import type { Principal } from '../auth/principal';
 import type { KycReviewDto, KycSubmitDto, KycUploadRequestDto } from './kyc.dto';
 
+/** Validade dos links de leitura dos arquivos de KYC (LGPD: curtos; a revisão abre na hora). */
+export const KYC_FILE_URL_TTL_SECONDS = 300;
+
 export const toKycStatus = (c: Customer) =>
   compact({ status: c.kycStatus, reason: c.kycReason ?? undefined, submittedAt: iso(c.kycSubmittedAt), reviewedAt: iso(c.kycReviewedAt) });
 
@@ -130,6 +133,24 @@ export class KycService {
 
   private async isRestricted(cpf: string): Promise<boolean> {
     return !!(await this.prisma.restrictionEntry.findUnique({ where: { cpf }, select: { id: true } }));
+  }
+
+  /**
+   * Arquivos da verificação para a revisão manual (painel de bancada, P2-6): links de leitura pré-assinados curtos, só das chaves
+   * do próprio cliente (`kyc/{id}/`). Cada consulta grava AuditLog (quais arquivos, nunca as chaves); nada de chave em log.
+   */
+  async files(actor: Principal, customerId: string) {
+    const c = await this.customer(customerId);
+    const prefix = `kyc/${customerId}/`;
+    const keys = { documentFront: c.kycDocumentFrontKey, documentBack: c.kycDocumentBackKey, selfie: c.kycSelfieKey } as const;
+    const out: Record<string, { url: string; expiresAt: string }> = {};
+    for (const [name, key] of Object.entries(keys)) {
+      if (!key || !key.startsWith(prefix)) continue;
+      const signed = await this.storage.presignGet({ bucket: this.cfg.buckets.kyc, key, expiresInSeconds: KYC_FILE_URL_TTL_SECONDS });
+      out[name] = { url: signed.url, expiresAt: signed.expiresAt };
+    }
+    await this.audit.record({ actor, action: 'customer.kyc_files_view', entityType: 'Customer', entityId: customerId, metadata: { files: Object.keys(out) } });
+    return compact({ customerId, documentType: c.kycDocumentType ?? undefined, ...out });
   }
 
   async status(customerId: string) {

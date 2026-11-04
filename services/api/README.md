@@ -352,6 +352,13 @@ Testes: `safe-lock.multi-instance.spec.ts`, `safe-lock.redis-store.spec.ts` (su�
 - **Pacotes de minutos:** no plano por minuto sem assinatura, os minutos da carteira abatem a linha `time` (linha `minute_package`, negativa) antes da carteira em reais, com lançamento `minute_package` (minutos negativos, `rentalId`) na transação do fechamento.
 - **Estorno de recarga:** tira o crédito da carteira uma vez por incremento (`TopUp.reversedCents`, migração `20261103131000_top_up_reversed_cents`): `top_up` negativo de `min(incremento, saldo)` ou os minutos proporcionais do pacote; falta de saldo → `payment.needs-review` (`top_up_refund_exceeds_balance`). Estorno do admin de recarga cujo crédito já foi gasto além do saldo → `409`. Só estorno confirmado conta (pedidos `claimed`/`pending` são descontados). Estorno total confirmado do aluguel devolve os minutos de pacote consumidos (parcial não devolve).
 
+## Painel de bancada (`docs/decisoes.md`, 2026-11-03)
+
+- Comando substituído por um mais novo (`supersede`, unlock que cancela a trava) termina `failed` com `statusReason: superseded` (migração `20261103160000_command_reason_superseded`) e **não** abre `command_failed`; os demais alertas de comando têm mensagem em pt-BR.
+- Ocupação: moto ocupada = aluguel em aberto (`active`, `paused`, `ending`), inclusive sem sinal (dashboard). `GET /reports/occupancy` é ponderado pelo tempo (tempo alugado ÷ tempo de frota, cortado em `from`/`to`/agora; `occupancyBuckets` em `reports.service.ts`) e devolve `occupancyPct` do intervalo inteiro.
+- `GET /customers` traz `stats` por cliente (lote). `GET /customers/{id}/kyc-files` (`admin`, `suporte`): links pré-assinados de 5 min do documento e da selfie (só chaves `kyc/{id}/`), AuditLog `customer.kyc_files_view` sem as chaves.
+- `Vehicle.positionAt` (staff): hora da medição da posição (também da sobreposição do Redis). `FieldTask.vehicleBatteryPct` ausente e `Battery.chargeKnown: false` quando a moto não tem leitura de bateria. `GET /field-tasks?active=true&completedSince=`.
+
 ## Regras que nunca mudam
 
 - Nenhum `speedLimitKmh` fora de 0..32 é aceito (DTO → 400 `speed-limit-out-of-range`; serviço de comandos revalida; `CHECK` no banco).

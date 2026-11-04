@@ -4,8 +4,11 @@ import { compact } from '../../common/util';
 /** Bateria carregada o suficiente para ir numa moto (estoque da van). */
 export const CHARGED_PCT = 90;
 
-/** Prisma → `Battery`. */
-export function toBattery(b: Battery, vehicleCode?: string) {
+/**
+ * Prisma → `Battery`. `vehicleBatteryKnown: false` (moto sem leitura de bateria, ex.: J16) com a bateria instalada → `chargeKnown:
+ * false`: o `chargePct` é o último valor gravado, não leitura (painel de bancada, P2-7).
+ */
+export function toBattery(b: Battery, vehicleCode?: string, vehicleBatteryKnown?: boolean) {
   return compact({
     id: b.id,
     serial: b.serial,
@@ -17,6 +20,7 @@ export function toBattery(b: Battery, vehicleCode?: string) {
     holderId: b.holderId ?? undefined,
     stationId: b.stationId ?? undefined,
     depotId: b.depotId ?? undefined,
+    chargeKnown: b.status === 'in_vehicle' && vehicleBatteryKnown === false ? false : undefined,
     updatedAt: b.updatedAt.toISOString(),
   });
 }
