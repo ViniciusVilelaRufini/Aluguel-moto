@@ -2749,6 +2749,192 @@ abstract class AppLocalizations {
   /// In pt, this message translates to:
   /// **'Contrato e pagamento'**
   String get handoverCounterCheckout;
+
+  /// No description provided for @arrivalCounterSettle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Acerto no balcão'**
+  String get arrivalCounterSettle;
+
+  /// No description provided for @settleTitle.
+  ///
+  /// In pt, this message translates to:
+  /// **'Acerto no balcão'**
+  String get settleTitle;
+
+  /// No description provided for @settleCustomer.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cliente: {name}'**
+  String settleCustomer(String name);
+
+  /// No description provided for @settleLoadError.
+  ///
+  /// In pt, this message translates to:
+  /// **'Não foi possível carregar o saldo.'**
+  String get settleLoadError;
+
+  /// No description provided for @settleRefresh.
+  ///
+  /// In pt, this message translates to:
+  /// **'Atualizar'**
+  String get settleRefresh;
+
+  /// No description provided for @settleWaitingRental.
+  ///
+  /// In pt, this message translates to:
+  /// **'Aguardando o encerramento do aluguel'**
+  String get settleWaitingRental;
+
+  /// No description provided for @settleWaitingRentalBody.
+  ///
+  /// In pt, this message translates to:
+  /// **'O acerto fica disponível quando o aluguel terminar.'**
+  String get settleWaitingRentalBody;
+
+  /// No description provided for @settleDebts.
+  ///
+  /// In pt, this message translates to:
+  /// **'Valores a receber'**
+  String get settleDebts;
+
+  /// No description provided for @settleDebtTotal.
+  ///
+  /// In pt, this message translates to:
+  /// **'Total a receber: {amount}'**
+  String settleDebtTotal(String amount);
+
+  /// No description provided for @settleDebtRow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Débito de {date}'**
+  String settleDebtRow(String date);
+
+  /// No description provided for @settleReceive.
+  ///
+  /// In pt, this message translates to:
+  /// **'Receber'**
+  String get settleReceive;
+
+  /// No description provided for @settleFromDeposit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abater da caução'**
+  String get settleFromDeposit;
+
+  /// No description provided for @settleDeposits.
+  ///
+  /// In pt, this message translates to:
+  /// **'Caução'**
+  String get settleDeposits;
+
+  /// No description provided for @settleDepositRow.
+  ///
+  /// In pt, this message translates to:
+  /// **'Caução · {method}'**
+  String settleDepositRow(String method);
+
+  /// No description provided for @settleDepositAvailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'Disponível: {amount}'**
+  String settleDepositAvailable(String amount);
+
+  /// No description provided for @settleRefund.
+  ///
+  /// In pt, this message translates to:
+  /// **'Devolver'**
+  String get settleRefund;
+
+  /// No description provided for @settleNothing.
+  ///
+  /// In pt, this message translates to:
+  /// **'Nada a acertar no balcão.'**
+  String get settleNothing;
+
+  /// No description provided for @settleAmount.
+  ///
+  /// In pt, this message translates to:
+  /// **'Valor (R\$)'**
+  String get settleAmount;
+
+  /// No description provided for @settleAmountMax.
+  ///
+  /// In pt, this message translates to:
+  /// **'Até {amount}'**
+  String settleAmountMax(String amount);
+
+  /// No description provided for @settleAmountOverBalance.
+  ///
+  /// In pt, this message translates to:
+  /// **'O valor passa do saldo ({amount}).'**
+  String settleAmountOverBalance(String amount);
+
+  /// No description provided for @settleAmountOverAvailable.
+  ///
+  /// In pt, this message translates to:
+  /// **'O valor passa do disponível ({amount}).'**
+  String settleAmountOverAvailable(String amount);
+
+  /// No description provided for @settleReference.
+  ///
+  /// In pt, this message translates to:
+  /// **'Referência (opcional)'**
+  String get settleReference;
+
+  /// No description provided for @settleConfirmReceive.
+  ///
+  /// In pt, this message translates to:
+  /// **'Registrar recebimento'**
+  String get settleConfirmReceive;
+
+  /// No description provided for @settleConfirmFromDeposit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Abater da caução'**
+  String get settleConfirmFromDeposit;
+
+  /// No description provided for @settleConfirmRefund.
+  ///
+  /// In pt, this message translates to:
+  /// **'Registrar devolução'**
+  String get settleConfirmRefund;
+
+  /// No description provided for @settleDoneReceive.
+  ///
+  /// In pt, this message translates to:
+  /// **'Recebimento registrado.'**
+  String get settleDoneReceive;
+
+  /// No description provided for @settleDoneFromDeposit.
+  ///
+  /// In pt, this message translates to:
+  /// **'Valor abatido da caução.'**
+  String get settleDoneFromDeposit;
+
+  /// No description provided for @settleDoneRefund.
+  ///
+  /// In pt, this message translates to:
+  /// **'Devolução registrada.'**
+  String get settleDoneRefund;
+
+  /// No description provided for @settleDepositPick.
+  ///
+  /// In pt, this message translates to:
+  /// **'Caução usada'**
+  String get settleDepositPick;
+
+  /// No description provided for @settleDepositCard.
+  ///
+  /// In pt, this message translates to:
+  /// **'Cartão'**
+  String get settleDepositCard;
+
+  /// No description provided for @settleDepositPix.
+  ///
+  /// In pt, this message translates to:
+  /// **'Pix'**
+  String get settleDepositPix;
 }
 
 class _AppLocalizationsDelegate

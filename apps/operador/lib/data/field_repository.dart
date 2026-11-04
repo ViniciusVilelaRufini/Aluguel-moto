@@ -162,6 +162,25 @@ abstract class FieldRepository {
     CounterCheckoutRequest request, {
     required String idempotencyKey,
   });
+
+  // ── Balcao: acerto na chegada (exigem rede) ──
+
+  /// Debitos e caucao do aluguel (`GET /rentals/{id}/counter-balance`).
+  Future<CounterBalance> getCounterBalance(String rentalId);
+
+  /// Recebe ou abate da caucao parte ou todo um debito (`POST /payments/{id}/counter-settle`).
+  Future<Payment> counterSettle(
+    String paymentId,
+    CounterSettleRequest request, {
+    required String idempotencyKey,
+  });
+
+  /// Devolve a caucao disponivel (`POST /payments/deposits/{id}/counter-refund`).
+  Future<Deposit> counterRefund(
+    String depositId,
+    CounterRefundRequest request, {
+    required String idempotencyKey,
+  });
 }
 
 /// Corpo do `POST /handovers` de saida.
@@ -320,6 +339,36 @@ class ApiFieldRepository implements FieldRepository {
             id: handoverId,
             idempotencyKey: idempotencyKey,
             counterCheckoutRequest: request,
+          ))
+              .data!);
+
+  @override
+  Future<CounterBalance> getCounterBalance(String rentalId) => _guard(() async =>
+      (await _api.getRentalsApi().getRentalCounterBalance(id: rentalId)).data!);
+
+  @override
+  Future<Payment> counterSettle(
+    String paymentId,
+    CounterSettleRequest request, {
+    required String idempotencyKey,
+  }) =>
+      _guard(() async => (await _api.getPaymentsApi().counterSettlePayment(
+            id: paymentId,
+            idempotencyKey: idempotencyKey,
+            counterSettleRequest: request,
+          ))
+              .data!);
+
+  @override
+  Future<Deposit> counterRefund(
+    String depositId,
+    CounterRefundRequest request, {
+    required String idempotencyKey,
+  }) =>
+      _guard(() async => (await _api.getPaymentsApi().counterRefundDeposit(
+            id: depositId,
+            idempotencyKey: idempotencyKey,
+            counterRefundRequest: request,
           ))
               .data!);
 

@@ -1006,5 +1006,92 @@
   "counterAmountChanged": "O valor mudou. Confira e toque de novo.",
   "counterConsentRequired": "Peça ao cliente para permitir a localização no app",
   "counterOffline": "Sem conexão. Contrato e pagamento precisam de rede.",
-  "handoverCounterCheckout": "Contrato e pagamento"
+  "handoverCounterCheckout": "Contrato e pagamento",
+  "arrivalCounterSettle": "Acerto no balcão",
+  "settleTitle": "Acerto no balcão",
+  "settleCustomer": "Cliente: {name}",
+  "@settleCustomer": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settleLoadError": "Não foi possível carregar o saldo.",
+  "settleRefresh": "Atualizar",
+  "settleWaitingRental": "Aguardando o encerramento do aluguel",
+  "settleWaitingRentalBody": "O acerto fica disponível quando o aluguel terminar.",
+  "settleDebts": "Valores a receber",
+  "settleDebtTotal": "Total a receber: {amount}",
+  "@settleDebtTotal": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleDebtRow": "Débito de {date}",
+  "@settleDebtRow": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "settleReceive": "Receber",
+  "settleFromDeposit": "Abater da caução",
+  "settleDeposits": "Caução",
+  "settleDepositRow": "Caução · {method}",
+  "@settleDepositRow": {
+    "placeholders": {
+      "method": {
+        "type": "String"
+      }
+    }
+  },
+  "settleDepositAvailable": "Disponível: {amount}",
+  "@settleDepositAvailable": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleRefund": "Devolver",
+  "settleNothing": "Nada a acertar no balcão.",
+  "settleAmount": "Valor (R$)",
+  "settleAmountMax": "Até {amount}",
+  "@settleAmountMax": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleAmountOverBalance": "O valor passa do saldo ({amount}).",
+  "@settleAmountOverBalance": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleAmountOverAvailable": "O valor passa do disponível ({amount}).",
+  "@settleAmountOverAvailable": {
+    "placeholders": {
+      "amount": {
+        "type": "String"
+      }
+    }
+  },
+  "settleReference": "Referência (opcional)",
+  "settleConfirmReceive": "Registrar recebimento",
+  "settleConfirmFromDeposit": "Abater da caução",
+  "settleConfirmRefund": "Registrar devolução",
+  "settleDoneReceive": "Recebimento registrado.",
+  "settleDoneFromDeposit": "Valor abatido da caução.",
+  "settleDoneRefund": "Devolução registrada.",
+  "settleDepositPick": "Caução usada",
+  "settleDepositCard": "Cartão",
+  "settleDepositPix": "Pix"
 }

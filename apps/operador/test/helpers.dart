@@ -508,7 +508,112 @@ class FakeFieldRepository implements FieldRepository {
       ..createdAt = now
       ..updatedAt = now);
   }
+
+  // ── Balcao: acerto na chegada (saldo em memoria que as acoes atualizam, como a API) ──
+  CounterBalance? balance;
+  int balanceReads = 0;
+  final settles = <({String paymentId, CounterSettleRequest request, String key})>[];
+  final refunds = <({String depositId, CounterRefundRequest request, String key})>[];
+  RepositoryException? settleRejectOnce;
+
+  @override
+  Future<CounterBalance> getCounterBalance(String rentalId) async {
+    if (!online) throw const RepositoryException(FailureKind.network, 'offline');
+    balanceReads++;
+    return balance!;
+  }
+
+  void _debit(String paymentId, int cents) => balance = balance!.rebuild((b) => b
+    ..debtTotalCents = b.debtTotalCents! - cents
+    ..debts.map((d) => d.paymentId == paymentId
+        ? d.rebuild((x) => x.outstandingCents = d.outstandingCents - cents)
+        : d));
+
+  void _useDeposit(String depositId, {int captured = 0, int refunded = 0}) =>
+      balance = balance!.rebuild((b) => b.deposits.map((d) => d.depositId == depositId
+          ? d.rebuild((x) => x
+            ..capturedCents = d.capturedCents + captured
+            ..refundedCents = d.refundedCents + refunded
+            ..availableCents = d.availableCents - captured - refunded)
+          : d));
+
+  @override
+  Future<Payment> counterSettle(String paymentId, CounterSettleRequest r,
+      {required String idempotencyKey}) async {
+    if (!online) throw const RepositoryException(FailureKind.network, 'offline');
+    final reject = settleRejectOnce;
+    if (reject != null) {
+      settleRejectOnce = null;
+      throw reject;
+    }
+    settles.add((paymentId: paymentId, request: r, key: idempotencyKey));
+    _debit(paymentId, r.amountCents);
+    if (r.fromDepositId != null) _useDeposit(r.fromDepositId!, captured: r.amountCents);
+    final now = DateTime.utc(2026, 11, 4, 15);
+    return Payment((b) => b
+      ..id = 'pay-settle-${settles.length}'
+      ..customerId = 'cust-1'
+      ..kind = PaymentKind.debtSettlement
+      ..method = PaymentMethod.cash
+      ..status = PaymentStatus.paid
+      ..amountCents = r.amountCents
+      ..refundedCents = 0
+      ..createdAt = now
+      ..updatedAt = now);
+  }
+
+  @override
+  Future<Deposit> counterRefund(String depositId, CounterRefundRequest r,
+      {required String idempotencyKey}) async {
+    if (!online) throw const RepositoryException(FailureKind.network, 'offline');
+    refunds.add((depositId: depositId, request: r, key: idempotencyKey));
+    _useDeposit(depositId, refunded: r.amountCents);
+    final now = DateTime.utc(2026, 11, 4, 15);
+    return Deposit((b) => b
+      ..id = depositId
+      ..customerId = 'cust-1'
+      ..method = DepositMethod.cash
+      ..status = DepositStatus.released
+      ..amountCents = 10000
+      ..createdAt = now
+      ..updatedAt = now);
+  }
 }
+
+CounterBalance fakeCounterBalance({
+  RentalStatus status = RentalStatus.ended,
+  int debtCents = 6000,
+  int depositCents = 10000,
+}) =>
+    CounterBalance((b) => b
+      ..rentalId = 'rental-1'
+      ..customerId = 'cust-1'
+      ..customerFirstName = 'Ana'
+      ..rentalStatus = status
+      ..debtTotalCents = debtCents
+      ..debts.replace([
+        if (debtCents > 0)
+          CounterDebt((d) => d
+            ..paymentId = 'pay1'
+            ..rentalId = 'rental-1'
+            ..kind = PaymentKind.debtSettlement
+            ..status = PaymentStatus.failed
+            ..method = PaymentMethod.cash
+            ..outstandingCents = debtCents
+            ..createdAt = DateTime.utc(2026, 11, 4, 14)),
+      ])
+      ..deposits.replace([
+        if (depositCents > 0)
+          CounterDepositBalance((d) => d
+            ..depositId = 'dep1'
+            ..rentalId = 'rental-1'
+            ..method = DepositMethod.cash
+            ..status = DepositStatus.held
+            ..amountCents = depositCents
+            ..capturedCents = 0
+            ..refundedCents = 0
+            ..availableCents = depositCents),
+      ]));
 
 Handover fakePendingHandover({String id = 'ho-1'}) => Handover((b) => b
   ..id = id

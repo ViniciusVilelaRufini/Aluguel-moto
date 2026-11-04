@@ -1563,4 +1563,114 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get handoverCounterCheckout => 'Contrato e pagamento';
+
+  @override
+  String get arrivalCounterSettle => 'Acerto no balcão';
+
+  @override
+  String get settleTitle => 'Acerto no balcão';
+
+  @override
+  String settleCustomer(String name) {
+    return 'Cliente: $name';
+  }
+
+  @override
+  String get settleLoadError => 'Não foi possível carregar o saldo.';
+
+  @override
+  String get settleRefresh => 'Atualizar';
+
+  @override
+  String get settleWaitingRental => 'Aguardando o encerramento do aluguel';
+
+  @override
+  String get settleWaitingRentalBody =>
+      'O acerto fica disponível quando o aluguel terminar.';
+
+  @override
+  String get settleDebts => 'Valores a receber';
+
+  @override
+  String settleDebtTotal(String amount) {
+    return 'Total a receber: $amount';
+  }
+
+  @override
+  String settleDebtRow(String date) {
+    return 'Débito de $date';
+  }
+
+  @override
+  String get settleReceive => 'Receber';
+
+  @override
+  String get settleFromDeposit => 'Abater da caução';
+
+  @override
+  String get settleDeposits => 'Caução';
+
+  @override
+  String settleDepositRow(String method) {
+    return 'Caução · $method';
+  }
+
+  @override
+  String settleDepositAvailable(String amount) {
+    return 'Disponível: $amount';
+  }
+
+  @override
+  String get settleRefund => 'Devolver';
+
+  @override
+  String get settleNothing => 'Nada a acertar no balcão.';
+
+  @override
+  String get settleAmount => 'Valor (R\$)';
+
+  @override
+  String settleAmountMax(String amount) {
+    return 'Até $amount';
+  }
+
+  @override
+  String settleAmountOverBalance(String amount) {
+    return 'O valor passa do saldo ($amount).';
+  }
+
+  @override
+  String settleAmountOverAvailable(String amount) {
+    return 'O valor passa do disponível ($amount).';
+  }
+
+  @override
+  String get settleReference => 'Referência (opcional)';
+
+  @override
+  String get settleConfirmReceive => 'Registrar recebimento';
+
+  @override
+  String get settleConfirmFromDeposit => 'Abater da caução';
+
+  @override
+  String get settleConfirmRefund => 'Registrar devolução';
+
+  @override
+  String get settleDoneReceive => 'Recebimento registrado.';
+
+  @override
+  String get settleDoneFromDeposit => 'Valor abatido da caução.';
+
+  @override
+  String get settleDoneRefund => 'Devolução registrada.';
+
+  @override
+  String get settleDepositPick => 'Caução usada';
+
+  @override
+  String get settleDepositCard => 'Cartão';
+
+  @override
+  String get settleDepositPix => 'Pix';
 }
