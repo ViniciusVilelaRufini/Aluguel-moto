@@ -1,14 +1,12 @@
 import { INestApplication } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
 import jestOpenAPI from 'jest-openapi';
-import { createHmac, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { io, type Socket } from 'socket.io-client';
 import request from 'supertest';
 import { ProblemException } from '../src/common/problem';
 import { StubIotGateway } from '../src/modules/iot/stub-iot-gateway';
-import { FakePaymentProvider } from '../src/modules/payments/provider/fake-payment-provider';
-import { PAYMENT_PROVIDER } from '../src/modules/payments/provider/payment-provider';
 import { RentalStartService } from '../src/modules/rentals/rental-start.service';
 import { ReservationsService } from '../src/modules/reservations/reservations.service';
 import { IOT_GATEWAY } from '../src/ports/iot-gateway.port';
@@ -21,6 +19,8 @@ jestOpenAPI(loadSpecAs30() as any);
 const GREEN_POINT = { lat: -23.5614, lng: -46.6559 };
 const ALL_DAY = Array.from({ length: 7 }, (_, weekday) => ({ weekday, opensAt: '00:00', closesAt: '23:59' }));
 const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
+const COUNTER_DEBT_DETAIL = 'Há um valor a acertar no galpão. Acerte no balcão para pré-reservar de novo.';
 
 type WsEvent = { name: string; payload: any };
 interface WsClient {
@@ -29,9 +29,11 @@ interface WsClient {
 }
 
 /**
- * Task 8 — ciclo completo do galpão pelos endpoints HTTP e eventos WS (`/realtime`), contra Postgres + Redis do compose
- * (`PAYMENT_PROVIDER=fake`, `IOT_MODE=stub` forçados no setup). Cada cenário cria os próprios cliente, moto e reserva.
- * Cobrança: a caução é retida na reserva, o aluguel começa no aceite e é liquidado uma vez no fim (sem cobrança no aceite).
+ * Ciclo completo do galpão (pré-reserva/balcão) pelos endpoints HTTP e eventos WS (`/realtime`), contra Postgres + Redis
+ * do compose (`PAYMENT_PROVIDER=fake`, `IOT_MODE=stub` forçados no setup). Cada cenário cria os próprios cliente, moto e
+ * reserva. Nada passa pelo gateway: a pré-reserva não tem caução; o aluguel começa no balcão (`counter-checkout`, plano
+ * pré-pago + caução de balcão); o excedente vira débito a acertar no galpão (`counter-balance` → `counter-settle`) e a
+ * caução volta pelo `counter-refund`.
  */
 describe('Galpão: ciclo completo (e2e)', () => {
   let app: INestApplication;
@@ -75,14 +77,6 @@ describe('Galpão: ciclo completo (e2e)', () => {
     return found.payload;
   }
 
-  function signedWebhook(dataId: string) {
-    const requestId = randomUUID();
-    const ts = String(Math.floor(Date.now() / 1000));
-    const v1 = createHmac('sha256', process.env.MERCADOPAGO_WEBHOOK_SECRET!).update(`id:${dataId};request-id:${requestId};ts:${ts};`).digest('hex');
-    return http().post('/webhooks/mercadopago').set('x-signature', `ts=${ts},v1=${v1}`).set('x-request-id', requestId)
-      .send({ id: Math.floor(Math.random() * 1e12), type: 'payment', action: 'payment.updated', live_mode: false, data: { id: dataId } });
-  }
-
   beforeAll(async () => {
     ({ app, prisma } = await bootE2eApp());
     await app.listen(0);
@@ -111,29 +105,42 @@ describe('Galpão: ciclo completo (e2e)', () => {
     });
   }
 
-  async function customerWithCard(tag: string) {
-    const c = await approvedCustomer(app, prisma, tag);
-    await http().post('/payments/cards').set(bearer(c.token)).set('Idempotency-Key', randomUUID()).send({ cardToken: 'tok_visa_4242' }).expect(201);
-    return c;
-  }
+  const reservationBody = (vehicleId: string, over: Record<string, unknown> = {}) => ({ vehicleId, depotId, pickupMode: 'now', ...over });
+  const preReserve = (token: string, vehicleId: string, over: Record<string, unknown> = {}) =>
+    http().post('/reservations').set(bearer(token)).set('Idempotency-Key', randomUUID()).send(reservationBody(vehicleId, over));
 
-  const reservationBody = (vehicleId: string, over: Record<string, unknown> = {}) => ({
-    vehicleId, depotId, pickupMode: 'now', planCode: 'day', coverage: 'basic', depositMethod: 'card', ...over,
-  });
-
-  /** Cliente com cartão e reserva "retirar agora" (caução retida no cartão). */
+  /** Cliente (sem cartão) com pré-reserva "retirar agora" (sem caução). */
   async function reserved(tag: string) {
-    const c = await customerWithCard(tag);
+    const c = await approvedCustomer(app, prisma, tag);
     const v = await depotVehicle();
-    const res = await http().post('/reservations').set(bearer(c.token)).set('Idempotency-Key', randomUUID()).send(reservationBody(v.id)).expect(201);
-    return { ...c, vehicleId: v.id, reservationId: res.body.id as string, pickupCode: res.body.pickupCode as string, depositId: res.body.deposit.id as string };
+    const res = await preReserve(c.token, v.id).expect(201);
+    return { ...c, vehicleId: v.id, reservationId: res.body.id as string, pickupCode: res.body.pickupCode as string };
   }
 
   type ChecklistItem = { code: string; ok: boolean; note?: string };
   const okChecklist: ChecklistItem[] = [{ code: 'freios', ok: true }, { code: 'pneus', ok: true }, { code: 'luzes', ok: true }];
   const pickup = (code: string) =>
     http().post('/handovers').set(bearer(campo)).send({ type: 'pickup', depotId, pickupCode: code, checklist: okChecklist, photoKeys: ['handovers/e2e-ciclo.jpg'], batteryPct: 96 });
-  const accept = (token: string, handoverId: string, key = randomUUID()) => http().post(`/handovers/${handoverId}/accept`).set(bearer(token)).set('Idempotency-Key', key);
+  const accept = (token: string, handoverId: string) => http().post(`/handovers/${handoverId}/accept`).set(bearer(token)).set('Idempotency-Key', randomUUID());
+
+  /** Contrato e pagamento no balcão: cotação → foto do contrato → checkout com o valor cotado. */
+  async function counterBody(handoverId: string, opts: { planCode?: string; quantity?: number; deposit?: { method: string; amountCents: number } } = {}) {
+    const planCode = opts.planCode ?? 'day';
+    const quantity = opts.quantity ?? 1;
+    const q = await http().get(`/handovers/${handoverId}/counter-quote`).query({ planCode, coverage: 'basic', quantity }).set(bearer(campo)).expect(200);
+    const up = await http().post('/handovers/uploads').set(bearer(campo)).send({ contentType: 'image/jpeg', purpose: 'contract' }).expect(201);
+    return {
+      quote: q.body as { totalCents: number; excessDayCents: number; periodDays: number },
+      body: {
+        planCode, quantity, coverage: 'basic', contractPhotoKeys: [up.body.objectKey as string],
+        payment: { method: 'counter_pix', amountCents: q.body.totalCents as number, reference: 'E2E-PIX-1' },
+        ...(opts.deposit ? { deposit: opts.deposit } : {}),
+      },
+    };
+  }
+  const checkout = (handoverId: string, body: object, key = randomUUID()) =>
+    http().post(`/handovers/${handoverId}/counter-checkout`).set(bearer(campo)).set('Idempotency-Key', key).send(body);
+
   /** Run-2: a chegada só encerra com a posição ao vivo da moto no galpão — o rastreador (stub) reporta o galpão. */
   async function atDepot(rentalId: string) {
     const { vehicle } = await prisma.rental.findUniqueOrThrow({ where: { id: rentalId }, select: { vehicle: { select: { thingName: true } } } });
@@ -147,19 +154,19 @@ describe('Galpão: ciclo completo (e2e)', () => {
     return http().post('/handovers').set(bearer(campo)).send({ type: 'return_depot', rentalId, depotId, checklist, photoKeys: [], batteryPct: 55 }).expect(status);
   };
 
-  /** Reserva → saída → aceite: devolve o aluguel ativo. */
+  /** Pré-reserva → saída → checkout no balcão: devolve o aluguel ativo. */
   async function rentedFromDepot(tag: string) {
     const c = await reserved(tag);
     const ho = await pickup(c.pickupCode).expect(201);
-    const rental = await accept(c.token, ho.body.id).expect(201);
+    const { body } = await counterBody(ho.body.id);
+    const rental = await checkout(ho.body.id, body).expect(201);
     return { ...c, handoverId: ho.body.id as string, rentalId: rental.body.id as string };
   }
 
-  const settledPayments = (rentalId: string) =>
-    until(() => prisma.payment.findMany({ where: { rentalId, kind: 'rental' } }), (ps) => ps.length > 0 && ps.every((p) => p.status !== 'pending'));
+  const rentalPayments = (rentalId: string) => prisma.payment.findMany({ where: { rentalId, kind: 'rental' }, orderBy: { createdAt: 'asc' } });
 
-  it('1. retirar agora com cartão: galpões → motos → reserva → saída → handover.pending → aceite → active/rented → chegada liquida uma vez', async () => {
-    const c = await customerWithCard('ciclo-1');
+  it('1. pré-reserva → saída → handover.pending → checkout → handover.updated/rental.updated → fim com excedente → counter-balance → counter-settle → counter-refund', async () => {
+    const c = await approvedCustomer(app, prisma, 'ciclo-1');
     const v = await depotVehicle();
 
     const depots = await http().get('/depots').query(depotPoint).set(bearer(c.token)).expect(200);
@@ -173,10 +180,11 @@ describe('Galpão: ciclo completo (e2e)', () => {
     expect(vehicles).toSatisfyApiSpec();
     expect(vehicles.body.items.map((x: { id: string }) => x.id)).toContain(v.id);
 
-    const res = await http().post('/reservations').set(bearer(c.token)).set('Idempotency-Key', randomUUID()).send(reservationBody(v.id)).expect(201);
+    // Pré-reserva sem caução, sem cartão e sem plano.
+    const res = await preReserve(c.token, v.id).expect(201);
     expect(res).toSatisfyApiSpec();
-    expect(res.body).toMatchObject({ status: 'active', depotId, pickupMode: 'now', planCode: 'day', coverage: 'basic', depositMethod: 'card' });
-    expect(res.body.deposit).toMatchObject({ status: 'held', method: 'card' });
+    expect(res.body).toMatchObject({ status: 'active', depotId, pickupMode: 'now' });
+    expect(res.body).not.toHaveProperty('deposit');
     expect(res.body.pickupCode).toBeTruthy();
     expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('reserved');
 
@@ -191,41 +199,106 @@ describe('Galpão: ciclo completo (e2e)', () => {
     const cur = await http().get('/reservations/current').set(bearer(c.token)).expect(200);
     expect(cur.body.reservation).toMatchObject({ id: res.body.id, status: 'handover', handoverId: ho.body.id });
 
-    // Outro cliente: 404 no aceite e na disputa (não revela a entrega).
+    // O app não aceita nada: dono → 409 handover-counter-checkout; outro cliente → 404 (não revela a entrega).
+    expect((await accept(c.token, ho.body.id).expect(409)).body.code).toBe('handover-counter-checkout');
     const other = await approvedCustomer(app, prisma, 'ciclo-1-outro');
     await accept(other.token, ho.body.id).expect(404);
     await http().post(`/handovers/${ho.body.id}/dispute`).set(bearer(other.token)).send({ reason: 'Não é minha' }).expect(404);
 
-    const rental = await accept(c.token, ho.body.id).expect(201);
+    // Balcão: diária + seguro no Pix do galpão, caução de R$ 200,00 em dinheiro.
+    const { quote, body } = await counterBody(ho.body.id, { deposit: { method: 'cash', amountCents: 20000 } });
+    expect(quote.periodDays).toBe(1);
+    const rental = await checkout(ho.body.id, body).expect(201);
     expect(rental).toSatisfyApiSpec();
     expect(rental.body).toMatchObject({ vehicleId: v.id, status: 'active', planCode: 'day' });
     expect(await waitEvent(customerWs, 'handover.updated', (p) => p.handoverId === ho.body.id && p.status === 'accepted')).toEqual({ handoverId: ho.body.id, status: 'accepted' });
+    await waitEvent(depotWs, 'handover.updated', (p) => p.handoverId === ho.body.id && p.status === 'accepted');
     await waitEvent(customerWs, 'rental.updated', (p) => p.rentalId === rental.body.id && p.status === 'active');
 
-    // Um aluguel, a caução da reserva retida e ligada a ele; moto rented guardando o galpão; um destravamento.
+    // Um aluguel; pré-pago e caução registrados no balcão; moto rented guardando o galpão; um destravamento.
     expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(1);
-    expect(await prisma.deposit.count({ where: { customerId: c.customerId } })).toBe(1);
-    const deposit = await prisma.deposit.findUniqueOrThrow({ where: { id: res.body.deposit.id } });
-    expect(deposit).toMatchObject({ status: 'held', rentalId: rental.body.id });
+    const prepaid = await rentalPayments(rental.body.id);
+    expect(prepaid.map((p) => [p.status, p.method, p.amountCents])).toEqual([['paid', 'counter_pix', quote.totalCents]]);
+    const depositId = rental.body.depositId as string;
+    expect(await prisma.deposit.findUniqueOrThrow({ where: { id: depositId } })).toMatchObject({ status: 'held', method: 'cash', amountCents: 20000, rentalId: rental.body.id });
     expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).toMatchObject({ status: 'rented', depotId });
     expect(await prisma.vehicleCommand.count({ where: { vehicleId: v.id, type: 'unlock' } })).toBe(1);
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: res.body.id } })).status).toBe('converted');
-    // Modelo de liquidação: nada de cobrança do aluguel no aceite.
-    expect(await prisma.payment.count({ where: { rentalId: rental.body.id, kind: 'rental' } })).toBe(0);
 
-    // Chegada no galpão → aluguel encerrado e liquidado uma única vez (repetição da fila offline não liquida de novo).
+    // Aluguel aberto: a caução não volta ainda.
+    const early = await http().post(`/payments/deposits/${depositId}/counter-refund`).set(bearer(campo)).set('Idempotency-Key', randomUUID()).send({ amountCents: 100 }).expect(409);
+    expect(early).toSatisfyApiSpec();
+
+    // O cliente ficou 25 h com a diária (pré-pago de 24 h): 1 dia iniciado de excedente.
+    await prisma.rental.update({ where: { id: rental.body.id }, data: { startedAt: new Date(Date.now() - 25 * HOUR) } });
     await returnDepot(rental.body.id);
     expect((await prisma.rental.findUniqueOrThrow({ where: { id: rental.body.id } })).status).toBe('ended');
-    const payments = await settledPayments(rental.body.id);
-    expect(payments).toHaveLength(1);
-    await returnDepot(rental.body.id, okChecklist, 200);
-    await new Promise((r) => setTimeout(r, 200));
-    expect(await prisma.payment.count({ where: { rentalId: rental.body.id, kind: 'rental' } })).toBe(1);
-    expect((await prisma.deposit.findUniqueOrThrow({ where: { id: deposit.id } })).status).not.toBe('held');
     await waitEvent(customerWs, 'rental.updated', (p) => p.rentalId === rental.body.id && p.status === 'ended');
+    // Excedente = débito de balcão `pending` (método do pré-pago), sem gateway; repetição da chegada não cria outro.
+    const afterEnd = await rentalPayments(rental.body.id);
+    expect(afterEnd).toHaveLength(2);
+    const debt = afterEnd[1];
+    expect(debt).toMatchObject({ status: 'pending', method: 'counter_pix', amountCents: quote.excessDayCents, providerPaymentId: null, depositId: null });
+    expect((await prisma.rental.findUniqueOrThrow({ where: { id: rental.body.id } })).paymentId).toBe(debt.id);
+    await returnDepot(rental.body.id, okChecklist, 200);
+    expect(await prisma.payment.count({ where: { rentalId: rental.body.id, kind: 'rental' } })).toBe(2);
+
+    // Com débito em aberto: nova pré-reserva → 409 com o texto do galpão; o app não paga o débito do balcão.
+    const blocked = await preReserve(c.token, (await depotVehicle()).id).expect(409);
+    expect(blocked.body).toMatchObject({ code: 'payment-pending', detail: COUNTER_DEBT_DETAIL });
+    const appPay = await http().post(`/payments/${debt.id}/retry`).set(bearer(c.token)).set('Idempotency-Key', randomUUID()).send({ method: 'pix' }).expect(409);
+    expect(appPay.body.code).toBe('debt-not-payable');
+
+    // Saldo do balcão: o débito e a caução disponível.
+    const balance = await http().get(`/rentals/${rental.body.id}/counter-balance`).set(bearer(campo)).expect(200);
+    expect(balance).toSatisfyApiSpec();
+    expect(balance.body).toMatchObject({ rentalId: rental.body.id, customerId: c.customerId, rentalStatus: 'ended', debtTotalCents: quote.excessDayCents });
+    expect(balance.body.debts).toEqual([expect.objectContaining({ paymentId: debt.id, rentalId: rental.body.id, status: 'pending', method: 'counter_pix', outstandingCents: quote.excessDayCents })]);
+    expect(balance.body.deposits).toEqual([expect.objectContaining({ depositId, method: 'cash', amountCents: 20000, capturedCents: 0, refundedCents: 0, availableCents: 20000 })]);
+    await http().get(`/rentals/${rental.body.id}/counter-balance`).set(bearer(c.token)).expect(403);
+
+    // Quitação: método e caução juntos → 400; acima do saldo → 422; parte em dinheiro, o resto abatido da caução.
+    const settle = (b: object) => http().post(`/payments/${debt.id}/counter-settle`).set(bearer(campo)).set('Idempotency-Key', randomUUID()).send(b);
+    await settle({ amountCents: 100, method: 'cash', fromDepositId: depositId }).expect(400);
+    expect((await settle({ amountCents: quote.excessDayCents + 1, method: 'cash' }).expect(422)).body.code).toBe('counter-amount-mismatch');
+    const part = Math.floor(quote.excessDayCents / 2);
+    const rest = quote.excessDayCents - part;
+    const partial = await settle({ amountCents: part, method: 'cash', reference: 'caixa-2' }).expect(200);
+    expect(partial).toSatisfyApiSpec();
+    expect(partial.body).toMatchObject({ id: debt.id, outstandingCents: rest });
+    expect(partial.body.debtSettledAt).toBeUndefined();
+    const fromDeposit = await settle({ amountCents: rest, fromDepositId: depositId }).expect(200);
+    expect(fromDeposit).toSatisfyApiSpec();
+    expect(fromDeposit.body).toMatchObject({ id: debt.id, status: 'paid', outstandingCents: 0 });
+    expect(fromDeposit.body.debtSettledAt).toBeTruthy();
+    const settlements = await prisma.payment.findMany({ where: { settlesPaymentId: debt.id }, orderBy: { createdAt: 'asc' } });
+    expect(settlements.map((p) => [p.kind, p.status, p.amountCents, p.depositId])).toEqual([
+      ['debt_settlement', 'paid', part, null],
+      ['debt_settlement', 'paid', rest, depositId],
+    ]);
+    expect(await prisma.auditLog.count({ where: { action: 'payment.counter_settle', entityId: debt.id } })).toBe(2);
+    expect((await prisma.customer.findUniqueOrThrow({ where: { id: c.customerId } })).delinquent).toBe(false);
+    // Já quitado → 409 debt-not-payable.
+    expect((await settle({ amountCents: 1, method: 'cash' }).expect(409)).body.code).toBe('debt-not-payable');
+
+    // Devolução da caução: acima do disponível → 422; o disponível inteiro → captured (houve abatimento).
+    const left = 20000 - rest;
+    const refund = (amountCents: number) =>
+      http().post(`/payments/deposits/${depositId}/counter-refund`).set(bearer(campo)).set('Idempotency-Key', randomUUID()).send({ amountCents, reference: 'devolvido-em-maos' });
+    expect((await refund(left + 1).expect(422)).body.code).toBe('counter-amount-mismatch');
+    const refunded = await refund(left).expect(200);
+    expect(refunded).toSatisfyApiSpec();
+    expect(refunded.body).toMatchObject({ id: depositId, status: 'captured', capturedCents: rest, refundedCents: left });
+    expect(await prisma.auditLog.count({ where: { action: 'deposit.counter_refund', entityId: depositId } })).toBe(1);
+    const clean = await http().get(`/rentals/${rental.body.id}/counter-balance`).set(bearer(campo)).expect(200);
+    expect(clean.body).toMatchObject({ debtTotalCents: 0, debts: [], deposits: [] });
+
+    // Tudo acertado: pré-reservar volta a ser possível.
+    const again = await preReserve(c.token, (await depotVehicle()).id).expect(201);
+    await http().delete(`/reservations/${again.body.id}`).set(bearer(c.token)).expect(204);
   });
 
-  it('2. agendada com Pix para amanhã 10:00 (São Paulo): QR → fake confirma pelo webhook → active com expiresAt = pickupAt + 30 min', async () => {
+  it('2. agendada para amanhã 10:00 (São Paulo) sem pagamento → active com expiresAt = pickupAt + 30 min; a varredura não derruba', async () => {
     const c = await approvedCustomer(app, prisma, 'ciclo-2');
     const v = await depotVehicle();
     // Amanhã no calendário de São Paulo, 10:00 local (UTC−3, sem horário de verão) = 13:00Z.
@@ -234,107 +307,100 @@ describe('Galpão: ciclo completo (e2e)', () => {
     expect(new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(pickupAt))).toBe('10:00');
     const expectedExpiry = new Date(new Date(pickupAt).getTime() + 30 * MINUTE).toISOString();
 
-    const res = await http().post('/reservations').set(bearer(c.token)).set('Idempotency-Key', randomUUID())
-      .send(reservationBody(v.id, { pickupMode: 'scheduled', pickupAt, depositMethod: 'pix' })).expect(201);
+    // Corpo dos apps beta12 (plano, seguro e caução Pix): aceito e ignorado.
+    const res = await preReserve(c.token, v.id, { pickupMode: 'scheduled', pickupAt, planCode: 'day', coverage: 'basic', depositMethod: 'pix' }).expect(201);
     expect(res).toSatisfyApiSpec();
-    expect(res.body).toMatchObject({ status: 'active', pickupMode: 'scheduled', pickupAt, depositMethod: 'pix', expiresAt: expectedExpiry });
-    expect(res.body.deposit).toMatchObject({ method: 'pix', status: 'awaiting_pix' });
-    expect(res.body.deposit.pix.qrCodeBase64).toBeTruthy();
-    expect(res.body.deposit.pix.copyPaste).toBeTruthy();
-
-    const dp = await prisma.payment.findFirstOrThrow({ where: { depositId: res.body.deposit.id, kind: 'deposit' } });
-    app.get<FakePaymentProvider>(PAYMENT_PROVIDER).simulatePixPaid(dp.providerPaymentId!);
-    await signedWebhook(dp.providerPaymentId!).expect(200);
-    const held = await until(() => prisma.deposit.findUniqueOrThrow({ where: { id: res.body.deposit.id } }), (x) => x.status === 'held');
-    expect(held.status).toBe('held');
+    expect(res.body).toMatchObject({ status: 'active', pickupMode: 'scheduled', pickupAt, expiresAt: expectedExpiry });
+    for (const f of ['deposit', 'depositMethod', 'planCode']) expect(res.body).not.toHaveProperty(f);
+    expect(await prisma.deposit.count({ where: { customerId: c.customerId } })).toBe(0);
 
     const cur = await http().get('/reservations/current').set(bearer(c.token)).expect(200);
     expect(cur).toSatisfyApiSpec();
     expect(cur.body.reservation).toMatchObject({ id: res.body.id, status: 'active', pickupAt, expiresAt: expectedExpiry });
     expect(cur.body.reservation.pickupCode).toBeTruthy();
     expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).status).toBe('reserved');
-    // A varredura não derruba a reserva paga e no prazo.
     await app.get(ReservationsService).sweep();
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: res.body.id } })).status).toBe('active');
 
     await http().delete(`/reservations/${res.body.id}`).set(bearer(c.token)).expect(204);
   });
 
-  it('3. corrida: duas reservas simultâneas para a mesma moto → 201 + 409', async () => {
-    const [a, b] = await Promise.all([customerWithCard('ciclo-3a'), customerWithCard('ciclo-3b')]);
+  it('3. corrida: duas pré-reservas simultâneas para a mesma moto → 201 + 409', async () => {
+    const [a, b] = await Promise.all([approvedCustomer(app, prisma, 'ciclo-3a'), approvedCustomer(app, prisma, 'ciclo-3b')]);
     const v = await depotVehicle();
-    const results = await Promise.all([a, b].map((c) => http().post('/reservations').set(bearer(c.token)).set('Idempotency-Key', randomUUID()).send(reservationBody(v.id))));
+    const results = await Promise.all([a, b].map((c) => preReserve(c.token, v.id)));
     expect(results.map((r) => r.status).sort()).toEqual([201, 409]);
     const loser = results.find((r) => r.status === 409)!;
     expect(loser.body.code).toBe('vehicle-unavailable');
     expect(loser).toSatisfyApiSpec();
     expect(await prisma.reservation.count({ where: { vehicleId: v.id, status: 'active' } })).toBe(1);
-    const loserId = results[0].status === 409 ? a.customerId : b.customerId;
-    const deposits = await until(() => prisma.deposit.findMany({ where: { customerId: loserId } }), (ds) => ds.every((d) => d.status === 'released' || d.status === 'failed'));
-    for (const d of deposits) expect(['released', 'failed']).toContain(d.status);
     const winner = results.find((r) => r.status === 201)!;
     await http().delete(`/reservations/${winner.body.id}`).set(bearer(results[0].status === 201 ? a.token : b.token)).expect(204);
   });
 
-  it('4. aceites duplicados concorrentes → um aluguel e um destravamento', async () => {
+  it('4. plano semanal × 2 no balcão: prepaidUntil = início + 14 dias e devolução dentro do período sem débito', async () => {
     const c = await reserved('ciclo-4');
     const ho = await pickup(c.pickupCode).expect(201);
-    const results = await Promise.all([0, 1, 2, 3].map(() => accept(c.token, ho.body.id)));
-    expect(results.every((r) => r.status === 201 || r.status === 409)).toBe(true);
-    const ok = results.filter((r) => r.status === 201);
-    expect(ok.length).toBeGreaterThanOrEqual(1);
-    expect(new Set(ok.map((r) => r.body.id)).size).toBe(1);
-    expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(1);
-    expect(await prisma.vehicleCommand.count({ where: { vehicleId: c.vehicleId, type: 'unlock' } })).toBe(1);
-    const retry = await accept(c.token, ho.body.id).expect(201);
-    expect(retry.body.id).toBe(ok[0].body.id);
-    await returnDepot(retry.body.id);
+    const { quote, body } = await counterBody(ho.body.id, { planCode: 'weekly', quantity: 2 });
+    expect(quote.periodDays).toBe(14);
+    const rental = await checkout(ho.body.id, body).expect(201);
+    expect(rental.body.planCode).toBe('weekly');
+    expect(new Date(rental.body.prepaidUntil).getTime() - new Date(rental.body.startedAt).getTime()).toBe(14 * 24 * HOUR);
+    // 13 dias depois do início: ainda no pré-pago.
+    await prisma.rental.update({ where: { id: rental.body.id }, data: { startedAt: new Date(Date.now() - 13 * 24 * HOUR) } });
+    await returnDepot(rental.body.id);
+    const payments = await rentalPayments(rental.body.id);
+    expect(payments.map((p) => [p.status, p.amountCents])).toEqual([['paid', quote.totalCents]]);
+    expect((await prisma.rental.findUniqueOrThrow({ where: { id: rental.body.id } })).paymentId).toBe(payments[0].id);
+    // Caução de balcão de valor 0 → liberada no fechamento; saldo limpo.
+    expect((await prisma.deposit.findUniqueOrThrow({ where: { id: rental.body.depositId } })).status).toBe('released');
+    expect((await http().get(`/rentals/${rental.body.id}/counter-balance`).set(bearer(operacao)).expect(200)).body).toMatchObject({ debtTotalCents: 0, debts: [], deposits: [] });
   });
 
-  it('5a. pagamento recusado no aceite → 422 payment-declined, entrega pending_customer com lastError, nenhum destravamento', async () => {
-    // Sem cobrança no aceite (caução retida na reserva, liquidação no fim), o gateway fake não é chamado aqui: a recusa
-    // é simulada como o erro de pagamento que o start() devolveria.
+  it('5a. moto sem conexão no checkout → 409 vehicle-offline, entrega pending_customer com lastError, nada registrado; nova tentativa com a mesma chave inicia', async () => {
     const c = await reserved('ciclo-5a');
     const customerWs = await connect(c.token);
     const ho = await pickup(c.pickupCode).expect(201);
+    const { body } = await counterBody(ho.body.id);
     const starter = app.get(RentalStartService);
-    const spy = jest.spyOn(starter, 'start').mockRejectedValueOnce(new ProblemException(402, 'payment-failed', 'Pagamento recusado.'));
+    const spy = jest.spyOn(starter, 'start').mockRejectedValueOnce(new ProblemException(409, 'vehicle-offline', 'Moto sem conexão.'));
     const key = randomUUID();
     try {
-      const refused = await accept(c.token, ho.body.id, key).expect(422);
+      const refused = await checkout(ho.body.id, body, key).expect(409);
       expect(refused).toSatisfyApiSpec();
-      expect(refused.body.code).toBe('payment-declined');
+      expect(refused.body.code).toBe('vehicle-offline');
     } finally {
       spy.mockRestore();
     }
     expect(await waitEvent(customerWs, 'handover.updated', (p) => p.handoverId === ho.body.id))
-      .toEqual({ handoverId: ho.body.id, status: 'pending_customer', lastError: 'payment-declined' });
+      .toEqual({ handoverId: ho.body.id, status: 'pending_customer', lastError: 'vehicle-offline' });
     const seen = await http().get(`/handovers/${ho.body.id}`).set(bearer(c.token)).expect(200);
-    expect(seen.body).toMatchObject({ status: 'pending_customer', lastError: 'payment-declined' });
+    expect(seen.body).toMatchObject({ status: 'pending_customer', lastError: 'vehicle-offline' });
     expect(await prisma.vehicleCommand.count({ where: { vehicleId: c.vehicleId, type: 'unlock' } })).toBe(0);
     expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).status).toBe('reserved');
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: c.reservationId } })).status).toBe('handover');
-    expect((await prisma.deposit.findUniqueOrThrow({ where: { id: c.depositId } })).status).toBe('held');
     expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(0);
+    expect(await prisma.payment.count({ where: { customerId: c.customerId } })).toBe(0);
 
-    // Nova tentativa com a MESMA Idempotency-Key e o pagamento em dia → o erro não foi memorizado: aceita, lastError some.
-    const rental = await accept(c.token, ho.body.id, key).expect(201);
+    // Mesma Idempotency-Key com a moto de volta → o erro não foi memorizado: inicia, lastError some.
+    const rental = await checkout(ho.body.id, body, key).expect(201);
     expect(rental.headers['idempotent-replayed']).toBeUndefined();
     expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(1);
     expect((await prisma.handover.findUniqueOrThrow({ where: { id: ho.body.id } })).lastError).toBeNull();
     // Agora sim a mesma chave repete o sucesso (201 memorizado).
-    const replay = await accept(c.token, ho.body.id, key).expect(201);
+    const replay = await checkout(ho.body.id, body, key).expect(201);
     expect(replay.headers['idempotent-replayed']).toBe('true');
     expect(replay.body.id).toBe(rental.body.id);
     await returnDepot(rental.body.id);
   });
 
-  it('5b. pagamento pendente (inadimplente) no aceite, caminho real → 403, entrega pending_customer com lastError, nenhum destravamento', async () => {
+  it('5b. cliente inadimplente no checkout, caminho real → 403, entrega pending_customer com lastError, nenhum destravamento', async () => {
     const c = await reserved('ciclo-5b');
     const ho = await pickup(c.pickupCode).expect(201);
+    const { body } = await counterBody(ho.body.id);
     await prisma.customer.update({ where: { id: c.customerId }, data: { delinquent: true } });
     const key = randomUUID();
-    const refused = await accept(c.token, ho.body.id, key).expect(403);
+    const refused = await checkout(ho.body.id, body, key).expect(403);
     expect(refused).toSatisfyApiSpec();
     expect(refused.body.code).toBe('customer-delinquent');
     expect(await prisma.handover.findUniqueOrThrow({ where: { id: ho.body.id } })).toMatchObject({ status: 'pending_customer', lastError: 'customer-delinquent' });
@@ -342,7 +408,7 @@ describe('Galpão: ciclo completo (e2e)', () => {
     expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).status).toBe('reserved');
     await prisma.customer.update({ where: { id: c.customerId }, data: { delinquent: false } });
     // Mesma chave depois de regularizar → tenta de novo (o 403 não foi memorizado).
-    const rental = await accept(c.token, ho.body.id, key).expect(201);
+    const rental = await checkout(ho.body.id, body, key).expect(201);
     expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(1);
     await returnDepot(rental.body.id);
   });
@@ -368,7 +434,8 @@ describe('Galpão: ciclo completo (e2e)', () => {
       expect((await prisma.rental.findUniqueOrThrow({ where: { id: c.rentalId } })).status).toBe('ended');
       expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).toMatchObject({ status: target, depotId });
       expect(await prisma.fieldTask.count({ where: { vehicleId: c.vehicleId, type: 'collect' } })).toBe(0);
-      await settledPayments(c.rentalId);
+      // Dentro do pré-pago: só o pagamento do balcão.
+      expect((await rentalPayments(c.rentalId)).map((p) => p.status)).toEqual(['paid']);
       // Sem estado intermediário: a frota só vê a moto passar para o status final.
       await waitEvent(fleet, 'vehicle.status', (p) => p.vehicleId === c.vehicleId && p.status === target);
       await new Promise((r) => setTimeout(r, 200));
@@ -393,8 +460,10 @@ describe('Galpão: ciclo completo (e2e)', () => {
     await prisma.vehicle.update({ where: { id: c.vehicleId }, data: GREEN_POINT });
     const photo = await http().post(`/rentals/${c.rentalId}/return-photo`).set(bearer(c.token)).send({ contentType: 'image/jpeg' }).expect(201);
     await http().post(`/rentals/${c.rentalId}/end`).set(bearer(c.token)).send({ returnPhotoObjectKey: photo.body.objectKey }).expect(200);
-    expect(await settledPayments(c.rentalId)).toHaveLength(1);
-    expect((await prisma.rental.findUniqueOrThrow({ where: { id: c.rentalId } })).status).toBe('ended');
+    // A finalização também pode chegar pelo evento de travada: espera o fechamento.
+    expect((await until(() => prisma.rental.findUniqueOrThrow({ where: { id: c.rentalId } }), (r) => r.status === 'ended')).status).toBe('ended');
+    // Fechamento do balcão sem gateway: só o pré-pago, nada pendente.
+    expect((await rentalPayments(c.rentalId)).map((p) => p.status)).toEqual(['paid']);
     expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).toMatchObject({ status: 'awaiting_pickup', depotId });
 
     const tasks = await prisma.fieldTask.findMany({ where: { vehicleId: c.vehicleId, type: 'collect' } });
@@ -402,7 +471,8 @@ describe('Galpão: ciclo completo (e2e)', () => {
     expect(tasks[0]).toMatchObject({ status: 'open', targetLat: GREEN_POINT.lat, targetLng: GREEN_POINT.lng });
 
     // Ninguém aluga pela rua enquanto espera o recolhimento.
-    const other = await customerWithCard('ciclo-7-outro');
+    const other = await approvedCustomer(app, prisma, 'ciclo-7-outro');
+    await http().post('/payments/cards').set(bearer(other.token)).set('Idempotency-Key', randomUUID()).send({ cardToken: 'tok_visa_4242' }).expect(201);
     const blocked = await http().post('/rentals').set(bearer(other.token)).set('Idempotency-Key', randomUUID())
       .send({ vehicleId: c.vehicleId, planCode: 'minute', coverage: 'basic', depositMethod: 'card' }).expect(409);
     expect(blocked.body.code).toBe('vehicle-unavailable');
@@ -410,17 +480,18 @@ describe('Galpão: ciclo completo (e2e)', () => {
     await http().post(`/field-tasks/${tasks[0].id}/start`).set(bearer(campo)).expect(200);
     const done = await http().post(`/field-tasks/${tasks[0].id}/complete`).set(bearer(campo)).send({ depotId }).expect(200);
     expect(done.body).toMatchObject({ status: 'done', vehicleStatus: 'free' });
-    const atDepot = await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } });
-    expect(atDepot).toMatchObject({ status: 'free', depotId });
-    expect(atDepot.lat).toBeCloseTo(depotPoint.lat, 6);
-    expect(atDepot.lng).toBeCloseTo(depotPoint.lng, 6);
+    const atDepotRow = await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } });
+    expect(atDepotRow).toMatchObject({ status: 'free', depotId });
+    expect(atDepotRow.lat).toBeCloseTo(depotPoint.lat, 6);
+    expect(atDepotRow.lng).toBeCloseTo(depotPoint.lng, 6);
     // De volta ao estoque do galpão.
     const list = await http().get(`/depots/${depotId}/vehicles`).set(bearer(other.token)).expect(200);
     expect(list.body.items.map((x: { id: string }) => x.id)).toContain(c.vehicleId);
   });
 
   it('7b. moto de rua (sem depotId) devolvida em ponto verde continua free, sem recolhimento', async () => {
-    const c = await customerWithCard('ciclo-7b');
+    const c = await approvedCustomer(app, prisma, 'ciclo-7b');
+    await http().post('/payments/cards').set(bearer(c.token)).set('Idempotency-Key', randomUUID()).send({ cardToken: 'tok_visa_4242' }).expect(201);
     const tag = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`.toUpperCase();
     const v = await prisma.vehicle.create({
       data: { code: `E2E-${tag}`, thingName: `e2e-thing-${tag.toLowerCase()}`, model: 'Volti S1', ...GREEN_POINT, batteryPct: 95, status: 'free', locked: true },
@@ -431,32 +502,30 @@ describe('Galpão: ciclo completo (e2e)', () => {
     const rentalId: string = started.body.rental.id;
     const photo = await http().post(`/rentals/${rentalId}/return-photo`).set(bearer(c.token)).send({ contentType: 'image/jpeg' }).expect(201);
     await http().post(`/rentals/${rentalId}/end`).set(bearer(c.token)).send({ returnPhotoObjectKey: photo.body.objectKey }).expect(200);
-    await settledPayments(rentalId);
+    await until(() => rentalPayments(rentalId), (ps) => ps.length > 0 && ps.every((p) => p.status !== 'pending'));
     expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: v.id } })).toMatchObject({ status: 'free', depotId: null });
     expect(await prisma.fieldTask.count({ where: { vehicleId: v.id, type: 'collect' } })).toBe(0);
   });
 
-  it('8. expiração: reserva vencida pela varredura → expired, caução liberada, moto free no galpão', async () => {
+  it('8. expiração: pré-reserva vencida pela varredura → expired, moto free no galpão; o código não serve mais', async () => {
     const c = await reserved('ciclo-8');
     await prisma.reservation.update({ where: { id: c.reservationId }, data: { expiresAt: new Date(Date.now() - MINUTE) } });
     await app.get(ReservationsService).sweep();
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: c.reservationId } })).status).toBe('expired');
     expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).toMatchObject({ status: 'free', depotId });
-    const dep = await until(() => prisma.deposit.findUniqueOrThrow({ where: { id: c.depositId } }), (d) => d.status === 'released');
-    expect(dep.status).toBe('released');
     expect((await http().get('/reservations/current').set(bearer(c.token)).expect(200)).body).toEqual({});
     // O código da reserva vencida não serve mais para uma saída (reserva fora de active/handover → 409).
     expect(await pickup(c.pickupCode).expect(409)).toSatisfyApiSpec();
     expect(await prisma.handover.count({ where: { reservationId: c.reservationId } })).toBe(0);
   });
 
-  it('9. horário inválido → 422 com o code certo, sem caução e sem separar a moto', async () => {
+  it('9. horário inválido → 422 com o code certo, sem separar a moto', async () => {
     // Galpão das 08:00 às 18:00 todos os dias e outro sem horário (sempre fechado).
     const mk = async (openingHours: { weekday: number; opensAt: string; closesAt: string }[]) =>
       prisma.depot.create({ data: { name: `Galpão Horário E2E ${Date.now()}-${Math.floor(Math.random() * 1e6)}`, address: 'Rua do Horário, 9', ...depotPoint, openingHours } });
     const business = await mk(Array.from({ length: 7 }, (_, weekday) => ({ weekday, opensAt: '08:00', closesAt: '18:00' })));
     const closed = await mk([]);
-    const c = await customerWithCard('ciclo-9');
+    const c = await approvedCustomer(app, prisma, 'ciclo-9');
     const vehicleAt = async (id: string) => {
       const tag = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`.toUpperCase();
       return prisma.vehicle.create({ data: { code: `E2E-${tag}`, thingName: `e2e-thing-${tag.toLowerCase()}`, model: 'Volti S1', ...depotPoint, batteryPct: 90, status: 'free', locked: true, depotId: id }, select: { id: true } });
@@ -485,14 +554,13 @@ describe('Galpão: ciclo completo (e2e)', () => {
     expect((await post(vb.id, business.id, { pickupMode: 'scheduled', pickupAt: new Date(Date.now() - 3600_000).toISOString() }).expect(400)).body.code).toBe('validation-error');
     expect((await post(vb.id, business.id, { pickupMode: 'scheduled' }).expect(400)).body.code).toBe('validation-error');
 
-    expect(await prisma.deposit.count({ where: { customerId: c.customerId } })).toBe(0);
     expect(await prisma.reservation.count({ where: { customerId: c.customerId } })).toBe(0);
     expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: vb.id } })).status).toBe('free');
     expect((await prisma.vehicle.findUniqueOrThrow({ where: { id: vc.id } })).status).toBe('free');
     await prisma.depot.updateMany({ where: { id: { in: [business.id, closed.id] } }, data: { active: false } });
   });
 
-  it('10. disputa → cancelamento pela operação → reserva active com pickupCode de novo → nova saída → aceite', async () => {
+  it('10. disputa → cancelamento pela operação → reserva active com pickupCode de novo → nova saída → checkout', async () => {
     const c = await reserved('ciclo-10');
     const customerWs = await connect(c.token);
     const first = await pickup(c.pickupCode).expect(201);
@@ -509,28 +577,26 @@ describe('Galpão: ciclo completo (e2e)', () => {
     const cur = await http().get('/reservations/current').set(bearer(c.token)).expect(200);
     expect(cur.body.reservation).toMatchObject({ id: c.reservationId, status: 'active' });
     expect(cur.body.reservation.pickupCode).toBeTruthy();
-    expect((await prisma.deposit.findUniqueOrThrow({ where: { id: c.depositId } })).status).toBe('held');
 
     const second = await pickup(cur.body.reservation.pickupCode).expect(201);
     expect(second.body.id).not.toBe(first.body.id);
     await waitEvent(customerWs, 'handover.pending', (p) => p.handoverId === second.body.id);
-    const rental = await accept(c.token, second.body.id).expect(201);
+    const { body } = await counterBody(second.body.id);
+    // A entrega cancelada não faz checkout.
+    expect((await checkout(first.body.id, body).expect(422)).body.code).toBe('handover-not-pending');
+    const rental = await checkout(second.body.id, body).expect(201);
     expect(rental.body).toMatchObject({ vehicleId: c.vehicleId, status: 'active' });
     expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(1);
-    // A entrega cancelada não aceita mais.
-    expect((await accept(c.token, first.body.id).expect(422)).body.code).toBe('handover-not-pending');
     await returnDepot(rental.body.id);
   });
 
-  it('11. cancelamento depois do prazo da reserva → expired, caução liberada, moto free no galpão', async () => {
+  it('11. cancelamento depois do prazo da reserva → expired, moto free no galpão', async () => {
     const c = await reserved('ciclo-11');
     const ho = await pickup(c.pickupCode).expect(201);
     await prisma.reservation.update({ where: { id: c.reservationId }, data: { expiresAt: new Date(Date.now() - MINUTE) } });
-    await http().post(`/handovers/${ho.body.id}/cancel`).set(bearer(campo)).send({ reason: 'Cliente não apareceu para aceitar.' }).expect(200);
+    await http().post(`/handovers/${ho.body.id}/cancel`).set(bearer(campo)).send({ reason: 'Cliente não apareceu no balcão.' }).expect(200);
     expect((await prisma.reservation.findUniqueOrThrow({ where: { id: c.reservationId } })).status).toBe('expired');
     expect(await prisma.vehicle.findUniqueOrThrow({ where: { id: c.vehicleId } })).toMatchObject({ status: 'free', depotId });
-    const dep = await until(() => prisma.deposit.findUniqueOrThrow({ where: { id: c.depositId } }), (d) => d.status === 'released');
-    expect(dep.status).toBe('released');
     expect((await http().get('/reservations/current').set(bearer(c.token)).expect(200)).body).toEqual({});
     expect(await prisma.rental.count({ where: { customerId: c.customerId } })).toBe(0);
   });
