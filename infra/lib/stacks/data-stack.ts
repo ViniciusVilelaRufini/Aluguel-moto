@@ -127,10 +127,20 @@ export class DataStack extends Stack {
         },
       ],
     });
+    // Handover and contract photos are also uploaded from the panel ("Entregar moto", "Contrato e pagamento") by presigned
+    // PUT, so the bucket needs CORS for the panel origin(s). PUT only: the panel shows photos with <img>, which needs no CORS.
     this.returnPhotosBucket = new s3.Bucket(this, 'ReturnPhotosBucket', {
       ...common,
       bucketName: name('fotos-devolucao'),
       encryption: s3.BucketEncryption.S3_MANAGED,
+      cors: [
+        {
+          allowedMethods: [s3.HttpMethods.PUT],
+          allowedOrigins: [props.adminOrigin, ...cfg.auth.adminExtraOrigins],
+          allowedHeaders: ['content-type'],
+          maxAge: 3000,
+        },
+      ],
       lifecycleRules: [
         {
           id: 'tier-and-expire',

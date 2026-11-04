@@ -1317,3 +1317,11 @@ Contexto: com a pré-reserva no app, o painel não tinha como entregar a moto. "
    - **Validações:** são as mesmas do caminho com código.
    - **Auditoria:** AuditLog `handover.pickup_without_code` na mesma transação, com ator, entrega, motivo e ids, sem dado do cliente. O texto de ajuda do motivo pede para não digitar números de documento.
 3. **Pendente (dono):** autorizar a dependência `jsqr@1.4.0`, que não está no cache local. Sem ela, a câmera não funciona em navegador sem `BarcodeDetector`, como o Chrome no Windows; lá fica só o campo do leitor ou do código colado.
+
+## 2026-11-04 · CORS do bucket de fotos da entrega e do contrato (branch `fix/cors-fotos-entrega`) · status: aplicada (infra; sem mudança de contrato)
+
+- **Sintoma:** "Entregar moto" e "Contrato e pagamento" no painel mostravam "Failed to fetch" ao enviar foto.
+- **Causa:** o navegador sobe a foto direto ao S3 pela URL pré-assinada (`POST /handovers/uploads`), e o bucket `fotos-devolucao` não tinha CORS. Antes só o app do operador, que é nativo, enviava essas fotos.
+- **Correção:** nos perfis `single` e `data`, o bucket ganhou CORS só de `PUT`, só para a origem do painel (e as extras do dev), com o cabeçalho `content-type`. O `GET` não entrou porque as fotos aparecem por `<img>`, que não precisa de CORS. Os buckets de KYC, relatórios e anexos continuam sem CORS. A impressão `volti-prod-data` foi regenerada de propósito.
+- **No dev:** a mesma regra foi aplicada direto no bucket `volti-dev-<conta>-single-fotos-devolucao` (`put-bucket-cors`), igual à do CDK, para não esperar um deploy da stack.
+- **CI (pendente, dono):** o job `deploy (dev)` do `infra.yml` passou a rodar depois da correção do teste API→infra e falha em `configure-aws-credentials`, porque o repositório não tem `AWS_DEPLOY_ROLE_ARN_DEV`. Nada é implantado. Ele faz deploy do perfil de vários stacks (ECS/RDS), não do `single`. Decidir entre configurar a role, se esse perfil for o alvo, ou desligar o job enquanto o dev for o `single`.

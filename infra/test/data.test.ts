@@ -55,9 +55,20 @@ describe.each(['dev', 'prod'] as const)('DataStack (%s)', (env) => {
     expect(origins).toMatch(/https:\/\//);
     if (env === 'dev') expect(rules[0].AllowedOrigins).toContain('http://localhost:3100');
     else expect(origins).not.toMatch(/localhost/);
-    // Only the other buckets stay without CORS.
+    // Only the catalog and the return/handover photos (panel uploads) have CORS.
     const withCors = Object.values(t().findResources('AWS::S3::Bucket')).filter((b: any) => b.Properties.CorsConfiguration);
-    expect(withCors).toHaveLength(1);
+    expect(withCors).toHaveLength(2);
+  });
+
+  it('return photos bucket: PUT-only CORS for the admin panel origin (handover and contract photos from the browser)', () => {
+    const photos = Object.entries(t().findResources('AWS::S3::Bucket')).find(([id]) => id.startsWith('ReturnPhotosBucket'))![1] as any;
+    const rules = photos.Properties.CorsConfiguration.CorsRules;
+    expect(rules).toHaveLength(1);
+    expect(rules[0].AllowedMethods).toEqual(['PUT']);
+    expect(rules[0].AllowedHeaders).toEqual(['content-type']);
+    const origins = JSON.stringify(rules[0].AllowedOrigins);
+    expect(origins).not.toContain('*');
+    expect(origins).toMatch(/https:\/\//);
   });
 
   it('buckets have lifecycle rules', () => {

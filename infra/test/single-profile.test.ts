@@ -137,6 +137,16 @@ describe('profile=single (dev on one EC2 instance)', () => {
     }
   });
 
+  it('browser uploads: CORS only on the catalog (PUT/GET) and the return/handover photos (PUT) buckets, panel origin only', () => {
+    const byName = (suffix: string) => resources(t, 'AWS::S3::Bucket').find((b) => JSON.stringify(b.Properties.BucketName).includes(suffix))!;
+    const photos = byName('fotos-devolucao').Properties.CorsConfiguration.CorsRules;
+    expect(photos).toHaveLength(1);
+    expect(photos[0].AllowedMethods).toEqual(['PUT']);
+    expect(photos[0].AllowedHeaders).toEqual(['content-type']);
+    expect(JSON.stringify(photos[0].AllowedOrigins)).not.toContain('*');
+    for (const suffix of ['documentos-kyc', 'relatorios', 'anexos']) expect(byName(suffix).Properties.CorsConfiguration).toBeUndefined();
+  });
+
   it('instance role: no managed policies; SSM agent only; parameters only under /volti/dev with an explicit Deny elsewhere', () => {
     const { role, stmts } = roleStatements();
     expect(role.Properties.ManagedPolicyArns).toBeUndefined();

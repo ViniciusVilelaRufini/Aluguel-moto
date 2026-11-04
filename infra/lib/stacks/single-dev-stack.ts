@@ -121,7 +121,17 @@ export class SingleDevStack extends Stack {
       });
     this.buckets = {
       KYC: bucket('KycBucket', 'documentos-kyc', { versioned: true }),
-      RETURN_PHOTOS: bucket('ReturnPhotosBucket', 'fotos-devolucao'),
+      // Handover and contract photos are also uploaded from the panel by presigned PUT (PUT only; <img> needs no CORS).
+      RETURN_PHOTOS: bucket('ReturnPhotosBucket', 'fotos-devolucao', {
+        cors: [
+          {
+            allowedMethods: [s3.HttpMethods.PUT],
+            allowedOrigins: [props.adminOrigin, ...cfg.auth.adminExtraOrigins],
+            allowedHeaders: ['content-type'],
+            maxAge: 3000,
+          },
+        ],
+      }),
       REPORTS: bucket('ReportsBucket', 'relatorios'),
       ATTACHMENTS: bucket('AttachmentsBucket', 'anexos'),
       CATALOG: bucket('CatalogBucket', 'catalogo', {
