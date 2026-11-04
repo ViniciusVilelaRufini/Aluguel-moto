@@ -8,8 +8,9 @@ Rodar (em `apps/admin`): `pnpm exec playwright test -c playwright.mock.config.ts
 - `fixtures.ts`: dados no formato do contrato (`@volti/contracts`), incluindo galpões, cadastro de estações e entregas.
 - Endpoints do galpão mockados (só leitura, mais `POST`/`PATCH /depots`): `/depots`, `/depots/{id}`, `/depots/{id}/vehicles`, `/depots/{id}/pickups`, `/swap-stations/registry`, `/swap-stations/{id}/swaps`, `/handovers`, `/handovers/{id}`, `/batteries/{id}/movements`, `/payments/deposits`. `GET /batteries` devolve `statusCounts` (BatteryPage).
 - Os fixtures não entram no `tsc` do `pnpm lint`; para checar contra o contrato: `tsc --noEmit -p` com um tsconfig que inclua `e2e-mock/**/*.ts`.
-- `mock-api.ts`: `installMockApi(page, { group, socket: 'on'|'off', latencyMs, failPaths })` devolve `{ calls, unmocked, emit, db }`. Endpoint sem handler responde 404 e entra em `unmocked`.
+- Balcão (pré-reserva): `GET /handovers/{id}/counter-quote`, `POST /handovers/{id}/counter-checkout`, `POST /handovers/uploads` + `PUT /uploads/...` (URL assinada), `GET /rentals/{id}/counter-balance`, `POST /payments/{id}/counter-settle`, `POST /payments/deposits/{id}/counter-refund`; a agenda (`/depots/{id}/pickups`) traz uma reserva `handover` com `handoverId` (`ho-3`). `db.counter` controla o saldo e erros (`mismatchOnce`, `checkoutError`, `rentalStatus`).
+- `mock-api.ts`: `installMockApi(page, { group, socket: 'on'|'off', latencyMs, failPaths })` devolve `{ calls, unmocked, emit, db }` (cada chamada guarda `headers`, ex.: `idempotency-key`). Endpoint sem handler responde 404 e entra em `unmocked`.
 - `login.ts`: `loginMocked` (token dev na sessionStorage, sem credencial) e `loginViaUi`.
 - `helpers.ts`: coletor de problemas (`collect`), `overflowReport`, `focusReport`, `shot`.
-- Specs: `sweep.spec.ts` (todas as rotas, desktop 1440x900 e celular 390x844), `states.spec.ts` (carregando/erro/401), `known-bugs.spec.ts` (regressoes `[BUG P1-xx]` que falham ate o bug ser corrigido).
+- Specs: `sweep.spec.ts` (todas as rotas, desktop 1440x900 e celular 390x844), `states.spec.ts` (carregando/erro/401), `balcao.spec.ts` (contrato e pagamento, acerto no balcão), `known-bugs.spec.ts` (regressoes `[BUG P1-xx]` que falham ate o bug ser corrigido).
 - `__shots__/` e `__results__/` nao sao versionados.
