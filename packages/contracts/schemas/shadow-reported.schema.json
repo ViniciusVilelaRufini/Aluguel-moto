@@ -11,6 +11,7 @@
     "limite_kmh": { "type": "integer", "minimum": 0, "maximum": 32, "description": "Limite efetivamente aplicado no controlador" },
     "modo_roubada": { "type": "boolean" },
     "firmware": { "type": "string", "maxLength": 64, "description": "Versão do firmware (semver)" },
-    "velocidade_kmh": { "type": "number", "minimum": 0, "maximum": 200, "description": "Velocidade no momento do reporte (usada pela rampa do bloqueio seguro)" }
+    "velocidade_kmh": { "type": "number", "minimum": 0, "maximum": 200, "description": "Velocidade no momento do reporte (usada pela rampa do bloqueio seguro)" },
+    "gps_economia": { "type": "boolean", "description": "Opcional (ausente = desconhecido). true = o rastreador reportou o rastreamento GPS desligado com a ignição desligada (modo de economia do J16: sem posição nova até o GPS voltar). Vem do status/heartbeat; a API trata como desconhecido 3 min depois." }
   }
 }

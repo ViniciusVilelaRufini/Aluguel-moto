@@ -43,6 +43,7 @@ Nada nesses tópicos identifica o cliente: a associação moto ↔ aluguel exist
 - Mensagens fora do schema são descartadas (log `telemetry_invalid`, sem o payload).
 - `bateria_conhecida` (opcional; ausente = `true`): `false` = o rastreador não tem leitura da bateria e `bateria_pct: 0` não é carga real. A ponte GT06 manda `false` quando publica depois do teto de 5 min sem tensão do pack. A API grava `Vehicle.batteryKnown = false` (REST), não usa o 0 como carga da bateria instalada, e o painel/app não exibem o 0 como nível.
 - `velocidade_kmh` acima de 32 é aceita (indica limitador violado e alimenta alertas), nunca usada como limite.
+- `satelites` (opcional; ausente = desconhecido): satélites do fix (ponte GT06: `attributes.sat` do Traccar). **Posição fraca** = `satelites` conhecido e menor que 5 (`MIN_GPS_SATELLITES`): continua no mapa e no trajeto, mas não conta como amostra parada para a trava só relé (a sequência parada recomeça; só dificulta o corte), não muda cerca nem limite de zona (o motor de cercas mantém o último estado) e a ponte não a usa no alerta `movimento_sem_aluguel` nem como amostra parada da segunda guarda. Sem o campo (simulador, firmware próprio), nada muda. A API expõe o valor em `Vehicle.gpsSatellites`.
 
 ## Device shadow
 
@@ -62,6 +63,7 @@ Nada nesses tópicos identifica o cliente: a associação moto ↔ aluguel exist
 | `modo_roubada` | boolean | servidor / rastreador | telemetria a cada 5 s mesmo travada; sirene ao mover |
 | `firmware` | string | rastreador | versão semver |
 | `velocidade_kmh` | número | rastreador | velocidade no momento do reporte, usada pela rampa |
+| `gps_economia` | boolean | rastreador (ponte GT06) | opcional: `true` = rastreamento GPS desligado com a ignição desligada (modo de economia do J16); vem do byte de status do heartbeat (bit 6 = GPS, bit 1 = ACC, `attributes.status` do Traccar). A API trata como desconhecido 3 min depois do reporte e expõe em `Vehicle.gpsSleep`. No modo aws a API só lê o shadow por polling enquanto há comando aguardando a moto (é quando a trava espera o GPS) |
 
 O shadow guarda o `desired` enquanto a moto está offline; ao reconectar, ela faz `shadow/get` e aplica o `delta`.
 

@@ -4175,6 +4175,20 @@ export interface components {
              */
             readonly positionAt?: string;
             /**
+             * @description Satélites da última posição (`lat`/`lng`) recebida do rastreador. Ausente = desconhecido (rastreador que não
+             *     informa, ou sem estado ao vivo). Abaixo de 5 = posição fraca: não confirma parada para a trava só relé nem muda
+             *     cerca/limite de zona. Para cliente, vem só junto com a posição visível (mesma regra de `positionAt`; nunca com
+             *     `locationHidden`).
+             */
+            readonly gpsSatellites?: number;
+            /**
+             * @description `true` = o rastreador reportou o rastreamento GPS desligado com a ignição desligada (modo de economia: sem
+             *     posição nova até o GPS voltar, então a trava só relé não confirma a parada). `false` = GPS ligado ou ignição
+             *     ligada. Ausente = desconhecido (sem status nos últimos 3 min, ou rastreador que não informa). Para cliente, vem
+             *     só junto com a posição visível (mesma regra de `positionAt`; nunca com `locationHidden`).
+             */
+            readonly gpsSleep?: boolean;
+            /**
              * Format: uuid
              * @description staff.
              */

@@ -56,6 +56,10 @@ class _$Vehicle extends Vehicle {
   @override
   final DateTime? positionAt;
   @override
+  final int? gpsSatellites;
+  @override
+  final bool? gpsSleep;
+  @override
   final String? currentRentalId;
   @override
   final String? vehicleModelId;
@@ -114,6 +118,8 @@ class _$Vehicle extends Vehicle {
       this.firmwareVersion,
       this.lastSeenAt,
       this.positionAt,
+      this.gpsSatellites,
+      this.gpsSleep,
       this.currentRentalId,
       this.vehicleModelId,
       this.categoryLabel,
@@ -165,6 +171,8 @@ class _$Vehicle extends Vehicle {
         firmwareVersion == other.firmwareVersion &&
         lastSeenAt == other.lastSeenAt &&
         positionAt == other.positionAt &&
+        gpsSatellites == other.gpsSatellites &&
+        gpsSleep == other.gpsSleep &&
         currentRentalId == other.currentRentalId &&
         vehicleModelId == other.vehicleModelId &&
         categoryLabel == other.categoryLabel &&
@@ -209,6 +217,8 @@ class _$Vehicle extends Vehicle {
     _$hash = $jc(_$hash, firmwareVersion.hashCode);
     _$hash = $jc(_$hash, lastSeenAt.hashCode);
     _$hash = $jc(_$hash, positionAt.hashCode);
+    _$hash = $jc(_$hash, gpsSatellites.hashCode);
+    _$hash = $jc(_$hash, gpsSleep.hashCode);
     _$hash = $jc(_$hash, currentRentalId.hashCode);
     _$hash = $jc(_$hash, vehicleModelId.hashCode);
     _$hash = $jc(_$hash, categoryLabel.hashCode);
@@ -255,6 +265,8 @@ class _$Vehicle extends Vehicle {
           ..add('firmwareVersion', firmwareVersion)
           ..add('lastSeenAt', lastSeenAt)
           ..add('positionAt', positionAt)
+          ..add('gpsSatellites', gpsSatellites)
+          ..add('gpsSleep', gpsSleep)
           ..add('currentRentalId', currentRentalId)
           ..add('vehicleModelId', vehicleModelId)
           ..add('categoryLabel', categoryLabel)
@@ -378,6 +390,15 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
   DateTime? get positionAt => _$this._positionAt;
   set positionAt(DateTime? positionAt) => _$this._positionAt = positionAt;
 
+  int? _gpsSatellites;
+  int? get gpsSatellites => _$this._gpsSatellites;
+  set gpsSatellites(int? gpsSatellites) =>
+      _$this._gpsSatellites = gpsSatellites;
+
+  bool? _gpsSleep;
+  bool? get gpsSleep => _$this._gpsSleep;
+  set gpsSleep(bool? gpsSleep) => _$this._gpsSleep = gpsSleep;
+
   String? _currentRentalId;
   String? get currentRentalId => _$this._currentRentalId;
   set currentRentalId(String? currentRentalId) =>
@@ -477,6 +498,8 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
       _firmwareVersion = $v.firmwareVersion;
       _lastSeenAt = $v.lastSeenAt;
       _positionAt = $v.positionAt;
+      _gpsSatellites = $v.gpsSatellites;
+      _gpsSleep = $v.gpsSleep;
       _currentRentalId = $v.currentRentalId;
       _vehicleModelId = $v.vehicleModelId;
       _categoryLabel = $v.categoryLabel;
@@ -545,6 +568,8 @@ class VehicleBuilder implements Builder<Vehicle, VehicleBuilder> {
             firmwareVersion: firmwareVersion,
             lastSeenAt: lastSeenAt,
             positionAt: positionAt,
+            gpsSatellites: gpsSatellites,
+            gpsSleep: gpsSleep,
             currentRentalId: currentRentalId,
             vehicleModelId: vehicleModelId,
             categoryLabel: categoryLabel,
